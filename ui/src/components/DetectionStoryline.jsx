@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
+import Term from './onboarding/Term.jsx'
 import './DetectionStoryline.css'
 
 /**
@@ -337,13 +338,13 @@ function StorylineHeader({ storyline, live, lastUpdated }) {
           )}
         </div>
         <div className="storyline-kpi">
-          <span className="storyline-kpi__label">MTTD p50</span>
+          <span className="storyline-kpi__label"><Term k="mttd">MTTD</Term> p50</span>
           <span className="storyline-kpi__value">
             {formatMttd(mttd.p50) || '—'}
           </span>
         </div>
         <div className="storyline-kpi">
-          <span className="storyline-kpi__label">MTTD p90</span>
+          <span className="storyline-kpi__label"><Term k="mttd">MTTD</Term> p90</span>
           <span className="storyline-kpi__value">
             {formatMttd(mttd.p90) || '—'}
           </span>

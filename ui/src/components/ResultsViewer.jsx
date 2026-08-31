@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getRuns, getResultsForRun, validateResult, downloadReport } from '../api/client.js'
 import { runIdOf } from '../api/ids.js'
+import Term from './onboarding/Term.jsx'
 
 // --- Helpers ----------------------------------------------------------------
 
@@ -49,25 +50,20 @@ function formatMTTD(seconds) {
 function CoverageBar({ label, observed, total }) {
   const pct = total > 0 ? Math.round((observed / total) * 100) : 0
   const fillCls = pct >= 75 ? 'fill-success' : pct >= 40 ? 'fill-warning' : 'fill-danger'
+  const pctCls = pct >= 75 ? 'rv-cov__pct--good' : pct >= 40 ? 'rv-cov__pct--warn' : 'rv-cov__pct--bad'
 
   return (
-    <div style={{ marginBottom: '8px' }}>
-      <div style={{
-        display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: '4px',
-      }}>
-        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--cortex-navy)' }}>
+    <div className="rv-cov">
+      <div className="rv-cov__head">
+        <span className="rv-cov__label">
           {label}
         </span>
-        <span style={{
-          fontSize: '12px', fontFamily: 'var(--font-mono)',
-          color: pct >= 75 ? 'var(--cortex-success)' : pct >= 40 ? 'var(--cortex-warning)' : 'var(--cortex-danger)',
-          fontWeight: 700,
-        }}>
+        <span className={`rv-cov__pct ${pctCls}`}>
           {pct}% ({observed}/{total})
         </span>
       </div>
       <div className="coverage-bar">
+        {/* width is computed from live coverage data — cannot be a static class */}
         <div className={`coverage-bar-fill ${fillCls}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -79,22 +75,18 @@ function CoverageBar({ label, observed, total }) {
 function MTTDSummary({ mttd }) {
   if (!mttd) return null
   return (
-    <div style={{
-      background: 'var(--cortex-navy)', color: 'white',
-      borderRadius: 'var(--radius-md)', padding: '12px 16px',
-      marginBottom: '16px',
-    }}>
-      <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: 0.7, marginBottom: '6px' }}>
-        Mean Time to Detect (MTTD)
+    <div className="rv-mttd">
+      <div className="rv-mttd__label">
+        Mean Time to Detect (<Term k="mttd">MTTD</Term>)
       </div>
-      <div style={{ display: 'flex', gap: '24px', alignItems: 'baseline' }}>
+      <div className="rv-mttd__body">
         <div>
-          <span style={{ fontSize: '24px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--cortex-teal)' }}>
+          <span className="rv-mttd__avg">
             {formatMTTD(mttd.avg_seconds)}
           </span>
-          <span style={{ fontSize: '11px', opacity: 0.7, marginLeft: '6px' }}>avg</span>
+          <span className="rv-mttd__avg-unit">avg</span>
         </div>
-        <div style={{ fontSize: '12px', opacity: 0.8, fontFamily: 'var(--font-mono)' }}>
+        <div className="rv-mttd__stats">
           min {formatMTTD(mttd.min_seconds)} · max {formatMTTD(mttd.max_seconds)} · {mttd.count} detections
         </div>
       </div>
@@ -130,48 +122,33 @@ function DetectionRow({ result, onValidate }) {
   }
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: '10px',
-      padding: '10px 0', borderBottom: '1px solid var(--cortex-border)',
-      opacity: saving ? 0.6 : 1,
-    }}>
+    <div className={`rv-det-row${saving ? ' rv-det-row--saving' : ''}`}>
       {/* Clickable observed toggle */}
       <button
         onClick={handleToggle}
         disabled={saving}
         title={observed ? 'Mark as NOT detected' : 'Mark as detected in XSIAM'}
-        style={{
-          width: '24px', height: '24px', borderRadius: '4px',
-          border: observed ? '2px solid var(--cortex-success)' : '2px solid var(--cortex-border)',
-          background: observed ? 'var(--cortex-success)' : 'transparent',
-          color: observed ? 'white' : 'var(--cortex-steel)',
-          cursor: 'pointer', flexShrink: 0, marginTop: '2px',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '14px', fontWeight: 700,
-        }}
+        className={`rv-det-toggle${observed ? ' rv-det-toggle--observed' : ''}`}
       >
         {observed ? '✓' : ''}
       </button>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="rv-det-row__body">
         {/* Step + signal type badges */}
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '3px', flexWrap: 'wrap' }}>
+        <div className="rv-det-row__badges">
           {result.step_id && (
-            <span className="badge badge-steel" style={{ fontSize: '10px' }}>
+            <span className="badge badge-steel badge--sm">
               {result.step_id}
             </span>
           )}
-          <span className="badge badge-navy" style={{ fontSize: '10px' }}>
+          <span className="badge badge-navy badge--sm">
             {result.signal_type || '—'}
           </span>
-          <span className="badge badge-steel" style={{ fontSize: '10px' }}>
+          <span className="badge badge-steel badge--sm">
             {result.plane || '—'}
           </span>
           {result.mttd_seconds != null && (
-            <span style={{
-              fontSize: '11px', fontFamily: 'var(--font-mono)',
-              color: 'var(--cortex-teal)', fontWeight: 600,
-            }}>
+            <span className="rv-det-row__mttd">
               MTTD: {formatMTTD(result.mttd_seconds)}
             </span>
           )}
@@ -179,36 +156,29 @@ function DetectionRow({ result, onValidate }) {
 
         {/* Step name */}
         {result.step_name && (
-          <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--cortex-navy)', marginBottom: '2px' }}>
+          <div className="rv-det-row__step-name">
             {result.step_name}
           </div>
         )}
 
         {/* Expected detection description */}
-        <p style={{ fontSize: '12px', color: '#1A2B3C', margin: 0 }}>
+        <p className="rv-det-row__desc">
           {result.expected_detection || '—'}
         </p>
 
         {/* Notes display/edit */}
         {result.notes && !notesOpen && (
-          <p style={{
-            fontSize: '11px', color: 'var(--cortex-steel)',
-            margin: '3px 0 0', fontStyle: 'italic', cursor: 'pointer',
-          }} onClick={() => setNotesOpen(true)} title="Click to edit notes">
+          <p className="rv-det-row__notes" onClick={() => setNotesOpen(true)} title="Click to edit notes">
             {result.notes}
           </p>
         )}
 
         {/* Action buttons */}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+        <div className="rv-det-row__actions">
           {!notesOpen && (
             <button
               onClick={() => setNotesOpen(true)}
-              style={{
-                fontSize: '11px', color: 'var(--cortex-teal)',
-                background: 'none', border: 'none', cursor: 'pointer',
-                padding: 0, textDecoration: 'underline',
-              }}
+              className="rv-det-row__notes-toggle"
             >
               {result.notes ? 'Edit notes' : 'Add notes'}
             </button>
@@ -217,25 +187,19 @@ function DetectionRow({ result, onValidate }) {
 
         {/* Notes editor */}
         {notesOpen && (
-          <div style={{ marginTop: '6px', display: 'flex', gap: '6px' }}>
+          <div className="rv-det-row__notes-editor">
             <input
               type="text"
               value={notesText}
               onChange={e => setNotesText(e.target.value)}
               placeholder="Alert name, XQL query used, XSIAM alert ID..."
-              style={{
-                flex: 1, fontSize: '12px', padding: '4px 8px',
-                border: '1px solid var(--cortex-border)', borderRadius: '4px',
-                fontFamily: 'var(--font-mono)',
-              }}
+              className="rv-det-row__notes-input"
               onKeyDown={e => e.key === 'Enter' && handleNotesSave()}
             />
-            <button className="btn btn-sm" onClick={handleNotesSave} disabled={saving}
-              style={{ fontSize: '11px', padding: '4px 8px' }}>
+            <button className="btn btn-sm rv-det-row__btn-sm" onClick={handleNotesSave} disabled={saving}>
               Save
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setNotesOpen(false)}
-              style={{ fontSize: '11px', padding: '4px 8px' }}>
+            <button className="btn btn-secondary btn-sm rv-det-row__btn-sm" onClick={() => setNotesOpen(false)}>
               Cancel
             </button>
           </div>
@@ -295,22 +259,16 @@ function RunDetail({ run }) {
   })
 
   return (
-    <div style={{
-      background: 'var(--cortex-light-bg)',
-      border: '1px solid var(--cortex-border)',
-      borderRadius: 'var(--radius-md)',
-      margin: '4px 0 12px 0',
-      padding: '16px 20px',
-    }}>
+    <div className="rv-run-detail">
       {loading ? (
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div className="rv-run-detail__loading">
           <div className="spinner" />
-          <span className="text-muted" style={{ fontSize: '12px' }}>Loading results…</span>
+          <span className="text-muted rv-run-detail__loading-text">Loading results…</span>
         </div>
       ) : error ? (
-        <p style={{ fontSize: '12px', color: 'var(--cortex-danger)' }}>{error}</p>
+        <p className="rv-run-detail__error">{error}</p>
       ) : results.length === 0 ? (
-        <p style={{ fontSize: '12px', color: 'var(--cortex-steel)' }}>
+        <p className="rv-run-detail__empty">
           No detection results recorded for this run.
         </p>
       ) : (
@@ -319,18 +277,17 @@ function RunDetail({ run }) {
           <MTTDSummary mttd={mttd} />
 
           {/* Report download */}
-          <div style={{ marginBottom: '12px', textAlign: 'right' }}>
+          <div className="rv-run-detail__report-row">
             <button
-              className="btn btn-sm"
+              className="btn btn-sm rv-run-detail__report-btn"
               onClick={handleDownloadReport}
-              style={{ fontSize: '12px' }}
             >
               &#8681; Download POV Report
             </button>
           </div>
 
           {/* Coverage summary */}
-          <div style={{ marginBottom: '16px' }}>
+          <div className="rv-run-detail__coverage">
             <p className="section-label">Detection Coverage</p>
             <CoverageBar
               label="Overall"
@@ -351,15 +308,15 @@ function RunDetail({ run }) {
 
           {/* Results grouped by step — interactive validation */}
           <div>
-            <p className="section-label" style={{ marginBottom: '4px' }}>
+            <p className="section-label rv-run-detail__validate-label">
               Validate Detections — check each detection you confirmed in XSIAM ({coverage.observed || 0}/{coverage.total || 0})
             </p>
-            <p style={{ fontSize: '11px', color: 'var(--cortex-steel)', marginBottom: '12px' }}>
+            <p className="rv-run-detail__validate-hint">
               Click the checkbox when you see the alert in XSIAM. MTTD is calculated automatically.
             </p>
 
             {Object.entries(byStep).map(([stepId, { step_name, results: stepResults }]) => (
-              <div key={stepId} style={{ marginBottom: '8px' }}>
+              <div key={stepId} className="rv-run-detail__step-group">
                 {stepResults.map(r => (
                   <DetectionRow key={r.id} result={r} onValidate={handleValidate} />
                 ))}
@@ -404,7 +361,7 @@ export default function ResultsViewer({ runs: propRuns, onClose }) {
     <div className="panel-card">
       <div className="panel-card-header">
         <h3>Run History & Detection Validation</h3>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="rv-header__actions">
           <button
             className="btn btn-secondary btn-sm"
             onClick={refresh}
@@ -425,10 +382,10 @@ export default function ResultsViewer({ runs: propRuns, onClose }) {
         </div>
       </div>
 
-      <div className="panel-card-body" style={{ padding: 0 }}>
+      <div className="panel-card-body rv-body">
         {loading && runs.length === 0 ? (
           <div className="empty-state">
-            <div className="spinner" style={{ margin: '0 auto var(--space-4)' }} />
+            <div className="spinner rv-loading-spinner" />
             <p>Loading run history…</p>
           </div>
         ) : runs.length === 0 ? (
@@ -437,7 +394,7 @@ export default function ResultsViewer({ runs: propRuns, onClose }) {
             <p>No runs yet. Launch a scenario to see results here.</p>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div className="rv-table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
@@ -455,15 +412,14 @@ export default function ResultsViewer({ runs: propRuns, onClose }) {
                     <React.Fragment key={runIdOf(run)}>
                       <tr
                         onClick={() => handleRowClick(run)}
-                        className={isExpanded ? 'row-selected' : ''}
+                        className={`rv-row${isExpanded ? ' row-selected' : ''}`}
                         title="Click to validate detection results"
-                        style={{ cursor: 'pointer' }}
                       >
                         <td>
-                          <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--cortex-navy)' }}>
+                          <div className="rv-row__scenario-id">
                             {run.scenario_id}
                           </div>
-                          <div style={{ fontSize: '11px', color: 'var(--cortex-steel)', fontFamily: 'var(--font-mono)' }}>
+                          <div className="rv-row__run-id">
                             {run.run_id?.slice(0, 8)}…
                             {run.identity_context ? ` · ${run.identity_context}` : ''}
                           </div>
@@ -474,16 +430,16 @@ export default function ResultsViewer({ runs: propRuns, onClose }) {
                           </span>
                         </td>
                         <td><StatusBadge status={run.status} /></td>
-                        <td><span style={{ fontSize: '12px' }}>{formatTime(run.started_at)}</span></td>
+                        <td><span className="rv-row__time">{formatTime(run.started_at)}</span></td>
                         <td>
-                          <span className="text-mono" style={{ fontSize: '12px' }}>
+                          <span className="text-mono rv-row__time">
                             {formatDuration(run.started_at, run.completed_at)}
                           </span>
                         </td>
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={5} style={{ padding: '4px 16px 4px', background: 'var(--cortex-light-bg)' }}>
+                          <td colSpan={5} className="rv-row__detail-cell">
                             <RunDetail run={run} />
                           </td>
                         </tr>

@@ -198,6 +198,14 @@ class LaunchRequest(BaseModel):
     # POST /api/scenarios/{id}/bundle, which gates independently and also
     # demands authorized_by. See docs/reference/k8s-delivery.md.
     consent: Optional[dict[str, bool]] = None
+    # Per-run authorization for the beacon to attempt a package-manager
+    # install when a step's declared `requires_interpreters` is absent on the
+    # target (docs/design/agent-runtime-dependencies.md). Mirrors
+    # CORTEXSIM_XSIAM_ALLOW_WRITE's two-key posture: this flag alone does
+    # nothing without CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL also being set on
+    # the deployment. Default False — nothing is ever installed on a target
+    # implicitly.
+    allow_runtime_install: bool = False
 
 
 class OutputRequest(BaseModel):
@@ -268,6 +276,7 @@ async def _launch_run_impl(
         target_agent_id=body.target_agent_id,
         identity=body.identity,
         consent=body.consent,
+        allow_runtime_install=body.allow_runtime_install,
     )
 
     if not result.success:

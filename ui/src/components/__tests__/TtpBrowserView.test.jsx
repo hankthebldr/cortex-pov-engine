@@ -690,4 +690,23 @@ describe('<TtpBrowserView />', () => {
     await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
     expect(screen.getByText(/no detections shipped/i)).toBeInTheDocument()
   })
+
+  // M-2 — a bundle-splitting/restyle pass silently changed two section
+  // labels in TtpDetail: "Detection coverage" → "Detection logic", and
+  // "Summary" was dropped entirely (the paragraph lost its DetailSection
+  // wrapper). The brief was explicit: restore both unless the new wording
+  // is clearly better — it wasn't argued to be, so both are restored.
+  it('keeps the "Summary" section label and "Detection coverage" (not "Detection logic")', async () => {
+    installRoutes({
+      'GET /api/ttps':                     fixtureList,
+      'GET /api/ttps/TTP-2026-0004':       fixtureDetailDcsync,
+      'GET /api/ttps/TTP-2026-0004/runs':  { ttp_id: 'TTP-2026-0004', runs: [], total: 0 },
+    })
+    render(<TtpBrowserView initialTtpId="TTP-2026-0004" />)
+    await waitFor(() => expect(screen.getByTestId('ttp-detail')).toBeInTheDocument())
+    expect(screen.getByText('Summary')).toBeInTheDocument()
+    expect(screen.getByText(fixtureDetailDcsync.identity.summary)).toBeInTheDocument()
+    expect(screen.getByText('Detection coverage')).toBeInTheDocument()
+    expect(screen.queryByText('Detection logic')).not.toBeInTheDocument()
+  })
 })

@@ -303,7 +303,7 @@ function ConsoleShell() {
                 <li>Trigger the scenario's cleanup block on the target</li>
                 <li>Mark the run as <span className="mono">aborted</span> in Evidence</li>
               </ul>
-              <p style={{ color: 'var(--c-pending)', fontSize: 12 }}>
+              <p className="abort-dialog__note">
                 Already-fired detections remain valid for POV evidence.
               </p>
             </>
@@ -314,20 +314,7 @@ function ConsoleShell() {
       />
 
       {toast && (
-        <div className={`toast toast-${toast.type}`} style={{
-          position: 'fixed', bottom: 48, right: 20, zIndex: 200,
-          padding: '10px 14px',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          background: 'var(--c-surface-modal)',
-          border: '1px solid var(--c-hairline-strong)',
-          borderRadius: 3,
-          color: toast.type === 'error' ? 'var(--c-missed)'
-               : toast.type === 'warn'  ? 'var(--c-pending)'
-                                        : 'var(--c-detected)',
-        }}>
+        <div className={`toast toast-${toast.type} app-toast`}>
           {toast.message}
         </div>
       )}

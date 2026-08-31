@@ -73,6 +73,53 @@ const base = (extra = {}) => installRoutes({
 
 const target = { kind: 'agent', id: 'jump-01', label: 'jump-01' }
 
+describe('LaunchView — payload plan resolving (I-1)', () => {
+  // A `?plan=` deep link's payload plan decodes asynchronously (dynamic
+  // import of ToolAdapterCatalog.jsx in destinations.jsx::useDecodedPlan).
+  // `payloadPlanResolving` is how that in-flight window reaches LaunchView.
+  // Before the fix this prop did not exist, `payloadPlan` was just `null`
+  // during the race, and Launch stayed enabled — a run could go out with no
+  // payload_plan and nothing on screen said so.
+  it('disables Launch and renders a placeholder — never nothing — while the plan is still resolving', async () => {
+    base()
+    render(
+      <LaunchView
+        scenario={{ ...SCENARIO, cluster_posture: {} }}
+        selectedTarget={target}
+        payloadPlan={null}
+        payloadPlanResolving
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId('launch-payload-plan-resolving')).toBeInTheDocument())
+    expect(screen.queryByTestId('launch-payload-plan')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Launch run/ })).toBeDisabled()
+    expect(screen.getByTestId('launch-blockers')).toHaveTextContent(/resolving/i)
+  })
+
+  it('does not silently drop to "no plan" once resolving settles with an empty plan param', async () => {
+    base()
+    const { rerender } = render(
+      <LaunchView
+        scenario={{ ...SCENARIO, cluster_posture: {} }}
+        selectedTarget={target}
+        payloadPlan={null}
+        payloadPlanResolving
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId('launch-payload-plan-resolving')).toBeInTheDocument())
+    rerender(
+      <LaunchView
+        scenario={{ ...SCENARIO, cluster_posture: {} }}
+        selectedTarget={target}
+        payloadPlan={PLAN}
+        payloadPlanResolving={false}
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId('launch-payload-plan')).toBeInTheDocument())
+    expect(screen.queryByTestId('launch-payload-plan-resolving')).not.toBeInTheDocument()
+  })
+})
+
 describe('LaunchView — payload plan', () => {
   it('renders the composed plan with destination, digest and the rename caveat', async () => {
     base()

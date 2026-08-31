@@ -16,7 +16,13 @@ import { agentIdOf, runIdOf } from '../../api/ids.js'
  * @param {(run) => void} callbacks.onRunComplete
  * @param {(message: string) => void} callbacks.onError
  */
-export default function useLaunchScenario(scenario, { onRunComplete, onError, payloadPlan = null } = {}) {
+export default function useLaunchScenario(scenario, {
+  onRunComplete, onError, payloadPlan = null,
+  // True only while a `?plan=` deep link's payload plan is still being
+  // decoded (destinations.jsx::useDecodedPlan). MUST NOT be treated as
+  // "no plan" — see the I-1 guard in `launch()` below.
+  payloadPlanResolving = false,
+} = {}) {
   const [mode, setMode]                   = useState('pull')      // 'pull' | 'push'
   const [identity, setIdentity]           = useState('')
   const [agents, setAgents]               = useState([])
@@ -75,6 +81,17 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError, pa
 
   const launch = useCallback(async () => {
     if (!scenario) return null
+    // I-1 guard: a `?plan=` deep link's chunk can still be in flight when
+    // Launch fires. Refusing here (not just disabling the button) means no
+    // caller of `launch()` — including a race that slips past the disabled
+    // state — can ever POST a run silently missing the payload plan it was
+    // supposed to carry.
+    if (payloadPlanResolving) {
+      const msg = 'Payload plan is still resolving — wait a moment before launching'
+      setLastRun({ status: 'error', message: msg })
+      if (onError) onError(msg)
+      return null
+    }
     setLaunching(true)
     setLastRun(null)
     try {
@@ -104,7 +121,7 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError, pa
       setLaunching(false)
     }
   }, [scenario, mode, identity, selectedAgent, consent, payloadPlan, payloadPlanAccepted,
-      onRunComplete, onError])
+      payloadPlanResolving, onRunComplete, onError])
 
   const downloadPushBundle = useCallback(async () => {
     if (!scenario) return
@@ -141,8 +158,11 @@ export default function useLaunchScenario(scenario, { onRunComplete, onError, pa
     if (mode === 'pull' && agents.length > 0 && !selectedAgent) {
       out.push('Pick the beacon to run on')
     }
+    if (payloadPlanResolving) {
+      out.push('Payload plan is still resolving from this link — wait before launching')
+    }
     return out
-  }, [scenario, mode, supportsPull, agents.length, selectedAgent])
+  }, [scenario, mode, supportsPull, agents.length, selectedAgent, payloadPlanResolving])
 
   const launchDisabled = launching || blockers.length > 0
 

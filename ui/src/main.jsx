@@ -2,8 +2,14 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import AppConsole from './AppConsole.jsx'
+import './styles/cortex-tokens.css'
 import './styles/cortex-theme.css'
 import './styles/cortex-console.css'
+import './styles/destinations/tenants.css'
+import './styles/destinations/eal.css'
+import './styles/destinations/adapters.css'
+import './styles/destinations/environments.css'
+import './styles/destinations/readiness.css'
 
 /**
  * Theme router — URL flag selects the shell.

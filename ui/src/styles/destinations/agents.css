@@ -1,0 +1,178 @@
+/* ============================================================
+   Agents destination — PANW redesign
+   Scope: ui/src/components/console/TargetsView.jsx (`.targets`)
+   Reference: .design-ref/13-agents.html + 00-tokens.css
+
+   Cortex green is the primary accent in both themes. PANW orange
+   is reserved for warn/gap signal only — never used decoratively
+   here. LIGHT is the default theme; DARK is opt-in via
+   [data-theme="dark"] on the root element (cortex-tokens.css).
+   ============================================================ */
+
+/* ── 1. Re-scope onto the new token contract ─────────────────────────
+   `.theme-console` ships its own `--c-*` palette (cortex-console.css)
+   as a FIXED set of hardcoded hex values with no [data-theme] variant
+   — it does not respond to light/dark at all. Every existing selector
+   in that file (.target-card, .deploy-*, .status-dot, the shared
+   .btn/.btn--primary/.btn--xs family, the global :focus-visible ring)
+   already reads through those `--c-*` names, so redeclaring the same
+   names here — scoped to this destination only — re-points the whole
+   subtree at the redesign's real light/dark tokens (cortex-tokens.css)
+   without rewriting or duplicating a single one of those rules. */
+.theme-console .targets {
+  /* a11y fix: paint the real surface here — the shared shell background
+     never varies by theme, so without this, plain text using the new
+     light-theme text tokens goes near-invisible. Same root cause/fix as
+     library.css. */
+  background: var(--s0);
+  --c-void:            var(--s0);
+  --c-surface:         var(--s1);
+  --c-surface-raised:  var(--s1);
+  --c-surface-modal:   var(--s1);
+  --c-hairline:        var(--bd);
+  --c-hairline-strong: var(--bd2);
+
+  --c-action:          var(--ac);
+  --c-action-bright:   var(--ac-str);
+  --c-action-deep:     var(--ac);
+  --c-action-soft:     var(--ac-soft);
+  --c-action-glow:     color-mix(in srgb, var(--ac) 45%, transparent);
+
+  --c-signal:          var(--info);
+  --c-signal-soft:     color-mix(in srgb, var(--info) 14%, transparent);
+  --c-signal-glow:     color-mix(in srgb, var(--info) 45%, transparent);
+
+  --c-detected:        var(--ac);
+  --c-detected-soft:   var(--ac-soft);
+  --c-missed:          var(--crit);
+  --c-missed-soft:     color-mix(in srgb, var(--crit) 14%, transparent);
+  --c-pending:         var(--warn);
+  --c-pending-soft:    color-mix(in srgb, var(--warn) 14%, transparent);
+  --c-stitched:        var(--info);
+
+  --c-text:            var(--tx);
+  --c-text-secondary:  var(--tx2);
+  --c-text-muted:      var(--tx3);
+  --c-text-disabled:   var(--tx3);
+
+  --c-panw-orange:     var(--orange);
+
+  color: var(--tx);
+}
+
+/* ── 2. Page header — accent bar + eyebrow, matching every other
+   redesigned destination's masthead. `.view-head` itself stays
+   untouched (shared by 8 other destinations); this only decorates
+   the elements inside `.targets`. ─────────────────────────────── */
+.theme-console .targets .agents-kicker {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px;
+}
+.theme-console .targets .agents-kicker__bar {
+  display: block; width: 56px; height: 4px; flex: none;
+  background: var(--ac-str);
+}
+.theme-console .targets .agents-kicker__label {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 9px; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--tx3);
+}
+.theme-console .targets .view-head h1 {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 25px; font-weight: 800; letter-spacing: -0.02em;
+  line-height: 1.1; color: var(--tx);
+  margin: 0;
+}
+.theme-console .targets .view-head__meta {
+  font-family: var(--font-ui);
+  font-size: 13px; letter-spacing: normal; line-height: 1.5;
+  color: var(--tx2);
+  margin-top: 7px; max-width: 62ch;
+}
+.theme-console .targets .view-head__meta strong { color: var(--tx); }
+
+.theme-console .targets__head-actions {
+  display: flex; align-items: center; gap: 12px; flex: none;
+}
+.theme-console .targets__active {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-ui); font-size: 12px; color: var(--tx2);
+  background: var(--s2); border: 1px solid var(--bd);
+  border-radius: 20px; padding: 6px 12px 6px 10px;
+}
+.theme-console .targets__active strong.mono {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  color: var(--ac);
+}
+.theme-console .targets__active--none {
+  font-style: normal; color: var(--tx3);
+}
+
+/* ── 3. Column headers ────────────────────────────────────────── */
+.theme-console .targets .target-col__title {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 10px; font-weight: 700; letter-spacing: .12em;
+  color: var(--tx3);
+  padding-bottom: 8px; border-bottom: 1px solid var(--bd);
+}
+.theme-console .targets .target-col__count {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;
+  color: var(--ac); background: var(--ac-soft);
+  border: 1px solid var(--ac-line); border-radius: 20px;
+  padding: 1px 8px;
+}
+
+/* ── 4. Cards — soften the console's sharp 6px corners toward the
+   redesign's 8-10px card language, and give a colored top edge so a
+   card reads its state before you read the pill. `:has()` reads the
+   pill already rendered inside the card, so the row-tone lives once
+   (the pill) instead of a second parallel switch in the JSX. ────── */
+.theme-console .targets .target-card { border-radius: 8px; }
+.theme-console .targets .target-card--push,
+.theme-console .targets .target-card--iac {
+  border-top: 3px solid var(--ac);
+  border-radius: 4px 4px 8px 8px;
+}
+.theme-console .targets .target-card--agent {
+  border-radius: 4px 4px 8px 8px;
+  overflow: hidden;
+}
+.theme-console .targets .target-card--agent:has(.target-card__pill--live) { border-top: 3px solid var(--ac); }
+.theme-console .targets .target-card--agent:has(.target-card__pill--stale) { border-top: 3px solid var(--warn); }
+.theme-console .targets .target-card--agent:has(.target-card__pill--unknown) { border-top: 3px solid var(--tx3); }
+.theme-console .targets .target-card.is-active {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 1px var(--ac);
+}
+
+/* ── 5. State pills — outlined mono chips (the redesign's chip()
+   pattern) instead of the console's soft-filled badges. One border
+   color IS the state; nothing else needs to repeat it. ─────────── */
+.theme-console .targets .target-card__pill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px; font-weight: 600; letter-spacing: .06em;
+  background: transparent; border-radius: 3px; padding: 3px 7px;
+  border: 1px solid currentColor;
+}
+.theme-console .targets .target-card__pill--live { color: var(--ac); }
+.theme-console .targets .target-card__pill--stale { color: var(--warn); }
+.theme-console .targets .target-card__pill--ready { color: var(--ac); }
+.theme-console .targets .target-card__pill--unknown { color: var(--tx3); }
+.theme-console .targets .target-card__pill--active {
+  color: var(--ac-str); background: var(--ac-soft); border-color: var(--ac-line);
+}
+
+/* ── 6. Small ghost actions on the agent card footer ─────────────── */
+.theme-console .targets .card-action { border-radius: 4px; }
+
+/* ── 7. Deploy modal — round to the card language, keep its own
+   fixed-dark drop shadow (a dark shadow under a modal reads fine on
+   either theme). ─────────────────────────────────────────────────── */
+.theme-console .targets .deploy-modal { border-radius: 12px; }
+.theme-console .targets .deploy-modal__head h2 {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 17px; font-weight: 800; letter-spacing: -0.01em;
+  color: var(--tx); margin: 0;
+}
+.theme-console .targets .deploy-os { border-radius: 6px; }
+.theme-console .targets .deploy-snippet { border-radius: 6px; }

@@ -493,7 +493,7 @@ function CommandPreview({ steps, renamed }) {
           <div className="payload-compose__cmd-head mono">
             {s.step_id} · {s.name}
             {s.shape === 'inline_fetch' && (
-              <span className="chip chip--missed" style={{ marginLeft: 6 }}>inline fetch</span>
+              <span className="chip chip--missed payload-compose__inline-fetch-chip">inline fetch</span>
             )}
           </div>
           {s.shape === 'inline_fetch' && (

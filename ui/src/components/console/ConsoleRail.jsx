@@ -67,7 +67,7 @@ export default function ConsoleRail({
             Pinned <span className="rail__hint">⌘L launch</span>
           </div>
           {pinned.map((s) => (
-            <div key={s.id} className="plane-item plane-item--pinned" style={{ fontSize: 10 }}>
+            <div key={s.id} className="plane-item plane-item--pinned plane-item--sm">
               <button
                 type="button"
                 className="plane-item__hit"
@@ -95,7 +95,7 @@ export default function ConsoleRail({
         <div className="rail__group">
           <div className="rail__section-title">Filters · MITRE</div>
           {mitreFilters.map((f) => (
-            <div key={f.tactic} className="plane-item" style={{ fontSize: 10 }}>
+            <div key={f.tactic} className="plane-item plane-item--sm">
               <span className="plane-item__code">{f.tactic}</span>
               <span className="plane-item__name">{f.name}</span>
               {f.count != null && <span className="plane-item__count">{f.count}</span>}

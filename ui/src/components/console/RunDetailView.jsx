@@ -6,6 +6,7 @@ import CausalityGraph from '../CausalityGraph.jsx'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { scenarioIdOf } from '../../api/ids.js'
+import '../../styles/destinations/run-detail.css'
 
 /**
  * Last few lines of a run's captured output — the actual reason it died.
@@ -84,10 +85,10 @@ export default function RunDetailView({
 
   if (!runId) {
     return (
-      <div className="runs-surface">
+      <div className="runs-surface run-detail run-detail--empty">
         <div className="view-head">
           <div><h1>Run detail</h1></div>
-          <button className="btn" onClick={onBack}>← All runs</button>
+          <button type="button" className="run-detail__back" onClick={onBack}>← All runs</button>
         </div>
         <div className="run-detail__empty mono">no run selected</div>
       </div>
@@ -95,9 +96,19 @@ export default function RunDetailView({
   }
 
   return (
+    // The shell (.theme-console, AppShell.jsx) is theme-aware and sets
+    // [data-theme] on the root, so the PANW token set (--ac/--s1/--tx/…)
+    // resolves correctly here without pinning a local override.
     <div className="runs-surface run-detail">
-      <div className="view-head">
-        <div>
+      <button type="button" className="run-detail__back" onClick={onBack}>← All runs</button>
+
+      <div className="view-head run-detail__head">
+        <div className="run-detail__head-main">
+          <div className="run-detail__accent-bar" aria-hidden="true" />
+          {/* Masthead eyebrow: the nav group alone ("Operate", per this
+              destination's registry entry), matching every other redesigned
+              destination — not the destination's own name (M-4). */}
+          <div className="run-detail__eyebrow">Operate</div>
           <h1 className={scenarioName ? undefined : 'mono'}>
             {scenarioName || descriptor.scenarioId || runId}
           </h1>
@@ -121,7 +132,6 @@ export default function RunDetailView({
             {run?.target && <> · <span className="mono">{run.target}</span></>}
           </div>
         </div>
-        <button className="btn" onClick={onBack}>← All runs</button>
       </div>
 
       {/* The run died and the console knew — say it here, once, at the top,
@@ -146,10 +156,9 @@ export default function RunDetailView({
       )}
 
       <div
-        className="lab__segmented"
+        className="lab__segmented run-detail__subtabs"
         role="tablist"
         aria-label="Run detail views"
-        style={{ marginBottom: 12 }}
       >
         {RUN_SUBTABS.map((t) => (
           <button

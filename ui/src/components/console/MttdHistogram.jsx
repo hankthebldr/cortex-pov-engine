@@ -62,7 +62,7 @@ export default function MttdHistogram({ rows = [] }) {
               <div className="mttd-histogram__count mono">
                 {b.count > 0 ? b.count : ''}
               </div>
-              <div className="mttd-histogram__bar-wrap" style={{ height: 120 }}>
+              <div className="mttd-histogram__bar-wrap">
                 <div
                   className={'mttd-histogram__bar' + (b.contains.p50 ? ' mttd-histogram__bar--median' : '')}
                   style={{ height: `${heightPct}%` }}

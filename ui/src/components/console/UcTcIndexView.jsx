@@ -23,6 +23,7 @@ import {
   readPath,
 } from './uctcMechanisms.js'
 import './UcTcIndexView.css'
+import '../../styles/destinations/uctc.css'
 
 /**
  * UcTcIndexView — read-only browser over the FY27 v2.2 master
@@ -443,6 +444,13 @@ export default function UcTcIndexView({
   /* ── render ── */
   return (
     <div className="adapter-registry uctc" data-testid="uctc-index">
+      <div className="uctc__pagehead">
+        <div className="uctc__pagehead-bar" aria-hidden="true" />
+        {/* Masthead eyebrow: the nav group alone, matching every other
+            redesigned destination (M-4) — not group+destination-name. */}
+        <div className="uctc__pagehead-eyebrow mono">Analyze</div>
+        <h1 className="uctc__pagehead-title">UC / TC Index</h1>
+      </div>
       <div className="adapter-registry__intro">
         <p className="adapter-registry__intro-prose">
           The FY27 master <strong>Use-Case / Test-Case index</strong> —{' '}
@@ -581,9 +589,8 @@ export default function UcTcIndexView({
               {hasActiveFilters && (
                 <button
                   type="button"
-                  className="btn"
+                  className="btn uctc__btn--clear"
                   data-testid="uctc-clear-filters"
-                  style={{ height: 28, padding: '0 10px' }}
                   onClick={resetFilters}
                 >
                   Clear
@@ -661,8 +668,7 @@ function Stat({ value, label, tone }) {
   return (
     <div className="stack-coverage__stat">
       <div
-        className="stack-coverage__stat-value mono"
-        style={tone ? { color: `var(--c-${tone})` } : undefined}
+        className={'stack-coverage__stat-value mono' + (tone ? ` uctc__tone-${tone}` : '')}
       >
         {value}
       </div>
@@ -732,16 +738,16 @@ function ClassStrip({ rows, totals, activeClass, onPick, onExplain }) {
               </span>
               <span className="coverage__summary-bar uctc__classcell-bar">
                 {r.proven > 0 && (
-                  <span className="coverage__summary-seg"
-                    style={{ width: `${pct(r.proven, r.total)}%`, background: 'var(--c-detected)' }} />
+                  <span className="coverage__summary-seg uctc__bar-seg--detected"
+                    style={{ width: `${pct(r.proven, r.total)}%` }} />
                 )}
                 {r.open_direct > 0 && (
-                  <span className="coverage__summary-seg"
-                    style={{ width: `${pct(r.open_direct, r.total)}%`, background: 'var(--c-pending)' }} />
+                  <span className="coverage__summary-seg uctc__bar-seg--pending"
+                    style={{ width: `${pct(r.open_direct, r.total)}%` }} />
                 )}
                 {r.open_needs_data_path > 0 && (
-                  <span className="coverage__summary-seg"
-                    style={{ width: `${pct(r.open_needs_data_path, r.total)}%`, background: 'var(--c-hairline-strong)' }} />
+                  <span className="coverage__summary-seg uctc__bar-seg--hairline"
+                    style={{ width: `${pct(r.open_needs_data_path, r.total)}%` }} />
                 )}
               </span>
               <span className="uctc__classcell-mech mono">
@@ -752,18 +758,18 @@ function ClassStrip({ rows, totals, activeClass, onPick, onExplain }) {
         })}
       </div>
       <div className="uctc__classstrip-legend mono">
-        <LegendKey color="var(--c-detected)" label="an artifact binds it" />
-        <LegendKey color="var(--c-pending)" label="open — measurable over XQL today" />
-        <LegendKey color="var(--c-hairline-strong)" label="open — needs a data path first" />
+        <LegendKey tone="detected" label="an artifact binds it" />
+        <LegendKey tone="pending" label="open — measurable over XQL today" />
+        <LegendKey tone="hairline" label="open — needs a data path first" />
       </div>
     </section>
   )
 }
 
-function LegendKey({ color, label }) {
+function LegendKey({ tone, label }) {
   return (
     <span className="uctc__legendkey">
-      <span className="uctc__legendswatch" style={{ background: color }} aria-hidden="true" />
+      <span className={`uctc__legendswatch uctc__legendswatch--${tone}`} aria-hidden="true" />
       {label}
     </span>
   )
@@ -820,7 +826,7 @@ function UcRail({ groups, selected, onSelect }) {
   if (!groups.length) {
     return (
       <nav className="uctc__rail" aria-label="Use cases">
-        <div className="coverage__empty mono" style={{ padding: 16 }}>no use cases</div>
+        <div className="coverage__empty mono uctc__rail-empty">no use cases</div>
       </nav>
     )
   }
@@ -856,20 +862,20 @@ function UcRail({ groups, selected, onSelect }) {
                 <div className="coverage__summary-bar uctc__rail-bar">
                   {evidenced > 0 && (
                     <div
-                      className="coverage__summary-seg"
-                      style={{ width: `${pct(evidenced, total)}%`, background: 'var(--c-detected)' }}
+                      className="coverage__summary-seg uctc__bar-seg--detected"
+                      style={{ width: `${pct(evidenced, total)}%` }}
                     />
                   )}
                   {detOpen > 0 && (
                     <div
-                      className="coverage__summary-seg"
-                      style={{ width: `${pct(detOpen, total)}%`, background: 'var(--c-pending)' }}
+                      className="coverage__summary-seg uctc__bar-seg--pending"
+                      style={{ width: `${pct(detOpen, total)}%` }}
                     />
                   )}
                   {rest > 0 && (
                     <div
-                      className="coverage__summary-seg"
-                      style={{ width: `${pct(rest, total)}%`, background: 'var(--c-hairline-strong)' }}
+                      className="coverage__summary-seg uctc__bar-seg--hairline"
+                      style={{ width: `${pct(rest, total)}%` }}
                     />
                   )}
                 </div>
@@ -896,7 +902,7 @@ function TestCaseTable({
         <div className="coverage__empty mono" data-testid="uctc-empty-uc">
           no test cases in <span className="mono">{activeUc.uc_id}</span> match —{' '}
           {(c.detection_backable || 0)} detection rows open{' '}
-          <button type="button" className="btn" style={{ height: 22, padding: '0 8px', marginLeft: 4 }} onClick={onSeeGaps}>
+          <button type="button" className="btn uctc__btn-inline--ml4" onClick={onSeeGaps}>
             See gaps →
           </button>
         </div>
@@ -907,8 +913,7 @@ function TestCaseTable({
         no test cases match the current filters —{' '}
         <button
           type="button"
-          className="btn"
-          style={{ height: 22, padding: '0 8px', marginLeft: 4 }}
+          className="btn uctc__btn-inline--ml4"
           onClick={onResetFilters}
         >
           clear filters
@@ -1011,7 +1016,7 @@ function EvidenceCell({ tc, evidence, assertions }) {
   const scenarioCount = evidence.scenario_count || (evidence.scenario_ids || []).length
   if (evidence.evidenced || assertions.length) {
     return (
-      <span style={{ color: 'var(--c-detected)' }}>
+      <span className="uctc__tone-detected">
         {evidence.evidenced && (
           <span title={(evidence.scenario_ids || []).join(', ')}>
             {scenarioCount} scenario{scenarioCount === 1 ? '' : 's'}
@@ -1038,7 +1043,7 @@ function EvidenceCell({ tc, evidence, assertions }) {
       </span>
     )
   }
-  return <span style={{ color: 'var(--c-text-muted)' }}>—</span>
+  return <span className="uctc__tone-muted">—</span>
 }
 
 function ClassChip({ value }) {
@@ -1046,9 +1051,8 @@ function ClassChip({ value }) {
   const det = DET_CLASSES.includes(value)
   return (
     <span
-      className="chip uctc__chip"
+      className={'chip uctc__chip ' + (det ? 'uctc__tone-action' : 'uctc__tone-muted')}
       title={CLASS_HINT[value] || value}
-      style={{ color: det ? 'var(--c-action)' : 'var(--c-text-muted)' }}
     >
       {value}
     </span>
@@ -1057,13 +1061,13 @@ function ClassChip({ value }) {
 
 function TierChip({ value }) {
   if (!value) return <span className="mono">—</span>
-  const color =
-    value === 'MOAT' ? 'var(--c-detected)'
-      : value === 'LEAD' ? 'var(--c-signal)'
-        : value === 'EMERGING' ? 'var(--c-pending)'
-          : 'var(--c-text-muted)'
+  const tone =
+    value === 'MOAT' ? 'detected'
+      : value === 'LEAD' ? 'signal'
+        : value === 'EMERGING' ? 'pending'
+          : 'muted'
   return (
-    <span className="chip uctc__chip" title={TIER_HINT[value] || value} style={{ color }}>
+    <span className={`chip uctc__chip uctc__tone-${tone}`} title={TIER_HINT[value] || value}>
       {value}
     </span>
   )
@@ -1245,9 +1249,8 @@ function TestCaseDetail({
                         {s.is_primary && <span className="chip chip--signal">primary</span>}
                         <button
                           type="button"
-                          className="btn"
+                          className="btn uctc__btn-inline--ml6"
                           data-testid={`uctc-open-library-${s.scenario_id}`}
-                          style={{ height: 22, padding: '0 8px', marginLeft: 6 }}
                           onClick={() => onNavigate('library', { open: s.scenario_id })}
                         >
                           Open in Library →
@@ -1267,16 +1270,15 @@ function TestCaseDetail({
           <div className="uctc__chiprow mono">
             <span>{runs.total} run{runs.total === 1 ? '' : 's'}</span>
             {Object.entries(runs.verdicts || {}).map(([k, v]) => (
-              <span key={k} className="chip uctc__chip" style={{ color: verdictColor(k) }}>
+              <span key={k} className={`chip uctc__chip ${verdictTone(k)}`}>
                 {v} {k}
               </span>
             ))}
             {runs.latest?.run_id && (
               <button
                 type="button"
-                className="btn"
+                className="btn uctc__btn-inline"
                 data-testid="uctc-open-run"
-                style={{ height: 22, padding: '0 8px' }}
                 onClick={() => onNavigate('runs', { run: runs.latest.run_id, tab: 'evidence' })}
               >
                 latest {runs.latest.run_id} →
@@ -1289,10 +1291,10 @@ function TestCaseDetail({
   )
 }
 
-function verdictColor(v) {
-  if (v === 'pass') return 'var(--c-detected)'
-  if (v === 'fail') return 'var(--c-missed)'
-  return 'var(--c-text-muted)'
+function verdictTone(v) {
+  if (v === 'pass') return 'uctc__tone-detected'
+  if (v === 'fail') return 'uctc__tone-missed'
+  return 'uctc__tone-muted'
 }
 
 /**
@@ -1318,17 +1320,17 @@ function ProofMechanism({ detail, assertions, availability, runsByAssertion = ne
         <dt className="mono">engine read path</dt>
         <dd className="mono">
           {reach === REACH.DIRECT && (
-            <span style={{ color: 'var(--c-detected)' }}>
+            <span className="uctc__tone-detected">
               XQL against a registered XSIAM tenant
             </span>
           )}
           {reach === REACH.INGEST && (
-            <span style={{ color: 'var(--c-text-muted)' }}>
+            <span className="uctc__tone-muted">
               the index points at {surfaces.join(' · ')} — outside XQL
             </span>
           )}
           {reach === REACH.UNKNOWN && (
-            <span style={{ color: 'var(--c-text-muted)' }}>
+            <span className="uctc__tone-muted">
               the index declares no source for this row
             </span>
           )}
@@ -1336,10 +1338,10 @@ function ProofMechanism({ detail, assertions, availability, runsByAssertion = ne
         <dt className="mono">can it ever pass</dt>
         <dd className="mono">
           {scope.certifiable
-            ? <span style={{ color: 'var(--c-detected)' }}>
+            ? <span className="uctc__tone-detected">
               yes — the index carries a measurable threshold
             </span>
-            : <span style={{ color: 'var(--c-text-muted)' }}>
+            : <span className="uctc__tone-muted">
               no — no measurable threshold, so the verifier clamps to not_applicable
             </span>}
         </dd>
@@ -1416,7 +1418,7 @@ function AssertionCard({ assertion, verdict }) {
         {/* Authored is not measured. Say which one this is, every time. */}
         {verdict
           ? (
-            <span className="chip uctc__chip mono" style={{ color: verdictColor(verdict.verdict) }}>
+            <span className={`chip uctc__chip mono ${verdictTone(verdict.verdict)}`}>
               {verdict.verdict}{verdict.reason ? ` · ${verdict.reason}` : ''}
             </span>
           )
@@ -1600,16 +1602,16 @@ function MechanismCard({ row, availability, onPickClass, onPickOutOfScope }) {
 
       <div className="coverage__summary-bar uctc__mechcard-bar">
         {row.proven > 0 && (
-          <span className="coverage__summary-seg"
-            style={{ width: `${pct(row.proven, row.total)}%`, background: 'var(--c-detected)' }} />
+          <span className="coverage__summary-seg uctc__bar-seg--detected"
+            style={{ width: `${pct(row.proven, row.total)}%` }} />
         )}
         {row.open_direct > 0 && (
-          <span className="coverage__summary-seg"
-            style={{ width: `${pct(row.open_direct, row.total)}%`, background: 'var(--c-pending)' }} />
+          <span className="coverage__summary-seg uctc__bar-seg--pending"
+            style={{ width: `${pct(row.open_direct, row.total)}%` }} />
         )}
         {row.open_needs_data_path > 0 && (
-          <span className="coverage__summary-seg"
-            style={{ width: `${pct(row.open_needs_data_path, row.total)}%`, background: 'var(--c-hairline-strong)' }} />
+          <span className="coverage__summary-seg uctc__bar-seg--hairline"
+            style={{ width: `${pct(row.open_needs_data_path, row.total)}%` }} />
         )}
       </div>
 
@@ -1619,12 +1621,12 @@ function MechanismCard({ row, availability, onPickClass, onPickOutOfScope }) {
         <dt className="mono">how it is scored</dt>
         <dd className="mono">{m.verdictPath || '—'}</dd>
         <dt className="mono">mechanism status</dt>
-        <dd className="mono" style={{ color: `var(--c-${mechState.tone})` }}>{mechState.text}</dd>
+        <dd className={`mono uctc__tone-${mechState.tone}`}>{mechState.text}</dd>
         <dt className="mono">measured</dt>
         <dd className="mono">
           {isAssertion
             ? (
-              <span style={{ color: row.measured ? 'var(--c-detected)' : 'var(--c-pending)' }}>
+              <span className={row.measured ? 'uctc__tone-detected' : 'uctc__tone-pending'}>
                 {row.measured} of {row.proven} bound row(s) carry a recorded tenant
                 verdict — the rest are authored claims awaiting a run
               </span>
@@ -1843,9 +1845,9 @@ function CoverageMode({ coverage, error, useCases, onPickUc }) {
             <span className="mono uctc__covrow-id">{r.uc_id}</span>
             <span className="uctc__covrow-name">{r.use_case || r.uc_id}</span>
             <span className="coverage__summary-bar uctc__covrow-bar">
-              {evidenced > 0 && <span className="coverage__summary-seg" style={{ width: `${pct(evidenced, total)}%`, background: 'var(--c-detected)' }} />}
-              {detOpen > 0 && <span className="coverage__summary-seg" style={{ width: `${pct(detOpen, total)}%`, background: 'var(--c-pending)' }} />}
-              {rest > 0 && <span className="coverage__summary-seg" style={{ width: `${pct(rest, total)}%`, background: 'var(--c-hairline-strong)' }} />}
+              {evidenced > 0 && <span className="coverage__summary-seg uctc__bar-seg--detected" style={{ width: `${pct(evidenced, total)}%` }} />}
+              {detOpen > 0 && <span className="coverage__summary-seg uctc__bar-seg--pending" style={{ width: `${pct(detOpen, total)}%` }} />}
+              {rest > 0 && <span className="coverage__summary-seg uctc__bar-seg--hairline" style={{ width: `${pct(rest, total)}%` }} />}
             </span>
             <span className="mono uctc__covrow-num">
               {evidenced}/{total} · {Math.round(r.det_coverage_pct || 0)}% DET

@@ -1,24 +1,90 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import OperationsView from '../components/console/OperationsView.jsx'
 import ConsoleRail from '../components/console/ConsoleRail.jsx'
-import LaunchView from '../components/console/LaunchView.jsx'
-import TargetsView from '../components/console/TargetsView.jsx'
-import RunDetailView from '../components/console/RunDetailView.jsx'
-import MultiRunCompare from '../components/console/MultiRunCompare.jsx'
-import CoverageView from '../components/console/CoverageView.jsx'
-import TtpBrowserView from '../components/console/TtpBrowserView.jsx'
-import ToolAdapterCatalog, { decodePlan } from '../components/console/ToolAdapterCatalog.jsx'
-import UcTcIndexView from '../components/console/UcTcIndexView.jsx'
-import LabView from '../components/console/LabView.jsx'
-import TenantManager from '../components/console/TenantManager.jsx'
-import ReadinessView from '../components/console/ReadinessView.jsx'
-import EalConsole from '../components/EalConsole.jsx'
 
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
 import { runIdOf, idMatches } from '../api/ids.js'
+
+/**
+ * Destination-level code splitting.
+ *
+ * The console has 14 destinations and a session typically visits two or
+ * three of them, so eagerly bundling every surface into the entry chunk pays
+ * — in parse/eval time on every load — for content most sessions never open.
+ * Each surface below is a lazy `import()` chunk instead of a static import;
+ * `withSuspense` gives every mount site its own tiny loading state so a slow
+ * chunk fetch reads as "loading this view", never as a blank pane.
+ *
+ * `ConsoleRail` stays a static import: it is the Library-scoped plane/pinned
+ * filter rail, mounted in the same paint as the default destination, so
+ * splitting it out would only add a chunk round-trip with no benefit.
+ */
+const OperationsView = lazy(() => import('../components/console/OperationsView.jsx'))
+const LaunchView = lazy(() => import('../components/console/LaunchView.jsx'))
+const TargetsView = lazy(() => import('../components/console/TargetsView.jsx'))
+const RunDetailView = lazy(() => import('../components/console/RunDetailView.jsx'))
+const MultiRunCompare = lazy(() => import('../components/console/MultiRunCompare.jsx'))
+const CoverageView = lazy(() => import('../components/console/CoverageView.jsx'))
+const TtpBrowserView = lazy(() => import('../components/console/TtpBrowserView.jsx'))
+const ToolAdapterCatalog = lazy(() => import('../components/console/ToolAdapterCatalog.jsx'))
+const UcTcIndexView = lazy(() => import('../components/console/UcTcIndexView.jsx'))
+const LabView = lazy(() => import('../components/console/LabView.jsx'))
+const TenantManager = lazy(() => import('../components/console/TenantManager.jsx'))
+const ReadinessView = lazy(() => import('../components/console/ReadinessView.jsx'))
+const EalConsole = lazy(() => import('../components/EalConsole.jsx'))
+
+export function DestinationLoading() {
+  return (
+    <div className="destination-loading" role="status" aria-live="polite">
+      loading…
+    </div>
+  )
+}
+
+/** Wrap a lazily-loaded surface in its own Suspense boundary, so a mount
+ * site never has to know whether the component behind it is lazy. */
+function withSuspense(LazyComponent) {
+  return function SuspendedSurface(props) {
+    return (
+      <Suspense fallback={<DestinationLoading />}>
+        <LazyComponent {...props} />
+      </Suspense>
+    )
+  }
+}
+
+/**
+ * The composed payload plan rides the URL from Tools & Payloads (see
+ * `ToolAdapterCatalog.jsx::encodePlan`). Decoding it needs that module's
+ * `decodePlan` export — resolved via the same dynamic import used for the
+ * lazy component above, so a guided-flow deep link that carries no `plan`
+ * param (the common case) never pulls the 700-line catalog module in at all.
+ *
+ * The dynamic import means the plan is NOT available on first paint even when
+ * `encoded` is present — there is a real window where the chunk is still in
+ * flight. Callers must be able to tell "no plan was ever composed" apart from
+ * "a plan was composed and is still loading": collapsing the two would let a
+ * consultant launch mid-race with the payload plan silently dropped (I-1). So
+ * this returns `{ plan, resolving }` rather than a bare, ambiguous `plan` —
+ * a zero here is degraded, not ok.
+ */
+export function useDecodedPlan(encoded) {
+  const [state, setState] = useState(() => (
+    encoded ? { plan: null, resolving: true } : { plan: null, resolving: false }
+  ))
+  useEffect(() => {
+    if (!encoded) { setState({ plan: null, resolving: false }); return undefined }
+    let cancelled = false
+    setState({ plan: null, resolving: true })
+    import('../components/console/ToolAdapterCatalog.jsx').then((mod) => {
+      if (!cancelled) setState({ plan: mod.decodePlan(encoded), resolving: false })
+    })
+    return () => { cancelled = true }
+  }, [encoded])
+  return state
+}
 
 /**
  * destinations.js — the single destination REGISTRY.
@@ -68,7 +134,6 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
   return (
     <div
       className="library-layout"
-      style={{ display: 'grid', gridTemplateColumns: 'var(--w-rail) 1fr', minHeight: 0, height: '100%' }}
     >
       <ConsoleRail
         planes={railPlanes}
@@ -77,24 +142,26 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
         onSelectPinned={(id) => { armedRef.current = id; onNavigate('guided', { arm: id }) }}
         onUnpin={unpin}
       />
-      <OperationsView
-        selectedPlane={selectedPlane}
-        onClearPlane={() => setSelectedPlane(null)}
-        techniqueFilter={techniqueFilter}
-        onClearTechniqueFilter={() => setTechniqueFilter(null)}
-        requestOpenScenarioId={params.open || null}
-        pinnedIds={pinnedIds}
-        isPinned={isPinned}
-        togglePin={togglePin}
-        onArmScenario={(sid) => { armedRef.current = sid }}
-        onContinueToLaunch={() => onNavigate('guided', { arm: armedRef.current })}
-        onOpenRunEvidence={(run) =>
-          onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
-        onRunComplete={(run) =>
-          onNavigate('runs', { run: runIdOf(run), tab: 'live' })}
-        onError={() => {}}
-        onSurfaceMessage={() => {}}
-      />
+      <Suspense fallback={<DestinationLoading />}>
+        <OperationsView
+          selectedPlane={selectedPlane}
+          onClearPlane={() => setSelectedPlane(null)}
+          techniqueFilter={techniqueFilter}
+          onClearTechniqueFilter={() => setTechniqueFilter(null)}
+          requestOpenScenarioId={params.open || null}
+          pinnedIds={pinnedIds}
+          isPinned={isPinned}
+          togglePin={togglePin}
+          onArmScenario={(sid) => { armedRef.current = sid }}
+          onContinueToLaunch={() => onNavigate('guided', { arm: armedRef.current })}
+          onOpenRunEvidence={(run) =>
+            onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
+          onRunComplete={(run) =>
+            onNavigate('runs', { run: runIdOf(run), tab: 'live' })}
+          onError={() => {}}
+          onSurfaceMessage={() => {}}
+        />
+      </Suspense>
     </div>
   )
 }
@@ -109,8 +176,10 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
   const { refreshRuns } = useEnvironment()
   // A composed payload plan arrives in the URL from Tools & Payloads. Decoding
   // here (rather than re-composing) keeps the launch reload-safe and means the
-  // exact digests the DC saw are the ones the launch carries.
-  const payloadPlan = useMemo(() => decodePlan(params.plan || null), [params.plan])
+  // exact digests the DC saw are the ones the launch carries. `resolving` is a
+  // DISTINCT state from "no plan" — see useDecodedPlan (I-1) — and must reach
+  // LaunchView so Launch stays disabled until the decode settles.
+  const { plan: payloadPlan, resolving: payloadPlanResolving } = useDecodedPlan(params.plan || null)
 
   useEffect(() => {
     if (!armId) { setScenario(null); return undefined }
@@ -122,37 +191,42 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
   }, [armId])
 
   return (
-    <div className="guided-flow" style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 4 }}>
+    <div className="guided-flow">
       <div className="view-head">
         <div>
           <h1>New POV run</h1>
           <div className="view-head__meta">
             {scenario
               ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>Arm a scenario from the <button className="linklike" onClick={() => onNavigate('library')} style={{ background: 'none', border: 'none', color: 'var(--cortex-teal, #00C0E8)', cursor: 'pointer', padding: 0 }}>Library</button> to begin.</>}
+              : <>Arm a scenario from the <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Library</button> to begin.</>}
           </div>
         </div>
       </div>
 
-      <TargetsView
-        selectedTarget={selectedTarget}
-        onSelectTarget={setSelectedTarget}
-        onGoToLab={() => onNavigate('environments')}
-      />
+      <Suspense fallback={<DestinationLoading />}>
+        <TargetsView
+          selectedTarget={selectedTarget}
+          onSelectTarget={setSelectedTarget}
+          onGoToLab={() => onNavigate('environments')}
+        />
+      </Suspense>
 
       {scenario && (
-        <LaunchView
-          scenario={scenario}
-          payloadPlan={payloadPlan}
-          selectedTarget={selectedTarget}
-          onRunComplete={(run) => {
-            refreshRuns()
-            onNavigate('runs', { run: runIdOf(run), tab: 'live' })
-          }}
-          onError={() => {}}
-          onGoLibrary={() => onNavigate('library')}
-          onGoTargets={() => {}}
-        />
+        <Suspense fallback={<DestinationLoading />}>
+          <LaunchView
+            scenario={scenario}
+            payloadPlan={payloadPlan}
+            payloadPlanResolving={payloadPlanResolving}
+            selectedTarget={selectedTarget}
+            onRunComplete={(run) => {
+              refreshRuns()
+              onNavigate('runs', { run: runIdOf(run), tab: 'live' })
+            }}
+            onError={() => {}}
+            onGoLibrary={() => onNavigate('library')}
+            onGoTargets={() => {}}
+          />
+        </Suspense>
       )}
     </div>
   )
@@ -180,7 +254,9 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
           <div><h1>Runs & Proof · Compare</h1></div>
           <button className="btn" onClick={() => setParams({ compare: null }, { replace: true })}>← Back to runs</button>
         </div>
-        <MultiRunCompare />
+        <Suspense fallback={<DestinationLoading />}>
+          <MultiRunCompare />
+        </Suspense>
       </div>
     )
   }
@@ -201,22 +277,24 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
   }
 
   return (
-    <RunDetailView
-      runId={runId}
-      run={selected}
-      activeRun={activeRun}
-      subTab={subTab}
-      onSubTab={(tab) => setParams({ tab })}
-      onBack={() => setParams({ run: null, tab: null }, { replace: true })}
-      onError={() => {}}
-    />
+    <Suspense fallback={<DestinationLoading />}>
+      <RunDetailView
+        runId={runId}
+        run={selected}
+        activeRun={activeRun}
+        subTab={subTab}
+        onSubTab={(tab) => setParams({ tab })}
+        onBack={() => setParams({ run: null, tab: null }, { replace: true })}
+        onError={() => {}}
+      />
+    </Suspense>
   )
 }
 
 function RunList({ runs = [], onOpen = () => {} }) {
   if (!runs.length) {
     return (
-      <div style={{ padding: 48, textAlign: 'center', color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+      <div className="run-list-empty">
         no runs yet — launch a scenario from the Library
       </div>
     )
@@ -234,24 +312,11 @@ function RunList({ runs = [], onOpen = () => {} }) {
             role="row"
             className="run-list__row"
             onClick={() => onOpen(id)}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto auto',
-              gap: 12, alignItems: 'center', width: '100%',
-              padding: '10px 14px', textAlign: 'left',
-              background: 'var(--c-surface-raised, rgba(255,255,255,0.03))',
-              border: '1px solid var(--c-hairline, rgba(255,255,255,0.08))',
-              borderRadius: 3, marginBottom: 6, color: 'var(--c-text)', cursor: 'pointer',
-            }}
           >
-            <span className="mono" style={{ fontSize: 12 }}>{r.scenario_id || id}</span>
-            <span className="mono" style={{ fontSize: 10, color: 'var(--c-text-muted)' }}>{id}</span>
+            <span className="mono run-list__scenario">{r.scenario_id || id}</span>
+            <span className="mono run-list__id">{id}</span>
             <span
-              className="chip"
-              style={{
-                fontSize: 10,
-                color: live ? 'var(--cortex-teal, #00C0E8)' : terminal ? 'var(--c-detected, #6ee7a8)' : 'var(--c-pending, #f5c451)',
-              }}
+              className={'chip run-list__status-chip' + (live ? ' run-list__status-chip--live' : terminal ? ' run-list__status-chip--done' : ' run-list__status-chip--pending')}
             >
               {r.status || 'unknown'}
             </span>
@@ -263,27 +328,31 @@ function RunList({ runs = [], onOpen = () => {} }) {
 }
 
 // ─── Thin re-home wrappers for self-sourcing surfaces ────────────────────────
-function CoverageSurface() { return <CoverageView /> }
-function TtpsSurface({ params = {} }) { return <TtpBrowserView initialTtpId={params.ttp || null} /> }
+// Each of these mounts exactly one lazy component with a straight props
+// pass-through, so `withSuspense` covers both the lazy-load and the boundary.
+const CoverageSurface = withSuspense(CoverageView)
+function TtpsSurface({ params = {} }) {
+  return (
+    <Suspense fallback={<DestinationLoading />}>
+      <TtpBrowserView initialTtpId={params.ttp || null} />
+    </Suspense>
+  )
+}
 // "Tools & Payloads" — the catalog plus the payload shelf. Staging state is a
 // PROPERTY of an adapter, not a new noun, so it lives on this destination
 // rather than an eleventh one: splitting them would list `linpeas.sh` in one
 // place and `TOOL-LINPEAS` in another and make the DC hold the join.
-function AdaptersSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
-  return <ToolAdapterCatalog params={params} setParams={setParams} onNavigate={onNavigate} />
-}
+const AdaptersSurface = withSuspense(ToolAdapterCatalog)
 // Deep-linkable: #/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03
-function UcTcSurface({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
-  return <UcTcIndexView params={params} setParams={setParams} onNavigate={onNavigate} />
-}
-function EalSurface() { return <EalConsole /> }
-function EnvironmentsSurface() { return <LabView /> }
+const UcTcSurface = withSuspense(UcTcIndexView)
+const EalSurface = withSuspense(EalConsole)
+const EnvironmentsSurface = withSuspense(LabView)
 // Readiness is grouped under Manage, next to Agents and Tenants — the three
 // things a DC configures before a POV. It is deliberately NOT the default
 // destination: a health page that greets you every morning stops being read.
-function ReadinessSurface({ onNavigate = () => {} }) { return <ReadinessView onNavigate={onNavigate} /> }
-function AgentsSurface() { return <TargetsView /> }
-function TenantsSurface() { return <TenantManager /> }
+const ReadinessSurface = withSuspense(ReadinessView)
+const AgentsSurface = withSuspense(TargetsView)
+const TenantsSurface = withSuspense(TenantManager)
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 export const DESTINATIONS = [

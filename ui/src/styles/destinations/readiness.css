@@ -1,0 +1,418 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   READINESS — "am I ready to run this in front of a customer?"
+
+   Design source: .design-ref/15-readiness.html (PANW redesign mockup) +
+   .design-ref/00-tokens.css. Restyle only — ReadinessView.jsx's structure,
+   copy, data bindings and every data-testid / data-tour-id are unchanged;
+   this file owns presentation for .readiness / .readiness__* / .rdy-* only.
+
+   Token vocabulary: --ac/--ac-str is the ONE accent (Cortex green, both
+   themes). --warn/--crit are status signal, never decorative. --orange is
+   deliberately unused here — this view has no gap/warn condition that maps
+   to the PANW-orange token specifically; --warn (amber) carries "not yet
+   proven / degraded" and --crit carries "unreachable / error".
+
+   Contrast note: --ac and --warn are both ~3:1 against a light-theme white
+   surface — enough for a graphical border/accent (WCAG 1.4.11) but not for
+   small body text (1.4.3 needs 4.5:1). Every rule below keeps ACTUAL TEXT
+   on --tx/--tx2 (>6:1 in both themes) and reserves --ac/--warn/--crit for
+   border accents plus solid-fill chips paired with a dark/light foreground
+   that IS verified at AA (chip rules below spell out the pairing). Colour
+   is also never the only signal — every state chip here still renders its
+   text label (OK / DEGRADED / YES …), enforced upstream in healthModel.js
+   and connectorState.js.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.theme-console .readiness {
+  /* a11y fix: paint the real surface here — the shared shell background
+     never varies by theme, so without this, plain text using the new
+     light-theme text tokens goes near-invisible. Same root cause/fix as
+     library.css. */
+  background: var(--s0);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.theme-console .readiness__loading {
+  padding: 64px 24px;
+  text-align: center;
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.theme-console .readiness__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.theme-console .readiness__stamp {
+  font-size: 10.5px;
+  color: var(--tx3);
+}
+
+/* ── Section shell ─────────────────────────────────────────────────── */
+.theme-console .readiness__section {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 20px 22px 22px;
+}
+.theme-console .readiness__section--gaps {
+  border-left: 4px solid var(--warn);
+}
+.theme-console .readiness__h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font: 700 15px/1.3 'Montserrat', var(--font-display, sans-serif);
+  color: var(--tx);
+  margin: 0 0 6px;
+}
+.theme-console .readiness__h-meta {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--tx3);
+}
+.theme-console .readiness__lede {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--tx2);
+  margin: 0 0 16px;
+  max-width: 74ch;
+}
+.theme-console .readiness__empty {
+  padding: 16px 18px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--tx2);
+  background: var(--s2);
+  border: 1px dashed var(--bd2);
+  border-radius: 8px;
+}
+.theme-console .readiness__empty p { margin: 0 0 12px; }
+.theme-console .readiness__empty p:last-child { margin-bottom: 0; }
+
+/* ── SimCore unreachable — the loud state, crit reads fine as text in
+   both themes (verified ≥6.3:1), so this is the one status colour used
+   directly as foreground rather than only as an accent. ─────────────── */
+.theme-console .readiness__down {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 6px solid var(--crit);
+  border-radius: 0 10px 10px 0;
+  padding: 18px 20px;
+  box-shadow: var(--shadow, none);
+}
+.theme-console .readiness__down-tag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--crit);
+}
+.theme-console .readiness__down-msg {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--tx);
+  margin: 10px 0;
+}
+.theme-console .readiness__down-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--tx2);
+  margin: 0;
+}
+.theme-console .readiness__down-hint em { color: var(--tx); font-style: normal; font-weight: 600; }
+
+/* ── The four-rung connector ladder ───────────────────────────────────
+   Each rung is a numbered step card; the left border is a decorative
+   reinforcement of the state the chip already labels in text. ───────── */
+.theme-console .readiness__ladder {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(228px, 1fr));
+  gap: 12px;
+}
+.theme-console .rdy-rung {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-left: 4px solid var(--bd2);
+  border-radius: 8px;
+  padding: 14px 15px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.theme-console .rdy-rung--yes { border-left-color: var(--ac-str); }
+.theme-console .rdy-rung--no { border-left-color: var(--warn); }
+.theme-console .rdy-rung--unknown { border-left-style: dashed; border-left-color: var(--tx3); }
+.theme-console .rdy-rung__top { display: flex; align-items: center; gap: 8px; }
+.theme-console .rdy-rung__n {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--tx2);
+  border: 1px solid var(--bd2);
+  border-radius: 50%;
+  width: 19px;
+  height: 19px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme-console .rdy-rung__label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--tx);
+  flex: 1;
+}
+.theme-console .rdy-rung__q {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+.theme-console .rdy-rung__detail {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--tx);
+}
+.theme-console .rdy-rung__proves {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 3px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--bd);
+}
+.theme-console .rdy-rung__proves-yes {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--tx3);
+}
+.theme-console .rdy-rung__proves-no {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--tx2);
+}
+.theme-console .rdy-rung__proves-no::before {
+  content: '✗ ';
+  color: var(--warn);
+}
+
+/* ── The one sentence that must never drift optimistic ────────────────
+   Informational, not a warning in itself — an --info accent, not --warn. */
+.theme-console .readiness__invariant {
+  background: var(--s2);
+  border-left: 4px solid var(--info);
+  border-radius: 0 8px 8px 0;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--tx);
+}
+.theme-console .readiness__invariant strong { color: var(--tx); }
+
+/* ── Tenants ───────────────────────────────────────────────────────── */
+.theme-console .readiness__tenants {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+.theme-console .rdy-tenant {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.theme-console .rdy-tenant__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.theme-console .rdy-tenant__name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--tx);
+}
+.theme-console .rdy-tenant__kind { font-size: 11.5px; color: var(--tx2); }
+.theme-console .rdy-tenant__host { font-family: var(--font-mono); font-size: 10.5px; color: var(--tx3); }
+.theme-console .rdy-tenant__buys {
+  font-size: 10.5px;
+  color: var(--tx2);
+  line-height: 1.65;
+  margin-top: 2px;
+}
+.theme-console .rdy-tenant__notbuys { color: var(--tx); }
+.theme-console .rdy-tenant__caveat {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--tx);
+  background: var(--s2);
+  border-left: 3px solid var(--warn);
+  border-radius: 0 4px 4px 0;
+  padding: 7px 9px;
+}
+
+/* ── Preflight stage checklist ─────────────────────────────────────── */
+.theme-console .rdy-preflight {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--bd);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.theme-console .rdy-preflight--err { color: var(--crit); font-size: 12px; }
+.theme-console .rdy-preflight--gap { color: var(--tx2); font-size: 12px; line-height: 1.6; }
+.theme-console .rdy-preflight__head { display: flex; align-items: center; gap: 8px; font-size: 10.5px; }
+.theme-console .rdy-preflight__empty { font-size: 11.5px; color: var(--tx3); }
+
+.theme-console .rdy-stage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  padding: 6px 0;
+  border-top: 1px solid var(--bd);
+}
+.theme-console .rdy-stage:first-child { border-top: none; padding-top: 0; }
+.theme-console .rdy-stage__id {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--tx2);
+  min-width: 90px;
+}
+.theme-console .rdy-stage__detail { color: var(--tx); flex: 1 1 200px; }
+.theme-console .rdy-stage--blocked .rdy-stage__detail { color: var(--crit); }
+.theme-console .rdy-stage__fix {
+  flex: 1 1 100%;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--tx2);
+}
+.theme-console .rdy-stage__fix::before { content: '→ '; color: var(--warn); }
+
+/* ── Component grid ───────────────────────────────────────────────── */
+.theme-console .readiness__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(242px, 1fr));
+  gap: 12px;
+}
+.theme-console .rdy-comp {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-left: 4px solid var(--bd2);
+  border-radius: 8px;
+  padding: 14px 15px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.theme-console .rdy-comp--ok { border-left-color: var(--ac-str); }
+.theme-console .rdy-comp--degraded { border-left-color: var(--warn); }
+.theme-console .rdy-comp--error { border-left-color: var(--crit); }
+.theme-console .rdy-comp--unknown,
+.theme-console .rdy-comp--unreported { border-left-style: dashed; border-left-color: var(--tx3); }
+.theme-console .rdy-comp__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.theme-console .rdy-comp__label { font-size: 12.5px; font-weight: 600; color: var(--tx); }
+.theme-console .rdy-comp__count { font-size: 21px; line-height: 1; color: var(--tx); font-weight: 700; }
+.theme-console .rdy-comp__purpose { font-size: 10.5px; color: var(--tx2); line-height: 1.5; }
+.theme-console .rdy-comp__disagree {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--tx);
+  background: var(--s1);
+  border-left: 3px solid var(--warn);
+  border-radius: 0 4px 4px 0;
+  padding: 6px 8px;
+}
+.theme-console .rdy-comp__code { font-size: 10px; letter-spacing: 0.06em; color: var(--tx2); }
+.theme-console .rdy-comp__detail { font-size: 10.5px; color: var(--tx2); line-height: 1.55; }
+.theme-console .rdy-comp__fix { font-size: 11px; color: var(--tx); line-height: 1.6; }
+.theme-console .rdy-comp__fix::before { content: '→ '; color: var(--ac); }
+.theme-console .rdy-comp .btn--xs { margin-top: 2px; }
+
+/* ── Gap list ──────────────────────────────────────────────────────── */
+.theme-console .readiness__gaps {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+.theme-console .readiness__gaps li {
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--tx2);
+  margin-bottom: 7px;
+}
+.theme-console .readiness__gaps li::marker { color: var(--warn); }
+
+/* ── Scoped chip + button primitives ──────────────────────────────────
+   The shared .chip / .btn base rules (cortex-console.css) still carry the
+   pre-redesign dark-only palette (see the file's own header comment) and
+   are out of this destination's file ownership. Rather than edit that
+   shared primitive, this view supplies its own token-correct look for the
+   chip/button instances it renders, scoped under .readiness so nothing
+   outside this page is affected. Every pairing below is contrast-checked
+   in both themes (see the file header note). ─────────────────────────── */
+.theme-console .readiness .chip {
+  height: auto;
+  line-height: 1;
+  padding: 4px 7px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  border-radius: 4px;
+  background: var(--s2);
+  color: var(--tx2);
+  border: 1px solid var(--bd2);
+}
+.theme-console .readiness .chip--detected {
+  background: var(--ac);
+  color: var(--ac-tx);
+  border-color: var(--ac);
+}
+.theme-console .readiness .chip--pending {
+  background: var(--warn);
+  color: var(--ink);
+  border-color: var(--warn);
+}
+.theme-console .readiness .chip--missed {
+  background: transparent;
+  color: var(--crit);
+  border-color: var(--crit);
+}
+
+.theme-console .readiness .btn {
+  height: 30px;
+  padding: 0 13px;
+  background: transparent;
+  color: var(--tx);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.theme-console .readiness .btn:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+  background: transparent;
+}
+.theme-console .readiness .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.theme-console .readiness .btn--xs { height: 25px; padding: 0 10px; font-size: 10.5px; }
+
+.theme-console .readiness *:focus-visible {
+  outline: 2px solid var(--ac-str);
+  outline-offset: 2px;
+}

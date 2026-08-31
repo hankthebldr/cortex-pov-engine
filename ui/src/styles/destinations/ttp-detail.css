@@ -1,0 +1,207 @@
+/* ============================================================
+   Destination: ttp-detail
+   Component:   ui/src/components/console/TtpEditorView.jsx (`.ttp-editor`)
+   Reference:   .design-ref/07-ttpdetail-name.html
+                (continues directly from .design-ref/06-ttp-cards.html —
+                the mockup's TTP list + detail aside is one page split
+                across those two ref files)
+
+   ── Data-model note (read before "fixing" a missing section) ──────
+   The mockup's `ttpDetail` is a READ-ONLY viewer aside: name + intent,
+   a 2-col stat grid, an "XQL" code block, a BIOC-condition list, a
+   false-positive-guard callout, "Exercised by" / "Test cases" /
+   "Proven by" chip-and-list sections, a teardown line, and "Add to
+   draft chain" / "Navigator layer" actions. That panel is
+   TtpBrowserView.jsx's inline `TtpDetail` component (the same file
+   06-ttp-cards.html's card grid belongs to) — out of scope here: this
+   task's file assignment is TtpEditorView.jsx only, and TtpBrowserView
+   is a shared file another concurrent task may own. Flagged in this
+   task's `gaps`, not silently reinterpreted.
+
+   TtpEditorView.jsx is the other "TTP detail" surface under
+   detection_scanner/ttps/ — the authoring/edit form (schema-validated
+   JSON textarea, Save / Promote / Close). It has no stats / BIOC /
+   proven-by data to show. This file restyles what it actually has
+   (eyebrow + title, action row, status banners, JSON source) in the
+   mockup's typographic language — Montserrat display type, JetBrains
+   Mono labels, Cortex green accent, an --ink code surface matching the
+   mockup's XQL block treatment for the one thing this view centers on.
+
+   `.theme-console` ships its own `--c-*` palette (cortex-console.css)
+   as fixed hex with no [data-theme] variant. Section 1 re-points that
+   local palette at the redesign's real light/dark tokens
+   (cortex-tokens.css), scoped to `.ttp-editor` only, so the shared
+   `.btn` / `.btn--primary` / focus-ring rules that already read
+   `--c-*` restyle for free — same technique as destinations/agents.css.
+   ============================================================ */
+
+/* ── 1. Re-scope onto the new token contract ──────────────────────── */
+.theme-console .ttp-editor {
+  --c-void:            var(--s0);
+  --c-surface:         var(--s1);
+  --c-surface-raised:  var(--s1);
+  --c-surface-modal:   var(--s1);
+  --c-hairline:        var(--bd);
+  --c-hairline-strong: var(--bd2);
+
+  --c-action:          var(--ac);
+  --c-action-bright:   var(--ac-str);
+  --c-action-deep:     var(--ac);
+  --c-action-soft:     var(--ac-soft);
+  --c-action-glow:     color-mix(in srgb, var(--ac) 45%, transparent);
+
+  --c-signal:          var(--info);
+  --c-signal-soft:     color-mix(in srgb, var(--info) 14%, transparent);
+  --c-signal-glow:     color-mix(in srgb, var(--info) 45%, transparent);
+
+  --c-detected:        var(--ac);
+  --c-detected-soft:   var(--ac-soft);
+  --c-missed:          var(--crit);
+  --c-missed-soft:     color-mix(in srgb, var(--crit) 14%, transparent);
+  --c-pending:         var(--warn);
+  --c-pending-soft:    color-mix(in srgb, var(--warn) 14%, transparent);
+  --c-stitched:        var(--info);
+
+  --c-text:            var(--tx);
+  --c-text-secondary:  var(--tx2);
+  --c-text-muted:      var(--tx3);
+  --c-text-disabled:   var(--tx3);
+
+  --c-panw-orange:     var(--orange);
+
+  color: var(--tx);
+}
+
+/* ── 2. Card shell — the mockup's raised-aside treatment: a green top
+   accent instead of the shared component's teal left-rail. ────────── */
+.theme-console .ttp-editor.competitive__detail {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: none;
+  border-top: 3px solid var(--ac-str);
+  border-radius: 10px;
+  padding: 20px 22px;
+  box-shadow: var(--shadow, 0 4px 14px rgba(10, 30, 20, .09));
+}
+
+/* ── 3. Head — eyebrow + title, matching every other redesigned
+   destination's masthead type. ───────────────────────────────────── */
+.theme-console .ttp-editor .competitive__detail-head {
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--bd);
+  margin-bottom: 16px;
+}
+.theme-console .ttp-editor .competitive__detail-eyebrow {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 6px;
+}
+.theme-console .ttp-editor .competitive__detail-title {
+  font-family: 'Montserrat', var(--font-ui), sans-serif;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.28;
+  color: var(--tx);
+}
+.theme-console .ttp-editor .ttp-editor__actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ── 4. Top-level status banners (schema-load error / save error /
+   save-ok) — left-accent callouts, matching the mockup's
+   false-positive-guard treatment, instead of bare colored text. ───── */
+.theme-console .ttp-editor .adapter-registry__error,
+.theme-console .ttp-editor .ttp-editor__saved-msg {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  padding: 8px 11px;
+  margin: 0 0 12px;
+  border-radius: 0 6px 6px 0;
+  background: var(--s2);
+}
+.theme-console .ttp-editor .adapter-registry__error {
+  border-left: 3px solid var(--crit);
+  color: var(--crit);
+}
+.theme-console .ttp-editor .ttp-editor__saved-msg {
+  border-left: 3px solid var(--ac-str);
+  color: var(--ac);
+}
+
+/* ── 5. Hint paragraph — the mockup's "intent" sub-line under a title. */
+.theme-console .ttp-editor .ttp-editor__hint {
+  font-size: 12px;
+  color: var(--tx2);
+  line-height: 1.55;
+  margin: 0 0 14px;
+}
+.theme-console .ttp-editor .ttp-editor__hint .mono {
+  color: var(--tx);
+}
+
+/* ── 6. JSON source — restyled as the mockup's XQL detection-logic code
+   block: an --ink surface regardless of theme (deliberately dark in
+   both — see cortex-theme.css's --cortex-navy note), JetBrains Mono,
+   generous line-height. This is the one thing the view is actually
+   *for*, so it gets the mockup's most deliberate surface. ──────────── */
+.theme-console .ttp-editor .ttp-editor__textarea {
+  width: 100%;
+  min-height: 440px;
+  padding: 14px 16px;
+  background: var(--ink);
+  border: 1px solid var(--ink-bd);
+  border-radius: 8px;
+  color: #C2D2CA;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  resize: vertical;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.theme-console .ttp-editor .ttp-editor__textarea:focus-visible {
+  outline: none;
+  border-color: var(--ac);
+  box-shadow: 0 0 0 3px var(--ac-soft);
+}
+.theme-console .ttp-editor .ttp-editor__textarea--error {
+  border-color: var(--crit);
+}
+.theme-console .ttp-editor .ttp-editor__textarea--error:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--crit) 20%, transparent);
+}
+
+/* ── 7. Parse / schema / valid messages — same left-accent callout
+   language as section 4, keyed green (valid) vs crit (broken). ────── */
+.theme-console .ttp-editor .ttp-editor__parse-error,
+.theme-console .ttp-editor .ttp-editor__validate-error,
+.theme-console .ttp-editor .ttp-editor__valid-msg {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  margin-top: 10px;
+  padding: 8px 11px;
+  border-radius: 0 6px 6px 0;
+  background: var(--s2);
+}
+.theme-console .ttp-editor .ttp-editor__parse-error,
+.theme-console .ttp-editor .ttp-editor__validate-error {
+  border-left: 3px solid var(--crit);
+  color: var(--crit);
+}
+.theme-console .ttp-editor .ttp-editor__valid-msg {
+  border-left: 3px solid var(--ac-str);
+  color: var(--ac);
+}
+.theme-console .ttp-editor .ttp-editor__validate-path {
+  color: var(--tx);
+  font-weight: 700;
+}

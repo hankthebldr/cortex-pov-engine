@@ -1,0 +1,291 @@
+/* ============================================================
+   Destination: uc-detail
+   Component:   ui/src/components/UCTCMapper.jsx
+   Reference:   .design-ref/09-ucdetail-name.html
+
+   UCTCMapper renders the per-scenario "UC / TC Chain" panel in the
+   legacy shell (App.jsx, not .theme-console). Its structural classes
+   (.uctc-*, .panel-card, .badge-*) are already defined in
+   cortex-console.css / cortex-theme.css — this file does NOT
+   duplicate or fork them, it layers a scoped override on top so two
+   agents never collide on the same shared stylesheet.
+
+   Everything below is scoped under the `.uc-detail` root class added
+   to the component's outer <div className="panel-card"> — every
+   selector pairs `.uc-detail` with the existing structural class, so
+   these rules win on specificity (0,2,0 > 0,1,0) regardless of the
+   actual <link>/import order the bundler produces. No !important.
+
+   Data model note: the mockup's uc-detail page is UC-level (one UC
+   with many test cases, each with its own KPI/result/XQL/evidence
+   list). The live component is scenario-level (one scenario = one UC
+   ref + one TC ref + an ordered execution-step timeline). That is a
+   real, intentional difference in what data exists — the timeline
+   shape is kept, restyled with the mockup's typographic language
+   (bold headings, mono ids, eyebrow labels, left-accent evidence
+   chips, ink-toned code blocks) rather than force-fitting a TC table
+   that has no backing data. See the task's `gaps` note.
+
+   Contrast pass: several base rules alias fixed-hue "navy" colours
+   (--cortex-navy / --ink, deliberately dark in BOTH themes) or
+   hardcoded #1A2B3C literals onto text sitting on a card surface that
+   also goes near-black in dark mode — a text-on-background collision
+   flagged but not fixed by the token-alias pass (see cortex-theme.css
+   :root comment above --cortex-navy). Every such spot touched by this
+   destination is repointed at an adaptive token (--tx / --tx2) below.
+   ============================================================ */
+
+/* ── Card header: accent bar + mono badges ─────────────────────────── */
+
+.uc-detail.panel-card {
+  overflow: hidden;
+}
+
+.uc-detail .panel-card-header {
+  position: relative;
+  padding-top: 24px;
+}
+
+.uc-detail .panel-card-header::before {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: var(--space-5, 20px);
+  width: 40px;
+  height: 3px;
+  background: var(--ac-str);
+  border-radius: 2px;
+}
+
+.uc-detail .panel-card-header h3 {
+  color: var(--tx);
+  font-weight: 700;
+}
+
+.uc-detail .badge {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+}
+
+/* Fix: --cortex-navy resolves to --ink (dark in both themes); on a
+   dark-mode card surface that text becomes invisible. Re-point at the
+   adaptive text token instead of the fixed-dark chrome token. */
+.uc-detail .badge-navy {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  color: var(--tx);
+}
+
+.uc-detail .badge-teal {
+  background: color-mix(in srgb, var(--ac) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ac) 32%, transparent);
+  color: var(--ac);
+}
+
+/* ── Loading state ──────────────────────────────────────────────────── */
+
+.uc-detail .spinner {
+  border-color: color-mix(in srgb, var(--ac) 25%, transparent);
+  border-top-color: var(--ac);
+}
+
+/* ── UC header block ────────────────────────────────────────────────── */
+
+.uc-detail .uctc-uc-header {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.uc-detail .uctc-uc-header__label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--tx3);
+}
+
+.uc-detail .uctc-uc-header__ref {
+  font-weight: 600;
+  color: var(--ac);
+}
+
+.uc-detail .uctc-uc-header__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tx);
+}
+
+.uc-detail .uctc-uc-header__tc {
+  color: var(--tx2);
+}
+
+/* ── MITRE tactic/technique row ─────────────────────────────────────── */
+
+.uc-detail .uctc-mitre {
+  border-top: 1px solid var(--bd);
+}
+
+.uc-detail .uctc-mitre__label {
+  font-family: var(--font-mono);
+  color: var(--tx3);
+  letter-spacing: 0.1em;
+}
+
+.uc-detail .uctc-mitre__value {
+  color: var(--tx);
+  font-family: var(--font-mono);
+}
+
+.uc-detail .uctc-mitre__name {
+  color: var(--tx2);
+}
+
+/* ── Threat report ref ───────────────────────────────────────────────── */
+
+.uc-detail .uctc-threat__label {
+  color: var(--tx2);
+}
+
+.uc-detail .uctc-threat__value {
+  color: var(--tx2);
+}
+
+/* ── Section label ───────────────────────────────────────────────────── */
+
+.uc-detail .uctc-steps-label {
+  position: relative;
+  padding-top: 14px;
+}
+
+.uc-detail .uctc-steps-label::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 3px;
+  background: var(--ac-str);
+  border-radius: 2px;
+}
+
+/* ── Step timeline ───────────────────────────────────────────────────── */
+
+.uc-detail .uctc-step__num {
+  background: var(--ac-str);
+  color: var(--ac-tx);
+}
+
+.uc-detail .uctc-step__toggle {
+  border-radius: 6px;
+}
+
+.uc-detail .uctc-step__toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--s1), 0 0 0 4px var(--ac);
+}
+
+.uc-detail .uctc-step__name {
+  color: var(--tx);
+  font-weight: 700;
+}
+
+.uc-detail .uctc-step__mitre {
+  color: var(--tx2);
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  padding: 2px 6px;
+  letter-spacing: 0.02em;
+}
+
+/* Command preview: a fixed "terminal" surface by design (matches the
+   mockup's XQL block, which also pins to --ink regardless of theme
+   rather than the adaptive card surface) — legible in both themes
+   because --ink stays deliberately dark in both. */
+.uc-detail .uctc-step__command {
+  background: var(--ink);
+  color: #c2d2ca;
+  border: 1px solid var(--ink-bd);
+  border-radius: 6px;
+}
+
+.uc-detail .uctc-step__detections-label {
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+  color: var(--tx3);
+}
+
+/* Evidence-chip treatment: left accent bar, matching the mockup's
+   "Evidence observed" row style. */
+.uc-detail .uctc-detection-row {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 0 6px 6px 0;
+}
+
+.uc-detail .uctc-detection-row__plane {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tx3);
+}
+
+.uc-detail .uctc-detection-row__desc {
+  color: var(--tx2);
+}
+
+/* ── Detection-type badges ──────────────────────────────────────────── */
+/* Closed vocabulary (BIOC/XQL/Analytics/Correlation/IOC + default).
+   Base rules in cortex-console.css hardcode a single light-mode hue
+   pair per type with no dark counterpart — on a dark card that text
+   collapses toward unreadable. Re-expressed on adaptive/theme-paired
+   tokens so every type holds contrast in both themes. IOC intentionally
+   maps to --warn (amber "stale/expiring indicator" signal), never to
+   --orange — orange is reserved for warn/gap signal per the design
+   contract, not a general detection-type tag. */
+
+.uc-detail .uctc-badge--bioc {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  color: var(--tx);
+}
+
+.uc-detail .uctc-badge--xql {
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--info) 34%, transparent);
+  color: var(--info);
+}
+
+.uc-detail .uctc-badge--analytics {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  color: var(--tx2);
+}
+
+.uc-detail .uctc-badge--correlation {
+  background: rgba(142, 124, 255, 0.16);
+  border: 1px solid rgba(142, 124, 255, 0.36);
+  color: #5b46d9;
+}
+[data-theme="dark"] .uc-detail .uctc-badge--correlation {
+  background: rgba(184, 166, 255, 0.18);
+  border: 1px solid rgba(184, 166, 255, 0.4);
+  color: #c9bcff;
+}
+
+.uc-detail .uctc-badge--ioc {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
+  color: var(--warn);
+}
+
+.uc-detail .uctc-badge--default {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  color: var(--tx3);
+}

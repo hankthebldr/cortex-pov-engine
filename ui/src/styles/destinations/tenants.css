@@ -1,0 +1,590 @@
+/* ============================================================
+   Destination: Tenants (Manage · Phase 1)
+   ============================================================
+   Source of truth: .design-ref/14-tenants.html (+ shared card/
+   eyebrow/pill pattern carried over from 12-environments.html /
+   13-agents.html — the mockup's own Tenants section is a
+   read-only summary card grid; TenantManager is the real CRUD
+   surface (register wizard + test/delete), so this file applies
+   the mockup's visual language — accent bar, eyebrow, JetBrains-
+   Mono key/value rows, soft-accent state pills — to the existing
+   structure rather than dropping functionality to match the
+   static study.
+
+   Tokens only: --ac / --ac-str is the sole accent (Cortex green).
+   --orange is never used here — it is reserved for warn/gap
+   signal in the coverage/detection surfaces, not generic tenant
+   health. A failed reachability test uses --crit (error), not
+   --orange, per the design's own stated intent.
+
+   Overrides the legacy `.tenant-mgr` rules in cortex-console.css
+   (same `.theme-console .tenant-mgr*` specificity) by loading
+   after it in main.jsx — see the import order there.
+   ============================================================ */
+
+.theme-console .tenant-mgr {
+  /* a11y fix: paint the real surface here — the shared shell background
+     never varies by theme, so without this, plain text using the new
+     light-theme text tokens goes near-invisible. Same root cause/fix as
+     library.css. */
+  background: var(--s0);
+  padding: 22px 26px 30px;
+  max-width: 1040px;
+}
+
+/* ── Header: accent bar + eyebrow + title ─────────────────────── */
+
+.theme-console .tenant-mgr__header {
+  margin-bottom: 22px;
+}
+.theme-console .tenant-mgr__accent-bar {
+  width: 56px;
+  height: 4px;
+  background: var(--ac-str);
+  margin-bottom: 10px;
+  border-radius: 2px;
+}
+.theme-console .tenant-mgr__eyebrow {
+  font-family: var(--font-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tx2, var(--cortex-steel));
+}
+.theme-console .tenant-mgr__header-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 7px;
+}
+.theme-console .tenant-mgr__title {
+  margin: 0;
+  font-family: var(--font-primary);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--tx, var(--cortex-navy));
+}
+.theme-console .tenant-mgr__subtitle {
+  font-size: 12px;
+  color: var(--tx2, var(--cortex-steel));
+}
+.theme-console .tenant-mgr__scope-line {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--tx2, var(--cortex-steel));
+}
+.theme-console .tenant-mgr__scope-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--tx, var(--cortex-navy));
+}
+.theme-console .tenant-mgr__scope-value::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--ac-str);
+}
+.theme-console .tenant-mgr__scope-empty {
+  font-style: italic;
+}
+.theme-console .tenant-mgr__scope-suffix {
+  margin-left: 6px;
+}
+
+/* ── Two-column layout: wizard | registered list ──────────────── */
+
+.theme-console .tenant-mgr__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 880px) {
+  .theme-console .tenant-mgr__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.theme-console .tenant-mgr__card {
+  background: var(--s1, var(--cortex-white));
+  border: 1px solid var(--bd, var(--cortex-border));
+  border-radius: 10px;
+  padding: 20px 22px;
+  box-shadow: var(--shadow);
+}
+
+.theme-console .tenant-mgr__section-title {
+  font-family: var(--font-primary);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--tx, var(--cortex-navy));
+  margin: 0 0 18px;
+}
+
+/* ── Step indicator ────────────────────────────────────────────── */
+
+.theme-console .tenant-mgr__steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 24px;
+}
+.theme-console .tenant-mgr__step {
+  display: flex;
+  align-items: center;
+}
+.theme-console .tenant-mgr__step-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--s3, var(--cortex-light-bg));
+  color: var(--tx2, var(--cortex-steel));
+}
+.theme-console .tenant-mgr__step-circle--done {
+  /* Solid fill (not a pale tint) — the accent text token (--ac-tx) is
+     designed for exactly this on-accent pairing; a tinted background
+     with --ac text does not clear contrast at this size. */
+  background: var(--ac);
+  color: var(--ac-tx);
+}
+.theme-console .tenant-mgr__step-circle--active {
+  background: var(--ac);
+  color: var(--ac-tx);
+  box-shadow: 0 0 0 3px var(--ac-soft);
+}
+.theme-console .tenant-mgr__step-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--tx2, var(--cortex-steel));
+  margin-left: 6px;
+}
+.theme-console .tenant-mgr__step-label--active {
+  font-weight: 700;
+  color: var(--tx, var(--cortex-navy));
+}
+.theme-console .tenant-mgr__step-label--done {
+  color: var(--tx, var(--cortex-navy));
+}
+.theme-console .tenant-mgr__step-connector {
+  flex: 1;
+  height: 1px;
+  margin: 0 10px;
+  background: var(--bd, var(--cortex-border));
+}
+.theme-console .tenant-mgr__step-connector--done {
+  background: var(--ac-str);
+}
+
+/* ── Fields ────────────────────────────────────────────────────── */
+
+.theme-console .tenant-mgr__field {
+  margin-bottom: 16px;
+}
+.theme-console .tenant-mgr__field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tx2, var(--cortex-steel));
+  margin-bottom: 5px;
+}
+.theme-console .tenant-mgr__field-required {
+  color: var(--crit, var(--cortex-danger));
+  margin-left: 2px;
+}
+.theme-console .tenant-mgr__field-hint {
+  font-size: 10px;
+  color: var(--tx2, var(--cortex-steel));
+  margin-top: 4px;
+}
+.theme-console .tenant-mgr__field-error {
+  font-size: 10px;
+  color: var(--crit, var(--cortex-danger));
+  margin-top: 4px;
+}
+.theme-console .tenant-mgr__input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: var(--font-primary);
+  color: var(--tx, var(--cortex-navy));
+  background: var(--s1, var(--cortex-white));
+  border: 1px solid var(--bd, var(--cortex-border));
+  border-radius: 6px;
+  outline: none;
+  transition: border-color .12s ease;
+}
+.theme-console .tenant-mgr__input--mono {
+  font-family: var(--font-mono);
+}
+.theme-console .tenant-mgr__input--error {
+  border-color: var(--crit, var(--cortex-danger));
+}
+.theme-console .tenant-mgr__input:focus {
+  border-color: var(--ac);
+  box-shadow: 0 0 0 3px var(--ac-soft);
+}
+
+/* ── Auth-mode radio row ───────────────────────────────────────── */
+
+.theme-console .tenant-mgr__radio-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.theme-console .tenant-mgr__radio-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  border: 1px solid var(--bd, var(--cortex-border));
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--tx2, var(--cortex-steel));
+}
+.theme-console .tenant-mgr__radio-option--selected {
+  border-color: var(--ac-line);
+  background: var(--ac-soft);
+  color: var(--tx, var(--cortex-navy));
+  font-weight: 700;
+}
+.theme-console .tenant-mgr__radio-option--disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.theme-console .tenant-mgr__radio-input {
+  accent-color: var(--ac);
+}
+.theme-console .tenant-mgr__radio-note {
+  font-size: 9px;
+  color: var(--tx2, var(--cortex-steel));
+  margin-left: 2px;
+}
+.theme-console .tenant-mgr__radio-hint {
+  font-size: 10px;
+  color: var(--tx2, var(--cortex-steel));
+  margin-top: 5px;
+}
+
+/* ── Health / status pills ────────────────────────────────────────
+   Deliberately no --orange: pill states are health, not gap
+   signal. Failed reachability reads as an error (--crit), not
+   the coverage-gap orange the design reserves elsewhere.        */
+
+.theme-console .tenant-mgr__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.theme-console .tenant-mgr__pill--testing {
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+  color: var(--info);
+  border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
+}
+.theme-console .tenant-mgr__pill--ok {
+  background: var(--ac-soft);
+  color: var(--tx, var(--cortex-navy));
+  border: 1px solid var(--ac-line);
+}
+.theme-console .tenant-mgr__pill--fail {
+  background: color-mix(in srgb, var(--crit) 12%, transparent);
+  color: var(--crit);
+  border: 1px solid color-mix(in srgb, var(--crit) 40%, transparent);
+}
+.theme-console .tenant-mgr__pill--fail.tenant-mgr__pill--hint {
+  cursor: help;
+}
+.theme-console .tenant-mgr__pill--unknown {
+  background: var(--s3, var(--cortex-light-bg));
+  color: var(--tx2, var(--cortex-steel));
+  border: 1px solid var(--bd, var(--cortex-border));
+}
+
+/* ── Review step: summary table ───────────────────────────────── */
+
+.theme-console .tenant-mgr__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+.theme-console .tenant-mgr__table-row {
+  border-bottom: 1px solid var(--bd, var(--cortex-border));
+}
+.theme-console .tenant-mgr__table-label {
+  padding: 7px 12px 7px 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tx2, var(--cortex-steel));
+  white-space: nowrap;
+  vertical-align: top;
+}
+.theme-console .tenant-mgr__table-value {
+  padding: 7px 0;
+  font-size: 12px;
+  font-family: var(--font-primary);
+  color: var(--tx, var(--cortex-navy));
+}
+.theme-console .tenant-mgr__table-value--mono {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+.theme-console .tenant-mgr__table-empty {
+  color: var(--tx2, var(--cortex-steel));
+}
+
+.theme-console .tenant-mgr__alert {
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.theme-console .tenant-mgr__alert--error {
+  background: color-mix(in srgb, var(--crit) 10%, transparent);
+  border: 1px solid var(--crit);
+  color: var(--crit);
+}
+.theme-console .tenant-mgr__alert--success {
+  background: var(--ac-soft);
+  border: 1px solid var(--ac-line);
+  color: var(--tx, var(--cortex-navy));
+}
+
+.theme-console .tenant-mgr__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.theme-console .tenant-mgr__btn-wide {
+  min-width: 130px;
+}
+.theme-console .tenant-mgr__footnote {
+  font-size: 10px;
+  color: var(--tx2, var(--cortex-steel));
+  margin-top: 8px;
+}
+
+.theme-console .tenant-mgr__nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 22px;
+}
+.theme-console .tenant-mgr__nav-single {
+  margin-top: 16px;
+}
+
+/* ── Registered-tenants list header ───────────────────────────── */
+
+.theme-console .tenant-mgr__list-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.theme-console .tenant-mgr__list-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tx, var(--cortex-navy));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.theme-console .tenant-mgr__count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--ac-soft);
+  color: var(--tx, var(--cortex-navy));
+  font-size: 10px;
+  font-weight: 700;
+}
+.theme-console .tenant-mgr__error-banner {
+  font-size: 11px;
+  color: var(--crit, var(--cortex-danger));
+  margin-bottom: 10px;
+}
+.theme-console .tenant-mgr__empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--tx2, var(--cortex-steel));
+}
+.theme-console .tenant-mgr__empty--bordered {
+  border: 1px dashed var(--bd, var(--cortex-border));
+  border-radius: 8px;
+}
+
+.theme-console .tenant-mgr__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Tenant card ───────────────────────────────────────────────
+   Mirrors the mockup's card pattern: header row (name + state
+   pill), a label/value grid in JetBrains Mono, then actions.  */
+
+.theme-console .tenant-mgr__row {
+  background: var(--s1, var(--cortex-white));
+  border: 1px solid var(--bd, var(--cortex-border));
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: border-color .12s ease;
+}
+.theme-console .tenant-mgr__row--active {
+  border-color: var(--ac-line);
+  box-shadow: 0 0 0 1px var(--ac-line);
+}
+.theme-console .tenant-mgr__row-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.theme-console .tenant-mgr__row-name {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--tx, var(--cortex-navy));
+  flex: 1;
+  word-break: break-word;
+}
+.theme-console .tenant-mgr__row-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--bd, var(--cortex-border));
+}
+.theme-console .tenant-mgr__row-cell {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 10px;
+}
+.theme-console .tenant-mgr__row-k {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tx2, var(--cortex-steel));
+}
+.theme-console .tenant-mgr__row-v {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--tx2, var(--cortex-steel));
+  word-break: break-all;
+}
+.theme-console .tenant-mgr__row-error {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--crit, var(--cortex-danger));
+}
+.theme-console .tenant-mgr__row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+  flex-wrap: wrap;
+}
+.theme-console .tenant-mgr__btn-align {
+  white-space: nowrap;
+}
+.theme-console .tenant-mgr__btn-nowrap {
+  white-space: nowrap;
+}
+.theme-console .tenant-mgr__badge-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--tx, var(--cortex-navy));
+  background: var(--ac-soft);
+  border: 1px solid var(--ac-line);
+  border-radius: 999px;
+}
+.theme-console .tenant-mgr__btn-delete {
+  margin-left: auto;
+  color: var(--crit, var(--cortex-danger));
+  border-color: var(--bd, var(--cortex-border));
+}
+.theme-console .tenant-mgr__btn-delete:hover {
+  border-color: var(--crit);
+  background: color-mix(in srgb, var(--crit) 8%, transparent);
+}
+
+/* ── Delete confirmation overlay ───────────────────────────────── */
+
+.theme-console .tenant-mgr__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 12, 8, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.theme-console .tenant-mgr__dialog {
+  background: var(--s1, var(--cortex-white));
+  border: 1px solid var(--bd, var(--cortex-border));
+  border-radius: 10px;
+  padding: 22px 24px;
+  max-width: 380px;
+  box-shadow: var(--shadow);
+}
+.theme-console .tenant-mgr__dialog-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--tx, var(--cortex-navy));
+  margin: 0 0 10px;
+}
+.theme-console .tenant-mgr__dialog-text {
+  font-size: 12px;
+  color: var(--tx2, var(--cortex-steel));
+  margin-bottom: 20px;
+}
+.theme-console .tenant-mgr__mono {
+  font-family: var(--font-mono);
+}
+.theme-console .tenant-mgr__dialog-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.theme-console .tenant-mgr__btn-delete-confirm {
+  /* --crit is tuned as a foreground (text) colour that stays readable
+     against --s0/--s1 in both themes, not as an accessible fill for
+     white text — it goes light in dark mode, which fails white-on-fill.
+     Use it as text+border on a neutral surface instead, in both themes. */
+  background: var(--s2, var(--cortex-light-bg));
+  color: var(--crit, var(--cortex-danger));
+  border: 1px solid var(--crit, var(--cortex-danger));
+  font-weight: 700;
+}
+.theme-console .tenant-mgr__btn-delete-confirm:hover {
+  background: color-mix(in srgb, var(--crit) 12%, transparent);
+}

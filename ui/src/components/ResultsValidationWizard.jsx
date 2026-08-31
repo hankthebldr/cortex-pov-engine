@@ -137,13 +137,13 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
   return (
     <section className="results-wizard">
       <header className="results-wizard__head">
-        <h2 style={{ margin: 0, fontSize: '18px' }}>
+        <h2 className="results-wizard__title">
           Validation Wizard
-          <span className="muted small" style={{ marginLeft: 8 }}>
+          <span className="muted small results-wizard__run-tag">
             run {runId?.slice?.(0, 12) || runId}…
           </span>
         </h2>
-        <div className="flex-row" style={{ gap: '6px', marginLeft: 'auto' }}>
+        <div className="flex-row results-wizard__toolbar">
           <DownloadBtn label="Matrix CSV" fetcher={downloadReportMatrix}
                        runId={runId} ext="csv" onMessage={onMessage} />
           <DownloadBtn label="Navigator JSON" fetcher={downloadReportNavigator}
@@ -173,12 +173,11 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
             <span className="kpi__value">{Math.round(mttd.median_seconds)}<span className="muted">s</span></span>
           </div>
         )}
-        <div className="flex-row" style={{ gap: '6px', marginLeft: 'auto' }}>
+        <div className="flex-row results-wizard__toolbar">
           <select
-            className="input"
+            className="input results-wizard__filter"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            style={{ width: 'auto' }}
           >
             <option value="all">All</option>
             <option value="pending">Pending only</option>
@@ -210,13 +209,13 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
           <table className="cs-table">
             <thead>
               <tr>
-                <th style={{ width: '70px' }}>Plane</th>
-                <th style={{ width: '70px' }}>Type</th>
+                <th className="results-wizard__th--narrow">Plane</th>
+                <th className="results-wizard__th--narrow">Type</th>
                 <th>Expected detection</th>
-                <th style={{ width: '300px' }}>XQL template</th>
-                <th style={{ width: '90px' }}>MTTD</th>
-                <th style={{ width: '180px' }}>Notes</th>
-                <th style={{ width: '120px' }}>Status</th>
+                <th className="results-wizard__th--xql">XQL template</th>
+                <th className="results-wizard__th--mttd">MTTD</th>
+                <th className="results-wizard__th--notes">Notes</th>
+                <th className="results-wizard__th--status">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -271,10 +270,9 @@ function ResultRow({ result, busy, onToggle, onNotesBlur }) {
       </td>
       <td>
         <button
-          className={`btn btn-sm ${result.observed ? 'btn-navy' : 'btn-secondary'}`}
+          className={`btn btn-sm results-wizard__row-toggle ${result.observed ? 'btn-navy' : 'btn-secondary'}`}
           disabled={busy}
           onClick={onToggle}
-          style={{ width: '100%' }}
         >
           {busy ? '…' : result.observed ? '✓ Observed' : 'Mark observed'}
         </button>

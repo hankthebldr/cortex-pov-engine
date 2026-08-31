@@ -4,18 +4,87 @@
    ============================================================ */
 
 :root {
-  /* Core palette */
-  --cortex-navy:     #003366;
-  --cortex-teal:     #00C0E8;
-  --cortex-steel:    #6B7E8E;
-  --cortex-white:    #FFFFFF;
-  --cortex-light-bg: #F4F6F8;
-  --cortex-border:   #D1D8DE;
+  /* ----------------------------------------------------------
+     Core palette — ALIASED onto ui/src/styles/cortex-tokens.css
+     (the PANW redesign's token contract), not replaced. The 12
+     names below are unchanged so every existing `var(--cortex-*)`
+     call site in this codebase (~117+ references across
+     cortex-theme.css and cortex-console.css) keeps working
+     untouched. What changes is what each name RESOLVES to.
+
+     cortex-tokens.css must be imported before this file (see
+     main.jsx) so --ac/--tx/--s1/etc. are defined when these
+     aliases are evaluated. Because CSS custom properties are
+     late-bound, a single alias below (e.g. --cortex-teal: var(--ac))
+     automatically follows [data-theme="dark"] at the point of
+     use — no separate dark-theme alias block is needed here.
+     ---------------------------------------------------------- */
+
+  /* --cortex-navy was the app's "always-dark chrome" color: the
+     sticky header, .btn-navy, toasts, and the onboarding-tour
+     bubble/tooltip all pair `background: var(--cortex-navy)` with
+     a HARDCODED `color: #fff`/`color: white`. --ink is the new
+     system's equivalent "inverse" surface — deliberately dark in
+     BOTH themes — so those chrome elements keep working exactly
+     as designed once dark mode is toggled. The tradeoff: the
+     minority of call sites that use --cortex-navy as plain
+     heading/label TEXT on a --cortex-white card (e.g. .rv-cov__label,
+     .uctc-uc-header__name) will read correctly in light mode but
+     go low-contrast in dark mode, because --ink stays near-black
+     while --cortex-white (→ --s1) goes near-black too. See the
+     CONTRAST FINDINGS note in cortex-tokens.test.js / the task
+     summary — this is flagged, not silently fixed, per instructions. */
+  --cortex-navy:     var(--ink);
+
+  /* --cortex-teal was the primary accent (#00C0E8, cyan). The
+     redesign's primary accent is Cortex GREEN (--ac) — this is
+     the single most visible change in the redesign, and this is
+     the one line that makes the whole console green-forward. */
+  --cortex-teal:     var(--ac);
+
+  /* --cortex-teal-deep was never actually defined in :root before
+     this change (every call site fell back to its own hardcoded
+     default, e.g. `var(--cortex-teal-deep, #0090b0)`). Its two
+     real uses (.pill-info, the network-lane label in
+     CausalityGraph.css) are both informational/cyan badges, not
+     accent UI — --info (#0090AA light / #35D3F0 dark) is the
+     direct semantic match and finally makes the token live. */
+  --cortex-teal-deep: var(--info);
+
+  /* --cortex-steel was the workhorse muted/secondary text + hint
+     color (130 call sites: labels, counts, hints, one border).
+     --tx2 is the new system's secondary-text token. */
+  --cortex-steel:    var(--tx2);
+  --cortex-white:    var(--s1);
+  --cortex-light-bg: var(--s0);
+  --cortex-border:   var(--bd);
+
+  /* --cortex-ink was likewise never defined in :root — its 3 call
+     sites (CausalityGraph.css labels, cortex-console.css line 775)
+     always fell back to a hardcoded near-black. --tx is the new
+     system's primary adaptive text color and is the direct match:
+     it's dark-on-light in light mode and light-on-dark in dark
+     mode, exactly what "ink" text needs to stay legible when the
+     theme flips. */
+  --cortex-ink:       var(--tx);
+
+  /* --cortex-ink-muted served the same "secondary/muted text" role
+     as --cortex-steel above (form-field help text, .muted), just
+     under a different name in a different era of this file.
+     Consolidating both legacy names onto --tx2 is intentional. */
+  --cortex-ink-muted: var(--tx2);
 
   /* Semantic status */
-  --cortex-success:  #00B894;
-  --cortex-warning:  #F39C12;
-  --cortex-danger:   #E74C3C;
+  --cortex-success:  var(--ac-str);
+  /* --cortex-warning maps to --warn, NOT --orange. Per the design's
+     own stated intent ("PANW orange is reserved for warn/gap
+     signal"), orange is a signal color, never a primary or
+     decorative one — using it here would make every warning badge
+     in the app orange, which is a much louder claim on that color
+     than "this one thing needs attention" warrants. --warn is the
+     token actually named for this semantic. */
+  --cortex-warning:  var(--warn);
+  --cortex-danger:   var(--crit);
 
   /* Typography */
   --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -924,4 +993,76 @@ ul.bullet { margin: 4px 0 0 0; padding-left: 18px; font-size: 12px; }
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+/* ── First-run activation tour ─────────────────────────────────────────── */
+.tour__dim {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(0, 20, 40, 0.62);
+}
+.tour__shutter {
+  position: fixed; z-index: 900;
+  background: rgba(0, 20, 40, 0.62);
+  pointer-events: auto;
+}
+.tour__cutout {
+  position: fixed; z-index: 901; border-radius: 6px;
+  border: 2px solid var(--cortex-teal, #00C0E8);
+  pointer-events: none;
+}
+.tour__bubble {
+  position: fixed; z-index: 902; max-width: 340px;
+  background: var(--cortex-navy, #003366);
+  border: 1px solid var(--cortex-teal, #00C0E8);
+  border-radius: 8px; padding: 14px 16px;
+  color: #fff; font-family: Inter, system-ui, sans-serif;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+.tour__title { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.tour__body  { margin: 0 0 12px; font-size: 13px; line-height: 1.5; color: #d7e3ec; }
+.tour__foot  { display: flex; align-items: center; gap: 8px; }
+/* `.tour__bubble`'s background is `--cortex-navy` → `--ink`, which is the
+   "always-dark chrome" surface — dark in BOTH themes, not theme-relative.
+   `--cortex-steel` (→ `--tx2`) IS theme-relative — in light theme it is a
+   dark gray meant for light surfaces, and on `--ink` that measured 2.93:1
+   (M7), well under the 4.5:1 AA floor for 11px text. `--ink-tx2` is this
+   codebase's existing "muted text over an always-dark ink surface" token
+   (see ttps.css .ttpb-pre, run-detail.css) — the same value in both themes,
+   because the surface it pairs with doesn't change either. */
+.tour__progress { margin-left: auto; font-size: 11px; color: var(--ink-tx2, #9FB0A9); }
+
+/* ── Vocabulary tooltip ────────────────────────────────────────────────── */
+.term-wrap { position: relative; display: inline-block; }
+.term {
+  border-bottom: 1px dotted var(--cortex-teal, #00C0E8);
+  cursor: help; outline-offset: 2px;
+}
+.term__tip {
+  position: absolute; z-index: 950; bottom: calc(100% + 6px); left: 0;
+  width: 280px; padding: 8px 10px;
+  background: var(--cortex-navy, #003366);
+  border: 1px solid var(--cortex-teal, #00C0E8);
+  border-radius: 6px; font-size: 12px; line-height: 1.45; color: #d7e3ec;
+}
+
+/* ── First-use hints on consequential controls ──────────────────────────── */
+/* Unlike `.tour__bubble`/`.term__tip`, this sits on the ambient THEMED page
+   background (`--c-void`/`--s0`..`--s3`), not the always-dark ink surface —
+   so its text needs a theme-RELATIVE color. `--cortex-teal` (→ `--ac`, the
+   accent green) measures ~2.8:1 on light `--s0`, under the 4.5:1 AA floor
+   for 11px text (M7) — an accent color tuned for large/graphic use, not
+   small body text. The teal-tinted background + border stay as the visual
+   "info" cue; the text itself uses `--tx2`, the same guaranteed-legible
+   secondary-text token the console-contrast guard already trusts. */
+.first-use-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: 4px; font-size: 11px;
+  background: rgba(0, 192, 232, 0.12);
+  border: 1px solid var(--cortex-teal, #00C0E8);
+  color: var(--tx2, #55605C);
+}
+.first-use-hint__x { background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tour__cutout, .tour__bubble { transition: none !important; }
 }

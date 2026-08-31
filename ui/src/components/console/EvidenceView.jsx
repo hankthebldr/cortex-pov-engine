@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import '../../styles/destinations/run-detail.css'
 import useResultsData from './useResultsData.js'
 import DetectionDrawer from './DetectionDrawer.jsx'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
@@ -62,16 +63,9 @@ export default function EvidenceView({
 
   if (!targetRunId) {
     return (
-      <div className="evidence" style={{ paddingTop: 80 }}>
-        <h1 style={{
-          fontFamily: 'var(--font-display)',
-          fontSize: 28, fontWeight: 400, color: 'var(--c-text)', marginBottom: 12,
-        }}>No run to validate</h1>
-        <p style={{
-          fontFamily: 'var(--font-narrative)',
-          fontSize: 15, fontWeight: 300,
-          color: 'var(--c-text-secondary)', lineHeight: 1.6, maxWidth: 640,
-        }}>
+      <div className="evidence evidence-empty">
+        <h1 className="evidence-empty__title">No run to validate</h1>
+        <p className="evidence-empty__desc">
           Launch a scenario from the Operations tab. The detection scorecard
           and POV report export will appear here once results begin to arrive.
         </p>
@@ -80,6 +74,9 @@ export default function EvidenceView({
   }
 
   return (
+    // The shell (.theme-console, AppShell.jsx) is theme-aware and sets
+    // [data-theme] on the root, so the PANW token set (--ac/--s1/--tx/…)
+    // resolves correctly here without pinning a local override.
     <div className="evidence">
       <div className="view-head">
         <div>
@@ -98,8 +95,8 @@ export default function EvidenceView({
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <div className="lab__segmented" role="tablist" aria-label="Evidence view mode">
+        <div className="evidence-header__actions">
+          <div className="lab__segmented evidence__mode-toggle" role="tablist" aria-label="Evidence view mode">
             <button
               type="button"
               role="tab"
@@ -181,6 +178,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           label="Coverage"
           value="n/a"
           meta={`run ${runStatus} — signal never generated`}
+          tone="tx"
         />
       ) : (
         <Kpi
@@ -189,6 +187,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           suffix="%"
           valueClass="kpi__value--detected"
           meta={`${kpis.detected} / ${kpis.total} detections confirmed`}
+          tone="ac"
         />
       )}
       <Kpi
@@ -197,31 +196,34 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         suffix={kpis.median != null ? 's' : ''}
         valueClass="kpi__value--signal"
         meta={kpis.median != null ? 'across confirmed detections' : 'no detections yet'}
+        tone={kpis.median != null ? 'ac' : 'tx'}
       />
       <Kpi
         label="XSIAM Stitch"
         value={kpis.stitched}
         suffix={` / ${kpis.total > 0 ? kpis.total : 0}`}
         meta="analytics-plane detections observed"
+        tone="info"
       />
       <Kpi
         label="Pending"
         value={kpis.pending}
         valueClass="kpi__value--pending"
         meta="awaiting validation"
+        tone={kpis.pending > 0 ? 'warn' : 'tx'}
       />
     </div>
   )
 }
 
-function Kpi({ label, value, suffix = '', meta = '', valueClass = '' }) {
+function Kpi({ label, value, suffix = '', meta = '', valueClass = '', tone = 'tx' }) {
   return (
-    <div className="kpi">
+    <div className={`kpi kpi--${tone}`}>
       <div className="kpi__label">{label}</div>
       <div className={'kpi__value ' + valueClass}>
         {value}
         {suffix && (
-          <span style={{ fontSize: 22, color: 'var(--c-text-muted)' }}>{suffix}</span>
+          <span className="kpi__suffix">{suffix}</span>
         )}
       </div>
       {meta && <div className="kpi__meta">{meta}</div>}
@@ -239,18 +241,11 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
           <div>TID</div>
           <div>Plane</div>
           <div>Alert</div>
-          <div style={{ textAlign: 'right' }}>MTTD</div>
+          <div className="scorecard__head-mttd">MTTD</div>
           <div>Alert ID</div>
           <div>Status</div>
         </div>
-        <div style={{
-          padding: 32,
-          textAlign: 'center',
-          color: 'var(--c-text-muted)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          letterSpacing: '0.04em',
-        }}>
+        <div className="scorecard-empty">
           no results yet — Cortex Data Lake ingestion typically takes 30–120s
         </div>
       </div>
@@ -263,7 +258,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
         <div>TID</div>
         <div>Plane</div>
         <div>Alert</div>
-        <div style={{ textAlign: 'right' }}>MTTD</div>
+        <div className="scorecard__head-mttd">MTTD</div>
         <div>Alert ID</div>
         <div>Status</div>
       </div>

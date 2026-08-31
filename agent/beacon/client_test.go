@@ -108,7 +108,7 @@ func TestRegister_PostsExpectedBody(t *testing.T) {
 	defer rs.Close()
 
 	c := New(rs.URL, "a-1", 100*time.Millisecond)
-	if err := c.Register("host-1", "linux", []string{"bash"}); err != nil {
+	if err := c.Register("host-1", "linux", []string{"bash"}, []string{"python"}); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
@@ -125,6 +125,9 @@ func TestRegister_PostsExpectedBody(t *testing.T) {
 	}
 	if !strings.Contains(r.Body, `"hostname":"host-1"`) {
 		t.Errorf("body missing hostname: %s", r.Body)
+	}
+	if !strings.Contains(r.Body, `"interpreters":["python"]`) {
+		t.Errorf("body missing interpreters: %s", r.Body)
 	}
 }
 

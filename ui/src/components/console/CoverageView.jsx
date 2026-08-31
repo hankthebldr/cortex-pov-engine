@@ -4,6 +4,7 @@ import StackCoverageView from './StackCoverageView.jsx'
 import CompetitiveView from './CompetitiveView.jsx'
 import { downloadLayer } from './exportNavigatorLayer.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
+import '../../styles/destinations/coverage.css'
 
 /**
  * CoverageView — the Coverage destination. THREE analytical modes, each a
@@ -69,6 +70,7 @@ export default function CoverageView({ onNavigate } = {}) {
       <div className="coverage">
         <div className="view-head">
           <div>
+            <CoverageKicker />
             <h1>PANW Stack Coverage</h1>
             <div className="view-head__meta">
               product × kill chain · click a cell to drill into scenarios
@@ -93,6 +95,7 @@ export default function CoverageView({ onNavigate } = {}) {
       <div className="coverage">
         <div className="view-head">
           <div>
+            <CoverageKicker />
             <h1>Competitive Position</h1>
             <div className="view-head__meta">
               capability matrix · Cortex vs. major EDR / SIEM / BAS competitors
@@ -109,18 +112,19 @@ export default function CoverageView({ onNavigate } = {}) {
     <div className="coverage">
       <div className="view-head">
         <div>
+          <CoverageKicker />
           <h1>ATT&amp;CK Coverage</h1>
           <div className="view-head__meta">
             {data?.summary ? (
               <>
                 <span className="mono">{data.summary.total_techniques}</span> techniques
-                {' · '}<span className="mono" style={{ color: 'var(--c-detected)' }}>
+                {' · '}<span className="mono coverage-color-detected">
                   {data.summary.detected}
                 </span> detected
-                {' · '}<span className="mono" style={{ color: 'var(--c-pending)' }}>
+                {' · '}<span className="mono coverage-color-pending">
                   {data.summary.run_not_detected}
                 </span> run / no detection
-                {' · '}<span className="mono" style={{ color: 'var(--c-text-muted)' }}>
+                {' · '}<span className="mono coverage-color-muted">
                   {data.summary.not_run}
                 </span> staged
               </>
@@ -129,7 +133,7 @@ export default function CoverageView({ onNavigate } = {}) {
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="coverage__header-actions">
           <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
           <button
             className="btn"
@@ -146,7 +150,10 @@ export default function CoverageView({ onNavigate } = {}) {
       </div>
 
       {data?.summary && (
-        <CoverageSummaryBar summary={data.summary} />
+        <>
+          <CoverageKpis summary={data.summary} />
+          <CoverageSummaryBar summary={data.summary} />
+        </>
       )}
 
       {selectedTechnique && (
@@ -163,7 +170,7 @@ export default function CoverageView({ onNavigate } = {}) {
       {loading && !data ? (
         <div className="coverage__empty mono">loading MITRE coverage…</div>
       ) : error ? (
-        <div className="coverage__empty mono" style={{ color: 'var(--c-missed)' }}>
+        <div className="coverage__empty mono coverage__empty--error">
           {error}
         </div>
       ) : !data || !data.by_tactic || data.by_tactic.length === 0 ? (
@@ -188,26 +195,85 @@ export default function CoverageView({ onNavigate } = {}) {
 
 /* ─── Subcomponents ────────────────────────────────────────────────────── */
 
+// Accent bar + eyebrow — the masthead pattern shared by every redesigned
+// console destination ("Analyze" is this destination's real nav group,
+// per app/destinations.jsx; there is no app-level "phase" stepper to
+// echo the mockup's "· Phase 6" suffix, so it is dropped).
+function CoverageKicker() {
+  return (
+    <div className="coverage-kicker">
+      <span className="coverage-kicker__bar" aria-hidden="true" />
+      <span className="coverage-kicker__label">Analyze</span>
+    </div>
+  )
+}
+
+// Four KPI tiles summarizing the same `data.summary` the segmented bar
+// below already renders — no new data fetch, just a second, higher-
+// contrast read of the ATT&CK matrix's headline numbers.
+function CoverageKpis({ summary }) {
+  const total = summary.total_techniques || 0
+  const tiles = [
+    {
+      key: 'detected', tone: 'ac', value: `${summary.detected || 0} / ${total}`,
+      label: 'Detected', note: 'techniques observed with a firing detection on this tenant',
+    },
+    {
+      key: 'gap', tone: 'warn', value: String(summary.run_not_detected || 0),
+      label: 'Open gaps', note: 'executed with no detection — close these first',
+    },
+    {
+      key: 'staged', tone: '', value: String(summary.not_run || 0),
+      label: 'Staged', note: 'scenario library covers this technique, not yet run',
+    },
+    {
+      key: 'total', tone: '', value: String(total),
+      label: 'Technique surface', note: 'MITRE ATT&CK techniques tracked by the library',
+    },
+  ]
+  return (
+    <div className="coverage__kpis">
+      {tiles.map((t) => (
+        <div key={t.key} className={'coverage__kpi' + (t.tone ? ` coverage__kpi--${t.tone}` : '')}>
+          <div className="coverage__kpi-label">{t.label}</div>
+          <div className="coverage__kpi-value mono">{t.value}</div>
+          <div className="coverage__kpi-note">{t.note}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function CoverageSummaryBar({ summary }) {
   const total = Math.max(1, summary.total_techniques || 0)
   const segs = [
-    { key: 'detected',         count: summary.detected || 0,         color: 'var(--c-detected)' },
-    { key: 'run_not_detected', count: summary.run_not_detected || 0, color: 'var(--c-pending)'  },
-    { key: 'not_run',          count: summary.not_run || 0,          color: 'var(--c-hairline-strong)' },
+    { key: 'detected',         label: 'Detected',            count: summary.detected || 0,         color: 'var(--c-detected)' },
+    { key: 'run_not_detected', label: 'Run · no detection',  count: summary.run_not_detected || 0, color: 'var(--c-pending)'  },
+    { key: 'not_run',          label: 'Staged',               count: summary.not_run || 0,          color: 'var(--c-hairline-strong)' },
   ]
   return (
-    <div className="coverage__summary-bar">
-      {segs.map((s) =>
-        s.count > 0 ? (
-          <div
-            key={s.key}
-            className="coverage__summary-seg"
-            style={{ width: `${(s.count / total) * 100}%`, background: s.color }}
-            title={`${s.key}: ${s.count}`}
-          />
-        ) : null
-      )}
-    </div>
+    <>
+      <div className="coverage__summary-bar">
+        {segs.map((s) =>
+          s.count > 0 ? (
+            <div
+              key={s.key}
+              className="coverage__summary-seg"
+              style={{ width: `${(s.count / total) * 100}%`, background: s.color }}
+              title={`${s.key}: ${s.count}`}
+            />
+          ) : null
+        )}
+      </div>
+      <div className="coverage__legend">
+        {segs.map((s) => (
+          <span key={s.key} className="coverage__legend-item">
+            <span className="coverage__legend-dot" style={{ background: s.color }} />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -319,7 +385,7 @@ function TechniqueDetailPanel({ technique, onClose, onFilterByTechnique }) {
             <dt>Planes</dt>
             <dd>
               {technique.planes.map((p) => (
-                <span key={p} className="chip" style={{ marginRight: 4 }}>{p}</span>
+                <span key={p} className="chip cov-detail__plane-chip">{p}</span>
               ))}
             </dd>
           </>

@@ -36,57 +36,33 @@ function ToolRow({ tool, onAction, actionInProgress }) {
   const canStop    = status === 'running'
 
   return (
-    <div style={{
-      borderBottom: '1px solid var(--cortex-border)',
-      padding: '10px 0',
-    }}>
+    <div className="tsp-row">
       {/* Row header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="tsp-row__head">
         <StatusDot status={status} />
 
         {/* Name + expand toggle */}
         <button
           onClick={() => setExpanded(v => !v)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            cursor: 'pointer',
-            textAlign: 'left',
-            flex: 1,
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-          }}
+          className="tsp-row__toggle"
           aria-expanded={expanded}
           title={desc || name}
         >
-          <span style={{
-            fontSize: '13px',
-            fontWeight: 600,
-            color: 'var(--cortex-navy)',
-            fontFamily: 'var(--font-mono)',
-          }}>
+          <span className="tsp-row__name">
             {name}
           </span>
           {port && (
-            <span style={{ fontSize: '10px', color: 'var(--cortex-steel)' }}>
+            <span className="tsp-row__port">
               :{port}
             </span>
           )}
-          <span style={{
-            fontSize: '9px',
-            color: 'var(--cortex-steel)',
-            marginLeft: 'auto',
-            transition: 'transform var(--transition-fast)',
-            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          }}>
+          <span className={`tsp-row__caret${expanded ? ' tsp-row__caret--open' : ''}`}>
             &#9658;
           </span>
         </button>
 
         {/* Action buttons */}
-        <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+        <div className="tsp-row__actions">
           {canInstall && (
             <button
               className="btn btn-sm btn-navy"
@@ -122,17 +98,11 @@ function ToolRow({ tool, onAction, actionInProgress }) {
 
       {/* Expanded description */}
       {expanded && desc && (
-        <div style={{
-          marginTop: '8px',
-          marginLeft: '24px',
-          fontSize: '12px',
-          color: 'var(--cortex-steel)',
-          lineHeight: 1.5,
-        }}>
+        <div className="tsp-row__desc">
           {desc}
           {tool.plane && (
-            <div style={{ marginTop: '4px' }}>
-              <span style={{ fontWeight: 600 }}>Plane: </span>
+            <div className="tsp-row__plane">
+              <span className="tsp-row__plane-label">Plane: </span>
               {(Array.isArray(tool.plane) ? tool.plane : [tool.plane]).join(', ')}
             </div>
           )}
@@ -221,30 +191,12 @@ export default function ToolStatusPanel({ onMessage }) {
   return (
     <div>
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '16px',
-      }}>
-        <p className="section-label" style={{ margin: 0 }}>Tools</p>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+      <div className="tsp-header">
+        <p className="section-label tsp-header__label">Tools</p>
+        <div className="tsp-header__meta">
           {/* Live poll indicator */}
-          <span style={{
-            fontSize: '10px',
-            color: 'var(--cortex-steel)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-          }}>
-            <span style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              background: 'var(--cortex-success)',
-              display: 'inline-block',
-              animation: 'pulse 2s infinite',
-            }} />
+          <span className="tsp-live">
+            <span className="tsp-live__dot" />
             Live
           </span>
         </div>
@@ -252,28 +204,17 @@ export default function ToolStatusPanel({ onMessage }) {
 
       {/* Summary stats */}
       {!loading && tools.length > 0 && (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '6px',
-          marginBottom: '16px',
-        }}>
+        <div className="tsp-stats">
           {[
-            { count: runningCount, label: 'Running', color: 'var(--cortex-success)' },
-            { count: stoppedCount, label: 'Stopped', color: 'var(--cortex-warning)' },
-            { count: notInstCount, label: 'Not Inst.', color: 'var(--cortex-steel)' },
-          ].map(({ count, label, color }) => (
-            <div key={label} style={{
-              textAlign: 'center',
-              padding: '8px 4px',
-              background: 'var(--cortex-light-bg)',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--cortex-border)',
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 700, color, lineHeight: 1 }}>
+            { count: runningCount, label: 'Running', variant: 'success' },
+            { count: stoppedCount, label: 'Stopped', variant: 'warning' },
+            { count: notInstCount, label: 'Not Inst.', variant: 'steel' },
+          ].map(({ count, label, variant }) => (
+            <div key={label} className="tsp-stat">
+              <div className={`tsp-stat__count tsp-stat__count--${variant}`}>
                 {count}
               </div>
-              <div style={{ fontSize: '10px', color: 'var(--cortex-steel)', marginTop: '2px' }}>
+              <div className="tsp-stat__label">
                 {label}
               </div>
             </div>
@@ -283,23 +224,16 @@ export default function ToolStatusPanel({ onMessage }) {
 
       {/* Tool list */}
       {loading ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '16px 0' }}>
+        <div className="tsp-loading">
           <div className="spinner" />
-          <span className="text-muted" style={{ fontSize: '12px' }}>Loading tools…</span>
+          <span className="text-muted tsp-loading__text">Loading tools…</span>
         </div>
       ) : error ? (
-        <div style={{
-          padding: '12px',
-          background: 'rgba(231,76,60,0.06)',
-          border: '1px solid rgba(231,76,60,0.2)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: '12px',
-          color: 'var(--cortex-danger)',
-        }}>
+        <div className="tsp-error">
           <strong>Error loading tools:</strong><br />{error}
         </div>
       ) : tools.length === 0 ? (
-        <div className="empty-state" style={{ padding: '24px 0' }}>
+        <div className="empty-state tsp-empty">
           <p>No tools registered.</p>
         </div>
       ) : (
@@ -318,10 +252,9 @@ export default function ToolStatusPanel({ onMessage }) {
       {/* Install All button */}
       {!loading && notInstCount > 0 && (
         <button
-          className="btn btn-navy btn-full"
+          className="btn btn-navy btn-full tsp-install-all"
           onClick={handleInstallAll}
           disabled={!!actionInProgress}
-          style={{ marginTop: '16px' }}
           title={`Install ${notInstCount} uninstalled tool(s)`}
         >
           {actionInProgress ? (
@@ -331,13 +264,6 @@ export default function ToolStatusPanel({ onMessage }) {
           )}
         </button>
       )}
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.35; }
-        }
-      `}</style>
     </div>
   )
 }

@@ -6,6 +6,7 @@ import {
   updateTtp,
   promoteTtp,
 } from '../../api/client.js'
+import '../../styles/destinations/ttp-detail.css'
 
 /**
  * TtpEditorView — minimal authoring surface for issue #59.
@@ -148,7 +149,7 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
 
   if (authoringDisabled) {
     return (
-      <div className="competitive__detail" data-testid="ttp-editor">
+      <div className="competitive__detail ttp-editor" data-testid="ttp-editor">
         <div className="competitive__detail-head">
           <h3 className="competitive__detail-title">TTP Editor — disabled</h3>
           <button type="button" className="btn" onClick={onClose}>Close</button>
@@ -162,7 +163,7 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
   }
 
   return (
-    <div className="competitive__detail" data-testid="ttp-editor">
+    <div className="competitive__detail ttp-editor" data-testid="ttp-editor">
       <div className="competitive__detail-head">
         <div>
           <div className="competitive__detail-eyebrow mono">
@@ -172,7 +173,7 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
             {isEdit ? 'Edit TTP card' : 'Author new TTP'}
           </h3>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="ttp-editor__actions">
           {isEdit && cardStatus === 'draft' && (
             <button
               type="button"
@@ -187,7 +188,7 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
           )}
           <button
             type="button"
-            className="btn"
+            className="btn btn--primary"
             data-testid="ttp-editor-save"
             disabled={!canSave}
             onClick={handleSave}
@@ -207,15 +208,13 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
         </div>
       )}
       {saveOk && (
-        <div className="mono" role="status" data-testid="ttp-editor-saved"
-             style={{ color: 'var(--c-success, #4FD1A1)', fontSize: 11, marginBottom: 8 }}>
+        <div className="mono ttp-editor__saved-msg" role="status" data-testid="ttp-editor-saved">
           ✓ {saveOk}
         </div>
       )}
 
       <p
-        className="mono"
-        style={{ fontSize: 10, color: 'var(--c-text-muted)', margin: '6px 0' }}
+        className="mono ttp-editor__hint"
       >
         Editing the full TTP JSON. Live-validated against{' '}
         <span className="mono">detection_scanner/schema/ttp-entry.schema.json</span>.
@@ -229,27 +228,13 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
         value={text}
         spellCheck={false}
         onChange={(e) => setText(e.target.value)}
-        className="mono"
-        style={{
-          width: '100%',
-          minHeight: 420,
-          fontSize: 11,
-          padding: '8px 10px',
-          background: 'var(--c-bg-subtle, rgba(0,0,0,0.25))',
-          border: `1px solid ${(parseErr || validateErr)
-            ? 'var(--c-error, salmon)'
-            : 'var(--c-hairline, rgba(255,255,255,0.08))'}`,
-          borderRadius: 4,
-          color: 'var(--c-text-primary)',
-          resize: 'vertical',
-        }}
+        className={'mono ttp-editor__textarea' + ((parseErr || validateErr) ? ' ttp-editor__textarea--error' : '')}
       />
 
       {parseErr && (
         <div
-          className="mono"
+          className="mono ttp-editor__parse-error"
           data-testid="ttp-editor-parse-error"
-          style={{ fontSize: 11, color: 'var(--c-error, salmon)', marginTop: 6 }}
         >
           JSON parse: {parseErr}
         </div>
@@ -257,22 +242,20 @@ export default function TtpEditorView({ editingTtpId = null, onClose, onSaved })
 
       {!parseErr && validateErr && (
         <div
-          className="mono"
+          className="mono ttp-editor__validate-error"
           data-testid="ttp-editor-validate-error"
-          style={{ fontSize: 11, color: 'var(--c-error, salmon)', marginTop: 6 }}
         >
           Schema: {validateErr.message}
           {validateErr.path?.length > 0 && (
-            <> &mdash; at <span style={{ fontWeight: 600 }}>{validateErr.path.join('.')}</span></>
+            <> &mdash; at <span className="ttp-editor__validate-path">{validateErr.path.join('.')}</span></>
           )}
         </div>
       )}
 
       {!parseErr && !validateErr && parsed && (
         <div
-          className="mono"
+          className="mono ttp-editor__valid-msg"
           data-testid="ttp-editor-valid"
-          style={{ fontSize: 11, color: 'var(--c-success, #4FD1A1)', marginTop: 6 }}
         >
           ✓ JSON parses and validates against the TTP schema
         </div>

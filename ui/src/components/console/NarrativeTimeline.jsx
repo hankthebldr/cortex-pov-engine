@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import '../../styles/destinations/run-detail.css'
 
 /**
  * NarrativeTimeline — the hero artifact.
@@ -67,6 +68,9 @@ export default function NarrativeTimeline({ frames = [], stitches = [], nowLabel
     frames.length > 1 ? `${Math.max(0, Math.min(100, ((doneCount - 0.5) / (frames.length - 1)) * 100))}%` : '0%'
 
   return (
+    // The shell (.theme-console, AppShell.jsx) is theme-aware and sets
+    // [data-theme] on the root, so the PANW token set resolves correctly
+    // here without pinning a local override.
     <div className="narrative__timeline" ref={containerRef}>
       {nowLabel && (
         <div className="narrative__now-label mono">{nowLabel}</div>
@@ -88,7 +92,7 @@ export default function NarrativeTimeline({ frames = [], stitches = [], nowLabel
         <div
           key={`label-${p.id}`}
           className="narrative__stitch-label"
-          style={{ left: p.labelX, top: p.labelY, transform: 'translate(-50%, -100%)' }}
+          style={{ left: p.labelX, top: p.labelY }}
         >
           {p.label}
         </div>

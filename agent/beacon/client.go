@@ -67,6 +67,15 @@ type Task struct {
 	// scenarios decodes to a nil slice and both execution paths are unchanged.
 	// See artifact.go for the integrity model.
 	Artifacts []Artifact `json:"artifacts,omitempty"`
+	// RuntimeInstallAuthorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
+	// an explicit, per-run, off-by-default flag. Only when the server sets this
+	// (which itself requires BOTH a launch-time request flag AND the deployment
+	// env var CORTEXSIM_AGENT_ALLOW_RUNTIME_INSTALL — see
+	// core/engine/orchestrator.py) may the beacon attempt a package-manager
+	// install to satisfy a step's declared `requires_interpreters`. Omitted from
+	// the wire entirely when false, so a task for any scenario without a
+	// runtime-dependency gap is byte-identical to before this feature existed.
+	RuntimeInstallAuthorized bool `json:"runtime_install_authorized,omitempty"`
 }
 
 // CgoAnchor labels the causality-chain root so the endpoint sensor's Causality
@@ -93,6 +102,13 @@ type Step struct {
 	MitreTechnique string         `json:"mitre_technique"`
 	Causality      *StepCausality `json:"causality,omitempty"`
 	Platforms      []string       `json:"platforms,omitempty"`
+	// RequiresInterpreters names the logical interpreters (e.g. "python") this
+	// step's command depends on but does not itself install. Checked against
+	// the target's real PATH before the command ever runs — see
+	// resolveRuntimeDeps in client.go and docs/design/agent-runtime-dependencies.md.
+	// Omitted from the wire when empty, so every existing scenario's task is
+	// byte-identical to before this field existed.
+	RequiresInterpreters []string `json:"requires_interpreters,omitempty"`
 	// expected_detections intentionally omitted — the server seeds Result rows.
 }
 
@@ -144,6 +160,7 @@ type BeaconClient struct {
 	regHostname     string
 	regOS           string
 	regCapabilities []string
+	regInterpreters []string
 
 	// resolveIdentity maps a step's identity USERNAME to something this host can
 	// actually execute. Injectable so the Windows degradation path — which is the
@@ -247,18 +264,30 @@ func logIdentity(stepID, username string, res identity.Resolution) {
 
 // Register sends agent metadata to SimCore so it appears in the agent roster.
 // Corresponds to: POST /api/agents/register
-func (c *BeaconClient) Register(hostname, goos string, capabilities []string) error {
+//
+// interpreters is this beacon's honest snapshot of what interpreters are
+// resolvable on THIS host right now (executor.AvailableLogicalNames()) —
+// never a guess, never a static list. SimCore uses it to preflight a
+// scenario's declared `requires_interpreters` against the real target before
+// dispatch instead of discovering the gap mid-run. A nil/empty slice is a
+// legitimate answer (the host has none of the interpreters this beacon knows
+// how to check for), not an omission — it is always sent, unlike capabilities'
+// omit-when-default idiom, so a host that regresses from "has python" to "has
+// nothing" is visible on its next registration rather than silently sticky.
+func (c *BeaconClient) Register(hostname, goos string, capabilities, interpreters []string) error {
 	// Remember the metadata so the run loop can transparently re-register on an
 	// unknown-agent 404 (GAP-AGENT-003).
 	c.regHostname = hostname
 	c.regOS = goos
 	c.regCapabilities = capabilities
+	c.regInterpreters = interpreters
 
 	body := map[string]interface{}{
 		"agent_id":     c.AgentID,
 		"hostname":     hostname,
 		"os":           goos,
 		"capabilities": capabilities,
+		"interpreters": interpreters,
 	}
 	_, err := c.post("/api/agents/register", body)
 	if err != nil {
@@ -288,7 +317,11 @@ func (c *BeaconClient) reRegister() error {
 	if caps == nil {
 		caps = []string{"shell", "identity-harness"}
 	}
-	return c.Register(hostname, goos, caps)
+	// regInterpreters is re-sent verbatim (including nil, a legitimate "none
+	// found" answer) rather than re-detected — reRegister recovers from an
+	// unknown-agent 404 and must not silently claim different runtime facts
+	// than the boot-time Register() call did.
+	return c.Register(hostname, goos, caps, c.regInterpreters)
 }
 
 // PollTasks asks SimCore whether there is a pending task for this agent.
@@ -535,16 +568,25 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s",
 			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
 
-		execID := identity.ExecutionIdentity{
-			Mode:     idRes.Mode,
-			Username: idRes.Username,
-			Command:  step.Command,
-		}
+		depOutcome := c.resolveRuntimeDeps(task, &step)
 
-		res, aborted, execErr := c.runStep(ctx, task.RunID, execID)
+		var res identity.ExecResult
+		var aborted bool
+		var execErr error
+		if depOutcome.blocked {
+			res = depOutcome.synthetic
+		} else {
+			execID := identity.ExecutionIdentity{
+				Mode:     idRes.Mode,
+				Username: idRes.Username,
+				Command:  step.Command,
+			}
+			res, aborted, execErr = c.runStep(ctx, task.RunID, execID)
+		}
+		depOutcome.cleanup()
 
 		// Build the per-step output and attribute it to this step.
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr)
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, depOutcome.note)
 		if err := c.SendOutput(task.RunID, step.ID, stepOut); err != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
@@ -634,21 +676,35 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		if idRes.Degraded() {
 			degradedSteps++
 		}
-		wrapped, wrapErr := identity.WrapCommand(identity.ExecutionIdentity{
-			Mode: idRes.Mode, Username: idRes.Username, Command: step.Command,
-		})
-		if wrapErr != nil {
-			log.Printf("[beacon] wrap error step %s run_id=%s: %v", step.ID, task.RunID, wrapErr)
-			_ = c.Complete(task.RunID, 1, fmt.Sprintf("wrap error in step %s: %v", step.ID, wrapErr))
-			return
+
+		depOutcome := c.resolveRuntimeDeps(task, &step)
+
+		var res identity.ExecResult
+		var aborted bool
+		var execErr error
+		if depOutcome.blocked {
+			// The anchor session stays alive and untouched — a runtime-dependency
+			// gap on ONE step must not tear down the causality chain for the rest.
+			res = depOutcome.synthetic
+		} else {
+			wrapped, wrapErr := identity.WrapCommand(identity.ExecutionIdentity{
+				Mode: idRes.Mode, Username: idRes.Username, Command: step.Command,
+			})
+			if wrapErr != nil {
+				depOutcome.cleanup()
+				log.Printf("[beacon] wrap error step %s run_id=%s: %v", step.ID, task.RunID, wrapErr)
+				_ = c.Complete(task.RunID, 1, fmt.Sprintf("wrap error in step %s: %v", step.ID, wrapErr))
+				return
+			}
+
+			log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s (chained)",
+				i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
+
+			res, aborted, execErr = c.runChainedStep(sessCtx, sessCancel, session, task.RunID, wrapped)
 		}
+		depOutcome.cleanup()
 
-		log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s (chained)",
-			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
-
-		res, aborted, execErr := c.runChainedStep(sessCtx, sessCancel, session, task.RunID, wrapped)
-
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr)
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, depOutcome.note)
 		if sendErr := c.SendOutput(task.RunID, step.ID, stepOut); sendErr != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, sendErr)
 		}
@@ -751,9 +807,18 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 		}
 		log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s",
 			i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
-		execID := identity.ExecutionIdentity{Mode: idRes.Mode, Username: idRes.Username, Command: step.Command}
-		res, aborted, execErr := c.runStep(ctx, task.RunID, execID)
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr)
+		depOutcome := c.resolveRuntimeDeps(task, &step)
+		var res identity.ExecResult
+		var aborted bool
+		var execErr error
+		if depOutcome.blocked {
+			res = depOutcome.synthetic
+		} else {
+			execID := identity.ExecutionIdentity{Mode: idRes.Mode, Username: idRes.Username, Command: step.Command}
+			res, aborted, execErr = c.runStep(ctx, task.RunID, execID)
+		}
+		depOutcome.cleanup()
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, depOutcome.note)
 		if err := c.SendOutput(task.RunID, step.ID, stepOut); err != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
@@ -893,19 +958,33 @@ func (c *BeaconClient) post(path string, body interface{}) ([]byte, error) {
 // record) greps for to find steps whose actor attribution cannot be trusted.
 const identityDegradedMarker = "!! IDENTITY NOT HONOURED:"
 
+// runtimeDepMissingMarker prefixes the notice for a step whose declared
+// `requires_interpreters` could not be satisfied on this target AND was not
+// (successfully) resolved by an authorized runtime install. It is a stable
+// literal for the same reason identityDegradedMarker is: deploy/tier-d/classify.py
+// and any downstream reader greps for it to tell "the tool never ran" apart
+// from "the tool ran and found nothing" — the exact distinction this feature
+// exists to make legible instead of silently absorbed by a step's own
+// `|| echo 'complete'` fallback.
+const runtimeDepMissingMarker = "!! RUNTIME_DEPENDENCY_MISSING:"
+
 // formatStepOutput renders one step's combined output with a step header so the
 // SSE/log stream shows per-step progress.
 //
 // An unhonoured identity is written into this output — not just the agent log —
 // because THIS is what reaches SimCore, the Result rows and the POV report. A
 // step whose actor could not be impersonated but whose readout says otherwise
-// is the exact false-green the engine exists to eliminate.
-func (c *BeaconClient) formatStepOutput(n, total int, step *Step, username string, idRes identity.Resolution, res identity.ExecResult, execErr error) string {
+// is the exact false-green the engine exists to eliminate. runtimeNote carries
+// the same guarantee for a step's interpreter dependency — see resolveRuntimeDeps.
+func (c *BeaconClient) formatStepOutput(n, total int, step *Step, username string, idRes identity.Resolution, res identity.ExecResult, execErr error, runtimeNote string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "=== STEP %d/%d · %s · %s · identity=%s ===\n",
 		n, total, step.ID, step.MitreTechnique, username)
 	if idRes.Degraded() {
 		fmt.Fprintf(&b, "%s %s\n", identityDegradedMarker, idRes.Degradation)
+	}
+	if runtimeNote != "" {
+		fmt.Fprintf(&b, "%s\n", runtimeNote)
 	}
 	if execErr != nil {
 		fmt.Fprintf(&b, "ERROR: %v\n", execErr)
@@ -919,6 +998,152 @@ func (c *BeaconClient) formatStepOutput(n, total int, step *Step, username strin
 	}
 	fmt.Fprintf(&b, "--- exit_code=%d duration=%s ---", res.ExitCode, res.Duration.Round(time.Millisecond))
 	return b.String()
+}
+
+// runtimeDepOutcome is the result of resolveRuntimeDeps for one step.
+type runtimeDepOutcome struct {
+	// blocked is true when a declared interpreter dependency could not be
+	// satisfied (directly, via a shim, or via an authorized install) — the
+	// step's own (possibly masking) command must NOT run.
+	blocked bool
+	// synthetic is the result to report when blocked is true. It is never the
+	// product of running step.Command.
+	synthetic identity.ExecResult
+	// note is prefixed into the step's output regardless of outcome — the
+	// runtime-dependency story is always visible, not only on failure.
+	note string
+	// shims must be Cleanup()'d after the step (whichever path was taken).
+	shims []*executor.InterpreterShim
+}
+
+func (o runtimeDepOutcome) cleanup() {
+	for _, s := range o.shims {
+		s.Cleanup()
+	}
+}
+
+// resolveRuntimeDeps checks step.RequiresInterpreters against what genuinely
+// exists on THIS host right now and returns how the step should proceed. It
+// mutates step.Command in place for the two paths that keep going (PATH-shim,
+// authorized install) and leaves step.Command untouched when nothing is
+// declared or on the windows GOOS (out of scope for this pass — see
+// docs/design/agent-runtime-dependencies.md).
+//
+// THE GUARANTEE: when a required interpreter is absent and no authorized
+// install can supply it, this function returns blocked=true and the caller
+// MUST use the synthetic result instead of executing step.Command. This is
+// what makes "a missing runtime dependency must never present as success"
+// true by construction rather than by scenario authors remembering not to
+// write `|| echo done`.
+// runtimeDepsGOOS is resolveRuntimeDeps' view of the host OS. It defaults to
+// runtime.GOOS and exists as a package var — rather than a bare runtime.GOOS
+// reference — solely so a test can flip it to "windows" and prove the
+// no-op-on-windows guard actually fires, without needing to cross-compile or
+// run on a real Windows host. See TestResolveRuntimeDeps_WindowsGOOSIsANoOp
+// in runtime_deps_test.go.
+var runtimeDepsGOOS = runtime.GOOS
+
+func (c *BeaconClient) resolveRuntimeDeps(task *Task, step *Step) runtimeDepOutcome {
+	if len(step.RequiresInterpreters) == 0 || runtimeDepsGOOS == "windows" {
+		return runtimeDepOutcome{}
+	}
+
+	var notes []string
+	var shims []*executor.InterpreterShim
+	// installSteps pairs each authorized install command with the logical
+	// name it was meant to supply, so the composed command can re-verify and
+	// shim EACH one individually after its own install runs (C2) rather than
+	// trusting `apt-get install` exit 0 as proof the step's own hardcoded
+	// interpreter name will resolve.
+	type installStep struct {
+		cmd     string
+		logical string
+	}
+	var installSteps []installStep
+
+	for _, logical := range step.RequiresInterpreters {
+		check := executor.ResolveInterpreter(logical)
+		if check.Found {
+			if !check.Exact {
+				shim, err := executor.NewInterpreterShim(logical, check.Path)
+				if err != nil {
+					notes = append(notes, fmt.Sprintf(
+						"[cortexsim] runtime dependency %q found (%s) but the PATH shim could not be created: %v — running unmodified",
+						logical, check.Resolved, err))
+					continue
+				}
+				shims = append(shims, shim)
+				notes = append(notes, fmt.Sprintf(
+					"[cortexsim] runtime dependency %q satisfied via %s (%s) — PATH-shimmed for this step only, host unchanged",
+					logical, check.Resolved, check.Path))
+			}
+			continue
+		}
+
+		if task.RuntimeInstallAuthorized {
+			if installCmd, ok := executor.InstallPackageCommand(logical); ok {
+				installSteps = append(installSteps, installStep{cmd: installCmd, logical: logical})
+				notes = append(notes, fmt.Sprintf(
+					"[cortexsim] RUNTIME_INSTALL_AUTHORIZED: %s missing — attempting %q, then re-verifying (and "+
+						"PATH-shimming if it only landed under an alias) before the step's own command runs "+
+						"(operator-authorized, recorded in the run record)",
+					logical, installCmd))
+				continue
+			}
+			notes = append(notes, fmt.Sprintf(
+				"[cortexsim] runtime dependency %q missing and no supported package manager was found on this host — cannot deliver a system update",
+				logical))
+		}
+
+		// Genuinely unresolved: neither a path nor an authorized install.
+		// step.Command must never run.
+		for _, s := range shims {
+			s.Cleanup()
+		}
+		return runtimeDepOutcome{
+			blocked: true,
+			note: fmt.Sprintf(
+				"%s %s — this step's command was NOT executed, so it produced no signal. This is an ENVIRONMENT gap, not a detection result.",
+				runtimeDepMissingMarker, logical),
+			synthetic: identity.ExecResult{
+				ExitCode: 127,
+				Stderr:   fmt.Sprintf("%s %s (no interpreter path and no authorized runtime install)", runtimeDepMissingMarker, logical),
+			},
+		}
+	}
+
+	cmd := step.Command
+	if len(installSteps) > 0 {
+		// `&&` is load-bearing throughout: if the install fails, or the
+		// post-install verification exits 127 (executor.PostInstallVerifyShim),
+		// the original command — including any `|| echo ...` fallback IT
+		// authored — never runs. An install (or verification) failure must
+		// surface as this step's own non-zero exit, never be absorbed by the
+		// scenario's own masking.
+		//
+		// C2: a bare `apt-get install -y python3` exiting 0 is NOT proof that
+		// the step's own hardcoded `python` will resolve — apt-get installing
+		// the python3 package produces /usr/bin/python3 and no /usr/bin/python.
+		// PostInstallVerifyShim re-resolves the LOGICAL name after its install
+		// ran and, if it only landed under an alias, shims it exactly like the
+		// "already there" branch above — the two branches converge instead of
+		// diverging.
+		parts := make([]string, 0, len(installSteps)*2)
+		for _, is := range installSteps {
+			parts = append(parts, is.cmd, executor.PostInstallVerifyShim(is.logical))
+		}
+		cmd = strings.Join(parts, " && ") + " && (" + cmd + ")"
+	}
+	if len(shims) > 0 {
+		dirs := make([]string, len(shims))
+		for i, s := range shims {
+			dirs[i] = s.Dir
+		}
+		cmd = fmt.Sprintf("export PATH=%q:\"$PATH\"\n%s", strings.Join(dirs, ":"), cmd)
+	}
+	step.Command = cmd
+
+	return runtimeDepOutcome{note: strings.Join(notes, "\n"), shims: shims}
 }
 
 // combineOutput merges stdout and stderr into a single log-friendly string.

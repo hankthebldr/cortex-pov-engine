@@ -86,7 +86,7 @@ export default function FilterPalette({
 
         <div className="cmd-palette__results filter-palette__results">
           {visibleFacets.length === 0 ? (
-            <div className="cmd-section-label" style={{ paddingBottom: 24 }}>
+            <div className="cmd-section-label filter-palette__empty">
               no facets match — try a different query
             </div>
           ) : (
@@ -104,7 +104,7 @@ export default function FilterPalette({
         <div className="cmd-palette__footer filter-palette__footer">
           <span>
             <strong className="filter-palette__count">{matchCount}</strong>
-            <span style={{ color: 'var(--c-text-muted)' }}>
+            <span className="filter-palette__match-count">
               {' / '}{totalCount} scenarios match
             </span>
           </span>
@@ -133,7 +133,7 @@ function FacetGroup({ group, filter, onToggle }) {
   return (
     <div className="filter-palette__group">
       <div className="filter-palette__group-head">
-        <span className="cmd-section-label" style={{ padding: 0 }}>{group.label}</span>
+        <span className="cmd-section-label filter-palette__group-label">{group.label}</span>
         {activeIn > 0 && (
           <span className="filter-palette__active-badge mono">
             {activeIn} active

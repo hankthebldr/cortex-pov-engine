@@ -1,0 +1,540 @@
+/* ============================================================
+   TTP Cards destination — ui/src/components/console/TtpBrowserView.jsx
+   Design contract: .design-ref/06-ttp-cards.html + 07-ttpdetail-name.html
+
+   Uses the PANW redesign token contract directly (--ac / --tx / --s* /
+   --bd / --ink / --warn* / --info / --crit; see cortex-tokens.css) —
+   NOT the Mission Ops Console's own permanently-dark `--c-*` palette
+   (cortex-console.css .theme-console block), which this pass does not
+   touch. Cortex green (--ac / --ac-str) is the accent everywhere in
+   this file; --orange is never used here (nothing in this destination
+   is a warn/gap signal in the product sense) and --warn/--warn-str is
+   used ONLY for the one true warn callout (remediation guidance) plus
+   an idiomatic string-literal color inside the read-only code preview,
+   never decoratively as a UI accent.
+
+   Every selector here is scoped under .ttpb so it cannot leak onto
+   (or be shadowed by) any other view — the legacy `.ttp-*` / `.adapter-*`
+   / `.competitive__*` names this component used to share with
+   ToolAdapterCatalog etc. have all been dropped in favour of a private
+   `ttpb-*` vocabulary specific to this file.
+   ============================================================ */
+
+/* a11y fix: .ttpb never painted its own root background, so the shared
+   shell's permanently-dark background (cortex-console.css .theme-console.shell)
+   showed through and collided with this file's light-theme text tokens
+   (near-invisible text). Same root cause/fix as library.css. */
+.theme-console .ttpb { background: var(--s0); }
+
+.ttpb-intro {
+  margin: 4px 0 16px;
+  max-width: 78ch;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--tx2);
+}
+.ttpb-intro strong { color: var(--tx); }
+
+/* ─── Stat strip ────────────────────────────────────────────────── */
+
+.ttpb-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 18px;
+}
+.ttpb-stat {
+  min-width: 92px;
+  padding: 10px 16px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+}
+.ttpb-stat__value { font-size: 20px; font-weight: 700; color: var(--tx); }
+.ttpb-stat__label {
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+/* ─── Toolbar (search + actions) ───────────────────────────────── */
+
+.ttpb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ttpb-search {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--s1);
+  color: var(--tx);
+  font-size: 12px;
+}
+.ttpb-search::placeholder { color: var(--tx3); }
+.ttpb-search:focus {
+  outline: none;
+  border-color: var(--ac);
+  box-shadow: 0 0 0 3px var(--ac-soft);
+}
+
+.ttpb-btn--sm   { height: 28px; padding: 0 10px; font-size: 10px; }
+.ttpb-btn--xs   { height: 22px; padding: 0 8px; font-size: 10px; }
+.ttpb-btn--copy { height: 20px; padding: 0 8px; font-size: 10px; }
+.ttpb-btn--accent {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-tx);
+  font-weight: 600;
+}
+.ttpb-btn--accent:hover { background: var(--ac-str); border-color: var(--ac-str); }
+
+/* ─── Filter rows ───────────────────────────────────────────────── */
+
+.ttpb-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.ttpb-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ttpb-filter-row__label {
+  flex: none;
+  width: 60px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.ttpb-chip {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  background: var(--s1);
+  color: var(--tx2);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color .12s ease, color .12s ease, background .12s ease;
+}
+.ttpb-chip:hover { border-color: var(--ac); color: var(--tx); }
+.ttpb-chip.is-active {
+  background: var(--ac);
+  border-color: var(--ac);
+  color: var(--ac-tx);
+  font-weight: 600;
+}
+
+/* ─── Body: list + sticky detail rail ──────────────────────────── */
+
+.ttpb-body { display: block; }
+.ttpb-body--split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 18px;
+  align-items: start;
+}
+.ttpb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ttpb-empty {
+  padding: 22px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--tx3);
+  border: 1px dashed var(--bd);
+  border-radius: 8px;
+}
+.ttpb-error {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--crit);
+  background: color-mix(in srgb, var(--crit) 10%, transparent);
+  color: var(--crit);
+  font-size: 12px;
+}
+
+/* ─── TTP row card ──────────────────────────────────────────────── */
+
+.ttpb-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.ttpb-row:hover, .ttpb-row:focus-visible {
+  border-color: var(--ac);
+  outline: none;
+}
+.ttpb-row--selected {
+  border-color: var(--ac-str);
+  background: var(--ac-soft);
+  box-shadow: 0 0 0 1px var(--ac-line);
+}
+.ttpb-row--selected::before {
+  content: '';
+  position: absolute;
+  left: -1px; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--ac-str);
+}
+
+.ttpb-row__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ttpb-row__id { font-size: 11px; font-weight: 600; color: var(--tx); }
+.ttpb-row__name {
+  flex: 1;
+  min-width: 160px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
+}
+.ttpb-row__count { flex: none; font-size: 10px; color: var(--tx3); }
+.ttpb-row__cat {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--tx3);
+}
+.ttpb-row__summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--tx2);
+}
+.ttpb-row__meta { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
+.ttpb-row__chips, .ttpb-row__det-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.ttpb-row__more { font-size: 9px; color: var(--tx3); }
+
+/* Shared small pill — status badges, MITRE ids, actor/tag chips. */
+.ttpb-chip--tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--bd);
+  background: var(--s2);
+  color: var(--tx2);
+  font-size: 10px;
+}
+.ttpb-chip--tag-status {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  font-size: 9px;
+}
+.ttpb-chip--tag-signal { background: var(--ac-soft); border-color: var(--ac-line); color: var(--ac); }
+.ttpb-chip--tag-muted  { color: var(--tx3); }
+.ttpb-chip--tag-xs     { font-size: 9px; padding: 1px 6px; }
+
+.ttpb-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.ttpb-chip-row--tight { gap: 4px; }
+
+/* ─── Detail rail ───────────────────────────────────────────────── */
+
+.ttpb-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--ac-str);
+  border-radius: 10px;
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+.ttpb-detail__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ttpb-detail__eyebrow { font-size: 11px; color: var(--tx2); }
+/* T2 repair (docs/design/token-aliasing-fixes.md): .theme-console prefix
+   raises this to (0,2,0) so it beats the shared ".theme-console h1,h2,h3"
+   rule's (0,1,1) for font-weight/font-size/line-height/letter-spacing —
+   this h3 is on a <h3>, which the shared rule also targets by tag. */
+.theme-console .ttpb-detail__title {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+.ttpb-detail__actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.ttpb-detail__summary { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--tx2); white-space: pre-line; }
+.ttpb-detail__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 15px;
+}
+.ttpb-detail__note { margin: 0 0 6px; font-size: 10px; color: var(--tx3); }
+.ttpb-detail__meta-tag { margin-left: 4px; font-size: 9px; opacity: .65; }
+.ttpb-detail__meta-tag--loose { opacity: .75; }
+
+.ttpb-stat-tile {
+  padding: 8px 10px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+.ttpb-stat-tile__k {
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--tx3);
+}
+.ttpb-stat-tile__v { margin-top: 5px; font-size: 11px; font-weight: 500; color: var(--tx); }
+
+.ttpb-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--bd);
+}
+.ttpb-section__label {
+  margin-bottom: 8px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--tx3);
+}
+
+/* ─── Tables (MITRE technique list · run history · launcher) ──── */
+
+.ttpb-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ttpb-table thead tr { text-align: left; color: var(--tx3); }
+.ttpb-table th, .ttpb-table td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px solid var(--bd);
+  color: var(--tx2);
+}
+.ttpb-table th { font-weight: 500; }
+.ttpb-table tbody tr:last-child td { border-bottom: 0; }
+.ttpb-table .th--num, .ttpb-table .td--num { text-align: right; }
+.ttpb-table .td--sm { font-size: 10px; color: var(--tx3); }
+.ttpb-table .th--check { width: 26px; }
+
+.ttpb-run-row { cursor: pointer; }
+.ttpb-run-row:hover td { background: var(--s2); }
+.ttpb-badge {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.ttpb-badge--pass    { background: var(--ac-soft); color: var(--ac); }
+.ttpb-badge--fail    { background: color-mix(in srgb, var(--crit) 14%, transparent); color: var(--crit); }
+.ttpb-badge--partial { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+
+/* ─── Detection accordion (BIOC / XQL / correlation / IOC / analytics) ─ */
+
+.ttpb-det-groups { display: flex; flex-direction: column; gap: 14px; }
+.ttpb-det-group__head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.ttpb-det-group__count { font-size: 10px; color: var(--tx3); }
+
+.ttpb-det-item {
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--s1);
+  overflow: hidden;
+}
+.ttpb-det-item + .ttpb-det-item { margin-top: 6px; }
+.ttpb-det-item__head {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.ttpb-det-item.is-expanded .ttpb-det-item__head { border-bottom: 1px solid var(--bd); }
+.ttpb-det-item__head-row { display: flex; align-items: baseline; gap: 8px; }
+.ttpb-det-item__caret { font-size: 9px; color: var(--tx3); flex: none; }
+.ttpb-det-item__name { flex: 1; font-size: 11px; font-weight: 600; color: var(--tx); }
+.ttpb-det-item__id { font-size: 9px; color: var(--tx3); }
+.ttpb-det-item__preview {
+  margin-top: 4px;
+  padding-left: 17px;
+  font-size: 11px;
+  color: var(--tx2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ttpb-det-item__body { padding: 8px 10px 10px 27px; }
+.ttpb-det-item__desc { margin: 0 0 8px; font-size: 11px; color: var(--tx2); }
+.ttpb-det-item__body-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ttpb-det-item__body-key { font-size: 9px; color: var(--tx3); }
+.ttpb-det-item__no-body { font-size: 10px; color: var(--tx3); }
+
+/* Dark read-only code preview — mirrors the mockup's "Detection logic ·
+   XQL" block (--ink surface regardless of theme, since it is meant to
+   read like a terminal/editor pane, not a themed UI surface). */
+.ttpb-pre {
+  margin: 0;
+  padding: 12px;
+  background: var(--ink);
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1.65;
+  color: var(--ink-tx2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
+}
+.ttpb-pre .syn-keyword  { color: var(--ac-str); font-weight: 600; }
+.ttpb-pre .syn-builtin  { color: var(--info); }
+.ttpb-pre .syn-string   { color: var(--warn-str); }
+.ttpb-pre .syn-number   { color: var(--ac); }
+.ttpb-pre .syn-operator { color: var(--ink-tx2); opacity: .8; }
+.ttpb-pre .syn-comment  { color: var(--ink-tx2); opacity: .55; font-style: italic; }
+.ttpb-pre .syn-ident,
+.ttpb-pre .syn-plain    { color: var(--ink-tx2); }
+
+/* ─── Remediation guidance callout ──────────────────────────────── */
+
+.ttpb-callout {
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid var(--warn-str);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--tx2);
+}
+/* Only variant currently authored (M-3) — the remediation-guidance callout's
+   warn treatment: a soft background tint + a warn-colored label, on top of
+   the base class's border-left. */
+.ttpb-callout--warn {
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  border-radius: 0 4px 4px 0;
+}
+.ttpb-callout--warn .ttpb-callout__label { color: var(--warn); }
+.ttpb-callout__label {
+  margin: 10px 0 4px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.ttpb-callout__label:first-child { margin-top: 0; }
+.ttpb-callout__list { margin: 0 0 2px; padding-left: 16px; }
+.ttpb-callout__list li { margin-bottom: 3px; }
+.ttpb-callout__playbook { margin-top: 8px; font-size: 10px; color: var(--tx3); }
+
+.ttpb-teardown {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--tx2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ─── Launch-all modal ──────────────────────────────────────────── */
+
+.ttpb-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ink) 65%, transparent);
+}
+.ttpb-modal {
+  width: min(720px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.ttpb-modal__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+/* T2 repair (docs/design/token-aliasing-fixes.md): same .theme-console
+   specificity bump as .ttpb-detail__title above — this h3 was losing
+   font-weight/font-size to the shared ".theme-console h1,h2,h3" rule. */
+.theme-console .ttpb-modal__title { margin: 4px 0 0; font-size: 16px; font-weight: 700; color: var(--tx); }
+.ttpb-modal__table-wrap {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.ttpb-modal__sub { font-size: 10px; color: var(--tx3); }
+.ttpb-modal__row { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline; margin-bottom: 14px; }
+.ttpb-modal__field { font-size: 11px; color: var(--tx2); }
+.ttpb-modal__field--grow { flex: 1; }
+.ttpb-modal__select, .ttpb-modal__input {
+  margin-top: 2px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--tx);
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+.ttpb-modal__input { width: 100%; box-sizing: border-box; }
+.ttpb-modal__footer-row { display: flex; align-items: center; justify-content: space-between; }
+.ttpb-modal__count { font-size: 10px; color: var(--tx3); }
+.ttpb-modal__summary { margin-top: 12px; font-size: 11px; color: var(--tx2); }
+.ttpb-modal__fail-list { margin: 6px 0 0; padding-left: 18px; }
+.ttpb-modal__fail-item { color: var(--crit); }
+
+/* ─── Responsive: collapse the split rail below tablet width ────── */
+/* Placed last so it wins the cascade over the unconditional
+   .ttpb-detail rule above at equal specificity. */
+@media (max-width: 980px) {
+  .ttpb-body--split { grid-template-columns: minmax(0, 1fr); }
+  .ttpb-detail { position: static; max-height: none; }
+}

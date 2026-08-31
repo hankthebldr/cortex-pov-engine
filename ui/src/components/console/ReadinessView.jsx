@@ -4,6 +4,7 @@ import useReadiness from './readiness/useReadiness.js'
 import { HS, HS_CHIP, HS_LABEL, healthHeadline } from './readiness/healthModel.js'
 import { RS, RS_CHIP, RUNG } from './readiness/connectorState.js'
 import { preflightXsiamTenant, preflightConnector } from '../../api/client.js'
+import Term from '../onboarding/Term.jsx'
 
 /**
  * ReadinessView — "am I ready to run this in front of a customer?", answered
@@ -144,7 +145,7 @@ function ConnectorSection({ ladder, tenants, onNavigate }) {
 
       {/* The single sentence that must never drift optimistic. */}
       <p className="readiness__invariant" data-testid="tenant-verified-statement">
-        <strong>tenant-verified: {ladder.rungs[3].count ?? 0}</strong> — {ladder.rungs[3].detail}
+        <strong><Term k="tenant-verified">tenant-verified</Term>: {ladder.rungs[3].count ?? 0}</strong> — {ladder.rungs[3].detail}
       </p>
 
       <TenantList tenants={tenants} onNavigate={onNavigate} />

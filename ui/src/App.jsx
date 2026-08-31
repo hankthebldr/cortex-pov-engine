@@ -66,118 +66,59 @@ function AppHeader({ hostname, version, onToggleResults, showResults,
       <CortexLogo />
 
       <div className="flex-row gap-3 flex-1">
-        <span style={{
-          fontSize: '18px',
-          fontWeight: 700,
-          color: 'var(--cortex-white)',
-          letterSpacing: '-0.02em',
-        }}>
-          Cortex<span style={{ color: 'var(--cortex-teal)' }}>Sim</span>
+        <span className="app-header__brand">
+          Cortex<span className="app-header__brand-accent">Sim</span>
         </span>
 
-        <span style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          padding: '2px 8px',
-          borderRadius: '3px',
-          background: 'rgba(0,192,232,0.18)',
-          color: 'var(--cortex-teal)',
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-        }}>
+        <span className="app-header__version-badge">
           {version || 'v1.0'}
         </span>
 
-        <span style={{
-          fontSize: '11px',
-          color: 'rgba(255,255,255,0.45)',
-          fontFamily: 'var(--font-mono)',
-          marginLeft: '4px',
-        }}>
+        <span className="app-header__subtitle">
           Detection Simulation Engine
         </span>
       </div>
 
       {/* Hostname display */}
-      <div style={{
-        fontSize: '12px',
-        color: 'rgba(255,255,255,0.55)',
-        fontFamily: 'var(--font-mono)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-      }}>
-        <span style={{ color: 'var(--cortex-success)', fontSize: '8px' }}>&#9679;</span>
+      <div className="app-header__hostname">
+        <span className="app-header__hostname-dot">&#9679;</span>
         {hostname || window.location.hostname}
       </div>
 
       {/* View toggles */}
       <button
-        className={`btn btn-sm ${showMitre ? 'btn-navy' : 'btn-secondary'}`}
+        className={`btn btn-sm app-header__toggle-btn app-header__toggle-btn--first ${showMitre ? 'btn-navy' : 'btn-secondary'} ${showMitre ? 'app-header__toggle-btn--active' : ''}`}
         onClick={onToggleMitre}
-        style={{
-          marginLeft: '8px',
-          border: '1px solid rgba(255,255,255,0.15)',
-          background: showMitre ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
-          color: 'var(--cortex-white)',
-        }}
       >
         &#9635; MITRE
       </button>
       <button
-        className={`btn btn-sm ${showDeploy ? 'btn-navy' : 'btn-secondary'}`}
+        className={`btn btn-sm app-header__toggle-btn ${showDeploy ? 'btn-navy' : 'btn-secondary'} ${showDeploy ? 'app-header__toggle-btn--active' : ''}`}
         onClick={onToggleDeploy}
-        style={{
-          border: '1px solid rgba(255,255,255,0.15)',
-          background: showDeploy ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
-          color: 'var(--cortex-white)',
-        }}
       >
         &#x2630; Deploy
       </button>
       <button
-        className={`btn btn-sm ${showEal ? 'btn-navy' : 'btn-secondary'}`}
+        className={`btn btn-sm app-header__toggle-btn ${showEal ? 'btn-navy' : 'btn-secondary'} ${showEal ? 'app-header__toggle-btn--active' : ''}`}
         onClick={onToggleEal}
-        style={{
-          border: '1px solid rgba(255,255,255,0.15)',
-          background: showEal ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
-          color: 'var(--cortex-white)',
-        }}
       >
         &#9881; EAL
       </button>
       <button
-        className={`btn btn-sm ${showValidate ? 'btn-navy' : 'btn-secondary'}`}
+        className={`btn btn-sm app-header__toggle-btn ${showValidate ? 'btn-navy' : 'btn-secondary'} ${showValidate ? 'app-header__toggle-btn--active' : ''}`}
         onClick={onToggleValidate}
-        style={{
-          border: '1px solid rgba(255,255,255,0.15)',
-          background: showValidate ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
-          color: 'var(--cortex-white)',
-        }}
       >
         &#10003; Validate
       </button>
       <button
-        className={`btn btn-sm ${showResults ? 'btn-navy' : 'btn-secondary'}`}
+        className={`btn btn-sm app-header__toggle-btn ${showResults ? 'btn-navy' : 'btn-secondary'} ${showResults ? 'app-header__toggle-btn--active' : ''}`}
         onClick={onToggleResults}
-        style={{
-          border: '1px solid rgba(255,255,255,0.15)',
-          background: showResults ? 'rgba(0,192,232,0.2)' : 'rgba(255,255,255,0.08)',
-          color: 'var(--cortex-white)',
-        }}
       >
         &#9776; Runs
       </button>
 
       {/* PANW branding */}
-      <div style={{
-        fontSize: '10px',
-        color: 'rgba(255,255,255,0.3)',
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
-        paddingLeft: '12px',
-        borderLeft: '1px solid rgba(255,255,255,0.12)',
-      }}>
+      <div className="app-header__panw-brand">
         Palo Alto Networks
       </div>
     </header>
@@ -334,7 +275,7 @@ export default function App() {
               onMessage={showToast}
             />
           ) : (
-            <div className="empty-state" style={{ padding: '24px' }}>
+            <div className="empty-state empty-state--compact">
               <p>No run to validate yet.</p>
               <p className="muted small">
                 Launch a campaign from the <strong>EAL</strong> view first,

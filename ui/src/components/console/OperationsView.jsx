@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import '../../styles/destinations/library.css'
 import ScenarioGrid from './ScenarioGrid.jsx'
 import ScenarioInspector from './ScenarioInspector.jsx'
 import FilterPalette from './FilterPalette.jsx'
@@ -220,13 +221,18 @@ export default function OperationsView({
     <div className="operations grid-bg">
       <div className="view-head">
         <div>
+          <div className="ops-accent-bar" aria-hidden="true" />
+          {/* Masthead eyebrow: the nav group alone, no "· Phase N" — this
+              product has no app-level phase stepper to echo (M-4; mirrors
+              CoverageView's CoverageKicker, the reference for this pattern). */}
+          <div className="ops-eyebrow">Operate</div>
           <h1>Library</h1>
           <div className="view-head__meta">
             Plane: <strong>{headMeta.planeLabel}</strong>
             {' · '}<span className="mono">
               {headMeta.count}
               {techniqueFilter && headMeta.count !== headMeta.totalCount && (
-                <span style={{ color: 'var(--c-text-muted)' }}>
+                <span className="ops-head__total">
                   /{headMeta.totalCount}
                 </span>
               )} scenarios
@@ -252,11 +258,10 @@ export default function OperationsView({
             />
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="ops-toolbar">
           <input
             type="search"
-            className="lab__input"
-            style={{ minWidth: 220 }}
+            className="lab__input ops-search"
             placeholder="Search scenarios (name · id · technique)…"
             aria-label="Search scenarios"
             value={scenarioFilter.filter.query}
@@ -270,7 +275,7 @@ export default function OperationsView({
           >
             <span>Filter</span>
             {scenarioFilter.activeCount > 0 && (
-              <span className="kbd" style={{ background: 'rgba(5,10,20,0.25)', borderColor: 'rgba(5,10,20,0.25)' }}>
+              <span className="kbd ops-filter-kbd">
                 {scenarioFilter.activeCount}
               </span>
             )}
@@ -290,14 +295,7 @@ export default function OperationsView({
       />
 
       {loading ? (
-        <div style={{
-          padding: 48,
-          textAlign: 'center',
-          color: 'var(--c-text-muted)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          letterSpacing: '0.04em',
-        }}>
+        <div className="ops-loading-note">
           loading scenarios…
         </div>
       ) : (

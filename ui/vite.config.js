@@ -5,6 +5,20 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        // React/ReactDOM change far less often than app code and are shared
+        // by every route — their own chunk means a redeploy that only
+        // touches app code doesn't invalidate the framework's browser cache.
+        // Destination-level splitting (see src/app/destinations.jsx, which
+        // now lazy-imports each of the console's 14 surfaces) does the rest
+        // of the work: Rollup gives each lazily-imported surface its own
+        // chunk automatically, no manualChunks entry needed per-destination.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+        },
+      },
+    },
   },
   server: {
     proxy: {

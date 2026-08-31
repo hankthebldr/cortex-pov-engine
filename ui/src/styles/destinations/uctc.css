@@ -1,0 +1,497 @@
+/* ============================================================
+   uctc.css — destination skin for the UC / TC Index
+   (ui/src/components/console/UcTcIndexView.jsx)
+
+   Restyles the existing `.uctc` scoped surface onto the PANW
+   redesign token contract (ui/src/styles/cortex-tokens.css):
+   --s0..--s3 surfaces, --bd/--bd2 borders, --tx/--tx2/--tx3 text,
+   --ac/--ac-str/--ac-tx/--ac-soft/--ac-line for the Cortex-green
+   accent, --warn/--warn-str for pending/gap signal, --crit for
+   failure, --info for informational, --ink for code/dark chrome.
+
+   Cortex green is the primary accent throughout. Orange
+   (--orange) is reserved for warn/gap signal elsewhere in the
+   product and is deliberately NOT used here — this surface's own
+   "gap"/"pending"/"blocked" language already reads through --warn,
+   matching the mockup's own tone() mapping (08-uc-tc-index.html /
+   09-ucdetail-name.html via the split .design-ref chunks).
+
+   Scoping: every rule is nested under `.uctc` so this file can
+   never leak into another destination, and every rule that also
+   matches a shared `.theme-console .foo` rule in cortex-console.css
+   is written as `.theme-console .uctc .foo` (3 classes) so it wins
+   on specificity regardless of import order — the monolith is never
+   edited to make room for this file.
+
+   Font: the mockup specifies Montserrat for display headings. This
+   app does not load Montserrat (only Inter / JetBrains Mono /
+   Archivo / Funnel Display are fetched in index.html, and adding a
+   new webfont is outside this task's scope) — headings use the
+   existing --font-display (Funnel Display) instead. JetBrains Mono
+   (--font-mono) already matches the mockup exactly.
+   ============================================================ */
+
+.uctc {
+  /* a11y fix: paint the real surface — the shared shell background never
+     varies by theme, so without this, plain text using the new light-theme
+     text tokens (e.g. .uctc__cell-title) rendered near-invisible (measured
+     ~1.03:1) over most of the table body. Same root cause/fix as
+     library.css. */
+  background: var(--s0);
+  --uctc-rail: 248px;
+}
+
+/* ── page header (new — mirrors the mockup's accent-bar + eyebrow + h1) ── */
+
+.uctc__pagehead {
+  margin-bottom: 14px;
+}
+
+.uctc__pagehead-bar {
+  width: 56px;
+  height: 4px;
+  background: var(--ac-str);
+  border-radius: 2px;
+  margin-bottom: 10px;
+}
+
+.uctc__pagehead-eyebrow {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+/* T2 repair (docs/design/token-aliasing-fixes.md): prefixed with
+   .theme-console so this (0,2,0) rule beats the shared ".theme-console
+   h1,h2,h3" rule's (0,1,1) for font-weight/font-size/line-height —
+   this destination's title is bigger and heavier than the shared
+   default and was silently losing both. Same technique this file
+   already uses for its other 58 rules. */
+.theme-console .uctc__pagehead-title {
+  margin: 6px 0 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 25px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+}
+
+/* ── intro / stat tiles ───────────────────────────────────── */
+
+.theme-console .uctc .adapter-registry__intro {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--bd);
+  border-radius: 10px;
+}
+.theme-console .uctc .adapter-registry__intro-prose {
+  color: var(--tx2);
+  font-family: inherit;
+  font-weight: 400;
+}
+.theme-console .uctc .adapter-registry__intro-prose strong {
+  color: var(--tx);
+  font-weight: 600;
+}
+.theme-console .uctc .adapter-registry__error {
+  background: color-mix(in srgb, var(--crit) 12%, transparent);
+  color: var(--crit);
+  border-color: var(--crit);
+}
+
+.theme-console .uctc .adapter-registry__stats { gap: 26px; }
+.theme-console .uctc .stack-coverage__stat-value {
+  font-family: var(--font-display);
+  color: var(--tx);
+}
+.theme-console .uctc .stack-coverage__stat-label {
+  color: var(--tx3);
+}
+.uctc .uctc__tone-detected.stack-coverage__stat-value,
+.uctc .stack-coverage__stat-value.uctc__tone-detected { color: var(--ac); }
+.uctc .stack-coverage__stat-value.uctc__tone-pending { color: var(--warn); }
+
+/* ── mode bar / tabs ──────────────────────────────────────── */
+
+.uctc__modebar {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bd);
+  margin-bottom: 16px;
+}
+
+.theme-console .uctc .lab__segmented {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  height: 32px;
+}
+.theme-console .uctc .lab__segmented button {
+  color: var(--tx2);
+}
+.theme-console .uctc .lab__segmented button:hover:not(:disabled) {
+  color: var(--tx);
+  background: var(--s3);
+}
+.theme-console .uctc .lab__segmented button.is-active {
+  background: var(--ac-soft);
+  color: var(--ac-str);
+  font-weight: 600;
+}
+
+.uctc__modebar-meta { color: var(--tx3); }
+.uctc .uctc__link { color: var(--ac); }
+.uctc .uctc__link:hover { color: var(--tx); }
+.uctc .uctc__link:focus-visible { outline-color: var(--ac); }
+.uctc .uctc__muted { color: var(--tx3); }
+
+/* ── class strip ──────────────────────────────────────────── */
+
+.theme-console .uctc .uctc__classstrip {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.uctc .uctc__classstrip-head { color: var(--tx2); }
+.theme-console .uctc .uctc__classcell {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.theme-console .uctc .uctc__classcell:hover { border-color: var(--bd2); }
+.theme-console .uctc .uctc__classcell.is-active {
+  border-color: var(--ac-str);
+  background: var(--ac-soft);
+}
+.uctc .uctc__classcell:focus-visible { outline-color: var(--ac); }
+.uctc .uctc__classcell-id { color: var(--tx); font-weight: 700; }
+.uctc .uctc__classcell-num { color: var(--tx2); }
+.uctc .uctc__classcell-mech { color: var(--tx3); }
+.uctc .uctc__classstrip-legend { color: var(--tx3); }
+
+.theme-console .uctc .uctc__bar-seg--detected { background: var(--ac); }
+.theme-console .uctc .uctc__bar-seg--pending { background: var(--warn); }
+.theme-console .uctc .uctc__bar-seg--hairline { background: var(--bd2); }
+.theme-console .uctc .coverage__summary-bar {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+}
+
+.uctc__legendswatch--detected { background: var(--ac); }
+.uctc__legendswatch--pending { background: var(--warn); }
+.uctc__legendswatch--hairline { background: var(--bd2); }
+
+/* ── filters + search ─────────────────────────────────────── */
+
+.theme-console .uctc .adapter-registry__search-input {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  color: var(--tx);
+}
+.theme-console .uctc .adapter-registry__search-input:focus { border-color: var(--ac); }
+.theme-console .uctc .adapter-registry__search-input::placeholder { color: var(--tx3); }
+
+.theme-console .uctc .competitive__filter-label { color: var(--tx3); }
+.theme-console .uctc .competitive__filter {
+  color: var(--tx2);
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+}
+.theme-console .uctc .competitive__filter:hover {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console .uctc .competitive__filter.is-active {
+  background: var(--ac-soft);
+  border-color: var(--ac-str);
+  color: var(--ac-str);
+}
+
+.theme-console .uctc .btn {
+  color: var(--tx);
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  border-radius: 5px;
+}
+.theme-console .uctc .btn:hover:not(:disabled) {
+  border-color: var(--ac);
+  color: var(--ac);
+}
+.theme-console .uctc .btn:disabled { opacity: 0.45; }
+.theme-console .uctc .btn--primary,
+.theme-console .uctc .uctc__btn--clear {
+  background: var(--ac);
+  color: var(--ac-tx);
+  border-color: var(--ac);
+  font-weight: 700;
+}
+.theme-console .uctc .btn--primary:hover:not(:disabled),
+.theme-console .uctc .uctc__btn--clear:hover:not(:disabled) {
+  background: var(--ac-str);
+  border-color: var(--ac-str);
+}
+.uctc .uctc__btn-inline--ml4 { margin-left: 4px; }
+.uctc .uctc__btn-inline--ml6 { margin-left: 6px; }
+.uctc .uctc__btn-inline { margin-left: 4px; }
+
+/* ── UC rail ──────────────────────────────────────────────── */
+
+.uctc .uctc__rail {
+  border-right: 1px solid var(--bd);
+}
+
+.uctc .uctc__rail-group-label { color: var(--tx3); }
+
+.uctc .uctc__rail-item {
+  color: var(--tx);
+  border-radius: 0 5px 5px 0;
+  border-left: 3px solid transparent;
+}
+.uctc .uctc__rail-item:hover {
+  background: var(--s2);
+  border-color: transparent;
+}
+.uctc .uctc__rail-item.is-active {
+  background: var(--ac-soft);
+  border-left-color: var(--ac-str);
+}
+.uctc .uctc__rail-item:focus-visible { outline-color: var(--ac); }
+.uctc .uctc__rail-count { color: var(--tx3); }
+.uctc .uctc__rail-name { color: var(--tx2); }
+
+/* ── table ────────────────────────────────────────────────── */
+
+.uctc .uctc__tablemeta { color: var(--tx3); }
+
+.uctc .uctc__tablewrap {
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+}
+
+.uctc .uctc__table { color: var(--tx); }
+
+/* The mockup's own --thead token (#999999 on light) puts white text at
+   ~2.6:1 against it — fails WCAG AA for the 10px label text here. --ink
+   stays near-black in both themes, so it keeps the mockup's "dark bar,
+   light mono label" intent while actually clearing 4.5:1 in both. */
+.uctc .uctc__table thead th {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: #fff;
+  background: var(--ink);
+  border-bottom: none;
+}
+
+.uctc .uctc__table tbody td {
+  border-bottom: 1px solid var(--bd);
+}
+
+.uctc .uctc__table-groupheader th {
+  color: var(--tx2);
+  background: var(--s2);
+  border-bottom: 1px solid var(--bd);
+}
+
+.uctc .uctc__table-row:hover { background: var(--s2); }
+.uctc .uctc__table-row.is-active {
+  background: var(--ac-soft);
+  box-shadow: inset 3px 0 0 var(--ac-str);
+}
+
+.uctc .uctc__idbtn { color: var(--ac); }
+.uctc .uctc__idbtn:hover { color: var(--ac-str); }
+.uctc .uctc__idbtn:focus-visible { outline-color: var(--ac); }
+
+.uctc .uctc__cell-kpi { color: var(--tx2); }
+
+/* ── chips + tones ────────────────────────────────────────── */
+
+.theme-console .uctc .chip {
+  background: var(--s2);
+  color: var(--tx2);
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+}
+.theme-console .uctc .chip--signal {
+  background: var(--ac-soft);
+  color: var(--ac-str);
+  border-color: transparent;
+}
+.theme-console .uctc .chip--detected {
+  background: var(--ac-soft);
+  color: var(--ac-str);
+  border-color: transparent;
+}
+.theme-console .uctc .chip--missed {
+  background: color-mix(in srgb, var(--crit) 14%, transparent);
+  color: var(--crit);
+  border-color: transparent;
+}
+.theme-console .uctc .chip--pending {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
+  border-color: transparent;
+}
+
+.uctc .uctc__tone-detected,
+.uctc .uctc__tone-action { color: var(--ac); }
+.uctc .uctc__tone-signal { color: var(--info); }
+.uctc .uctc__tone-pending { color: var(--warn); }
+.uctc .uctc__tone-missed { color: var(--crit); }
+.uctc .uctc__tone-muted { color: var(--tx3); }
+
+.theme-console .uctc .uctc__chip { color: var(--tx2); border-color: var(--bd2); }
+.theme-console .uctc .uctc__chip.uctc__tone-detected,
+.theme-console .uctc .uctc__chip.uctc__tone-action {
+  color: var(--ac-str);
+  border-color: var(--ac-line);
+  background: var(--ac-soft);
+}
+.theme-console .uctc .uctc__chip.uctc__tone-signal {
+  color: var(--info);
+  border-color: var(--info);
+  background: transparent;
+}
+.theme-console .uctc .uctc__chip.uctc__tone-pending {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: transparent;
+}
+.theme-console .uctc .uctc__chip.uctc__tone-missed {
+  color: var(--crit);
+  border-color: var(--crit);
+  background: transparent;
+}
+.theme-console .uctc .uctc__chip.uctc__tone-muted {
+  color: var(--tx3);
+  border-color: var(--bd2);
+}
+
+.uctc .uctc__chip-qual { color: var(--tx3); }
+.uctc .uctc__chip-split { color: var(--warn); border-color: var(--warn); }
+.uctc .uctc__chip-delta { color: var(--tx3); }
+.uctc .uctc__chip-oos { color: var(--tx3); border-color: var(--bd2); }
+
+/* "needs a data path" reads as a scope boundary, not a failure — steel, not
+   red, matching the mockup's tone() treatment of blocked/queued states. */
+.theme-console .uctc .uctc__chip-oos { background: var(--s2); }
+
+/* ── detail drawer ────────────────────────────────────────── */
+
+.theme-console .uctc .competitive__detail {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+.theme-console .uctc .competitive__detail-eyebrow { color: var(--ac); }
+.theme-console .uctc .competitive__detail-title {
+  color: var(--tx);
+  font-family: var(--font-display);
+}
+.theme-console .uctc .competitive__detail-label { color: var(--tx3); }
+.theme-console .uctc .competitive__detail-section p { color: var(--tx); }
+.theme-console .uctc .competitive__detail-section { border-bottom: none; }
+
+.uctc .uctc__detail-subtitle { color: var(--tx2); }
+.uctc .uctc__detail-prose { color: var(--tx2); }
+.uctc .uctc__detail-chips { gap: 6px; }
+
+.uctc .uctc__banner {
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+.uctc .uctc__banner--muted {
+  color: var(--tx2);
+  border-color: var(--bd2);
+  background: var(--s2);
+}
+.uctc .uctc__unscoreable,
+.uctc [data-testid="uctc-unscoreable"] {
+  color: var(--tx2);
+  border-color: var(--bd2);
+  background: var(--s2);
+}
+
+.theme-console .uctc .cov-detail__kv dt { color: var(--tx3); }
+.theme-console .uctc .cov-detail__kv dd { color: var(--tx); }
+
+/* ── XQL / code blocks ────────────────────────────────────── */
+
+.uctc .uctc__table tbody td code,
+.uctc .cov-detail__kv dd.mono {
+  color: var(--tx);
+}
+
+/* Detector · XQL panels ride the shared .ttp-detection-item__pre-like
+   treatment: ink background regardless of theme, since --ink stays dark
+   in both palettes — matches the mockup's Detector panel exactly. */
+.uctc pre,
+.uctc .uctc__xql {
+  background: var(--ink);
+  color: #C2D2CA;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+}
+
+/* ── assertion cards ──────────────────────────────────────── */
+
+.theme-console .uctc .uctc__assertcard {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-left: 2px solid var(--ac-str);
+  border-radius: 6px;
+}
+.uctc .uctc__assertcard-id { color: var(--ac); }
+.uctc .uctc__assertcard-name { color: var(--tx); }
+
+/* ── mechanisms mode ──────────────────────────────────────── */
+
+.uctc .uctc__mech-prose { color: var(--tx2); }
+
+.theme-console .uctc .uctc__mechcard {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.uctc .uctc__mechcard-eyebrow { color: var(--tx3); }
+.uctc .uctc__mechcard-title { color: var(--tx); font-family: var(--font-display); }
+.uctc .uctc__mechcard-proves { color: var(--tx2); }
+.uctc .uctc__mechcard-score-num { color: var(--ac); font-family: var(--font-display); }
+.uctc .uctc__mechcard-score-den { color: var(--tx3); }
+.uctc .uctc__mechcard-score-label { color: var(--tx3); }
+.uctc .uctc__mechcard-oosprose { color: var(--tx2); }
+.theme-console .uctc .uctc__mechcard-oos { border-top: 1px solid var(--bd); }
+.uctc .uctc__oos-list { color: var(--tx2); }
+.uctc .uctc__oos-count { color: var(--tx3); }
+
+/* ── coverage mode ────────────────────────────────────────── */
+
+.uctc .uctc__coverage-hint { color: var(--tx3); }
+.uctc .uctc__covrow { color: var(--tx); border-radius: 5px; }
+.uctc .uctc__covrow:hover {
+  background: var(--s2);
+  border-color: var(--bd);
+}
+.uctc .uctc__covrow:focus-visible { outline-color: var(--ac); }
+.uctc .uctc__covrow-name { color: var(--tx2); }
+.uctc .uctc__covrow-num { color: var(--tx3); }
+
+/* ── gaps mode ────────────────────────────────────────────── */
+
+.uctc .uctc__gaps-headline { color: var(--tx); }
+.uctc .uctc__gaps-headline .mono { color: var(--warn); font-family: var(--font-display); }
+.uctc .uctc__toggle { color: var(--tx2); }
+
+/* ── empty / degraded states ──────────────────────────────── */
+
+.theme-console .uctc .coverage__empty { color: var(--tx3); }
