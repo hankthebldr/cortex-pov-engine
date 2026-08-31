@@ -814,6 +814,15 @@
   font-weight: 500;
 }
 
+/* Fallback shown in every lazy destination's Suspense boundary while its
+   chunk is in flight (destinations.jsx::DestinationLoading). */
+.theme-console .destination-loading {
+  padding: var(--space-8) var(--space-6);
+  opacity: 0.6;
+  font-size: 13px;
+  color: var(--c-text-muted);
+}
+
 .theme-console .scenario-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -5540,6 +5549,7 @@
 .theme-console .launch-payload__meta { font-size: 10.5px; color: var(--c-text-muted); }
 .theme-console .launch-payload__renamed { margin-top: 4px; font-size: 11.5px; line-height: 1.55; color: var(--c-pending); }
 .theme-console .launch-payload__warn { margin-top: 8px; font-size: 11.5px; line-height: 1.55; color: var(--c-pending); }
+.theme-console .launch-payload__resolving { margin-top: 6px; font-size: 11.5px; line-height: 1.55; color: var(--c-text-muted); }
 
 /* ── Inspector: tool supply rows ────────────────────────────────────── */
 .theme-console .insp-tool {
@@ -6586,6 +6596,14 @@
   background: rgba(0,192,232,0.15); color: var(--cortex-teal);
   border: 1px solid var(--cortex-teal);
   animation: pulse 1s ease-in-out infinite;
+}
+/* Sole definition of `pulse` in the app (M-1) — the "TESTING…" pill's loading
+   affordance for an in-flight tenant test. ToolStatusPanel's dot uses its own
+   `tsp-pulse` above; this one stayed named `pulse` because that is what the
+   rule at .tenant-mgr__pill--testing already referenced. */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
 }
 .theme-console .tenant-mgr__pill--ok {
   background: rgba(0,184,148,0.15); color: var(--cortex-success);

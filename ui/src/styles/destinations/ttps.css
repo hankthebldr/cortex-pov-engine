@@ -442,6 +442,14 @@
   line-height: 1.55;
   color: var(--tx2);
 }
+/* Only variant currently authored (M-3) — the remediation-guidance callout's
+   warn treatment: a soft background tint + a warn-colored label, on top of
+   the base class's border-left. */
+.ttpb-callout--warn {
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  border-radius: 0 4px 4px 0;
+}
+.ttpb-callout--warn .ttpb-callout__label { color: var(--warn); }
 .ttpb-callout__label {
   margin: 10px 0 4px;
   font-size: 9px;

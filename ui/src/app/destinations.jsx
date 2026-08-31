@@ -35,14 +35,9 @@ const TenantManager = lazy(() => import('../components/console/TenantManager.jsx
 const ReadinessView = lazy(() => import('../components/console/ReadinessView.jsx'))
 const EalConsole = lazy(() => import('../components/EalConsole.jsx'))
 
-function DestinationLoading() {
+export function DestinationLoading() {
   return (
-    <div
-      className="destination-loading"
-      role="status"
-      aria-live="polite"
-      style={{ padding: '2rem', opacity: 0.6, fontSize: '0.9em' }}
-    >
+    <div className="destination-loading" role="status" aria-live="polite">
       loading…
     </div>
   )
@@ -66,18 +61,29 @@ function withSuspense(LazyComponent) {
  * `decodePlan` export — resolved via the same dynamic import used for the
  * lazy component above, so a guided-flow deep link that carries no `plan`
  * param (the common case) never pulls the 700-line catalog module in at all.
+ *
+ * The dynamic import means the plan is NOT available on first paint even when
+ * `encoded` is present — there is a real window where the chunk is still in
+ * flight. Callers must be able to tell "no plan was ever composed" apart from
+ * "a plan was composed and is still loading": collapsing the two would let a
+ * consultant launch mid-race with the payload plan silently dropped (I-1). So
+ * this returns `{ plan, resolving }` rather than a bare, ambiguous `plan` —
+ * a zero here is degraded, not ok.
  */
-function useDecodedPlan(encoded) {
-  const [plan, setPlan] = useState(null)
+export function useDecodedPlan(encoded) {
+  const [state, setState] = useState(() => (
+    encoded ? { plan: null, resolving: true } : { plan: null, resolving: false }
+  ))
   useEffect(() => {
-    if (!encoded) { setPlan(null); return undefined }
+    if (!encoded) { setState({ plan: null, resolving: false }); return undefined }
     let cancelled = false
+    setState({ plan: null, resolving: true })
     import('../components/console/ToolAdapterCatalog.jsx').then((mod) => {
-      if (!cancelled) setPlan(mod.decodePlan(encoded))
+      if (!cancelled) setState({ plan: mod.decodePlan(encoded), resolving: false })
     })
     return () => { cancelled = true }
   }, [encoded])
-  return plan
+  return state
 }
 
 /**
@@ -170,8 +176,10 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
   const { refreshRuns } = useEnvironment()
   // A composed payload plan arrives in the URL from Tools & Payloads. Decoding
   // here (rather than re-composing) keeps the launch reload-safe and means the
-  // exact digests the DC saw are the ones the launch carries.
-  const payloadPlan = useDecodedPlan(params.plan || null)
+  // exact digests the DC saw are the ones the launch carries. `resolving` is a
+  // DISTINCT state from "no plan" — see useDecodedPlan (I-1) — and must reach
+  // LaunchView so Launch stays disabled until the decode settles.
+  const { plan: payloadPlan, resolving: payloadPlanResolving } = useDecodedPlan(params.plan || null)
 
   useEffect(() => {
     if (!armId) { setScenario(null); return undefined }
@@ -208,6 +216,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
           <LaunchView
             scenario={scenario}
             payloadPlan={payloadPlan}
+            payloadPlanResolving={payloadPlanResolving}
             selectedTarget={selectedTarget}
             onRunComplete={(run) => {
               refreshRuns()

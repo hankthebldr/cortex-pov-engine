@@ -45,6 +45,12 @@
   flex-wrap: wrap;
 }
 
+.eal-console__heading {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .eal-console__accent-bar {
   width: 56px;
   height: 4px;
@@ -84,22 +90,26 @@
   flex: none;
 }
 
-/* Primary CTA ("+ New Campaign", the app's equivalent of the mockup's
-   "Build campaign" button). Deliberately styled as .btn-navy (ink fill,
-   white text — ~19:1 contrast in both themes) rather than a solid --ac
-   fill: white-on---ac measures ~3.1:1 in light mode at this font size,
-   under the 4.5:1 AA floor for button text, so the ink/--ac-tx-safe
-   pairing is used for the filled CTA instead. The green accent still
-   reads as primary via the underline tabs + accent bar. */
-.eal-console__build-btn.is-active {
-  box-shadow: inset 0 0 0 2px var(--ac-str);
-}
-
-/* ── Tab strip: underline tabs, not pill buttons ──────────────────────── */
+/* ── Tab strip: underline tabs, plus one pill-styled tab ──────────────────
+   "+ New Campaign" (M-8) is a real role="tab" inside this tablist — a
+   screen-reader user needs exactly one tab reporting aria-selected="true"
+   at all times, which a header action driving the same tab state could
+   never guarantee. It keeps its own CTA look (.btn.btn-navy, ink fill,
+   white text — ~19:1 contrast in both themes; a solid --ac fill measures
+   only ~3.1:1 white-on---ac in light mode at this font size, under the
+   4.5:1 AA floor) rather than adopting the underline-tab look below. */
 .eal-console__tabs {
   display: flex;
+  align-items: center;
   gap: 22px;
   border-bottom: 1px solid var(--bd);
+}
+
+.eal-console__tab--new {
+  margin-left: auto;
+}
+.eal-console__tab--new.is-active {
+  box-shadow: inset 0 0 0 2px var(--ac-str);
 }
 
 .eal-console__tab {

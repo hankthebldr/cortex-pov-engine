@@ -45,6 +45,11 @@
   gap: var(--s-5);
   margin-bottom: var(--s-5);
 }
+.theme-console .tools-destination__head-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
 .theme-console .tools-destination__accent-bar {
   width: 56px;
   height: 4px;
