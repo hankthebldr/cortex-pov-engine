@@ -1,0 +1,17 @@
+{
+  "mitre_techniques": [
+    "T1048",
+    "T1074.001",
+    "T1560.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Sequence: File Write (SQL Dump) -> File Write (GZIP) -> Network Egress within 300s by same process lineage",
+      "name": "cr-cross-channel-dlp-stitch",
+      "rule_id": "CR-DLP-0004",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0180"
+}

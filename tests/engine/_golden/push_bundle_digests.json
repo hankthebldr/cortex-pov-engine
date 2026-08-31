@@ -678,5 +678,33 @@
   "SIM-TIM-009": {
     "bash": "f0afe3d6e86c0ef31afade8f5f74180249797802d03b37d01e775bdb9d06ce12",
     "powershell": null
+  },
+  "SIM-CDR-027": {
+    "bash": "a8dea193efa39c22eb68cab0d3655460b91f0b5596c058a431508711ee7d6983",
+    "powershell": null
+  },
+  "SIM-CDR-028": {
+    "bash": "26fb0b338677129af4fb2da1e7bfb69baa44179e143319efd3e31496709deea6",
+    "powershell": null
+  },
+  "SIM-DLP-001": {
+    "bash": "ca40a0db3bed90213d124ab747768e58611ff52ea348f63ac7381119cabf930b",
+    "powershell": null
+  },
+  "SIM-DLP-002": {
+    "bash": "2ff5133d5ddc20617929832b3886bdc5b0a346703d4f353c84079d09747d53a2",
+    "powershell": null
+  },
+  "SIM-DLP-003": {
+    "bash": "31afd83dd8892f0bdce7ed57f1f8ad596f6d647fc134b1214064002f9c5aca9d",
+    "powershell": null
+  },
+  "SIM-DLP-004": {
+    "bash": "ae4ad6aa52146ff9d96a947bb77215b568598f6dded6bff863989da4ba450e3a",
+    "powershell": null
+  },
+  "SIM-DLP-005": {
+    "bash": "3a1cd77bb023db045f833c066bcbe93792fb41441b7f41befd8892d42d93852e",
+    "powershell": null
   }
 }

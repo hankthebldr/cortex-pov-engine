@@ -1,0 +1,51 @@
+title: "Unsanctioned SaaS Web Upload of Confidential Financial Records \u2014 Financial Data Staging"
+id: ttp-2026-0179-bioc-01
+status: experimental
+description: |
+  Financial Data Staging
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'financials' and (action_file_path contains '/tmp/' or action_file_path contains 'AppData')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+    - attack.t1074
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Unsanctioned SaaS Web Upload of Confidential Financial Records \u2014 DLP Unsanctioned Web Upload"
+id: ttp-2026-0179-bioc-02
+status: experimental
+description: |
+  DLP Unsanctioned Web Upload
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data | filter event_type = 'NETWORK' and action_process_image_name in ('curl', 'powershell', 'chrome', 'msedge') and action_process_command_line contains 'financials.csv'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+    - attack.t1074
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -380,6 +380,8 @@ class ScenarioSchema(BaseModel):
             "TIM",         # Cortex Threat Intel Management — IOC feed + matching traffic
             # Email line of defense — Proofpoint TAP / M365 ingestion + phishing/BEC correlation
             "EMAIL",
+            # Data Loss Prevention & Data Security
+            "DLP",
         }
         if v not in allowed:
             raise ValueError(f"plane must be one of {allowed}, got '{v}'")

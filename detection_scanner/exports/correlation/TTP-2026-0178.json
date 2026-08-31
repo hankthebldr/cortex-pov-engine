@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1560.001",
+    "T1074.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Sequence: File Write (Sensitive Marker) -> Process Exec (Zip/7z Password Encrypted) within 300s by same user",
+      "name": "Sensitive File Staging Followed by Encrypted Archive Creation",
+      "rule_id": "CR-DLP-0001",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0178"
+}

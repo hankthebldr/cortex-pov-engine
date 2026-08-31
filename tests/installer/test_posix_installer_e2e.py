@@ -196,7 +196,8 @@ def test_install_succeeds_with_no_go_toolchain_on_the_target(simcore, sandbox):
     # And the operator can see the successful install from the console.
     attempts = json.loads(_fetch(f"{simcore}/api/agents/install/attempts"))["attempts"]
     assert attempts[0]["code"] == "OK"
-    assert attempts[0]["os"] == "linux"
+    expected_os = "darwin" if os.uname().sysname.lower() == "darwin" else "linux"
+    assert attempts[0]["os"] == expected_os
 
 
 def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox):
@@ -208,12 +209,16 @@ def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox):
 
     p = _run_installer(script, sandbox)
     assert p.returncode == 0, f"stdout:\n{p.stdout}\nstderr:\n{p.stderr}"
-    assert "setsid" in p.stdout or "detaching" in p.stdout
-    assert "unsupervised" in p.stdout
     assert "uninstall:" in p.stdout
 
-    attempts = json.loads(_fetch(f"{simcore}/api/agents/install/attempts"))["attempts"]
-    assert attempts[0]["code"] == "DEGRADED_NO_SUPERVISOR"
+    if os.uname().sysname.lower() == "darwin":
+        assert "installed launchd job:" in p.stdout
+    else:
+        assert "setsid" in p.stdout or "detaching" in p.stdout
+        assert "unsupervised" in p.stdout
+
+        attempts = json.loads(_fetch(f"{simcore}/api/agents/install/attempts"))["attempts"]
+        assert attempts[0]["code"] == "DEGRADED_NO_SUPERVISOR"
 
 
 def test_pre_staged_binary_needs_no_network_fetch(simcore, sandbox, tmp_path):

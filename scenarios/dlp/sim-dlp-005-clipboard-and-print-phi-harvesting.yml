@@ -1,0 +1,101 @@
+scenario_id: "SIM-DLP-005"
+name: "Clipboard and Print Buffer PHI Healthcare Records Harvesting"
+version: "1.0"
+status: "active"
+plane: "DLP"
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: "UCS-DLP-04"
+tc_ref: "TC-DLP-07"
+tc_refs:
+  - "TC-DLP-07"
+uc_name: "Enterprise Data Loss Prevention"
+tc_name: "Validate DLP enforces regulatory compliance controls for HIPAA and PHI data classification and handling"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1115"
+mitre_technique_name: "Clipboard Data"
+additional_techniques:
+  - technique: "T1005"
+    name: "Data from Local System"
+
+threat_report: "Unit 42 - Healthcare Sector Cyber Threat Landscape"
+threat_report_url: "https://unit42.paloaltonetworks.com/healthcare-threat-landscape/"
+
+execution_identity:
+  default: "svc-backup"
+  options:
+    - "svc-backup"
+    - "www-data"
+    - "root"
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Content Inspection"
+methodology_family: "F1"
+primary_kpi: "Compliance Score"
+threshold:
+  kpi: "Compliance Score"
+  op: "="
+  value: 100.0
+  unit: "%"
+success_criteria: |
+  Interception and bulk harvesting of HIPAA Medical Records Numbers (MRN) and diagnostic
+  codes from memory/clipboard generates immediate Endpoint DLP compliance detection alert.
+moat_tier: "LEAD"
+
+steps:
+  - id: "step-01"
+    name: "Stage unencrypted patient health records (PHI)"
+    command: |
+      mkdir -p /tmp/cortex_dlp_phi
+      cat << 'EOF' > /tmp/cortex_dlp_phi/patient_phi_records.hl7
+      MSH|^~\&|EPIC|HOSPITAL|CORTEX_LAB|RECEIVING|20260827180000||ADT^A01|MSG0001|P|2.5
+      PID|1||MRN984210^^^HOSPITAL||DOE^JANE||19850615|F|||123 HEALTH WAY^^METROPOLIS^NY^10001||555-0199|||S||987-65-4320
+      DG1|1|ICD10|C34.90|MALIGNANT NEOPLASM OF UNPAIRED BRONCHUS OR LUNG||A
+      EOF
+    identity: "svc-backup"
+    mitre_technique: "T1005"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "Unencrypted HL7 patient healthcare data staged locally"
+        ttp_ref: "TTP-2026-0181"
+        detection_id: "bioc-hl7-phi-data-staging"
+
+  - id: "step-02"
+    name: "Harvest patient diagnostics into clipboard buffer"
+    command: |
+      python3 -c "
+      import os
+      with open('/tmp/cortex_dlp_phi/patient_phi_records.hl7', 'r') as f:
+          content = f.read()
+      # Simulate clipboard buffer capture
+      with open('/tmp/cortex_dlp_phi/clipboard_capture.txt', 'w') as out:
+          out.write(content)
+      "
+    identity: "svc-backup"
+    mitre_technique: "T1115"
+    causality:
+      parent_step: "step-01"
+      pivot: "process_lineage"
+    expected_detections:
+      - plane: DLP
+        type: BIOC
+        description: "Clipboard capture of protected healthcare information (PHI/MRN)"
+        ttp_ref: "TTP-2026-0181"
+        detection_id: "bioc-phi-clipboard-harvesting"
+      - plane: DLP
+        type: Analytics
+        description: "DLP policy violation: Unauthorised access and extraction of HIPAA-regulated medical records"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortex_dlp_phi"
+
+author: "Henry Reed"

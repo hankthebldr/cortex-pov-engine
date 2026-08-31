@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -56,7 +56,7 @@ def _fake_fetcher_with_alert(t):
 def test_auto_reconcile_validates_recent_run(db_factory):
     from connectors.service import auto_reconcile_once
 
-    t0 = datetime.utcnow() - timedelta(minutes=10)
+    t0 = datetime.now(timezone.utc) - timedelta(minutes=10)
     _seed(db_factory, run_id="run-auto-1", started_at=t0)
     fetcher = _fake_fetcher_with_alert(t0 + timedelta(seconds=20))
 
@@ -75,7 +75,7 @@ def test_auto_reconcile_validates_recent_run(db_factory):
 def test_auto_reconcile_noop_without_integration(db_factory):
     from connectors.service import auto_reconcile_once
 
-    t0 = datetime.utcnow() - timedelta(minutes=5)
+    t0 = datetime.now(timezone.utc) - timedelta(minutes=5)
     _seed(db_factory, run_id="run-auto-2", started_at=t0, with_integration=False)
 
     async def _run():
@@ -89,7 +89,7 @@ def test_auto_reconcile_noop_without_integration(db_factory):
 def test_auto_reconcile_skips_old_runs(db_factory):
     from connectors.service import auto_reconcile_once
 
-    old = datetime.utcnow() - timedelta(days=3)
+    old = datetime.now(timezone.utc) - timedelta(days=3)
     _seed(db_factory, run_id="run-auto-3", started_at=old)
     fetcher = _fake_fetcher_with_alert(old + timedelta(seconds=20))
 
@@ -106,7 +106,7 @@ def test_reconcile_run_raises_structured_error_on_no_integration(db_factory):
     from connectors.service import ReconcileError, reconcile_run
     from models import Result, Run
 
-    t0 = datetime.utcnow()
+    t0 = datetime.now(timezone.utc)
     _seed(db_factory, run_id="run-auto-4", started_at=t0, with_integration=False)
 
     async def _run():

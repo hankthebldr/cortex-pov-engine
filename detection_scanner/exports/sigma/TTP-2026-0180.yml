@@ -1,0 +1,53 @@
+title: "Cross-Channel DLP: Local SQL Database Staging Correlated to Network Exfiltration \u2014 Sql Dump Pii Staging"
+id: ttp-2026-0180-bioc-01
+status: experimental
+description: |
+  Sql Dump Pii Staging
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'db_users_dump' and (action_file_path contains '/tmp/' or action_file_path contains 'AppData')
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048
+    - attack.t1074
+    - attack.t1560
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Cross-Channel DLP: Local SQL Database Staging Correlated to Network Exfiltration \u2014 Compressed Staging Payload"
+id: ttp-2026-0180-bioc-02
+status: experimental
+description: |
+  Compressed Staging Payload
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'staged_payload.gz'
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048
+    - attack.t1074
+    - attack.t1560
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -32,7 +32,15 @@ jobs:
           # Replace placeholders so the page knows which repo to query at runtime.
           OWNER="${GITHUB_REPOSITORY_OWNER}"
           REPO="${GITHUB_REPOSITORY#*/}"
-          sed -i "s|__GH_OWNER__|${OWNER}|g; s|__GH_REPO__|${REPO}|g" _site/index.html _site/app.js
+          # Substitute across every text asset that ships, rather than a
+          # hard-coded file list. The list previously named _site/app.js;
+          # when the landing page became a self-contained single file that
+          # path stopped existing and sed would have failed the deploy.
+          find _site -type f \( -name "*.html" -o -name "*.js" -o -name "*.css" \) \
+            -exec sed -i "s|__GH_OWNER__|${OWNER}|g; s|__GH_REPO__|${REPO}|g" {} +
+          if grep -rq "__GH_OWNER__\|__GH_REPO__" _site; then
+            echo "::error::unsubstituted placeholder left in _site"; exit 1
+          fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

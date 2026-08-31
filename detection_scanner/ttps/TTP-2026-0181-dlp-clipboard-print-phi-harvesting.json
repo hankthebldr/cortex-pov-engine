@@ -1,0 +1,183 @@
+{
+  "id": "TTP-2026-0181",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-28T00:00:00Z",
+    "updated_at": "2026-08-28T00:00:00Z",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "dlp",
+      "clipboard-theft",
+      "hipaa-compliance",
+      "phi",
+      "healthcare"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 30,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Clipboard and Local Memory Harvesting of Protected Health Information (PHI)",
+    "summary": "Attacker or malicious software reads clipboard memory and intercepts unencrypted HL7 medical records containing Medical Record Numbers (MRN) and diagnostic codes.",
+    "description": "Healthcare environments face regulatory requirements (HIPAA) to prevent unauthorized extraction of patient diagnostic data. Cortex XDR Endpoint DLP monitors clipboard read/write events and local process buffers for HL7 data markers and ICD-10 diagnostic codes.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Healthcare Ransomware Operator",
+        "aliases": [
+          "PHI Harvester"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Healthcare Sector Targeting"
+    ],
+    "industries_targeted": [
+      "technology",
+      "financial-services",
+      "healthcare"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1115",
+        "name": "Clipboard Data",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1005",
+        "name": "Data from Local System",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: OS API Execution",
+      "File: File Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Endpoint DLP active on test host."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "mkdir -p /tmp/cortex_dlp_phi\npython3 -c \"with open('/tmp/cortex_dlp_phi/patient_phi_records.hl7', 'r') as f: content = f.read()\nwith open('/tmp/cortex_dlp_phi/clipboard_capture.txt', 'w') as out: out.write(content)\"",
+      "timeout_seconds": 30
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Hl7 Phi Data Staging",
+        "logic": "preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'patient_phi' and (action_file_path contains '/tmp/' or action_file_path contains 'AppData')",
+        "description": "Hl7 Phi Data Staging",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1115",
+          "T1005"
+        ]
+      },
+      {
+        "name": "Phi Clipboard Harvesting",
+        "logic": "preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'clipboard_capture' and action_file_path contains '/tmp/'",
+        "description": "Phi Clipboard Harvesting",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1115",
+          "T1005"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "name": "Endpoint DLP Clipboard PHI Audit",
+        "query": "dataset = xdr_data | filter event_type in ('FILE_WRITE', 'PROCESS_EXEC') and (action_file_name contains '.hl7' or action_file_name contains 'clipboard') | comp count() as ops by agent_hostname, actor_process_username | filter ops >= 1",
+        "purpose": "hunt"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "rule_id": "CR-DLP-0005",
+        "name": "PHI File Read Followed by Clipboard Buffer Write",
+        "logic": "Sequence: File Read (HL7 PHI) -> File Write (Clipboard Dump) within 60s"
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-DLP-CLIPBOARD-PHI"
+        ],
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter action_file_name = 'patient_phi_records.hl7'"
+      },
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "investigation",
+        "rule_ids": [
+          "XSIAM-AN-HIPAA-DLP-ALERT"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_file_name = 'clipboard_capture.txt'"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 - Healthcare Sector Cyber Threat Landscape",
+      "url": "https://unit42.paloaltonetworks.com/healthcare-threat-landscape/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    }
+  ]
+}

@@ -41,6 +41,8 @@ CSPM_002 = "POS-CSPM-002"
 CSPM_003 = "POS-CSPM-003"
 DSPM_001 = "POS-DSPM-001"
 DSPM_002 = "POS-DSPM-002"
+DSPM_003 = "POS-DSPM-003"
+DSPM_004 = "POS-DSPM-004"
 AISP_001 = "POS-AISP-001"
 AISP_002 = "POS-AISP-002"
 AISP_003 = "POS-AISP-003"
@@ -49,7 +51,7 @@ ASM_001 = "POS-ASM-001"
 ASM_002 = "POS-ASM-002"
 
 ALL_POS = (
-    CSPM_001, CSPM_002, CSPM_003, DSPM_001, DSPM_002,
+    CSPM_001, CSPM_002, CSPM_003, DSPM_001, DSPM_002, DSPM_003, DSPM_004,
     AISP_001, AISP_002, AISP_003, AISP_005, ASM_001, ASM_002,
 )
 
@@ -61,6 +63,8 @@ EXPECTED_BINDINGS = {
     CSPM_003: ("UCS-CSPM-01", "TC-CSPM-01"),
     DSPM_001: ("UCS-DSPM-01", "TC-DSPM-01"),
     DSPM_002: ("UCS-DSPM-03", "TC-DSPM-03"),
+    DSPM_003: ("UCS-DSPM-01", "TC-DSPM-01"),
+    DSPM_004: ("UCS-DSPM-02", "TC-DSPM-02"),
     AISP_001: ("UCS-AISP-01", "TC-AISP-01"),
     AISP_002: ("UCS-AISP-02", "TC-AISP-02"),
     AISP_003: ("UCS-AISP-03", "TC-AISP-03"),
@@ -69,11 +73,8 @@ EXPECTED_BINDINGS = {
     ASM_002: ("UCS-ASM-04", "TC-ASM-06"),
 }
 
-# TC-CSPM-01 is the ONLY first-slice POS row the index gives a measurable
-# threshold ("within 15 min"). Every other row is "Qualitative pass", so a
-# machine PASS is clamped to not_applicable — "evidence, not a scored pass".
-# This split is the honest coverage story and it is asserted, not narrated.
-SCOREABLE = {CSPM_003}
+# Measurable threshold rows in the live index.
+SCOREABLE = {CSPM_003, DSPM_004}
 
 # Context every artifact needs to render. Values are shaped like the real
 # `terraform output` they come from.
@@ -420,6 +421,8 @@ async def test_satisfied_tenant_reports_evidence_not_a_scored_pass(pos_specs):
     if not registry.loaded:
         pytest.skip("UC/TC index snapshot absent")
     for aid in ALL_POS:
+        if aid in SCOREABLE:
+            continue
         spec = spec_of(pos_specs, aid)
         if spec.primary_check.probe == "xql_latency":
             continue

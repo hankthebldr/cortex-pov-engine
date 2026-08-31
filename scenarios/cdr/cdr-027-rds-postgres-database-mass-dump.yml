@@ -1,0 +1,83 @@
+scenario_id: "SIM-CDR-027"
+name: "RDS PostgreSQL Mass Database Dump via Compromised Web Identity"
+version: "1.0"
+status: "active"
+plane: "CDR"
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: "UCS-DSPM-04"
+tc_ref: "TC-DSPM-04"
+tc_refs:
+  - "TC-DSPM-04"
+uc_name: "Data Security Posture Management (DSPM)"
+tc_name: "Validate Data Detection & Response (DDR) — Anomalous data access patterns detected in near-real-time"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1530"
+mitre_technique_name: "Data from Cloud Storage"
+additional_techniques:
+  - technique: "T1505.003"
+    name: "Server Software Component: Web Shell"
+
+threat_report: "Unit 42 - Cloud Database Breaches and Web Shell Extortion"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report/"
+
+execution_identity:
+  default: "www-data"
+  options:
+    - "www-data"
+    - "postgres"
+    - "root"
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Database Runtime Anomaly Detection"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Execution of bulk database dump utility (`pg_dump`) by a web server identity (`www-data`)
+  targeting sensitive customer tables triggers immediate Cortex Cloud DDR behavioral alert.
+moat_tier: "LEAD"
+
+steps:
+  - id: "step-01"
+    name: "Execute mass database dump of customer records via web identity"
+    command: |
+      mkdir -p /tmp/cortex_ddr_dump
+      # Simulate pg_dump command invocation by web process
+      python3 -c "
+      import os, sys
+      with open('/tmp/cortex_ddr_dump/rds_customer_export.sql', 'w') as f:
+          f.write('-- PostgreSQL database dump --\n')
+          f.write('COPY customers (id, name, ssn, pan, balance) FROM stdin;\n')
+          for i in range(100):
+              f.write(f'{i}\tUser_{i}\t999-00-{i:04d}\t4111-2222-3333-{i:04d}\t{i*1500}\n')
+          f.write('\\.\n')
+      "
+    identity: "www-data"
+    mitre_technique: "T1530"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Mass database export file created by non-database service account"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: "bioc-s3-mass-object-read"
+      - plane: CDR
+        type: Analytics
+        description: "Cortex Cloud DDR: Anomalous high-volume database export by web service identity"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortex_ddr_dump"
+
+author: "Henry Reed"

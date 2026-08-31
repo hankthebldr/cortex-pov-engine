@@ -1,68 +1,101 @@
 # CortexSim — Detection Simulation Engine
 
-Enterprise-grade, Cortex-branded detection simulation platform for Palo
-Alto Networks Domain Consultants. Validates BIOC, Analytics, IOC, and
-cross-plane stitching across XSIAM / XDR / AIRS / Browser / KOI surfaces
-with controlled, high-fidelity signal generation.
+Enterprise detection simulation engine for Palo Alto Networks Cortex Domain
+Consultants. It generates controlled, high-fidelity signal into a customer's
+Cortex environment (XSIAM / XDR / Cortex Cloud) to validate detection logic
+across the full `detection_type` vocabulary — **`BIOC · XQL · Analytics ·
+Correlation · IOC · ABIOC`** — plus the XDM modeling-rule normalization
+substrate and cross-plane stitching.
 
-> This wiki is auto-generated from `docs/wiki/` in the
-> [`hankthebldr/cortex-pov-engine`](https://github.com/hankthebldr/cortex-pov-engine)
-> repo on every merge to `main`. Do not edit pages directly in the
-> GitHub wiki — they will be overwritten.
+> Not a red-team C2 — a **detection quality-assurance engine**. Real binaries,
+> real process causality, real telemetry.
 
-## Quick links
+> **This wiki is generated.** Narrative pages come from `docs/wiki/` in the
+> [source repo](https://github.com/hankthebldr/cortex-pov-engine); the whole
+> scenario catalog is rebuilt from the live corpus by `scripts/gen_wiki.py` on
+> every merge to `main`. Direct edits in the wiki UI are overwritten.
 
-- **[[Architecture]]** — three-tier design, plugin model, identity harness
-- **[[Detection Planes]]** — what's covered, what's pending
-- **[[EAL Simulator]]** — plugin catalog + campaign model
+## Read this before quoting any number
+
+| Term | Meaning | Count |
+|---|---|---|
+| **Authored** | Exists and loads clean under strict validation | 177 scenarios · 22 assertions |
+| **Executed** | Has run end-to-end through a beacon or push bundle | partial |
+| **Tenant-verified** | Has run against a **live Cortex tenant**, alert read back | **0** |
+
+***tenant-verified is 0.*** Every green in the test suite and the console comes
+from an injected transport. **Authored is not proven.** The console's
+*Readiness* surface states this verbatim and renders the connector ladder as
+four never-collapsed rungs: **AUTHORED · CONFIGURED · REACHABLE · VERIFIED**.
+
+## Current state — counted, not estimated
+
+Measured **2026-08-30** by running the real scenario loader and the real EAL
+plugin registry over the tree. Where any prose disagrees, re-run the count and
+the count wins.
+
+| Surface | Count |
+|---|---|
+| Loadable scenarios | **177** across **16 planes** |
+| Steps · step-detections | **667 · 1116** |
+| TTP detection cards | **175** |
+| Assertion artifacts (POS/PLT/AUT) | **22** (15 · 4 · 3) |
+| EAL simulator plugins | **21** |
+| Tool-adapter packs | **91** (8 shelf-backed · 48 exemption-declared) |
+| AWS IaC modules | **11** |
+| HTTP routes at boot | **133** |
+| MITRE ATT&CK tactics | **14** |
+
+```bash
+make validate && make check-refs && make coverage-strict
+```
+
+## The catalog
+
+- **[[Scenario Index]]** — all 177 scenarios, every plane, one table
+- **[[ATT-CK-Coverage]]** — tactic → technique → scenario matrix
+- **[[Detection Planes]]** — how planes work, and the per-plane pages
+
+## Narrative pages
+
+- **[[Architecture]]** — three-tier design, execution modes, identity harness
+- **[[EAL Simulator]]** — the 21-plugin catalog + campaign model
 - **[[AIRS Validation]]** — vulnerable-LLM canary + prompt-attacker pipeline
-- **[[KOI Validation]]** — agentic supply-chain artifact pack + agentic_egress
-- **[[Tools Catalog]]** — what every in-tree tool does + how to invoke
-- **[[Roadmap]]** — phase-by-phase shipped vs. pending
+- **[[KOI Validation]]** — agentic supply-chain artifact pack + `agentic_egress`
+- **[[Tools Catalog]]** — what every in-tree tool does + how to invoke it
+- **[[Detection Coverage Lab]]** — coverage analysis workflow
 - **[[POV Runbook]]** — DC playbook for a customer engagement
-- **[[Plugin Development]]** — adding a new EAL plugin
 - **[[Scenario Authoring]]** — writing a new scenario YAML
+- **[[Plugin Development]]** — adding a new EAL plugin
 - **[[Contributing]]** — how to land changes
+- **[[Roadmap]]** — shipped vs pending
 
 ## Repo layout
 
 ```
-core/                  ← SimCore FastAPI app
+core/                  ← SimCore FastAPI app — 133 routes
   api/                   REST routers
-  eal_simulator/         EAL traffic simulator + 7 plugins
-  engine/                scenario loader, orchestrator, push generator
-agent/                 ← Go pull-model beacon
-ui/                    ← React 18 + Vite frontend
-scenarios/             ← YAML scenario library, per plane
-sources/               ← submodules + in-tree tools
-infra/                 ← Terraform IaC modules (AWS)
-deploy/helm/           ← Helm chart for the EAL simulator
-docs/                  ← architecture, runbooks, research briefs, wiki
-tests/                 ← pytest suite
+  engine/                scenario_loader · orchestrator · push_generator
+                         uctc_registry · verifier · assertions · payload_shelf
+  connectors/            optional read-back measurement loop
+  integrations/xsiam/    ~116 read-only operation packs + Tier-2 XQL
+  eal_simulator/         EAL traffic simulator + 21 plugins
+  planes/                declarative PlaneDescriptor registry (16 planes)
+agent/                 ← Go pull-model beacon (5-target build matrix)
+ui/                    ← React 18 + Vite console
+scenarios/             ← 177 scenario YAMLs, per plane
+assertions/            ← 22 POS/PLT/AUT artifacts
+detection_scanner/ttps ← 175 TTP detection cards
+tools/packs/           ← 91 tool-adapter packs
+payloads/              ← digest-pinned payload shelf
+infra/modules/aws/     ← 11 Terraform modules
+docs/reference/        ← counted ground truth — the authority
 ```
 
-## Status snapshot — Phase 5 (latest shipped)
+## Distribution
 
-| Plane | Status |
-|---|---|
-| CDR | 5 scenarios + IaC |
-| EDR | 5 scenarios + IaC |
-| NDR | 5 scenarios + IaC + EAL simulator |
-| ITDR | IaC module (no scenarios yet) |
-| CSPM / ASM / TIM | IaC modules |
-| Cloud App | planned |
-| Analytics | 3 multi-plane stitching scenarios |
-| **AI_ACCESS** | 5 active scenarios via `llm_provider_egress` plugin |
-| **AIRS** | 5 active scenarios via `cortex-prompt-attacker` + `airs_prompt_attack` plugin |
-| **BROWSER** | 5 draft scenarios — Phase 6 |
-| **KOI** | 5 active scenarios via `cortex-malicious-agentic-pack` + `agentic_egress` plugin |
-
-7 EAL plugins shipped (`c2_http_beacon`, `dns_tunnel_exfil`,
-`bulk_https_exfil`, `stratum_tcp_connect`, `smb_rpc_sweep`,
-`airs_prompt_attack`, `llm_provider_egress`, `agentic_egress`).
-
-352-test pytest surface across `tests/`,
-`sources/cortex-vulnerable-llm/tests/`,
-`sources/cortex-prompt-attacker/tests/`.
-
-See [[Roadmap]] for what's next.
+CortexSim is **build-from-source**. There is no tagged release and no published
+container image — `.github/workflows/release.yml` implements that pipeline and
+fires on a `v*.*.*` tag, but no tag has been cut. See [[Contributing]] for
+build instructions, or the
+[landing page](https://hankthebldr.github.io/cortex-pov-engine/).

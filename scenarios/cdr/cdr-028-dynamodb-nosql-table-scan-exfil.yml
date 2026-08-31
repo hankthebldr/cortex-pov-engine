@@ -1,0 +1,82 @@
+scenario_id: "SIM-CDR-028"
+name: "DynamoDB NoSQL Table Scan and External Data Exfiltration"
+version: "1.0"
+status: "active"
+plane: "CDR"
+detection_types:
+  - BIOC
+  - Analytics
+
+uc_ref: "UCS-DSPM-04"
+tc_ref: "TC-DSPM-04"
+tc_refs:
+  - "TC-DSPM-04"
+uc_name: "Data Security Posture Management (DSPM)"
+tc_name: "Validate Data Detection & Response (DDR) — Anomalous NoSQL data access patterns detected"
+
+mitre_tactic: "TA0009"
+mitre_tactic_name: "Collection"
+mitre_technique: "T1530"
+mitre_technique_name: "Data from Cloud Storage"
+additional_techniques:
+  - technique: "T1078.004"
+    name: "Valid Accounts: Cloud Accounts"
+
+threat_report: "Unit 42 - Cloud Threat Report: IAM Role Exploitation and NoSQL Breaches"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-threat-report/"
+
+execution_identity:
+  default: "container-runtime"
+  options:
+    - "container-runtime"
+    - "root"
+
+push_supported: true
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "NoSQL Access Anomaly Detection"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 300
+  unit: "seconds"
+success_criteria: |
+  Compromised IAM credentials executing full table scans across DynamoDB customer tables
+  and exporting records triggers a Cortex Cloud DDR behavioral anomaly detection alert.
+moat_tier: "LEAD"
+
+steps:
+  - id: "step-01"
+    name: "Execute DynamoDB full table scan simulation"
+    command: |
+      mkdir -p /tmp/cortex_ddr_dynamo
+      cat << 'EOF' > /tmp/cortex_ddr_dynamo/dynamodb_full_scan.json
+      {
+        "TableName": "Production-Customer-Data",
+        "ScannedCount": 5000,
+        "Items": [
+          {"id": {"S": "USR-001"}, "email": {"S": "user1@corp.internal"}, "ssn": {"S": "999-11-0001"}},
+          {"id": {"S": "USR-002"}, "email": {"S": "user2@corp.internal"}, "ssn": {"S": "999-11-0002"}}
+        ]
+      }
+      EOF
+    identity: "container-runtime"
+    mitre_technique: "T1530"
+    expected_detections:
+      - plane: CDR
+        type: BIOC
+        description: "Bulk DynamoDB table export artifact created on host"
+        ttp_ref: "TTP-2026-0003"
+        detection_id: "bioc-s3-mass-object-read"
+      - plane: CDR
+        type: Analytics
+        description: "Cortex Cloud DDR: High-volume NoSQL table scan by anomalous compute entity"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortex_ddr_dynamo"
+
+author: "Henry Reed"

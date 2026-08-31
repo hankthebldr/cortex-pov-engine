@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "docs/wiki/**"
+      - "scenarios/**"
+      - "scripts/gen_wiki.py"
+      - "core/engine/scenario_loader.py"
       - ".github/workflows/wiki-sync.yml"
   workflow_dispatch:
 
@@ -16,57 +19,91 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-22.04
+    # contents: write is REQUIRED to push to <repo>.wiki.git. This job carried
+    # `contents: read` from its first commit, so every run since 2026-05-11
+    # failed at the push step and the live wiki has been frozen since
+    # 2026-05-15. Do not narrow this back to read.
     permissions:
-      contents: read
+      contents: write
     steps:
-      - name: Checkout repo (for docs/wiki/ source)
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           path: repo
 
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: pip }
+
+      - name: Install loader deps
+        # gen_wiki.py reads the corpus through the REAL scenario loader, so it
+        # needs whatever that module imports — not just pyyaml.
+        working-directory: repo
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r core/requirements.txt
+
+      - name: Build the wiki tree
+        working-directory: repo
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}/repo
+        run: |
+          python3 scripts/gen_wiki.py --out "${GITHUB_WORKSPACE}/wiki-build"
+          echo "--- pages built ---"
+          ls "${GITHUB_WORKSPACE}/wiki-build" | wc -l
+
+      - name: Guard — never publish an empty or truncated tree
+        # wiki-sync force-replaces the whole wiki. If the generator silently
+        # produced nothing (bad path, loader import failure), an unguarded sync
+        # would delete every page and report success. Fail closed instead.
+        run: |
+          COUNT=$(find "${GITHUB_WORKSPACE}/wiki-build" -name '*.md' | wc -l)
+          echo "generated ${COUNT} pages"
+          if [ "$COUNT" -lt 50 ]; then
+            echo "::error::only ${COUNT} pages generated (expected 150+) — refusing to publish a truncated wiki"
+            exit 1
+          fi
+          for required in Home.md _Sidebar.md Scenario-Index.md ATT-CK-Coverage.md; do
+            if [ ! -f "${GITHUB_WORKSPACE}/wiki-build/${required}" ]; then
+              echo "::error::required page ${required} missing — refusing to publish"
+              exit 1
+            fi
+          done
+
       - name: Checkout wiki
-        # The wiki is a separate git repo at <repo>.wiki.git. We use
-        # the default GITHUB_TOKEN; for private wikis or first-time
-        # publish, swap to a PAT with 'repo' scope stored in
-        # secrets.WIKI_TOKEN.
+        # The wiki is a separate git repo at <repo>.wiki.git, and its default
+        # branch is `master`, not `main`.
         run: |
           set -euo pipefail
           git clone "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git" wiki || {
-            echo "Wiki repo not found — create the wiki by visiting"
+            echo "::error::Wiki repo not found — create it at"
             echo "https://github.com/${{ github.repository }}/wiki"
-            echo "and clicking 'Create the first page', then re-run this workflow."
+            echo "by clicking 'Create the first page', then re-run this workflow."
             exit 1
           }
 
-      - name: Sync docs/wiki -> wiki repo
+      - name: Publish
         run: |
           set -euo pipefail
           cd wiki
-
-          # Identify the bot author for the commit.
           git config user.name "cortexsim-wiki-bot"
           git config user.email "wiki-bot@users.noreply.github.com"
 
-          # Drop everything tracked except .git, copy fresh.
+          # Full replace: drop everything tracked except .git, copy the freshly
+          # built tree over. Safe because the build guard above proved the tree
+          # is complete.
           git rm -rfq . 2>/dev/null || true
-          cp -r ../repo/docs/wiki/. .
+          cp -r "${GITHUB_WORKSPACE}/wiki-build/." .
 
-          # Drop our README — it's source-tree only, not a wiki page.
-          rm -f README.md
-
-          # Stage + commit + push.
           if git status --porcelain | grep -q .; then
             git add -A
-            COMMIT_SHA="${{ github.sha }}"
-            COMMIT_SHA_SHORT="${COMMIT_SHA:0:8}"
-            git commit -m "wiki: sync from main@${COMMIT_SHA_SHORT}
+            SHA="${{ github.sha }}"
+            git commit -m "wiki: sync from main@${SHA:0:8}
 
-            Auto-published from docs/wiki/ in
-            ${{ github.repository }}@${COMMIT_SHA_SHORT}.
-
-            Edit the source markdown — direct wiki edits are overwritten."
+          Narrative pages from docs/wiki/; scenario catalog regenerated from the
+          corpus by scripts/gen_wiki.py. Edit the source — direct wiki edits are
+          overwritten."
             git push origin master
-            echo "wiki updated."
+            echo "wiki updated: $(find . -name '*.md' | wc -l) pages"
           else
             echo "no wiki changes to publish."
           fi

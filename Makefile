@@ -24,7 +24,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
-        ci clean
+        wiki wiki-check ci clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -160,6 +160,17 @@ check-refs: ## every scenario through the REAL loader under CORTEXSIM_STRICT_REF
 	  -e CORTEXSIM_ENV=development -e PYTHONPATH=/repo/core $(IMAGE) \
 	  sh -c "pip install --no-cache-dir -q pytest pytest-asyncio httpx && \
 	         pytest tests/engine/test_corpus_refs_strict.py -q"
+
+# gen_wiki.py drives the REAL scenario loader, so it needs core/requirements.txt
+# installed. Prefer the repo venv; fall back to whatever python3 is on PATH and
+# let the ImportError name the missing dep rather than failing cryptically.
+WIKI_PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
+
+wiki: ## build the GitHub wiki tree from the live corpus -> build/wiki/
+	$(WIKI_PY) scripts/gen_wiki.py --out build/wiki
+
+wiki-check: ## build the wiki to a temp dir and report page counts only
+	$(WIKI_PY) scripts/gen_wiki.py --check
 
 unscoreable-report: ## regenerate docs/uc_tc_mapping/unscoreable-tcs.md from the index snapshot
 	python3 scripts/report_unscoreable_tcs.py

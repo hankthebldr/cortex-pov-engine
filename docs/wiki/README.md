@@ -1,32 +1,70 @@
 # `docs/wiki/`
 
-Source of truth for the GitHub wiki at
+Source for the GitHub wiki at
 **https://github.com/hankthebldr/cortex-pov-engine/wiki**.
 
-The `.github/workflows/wiki-sync.yml` workflow clones the wiki repo
-(`<repo>.wiki.git`) on every merge to `main`, copies every markdown
-file from this directory over, and force-pushes. Direct edits in the
-GitHub wiki UI are overwritten on the next merge.
+The published wiki has **two halves**, and only one of them lives here.
+
+| Half | Source | Count |
+|---|---|---|
+| **Narrative** — Home, Architecture, runbooks, how-tos | these files | 15 pages |
+| **Catalog** — `SIM-*`, `Plane-*`, Scenario Index, ATT&CK Coverage | generated from the live corpus by `scripts/gen_wiki.py` | ~187 pages |
+
+`.github/workflows/wiki-sync.yml` runs the generator on every merge to `main`,
+assembles both halves into one tree, and force-pushes it to the wiki repo.
+Direct edits in the wiki UI are overwritten.
+
+## Why the catalog is generated, not committed
+
+Two earlier attempts stored the catalog instead of generating it, and both
+drifted:
+
+- These narrative pages described a 53-scenario, 13-plane tree that stopped
+  being true in **May 2026**.
+- The live wiki carried 57 per-scenario pages from a one-shot script that was
+  never re-run, frozen at **39 scenarios across 8 planes**.
+
+Meanwhile `wiki-sync.yml` does `git rm -rfq .` before copying — so turning it
+on while only the narrative half existed would have **deleted all 57 catalog
+pages**. Generating the catalog is what makes this directory a superset of
+what is published, which is the precondition for the destructive sync being
+safe.
+
+## Build it locally
+
+```bash
+make wiki          # -> build/wiki/, the exact tree the workflow publishes
+```
+
+`build/` is gitignored. The generator reads the corpus through the **real**
+loader, so a scenario the engine rejects never reaches the wiki — it is
+reported on stderr and excluded. That is deliberate: a published page for a
+scenario that does not load is a claim the engine cannot back.
+
+```bash
+python3 scripts/gen_wiki.py --check     # build to a temp dir, report counts only
+```
 
 ## Page conventions
 
-- One `.md` file per page; the filename (minus `.md`) is the wiki
-  page title GitHub renders.
-- Wiki page links use `[[Page Name]]` (GitHub wiki double-bracket
-  syntax). Page names are the file's basename with hyphens
-  converted to spaces — `Detection-Planes.md` is linked as
-  `[[Detection Planes]]`.
-- `_Sidebar.md` and `_Footer.md` are special — GitHub renders them on
-  every page. Do not link `[[_Sidebar]]` etc.
+- One `.md` file per page; the filename minus `.md` is the page title GitHub
+  renders.
+- Links use `[[Page Name]]`. Page names are the basename with hyphens read as
+  spaces — `Detection-Planes.md` is linked `[[Detection Planes]]`.
+- A pipe inside a `[[target|label]]` link **must be escaped** (`\|`) when it
+  appears in a markdown table, or it terminates the cell.
+- `_Sidebar.md` and `_Footer.md` are special — GitHub renders them on every
+  page. Never link them.
+- `README.md` (this file) is source-tree only and is not published.
 
-## Adding a page
+## Adding a narrative page
 
 1. Create `docs/wiki/My-Page.md`.
-2. Cross-link from `_Sidebar.md`, `Home.md`, and any related pages.
-3. Open a PR; the workflow will publish on merge.
+2. Cross-link it from `_Sidebar.md` and `Home.md`.
+3. Open a PR. The workflow publishes on merge.
 
-## Local preview
+## Changing the catalog
 
-GitHub wiki uses GFM. Any GFM renderer (`grip`, `glow`, IDE preview)
-will render acceptably; the actual sidebar / footer behaviour only
-appears once published.
+Do not hand-write catalog pages — edit the scenario YAML, or edit the page
+templates in `scripts/gen_wiki.py`. Adding a new plane also needs an entry in
+that script's `PLANE_ENGINE` map so the plane page gets an engine name.

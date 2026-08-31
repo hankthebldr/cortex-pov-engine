@@ -1,0 +1,16 @@
+{
+  "mitre_techniques": [
+    "T1115",
+    "T1005"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "Sequence: File Read (HL7 PHI) -> File Write (Clipboard Dump) within 60s",
+      "name": "PHI File Read Followed by Clipboard Buffer Write",
+      "rule_id": "CR-DLP-0005",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0181"
+}
