@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import '../../styles/destinations/adapters.css'
 import { getToolAdapters, getToolAdapter } from '../../api/client.js'
 import useShelf from './useShelf.js'
 import { SUPPLY, SUPPLY_LABEL, supplyOf, shortDigest, scenarioIdsFrom } from './supplyState.js'

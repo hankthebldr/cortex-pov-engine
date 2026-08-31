@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import '../../styles/destinations/readiness.css'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import useReadiness from './readiness/useReadiness.js'
 import { HS, HS_CHIP, HS_LABEL, healthHeadline } from './readiness/healthModel.js'

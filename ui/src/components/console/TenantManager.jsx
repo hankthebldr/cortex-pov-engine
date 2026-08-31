@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react'
+import '../../styles/destinations/tenants.css'
 import {
   registerXsiamTenant,
   deleteXsiamTenant,

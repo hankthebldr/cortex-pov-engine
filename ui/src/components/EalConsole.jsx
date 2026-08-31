@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import '../styles/destinations/eal.css'
 import EalCampaignBuilder from './EalCampaignBuilder.jsx'
 import EalRunProgress from './EalRunProgress.jsx'
 import {
