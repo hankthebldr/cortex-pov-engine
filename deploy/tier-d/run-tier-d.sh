@@ -29,14 +29,23 @@
 #   deploy/tier-d/run-tier-d.sh --scenario SIM-EDR-001 --keep     # leave target up
 #
 # EXIT CODES
-#   0  lifecycle completed and no ENGINE-class failure was observed
-#   1  an ENGINE-class failure was observed (a real defect)
+#   0  lifecycle completed and classify.py returned a genuine PASS (a clean
+#      run, or an honest PASS-with-unrun-steps ENVIRONMENT outcome)
+#   1  classify.py returned FAIL or INCONCLUSIVE — an ENGINE-class failure
+#      (a real defect), or the run does not carry enough honest evidence to
+#      call PASS (zero steps executed, some declared steps never reported)
 #   2  harness could not set up (docker, SimCore unreachable, enrol failed)
+#   3  the run never reached a terminal state within the poll budget (a hung
+#      run, or SimCore not updating status) — classify.py was never even
+#      invoked, because there is nothing terminal yet to classify
 # ===========================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." >/dev/null 2>&1 && pwd)"
+
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/lib/poll_status.sh"
 
 SIMCORE="${CORTEXSIM_SERVER:-http://localhost:8888}"
 SCENARIO=""
@@ -208,13 +217,23 @@ STATUS="running"
 for _ in $(seq 1 120); do
   STATUS="$(curl -fsS "${SIMCORE}/api/runs/${RUN_ID}" \
     | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo "")"
-  case "$STATUS" in
-    running|pending|queued|"") sleep 3 ;;
-    *) break ;;
-  esac
+  is_non_terminal_status "$STATUS" && sleep 3 || break
 done
 
 curl -fsS "${SIMCORE}/api/runs/${RUN_ID}" > "${RESULTS_DIR}/run.json"
+
+# A hung run is a green harness if this is not checked: the loop above just
+# EXITS after its fixed budget regardless of why — it does not distinguish
+# "reached a terminal state" from "gave up waiting". Without this gate, a
+# STATUS still stuck at running/pending/queued/"" prints as if it were a
+# legitimate terminal status and classify.py runs against a mid-flight,
+# forever-incomplete run.json.
+if is_non_terminal_status "$STATUS"; then
+  err "run ${RUN_ID} never reached a terminal state within the poll budget (120 x 3s = 360s)."
+  err "last known status: '${STATUS}'. This is NOT a pass — the run may be hung, or SimCore"
+  err "may not be updating run status. Partial run.json saved to ${RESULTS_DIR}/run.json."
+  exit 3
+fi
 ok "terminal status: ${STATUS}  (run.json saved)"
 
 # ---------------------------------------------------------------------------

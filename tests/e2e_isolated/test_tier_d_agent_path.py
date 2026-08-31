@@ -107,7 +107,22 @@ def test_classify_nologin_is_environment_not_engine(tmp_path):
     """The exact defect that motivated this harness: www-data shipped with
     nologin + no /var/www, so `runuser -l www-data` died in 7ms and the TTP
     never ran. That must classify as ENVIRONMENT (never happened) — NOT
-    ENGINE (CortexSim is broken) and NOT a silent OK."""
+    ENGINE (CortexSim is broken) and NOT a silent OK.
+
+    2026-08-31 pre-merge review fix (C1): this fixture only reports 1 of 5
+    declared steps (fail-fast stopped the remaining 4 after step-01's real
+    ENVIRONMENT failure). Before the fix this test asserted
+    harness_verdict == "PASS" / rc == 0 for that shape — i.e. `unreported`
+    was computed and printed but never gated the verdict. classify.py now
+    refuses to call ANY run PASS while steps_unreported > 0: knowing WHY
+    step-01 didn't run its command does not tell you why steps 2-5 never
+    even started (fail-fast stopping there is a fact about the ENGINE, not
+    proof every subsequent step would have hit the identical environment
+    gap). The per-STEP classification this test exists to pin — ENVIRONMENT,
+    never ENGINE, never a silent OK — is unchanged and still asserted below;
+    only the run-level verdict tightened. See
+    test_classify_all_steps_reported_environment_only_still_passes for the
+    companion case (nothing unreported) that DOES stay a clean PASS."""
     body = (
         "--- STDOUT ---\n"
         "This account is currently not available.\n"
@@ -118,12 +133,41 @@ def test_classify_nologin_is_environment_not_engine(tmp_path):
     _write(run_path, _run_json(status="failed", tc_verdict="pending", steps_text=steps))
 
     rc, verdict, _ = _classify(run_path, tmp_path / "verdict.json")
-    assert rc == 0, "ENVIRONMENT-only failures must NOT fail the harness"
-    assert verdict["harness_verdict"] == "PASS"
     assert verdict["counts"]["ENVIRONMENT"] == 1
     assert verdict["counts"]["ENGINE"] == 0
     assert verdict["steps"][0]["class"] == "ENVIRONMENT"
     assert verdict["steps_unreported"] == 4
+    # The run-level gate (C1): 4 unreported steps means the harness cannot
+    # prove the lifecycle completed, so it must NOT report an unqualified
+    # PASS — even though the one step it DID see is correctly, honestly
+    # classified ENVIRONMENT rather than ENGINE.
+    assert verdict["harness_verdict"] != "PASS"
+    assert rc != 0
+
+
+def test_classify_all_steps_reported_environment_only_still_passes(tmp_path):
+    """Companion to the case above: when EVERY declared step reports (nothing
+    unreported), an ENVIRONMENT-classified step must still be an honest,
+    clean PASS — this is the real SIM-EDR-001 shape (steps 1-4 OK, step 5
+    RUNTIME_DEPENDENCY_MISSING, all 5 of 5 reported) verified end to end in
+    docs/design/tier-d-classifier-fixes.md."""
+    steps = [
+        _step(1, 5, "step-01", "T1087.001", "www-data", "--- STDOUT ---\n[*] ok", 0),
+        _step(2, 5, "step-02", "T1003.008", "www-data", "--- STDOUT ---\n[*] ok", 0),
+        _step(3, 5, "step-03", "T1552.001", "www-data", "--- STDOUT ---\n[*] ok", 0),
+        _step(4, 5, "step-04", "T1003", "root", "--- STDOUT ---\n[*] ok", 0),
+        _step(5, 5, "step-05", "T1003", "root",
+              "--- STDERR ---\n!! RUNTIME_DEPENDENCY_MISSING: python\n", 127),
+    ]
+    run_path = tmp_path / "run.json"
+    _write(run_path, _run_json(status="failed", tc_verdict="pending", steps_text=steps))
+
+    rc, verdict, _ = _classify(run_path, tmp_path / "verdict.json")
+    assert rc == 0, "ENVIRONMENT-only failures with nothing unreported must NOT fail the harness"
+    assert verdict["harness_verdict"] == "PASS"
+    assert verdict["counts"]["ENVIRONMENT"] == 1
+    assert verdict["counts"]["ENGINE"] == 0
+    assert verdict["steps_unreported"] == 0
 
 
 def test_classify_engine_negative_control_fails(tmp_path):
