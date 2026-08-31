@@ -6,13 +6,23 @@
    ═══════════════════════════════════════════════════════════════════ */
 
 .theme-console {
-  /* ── Color field ─────────────────────────────────────────────────── */
-  --c-void:            #050A14;
-  --c-surface:         #0A1420;
-  --c-surface-raised:  #101A28;
-  --c-surface-modal:   #18243A;
-  --c-hairline:        #1F2E46;
-  --c-hairline-strong: #2B3E5E;
+  /* ── Color field ─────────────────────────────────────────────────────
+     ALIASED onto the mockup token layer (cortex-tokens.css) — the same
+     pattern cortex-theme.css already uses for --cortex-*. These used to
+     be hardcoded to a single permanently-dark palette with no
+     [data-theme] variant, which is what made the shell "an accident"
+     rather than a theme: nothing here ever changed when [data-theme]
+     flipped, and every destination painted on top of a fixed-dark void.
+     Aliasing them means --s0..--s3 / --bd / --bd2 / --tx / --tx2 / --tx3
+     do the real work and .theme-console now follows [data-theme] like
+     everything else. Do not re-hardcode a hex value here — change the
+     token layer instead. ────────────────────────────────────────────── */
+  --c-void:            var(--s0);
+  --c-surface:         var(--s1);
+  --c-surface-raised:  var(--s2);
+  --c-surface-modal:   var(--s3);
+  --c-hairline:        var(--bd);
+  --c-hairline-strong: var(--bd2);
 
   /* ── Action (Cortex green — PRIMARY accent: launch, active, brand) ── */
   /* Redesign v2 — see docs/design/console-redesign-v2.md. Green leads,
@@ -37,11 +47,15 @@
   --c-pending-soft:    rgba(245, 165, 36, 0.14);
   --c-stitched:        #00C0E8;
 
-  /* ── Text ────────────────────────────────────────────────────────── */
-  --c-text:            #E8EEF5;
-  --c-text-secondary:  #8FA3BE;
-  --c-text-muted:      #5A6B84;
-  --c-text-disabled:   #3D4A60;
+  /* ── Text — aliased onto --tx/--tx2/--tx3 (see Color field note above).
+     No fourth text-tier exists on the token layer; --c-text-disabled maps
+     onto --tx3 (same as -muted) rather than inventing an unauthored
+     fourth shade — WCAG's contrast requirement is explicitly waived for
+     disabled controls, so this is not a new AA exposure. ─────────────── */
+  --c-text:            var(--tx);
+  --c-text-secondary:  var(--tx2);
+  --c-text-muted:      var(--tx3);
+  --c-text-disabled:   var(--tx3);
 
   /* ── PANW / accents (use sparingly) ──────────────────────────────── */
   --c-panw-orange:     #FA582D;
@@ -129,7 +143,13 @@
   font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: var(--tracking-tight);
-  color: var(--c-text);
+  /* Was a hardcoded theme-specific near-white (#E8EEF5 via --c-text) that
+     this (0,1,1)-specificity rule imposed over every destination's own
+     single-class title rule, discarding it — see docs/design/console-
+     redesign-repair.md defect 1. Headings inherit the theme's text token
+     directly so they render correctly in both themes regardless of which
+     rule wins the cascade. */
+  color: var(--tx);
   line-height: var(--lh-tight);
 }
 
