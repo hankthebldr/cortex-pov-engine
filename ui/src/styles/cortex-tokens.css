@@ -30,7 +30,20 @@
             "flatten a fill for no benefit" tradeoff to make — see
             --warn-str, unchanged, for anything that must stay the
             bright designer gold)
-   Dark values for both are untouched — already >=4.5:1 as authored. */
+   Dark values for both are untouched, but they are NOT both
+   >=4.5:1 as authored everywhere they're used — measure before
+   trusting this sentence:
+     --warn (#FFCB06) clears 4.5:1 against every dark surface,
+            9.87:1-12.88:1 across --s0/--s1/--s2/--s3/--ac-soft.
+     --tx3  (#77867E) clears 4.5:1 only against --s0 (5.13:1) and
+            --s1 (4.72:1); it falls short against --s2 (4.33:1),
+            --s3 (3.99:1), and --ac-soft (3.93:1). Practical impact
+            is near-zero today (one dark `:hover` rule composites
+            --tx3 onto --ac-soft), but a future dark `color: --tx3`
+            use against --s2/--s3/--ac-soft would be a real AA
+            failure — measure that use rather than trusting this
+            block. See docs/design/orange-warn-contrast-fix.md for
+            the full measured table. */
 
 /* Cortex green is the primary accent. PANW orange is reserved for warn/gap signal. */
 :root {
@@ -127,4 +140,35 @@
 }
 [data-theme="dark"] {
   --ac-ink: var(--ac);
+}
+
+/* ============================================================
+   --orange-ink — ADDITIVE (not part of the 25-token contract
+   above). Light-theme text-safe variant of --orange, same story
+   as --ac-ink above: --orange (#FA582D) is the designer's PANW
+   orange, reserved for warn/gap signal (see the file-top comment)
+   and correctly used as a fill/border color — but at the 9-11px
+   this console renders `color:` text, it measures 2.80-3.23:1
+   against --s0..--s3, short of the 4.5:1 text floor on every
+   light surface (payload-blocker copy — PAYLOAD_NOT_STAGED,
+   compose-not-airgapped — is exactly the text this fails on: the
+   warning that a tool never reached the target reads unreadable
+   in the app's default theme). --orange-ink is --orange's own
+   hue+saturation, darkened only as far as needed to clear 4.5:1
+   against every light surface:
+     --s0 2.90:1 -> 4.67:1   --s1 3.23:1 -> 5.21:1
+     --s2 3.08:1 -> 4.97:1   --s3 2.80:1 -> 4.52:1
+   Do NOT darken --orange itself — unlike --warn, it has real
+   fill/border roles at the 3:1 non-text floor it already clears
+   (7.02-7.62:1 there is plenty of margin); this is a second,
+   additive token for the `color:` sites only, exactly the
+   --ac-ink precedent. Dark theme's own --orange (#FF7A54) already
+   clears 4.5:1 against every dark surface (5.93-7.62:1), so
+   --orange-ink there is an alias, not a second color to keep in
+   sync. */
+:root {
+  --orange-ink: #CE2F05;
+}
+[data-theme="dark"] {
+  --orange-ink: var(--orange);
 }
