@@ -479,6 +479,11 @@ _BASH_HEADER_TMPL = """\
 #
 # IMPORTANT: Self-contained — no SimCore dependency at runtime.
 #            Requires Ubuntu 22.04+ or equivalent Linux distribution.
+#            Run as root (or with a configured sudoers) so the identity harness
+#            can impersonate service accounts; without it, service-account steps
+#            fall back to the invoking user and the causality chain is degraded.
+#            Each step is per-step non-fatal — an expected non-zero exit (a
+#            blocked LOLBin, a denied read) is logged, not fatal to the bundle.
 # =============================================================================
 
 set -euo pipefail
@@ -718,7 +723,20 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         cmd = ad.install.runtime_install_command if ad.install else None
         if ad.tier == 4 and cmd:
             adapter_lines.append(f'log INFO "Installing adapter {ad.name} v{ad.version} (tier 4)"')
-            adapter_lines.append(cmd)
+            # Tier-4 installs fetch from the public internet ON THE TARGET, which a
+            # default-deny customer lab blocks. Emit the install UNGUARDED and a
+            # blocked fetch aborts the whole bundle under `set -e` (the apt shape)
+            # or leaves a later step running tool-less (the curl shape). Wrap it so
+            # a failure WARNs honestly and the bundle continues; steps that need an
+            # absent tool then log their own non-zero via run_as rather than
+            # manufacturing a silent false negative. (Stage the tool on the payload
+            # shelf, or pre-install it on the target, to remove the egress need.)
+            adapter_lines.append(
+                "{ " + cmd + "; } || log WARN "
+                + f'"Adapter {ad.name} install failed (blocked egress or missing '
+                + f'package) — steps needing {ad.name} will run tool-less and '
+                + 'produce no signal"'
+            )
         else:
             adapter_lines.append(
                 f'log INFO "Adapter {ad.name} v{ad.version} (tier {ad.tier}, {ad.category}) '
@@ -759,7 +777,16 @@ def generate_bash(scenario: dict[str, Any]) -> str:
             script += f"# Expected: [{det.get('plane','?')}] {det.get('type','?')}: {det.get('description','')}\n"
         # Escape the command for embedding in the run_as call
         escaped_cmd = command.replace("'", "'\\''")
-        script += f"run_as '{identity}' '{escaped_cmd}' '{step_id}'\n\n"
+        # `|| true` is load-bearing, not sloppiness: under `set -euo pipefail` a
+        # bare `run_as` call aborts the ENTIRE bundle the moment any step exits
+        # non-zero — and a non-zero exit is routinely EXPECTED here (a blocked
+        # LOLBin, a `grep` with no match, a denied `cat /etc/shadow` — often the
+        # detection working). A partial detonation reads in a POV as "Cortex
+        # detected nothing". Guarding the call also suppresses `set -e` INSIDE
+        # run_as (bash disables -e in a function invoked in a tested context),
+        # so the harness reaches its own per-step exit-code logging instead of
+        # dying mid-step. This mirrors the PowerShell path's per-step isolation.
+        script += f"run_as '{identity}' '{escaped_cmd}' '{step_id}' || true\n\n"
 
     # --- Footer ---
     script += _FOOTER.format(scenario_id=scenario_id)
