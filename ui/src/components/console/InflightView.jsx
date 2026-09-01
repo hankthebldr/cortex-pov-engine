@@ -134,7 +134,7 @@ export default function InflightView({ activeRun, lastRun, onError }) {
       <div className="narrative inflight-empty">
         <h1 className="inflight-empty__title">No run in progress</h1>
         <p className="inflight-empty__desc">
-          Launch a scenario from the Operations tab. The attack narrative
+          Launch a scenario from the Library. The attack narrative
           timeline will render here as steps execute, and Cortex stitches arrive.
         </p>
       </div>
