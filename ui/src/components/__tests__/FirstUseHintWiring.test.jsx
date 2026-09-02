@@ -88,12 +88,17 @@ describe('Launch first-use hint (I6)', () => {
 
     fireEvent.click(launchBtn)
 
-    await waitFor(() => expect(screen.queryByRole('note')).not.toBeInTheDocument())
+    // Timeout raised for CI headroom: the click fires an async launch (a POST);
+    // the hint only clears once that resolves, which can exceed waitFor's 1000ms
+    // default on a loaded runner. Asserting an element is ABSENT is the pattern
+    // most sensitive to a tight timeout — the element is simply still there when
+    // it expires. The assertion is unchanged.
+    await waitFor(() => expect(screen.queryByRole('note')).not.toBeInTheDocument(), { timeout: 4000 })
     expect(window.localStorage.getItem('cortexsim.onboarding.hint.launch')).toBe('true')
 
     // A remount (e.g. navigating away and back) must not resurrect it.
     const { unmount } = render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
-    await waitFor(() => expect(screen.queryAllByRole('note')).toHaveLength(0))
+    await waitFor(() => expect(screen.queryAllByRole('note')).toHaveLength(0), { timeout: 4000 })
     unmount()
   })
 
