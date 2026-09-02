@@ -162,6 +162,8 @@ class Orchestrator:
         # signal and prevents a queued-but-undelivered task from executing.
         # Unbounded in principle but runs are few/short; pruned on /complete.
         self._aborted: set[str] = set()
+        # agent_id -> asyncio.Event for sub-second long-polling notification
+        self._events: dict[str, asyncio.Event] = {}
 
     # ------------------------------------------------------------------
     # launch
@@ -513,6 +515,21 @@ class Orchestrator:
         if agent_id not in self._queue:
             self._queue[agent_id] = []
         self._queue[agent_id].append(task)
+        if agent_id in self._events:
+            self._events[agent_id].set()
+
+    async def wait_for_task(self, agent_id: str, timeout: float) -> None:
+        """Wait up to timeout seconds for a task to be enqueued for agent_id."""
+        if agent_id not in self._events:
+            self._events[agent_id] = asyncio.Event()
+        event = self._events[agent_id]
+        event.clear()
+        if self._queue.get(agent_id):
+            return
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
 
     def dequeue(self, agent_id: str) -> Optional[Task]:
         """Pop the next deliverable task for an agent from the in-memory queue.

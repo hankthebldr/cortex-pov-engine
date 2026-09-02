@@ -128,6 +128,8 @@ func artifactClientFor(t *testing.T, rs *artifactRecordingServer, stageRoot stri
 		return ""
 	}
 	c.artifactProbeExec = func(string) error { return nil }
+	cacheDir := t.TempDir()
+	c.artifactCacheDirFunc = func() string { return cacheDir }
 	return c
 }
 

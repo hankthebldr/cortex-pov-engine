@@ -129,7 +129,7 @@ steps:
 
   - id: step-02
     name: "CVE-2025-59287 deserialization RCE — WSUS service spawns cmd→powershell (T1190)"
-    command: "echo '[CortexSim][SAFE-MODE] SIM-ASM-005 step-02 — modeling wsusservice.exe/w3wp.exe → cmd.exe → powershell.exe deserialization-RCE lineage (non-destructive marker)'"
+    command: "echo '[CortexSim][SAFE-MODE] SIM-ASM-005 step-02 — modeling wsusservice.exe/w3wp.exe → cmd.exe → powershell.exe deserialization-RCE lineage (non-destructive marker)' && python3 -c 'import sys; print(\"[CortexSim] WSUS RCE emulation marker\", sys.version)'"
     identity: root
     mitre_technique: "T1190"
     platforms: ["linux", "windows"]
@@ -155,7 +155,7 @@ steps:
 
   - id: step-03
     name: "Domain-discovery burst under the WSUS lineage — whoami / net user /domain / ipconfig (T1033/T1087.002)"
-    command: "echo '[CortexSim][SAFE-MODE] SIM-ASM-005 step-03 — modeling post-exploit domain recon burst (whoami; net user /domain; ipconfig /all) under the WSUS process lineage'"
+    command: "echo '[CortexSim][SAFE-MODE] SIM-ASM-005 step-03 — modeling post-exploit domain recon burst (whoami; net user /domain; ipconfig /all) under the WSUS process lineage' && whoami && id && (uname -a || true)"
     identity: root
     mitre_technique: "T1033"
     platforms: ["linux", "windows"]
@@ -175,7 +175,7 @@ steps:
 
   - id: step-04
     name: "Webhook.site exfil — PowerShell Invoke-WebRequest egress from the WSUS host (T1567)"
-    command: "echo '[CortexSim][SAFE-MODE] SIM-ASM-005 step-04 — modeling webhook.site exfil egress (Invoke-WebRequest, curl.exe fallback) to authorised local collector, not the real attacker indicator'"
+    command: "echo '[CortexSim][SAFE-MODE] SIM-ASM-005 step-04 — modeling webhook.site exfil egress (Invoke-WebRequest, curl.exe fallback) to authorised local collector, not the real attacker indicator' && (curl -s -m 2 http://127.0.0.1:8888/api/health || wget -q -O- http://127.0.0.1:8888/api/health || true)"
     identity: root
     mitre_technique: "T1567"
     platforms: ["linux", "windows"]

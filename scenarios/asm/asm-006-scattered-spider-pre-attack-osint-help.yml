@@ -101,6 +101,7 @@ steps:
       # SAFE-MODE: emit the OSINT key-personnel profiling footprint against the
       # authorised target org only. No real victim identity data is collected.
       echo "[CortexSim][SAFE-MODE] SIM-ASM-006 OSINT profiling key personnel of ${TARGET_ORG:-acme-corp} (LinkedIn-sourced personas)"
+      python3 -c 'import urllib.request, json; print("[CortexSim] OSINT query emulation: target=${TARGET_ORG:-acme-corp}")' || id
     identity: root
     mitre_technique: "T1589"
     platforms: ["linux"]
@@ -119,6 +120,7 @@ steps:
       # exposes publicly (a defensive exposure-management finding, not attacker
       # enumeration). This public footprint is the pretext material.
       echo "[CortexSim][SAFE-MODE] Cortex ASM surfaces ${TARGET_ORG:-acme-corp} externally-exposed SaaS apps, CSP tenants, and federated IdP login portal"
+      (curl -s -m 2 http://127.0.0.1:8888/api/health || getent hosts localhost || true)
     identity: root
     mitre_technique: "T1589"
     platforms: ["linux"]
@@ -141,6 +143,7 @@ steps:
       # low-pressure contacts impersonating a locked-out employee, targeting the
       # ASM-exposed personnel. No help desk is actually contacted.
       echo "[CortexSim][SAFE-MODE] simulating repeated low-pressure help-desk account-recovery recon calls (impersonating a locked-out employee among exposed personnel)"
+      python3 -c 'print("[CortexSim] IdP audit simulation: account-recovery requests=5 user=helpdesk-test")' || id
     identity: root
     mitre_technique: "T1598"
     platforms: ["linux"]

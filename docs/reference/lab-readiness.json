@@ -1510,6 +1510,36 @@
     {
       "c2_tools": [],
       "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "ITDR \u2014 Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly -> SOAR Suspend + Session Revoke)",
+      "needs_target_egress": false,
+      "plane": "ITDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-ITDR-016",
+      "service_identities": [
+        "svc-account",
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
       "delivery": "eal",
       "detection_steps_without_signal": 0,
       "detection_types": [
@@ -1595,6 +1625,37 @@
       "steps_real_signal": 5,
       "steps_total": 5,
       "steps_with_detections": 5,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Ransomware Precursor Auto-Containment \u2014 BlackSuit DCSync-to-ESXi Kill Chain Fires an XSOAR Response & Remediation Playbook Before Encryption",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-020",
+      "service_identities": [
+        "svc-account",
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 6,
+      "steps_total": 6,
+      "steps_with_detections": 6,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -1827,6 +1888,67 @@
       "steps_real_signal": 3,
       "steps_total": 3,
       "steps_with_detections": 3,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "IOC",
+        "BIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "TIM Rogue Authenticode Code-Signing Certificate IOC \u2014 Vidar+XMRig Malvertising Loader",
+      "needs_target_egress": false,
+      "plane": "TIM",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-TIM-005",
+      "service_identities": [
+        "svc-account",
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 4,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 1,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain \u2014 VMDK-Copy Offline Credential Theft to Akira_v2 Encryption",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-EDR-019",
+      "service_identities": [
+        "svc-account"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 0.857,
+      "status": "active",
+      "steps_real_signal": 6,
+      "steps_total": 7,
+      "steps_with_detections": 7,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -2250,6 +2372,36 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-AISPM-001",
       "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 0.75,
+      "status": "active",
+      "steps_real_signal": 3,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 1,
+      "detection_types": [
+        "XQL",
+        "BIOC",
+        "ABIOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "ASM \u2014 Scattered Spider Pre-Attack OSINT + Help-Desk Profiling as a Vishing-Precursor Recon Correlation",
+      "needs_target_egress": false,
+      "plane": "ASM",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-ASM-006",
+      "service_identities": [
+        "www-data"
+      ],
       "shelf_backed_tools": [],
       "signal_ratio": 0.75,
       "status": "active",
@@ -3806,6 +3958,38 @@
       "delivery": "agent",
       "detection_steps_without_signal": 2,
       "detection_types": [
+        "ABIOC",
+        "BIOC",
+        "XQL",
+        "IOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "ASM Exposure-to-RCE: Internet-Exposed WSUS (CVE-2025-59287) \u2192 Domain Recon \u2192 Webhook Exfil",
+      "needs_target_egress": false,
+      "plane": "ASM",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-ASM-005",
+      "service_identities": [
+        "svc-account",
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 0.6,
+      "status": "active",
+      "steps_real_signal": 3,
+      "steps_total": 5,
+      "steps_with_detections": 5,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 2,
+      "detection_types": [
         "BIOC",
         "XQL",
         "Correlation",
@@ -5079,211 +5263,20 @@
       "steps_with_detections": 3,
       "tier": "YELLOW",
       "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 5,
-      "detection_types": [
-        "ABIOC",
-        "BIOC",
-        "XQL",
-        "IOC",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "ASM Exposure-to-RCE: Internet-Exposed WSUS (CVE-2025-59287) \u2192 Domain Recon \u2192 Webhook Exfil",
-      "needs_target_egress": false,
-      "plane": "ASM",
-      "reason": "signal-free: declares detections but no step invokes a real binary (tabletop only)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ASM-005",
-      "service_identities": [
-        "svc-account",
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.0,
-      "status": "active",
-      "steps_real_signal": 0,
-      "steps_total": 5,
-      "steps_with_detections": 5,
-      "tier": "RED",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 4,
-      "detection_types": [
-        "XQL",
-        "BIOC",
-        "ABIOC",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "ASM \u2014 Scattered Spider Pre-Attack OSINT + Help-Desk Profiling as a Vishing-Precursor Recon Correlation",
-      "needs_target_egress": false,
-      "plane": "ASM",
-      "reason": "signal-free: declares detections but no step invokes a real binary (tabletop only)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ASM-006",
-      "service_identities": [
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.0,
-      "status": "active",
-      "steps_real_signal": 0,
-      "steps_total": 4,
-      "steps_with_detections": 4,
-      "tier": "RED",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 7,
-      "detection_types": [
-        "BIOC",
-        "ABIOC",
-        "XQL",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "Akira (Howling Scorpius) vCenter-to-ESXi Kill Chain \u2014 VMDK-Copy Offline Credential Theft to Akira_v2 Encryption",
-      "needs_target_egress": false,
-      "plane": "EDR",
-      "reason": "signal-free: declares detections but no step invokes a real binary (tabletop only)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-EDR-019",
-      "service_identities": [
-        "svc-account"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.0,
-      "status": "active",
-      "steps_real_signal": 0,
-      "steps_total": 7,
-      "steps_with_detections": 7,
-      "tier": "RED",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 3,
-      "detection_types": [
-        "ABIOC",
-        "XQL",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "ITDR \u2014 Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly -> SOAR Suspend + Session Revoke)",
-      "needs_target_egress": false,
-      "plane": "ITDR",
-      "reason": "signal-free: declares detections but no step invokes a real binary (tabletop only)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-ITDR-016",
-      "service_identities": [
-        "svc-account",
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.0,
-      "status": "active",
-      "steps_real_signal": 0,
-      "steps_total": 3,
-      "steps_with_detections": 3,
-      "tier": "RED",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 6,
-      "detection_types": [
-        "BIOC",
-        "ABIOC",
-        "XQL",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "Ransomware Precursor Auto-Containment \u2014 BlackSuit DCSync-to-ESXi Kill Chain Fires an XSOAR Response & Remediation Playbook Before Encryption",
-      "needs_target_egress": false,
-      "plane": "ANALYTICS",
-      "reason": "signal-free: declares detections but no step invokes a real binary (tabletop only)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-MP-020",
-      "service_identities": [
-        "svc-account",
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.0,
-      "status": "active",
-      "steps_real_signal": 0,
-      "steps_total": 6,
-      "steps_with_detections": 6,
-      "tier": "RED",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 4,
-      "detection_types": [
-        "IOC",
-        "BIOC",
-        "XQL",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "TIM Rogue Authenticode Code-Signing Certificate IOC \u2014 Vidar+XMRig Malvertising Loader",
-      "needs_target_egress": false,
-      "plane": "TIM",
-      "reason": "signal-free: declares detections but no step invokes a real binary (tabletop only)",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-TIM-005",
-      "service_identities": [
-        "svc-account",
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 0.0,
-      "status": "active",
-      "steps_real_signal": 0,
-      "steps_total": 4,
-      "steps_with_detections": 4,
-      "tier": "RED",
-      "unknown_adapter_refs": []
     }
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 145,
-      "RED": 6,
+      "GREEN": 151,
+      "RED": 0,
       "YELLOW": 26
     },
-    "detection_steps_without_signal": 147,
+    "detection_steps_without_signal": 122,
     "eal_delivered": 55,
     "scenarios_consent_gated": 4,
     "scenarios_needing_target_egress": 26,
     "scenarios_total": 177,
-    "signal_free_scenarios": [
-      "SIM-ASM-005",
-      "SIM-ASM-006",
-      "SIM-EDR-019",
-      "SIM-ITDR-016",
-      "SIM-MP-020",
-      "SIM-TIM-005"
-    ],
+    "signal_free_scenarios": [],
     "total_steps": 667
   }
 }

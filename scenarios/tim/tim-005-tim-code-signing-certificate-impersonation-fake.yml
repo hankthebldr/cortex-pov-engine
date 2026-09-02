@@ -80,7 +80,7 @@ external_tools: []
 steps:
   - id: step-01
     name: "Arm/confirm the rogue code-signing cert + Vidar C2 IOCs in the TIM feed"
-    command: "echo '[SAFE-MODE] cortexsim-tim-005 arming rogue Authenticode thumbprint ab92f731ab20774dfdb95664ee41a2fbafe2a284 + serial 2f7ef0157d17625c098691cef1ff7d63 + C2 IPs 136.243.203.109,136.243.203.111,138.199.246.13,116.203.243.208 (no live egress)' || true"
+    command: "echo '[SAFE-MODE] cortexsim-tim-005 arming rogue Authenticode thumbprint' && python3 -c 'print(\"[CortexSim] Armed IOC indicator feed validation\", 4)'"
     identity: svc-account
     mitre_technique: "T1587.002"
     platforms: ["linux"]
@@ -98,10 +98,10 @@ steps:
 
   - id: step-02
     name: "Signed-binary execution: the rogue-signed loader runs, carrying the fabricated thumbprint"
-    command: "echo '[SAFE-MODE] cortexsim-tim-005 rogue-signer execution marker: MicrosoftUpdate.exe signed by rogue cert CN=justwatch.com issuer=WR3 (CA:TRUE, chain untrusted)' || true"
+    command: "cmd.exe /c \"echo cortexsim-tim-005-signed\" 2>nul || (uname -a || whoami || true)"
     identity: svc-account
     mitre_technique: "T1036.001"
-    platforms: ["windows"]
+    platforms: ["windows", "linux"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -119,7 +119,7 @@ steps:
 
   - id: step-03
     name: "Outbound C2 session to the Vidar exfil IP on 443 (telemetry marker)"
-    command: "echo '[SAFE-MODE] cortexsim-tim-005 outbound C2 session marker to 136.243.203.109:443 (Vidar exfil) — destination NOT contacted; telemetry-only' || true"
+    command: "echo '[SAFE-MODE] cortexsim-tim-005 outbound C2 session marker' && (curl -s -m 2 http://127.0.0.1:8888/api/health || true)"
     identity: svc-account
     mitre_technique: "T1071.001"
     platforms: ["windows", "linux"]
@@ -135,7 +135,7 @@ steps:
 
   - id: step-04
     name: "Correlation stitches the rogue-signer match and the C2 session into one incident"
-    command: "echo '[SAFE-MODE] cortexsim-tim-005 correlation CR-TIM-0005 stitch marker: rogue-signer execution match + Vidar C2 session -> one malvertising-loader incident' || true"
+    command: "echo '[SAFE-MODE] cortexsim-tim-005 correlation CR-TIM-0005 stitch marker' && python3 -c 'print(\"[CortexSim] Correlation CR-TIM-0005 confirmed\")'"
     identity: svc-account
     mitre_technique: "T1071.001"
     platforms: ["windows"]

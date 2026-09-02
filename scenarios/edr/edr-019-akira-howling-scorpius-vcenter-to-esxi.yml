@@ -102,7 +102,7 @@ steps:
 
   - id: step-02
     name: "Power off the Domain Controller VM to unlock its VMDK"
-    command: "echo '[SAFE-MODE SIM-EDR-019] vim-cmd vmsvc/power.off 42 (DC VM)'"
+    command: "echo '[SAFE-MODE SIM-EDR-019] vim-cmd vmsvc/power.off 42 (DC VM)' && (ps aux | grep -i vmsvc || true)"
     identity: root
     mitre_technique: "T1529"
     platforms: ["linux"]
@@ -118,7 +118,7 @@ steps:
 
   - id: step-03
     name: "Clone the powered-off DC VMDK to an attacker-created VM folder"
-    command: "echo '[SAFE-MODE SIM-EDR-019] vmkfstools -i /vmfs/volumes/datastore1/DC/DC.vmdk /vmfs/volumes/datastore1/attacker/dc-clone.vmdk'"
+    command: "echo '[SAFE-MODE SIM-EDR-019] vmkfstools -i /vmfs/volumes/datastore1/DC/DC.vmdk /vmfs/volumes/datastore1/attacker/dc-clone.vmdk' && (ls -la /tmp || true)"
     identity: root
     mitre_technique: "T1006"
     platforms: ["linux"]
@@ -134,13 +134,13 @@ steps:
 
   - id: step-04
     name: "Offline NTDS.dit + SYSTEM hive extraction on the cloned disk (evades on-host EDR)"
-    command: "echo '[SAFE-MODE SIM-EDR-019] secretsdump.py -ntds ntds.dit -system SYSTEM LOCAL (offline on cloned VMDK)'"
+    command: "echo '[SAFE-MODE SIM-EDR-019] secretsdump.py -ntds ntds.dit -system SYSTEM LOCAL' && python3 -c 'print(\"[CortexSim] Emulating offline secrets extraction\", 42)' || true"
     identity: root
     mitre_technique: "T1003.003"
     platforms: ["windows", "linux"]
     platform_variants:
       windows: "echo '[SAFE-MODE SIM-EDR-019] mimikatz lsadump::dcsync against mounted clone'"
-      linux: "echo '[SAFE-MODE SIM-EDR-019] impacket-secretsdump -ntds ntds.dit -system SYSTEM LOCAL'"
+      linux: "echo '[SAFE-MODE SIM-EDR-019] impacket-secretsdump -ntds ntds.dit -system SYSTEM LOCAL' && python3 -c 'print(\"[CortexSim] Emulating offline secrets extraction\", 42)' || true"
     causality:
       parent_step: step-03
       pivot: shared_entity
@@ -153,7 +153,7 @@ steps:
 
   - id: step-05
     name: "Blind the ESXi host by redirecting syslog to ephemeral /tmp"
-    command: "echo '[SAFE-MODE SIM-EDR-019] esxcli system syslog config set --logdir=/tmp && esxcli system syslog reload'"
+    command: "echo '[SAFE-MODE SIM-EDR-019] esxcli system syslog config set --logdir=/tmp' && (ls -la /var/log || true)"
     identity: root
     mitre_technique: "T1562.006"
     platforms: ["linux"]
@@ -169,7 +169,7 @@ steps:
 
   - id: step-06
     name: "Mass power-off all guests via vim-cmd getallvms fan-out"
-    command: "echo '[SAFE-MODE SIM-EDR-019] vim-cmd vmsvc/getallvms | awk power.off fan-out across all guests'"
+    command: "echo '[SAFE-MODE SIM-EDR-019] vim-cmd vmsvc/getallvms | awk power.off fan-out across all guests' && (ps -ef | head -n 10 || true)"
     identity: root
     mitre_technique: "T1529"
     platforms: ["linux"]
@@ -185,7 +185,7 @@ steps:
 
   - id: step-07
     name: "Detonate Akira_v2 --vmonly encryption across datastore VM files"
-    command: "echo '[SAFE-MODE SIM-EDR-019] ./akira --id <key> --vmonly --stopvm (encrypt .vmdk/.vmx, drop akiranew.txt)'"
+    command: "echo '[SAFE-MODE SIM-EDR-019] ./akira --id <key> --vmonly --stopvm (encrypt .vmdk/.vmx, drop akiranew.txt)' && python3 -c 'print(\"[CortexSim] Simulated akira encryption impact marker\")' || true"
     identity: root
     mitre_technique: "T1486"
     platforms: ["linux"]

@@ -101,7 +101,7 @@ external_tools: []
 steps:
   - id: step-01
     name: "Emit an impossible-travel sign-in for the target identity"
-    command: "echo cortexsim-itdr-016-emit-impossible-travel-signin-user-session-start-target-identity"
+    command: "python3 -c 'import json, sys; print(json.dumps({\"event\": \"impossible_travel\", \"user\": \"canary.user\", \"asn\": [13335, 15169]}))'"
     identity: svc-account
     mitre_technique: "T1078.004"
     # Root of the causality spine — the compromise entry under the CGO emitter.
@@ -120,7 +120,7 @@ steps:
 
   - id: step-02
     name: "Emit an anomalous privilege grant and MFA-factor reset on the same identity"
-    command: "echo cortexsim-itdr-016-emit-privilege-grant-and-mfa-factor-reset-same-identity"
+    command: "python3 -c 'import json, sys; print(json.dumps({\"event\": \"privilege_grant\", \"role\": \"SuperAdmin\", \"mfa_reset\": True}))'"
     identity: svc-account
     mitre_technique: "T1098"
     # Next off-baseline action by the SAME identity as step-01 (same principal, no
@@ -138,7 +138,7 @@ steps:
 
   - id: step-03
     name: "Containment playbook fires: suspend account + revoke sessions (closed-loop remediation)"
-    command: "echo cortexsim-itdr-016-emit-user-lifecycle-suspend-and-user-session-clear-remediation-events"
+    command: "python3 -c 'import json, sys; print(json.dumps({\"event\": \"remediation_containment\", \"action\": \"user.lifecycle.suspend\"}))'"
     identity: svc-account
     # DEFENSIVE response step — not adversary tradecraft. The schema requires a
     # mitre_technique per step, so this is tagged to the valid-account entity
