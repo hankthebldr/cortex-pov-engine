@@ -86,19 +86,24 @@ describe('Launch first-use hint (I6)', () => {
     const launchBtn = await screen.findByRole('button', { name: /Launch run/i })
     expect(screen.getByRole('note')).toBeInTheDocument()
 
+    // findByRole returns the Launch button even while it is still DISABLED:
+    // `disabled = launch.launching || blockers.length > 0`, and `blockers`
+    // settle asynchronously as the preflight resolves fetched agent/target
+    // data. fireEvent.click on a disabled button is a no-op, so clicking before
+    // it enables leaves handleLaunch — and the synchronous launchHint.onUse()
+    // that clears the hint — never called. That was the CI-only flake (the hint
+    // stayed and the button was already enabled again by the time waitFor gave
+    // up). Wait for the button to be enabled, THEN click; the clear is then
+    // synchronous and the default waitFor is ample.
+    await waitFor(() => expect(launchBtn).toBeEnabled())
     fireEvent.click(launchBtn)
 
-    // Timeout raised for CI headroom: the click fires an async launch (a POST);
-    // the hint only clears once that resolves, which can exceed waitFor's 1000ms
-    // default on a loaded runner. Asserting an element is ABSENT is the pattern
-    // most sensitive to a tight timeout — the element is simply still there when
-    // it expires. The assertion is unchanged.
-    await waitFor(() => expect(screen.queryByRole('note')).not.toBeInTheDocument(), { timeout: 4000 })
+    await waitFor(() => expect(screen.queryByRole('note')).not.toBeInTheDocument())
     expect(window.localStorage.getItem('cortexsim.onboarding.hint.launch')).toBe('true')
 
     // A remount (e.g. navigating away and back) must not resurrect it.
     const { unmount } = render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
-    await waitFor(() => expect(screen.queryAllByRole('note')).toHaveLength(0), { timeout: 4000 })
+    await waitFor(() => expect(screen.queryAllByRole('note')).toHaveLength(0))
     unmount()
   })
 
