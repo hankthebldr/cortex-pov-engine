@@ -86,6 +86,16 @@ describe('Launch first-use hint (I6)', () => {
     const launchBtn = await screen.findByRole('button', { name: /Launch run/i })
     expect(screen.getByRole('note')).toBeInTheDocument()
 
+    // findByRole returns the Launch button even while it is still DISABLED:
+    // `disabled = launch.launching || blockers.length > 0`, and `blockers`
+    // settle asynchronously as the preflight resolves fetched agent/target
+    // data. fireEvent.click on a disabled button is a no-op, so clicking before
+    // it enables leaves handleLaunch — and the synchronous launchHint.onUse()
+    // that clears the hint — never called. That was the CI-only flake (the hint
+    // stayed and the button was already enabled again by the time waitFor gave
+    // up). Wait for the button to be enabled, THEN click; the clear is then
+    // synchronous and the default waitFor is ample.
+    await waitFor(() => expect(launchBtn).toBeEnabled())
     fireEvent.click(launchBtn)
 
     await waitFor(() => expect(screen.queryByRole('note')).not.toBeInTheDocument())

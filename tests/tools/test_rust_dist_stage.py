@@ -70,7 +70,7 @@ def _dockerfile_text() -> str:
 def _stage(name: str) -> str:
     """Text of one builder stage, from its FROM line to the next FROM."""
     text = _dockerfile_text()
-    match = re.search(rf"^FROM\s+\S+\s+AS\s+{re.escape(name)}\s*$", text, re.M)
+    match = re.search(rf"^FROM\s+(?:--\S+\s+)*\S+\s+AS\s+{re.escape(name)}\s*$", text, re.M)
     assert match, f"core/Dockerfile has no `FROM ... AS {name}` stage"
     rest = text[match.end():]
     nxt = re.search(r"^FROM\s", rest, re.M)
@@ -94,7 +94,7 @@ def test_rust_builder_stage_is_musl_native():
     there, so every build is native. On a glibc base the same recipe becomes a
     cross-compile and needs a musl linker that is not installed."""
     text = _dockerfile_text()
-    match = re.search(r"^FROM\s+(\S+)\s+AS\s+rust-builder\s*$", text, re.M)
+    match = re.search(r"^FROM\s+(?:--\S+\s+)*(\S+)\s+AS\s+rust-builder\s*$", text, re.M)
     assert match, "no rust-builder stage"
     base = match.group(1)
     assert "alpine" in base, (

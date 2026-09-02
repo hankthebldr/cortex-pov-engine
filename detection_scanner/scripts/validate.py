@@ -155,6 +155,14 @@ KNOWN_DATASETS = frozenset({
     #                           (TTP-2026-0162/0163). Live-tenant string to be
     #                           confirmed against a real Kubernetes-audit ingest.
     "msft_azure_audit", "kubernetes_audit_logs",
+    # Plan 05 — DLP plane (TTP-2026-0179) raw source. Palo Alto Networks
+    # Enterprise DLP / NGFW data-filtering telemetry (dlp_status, file_type,
+    # destination_domain, user_id) forwarded into XSIAM. Convention-named
+    # (panw_<product>_raw) after the ArcaneDoor/Ivanti/GlobalProtect precedent
+    # above; a real ingested PANW product, not an invented source, so it must
+    # not WARN as a typo. Exact tenant dataset string to be confirmed against a
+    # live Enterprise-DLP ingest.
+    "panw_dlp_raw",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain

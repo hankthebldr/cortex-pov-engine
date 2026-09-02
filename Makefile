@@ -20,7 +20,7 @@ COMPOSE     ?= docker compose
 # in core/config.py) doesn't refuse to start with the `changeme` default.
 SECRET      ?= $(shell openssl rand -hex 32)
 
-.PHONY: help up down build agent-dist test test-backend test-agent test-agent-cross \
+.PHONY: help up down build agent-dist lab-ready check-lab-ready test test-backend test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
@@ -211,6 +211,12 @@ coverage: ## detection coverage-quality report (WARN-only, exit 0)
 
 coverage-strict: ## coverage report as a hard gate (exit 1 on floor/target breach)
 	python3 detection_scanner/scripts/coverage_report.py --strict
+
+lab-ready: ## Regenerate docs/reference/lab-readiness.{json,md} — which scenarios emit signal in a lab
+	python3 scripts/lab_readiness.py --json docs/reference/lab-readiness.json --md docs/reference/lab-readiness.md
+
+check-lab-ready: lab-ready ## Determinism gate: regenerate the manifest and fail if it drifts from the committed files
+	git diff --exit-code docs/reference/lab-readiness.json docs/reference/lab-readiness.md
 
 # -----------------------------------------------------------------------------
 # Everything

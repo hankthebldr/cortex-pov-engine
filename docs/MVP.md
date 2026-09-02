@@ -172,6 +172,14 @@ false claim about a customer's coverage.
 
 In priority order:
 
+> **See also (2026-09-01 hardening pass):**
+> - `docs/reference/mvp-readiness-2026-09-01.md` — full-guts review (front end,
+>   agent+NGFW lab, substrate) with a prioritized L1–L6 punch list and the open
+>   product decisions.
+> - `docs/reference/lab-readiness.md` (`make lab-ready`) — which scenarios emit
+>   signal in a lab (GREEN 145 · YELLOW 26 · RED 6). Start any demo from GREEN.
+
+
 1. Publish (§4), then re-run the stranger dry run against the **published**
    artifact rather than a local build.
 2. Fix `release.yml`'s `lint-shell` so the CI publish route works.

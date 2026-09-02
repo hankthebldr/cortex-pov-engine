@@ -58,7 +58,7 @@ def _agent_builder_stage() -> str:
     """The text of the `FROM ... AS agent-builder` stage, up to the next FROM."""
     text = DOCKERFILE.read_text()
     m = re.search(
-        r"^FROM\s+\S+\s+AS\s+agent-builder\b(.*?)(?=^FROM\s|\Z)",
+        r"^FROM\s+(?:--\S+\s+)*\S+\s+AS\s+agent-builder\b(.*?)(?=^FROM\s|\Z)",
         text,
         re.MULTILINE | re.DOTALL | re.IGNORECASE,
     )

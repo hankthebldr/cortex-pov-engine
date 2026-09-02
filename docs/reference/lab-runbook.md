@@ -55,6 +55,13 @@ harness below does).
 
 ### 3. A meaningful slice of steps are echo-only while declaring `expected_detections`
 
+> **The generated manifest does this counting for you.** `make lab-ready`
+> writes `docs/reference/lab-readiness.md`, which tiers every scenario
+> GREEN/YELLOW/RED and lists the 6 signal-free (RED) scenarios by id. Prefer it
+> over the ad-hoc one-liner below — the classifier is quote/comment/probe-aware,
+> so it does not mis-score a `&&` inside an `echo` string (which the one-liner
+> below does) as a real command.
+
 Of the corpus's 654 total steps, at minimum **100 of them are pure
 `echo`/`printf` statements** — placeholders that declare `expected_detections`
 without producing the underlying signal a sensor could actually catch — and

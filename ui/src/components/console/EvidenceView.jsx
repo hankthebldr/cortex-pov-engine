@@ -66,7 +66,7 @@ export default function EvidenceView({
       <div className="evidence evidence-empty">
         <h1 className="evidence-empty__title">No run to validate</h1>
         <p className="evidence-empty__desc">
-          Launch a scenario from the Operations tab. The detection scorecard
+          Launch a scenario from the Library. The detection scorecard
           and POV report export will appear here once results begin to arrive.
         </p>
       </div>
