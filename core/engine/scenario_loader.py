@@ -630,6 +630,16 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
             errors.append(msg)
             continue
 
+        # S-17 — step identities against the canonical harness spec. Structural,
+        # NOT gated by CORTEXSIM_STRICT_REFS: an undeclared identity is a broken
+        # step on a customer host, not an incomplete crosswalk.
+        identity_error = _check_step_identities(schema, filepath)
+        if identity_error:
+            msg = f"REJECTED {filepath}: {identity_error}"
+            logger.error(msg)
+            errors.append(msg)
+            continue
+
         # Upsert against the prefetched map. Newly-added scenarios are folded
         # back in so a duplicate scenario_id across two files still collapses
         # onto one row (the old per-file SELECT saw pending adds via autoflush).
@@ -681,6 +691,64 @@ def _derive_entitlements(schema: "ScenarioSchema") -> dict[str, list[str]]:
         "required_addons": schema.required_addons or addons,
     }
 
+
+
+def _check_step_identities(schema, filepath) -> Optional[str]:
+    """S-17 — every step's ``identity`` must be a DECLARED identity.
+
+    A step's ``identity`` is a username the executing side turns into a real
+    ``runuser -l <user> -c ...`` on the target. Both execution paths resolve an
+    unrecognised name through a "best-effort" arm that emits a WARN and runs it
+    anyway, so an identity nobody declared does not fail here — it fails on the
+    CUSTOMER's host, as a non-zero exit with no detection. In a POV report that
+    reads as a miss by their stack rather than as an unprovisioned target.
+
+    That is not hypothetical: 80 steps declared ``svc-account``, which was in
+    neither the spec nor the beacon allowlist (both say ``svc-backup``), and it
+    survived because the only drift guard compares the Go allowlist to the spec
+    — nothing compared the CORPUS to either.
+
+    Accepted:
+      * ``direct_identities``  (root, container-runtime, direct) and empty
+      * ``service_accounts``   — impersonated via the harness on POSIX
+      * ``windows_identities`` — ONLY on a step whose platforms are windows-only.
+        These are never impersonated (Windows has no unattended primitive), but
+        ``runuser -l administrator`` on a Linux step is an authoring error, so
+        allowing them everywhere would defeat the check.
+
+    Returns an error string (the caller rejects) or None.
+    """
+    from engine.identity_spec import (  # noqa: PLC0415
+        DIRECT_IDENTITIES, SERVICE_ACCOUNTS, windows_identities,
+    )
+
+    allowed = set(DIRECT_IDENTITIES) | set(SERVICE_ACCOUNTS)
+    win_only = set(windows_identities())
+    bad: list[str] = []
+
+    for step in (schema.steps or []):
+        ident = (getattr(step, "identity", None) or "").strip()
+        if not ident or ident in allowed:
+            continue
+        platforms = {str(p).lower() for p in (getattr(step, "platforms", None) or [])}
+        if ident in win_only and platforms and platforms <= {"windows"}:
+            continue
+        if ident in win_only:
+            bad.append(
+                f"step={getattr(step, 'id', '?')} identity={ident!r} is a "
+                f"windows-only identity but the step targets {sorted(platforms) or 'no declared platform'}"
+            )
+        else:
+            bad.append(f"step={getattr(step, 'id', '?')} identity={ident!r} is not declared")
+
+    if not bad:
+        return None
+    return (
+        "S-17 undeclared step identity: " + "; ".join(bad)
+        + " — add it to spec/identity_harness.json (and the Go allowlist in "
+        "agent/identity/harness.go) or use a declared one. An undeclared "
+        "identity does not fail here; it fails on the target with no detection."
+    )
 
 def validate_index_refs(
     *,

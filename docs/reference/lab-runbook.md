@@ -46,9 +46,9 @@ miss unless you know to look for it.
 
 `deploy/tier-d/Dockerfile.target` is the reference for what a target actually
 needs: a login shell + home directory for every identity the corpus uses
-(measured, not guessed: `www-data` 104 steps · `svc-backup` 117 · `node` 11 ·
-`administrator` 10 · `user` 7 · `runner` 6 · `app` 6 ·
-`vertex-agent` 5 · `developer` 1 · `nobody` 1), plus the toolchain the Linux
+(measured, not guessed: `container-runtime` 249 · `root` 152 · `svc-backup` 117 ·
+`www-data` 104 · `node` 11 · `administrator` 10 · `user` 7 ·
+`runner` 6 · `app` 6 · `vertex-agent` 5 · `developer` 1 · `nobody` 1), plus the toolchain the Linux
 steps actually invoke (`binutils`, `procps`, `iproute2`, `curl`). Provision a
 real lab target the same way, or use that Dockerfile directly (the Tier-D
 harness below does).

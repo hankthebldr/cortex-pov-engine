@@ -37,8 +37,11 @@ logger = logging.getLogger("cortexsim.identity_spec")
 # JSON file is authoritative; this only guards generation when the file is
 # unreadable.
 _FALLBACK_DIRECT = ("root", "container-runtime", "direct")
+_FALLBACK_WINDOWS_IDENTITIES = ("administrator", "user")
+
 _FALLBACK_SERVICE = (
-    "www-data", "postgres", "mysql", "node", "python3", "nobody", "svc-backup",
+    "app", "developer", "mysql", "node", "nobody", "postgres", "python3",
+    "runner", "svc-backup", "vertex-agent", "www-data",
 )
 _FALLBACK_IMPERSONATION_PLATFORMS = ("linux", "darwin")
 
@@ -90,6 +93,21 @@ def impersonation_platforms() -> tuple[str, ...]:
     ran as ``www-data`` when it ran as the beacon user is a correctness lie.
     """
     vals = _load().get("impersonation_platforms") or list(_FALLBACK_IMPERSONATION_PLATFORMS)
+    return tuple(vals)
+
+
+def windows_identities() -> tuple[str, ...]:
+    """Accounts the corpus declares on windows-ONLY steps.
+
+    They are never impersonated — Windows has no unattended primitive, so
+    ``ResolveFor`` collapses them to ``direct`` and records the degradation.
+    They are kept OUT of ``service_accounts`` on purpose: a POSIX beacon must
+    not treat them as known, because ``runuser -l administrator`` on a Linux
+    step is an authoring error rather than something to run best-effort.
+    ``S-17`` in the scenario loader accepts them only on a step whose declared
+    platforms are windows-only.
+    """
+    vals = _load().get("windows_identities") or list(_FALLBACK_WINDOWS_IDENTITIES)
     return tuple(vals)
 
 

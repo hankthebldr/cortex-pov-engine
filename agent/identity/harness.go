@@ -116,13 +116,17 @@ func ExecuteCtx(ctx context.Context, identity ExecutionIdentity) (ExecResult, er
 // via core/engine/identity_spec.py). harness_spec_test.go asserts this map
 // matches the spec so push and pull resolve a scenario's identity identically.
 var serviceAccounts = map[string]bool{
-	"www-data":   true,
-	"postgres":   true,
-	"mysql":      true,
-	"node":       true,
-	"python3":    true,
-	"nobody":     true,
-	"svc-backup": true,
+	"www-data":     true,
+	"postgres":     true,
+	"mysql":        true,
+	"node":         true,
+	"python3":      true,
+	"nobody":       true,
+	"svc-backup":   true,
+	"app":          true,
+	"developer":    true,
+	"runner":       true,
+	"vertex-agent": true,
 }
 
 // ResolveIdentity maps a scenario step's identity USERNAME string to a harness
