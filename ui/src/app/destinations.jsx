@@ -538,27 +538,52 @@ const TenantsSurface = withSuspense(TenantManager)
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 export const DESTINATIONS = [
-  // Composer leads Operate: it is Phase 2 of the POV model and the only surface
-  // on which a chain is BUILT rather than browsed or replayed. It is NOT the
-  // default destination — Library is, deliberately, because the fastest path
-  // for most sessions is still an existing Unit 42-anchored chain, and landing
-  // a new DC on an empty canvas would hide the 100+ scenarios that already
-  // exist. Composer is one click away, and deep-linkable as
+  // ORDER IS THE POV RUN ORDER, and that is a contract, not a preference.
+  //
+  // The sidebar used to group by JOB (Operate / Analyze / Traffic /
+  // Infrastructure / Manage). That answers "what kind of surface is this?" —
+  // a question nobody asks — while the DC's actual question is "where am I in
+  // the run?". PhaseBar already answers that at the top of the workspace, so
+  // the sidebar disagreeing with it forced a DC to hold two different mental
+  // models of the same fourteen destinations at once.
+  //
+  // The groups below are PhaseBar's phases, in PhaseBar's order. Keep them in
+  // sync with PHASES / PHASE_BY_DEST in components/console/PhaseBar.jsx —
+  // `navOrderMatchesPhaseBar.test.js` fails if they ever drift, so this comment
+  // is not the only thing holding the two together.
+  //
+  // Phase 4 (Launch) has no group of its own: Launch is a state the Composer
+  // enters after preflight, not a place you navigate to. Inventing a nav entry
+  // for it would offer a destination that does not exist.
+
+  // ── 1 · Scope — whose tenant, which agent, what lab ──
+  { id: 'environments', label: 'Environments',  group: 'Scope',     icon: '☁', Component: EnvironmentsSurface },
+  { id: 'tenants',      label: 'Tenants',       group: 'Scope',     icon: '⬡', Component: TenantsSurface },
+  { id: 'agents',       label: 'Agents',        group: 'Scope',     icon: '◉', Component: AgentsSurface },
+
+  // ── 2 · Compose — choosing and building what to prove ──
+  // Library is the DEFAULT destination, not Composer, and deliberately so: the
+  // fastest path for most sessions is an existing Unit 42-anchored chain, and
+  // landing a new DC on an empty canvas would hide the 170+ scenarios that
+  // already exist. Composer is one click away and deep-linkable as
   // `#/composer?from=SIM-EDR-001`.
-  { id: 'composer',     label: 'Composer',      group: 'Operate',        icon: '⌗', Component: ComposerView },
-  { id: 'library',      label: 'Library',       group: 'Operate',        icon: '▤', Component: LibrarySurface,      badge: 'scenarioCount' },
-  { id: 'runs',         label: 'Runs & Proof',  group: 'Operate',        icon: '◈', Component: RunsSurface,         badge: 'live' },
-  { id: 'coverage',     label: 'Coverage',      group: 'Analyze',        icon: '▦', Component: CoverageSurface },
-  { id: 'ttps',         label: 'TTP Cards',     group: 'Analyze',        icon: '◆', Component: TtpsSurface },
-  { id: 'uctc',         label: 'UC / TC Index', group: 'Analyze',        icon: '≣', Component: UcTcSurface },
+  { id: 'library',      label: 'Library',       group: 'Compose',   icon: '▤', Component: LibrarySurface,   badge: 'scenarioCount' },
+  { id: 'composer',     label: 'Composer',      group: 'Compose',   icon: '⌗', Component: ComposerView },
   // id stays 'adapters' — it is the route (#/adapters), the data-testid and the
   // ⌘K entry. Only the label changed.
-  { id: 'adapters',     label: 'Tools & Payloads', group: 'Analyze',     icon: '⚙', Component: AdaptersSurface, badge: 'targetEgress' },
-  { id: 'eal',          label: 'Traffic / EAL', group: 'Traffic',        icon: '∿', Component: EalSurface },
-  { id: 'environments', label: 'Environments',  group: 'Infrastructure', icon: '☁', Component: EnvironmentsSurface },
-  { id: 'agents',       label: 'Agents',        group: 'Manage',         icon: '◉', Component: AgentsSurface },
-  { id: 'tenants',      label: 'Tenants',       group: 'Manage',         icon: '⬡', Component: TenantsSurface },
-  { id: 'readiness',    label: 'Readiness',     group: 'Manage',         icon: '✓', Component: ReadinessSurface, badge: 'degraded' },
+  { id: 'adapters',     label: 'Tools & Payloads', group: 'Compose', icon: '⚙', Component: AdaptersSurface, badge: 'targetEgress' },
+  { id: 'uctc',         label: 'UC / TC Index', group: 'Compose',   icon: '≣', Component: UcTcSurface },
+
+  // ── 3 · Preflight — will it actually reach the target ──
+  { id: 'readiness',    label: 'Readiness',     group: 'Preflight', icon: '✓', Component: ReadinessSurface, badge: 'degraded' },
+
+  // ── 5 · Observe — what is happening right now ──
+  { id: 'runs',         label: 'Runs & Proof',  group: 'Observe',   icon: '◈', Component: RunsSurface,      badge: 'live' },
+  { id: 'eal',          label: 'Traffic / EAL', group: 'Observe',   icon: '∿', Component: EalSurface },
+
+  // ── 6 · Prove — what the run established ──
+  { id: 'coverage',     label: 'Coverage',      group: 'Prove',     icon: '▦', Component: CoverageSurface },
+  { id: 'ttps',         label: 'TTP Cards',     group: 'Prove',     icon: '◆', Component: TtpsSurface },
   // Hidden route — the optional guided demo path, reachable from Library + ⌘K.
   { id: 'guided',       label: 'New POV run',   group: null, hidden: true, icon: '▸', Component: GuidedPovFlow },
 ]

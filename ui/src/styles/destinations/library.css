@@ -29,6 +29,16 @@
      sit on its own card/chip. Painting the real theme-aware surface here
      closes that for the whole destination in one place. */
   background: var(--s0);
+
+  /* FULL-BLEED, then own the inset.
+     .view already pads every destination by --view-pad, and this layout added
+     26px of its own on top — so the shell's nav rail ended at x=62 and the
+     Library's OWN filter rail started at x=112: a 50px dead gutter that read as
+     two disconnected sidebars. Cancelling .view's padding here (rather than
+     dropping this padding) is deliberate: the background above is the a11y fix
+     for the shell's non-theme-aware dark surface, and it has to paint edge to
+     edge or a strip of near-black shows through beside the light theme. */
+  margin: calc(var(--view-pad) * -1);
   padding: 22px 26px 30px;
   align-items: start;
 }
