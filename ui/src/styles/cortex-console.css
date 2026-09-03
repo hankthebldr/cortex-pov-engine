@@ -143,11 +143,18 @@
   --r-modal:  6px;
 
   /* ── Layout ──────────────────────────────────────────────────────── */
+  /* Rail and command-strip widths/heights are the redesign's measured values.
+     The rail was 240px against the design's 202px: 38px of dead gutter on a
+     column whose longest label ("Tools & Payloads") fits in 202px, taken off
+     the workspace on every surface. Collapsed goes 56 -> 62px so the two-glyph
+     collapsed label the design uses is not clipped. The command strip is 30px,
+     not 32px, matching the ink band under the workspace. */
   --h-header:      56px;
+  --h-phasebar:    46px;
   --h-telemetry:   40px;
-  --h-commandstrip:32px;
-  --w-rail:        240px;
-  --w-rail-collapsed: 56px;
+  --h-commandstrip:30px;
+  --w-rail:        202px;
+  --w-rail-collapsed: 62px;
   --w-inspector:   420px;
 
   /* ── Motion ──────────────────────────────────────────────────────── */
@@ -421,31 +428,104 @@
    both `theme-console` and `shell` on the same element (see AppShell.jsx).
    A descendant combinator (`.theme-console .shell`) silently fails to match
    and the whole fixed-viewport grid collapses into a single scrolling page. */
+/* FLEX COLUMN, NOT A ROW GRID — deliberately.
+   This was `grid-template-rows: header auto 1fr strip` with a second rule
+   dropping to three rows when there was no telemetry strip. That only works
+   while the number of children is fixed: CSS grid auto-placement fills rows in
+   DOM order, so the moment a child is conditional, every child after it shifts
+   up one row and the `1fr` lands on the wrong element (the workspace stops
+   growing and the command strip is pushed off-screen). The shell now has FOUR
+   conditional children — the safety banner (gone once acknowledged), the phase
+   bar (hidden in theater mode), the telemetry strip (only while a run is in
+   flight) and the command strip — which is 16 row templates to enumerate.
+   A flex column needs none of them: each band sizes itself and the workspace
+   takes the remainder. `min-height: 0` on the workspace is what lets its own
+   overflow:auto children scroll instead of stretching the shell. */
 .theme-console.shell {
-  display: grid;
-  grid-template-rows: var(--h-header) auto 1fr var(--h-commandstrip);
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   height: 100dvh; /* mobile-safe dynamic viewport unit; falls back to 100vh */
   overflow: hidden;
 }
-.theme-console.shell--no-telemetry {
-  grid-template-rows: var(--h-header) 1fr var(--h-commandstrip);
-}
+/* `.shell--no-telemetry` / `.shell--no-phasebar` are still set by AppShell and
+   are still useful as state hooks (and as a testing handle), but they
+   deliberately carry NO layout rule any more — the flex column above makes
+   them unnecessary, and a stale row-template rule here is exactly the bug the
+   comment describes. */
 
 /* ─── Header ─── */
 .theme-console .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 0 20px;
+  /* Design metrics: the bar is 56px of fixed chrome at 16px inset with a 16px
+     gutter between the two clusters and 8px between controls inside the right
+     one. It was 20px/20px/12px, which at the widths this header actually
+     renders (11 controls on the right) pushed the brand block into the tenant
+     pill before any of them could shrink. `flex: none` + an explicit height
+     are load-bearing now that the shell is a flex column, not a row grid. */
+  gap: 16px;
+  padding: 0 16px;
+  height: var(--h-header);
+  flex: none;
+  /* Without this the two clusters OVERLAP rather than clip: the right cluster
+     is flex-shrink:0 (its controls must not squash), so once its min-content
+     width exceeds what is left, the left cluster's text overflows its box and
+     paints underneath the tenant/agent pills. Clipping here plus `min-width: 0`
+     and per-element truncation below turns that into graceful loss instead of
+     illegible collision. */
+  overflow: hidden;
   background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-void) 100%);
   border-bottom: 1px solid var(--c-hairline);
   position: relative;
   z-index: 10;
 }
-.theme-console .header__left  { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
-.theme-console .header__right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+/* `0 1 auto`, NOT `1 1 auto`: the left cluster must give up space before the
+   right one, because every control on the right is interactive and the brand
+   text is not. */
+.theme-console .header__left {
+  display: flex; align-items: center; gap: 12px;
+  flex: 0 1 auto; min-width: 0; overflow: hidden;
+}
+.theme-console .header__right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* `flex: none` + nowrap: a wordmark ellipsised to "C…" is worse than no
+   wordmark at all, so the breakpoints below hide it whole rather than letting
+   it shrink into nonsense. */
+.theme-console .brand { min-width: 0; flex: none; }
+.theme-console .brand__wordmark,
+.theme-console .brand__subtitle { white-space: nowrap; }
+
+/* Progressive disclosure for the header, widest-first. Nothing here is
+   information the console has nowhere else: the PANW text mark duplicates the
+   real lockup now sitting on the left, the brand subtitle repeats the page
+   title, and the sensor summary is the env pill's `title` and the Readiness
+   surface. The interactive controls are never hidden. */
+@media (max-width: 1700px) { .theme-console .brand__subtitle { display: none; } }
+@media (max-width: 1600px) { .theme-console .panw-mark { display: none; } }
+@media (max-width: 1500px) {
+  /* The two lockups carry the identity on their own below this width; the
+     version chip is 40px and stays until it too has to go. */
+  .theme-console .brand { display: none; }
+}
+@media (max-width: 1280px) { .theme-console .brand__version { display: none; } }
+@media (max-width: 1120px) {
+  .theme-console .env-pill__meta { display: none; }
+  .theme-console .theater-toggle__label,
+  .theme-console .theme-toggle__label { display: none; }
+}
+
+/* ─── Brand marks (PANW + Cortex lockups) ───
+   Height-locked, width auto: both PNGs are lockups of different aspect ratios
+   and forcing a width would letterbox one of them. 17px/19px are the design's
+   own values — the PANW asset is a full wordmark lockup, the Cortex one a
+   taller glyph, so they are NOT the same height by design. */
+.theme-console .brand-marks { display: flex; align-items: center; gap: 12px; flex: none; }
+.theme-console .brand-marks__panw   { height: 17px; width: auto; display: block; }
+.theme-console .brand-marks__cortex { height: 19px; width: auto; display: block; }
+.theme-console .brand-marks__divider {
+  width: 1px; height: 24px; background: var(--c-hairline); flex: none;
+}
 .theme-console .brand__version {
   font-size: 10px; color: var(--c-text-muted);
   padding: 1px 6px; border: 1px solid var(--c-hairline); border-radius: 2px;
@@ -537,19 +617,237 @@
 }
 .theme-console .panw-mark span { color: var(--c-panw-orange); }
 
+/* ─── Guided-tour trigger (the `?` button + its one beacon) ───
+   Round, same 32px as the other header controls so the right cluster keeps one
+   baseline. The beacon is the ONLY animated affordance in the header; it
+   clears permanently on first use (see onboardingState.tourSeen). */
+.theme-console .tour-trigger {
+  position: relative;
+  width: 32px; height: 32px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--c-surface-raised);
+  border: 1px solid var(--c-hairline);
+  color: var(--c-text-secondary);
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+.theme-console .tour-trigger:hover { color: var(--c-text); border-color: var(--ac); }
+.theme-console .tour-trigger__beacon {
+  position: absolute; top: -2px; right: -2px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ac-str);
+  animation: pv-beacon 2s ease-out infinite;
+}
+@keyframes pv-beacon {
+  0%   { box-shadow: 0 0 0 0 rgba(0, 204, 102, 0.5); }
+  70%  { box-shadow: 0 0 0 11px rgba(0, 204, 102, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 204, 102, 0); }
+}
+/* Respect a stated motion preference — a pulsing dot is exactly the kind of
+   attention-grabbing loop `prefers-reduced-motion` exists for. The beacon
+   still renders (it is a real affordance marker), it just stops pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  .theme-console .tour-trigger__beacon { animation: none; }
+}
+
+/* ─── Header run view (LIVE · LAST RUN · NO RUNS) ───
+   Shares `.env-pill`'s geometry so all three states line up with the sensor
+   chip beside them; only the dot and label colour change. `.live-pill` already
+   exists for the in-flight case — these two are its idle counterparts, added
+   so the control is never absent. */
+.theme-console .run-pill { cursor: pointer; }
+.theme-console .run-pill__dot { background: var(--bd2); }
+.theme-console .run-pill__label { color: var(--c-text-secondary); }
+.theme-console .run-pill--last .run-pill__dot { background: var(--ac); }
+.theme-console .run-pill--last .run-pill__label { color: var(--ac-ink); }
+.theme-console .run-pill--none { opacity: 0.72; }
+.theme-console .run-pill:hover { border-color: var(--ac); opacity: 1; }
+
+/* ─── Safety banner (blast-radius consent) ───
+   Full-bleed, above the header, `flex: none` so it never absorbs the shell's
+   remaining height. Deliberately the loudest thing on screen: --warn-str on
+   near-black is the highest-contrast pairing in the token set, and it is NOT
+   dimmed in dark mode (the projector case is exactly when someone is about to
+   launch in front of a customer). */
+.theme-console .safety-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: none;
+  padding: 10px 16px;
+  background: var(--warn-str);
+  color: #0A0F0D;
+  border-bottom: 2px solid #0A0F0D;
+}
+.theme-console .safety-banner__tag {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex: none;
+}
+.theme-console .safety-banner__rule {
+  width: 1px; height: 26px; flex: none;
+  background: rgba(10, 15, 13, 0.28);
+}
+.theme-console .safety-banner__msg {
+  font-size: 12px;
+  line-height: 1.45;
+  min-width: 0;
+  flex: 1;
+}
+.theme-console .safety-banner__msg strong { font-weight: 700; }
+.theme-console .safety-banner__link {
+  background: none;
+  border: none;
+  padding: 0;
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0A0F0D;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.theme-console .safety-banner__ack {
+  height: 28px;
+  padding: 0 13px;
+  flex: none;
+  background: #0A0F0D;
+  color: var(--warn-str);
+  border: none;
+  border-radius: 5px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.theme-console .safety-banner__ack:hover { background: #2A2F2D; }
+
+/* ─── Phase bar (the six phases of a POV run) ─── */
+.theme-console .phase-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-height: var(--h-phasebar);
+  padding: 7px 16px;
+  background: var(--s0);
+  border-bottom: 1px solid var(--bd);
+  overflow-x: auto;
+}
+.theme-console .phase-bar__eyebrow {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  flex: none;
+  padding-right: 6px;
+}
+.theme-console .phase-bar__list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.theme-console .phase-bar__item { display: flex; min-width: 0; }
+.theme-console .phase-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 7px 12px 7px 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  text-align: left;
+  cursor: pointer;
+}
+.theme-console .phase-step:hover { background: var(--s2); }
+.theme-console .phase-step--on {
+  background: var(--s1);
+  border-color: var(--bd2);
+}
+.theme-console .phase-step__num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px; height: 20px;
+  flex: none;
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--s3);
+  color: var(--tx3);
+}
+.theme-console .phase-step--done .phase-step__num { background: var(--tx); color: var(--s1); }
+.theme-console .phase-step--on   .phase-step__num { background: var(--ac); color: var(--ac-tx); }
+.theme-console .phase-step__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.theme-console .phase-step__label {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--tx2);
+  white-space: nowrap;
+}
+.theme-console .phase-step--on .phase-step__label { font-weight: 700; color: var(--tx); }
+.theme-console .phase-step__caption {
+  font-size: 10px;
+  color: var(--tx3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Below ~1100px the six captions are what overflow first. Dropping them keeps
+   all six numbered steps visible — losing a step entirely to a scroll region
+   is worse than losing its subtitle. */
+@media (max-width: 1100px) {
+  .theme-console .phase-step__caption { display: none; }
+}
+
 /* ─── Telemetry strip ─── */
 .theme-console .telemetry {
   display: flex;
   align-items: center;
   gap: 20px;
   height: var(--h-telemetry);
-  padding: 0 20px;
+  flex: none;
+  padding: 0 16px;
   background: var(--c-surface);
   border-bottom: 1px solid var(--c-hairline);
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: var(--tracking-mono);
 }
+/* The strip is a fixed-height row of label/value pairs. Without `nowrap` the
+   flex line wraps inside a `height: var(--h-telemetry)` box, so at narrow
+   widths "SIM-EDR-001" and "3 / 4" break into stacked characters that overflow
+   the band. Scrolling the strip horizontally keeps every value legible; the
+   run id and step counter are the two things that must never become a
+   three-line column mid-demo. */
+.theme-console .telemetry { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; }
+/* Scoped to the text cells, so `.tel-progress`'s own `flex: 1` still lets the
+   progress bar take the slack. */
+.theme-console .tel-label,
+.theme-console .tel-value,
+.theme-console .tel-sep     { flex: none; white-space: nowrap; }
+.theme-console .tel-progress { min-width: 80px; }
 .theme-console .tel-label   { color: var(--c-text-muted); text-transform: uppercase; }
 .theme-console .tel-value   { color: var(--c-text); }
 .theme-console .tel-value--signal  { color: var(--c-signal); }
@@ -597,6 +895,11 @@
 .theme-console .workspace {
   display: grid;
   grid-template-columns: var(--w-rail) 1fr;
+  /* `flex: 1` claims the remainder of the shell column; `min-height: 0` is what
+     stops the grid's own content from stretching the shell past the viewport
+     and lets `.view`'s overflow:auto actually scroll. Both are required — a
+     flex item's default `min-height: auto` silently defeats the second. */
+  flex: 1;
   min-height: 0;
 }
 .theme-console .workspace--rail-collapsed {
@@ -706,7 +1009,8 @@
 .theme-console .command-strip {
   display: flex; align-items: center; justify-content: space-between;
   height: var(--h-commandstrip);
-  padding: 0 20px;
+  flex: none;
+  padding: 0 16px;
   background: var(--c-surface);
   border-top: 1px solid var(--c-hairline);
   font-family: var(--font-mono);
@@ -6897,6 +7201,112 @@
 .theme-console .run-list__status-chip--live { color: var(--cortex-teal, #00C0E8); }
 .theme-console .run-list__status-chip--done { color: var(--c-detected, #6ee7a8); }
 .theme-console .run-list__status-chip--pending { color: var(--c-pending, #f5c451); }
+
+/* ─── "What ran last" card (leads the Runs & Proof surface) ───
+   A left rule rather than a full accent fill: it must read as the most
+   important thing on the page without becoming the loudest, since the safety
+   banner above it legitimately owns "loudest". The rule goes green only while
+   a run is actually in flight. */
+.theme-console .last-run {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 4px solid var(--bd2);
+  border-radius: 0 10px 10px 0;
+  padding: 15px 18px 16px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
+  color: var(--tx);
+}
+.theme-console .last-run:hover { border-color: var(--ac); }
+.theme-console .last-run--live { border-left-color: var(--ac); }
+.theme-console .last-run--empty {
+  cursor: default;
+  box-shadow: none;
+  border-left-color: var(--bd);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+.theme-console .last-run__head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.theme-console .last-run__pulse {
+  width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--bd2);
+}
+.theme-console .last-run--live .last-run__pulse {
+  background: var(--ac-str);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-console .last-run--live .last-run__pulse { animation: none; }
+}
+.theme-console .last-run__eyebrow {
+  font-family: var(--font-display);
+  font-size: 10px; font-weight: 700; line-height: 1;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ac-ink);
+}
+.theme-console .last-run__id { font-size: 11px; color: var(--tx2); }
+.theme-console .last-run__spacer { flex: 1; }
+.theme-console .last-run__cta { font-size: 11px; font-weight: 700; color: var(--ac-ink); }
+.theme-console .last-run__title {
+  font-family: var(--font-display);
+  font-size: 17px; font-weight: 800; line-height: 1.25;
+  letter-spacing: -0.01em; margin-top: 9px;
+}
+.theme-console .last-run__stats {
+  display: flex; gap: 22px; margin-top: 13px; flex-wrap: wrap;
+}
+.theme-console .last-run__stat { min-width: 0; }
+.theme-console .last-run__stat-k {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 8px; font-weight: 600; line-height: 1;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .last-run__stat-v {
+  display: block; font-size: 12px; font-weight: 500; margin-top: 5px; color: var(--tx);
+}
+
+/* ─── Scope & health strip (Runs & Proof) ─── */
+.theme-console .scope-health {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(184px, 1fr));
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.theme-console .scope-health__tile {
+  padding: 13px 16px 14px;
+  min-width: 0;
+  border-left: 1px solid var(--bd);
+}
+.theme-console .scope-health__tile:first-child { border-left: none; }
+.theme-console .scope-health__label {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--font-display);
+  font-size: 9px; font-weight: 600; line-height: 1;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .scope-health__dot {
+  width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--warn);
+}
+.theme-console .scope-health__dot--ok { background: var(--ac); }
+.theme-console .scope-health__value {
+  font-size: 12px; font-weight: 500; margin-top: 8px; color: var(--tx);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.theme-console .scope-health__note {
+  font-size: 10px; color: var(--tx3); margin-top: 4px; line-height: 1.4;
+}
 
 /* ─── CoverageView.jsx ─── */
 .theme-console .coverage-color-detected { color: var(--c-detected); }

@@ -4,10 +4,13 @@ import TelemetryStrip from './TelemetryStrip.jsx'
 import DestinationNav from './DestinationNav.jsx'
 import CommandStrip from './CommandStrip.jsx'
 import CommandPalette from './CommandPalette.jsx'
+import SafetyBanner from './SafetyBanner.jsx'
+import PhaseBar from './PhaseBar.jsx'
 import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverlay.jsx'
 import { useTour } from '../onboarding/useTour.js'
 import TourSpotlight from '../onboarding/TourSpotlight.jsx'
 import { TOUR_STOPS } from '../onboarding/tourStops.js'
+import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
 
 /**
  * AppShell — Mission Ops Console layout wrapper.
@@ -35,7 +38,9 @@ export default function AppShell({
   onNavigate = () => {},
   navGroups = [],
   activeRun = null,
+  lastRun = null,
   health = {},
+  tenantId = null,
   onAbortRun = () => {},
   paletteItems = [],
   ticker = '',
@@ -157,7 +162,15 @@ export default function AppShell({
     markFirstRunSeen()
   }, [])
 
-  const shellClass = `shell${activeRun ? '' : ' shell--no-telemetry'}`
+  // The shell is a CSS grid whose row template must match the rows actually
+  // rendered — a mismatch silently collapses the last row (the command strip)
+  // rather than erroring. Theater mode hides the phase bar (projector view
+  // shows the work, not the wayfinding), and the safety banner disappears once
+  // acknowledged, so both are tracked as modifier classes rather than assumed.
+  const showPhaseBar = !theaterMode
+  const shellClass = 'shell'
+    + (activeRun ? '' : ' shell--no-telemetry')
+    + (showPhaseBar ? '' : ' shell--no-phasebar')
   const themeClass = `theme-console ${theaterMode ? 'theme-console--theater' : ''}`
 
   return (
@@ -168,16 +181,29 @@ export default function AppShell({
         Skip to workspace
       </a>
 
+      {/* Above the header on purpose: it is a consent gate for the whole
+          console, not a property of any one surface. It removes itself from
+          the grid entirely once acknowledged for this tenant, so the row
+          template below must not reserve space for it. */}
+      <SafetyBanner tenantId={tenantId} onNavigate={onNavigate} />
+
       <ConsoleHeader
         health={health}
         activeRun={activeRun}
+        lastRun={lastRun}
         onOpenPalette={() => setPaletteOpen(true)}
         onNavigate={onNavigate}
+        onStartTour={() => tour.start()}
+        tourSeen={readTourSeen()}
         theaterMode={theaterMode}
         onToggleTheater={toggleTheater}
         colorTheme={colorTheme}
         onToggleColorTheme={toggleColorTheme}
       />
+
+      {showPhaseBar && (
+        <PhaseBar destination={destination} onNavigate={onNavigate} />
+      )}
 
       {activeRun && (
         <TelemetryStrip run={activeRun} onAbort={onAbortRun} />

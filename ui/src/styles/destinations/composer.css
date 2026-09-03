@@ -1,0 +1,788 @@
+/* ============================================================
+   Simulation Composer — destination stylesheet.
+
+   Consumes tokens only (var(--x)); declares none of its own, per the
+   convention the other destination sheets state in their own headers.
+   The whole surface is a flex COLUMN inside `.view`: the bench/canvas/
+   inspector grid takes the remaining height and scrolls internally, so
+   the workstream strip stays pinned to the bottom the way the redesign
+   draws it. That is why `.view` gets zero padding for this destination
+   (see the `.view:has()` rule at the end) — a padded viewport would put
+   the workstream 24px off the bottom edge and give the canvas its own
+   second scrollbar.
+   ============================================================ */
+
+.theme-console .composer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+/* ─── Title row ─── */
+.theme-console .composer__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  padding: 12px 20px 10px;
+}
+.theme-console .composer__accent {
+  width: 3px;
+  height: 30px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--ac-str);
+}
+.theme-console .composer__title-block { min-width: 0; }
+.theme-console .composer__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--tx);
+  white-space: nowrap;
+}
+.theme-console .composer__provenance {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  min-width: 0;
+}
+.theme-console .composer__from,
+.theme-console .composer__meta {
+  font-size: 11px;
+  color: var(--tx3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* "edited" is a launch blocker, not a cosmetic note — it is why the Launch
+   button is disabled, so it reads at the same weight as a warning chip. */
+.theme-console .composer__edited { color: var(--warn); font-weight: 700; }
+.theme-console .composer__spacer { flex: 1; min-width: 0; }
+
+/* ─── "Proves" row ─── */
+.theme-console .composer__proves {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  flex-wrap: wrap;
+  padding: 0 20px 10px;
+}
+.theme-console .composer__proves-label {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  flex: none;
+}
+.theme-console .prove-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  height: 30px;
+  padding: 0 10px;
+  flex: none;
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.theme-console .prove-chip:hover { border-color: var(--ac); }
+.theme-console .prove-chip__kind {
+  font-family: var(--font-display);
+  font-size: 7px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .prove-chip__value { font-size: 10px; font-weight: 500; color: var(--tx); }
+
+/* ─── Chain validation pill ─── */
+.theme-console .chain-validation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 58%;
+  padding: 6px 11px;
+  border-radius: 6px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--warn-str);
+}
+.theme-console .chain-validation--ok {
+  background: var(--ac-soft);
+  border-color: var(--ac-line);
+  border-left-color: var(--ac);
+}
+.theme-console .chain-validation__dot {
+  width: 7px; height: 7px; flex: none;
+  border-radius: 50%;
+  background: var(--warn);
+}
+.theme-console .chain-validation--ok .chain-validation__dot { background: var(--ac); }
+.theme-console .chain-validation__title {
+  font-size: 11px; font-weight: 600; flex: none; color: var(--tx);
+}
+.theme-console .chain-validation__detail {
+  font-size: 11px;
+  color: var(--tx2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-console .composer__notice {
+  flex: none;
+  margin: 0 20px 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--ac-soft);
+  border: 1px solid var(--ac-line);
+  font-size: 12px;
+  color: var(--tx);
+}
+
+/* ─── bench · canvas · inspector ───
+   `minmax(520px, 1fr)` on the canvas is a FLOOR, not a preference: a node is
+   176px and the chain wraps, so below ~520px the cards stack one-per-row and
+   the chain stops reading as a sequence. Below 1150px the side panels are
+   hidden entirely (see the media query) rather than squeezed. */
+.theme-console .composer__grid {
+  display: grid;
+  grid-template-columns: 194px minmax(520px, 1fr) 296px;
+  flex: 1;
+  min-height: 300px;
+  border-top: 1px solid var(--bd);
+  overflow-x: auto;
+}
+.theme-console .composer__grid--solo {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-x: hidden;
+}
+@media (max-width: 1150px) {
+  .theme-console .composer__grid {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: hidden;
+  }
+  .theme-console .composer-bench,
+  .theme-console .composer-inspector { display: none; }
+}
+
+/* ─── Bench ─── */
+.theme-console .composer-bench {
+  border-right: 1px solid var(--bd);
+  background: var(--s1);
+  overflow-y: auto;
+  padding: 14px 12px;
+  min-width: 0;
+}
+.theme-console .composer-bench__filter {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  margin-bottom: 12px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--tx);
+}
+.theme-console .composer-bench__filter:focus { outline: none; border-color: var(--ac); }
+.theme-console .composer-bench__group { margin-bottom: 16px; }
+.theme-console .composer-bench__group-title {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 8px;
+}
+.theme-console .composer-bench__empty { font-size: 11px; color: var(--tx3); }
+.theme-console .bench-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  margin-bottom: 5px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+.theme-console .bench-item:hover { border-color: var(--ac); background: var(--s1); }
+.theme-console .bench-item__dot {
+  width: 7px; height: 7px; flex: none;
+  border-radius: 50%;
+  background: var(--bd2);
+}
+.theme-console .bench-item__dot--action   { background: var(--ink-action); }
+.theme-console .bench-item__dot--detected { background: var(--ink-detected); }
+.theme-console .bench-item__dot--signal   { background: var(--ink-signal); }
+.theme-console .bench-item__dot--pending  { background: var(--ink-pending); }
+.theme-console .bench-item__text { flex: 1; min-width: 0; }
+.theme-console .bench-item__name {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-console .bench-item__meta {
+  display: block;
+  font-size: 9px;
+  color: var(--tx3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-console .bench-item__add { font-size: 12px; color: var(--tx3); flex: none; }
+
+/* ─── Canvas ───
+   The dot grid is what makes this read as a build surface rather than a list.
+   It is a background-image on the scroll container, so it extends under a
+   chain of any length. */
+.theme-console .composer-canvas {
+  overflow: auto;
+  padding: 16px 20px 22px;
+  min-width: 0;
+  background-color: var(--s0);
+  background-image: radial-gradient(var(--bd2) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.theme-console .composer-canvas__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.theme-console .composer-canvas__id {
+  font-size: 11px; font-weight: 500; white-space: nowrap; flex: none; color: var(--tx);
+}
+.theme-console .composer-canvas__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.theme-console .composer-canvas__views { display: flex; gap: 3px; flex: none; }
+.theme-console .canvas-view {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--s1);
+  color: var(--tx2);
+  border: 1px solid var(--bd2);
+}
+.theme-console .canvas-view--on {
+  font-weight: 700;
+  background: var(--tx);
+  color: var(--s1);
+  border-color: var(--tx);
+}
+.theme-console .composer-canvas__meta {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 12px;
+}
+.theme-console .composer-canvas__error {
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border-radius: 0 8px 8px 0;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-left: 4px solid var(--crit);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+.theme-console .composer-yaml {
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #C7D6CE;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+/* ─── Chain ─── */
+.theme-console .chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.theme-console .chain__anchor {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-bottom: 14px;
+}
+.theme-console .chain__spine {
+  width: 20px;
+  height: 1px;
+  flex: none;
+  display: block;
+  background: var(--bd2);
+}
+.theme-console .chain-node {
+  width: 176px;
+  flex: none;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--ac-str);
+  border-radius: 8px;
+  padding: 10px 12px 8px;
+  text-align: left;
+}
+.theme-console .chain-node--selected { border-color: var(--ac); box-shadow: var(--shadow); }
+/* A step with no expected detection is the one state that costs a POV — it
+   runs, proves nothing, and shows up as a gap in the readout. Amber top rule
+   so it is visible without opening the inspector. */
+.theme-console .chain-node--nodetect { border-top-color: var(--warn-str); }
+.theme-console .chain-node--start {
+  width: 162px;
+  background: var(--ac-soft);
+  border: 1px solid var(--ac-line);
+  border-left: 3px solid var(--ac);
+  border-top-width: 1px;
+  border-top-color: var(--ac-line);
+  border-radius: 4px 8px 8px 4px;
+  padding: 10px 11px 11px;
+}
+.theme-console .chain-node--end {
+  width: 150px;
+  background: var(--s2);
+  border: 1px dashed var(--bd2);
+  border-radius: 8px;
+  padding: 10px 12px 11px;
+}
+.theme-console .chain-node--add {
+  width: 176px;
+  min-height: 118px;
+  margin-bottom: 14px;
+  background: transparent;
+  border: 1px dashed var(--bd2);
+  border-radius: 8px;
+  color: var(--tx3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.theme-console .chain-node--add:hover { border-color: var(--ac); color: var(--ac-ink); }
+.theme-console .chain-node__kicker {
+  font-family: var(--font-display);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .chain-node--start .chain-node__kicker { color: var(--ac-ink); }
+.theme-console .chain-node__title {
+  font-size: 12px; font-weight: 700; margin-top: 7px; color: var(--tx);
+}
+.theme-console .chain-node__scope {
+  display: flex; flex-direction: column; gap: 3px; margin-top: 6px;
+}
+.theme-console .scope-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 5px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+.theme-console .scope-link:hover { background: var(--s1); }
+.theme-console .scope-link__label {
+  font-family: var(--font-display);
+  font-size: 7px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  flex: none;
+}
+.theme-console .scope-link__value {
+  font-size: 9px;
+  color: var(--tx2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.theme-console .chain-node__body {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.theme-console .chain-node__row { display: flex; align-items: center; gap: 6px; }
+.theme-console .chain-node__kind {
+  font-family: var(--font-display);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx2);
+  background: var(--s3);
+  border-radius: 3px;
+  padding: 2px 5px;
+}
+.theme-console .chain-node__id,
+.theme-console .chain-node__order { font-size: 9px; color: var(--tx3); }
+.theme-console .chain-node__name {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 7px;
+  color: var(--tx);
+}
+.theme-console .chain-node__sub {
+  display: block; font-size: 9px; color: var(--tx3); margin-top: 6px;
+}
+.theme-console .chain-node__chips {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 9px;
+}
+.theme-console .chain-node__tools {
+  display: flex; gap: 2px; margin-top: 9px; padding-top: 7px;
+  border-top: 1px solid var(--bd);
+}
+.theme-console .chain-node__tools button {
+  flex: 1;
+  height: 20px;
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  color: var(--tx3);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.theme-console .chain-node__tools button:hover { border-color: var(--ac); color: var(--tx); }
+
+/* ─── First-run card ─── */
+.theme-console .composer-firstrun {
+  max-width: 640px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-top: 3px solid var(--ac-str);
+  border-radius: 10px;
+  padding: 20px 22px 18px;
+}
+.theme-console .composer-firstrun__title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--tx);
+}
+.theme-console .composer-firstrun__body {
+  font-size: 12px; color: var(--tx2); line-height: 1.5; margin: 7px 0 0;
+}
+.theme-console .composer-firstrun__options {
+  display: flex; flex-direction: column; gap: 8px; margin-top: 16px;
+}
+.theme-console .firstrun-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 13px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.theme-console .firstrun-option:hover { border-color: var(--ac); background: var(--s1); }
+.theme-console .firstrun-option__num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px; height: 22px; flex: none;
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--ac-soft);
+  color: var(--ac-ink);
+  border: 1px solid var(--ac-line);
+}
+.theme-console .firstrun-option__text { flex: 1; min-width: 0; }
+.theme-console .firstrun-option__title {
+  display: block; font-size: 12px; font-weight: 700; color: var(--tx);
+}
+.theme-console .firstrun-option__note {
+  display: block; font-size: 11px; color: var(--tx2); line-height: 1.45; margin-top: 3px;
+}
+.theme-console .firstrun-option__arrow { font-size: 12px; color: var(--tx3); flex: none; }
+
+/* ─── Inspector ─── */
+.theme-console .composer-inspector {
+  border-left: 1px solid var(--bd);
+  background: var(--s1);
+  overflow-y: auto;
+  padding: 16px 16px 22px;
+  min-width: 0;
+}
+.theme-console .composer-inspector__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .composer-inspector__title {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx);
+}
+.theme-console .composer-inspector__id { font-size: 10px; color: var(--tx3); }
+.theme-console .composer-inspector__empty {
+  margin-top: 16px; font-size: 12px; color: var(--tx3); line-height: 1.5;
+}
+.theme-console .composer-inspector__pair {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px;
+}
+.theme-console .field-label {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin: 14px 0 6px;
+}
+.theme-console .composer-inspector__pair .field-label { margin-top: 0; }
+.theme-console .field-label__count { color: var(--tx2); }
+.theme-console .field-value {
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.45;
+  background: var(--s2);
+  color: var(--tx);
+}
+.theme-console .field-note { display: block; font-size: 11px; color: var(--tx3); margin-bottom: 6px; }
+.theme-console .field-code {
+  margin: 0;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  padding: 10px 11px;
+  font-size: 10px;
+  line-height: 1.6;
+  background: var(--s2);
+  color: var(--tx);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.theme-console .detection-card {
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--ac-str);
+  border-radius: 0 6px 6px 0;
+  padding: 9px 11px;
+  margin-bottom: 6px;
+  background: var(--s2);
+}
+.theme-console .detection-card--empty {
+  border-left-color: var(--warn-str);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+.theme-console .detection-card__head { display: flex; align-items: center; gap: 7px; }
+.theme-console .detection-card__desc {
+  font-size: 11px; color: var(--tx2); line-height: 1.45; margin-top: 6px;
+}
+.theme-console .detection-card__id {
+  font-size: 9px; color: var(--tx3); margin-top: 5px; word-break: break-all;
+}
+
+/* ─── Workstream ─── */
+.theme-console .composer-ws {
+  flex: none;
+  border-top: 1px solid var(--bd);
+  background: var(--s1);
+}
+.theme-console .composer-ws__tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .ws-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--tx3);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.theme-console .ws-tab--on {
+  border-bottom-color: var(--ac);
+  color: var(--tx);
+  font-weight: 700;
+}
+.theme-console .ws-tab__meta { font-size: 9px; color: var(--tx3); }
+.theme-console .ws-ctl {
+  background: none; border: none; color: var(--tx3);
+  font-size: 11px; cursor: pointer; padding: 8px;
+}
+.theme-console .ws-ctl:hover { color: var(--tx); }
+.theme-console .composer-ws__body {
+  padding: 14px 16px 16px;
+  max-height: 190px;
+  overflow-y: auto;
+  background: var(--s1);
+}
+.theme-console .ws-empty {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 12px; color: var(--tx2); line-height: 1.5;
+}
+.theme-console .ws-rows { display: flex; flex-direction: column; gap: 5px; }
+.theme-console .ws-row {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 160px) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  text-align: left;
+  width: 100%;
+}
+.theme-console .ws-row--button { cursor: pointer; }
+.theme-console .ws-row--button:hover { border-color: var(--ac); }
+.theme-console .ws-row__id { font-size: 10px; font-weight: 500; color: var(--tx); }
+.theme-console .ws-row__mid { font-size: 11px; color: var(--tx2); }
+.theme-console .ws-row__digest {
+  font-size: 9px; color: var(--tx3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.theme-console .ws-preflight { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.theme-console .ws-verdict {
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 0 6px 6px 0;
+  background: var(--s2);
+  border-left: 3px solid var(--warn-str);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tx2);
+}
+.theme-console .ws-verdict--ok { border-left-color: var(--ac); background: var(--ac-soft); }
+.theme-console .ws-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+.theme-console .ws-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+.theme-console .ws-check__dot {
+  width: 8px; height: 8px; flex: none;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--bd2);
+}
+.theme-console .ws-check__dot--ok  { background: var(--ac); }
+.theme-console .ws-check__dot--bad { background: var(--warn); }
+.theme-console .ws-check__text { min-width: 0; }
+.theme-console .ws-check__name {
+  display: block; font-size: 11px; font-weight: 600; color: var(--tx);
+}
+.theme-console .ws-check__detail {
+  display: block; font-size: 9px; color: var(--tx3); line-height: 1.5; margin-top: 3px;
+}
+
+/* The Composer owns its own viewport: see the file header. `:has()` keeps this
+   scoped to the one destination without the shell needing to know which
+   surface is mounted.
+
+   The viewport is a FLEX COLUMN, not just an unpadded block. `.view` is not
+   the Composer's only child — the api-down banner and the ReadinessBanner are
+   its siblings — so a `.composer { height: 100% }` inside an `overflow: hidden`
+   block resolves to 100% of the viewport MINUS nothing, pushing the workstream
+   strip past the bottom edge where it was then clipped away entirely
+   (reproduced with a degraded SimCore: the whole Payload/Preflight/Active/
+   History strip was invisible). As a flex column the banners take their natural
+   height and the Composer takes exactly the remainder. */
+.theme-console .view:has(> .composer) {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.theme-console .view:has(> .composer) > * { flex: none; }
+.theme-console .view:has(> .composer) > .composer { flex: 1; min-height: 0; height: auto; }

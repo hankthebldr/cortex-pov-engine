@@ -248,7 +248,13 @@ function ConsoleShell() {
         onNavigate={router.navigate}
         navGroups={groups}
         activeRun={env.activeRun}
+        lastRun={env.lastRun}
         health={env.health}
+        // Drives the safety banner's per-tenant acknowledgement: switching to a
+        // customer tenant re-arms the blast-radius warning that was
+        // acknowledged against a lab one. `tenant` is the resolved object, so
+        // fall back to the raw name when the pointer has not resolved yet.
+        tenantId={env.tenant ? (env.tenant.name || env.tenant.id) : null}
         onAbortRun={() => setAbortConfirmOpen(true)}
         onExportPOV={handleExportPOV}
         paletteItems={paletteItems}
