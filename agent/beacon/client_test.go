@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/hankthebldr/cortexsim/agent/identity"
 )
 
 // -----------------------------------------------------------------------------
@@ -24,6 +26,7 @@ import (
 type recorded struct {
 	Method string
 	Path   string
+	Query  string
 	Body   string
 }
 
@@ -42,7 +45,7 @@ func newRecordingServer(t *testing.T, taskOnce *Task) *recordingServer {
 	rs.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bodyBytes, _ := io.ReadAll(r.Body)
 		rs.mu.Lock()
-		rs.log = append(rs.log, recorded{Method: r.Method, Path: r.URL.Path, Body: string(bodyBytes)})
+		rs.log = append(rs.log, recorded{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(bodyBytes)})
 		rs.mu.Unlock()
 
 		switch {
@@ -611,3 +614,135 @@ func TestResolveStepUsername_Precedence(t *testing.T) {
 		})
 	}
 }
+
+// -----------------------------------------------------------------------------
+// Step Execution Timeouts
+// -----------------------------------------------------------------------------
+
+func TestStepTimeout_Termination(t *testing.T) {
+	task := &Task{
+		TaskID:     "task-timeout-1",
+		RunID:      "run-timeout-1",
+		ScenarioID: "SIM-TEST-TIMEOUT",
+		Steps: []Step{
+			{
+				ID:             "step-hang",
+				Name:           "Hanging step",
+				Command:        "sleep 10",
+				Identity:       "root",
+				MitreTechnique: "T1059",
+				TimeoutSeconds: 1,
+			},
+		},
+	}
+
+	rs := newRecordingServer(t, task)
+	defer rs.Close()
+
+	c := New(rs.URL, "agent-test", time.Millisecond)
+	c.resolveIdentity = func(string) identity.Resolution {
+		return identity.Resolution{Mode: "direct", Username: "root"}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	start := time.Now()
+	c.executeTask(ctx, task)
+	duration := time.Since(start)
+
+	if duration > 5*time.Second {
+		t.Errorf("step execution took %s, should have timed out after ~1s", duration)
+	}
+
+	completes := rs.find("POST", "/complete")
+	if len(completes) != 1 {
+		t.Fatalf("expected 1 complete call, got %d", len(completes))
+	}
+	if !strings.Contains(completes[0].Body, `"exit_code":124`) {
+		t.Errorf("expected exit_code 124 on timeout, got body: %s", completes[0].Body)
+	}
+
+	outputs := rs.find("POST", "/output")
+	if len(outputs) == 0 {
+		t.Fatalf("expected output frames, got none")
+	}
+	foundTimeoutMarker := false
+	for _, out := range outputs {
+		if strings.Contains(out.Body, stepTimeoutMarker) {
+			foundTimeoutMarker = true
+			break
+		}
+	}
+	if !foundTimeoutMarker {
+		t.Errorf("expected output to contain %q, outputs: %+v", stepTimeoutMarker, outputs)
+	}
+}
+
+func TestPollTasks_LongPolling(t *testing.T) {
+	task := &Task{
+		TaskID:     "task-lp-1",
+		RunID:      "run-lp-1",
+		ScenarioID: "SIM-TEST-LP",
+	}
+	rs := newRecordingServer(t, task)
+	defer rs.Close()
+
+	c := New(rs.URL, "agent-test", time.Millisecond)
+
+	gotTask, err := c.PollTasksWait(15)
+	if err != nil {
+		t.Fatalf("PollTasksWait error: %v", err)
+	}
+	if gotTask == nil || gotTask.TaskID != "task-lp-1" {
+		t.Fatalf("expected task-lp-1, got %+v", gotTask)
+	}
+
+	reqs := rs.records()
+	foundQuery := false
+	for _, r := range reqs {
+		if strings.Contains(r.Query, "wait=15") {
+			foundQuery = true
+			break
+		}
+	}
+	if !foundQuery {
+		t.Errorf("expected GET /tasks with ?wait=15, got requests: %+v", reqs)
+	}
+}
+
+func TestStreamOutput_LiveChunksSent(t *testing.T) {
+	task := &Task{
+		TaskID:     "task-stream-1",
+		RunID:      "run-stream-1",
+		ScenarioID: "SIM-TEST-STREAM",
+		Steps: []Step{
+			{
+				ID:             "step-stream-1",
+				Name:           "Streaming Step",
+				Command:        "echo line1 && echo line2",
+				Identity:       "root",
+				MitreTechnique: "T1059",
+			},
+		},
+	}
+	rs := newRecordingServer(t, task)
+	defer rs.Close()
+
+	c := New(rs.URL, "agent-test", time.Millisecond)
+	c.StreamOutput = true
+	c.resolveIdentity = func(string) identity.Resolution {
+		return identity.Resolution{Mode: "direct", Username: "root"}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c.executeTask(ctx, task)
+
+	outputs := rs.find("POST", "/output")
+	if len(outputs) <= 1 {
+		t.Errorf("expected >1 /output POSTs with StreamOutput=true, got %d", len(outputs))
+	}
+}
+

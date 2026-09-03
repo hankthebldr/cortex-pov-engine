@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -1343,12 +1343,14 @@ async def delete_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/{agent_id}/tasks")
 async def poll_tasks(
     agent_id: str,
+    wait: int = Query(default=0, ge=0, le=60, description="Long-poll duration in seconds (0 = immediate)"),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Agent polls for its next pending task.
     Returns the task dict if one is available, or {"task": null} if the queue is empty.
     Also updates agent last_seen timestamp.
+    Supports HTTP long-polling via wait parameter.
     """
     # Update last_seen
     result = await db.execute(
@@ -1368,6 +1370,10 @@ async def poll_tasks(
     # DB-aware dequeue so the durable queued_tasks row is removed on delivery
     # (GAP-API-005). A restart will not re-deliver an already-dispatched task.
     task = await orchestrator.dequeue_for_agent(agent_id, db)
+    if task is None and wait > 0:
+        await orchestrator.wait_for_task(agent_id, timeout=float(wait))
+        task = await orchestrator.dequeue_for_agent(agent_id, db)
+
     if task is None:
         logger.debug("poll_tasks agent=%s no tasks", agent_id)
         return {"task": None}

@@ -60,20 +60,16 @@ func Execute(identity ExecutionIdentity) (ExecResult, error) {
 	return ExecuteCtx(context.Background(), identity)
 }
 
-// ExecuteCtx is the context-aware variant of Execute. It honours ctx for
-// cancellation: when ctx is cancelled the underlying process group is signalled
-// (SIGTERM → SIGKILL) so an operator abort can stop a long-running step. A
-// cancelled run returns an ExecResult with ExitCode 130 and err == context.Canceled,
-// which the caller should treat as a non-fatal "aborted" outcome rather than an
-// execution failure.
-func ExecuteCtx(ctx context.Context, identity ExecutionIdentity) (ExecResult, error) {
+// ExecuteCtxStream is the context-aware streaming variant of Execute. It streams
+// stdout and stderr chunks in real-time as they are written.
+func ExecuteCtxStream(ctx context.Context, identity ExecutionIdentity, onChunk executor.OutputChunkFunc) (ExecResult, error) {
 	wrapped, err := WrapCommandFor(runtime.GOOS, identity)
 	if err != nil {
 		return ExecResult{}, err
 	}
 
 	start := time.Now()
-	stdout, stderr, exitCode, execErr := executor.RunCommandCtx(ctx, wrapped)
+	stdout, stderr, exitCode, execErr := executor.RunCommandCtxStream(ctx, wrapped, onChunk)
 	duration := time.Since(start)
 
 	if execErr != nil {
@@ -101,6 +97,16 @@ func ExecuteCtx(ctx context.Context, identity ExecutionIdentity) (ExecResult, er
 		Stderr:   stderr,
 		Duration: duration,
 	}, nil
+}
+
+// ExecuteCtx is the context-aware variant of Execute. It honours ctx for
+// cancellation: when ctx is cancelled the underlying process group is signalled
+// (SIGTERM → SIGKILL) so an operator abort can stop a long-running step. A
+// cancelled run returns an ExecResult with ExitCode 130 and err == context.Canceled,
+// which the caller should treat as a non-fatal "aborted" outcome rather than an
+// execution failure.
+func ExecuteCtx(ctx context.Context, identity ExecutionIdentity) (ExecResult, error) {
+	return ExecuteCtxStream(ctx, identity, nil)
 }
 
 // serviceAccounts is the allowlist of known service accounts that should be

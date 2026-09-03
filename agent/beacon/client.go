@@ -109,6 +109,9 @@ type Step struct {
 	// Omitted from the wire when empty, so every existing scenario's task is
 	// byte-identical to before this field existed.
 	RequiresInterpreters []string `json:"requires_interpreters,omitempty"`
+	// TimeoutSeconds defines the maximum execution duration for this step in
+	// seconds. If zero or unset, the client's StepTimeout or defaultStepTimeout is used.
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 	// expected_detections intentionally omitted — the server seeds Result rows.
 }
 
@@ -138,6 +141,17 @@ type ControlState struct {
 // abortExitCode is the conventional exit code reported when a run is aborted by
 // an operator (SIGINT convention = 128 + 2).
 const abortExitCode = 130
+
+// timeoutExitCode is the conventional exit code reported when a step times out
+// (GNU coreutils timeout convention = 124).
+const timeoutExitCode = 124
+
+// defaultStepTimeout is the fallback execution timeout if neither the step nor
+// the client declares one.
+const defaultStepTimeout = 180 * time.Second
+
+// stepTimeoutMarker prefixes the notice for a step that was terminated by timeout.
+const stepTimeoutMarker = "!! STEP TIMEOUT:"
 
 // controlPollInterval is how often the agent polls the abort control channel
 // while a long-running step is executing.
@@ -175,11 +189,35 @@ type BeaconClient struct {
 	artifactHTTP  *http.Client
 	artifactToken string
 
+	// StepTimeout overrides defaultStepTimeout (180s) when non-zero.
+	StepTimeout time.Duration
+
 	// Injectable seams for the staging phase, same idiom as resolveIdentity:
 	// getenv drives the per-platform dest allowlist, artifactProbeExec drives
 	// the noexec pre-flight branch that CI cannot reach by mounting anything.
-	artifactGetenv    func(string) string
-	artifactProbeExec func(string) error
+	artifactGetenv       func(string) string
+	artifactProbeExec    func(string) error
+	artifactCacheDirFunc func() string
+	DisableArtifactCache bool
+
+	// LongPollTimeout defines the duration in seconds for HTTP long-polling tasks.
+	// When 0, the client uses interval ticker polling.
+	LongPollTimeout int
+
+	// StreamOutput enables real-time line-by-line output streaming to SimCore
+	// during command execution.
+	StreamOutput bool
+}
+
+// stepTimeout returns the effective execution timeout for a step.
+func (c *BeaconClient) stepTimeout(step *Step) time.Duration {
+	if step != nil && step.TimeoutSeconds > 0 {
+		return time.Duration(step.TimeoutSeconds) * time.Second
+	}
+	if c.StepTimeout > 0 {
+		return c.StepTimeout
+	}
+	return defaultStepTimeout
 }
 
 // New constructs a BeaconClient with a sensible default HTTP timeout.
@@ -324,20 +362,35 @@ func (c *BeaconClient) reRegister() error {
 	return c.Register(hostname, goos, caps, c.regInterpreters)
 }
 
-// PollTasks asks SimCore whether there is a pending task for this agent.
+// PollTasks asks SimCore whether there is a pending task for this agent (immediate).
+func (c *BeaconClient) PollTasks() (*Task, error) {
+	return c.PollTasksWait(0)
+}
+
+// PollTasksWait asks SimCore whether there is a pending task for this agent,
+// optionally long-polling up to waitSec seconds on the server.
 //
 // Return contract (GAP-AGENT-003):
 //   - (nil, nil)              → registered, but no task queued ({"task": null})
 //   - (task, nil)            → a task to execute
 //   - (nil, ErrUnknownAgent) → SimCore 404: this agent is not registered;
-//     the caller should Register() and retry. This is NO LONGER conflated with
-//     the idle "no task" case.
+//     the caller should Register() and retry.
 //
-// Corresponds to: GET /api/agents/{id}/tasks
-func (c *BeaconClient) PollTasks() (*Task, error) {
+// Corresponds to: GET /api/agents/{id}/tasks(?wait=N)
+func (c *BeaconClient) PollTasksWait(waitSec int) (*Task, error) {
 	url := fmt.Sprintf("%s/api/agents/%s/tasks", c.ServerURL, c.AgentID)
+	if waitSec > 0 {
+		url = fmt.Sprintf("%s?wait=%d", url, waitSec)
+	}
 
-	resp, err := c.http.Get(url)
+	httpClient := c.http
+	if waitSec > 0 && httpClient != nil && httpClient.Timeout > 0 && httpClient.Timeout <= time.Duration(waitSec)*time.Second {
+		cloned := *httpClient
+		cloned.Timeout = time.Duration(waitSec+10) * time.Second
+		httpClient = &cloned
+	}
+
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("pollTasks GET: %w", err)
 	}
@@ -438,6 +491,42 @@ func (c *BeaconClient) Complete(runID string, exitCode int, summary string) erro
 // and reports the final exit code.  It exits cleanly when ctx is cancelled
 // (SIGINT / SIGTERM).
 func (c *BeaconClient) Run(ctx context.Context) {
+	if c.LongPollTimeout > 0 {
+		log.Printf("[beacon] agent %q started — long-polling %s (wait=%ds)", c.AgentID, c.ServerURL, c.LongPollTimeout)
+		for {
+			if ctx.Err() != nil {
+				log.Printf("[beacon] context cancelled — shutting down cleanly")
+				return
+			}
+			task, err := c.PollTasksWait(c.LongPollTimeout)
+			if err != nil {
+				if errors.Is(err, ErrUnknownAgent) {
+					log.Printf("[beacon] SimCore reports agent %q unknown — re-registering", c.AgentID)
+					if rerr := c.reRegister(); rerr != nil {
+						log.Printf("[beacon] re-register failed (will retry): %v", rerr)
+					} else {
+						log.Printf("[beacon] re-registration OK")
+					}
+				} else {
+					log.Printf("[beacon] poll error: %v", err)
+				}
+				select {
+				case <-ctx.Done():
+					log.Printf("[beacon] context cancelled — shutting down cleanly")
+					return
+				case <-time.After(c.Interval):
+					continue
+				}
+			}
+			if task == nil {
+				continue
+			}
+			log.Printf("[beacon] received task task_id=%s run_id=%s scenario=%s steps=%d",
+				task.TaskID, task.RunID, task.ScenarioID, len(task.Steps))
+			c.executeTask(ctx, task)
+		}
+	}
+
 	ticker := time.NewTicker(c.Interval)
 	defer ticker.Stop()
 
@@ -572,7 +661,9 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 
 		var res identity.ExecResult
 		var aborted bool
+		var timedOut bool
 		var execErr error
+		stTimeout := c.stepTimeout(&step)
 		if depOutcome.blocked {
 			res = depOutcome.synthetic
 		} else {
@@ -581,12 +672,22 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 				Username: idRes.Username,
 				Command:  step.Command,
 			}
-			res, aborted, execErr = c.runStep(ctx, task.RunID, execID)
+			res, aborted, timedOut, execErr = c.runStep(ctx, task.RunID, step.ID, execID, stTimeout)
 		}
 		depOutcome.cleanup()
 
+		notes := depOutcome.note
+		if timedOut {
+			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
+			if notes != "" {
+				notes += "\n" + tn
+			} else {
+				notes = tn
+			}
+		}
+
 		// Build the per-step output and attribute it to this step.
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, depOutcome.note)
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, notes)
 		if err := c.SendOutput(task.RunID, step.ID, stepOut); err != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
@@ -595,6 +696,13 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 			log.Printf("[beacon] step %s terminated by operator abort (run_id=%s)", step.ID, task.RunID)
 			_ = c.Complete(task.RunID, abortExitCode,
 				fmt.Sprintf("aborted by operator — step %s terminated", step.ID))
+			return
+		}
+
+		if timedOut {
+			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
+			_ = c.Complete(task.RunID, timeoutExitCode,
+				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout))
 			return
 		}
 
@@ -681,7 +789,9 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 
 		var res identity.ExecResult
 		var aborted bool
+		var timedOut bool
 		var execErr error
+		stTimeout := c.stepTimeout(&step)
 		if depOutcome.blocked {
 			// The anchor session stays alive and untouched — a runtime-dependency
 			// gap on ONE step must not tear down the causality chain for the rest.
@@ -700,11 +810,21 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s (chained)",
 				i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
 
-			res, aborted, execErr = c.runChainedStep(sessCtx, sessCancel, session, task.RunID, wrapped)
+			res, aborted, timedOut, execErr = c.runChainedStep(sessCtx, sessCancel, session, task.RunID, wrapped, stTimeout)
 		}
 		depOutcome.cleanup()
 
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, depOutcome.note)
+		notes := depOutcome.note
+		if timedOut {
+			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
+			if notes != "" {
+				notes += "\n" + tn
+			} else {
+				notes = tn
+			}
+		}
+
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, notes)
 		if sendErr := c.SendOutput(task.RunID, step.ID, stepOut); sendErr != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, sendErr)
 		}
@@ -713,6 +833,12 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			log.Printf("[beacon] step %s terminated by operator abort (run_id=%s)", step.ID, task.RunID)
 			_ = c.Complete(task.RunID, abortExitCode,
 				fmt.Sprintf("aborted by operator — step %s terminated", step.ID))
+			return
+		}
+		if timedOut {
+			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
+			_ = c.Complete(task.RunID, timeoutExitCode,
+				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout))
 			return
 		}
 		if ctx.Err() != nil {
@@ -743,13 +869,15 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 }
 
 // runChainedStep runs one already-wrapped command through the anchor session,
-// polling the abort control channel while it runs. On abort it cancels the whole
-// session (tearing down the anchor group) and reports the step aborted — mirror
-// of runStep's semantics for the chained path.
+// polling the abort control channel while it runs and enforcing step execution timeout.
+// On abort or timeout it cancels the session (tearing down the anchor group).
 func (c *BeaconClient) runChainedStep(
 	sessCtx context.Context, sessCancel context.CancelFunc,
-	session *executor.ChainSession, runID, wrapped string,
-) (identity.ExecResult, bool, error) {
+	session *executor.ChainSession, runID, wrapped string, timeout time.Duration,
+) (identity.ExecResult, bool, bool, error) {
+	if timeout <= 0 {
+		timeout = defaultStepTimeout
+	}
 	type result struct {
 		res identity.ExecResult
 		err error
@@ -767,21 +895,29 @@ func (c *BeaconClient) runChainedStep(
 	ticker := time.NewTicker(controlPollInterval)
 	defer ticker.Stop()
 
+	timeoutTimer := time.NewTimer(timeout)
+	defer timeoutTimer.Stop()
+
 	aborted := false
 	for {
 		select {
 		case <-sessCtx.Done():
 			r := <-done
-			return r.res, aborted, c.nonCancelErr(r.err)
+			return r.res, aborted, false, c.nonCancelErr(r.err)
+		case <-timeoutTimer.C:
+			sessCancel() // tear down the chain session process group
+			r := <-done
+			r.res.ExitCode = timeoutExitCode
+			return r.res, false, true, nil
 		case <-ticker.C:
 			if state, _ := c.Control(runID); state.Abort {
 				aborted = true
 				sessCancel() // tear the anchor group down
 				r := <-done
-				return r.res, true, nil
+				return r.res, true, false, nil
 			}
 		case r := <-done:
-			return r.res, aborted, c.nonCancelErr(r.err)
+			return r.res, aborted, false, c.nonCancelErr(r.err)
 		}
 	}
 }
@@ -810,21 +946,40 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 		depOutcome := c.resolveRuntimeDeps(task, &step)
 		var res identity.ExecResult
 		var aborted bool
+		var timedOut bool
 		var execErr error
+		stTimeout := c.stepTimeout(&step)
 		if depOutcome.blocked {
 			res = depOutcome.synthetic
 		} else {
 			execID := identity.ExecutionIdentity{Mode: idRes.Mode, Username: idRes.Username, Command: step.Command}
-			res, aborted, execErr = c.runStep(ctx, task.RunID, execID)
+			res, aborted, timedOut, execErr = c.runStep(ctx, task.RunID, step.ID, execID, stTimeout)
 		}
 		depOutcome.cleanup()
-		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, depOutcome.note)
+
+		notes := depOutcome.note
+		if timedOut {
+			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
+			if notes != "" {
+				notes += "\n" + tn
+			} else {
+				notes = tn
+			}
+		}
+
+		stepOut := c.formatStepOutput(i+1, totalSteps, &step, username, idRes, res, execErr, notes)
 		if err := c.SendOutput(task.RunID, step.ID, stepOut); err != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
 		if aborted {
 			_ = c.Complete(task.RunID, abortExitCode,
 				fmt.Sprintf("aborted by operator — step %s terminated", step.ID))
+			return
+		}
+		if timedOut {
+			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
+			_ = c.Complete(task.RunID, timeoutExitCode,
+				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout))
 			return
 		}
 		if ctx.Err() != nil {
@@ -848,13 +1003,16 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 
 // runStep executes one step via the identity harness, polling the abort control
 // channel every controlPollInterval while it runs. It returns the exec result,
-// whether the step was aborted by an operator, and any execution error.
+// whether the step was aborted by an operator, whether it timed out, and any execution error.
 //
-// The step runs under a child context derived from ctx; on abort (or parent
-// cancel) the child context is cancelled, which signals the step's process group
-// via the executor's RunCommandCtx.
-func (c *BeaconClient) runStep(ctx context.Context, runID string, execID identity.ExecutionIdentity) (identity.ExecResult, bool, error) {
-	stepCtx, cancel := context.WithCancel(ctx)
+// The step runs under a child context derived from ctx with a step execution timeout;
+// on timeout, abort (or parent cancel) the child context is cancelled, which signals
+// the step's process group via the executor's RunCommandCtx.
+func (c *BeaconClient) runStep(ctx context.Context, runID, stepID string, execID identity.ExecutionIdentity, timeout time.Duration) (identity.ExecResult, bool, bool, error) {
+	if timeout <= 0 {
+		timeout = defaultStepTimeout
+	}
+	stepCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	type result struct {
@@ -862,8 +1020,16 @@ func (c *BeaconClient) runStep(ctx context.Context, runID string, execID identit
 		err error
 	}
 	done := make(chan result, 1)
+
+	var onChunk executor.OutputChunkFunc
+	if c.StreamOutput {
+		onChunk = func(chunk string, isStderr bool) {
+			_ = c.SendOutput(runID, stepID, chunk)
+		}
+	}
+
 	go func() {
-		r, e := identity.ExecuteCtx(stepCtx, execID)
+		r, e := identity.ExecuteCtxStream(stepCtx, execID, onChunk)
 		done <- result{r, e}
 	}()
 
@@ -877,7 +1043,16 @@ func (c *BeaconClient) runStep(ctx context.Context, runID string, execID identit
 			// Agent shutdown — cancel the step and wait for it to drain.
 			cancel()
 			r := <-done
-			return r.res, false, c.nonCancelErr(r.err)
+			return r.res, false, false, c.nonCancelErr(r.err)
+
+		case <-stepCtx.Done():
+			if errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
+				r := <-done
+				r.res.ExitCode = timeoutExitCode
+				return r.res, false, true, nil
+			}
+			r := <-done
+			return r.res, false, false, c.nonCancelErr(r.err)
 
 		case <-controlTicker.C:
 			// (b) Abort check while the step runs.
@@ -885,14 +1060,14 @@ func (c *BeaconClient) runStep(ctx context.Context, runID string, execID identit
 				aborted = true
 				cancel() // SIGTERM → SIGKILL the process group
 				r := <-done
-				return r.res, true, nil
+				return r.res, true, false, nil
 			}
 
 		case r := <-done:
 			// ExecuteCtx returns context.Canceled if we cancelled mid-flight; the
 			// only way that happens here is a race where ctx was cancelled (shutdown)
 			// just as the step finished. Treat a clean finish as not-aborted.
-			return r.res, aborted, c.nonCancelErr(r.err)
+			return r.res, aborted, false, c.nonCancelErr(r.err)
 		}
 	}
 }

@@ -126,10 +126,11 @@ type artifactFailure struct {
 // -------------------------------------------------------------------------
 
 type stagedFile struct {
-	Artifact Artifact
-	Dest     string
-	SHA256   string
-	Size     int64
+	Artifact  Artifact
+	Dest      string
+	SHA256    string
+	Size      int64
+	FromCache bool
 }
 
 // stagedSet is the ledger of one task's staging phase. It is returned even on
@@ -161,8 +162,12 @@ func (s *stagedSet) Ledger() string {
 		if mode == "" {
 			mode = defaultArtifactMode
 		}
-		fmt.Fprintf(&b, "[cortexsim] staged %s sha256=%s %dB -> %s mode=%s\n",
-			f.Artifact.Name, shortDigest(f.SHA256), f.Size, f.Dest, mode)
+		cached := ""
+		if f.FromCache {
+			cached = " (cache-hit)"
+		}
+		fmt.Fprintf(&b, "[cortexsim] staged %s sha256=%s %dB%s -> %s mode=%s\n",
+			f.Artifact.Name, shortDigest(f.SHA256), f.Size, cached, f.Dest, mode)
 	}
 	fmt.Fprintf(&b, "[cortexsim] source=%s · digests carried in the task, resolved on SimCore at enqueue time\n", s.Server)
 	// Trailing newline: /output frames are concatenated verbatim into run.output,
@@ -251,10 +256,60 @@ func (c *BeaconClient) stageOne(ctx context.Context, a Artifact, set *stagedSet)
 	// A leftover .part from a SIGKILLed run would make O_EXCL fail forever.
 	_ = os.Remove(part)
 
+	// 1. Check local SHA-256 cache first
+	cacheDir := c.getArtifactCacheDir()
+	cachedPath := filepath.Join(cacheDir, strings.ToLower(a.SHA256))
+	var fromCache bool
+	var wrote int64
+	var digest string
+
+	if !c.DisableArtifactCache && cacheDir != "" {
+		if valid, size := verifyFileSHA256(cachedPath, a.SHA256); valid {
+			if _, err := copyFile(cachedPath, part, openFlags(), 0o644); err == nil {
+				fromCache = true
+				wrote = size
+				digest = strings.ToLower(a.SHA256)
+			} else {
+				_ = os.Remove(part)
+			}
+		}
+	}
+
+	if fromCache {
+		if err := applyMode(part, a.Mode); err != nil {
+			_ = os.Remove(part)
+			return &artifactFailure{Artifact: a, Code: codeWriteFailed,
+				Detail: fmt.Sprintf("chmod %s %s: %v", modeOrDefault(a.Mode), part, err)}
+		}
+		if err := os.Rename(part, dest); err != nil {
+			_ = os.Remove(part)
+			return &artifactFailure{Artifact: a, Code: codeWriteFailed,
+				Detail: fmt.Sprintf("rename %s -> %s: %v", part, dest, err)}
+		}
+		set.Files = append(set.Files, stagedFile{Artifact: a, Dest: dest, SHA256: digest, Size: wrote, FromCache: true})
+		log.Printf("[beacon] staged %s -> %s (cache-hit) sha256=%s", a.Name, dest, shortDigest(digest))
+		return nil
+	}
+
 	var last *artifactFailure
 	for attempt := 1; attempt <= artifactRetries; attempt++ {
-		fail, retryable, wrote, digest := c.fetchArtifactOnce(ctx, a, part)
+		fail, retryable, w, d := c.fetchArtifactOnce(ctx, a, part)
 		if fail == nil {
+			wrote = w
+			digest = d
+
+			// Populate local SHA-256 cache for future runs
+			if !c.DisableArtifactCache && cacheDir != "" {
+				_ = os.MkdirAll(cacheDir, 0o755)
+				cachePart := cachedPath + stalePartSuffix
+				_ = os.Remove(cachePart)
+				if _, cerr := copyFile(part, cachePart, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644); cerr == nil {
+					_ = os.Rename(cachePart, cachedPath)
+				} else {
+					_ = os.Remove(cachePart)
+				}
+			}
+
 			// ---- ORDERING IS THE GUARANTEE ----
 			// The step's command names `dest`. `dest` does not exist until the
 			// digest matched. It is structurally impossible for a step to find a
@@ -366,6 +421,106 @@ func (c *BeaconClient) fetchArtifactOnce(ctx context.Context, a Artifact, part s
 				strings.ToLower(a.SHA256), digest)}, false, wrote, digest
 	}
 	return nil, false, wrote, digest
+}
+
+// getArtifactCacheDir resolves the local content-addressable cache directory.
+func (c *BeaconClient) getArtifactCacheDir() string {
+	if c.artifactCacheDirFunc != nil {
+		return c.artifactCacheDirFunc()
+	}
+	if env := c.getenv("CORTEXSIM_CACHE_DIR"); env != "" {
+		_ = os.MkdirAll(env, 0o755)
+		return env
+	}
+	// Try /opt/cortexsim/cache if writable
+	optCache := "/opt/cortexsim/cache"
+	if err := os.MkdirAll(optCache, 0o755); err == nil {
+		testFile := filepath.Join(optCache, ".cxs_test")
+		if err := os.WriteFile(testFile, []byte("ok"), 0o644); err == nil {
+			_ = os.Remove(testFile)
+			return optCache
+		}
+	}
+	// Try user cache dir
+	if ucd, err := os.UserCacheDir(); err == nil && ucd != "" {
+		userCache := filepath.Join(ucd, "cortexsim")
+		if err := os.MkdirAll(userCache, 0o755); err == nil {
+			return userCache
+		}
+	}
+	// Fallback to os.TempDir()/cortexsim-cache
+	fallback := filepath.Join(os.TempDir(), "cortexsim-cache")
+	_ = os.MkdirAll(fallback, 0o755)
+	return fallback
+}
+
+// copyFile copies bytes from src to dst with specific flags and file mode.
+func copyFile(src, dst string, flags int, mode os.FileMode) (int64, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return 0, err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, flags, mode)
+	if err != nil {
+		return 0, err
+	}
+	defer out.Close()
+
+	n, err := io.Copy(out, in)
+	if err != nil {
+		return n, err
+	}
+	return n, out.Close()
+}
+
+// verifyFileSHA256 reads path and reports whether its sha256 digest matches expected.
+func verifyFileSHA256(path, expectedSHA256 string) (bool, int64) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, 0
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return false, 0
+	}
+	digest := hex.EncodeToString(h.Sum(nil))
+	return strings.EqualFold(digest, expectedSHA256), n
+}
+
+// findExecutableFallback identifies an alternative staging directory when a noexec mount is detected.
+func (c *BeaconClient) findExecutableFallback(currentDir string) string {
+	candidates := []string{
+		"/opt/cortexsim/tools",
+		"/var/tmp",
+		"/dev/shm",
+	}
+	if home := c.getenv("HOME"); home != "" {
+		candidates = append(candidates, filepath.Join(home, ".cortexsim", "tools"))
+	}
+	for _, cand := range candidates {
+		if cand == currentDir {
+			continue
+		}
+		if err := os.MkdirAll(cand, 0o755); err != nil {
+			continue
+		}
+		probe := filepath.Join(cand, ".cxs_noexec_probe")
+		if err := os.WriteFile(probe, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			continue
+		}
+		_ = os.Chmod(probe, 0o755)
+		execErr := c.probeExec(probe)
+		_ = os.Remove(probe)
+		if execErr == nil {
+			return cand
+		}
+	}
+	return ""
 }
 
 // classifyStatus maps an HTTP response onto the taxonomy. Returns
@@ -678,6 +833,11 @@ func (c *BeaconClient) probeExecutability(set *stagedSet) *artifactFailure {
 		_ = os.Chmod(probe, 0o755)
 		set.probes = append(set.probes, probe)
 		if err := c.probeExec(probe); err != nil {
+			fallback := c.findExecutableFallback(dir)
+			if fallback != "" {
+				return &artifactFailure{Artifact: f.Artifact, Code: codeDestNoexec,
+					Detail: fmt.Sprintf("%s cannot execute files (%v) — noexec mount detected; fallback candidate %s is available (set CORTEXSIM_STAGE_ROOT=%s)", dir, err, fallback, fallback)}
+			}
 			return &artifactFailure{Artifact: f.Artifact, Code: codeDestNoexec,
 				Detail: fmt.Sprintf("%s cannot execute files (%v) — likely a noexec mount; set CORTEXSIM_STAGE_ROOT=/var/tmp on the beacon", dir, err)}
 		}

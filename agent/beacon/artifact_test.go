@@ -85,6 +85,8 @@ func stagingClient(t *testing.T, serverURL, stageRoot string) *BeaconClient {
 		}
 		return ""
 	}
+	cacheDir := t.TempDir()
+	c.artifactCacheDirFunc = func() string { return cacheDir }
 	return c
 }
 
@@ -996,6 +998,72 @@ func TestReportStagingFailure_UnattributedArtifactLandsOnStepOne(t *testing.T) {
 	}
 	if !strings.Contains(outs[0].Body, "STEP 1/1") {
 		t.Fatalf("an artifact naming no steps must still be attributed: %s", outs[0].Body)
+	}
+}
+
+func TestArtifactCache_HitAndPreservation(t *testing.T) {
+	body := []byte("#!/bin/sh\necho 'cached tool'\n")
+	srv := newShelfServer(t, body)
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "cache")
+	stageRoot := filepath.Join(root, "staging")
+
+	c := stagingClient(t, srv.URL, stageRoot)
+	c.artifactCacheDirFunc = func() string { return cacheDir }
+
+	art := Artifact{
+		Name:   "tool.sh",
+		SHA256: digestOf(body),
+		Path:   "/api/shelf/payload/tool.sh",
+		Dest:   filepath.Join(stageRoot, "tool.sh"),
+		Mode:   "0755",
+	}
+
+	// First staging run: fetches from HTTP server
+	set1 := stageOneArtifact(t, c, art)
+	if !set1.OK() {
+		t.Fatalf("first stage failed: %+v", set1.Failures)
+	}
+	if n := srv.hits.Load(); n != 1 {
+		t.Fatalf("expected 1 HTTP hit on first stage, got %d", n)
+	}
+	if set1.Files[0].FromCache {
+		t.Fatalf("expected FromCache false on initial download")
+	}
+
+	// Cleanup should remove dest from staging, but keep the file in cacheDir
+	set1.Cleanup(c, "run-1")
+	if _, err := os.Stat(art.Dest); !os.IsNotExist(err) {
+		t.Fatalf("staged file survived Cleanup at %s", art.Dest)
+	}
+
+	cachedFile := filepath.Join(cacheDir, strings.ToLower(art.SHA256))
+	if _, err := os.Stat(cachedFile); err != nil {
+		t.Fatalf("expected cached file to survive at %s, got err: %v", cachedFile, err)
+	}
+
+	// Second staging run: should hit local cache without contacting HTTP server
+	set2 := stageOneArtifact(t, c, art)
+	if !set2.OK() {
+		t.Fatalf("second stage failed: %+v", set2.Failures)
+	}
+	if n := srv.hits.Load(); n != 1 {
+		t.Fatalf("expected 1 HTTP hit after second stage (cache-hit), got %d", n)
+	}
+	if !set2.Files[0].FromCache {
+		t.Fatalf("expected FromCache true on second staging")
+	}
+	if !strings.Contains(set2.Ledger(), "(cache-hit)") {
+		t.Fatalf("expected ledger to indicate cache-hit, got:\n%s", set2.Ledger())
+	}
+
+	// Verify staged file content
+	gotBytes, err := os.ReadFile(art.Dest)
+	if err != nil {
+		t.Fatalf("could not read staged dest: %v", err)
+	}
+	if string(gotBytes) != string(body) {
+		t.Fatalf("got %q, want %q", gotBytes, body)
 	}
 }
 
