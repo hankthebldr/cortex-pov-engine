@@ -1,0 +1,171 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Third-party network data has to become the SAME shape as first-party, or the
+# hunt query a DC writes against native telemetry silently misses half the
+# estate.
+#
+# This is PLT-IR-008's round-trip narrowed to one question the NDR plane owns:
+# does a NON-PANW network source arrive carrying the unified connection tuple —
+# source, destination, port, action — in the platform's own field names, the way
+# native NGFW traffic does?
+#
+# The canary is planted twice per record, in the source's own schema fields AND
+# as a raw marker, because that is what separates three failures a DC would
+# otherwise conflate:
+#
+#   raw present / tuple present   -> ingested AND normalized   (claim holds)
+#   raw present / tuple absent    -> ingested, NOT normalized  (parser gap)
+#   raw absent                    -> never landed              (collector gap)
+#
+# A check built only on the raw marker reads "third-party normalization works"
+# on precisely the tenants whose parser dropped every field that made it useful.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: PLT-NDR-005
+name: Third-party network telemetry normalizes into the unified connection model
+version: "1.0"
+status: active
+
+validation_class: PLT
+kind: state
+plane: NDR
+
+uc_ref: UCS-NDR-03
+tc_ref: TC-NDR-05
+tc_refs: [TC-NDR-05]
+uc_name: "Network Detection & Response"
+tc_name: "Validate Broker VM normalization of 3rd-party network data into unified schema"
+
+moat_tier: MOAT
+methodology_family: F8
+primary_kpi: "Cross-Source Correlation Rate"
+success_criteria: |
+  Records from a non-PANW network source arrive in the tenant carrying the same
+  unified connection tuple — source address, destination address, destination
+  port and action — that native NGFW traffic carries, so one query returns both
+  families and a hunt written against native telemetry does not silently skip
+  the third-party estate.
+
+scope_limitations: >
+  Proves field-level normalization of ONE third-party network source family
+  (Cisco ASA/FTD connection events) against the four tuple fields the unified
+  model needs to make a connection queryable, measured against the emitter's own
+  ground truth. Does NOT prove the DOOR: no read API reports whether a record
+  entered through a Broker VM, a Marketplace connector or a syslog relay, so the
+  test case's "Broker VM" framing is disclaimed rather than guessed at — what is
+  proven is the measurable core, that third-party network data normalizes.
+  Does NOT prove breadth across the many network vendors a customer runs; one
+  source family is a sample, and a Zeek or Fortinet parser may behave
+  differently. Does NOT prove the "query performance unaffected" leg — no probe
+  in this substrate measures query latency, and measuring it from the engine
+  would fold emitter and ingest delay into the platform's number. Counts only
+  canary-bearing records, so it is a probe of the parser, not a census.
+
+stimulus:
+  kind: eal_campaign
+  campaign_id: plt-ndr-005-thirdparty-normalization
+  detail: >
+    Run TWO network emitters against the operator's collector with ONE fresh
+    canary token, planted into each source's own address field and repeated as a
+    raw marker:
+
+      cisco_asa_raw            6 connection-teardown records (third party)
+      ngfw_eal_emitter         6 EAL traffic records          (native control)
+
+    The native leg is the CONTROL, not decoration: it establishes that the
+    collector and the tuple query both work, so a red third-party result is
+    attributable to the third-party parser rather than to the query. Supply the
+    token as context.canary.
+
+context_vars: [canary]
+
+checks:
+  # ── NORMALIZED ───────────────────────────────────────────────────────────
+  - check_id: chk-01
+    title: Third-party records carry the full unified connection tuple
+    probe: xql_ratio
+    primary: true
+    weight: 2.0
+    params:
+      # POPULATION is what the PLATFORM landed from the third-party source, read
+      # from the raw body. The engine does not assert how many records SHOULD be
+      # there — only what fraction of the arrivals are usable.
+      population_query: |
+        dataset = cisco_asa_raw
+        | filter _raw_log contains "{{canary}}"
+        | limit 2000
+      # NUMERATOR requires ALL FOUR tuple fields. Three-of-four is a
+      # normalization defect, not a partial success: a connection missing its
+      # destination port cannot be matched to a service, and one missing its
+      # action cannot be told from a block — both are unusable for the hunt the
+      # unified model exists to enable.
+      numerator_query: |
+        dataset = cisco_asa_raw
+        | filter _raw_log contains "{{canary}}"
+        | filter source_ip      != null and source_ip      != ""
+        | filter dest_ip        != null and dest_ip        != ""
+        | filter dest_port      != null
+        | filter action         != null and action         != ""
+        | limit 2000
+      min_population: 6
+    threshold:
+      kpi: third-party records carrying the full connection tuple
+      op: ">="
+      value: 95
+      unit: "%"
+      source: authored_sharpening
+      rationale: >
+        TC-NDR-05 carries "Qualitative pass" and therefore no number of its own.
+        95% is transcribed from the platform-wide normalization bar the index
+        DOES quantify for the same mechanism (TC-XDL-01, "95%+ field
+        normalization accuracy") rather than invented here, so third-party
+        network data is held to the same standard as every other source rather
+        than to a softer one chosen to make it pass. Note the index row is
+        Qualitative, so verifier.score_run clamps a PASS to not_applicable —
+        this bar can produce evidence and a red, never a machine-certified green.
+      min_population_note: >
+        6 is the declared campaign's third-party record count; a smaller run
+        resolves POPULATION_EMPTY -> pending rather than being scored.
+    negative_control:
+      description: >
+        The ASA parser maps addresses and action but leaves dest_port unmapped
+        because the vendor writes it inside a composite "interface:ip/port"
+        token the grok pattern never splits. Every record lands
+        three-quarters-normalized — searchable, and useless for any query that
+        pivots on a service. 0 of 6 carry the full tuple.
+      measured_value: 0
+
+  # ── ARRIVED AT ALL ───────────────────────────────────────────────────────
+  # Read this FIRST on a red chk-01: it separates a parser gap from a collector
+  # gap, which are different problems owned by different people.
+  - check_id: chk-02
+    title: Both source families reached the lake
+    probe: xql_distinct
+    weight: 1.0
+    params:
+      query: |
+        dataset in (cisco_asa_raw, panw_ngfw_traffic_raw)
+        | filter _raw_log contains "{{canary}}"
+        | comp count() as record_count by _dataset
+        | fields _dataset, record_count
+        | limit 50
+      distinct_key: _dataset
+    threshold:
+      kpi: distinct source families landed
+      op: ">="
+      value: 2
+      unit: ""
+      source: authored_sharpening
+      rationale: >
+        The native leg is the control. If only one family landed, chk-01 is
+        measuring a collector problem and reporting it as a normalization
+        verdict — the two send a DC to different teams, so the pack must be able
+        to tell them apart before it renders a number.
+    negative_control:
+      description: >
+        The third-party syslog listener was never opened on the collector, so
+        only the native EAL records arrived. chk-01's population is empty and any
+        normalization claim about the third-party path is unfounded.
+      measured_value: 1
+
+tags: [ndr, normalization, third-party, broker-vm, unified-schema]
+author: "CortexSim PLT pack"

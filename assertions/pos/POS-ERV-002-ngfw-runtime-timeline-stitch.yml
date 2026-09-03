@@ -1,0 +1,170 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Perimeter and workload in ONE incident, not two.
+#
+# The failure this exists to catch is subtle and extremely common: both sources
+# ingest perfectly, both render in search, and the platform still opens TWO
+# incidents — one for the firewall session, one for the container process. Every
+# ingest-shaped check passes on that tenant. The analyst still works two queues
+# and never sees the perimeter-to-workload arc.
+#
+# So the claim is not "both datasets are present". It is "both datasets resolve
+# to the SAME incident id", and chk-01 is a ratio over the incidents the
+# platform actually opened for this activity, not over records.
+#
+# chk-02 is the precursor gate in disguise. If the NGFW leg never ingested, the
+# stitch could not have happened for an infrastructure reason rather than a
+# correlation one, and the two send a DC to two different places.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: POS-ERV-002
+name: NGFW and container-runtime events stitch into one incident timeline
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: ANALYTICS
+
+uc_ref: UCS-ERV-01
+tc_ref: TC-ERV-02
+tc_refs: [TC-ERV-02]
+uc_name: "Enterprise Risk Visibility"
+tc_name: "Demonstrate NGFW/Runtime event stitching into unified incident timeline"
+
+moat_tier: MOAT
+methodology_family: F8
+primary_kpi: "Cross-Source Correlation Rate"
+success_criteria: |
+  The firewall session and the container-runtime process activity that produced
+  it resolve into a single XSIAM incident carrying both source families, rather
+  than into two independently-correct incidents the analyst must join by hand.
+
+scope_limitations: >
+  Proves that two specific source families — PAN-OS NGFW traffic and container
+  runtime telemetry — land in one incident for one scenario's activity. Does NOT
+  prove stitching in general: SIM-MP-006 supplies a deliberately favourable
+  case (shared 5-tuple, sub-10s window), and a real environment stitches across
+  NAT boundaries, proxies and longer gaps this fixture never exercises. Does NOT
+  prove the timeline is ORDERED or causally correct — only that both families
+  are attached to one incident; a correct set of events in the wrong order still
+  passes here. Does NOT prove NGFW onboarding: whether the customer's firewall
+  forwards through a Broker VM, a Marketplace connector or a syslog relay is
+  invisible to every read API, and the door is disclaimed rather than guessed at
+  (PLT-NDR-005 measures the normalization leg of that path). A tenant lacking
+  the container runtime sensor resolves POPULATION_EMPTY -> pending.
+
+stimulus:
+  kind: scenario_run
+  scenario_id: SIM-MP-006
+  detail: >
+    Run SIM-MP-006 (NGFW <-> container 5-tuple + 10s causality stitch) end to
+    end against a target running the container runtime with NGFW logs forwarding
+    into the tenant. It is the corpus's purpose-built stitch case: the egress it
+    generates is observed by the firewall AND by the runtime sensor within the
+    correlation window, which is the only shape that can distinguish a
+    stitching failure from a coverage gap. Wait out ingest, then supply the
+    container's host as context.target_host.
+
+settle:
+  # Incident GROUPING is not instantaneous — the platform opens an incident and
+  # then attaches later-arriving evidence to it. Reading before the grouping
+  # pass has run measures the platform mid-thought and manufactures a false red.
+  ingest_floor_seconds: 180
+  poll_interval_seconds: 30
+  max_wait_seconds: 1200
+
+context_vars: [target_host]
+
+checks:
+  # ── STITCHED ─────────────────────────────────────────────────────────────
+  - check_id: chk-01
+    title: One incident carries both the firewall session and the runtime process
+    probe: xql_ratio
+    primary: true
+    weight: 2.0
+    params:
+      # POPULATION — the incidents the platform opened that carry the NGFW leg.
+      # Anchoring on the firewall side is deliberate: it is the source most
+      # likely to arrive through a third-party path, so an incident that has it
+      # is one where the hard half already worked.
+      population_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter alert_sources contains "panw_ngfw_traffic_raw"
+        | comp count() as evidence_count by incident_id
+        | limit 500
+      # NUMERATOR — of those, the ones that ALSO carry the runtime leg. Same
+      # incident_id, both families. That identity is the entire test case.
+      numerator_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter agent_hostname = "{{target_host}}"
+        | filter alert_sources contains "panw_ngfw_traffic_raw"
+        | filter alert_sources contains "cortexsim_container_raw"
+              or alert_sources contains "xdr_data"
+        | comp count() as evidence_count by incident_id
+        | limit 500
+      min_population: 1
+    threshold:
+      kpi: NGFW incidents also carrying the runtime leg
+      op: ">="
+      value: 100
+      unit: "%"
+      source: authored_sharpening
+      rationale: >
+        Absolute, and defensible only because the stimulus is a single scenario
+        producing a single correlated arc — there is one incident to get right.
+        A partial bar would be meaningless at n=1 and would let a total
+        stitching failure score 0% and still read as "mostly working". Expressed
+        as a ratio over the incidents that HAVE the firewall leg, so a tenant
+        where NGFW never ingested resolves POPULATION_EMPTY -> pending rather
+        than failing the correlation engine for an ingestion problem.
+    negative_control:
+      description: >
+        Both sources ingested and both are searchable, but the platform grouped
+        them into two separate incidents — one firewall session, one container
+        process — because the container's overlay IP never resolved to the NAT
+        address the firewall logged. The analyst sees two half-stories and joins
+        them by hand, which is the exact labour this test case claims is removed.
+      measured_value: 0
+
+  # ── BOTH LEGS REALLY ARRIVED ─────────────────────────────────────────────
+  # Read this FIRST on a red chk-01. "Not stitched" and "never ingested" are
+  # different problems with different owners, and only this check separates them.
+  - check_id: chk-02
+    title: Both source families are independently present for this host
+    probe: xql_distinct
+    weight: 1.0
+    params:
+      query: |
+        dataset in (panw_ngfw_traffic_raw, cortexsim_container_raw, xdr_data)
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter device_name = "{{target_host}}" or agent_hostname = "{{target_host}}"
+        | comp count() as record_count by _dataset
+        | fields _dataset, record_count
+        | limit 50
+      distinct_key: _dataset
+    threshold:
+      kpi: distinct source families present for the host
+      op: ">="
+      value: 2
+      unit: ""
+      source: authored_sharpening
+      rationale: >
+        Two is the minimum that makes "stitching" a meaningful word — the test
+        case's own subject is NGFW plus Runtime. This is not a claim about
+        correlation; it is the precursor that tells a DC whether a red chk-01 is
+        a correlation defect (both present, not joined) or a coverage gap (one
+        never arrived). Without it the pack would report a firewall-forwarding
+        misconfiguration as a failure of the correlation engine.
+    negative_control:
+      description: >
+        The container runtime telemetry is flowing but the firewall's log
+        forwarding profile was never applied to the egress rule, so only one
+        source family is present. Nothing could have been stitched, and reading
+        chk-01 as a correlation failure would send the DC to the wrong team.
+      measured_value: 1
+
+tags: [stitching, correlation, ngfw, container-runtime, incident-timeline, erv]
+author: "CortexSim POS pack"

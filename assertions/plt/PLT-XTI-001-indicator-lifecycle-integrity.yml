@@ -1,0 +1,253 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Indicator lifecycle, measured against the publisher's own ground truth.
+#
+# The reason this is expressible at all is that the ENGINE decides what the
+# three feeds contain. It knows how many distinct indicators it published, which
+# ones it deliberately duplicated across feeds, and which ones it stamped with a
+# past expiry — so "did the platform deduplicate?" is a comparison against
+# authored truth rather than against a number the platform also produced.
+#
+# The four checks are deliberately four, because a TI pipeline fails in four
+# unrelated places and a single aggregate score would hide which one:
+#
+#   dedup broken     -> the same IOC arrives 3x and drives 3 alerts (chk-01)
+#   expiry broken    -> a retired IOC keeps matching forever (chk-02)
+#   scoring broken   -> records land unscored, so nothing can prioritise (chk-03)
+#   ingest broken    -> fewer than 3 feeds ever arrived (chk-04)
+#
+# chk-04 is the precursor for the other three in spirit: a tenant that ingested
+# one feed can trivially "deduplicate" 100% of it. Read it first.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: PLT-XTI-001
+name: Indicator lifecycle integrity across three overlapping feeds
+version: "1.0"
+status: active
+
+validation_class: PLT
+kind: state
+plane: TIM
+
+uc_ref: UCS-XTI-01
+tc_ref: TC-XTI-01
+tc_refs: [TC-XTI-01]
+uc_name: "Extended Threat Intelligence (XTI)"
+tc_name: "Validate indicator lifecycle governance — ingest, dedupe, score and auto-expire across 3+ feeds"
+
+moat_tier: LEAD
+methodology_family: F8
+primary_kpi: "Completeness %"
+success_criteria: |
+  Indicators published across three TAXII collections deduplicate into single
+  scored records at or above 95%, every past-expiry indicator is retired rather
+  than left matching, and all three source collections are positively present in
+  the tenant's threat-intel store.
+
+scope_limitations: >
+  Proves the four mechanical legs of indicator lifecycle — deduplication,
+  auto-expiry, scoring presence and source breadth — over the canary-bearing
+  indicator set THIS fixture published, and nothing else. Does NOT prove the
+  test case's "no duplicate IOC drives a duplicate alert" leg end to end: that
+  requires an alert to fire off each indicator, which needs matching traffic for
+  every IOC in the set and is a detection claim, not a lifecycle one. Does NOT
+  prove scoring CORRECTNESS — chk-03 measures that a confidence value is
+  present and in range, not that the platform's number is the right number, which
+  is not machine-knowable from outside the scoring model. Does NOT prove
+  behaviour on feeds this fixture did not publish; a customer's commercial feed
+  may carry indicator shapes (YARA, sigma, file paths) that normalize
+  differently. Measures only indicators carrying the canary token, so it is a
+  sample of the store, never the whole store. A tenant whose threat-intel schema
+  names these columns differently resolves PROBE_QUERY_FAILED -> pending, never
+  a false verdict.
+
+stimulus:
+  kind: iac_fixture
+  iac_module: aws/tim
+  detail: >
+    terraform apply the `tim` module, then publish THREE mocktaxii collections
+    with a single fresh canary token embedded in every indicator value
+    (`<ioc>.{{canary}}.cortexsim-canary.invalid`):
+
+      collection A — 25 indicators
+      collection B — 25 indicators, 5 of which are VERBATIM copies from A
+      collection C — 25 indicators, 5 of which are VERBATIM copies from A
+
+    That is 75 published records over 65 distinct values — a deliberate 20%
+    overlap, matching the index row's own simulation input. Stamp 8 of the 65
+    with a `valid_until` one hour in the past. Onboard all three collections as
+    separate TAXII feeds, then allow one full feed-poll interval before reading.
+    Supply the token as context.canary.
+
+context_vars: [canary]
+
+checks:
+  # ── DEDUPLICATED ─────────────────────────────────────────────────────────
+  - check_id: chk-01
+    title: Indicators arriving from multiple feeds collapse to one record each
+    probe: xql_ratio
+    primary: true
+    weight: 2.0
+    params:
+      # POPULATION is one row per DISTINCT indicator value the platform holds —
+      # the comp collapses the store's own duplicates so the denominator is
+      # "indicators known", not "records stored". Counting records instead would
+      # make a badly-duplicated store look larger and therefore better.
+      population_query: |
+        dataset = threat_intel
+        | filter indicator_value contains "{{canary}}"
+        | comp count() as record_count by indicator_value
+        | limit 2000
+      # NUMERATOR keeps only those held exactly ONCE. record_count = 1 is the
+      # whole claim: the same IOC from three feeds is one scored record.
+      numerator_query: |
+        dataset = threat_intel
+        | filter indicator_value contains "{{canary}}"
+        | comp count() as record_count by indicator_value
+        | filter record_count = 1
+        | limit 2000
+      # 65 distinct values are published. A store holding a handful would give a
+      # meaningless ratio, so the floor is set just under the published set to
+      # tolerate normal feed-poll lag without tolerating a near-empty store.
+      min_population: 60
+    threshold:
+      kpi: indicators deduplicated into a single record
+      op: ">="
+      value: 95
+      unit: "%"
+      source: index
+      rationale: >
+        Transcribed from the index verbatim — TC-XTI-01 carries threshold ">=95%"
+        against a Completeness % KPI and a success criterion of "Indicators from
+        3+ sources deduplicate into single scored records". Nothing was sharpened.
+    negative_control:
+      description: >
+        The platform keys its dedup on the (source, indicator) pair rather than
+        on the indicator value, so each of the 10 cross-feed duplicates is held
+        as a separate record. 55 of 65 distinct values are singletons = 84.6%,
+        and every one of those 10 IOCs will drive duplicate alerts.
+      measured_value: 84.6
+
+  # ── EXPIRED ──────────────────────────────────────────────────────────────
+  - check_id: chk-02
+    title: Every past-expiry indicator is retired rather than left matching
+    probe: xql_ratio
+    weight: 1.5
+    params:
+      # POPULATION — the indicators whose own valid_until has already passed,
+      # read from the platform's copy of the field, not from the fixture's
+      # intent. If the platform never parsed valid_until this is empty and the
+      # check resolves POPULATION_EMPTY -> pending, which is the honest answer:
+      # the expiry policy was never given a date to act on.
+      population_query: |
+        dataset = threat_intel
+        | filter indicator_value contains "{{canary}}"
+        | filter valid_until != null
+        | filter valid_until < current_time()
+        | comp count() as record_count by indicator_value, valid_until, status
+        | limit 2000
+      numerator_query: |
+        dataset = threat_intel
+        | filter indicator_value contains "{{canary}}"
+        | filter valid_until != null
+        | filter valid_until < current_time()
+        | filter status in ("expired", "retired", "inactive")
+        | comp count() as record_count by indicator_value, valid_until, status
+        | limit 2000
+      min_population: 1
+    threshold:
+      kpi: past-expiry indicators actually retired
+      op: ">="
+      value: 100
+      unit: "%"
+      source: authored_sharpening
+      rationale: >
+        The index's "expired indicators auto-retire on policy" is an absolute
+        claim, so the bar is absolute. A single stale indicator left in an active
+        state keeps generating matches on infrastructure that has changed hands —
+        the specific harm an expiry policy exists to prevent — so 7-of-8 is a
+        failure, not a high grade. Expressed as a ratio over the platform's own
+        past-expiry set rather than as "count of un-retired = 0", which passes on
+        a tenant that parsed no dates at all.
+    negative_control:
+      description: >
+        The feed's valid_until is ingested and stored but no retirement job acts
+        on it, so all 8 past-expiry indicators sit in status "active" and keep
+        matching. 0 of 8 retired.
+      measured_value: 0
+
+  # ── SCORED ───────────────────────────────────────────────────────────────
+  - check_id: chk-03
+    title: Deduplicated records carry a confidence score
+    probe: xql_ratio
+    weight: 1.0
+    params:
+      population_query: |
+        dataset = threat_intel
+        | filter indicator_value contains "{{canary}}"
+        | comp count() as record_count by indicator_value
+        | limit 2000
+      # A score must be PRESENT and IN RANGE. "not null" alone passes on a
+      # platform that writes a literal 0 or an empty string into every row,
+      # which is an unscored store wearing a scored store's schema.
+      numerator_query: |
+        dataset = threat_intel
+        | filter indicator_value contains "{{canary}}"
+        | filter confidence != null and confidence > 0 and confidence <= 100
+        | comp count() as record_count by indicator_value
+        | limit 2000
+      min_population: 60
+    threshold:
+      kpi: indicators carrying a usable confidence score
+      op: ">="
+      value: 95
+      unit: "%"
+      source: index
+      rationale: >
+        The index's success criterion is "deduplicate into single SCORED
+        records" — scoring is part of the same 95% completeness claim as the
+        dedup leg, so it carries the same bar rather than an invented one.
+    negative_control:
+      description: >
+        The TAXII parser maps indicator value and type but drops the confidence
+        attribute, so records land unscored and nothing downstream can
+        prioritise them — every IOC arrives equally urgent, which is the same as
+        none of them being urgent.
+      measured_value: 0
+
+  # ── FROM THREE SOURCES ───────────────────────────────────────────────────
+  # Read this one FIRST when triaging. A tenant that ingested a single feed can
+  # deduplicate it perfectly and score it perfectly, and chk-01/03 would both go
+  # green on a pipeline that never exercised the claim under test.
+  - check_id: chk-04
+    title: All three published collections are positively present
+    probe: xql_distinct
+    weight: 1.0
+    params:
+      query: |
+        dataset = threat_intel
+        | filter indicator_value contains "{{canary}}"
+        | comp count() as record_count by source_collection
+        | fields source_collection, record_count
+        | limit 100
+      distinct_key: source_collection
+    threshold:
+      kpi: distinct source collections represented
+      op: ">="
+      value: 3
+      unit: ""
+      source: index
+      rationale: >
+        The test case says "across 3+ feeds" and the fixture publishes exactly
+        three, so three is the index's own floor rather than an authored one.
+        Without this check the dedup ratio is unfalsifiable — one feed
+        deduplicates against nothing.
+    negative_control:
+      description: >
+        Two of the three TAXII collections onboarded cleanly and the third
+        failed authentication at poll time, so only two source collections are
+        represented. The overlap this test case is built on never occurred and
+        the dedup number above is measuring nothing.
+      measured_value: 2
+
+tags: [threat-intel, taxii, lifecycle, deduplication, expiry, xti]
+author: "CortexSim PLT pack"

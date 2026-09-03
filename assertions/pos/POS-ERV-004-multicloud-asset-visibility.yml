@@ -1,0 +1,156 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Three clouds, one inventory — the smallest honest form of "multi-cloud".
+#
+# "Unified visibility across AWS, Azure and GCP" is the kind of claim that
+# passes trivially against a tenant onboarded to ONE cloud, because every
+# single-cloud inventory is internally consistent and every dashboard renders.
+# The only way to falsify it is to emit control-plane activity into all three
+# and then require all three back, keyed on ONE token.
+#
+# chk-01 is therefore a distinct-count and not a row-count. A tenant that
+# ingested 10,000 AWS records and zero Azure/GCP has a large, healthy-looking
+# asset table and has not satisfied this test case at all.
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: POS-ERV-004
+name: Multi-cloud asset visibility spans AWS, Azure and GCP
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: ANALYTICS
+
+uc_ref: UCS-ERV-02
+tc_ref: TC-ERV-04
+tc_refs: [TC-ERV-04]
+uc_name: "Enterprise Risk Visibility"
+tc_name: "Validate unified asset onboarding and multi-cloud visibility (AWS, Azure, GCP)"
+
+moat_tier: MOAT
+methodology_family: F8
+primary_kpi: "Coverage %"
+success_criteria: |
+  Control-plane activity emitted into all three major clouds under one canary
+  token is queryable from the tenant with all three providers positively
+  represented, each carrying the account/subscription/project identifier that
+  makes an asset attributable rather than merely present.
+
+scope_limitations: >
+  Proves that control-plane records from three cloud providers reach the tenant
+  and remain attributable to their own account scope. Does NOT prove asset
+  ONBOARDING in the product sense — cloud-connector configuration, role
+  assumption and scan scheduling are tenant-side actions the engine has no write
+  path to perform or inspect. Does NOT prove POSTURE state for those assets
+  (that is TC-CSPM's population, covered by the POS-CSPM pack) — this measures
+  visibility, not compliance. Does NOT prove the "visibility dashboard reflects
+  accurate state" leg: dashboards are a console rendering with no read API that
+  distinguishes a correct panel from a stale one. Does NOT prove coverage of
+  assets the fixture did not create; a customer with 40 accounts is not measured
+  by three. Counts only canary-bearing records, so it is a probe of the ingest
+  path, never a census of the estate.
+
+stimulus:
+  kind: eal_campaign
+  campaign_id: pos-erv-004-tricloud-controlplane
+  detail: >
+    Run the three cloud control-plane emitters against the operator's collector
+    with ONE fresh canary token, each writing the token into its own principal
+    field and its own account-scope field:
+
+      cloud_audit_emitter          provider=aws    (userIdentity.arn, recipientAccountId)
+      cloud_audit_emitter          provider=gcp    (protoPayload.authenticationInfo, resource project_id)
+      azure_audit_emitter          (caller, subscriptionId)
+
+    A minimum of 4 records per provider so chk-02's per-provider floor is
+    exercised rather than satisfied by a single lucky record. Supply the token as
+    context.canary.
+
+context_vars: [canary]
+
+checks:
+  # ── ALL THREE PRESENT ────────────────────────────────────────────────────
+  - check_id: chk-01
+    title: All three cloud providers are positively represented
+    probe: xql_distinct
+    primary: true
+    weight: 2.0
+    params:
+      # The comp is what makes this a PROVIDER count rather than a record count.
+      # Without it a distinct over raw rows still returns 3 only if all three
+      # landed, but the row sample returned to the operator would be dominated
+      # by whichever provider is loudest, hiding which one is missing.
+      query: |
+        dataset in (cloud_audit_logs, msft_azure_audit)
+        | filter _raw_log contains "{{canary}}"
+        | comp count() as record_count by cloud_provider
+        | fields cloud_provider, record_count
+        | limit 100
+      distinct_key: cloud_provider
+    threshold:
+      kpi: distinct cloud providers visible
+      op: ">="
+      value: 3
+      unit: ""
+      source: index
+      rationale: >
+        The test case names the three clouds explicitly — "(AWS, Azure, GCP)" —
+        so three is the index's own floor, transcribed rather than authored. The
+        bar is absolute because two-of-three is precisely the gap this test case
+        exists to find: the cloud nobody onboarded is the one the attacker uses.
+    negative_control:
+      description: >
+        AWS and Azure onboarded cleanly but the GCP connector was never granted
+        the org-level viewer role, so no GCP control-plane record reaches the
+        lake. Two providers visible, and the estate's entire GCP footprint is
+        invisible while the dashboard still renders green for the two that work.
+      measured_value: 2
+
+  # ── ATTRIBUTABLE ─────────────────────────────────────────────────────────
+  # Presence without account scope is a log, not an asset inventory. An event
+  # you cannot attribute to an account is one you cannot route, own or remediate.
+  - check_id: chk-02
+    title: Every provider's records carry their own account-scope identifier
+    probe: xql_ratio
+    weight: 1.0
+    params:
+      population_query: |
+        dataset in (cloud_audit_logs, msft_azure_audit)
+        | filter _raw_log contains "{{canary}}"
+        | fields cloud_provider, account_id, subscription_id, project_id
+        | limit 2000
+      # Each provider's OWN field — AWS account, Azure subscription, GCP project.
+      # A single shared "account" column would not survive contact with three
+      # different control planes, and asserting one would test the query rather
+      # than the normalization.
+      numerator_query: |
+        dataset in (cloud_audit_logs, msft_azure_audit)
+        | filter _raw_log contains "{{canary}}"
+        | filter (cloud_provider = "aws"   and account_id != null      and account_id != "")
+              or (cloud_provider = "azure" and subscription_id != null and subscription_id != "")
+              or (cloud_provider = "gcp"   and project_id != null      and project_id != "")
+        | fields cloud_provider, account_id, subscription_id, project_id
+        | limit 2000
+      min_population: 12
+    threshold:
+      kpi: records carrying their provider's account scope
+      op: ">="
+      value: 100
+      unit: "%"
+      source: authored_sharpening
+      rationale: >
+        Absolute, because a control-plane record with no account scope cannot be
+        attributed to an owner and therefore cannot become an asset. The index's
+        "unified asset onboarding" claim is about attribution, not volume. The
+        floor of 12 is the declared campaign's minimum (3 providers x 4 records);
+        a smaller run must resolve pending rather than be scored.
+    negative_control:
+      description: >
+        The Azure parser maps caller and operation but drops subscriptionId, so
+        every Azure record lands unattributable — present in the lake, invisible
+        in the inventory, and impossible to route to the team that owns it.
+        8 of 12 attributable = 66.7%.
+      measured_value: 66.7
+
+tags: [multi-cloud, asset-visibility, inventory, control-plane, erv]
+author: "CortexSim POS pack"
