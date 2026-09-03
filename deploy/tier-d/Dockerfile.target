@@ -20,10 +20,11 @@
 #   node 11 · administrator 10 · user 7 · runner 6 · app 6 ·
 #   vertex-agent 5 · nobody 1 · developer 1
 #
-# NOTE: user, runner, app, vertex-agent and developer are NOT in
-# spec/identity_harness.json's `service_accounts` list. They resolve through the
-# spec's "unknown username -> runuser best-effort + WARN" path. That is 25
-# steps relying on a fallback rather than a declared account; provisioning them
+# NOTE: every POSIX identity the corpus uses is now DECLARED in
+# spec/identity_harness.json and enforced at load time by S-17, so nothing here
+# rides the "unknown username -> runuser best-effort + WARN" path any more.
+# `administrator` and `user` are windows_identities, used only on windows-only
+# steps that never execute here. Provisioning the declared accounts
 # here makes the harness honest about what it is exercising.
 # ===========================================================================
 FROM ubuntu:22.04
@@ -75,7 +76,7 @@ RUN set -eux; \
     usermod --shell /bin/bash nobody || true; \
     \
     # --- declared service accounts from spec/identity_harness.json ----------
-    for u in postgres mysql node python3 svc-backup; do \
+    for u in postgres mysql node python3 svc-backup app developer runner vertex-agent; do \
         if ! getent passwd "$u" >/dev/null; then \
             useradd --create-home --shell /bin/bash "$u"; \
         else \
@@ -84,10 +85,15 @@ RUN set -eux; \
         fi; \
     done; \
     \
-    # --- identities the corpus uses that the spec does NOT declare ----------
-    # (see the header note: 25 steps ride the unknown-username fallback)
-    for u in user runner app vertex-agent developer; do \
-        useradd --create-home --shell /bin/bash "$u"; \
+    # --- windows-only identities -------------------------------------------
+    # `administrator` and `user` are declared in the spec's windows_identities
+    # and appear ONLY on windows-only steps, which never execute on this Linux
+    # target. `user` is still created so a mistargeted step fails on its own
+    # merits rather than on a missing account.
+    for u in user; do \
+        if ! getent passwd "$u" >/dev/null; then \
+            useradd --create-home --shell /bin/bash "$u"; \
+        fi; \
     done
 
 # Credential-shaped bait so credential-sweep steps have something to find.
