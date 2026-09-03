@@ -82,6 +82,7 @@ checks:
       # by whichever provider is loudest, hiding which one is missing.
       query: |
         dataset in (cloud_audit_logs, msft_azure_audit)
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter _raw_log contains "{{canary}}"
         | comp count() as record_count by cloud_provider
         | fields cloud_provider, record_count
@@ -92,12 +93,18 @@ checks:
       op: ">="
       value: 3
       unit: ""
-      source: index
+      source: authored_sharpening
       rationale: >
-        The test case names the three clouds explicitly — "(AWS, Azure, GCP)" —
-        so three is the index's own floor, transcribed rather than authored. The
-        bar is absolute because two-of-three is precisely the gap this test case
-        exists to find: the cloud nobody onboarded is the one the attacker uses.
+        TC-ERV-04's threshold field reads "Qualitative pass" and carries no
+        number, so this bar is authored, not transcribed — saying otherwise
+        would claim a provenance the index does not have. Three is taken from
+        the test case's own TITLE, which names the clouds explicitly
+        ("AWS, Azure, GCP"), so it is the row's stated scope rather than an
+        invented bar. Absolute because two-of-three is precisely the gap this
+        test case exists to find: the cloud nobody onboarded is the one the
+        attacker uses. Note the row is Qualitative, so verifier.score_run clamps
+        a PASS to not_applicable — this can produce evidence and a red, never a
+        machine-certified green.
     negative_control:
       description: >
         AWS and Azure onboarded cleanly but the GCP connector was never granted
@@ -116,6 +123,7 @@ checks:
     params:
       population_query: |
         dataset in (cloud_audit_logs, msft_azure_audit)
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter _raw_log contains "{{canary}}"
         | fields cloud_provider, account_id, subscription_id, project_id
         | limit 2000
@@ -125,6 +133,7 @@ checks:
       # than the normalization.
       numerator_query: |
         dataset in (cloud_audit_logs, msft_azure_audit)
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter _raw_log contains "{{canary}}"
         | filter (cloud_provider = "aws"   and account_id != null      and account_id != "")
               or (cloud_provider = "azure" and subscription_id != null and subscription_id != "")
@@ -139,6 +148,8 @@ checks:
       unit: "%"
       source: authored_sharpening
       rationale: >
+        TC-ERV-04's threshold field reads "Qualitative pass", so this bar is
+        authored rather than transcribed.
         Absolute, because a control-plane record with no account scope cannot be
         attributed to an owner and therefore cannot become an asset. The index's
         "unified asset onboarding" claim is about attribution, not volume. The

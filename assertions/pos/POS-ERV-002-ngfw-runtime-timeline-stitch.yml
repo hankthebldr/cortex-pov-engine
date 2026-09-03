@@ -65,13 +65,6 @@ stimulus:
     stitching failure from a coverage gap. Wait out ingest, then supply the
     container's host as context.target_host.
 
-settle:
-  # Incident GROUPING is not instantaneous — the platform opens an incident and
-  # then attaches later-arriving evidence to it. Reading before the grouping
-  # pass has run measures the platform mid-thought and manufactures a false red.
-  ingest_floor_seconds: 180
-  poll_interval_seconds: 30
-  max_wait_seconds: 1200
 
 context_vars: [target_host]
 
@@ -113,6 +106,8 @@ checks:
       unit: "%"
       source: authored_sharpening
       rationale: >
+        TC-ERV-02's threshold field reads "Qualitative pass" and carries no
+        number, so this bar is authored rather than transcribed.
         Absolute, and defensible only because the stimulus is a single scenario
         producing a single correlated arc — there is one incident to get right.
         A partial bar would be meaningless at n=1 and would let a total
@@ -152,6 +147,8 @@ checks:
       unit: ""
       source: authored_sharpening
       rationale: >
+        TC-ERV-02's threshold field reads "Qualitative pass", so this bar is
+        authored rather than transcribed.
         Two is the minimum that makes "stitching" a meaningful word — the test
         case's own subject is NGFW plus Runtime. This is not a claim about
         correlation; it is the precursor that tells a DC whether a red chk-01 is

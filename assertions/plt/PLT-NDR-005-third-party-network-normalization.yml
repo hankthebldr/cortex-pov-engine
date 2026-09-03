@@ -91,6 +91,7 @@ checks:
       # there — only what fraction of the arrivals are usable.
       population_query: |
         dataset = cisco_asa_raw
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter _raw_log contains "{{canary}}"
         | limit 2000
       # NUMERATOR requires ALL FOUR tuple fields. Three-of-four is a
@@ -100,6 +101,7 @@ checks:
       # unified model exists to enable.
       numerator_query: |
         dataset = cisco_asa_raw
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter _raw_log contains "{{canary}}"
         | filter source_ip      != null and source_ip      != ""
         | filter dest_ip        != null and dest_ip        != ""
@@ -121,10 +123,10 @@ checks:
         network data is held to the same standard as every other source rather
         than to a softer one chosen to make it pass. Note the index row is
         Qualitative, so verifier.score_run clamps a PASS to not_applicable —
-        this bar can produce evidence and a red, never a machine-certified green.
-      min_population_note: >
-        6 is the declared campaign's third-party record count; a smaller run
-        resolves POPULATION_EMPTY -> pending rather than being scored.
+        this bar can produce evidence and a red, never a machine-certified
+        green. The min_population of 6 is the declared campaign's third-party
+        record count, so a smaller run resolves POPULATION_EMPTY -> pending
+        rather than being scored against a bar it never exercised.
     negative_control:
       description: >
         The ASA parser maps addresses and action but leaves dest_port unmapped
@@ -144,6 +146,7 @@ checks:
     params:
       query: |
         dataset in (cisco_asa_raw, panw_ngfw_traffic_raw)
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter _raw_log contains "{{canary}}"
         | comp count() as record_count by _dataset
         | fields _dataset, record_count

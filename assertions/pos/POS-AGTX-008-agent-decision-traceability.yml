@@ -65,15 +65,10 @@ stimulus:
     to DO: a large mixed corpus produces triage, grouping and disposition
     actions in volume, so the population this ratio is computed over is big
     enough for a single gap to be a real finding rather than noise. Wait out the
-    settle window, then supply the run's incident-tag as context.run_tag.
+    run, then — because the incident store indexes the audit record asynchronously —
+    allow at least 3 minutes before evaluating, and supply the run's
+    incident-tag as context.run_tag.
 
-settle:
-  # The audit record is written as the agent acts, but the incident store
-  # indexes it asynchronously. Reading immediately measures indexing lag and
-  # reports it as a traceability gap.
-  ingest_floor_seconds: 180
-  poll_interval_seconds: 30
-  max_wait_seconds: 1200
 
 context_vars: [run_tag]
 
@@ -161,6 +156,9 @@ checks:
       unit: ""
       source: authored_sharpening
       rationale: >
+        TC-AGTX-08's own threshold is "100%", which chk-01 transcribes; this
+        companion count is authored rather than taken from a "Qualitative pass"
+        row, and is named as such.
         One is the floor, not an ambition: the claim is decision TRANSPARENCY,
         and a trail attributing every action to the string "system" satisfies
         chk-01's not-null test while telling an auditor nothing. The placeholder

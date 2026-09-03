@@ -94,6 +94,7 @@ checks:
       # make a badly-duplicated store look larger and therefore better.
       population_query: |
         dataset = threat_intel
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter indicator_value contains "{{canary}}"
         | comp count() as record_count by indicator_value
         | limit 2000
@@ -101,6 +102,7 @@ checks:
       # whole claim: the same IOC from three feeds is one scored record.
       numerator_query: |
         dataset = threat_intel
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter indicator_value contains "{{canary}}"
         | comp count() as record_count by indicator_value
         | filter record_count = 1
@@ -140,6 +142,7 @@ checks:
       # the expiry policy was never given a date to act on.
       population_query: |
         dataset = threat_intel
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter indicator_value contains "{{canary}}"
         | filter valid_until != null
         | filter valid_until < current_time()
@@ -147,6 +150,7 @@ checks:
         | limit 2000
       numerator_query: |
         dataset = threat_intel
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter indicator_value contains "{{canary}}"
         | filter valid_until != null
         | filter valid_until < current_time()
@@ -183,6 +187,7 @@ checks:
     params:
       population_query: |
         dataset = threat_intel
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter indicator_value contains "{{canary}}"
         | comp count() as record_count by indicator_value
         | limit 2000
@@ -191,6 +196,7 @@ checks:
       # which is an unscored store wearing a scored store's schema.
       numerator_query: |
         dataset = threat_intel
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter indicator_value contains "{{canary}}"
         | filter confidence != null and confidence > 0 and confidence <= 100
         | comp count() as record_count by indicator_value
@@ -225,6 +231,7 @@ checks:
     params:
       query: |
         dataset = threat_intel
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
         | filter indicator_value contains "{{canary}}"
         | comp count() as record_count by source_collection
         | fields source_collection, record_count
@@ -235,10 +242,12 @@ checks:
       op: ">="
       value: 3
       unit: ""
-      source: index
+      source: authored_sharpening
       rationale: >
-        The test case says "across 3+ feeds" and the fixture publishes exactly
-        three, so three is the index's own floor rather than an authored one.
+        The index row's threshold field is ">=95%", which belongs to the
+        completeness KPI and not to this count, so the provenance here is
+        authored rather than transcribed. Three is taken from the test case's
+        own title ("across 3+ feeds") and the fixture publishes exactly three.
         Without this check the dedup ratio is unfalsifiable — one feed
         deduplicates against nothing.
     negative_control:
