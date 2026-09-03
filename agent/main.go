@@ -58,6 +58,13 @@ func main() {
 		"Long-poll the task queue for N seconds per request instead of ticking every --interval (0 = off, max 60). Cuts task pickup from up to --interval down to milliseconds.")
 	streamOutputFlag := flag.Bool("stream-output", false,
 		"Stream step stdout/stderr to SimCore as it is produced rather than only on step completion.")
+	// 0 keeps the built-in default (180s). Raise it on a slow or proxied link:
+	// tier-4 adapter packs install their tool inline at dispatch (apt-get
+	// install hydra / john / hashcat / metasploit), and a step killed mid
+	// install reports exit 124 with no detection — which reads in a POV report
+	// as a miss by the customer's stack rather than a beacon budget.
+	stepTimeoutFlag := flag.Int("step-timeout", 0,
+		"Per-step execution timeout in seconds (0 = built-in default of 180). A step exceeding it is terminated and reported as exit 124.")
 	flag.Parse()
 
 	// Validate required flag.
@@ -77,14 +84,18 @@ func main() {
 		fmt.Fprintln(os.Stderr, "ERROR: --long-poll must be between 0 and 60 seconds (0 disables it)")
 		os.Exit(1)
 	}
+	if *stepTimeoutFlag < 0 {
+		fmt.Fprintln(os.Stderr, "ERROR: --step-timeout must be >= 0 (0 selects the built-in default)")
+		os.Exit(1)
+	}
 
 	// Configure stdlib logger to write to stderr with timestamps.
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("[cortexsim-agent] ")
 
-	log.Printf("starting — server=%s id=%s interval=%ds long-poll=%ds stream-output=%t",
-		*serverFlag, *idFlag, *intervalFlag, *longPollFlag, *streamOutputFlag)
+	log.Printf("starting — server=%s id=%s interval=%ds long-poll=%ds stream-output=%t step-timeout=%ds",
+		*serverFlag, *idFlag, *intervalFlag, *longPollFlag, *streamOutputFlag, *stepTimeoutFlag)
 
 	// ----------------------------------------------------------------
 	// Build beacon client
@@ -92,6 +103,9 @@ func main() {
 	client := beacon.New(*serverFlag, *idFlag, time.Duration(*intervalFlag)*time.Second)
 	client.LongPollTimeout = *longPollFlag
 	client.StreamOutput = *streamOutputFlag
+	if *stepTimeoutFlag > 0 {
+		client.StepTimeout = time.Duration(*stepTimeoutFlag) * time.Second
+	}
 
 	artifactToken := *artifactTokenFlag
 	if artifactToken == "" {
