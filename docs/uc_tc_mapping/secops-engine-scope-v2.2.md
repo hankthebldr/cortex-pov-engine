@@ -4,9 +4,9 @@
 > `python3 scripts/uctc_crosswalk_v2.2.py --report`; this file answers the
 > different question of **why** a row is still open.
 
-The SecOps sheet of the v2.2 index carries **146 test cases**. **71** are evidenced by a scenario or an assertion. The **75** below are not, and they are not one population:
+The SecOps sheet of the v2.2 index carries **146 test cases**. **73** are evidenced by a scenario or an assertion. The **73** below are not, and they are not one population:
 
-- **29 are buildable** — the work is owed to this corpus.
+- **27 are buildable** — the work is owed to this corpus.
 - **46 are not** — the work is owed to something outside the engine, or to nobody.
 
 Collapsing those two into a single "open" number is how a backlog becomes a
@@ -18,7 +18,7 @@ of scope.
 | reason code | bucket | meaning | count |
 |---|---|---|---:|
 | `BUILDABLE_SCENARIO` | buildable | Scenario YAML + TTP card. The engine can emit the signal the test case is about. | 1 |
-| `BUILDABLE_ASSERTION` | buildable | Assertion YAML. The success criterion has a core that a read-only XQL probe can measure. | 12 |
+| `BUILDABLE_ASSERTION` | buildable | Assertion YAML. The success criterion has a core that a read-only XQL probe can measure. | 10 |
 | `BUILDABLE_BOTH` | buildable | Scenario supplies the stimulus, assertion measures the platform's observable response. Two artifacts, one claim. | 16 |
 | `EXTERNAL_SERVICE_DELIVERY` | external | Measures a Palo Alto Networks human service (Unit 42 MDR / MTH / MSIAM), not a platform behaviour. No artifact can prove a staffed service met an SLA. | 3 |
 | `EXTERNAL_THIRD_PARTY_SYSTEM` | external | Requires a system outside Cortex that the engine has no connector for — ServiceNow/ITSM, an ISAC peer, a customer CI/CD pipeline, or a competitor EDR. | 9 |
@@ -31,10 +31,8 @@ of scope.
 
 | TC | class | UC | reason | note |
 |---|---|---|---|---|
-| `TC-AGTX-08` | POS | UC-AGTX | `BUILDABLE_ASSERTION` | Agent decision transparency is queryable on xsiam_incidents — actor type, action, approval state. AUT-AEPS-002/chk-03 is the precedent. |
 | `TC-AIRS-02` | POS | UC-AIRS | `BUILDABLE_ASSERTION` | AI SBOM completeness reads from ai_spm_findings; the POS-AISP pack is the precedent. |
 | `TC-AIRS-09` | POS | UC-AIRS | `BUILDABLE_ASSERTION` | Training-pipeline exposure is a posture read over ai_spm_findings; POS-AISP-005 is the precedent. |
-| `TC-APB-05` | PLT | UC-APB | `BUILDABLE_ASSERTION` | Guardrail enforcement is queryable: high-risk actions carrying an approval decision. AUT-AEPS-002/chk-03 already does exactly this. |
 | `TC-APB-08` | PLT | UC-APB | `BUILDABLE_ASSERTION` | Autonomous close under an approval gate is an xsiam_incidents latency + gate-presence read. |
 | `TC-CDR-04` | POS | UC-CDR | `BUILDABLE_ASSERTION` | The cspm module already plants an over-permissioned IAM role and a wildcard-policy user; assertion reads CIEM's recall over the planted set. |
 | `TC-DLP-09` | DET | UC-DLP | `BUILDABLE_ASSERTION` | Case auto-creation from a DLP incident, with required context fields present, is a direct xsiam_incidents read. |
