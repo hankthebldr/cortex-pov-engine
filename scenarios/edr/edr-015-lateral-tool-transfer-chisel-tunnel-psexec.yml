@@ -43,9 +43,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra-ops-playbo
 # SAFE-MODE marker files named for the tooling, loopback-only actions.
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -92,7 +92,7 @@ external_tools: []
 # lineage is one connected spine rooted on the foothold, not the beacon.
 cgo_anchor:
   image_name: "bash"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 steps:
   - id: step-01
@@ -107,7 +107,7 @@ steps:
       printf '#!/bin/sh\necho cortexsim-edr015-chisel-tunnel-safe-marker\n' > "$WORK/chisel.exe"
       chmod +x "$WORK/chisel.exe"; "$WORK/chisel.exe" || true
       echo 'cortexsim-edr-015-lateral-tool-transfer-step-complete'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1570"
     # Root: HTTPS downloader (curl) spawned by the foothold shell writes+executes
     # the never-before-seen tunneler. Lateral tool transfer is cross-OS.
@@ -133,7 +133,7 @@ steps:
       # Loopback-only; the NDR/NGFW should record the long-lived 443 session.
       timeout 3 bash -c ': > /dev/tcp/127.0.0.1/443' 2>/dev/null || true
       echo 'cortexsim-edr-015-tcp443-tunnel-safe-marker'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1021.004"
     # The chisel endpoint tool (step-01) opens the long-lived NDR/NGFW TCP/443
     # session: an endpoint<->firewall stitch on the same host.
@@ -157,7 +157,7 @@ steps:
       # fan out toward >= 2 loopback/lab peers (SAFE-MODE, no real SMB/RDP)
       for peer in 127.0.0.2 127.0.0.3; do "$WORK/psexec.exe" "$peer" || true; done
       echo 'cortexsim-edr-015-psexec-fanout-step-complete'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1021.002"
     # psexec is a second tool transferred by the same foothold on the same host,
     # fanning out to peers — same-entity (src_host) reuse, a sibling of chisel.

@@ -55,7 +55,7 @@ execution_identity:
   default: www-data
   options:
     - www-data
-    - svc-account
+    - svc-backup
     - root
 
 push_supported: true
@@ -188,7 +188,7 @@ steps:
       RUN_TAG="${CORTEXSIM_RUN_TAG:-APB001}"
       printf '{"run_tag":"%s","arm":"cloud","event":"api_call","oauth_token_id":"0CiSIMAPB001","caller_ip":"198.51.100.44","caller_seen_before":false}\n' "$RUN_TAG" > "$D/arm-cloud.json"
       echo cortexsim-apb001-cloud-arm-emitted
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1550.001"
     platforms: ["linux", "windows", "macos"]
     causality:

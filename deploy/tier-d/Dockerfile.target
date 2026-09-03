@@ -16,12 +16,13 @@
 # a failed step means the TTP failed — not that the target was unprepared.
 #
 # Identity counts are measured from scenarios/**/*.yml, not guessed:
-#   www-data 103 · svc-account 80 · svc-backup 26 · node 11 · user 7
-#   runner 6 · app 6 · vertex-agent 5 · developer 1 · nobody 1
+#   container-runtime 249 · root 152 · svc-backup 117 · www-data 104 ·
+#   node 11 · administrator 10 · user 7 · runner 6 · app 6 ·
+#   vertex-agent 5 · nobody 1 · developer 1
 #
-# NOTE: svc-account, user, runner, app, vertex-agent and developer are NOT in
+# NOTE: user, runner, app, vertex-agent and developer are NOT in
 # spec/identity_harness.json's `service_accounts` list. They resolve through the
-# spec's "unknown username -> runuser best-effort + WARN" path. That is 105
+# spec's "unknown username -> runuser best-effort + WARN" path. That is 25
 # steps relying on a fallback rather than a declared account; provisioning them
 # here makes the harness honest about what it is exercising.
 # ===========================================================================
@@ -84,8 +85,8 @@ RUN set -eux; \
     done; \
     \
     # --- identities the corpus uses that the spec does NOT declare ----------
-    # (see the header note: 105 steps ride the unknown-username fallback)
-    for u in svc-account user runner app vertex-agent developer; do \
+    # (see the header note: 25 steps ride the unknown-username fallback)
+    for u in user runner app vertex-agent developer; do \
         useradd --create-home --shell /bin/bash "$u"; \
     done
 
@@ -93,7 +94,7 @@ RUN set -eux; \
 # These are inert fixtures, not real secrets — a sweep that finds nothing on an
 # empty host reports a false negative just as loudly as a broken one.
 RUN set -eux; \
-    for u in svc-account svc-backup user developer; do \
+    for u in svc-backup user developer; do \
         h="/home/$u"; \
         printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI%s cortexsim-fixture\n' "$u" > "$h/.ssh_fixture_pub"; \
         printf '# cortexsim tier-d fixture — inert\nhost=localhost\nuser=%s\n' "$u" > "$h/.pgpass"; \

@@ -49,9 +49,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/iam-cloud-threat-researc
 # EMAIL-plane precedent (scenarios/email/sim-email-001.yml).
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -79,7 +79,7 @@ steps:
     command: |
       python3 -m scripts.eal_simulator.cli describe cloud_audit_emitter \
         | jq -e '.eal_targets | length > 0'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1537"
     platforms: ["linux", "container"]
     expected_detections:
@@ -113,7 +113,7 @@ steps:
             iterations: 1
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/cdr-022-gcp-impersonation.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078.004"
     platforms: ["linux", "container"]
     causality:
@@ -155,7 +155,7 @@ steps:
             iterations: 1
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/cdr-022-gcp-bq-exfil.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1537"
     platforms: ["linux", "container"]
     causality:

@@ -41,9 +41,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/strategically-aged-domai
 # A SAFE-MODE marker file records the simulated activation.
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -52,12 +52,12 @@ pull_supported: true
 
 # ── Causality Group Owner anchor ────────────────────────────────────────────
 # The chain OWNER is the beaconing implant process on the compromised host that
-# resolves the aged apex, NOT the synthetic beacon. Modeled as the svc-account
+# resolves the aged apex, NOT the synthetic beacon. Modeled as the svc-backup
 # shell loop that drives the dormancy-break burst and the DGA fan-out, so both
 # per-apex DNS deviations descend from one CGO instead of hanging off cortexsim-agent.
 cgo_anchor:
   image_name: "bash"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 validation_methodology: "Signal Injection & Detection Accuracy"
 methodology_family: "F1"
@@ -89,7 +89,7 @@ steps:
   - id: step-01
     name: "Dormancy-break activation burst — spike DNS query volume for the aged sleeper apex"
     command: "mkdir -p /tmp/cortexsim-tim-003 && echo \"SAFE-MODE simulated sleeper-domain activation of avsvmcloud.com at $(date -u +%FT%TZ)\" > /tmp/cortexsim-tim-003/activation.marker; for i in $(seq 1 120); do dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} avsvmcloud.com >/dev/null 2>&1 || true; done; echo cortexsim-tim-003-dormancy-break-activation-burst"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1071.004"
     platforms: ["linux", "windows", "macos"]
     platform_variants:
@@ -112,7 +112,7 @@ steps:
   - id: step-02
     name: "DGA subdomain fan-out — resolve never-before-seen high-entropy subdomains under the activated apex"
     command: "for pub in imgdsg4f35 php78mp9v dga1a2b3c appsync-api-70e2b8f4; do dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} ${pub}.avsvmcloud.com >/dev/null 2>&1 || true; done; for i in $(seq 1 60); do sub=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \\n'); dig +short +time=1 +tries=1 @${DNS_RESOLVER:-127.0.0.1} ${sub}.avsvmcloud.com >/dev/null 2>&1 || true; done; echo cortexsim-tim-003-dga-subdomain-fan-out"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1568.002"
     causality:
       parent_step: "step-01"
@@ -138,7 +138,7 @@ steps:
   - id: step-03
     name: "Correlation stitches the dormancy-break burst and the DGA fan-out into one activation incident"
     command: "echo cortexsim-tim-003-cr-tim-0003-stitched-sleeper-domain-activation"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1568.002"
     causality:
       parent_step: "step-02"

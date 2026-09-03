@@ -18,7 +18,7 @@
 # ===========================================================================
 set -euo pipefail
 
-for u in www-data postgres svc-account svc-backup node; do
+for u in www-data postgres svc-backup node; do
     if getent passwd "$u" >/dev/null 2>&1; then
         # Each holder carries an env var so /proc/<pid>/environ scraping has
         # deterministic, inert content to surface.

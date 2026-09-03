@@ -483,7 +483,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-CDR-022",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -514,7 +514,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-CDR-023",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -544,7 +544,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-CDR-025",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -1526,7 +1526,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-ITDR-018",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -1850,7 +1850,7 @@
       "scenario_id": "SIM-MP-018",
       "service_identities": [
         "runner",
-        "svc-account"
+        "svc-backup"
       ],
       "shelf_backed_tools": [],
       "signal_ratio": 0.857,
@@ -1912,7 +1912,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-CLOUD-010",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -1943,7 +1943,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-016",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -1975,7 +1975,6 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-022",
       "service_identities": [
-        "svc-account",
         "svc-backup"
       ],
       "shelf_backed_tools": [],
@@ -2005,7 +2004,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-CLOUD-007",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -2426,7 +2425,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-CDR-021",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -2576,7 +2575,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-EDR-015",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -2726,7 +2725,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-012",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -2757,7 +2756,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-014",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -3101,7 +3100,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-CDR-024",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -3132,7 +3131,7 @@
       "scenario_id": "SIM-CDR-026",
       "service_identities": [
         "container-runtime",
-        "svc-account"
+        "svc-backup"
       ],
       "shelf_backed_tools": [],
       "signal_ratio": 0.667,
@@ -3342,7 +3341,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-ITDR-020",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -3515,7 +3514,7 @@
       "scenario_id": "SIM-KOI-007",
       "service_identities": [
         "node",
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -3604,7 +3603,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-NDR-011",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -3663,7 +3662,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-TIM-003",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -3756,7 +3755,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-AISPM-007",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "vertex-agent",
         "www-data"
       ],
@@ -3788,7 +3787,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-APB-001",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -3969,7 +3968,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-009",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -4151,7 +4150,7 @@
       "scenario_id": "SIM-ITDR-013",
       "service_identities": [
         "nobody",
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -4182,7 +4181,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-010",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -4213,7 +4212,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-EDR-020",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -4244,7 +4243,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-ITDR-017",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -4889,7 +4888,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-019",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -5100,7 +5099,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-ASM-005",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -5161,7 +5160,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-EDR-019",
       "service_identities": [
-        "svc-account"
+        "svc-backup"
       ],
       "shelf_backed_tools": [],
       "signal_ratio": 0.0,
@@ -5190,7 +5189,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-ITDR-016",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -5221,7 +5220,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-020",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],
@@ -5252,7 +5251,7 @@
       "requires_interpreters": [],
       "scenario_id": "SIM-TIM-005",
       "service_identities": [
-        "svc-account",
+        "svc-backup",
         "www-data"
       ],
       "shelf_backed_tools": [],

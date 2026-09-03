@@ -46,9 +46,9 @@ cgo_anchor:
   primary_username: "container-runtime"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -110,7 +110,7 @@ steps:
             iterations: 3
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/cdr-021-iam.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1087.004"
     platforms: ["linux", "container"]
     expected_detections:
@@ -143,7 +143,7 @@ steps:
             iterations: 3
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/cdr-021-s3.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1580"
     # Same AWS caller ARN as step-01, next discovery action across two CloudTrail
     # API bursts (no process fork) → shared_entity.
@@ -161,7 +161,7 @@ steps:
   - id: step-03
     name: "Behavioral-ML flags the discovery-volume anomaly and the emitted records are confirmed landed"
     command: "id; echo cortexsim-cdr-021-abioc-discovery-volume-anomaly-on-learned-cloudtrail-baseline"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1580"
     # The ABIOC + validation evaluate the CloudTrail records emitted in step-01/02
     # for the SAME caller ARN — no new emit, so it threads on shared_entity.
@@ -184,7 +184,7 @@ steps:
   - id: step-04
     name: "Correlation stitches the IAM and S3 enumeration alerts into one cloud-reconnaissance incident"
     command: "echo cortexsim-cdr-021-cr-cdr-0021-stitched-cloud-reconnaissance-sequence-incident"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1580"
     # Correlation fuses both enumeration Analytics alerts on the same caller ARN
     # → shared_entity.

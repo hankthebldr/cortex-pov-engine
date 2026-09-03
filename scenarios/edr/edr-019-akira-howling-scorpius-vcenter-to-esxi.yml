@@ -44,7 +44,7 @@ execution_identity:
   default: root
   options:
     - root
-    - svc-account
+    - svc-backup
 
 push_supported: true
 pull_supported: true

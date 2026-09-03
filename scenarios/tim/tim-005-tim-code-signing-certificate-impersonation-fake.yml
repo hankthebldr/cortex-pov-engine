@@ -63,12 +63,12 @@ moat_tier: "LEAD"
 # session on the same host (temporal).
 cgo_anchor:
   image_name: "MicrosoftUpdate.exe"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -81,7 +81,7 @@ steps:
   - id: step-01
     name: "Arm/confirm the rogue code-signing cert + Vidar C2 IOCs in the TIM feed"
     command: "echo '[SAFE-MODE] cortexsim-tim-005 arming rogue Authenticode thumbprint ab92f731ab20774dfdb95664ee41a2fbafe2a284 + serial 2f7ef0157d17625c098691cef1ff7d63 + C2 IPs 136.243.203.109,136.243.203.111,138.199.246.13,116.203.243.208 (no live egress)' || true"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1587.002"
     platforms: ["linux"]
     expected_detections:
@@ -99,7 +99,7 @@ steps:
   - id: step-02
     name: "Signed-binary execution: the rogue-signed loader runs, carrying the fabricated thumbprint"
     command: "echo '[SAFE-MODE] cortexsim-tim-005 rogue-signer execution marker: MicrosoftUpdate.exe signed by rogue cert CN=justwatch.com issuer=WR3 (CA:TRUE, chain untrusted)' || true"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1036.001"
     platforms: ["windows"]
     causality:
@@ -120,7 +120,7 @@ steps:
   - id: step-03
     name: "Outbound C2 session to the Vidar exfil IP on 443 (telemetry marker)"
     command: "echo '[SAFE-MODE] cortexsim-tim-005 outbound C2 session marker to 136.243.203.109:443 (Vidar exfil) — destination NOT contacted; telemetry-only' || true"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1071.001"
     platforms: ["windows", "linux"]
     causality:
@@ -136,7 +136,7 @@ steps:
   - id: step-04
     name: "Correlation stitches the rogue-signer match and the C2 session into one incident"
     command: "echo '[SAFE-MODE] cortexsim-tim-005 correlation CR-TIM-0005 stitch marker: rogue-signer execution match + Vidar C2 session -> one malvertising-loader incident' || true"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1071.001"
     platforms: ["windows"]
     causality:

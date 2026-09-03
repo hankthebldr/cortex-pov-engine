@@ -57,7 +57,7 @@ execution_identity:
   options:
     - root
     - www-data
-    - svc-account
+    - svc-backup
 
 push_supported: true
 pull_supported: true

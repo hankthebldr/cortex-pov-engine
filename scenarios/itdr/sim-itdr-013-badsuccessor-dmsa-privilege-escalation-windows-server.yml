@@ -40,9 +40,9 @@ threat_report: "Unit 42 — BadSuccessor: Abusing dMSA to Escalate Privileges in
 threat_report_url: "https://unit42.paloaltonetworks.com/badsuccessor-attack-vector/"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - nobody
 
@@ -55,14 +55,14 @@ infra_modules_needed:
 
 # ── Causality Group Owner anchor ────────────────────────────────────────────
 # The BadSuccessor chain is OWNED by the non-privileged identity's interactive
-# session — the PowerShell / SharpSuccessor process the svc-account ran to create
+# session — the PowerShell / SharpSuccessor process the svc-backup ran to create
 # the dMSA and write its attributes. That session is the chain root, NOT the
 # synthetic beacon. The downstream directory-service events (5137/5136/4662/
 # 2946/4624) are AD audit records, not process forks, so steps thread on the
 # shared subject_logon_id and the created-dMSA identity (shared_entity pivots).
 cgo_anchor:
   image_name: "powershell.exe"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 external_tools: []
 
@@ -109,7 +109,7 @@ steps:
   - id: step-01
     name: "dMSA object created outside CN=Managed Service Accounts (Security 5137)"
     command: "mkdir -p /tmp/cortexsim-itdr-013 && echo '[SIM-ITDR-013] SAFE-MODE 5137: SharpSuccessor would create dMSA CN=websvc-dmsa outside CN=Managed Service Accounts as a non-privileged identity' | tee /tmp/cortexsim-itdr-013/5137-dmsa-create.marker; echo cortexsim-itdr-013-dmsa-object-created"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1136.002"
     # Root step — links from the powershell.exe CGO session. dMSA / Windows
     # Server 2025 is a Windows-only technique; no cross-OS variant applies.
@@ -129,7 +129,7 @@ steps:
   - id: step-02
     name: "Dual privileged-attribute write in one logon session (paired Security 5136 + 4662)"
     command: "printf '[SIM-ITDR-013] SAFE-MODE 5136 msDS-DelegatedMSAState=2\\n[SIM-ITDR-013] SAFE-MODE 5136 msDS-ManagedAccountPrecededByLink=CN=Administrator,CN=Users,DC=corp,DC=local\\n' | tee /tmp/cortexsim-itdr-013/5136-dual-attr-write.marker; echo cortexsim-itdr-013-dual-privileged-attribute-write"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1098"
     # Same attacker logon session as the 5137 creation — the dual 5136/4662
     # attribute writes target the dMSA object created in step-01. No process
@@ -159,7 +159,7 @@ steps:
   - id: step-03
     name: "dMSA privileged TGT minted and inherited-privilege logon (Security 2946 / 4624)"
     command: "echo '[SIM-ITDR-013] SAFE-MODE 2946/4624: Rubeus would request the dMSA TGT (inheriting Administrator privileges) and authenticate as the privilege-inherited dMSA' | tee /tmp/cortexsim-itdr-013/2946-4624-inherited-priv.marker; echo cortexsim-itdr-013-privileged-tgt-and-logon"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1550.003"
     # The privileged TGT (2946) and inherited-privilege logon (4624) run under
     # the created dMSA's OWN new session, joined to the lineage on the created-
@@ -179,7 +179,7 @@ steps:
   - id: step-04
     name: "Correlation-terminal — assert one stitched ITDR privilege-escalation incident"
     command: "echo '[SIM-ITDR-013] Polling XSIAM for the single stitched BadSuccessor incident'; sleep \"${CORTEXSIM_STITCH_WAIT_SECONDS:-60}\"; echo '[*] CR-ITDR-0013 should fuse the 5137 create + dual 5136 write (one host_name+subject_logon_id) with the 2946 TGT + 4624 logon (joined on the created-dMSA identity websvc-dmsa$, which run under the dMSA own session) into ONE incident_id'; echo cortexsim-itdr-013-cr-itdr-0013-single-incident-stitched"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078.002"
     # Terminal stitch — fuses the create-and-modify lineage (steps 01-02, one
     # subject_logon_id) with the dMSA TGT + logon (step-03, dMSA identity) into

@@ -45,9 +45,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/autonomous-ai-cloud-atta
 # instance metadata IP (token discarded), and nothing is created, granted, or exfiltrated.
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -97,13 +97,13 @@ external_tools: []
 # into ONE machine-tempo incident.
 cgo_anchor:
   image_name: "node"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 steps:
   - id: step-01
     name: "SSRF-driven instance metadata token access on the exposed workload"
     command: "ss -tunlp 2>/dev/null | head -n 5 || true; curl -s --max-time 2 -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token -o /dev/null || true; echo cortexsim-mp-009-ssrf-imds-token-access"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1552.005"
     platforms: ["linux", "container"]
     expected_detections:
@@ -116,7 +116,7 @@ steps:
   - id: step-02
     name: "Machine-speed cloud enumeration fan-out under the derived identity"
     command: "for op in compute.instances.list compute.networks.list resourcemanager.projects.getIamPolicy bigquery.datasets.get; do echo \"SAFE-MODE ${op} $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; done; echo cortexsim-mp-009-cloud-enum-fanout"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1526"
     platforms: ["linux", "container"]
     causality:
@@ -137,7 +137,7 @@ steps:
   - id: step-03
     name: "Autonomous IAM self-escalation and export to a new bucket (SAFE-MODE)"
     command: "echo \"SAFE-MODE storage.setIamPermissions roles/storage.objectAdmin $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; echo \"SAFE-MODE bigquery.tables.export -> cortexsim-marker-bucket $(date +%s%N)\" >> /tmp/cortexsim-mp-009-cloud-stages.log; touch /tmp/cortexsim-mp-009-exfil-SAFE-MODE.marker; echo cortexsim-mp-009-self-escalation-export-safe-mode"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1548.005"
     platforms: ["linux", "container"]
     causality:
@@ -158,7 +158,7 @@ steps:
   - id: step-04
     name: "Correlation stitches the endpoint and cloud signals into one machine-tempo incident"
     command: "echo cortexsim-mp-009-cr-mp-0009-machine-tempo-incident-stitched"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1537"
     platforms: ["linux", "container"]
     causality:

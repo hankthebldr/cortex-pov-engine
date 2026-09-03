@@ -52,9 +52,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra-evolution-
 # so XSIAM sees the identity + cloud-audit telemetry shape without touching a
 # real tenant. All IPs are RFC5737 documentation ranges.
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -112,7 +112,7 @@ steps:
       printf '{"eventType":"user.mfa.factor.reset_all","target_user_email":"%s","target_admin_role":true,"actor_alternate_id":"helpdesk-agent@corp.example","client_ip_address":"203.0.113.10","outcome_result":"SUCCESS"}\n' "$ADMIN" > "$D/01-mfa-reset.json";
       cat "$D/01-mfa-reset.json";
       echo '[*] Okta system log should record a factor reset on an admin-role identity sourced from a help-desk flow'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1556.006"
     platforms: ["linux"]
     expected_detections:
@@ -131,7 +131,7 @@ steps:
       printf '{"eventType":"user.session.start","target_user_email":"%s","admin_console_access":true,"auth_result":"SUCCESS","client_geo_country":"UNUSUAL","client_ip_address":"198.51.100.20"}\n' "$ADMIN" > "$D/02-admin-signin.json";
       cat "$D/02-admin-signin.json";
       echo '[*] Okta should record a privileged admin-console sign-in for the same identity within minutes of the reset'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078.004"
     platforms: ["linux"]
     causality:
@@ -153,7 +153,7 @@ steps:
       printf '{"eventType":"system.idp.lifecycle.create","actor_alternate_id":"%s","idp_display_name":"rogue-federation","idp_jit_enabled":true,"idp_account_link_action":"AUTO","outcome_result":"SUCCESS","client_ip_address":"198.51.100.20"}\n' "$ADMIN" > "$D/03-rogue-idp.json";
       cat "$D/03-rogue-idp.json";
       echo '[*] Okta system log should record a new IdP-lifecycle create with impersonation linking by the just-taken-over admin'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1484.002"
     platforms: ["linux"]
     causality:
@@ -177,7 +177,7 @@ steps:
       done
       ls -1 "$D"/04-assumerole-*.json | head -10;
       echo '[*] Cloud audit logs should show a fan-out of federated role assumptions into >= 2 accounts on the same subject'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078.004"
     platforms: ["linux", "windows"]
     platform_variants:
@@ -204,7 +204,7 @@ steps:
       printf '{"event_name":"MICROSOFT.COMPUTE/SNAPSHOTS/WRITE","cloud_provider":"AZURE","caller_principal_id":"%s","target_subscription_id":"attacker-sub","home_subscription_id":"victim-sub","resource_id":"disk-01","source_ip":"198.51.100.20"}\n' "$ADMIN" > "$D/05-azure-snapshot.json";
       ls -1 "$D"/05-*.json | head -10;
       echo '[*] Cloud audit logs should show Transfer Family/DataSync/Secrets Manager APIs + an Azure snapshot copied to an external subscription'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1537"
     platforms: ["linux", "windows"]
     platform_variants:

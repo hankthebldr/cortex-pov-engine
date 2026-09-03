@@ -35,9 +35,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/kubernetes-privilege-esc
 # two XSIAM behavioral-ML (ABIOC) alerts fire. No real cluster is touched.
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -51,7 +51,7 @@ pull_supported: true
 # the SAME service-account principal XSIAM stitches the two audit signals on.
 cgo_anchor:
   image_name: "web-frontend"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 external_tools:
   - name: cortexsim-eal-cli
@@ -89,7 +89,7 @@ steps:
             iterations: 1
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-025-exec.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1609"
     platforms: ["container", "k8s"]
     expected_detections:
@@ -122,7 +122,7 @@ steps:
             iterations: 1
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-025-sa.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078.004"
     platforms: ["container", "k8s"]
     causality:

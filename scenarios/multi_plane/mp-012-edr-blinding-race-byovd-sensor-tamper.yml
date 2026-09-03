@@ -46,9 +46,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/edr-bypass-extortion-att
 # The real malicious C2 (beamofthemoon.com) and SFTP endpoint (82.192.88.95)
 # are NEVER contacted — the beacon and exfil legs use loopback only.
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -144,7 +144,7 @@ steps:
         sleep 1;
       done
       echo '[*] NGFW should record repeating outbound sessions from this host after the tamper t0'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1071.001"
     platforms: ["windows"]
     # The EDR tamper t0 (endpoint signal) joins the NGFW beacon session on the
@@ -167,7 +167,7 @@ steps:
       echo 'rclone(vmware.exe) SFTP bulk-egress marker' > "${MARK}_exfil.marker";
       curl -s --max-time 3 "http://127.0.0.1/mp012/sftp-egress" -o /dev/null || true;
       echo '[*] NGFW should record a sustained egress session (bulk bytes) from this host'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1048"
     platforms: ["windows"]
     # The SFTP exfil is a second network session from the SAME tampered host,

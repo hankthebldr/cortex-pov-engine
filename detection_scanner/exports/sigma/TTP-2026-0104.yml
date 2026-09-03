@@ -34,7 +34,7 @@ title: "Identity to Endpoint to Network Hands-on-Keyboard Campaign \u2014 Cross-
 id: ttp-2026-0104-abioc-02
 status: experimental
 description: |
-  Immediately after the anomalous sign-in, the same account, whose learned endpoint baseline is narrow non-interactive automation, parents an interactive shell (the causality-group-owner of the burst) and runs a rapid living-off-the-land discovery burst. Every utility is a legitimate admin tool; the ABIOC fires on the interactive-lineage-plus-diversity deviation, keyed on the causality_actor_process (the owning shell) and its instance_id plus actor_effective_username (the dropped svc-account identity) rather than on any single child image, so the whole fan-out threads to one process-lineage owner.
+  Immediately after the anomalous sign-in, the same account, whose learned endpoint baseline is narrow non-interactive automation, parents an interactive shell (the causality-group-owner of the burst) and runs a rapid living-off-the-land discovery burst. Every utility is a legitimate admin tool; the ABIOC fires on the interactive-lineage-plus-diversity deviation, keyed on the causality_actor_process (the owning shell) and its instance_id plus actor_effective_username (the dropped svc-backup identity) rather than on any single child image, so the whole fan-out threads to one process-lineage owner.
   Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
   ----
     dataset = xdr_data

@@ -40,12 +40,12 @@ threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cort
 # stolen from; the analytics streamer EAL plugin is our tooling, not the CGO.
 cgo_anchor:
   image_name: "amazonlinux-ec2-workload"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -92,7 +92,7 @@ steps:
             iterations: 1
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/cdr-023-imds.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1552.005"
     platforms: ["linux", "container"]
     expected_detections:
@@ -130,7 +130,7 @@ steps:
             iterations: 1
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/cdr-023-ec2.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078.004"
     platforms: ["linux", "container"]
     causality:

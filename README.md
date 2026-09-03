@@ -323,7 +323,7 @@ deploy/tier-d/run-tier-d.sh --scenario SIM-EDR-001
   egress, browser attacks, agentic supply-chain artifacts…) via 21 plugins.
 
 **Identity harness** — every step runs under a realistic service-account
-identity (`www-data`, `postgres`, `svc-account`, `node`, …), wrapped with
+identity (`www-data`, `postgres`, `svc-backup`, `node`, …), wrapped with
 `runuser -l` / `sudo -u` / `su`, to build honest process-causality chains in
 XSIAM instead of everything running as the beacon's own account.
 

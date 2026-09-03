@@ -39,7 +39,7 @@ execution_identity:
   default: vertex-agent
   options:
     - vertex-agent
-    - svc-account
+    - svc-backup
     - www-data
 
 push_supported: true

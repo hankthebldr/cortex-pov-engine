@@ -35,9 +35,9 @@ threat_report: "Unit 42 — Threat Brief: Salesloft Drift Integration Used To Co
 threat_report_url: "https://unit42.paloaltonetworks.com/threat-brief-compromised-salesforce-instances/"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -98,7 +98,7 @@ steps:
         echo "SAFE-MODE export object=${OBJ} rows=250000 ua=${EXFIL_UA} token=${TOKEN_ID}" > "/tmp/sf-007-export-${OBJ}.marker"
       done
       echo cortexsim-cloud-007-bulk-api-mass-export-complete
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1567"
     platforms: ["linux", "container"]
     expected_detections:
@@ -118,7 +118,7 @@ steps:
         rm -f "/tmp/sf-007-export-${OBJ}.marker"
       done
       echo cortexsim-cloud-007-query-job-deletion-anti-forensics-complete
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1070"
     platforms: ["linux", "container"]
     causality:
@@ -138,7 +138,7 @@ steps:
       echo "SAFE-MODE revoke token=${TOKEN_ID} types=access,refresh connected_app=Drift source=cortex-xsoar-playbook" > /tmp/sf-007-revoke.marker
       echo "SAFE-MODE force_reauth connected_app=Drift affected_admins=applied source=cortex-xsoar-playbook" > /tmp/sf-007-reauth.marker
       echo cortexsim-cloud-007-xsoar-auto-revoke-access-and-refresh-token-complete
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1550.001"
     platforms: ["linux", "container"]
     causality:
@@ -165,7 +165,7 @@ steps:
         "https://127.0.0.1/services/data/v61.0/jobs/query" -o /dev/null 2>/dev/null || true
       echo "SAFE-MODE replay token=${TOKEN_ID} response_status=401 error_code=invalid_token" > /tmp/sf-007-replay-401.marker
       echo cortexsim-cloud-007-revoked-token-replay-401-invalid-token
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1550.001"
     platforms: ["linux", "container"]
     causality:
@@ -181,7 +181,7 @@ steps:
   - id: step-05
     name: "Correlation stitches export -> erase -> revoke -> 401 into one closed-loop incident"
     command: "echo cortexsim-cloud-007-cr-cloud-0007-stitched-auto-revoke-closed-loop-incident"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1550.001"
     platforms: ["linux", "container"]
     causality:

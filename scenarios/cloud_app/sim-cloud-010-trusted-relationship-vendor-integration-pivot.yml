@@ -59,7 +59,7 @@ execution_identity:
   default: www-data
   options:
     - www-data
-    - svc-account
+    - svc-backup
     - root
 
 push_supported: true
@@ -225,7 +225,7 @@ steps:
       APP_ID="${VENDOR_APP_ID:-a1b2c3d4-vendor-crm-sync}"
       printf '{"run_tag":"%s","event":"egress","app_id":"%s","dest":"198.51.100.77","publisher_declared":false,"bytes_sent":41000000}\n' "$RUN_TAG" "$APP_ID" > "$D/egress.json"
       echo cortexsim-cloud010-non-publisher-egress-emitted
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1567"
     platforms: ["linux", "windows", "macos"]
     causality:

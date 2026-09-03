@@ -354,7 +354,7 @@ def build_card(*, ttp_id: str, plane_info: dict, title: str, url: str,
                     "logic": (
                         "dataset = xdr_data\n"
                         "| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n"
-                        "| filter actor_effective_username in (\"svc-account\")\n"
+                        "| filter actor_effective_username in (\"svc-backup\")\n"
                         "| comp count() as observed_events by agent_hostname, actor_effective_username\n"
                         "| filter observed_events >= 1\n"
                         "| fields agent_hostname, actor_effective_username, observed_events"
@@ -375,7 +375,7 @@ def build_card(*, ttp_id: str, plane_info: dict, title: str, url: str,
                     "query": (
                         "dataset = xdr_data\n"
                         "| filter _time > to_timestamp(current_time() - 900)\n"
-                        "| filter actor_effective_username = \"svc-account\"\n"
+                        "| filter actor_effective_username = \"svc-backup\"\n"
                         "| comp count() as observed_events by agent_hostname\n"
                         "| filter observed_events >= 1\n"
                         "| fields agent_hostname, observed_events"
@@ -529,9 +529,9 @@ threat_report_url: "{url}"
 # Source summary: {summary[:200]}
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -544,7 +544,7 @@ steps:
   - id: step-01
     name: "Scaffolded technique step (replace with the real research technique)"
     command: "echo 'cortexsim-{token.lower()}-{nnn}-scaffold-behavioral-step' || true"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1059"
     expected_detections:
       - plane: {plane}
@@ -561,7 +561,7 @@ steps:
   - id: step-02
     name: "Correlation stitches the scaffolded signals into one incident"
     command: "echo 'cortexsim-{token.lower()}-{nnn}-scaffold-correlation-stitch' || true"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1059"
     expected_detections:
       - plane: {plane}

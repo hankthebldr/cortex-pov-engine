@@ -39,9 +39,9 @@ threat_report: "Unit 42 — Threat Group Assessment: Muddled Libra"
 threat_report_url: "https://unit42.paloaltonetworks.com/muddled-libra/"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -102,7 +102,7 @@ steps:
   - id: step-01
     name: "Emit an impossible-travel sign-in for the target identity"
     command: "echo cortexsim-itdr-016-emit-impossible-travel-signin-user-session-start-target-identity"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078.004"
     # Root of the causality spine — the compromise entry under the CGO emitter.
     platforms: ["linux"]
@@ -121,7 +121,7 @@ steps:
   - id: step-02
     name: "Emit an anomalous privilege grant and MFA-factor reset on the same identity"
     command: "echo cortexsim-itdr-016-emit-privilege-grant-and-mfa-factor-reset-same-identity"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1098"
     # Next off-baseline action by the SAME identity as step-01 (same principal, no
     # process fork between two Okta admin API calls) -> shared_entity.
@@ -139,7 +139,7 @@ steps:
   - id: step-03
     name: "Containment playbook fires: suspend account + revoke sessions (closed-loop remediation)"
     command: "echo cortexsim-itdr-016-emit-user-lifecycle-suspend-and-user-session-clear-remediation-events"
-    identity: svc-account
+    identity: svc-backup
     # DEFENSIVE response step — not adversary tradecraft. The schema requires a
     # mitre_technique per step, so this is tagged to the valid-account entity
     # (T1078.004) that the containment disables, NOT an offensive Impact technique

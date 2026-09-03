@@ -46,9 +46,9 @@ threat_report: "Unit 42 — Active Directory Certificate Services Exploitation (
 threat_report_url: "https://unit42.paloaltonetworks.com/active-directory-certificate-services-exploitation/"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -71,7 +71,7 @@ infra_modules_needed:
 # tradecraft runs through Certify.exe + Rubeus (platform_variants).
 cgo_anchor:
   image_name: "python3"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 external_tools: []
 
@@ -121,7 +121,7 @@ steps:
   - id: step-01
     name: "AD CS template / CA LDAP reconnaissance (Certipy find — Security 1644/30)"
     command: "mkdir -p /tmp/cortexsim-itdr-017 && echo '[SIM-ITDR-017] SAFE-MODE 1644/30: Certipy find would enumerate pKICertificateTemplate, PKI-Enrollment-Service and msDS-KeyCredentialLink over LDAP' | tee /tmp/cortexsim-itdr-017/1644-adcs-ldap-recon.marker; echo cortexsim-itdr-017-adcs-ldap-recon"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1087.002"
     # Root step — links from the python3 (Certipy) CGO session run by the
     # low-privileged requesting identity. AD CS abuse tooling runs from Linux;
@@ -139,7 +139,7 @@ steps:
   - id: step-02
     name: "ESC1 certificate request with attacker-chosen SAN (Certipy req — Security 4886)"
     command: "echo '[SIM-ITDR-017] SAFE-MODE 4886: Certipy req would enroll against the ESC1 template (CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT) supplying upn=administrator@corp.local in the SAN' | tee /tmp/cortexsim-itdr-017/4886-esc1-san-request.marker; echo cortexsim-itdr-017-esc1-san-request"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1649"
     # Same requesting identity / operator session as the recon — the ESC1 request
     # is issued by the account whose LDAP recon ran in step-01. No process fork
@@ -160,8 +160,8 @@ steps:
 
   - id: step-03
     name: "CA issues certificate with requester != subject SAN mismatch (Security 4887)"
-    command: "printf '[SIM-ITDR-017] SAFE-MODE 4887: CA issues certificate serial=1a2b3c4d requester=svc-account subject/SAN=administrator@corp.local (requester!=subject)\\n' | tee /tmp/cortexsim-itdr-017/4887-san-mismatch-issuance.marker; echo cortexsim-itdr-017-san-mismatch-issuance"
-    identity: svc-account
+    command: "printf '[SIM-ITDR-017] SAFE-MODE 4887: CA issues certificate serial=1a2b3c4d requester=svc-backup subject/SAN=administrator@corp.local (requester!=subject)\\n' | tee /tmp/cortexsim-itdr-017/4887-san-mismatch-issuance.marker; echo cortexsim-itdr-017-san-mismatch-issuance"
+    identity: svc-backup
     mitre_technique: "T1649"
     # The issuance (4887) follows the request (4886) at the CA within seconds —
     # temporal pivot on the issue-after-request timing; same certificate request
@@ -185,7 +185,7 @@ steps:
   - id: step-04
     name: "PKINIT TGT + service tickets as the impersonated Domain Admin (Security 4768/4769)"
     command: "echo '[SIM-ITDR-017] SAFE-MODE 4768/4769: Certipy auth / PKINITtools would use the issued PFX for PKINIT to obtain a TGT (pre-auth type 16) as administrator@corp.local, then request service tickets as the target' | tee /tmp/cortexsim-itdr-017/4768-pkinit-privileged-auth.marker; echo cortexsim-itdr-017-pkinit-privileged-auth"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1550"
     # The PKINIT authentication (4768) follows the SAN-mismatch issuance within a
     # short window and authenticates AS the impersonated principal named in the
@@ -212,7 +212,7 @@ steps:
   - id: step-05
     name: "Optional shadow-credential write to target msDS-KeyCredentialLink (Security 5136)"
     command: "echo '[SIM-ITDR-017] SAFE-MODE 5136: pyWhisker would write a key credential to the target account msDS-KeyCredentialLink for durable passwordless PKINIT re-entry' | tee /tmp/cortexsim-itdr-017/5136-shadow-credential-write.marker; echo cortexsim-itdr-017-shadow-credential-write"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1556"
     # Persistence extension by the same requesting identity — the shadow-cred
     # write reuses the ESC1-gained access on the same identity context; no process
@@ -232,8 +232,8 @@ steps:
 
   - id: step-06
     name: "Correlation-terminal — assert one stitched ITDR ESC1 incident with citable evidence"
-    command: "echo '[SIM-ITDR-017] Polling XSIAM for the single stitched ESC1 incident'; sleep \"${CORTEXSIM_STITCH_WAIT_SECONDS:-60}\"; echo '[*] CR-ITDR-0017 should fuse LDAP recon + 4886/4887 SAN-mismatch issuance (requester=svc-account) with the 4768 PKINIT as administrator@corp.local (joined on impersonated principal) and the optional 5136 shadow credential into ONE incident_id carrying the certificate serials, template and impersonated UPN'; echo cortexsim-itdr-017-cr-itdr-0017-single-incident-stitched"
-    identity: svc-account
+    command: "echo '[SIM-ITDR-017] Polling XSIAM for the single stitched ESC1 incident'; sleep \"${CORTEXSIM_STITCH_WAIT_SECONDS:-60}\"; echo '[*] CR-ITDR-0017 should fuse LDAP recon + 4886/4887 SAN-mismatch issuance (requester=svc-backup) with the 4768 PKINIT as administrator@corp.local (joined on impersonated principal) and the optional 5136 shadow credential into ONE incident_id carrying the certificate serials, template and impersonated UPN'; echo cortexsim-itdr-017-cr-itdr-0017-single-incident-stitched"
+    identity: svc-backup
     mitre_technique: "T1078.002"
     # Terminal stitch — fuses the recon + SAN-mismatch issuance (steps 01-03, one
     # requesting identity) with the PKINIT privileged auth (step-04, joined on the

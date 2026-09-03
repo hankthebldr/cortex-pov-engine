@@ -205,9 +205,9 @@ in 7 ms vs. the provisioned `www-data:…:/bin/bash` succeeding).
 
 **Reference for what a target actually needs:**
 `deploy/tier-d/Dockerfile.target`. Its header states the identity counts
-measured from the real corpus, not guessed — `www-data` 103 steps ·
-`svc-account` 80 · `svc-backup` 26 · `node` 11 · `user` 7 · `runner` 6 ·
-`app` 6 · `vertex-agent` 5 · `developer` 1 · `nobody` 1 — and it provisions
+measured from the real corpus, not guessed — `www-data` 104 steps · `svc-backup` 117 · `node` 11 ·
+`administrator` 10 · `user` 7 · `runner` 6 · `app` 6 ·
+`vertex-agent` 5 · `developer` 1 · `nobody` 1 — and it provisions
 each with a login shell (`/bin/bash`) and a real home directory, plus the
 toolchain the Linux steps invoke (`binutils`, `procps`, `iproute2`, `curl`).
 Two things worth pointing out about it directly, because they change how you

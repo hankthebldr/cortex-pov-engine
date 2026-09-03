@@ -55,9 +55,9 @@ threat_report: "Unit 42 — Anatomy of an Attack: BlackSuit Ransomware Blitz (Ig
 threat_report_url: "https://unit42.paloaltonetworks.com/anatomy-of-an-attack-blacksuit-ransomware-blitz/"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -131,7 +131,7 @@ steps:
   - id: step-01
     name: "Initial access — vished VPN credential authenticates (T1078)"
     command: "echo 'cortexsim-mp-020 SAFE-MODE: vished VPN credential valid-account sign-in (T1078) — root of the precursor chain'"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078"
     platforms: ["windows"]
     expected_detections:
@@ -144,7 +144,7 @@ steps:
   - id: step-02
     name: "DCSync credential theft on the domain controller (T1003.006)"
     command: "echo 'cortexsim-mp-020 SAFE-MODE: DCSync / DsGetNCChanges replication request from a non-DC account against dc01 — extracts NTDS.dit hashes incl. svc-backup (T1003.006)'"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1003.006"
     platforms: ["windows"]
     # DCSync executes with the stolen VPN foothold; it shares the DC host +
@@ -162,7 +162,7 @@ steps:
   - id: step-03
     name: "AnyDesk / RAT scheduled-task persistence on the domain controller (T1053.005)"
     command: "echo 'cortexsim-mp-020 SAFE-MODE: AnyDesk + custom RAT registered as a scheduled task (schtasks /create) on dc01 to survive reboots (T1053.005) — the DCSync+persistence JUNCTION'"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1053.005"
     platforms: ["windows"]
     # The persistence write forks from the DCSync activity on the SAME DC
@@ -185,7 +185,7 @@ steps:
   - id: step-04
     name: "RDP + SMBExec lateral movement from the stolen service account (T1021.001 / T1570)"
     command: "echo 'cortexsim-mp-020 SAFE-MODE: Advanced IP Scanner recon + RDP/SMBExec lateral from svc-backup across the estate (T1021.001, T1570)'"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1021.001"
     platforms: ["windows"]
     # Lateral movement opens network sessions to further hosts using the stolen
@@ -203,7 +203,7 @@ steps:
   - id: step-05
     name: "Renamed-rclone bulk exfiltration (~400GB) (T1020)"
     command: "echo 'cortexsim-mp-020 SAFE-MODE: renamed rclone binary performs ~400GB outbound transfer to external storage (T1020) — CCleaner anti-forensics follows'"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1020"
     platforms: ["windows"]
     # The exfil ties the endpoint (renamed-rclone process) to the network egress
@@ -221,7 +221,7 @@ steps:
   - id: step-06
     name: "IMPACT PRE-EMPTED — auto-containment fires before the ESXi mass-encryption (T1486)"
     command: "echo 'cortexsim-mp-020 SAFE-MODE: CR-MP-0020 raises ONE Ransomware Precursor incident at the DCSync+persistence junction; XSOAR Ransomware-Precursor-AutoContain isolates dc01, disables svc-backup, blocks egress ASN — the Ansible fan-out encrypting ~60 ESXi hosts (T1486) is CONTAINED, not executed'"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1486"
     platforms: ["linux", "windows"]
     # Terminal step: the T1486 ESXi encryption is the impact the playbook

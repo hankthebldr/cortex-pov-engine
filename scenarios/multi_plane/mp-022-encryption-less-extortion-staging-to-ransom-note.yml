@@ -52,9 +52,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/cyber-extortion-economy/
 
 # ── Execution Configuration ─────────────────────────────────────────────────
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - svc-backup
     - root
 
@@ -132,7 +132,7 @@ steps:
         printf '{"run_tag":"%s","event":"dir_list","share":"/mnt/%s","actor":"svc-helpdesk","tool":"anydesk"}\n' "$RUN_TAG" "$SHARE"
       done > "$D/enum.ndjson"
       echo cortexsim-mp022-share-enumeration-emitted
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1083"
     # ROOT — links from the anydesk.exe CGO.
     platforms: ["windows", "linux"]
@@ -158,7 +158,7 @@ steps:
       done
       cat "$D"/stage/doc-*.dat > /dev/null
       echo "cortexsim-mp022-mass-staging-emitted files=40"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1074.001"
     platforms: ["windows", "linux"]
     causality:
@@ -185,7 +185,7 @@ steps:
         printf '{"run_tag":"%s","event":"egress","dest":"198.51.100.90","app":"cloud-storage","bytes":%s,"chunk":%s}\n' "$RUN_TAG" "$CHUNK" "$C"
       done > "$D/egress.ndjson"
       echo "cortexsim-mp022-chunked-egress-emitted sessions=8 chunk_bytes=$CHUNK"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1030"
     platforms: ["windows", "linux"]
     causality:
@@ -242,7 +242,7 @@ steps:
       RUN_TAG="${CORTEXSIM_RUN_TAG:-MP022}"
       printf 'Your data has been copied. Contact us. [CortexSim SAFE-MODE marker, run %s]\n' "$RUN_TAG" > "$D/stage/README-RESTORE.txt"
       echo cortexsim-mp022-ransom-note-written
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1657"
     platforms: ["windows", "linux"]
     causality:

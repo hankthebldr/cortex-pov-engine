@@ -31,9 +31,9 @@ threat_report: "Cortex XDR/XSIAM — Analytics Alert Reference (Active-Directory
 threat_report_url: "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/Cortex-XDR-Analytics-Alert-Reference-by-Alert-name"
 
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -108,7 +108,7 @@ steps:
             burst_count: 12
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/sim-itdr-020-roast.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1558.003"
     # Root of the causality spine — links from the CGO (python3 emitter).
     platforms: ["container"]
@@ -150,7 +150,7 @@ steps:
             target_account: cortexsim-canary
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/sim-itdr-020-pth.yml --live
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1550.002"
     # Same identity's lateral authentication after the roast (same account, no
     # process fork between the roast and the NTLM logon) → shared_entity.
@@ -168,7 +168,7 @@ steps:
   - id: step-03
     name: "Correlation stitches the roast and Pass-the-Hash into one incident"
     command: "echo cortexsim-itdr-020-cr-itdr-0009-stitched-kerberoast-pass-the-hash-incident"
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1550.002"
     # Correlation fuses the weak-ticket ABIOC and the Pass-the-Hash ABIOC on the
     # same account → shared_entity.

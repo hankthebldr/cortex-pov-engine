@@ -53,9 +53,9 @@ threat_report_url: "https://unit42.paloaltonetworks.com/threat-actor-misuse-of-a
 # signal is modelled with local marker files under the identity harness so
 # XSIAM sees the process/file causality shape without touching a real tenant.
 execution_identity:
-  default: svc-account
+  default: svc-backup
   options:
-    - svc-account
+    - svc-backup
     - www-data
     - root
 
@@ -73,7 +73,7 @@ external_tools: []
 # (NOT the synthetic beacon) roots the identity-reuse spine on a real process.
 cgo_anchor:
   image_name: "redline.exe"
-  primary_username: "svc-account"
+  primary_username: "svc-backup"
 
 # ── v2.0 KPI / Methodology Metadata (DL-06 — F2 Causality Stitching) ─────────
 validation_methodology: "Cross-Plane Causality Correlation"
@@ -117,7 +117,7 @@ steps:
       printf 'SAFE-MODE-LOGIN-MARKER-NOT-A-REAL-CREDENTIAL\n' > "$WORK/Login Data";
       grep -a 'SAFE-MODE' "$WORK/cookies.sqlite" "$WORK/Login Data" | head -2;
       echo '[*] XDR should record a non-browser process reading 2 browser credential-store FILE_OPENs under this identity'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1528"
     # Root: browser session-token theft is a cross-OS infostealer technique.
     platforms: ["windows", "linux", "macos"]
@@ -139,7 +139,7 @@ steps:
       printf '{"is_interactive":false,"location_country":"unusual-geo-impossible-travel","signin_activity_id":"SAFE-MODE-MP014-SIGNIN"}\n' > "$WORK/signin.json";
       cat "$WORK/signin.json";
       echo '[*] Entra non-interactive sign-in log should carry an out-of-region (impossible-travel) sign-in for this UPN'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1078.004"
     # The stolen session token (from step-01) is replayed to Entra — the sign-in
     # binds to the SAME session identity (user_principal), a stolen-token reuse.
@@ -164,7 +164,7 @@ steps:
       done
       ls -1 "$WORK"/*.json | head -10;
       echo '[*] Graph activity logs should show >500 GET/hr with User-Agent azurehound/<version>'
-    identity: svc-account
+    identity: svc-backup
     mitre_technique: "T1087.004"
     # AzureHound (cross-platform Go binary) drives the Graph burst on the SAME
     # replayed session as the sign-in — identity reuse, correlated via
