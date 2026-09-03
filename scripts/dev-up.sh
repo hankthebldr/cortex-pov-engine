@@ -96,16 +96,43 @@ else
   log "No .env found — generating one from .env.example (development mode)."
   SECRET="$(gen_secret)"
 
-  # Start from the template, then override the two values that matter for a
-  # frictionless local boot. sed only rewrites the assignment lines; comments
-  # and docs from .env.example are preserved.
-  cp "${ENV_EXAMPLE}" "${ENV_FILE}"
-  sed -i \
+  # Render the template to a temp file and move it into place, rather than
+  # `cp` then `sed -i`. Two reasons, both of which bit on macOS:
+  #   - BSD sed's -i REQUIRES a backup-suffix argument, so the GNU-style
+  #     `sed -i -e ...` parses `-e` AS that suffix and dies with
+  #     "sed: -e: No such file or directory". Redirecting to a temp file
+  #     needs no -i at all and behaves identically on BSD and GNU.
+  #   - `cp` first, edit second is not atomic. Under `set -e` a failing sed
+  #     aborted the script having ALREADY created .env, holding the
+  #     template's literal placeholder secret. The next run then took the
+  #     "already present — leaving it untouched" branch and booted with it.
+  tmp_env="${ENV_FILE}.tmp.$$"
+  sed \
     -e 's/^CORTEXSIM_ENV=.*/CORTEXSIM_ENV=development/' \
     -e "s|^CORTEXSIM_SECRET=.*|CORTEXSIM_SECRET=${SECRET}|" \
-    "${ENV_FILE}"
-  chmod 600 "${ENV_FILE}" 2>/dev/null || true
+    "${ENV_EXAMPLE}" > "${tmp_env}"
+  chmod 600 "${tmp_env}" 2>/dev/null || true
+  mv "${tmp_env}" "${ENV_FILE}"
   log "Wrote ${ENV_FILE} with a freshly generated CORTEXSIM_SECRET."
+fi
+
+# ---------------------------------------------------------------------------
+# 1b. Validate the secret we are about to boot with — whether this run
+#     generated it or inherited an existing .env. docker-compose.yml's
+#     ${CORTEXSIM_SECRET:?...} guard only asserts NON-EMPTY, so
+#     .env.example's literal "replace-me-with-a-generated-32plus-byte-secret"
+#     satisfies it and the stack comes up encrypting the integration
+#     credential vault — which holds customer Cortex tenant API keys — with a
+#     value that is committed, public, and identical for every operator.
+#     Refuse, and print the exact fix.
+# ---------------------------------------------------------------------------
+CURRENT_SECRET="$(sed -n 's/^CORTEXSIM_SECRET=//p' "${ENV_FILE}" | head -n1)"
+if [[ -z "${CURRENT_SECRET}" || "${CURRENT_SECRET}" == replace-me-* || ${#CURRENT_SECRET} -lt 32 ]]; then
+  err "${ENV_FILE} carries a placeholder or too-short CORTEXSIM_SECRET."
+  err "That value encrypts the integration-credential vault, so it must not be"
+  err "the template default. Regenerate it with:"
+  err "    rm ${ENV_FILE} && scripts/dev-up.sh"
+  exit 1
 fi
 
 # Read CORTEXSIM_PORT from .env for the health-check URL (default 8888).
