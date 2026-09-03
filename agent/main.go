@@ -51,6 +51,13 @@ func main() {
 	// queued_tasks.payload is plaintext JSON in SQLite.
 	artifactTokenFlag := flag.String("artifact-token", "",
 		"Bearer token for the payload shelf when SimCore runs it in token mode (env: CORTEXSIM_ARTIFACT_TOKEN)")
+	// Both default to OFF so an existing deployment's behaviour is byte-identical
+	// after an upgrade: 0 keeps the interval ticker, false keeps whole-step
+	// output delivered once on completion. Opt in per host.
+	longPollFlag := flag.Int("long-poll", 0,
+		"Long-poll the task queue for N seconds per request instead of ticking every --interval (0 = off, max 60). Cuts task pickup from up to --interval down to milliseconds.")
+	streamOutputFlag := flag.Bool("stream-output", false,
+		"Stream step stdout/stderr to SimCore as it is produced rather than only on step completion.")
 	flag.Parse()
 
 	// Validate required flag.
@@ -63,18 +70,28 @@ func main() {
 		fmt.Fprintln(os.Stderr, "ERROR: --interval must be at least 1 second")
 		os.Exit(1)
 	}
+	// Mirror the server-side bound (core/api/agents.py declares wait as
+	// ge=0, le=60) so a bad value is rejected here with a clear message
+	// instead of becoming a 422 on every poll.
+	if *longPollFlag < 0 || *longPollFlag > 60 {
+		fmt.Fprintln(os.Stderr, "ERROR: --long-poll must be between 0 and 60 seconds (0 disables it)")
+		os.Exit(1)
+	}
 
 	// Configure stdlib logger to write to stderr with timestamps.
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("[cortexsim-agent] ")
 
-	log.Printf("starting — server=%s id=%s interval=%ds", *serverFlag, *idFlag, *intervalFlag)
+	log.Printf("starting — server=%s id=%s interval=%ds long-poll=%ds stream-output=%t",
+		*serverFlag, *idFlag, *intervalFlag, *longPollFlag, *streamOutputFlag)
 
 	// ----------------------------------------------------------------
 	// Build beacon client
 	// ----------------------------------------------------------------
 	client := beacon.New(*serverFlag, *idFlag, time.Duration(*intervalFlag)*time.Second)
+	client.LongPollTimeout = *longPollFlag
+	client.StreamOutput = *streamOutputFlag
 
 	artifactToken := *artifactTokenFlag
 	if artifactToken == "" {

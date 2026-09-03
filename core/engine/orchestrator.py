@@ -10,6 +10,7 @@ Manages an in-memory task queue: Dict[agent_id, List[Task]]
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -162,8 +163,13 @@ class Orchestrator:
         # signal and prevents a queued-but-undelivered task from executing.
         # Unbounded in principle but runs are few/short; pruned on /complete.
         self._aborted: set[str] = set()
-        # agent_id -> asyncio.Event for sub-second long-polling notification
-        self._events: dict[str, asyncio.Event] = {}
+        # agent_id -> (loop, asyncio.Event) for sub-second long-polling wakeup.
+        # The loop is stored alongside because asyncio.Event binds itself to the
+        # first loop that awaits it and raises "bound to a different event loop"
+        # on any other. uvicorn runs one loop per process so a bare Event
+        # survives in production, but it makes the whole path unreachable from
+        # TestClient — which is precisely why no Python test covered it.
+        self._events: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Event]] = {}
 
     # ------------------------------------------------------------------
     # launch
@@ -515,14 +521,33 @@ class Orchestrator:
         if agent_id not in self._queue:
             self._queue[agent_id] = []
         self._queue[agent_id].append(task)
-        if agent_id in self._events:
-            self._events[agent_id].set()
+        entry = self._events.get(agent_id)
+        if entry is not None:
+            bound_loop, event = entry
+            try:
+                running = asyncio.get_running_loop()
+            except RuntimeError:
+                running = None
+            if running is bound_loop:
+                event.set()
+            else:
+                # Enqueued from outside the waiter's loop (or from no loop at
+                # all): hand the wakeup to the owning loop rather than touching
+                # its futures from here.
+                bound_loop.call_soon_threadsafe(event.set)
 
     async def wait_for_task(self, agent_id: str, timeout: float) -> None:
         """Wait up to timeout seconds for a task to be enqueued for agent_id."""
-        if agent_id not in self._events:
-            self._events[agent_id] = asyncio.Event()
-        event = self._events[agent_id]
+        loop = asyncio.get_running_loop()
+        entry = self._events.get(agent_id)
+        if entry is None or entry[0] is not loop:
+            # First wait for this agent, or a different loop from the one the
+            # cached Event bound to. Reusing the stale Event raises
+            # RuntimeError("... is bound to a different event loop").
+            event = asyncio.Event()
+            self._events[agent_id] = (loop, event)
+        else:
+            event = entry[1]
         event.clear()
         if self._queue.get(agent_id):
             return
