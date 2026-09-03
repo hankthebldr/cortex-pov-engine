@@ -23,12 +23,13 @@
     "direct": "run the command as-is (no impersonation wrapper)",
     "runuser": "runuser -l <username> -c '<command>' (preferred \u2014 cleanest causality)",
     "sudo_u": "sudo -u <username> <args...>",
-    "su": "su -s /bin/bash <username> -c '<command>'"
+    "su": "su -s /bin/bash <username> -c '<command>'",
+    "sudo_sh": "sudo -n -u <username> /bin/sh -c '<command>' (darwin \u2014 macOS has no runuser and BSD su takes no -s; -n so a non-root beacon fails fast instead of hanging on a password prompt)"
   },
   "resolution": {
     "empty_or_direct_identity": "direct",
-    "known_service_account": "runuser",
-    "unknown_username": "runuser (best-effort; emit a WARN)"
+    "known_service_account": "runuser on linux; sudo_sh on darwin (no runuser there) \u2014 see modes",
+    "unknown_username": "same wrapper as a known account, best-effort, plus a WARN (linux: runuser; darwin: sudo_sh)"
   },
   "impersonation_platforms": [
     "linux",

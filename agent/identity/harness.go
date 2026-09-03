@@ -190,8 +190,27 @@ func buildWrappedCommand(identity ExecutionIdentity) (string, error) {
 			shellQuote(identity.Command),
 		), nil
 
+	case "sudo_sh":
+		// sudo -n -u <username> /bin/sh -c "<command>" — the macOS arm.
+		//
+		// Darwin has no runuser (util-linux) and its BSD su takes no -s flag,
+		// so neither of the two modes above exists there. sudo does, and
+		// wrapping in `/bin/sh -c` keeps the command's shell semantics, which
+		// sudo_u's whitespace split would destroy for the pipelines and && in
+		// this corpus.
+		//
+		// -n is load-bearing: without it, a beacon NOT running as root gets an
+		// interactive password prompt on a headless host and the step hangs
+		// until the step timeout kills it, reporting exit 124 with no
+		// diagnostic. With -n sudo exits immediately saying a password is
+		// required, which names the real problem.
+		return fmt.Sprintf("sudo -n -u %s /bin/sh -c %s",
+			shellQuote(identity.Username),
+			shellQuote(identity.Command),
+		), nil
+
 	default:
-		return "", fmt.Errorf("unknown identity mode: %q (must be direct|runuser|sudo_u|su)", identity.Mode)
+		return "", fmt.Errorf("unknown identity mode: %q (must be direct|runuser|sudo_u|su|sudo_sh)", identity.Mode)
 	}
 }
 
