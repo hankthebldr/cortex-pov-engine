@@ -204,18 +204,48 @@ describe('ComposerView — editing the chain', () => {
     expect(screen.getByTestId('composer-validation')).toHaveTextContent(/Chain valid/i)
   })
 
-  it('REFUSES to launch an edited draft, and says why', async () => {
-    // SimCore would execute the ORIGINAL chain while the canvas showed the
-    // edited one — a false claim in a customer-facing report.
+  it('refuses to launch an UNSAVED or UN-TC-BOUND draft, and says why', async () => {
+    // Launch runs the SAVED draft row, not the canvas. So an edited-but-unsaved
+    // chain is refused (leg 1), and a saved-but-un-tc-bound one is refused with
+    // the server's own reason (leg 2) — never posted as a false claim in a
+    // customer-facing report.
     const user = userEvent.setup()
-    baseRoutes()
+    baseRoutes({
+      // Leg 2: the save persists, but the server's launch gate says the draft
+      // is not tc-bound and names the fix.
+      'POST /api/scenarios/drafts': () => new Response(
+        JSON.stringify({
+          scenario_id: 'SIM-DRAFT-credential-dumping',
+          status: 'draft',
+          launchable: {
+            launchable: false,
+            chain_valid: true,
+            tc_bound: false,
+            refusal_code: 'DRAFT_NOT_TC_BOUND',
+            reasons: ['bind tc_ref to a real FY27 index test case'],
+          },
+        }),
+        { status: 201, headers: { 'content-type': 'application/json' } },
+      ),
+    })
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+
+    // Leg 1 — an unsaved edit cannot launch, and the reason names the save.
     await user.click(screen.getByTestId('composer-add-step'))
     await user.click(screen.getByTestId('composer-preflight'))
     const launch = screen.getByTestId('composer-launch')
     expect(launch).toBeDisabled()
-    expect(launch.getAttribute('title')).toMatch(/hand-edits SimCore does not have/i)
+    expect(launch.getAttribute('title')).toMatch(/save the draft|not launchable|un-?bound|tc_ref/i)
+
+    // Leg 2 — after saving, the server reports the draft is not tc-bound; the
+    // button stays disabled and the title names the tc_ref fix.
+    await user.click(screen.getByTestId('composer-save-draft'))
+    await waitFor(() => {
+      const l = screen.getByTestId('composer-launch')
+      expect(l).toBeDisabled()
+      expect(l.getAttribute('title')).toMatch(/tc_ref|not launchable|un-?bound/i)
+    })
   })
 
   it('keeps Launch disabled until preflight has actually run', async () => {

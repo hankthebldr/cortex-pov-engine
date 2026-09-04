@@ -64,7 +64,12 @@ async def get_atlas_coverage(db: AsyncSession = Depends(get_db)):
     Additive, never replaces ATT&CK — a card may (and the AI cards do) carry
     both an ATT&CK technique AND an ATLAS technique for the same step.
     """
-    scenarios = list((await db.execute(select(Scenario))).scalars().all())
+    # Active-only: a status='draft' Composer row must never inflate the ATLAS
+    # coverage heatmap (Gate A5 — authored is not proven).
+    scenarios = list(
+        (await db.execute(select(Scenario).where(Scenario.status == "active")))
+        .scalars().all()
+    )
 
     # ttp_ref -> set of (scenario_id, plane) that reach the card.
     ref_to_scenarios: dict[str, set] = {}

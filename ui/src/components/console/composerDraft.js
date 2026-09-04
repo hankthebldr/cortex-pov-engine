@@ -80,6 +80,14 @@ export function draftFromScenario(scenario) {
     // Scenario-level, per the schema. Never copied onto individual steps.
     teardown: Array.isArray(scenario.cleanup?.commands) ? scenario.cleanup.commands : [],
     steps,
+    // Persistence identity — null here, filled by `draftFromApi` when the row
+    // came back from the drafts API. A draft seeded from a corpus scenario is
+    // NOT itself a persisted draft until it is saved, so these stay null and
+    // the two shapes (`draftFromScenario` / `draftFromApi`) match key-for-key.
+    scenarioId: null,
+    status: null,
+    author: null,
+    tags: [],
   }
 }
 
@@ -87,6 +95,7 @@ export function emptyDraft() {
   return {
     originId: null, name: null, plane: null, ucRef: null, tcRef: null,
     moatTier: null, cgo: null, teardown: [], steps: [],
+    scenarioId: null, status: null, author: null, tags: [],
   }
 }
 
@@ -284,4 +293,303 @@ export function emitDraftYaml(draft, { tenant = null, agent = null } = {}) {
   }
 
   return lines.join('\n') + '\n'
+}
+
+// ─── Composer enums (mirror the backend verbatim) ─────────────────────────────
+// These drive the inspector's pickers. They are the SAME enums the strict
+// loader and DraftScenarioSchema enforce server-side — a picker that offered a
+// value the backend rejects would let a DC author a draft that 422s at save,
+// so the two lists must not drift. Keep them in this order (matches the spec's
+// frozen cross-file facts: pivots=7, detection types=6, planes=16).
+
+/** Causality pivot vocabulary (`StepCausalitySchema._PIVOTS`). */
+export const PIVOTS = [
+  'process_lineage',
+  'network_session',
+  'endpoint_network_stitch',
+  'shared_entity',
+  'exposure_exploit',
+  'exploit_impact',
+  'temporal',
+]
+
+/** The `detection_type` vocabulary — six, ABIOC included. */
+export const DETECTION_TYPES = ['BIOC', 'XQL', 'Analytics', 'Correlation', 'IOC', 'ABIOC']
+
+/** Detection planes (`ScenarioSchema.validate_plane` enum). */
+export const PLANES = [
+  'EDR', 'CDR', 'NDR', 'ITDR', 'CLOUD_APP', 'ANALYTICS', 'AI_ACCESS', 'AIRS',
+  'AI_SPM', 'BROWSER', 'KOI', 'ASM', 'CSPM', 'TIM', 'EMAIL', 'DLP',
+]
+
+// ─── Immutable step edit operations ───────────────────────────────────────────
+// Same no-op-returns-same-ref contract as moveStep/duplicateStep above: a caller
+// wiring these to setState relies on identity to skip a pointless re-render, and
+// a test asserts "editing an unknown id did nothing" by reference equality.
+
+const _EDITABLE_KEYS = new Set([
+  'name', 'command', 'identity', 'technique', 'platforms',
+  'causalityParent', 'causalityPivot',
+])
+
+/**
+ * Patch one step's mutable fields. `patch` ⊆ the editable-key set; unknown keys
+ * are ignored. Returns the SAME array when the id is unknown or the patch would
+ * change nothing (shallow compare, arrays compared by identity — callers pass a
+ * fresh array for a platforms change).
+ */
+export function editStep(steps, id, patch) {
+  if (!patch || typeof patch !== 'object') return steps
+  const index = steps.findIndex((s) => s.id === id)
+  if (index < 0) return steps
+  const current = steps[index]
+  let changed = false
+  const next = { ...current }
+  for (const [k, v] of Object.entries(patch)) {
+    if (!_EDITABLE_KEYS.has(k)) continue
+    if (current[k] !== v) {
+      next[k] = v
+      changed = true
+    }
+  }
+  if (!changed) return steps
+  const out = steps.slice()
+  out[index] = next
+  return out
+}
+
+/** One expected-detection object, normalised to the draft's camelCase shape. */
+function _normalizeDetection(det) {
+  if (!det || typeof det !== 'object') return null
+  return {
+    plane: det.plane || null,
+    type: det.type || null,
+    description: det.description || null,
+    ttpRef: det.ttpRef ?? det.ttp_ref ?? null,
+    detectionId: det.detectionId ?? det.detection_id ?? null,
+    verificationXql: det.verificationXql ?? det.verification_xql ?? null,
+  }
+}
+
+/**
+ * Append one expected detection to a step. Returns the SAME array when the id is
+ * unknown or the detection is not an object.
+ */
+export function addDetection(steps, id, det) {
+  const normalized = _normalizeDetection(det)
+  if (!normalized) return steps
+  const index = steps.findIndex((s) => s.id === id)
+  if (index < 0) return steps
+  const out = steps.slice()
+  out[index] = { ...steps[index], detections: steps[index].detections.concat([normalized]) }
+  return out
+}
+
+/**
+ * Remove the detection at `detIndex` from a step. Returns the SAME array when
+ * the id is unknown or the index is out of range.
+ */
+export function removeDetection(steps, id, detIndex) {
+  const index = steps.findIndex((s) => s.id === id)
+  if (index < 0) return steps
+  const dets = steps[index].detections
+  if (detIndex < 0 || detIndex >= dets.length) return steps
+  const out = steps.slice()
+  out[index] = { ...steps[index], detections: dets.filter((_, i) => i !== detIndex) }
+  return out
+}
+
+/**
+ * Re-parent a step in the causality spine. `parentId === null` clears the link
+ * (the step becomes a chain root, hanging off the CGO).
+ *
+ * Returns the SAME array when the edit would author an invalid spine — a
+ * self-ref, or a FORWARD ref (a parent that appears at or after this step in
+ * array order). That mirrors the loader's spine rule (`no self/forward refs`),
+ * so the canvas physically cannot build a chain the backend would reject.
+ */
+export function setCausalityParent(steps, id, parentId, pivot = 'process_lineage') {
+  const index = steps.findIndex((s) => s.id === id)
+  if (index < 0) return steps
+
+  if (parentId != null) {
+    if (parentId === id) return steps // self-ref
+    const parentIndex = steps.findIndex((s) => s.id === parentId)
+    if (parentIndex < 0) return steps // unknown parent
+    if (parentIndex >= index) return steps // forward (or self) ref
+  }
+
+  const current = steps[index]
+  const nextParent = parentId ?? null
+  // When clearing, the pivot is meaningless — keep the step's existing pivot so
+  // re-linking later restores a sensible default rather than a surprise.
+  const nextPivot = nextParent ? (pivot || 'process_lineage') : current.causalityPivot
+  if (current.causalityParent === nextParent && current.causalityPivot === nextPivot) {
+    return steps
+  }
+  const out = steps.slice()
+  out[index] = { ...current, causalityParent: nextParent, causalityPivot: nextPivot }
+  return out
+}
+
+/**
+ * Append one expected detection pre-filled from a TTP card object — the
+ * launch-gate satisfaction path (§6.6). A TTP card carries a plane, a detection
+ * type and its own id; binding it gives the step a declared detection so it is
+ * no longer reported as a gap. Returns the SAME array when the id is unknown or
+ * the card is not an object.
+ */
+export function bindTtpDetection(steps, id, ttpCard) {
+  if (!ttpCard || typeof ttpCard !== 'object') return steps
+  const index = steps.findIndex((s) => s.id === id)
+  if (index < 0) return steps
+  const det = {
+    plane: ttpCard.plane || steps[index].detections[0]?.plane || null,
+    type: ttpCard.detection_type || ttpCard.type || null,
+    description: ttpCard.name || ttpCard.description || null,
+    ttpRef: ttpCard.ttp_id || ttpCard.id || ttpCard.ttpRef || null,
+    detectionId: ttpCard.detection_id || ttpCard.detectionId || null,
+  }
+  return addDetection(steps, id, det)
+}
+
+// ─── Round-trip serializers (draft ⇄ drafts API) ─────────────────────────────
+
+/** Parse the joined `cgo` display string back into a `{image_name,...}` object. */
+function _cgoAnchorFromDisplay(cgo) {
+  if (!cgo) return null
+  const [image_name, primary_username] = String(cgo).split(' / ').map((s) => s.trim())
+  if (!image_name) return null
+  const anchor = { image_name }
+  if (primary_username) anchor.primary_username = primary_username
+  return anchor
+}
+
+/**
+ * Build the FROZEN snake_case `DraftCreateRequest` body for POST/PUT.
+ *
+ * OMITS every server-derived field (`detection_types`, `push_supported`,
+ * `pull_supported`, `required_base_platform`, `required_addons`, `status`,
+ * `version`) — the backend derives those from the steps and the index, and a
+ * client that sent them would be asserting a contract it does not own.
+ */
+export function draftToApi(draft, { author = 'composer' } = {}) {
+  const body = {
+    name: draft.name || '',
+    plane: draft.plane || '',
+    author: draft.author || author,
+    tags: Array.isArray(draft.tags) ? draft.tags : [],
+    steps: draft.steps.map((s) => {
+      const step = {
+        id: s.id,
+        name: s.name,
+        command: s.command ?? '',
+        identity: s.identity ?? '',
+        mitre_technique: s.technique ?? '',
+        expected_detections: s.detections.map((d) => {
+          const det = { plane: d.plane, type: d.type, description: d.description }
+          if (d.ttpRef) det.ttp_ref = d.ttpRef
+          if (d.detectionId) det.detection_id = d.detectionId
+          if (d.verificationXql) det.verification_xql = d.verificationXql
+          return det
+        }),
+      }
+      if (s.causalityParent) {
+        step.causality = {
+          parent_step: s.causalityParent,
+          pivot: s.causalityPivot || 'process_lineage',
+        }
+      }
+      if (Array.isArray(s.platforms) && s.platforms.length) step.platforms = s.platforms
+      if (s.platformVariants && Object.keys(s.platformVariants).length) {
+        step.platform_variants = s.platformVariants
+      }
+      return step
+    }),
+  }
+  if (draft.ucRef) body.uc_ref = draft.ucRef
+  if (draft.tcRef) body.tc_ref = draft.tcRef
+  if (Array.isArray(draft.tcRefs) && draft.tcRefs.length) body.tc_refs = draft.tcRefs
+  if (draft.povScenarioId) body.pov_scenario_id = draft.povScenarioId
+  if (draft.mitreTactic) body.mitre_tactic = draft.mitreTactic
+  if (draft.mitreTacticName) body.mitre_tactic_name = draft.mitreTacticName
+  if (draft.mitreTechniqueName) body.mitre_technique_name = draft.mitreTechniqueName
+  const cgoAnchor = _cgoAnchorFromDisplay(draft.cgo)
+  if (cgoAnchor) body.cgo_anchor = cgoAnchor
+  if (draft.executionIdentity) body.execution_identity = draft.executionIdentity
+  if (Array.isArray(draft.teardown) && draft.teardown.length) {
+    body.cleanup = { commands: draft.teardown }
+  }
+  if (Array.isArray(draft.externalTools) && draft.externalTools.length) {
+    body.external_tools = draft.externalTools
+  }
+  return body
+}
+
+/**
+ * Inverse of `draftToApi` over a draft `Scenario.to_dict()` body.
+ *
+ * A SUPERSET of `draftFromScenario`: it reuses it for the shared camelCase
+ * fields (never forking `normalizeStep`) and ALSO carries the persistence
+ * identity the drafts API returns (`scenario_id`, `status`, `author`, `tags`).
+ */
+export function draftFromApi(row) {
+  if (!row) return emptyDraft()
+  const base = draftFromScenario(row)
+  return {
+    ...base,
+    scenarioId: row.scenario_id || null,
+    status: row.status || null,
+    author: row.author || null,
+    tags: Array.isArray(row.tags) ? row.tags : [],
+  }
+}
+
+// ─── Dirty tracking (the launch gate's "save before launch" guard) ────────────
+
+/**
+ * A plain, serializable snapshot of only the LAUNCH-relevant fields. SimCore
+ * runs the SAVED chain, not the canvas, so the console must know when the canvas
+ * has drifted from what was persisted. Fields that do not change what executes
+ * (e.g. `moatTier`, `authored` flags) are deliberately excluded so a cosmetic
+ * change does not read as "unsaved work that changes the run".
+ */
+export function draftSnapshot(draft) {
+  if (!draft) return null
+  return {
+    name: draft.name ?? null,
+    plane: draft.plane ?? null,
+    ucRef: draft.ucRef ?? null,
+    tcRef: draft.tcRef ?? null,
+    cgo: draft.cgo ?? null,
+    steps: (draft.steps || []).map((s) => ({
+      id: s.id,
+      command: s.command ?? null,
+      identity: s.identity ?? null,
+      technique: s.technique ?? null,
+      platforms: Array.isArray(s.platforms) ? s.platforms.slice() : [],
+      causalityParent: s.causalityParent ?? null,
+      causalityPivot: s.causalityPivot ?? null,
+      detections: (s.detections || []).map((d) => ({
+        plane: d.plane ?? null,
+        type: d.type ?? null,
+        description: d.description ?? null,
+        ttpRef: d.ttpRef ?? null,
+        detectionId: d.detectionId ?? null,
+        verificationXql: d.verificationXql ?? null,
+      })),
+    })),
+  }
+}
+
+/**
+ * Has the current draft drifted from the last saved snapshot?
+ *
+ * A `null` savedSnapshot ALWAYS returns true — an unsaved draft is dirty by
+ * definition, and the launch gate leans on exactly this: it refuses to launch
+ * a chain that was never persisted.
+ */
+export function isDraftDirty(current, savedSnapshot) {
+  if (savedSnapshot == null) return true
+  return JSON.stringify(current) !== JSON.stringify(savedSnapshot)
 }
