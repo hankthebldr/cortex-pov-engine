@@ -251,6 +251,65 @@ tc-bound).
   `verification_xql`/reconciliation confirm the stitch. The Run lens now shows
   the entity-join edges as CONFIRMED/BROKEN — DC-authored, not accidental.
 
+### 7.1 Detailed design (concrete, grounded 2026-09-04)
+
+**Schema — `stitch_context` block** (additive/optional on `DraftScenarioSchema`
+and the `Scenario` ORM via an idempotent `ADD COLUMN stitch_context JSON`, the
+`cgo_anchor` pattern). Keyed by the eight canonical entity keys plus
+`cloud_resource`; the UI groups them by NICE, the data does not need to. Each
+entry is a `{literal: <value>}` or a `{resolve: <directive>}`:
+
+```yaml
+stitch_context:
+  src_ip:        { resolve: auto_ip }        # a lab-range source address
+  src_port:      { resolve: auto_port }
+  dst_ip:        { literal: 203.0.113.10 }   # the C2 / target
+  dst_port:      { literal: 443 }
+  protocol:      { literal: tcp }
+  account:       { resolve: canary_principal }  # generalises canary_bindings
+  host:          { resolve: from_agent }     # the launch target's hostname
+  container_id:  { resolve: auto_container_id }
+  cloud_resource:{ literal: "arn:aws:s3:::acme-logs" }
+```
+
+Directives (the only ones Phase 2 ships): `auto_ip`, `auto_port`, `auto_5tuple`
+(composite convenience), `canary_principal` (reuses the existing token → 
+`{token}@cortexsim-canary.invalid`), `from_agent` (the launch target's
+hostname/ip), `auto_container_id`. Unknown directive → schema reject.
+
+**Resolver — `core/engine/stitch_context.py` (pure, deterministic, no network).**
+`resolve_stitch_context(spec, *, seed, target=None) -> StitchBinding`. Values are
+derived from `seed` (the run id) by a stable hash, NOT randomness — so a run's
+tuple is reproducible and unit-testable, and every channel that reads the binding
+gets byte-identical values. `StitchBinding` exposes the eight keys plus
+per-channel projections that are the INVERSE of `causality_graph._entities()`:
+`as_raw()` (emitter wire keys: `src`/`dst`/`proto`…), `as_xdr_columns()`
+(`source_ip`/`dest_port`/`actor_effective_user_name`…), `as_xdm()`
+(`xdm.source.ipv4`…). The identity leg calls the existing `canary_bindings`; this
+phase widens the shared-entity surface from identity-only to the full 5-tuple +
+host + container + cloud resource.
+
+**Injection — mirror the adapter path.** `orchestrator._resolve_adapter_placeholders`
+(`orchestrator.py:371`, `:1027`) already substitutes `{adapter:TOOL-X}` in step
+commands before enqueue. Add a sibling `_resolve_stitch_placeholders(steps,
+binding)` that substitutes `{stitch:src_ip}` / `{stitch:dst_port}` / … so a
+command reads `curl --local-port {stitch:src_port} https://{stitch:dst_ip}/...`
+and every step (and, in Phase 3, every channel) emits the SAME entities.
+Unresolved `{stitch:*}` is left verbatim so the agent surfaces the miss (same
+honesty rule as adapters). The resolved binding is persisted on the run so the
+report/Run lens can quote the exact values used.
+
+**Frontend.** A pure `stitchContext.js` model (parse/emit the block, list the
+eight keys by NICE, validate literal vs resolve) + a **Stitch panel** in the
+Composer (declare each entity, mark per-step plant/consume) + client wiring. The
+canvas overlays the entity-join edges the context implies, using the same
+STATE_TINT tokens as the run-lens edges.
+
+**Testing.** Resolver determinism (same seed → same binding; distinct seeds →
+distinct), per-channel projection correctness (round-trips through
+`_entities()`), directive rejection, injection substitution + unresolved
+passthrough, and the idempotent migration. UI: panel authoring + canvas overlay.
+
 ## 8. Phase 3 — Multi-channel orchestrated run
 
 - Channel-typed steps go live (D7: agent · EAL · second endpoint). Palette gains
