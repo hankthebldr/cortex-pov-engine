@@ -67,8 +67,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Assertion artifacts | 22 |
-| By validation class | `{"AUT": 3, "PLT": 4, "POS": 15}` |
+| Assertion artifacts | 28 |
+| By validation class | `{"AUT": 3, "PLT": 7, "POS": 18}` |
 | Rejected at load (strict) | 0 |
 | Boot-verified (real `AssertionCatalog`) | True |
 
