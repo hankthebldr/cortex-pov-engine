@@ -27,6 +27,8 @@
  */
 import React, { memo, useEffect, useRef } from 'react'
 import { PIVOTS, DETECTION_TYPES, PLANES } from './composerDraft.js'
+import { plantedKeys, stitchPlaceholdersIn } from './stitchContext.js'
+import ComposerStitchPanel from './ComposerStitchPanel.jsx'
 
 /**
  * CommandEditor — an UNCONTROLLED, memoised contentEditable for the step command.
@@ -89,6 +91,12 @@ export default function ComposerInspector({
   detectionTypes = DETECTION_TYPES,
   planes = PLANES,
   onNavigate = () => {},
+  // ── Phase-2 Stitch Context (additive, defaulted so the existing test
+  //    construction, which passes none of these, stays green) ──
+  stitchModel = null,
+  onSetStitchEntity = () => {},
+  onInsertStitch = () => {},
+  agentName = null,
 }) {
   const teardown = Array.isArray(draft.teardown) ? draft.teardown : []
 
@@ -108,6 +116,9 @@ export default function ComposerInspector({
           planes={planes}
           onEditMeta={onEditMeta}
           onNavigate={onNavigate}
+          stitchModel={stitchModel}
+          onSetStitchEntity={onSetStitchEntity}
+          agentName={agentName}
         />
       ) : (
         <>
@@ -228,6 +239,13 @@ export default function ComposerInspector({
             }
           />
 
+          {/* ── stitch: which shared entities this step's command consumes ── */}
+          <StepStitchConsume
+            step={selected}
+            stitchModel={stitchModel}
+            onInsertStitch={onInsertStitch}
+          />
+
           {/* ── expected detections ── */}
           <div className="field-label">
             Expected detections
@@ -303,6 +321,76 @@ export default function ComposerInspector({
 }
 
 /**
+ * The per-step Stitch consume section: the `{stitch:KEY}` keys this step's
+ * command references, each badged PLANTED (the scenario's stitch context
+ * declares it) or UNPLANTED. An unplanted `{stitch:K}` is the honest warning
+ * that it will be left VERBATIM at launch — the same rule the orchestrator
+ * applies to an unresolved placeholder (it never silently expands to an empty
+ * command). Optional insert buttons append a planted key's token to the command
+ * through `onInsertStitch`, so a DC can wire a shared entity without hand-typing
+ * the grammar. It reads the command text (the honest consume set) and the model
+ * (the plant set); it authors nothing itself beyond the insert callback.
+ */
+function StepStitchConsume({ step, stitchModel, onInsertStitch }) {
+  const consumed = stitchPlaceholdersIn(step.command)
+  const planted = new Set(plantedKeys(stitchModel))
+  const plantable = plantedKeys(stitchModel).filter((k) => !consumed.includes(k))
+
+  return (
+    <div className="step-stitch" data-testid="step-stitch-consume">
+      <div className="field-label">
+        Stitch
+        <span className="field-label__count mono"> {consumed.length}</span>
+      </div>
+      {consumed.length ? (
+        <div className="step-stitch__consumed">
+          {consumed.map((key) => {
+            const isPlanted = planted.has(key)
+            return (
+              <span
+                key={key}
+                className={`chip chip--${isPlanted ? 'detected' : 'missed'}`}
+                data-testid={`step-stitch-key-${key}`}
+                title={
+                  isPlanted
+                    ? `${key} is planted by the stitch context — resolved at launch`
+                    : `${key} is NOT planted — {stitch:${key}} will be left verbatim at launch`
+                }
+              >
+                {`{stitch:${key}}`} · {isPlanted ? 'planted' : 'unplanted'}
+              </span>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="field-value step-stitch__none">
+          This command references no shared entity. Insert a planted one below to
+          stitch this step to the rest of the chain.
+        </div>
+      )}
+      {plantable.length > 0 && (
+        <div className="step-stitch__insert">
+          <span className="field-sub">Insert a planted entity</span>
+          <div className="step-stitch__insert-row">
+            {plantable.map((key) => (
+              <button
+                type="button"
+                key={key}
+                className="btn btn--xs"
+                aria-label={`Insert stitch ${key} into ${step.id}`}
+                onClick={() => onInsertStitch(step.id, key)}
+              >
+                + {`{stitch:${key}}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * The add-a-detection form. Local ONLY to hold the in-progress row (plane /
  * type / description) before it is committed; on Add it hands a plain detection
  * object up through `onAdd` and clears itself. It never holds a draft detection
@@ -372,7 +460,10 @@ function AddDetection({ planes, detectionTypes, onAdd }) {
  * the CGO anchor line. No preserved assertion reads this branch, so it is free
  * to be inputs.
  */
-function WorkflowMeta({ draft, planes, onEditMeta, onNavigate }) {
+function WorkflowMeta({
+  draft, planes, onEditMeta, onNavigate,
+  stitchModel = null, onSetStitchEntity = () => {}, agentName = null,
+}) {
   return (
     <div className="composer-inspector__meta">
       <label className="field-label" htmlFor="meta-name">Workflow name</label>
@@ -430,6 +521,16 @@ function WorkflowMeta({ draft, planes, onEditMeta, onNavigate }) {
         value={draft.cgo || ''}
         placeholder="apache2 / www-data"
         onChange={(e) => onEditMeta({ cgo: e.target.value })}
+      />
+
+      {/* Phase-2 Stitch Context — declare the shared entities the chain stitches
+          on. After the CGO anchor because the CGO owns the chain and the stitch
+          context is what makes its cross-surface legs correlate. */}
+      <ComposerStitchPanel
+        model={stitchModel}
+        onSetEntity={onSetStitchEntity}
+        agentName={agentName}
+        onNavigate={onNavigate}
       />
     </div>
   )

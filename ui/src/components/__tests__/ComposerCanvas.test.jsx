@@ -136,6 +136,72 @@ describe('ComposerCanvas — lens toggle', () => {
   })
 })
 
+describe('ComposerCanvas — Stitch overlay (design intent)', () => {
+  // Two steps consume the SAME planted key, so a join edge exists to draw.
+  const STITCH_STEPS = [
+    { ...STEPS[0], command: 'curl --local-port {stitch:src_port} https://x' },
+    { ...STEPS[1], command: 'nc -p {stitch:src_port} 10.0.0.9' },
+  ]
+  const MODEL = { src_port: { resolve: 'auto_port' } }
+
+  it('exposes a stitch overlay toggle in the head', () => {
+    render(<ComposerCanvas {...baseProps()} />)
+    expect(screen.getByTestId('composer-stitch-toggle')).toBeInTheDocument()
+  })
+
+  it('calls onToggleStitch when the toggle is clicked', async () => {
+    const onToggleStitch = vi.fn()
+    render(<ComposerCanvas {...baseProps({ onToggleStitch })} />)
+    await userEvent.setup().click(screen.getByTestId('composer-stitch-toggle'))
+    expect(onToggleStitch).toHaveBeenCalled()
+  })
+
+  it('does NOT draw the overlay by default (off keeps existing contracts green)', () => {
+    render(<ComposerCanvas {...baseProps({ steps: STITCH_STEPS, draft: { ...DRAFT, steps: STITCH_STEPS } })} />)
+    expect(screen.queryByTestId('composer-stitch-overlay')).not.toBeInTheDocument()
+  })
+
+  it('draws the EXPECTED-only overlay when showStitch is on and a model plants a consumed key', () => {
+    render(<ComposerCanvas {...baseProps({
+      steps: STITCH_STEPS,
+      draft: { ...DRAFT, steps: STITCH_STEPS },
+      stitchModel: MODEL,
+      showStitch: true,
+    })} />)
+    const overlay = screen.getByTestId('composer-stitch-overlay')
+    expect(overlay).toBeInTheDocument()
+    // The join path names its key, and reads as EXPECTED intent — never a run state.
+    expect(overlay.querySelector('[data-stitch-key="src_port"]')).toBeTruthy()
+    expect(overlay.textContent).toMatch(/EXPECTED/)
+    expect(overlay.textContent).not.toMatch(/CONFIRMED|BROKEN/)
+  })
+
+  it('draws no overlay layer when the toggle is on but nothing is planted', () => {
+    render(<ComposerCanvas {...baseProps({
+      steps: STITCH_STEPS,
+      draft: { ...DRAFT, steps: STITCH_STEPS },
+      stitchModel: null,
+      showStitch: true,
+    })} />)
+    expect(screen.queryByTestId('composer-stitch-overlay')).not.toBeInTheDocument()
+  })
+
+  it('quotes the run\'s REAL persisted binding on the Run lens, nothing invented', () => {
+    const graph = {
+      run_id: 'run-9', nodes: [{ id: 'proc:run-9:step-01', kind: 'process', label: 'curl' }],
+      edges: [], causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+    }
+    render(<ComposerCanvas {...baseProps({
+      lens: 'run',
+      causalityGraph: graph,
+      activeRun: { run_id: 'run-9', status: 'completed', stitch_binding: { src_port: 51234, dst_ip: '203.0.113.10' } },
+    })} />)
+    const readout = screen.getByTestId('composer-stitch-binding')
+    expect(readout.textContent).toMatch(/src_port=51234/)
+    expect(readout.textContent).toMatch(/dst_ip=203\.0\.113\.10/)
+  })
+})
+
 describe('ComposerCanvas — Run lens honesty', () => {
   it('shows "no run yet — EXPECTED only" when there is no causality graph', () => {
     render(<ComposerCanvas {...baseProps({ lens: 'run', causalityGraph: null })} />)
