@@ -3,11 +3,52 @@
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-This project does not yet follow strict [Semantic Versioning](https://semver.org/)
-guarantees on its API — `0.y.z` releases may change behavior between minor
-versions while the project is pre-1.0.
+From `v1.0.0` onward this project follows [Semantic Versioning](https://semver.org/);
+the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-09-04
+
+First official launch release — the MVP. Promotes CortexSim from its `v0.1.0`
+pre-release to a tagged 1.0. The engine, detection corpus, cross-platform
+agent, and console described under `[0.1.0]` below are the shipping baseline;
+this release adds the scenario Composer and closes the release-automation
+loop. The honest limitations recorded under `[0.1.0]` — chiefly
+**`tenant-verified` is 0**, authored is not proven — still stand and are not
+superseded by the version number.
+
+### Added
+
+- **Scenario Composer (Phase 1)** — author, persist, and launch *draft*
+  scenarios from the console: a draft schema + ORM converter, a
+  `/api/scenarios/drafts` CRUD router, a TC-bound launch gate for draft runs,
+  and a spine-constrained graph canvas with an editable inspector. Drafts are
+  excluded from the Library, coverage, scope, and adapter surfaces, so an
+  unfinished draft never inflates a published count.
+- **Release automation off `main`** — `tag-on-main.yml` reads the version from
+  `CHANGELOG.md` on a merge to `main`, cuts the matching `vX.Y.Z` tag, and
+  dispatches `release.yml` (multi-arch GHCR image + GitHub Release). It is
+  idempotent: an unchanged top version never re-releases, so the existing
+  Pages and wiki syncs on `main` are unaffected.
+
+### Changed
+
+- **Console UX overhaul** — the shell/console redesign lands: a code-split
+  entry chunk for faster first paint, the TTP browser as a paged grid with a
+  full-width breakout (and a visible way back), navigation aligned to the POV
+  run phases, a session-scoped safety gate, and a set of accessibility and
+  theming fixes (tour controls, dropdown clipping, Library height,
+  always-dark bubble contrast).
+- **SecOps assertion coverage** — new POS/PLT/AUT assertion artifacts close
+  SecOps test cases (XTI/ERV/NDR/AGTX/APB) through the same
+  `verifier.score_run` path, and UC/TC index rows whose success criteria
+  contradicted their own title were corrected.
+- **Reported application version** is `1.0.0` (`GET /api/health`,
+  OpenAPI/`/api/docs`), matching this tag.
+- **`docs/reference/ground-truth.*`** regenerated: 133 route decorators (the
+  Composer's drafts router adds six), 25 `APIRouter` instances, 23 router
+  files.
 
 ## [0.1.0] - 2026-08-31
 
@@ -150,5 +191,6 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/hankthebldr/cortex-pov-engine/releases/tag/v0.1.0
