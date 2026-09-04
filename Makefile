@@ -70,13 +70,25 @@ ui-dev: ## UI hot-reload on :5273, API proxied to the running SimCore (fastest l
 	cd ui && npm run dev -- --port 5273 --strictPort
 
 ui-sync: ## Build the real bundle and push it into the RUNNING container (no rebuild, no restart)
+	@# Target is checked BEFORE the build: a sync that cannot land should not
+	@# cost a bundle first. And the three ways this fails have three different
+	@# fixers - daemon, stack, container - so they get three different messages
+	@# rather than one 'not running' that sends you to the wrong one.
+	@docker info >/dev/null 2>&1 || { \
+	  echo "docker daemon unreachable - start Docker Desktop"; exit 1; }
+	@docker container inspect $(UI_CONTAINER) >/dev/null 2>&1 || { \
+	  echo "no container named '$(UI_CONTAINER)'"; \
+	  echo "  running simcore containers:"; \
+	  docker ps --filter name=simcore --format '    {{.Names}}' || true; \
+	  echo "  set UI_CONTAINER=<name>, or: make up"; exit 1; }
+	@[ "$$(docker container inspect -f '{{.State.Running}}' $(UI_CONTAINER))" = true ] || { \
+	  echo "container '$(UI_CONTAINER)' exists but is STOPPED - docker start $(UI_CONTAINER)"; exit 1; }
 	@cd ui && npx vite build
-	@# Clear hashed chunks first so the container MIRRORS ui/dist instead of
-	@# accumulating every build's assets. Scoped to assets/ on purpose:
-	@# /app/core/static/agent is a read-only bind mount (docker-compose.yml),
-	@# so an rm -rf over the whole static dir would fail on it.
-	@docker exec $(UI_CONTAINER) sh -c 'rm -rf /app/core/static/assets' 2>/dev/null \
-	  || { echo "container '$(UI_CONTAINER)' not running - try: make up"; exit 1; }
+	@# Clear hashed chunks so the container MIRRORS ui/dist instead of keeping a
+	@# chunk per build. Scoped to assets/: /app/core/static/agent is a read-only
+	@# bind mount and an rm -rf over the whole static dir fails on it.
+	@# stderr is NOT swallowed - a failure here is a real fault, not 'not running'.
+	@docker exec $(UI_CONTAINER) sh -c 'rm -rf /app/core/static/assets'
 	@docker cp ui/dist/. $(UI_CONTAINER):/app/core/static/
 	@echo "pushed ui/dist -> $(UI_CONTAINER):/app/core/static  (http://localhost:8888)"
 	@echo "no rebuild, no restart - enrolled agents and open SSE streams survive"
