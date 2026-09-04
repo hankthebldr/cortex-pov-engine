@@ -20,6 +20,8 @@
  * labelled as such rather than being copied onto each node.
  */
 
+import { parseStitchContext, emitStitchContext } from './stitchContext.js'
+
 /** A step the DC added by hand, before they have configured it. */
 export const BLANK_COMMAND = '# configure the command for this step'
 
@@ -79,6 +81,12 @@ export function draftFromScenario(scenario) {
       : null,
     // Scenario-level, per the schema. Never copied onto individual steps.
     teardown: Array.isArray(scenario.cleanup?.commands) ? scenario.cleanup.commands : [],
+    // Phase-2 Stitch Context — the authored shared-entity intent. Parsed to the
+    // panel's `{[key]:{literal|resolve}}` model, or null for a context-less
+    // scenario (the 177-scenario corpus + Phase-1 drafts all land here as null).
+    // Because `draftFromApi` spreads `...draftFromScenario(row)`, drafts round-
+    // trip through this ONE place — no separate `draftFromApi` edit.
+    stitchContext: parseStitchContext(scenario.stitch_context),
     steps,
     // Persistence identity — null here, filled by `draftFromApi` when the row
     // came back from the drafts API. A draft seeded from a corpus scenario is
@@ -94,7 +102,7 @@ export function draftFromScenario(scenario) {
 export function emptyDraft() {
   return {
     originId: null, name: null, plane: null, ucRef: null, tcRef: null,
-    moatTier: null, cgo: null, teardown: [], steps: [],
+    moatTier: null, cgo: null, teardown: [], stitchContext: null, steps: [],
     scenarioId: null, status: null, author: null, tags: [],
   }
 }
@@ -510,6 +518,11 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
   if (draft.ucRef) body.uc_ref = draft.ucRef
   if (draft.tcRef) body.tc_ref = draft.tcRef
   if (Array.isArray(draft.tcRefs) && draft.tcRefs.length) body.tc_refs = draft.tcRefs
+  // Phase-2 Stitch Context — OMITTED when empty so a context-less draft
+  // serializes byte-identically to the corpus. Additive/optional, matching the
+  // backend `stitch_context: Optional[StitchContextSchema] = None`.
+  const sc = emitStitchContext(draft.stitchContext)
+  if (sc) body.stitch_context = sc
   if (draft.povScenarioId) body.pov_scenario_id = draft.povScenarioId
   if (draft.mitreTactic) body.mitre_tactic = draft.mitreTactic
   if (draft.mitreTacticName) body.mitre_tactic_name = draft.mitreTacticName
@@ -562,6 +575,11 @@ export function draftSnapshot(draft) {
     ucRef: draft.ucRef ?? null,
     tcRef: draft.tcRef ?? null,
     cgo: draft.cgo ?? null,
+    // Load-bearing, NOT cosmetic: the context changes WHAT EXECUTES (the
+    // {stitch:*} substitutions the server injects), so a context edit MUST read
+    // as dirty and force a re-save before launch, exactly like a step edit. The
+    // emitted (wire) form is the stable comparison key.
+    stitchContext: emitStitchContext(draft.stitchContext),
     steps: (draft.steps || []).map((s) => ({
       id: s.id,
       command: s.command ?? null,
