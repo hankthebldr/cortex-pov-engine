@@ -718,3 +718,20 @@
   color: var(--tx3);
   font-size: 10px;
 }
+
+
+/* ── The plane filter rail ──────────────────────────────────────────────────
+   It filters a grid that is ~18,000px tall, so it has to stay reachable while
+   that grid scrolls — otherwise changing plane means scrolling back to the top.
+   Sticky (moves with the page, parks at the top) rather than its own
+   `overflow-y: auto` box, which is what made it read as a SECOND shell sidebar
+   with its own scrollbar sitting at a different vertical origin from the real
+   one. `align-self: start` stops the grid stretching it to the full 18,000px
+   row height, which would defeat the sticky entirely. */
+.theme-console .library-layout .rail--filter {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100vh - var(--h-header, 56px));
+  overflow-y: auto;
+}

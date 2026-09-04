@@ -7236,8 +7236,16 @@
 }
 
 /* ─── destinations.jsx ─── */
+/* `height: 100%` PINNED this grid to the viewport while its content ran to
+   ~18,300px, so the container reported 351px tall and everything inside
+   overflowed it. The visible symptom was the sidebar: `.rail--filter` became an
+   independently scrolling 555px box starting at y=412 while the shell's own nav
+   rail starts at y=291 — two sidebars, two tops, two scroll contexts, which is
+   what kept reading as broken spacing after the gutter was already fixed.
+   `min-height` fills the viewport when the corpus is short; the grid grows with
+   the content when it isn't, and `.view` stays the single scroll owner. */
 .theme-console .library-layout {
-  display: grid; grid-template-columns: var(--w-rail) 1fr; min-height: 0; height: 100%;
+  display: grid; grid-template-columns: var(--w-rail) 1fr; min-height: 100%;
 }
 .theme-console .guided-flow { display: flex; flex-direction: column; gap: 16px; padding: 4px; }
 .theme-console .guided-flow__library-link {
