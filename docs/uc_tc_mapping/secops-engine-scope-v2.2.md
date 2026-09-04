@@ -6,8 +6,8 @@
 
 The SecOps sheet of the v2.2 index carries **146 test cases**. **73** are evidenced by a scenario or an assertion. The **73** below are not, and they are not one population:
 
-- **27 are buildable** — the work is owed to this corpus.
-- **46 are not** — the work is owed to something outside the engine, or to nobody.
+- **25 are buildable** — the work is owed to this corpus.
+- **48 are not** — the work is owed to something outside the engine, or to nobody.
 
 Collapsing those two into a single "open" number is how a backlog becomes a
 promise nobody can keep. Quote the first as owed work; name the second as out
@@ -18,7 +18,7 @@ of scope.
 | reason code | bucket | meaning | count |
 |---|---|---|---:|
 | `BUILDABLE_SCENARIO` | buildable | Scenario YAML + TTP card. The engine can emit the signal the test case is about. | 1 |
-| `BUILDABLE_ASSERTION` | buildable | Assertion YAML. The success criterion has a core that a read-only XQL probe can measure. | 10 |
+| `BUILDABLE_ASSERTION` | buildable | Assertion YAML. The success criterion has a core that a read-only XQL probe can measure. | 8 |
 | `BUILDABLE_BOTH` | buildable | Scenario supplies the stimulus, assertion measures the platform's observable response. Two artifacts, one claim. | 16 |
 | `EXTERNAL_SERVICE_DELIVERY` | external | Measures a Palo Alto Networks human service (Unit 42 MDR / MTH / MSIAM), not a platform behaviour. No artifact can prove a staffed service met an SLA. | 3 |
 | `EXTERNAL_THIRD_PARTY_SYSTEM` | external | Requires a system outside Cortex that the engine has no connector for — ServiceNow/ITSM, an ISAC peer, a customer CI/CD pipeline, or a competitor EDR. | 9 |
@@ -26,6 +26,7 @@ of scope.
 | `CONSOLE_ONLY_NO_READ_API` | external | A console workflow or generated prose with no API-observable artifact — dashboards, case starring, Copilot answer quality. Nothing to query, so nothing to assert. | 8 |
 | `LICENSED_MODULE_REQUIRED` | external | Needs a licensed module active in the tenant that the engine can neither provision nor detect (Host Insights, Chronosphere, federated search, agentless scanning). | 8 |
 | `TIME_HORIZON_EXCEEDS_POV` | external | Requires data aged past what a POV can produce — 12-month retention, multi-year compliance windows. Not authorable; only a tenant with real history can answer it. | 3 |
+| `INDEX_ROW_SELF_CONTRADICTORY` | external | The row's title and its success_criteria describe DIFFERENT capabilities, so no artifact can satisfy both: one authored from the title is scored against the wrong claim, and one authored from the criteria closes a test case whose title promises something it never proved. Blocked on the index owner — see `scripts/check_index_criteria_reuse.py`. | 2 |
 
 ## The buildable set
 
@@ -34,10 +35,8 @@ of scope.
 | `TC-AIRS-02` | POS | UC-AIRS | `BUILDABLE_ASSERTION` | AI SBOM completeness reads from ai_spm_findings; the POS-AISP pack is the precedent. |
 | `TC-AIRS-09` | POS | UC-AIRS | `BUILDABLE_ASSERTION` | Training-pipeline exposure is a posture read over ai_spm_findings; POS-AISP-005 is the precedent. |
 | `TC-APB-08` | PLT | UC-APB | `BUILDABLE_ASSERTION` | Autonomous close under an approval gate is an xsiam_incidents latency + gate-presence read. |
-| `TC-CDR-04` | POS | UC-CDR | `BUILDABLE_ASSERTION` | The cspm module already plants an over-permissioned IAM role and a wildcard-policy user; assertion reads CIEM's recall over the planted set. |
 | `TC-DLP-09` | DET | UC-DLP | `BUILDABLE_ASSERTION` | Case auto-creation from a DLP incident, with required context fields present, is a direct xsiam_incidents read. |
 | `TC-ERV-06` | POS | UC-ERV | `BUILDABLE_ASSERTION` | Rolling risk attribution is a scalar read on the asset's score before and after seeded identity risk. |
-| `TC-IR-06` | PLT | UC-IR | `BUILDABLE_ASSERTION` | Auto-containment within an SLA is exactly AUT-AEPS-002's xql_latency mechanism, re-pointed at a malware precursor. |
 | `TC-IR-09` | DET | UC-IR | `BUILDABLE_ASSERTION` | Priority adjustment by asset criticality is a scalar read on incident severity across two hosts of differing criticality. |
 | `TC-IR-11` | DET | UC-IR | `BUILDABLE_ASSERTION` | Auto-enrichment presence is a ratio over incidents carrying the enrichment fields. |
 | `TC-ITDR-04` | PLT | UC-ITDR | `BUILDABLE_ASSERTION` | PLT-ITDR-006 already proves one identity resolving across AD, Entra and Okta. The Marketplace-connector door itself is unprovable and stays disclaimed. |
@@ -88,6 +87,8 @@ Each is listed so it stops reading as unbuilt backlog.
 | `TC-ITPA-01` | DET | UC-ITPA | `EXTERNAL_THIRD_PARTY_SYSTEM` | Bidirectional ServiceNow sync. No ServiceNow surface exists anywhere in the tree, and closing it would need a write path the engine forbids. |
 | `TC-SOAR-03` | DET | UC-SOAR | `EXTERNAL_THIRD_PARTY_SYSTEM` | 'Top 5 customer tools' is by definition the customer's third-party estate. |
 | `TC-XTI-10` | DET | UC-XTI | `EXTERNAL_THIRD_PARTY_SYSTEM` | Publishing to an ISAC peer requires the peer. |
+| `TC-CDR-04` | POS | UC-CDR | `INDEX_ROW_SELF_CONTRADICTORY` | Title says CIEM over-permissioned-identity discovery; success_criteria are verbatim TC-ITDR-03/06's multi-IdP correlation claim. The cspm module does plant the IAM findings the TITLE wants, but an assertion measuring them would satisfy a row whose criteria ask about something else. |
+| `TC-IR-06` | PLT | UC-IR | `INDEX_ROW_SELF_CONTRADICTORY` | Title says auto-containment within an SLA; success_criteria measure malware DETECTION pre-execution and false-positive rate, and primary_kpi is 'False Positive Rate' — the KPI agrees with the pasted criteria, not with the title. An xql_latency containment assertion would be scored against a detection claim. |
 | `TC-AIRS-05` | POS | UC-AIRS | `LICENSED_MODULE_REQUIRED` | 'Continuous autonomous red teaming, 500+ attack types' is the product performing its own testing. cortex-prompt-attacker proves the target is attackable, not that AIRS ran 500 types. |
 | `TC-CDR-05` | POS | UC-CDR | `LICENSED_MODULE_REQUIRED` | Agentless scanning is a licensed Cortex Cloud capability the engine cannot enable or detect. |
 | `TC-SIEM-02` | DET | UC-SIEM | `LICENSED_MODULE_REQUIRED` | Host Insights must be licensed and active; the engine can neither enable it nor tell an unlicensed tenant from an unenriched one. |
