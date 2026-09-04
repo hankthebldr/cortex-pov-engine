@@ -32,6 +32,7 @@ import {
   LAYOUT,
   layoutChain,
   layoutCausalityGraph,
+  stitchOverlayEdges,
 } from './composerLayout.js'
 
 // Detection-type → chip tone. Identical mapping to the inspector's `detTone`
@@ -99,6 +100,7 @@ function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
   onMoveStep, onDuplicateStep, onRemoveStep, onAddStep, zoom,
+  stitchModel = null, showStitch = false,
 }) {
   const layout = useMemo(
     () => layoutChain({ ...draft, steps }),
@@ -106,6 +108,14 @@ function DesignGraph({
   )
   const { nodes, edges, bounds } = layout
   const runLens = lens === 'run'
+
+  // Design-lens entity-join overlay: the stitch edges the context IMPLIES,
+  // EXPECTED-only (authored intent, never outcome). Off by default; drawn as a
+  // distinct dashed secondary layer offset to the right of the spine.
+  const stitchEdges = useMemo(
+    () => (showStitch ? stitchOverlayEdges(steps, stitchModel) : []),
+    [showStitch, steps, stitchModel],
+  )
 
   return (
     <div
@@ -145,11 +155,45 @@ function DesignGraph({
                 strokeWidth={1.5}
                 strokeDasharray={e.kind === 'root' || e.kind === 'terminal' ? '4 4' : undefined}
               />
-              {e.from && <circle cx={e.from.x} cy={e.from.y} r={3} fill="#6B7E8E" />}
-              {e.to && <circle cx={e.to.x} cy={e.to.y} r={3} fill="#6B7E8E" />}
+              {e.from && <circle cx={e.from.x} cy={e.from.y} r={3} fill="var(--cortex-steel, #6B7E8E)" />}
+              {e.to && <circle cx={e.to.x} cy={e.to.y} r={3} fill="var(--cortex-steel, #6B7E8E)" />}
             </g>
           ))}
         </svg>
+
+        {/* Stitch overlay — additive, EXPECTED-only dashed entity-join edges the
+            context implies. STATE_TINT.EXPECTED (never CONFIRMED/BROKEN; those
+            belong to the Run lens). Off unless showStitch && a model. */}
+        {stitchEdges.length > 0 && (
+          <svg
+            width={bounds.width}
+            height={bounds.height}
+            data-testid="composer-stitch-overlay"
+            style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+            aria-hidden="true"
+          >
+            {stitchEdges.map((se) => {
+              // Bulge to the right of the spine so the join reads as a second layer.
+              const bulge = 28 + Math.abs(se.to.y - se.from.y) / 3
+              const d = `M ${se.from.x} ${se.from.y} `
+                + `C ${se.from.x + bulge} ${se.from.y} `
+                + `${se.to.x + bulge} ${se.to.y} ${se.to.x} ${se.to.y}`
+              return (
+                <path
+                  key={se.id}
+                  d={d}
+                  fill="none"
+                  stroke={STATE_TINT.EXPECTED}
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                  data-stitch-key={se.key}
+                >
+                  <title>{`stitch ${se.key} · EXPECTED (authored intent)`}</title>
+                </path>
+              )
+            })}
+          </svg>
+        )}
 
         {nodes.map((n) => {
           const style = { position: 'absolute', left: n.x, top: n.y, width: n.w }
@@ -199,7 +243,7 @@ function DesignGraph({
           const s = n.step
           const i = steps.indexOf(s)
           const plane = stepPlane(s, draft)
-          const tint = PLANE_TINT[plane] || '#6B7E8E'
+          const tint = PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)'
           const runState = runLens ? (causalityStates?.[s.id]?.state || 'EXPECTED') : null
           return (
             <div
@@ -289,8 +333,14 @@ function DesignGraph({
 
 // ─── Run lens ─────────────────────────────────────────────────────────────────
 
-function RunGraph({ causalityGraph, zoom }) {
+function RunGraph({ causalityGraph, zoom, binding = null }) {
   const summary = causalityGraph?.causality_summary || {}
+  // The REAL resolved 5-tuple/UPN/host/CI/cloud-resource the run used, persisted
+  // on the run (runs.stitch_binding). Quoted verbatim — Gate A5: real values,
+  // nothing invented. Absent for a run whose scenario had no stitch context.
+  const bindingEntries = binding && typeof binding === 'object'
+    ? Object.entries(binding).filter(([, v]) => v != null && v !== '')
+    : []
   const completeness = summary.chain_completeness_pct
   const broken = Array.isArray(summary.broken_stitches) ? summary.broken_stitches : []
 
@@ -341,6 +391,23 @@ function RunGraph({ causalityGraph, zoom }) {
         )}
       </div>
 
+      {bindingEntries.length > 0 && (
+        <div
+          className="composer-canvas__binding"
+          data-testid="composer-stitch-binding"
+          style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, fontSize: 11 }}
+        >
+          <span style={{ fontWeight: 700, color: 'var(--ink, #003366)' }}>
+            resolved binding:
+          </span>
+          {bindingEntries.map(([k, v]) => (
+            <span key={k} className="mono composer-canvas__binding-pair">
+              {k}=<strong>{String(v)}</strong>
+            </span>
+          ))}
+        </div>
+      )}
+
       <div
         style={{
           position: 'relative',
@@ -363,7 +430,7 @@ function RunGraph({ causalityGraph, zoom }) {
             aria-hidden="true"
           >
             {edges.map((e) => {
-              const stroke = STATE_TINT[e.state] || '#6B7E8E'
+              const stroke = STATE_TINT[e.state] || 'var(--cortex-steel, #6B7E8E)'
               return (
                 <g key={e.id}>
                   <path
@@ -386,7 +453,7 @@ function RunGraph({ causalityGraph, zoom }) {
           </svg>
 
           {nodes.map((n) => {
-            const tint = KIND_TINT[n.kind] || '#6B7E8E'
+            const tint = KIND_TINT[n.kind] || 'var(--cortex-steel, #6B7E8E)'
             const label = n.node?.label || n.node?.name || n.id
             return (
               <div
@@ -396,7 +463,7 @@ function RunGraph({ causalityGraph, zoom }) {
                 style={{
                   position: 'absolute', left: n.x, top: n.y, width: n.w,
                   minHeight: n.h, boxSizing: 'border-box',
-                  borderLeft: `4px solid ${tint}`, background: '#fff',
+                  borderLeft: `4px solid ${tint}`, background: 'var(--s1, #fff)',
                   border: '1px solid var(--bd, #dde3e8)', borderRadius: 6, padding: '8px 10px',
                   fontSize: 12,
                 }}
@@ -443,6 +510,11 @@ export default function ComposerCanvas({
   onStartTtp = () => {},
   onStartBlank = () => {},
   onNavigate = () => {},
+  // ── Phase-2 Stitch Context (additive, defaulted — overlay OFF by default so
+  //    every existing ComposerCanvas.test assertion stays green) ──
+  stitchModel = null,
+  showStitch = false,
+  onToggleStitch = () => {},
 }) {
   const [zoom, setZoom] = useState(1)
   const runLens = lens === 'run'
@@ -474,6 +546,19 @@ export default function ComposerCanvas({
             </button>
           ))}
         </div>
+
+        {/* Stitch overlay toggle — a design-lens entity-join layer. Sits beside
+            the lens toggle; EXPECTED-only intent, never a run outcome. */}
+        <button
+          type="button"
+          data-testid="composer-stitch-toggle"
+          className={'canvas-view' + (showStitch ? ' canvas-view--on' : '')}
+          aria-pressed={showStitch}
+          title="Overlay the entity-join edges the stitch context implies (design intent)"
+          onClick={onToggleStitch}
+        >
+          Stitch overlay
+        </button>
 
         <div className="composer-canvas__views" role="group" aria-label="Canvas view">
           {[['chain', 'Chain'], ['yaml', 'YAML']].map(([id, label]) => (
@@ -581,12 +666,14 @@ export default function ComposerCanvas({
               onRemoveStep={onRemoveStep}
               onAddStep={onAddStep}
               zoom={zoom}
+              stitchModel={stitchModel}
+              showStitch={showStitch}
             />
           )}
 
           {hasSteps && runLens && (
             <>
-              <RunGraph causalityGraph={causalityGraph} zoom={zoom} />
+              <RunGraph causalityGraph={causalityGraph} zoom={zoom} binding={activeRun?.stitch_binding || null} />
               {/* The authored spine stays visible under the Run lens, each card
                   badged with its REAL run status (default EXPECTED before a run
                   produces observations) so the DC sees intent against outcome. */}

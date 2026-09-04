@@ -163,6 +163,61 @@ describe('ComposerInspector — edits call back, hold no state', () => {
   })
 })
 
+describe('ComposerInspector — per-step stitch consume', () => {
+  const STEP_CONSUMES = {
+    ...STEP_02,
+    command: 'curl --local-port {stitch:src_port} https://x:{stitch:dst_port}/beacon',
+  }
+
+  it('lists the {stitch:*} keys the command references, badged planted/unplanted', () => {
+    // src_port is planted; dst_port is not → one planted, one unplanted warning.
+    renderInspector({ selected: STEP_CONSUMES, stitchModel: { src_port: { resolve: 'auto_port' } } })
+    const section = screen.getByTestId('step-stitch-consume')
+    expect(within(section).getByTestId('step-stitch-key-src_port').textContent).toMatch(/planted/)
+    const dst = within(section).getByTestId('step-stitch-key-dst_port')
+    expect(dst.textContent).toMatch(/unplanted/)
+    // the unplanted badge is the honest "left verbatim at launch" warning
+    expect(dst.getAttribute('title')).toMatch(/left verbatim at launch/i)
+  })
+
+  it('offers insert buttons for planted keys the command does not yet consume', async () => {
+    const user = userEvent.setup()
+    const onInsertStitch = vi.fn()
+    renderInspector({
+      selected: STEP_02, // command 'cat /etc/shadow' — consumes nothing
+      stitchModel: { account: { resolve: 'canary_principal' } },
+      onInsertStitch,
+    })
+    await user.click(screen.getByRole('button', { name: /Insert stitch account into step-02/i }))
+    expect(onInsertStitch).toHaveBeenCalledWith('step-02', 'account')
+  })
+
+  it('says a command references no shared entity when it has no placeholders', () => {
+    renderInspector({ selected: STEP_02, stitchModel: null })
+    expect(within(screen.getByTestId('step-stitch-consume'))
+      .getByText(/references no shared entity/i)).toBeInTheDocument()
+  })
+})
+
+describe('ComposerInspector — workflow meta hosts the stitch panel', () => {
+  it('renders the ComposerStitchPanel after the CGO anchor', () => {
+    renderInspector({ selected: null, stitchModel: null })
+    expect(screen.getByTestId('composer-stitch-panel')).toBeInTheDocument()
+    // and it sits after the CGO input in DOM order
+    const cgo = screen.getByLabelText('CGO anchor')
+    const panel = screen.getByTestId('composer-stitch-panel')
+    expect(cgo.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('wires a stitch edit through onSetStitchEntity', async () => {
+    const user = userEvent.setup()
+    const onSetStitchEntity = vi.fn()
+    renderInspector({ selected: null, onSetStitchEntity })
+    await user.selectOptions(screen.getByLabelText('Resolve directive for account'), 'canary_principal')
+    expect(onSetStitchEntity).toHaveBeenCalledWith('account', { resolve: 'canary_principal' })
+  })
+})
+
 describe('ComposerInspector — workflow meta (no step selected)', () => {
   it('edits the plane through onEditMeta', async () => {
     const user = userEvent.setup()

@@ -16,6 +16,7 @@ import {
   layoutChain,
   layoutSpine,
   spineEdges,
+  stitchOverlayEdges,
 } from '../console/composerLayout.js'
 
 // A three-step linear spine: step-02 descends from step-01, step-03 from step-02.
@@ -230,5 +231,59 @@ describe('LAYOUT constants', () => {
   it('is frozen so a caller cannot mutate shared geometry', () => {
     expect(Object.isFrozen(LAYOUT)).toBe(true)
     expect(LAYOUT.nodeW).toBeGreaterThan(0)
+  })
+})
+
+describe('stitchOverlayEdges — design-lens entity-join intent', () => {
+  const steps = [
+    { id: 'step-01', command: 'curl --local-port {stitch:src_port} https://x' },
+    { id: 'step-02', command: 'echo {stitch:src_port} {stitch:dst_ip}' },
+    { id: 'step-03', command: 'nc {stitch:src_port}' },
+  ]
+  const model = { src_port: { resolve: 'auto_port' }, dst_ip: { literal: '203.0.113.10' } }
+
+  it('is EXPECTED-only — never CONFIRMED or BROKEN (intent, not outcome)', () => {
+    const edges = stitchOverlayEdges(steps, model)
+    expect(edges.length).toBeGreaterThan(0)
+    for (const e of edges) expect(e.state).toBe('EXPECTED')
+    // The design lens must not carry a run outcome.
+    expect(edges.some((e) => e.state === 'CONFIRMED' || e.state === 'BROKEN')).toBe(false)
+  })
+
+  it('links CONSECUTIVE consumers of a planted key, not a full mesh', () => {
+    // src_port is consumed by step-01, step-02, step-03 → two hops, not three.
+    const edges = stitchOverlayEdges(steps, model).filter((e) => e.key === 'src_port')
+    expect(edges.map((e) => [e.source, e.target])).toEqual([
+      ['step-01', 'step-02'],
+      ['step-02', 'step-03'],
+    ])
+  })
+
+  it('emits no edge for a planted key with fewer than two consumers', () => {
+    // dst_ip is consumed only by step-02 — a join needs two ends.
+    const edges = stitchOverlayEdges(steps, model).filter((e) => e.key === 'dst_ip')
+    expect(edges).toEqual([])
+  })
+
+  it('emits nothing when a consumed key is not planted', () => {
+    // The command references src_port, but the model plants nothing.
+    expect(stitchOverlayEdges(steps, null)).toEqual([])
+    expect(stitchOverlayEdges(steps, {})).toEqual([])
+  })
+
+  it('resolves ports from layoutChain node geometry, offset to the right edge', () => {
+    const { nodes } = layoutChain({ steps })
+    const n1 = nodes.find((n) => n.id === 'step-01')
+    const [edge] = stitchOverlayEdges(steps, model).filter((e) => e.key === 'src_port')
+    expect(edge.from).toEqual({ x: n1.x + n1.w, y: n1.y + n1.h / 2 })
+  })
+
+  it('is deterministic and order-stable across calls', () => {
+    expect(stitchOverlayEdges(steps, model)).toEqual(stitchOverlayEdges(steps, model))
+  })
+
+  it('returns [] for absent steps', () => {
+    expect(stitchOverlayEdges(null, model)).toEqual([])
+    expect(stitchOverlayEdges([], model)).toEqual([])
   })
 })
