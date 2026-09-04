@@ -1,234 +1,299 @@
-# Simulation Composer — full workflow design
+# Simulation Composer — cross-surface, causality-stitched workflow program
 
-**Status:** design approved in brainstorm 2026-09-04, spec pending user review.
+**Status:** design in brainstorm 2026-09-04; spec pending user review.
 **Owner:** Henry (DC), authored by Claude.
-**Scope of this spec:** make the Simulation Composer a fully functional,
-end-to-end authoring **and** execution surface for POV chains — persist a
-composed draft, edit every field in-product, and launch it through the real
-run path — mirroring the interaction model of the `local-ai-platform` Composer
-while staying inside CortexSim's no-fake-runs doctrine.
+**Shape:** a three-phase program. Spec the whole architecture now; build Phase 1
+first, gate, then Phase 2, then Phase 3.
+
+**North star.** A DC composes one chain that fans out across **NICE — Network,
+Identity, Cloud, Endpoint** — e.g. a third-party syslog/analytics detection, an
+agent-based endpoint sim, and an EAL sim on a *second* endpoint that triggers
+NGFW ingestion — and the platform stitches all of it into **one real causality
+instance** because every channel plants the *same* XDM shared entities (5-tuple,
+user principal, host, container) inside the correlation window. The Composer is
+the surface that authors, coordinates, persists, and launches that run.
+
+**The Composer is additive.** Existing scenario / TTP / EAL / assertion
+execution paths stay fully usable on their own. Nothing here replaces them.
 
 ---
 
 ## 1. Why
 
-The console can browse, launch, and prove **authored** scenarios, but the
-Composer (`ui/src/components/console/ComposerView.jsx`) is half-built:
+The Composer (`ui/src/components/console/ComposerView.jsx`, 938 lines) is
+half-built: static linear canvas, **read-only** inspector, and a from-scratch
+chain **cannot launch** (SimCore only runs scenarios loaded from `scenarios/` at
+boot). The `local-ai-platform` prototype
+(`docs/design/project/ui_kits/console/Composer.jsx`, `console-v2/CanvasMode.jsx`)
+shows the target *interaction model* (tabbed palette, node/edge canvas, editable
+inspector, Design/Run lens, scrub timeline) but its runs are **mocked**.
+CortexSim mirrors the interaction model and drives it with **real** data.
 
-- The canvas is a static linear chain; there is no spatial graph.
-- The inspector is **read-only** — a DC cannot edit a step's command,
-  identity, technique, or detections in-product.
-- A hand-edited or from-scratch chain **cannot be launched** — SimCore only
-  executes scenarios loaded from `scenarios/` at boot, so the only output is a
-  YAML file the DC drops into the tree and reloads by hand.
-
-The `local-ai-platform` design prototype
-(`docs/design/project/ui_kits/console/Composer.jsx`,
-`console-v2/CanvasMode.jsx`) demonstrates the target experience: a tabbed
-palette, a zoomable node/edge canvas, a fully editable inspector, per-step
-test, a Design/Run lens with a scrub timeline, and run-status overlays. Its
-runs are **mocked**. CortexSim will mirror the *interaction model* but drive it
-with **real** run data.
+Beyond authoring, the deeper gap is **cross-surface orchestration**: today a
+multi-plane scenario gets its shared 5-tuple "for free" because it is one
+`curl` on one host (`SIM-MP-006`). The moment signal comes from *different
+channels on different endpoints*, nothing coordinates the shared entities, and
+nothing runs the channels under one timed, correlated run.
 
 ## 2. The doctrine this must not break (Gate A5)
 
 1. **Authored is not proven.** `tenant-verified` stays 0. A composed draft that
-   has run produces real seeded results, but is never counted as tenant-proven.
-2. **A draft is not corpus coverage.** Draft rows are excluded from
-   `/api/uctc` evidence, coverage counts, and corpus totals.
-3. **No invented data.** The Run lens shows real step status / MTTD from SSE and
-   `env.runs`; it never fabricates throughput or timing.
-4. **No write path to Cortex.** Unchanged; the Composer generates signal, it
-   does not write to a tenant.
+   runs produces real seeded results, never a tenant-proven claim.
+2. **A draft is not corpus coverage.** Draft rows are excluded from `/api/uctc`
+   evidence, coverage counts, and corpus totals.
+3. **No invented data.** The Run lens renders the **real** causality graph
+   (`build_causality_graph`) with its real edge states; a stitch that fell
+   outside the window shows **BROKEN**, never quietly "confirmed". No fabricated
+   throughput/timing.
+4. **No write path to Cortex.** Unchanged.
 
-## 3. Decisions (locked in brainstorm)
+## 3. Decisions (locked in brainstorm 2026-09-04)
 
 | # | Decision |
 |---|----------|
-| D1 | **Full path:** author + persist + run, not UI-only. |
-| D2 | **Canvas:** graph canvas in the reference's visual language, **spine-constrained** — edges must form a valid causality tree (one parent per step, one root), never a free-form DAG. |
-| D3 | **Persistence:** DB `Scenario` rows with `status='draft'`, not disk YAML. |
-| D4 | **Bottom region:** keep the honest workstream tabs (Payload / Preflight / Active / History). Drop the chat dock. |
-| D5 | **Launch gate:** a draft saves and edits with no refs, but **launch is blocked until it is bound to a real `tc_ref`** resolvable in the FY27 index (plus chain validity). |
+| D1 | Full path: author + persist + run — not UI-only. |
+| D2 | Canvas: graph canvas in the reference's visual language, **spine-constrained** (valid causality tree, one root; never a free-form DAG). |
+| D3 | Persistence: DB `Scenario` rows with `status='draft'`, not disk YAML. |
+| D4 | Bottom region: keep the honest workstream tabs; drop the chat dock. |
+| D5 | Launch gate: a draft saves/edits freely, but **launch is blocked until it is bound to a real `tc_ref`** in the FY27 index (plus chain validity). |
+| D6 | **NICE (Network · Identity · Cloud · Endpoint)** is the organizing model for surfaces, the palette, and the stitch context. |
+| D7 | Phase-3 channels: **agent beacon · EAL emitter · second endpoint/agent** (not push bundle). |
+| D8 | The **Stitch Context** generalizes the existing `_entities()` 8-key set, named canonically in XDM, resolved to consistent concrete values at launch. |
+| D9 | The Run lens renders the **real** `build_causality_graph` output (nodes + typed edges + EXPECTED/CONFIRMED/BROKEN), not a mock. |
+| D10 | Spec all three phases; build Phase 1 first, gate, then 2, then 3. |
 
-## 4. Architecture
+## 4. Grounding — what the platform already gives us
 
-### 4.1 Persistence substrate (backend)
+Verified in-repo (2026-09-04) and against Cortex XSIAM docs.
 
-Composed chains persist as `Scenario` ORM rows (`core/models.py`) with:
+### 4.1 Three field vocabularies, one reconciler
+- **Raw** vendor-native emitter keys (on the wire to a collector), tagged with a
+  `dataset` hint — e.g. NGFW `src`/`dst`/`proto` → `panw_ngfw_traffic_raw`
+  (`core/eal_simulator/ngfw_eal_emitter.py:76,143-146`).
+- **Normalized** `xdr_data` columns used in scenario `verification_xql` —
+  `source_ip`, `action_local_ip`, `actor_effective_user_name`,
+  `causality_actor_process_*`, `container_id`.
+- **Canonical** `xdm.*` paths in modeling-rule exports
+  (`detection_scanner/exports/modeling/*.xql`; schema
+  `detection_scanner/schema/ttp-entry.schema.json:650-679`) — the authoritative
+  dictionary. Most-used: `xdm.source.ipv4` (41), `xdm.source.user.username`,
+  `xdm.target.container.id`, `xdm.source.host.hostname`, `xdm.network.*`.
 
-- `status = 'draft'` (the column already documents `active | draft | deprecated`).
-- `author = <dc identifier>` (existing column).
-- `tags` includes `'composer-draft'` so drafts are trivially identifiable and
-  the strict boot loader (which only walks `scenarios/` on disk) never touches
-  them.
-- `scenario_id` generated as `SIM-DRAFT-<8-char slug>`, unique.
+`core/engine/causality_graph.py::_entities()` (`:268-294`) already coalesces all
+three into **eight shared entity keys**: `host, src_ip, dst_ip, src_port,
+dst_port, protocol, container_id, account`. **This is the seed of the Stitch
+Context.**
 
-No new columns are required. Drafts live in `data/cortexsim.db` (a mounted
-volume), survive restart, and never enter git-tracked `scenarios/`.
+### 4.2 NICE → XDM → the eight entity keys
 
-**Relaxed draft schema.** `ScenarioSchema` (the strict corpus loader) makes
-`uc_ref`, `tc_ref`, `uc_name`, `tc_name`, MITRE tactic/technique names, and
-`push/pull_supported` mandatory — a from-scratch draft has none of these. Add
-`DraftScenarioSchema` in `core/engine/composer_draft_schema.py`:
+| NICE | Canonical `xdm.*` | Normalized column | Entity key |
+|------|-------------------|-------------------|-----------|
+| Network | `xdm.source.ipv4` / `xdm.target.ipv4`, `xdm.source.port` / `xdm.target.port`, `xdm.network.application_protocol`, `xdm.network.session_id` | `source_ip`/`action_local_ip`, `dest_ip`/`action_remote_ip`, `src_port`, `dst_port`, `protocol` | `src_ip,dst_ip,src_port,dst_port,protocol` (the 5-tuple) |
+| Identity | `xdm.source.user.upn` / `.username` / `.domain` | `actor_effective_user_name`, `causality_actor_primary_username` | `account` |
+| Cloud | cloud account/project/resource (entity; **no CGO**), `xdm.target.container.id` | `resource_name`, `container_id` | `container_id` (+ cloud resource, see §7) |
+| Endpoint | `xdm.source.host.hostname`, `xdm.source.process.causality_id`, CGO process | `agent_hostname`, `src_host`, `causality_actor_process_image_name` | `host` (+ `causality_id`) |
 
-- **Required:** `name`, `plane` (must be a known plane), `steps` (≥1,
-  each well-formed).
-- **Optional:** `uc_ref`, `tc_ref`, `tc_refs`, MITRE fields, KPI/threshold,
-  `cgo_anchor`, `cleanup`, `execution_identity`.
-- **Hard structural validation, reused from the loader:**
-  - each step: non-empty `id` (unique), `name`, `command`; `expected_detections`
-    entries carry `plane` + `type` from the six-value vocabulary.
-  - the **causality spine**: reuse `_validate_causality_spine`'s rules — exactly
-    one root (a step with no `causality.parent_step`), no forward/self
-    references, `pivot` in the allowed set.
-- Missing mandatory ORM fields are filled with explicit sentinels on persist:
-  `uc_ref='UNBOUND'`, `tc_ref='UNBOUND'`, `uc_name='(draft — unbound)'`, etc.,
-  and `push_supported`/`pull_supported` derived from step command text the same
-  way the push generator classifies targets.
+### 4.3 Two causality mechanisms (both must be authorable)
+- **Endpoint process spine** — a **CGO (Causality Group Owner)** root; every
+  process/wrapper node stamps the same `causality_id` (= `cgo:{run_id}`),
+  mirroring XSIAM's `causality_actor_process_*` anchoring. Authored today via
+  `cgo_anchor` + per-step `causality.parent_step`/`pivot`
+  (`causality_graph.py:399-586`).
+- **Entity-join stitching** — network/identity/cloud events attach by **shared
+  entity**, not a process tree (Cortex: **cloud/SaaS causality has no CGO**).
+  Authored via `stitching_key` + `correlation_window_seconds` +
+  `required_planes_in_incident`, realized as `network_session` /
+  `endpoint_network_stitch` / `shared_entity` / `temporal` edges.
 
-### 4.2 API surface (backend)
+### 4.4 The causality graph is real, and has a stitch state machine
+`build_causality_graph` (`causality_graph.py`) is a pure deterministic
+projection over seeded detections + observations. Nodes: `cgo, process, wrapper,
+exposure, alert`. Edges carry `state ∈ {EXPECTED, CONFIRMED, BROKEN}`
+(`_edge_state` `:317-330`): both ends observed within the window → CONFIRMED;
+observed but outside → **BROKEN** (a demonstrable stitch gap); else EXPECTED.
+`_stitch_value` / `_five_tuple` / `_shared_entity` (`:297-314,891-896`) resolve
+the join values; `_causality_summary` yields `chain_completeness_pct`,
+`stitched_incident`, `broken_stitches`, `dual_control_verdict`.
 
-New router `core/api/drafts.py`, mounted at `/api/scenarios/drafts`:
+### 4.5 Two execution lifecycles today (Phase 3 must coordinate)
+- Beacon: scenario `Run` → `Orchestrator.launch()` selects the DB row, seeds
+  results, enqueues a step task the Go beacon pulls (`orchestrator.py:178-393`).
+- EAL: `CampaignExecutor` runs **in SimCore's own process**, POSTs shape-true
+  logs to a collector, tracked as a separate `EalCampaignRun` (`core/api/eal.py`,
+  `core/eal_simulator/`). Shared entities today reach only identity
+  (`analytics_emitter.py::canary_bindings` shares `account`/`principal`).
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `POST` | `/api/scenarios/drafts` | Validate via `DraftScenarioSchema`, persist a `status='draft'` row, return the draft document + `scenario_id`. |
-| `GET` | `/api/scenarios/drafts` | List draft rows (summary shape), optionally `?author=`. |
-| `GET` | `/api/scenarios/drafts/{id}` | Full draft document (same shape as `GET /api/scenarios/{id}`). |
-| `PUT` | `/api/scenarios/drafts/{id}` | Replace a draft's chain (re-validate). |
-| `DELETE` | `/api/scenarios/drafts/{id}` | Remove a draft row (hard delete is fine — it is the DC's own scratch work, and runs reference it by `scenario_id` string, not FK). |
+## 5. Target architecture (all three phases)
 
-**`list_scenarios` (existing) gains a status guard:** it must exclude
-`status='draft'` by default so drafts never leak into the Library, UC/TC
-evidence, coverage, or entitlement scoping. A `?status=` query can opt in.
-`_evidence_index` in `core/api/uctc.py` and any coverage walk filter to
-`status='active'`.
+### 5.1 Data model additions (designed now, filled in per phase)
 
-**Launch is unchanged.** Once a draft row exists, `POST /api/runs` with its
-`scenario_id` runs through `Orchestrator.launch()` exactly as a shipped
-scenario does (it selects the row from the DB, seeds results from the draft's
-`expected_detections`, enqueues the step task the beacon pulls). This is the
-crux: we add persistence, not a second execution engine.
+**Step gains a channel (back-compat).** `StepSchema` and the draft model add:
+- `channel: 'agent' | 'eal' | 'agent@target'` — absent ⇒ `agent` (today's
+  behaviour; every existing scenario loads unchanged).
+- `target`: which endpoint/agent (Phase 3) or collector (EAL).
+- `eal`: `{plugin, params}` when `channel == 'eal'`.
+- `entity_bindings`: which Stitch-Context keys this step **plants** vs
+  **consumes** (e.g. an NGFW EAL step plants the 5-tuple; the endpoint step
+  consumes it). Absent ⇒ inherit all from context.
 
-**Launch gate (the D5 rule)** is enforced authoritatively in the run-launch
-path (so the UI cannot be bypassed), and also exposed read-only for the UI to
-pre-check via `GET /api/scenarios/drafts/{id}/launchable`. Both compute the same
-structured verdict:
+**Scenario gains a stitch context.** A `stitch_context` block (additive,
+optional): the NICE-organized entity set (§4.2 keys), each entry either a
+literal or a `resolve` directive (`auto_ip`, `auto_5tuple`, `canary_principal`,
+`from_agent`). Persisted on the draft/scenario row. This is the generalization
+of `canary_bindings` to all eight keys, XDM-named.
 
-- `chain_valid`: every step has a command and ≥1 expected detection.
-- `tc_bound`: `validate_index_refs(...)` (advisory return) yields a resolvable
-  test case for the draft's `tc_ref`/`tc_refs` with no FK errors.
-- Launch of a `status='draft'` row whose `tc_ref == 'UNBOUND'` (or unresolvable)
-  is refused with `409 DRAFT_NOT_TC_BOUND`, naming the fix ("bind a test case
-  from the UC/TC Index"). Non-draft scenarios are unaffected.
+### 5.2 Stitch Context resolver (Phase 2)
+`core/engine/stitch_context.py` (new, pure): given a `stitch_context` spec + the
+launch target(s), resolve concrete consistent values (one src_ip, one 5-tuple,
+one UPN, one host/CI anchor) and return a **binding map** keyed by the eight
+entity keys, plus per-channel projections (raw emitter keys, `xdr_data` columns,
+`xdm.*`) so each channel plants the value in its own vocabulary. Reuses the
+`_entities()` coalescing rules in reverse. Deterministic, unit-tested, no
+network.
 
-Consent gating (`_check_launch_consent`) and runtime-readiness preflight are
-inherited unchanged — a draft wiring a gated adapter or a c2 framework is gated
-exactly like any scenario.
+### 5.3 Multi-channel orchestrator (Phase 3)
+A coordinator that, for one composed run, dispatches each step to its channel —
+beacon (existing), EAL (`CampaignExecutor`), or a second beacon/target —
+injecting the resolved Stitch-Context binding so every channel emits the *same*
+entities, ordered/timed to land within `correlation_window_seconds`. Tracked as
+one composite run; per-channel sub-results roll up. Approach (merge lifecycles
+vs coordinate two under a parent run id) is decided in Phase 3's detailed
+design; the Stitch Context + channel-typed steps make either viable.
 
-### 4.3 Frontend decomposition
+## 6. Phase 1 — Composer UX + single-channel persist/run (build first)
 
-`ComposerView.jsx` is 938 lines and read-only; extending it in place would make
-it unmaintainable. Split by responsibility (pure modules stay React-free and
-unit-tested, per the `runStatus.js` / `healthModel.js` convention):
+Everything here ships without any new orchestration substrate. Channel is
+implicitly `agent`; a `SIM-MP-006`-style single-host chain already produces
+multi-plane telemetry with a natural shared tuple.
+
+### 6.1 Persistence (backend)
+- Composed chains persist as `Scenario` rows: `status='draft'`, `author=<dc>`,
+  `tags` includes `'composer-draft'`, `scenario_id = SIM-DRAFT-<slug>`. No new
+  columns (reuses existing `status`/`author`/`tags`). Drafts live in
+  `data/cortexsim.db`; never touch git-tracked `scenarios/`.
+- New `DraftScenarioSchema` (`core/engine/composer_draft_schema.py`): requires
+  only `name`, `plane`, well-formed `steps`; `uc_ref`/`tc_ref`/MITRE/KPI
+  optional. Hard structural validation reused from the loader (step shape,
+  detection shape, **causality-spine** rules — one root, no forward refs, valid
+  pivot). Missing mandatory ORM fields filled with explicit sentinels
+  (`tc_ref='UNBOUND'`, etc.); `push/pull_supported` derived from command text.
+
+### 6.2 API surface (backend)
+New router `core/api/drafts.py` at `/api/scenarios/drafts`: `POST` (create),
+`GET` (list, `?author=`), `GET/PUT/DELETE /{id}`, and
+`GET /{id}/launchable` (the D5 verdict). **Launch is unchanged** — once a draft
+row exists, `POST /api/runs` runs it through the existing path.
+`list_scenarios` and `_evidence_index` (`core/api/uctc.py`) gain a
+`status='active'` guard so drafts never leak into Library / coverage.
+
+### 6.3 Launch gate (D5, enforced server-side)
+In the run-launch path (authoritative) and mirrored at `/{id}/launchable`:
+`chain_valid` (every step has a command + ≥1 expected detection) **and**
+`tc_bound` (`validate_index_refs(...)` resolves the draft's `tc_ref`/`tc_refs`
+with no FK errors). A `status='draft'` row with `tc_ref='UNBOUND'` is refused
+`409 DRAFT_NOT_TC_BOUND`, naming the fix. Consent + runtime-readiness preflight
+inherited unchanged.
+
+### 6.4 Frontend decomposition
+`ComposerView.jsx` splits (pure modules stay React-free + unit-tested, per the
+`runStatus.js`/`healthModel.js` convention):
 
 | Module | Kind | Responsibility |
 |--------|------|----------------|
-| `composerDraft.js` (extend) | pure | Draft model + immutable edit ops; add `editStep`, `addDetection`, `removeDetection`, `setCausalityParent`; add `draftToApi` / `draftFromApi` mapping for the new endpoints. |
-| `composerLayout.js` (new) | pure | Spine → node coordinates + edge list. Deterministic top-down/left-right layout from `causality.parent_step`. |
-| `ComposerCanvas.jsx` (new) | view | The zoomable graph: node cards, SVG spine edges, ports, zoom controls, selection, run-status overlay. |
-| `ComposerPalette.jsx` (new) | view | Tabbed palette (§4.5). |
-| `ComposerInspector.jsx` (new) | view | Editable step config + workflow meta (§4.6). |
-| `ComposerView.jsx` (slim) | view | Orchestrates the above; owns draft state, save/load, launch, workstream. |
+| `composerDraft.js` (extend) | pure | model + edit ops (`editStep`, `add/removeDetection`, `setCausalityParent`) + `draftToApi`/`draftFromApi`. |
+| `composerLayout.js` (new) | pure | spine → node coordinates + edge list. |
+| `ComposerCanvas.jsx` (new) | view | zoomable graph: node cards, SVG spine edges, ports, zoom, selection, run-status overlay. |
+| `ComposerPalette.jsx` (new) | view | NICE-organized tabbed palette (§6.6). |
+| `ComposerInspector.jsx` (new) | view | editable step config + workflow meta. |
+| `ComposerView.jsx` (slim) | view | wiring, draft state, save/load, launch, workstream. |
 
-### 4.4 Canvas & the two lenses
+### 6.5 Canvas + two lenses
+- **Design lens:** graph canvas in the reference's visual language, tinted by
+  **plane** (the NICE analogue of the reference's role colour); edges are the
+  spine-constrained causality tree; START/END anchors; layout from
+  `composerLayout.js` (the DC adds/links/reorders, never drags into an invalid
+  topology).
+- **Run lens:** renders the **real** `build_causality_graph` — nodes and typed
+  edges with EXPECTED/CONFIRMED/BROKEN, `chain_completeness_pct`, and the
+  `broken_stitches` list. Pre-run: EXPECTED. Post-run/reconcile: confirmed or
+  broken from real observations. Live status from `env.activeRun` SSE; terminal
+  runs from `env.runs`. No mock throughput.
 
-**Design lens** — the graph canvas, in the reference's visual language:
+### 6.6 Editable inspector + NICE palette
+- Inspector edits: name, command, identity, technique, platforms,
+  `causality.parent_step`/`pivot`, expected detections (add/remove; bind a TTP
+  card fills `type`/`ttp_ref`/`detection_id`). No step selected ⇒ editable
+  workflow meta (name, plane, `tc_ref` picker → UC/TC Index, CGO anchor).
+- Palette tabs (reference's roles/agents/skills/plugins/mcps → CortexSim,
+  organized by NICE), every group API-sourced: **Step kinds**, **Scenario
+  library** (seed/replace), **TTP cards** (`GET /api/ttps`, append a step
+  pre-bound to a detection — the path to satisfying the launch gate), **Tool
+  adapters** (attach `adapter_ref`), **Targets** (agents, by NICE surface),
+  **Staged payloads** (shelf). Phase 3 adds an **EAL emitter** group here.
 
-- Node cards tinted by **plane** (CortexSim's analogue of the reference's role
-  colour), a title, an id/order kicker, meta (technique · identity), detection
-  chips, and a run-status pip.
-- Edges are the **causality spine** drawn as SVG paths (reuse the reference's
-  `edgePath` curve). START and END anchors bracket the chain.
-- Layout comes from `composerLayout.js` — the DC never positions nodes by
-  hand-drag into invalid topologies; they add/link/reorder and the layout
-  re-derives. Adding a step from the palette links it under the current
-  selection (or the last root-line step) as its `parent_step`.
-- Zoom controls, node selection, keyboard reorder — mirrored from the reference.
+### 6.7 Header actions
+`Save draft`, `Load`, `Download YAML` (existing), `Run preflight` (now also
+reports the tc-bound gate), `Launch` (enabled only when saved + chain-valid +
+tc-bound).
 
-**Run lens** — real data, not mock:
+## 7. Phase 2 — Stitch Context (XDM shared entities)
 
-- Painted from `env.activeRun` (live SSE: `step`, `totalSteps`, `detected`,
-  per-step status) and terminal runs in `env.runs`.
-- A scrub timeline sized by real step boundaries; a per-node overlay shows real
-  MTTD where a result was observed, and "not reached" / "no detection" honestly
-  where it was not. No fabricated throughput.
-- "Inspect a past run on the canvas" deep-links from the Runs view.
+- Implement `stitch_context` on the draft/scenario + `stitch_context.py`
+  resolver (§5.1–5.2). Generalize `canary_bindings` to the eight keys; add a
+  Cloud resource key (account/project/resource) since cloud stitches by entity,
+  not CGO.
+- Composer UI: a **Stitch panel** (NICE-organized) to declare the context and,
+  per step, mark each entity **plant** vs **consume**. The canvas draws the
+  entity-join edges the context implies (mirrors the graph's
+  `endpoint_network_stitch`/`shared_entity`), so the DC *sees* how the chain will
+  stitch before launch.
+- Launch injects the resolved binding into the (still single-channel) run;
+  `verification_xql`/reconciliation confirm the stitch. The Run lens now shows
+  the entity-join edges as CONFIRMED/BROKEN — DC-authored, not accidental.
 
-### 4.5 Palette taxonomy
+## 8. Phase 3 — Multi-channel orchestrated run
 
-The reference's `roles / agents / skills / plugins / mcps`, mapped to real
-CortexSim concepts, every group sourced from the API:
+- Channel-typed steps go live (D7: agent · EAL · second endpoint). Palette gains
+  the EAL-emitter group; inspector gains channel/target/eal-params/entity-binding
+  editors.
+- Multi-channel orchestrator (§5.3) dispatches per channel with the shared
+  Stitch-Context binding, timed within the window; results roll up under one run.
+- Delivers the north-star example: syslog/analytics (EAL) + agent endpoint sim +
+  EAL sim on a second endpoint → NGFW ingestion, all stitched on the 5-tuple into
+  one causality instance, verified as CONFIRMED edges across ≥N NICE planes under
+  one `incident_id`.
 
-| Palette tab | Source | "Add" action |
-|-------------|--------|--------------|
-| Step kinds | static (things this UI creates) | append a blank command / wait step |
-| Scenario library | `env.scenarios` | seed/replace the draft from a scenario |
-| TTP cards | `GET /api/ttps` | append a step **pre-bound** to that card's detection (this is how a DC binds a real `tc_ref` to satisfy the launch gate) |
-| Tool adapters | `GET /api/tools/adapters` | attach an `adapter_ref` to the selected step |
-| Targets | `env.agents` | set the launch agent |
-| Staged payloads | shelf (`useShelf`) | inspect / route to Tools & Payloads |
+## 9. Testing
 
-### 4.6 Editable inspector
+- **Phase 1 backend:** `DraftScenarioSchema` (accepts minimal draft; rejects
+  broken spine / dup step id / bad detection type); CRUD routes; the status guard
+  (draft absent from Library + coverage); the launch gate (`UNBOUND` →
+  `409 DRAFT_NOT_TC_BOUND`; tc-bound → launches + seeds).
+- **Phase 1 frontend:** extend `ComposerView.test.jsx`; unit-test
+  `composerLayout.js`. Preserve existing contracts; the one intentional change:
+  "REFUSES to launch an edited draft" → "refuses to launch an **unsaved or
+  un-tc-bound** draft, and says why".
+- **Phase 2:** `stitch_context.py` resolver determinism + per-channel projection;
+  UI plant/consume authoring.
+- **Phase 3:** orchestrator fan-out + shared-binding injection + window timing;
+  the north-star scenario as an integration test (injected transport).
+- **CI:** `refs` stays green (drafts never enter `scenarios/`).
 
-The core of "fully functional." For the selected step, edit:
+## 10. Migration & rollout
 
-- name, command (textarea), identity (from the identity-harness spec set),
-  technique, platforms, `causality.parent_step` + `pivot`,
-- **expected detections:** add / remove; binding a TTP card fills
-  `type` / `ttp_ref` / `detection_id` / `description`.
+- No schema migration in Phase 1 (reuses `status`/`author`/`tags`). Phases 2–3
+  add JSON columns (`stitch_context`, step `channel`/`eal`/`entity_bindings`) via
+  the repo's idempotent `ADD COLUMN` pattern (as `cgo_anchor` did).
+- Additive throughout; the only existing-behaviour change is the `list_scenarios`
+  status guard (which only hides rows that do not exist yet).
+- Update counted ground truth in `docs/reference/README.md` when each phase
+  lands (route count rises with the drafts router, then the orchestrator).
 
-When no step is selected, show **workflow meta** (editable): name, plane,
-`tc_ref` binding (deep-link to the UC/TC Index picker), CGO anchor. Every edit
-flows through a pure op in `composerDraft.js`; the YAML view and validation
-re-derive from the same model so they can never disagree.
+## 11. Out of scope
 
-### 4.7 Header actions
-
-`Save draft` (POST/PUT), `Load` (draft picker), `Download YAML` (existing),
-`Run preflight` (existing, now also reports the D5 tc-bound gate), `Launch`
-(enabled only when saved **and** chain-valid **and** tc-bound).
-
-## 5. Testing
-
-- **Backend:** `DraftScenarioSchema` validation (accepts a minimal draft;
-  rejects a broken spine, a duplicate step id, a bad detection type); the CRUD
-  routes; the status guard on `list_scenarios` / uctc evidence (a draft row does
-  **not** appear in the Library or inflate coverage); the launch gate (a draft
-  with `tc_ref='UNBOUND'` is refused `409 DRAFT_NOT_TC_BOUND`; a tc-bound draft
-  launches and seeds results).
-- **Frontend:** extend `ComposerView.test.jsx` and add unit tests for
-  `composerLayout.js`. Preserve every existing test contract in §
-  `ComposerView.test.jsx` (empty-state three ways, seeded-from-scenario,
-  failed-load honesty, YAML emit). The one contract that changes on purpose:
-  "REFUSES to launch an edited draft" becomes "refuses to launch an **unsaved
-  or un-tc-bound** draft, and says why."
-- **CI:** `refs` job stays green (drafts never enter `scenarios/`, so the strict
-  loader is untouched). Backend/ui suites gate as usual.
-
-## 6. Migration & rollout
-
-- No schema migration needed (reuses `status`, `author`, `tags`).
-- Drafts are additive; no existing behaviour changes except the `list_scenarios`
-  status guard (which only ever hid rows that do not exist yet).
-- App route count rises by the drafts router's endpoints; update the counted
-  ground truth in `docs/reference/README.md` when the work lands.
-
-## 7. Out of scope
-
-- Writing drafts to disk `scenarios/` (rejected in favour of DB rows).
-- A conversational/chat dock (rejected; no real agent backend).
-- Free-form DAG topologies (rejected; spine-constrained only).
-- Promoting a draft into the shipped corpus — that stays a human PR against
-  `scenarios/`, and is explicitly a separate, later concern.
+- Writing drafts to disk `scenarios/` (rejected; DB rows).
+- A conversational chat dock (rejected; no real agent backend).
+- Free-form DAG topologies (rejected; spine-constrained).
+- Push-bundle as an orchestrated stitch channel (D7 excluded it).
+- Promoting a draft into the shipped corpus — stays a human PR against
+  `scenarios/`, a separate later concern.
