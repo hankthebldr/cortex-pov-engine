@@ -149,6 +149,19 @@ export default function TtpBrowserView({ initialTtpId = null }) {
     setSelectedRuns(null)
   }
 
+  // Escape returns to the grid. A full-page breakout with no keyboard exit is a
+  // trap for anyone driving the console from the keyboard, and this destination
+  // is otherwise fully keyboard-navigable (⌘K, the filter chips, the cards).
+  // Bound only while the breakout is open so it cannot swallow Escape from the
+  // editor modal or the launch dialog, which own it when they are up.
+  useEffect(() => {
+    if (!showDetail) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') clearSelection() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDetail])
+
   // ── Paging ──────────────────────────────────────────────────────────────
   // The corpus is 175 cards and grows every content pass. One scrolling column
   // meant the filter controls scrolled out of reach long before the list ended,
@@ -460,6 +473,23 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
   if (detail._error) {
     return (
       <aside className="ttpb-detail" data-testid="ttp-detail">
+      {/* THE WAY BACK.
+          The `Close` button further down is a btn--xs floated to the far right.
+          It was sized for the old 400px rail, where it sat beside the title; on
+          a full-width breakout it is ~1000px from where the eye starts and reads
+          as nothing, so the card looked like a dead end. This is the actual back
+          affordance: top-left, full size, and labelled with the DESTINATION
+          ("All TTP cards") rather than the verb "close", because the operator is
+          navigating, not dismissing. Escape does the same — see TtpBrowserView. */}
+      <button
+        type="button"
+        className="btn ttpb-btn--sm ttpb-detail__back"
+        data-testid="ttp-detail-back"
+        onClick={onClose}
+      >
+        &larr; All TTP cards
+      </button>
+
         <div className="ttpb-detail__head">
           <div>
             <div className="ttpb-detail__eyebrow mono">TTP detail</div>
@@ -510,6 +540,22 @@ function TtpDetail({ detail, runs, onClose, onEdit }) {
 
   return (
     <aside className="ttpb-detail" data-testid="ttp-detail">
+      {/* THE WAY BACK. The `Close` further down is a btn--xs floated far right —
+          sized for the old 400px rail, where it sat beside the title. On a
+          full-width breakout it is ~1000px from where the eye starts and reads as
+          nothing, so the card looked like a dead end. This is the real affordance:
+          top-left, full size, labelled with the DESTINATION rather than the verb
+          "close", because the operator is navigating, not dismissing. Escape does
+          the same — see the key handler in TtpBrowserView. */}
+      <button
+        type="button"
+        className="btn ttpb-btn--sm ttpb-detail__back"
+        data-testid="ttp-detail-back"
+        onClick={onClose}
+      >
+        &larr; All TTP cards
+      </button>
+
       <div className="ttpb-detail__head">
         <div>
           <div className="ttpb-detail__eyebrow mono">

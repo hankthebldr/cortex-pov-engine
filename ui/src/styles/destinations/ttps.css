@@ -569,3 +569,12 @@
   .ttpb-list { grid-template-columns: minmax(0, 1fr); }
   .ttpb-detail { padding: 16px; }
 }
+
+/* The breakout's back affordance. Sits above the head, aligned left, so it is
+   the first thing on the line the eye starts at — the old btn--xs `Close` is
+   ~1000px away on the right and was effectively invisible on a full-width
+   panel. margin-bottom pairs it with the head rather than the page. */
+.ttpb-detail__back {
+  align-self: flex-start;
+  margin-bottom: 14px;
+}
