@@ -40,6 +40,10 @@ export default function TtpBrowserView({ initialTtpId = null }) {
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
 
+  // `pageRaw` is the STORED page; the rendered page is clamped against the
+  // current filter result (see `page` below), so narrowing a filter can never
+  // strand the grid on a page that no longer exists and render empty.
+  const [pageRaw, setPage]                  = useState(0)
   const [selectedId, setSelectedId]         = useState(null)
   const [selectedDetail, setSelectedDetail] = useState(null)
   const [selectedRuns, setSelectedRuns]     = useState(null)
@@ -134,9 +138,30 @@ export default function TtpBrowserView({ initialTtpId = null }) {
     setFilterTactic('all')
     setFilterPlatform('all')
     setQuery('')
+    setPage(0)
   }
 
-  const showRail = !!selectedDetail && !editorMode
+  const showDetail = !!selectedDetail && !editorMode
+
+  const clearSelection = () => {
+    setSelectedId(null)
+    setSelectedDetail(null)
+    setSelectedRuns(null)
+  }
+
+  // ── Paging ──────────────────────────────────────────────────────────────
+  // The corpus is 175 cards and grows every content pass. One scrolling column
+  // meant the filter controls scrolled out of reach long before the list ended,
+  // so narrowing a search cost a trip back to the top.
+  const PAGE_SIZE = 24
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
+  // Clamp rather than store a page that a narrower filter has just invalidated:
+  // filtering from 175 cards to 3 while sitting on page 6 would otherwise render
+  // an empty grid that reads as "no results".
+  const page      = Math.min(pageRaw, pageCount - 1)
+  const pageStart = page * PAGE_SIZE
+  const pageEnd   = Math.min(pageStart + PAGE_SIZE, visible.length)
+  const pageItems = visible.slice(pageStart, pageEnd)
 
   return (
     <div className="ttpb" data-testid="ttp-browser">
@@ -218,44 +243,78 @@ export default function TtpBrowserView({ initialTtpId = null }) {
         <FilterRow label="platform" active={filterPlatform} options={platforms} onChange={setFilterPlatform} />
       </div>
 
-      <div className={'ttpb-body' + (showRail ? ' ttpb-body--split' : '')}>
-        <div className="ttpb-list">
-          {loading ? (
-            <div className="ttpb-empty mono">loading TTP corpus…</div>
-          ) : visible.length === 0 ? (
-            <div className="ttpb-empty mono">
-              no TTPs match the current filters —{' '}
-              <button
-                type="button"
-                className="btn ttpb-btn--xs"
-                onClick={resetFilters}
-              >
-                clear filters
-              </button>
-            </div>
-          ) : (
-            visible.map((t) => (
-              <TtpCard
-                key={t.id}
-                ttp={t}
-                isSelected={t.id === selectedId}
-                onSelect={() => handleSelect(t.id)}
-              />
-            ))
-          )}
-        </div>
-
-        {showRail && (
+      {/* BREAKOUT, NOT A RAIL.
+          The detail used to sit in a 400px sticky column beside the list. A TTP
+          card carries the MITRE mapping, the execution block, every detection
+          object and the run history — 400px forced all of it into a scrolling
+          ribbon nobody could read, which is the opposite of what a card is for.
+          Selecting now REPLACES the grid with a full-width breakout and offers
+          an explicit way back, the same shape RunDetailView uses, so the two
+          deep-dives in the console behave the same way. */}
+      <div className="ttpb-body">
+        {showDetail ? (
           <TtpDetail
             detail={selectedDetail}
             runs={selectedRuns}
-            onClose={() => {
-              setSelectedId(null)
-              setSelectedDetail(null)
-              setSelectedRuns(null)
-            }}
+            onClose={clearSelection}
             onEdit={() => setEditorMode(selectedDetail.id)}
           />
+        ) : (
+          <>
+            <div className="ttpb-list" data-testid="ttp-grid">
+              {loading ? (
+                <div className="ttpb-empty mono">loading TTP corpus…</div>
+              ) : visible.length === 0 ? (
+                <div className="ttpb-empty mono">
+                  no TTPs match the current filters —{' '}
+                  <button
+                    type="button"
+                    className="btn ttpb-btn--xs"
+                    onClick={resetFilters}
+                  >
+                    clear filters
+                  </button>
+                </div>
+              ) : (
+                pageItems.map((t) => (
+                  <TtpCard
+                    key={t.id}
+                    ttp={t}
+                    isSelected={t.id === selectedId}
+                    onSelect={() => handleSelect(t.id)}
+                  />
+                ))
+              )}
+            </div>
+
+            {pageCount > 1 && (
+              <nav className="ttpb-pager" aria-label="TTP card pages" data-testid="ttp-pager">
+                <button
+                  type="button"
+                  className="btn ttpb-btn--sm"
+                  data-testid="ttp-page-prev"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                >
+                  ‹ Prev
+                </button>
+                <span className="ttpb-pager__status mono">
+                  {pageStart + 1}–{pageEnd} of {visible.length}
+                  <span className="ttpb-pager__sep" aria-hidden="true"> · </span>
+                  page {page + 1}/{pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="btn ttpb-btn--sm"
+                  data-testid="ttp-page-next"
+                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                  disabled={page >= pageCount - 1}
+                >
+                  Next ›
+                </button>
+              </nav>
+            )}
+          </>
         )}
       </div>
 

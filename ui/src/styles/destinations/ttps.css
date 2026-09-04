@@ -140,18 +140,36 @@
 /* ─── Body: list + sticky detail rail ──────────────────────────── */
 
 .ttpb-body { display: block; }
-.ttpb-body--split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 400px;
-  gap: 18px;
-  align-items: start;
-}
+
+/* GRID, NOT BARS.
+   Full-width rows gave every card the same visual weight as the one above it
+   and wasted the right two-thirds of the viewport on whitespace, so scanning
+   175 cards meant scrolling past 175 near-identical strips. auto-fill + a
+   300px floor means the column count follows the viewport instead of being
+   pinned, and the cards keep the same internal markup they had as rows. */
 .ttpb-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: start;
   min-width: 0;
 }
+/* The empty/loading state is a message, not a card — it spans the grid. */
+.ttpb-list > .ttpb-empty { grid-column: 1 / -1; }
+
+/* ─── Pager ─── */
+.ttpb-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--bd);
+}
+.ttpb-pager__status { font-size: 11px; color: var(--tx2); }
+.ttpb-pager__sep    { color: var(--tx3); }
+.ttpb-pager .btn[disabled] { opacity: .4; cursor: not-allowed; }
 
 .ttpb-empty {
   padding: 22px;
@@ -267,19 +285,29 @@
 
 /* ─── Detail rail ───────────────────────────────────────────────── */
 
+/* BREAKOUT PAGE, NOT A RAIL.
+   This used to be a 400px sticky column beside the list. A TTP card carries the
+   MITRE mapping, the execution block, every detection object and the run
+   history — 400px squeezed all of that into a scrolling ribbon, which is what
+   made the deep-dive unreadable. It now takes the full body width and is NOT
+   sticky (a sticky full-width panel just pins content to the top of a scroll it
+   owns). */
 .ttpb-detail {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 18px;
+  padding: 22px 24px;
   background: var(--s1);
   border: 1px solid var(--bd);
   border-top: 3px solid var(--ac-str);
   border-radius: 10px;
-  position: sticky;
-  top: 0;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
+  width: 100%;
+  min-width: 0;
+  /* NO max-height / overflow-y. Both were correct for a sticky 400px rail and
+     are wrong for a breakout: capping the panel to the viewport gives it its
+     own scrollbar INSIDE the view's scrollbar, so reading one card meant
+     driving two nested scroll regions. The breakout flows in the page's own
+     scroll instead. */
 }
 .ttpb-detail__head {
   display: flex;
@@ -531,10 +559,13 @@
 .ttpb-modal__fail-list { margin: 6px 0 0; padding-left: 18px; }
 .ttpb-modal__fail-item { color: var(--crit); }
 
-/* ─── Responsive: collapse the split rail below tablet width ────── */
-/* Placed last so it wins the cascade over the unconditional
-   .ttpb-detail rule above at equal specificity. */
-@media (max-width: 980px) {
-  .ttpb-body--split { grid-template-columns: minmax(0, 1fr); }
-  .ttpb-detail { position: static; max-height: none; }
+/* ─── Responsive ────────────────────────────────────────────────── */
+/* The split rail this block used to collapse no longer exists — the detail is
+   a full-width breakout and the list is an auto-fill grid, so both already
+   adapt without a breakpoint. What still needs one is the card floor: below
+   ~680px a 300px minimum forces a horizontal scrollbar, so drop to one column
+   and let the cards be as wide as the viewport. */
+@media (max-width: 680px) {
+  .ttpb-list { grid-template-columns: minmax(0, 1fr); }
+  .ttpb-detail { padding: 16px; }
 }
