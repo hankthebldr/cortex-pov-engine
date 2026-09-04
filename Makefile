@@ -48,6 +48,43 @@ down: ## Stop SimCore
 build: ## Build the production simcore image
 	docker build -f core/Dockerfile -t $(IMAGE) .
 
+# -----------------------------------------------------------------------------
+# UI dev loop
+# -----------------------------------------------------------------------------
+# The console is BAKED into the image (core/Dockerfile: COPY --from=ui-builder
+# /ui/dist/ /app/core/static/) and nothing bind-mounts it, so out of the box a
+# one-line CSS change costs a trip through four builder stages. Measured on this
+# tree, edit -> visible:
+#
+#     ui-dev  (vite HMR, :5273)          ~50 ms   no container involved
+#     ui-sync (vite build + docker cp)   ~980 ms  container keeps running
+#     compose build + force-recreate     ~3340 ms container restarts
+#
+# The restart is the hidden cost, not the seconds: force-recreate drops enrolled
+# agents' connections and every open SSE stream, so a UI tweak mid-run destroys
+# the run you were looking at. `ui-sync` never restarts anything.
+
+ui-dev: ## UI hot-reload on :5273, API proxied to the running SimCore (fastest loop)
+	@echo "vite dev on http://localhost:5273  — /api proxies to $${CORTEXSIM_DEV_API:-http://localhost:8888}"
+	@echo "use this for component + CSS work; it does NOT exercise the production bundle"
+	cd ui && npm run dev -- --port 5273 --strictPort
+
+ui-sync: ## Build the real bundle and push it into the RUNNING container (no rebuild, no restart)
+	@cd ui && npx vite build
+	@# Clear hashed chunks first so the container MIRRORS ui/dist instead of
+	@# accumulating every build's assets. Scoped to assets/ on purpose:
+	@# /app/core/static/agent is a read-only bind mount (docker-compose.yml),
+	@# so an rm -rf over the whole static dir would fail on it.
+	@docker exec $(UI_CONTAINER) sh -c 'rm -rf /app/core/static/assets' 2>/dev/null \
+	  || { echo "container '$(UI_CONTAINER)' not running - try: make up"; exit 1; }
+	@docker cp ui/dist/. $(UI_CONTAINER):/app/core/static/
+	@echo "pushed ui/dist -> $(UI_CONTAINER):/app/core/static  (http://localhost:8888)"
+	@echo "no rebuild, no restart - enrolled agents and open SSE streams survive"
+
+# Overridable so this works against a differently-named stack (e.g. a worktree's
+# compose project, which prefixes the directory name).
+UI_CONTAINER ?= cortex-pov-engine-simcore-1
+
 agent-dist: ## Cross-compile the beacon matrix into ./agent-dist (served by /api/agents/binary)
 	scripts/build-agent-dist.sh
 
