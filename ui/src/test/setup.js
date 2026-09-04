@@ -52,4 +52,33 @@ if (typeof window !== 'undefined') {
   if (!window.scrollTo) {
     window.scrollTo = vi.fn()
   }
+
+  // Web Storage. Absent in this jsdom configuration, and its absence was costing
+  // 43 failures across 3 files: every suite whose beforeEach ran
+  // `window.localStorage.clear()` threw before its first assertion, so the whole
+  // file reported red for a reason unrelated to the component under test.
+  //
+  // Both are polyfilled, not just localStorage: the blast-radius consent gate
+  // (SafetyBanner.jsx) is sessionStorage-backed, and a missing sessionStorage
+  // would silently push it down its catch branch — where it always renders
+  // UNacknowledged. The test would then pass while proving nothing about the
+  // acknowledged path.
+  const memoryStorage = () => {
+    let store = new Map()
+    return {
+      get length() { return store.size },
+      key: (i) => Array.from(store.keys())[i] ?? null,
+      getItem: (k) => (store.has(String(k)) ? store.get(String(k)) : null),
+      setItem: (k, v) => { store.set(String(k), String(v)) },
+      removeItem: (k) => { store.delete(String(k)) },
+      clear: () => { store = new Map() },
+    }
+  }
+  for (const name of ['localStorage', 'sessionStorage']) {
+    if (!window[name]) {
+      Object.defineProperty(window, name, {
+        value: memoryStorage(), configurable: true, writable: true,
+      })
+    }
+  }
 }

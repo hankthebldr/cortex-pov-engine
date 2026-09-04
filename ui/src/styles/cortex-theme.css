@@ -1031,6 +1031,29 @@ ul.bullet { margin: 4px 0 0 0; padding-left: 18px; font-size: 12px; }
    because the surface it pairs with doesn't change either. */
 .tour__progress { margin-left: auto; font-size: 11px; color: var(--ink-tx2, #9FB0A9); }
 
+/* Skip / Back sit on the SAME always-dark bubble and hit the SAME defect the
+   comment above describes — they just weren't covered by that fix. `.btn` is a
+   theme-relative control: in light theme it paints dark text on a light fill,
+   which on `--cortex-navy` renders as an unreadable button (the operator sees
+   an empty chip and cannot tell Skip from Back). Next/Done escaped it only
+   because `.btn--primary` carries its own light-on-accent colours.
+
+   Scoped to `.tour__foot` so the global `.btn` is untouched — this is a
+   surface-specific correction, not a change to the button vocabulary. */
+.tour__foot .btn {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #fff;
+}
+.tour__foot .btn:hover,
+.tour__foot .btn:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #fff;
+}
+/* Next/Done already reads on the bubble — leave its accent fill alone. */
+.tour__foot .btn--primary { background: var(--cortex-teal, #00C0E8); color: #04121A; }
+
 /* ── Vocabulary tooltip ────────────────────────────────────────────────── */
 .term-wrap { position: relative; display: inline-block; }
 .term {

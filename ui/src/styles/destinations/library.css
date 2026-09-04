@@ -29,6 +29,16 @@
      sit on its own card/chip. Painting the real theme-aware surface here
      closes that for the whole destination in one place. */
   background: var(--s0);
+
+  /* FULL-BLEED, then own the inset.
+     .view already pads every destination by --view-pad, and this layout added
+     26px of its own on top — so the shell's nav rail ended at x=62 and the
+     Library's OWN filter rail started at x=112: a 50px dead gutter that read as
+     two disconnected sidebars. Cancelling .view's padding here (rather than
+     dropping this padding) is deliberate: the background above is the a11y fix
+     for the shell's non-theme-aware dark surface, and it has to paint edge to
+     edge or a strip of near-black shows through beside the light theme. */
+  margin: calc(var(--view-pad) * -1);
   padding: 22px 26px 30px;
   align-items: start;
 }
@@ -707,4 +717,21 @@
   padding: 12px 20px;
   color: var(--tx3);
   font-size: 10px;
+}
+
+
+/* ── The plane filter rail ──────────────────────────────────────────────────
+   It filters a grid that is ~18,000px tall, so it has to stay reachable while
+   that grid scrolls — otherwise changing plane means scrolling back to the top.
+   Sticky (moves with the page, parks at the top) rather than its own
+   `overflow-y: auto` box, which is what made it read as a SECOND shell sidebar
+   with its own scrollbar sitting at a different vertical origin from the real
+   one. `align-self: start` stops the grid stretching it to the full 18,000px
+   row height, which would defeat the sticky entirely. */
+.theme-console .library-layout .rail--filter {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100vh - var(--h-header, 56px));
+  overflow-y: auto;
 }

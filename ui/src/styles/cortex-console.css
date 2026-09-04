@@ -155,6 +155,10 @@
   --h-commandstrip:30px;
   --w-rail:        202px;
   --w-rail-collapsed: 62px;
+  /* Inset every destination gets from .view. Exposed as a token because a
+     full-bleed destination (Library) has to cancel it with a negative margin,
+     and a hardcoded 24px in two files drifts apart the moment one is tuned. */
+  --view-pad:      24px;
   --w-inspector:   420px;
 
   /* ── Motion ──────────────────────────────────────────────────────── */
@@ -474,8 +478,17 @@
      width exceeds what is left, the left cluster's text overflows its box and
      paints underneath the tenant/agent pills. Clipping here plus `min-width: 0`
      and per-element truncation below turns that into graceful loss instead of
-     illegible collision. */
-  overflow: hidden;
+     illegible collision.
+
+     CLIPPED ON .header__left, NOT HERE. `overflow: hidden` on the bar itself
+     also clipped every absolutely-positioned menu the bar owns: the tenant and
+     agent switchers open a `.switcher__menu` that extends BELOW the 56px bar,
+     so it was cut to the ~8px that happened to fall inside it. The switchers
+     looked broken — aria-expanded went true, the menu rendered, and the user
+     saw an empty sliver. CSS gives no way to clip one axis only (a `visible`
+     paired with a `hidden` computes to `auto`), so the clip has to move to the
+     element that actually overflows. */
+  overflow: visible;
   background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-void) 100%);
   border-bottom: 1px solid var(--c-hairline);
   position: relative;
@@ -672,15 +685,63 @@
    dimmed in dark mode (the projector case is exactly when someone is about to
    launch in front of a customer). */
 .theme-console .safety-banner {
-  display: flex;
-  align-items: center;
-  gap: 16px;
   flex: none;
-  padding: 10px 16px;
   background: var(--warn-str);
   color: #0A0F0D;
   border-bottom: 2px solid #0A0F0D;
 }
+
+/* ── Not yet acknowledged: the gate. Deliberately large.
+   This is the one moment the DC is asked to understand what Launch does to a
+   customer's tenant, and the acknowledgement is per-session (SafetyBanner.jsx),
+   so this renders at the start of every session — it has to earn that space by
+   being read, not skimmed past as a 40px strip. ── */
+.theme-console .safety-banner--full {
+  display: block;
+  padding: 18px 26px 20px;
+}
+.theme-console .safety-banner__head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.theme-console .safety-banner--full .safety-banner__tag {
+  font-size: 20px;
+}
+.theme-console .safety-banner__scope {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.theme-console .safety-banner--full .safety-banner__msg {
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 104ch;
+  margin-bottom: 14px;
+}
+.theme-console .safety-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.theme-console .safety-banner--full .safety-banner__ack {
+  height: 38px;
+  padding: 0 22px;
+  font-size: 13px;
+}
+
+/* ── Acknowledged: the compact line. Same visual language, one row. ── */
+.theme-console .safety-banner--min {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+}
+.theme-console .safety-banner--min .safety-banner__msg { flex: 1; }
+
 .theme-console .safety-banner__tag {
   font-family: var(--font-display);
   font-size: 15px;
@@ -697,7 +758,6 @@
   font-size: 12px;
   line-height: 1.45;
   min-width: 0;
-  flex: 1;
 }
 .theme-console .safety-banner__msg strong { font-weight: 700; }
 .theme-console .safety-banner__link {
@@ -1001,7 +1061,7 @@
      (position:absolute + translateX(100%)). Without this it added a spurious
      horizontal scrollbar and ~396px of dead width to every view. */
   overflow-x: hidden;
-  padding: 24px;
+  padding: var(--view-pad);
   position: relative;
 }
 
@@ -7176,8 +7236,16 @@
 }
 
 /* ─── destinations.jsx ─── */
+/* `height: 100%` PINNED this grid to the viewport while its content ran to
+   ~18,300px, so the container reported 351px tall and everything inside
+   overflowed it. The visible symptom was the sidebar: `.rail--filter` became an
+   independently scrolling 555px box starting at y=412 while the shell's own nav
+   rail starts at y=291 — two sidebars, two tops, two scroll contexts, which is
+   what kept reading as broken spacing after the gutter was already fixed.
+   `min-height` fills the viewport when the corpus is short; the grid grows with
+   the content when it isn't, and `.view` stays the single scroll owner. */
 .theme-console .library-layout {
-  display: grid; grid-template-columns: var(--w-rail) 1fr; min-height: 0; height: 100%;
+  display: grid; grid-template-columns: var(--w-rail) 1fr; min-height: 100%;
 }
 .theme-console .guided-flow { display: flex; flex-direction: column; gap: 16px; padding: 4px; }
 .theme-console .guided-flow__library-link {
