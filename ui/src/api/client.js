@@ -201,6 +201,11 @@ export async function getScenarios(params = {}) {
 
 /**
  * GET /api/scenarios/:id
+ *
+ * The Scenario.to_dict() response now carries an optional Phase-2
+ * `stitch_context` (the flat nine-key `{literal|resolve}` block; absent/null for
+ * a context-less scenario), consumed by `parseStitchContext`.
+ *
  * @param {string|number} id
  * @returns {Promise<Object>}
  */
@@ -256,10 +261,21 @@ export async function downloadScenario(id, format = 'bash') {
  * Persist a Composer draft. `body` is the frozen snake_case `DraftCreateRequest`
  * (build it with `draftToApi`).
  *
+ * The body may additionally carry an optional Phase-2 `stitch_context`: a flat
+ * object keyed by the nine entity keys (`host`, `src_ip`, `dst_ip`, `src_port`,
+ * `dst_port`, `protocol`, `container_id`, `account`, `cloud_resource`), each
+ * value exactly one of `{literal:<scalar>}` or `{resolve:<directive>}` where the
+ * directive is one of the six (`auto_ip`, `auto_port`, `auto_5tuple`,
+ * `canary_principal`, `from_agent`, `auto_container_id`). It rides through
+ * unchanged — no signature change — because `draftToApi` builds it. A rejected
+ * shape returns 422 {code:'STITCH_CONTEXT_INVALID', detail naming the offending
+ * key+directive}, surfaced through the existing apiError path.
+ *
  * @param {Object} body  DraftCreateRequest
  * @returns {Promise<Object>} 201 — full Scenario.to_dict() + a `launchable` block
  *   {launchable, chain_valid, tc_bound, reasons[], refusal_code}. Throws apiError
- *   on 422 {code:'DRAFT_SCHEMA_INVALID'} / 409 {code:'DRAFT_ID_EXISTS'}.
+ *   on 422 {code:'DRAFT_SCHEMA_INVALID'} / 422 {code:'STITCH_CONTEXT_INVALID'} /
+ *   409 {code:'DRAFT_ID_EXISTS'}.
  */
 export async function createDraft(body) {
   return request('/api/scenarios/drafts', {
@@ -286,6 +302,10 @@ export async function listDrafts({ author } = {}) {
 
 /**
  * GET /api/scenarios/drafts/:id
+ *
+ * The response carries the optional `stitch_context` block (consumed by
+ * `parseStitchContext`) alongside the rest of the Scenario.to_dict() shape.
+ *
  * @param {string} id  e.g. 'SIM-DRAFT-credential-dumping'
  * @returns {Promise<Object>} full Scenario.to_dict() + `launchable` block.
  *   404 {code:'DRAFT_NOT_FOUND'} for a missing or non-draft id.
@@ -296,10 +316,16 @@ export async function getDraft(id) {
 
 /**
  * PUT /api/scenarios/drafts/:id  (full-replace semantics)
+ *
+ * `body` accepts the same optional `stitch_context` block as `createDraft` (see
+ * there); it rides through unchanged and 422s as {code:'STITCH_CONTEXT_INVALID'}
+ * on a bad shape.
+ *
  * @param {string} id
  * @param {Object} body  DraftCreateRequest (build with `draftToApi`)
  * @returns {Promise<Object>} updated Scenario.to_dict() + `launchable` block.
- *   404 DRAFT_NOT_FOUND / 409 DRAFT_NOT_EDITABLE / 422 DRAFT_SCHEMA_INVALID.
+ *   404 DRAFT_NOT_FOUND / 409 DRAFT_NOT_EDITABLE / 422 DRAFT_SCHEMA_INVALID /
+ *   422 STITCH_CONTEXT_INVALID.
  */
 export async function updateDraft(id, body) {
   return request(`/api/scenarios/drafts/${encodeURIComponent(id)}`, {
@@ -333,6 +359,11 @@ export async function getDraftLaunchable(id) {
 }
 
 // ─── Runs ─────────────────────────────────────────────────────────────────────
+// Phase-2 note: a Run row (getRun / getRuns) now carries an optional
+// `stitch_binding` — the resolved nine-key dict of the REAL concrete values the
+// resolver injected into this run's step commands (NULL for a run of a
+// context-less scenario). The Run lens / report may quote it verbatim (Gate A5
+// honesty: real values, nothing invented). No new client function is needed.
 
 /**
  * POST /api/run
