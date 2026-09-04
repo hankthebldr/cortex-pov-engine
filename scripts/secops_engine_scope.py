@@ -74,6 +74,13 @@ REASONS = {
         "external", "Requires data aged past what a POV can produce — 12-month "
         "retention, multi-year compliance windows. Not authorable; only a "
         "tenant with real history can answer it."),
+    "INDEX_ROW_SELF_CONTRADICTORY": (
+        "external", "The row's title and its success_criteria describe DIFFERENT "
+        "capabilities, so no artifact can satisfy both: one authored from the "
+        "title is scored against the wrong claim, and one authored from the "
+        "criteria closes a test case whose title promises something it never "
+        "proved. Blocked on the index owner — see "
+        "`scripts/check_index_criteria_reuse.py`."),
 }
 
 VERDICT = {
@@ -113,7 +120,7 @@ VERDICT = {
     # ── UC-BYOML ──
     "TC-BYOML-01": ("TENANT_CONFIG_NO_WRITE_PATH", "Deploying a custom ML model into the tenant is a write action."),
     # ── UC-CDR ──
-    "TC-CDR-04":   ("BUILDABLE_ASSERTION", "The cspm module already plants an over-permissioned IAM role and a wildcard-policy user; assertion reads CIEM's recall over the planted set."),
+    "TC-CDR-04":   ("INDEX_ROW_SELF_CONTRADICTORY", "Title says CIEM over-permissioned-identity discovery; success_criteria are verbatim TC-ITDR-03/06's multi-IdP correlation claim. The cspm module does plant the IAM findings the TITLE wants, but an assertion measuring them would satisfy a row whose criteria ask about something else."),
     "TC-CDR-05":   ("LICENSED_MODULE_REQUIRED", "Agentless scanning is a licensed Cortex Cloud capability the engine cannot enable or detect."),
     # ── UC-DLP ──
     "TC-DLP-03":   ("TENANT_CONFIG_NO_WRITE_PATH", "DLP policy creation is a write; only enforcement is observable, and enforcement without the authored policy proves nothing."),
@@ -131,7 +138,7 @@ VERDICT = {
     "TC-ERV-07":   ("CONSOLE_ONLY_NO_READ_API", "Compliance-framework report generation is a console artifact."),
     "TC-ERV-08":   ("TENANT_CONFIG_NO_WRITE_PATH", "Custom policy configurability requires authoring policies."),
     # ── UC-IR ──
-    "TC-IR-06":    ("BUILDABLE_ASSERTION", "Auto-containment within an SLA is exactly AUT-AEPS-002's xql_latency mechanism, re-pointed at a malware precursor."),
+    "TC-IR-06":    ("INDEX_ROW_SELF_CONTRADICTORY", "Title says auto-containment within an SLA; success_criteria measure malware DETECTION pre-execution and false-positive rate, and primary_kpi is 'False Positive Rate' — the KPI agrees with the pasted criteria, not with the title. An xql_latency containment assertion would be scored against a detection claim."),
     "TC-IR-09":    ("BUILDABLE_ASSERTION", "Priority adjustment by asset criticality is a scalar read on incident severity across two hosts of differing criticality."),
     "TC-IR-10":    ("CONSOLE_ONLY_NO_READ_API", "Case starring is a console interaction."),
     "TC-IR-11":    ("BUILDABLE_ASSERTION", "Auto-enrichment presence is a ratio over incidents carrying the enrichment fields."),
