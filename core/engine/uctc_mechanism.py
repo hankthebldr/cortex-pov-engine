@@ -86,3 +86,33 @@ def platform_category(validation_class: str, target_dataset: str) -> str:
     if vc == "POS":
         return _CATEGORY_BY_FAMILY.get(fam, "cloud")
     return _CATEGORY_BY_FAMILY[fam]
+
+
+def binding_record(tc_id: str, spec_row: dict, evidenced_by: str) -> dict:
+    """Assemble the durable per-TC binding record (spec section 5).
+
+    `evidenced_by` is 'scenario', 'assertion', or '' (not yet authored).
+    """
+    vc = spec_row.get("validation_class", "")
+    ds = spec_row.get("target_dataset", "")
+    mech = mechanism_for(vc, ds)
+    authored = bool(evidenced_by)
+    if authored:
+        status = "authored"
+    elif mech == "M3":
+        status = "blocked(laab)"
+    else:
+        status = "open"
+    return {
+        "tc_id": tc_id,
+        "uc_id": spec_row.get("uc_id", ""),
+        "validation_class": (vc or "").strip().upper(),
+        "mechanism": mech,
+        "data_source": ds,
+        "platform_category": platform_category(vc, ds),
+        "evidenced_by": evidenced_by,
+        "authored": authored,
+        "negative_control": "unknown",
+        "tenant_verified": False,
+        "status": status,
+    }

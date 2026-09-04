@@ -32,3 +32,35 @@ def test_platform_category():
     assert platform_category("DET", "xdr_data") == "none"
     assert platform_category("DET", "cloud_audit_logs · container_events") == "cloud"
     assert platform_category("POS", "posture_findings") == "cloud"
+from engine.uctc_mechanism import binding_record
+
+
+def _row(vc, ds, uc="UC-EDR"):
+    return {"validation_class": vc, "target_dataset": ds, "uc_id": uc}
+
+
+def test_binding_record_open_endpoint_det():
+    r = binding_record("TC-EDR-07", _row("DET", "xdr_data"), "")
+    assert r["mechanism"] == "M1"
+    assert r["authored"] is False
+    assert r["negative_control"] == "unknown"
+    assert r["tenant_verified"] is False
+    assert r["status"] == "open"
+
+
+def test_binding_record_authored_sets_status_authored():
+    r = binding_record("TC-EDR-05", _row("DET", "xdr_data"), "scenario")
+    assert r["authored"] is True
+    assert r["evidenced_by"] == "scenario"
+    assert r["status"] == "authored"
+
+
+def test_binding_record_open_pos_is_laab_blocked():
+    r = binding_record("TC-CSPM-02", _row("POS", "posture_findings", "UC-CSPM"), "")
+    assert r["mechanism"] == "M3"
+    assert r["status"] == "blocked(laab)"
+
+
+def test_binding_record_authored_pos_is_authored_not_blocked():
+    r = binding_record("TC-KSPM-03", _row("POS", "posture_findings", "UC-KSPM"), "assertion")
+    assert r["status"] == "authored"
