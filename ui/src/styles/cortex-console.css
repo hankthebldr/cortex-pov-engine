@@ -478,8 +478,17 @@
      width exceeds what is left, the left cluster's text overflows its box and
      paints underneath the tenant/agent pills. Clipping here plus `min-width: 0`
      and per-element truncation below turns that into graceful loss instead of
-     illegible collision. */
-  overflow: hidden;
+     illegible collision.
+
+     CLIPPED ON .header__left, NOT HERE. `overflow: hidden` on the bar itself
+     also clipped every absolutely-positioned menu the bar owns: the tenant and
+     agent switchers open a `.switcher__menu` that extends BELOW the 56px bar,
+     so it was cut to the ~8px that happened to fall inside it. The switchers
+     looked broken — aria-expanded went true, the menu rendered, and the user
+     saw an empty sliver. CSS gives no way to clip one axis only (a `visible`
+     paired with a `hidden` computes to `auto`), so the clip has to move to the
+     element that actually overflows. */
+  overflow: visible;
   background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-void) 100%);
   border-bottom: 1px solid var(--c-hairline);
   position: relative;
