@@ -23,21 +23,29 @@ run can move, and today it is zero.
 
 ## Technical detail
 
-### Baseline scoreboard (2026-09-04, live crosswalk)
+### Baseline scoreboard (P0-measured, 2026-09-04)
 
-| Metric | Value | Source |
-|---|---:|---|
-| TCs in index | 266 | index registry |
-| TCs evidenced (authored) | ~90 (union ~94) | `crosswalk --report` |
-| — DET/HNT evidenced | 70 / 107 | `crosswalk --report` |
-| TCs open | ~172 | derived |
-| — open DET/HNT | ~40 | derived |
-| — open POS | ~108 | POV Readiness |
-| — open PLT | 39 | POV Readiness |
-| — open AUT | 3 | POV Readiness |
-| tenant-verified | **0** | Gate A5 |
-| log-sim emitters | ~14 | `core/eal_simulator/` |
-| data sources covered / catalog | measured in P0 by Task L0 | Task L0 |
+Machine-computed by `make uctc-sheet` — regenerable from live engine state,
+CI-gated by `make check-uctc-sheet`. Live source of truth:
+[`scoreboard.md`](scoreboard.md) and `_v2.2-source/engine_coverage_v2.3.csv`.
+These measured counts supersede the earlier hand estimates: notably POS authored
+is **20** (scenarios bind POS TCs as secondary refs, plus the K8s assertion pack),
+not the ~2 previously guessed, and AUT authored is **0**, not 3.
+
+| class | total | authored | open | open mechanism | blocked(laab) | tenant-verified |
+|---|---:|---:|---:|---|---:|---:|
+| DET | 102 | 66 | 36 | M1 33 · M2-quick 2 · M2-longterm 1 | 0 | 0 |
+| HNT | 5 | 4 | 1 | M2-longterm 1 | 0 | 0 |
+| POS | 110 | 20 | 90 | M3 90 | 90 | 0 |
+| PLT | 43 | 5 | 38 | M4 38 | 0 | 0 |
+| AUT | 6 | 0 | 6 | M5 6 | 0 | 0 |
+| **all** | **266** | **95** | **171** | — | **90** | **0** |
+
+Quick-win surface (P1, ungated) = **35** open DET/HNT (M1 33 + M2-quick 2). The
+next-largest ungated bucket is **44** read-only-probe rows (M4 38 + M5 6), which
+are **not** LaaB-gated — a data-driven reason P3/P4 can run alongside or ahead of
+the 90 LaaB-gated M3 posture rows. `log-sim emitters ~14` and `data sources
+covered / catalog` remain measured by the follow-on L0 plan.
 
 ### Definition of done
 
