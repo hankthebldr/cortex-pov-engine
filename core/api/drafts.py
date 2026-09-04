@@ -62,6 +62,10 @@ from engine.composer_draft_schema import (
     orm_sentinels,
 )
 from engine.scenario_loader import validate_index_refs
+from engine.stitch_context import (
+    StitchContextValidationError,
+    validate_stitch_context_spec,
+)
 from models import Scenario
 
 # Reuse the Library list's summary projection so a draft summary row is the
@@ -97,6 +101,24 @@ def _schema_invalid(exc: Exception) -> HTTPException:
         "DRAFT_SCHEMA_INVALID",
         str(exc),
         error="Draft failed structural validation",
+    )
+
+
+def _stitch_invalid(exc: StitchContextValidationError) -> HTTPException:
+    """Map a StitchContextValidationError to 422 STITCH_CONTEXT_INVALID, naming
+    the offending key (+directive) in the detail so the client can point at it
+    rather than reading a generic 'draft invalid' sentence."""
+    where = []
+    if exc.key is not None:
+        where.append(f"key='{exc.key}'")
+    if exc.directive is not None:
+        where.append(f"directive='{exc.directive}'")
+    suffix = f" ({', '.join(where)})" if where else ""
+    return _err(
+        422,
+        "STITCH_CONTEXT_INVALID",
+        f"{exc}{suffix}",
+        error="Stitch context failed validation",
     )
 
 
@@ -231,7 +253,17 @@ async def _pick_scenario_id(db: AsyncSession, name: str) -> str:
 def _validate_body(body: dict[str, Any]) -> DraftScenarioSchema:
     """Validate a request body through DraftScenarioSchema, mapping any failure
     to 422 DRAFT_SCHEMA_INVALID (bad step/detection shape, broken causality
-    spine, duplicate step id, empty steps, empty detection union)."""
+    spine, duplicate step id, empty steps, empty detection union).
+
+    An optional ``stitch_context`` block is pre-checked with the ONE structural
+    guard first, so a malformed entry surfaces as ``STITCH_CONTEXT_INVALID``
+    (naming key+directive) instead of being swallowed into the generic pydantic
+    ``DRAFT_SCHEMA_INVALID`` when the nested schema re-raises it wrapped."""
+    if isinstance(body, dict) and body.get("stitch_context") is not None:
+        try:
+            validate_stitch_context_spec(body["stitch_context"])
+        except StitchContextValidationError as exc:
+            raise _stitch_invalid(exc)
     try:
         return DraftScenarioSchema.model_validate(body)
     except ValidationError as exc:
@@ -265,6 +297,7 @@ _MUTABLE_COLUMNS = (
     "cleanup",
     "tags",
     "cgo_anchor",
+    "stitch_context",
     "validation_methodology",
     "methodology_family",
     "primary_kpi",
