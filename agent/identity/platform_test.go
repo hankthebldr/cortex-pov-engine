@@ -94,10 +94,16 @@ func TestResolveFor_WindowsDirectIdentitiesAreNotDegraded(t *testing.T) {
 // POSIX behaviour must be untouched by the Windows work: the harness really can
 // impersonate there, so nothing is degraded and the mode/user pair is unchanged.
 func TestResolveFor_POSIXIsUnchanged(t *testing.T) {
+	// The WRAPPER differs by host family and the mode name says which: linux has
+	// runuser (util-linux), darwin does not, and BSD su takes no -s flag either,
+	// so darwin impersonates through `sudo -n -u <user> /bin/sh -c`. Everything
+	// else below — honoured, never degraded, Unknown preserved — must hold
+	// identically on both, because both ARE impersonation platforms.
+	wantMode := map[string]string{"linux": "runuser", "darwin": "sudo_sh"}
 	for _, goos := range []string{"linux", "darwin"} {
 		res := ResolveFor(goos, "www-data", "root")
-		if res.Mode != "runuser" || res.Username != "www-data" {
-			t.Errorf("ResolveFor(%s, www-data) = %+v, want runuser/www-data", goos, res)
+		if res.Mode != wantMode[goos] || res.Username != "www-data" {
+			t.Errorf("ResolveFor(%s, www-data) = %+v, want %s/www-data", goos, res, wantMode[goos])
 		}
 		if !res.Honoured || res.Degraded() {
 			t.Errorf("ResolveFor(%s, www-data) degraded a POSIX impersonation: %s", goos, res.Degradation)
@@ -109,10 +115,11 @@ func TestResolveFor_POSIXIsUnchanged(t *testing.T) {
 		}
 
 		unknown := ResolveFor(goos, "some-random-acct", "root")
-		if !unknown.Unknown || unknown.Mode != "runuser" {
-			t.Errorf("ResolveFor(%s, unknown) = %+v, want runuser with Unknown=true", goos, unknown)
+		if !unknown.Unknown || unknown.Mode != wantMode[goos] {
+			t.Errorf("ResolveFor(%s, unknown) = %+v, want %s with Unknown=true",
+				goos, unknown, wantMode[goos])
 		}
-		// Unknown is best-effort, not a lie: runuser fails loudly at exec time.
+		// Unknown is best-effort, not a lie: the wrapper fails loudly at exec time.
 		if unknown.Degraded() {
 			t.Errorf("an unknown POSIX account must not be pre-emptively degraded: %s", unknown.Degradation)
 		}

@@ -410,6 +410,13 @@ def test_installer_fails_when_agent_never_checks_in(simcore, sandbox):
     assert attempts[0]["stage"] == "verify"
 
 
+@pytest.mark.skipif(
+    os.geteuid() != 0,
+    reason="asserts the ROOT branch of cs_install_systemd (system unit). As non-root the "
+           "installer correctly writes a USER unit instead, so this test would be asserting "
+           "a branch it never took. Covered as root by the CI workflow's `backend` job, "
+           "which runs pytest inside the prod image.",
+)
 def test_reinstall_restarts_the_stale_unit_so_the_new_id_takes_over(simcore, sandbox, tmp_path):
     """The exact MVP blocker, reproduced mechanically: `systemctl enable --now`
     is a no-op on an already-active unit of the same name, so a re-install
@@ -421,9 +428,17 @@ def test_reinstall_restarts_the_stale_unit_so_the_new_id_takes_over(simcore, san
 
     Runs INSIDE this test's own docker/CI sandbox only: the fake systemctl
     shadows any real one via PATH, and the unit file it "writes" (root branch
-    of cs_install_systemd, since these tests run as root in the CI image)
-    lives at /etc/systemd/system/cortexsim-agent.service — inside the
-    ephemeral container, never the host."""
+    of cs_install_systemd) lives at /etc/systemd/system/cortexsim-agent.service
+    — inside the ephemeral container, never the host.
+
+    ROOT-ONLY. The installer branches on `[ "$(id -u)" = "0" ]`: root gets a
+    system unit, everyone else a USER unit under ~/.config/systemd/user. This
+    test asserts "installed system unit:", so it is only meaningful as root.
+    The CI workflow's `backend` job runs pytest inside the prod image (root)
+    and does exercise it; the legacy `test` workflow's `python` job is a bare
+    `runs-on: ubuntu-22.04` with no container, so it runs as `runner` and the
+    assertion could never hold there. It failed on main continuously for that
+    reason — the skip makes the gap visible instead of red."""
     fakebin = sandbox["env"]["PATH"].split(os.pathsep)[0]
     syslog = tmp_path / "systemctl.log"
     with open(os.path.join(fakebin, "systemctl"), "w") as f:

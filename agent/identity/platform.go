@@ -68,6 +68,18 @@ func Resolve(requested string) Resolution {
 func ResolveFor(goos, requested, currentUser string) Resolution {
 	mode, user, unknown := ResolveIdentity(requested)
 
+	if goos == "darwin" && mode == "runuser" {
+		// macOS is a declared impersonation platform (spec
+		// impersonation_platforms = [linux, darwin]) and 110 corpus steps target
+		// it — but it has NO runuser: that is util-linux, and BSD su takes no -s
+		// flag either. Emitting the Linux wrapper here made every identity step
+		// on a macOS beacon exit 127 "command not found", which reads in a run
+		// record as a failed TTP rather than as a wrapper the host cannot run.
+		// sudo exists on macOS and, wrapped in /bin/sh -c, preserves the shell
+		// semantics this corpus depends on.
+		return Resolution{Mode: "sudo_sh", Username: user, Unknown: unknown, Honoured: true}
+	}
+
 	if goos != "windows" {
 		// POSIX: the harness can actually impersonate. An unknown account still
 		// resolves to runuser and fails loudly at execution time (non-zero exit

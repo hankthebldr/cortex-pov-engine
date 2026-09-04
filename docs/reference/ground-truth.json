@@ -25,12 +25,12 @@
     "tier4_undeclared": 0
   },
   "assertions": {
-    "artifacts_total": 22,
+    "artifacts_total": 28,
     "boot_verified": true,
     "by_validation_class": {
       "AUT": 3,
-      "PLT": 4,
-      "POS": 15
+      "PLT": 7,
+      "POS": 18
     },
     "rejected": 0,
     "warnings": 0

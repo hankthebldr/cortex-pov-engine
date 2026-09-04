@@ -1,32 +1,49 @@
 {
-  "_comment": "Canonical CortexSim identity-harness spec — the SINGLE source of truth shared by the push-mode bash generator (core/engine/push_generator.py via core/engine/identity_spec.py) and the pull-mode Go beacon (agent/identity, validated against this file by harness_spec_test.go). A scenario step's `identity` is a USERNAME string; both execution paths resolve it to the same {mode, wrapper} so a scenario behaves identically on push and pull. GAP-PUSH-001.",
+  "_comment": "Canonical CortexSim identity-harness spec \u2014 the SINGLE source of truth shared by the push-mode bash generator (core/engine/push_generator.py via core/engine/identity_spec.py) and the pull-mode Go beacon (agent/identity, validated against this file by harness_spec_test.go). A scenario step's `identity` is a USERNAME string; both execution paths resolve it to the same {mode, wrapper} so a scenario behaves identically on push and pull. GAP-PUSH-001.",
   "version": 1,
-  "direct_identities": ["root", "container-runtime", "direct"],
+  "direct_identities": [
+    "root",
+    "container-runtime",
+    "direct"
+  ],
   "service_accounts": [
-    "www-data",
-    "postgres",
+    "app",
+    "developer",
     "mysql",
-    "node",
-    "python3",
     "nobody",
-    "svc-backup"
+    "node",
+    "postgres",
+    "python3",
+    "runner",
+    "svc-backup",
+    "vertex-agent",
+    "www-data"
   ],
   "modes": {
     "direct": "run the command as-is (no impersonation wrapper)",
-    "runuser": "runuser -l <username> -c '<command>' (preferred — cleanest causality)",
+    "runuser": "runuser -l <username> -c '<command>' (preferred \u2014 cleanest causality)",
     "sudo_u": "sudo -u <username> <args...>",
-    "su": "su -s /bin/bash <username> -c '<command>'"
+    "su": "su -s /bin/bash <username> -c '<command>'",
+    "sudo_sh": "sudo -n -u <username> /bin/sh -c '<command>' (darwin \u2014 macOS has no runuser and BSD su takes no -s; -n so a non-root beacon fails fast instead of hanging on a password prompt)"
   },
   "resolution": {
     "empty_or_direct_identity": "direct",
-    "known_service_account": "runuser",
-    "unknown_username": "runuser (best-effort; emit a WARN)"
+    "known_service_account": "runuser on linux; sudo_sh on darwin (no runuser there) \u2014 see modes",
+    "unknown_username": "same wrapper as a known account, best-effort, plus a WARN (linux: runuser; darwin: sudo_sh)"
   },
-  "impersonation_platforms": ["linux", "darwin"],
+  "impersonation_platforms": [
+    "linux",
+    "darwin"
+  ],
   "windows": {
-    "_comment": "Windows has NO unattended impersonation primitive available to the beacon: runuser/sudo/su are POSIX-only and runas requires an interactive password prompt. Every non-direct identity therefore collapses to `direct` on Windows and MUST be reported as a degradation in the run record — a step that claims to have run as `administrator` while running as the beacon account is a correctness lie a POV readout would be built on. The single exception is when the beacon process is ALREADY running as the requested principal (e.g. installed as a service under NT AUTHORITY\\SYSTEM), which is verified against the real process token, not assumed. Enforced by agent/identity/platform.go (ResolveFor) and guarded by harness_spec_test.go.",
+    "_comment": "Windows has NO unattended impersonation primitive available to the beacon: runuser/sudo/su are POSIX-only and runas requires an interactive password prompt. Every non-direct identity therefore collapses to `direct` on Windows and MUST be reported as a degradation in the run record \u2014 a step that claims to have run as `administrator` while running as the beacon account is a correctness lie a POV readout would be built on. The single exception is when the beacon process is ALREADY running as the requested principal (e.g. installed as a service under NT AUTHORITY\\SYSTEM), which is verified against the real process token, not assumed. Enforced by agent/identity/platform.go (ResolveFor) and guarded by harness_spec_test.go.",
     "impersonation_supported": false,
-    "resolution": "direct (degraded) — unless the beacon's own account matches the requested identity, in which case it is honoured",
+    "resolution": "direct (degraded) \u2014 unless the beacon's own account matches the requested identity, in which case it is honoured",
     "degradation_must_be_recorded": true
-  }
+  },
+  "windows_identities": [
+    "administrator",
+    "user"
+  ],
+  "_windows_identities_comment": "Accounts the corpus declares on windows-ONLY steps. They are never impersonated \u2014 Windows has no unattended primitive, so ResolveFor collapses them to `direct` and records the degradation, exactly as it does for a service account. They are listed separately from service_accounts because a POSIX beacon must NOT treat them as known: `runuser -l administrator` on Linux is a scenario-authoring error, and S-17 rejects it rather than letting it fail on a customer's host."
 }

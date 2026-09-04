@@ -33,7 +33,22 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // Desktop Chrome's default is 1280x720, which sits BELOW every one of
+        // the console header's progressive-disclosure breakpoints
+        // (cortex-console.css: 1700 / 1600 / 1500 / 1280 / 1120). At 1280 the
+        // brand subtitle, the PANW mark and the whole .brand block are
+        // display:none BY DESIGN — so the shell specs were asserting on chrome
+        // the stylesheet deliberately hides, and failing for a reason that has
+        // nothing to do with the behaviour under test.
+        //
+        // 1920x1080 is above the widest breakpoint (1700), so the console
+        // renders its full chrome and the specs measure the app rather than the
+        // viewport. Responsive collapse is a separate concern and belongs in a
+        // spec that sets its own narrow viewport explicitly.
+        viewport: { width: 1920, height: 1080 },
+      },
     },
   ],
 })

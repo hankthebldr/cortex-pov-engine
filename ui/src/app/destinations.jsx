@@ -92,6 +92,7 @@ export function makeLazySurface(loader, title) {
  * splitting it out would only add a chunk round-trip with no benefit.
  */
 const OperationsView = makeLazySurface(() => import('../components/console/OperationsView.jsx'), 'Library')
+const ComposerView = makeLazySurface(() => import('../components/console/ComposerView.jsx'), 'Composer')
 const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
 const TargetsView = makeLazySurface(() => import('../components/console/TargetsView.jsx'), 'Targets')
 const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs & Proof')
@@ -329,6 +330,13 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
           </div>
           <button className="btn" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</button>
         </div>
+        {/* "What ran last" leads the page: the first question on this surface
+            is never "list every run", it is "what is happening / what just
+            happened". The run list stays below, unchanged. */}
+        <LastRunCard
+          onOpen={(id, tab) => setParams({ run: id, tab }, { replace: true })}
+        />
+        <ScopeHealthStrip />
         <RunList runs={runs} onOpen={(id) => setParams({ run: id, tab: 'live' }, { replace: true })} />
       </div>
     )
@@ -346,6 +354,122 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
         onError={() => {}}
       />
     </Suspense>
+  )
+}
+
+/**
+ * LastRunCard — "Running now" or "Last run", above the run table.
+ *
+ * Reads the SAME derived `activeRun` / `runs` the header pill and the telemetry
+ * strip read, so the three cannot disagree about what is in flight. Every field
+ * is a real value off the run record; where SimCore did not report one (a run
+ * with no `started_at`, a detection count the API omits) the card prints an
+ * explicit dash rather than a zero — a fabricated "0 detections" on a run that
+ * actually detected things is the kind of number that ends up in a customer
+ * readout.
+ */
+function LastRunCard({ onOpen = () => {} }) {
+  const { runs, activeRun } = useEnvironment()
+
+  const running = activeRun
+    ? runs.find((r) => idMatches(runIdOf(r), activeRun.runId)) || null
+    : null
+  const shown = running || runs.find((r) => r && isRunTerminal(r.status)) || null
+
+  if (!shown) {
+    return (
+      <div className="last-run last-run--empty" data-testid="last-run-card">
+        No run has completed on this SimCore yet. Compose a chain, or open a scenario
+        from the Library and launch it.
+      </div>
+    )
+  }
+
+  const id = runIdOf(shown)
+  const isLive = !!running
+  const stats = [
+    ['Status', shown.status || 'unknown'],
+    ['Detections', shown.detected_count != null && shown.expected_detections != null
+      ? `${shown.detected_count} / ${shown.expected_detections}` : '—'],
+    ['Started', shown.started_at || '—'],
+    ['Agent', shown.target_agent_id || shown.agent_id || '—'],
+  ]
+
+  return (
+    <button
+      type="button"
+      className={'last-run' + (isLive ? ' last-run--live' : '')}
+      data-testid="last-run-card"
+      onClick={() => onOpen(id, isLive ? 'live' : 'evidence')}
+    >
+      <div className="last-run__head">
+        <span className="last-run__pulse" aria-hidden="true" />
+        <span className="last-run__eyebrow">{isLive ? 'Running now' : 'Last run'}</span>
+        <span className="mono last-run__id">{id}</span>
+        <span className="last-run__spacer" />
+        <span className="mono last-run__cta">
+          {isLive ? 'Follow the live run →' : 'Open the evidence →'}
+        </span>
+      </div>
+      <div className="last-run__title">
+        {shown.scenario_id || '(scenario unknown)'}
+      </div>
+      <div className="last-run__stats">
+        {stats.map(([k, v]) => (
+          <span className="last-run__stat" key={k}>
+            <span className="last-run__stat-k">{k}</span>
+            <span className="mono last-run__stat-v">{v}</span>
+          </span>
+        ))}
+      </div>
+    </button>
+  )
+}
+
+/**
+ * ScopeHealthStrip — tenant · agent · component health, on the surface where
+ * they matter.
+ *
+ * The redesign's argument for putting these here rather than only in the global
+ * bar: scope is a property of the RUN, and this is the page where a DC asks
+ * "why did that not detect?" — at which point "which tenant was that against,
+ * and was the cloud sensor up?" is the next question. The header switchers stay
+ * where they are; this is a read-only echo of the same provider state, not a
+ * second place to change it.
+ */
+function ScopeHealthStrip() {
+  const { tenant, agent, healthModel } = useEnvironment()
+
+  const degraded = healthModel?.degraded?.length ?? null
+  const tiles = [
+    { k: 'Tenant', v: tenant ? (tenant.name || tenant.id) : 'none selected',
+      note: tenant?.config?.region || tenant?.region || 'no region reported',
+      ok: !!tenant },
+    { k: 'Agent', v: agent ? (agent.hostname || agentIdOf(agent)) : 'none selected',
+      note: agent ? [agent.os, agent.status].filter(Boolean).join(' · ') || 'beacon' : 'pull-mode launches need one',
+      ok: !!agent },
+    { k: 'Readiness',
+      v: healthModel == null ? 'not probed'
+        : !healthModel.reachable ? 'unreachable'
+          : degraded === 0 ? 'all components ok' : `${degraded} degraded`,
+      note: healthModel == null ? 'no /api/health answer yet'
+        : healthModel.gaps?.length ? `${healthModel.gaps.length} not reported by this build` : 'reported by /api/health',
+      ok: healthModel?.reachable === true && degraded === 0 },
+  ]
+
+  return (
+    <div className="scope-health" data-testid="scope-health-strip">
+      {tiles.map((t) => (
+        <div className="scope-health__tile" key={t.k}>
+          <div className="scope-health__label">
+            <span className={'scope-health__dot' + (t.ok ? ' scope-health__dot--ok' : '')} />
+            {t.k}
+          </div>
+          <div className="mono scope-health__value">{t.v}</div>
+          <div className="scope-health__note">{t.note}</div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -414,6 +538,14 @@ const TenantsSurface = withSuspense(TenantManager)
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 export const DESTINATIONS = [
+  // Composer leads Operate: it is Phase 2 of the POV model and the only surface
+  // on which a chain is BUILT rather than browsed or replayed. It is NOT the
+  // default destination — Library is, deliberately, because the fastest path
+  // for most sessions is still an existing Unit 42-anchored chain, and landing
+  // a new DC on an empty canvas would hide the 100+ scenarios that already
+  // exist. Composer is one click away, and deep-linkable as
+  // `#/composer?from=SIM-EDR-001`.
+  { id: 'composer',     label: 'Composer',      group: 'Operate',        icon: '⌗', Component: ComposerView },
   { id: 'library',      label: 'Library',       group: 'Operate',        icon: '▤', Component: LibrarySurface,      badge: 'scenarioCount' },
   { id: 'runs',         label: 'Runs & Proof',  group: 'Operate',        icon: '◈', Component: RunsSurface,         badge: 'live' },
   { id: 'coverage',     label: 'Coverage',      group: 'Analyze',        icon: '▦', Component: CoverageSurface },
