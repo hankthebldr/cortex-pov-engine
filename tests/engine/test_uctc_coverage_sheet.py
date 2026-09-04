@@ -28,3 +28,25 @@ def test_rows_to_csv_text_is_deterministic():
     assert a == b
     assert a.splitlines()[0] == ",".join(COLUMNS)
     assert a.endswith("\n")
+import pytest
+from engine.uctc_coverage_sheet import scoreboard_markdown, write_xlsx
+
+
+def test_scoreboard_markdown_counts_and_is_deterministic():
+    rows = build_rows(_specs(), {"TC-EDR-05"}, {"TC-CSPM-02"})
+    md = scoreboard_markdown(rows)
+    assert md == scoreboard_markdown(rows)          # deterministic
+    assert "| DET |" in md
+    assert "authored" in md
+    assert "tenant-verified" in md.lower()
+
+
+def test_write_xlsx_roundtrip(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    rows = build_rows(_specs(), {"TC-EDR-05"}, set())
+    out = tmp_path / "sheet.xlsx"
+    write_xlsx(str(out), rows)
+    wb = openpyxl.load_workbook(out, read_only=True)
+    ws = wb["Engine Coverage v2.3"]
+    header = [c.value for c in next(ws.iter_rows(max_row=1))]
+    assert header == COLUMNS
