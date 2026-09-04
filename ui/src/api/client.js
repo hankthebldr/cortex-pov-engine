@@ -244,6 +244,94 @@ export async function downloadScenario(id, format = 'bash') {
   return response.blob()
 }
 
+// ─── Composer drafts ──────────────────────────────────────────────────────────
+// The draft CRUD surface (POST/GET/PUT/DELETE /api/scenarios/drafts). Drafts are
+// status='draft' Scenario rows persisted by the Composer; they are deliberately
+// ABSENT from the Library list (GET /api/scenarios), coverage and UC/TC evidence
+// — these routes are the ONLY surface that lists them.
+
+/**
+ * POST /api/scenarios/drafts
+ *
+ * Persist a Composer draft. `body` is the frozen snake_case `DraftCreateRequest`
+ * (build it with `draftToApi`).
+ *
+ * @param {Object} body  DraftCreateRequest
+ * @returns {Promise<Object>} 201 — full Scenario.to_dict() + a `launchable` block
+ *   {launchable, chain_valid, tc_bound, reasons[], refusal_code}. Throws apiError
+ *   on 422 {code:'DRAFT_SCHEMA_INVALID'} / 409 {code:'DRAFT_ID_EXISTS'}.
+ */
+export async function createDraft(body) {
+  return request('/api/scenarios/drafts', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/**
+ * GET /api/scenarios/drafts[?author=...]
+ *
+ * Returns the RAW wrapper (like getTtps / the UC-TC helpers), not a bare array.
+ *
+ * @param {Object} [opts]
+ * @param {string} [opts.author]  optional author filter
+ * @returns {Promise<{drafts:Array, total:number, projection:'summary'}>}
+ */
+export async function listDrafts({ author } = {}) {
+  const qs = new URLSearchParams()
+  if (author) qs.set('author', author)
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/scenarios/drafts${suffix}`)
+}
+
+/**
+ * GET /api/scenarios/drafts/:id
+ * @param {string} id  e.g. 'SIM-DRAFT-credential-dumping'
+ * @returns {Promise<Object>} full Scenario.to_dict() + `launchable` block.
+ *   404 {code:'DRAFT_NOT_FOUND'} for a missing or non-draft id.
+ */
+export async function getDraft(id) {
+  return request(`/api/scenarios/drafts/${encodeURIComponent(id)}`)
+}
+
+/**
+ * PUT /api/scenarios/drafts/:id  (full-replace semantics)
+ * @param {string} id
+ * @param {Object} body  DraftCreateRequest (build with `draftToApi`)
+ * @returns {Promise<Object>} updated Scenario.to_dict() + `launchable` block.
+ *   404 DRAFT_NOT_FOUND / 409 DRAFT_NOT_EDITABLE / 422 DRAFT_SCHEMA_INVALID.
+ */
+export async function updateDraft(id, body) {
+  return request(`/api/scenarios/drafts/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/**
+ * DELETE /api/scenarios/drafts/:id
+ * @param {string} id
+ * @returns {Promise<null>} 204. 404 DRAFT_NOT_FOUND / 409 DRAFT_NOT_DELETABLE.
+ */
+export async function deleteDraft(id) {
+  return request(`/api/scenarios/drafts/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+/**
+ * GET /api/scenarios/drafts/:id/launchable
+ *
+ * Read-only mirror of the server's authoritative launch gate — mutates nothing,
+ * issues no outbound calls. Lets the console enable/disable Launch without
+ * attempting a launch.
+ *
+ * @param {string} id
+ * @returns {Promise<{launchable:boolean, chain_valid:boolean, tc_bound:boolean,
+ *   reasons:string[], refusal_code:('DRAFT_NOT_TC_BOUND'|null)}>}
+ */
+export async function getDraftLaunchable(id) {
+  return request(`/api/scenarios/drafts/${encodeURIComponent(id)}/launchable`)
+}
+
 // ─── Runs ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -278,6 +366,26 @@ export async function getRuns() {
  */
 export async function getRun(runId) {
   return request(`/api/runs/${runId}`)
+}
+
+/**
+ * GET /api/runs/:runId/causality
+ *
+ * The REAL causality graph for a run — the Run lens's only data source. Unwraps
+ * the `{causality_graph}` envelope and returns the bare graph. Read-only; no
+ * tenant calls. The edge `state` (EXPECTED|CONFIRMED|BROKEN) is ground truth —
+ * the console renders it verbatim and never fabricates a CONFIRMED.
+ *
+ * @param {string} runId
+ * @returns {Promise<{run_id:string, scenario_id:string, run_status:string,
+ *   nodes:Array, edges:Array<{source,target,kind,state,rationale}>, summary:Object,
+ *   causality_summary:{chain_completeness_pct:number, stitched_incident:boolean,
+ *   broken_stitches:Array, dual_control_verdict:string}}>}
+ *   404 {code:'RUN_NOT_FOUND'} / 503 CAUSALITY_ENGINE_UNAVAILABLE / 500 CAUSALITY_BUILD_FAILED.
+ */
+export async function getRunCausality(runId) {
+  const data = await request(`/api/runs/${encodeURIComponent(runId)}/causality`)
+  return data?.causality_graph ?? data
 }
 
 // ─── Results ─────────────────────────────────────────────────────────────────
