@@ -263,3 +263,25 @@ def test_step_may_be_detectionless_if_chain_has_one():
     schema = DraftScenarioSchema(**draft)
     kwargs = draft_to_orm_kwargs(schema)
     assert kwargs["detection_types"] == ["BIOC"]
+
+
+def test_draft_step_may_omit_identity_and_technique():
+    """A blank step the DC just dropped on the canvas carries no identity and no
+    technique yet (both are strict-required on the corpus StepSchema). The draft
+    schema must accept it — otherwise a from-scratch save 422s — and the
+    converter defaults identity to 'direct' so the run path is well-defined,
+    while mitre_technique may stay unset (bound later from a TTP card)."""
+    blank = {
+        "id": "step-01",
+        "name": "New command step",
+        "command": "whoami",
+        "expected_detections": [{"plane": "EDR", "type": "BIOC", "description": "x"}],
+    }
+    schema = DraftScenarioSchema(name="wip", plane="EDR", steps=[blank])
+    assert schema.steps[0].identity is None
+    assert schema.steps[0].mitre_technique is None
+
+    kwargs = draft_to_orm_kwargs(schema)
+    assert kwargs["steps"][0]["identity"] == "direct"
+    # A blank chain still has a plane and its detection type union.
+    assert kwargs["status"] == "draft"

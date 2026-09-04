@@ -80,6 +80,26 @@ class DraftValidationError(ValueError):
 # ---------------------------------------------------------------------------
 
 
+class DraftStepSchema(StepSchema):
+    """A draft step relaxes exactly the two fields a work-in-progress chain may
+    not have filled yet, while keeping everything else — ``id`` / ``name`` /
+    ``command`` required, the detection shape, and the causality-spine rules —
+    as strict as the corpus loader:
+
+    - ``identity``: how the step runs. A blank step the DC just dropped on the
+      canvas has none; it defaults to ``direct`` (the agent's own user) at
+      ORM-conversion so the run path is always well-defined.
+    - ``mitre_technique``: bound later from a TTP card. Optional here so the
+      step can be authored before its technique is chosen.
+
+    Reusing ``StepSchema`` for the rest means the strict command/detection/spine
+    validation is not forked — only these two fields are widened.
+    """
+
+    identity: Optional[str] = None
+    mitre_technique: Optional[str] = None
+
+
 class DraftScenarioSchema(BaseModel):
     """A composer-authored draft chain, validated for structural well-formedness
     but NOT for a UC/TC index binding (that is the launch gate's job).
@@ -91,7 +111,7 @@ class DraftScenarioSchema(BaseModel):
     # ── Required ────────────────────────────────────────────────────────────
     name: str
     plane: str
-    steps: list[StepSchema]
+    steps: list[DraftStepSchema]
 
     # ── Optional identity / provenance ──────────────────────────────────────
     author: Optional[str] = None
@@ -295,6 +315,12 @@ def draft_to_orm_kwargs(
     override).
     """
     steps = [s.model_dump() for s in draft.steps]
+    # A blank draft step carries no identity; the run path needs a defined one,
+    # so an unset identity persists as 'direct' (the agent's own user) rather
+    # than null. mitre_technique may stay null — it is metadata, bound later.
+    for s in steps:
+        if not s.get("identity"):
+            s["identity"] = "direct"
 
     # detection_types = union of every step's expected_detections[].type,
     # sorted and de-duped. The schema guarantees this is non-empty.
