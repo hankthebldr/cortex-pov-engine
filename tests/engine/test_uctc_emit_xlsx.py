@@ -41,3 +41,14 @@ def test_check_fails_when_stale(tmp_path):
         assert r.returncode == 1
     finally:
         open(csv_path, "w").write(original)   # restore
+
+
+def test_committed_sheet_is_in_sync_on_head():
+    """The committed engine_coverage_v2.3.csv must match a fresh regeneration.
+    This is the CI honesty gate: a merged change that shifts coverage without
+    regenerating the sheet fails here."""
+    r = _run("--emit-xlsx", "--check")
+    assert r.returncode == 0, (
+        "engine coverage sheet is stale on HEAD — run `make uctc-sheet` and commit\n"
+        + r.stderr
+    )

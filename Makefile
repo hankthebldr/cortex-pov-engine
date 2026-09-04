@@ -146,7 +146,7 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-adapters check-streamer check-agent-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + ground-truth gates
+validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + ground-truth gates
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -226,6 +226,12 @@ unscoreable-report: ## regenerate docs/uc_tc_mapping/unscoreable-tcs.md from the
 
 crosswalk-report: ## UC/TC crosswalk reconciliation summary
 	python3 scripts/uctc_crosswalk_v2.2.py --report
+
+uctc-sheet: ## regenerate the UC/TC-keyed engine coverage sheet + scoreboard
+	python3 scripts/uctc_crosswalk_v2.2.py --emit-xlsx
+
+check-uctc-sheet: ## gate: committed engine coverage sheet matches the tree (fail-closed)
+	python3 scripts/uctc_crosswalk_v2.2.py --emit-xlsx --check
 
 # scripts/generate_ground_truth.py runs uctc_crosswalk_v2.2.py --report and
 # coverage_report.py --json (the two named ground-truth commands) plus direct
