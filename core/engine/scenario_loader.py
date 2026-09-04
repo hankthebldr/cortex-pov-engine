@@ -88,6 +88,28 @@ _PIVOTS = {
 }
 _PLATFORMS = {"linux", "windows", "macos", "container", "k8s"}
 
+# Canonical detection-plane vocabulary. Single source of truth for the plane
+# enum, shared by ScenarioSchema.validate_plane (strict corpus loader) and the
+# composer DraftScenarioSchema so the two cannot drift into two notions of a
+# valid plane.
+VALID_PLANES: frozenset[str] = frozenset({
+    "EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS",
+    # AI / Browser / Agentic detection-set expansion
+    "AI_ACCESS",   # Cortex AI Access Security — egress to AI providers
+    "AIRS",        # Cortex AI Runtime Security — vulnerable LLM app
+    "AI_SPM",      # Cortex AI Security Posture Management — static AI asset inventory + config
+    "BROWSER",     # Prisma Browser — DLP / extension / phishing
+    "KOI",         # Agentic endpoint / supply-chain (MCPs, skills, exts)
+    # Exposure-management / posture / intel planes (IaC-backed surfaces)
+    "ASM",         # Cortex ASM / Xpanse — internet-exposed attack-surface discovery
+    "CSPM",        # Cortex Cloud Posture Management — misconfig findings
+    "TIM",         # Cortex Threat Intel Management — IOC feed + matching traffic
+    # Email line of defense — Proofpoint TAP / M365 ingestion + phishing/BEC correlation
+    "EMAIL",
+    # Data Loss Prevention & Data Security
+    "DLP",
+})
+
 
 class CgoAnchorSchema(BaseModel):
     """Scenario-level Causality Group Owner anchor. Drives the CGO node's
@@ -233,6 +255,57 @@ class AdditionalTechnique(BaseModel):
     name: str = ""
 
 
+def validate_causality_spine(steps: list[Any]) -> None:
+    """Cross-check a declared step-level causality spine, raising ``ValueError``
+    on the first violation.
+
+    (a) every ``causality.parent_step`` must be the id of an EARLIER step
+        (index < the declaring step) — forward/self/unknown refs are errors.
+    (b) at most ONE step may omit ``causality`` (the root) once any step
+        declares it, keeping a single connected spine.
+
+    A collection where NO step declares causality is legacy/star and passes
+    untouched. ``steps`` may be any objects exposing ``.id`` and ``.causality``
+    (with ``.parent_step``) — ``StepSchema`` from the strict loader and the
+    composer draft schema both qualify, so scenarios and drafts share ONE
+    spine implementation and cannot drift into two notions of a valid spine.
+    """
+    step_ids = [s.id for s in steps]
+    index_of = {sid: i for i, sid in enumerate(step_ids)}
+
+    declared = [s for s in steps if s.causality is not None]
+    if not declared:
+        return  # legacy star — no contract
+
+    for i, step in enumerate(steps):
+        caus = step.causality
+        if caus is None:
+            continue
+        parent = caus.parent_step
+        if parent == step.id:
+            raise ValueError(
+                f"step '{step.id}' causality.parent_step is a self-reference"
+            )
+        if parent not in index_of:
+            raise ValueError(
+                f"step '{step.id}' causality.parent_step references unknown "
+                f"step '{parent}'"
+            )
+        if index_of[parent] >= i:
+            raise ValueError(
+                f"step '{step.id}' causality.parent_step '{parent}' must be an "
+                f"EARLIER step (forward/self references are not allowed)"
+            )
+
+    roots = [s for s in steps if s.causality is None]
+    if len(roots) > 1:
+        raise ValueError(
+            "a declared causality spine allows at most one root step "
+            f"(steps without causality), got {len(roots)}: "
+            f"{[s.id for s in roots]}"
+        )
+
+
 class ScenarioSchema(BaseModel):
     scenario_id: str
     name: str
@@ -366,25 +439,8 @@ class ScenarioSchema(BaseModel):
     @field_validator("plane")
     @classmethod
     def validate_plane(cls, v: str) -> str:
-        allowed = {
-            "EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS",
-            # AI / Browser / Agentic detection-set expansion
-            "AI_ACCESS",   # Cortex AI Access Security — egress to AI providers
-            "AIRS",        # Cortex AI Runtime Security — vulnerable LLM app
-            "AI_SPM",      # Cortex AI Security Posture Management — static AI asset inventory + config
-            "BROWSER",     # Prisma Browser — DLP / extension / phishing
-            "KOI",         # Agentic endpoint / supply-chain (MCPs, skills, exts)
-            # Exposure-management / posture / intel planes (IaC-backed surfaces)
-            "ASM",         # Cortex ASM / Xpanse — internet-exposed attack-surface discovery
-            "CSPM",        # Cortex Cloud Posture Management — misconfig findings
-            "TIM",         # Cortex Threat Intel Management — IOC feed + matching traffic
-            # Email line of defense — Proofpoint TAP / M365 ingestion + phishing/BEC correlation
-            "EMAIL",
-            # Data Loss Prevention & Data Security
-            "DLP",
-        }
-        if v not in allowed:
-            raise ValueError(f"plane must be one of {allowed}, got '{v}'")
+        if v not in VALID_PLANES:
+            raise ValueError(f"plane must be one of {set(VALID_PLANES)}, got '{v}'")
         return v
 
     @field_validator("detection_types")
@@ -437,42 +493,10 @@ class ScenarioSchema(BaseModel):
             declares it, keeping a single connected spine.
 
         A scenario where NO step declares causality is legacy/star and passes
-        untouched.
+        untouched. Delegates to the module-level ``validate_causality_spine`` so
+        scenarios and composer drafts share one implementation.
         """
-        step_ids = [s.id for s in self.steps]
-        index_of = {sid: i for i, sid in enumerate(step_ids)}
-
-        declared = [s for s in self.steps if s.causality is not None]
-        if not declared:
-            return self  # legacy star — no contract
-
-        for i, step in enumerate(self.steps):
-            caus = step.causality
-            if caus is None:
-                continue
-            parent = caus.parent_step
-            if parent == step.id:
-                raise ValueError(
-                    f"step '{step.id}' causality.parent_step is a self-reference"
-                )
-            if parent not in index_of:
-                raise ValueError(
-                    f"step '{step.id}' causality.parent_step references unknown "
-                    f"step '{parent}'"
-                )
-            if index_of[parent] >= i:
-                raise ValueError(
-                    f"step '{step.id}' causality.parent_step '{parent}' must be an "
-                    f"EARLIER step (forward/self references are not allowed)"
-                )
-
-        roots = [s for s in self.steps if s.causality is None]
-        if len(roots) > 1:
-            raise ValueError(
-                "a declared causality spine allows at most one root step "
-                f"(steps without causality), got {len(roots)}: "
-                f"{[s.id for s in roots]}"
-            )
+        validate_causality_spine(self.steps)
         return self
 
     @model_validator(mode="after")
