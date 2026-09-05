@@ -11,10 +11,13 @@ to route them, but only as a skeleton:
     step's task is enqueued to that agent. A target that is not enrolled refuses
     the whole launch (TARGET_AGENT_NOT_ENROLLED), all-or-nothing — never a
     silent no-op or a task nothing will collect.
-  * An ``eal`` step is recognised and validated but NOT dispatched — it is
-    recorded on the run as ``EAL_DISPATCH_PENDING``. No CampaignExecutor runs and
-    no EAL result is fabricated (that is Phase 3b). Its expected detections still
-    seed honest not-fired Result rows.
+  * An ``eal`` step is dispatched IN-PROCESS at launch (Phase 3b): the
+    orchestrator builds a Campaign and runs it through ``CampaignExecutor`` in
+    dry_run (records pre-rendered, nothing POSTed), injecting the shared identity
+    principal via the binding->params adapter, seeding the step's detections with
+    a real executed_at, and recording the real dispatch outcome (dry_run /
+    dispatched / not_delivered / error) on ``Run.channel_dispatch`` — never a
+    fabricated ingest. An all-EAL run terminalises at launch (no beacon task).
 
 Every channel shares the ONE stitch binding the orchestrator resolves once
 (seed=run_id), exactly as Phase 2 does for the single-channel run.
@@ -102,8 +105,13 @@ def _agent_step(step_id, *, target=None):
 
 
 def _eal_step(step_id, *, plugin="ngfw_eal_emitter", params=None):
+    # The analytics emitters require a collector_url even for a dry-run dispatch
+    # (params validate regardless of dry_run), so give one by default.
     return {"id": step_id, "name": step_id, "identity": "root",
-            "channel": "eal", "eal": {"plugin": plugin, "params": params or {}},
+            "channel": "eal",
+            "eal": {"plugin": plugin,
+                    "params": params if params is not None
+                    else {"collector_url": "https://collector.lab.invalid/eal"}},
             "expected_detections": [{"type": "Analytics", "description": step_id}]}
 
 
@@ -240,7 +248,12 @@ def test_missing_target_agent_refuses_all_or_nothing(session_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_eal_step_yields_pending_marker_and_runs_no_campaign(session_factory):
+def test_eal_step_dispatches_in_process_dry_run(session_factory):
+    """Phase 3b: an eal step is dispatched IN-PROCESS (dry_run) at launch — not
+    parked at EAL_DISPATCH_PENDING. Only the agent step is on a beacon task; the
+    eal step's detections ARE seeded (a real dispatch) and its ledger entry
+    carries the real dry_run outcome. No EalCampaignRun row (in-process, not the
+    campaign API)."""
     from models import QueuedTask, Result, Run
 
     async def _run():
@@ -256,7 +269,7 @@ def test_eal_step_yields_pending_marker_and_runs_no_campaign(session_factory):
                 target_agent_id="agent-1",
             )
             assert result.success
-            assert "EAL_DISPATCH_PENDING" in result.message
+            assert "dispatched in-process" in result.message
 
             # The eal step is NOT on any beacon task — only the agent step is.
             rows = (await db.execute(select(QueuedTask))).scalars().all()
@@ -265,26 +278,25 @@ def test_eal_step_yields_pending_marker_and_runs_no_campaign(session_factory):
             assert [s["id"] for s in rows[0].payload["steps"]] == ["step-01"]
 
             run = (await db.execute(select(Run).where(Run.run_id == result.run_id))).scalar_one()
-            assert run.channel_dispatch == [
-                {"step_id": "step-01", "channel": "agent", "target": "agent-1",
-                 "status": "enqueued", "code": None},
-                {"step_id": "step-02", "channel": "eal", "plugin": "ngfw_eal_emitter",
-                 "target": None, "status": "pending", "code": "EAL_DISPATCH_PENDING",
-                 "detail": "EAL dispatch wired in Phase 3b; no campaign run, no "
-                           "EAL result fabricated"},
-            ]
+            ledger = run.channel_dispatch
+            assert ledger[0] == {"step_id": "step-01", "channel": "agent",
+                                 "target": "agent-1", "status": "enqueued", "code": None}
+            eal_entry = ledger[1]
+            assert eal_entry["step_id"] == "step-02" and eal_entry["channel"] == "eal"
+            assert eal_entry["plugin"] == "ngfw_eal_emitter"
+            assert eal_entry["status"] == "dry_run"        # real dispatch outcome, not pending
+            assert eal_entry["code"] != "EAL_DISPATCH_PENDING"
 
-            # An EAL step is NOT dispatched in 3a (EAL_DISPATCH_PENDING), so its
-            # detections are NOT seeded as Result rows here — seeding with
-            # executed_at=now would falsely claim a step that never ran did.
-            # 3b seeds them when it actually dispatches the campaign; the pending
-            # status lives in channel_dispatch (asserted above), not a fake row.
+            # The eal step's detection IS seeded now — it actually ran (dry_run).
             eal_results = (await db.execute(
                 select(Result).where(Result.step_id == "step-02")
             )).scalars().all()
-            assert len(eal_results) == 0
+            assert len(eal_results) == 1
+            assert eal_results[0].observed is False
+            assert eal_results[0].executed_at is not None
 
-            # No EalCampaignRun was created — dispatch did not run a campaign.
+            # In-process dispatch does NOT persist an EalCampaignRun (that is the
+            # campaign API path, not this one).
             from models import EalCampaignRun
             assert (await db.execute(select(EalCampaignRun))).scalars().all() == []
 
@@ -314,7 +326,8 @@ def test_channel_dispatch_is_in_run_to_dict(session_factory):
             run = (await db.execute(select(Run).where(Run.run_id == result.run_id))).scalar_one()
             d = run.to_dict()
             assert "channel_dispatch" in d
-            assert d["channel_dispatch"][1]["code"] == "EAL_DISPATCH_PENDING"
+            assert d["channel_dispatch"][1]["channel"] == "eal"
+            assert d["channel_dispatch"][1]["status"] == "dry_run"
 
     asyncio.run(_run())
 
@@ -359,32 +372,35 @@ def test_build_channel_dispatch_preserves_step_order_and_markers():
 # ---------------------------------------------------------------------------
 
 
-def test_all_eal_run_is_refused_not_parked_at_running(session_factory):
-    """An all-EAL run has no beacon work in 3a. It must be refused honestly and
-    the seeded run terminalised — never left at 'running' with zero tasks that
-    nothing would ever complete."""
-    from models import Run, QueuedTask
+def test_all_eal_run_dispatches_in_process_and_terminalises(session_factory):
+    """Phase 3b: an all-EAL run IS dispatchable — its EAL steps run in-process
+    (dry_run) at launch and the run terminalises 'complete' immediately (no
+    beacon task to wait on, open_tasks=0). Detections are seeded; nothing hangs
+    at 'running'."""
+    from models import Run, QueuedTask, Result
 
     async def _run():
         orch = _fresh_orchestrator()
         async with session_factory() as db:
             await _seed_agent(db, "agent-1")
             await _seed_scenario(db, steps=[
-                _eal_step("step-01"),
-                _eal_step("step-02", plugin="okta_sso"),
+                _eal_step("step-01", plugin="ngfw_eal_emitter"),
+                _eal_step("step-02", plugin="ngfw_eal_emitter"),
             ])
             result = await orch.launch(
                 scenario_id="SIM-EDR-001", mode="pull", db=db, target_agent_id="agent-1",
             )
-            assert result.success is False
-            assert result.error_code == "EAL_ONLY_NOT_DISPATCHABLE"
+            assert result.success is True
+            # No beacon task — EAL ran in-process.
             assert (await db.execute(select(QueuedTask))).scalars().all() == []
             run = (await db.execute(
                 select(Run).where(Run.run_id == result.run_id)
             )).scalar_one()
-            assert run.status == "failed"
+            assert run.status == "complete"
             assert run.completed_at is not None
-            assert run.status != "running"
+            assert run.open_tasks == 0
+            # Both eal steps' detections seeded.
+            assert len((await db.execute(select(Result))).scalars().all()) == 2
 
     asyncio.run(_run())
 
@@ -469,5 +485,34 @@ def test_multi_endpoint_run_fails_if_any_endpoint_fails(session_factory):
                 select(Run).where(Run.run_id == result.run_id)
             )).scalar_one()
             assert run.completed_at is not None
+
+    asyncio.run(_run())
+
+
+def test_eal_step_with_unknown_plugin_reports_error_not_fabrication(session_factory):
+    """A misconfigured eal plugin must surface an honest error in the ledger,
+    never a fabricated dispatch. The agent step still runs; the run proceeds."""
+    from models import Run, QueuedTask
+
+    async def _run():
+        orch = _fresh_orchestrator()
+        async with session_factory() as db:
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[
+                _agent_step("step-01"),
+                _eal_step("step-02", plugin="no_such_plugin"),
+            ])
+            result = await orch.launch(
+                scenario_id="SIM-EDR-001", mode="pull", db=db, target_agent_id="agent-1",
+            )
+            assert result.success
+            # Agent step still enqueued to its beacon.
+            assert len((await db.execute(select(QueuedTask))).scalars().all()) == 1
+            run = (await db.execute(
+                select(Run).where(Run.run_id == result.run_id)
+            )).scalar_one()
+            eal_entry = run.channel_dispatch[1]
+            assert eal_entry["status"] == "error"
+            assert eal_entry["code"] == "PLUGIN_MISCONFIGURED"
 
     asyncio.run(_run())

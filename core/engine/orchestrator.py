@@ -322,6 +322,133 @@ class Orchestrator:
     # pull path
     # ------------------------------------------------------------------
 
+    async def _dispatch_eal_in_process(
+        self,
+        run_id: str,
+        scenario: Any,
+        eal_steps: list[dict[str, Any]],
+        binding: Any,
+        executed_at: datetime,
+        db: AsyncSession,
+    ) -> dict[str, dict[str, Any]]:
+        """Dispatch the run's EAL-channel steps IN-PROCESS (Phase 3b).
+
+        Builds ONE Campaign from the eal steps — each step's authored
+        ``eal.params`` merged with the stitch binding projected onto that
+        plugin's own fields (the shared identity principal via ``canary_token``;
+        see ``eal_simulator.stitch_params``) — and runs it synchronously through
+        ``CampaignExecutor``. Defaults to **dry_run** (records pre-rendered,
+        nothing POSTed): the safe baseline. Real delivery (``dry_run=false``) is
+        a consent-gated follow-up, not this cut. Seeds each eal step's
+        ``expected_detections`` as ``Result`` rows with a REAL ``executed_at``,
+        and returns a per-step outcome for the ``channel_dispatch`` ledger. It
+        NEVER fabricates an ingest or a CONFIRMED verdict (Gate A5).
+        """
+        from eal_simulator import get_default_registry  # noqa: PLC0415
+        from eal_simulator.executor import CampaignExecutor  # noqa: PLC0415
+        from eal_simulator.campaign import Campaign, CampaignStep  # noqa: PLC0415
+        from eal_simulator.stitch_params import (  # noqa: PLC0415
+            stitch_binding_to_eal_params,
+        )
+        from models import Result  # noqa: PLC0415
+
+        registry = get_default_registry()
+        outcomes: dict[str, dict[str, Any]] = {}
+        campaign_steps: list[CampaignStep] = []
+        for s in eal_steps:
+            step_id = s.get("id")
+            eal = s.get("eal") or {}
+            plugin_name = eal.get("plugin")
+            try:
+                plugin_cls = registry.get(plugin_name) if plugin_name else None
+            except KeyError:
+                plugin_cls = None
+            if plugin_cls is None:
+                outcomes[step_id] = {
+                    "status": "error", "code": "PLUGIN_MISCONFIGURED",
+                    "detail": f"plugin '{plugin_name}' is not registered",
+                }
+                continue
+            injected = stitch_binding_to_eal_params(binding, plugin_cls)
+            params = {**(eal.get("params") or {}), **injected}
+            try:
+                campaign_steps.append(CampaignStep(
+                    step_id=step_id, plugin=plugin_name, params=params,
+                ))
+            except Exception as exc:  # bad step_id shape etc. — honest per-step error
+                outcomes[step_id] = {
+                    "status": "error", "code": "EAL_STEP_INVALID", "detail": str(exc),
+                }
+
+        if campaign_steps:
+            try:
+                campaign = Campaign(
+                    # Ephemeral, not persisted; run_id (passed to execute) is the
+                    # real disambiguator. campaign_id must match CMP-{LABEL}-{NNN}.
+                    campaign_id="CMP-COMPOSER-001",
+                    name=f"composer eal dispatch {run_id[:8]}",
+                    steps=campaign_steps,
+                    dry_run=True,  # safe baseline; real delivery is consent-gated (follow-up)
+                )
+                executor = CampaignExecutor(registry=registry)
+                state = await executor.execute(campaign, run_id=run_id)
+            except Exception as exc:  # a dispatch fault must never crash the launch
+                logger.exception("EAL in-process dispatch faulted run_id=%s", run_id)
+                for cs in campaign_steps:
+                    outcomes[cs.step_id] = {
+                        "status": "error", "code": "EAL_DISPATCH_FAULT", "detail": str(exc),
+                    }
+            else:
+                by_step = {r.step_id: r for r in state.step_results}
+                for cs in campaign_steps:
+                    r = by_step.get(cs.step_id)
+                    if r is None:
+                        outcomes[cs.step_id] = {
+                            "status": "error", "code": "EAL_NO_RESULT",
+                            "detail": "executor returned no result for this step",
+                        }
+                        continue
+                    if r.status == "success":
+                        status = "dry_run" if state.dry_run else "dispatched"
+                        detail = (
+                            "dry-run: records pre-rendered, not delivered"
+                            if state.dry_run
+                            else f"{r.events_emitted} record(s) delivered"
+                        )
+                    elif r.status == "skipped":
+                        status, detail = "skipped", "step skipped"
+                    else:
+                        status, detail = "not_delivered", str(r.detail or "delivery failed")
+                    outcomes[cs.step_id] = {
+                        "status": status, "code": None, "detail": detail,
+                    }
+
+        # Seed a Result row per expected detection for the eal steps, with a REAL
+        # executed_at (the seeding 3a deferred): the step actually ran here.
+        for s in eal_steps:
+            step_id = s.get("id")
+            step_name = s.get("name", "")
+            step_technique = s.get("mitre_technique")
+            for det in s.get("expected_detections", []):
+                db.add(Result(
+                    run_id=run_id,
+                    step_id=step_id,
+                    step_name=step_name,
+                    plane=det.get("plane", scenario.plane),
+                    signal_type=det.get("type", "Analytics"),
+                    expected_detection=det.get("description", ""),
+                    observed=False,
+                    executed_at=executed_at,
+                    ttp_ref=det.get("ttp_ref"),
+                    detection_id=det.get("detection_id"),
+                    mitre_technique=step_technique,
+                    verification_xql=det.get("verification_xql"),
+                    kpi_contribution=det.get("kpi_contribution"),
+                    kpi_verdict="pending" if det.get("verification_xql") else None,
+                ))
+        await db.commit()
+        return outcomes
+
     async def _handle_pull(
         self,
         run_id: str,
@@ -418,6 +545,8 @@ class Orchestrator:
         )
 
         channel_dispatch: Optional[list[dict[str, Any]]] = None
+        eal_outcomes: dict[str, dict[str, Any]] = {}
+        now = datetime.utcnow()
 
         if not is_multichannel:
             task = Task(
@@ -443,34 +572,10 @@ class Orchestrator:
             # validated, but NEVER dispatched in 3a (that is 3b).
             agent_partitions, eal_steps = _partition_channels(steps, target_agent_id)
 
-            # An all-EAL run has no beacon work in Phase 3a (EAL dispatch is 3b).
-            # Refuse honestly rather than parking a run at "running" with zero
-            # tasks that nothing would ever complete, and terminate the seeded
-            # run so it is not left orphaned.
-            if not agent_partitions:
-                run_row = (await db.execute(
-                    select(Run).where(Run.run_id == run_id)
-                )).scalar_one_or_none()
-                if run_row:
-                    run_row.status = "failed"
-                    run_row.completed_at = datetime.utcnow()
-                    run_row.channel_dispatch = _build_channel_dispatch(steps, target_agent_id)
-                    await db.commit()
-                logger.warning(
-                    "Launch refused run_id=%s code=EAL_ONLY_NOT_DISPATCHABLE eal_steps=%d",
-                    run_id, len(eal_steps),
-                )
-                return LaunchResult(
-                    success=False,
-                    run_id=run_id,
-                    error=(
-                        "EAL_ONLY_NOT_DISPATCHABLE: every step is channel='eal', "
-                        "whose dispatch lands in Phase 3b — this run has no "
-                        "agent-channel work to execute yet"
-                    ),
-                    error_code="EAL_ONLY_NOT_DISPATCHABLE",
-                    error_detail={"eal_steps": [s.get("id") for s in eal_steps]},
-                )
+            # Phase 3b: an all-EAL run IS dispatchable — its EAL steps run
+            # in-process below and the run terminalises at launch (there is no
+            # beacon task to complete it). n_tasks counts only beacon tasks, so
+            # it is 0 for an all-EAL run.
             n_tasks = len(agent_partitions)
 
             # All-or-nothing: verify every distinct target endpoint is enrolled
@@ -541,23 +646,51 @@ class Orchestrator:
                 self._enqueue(tgt, task)
                 await self._persist_task(db, tgt, task)
 
-            # The honest routing ledger the report/Run lens reads: agent steps
-            # enqueued, eal steps EAL_DISPATCH_PENDING.
-            channel_dispatch = _build_channel_dispatch(steps, target_agent_id)
+            # Phase 3b: dispatch the EAL steps IN-PROCESS (synchronous),
+            # injecting the shared identity principal, and seed their results.
+            # No beacon is involved — the executor runs the campaign here.
+            if eal_steps:
+                eal_outcomes = await self._dispatch_eal_in_process(
+                    run_id, scenario, eal_steps, binding, now, db
+                )
+
+            # The honest routing ledger: agent steps enqueued to their endpoint,
+            # eal steps carrying their real dispatch outcome (dispatched /
+            # dry_run / not_delivered), never a fabrication.
+            channel_dispatch = _build_channel_dispatch(
+                steps, target_agent_id, eal_outcomes=eal_outcomes
+            )
             n_eal = len(eal_steps)
             queued_message = (
                 f"Multi-channel run: {len(steps) - n_eal} agent step(s) queued "
                 f"across {len(agent_partitions)} endpoint(s); {n_eal} eal step(s) "
-                "EAL_DISPATCH_PENDING (dispatch lands in Phase 3b)"
+                "dispatched in-process"
             )
 
-        # Update run status to running (shared by both paths).
+        # Update run status (shared by both paths).
         run_result = await db.execute(
             select(Run).where(Run.run_id == run_id)
         )
         run: Optional[Run] = run_result.scalar_one_or_none()
         if run:
-            run.status = "running"
+            if n_tasks == 0:
+                # All-EAL run: the EAL steps ran in-process synchronously above,
+                # and there is no beacon task to complete the run — so it is
+                # terminal at launch. Failed only if EVERY eal step failed to run
+                # (misconfigured / plugin missing); a dry-run dispatch is a real
+                # dispatch and terminates 'complete'.
+                all_failed = bool(eal_outcomes) and all(
+                    o.get("status") == "error" for o in eal_outcomes.values()
+                )
+                run.status = "failed" if all_failed else "complete"
+                run.completed_at = now
+                run.open_tasks = 0
+            else:
+                run.status = "running"
+                # How many beacon tasks must report before the run is terminal —
+                # 1 for a single endpoint, N for a multi-endpoint fan-out. EAL
+                # steps ran in-process and are NOT counted here.
+                run.open_tasks = n_tasks
             # The per-run home for the RESOLVED values actually injected into this
             # run's step commands — the real 5-tuple / UPN / host / CI / cloud
             # resource, nothing invented (Gate A5). NULL for a context-less
@@ -566,11 +699,8 @@ class Orchestrator:
             # NULL for a single-channel run (byte-identical); the routing ledger
             # for a multichannel one.
             run.channel_dispatch = channel_dispatch
-            # How many beacon tasks must report before the run is terminal — 1
-            # for a single endpoint, N for a multi-endpoint fan-out.
-            run.open_tasks = n_tasks
             await db.commit()
-            await _publish_run_status(run_id, "running")
+            await _publish_run_status(run_id, run.status)
 
         logger.info(
             "Task(s) enqueued run_id=%s target=%s multichannel=%s",
@@ -1358,33 +1488,49 @@ def _partition_channels(
 def _build_channel_dispatch(
     steps: list[dict[str, Any]],
     launch_target: str,
+    eal_outcomes: Optional[dict[str, dict[str, Any]]] = None,
 ) -> list[dict[str, Any]]:
     """Build the per-run ledger persisted on ``Run.channel_dispatch`` — one
     entry per step, in step order.
 
-    An agent step records the endpoint it was enqueued to; an eal step records an
-    ``EAL_DISPATCH_PENDING`` marker — an honest "not dispatched yet" (Phase 3b),
-    never a fabricated EAL result (Gate A5). Populated only for a multichannel
+    An agent step records the endpoint it was enqueued to; an eal step records
+    its real in-process dispatch outcome from ``eal_outcomes`` (Phase 3b —
+    dispatched / dry_run / not_delivered / error), never a fabricated EAL result
+    (Gate A5). When no outcome is supplied for an eal step it falls back to the
+    honest ``EAL_DISPATCH_PENDING`` marker. Populated only for a multichannel
     run; a run with no channel-typed step keeps ``Run.channel_dispatch`` NULL.
     """
     from engine.scenario_loader import effective_channel  # noqa: PLC0415
 
+    eal_outcomes = eal_outcomes or {}
     ledger: list[dict[str, Any]] = []
     for step in steps:
         step_id = step.get("id")
         if effective_channel(step) == "eal":
-            ledger.append({
-                "step_id": step_id,
-                "channel": "eal",
-                "plugin": (step.get("eal") or {}).get("plugin"),
-                "target": None,
-                "status": "pending",
-                "code": "EAL_DISPATCH_PENDING",
-                "detail": (
-                    "EAL dispatch wired in Phase 3b; no campaign run, no EAL "
-                    "result fabricated"
-                ),
-            })
+            outcome = eal_outcomes.get(step_id)
+            if outcome is not None:
+                ledger.append({
+                    "step_id": step_id,
+                    "channel": "eal",
+                    "plugin": (step.get("eal") or {}).get("plugin"),
+                    "target": None,
+                    "status": outcome.get("status", "dispatched"),
+                    "code": outcome.get("code"),
+                    "detail": outcome.get("detail"),
+                })
+            else:
+                ledger.append({
+                    "step_id": step_id,
+                    "channel": "eal",
+                    "plugin": (step.get("eal") or {}).get("plugin"),
+                    "target": None,
+                    "status": "pending",
+                    "code": "EAL_DISPATCH_PENDING",
+                    "detail": (
+                        "EAL dispatch not yet run; no campaign run, no EAL "
+                        "result fabricated"
+                    ),
+                })
         else:
             ledger.append({
                 "step_id": step_id,
