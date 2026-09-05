@@ -362,6 +362,76 @@ def test_from_agent_src_ip_sentinel_is_lab_range_when_target_absent():
 
 
 # ---------------------------------------------------------------------------
+# from_agent src_ip — Phase 3a: prefer the target's REAL captured last_ip, and
+# label the synthetic fallback as synthetic (never a fabricated real address).
+# ---------------------------------------------------------------------------
+
+
+def test_from_agent_src_ip_uses_last_ip_when_present():
+    """An ORM-shaped Agent carrying last_ip yields a REAL src_ip, flagged
+    not-synthetic."""
+
+    class _Agent:
+        hostname = "prod-web-7"
+        last_ip = "203.0.113.44"
+
+    b = resolve_stitch_context(
+        {"src_ip": {"resolve": "from_agent"}}, seed="run-1", target=_Agent()
+    )
+    assert b.src_ip == "203.0.113.44"
+    assert b.src_ip_is_synthetic is False
+
+
+def test_from_agent_src_ip_last_ip_wins_over_legacy_ip_field():
+    b = resolve_stitch_context(
+        {"src_ip": {"resolve": "from_agent"}},
+        seed="run-1",
+        target={"hostname": "h", "last_ip": "198.51.100.9", "ip": "10.20.30.40"},
+    )
+    assert b.src_ip == "198.51.100.9"
+    assert b.src_ip_is_synthetic is False
+
+
+def test_from_agent_src_ip_synthetic_when_last_ip_null():
+    """A target whose last_ip was never captured falls back to a labelled
+    synthetic lab-range address — flagged synthetic so the report cannot quote
+    it as observed truth."""
+
+    class _Agent:
+        hostname = "orm-host-9"
+        last_ip = None
+
+    b = resolve_stitch_context(
+        {"src_ip": {"resolve": "from_agent"}}, seed="run-1", target=_Agent()
+    )
+    assert b.src_ip.startswith("10.")
+    assert b.src_ip_is_synthetic is True
+
+
+def test_from_agent_src_ip_synthetic_flag_true_when_target_absent():
+    b = resolve_stitch_context({"src_ip": {"resolve": "from_agent"}}, seed="run-1")
+    assert b.src_ip_is_synthetic is True
+
+
+def test_src_ip_is_synthetic_is_none_when_not_from_agent():
+    # A literal src_ip is neither real-from-agent nor synthetic-fallback.
+    b = resolve_stitch_context({"src_ip": {"literal": "192.0.2.5"}}, seed="run-1")
+    assert b.src_ip == "192.0.2.5"
+    assert b.src_ip_is_synthetic is None
+
+
+def test_src_ip_is_synthetic_excluded_from_values():
+    class _Agent:
+        hostname = "h"
+        last_ip = None
+
+    b = resolve_stitch_context(
+        {"src_ip": {"resolve": "from_agent"}}, seed="run-1", target=_Agent()
+    )
+    assert "src_ip_is_synthetic" not in b.values
+
+
+# ---------------------------------------------------------------------------
 # Fail-closed rejection
 # ---------------------------------------------------------------------------
 

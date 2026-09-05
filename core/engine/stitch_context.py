@@ -172,6 +172,15 @@ class StitchBinding:
     #: from ``analytics_emitter.canary_bindings``. ``None`` otherwise. Not one
     #: of the nine entity keys; surfaced for the report's identity readout.
     principal: Optional[str] = None
+    #: Whether the ``src_ip`` value is a synthesised lab-range address rather
+    #: than a REAL observed one. ``True`` when a ``from_agent`` src_ip fell back
+    #: because the target agent had no ``last_ip``; ``False`` when it resolved to
+    #: a genuine captured address; ``None`` when src_ip did not resolve via
+    #: ``from_agent`` at all (a literal, a 5-tuple auto-fill, or unset). Like
+    #: ``principal`` it is NOT one of the nine entity keys and is excluded from
+    #: ``.values`` — surfaced only so the report/Run lens can label a synthetic
+    #: address as synthetic and never quote it as tenant-observed truth.
+    src_ip_is_synthetic: Optional[bool] = None
 
     # -- accessors ----------------------------------------------------------
 
@@ -342,14 +351,28 @@ def _target_field(target: Any, field_name: str) -> Any:
     return value if value not in (None, "") else None
 
 
+def _agent_real_ip(target: Any) -> Any:
+    """The launch target's REAL observed source IP, or None.
+
+    Prefers ``last_ip`` — the request source captured on the beacon's last
+    register/heartbeat/enroll (see models.Agent.last_ip). Falls back to a
+    literal ``ip`` field if a caller passes one (e.g. a plain dict). Returns
+    None when neither is present, which is the signal to synthesise below.
+    """
+    return _target_field(target, "last_ip") or _target_field(target, "ip")
+
+
 def _from_agent(seed: str, key: str, target: Any) -> Any:
     """The launch target's hostname (``host``) or ip (``src_ip``).
 
-    Falls back to a clearly-synthetic hashed sentinel when the target is absent
-    or lacks the field — NEVER a fabricated real hostname.
+    For ``src_ip``: the target's REAL observed source IP (``last_ip``) when
+    present — a genuine address, not invented. When absent, a clearly-synthetic
+    lab-range ``10.x`` sentinel; the resolver records that fact on
+    ``StitchBinding.src_ip_is_synthetic`` so the report never presents a made-up
+    address as real. Host falls back to a hashed sentinel likewise.
     """
     if key == "src_ip":
-        ip = _target_field(target, "ip")
+        ip = _agent_real_ip(target)
         return ip if ip is not None else _auto_ip(seed, "from_agent:src_ip")
     # key == "host"
     hostname = _target_field(target, "hostname")
@@ -425,9 +448,12 @@ def resolve_stitch_context(
         The run id. Every ``resolve`` directive derives its value from a stable
         hash of this seed, so the binding is reproducible and unit-testable.
     target:
-        The launch-target descriptor for ``from_agent`` — a ``{hostname, ip}``
-        dict or an ORM row exposing ``.hostname``/``.ip``. Optional; when absent
-        ``from_agent`` degrades to a hashed sentinel.
+        The launch-target descriptor for ``from_agent`` — an ORM ``Agent`` row
+        exposing ``.hostname``/``.last_ip`` (or a ``{hostname, last_ip}`` /
+        legacy ``{hostname, ip}`` dict). Optional; when absent, or when the row
+        has no ``last_ip``, the src_ip leg degrades to a labelled-synthetic
+        lab-range address (``StitchBinding.src_ip_is_synthetic == True``) and
+        host to a hashed sentinel — never a fabricated real address.
 
     Returns
     -------
@@ -449,6 +475,7 @@ def resolve_stitch_context(
 
     resolved: dict[str, Any] = {k: None for k in ENTITY_KEYS}
     principal: Optional[str] = None
+    src_ip_is_synthetic: Optional[bool] = None
     five_tuple_requested = False
 
     for key, entry in spec_dict.items():
@@ -489,6 +516,10 @@ def resolve_stitch_context(
             resolved[key] = _auto_container_id(seed)
         elif directive == "from_agent":
             resolved[key] = _from_agent(seed, key, target)
+            if key == "src_ip":
+                # Record whether that src_ip is a real captured address or a
+                # synthesised fallback, so the report never mislabels it.
+                src_ip_is_synthetic = _agent_real_ip(target) is None
         elif directive == "canary_principal":
             # Identity leg DELEGATED — never forked. The token → account/principal
             # mapping is exactly what analytics_emitter already plants.
@@ -504,7 +535,9 @@ def resolve_stitch_context(
             if resolved[tk] is None:
                 resolved[tk] = tv
 
-    return StitchBinding(**resolved, principal=principal)
+    return StitchBinding(
+        **resolved, principal=principal, src_ip_is_synthetic=src_ip_is_synthetic
+    )
 
 
 # ---------------------------------------------------------------------------

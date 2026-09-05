@@ -1083,6 +1083,27 @@ _ONLINE_WINDOW_S = 30
 _STALE_WINDOW_S = 300  # 5 minutes
 
 
+def _client_ip(request: Request) -> Optional[str]:
+    """The request source IP, honestly derived — NEVER invented.
+
+    When the beacon reaches SimCore through a proxy/load balancer, the socket
+    peer is the proxy, so the real client is the FIRST hop of
+    ``X-Forwarded-For`` (``client, proxy1, proxy2``). Without that header we use
+    the socket peer (``request.client.host``). A transport with no client
+    address (some test transports, in-process ASGI calls) yields None — the
+    stitch resolver then keeps a labelled synthetic src_ip rather than a
+    fabricated real one. See models.Agent.last_ip.
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    if request.client is not None and request.client.host:
+        return request.client.host
+    return None
+
+
 def _derive_status(last_seen: Optional[datetime], now: datetime) -> tuple[str, float]:
     """Derive an agent's liveness status from its last_seen age.
 
@@ -1121,6 +1142,7 @@ async def list_agents(db: AsyncSession = Depends(get_db)):
 @router.post("/register")
 async def register_agent(
     body: RegisterRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -1132,6 +1154,8 @@ async def register_agent(
     )
     existing: Optional[Agent] = result.scalar_one_or_none()
     now = datetime.utcnow()
+    # The observed request source — real, or None (never fabricated).
+    src_ip = _client_ip(request)
 
     if existing is None:
         agent = Agent(
@@ -1143,6 +1167,7 @@ async def register_agent(
             registered_at=now,
             last_seen=now,
             status="online",
+            last_ip=src_ip,
         )
         db.add(agent)
         logger.info("register_agent NEW agent_id=%s hostname=%s os=%s interpreters=%s",
@@ -1154,6 +1179,10 @@ async def register_agent(
         existing.interpreters = body.interpreters
         existing.last_seen = now
         existing.status = "online"
+        # Only overwrite with a real observation — a proxy-stripped None must
+        # not clobber a good address captured on a prior call.
+        if src_ip is not None:
+            existing.last_ip = src_ip
         logger.info("register_agent UPDATED agent_id=%s interpreters=%s", body.agent_id, body.interpreters)
 
     await db.commit()
@@ -1277,7 +1306,7 @@ async def revoke_enrollment_token(token_id: int, db: AsyncSession = Depends(get_
 
 
 @router.post("/enroll")
-async def enroll_agent(body: EnrollRequest, db: AsyncSession = Depends(get_db)):
+async def enroll_agent(body: EnrollRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Redeem an enrollment token and register a NEW agent with a
     server-assigned id.
 
@@ -1308,6 +1337,8 @@ async def enroll_agent(body: EnrollRequest, db: AsyncSession = Depends(get_db)):
         capabilities=body.capabilities or ["shell", "identity-harness"],
         interpreters=body.interpreters,
         registered_at=now, last_seen=now, status="online",
+        # The installer runs ON the jumpbox, so the request source IS the target.
+        last_ip=_client_ip(request),
     ))
     token_row.used_count += 1
     await db.commit()
@@ -1343,6 +1374,7 @@ async def delete_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/{agent_id}/tasks")
 async def poll_tasks(
     agent_id: str,
+    request: Request,
     wait: int = Query(default=0, ge=0, le=60, description="Long-poll duration in seconds (0 = immediate)"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1365,6 +1397,11 @@ async def poll_tasks(
 
     agent.last_seen = datetime.utcnow()
     agent.status = "online"
+    # Refresh the observed source IP on every heartbeat (a real value, or leave
+    # the prior one — never overwrite a good address with a proxy-stripped None).
+    src_ip = _client_ip(request)
+    if src_ip is not None:
+        agent.last_ip = src_ip
     await db.commit()
 
     # DB-aware dequeue so the durable queued_tasks row is removed on delivery
