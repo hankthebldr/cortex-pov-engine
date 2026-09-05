@@ -34,6 +34,7 @@ import {
   layoutCausalityGraph,
   stitchOverlayEdges,
 } from './composerLayout.js'
+import { effectiveChannel } from './composerDraft.js'
 
 // Detection-type → chip tone. Identical mapping to the inspector's `detTone`
 // (they are two new files; the mapping is duplicated deliberately rather than
@@ -265,6 +266,27 @@ function DesignGraph({
                 <span className="chain-node__row">
                   <span className="chain-node__kind">{s.authored ? 'new' : 'step'}</span>
                   <span className="chain-node__id mono">{s.id}</span>
+                  {/* Channel badge — GATED so an agent-default node (no channel,
+                      no target) renders byte-identically to today. An eal step
+                      shows its emitter; an agent step with a second endpoint
+                      shows where it runs. Reuses existing chip tones (no hex). */}
+                  {effectiveChannel(s) === 'eal' ? (
+                    <span
+                      className="chip chip--signal chain-node__chanbadge"
+                      data-testid={`chain-step-channel-${s.id}`}
+                      title={`channel: eal · emitter ${s.eal?.plugin || '(unset)'}`}
+                    >
+                      EAL
+                    </span>
+                  ) : s.target ? (
+                    <span
+                      className="chip chip--pending chain-node__chanbadge"
+                      data-testid={`chain-step-target-${s.id}`}
+                      title={`runs on second endpoint ${s.target}`}
+                    >
+                      {`→ ${s.target}`}
+                    </span>
+                  ) : null}
                   <span className="composer__spacer" />
                   {runState && (
                     <span

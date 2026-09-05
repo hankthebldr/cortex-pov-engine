@@ -63,6 +63,9 @@ function renderInspector(overrides = {}) {
     onBindTtp: vi.fn(),
     onEditMeta: vi.fn(),
     onNavigate: vi.fn(),
+    onSetChannel: vi.fn(),
+    onSetTarget: vi.fn(),
+    onSetEal: vi.fn(),
   }
   render(
     <ComposerInspector
@@ -196,6 +199,126 @@ describe('ComposerInspector — per-step stitch consume', () => {
     renderInspector({ selected: STEP_02, stitchModel: null })
     expect(within(screen.getByTestId('step-stitch-consume'))
       .getByText(/references no shared entity/i)).toBeInTheDocument()
+  })
+})
+
+describe('ComposerInspector — channel / target / eal editors (Phase-3a)', () => {
+  const AGENTS = [
+    { id: 'a1', hostname: 'web-prod-01', os: 'linux', status: 'online' },
+    { id: 'a2', hostname: 'db-prod-02', os: 'linux', status: 'stale' },
+  ]
+
+  it('shows the channel section with the honest agent default for a corpus step', () => {
+    renderInspector({ agents: AGENTS })
+    const section = screen.getByTestId('step-channel')
+    // effectiveChannel reads an absent channel as agent, never blank. Both the
+    // value node and the <option> carry the label text, so query the value node.
+    const valueNode = within(section).getByText('agent (beacon)', { selector: '.field-value' })
+    expect(valueNode).toBeInTheDocument()
+    const sel = screen.getByLabelText('Channel for step-02')
+    expect(sel).toHaveValue('agent')
+  })
+
+  it('switching the channel to eal calls onSetChannel', async () => {
+    const user = userEvent.setup()
+    const h = renderInspector({ agents: AGENTS })
+    await user.selectOptions(screen.getByLabelText('Channel for step-02'), 'eal')
+    expect(h.onSetChannel).toHaveBeenCalledWith('step-02', 'eal')
+  })
+
+  it('renders the target picker for an agent step, with a launch-target default', () => {
+    renderInspector({ agents: AGENTS })
+    const picker = screen.getByLabelText('Target agent for step-02')
+    expect(picker).toBeInTheDocument()
+    expect(picker).toHaveValue('') // '' = launch target (default)
+    expect(within(picker).getByText(/launch target agent \(default\)/i)).toBeInTheDocument()
+    // options come from env.agents, hostname + status
+    expect(within(picker).getByText('web-prod-01 · online')).toBeInTheDocument()
+    expect(within(picker).getByText('db-prod-02 · stale')).toBeInTheDocument()
+  })
+
+  it('picking a target agent calls onSetTarget with the agent id', async () => {
+    const user = userEvent.setup()
+    const h = renderInspector({ agents: AGENTS })
+    await user.selectOptions(screen.getByLabelText('Target agent for step-02'), 'a2')
+    expect(h.onSetTarget).toHaveBeenCalledWith('step-02', 'a2')
+  })
+
+  it('clearing the target back to the launch default passes null', async () => {
+    const user = userEvent.setup()
+    const withTarget = { ...STEP_02, target: 'a2' }
+    const h = renderInspector({ selected: withTarget, agents: AGENTS })
+    await user.selectOptions(screen.getByLabelText('Target agent for step-02'), '')
+    expect(h.onSetTarget).toHaveBeenCalledWith('step-02', null)
+  })
+
+  it('warns that an unenrolled target is refused at launch, not silently dropped', () => {
+    renderInspector({ agents: AGENTS })
+    expect(screen.getByText(/TARGET_AGENT_NOT_ENROLLED/)).toBeInTheDocument()
+  })
+
+  it('an agent step renders NO eal editor', () => {
+    renderInspector({ agents: AGENTS })
+    expect(screen.queryByTestId('step-eal')).not.toBeInTheDocument()
+  })
+
+  it('an eal step renders the plugin field + params, and NO target picker', () => {
+    const ealStep = { ...STEP_02, channel: 'eal', target: null, eal: { plugin: 'ngfw_eal_emitter', params: {} } }
+    renderInspector({ selected: ealStep, agents: AGENTS })
+    expect(screen.getByTestId('step-eal')).toBeInTheDocument()
+    expect(screen.getByLabelText('EAL plugin for step-02')).toHaveValue('ngfw_eal_emitter')
+    // the second-endpoint target picker does not belong to an eal step
+    expect(screen.queryByLabelText('Target agent for step-02')).not.toBeInTheDocument()
+    // the honesty note: not dispatched in this phase
+    expect(screen.getByText(/EAL_DISPATCH_PENDING/)).toBeInTheDocument()
+  })
+
+  it('editing the eal plugin calls onSetEal with the plugin', async () => {
+    const user = userEvent.setup()
+    const ealStep = { ...STEP_02, channel: 'eal', target: null, eal: { plugin: '', params: {} } }
+    const h = renderInspector({ selected: ealStep, agents: AGENTS })
+    await user.type(screen.getByLabelText('EAL plugin for step-02'), 'x')
+    expect(h.onSetEal).toHaveBeenCalled()
+    expect(h.onSetEal.mock.calls[0][0]).toBe('step-02')
+    expect(h.onSetEal.mock.calls[0][1]).toHaveProperty('plugin')
+  })
+
+  it('adding an eal param commits a {params} patch through onSetEal', async () => {
+    const user = userEvent.setup()
+    const ealStep = { ...STEP_02, channel: 'eal', target: null, eal: { plugin: 'ngfw_eal_emitter', params: {} } }
+    const h = renderInspector({ selected: ealStep, agents: AGENTS })
+    await user.type(screen.getByLabelText('New EAL param key for step-02'), 'rate')
+    await user.type(screen.getByLabelText('New EAL param value for step-02'), '10')
+    await user.click(screen.getByRole('button', { name: 'Add param' }))
+    expect(h.onSetEal).toHaveBeenCalledWith('step-02', { params: { rate: '10' } })
+  })
+
+  it('editing an existing eal param value passes the merged params', async () => {
+    const user = userEvent.setup()
+    const ealStep = { ...STEP_02, channel: 'eal', target: null, eal: { plugin: 'ngfw', params: { rate: '10' } } }
+    const h = renderInspector({ selected: ealStep, agents: AGENTS })
+    const input = screen.getByLabelText('EAL param rate for step-02')
+    expect(input).toHaveValue('10')
+    await user.type(input, '0') // -> '100'
+    expect(h.onSetEal).toHaveBeenCalled()
+    expect(h.onSetEal.mock.calls[0][1]).toHaveProperty('params')
+  })
+
+  it('removing an eal param calls onSetEal without that key', async () => {
+    const user = userEvent.setup()
+    const ealStep = { ...STEP_02, channel: 'eal', target: null, eal: { plugin: 'ngfw', params: { rate: '10' } } }
+    const h = renderInspector({ selected: ealStep, agents: AGENTS })
+    await user.click(screen.getByRole('button', { name: 'Remove EAL param rate from step-02' }))
+    expect(h.onSetEal).toHaveBeenCalledWith('step-02', { params: {} })
+  })
+
+  it('the target picker renders just the default option when agents=[] (default prop)', () => {
+    // renderInspector passes no agents override — the prop must default so this mounts
+    renderInspector()
+    const picker = screen.getByLabelText('Target agent for step-02')
+    expect(within(picker).getByText(/launch target agent \(default\)/i)).toBeInTheDocument()
+    // no agent options
+    expect(picker.querySelectorAll('option')).toHaveLength(1)
   })
 })
 

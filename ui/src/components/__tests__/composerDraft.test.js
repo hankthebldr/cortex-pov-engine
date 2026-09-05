@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   BLANK_COMMAND,
+  CHANNELS,
   DETECTION_TYPES,
   PIVOTS,
   PLANES,
@@ -23,6 +24,7 @@ import {
   draftToApi,
   duplicateStep,
   editStep,
+  effectiveChannel,
   emitDraftYaml,
   emptyDraft,
   isDraftDirty,
@@ -32,6 +34,9 @@ import {
   removeDetection,
   removeStep,
   setCausalityParent,
+  setStepChannel,
+  setStepEal,
+  setStepTarget,
   validateDraft,
 } from '../console/composerDraft.js'
 
@@ -246,6 +251,9 @@ describe('composer enums mirror the backend verbatim', () => {
     expect(PLANES).toHaveLength(16)
     expect(PLANES).toContain('DLP')
     expect(PLANES[0]).toBe('EDR')
+  })
+  it('CHANNELS mirrors the backend — exactly agent,eal', () => {
+    expect(CHANNELS).toEqual(['agent', 'eal'])
   })
 })
 
@@ -507,5 +515,213 @@ describe('stitch_context carried through the draft round-trip', () => {
     const saved = draftSnapshot(draft)
     const edited = { ...draft, stitchContext: { dst_port: { literal: 443 } } }
     expect(isDraftDirty(draftSnapshot(edited), saved)).toBe(true)
+  })
+})
+
+// ─── Phase-3a channel routing (channel / target / eal) ────────────────────────
+
+describe('effectiveChannel — absent is agent, never blank', () => {
+  it('reads a step with no channel key as agent (back-compat)', () => {
+    expect(effectiveChannel({ id: 'step-01' })).toBe('agent')
+    expect(effectiveChannel({ id: 'step-01', channel: null })).toBe('agent')
+  })
+  it('reads an explicit channel through unchanged', () => {
+    expect(effectiveChannel({ id: 'step-01', channel: 'eal' })).toBe('eal')
+    expect(effectiveChannel({ id: 'step-01', channel: 'agent' })).toBe('agent')
+  })
+  it('tolerates null/undefined step', () => {
+    expect(effectiveChannel(null)).toBe('agent')
+    expect(effectiveChannel(undefined)).toBe('agent')
+  })
+})
+
+describe('normalizeStep / blankStep carry channel fields', () => {
+  it('a corpus step lands channel/target/eal null (byte-identical to today)', () => {
+    const s = normalizeStep(SCENARIO.steps[0], 0)
+    expect(s.channel).toBeNull()
+    expect(s.target).toBeNull()
+    expect(s.eal).toBeNull()
+    expect(effectiveChannel(s)).toBe('agent')
+  })
+  it('normalizeStep carries an eal block when present', () => {
+    const rawParams = { rate: '5' }
+    const s = normalizeStep(
+      { id: 'step-01', name: 'x', channel: 'eal', eal: { plugin: 'ngfw_eal_emitter', params: rawParams } },
+      0,
+    )
+    expect(s.channel).toBe('eal')
+    expect(s.eal).toEqual({ plugin: 'ngfw_eal_emitter', params: { rate: '5' } })
+    // params are copied, not aliased to the raw scenario object
+    expect(s.eal.params).not.toBe(rawParams)
+  })
+  it('normalizeStep carries a target string', () => {
+    const s = normalizeStep({ id: 'step-01', name: 'x', target: 'web-prod-02' }, 0)
+    expect(s.target).toBe('web-prod-02')
+  })
+  it('blankStep defaults to an agent step with no second endpoint or emitter', () => {
+    const b = blankStep('step-09')
+    expect(b.channel).toBeNull()
+    expect(b.target).toBeNull()
+    expect(b.eal).toBeNull()
+  })
+})
+
+describe('setStepChannel — enforces backend mutual exclusivity', () => {
+  const steps = draftFromScenario(SCENARIO).steps
+
+  it('returns the SAME array for an unknown id', () => {
+    expect(setStepChannel(steps, 'step-99', 'eal')).toBe(steps)
+  })
+  it('returns the SAME array for an unknown channel value', () => {
+    expect(setStepChannel(steps, 'step-01', 'bogus')).toBe(steps)
+  })
+  it('agent on an already-agent step with no eal is a SAME-ref no-op', () => {
+    expect(setStepChannel(steps, 'step-01', 'agent')).toBe(steps)
+  })
+  it('switching to eal seeds an empty eal block and clears target', () => {
+    const withTarget = setStepTarget(steps, 'step-01', 'web-prod-02')
+    const out = setStepChannel(withTarget, 'step-01', 'eal')
+    expect(out[0].channel).toBe('eal')
+    expect(out[0].target).toBeNull()
+    expect(out[0].eal).toEqual({ plugin: '', params: {} })
+  })
+  it('switching eal back to agent clears the eal block, storing channel as null', () => {
+    const asEal = setStepChannel(steps, 'step-01', 'eal')
+    const back = setStepChannel(asEal, 'step-01', 'agent')
+    expect(back[0].channel).toBeNull()
+    expect(back[0].eal).toBeNull()
+  })
+  it('does not mutate the input array', () => {
+    setStepChannel(steps, 'step-01', 'eal')
+    expect(steps[0].channel).toBeNull()
+  })
+})
+
+describe('setStepTarget — agent-channel only', () => {
+  const steps = draftFromScenario(SCENARIO).steps
+
+  it('returns the SAME array for an unknown id', () => {
+    expect(setStepTarget(steps, 'step-99', 'web-prod-02')).toBe(steps)
+  })
+  it('sets a second-endpoint target on an agent step', () => {
+    const out = setStepTarget(steps, 'step-01', 'web-prod-02')
+    expect(out[0].target).toBe('web-prod-02')
+    expect(steps[0].target).toBeNull()
+  })
+  it('empty string clears back to the launch target', () => {
+    const withTarget = setStepTarget(steps, 'step-01', 'web-prod-02')
+    expect(setStepTarget(withTarget, 'step-01', '')[0].target).toBeNull()
+  })
+  it('is a SAME-ref no-op when the target is unchanged', () => {
+    expect(setStepTarget(steps, 'step-01', null)).toBe(steps)
+  })
+  it('refuses (SAME array) on a non-agent step', () => {
+    const asEal = setStepChannel(steps, 'step-01', 'eal')
+    expect(setStepTarget(asEal, 'step-01', 'web-prod-02')).toBe(asEal)
+  })
+})
+
+describe('setStepEal — eal-channel only, shallow merge', () => {
+  const steps = draftFromScenario(SCENARIO).steps
+  const asEal = setStepChannel(steps, 'step-01', 'eal')
+
+  it('returns the SAME array for an unknown id or a non-object patch', () => {
+    expect(setStepEal(asEal, 'step-99', { plugin: 'x' })).toBe(asEal)
+    expect(setStepEal(asEal, 'step-01', null)).toBe(asEal)
+  })
+  it('refuses (SAME array) on a non-eal step', () => {
+    expect(setStepEal(steps, 'step-01', { plugin: 'x' })).toBe(steps)
+  })
+  it('merges a plugin without touching params', () => {
+    const out = setStepEal(asEal, 'step-01', { plugin: 'ngfw_eal_emitter' })
+    expect(out[0].eal).toEqual({ plugin: 'ngfw_eal_emitter', params: {} })
+  })
+  it('replaces params wholesale', () => {
+    const withPlugin = setStepEal(asEal, 'step-01', { plugin: 'ngfw_eal_emitter' })
+    const out = setStepEal(withPlugin, 'step-01', { params: { rate: '10' } })
+    expect(out[0].eal).toEqual({ plugin: 'ngfw_eal_emitter', params: { rate: '10' } })
+  })
+  it('is a SAME-ref no-op when nothing changes', () => {
+    const withPlugin = setStepEal(asEal, 'step-01', { plugin: 'ngfw_eal_emitter' })
+    expect(setStepEal(withPlugin, 'step-01', { plugin: 'ngfw_eal_emitter' })).toBe(withPlugin)
+  })
+})
+
+describe('draftToApi — channel omit-when-default', () => {
+  it('a corpus (all-agent) draft emits NONE of the three keys', () => {
+    const body = draftToApi(draftFromScenario(SCENARIO))
+    expect(body.steps[0]).not.toHaveProperty('channel')
+    expect(body.steps[0]).not.toHaveProperty('target')
+    expect(body.steps[0]).not.toHaveProperty('eal')
+  })
+  it('an agent step with a second endpoint emits only target', () => {
+    const draft = draftFromScenario(SCENARIO)
+    draft.steps = setStepTarget(draft.steps, 'step-01', 'web-prod-02')
+    const body = draftToApi(draft)
+    expect(body.steps[0].target).toBe('web-prod-02')
+    expect(body.steps[0]).not.toHaveProperty('channel')
+    expect(body.steps[0]).not.toHaveProperty('eal')
+  })
+  it('an eal step emits channel + eal, never target', () => {
+    const draft = draftFromScenario(SCENARIO)
+    draft.steps = setStepEal(
+      setStepChannel(draft.steps, 'step-01', 'eal'),
+      'step-01',
+      { plugin: 'ngfw_eal_emitter', params: { rate: '5' } },
+    )
+    const body = draftToApi(draft)
+    expect(body.steps[0].channel).toBe('eal')
+    expect(body.steps[0].eal).toEqual({ plugin: 'ngfw_eal_emitter', params: { rate: '5' } })
+    expect(body.steps[0]).not.toHaveProperty('target')
+  })
+})
+
+describe('channel round-trip + dirty tracking', () => {
+  it('an eal step round-trips scenario → api → draft with the eal block intact', () => {
+    const draft = draftFromScenario(SCENARIO)
+    draft.steps = setStepEal(
+      setStepChannel(draft.steps, 'step-01', 'eal'),
+      'step-01',
+      { plugin: 'ngfw_eal_emitter', params: { rate: '5' } },
+    )
+    const body = draftToApi(draft)
+    const back = draftFromApi({ ...SCENARIO, status: 'draft', steps: body.steps })
+    expect(back.steps[0].channel).toBe('eal')
+    expect(back.steps[0].eal).toEqual({ plugin: 'ngfw_eal_emitter', params: { rate: '5' } })
+  })
+  it('a channel edit reads as DIRTY (it changes which endpoint executes)', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const saved = draftSnapshot(draft)
+    const edited = { ...draft, steps: setStepChannel(draft.steps, 'step-01', 'eal') }
+    expect(isDraftDirty(draftSnapshot(edited), saved)).toBe(true)
+  })
+  it('a target edit reads as DIRTY', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const saved = draftSnapshot(draft)
+    const edited = { ...draft, steps: setStepTarget(draft.steps, 'step-01', 'web-prod-02') }
+    expect(isDraftDirty(draftSnapshot(edited), saved)).toBe(true)
+  })
+})
+
+describe('validateDraft — missing EAL plugin', () => {
+  it('names an eal-channel step with no plugin declared', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const steps = setStepChannel(draft.steps, 'step-01', 'eal') // seeds empty plugin
+    const v = validateDraft(steps)
+    expect(v.missingEalPlugin).toEqual(['step-01'])
+    expect(v.ok).toBe(false)
+    expect(v.problems.join(' ')).toMatch(/emitter plugin/i)
+  })
+  it('an eal step WITH a plugin does not flag missingEalPlugin', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const steps = setStepEal(
+      setStepChannel(draft.steps, 'step-01', 'eal'),
+      'step-01',
+      { plugin: 'ngfw_eal_emitter' },
+    )
+    expect(validateDraft(steps).missingEalPlugin).toEqual([])
+  })
+  it('a corpus draft has an empty missingEalPlugin list', () => {
+    expect(validateDraft(draftFromScenario(SCENARIO).steps).missingEalPlugin).toEqual([])
   })
 })
