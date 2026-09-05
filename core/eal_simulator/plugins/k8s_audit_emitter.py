@@ -378,6 +378,9 @@ class K8sAuditEmitter(AnalyticsLogEmitter):
 
     class Meta:
         name = "k8s_audit_emitter"
+        # Vendor analytics catalogue join (see analytics_catalogue.py).
+        data_sources = ["kubernetes_audit_logs"]
+        datasets = ["kubernetes_audit_logs"]
         version = "1.0.0"
         description = (
             "Emits shape-true Kubernetes API-server audit records "
