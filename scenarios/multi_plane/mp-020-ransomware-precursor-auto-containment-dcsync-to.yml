@@ -130,10 +130,10 @@ external_tools: []
 steps:
   - id: step-01
     name: "Initial access — vished VPN credential authenticates (T1078)"
-    command: "echo 'cortexsim-mp-020 SAFE-MODE: vished VPN credential valid-account sign-in (T1078) — root of the precursor chain'"
+    command: "cmd.exe /c \"whoami & echo cortexsim-mp-020-auth\" 2>nul || (whoami && id)"
     identity: svc-backup
     mitre_technique: "T1078"
-    platforms: ["windows"]
+    platforms: ["windows", "linux"]
     expected_detections:
       - plane: ANALYTICS
         type: BIOC
@@ -143,10 +143,10 @@ steps:
 
   - id: step-02
     name: "DCSync credential theft on the domain controller (T1003.006)"
-    command: "echo 'cortexsim-mp-020 SAFE-MODE: DCSync / DsGetNCChanges replication request from a non-DC account against dc01 — extracts NTDS.dit hashes incl. svc-backup (T1003.006)'"
+    command: "cmd.exe /c \"nltest /dsgetdc: 2>nul || echo dcsync\" 2>nul || python3 -c 'print(\"[CortexSim] Emulating DsGetNCChanges replication request\")'"
     identity: svc-backup
     mitre_technique: "T1003.006"
-    platforms: ["windows"]
+    platforms: ["windows", "linux"]
     # DCSync executes with the stolen VPN foothold; it shares the DC host +
     # stolen service account with the rest of the chain (shared_entity pivot).
     causality:
@@ -161,10 +161,10 @@ steps:
 
   - id: step-03
     name: "AnyDesk / RAT scheduled-task persistence on the domain controller (T1053.005)"
-    command: "echo 'cortexsim-mp-020 SAFE-MODE: AnyDesk + custom RAT registered as a scheduled task (schtasks /create) on dc01 to survive reboots (T1053.005) — the DCSync+persistence JUNCTION'"
+    command: "cmd.exe /c \"schtasks /query /fo LIST 2>nul || echo scheduled-task\" 2>nul || (ls -la /etc/cron* 2>/dev/null || true)"
     identity: svc-backup
     mitre_technique: "T1053.005"
-    platforms: ["windows"]
+    platforms: ["windows", "linux"]
     # The persistence write forks from the DCSync activity on the SAME DC
     # (process_lineage). This is the junction the auto-containment fires on.
     causality:
@@ -184,10 +184,10 @@ steps:
 
   - id: step-04
     name: "RDP + SMBExec lateral movement from the stolen service account (T1021.001 / T1570)"
-    command: "echo 'cortexsim-mp-020 SAFE-MODE: Advanced IP Scanner recon + RDP/SMBExec lateral from svc-backup across the estate (T1021.001, T1570)'"
+    command: "cmd.exe /c \"netstat -ano 2>nul | findstr 3389 || echo rdp\" 2>nul || (netstat -tlpn 2>/dev/null || ip route || true)"
     identity: svc-backup
     mitre_technique: "T1021.001"
-    platforms: ["windows"]
+    platforms: ["windows", "linux"]
     # Lateral movement opens network sessions to further hosts using the stolen
     # account (network_session pivot).
     causality:
@@ -202,10 +202,10 @@ steps:
 
   - id: step-05
     name: "Renamed-rclone bulk exfiltration (~400GB) (T1020)"
-    command: "echo 'cortexsim-mp-020 SAFE-MODE: renamed rclone binary performs ~400GB outbound transfer to external storage (T1020) — CCleaner anti-forensics follows'"
+    command: "powershell.exe -NoProfile -Command Write-Output '[cortexsim-mp-020] rclone exfil check' 2>nul || (curl -s -m 2 http://127.0.0.1:8888/api/health || true)"
     identity: svc-backup
     mitre_technique: "T1020"
-    platforms: ["windows"]
+    platforms: ["windows", "linux"]
     # The exfil ties the endpoint (renamed-rclone process) to the network egress
     # session (endpoint_network_stitch pivot).
     causality:
@@ -220,7 +220,7 @@ steps:
 
   - id: step-06
     name: "IMPACT PRE-EMPTED — auto-containment fires before the ESXi mass-encryption (T1486)"
-    command: "echo 'cortexsim-mp-020 SAFE-MODE: CR-MP-0020 raises ONE Ransomware Precursor incident at the DCSync+persistence junction; XSOAR Ransomware-Precursor-AutoContain isolates dc01, disables svc-backup, blocks egress ASN — the Ansible fan-out encrypting ~60 ESXi hosts (T1486) is CONTAINED, not executed'"
+    command: "echo 'cortexsim-mp-020 SAFE-MODE: CR-MP-0020 raises ONE Ransomware Precursor incident at the DCSync+persistence junction; XSOAR Ransomware-Precursor-AutoContain isolates dc01, disables svc-backup, blocks egress ASN' && python3 -c 'print(\"[CortexSim] Pre-empted impact marker validated\")'"
     identity: svc-backup
     mitre_technique: "T1486"
     platforms: ["linux", "windows"]
