@@ -45,6 +45,9 @@ import {
   removeDetection,
   removeStep,
   setCausalityParent,
+  setStepChannel,
+  setStepEal,
+  setStepTarget,
   validateDraft,
 } from './composerDraft.js'
 import { setEntity, stitchInsertToken } from './stitchContext.js'
@@ -417,6 +420,12 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const onMoveStep = useCallback((index, delta) => setSteps((p) => moveStep(p, index, delta)), [])
   const onDuplicateStep = useCallback((index) => setSteps((p) => duplicateStep(p, index)), [])
   const onRemoveStep = useCallback((index) => setSteps((p) => removeStep(p, index)), [])
+  // Phase-3a channel routing. NOTE the distinction from the launch target:
+  // `env.setAgent` + the palette 'Targets' group set the single-agent LAUNCH
+  // target; `onSetTarget` here is the per-step SECOND-endpoint case (step.target).
+  const onSetChannel = useCallback((id, ch) => setSteps((p) => setStepChannel(p, id, ch)), [])
+  const onSetTarget = useCallback((id, t) => setSteps((p) => setStepTarget(p, id, t)), [])
+  const onSetEal = useCallback((id, patch) => setSteps((p) => setStepEal(p, id, patch)), [])
 
   // ── Palette groups (every group API-sourced, never hardcoded content) ────────
   const paletteGroups = useMemo(() => {
@@ -753,6 +762,10 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
               onSetStitchEntity={onSetStitchEntity}
               onInsertStitch={onInsertStitch}
               agentName={agentName}
+              agents={env.agents}
+              onSetChannel={onSetChannel}
+              onSetTarget={onSetTarget}
+              onSetEal={onSetEal}
             />
           ) : (
             <NoSelectionAside draft={draft} onOpenMeta={() => setMetaOpen(true)} />

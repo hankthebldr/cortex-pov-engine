@@ -202,6 +202,54 @@ describe('ComposerCanvas — Stitch overlay (design intent)', () => {
   })
 })
 
+describe('ComposerCanvas — channel badge (Phase-3a)', () => {
+  it('draws NO channel badge for agent-default nodes (byte-identical to today)', () => {
+    render(<ComposerCanvas {...baseProps()} />)
+    // both STEPS are agent-default (no channel, no target)
+    expect(screen.queryByTestId('chain-step-channel-step-01')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('chain-step-target-step-01')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('chain-step-channel-step-02')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('chain-step-target-step-02')).not.toBeInTheDocument()
+  })
+
+  it('badges an eal step EAL, naming its emitter in the title', () => {
+    const ealSteps = [
+      { ...STEPS[0], channel: 'eal', eal: { plugin: 'ngfw_eal_emitter', params: {} } },
+      STEPS[1],
+    ]
+    render(<ComposerCanvas {...baseProps({ steps: ealSteps, draft: { ...DRAFT, steps: ealSteps } })} />)
+    const badge = screen.getByTestId('chain-step-channel-step-01')
+    expect(badge.textContent).toBe('EAL')
+    expect(badge.getAttribute('title')).toMatch(/emitter ngfw_eal_emitter/)
+    // step-02 stays an unbadged agent node
+    expect(screen.queryByTestId('chain-step-channel-step-02')).not.toBeInTheDocument()
+  })
+
+  it('badges an agent step with a second-endpoint target, showing where it runs', () => {
+    const targetSteps = [
+      { ...STEPS[0], target: 'db-prod-02' },
+      STEPS[1],
+    ]
+    render(<ComposerCanvas {...baseProps({ steps: targetSteps, draft: { ...DRAFT, steps: targetSteps } })} />)
+    const badge = screen.getByTestId('chain-step-target-step-01')
+    expect(badge.textContent).toBe('→ db-prod-02')
+    expect(badge.getAttribute('title')).toMatch(/second endpoint db-prod-02/)
+    // it is NOT an EAL badge
+    expect(screen.queryByTestId('chain-step-channel-step-01')).not.toBeInTheDocument()
+  })
+
+  it('keeps step DOM order and node identity when a badge is present', () => {
+    const ealSteps = [
+      { ...STEPS[0], channel: 'eal', eal: { plugin: 'x', params: {} } },
+      STEPS[1],
+    ]
+    render(<ComposerCanvas {...baseProps({ steps: ealSteps, draft: { ...DRAFT, steps: ealSteps } })} />)
+    const cards = screen.getAllByTestId(/^chain-step-step-/)
+    expect(cards[0]).toHaveAttribute('data-testid', 'chain-step-step-01')
+    expect(cards[1]).toHaveAttribute('data-testid', 'chain-step-step-02')
+  })
+})
+
 describe('ComposerCanvas — Run lens honesty', () => {
   it('shows "no run yet — EXPECTED only" when there is no causality graph', () => {
     render(<ComposerCanvas {...baseProps({ lens: 'run', causalityGraph: null })} />)

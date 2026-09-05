@@ -45,6 +45,18 @@ export function normalizeStep(raw, index) {
     identity: raw.identity || null,
     technique: raw.mitre_technique || null,
     platforms: Array.isArray(raw.platforms) ? raw.platforms : [],
+    // Phase-3a channel routing. `channel` absent/null reads as 'agent' via
+    // effectiveChannel — a corpus step (no channel key) is byte-identical to
+    // today. `target` is a SECOND-endpoint agent id (agent channel only);
+    // `eal` is the emitter block ({plugin, params}) for an eal-channel step.
+    channel: typeof raw.channel === 'string' ? raw.channel : null,
+    target: typeof raw.target === 'string' ? raw.target : null,
+    eal: raw.eal && typeof raw.eal === 'object'
+      ? {
+        plugin: typeof raw.eal.plugin === 'string' ? raw.eal.plugin : null,
+        params: raw.eal.params && typeof raw.eal.params === 'object' ? { ...raw.eal.params } : {},
+      }
+      : null,
     causalityParent: raw.causality?.parent_step || null,
     causalityPivot: raw.causality?.pivot || null,
     detections: detections.map((d) => ({
@@ -123,6 +135,12 @@ export function blankStep(id, { name = 'New step', technique = null } = {}) {
     identity: null,
     technique,
     platforms: [],
+    // Phase-3a: a new step is an agent-channel step on the launch target, with
+    // no second endpoint and no emitter — the default that serializes to none
+    // of the three keys (byte-identical to a corpus step).
+    channel: null,
+    target: null,
+    eal: null,
     causalityParent: null,
     causalityPivot: 'process_lineage',
     detections: [],
@@ -181,6 +199,13 @@ export function validateDraft(steps) {
   const missingCommands = steps
     .filter((s) => !s.command || s.command === BLANK_COMMAND)
     .map((s) => s.id)
+  // An eal-channel step with no plugin declared cannot dispatch — the backend
+  // rejects it (channel==eal REQUIRES a truthy plugin). Named the same way as
+  // missingCommands/missingDetections. Corpus has no eal steps, so this stays
+  // empty for every shipped scenario.
+  const missingEalPlugin = steps
+    .filter((s) => (s.channel || 'agent') === 'eal' && !(s.eal && s.eal.plugin))
+    .map((s) => s.id)
 
   const detectionCount = steps.reduce((n, s) => n + s.detections.length, 0)
   const techniques = steps
@@ -210,12 +235,21 @@ export function validateDraft(steps) {
       + `report ${one ? 'it' : 'them'} as ${one ? 'a gap' : 'gaps'}.`,
     )
   }
+  if (missingEalPlugin.length) {
+    const one = missingEalPlugin.length === 1
+    problems.push(
+      `${missingEalPlugin.length} EAL step${one ? '' : 's'} ${one ? 'declares' : 'declare'} `
+      + `no emitter plugin (${missingEalPlugin.join(', ')}) — an eal channel `
+      + `requires a plugin or it cannot dispatch.`,
+    )
+  }
 
   return {
     ok: problems.length === 0,
     problems,
     missingDetections,
     missingCommands,
+    missingEalPlugin,
     counts: { steps: steps.length, detections: detectionCount, techniques: techniques.length },
     techniques,
   }
@@ -330,6 +364,23 @@ export const PLANES = [
   'AI_SPM', 'BROWSER', 'KOI', 'ASM', 'CSPM', 'TIM', 'EMAIL', 'DLP',
 ]
 
+/**
+ * Step execution channel (`StepSchema.channel` enum). Two values: an 'agent'
+ * step runs on a beacon (the shipped path); an 'eal' step is an emitter run.
+ * Absent/null on a step means 'agent' — see `effectiveChannel` — so the whole
+ * corpus stays back-compatible.
+ */
+export const CHANNELS = ['agent', 'eal']
+
+/**
+ * The ONE place that resolves a step's effective channel. An absent or null
+ * `channel` reads as 'agent' (back-compat), never blank. Both the inspector and
+ * the canvas import this so the "what runs this step" answer cannot diverge.
+ */
+export function effectiveChannel(step) {
+  return (step && step.channel) || 'agent'
+}
+
 // ─── Immutable step edit operations ───────────────────────────────────────────
 // Same no-op-returns-same-ref contract as moveStep/duplicateStep above: a caller
 // wiring these to setState relies on identity to skip a pointless re-render, and
@@ -440,6 +491,96 @@ export function setCausalityParent(steps, id, parentId, pivot = 'process_lineage
   return out
 }
 
+// ─── Channel edit operations (Phase-3a) ──────────────────────────────────────
+// Deliberately NOT folded into editStep / _EDITABLE_KEYS: these three carry the
+// backend's mutual-exclusivity invariants, and keeping them separate leaves the
+// "patches only editable keys" contract untouched. Same no-op-returns-same-ref
+// convention as every other op here.
+
+/**
+ * Set a step's execution channel, enforcing the backend's mutual exclusivity so
+ * the picker can never author a step that 422s:
+ *   - 'agent' stores `channel: null` (the byte-identical omit) and clears any
+ *     `eal` block; a `target` stays (it is agent-valid).
+ *   - 'eal' stores `channel: 'eal'`, clears any `target`, and seeds an empty
+ *     `eal` block ({plugin:'',params:{}}) when the step had none.
+ * Returns the SAME array for an unknown id or an unknown channel value.
+ */
+export function setStepChannel(steps, id, channel) {
+  if (channel !== 'agent' && channel !== 'eal') return steps
+  const index = steps.findIndex((s) => s.id === id)
+  if (index < 0) return steps
+  const current = steps[index]
+  let nextChannel
+  let nextTarget
+  let nextEal
+  if (channel === 'agent') {
+    nextChannel = null
+    nextTarget = current.target ?? null // keep — target is an agent-channel field
+    nextEal = null
+  } else {
+    nextChannel = 'eal'
+    nextTarget = null
+    nextEal = current.eal || { plugin: '', params: {} }
+  }
+  if (
+    current.channel === nextChannel
+    && current.target === nextTarget
+    && current.eal === nextEal
+  ) {
+    return steps
+  }
+  const out = steps.slice()
+  out[index] = { ...current, channel: nextChannel, target: nextTarget, eal: nextEal }
+  return out
+}
+
+/**
+ * Point an AGENT-channel step at a second endpoint (`target` = a different
+ * agent id). Empty string / null clears it back to "use the launch target".
+ * Refuses (SAME array) when the step is not agent-channel — the eal control is
+ * not even rendered there, so this is belt-and-suspenders.
+ */
+export function setStepTarget(steps, id, target) {
+  const index = steps.findIndex((s) => s.id === id)
+  if (index < 0) return steps
+  const current = steps[index]
+  if (effectiveChannel(current) !== 'agent') return steps
+  const nextTarget = target || null
+  if (current.target === nextTarget) return steps
+  const out = steps.slice()
+  out[index] = { ...current, target: nextTarget }
+  return out
+}
+
+/**
+ * Shallow-merge a patch into an EAL-channel step's `eal` block ({plugin?,
+ * params?}). Refuses (SAME array) when the step is not eal-channel, when the id
+ * is unknown, or when the patch is not an object / changes nothing.
+ */
+export function setStepEal(steps, id, patch) {
+  if (!patch || typeof patch !== 'object') return steps
+  const index = steps.findIndex((s) => s.id === id)
+  if (index < 0) return steps
+  const current = steps[index]
+  if (effectiveChannel(current) !== 'eal') return steps
+  const base = current.eal || { plugin: '', params: {} }
+  const next = { plugin: base.plugin ?? '', params: base.params ?? {} }
+  let changed = current.eal == null // seeding a missing block is itself a change
+  if ('plugin' in patch && patch.plugin !== base.plugin) {
+    next.plugin = patch.plugin
+    changed = true
+  }
+  if ('params' in patch && patch.params !== base.params) {
+    next.params = patch.params
+    changed = true
+  }
+  if (!changed) return steps
+  const out = steps.slice()
+  out[index] = { ...current, eal: next }
+  return out
+}
+
 /**
  * Append one expected detection pre-filled from a TTP card object — the
  * launch-gate satisfaction path (§6.6). A TTP card carries a plane, a detection
@@ -511,6 +652,17 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
       if (Array.isArray(s.platforms) && s.platforms.length) step.platforms = s.platforms
       if (s.platformVariants && Object.keys(s.platformVariants).length) {
         step.platform_variants = s.platformVariants
+      }
+      // Phase-3a channel routing — OMIT-WHEN-DEFAULT, mirroring the cgo_anchor /
+      // platforms omission above: an agent step with no second endpoint emits
+      // none of the three keys, so it serializes byte-identically to the corpus.
+      const eff = s.channel || 'agent'
+      if (eff !== 'agent') step.channel = eff
+      if (eff === 'agent') {
+        if (s.target) step.target = s.target
+      }
+      if (eff === 'eal') {
+        step.eal = { plugin: s.eal?.plugin ?? '', params: s.eal?.params ?? {} }
       }
       return step
     }),
@@ -585,6 +737,13 @@ export function draftSnapshot(draft) {
       command: s.command ?? null,
       identity: s.identity ?? null,
       technique: s.technique ?? null,
+      // Load-bearing, NOT cosmetic: channel/target/eal change WHICH beacon runs
+      // the step (or that it becomes an EAL pending marker), so an edit must
+      // read dirty and force a re-save before launch. A corpus step snapshots
+      // these as null on both sides, so the round-trip equality still holds.
+      channel: s.channel ?? null,
+      target: s.target ?? null,
+      eal: s.eal ? { plugin: s.eal.plugin ?? '', params: s.eal.params ?? {} } : null,
       platforms: Array.isArray(s.platforms) ? s.platforms.slice() : [],
       causalityParent: s.causalityParent ?? null,
       causalityPivot: s.causalityPivot ?? null,
