@@ -94,18 +94,18 @@
     },
     "ttp_cards": 175
   },
-  "eal_plugins": 21,
+  "eal_plugins": 26,
   "generated_by": "scripts/generate_ground_truth.py",
   "http_routes": {
     "apirouter_instances": 25,
     "by_method": {
       "api_route": 1,
       "delete": 5,
-      "get": 86,
+      "get": 87,
       "post": 35,
       "put": 6
     },
-    "decorator_count": 133,
+    "decorator_count": 134,
     "router_files": 23
   },
   "iac_modules_aws": 11,
