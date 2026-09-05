@@ -333,7 +333,7 @@
   padding: 16px 18px;
   border-radius: 8px;
   background: var(--ink);
-  color: #C7D6CE;
+  color: var(--tx-on-ink, #C7D6CE);
   font-size: 11px;
   line-height: 1.7;
   white-space: pre-wrap;
@@ -493,7 +493,7 @@
 }
 .theme-console .chain-node__tools button {
   flex: 1;
-  height: 20px;
+  min-height: 24px;
   background: transparent;
   border: 1px solid var(--bd);
   border-radius: 4px;
@@ -786,3 +786,135 @@
 }
 .theme-console .view:has(> .composer) > * { flex: none; }
 .theme-console .view:has(> .composer) > .composer { flex: 1; min-height: 0; height: auto; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPLIT-COMPONENT ADDITIONS (2026-09-04 Composer workflow redesign)
+
+   ComposerView.jsx became a slim wiring layer; the centre/left/right columns
+   are now ComposerCanvas / ComposerPalette / ComposerInspector. These rules
+   dress the surfaces those three added — the Design/Run LENS toggle and zoom,
+   the run-graph overlay, the NICE palette tab bar, and the now-editable
+   inspector's inputs. Everything else (`.chain-node*`, `.field-*`,
+   `.detection-card*`, `.composer-bench*`) is reused verbatim from above, which
+   is why "bench" was renamed to "palette" in the component tree only.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Canvas: lens toggle + zoom (siblings of __views in the head) ─── */
+.theme-console .composer-canvas__lens { display: flex; gap: 3px; flex: none; }
+.theme-console .composer-canvas__zoom { display: flex; gap: 4px; flex: none; align-items: center; }
+
+/* The laid-out graph is absolutely positioned by composerLayout coordinates;
+   this wrapper just gives it a scroll context so a tall chain never pushes the
+   workstream off-screen. */
+.theme-console .composer-canvas__graph {
+  position: relative;
+  max-width: 100%;
+  overflow: auto;
+}
+
+/* ─── Run lens ─── */
+.theme-console .composer-canvas__runempty {
+  margin-bottom: 14px;
+}
+.theme-console .composer-canvas__runbar {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+.theme-console .composer-canvas__rungraph { margin-bottom: 8px; }
+.theme-console .chain-node--run { box-shadow: var(--shadow); }
+.theme-console .chain-node__runbadge {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+}
+
+/* ─── Palette: NICE tab bar (Build · Network · Identity · Cloud · Endpoint) ─── */
+.theme-console .composer-bench__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.theme-console .composer-bench__tab {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--s1);
+  color: var(--tx2);
+  border: 1px solid var(--bd2);
+}
+.theme-console .composer-bench__tab:hover { border-color: var(--ac); color: var(--tx); }
+.theme-console .composer-bench__tab--active {
+  background: var(--tx);
+  color: var(--s1);
+  border-color: var(--tx);
+}
+
+/* ─── Inspector: the fields are now editable ─── */
+.theme-console .field-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  margin-top: 4px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--tx);
+  box-sizing: border-box;
+}
+.theme-console select.field-input { cursor: pointer; }
+.theme-console .field-input:focus { outline: none; border-color: var(--ac); }
+.theme-console .field-sub {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 2px;
+}
+/* The command <pre> is contentEditable — it must read as a real editor, not a
+   static block, so it takes the focus ring the inputs do. */
+.theme-console .field-code[contenteditable="true"] { cursor: text; }
+.theme-console .field-code[contenteditable="true"]:focus {
+  outline: none;
+  border-color: var(--ac);
+  box-shadow: 0 0 0 1px var(--ac);
+}
+/* Null / empty command: show the help text as a real placeholder, never as
+   editable content the DC would turn into the command by typing. */
+.theme-console .field-code--editable:empty::before {
+  content: attr(data-placeholder);
+  color: var(--tx3);
+  pointer-events: none;
+}
+
+/* The add-a-detection form and the workflow-meta block. */
+.theme-console .detection-add {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px dashed var(--bd2);
+  border-radius: 8px;
+  background: var(--s1);
+}
+.theme-console .detection-add .field-input { margin-top: 6px; }
+.theme-console .detection-add .btn--xs { margin-top: 8px; }
+.theme-console .composer-inspector__meta { display: block; }
+
+/* Provenance: a persisted draft names its saved row. */
+.theme-console .composer__saved { color: var(--ink-detected); font-weight: 600; }
+
+/* Ghost button variant — a quiet action inside a card (remove one detection). */
+.theme-console .btn--ghost {
+  background: transparent;
+  border-color: var(--bd2);
+  color: var(--tx2);
+}
+.theme-console .btn--ghost:hover { border-color: var(--crit); color: var(--crit); }

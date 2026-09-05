@@ -22,10 +22,13 @@ def registry():
 
 
 class FakeScenario:
-    def __init__(self, sid, base, addons, plane="EDR"):
+    def __init__(self, sid, base, addons, plane="EDR", status="active"):
         self.scenario_id = sid
         self.name = sid
         self.plane = plane
+        # POST /api/pov/scope filters to status='active' so a status='draft'
+        # Composer row can never surface in a tenant's runnable/upsell output.
+        self.status = status
         self.tc_ref = "TC-EDR-03"
         self.moat_tier = "MOAT"
         self.required_base_platform = base
@@ -228,6 +231,34 @@ class _FakeDb:
 
     async def execute(self, stmt):
         self.last_sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-        rows = [r for r in self._rows
-                if f"'{r.plane}'" in self.last_sql or "WHERE" not in self.last_sql]
+        # Inspect ONLY the WHERE clause — `select(Scenario)` lists every column
+        # (plane, status, …) in its projection, so a substring match against the
+        # whole statement always "sees" plane/status even with no filter. scope
+        # always filters status (active-only) and optionally plane.
+        where = self.last_sql.split("WHERE", 1)[1] if "WHERE" in self.last_sql else ""
+        rows = []
+        for r in self._rows:
+            plane_ok = ("plane" not in where) or (f"'{r.plane}'" in where)
+            status_ok = ("status" not in where) or (
+                f"'{getattr(r, 'status', 'active')}'" in where)
+            if plane_ok and status_ok:
+                rows.append(r)
         return _FakeResult(rows)
+
+
+@pytest.mark.asyncio
+async def test_draft_scenarios_are_excluded_from_scope():
+    """Gate A5: a status='draft' Composer row declares no entitlements, so left
+    unfiltered it would fall into the tenant-facing runnable[] list. Scope must
+    only ever consider status='active' corpus scenarios."""
+    from api.pov import ScopeRequest, scope_pov  # noqa: PLC0415
+
+    active = FakeScenario("S-ACTIVE", ["Cortex XSIAM"], [])
+    draft = FakeScenario("SIM-DRAFT-abc", ["Cortex XSIAM"], [], status="draft")
+    out = await scope_pov(ScopeRequest(profile="enterprise"), _FakeDb([active, draft]))
+    runnable_ids = {r["scenario_id"] for r in out.get("runnable", [])}
+    blocked_ids = {r["scenario_id"] for r in out.get("blocked", [])}
+    assert "S-ACTIVE" in runnable_ids
+    # The draft appears in NEITHER list — it was filtered before scoping.
+    assert "SIM-DRAFT-abc" not in runnable_ids
+    assert "SIM-DRAFT-abc" not in blocked_ids

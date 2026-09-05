@@ -310,6 +310,10 @@ class NgfwEalEmitter(AnalyticsLogEmitter):
 
     class Meta:
         name = "ngfw_eal_emitter"
+        # Vendor analytics catalogue join (see analytics_catalogue.py). The PAN
+        # EAL feed carries both the EAL-logs and traffic-logs catalogue sources.
+        data_sources = ["pan_firewall_eal_logs", "pan_firewall_traffic_logs"]
+        datasets = ["panw_ngfw_traffic_raw"]
         version = "1.0.0"
         description = (
             "Emits shape-true PAN-OS NGFW Enhanced Application Log (EAL) traffic "

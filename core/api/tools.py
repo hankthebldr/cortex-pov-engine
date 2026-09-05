@@ -210,7 +210,13 @@ async def adapter_wiring_coverage(db: AsyncSession = Depends(get_db)):
     """
     from models import Scenario  # noqa: PLC0415
 
-    scenarios = list((await db.execute(select(Scenario))).scalars().all())
+    # Active-only: a status='draft' Composer row wiring an adapter must not flip
+    # that adapter from 'candidate' to 'wired' and hide a real de-hand-rolling
+    # gap behind an unpersisted draft (Gate A5).
+    scenarios = list(
+        (await db.execute(select(Scenario).where(Scenario.status == "active")))
+        .scalars().all()
+    )
     wired_ids: set[str] = set()
     for s in scenarios:
         for tool in (s.external_tools or []):

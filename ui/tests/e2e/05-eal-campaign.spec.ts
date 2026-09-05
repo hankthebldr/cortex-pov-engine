@@ -24,7 +24,11 @@ test('EAL Plugins sub-view opens and shows the plugin surface', async ({ page, a
   await page.goto('/')
   await gotoView(page, 'EAL Plugins')
   // The surface opens on Campaigns; the plugin catalogue is the builder's.
-  await page.getByRole('button', { name: /New Campaign/i }).click()
+  // "+ New Campaign" is a TAB in the surface's tablist, not a button — the
+  // destination redesign made the builder a sibling tab of Campaigns rather
+  // than a control that opens one. getByRole('button') can never match a
+  // role=tab, so this timed out for a reason unrelated to the plugin surface.
+  await page.getByRole('tab', { name: /New Campaign/i }).click()
   await page.waitForLoadState('networkidle')
 
   // At least one plugin name from the API should surface. The builder renders

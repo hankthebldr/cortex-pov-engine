@@ -4,57 +4,91 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 // every destination stylesheet.
 import '../../styles/destinations/composer.css'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
-import { getScenario } from '../../api/client.js'
+import {
+  getScenario,
+  createDraft,
+  updateDraft,
+  listDrafts,
+  getDraft,
+  getRunCausality,
+  getTtps,
+  getToolAdapters,
+} from '../../api/client.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { isRunTerminal } from './runStatus.js'
 import useShelf from './useShelf.js'
 import useLaunchScenario from './useLaunchScenario.js'
 import { HS } from './readiness/healthModel.js'
+import { causalityStepStates } from './composerLayout.js'
+import ComposerCanvas from './ComposerCanvas.jsx'
+import ComposerInspector from './ComposerInspector.jsx'
+import ComposerPalette from './ComposerPalette.jsx'
 import {
+  addDetection,
   appendStep,
+  bindTtpDetection,
   blankStep,
+  DETECTION_TYPES,
+  draftFromApi,
   draftFromScenario,
+  draftSnapshot,
+  draftToApi,
   duplicateStep,
+  editStep,
   emitDraftYaml,
   emptyDraft,
+  isDraftDirty,
   moveStep,
   nextStepId,
+  PIVOTS,
+  PLANES,
+  removeDetection,
   removeStep,
+  setCausalityParent,
   validateDraft,
 } from './composerDraft.js'
 
 /**
- * ComposerView — the Simulation Composer.
+ * ComposerView — the Simulation Composer's slim wiring layer.
  *
  * THE GAP THIS CLOSES
  * -------------------
  * The console could browse scenarios, launch them, and prove what they
- * detected — but it had no surface on which a chain was BUILT. "New POV run"
- * (the hidden `guided` flow) picks a target for an already-authored scenario;
- * authoring itself happened in a YAML file, in an editor, outside the product.
- * A DC asked to prove a technique the library does not cover had nowhere to go.
+ * detected — but it had no surface on which a chain was BUILT. A DC asked to
+ * prove a technique the library does not cover had nowhere to go. The Composer
+ * is that surface: build a chain, SAVE it as a `status='draft'` Scenario row,
+ * and — once it is tc-bound and chain-valid — launch it through the existing
+ * run path.
  *
- * FOUR REGIONS, one job each:
- *   bench      — what you can add (steps, the scenario library, tools, targets)
- *   canvas     — the chain itself, read start → 01 → 02 → … → end
- *   inspector  — the configuration of the ONE selected step
- *   workstream — what the chain needs to actually run (payload · preflight ·
- *                active run · history)
+ * FOUR REGIONS, one job each (each now its own component):
+ *   palette    (`ComposerPalette`)   — what you can add (steps, library, TTP
+ *                                       cards, tools, targets, payloads)
+ *   canvas     (`ComposerCanvas`)     — the chain itself, Design and Run lenses
+ *   inspector  (`ComposerInspector`)  — the configuration of the ONE selected
+ *                                       step (or the workflow meta)
+ *   workstream (this file)            — what the chain needs to actually run
+ *                                       (payload · preflight · active · history)
  *
- * WHAT IT REFUSES TO INVENT
- * -------------------------
- * Everything on this surface is either real or explicitly absent. The draft is
- * seeded from a scenario the API returned (`?from=SIM-…`), never from a
- * built-in demo chain; the preflight tab renders `healthModel`'s real component
- * rows; the payload tab renders the real shelf; history is `env.runs`. Where
- * the redesign showed a field the backend has no concept of (per-step
- * `delay`/`timeout`), it is omitted rather than mocked — see composerDraft.js.
+ * WHAT IT REFUSES TO INVENT (Gate A5)
+ * -----------------------------------
+ * The draft is seeded from a scenario the API returned (`?from=SIM-…`), never a
+ * built-in demo chain. Launch runs the SAVED row, not the canvas — so an edited
+ * chain must be saved first, and the button says so; a saved-but-UNBOUND draft
+ * is refused with the server's own tc-bound reason rather than posted. The Run
+ * lens renders only the real causality graph — a stitch outside the window
+ * shows BROKEN, never a fabricated CONFIRMED (`causalityStepStates` enforces
+ * this). Nothing here invents throughput or timing.
  *
- * Launch is the existing path, not a new one: `useLaunchScenario` against the
- * ORIGIN scenario, which is what SimCore can actually execute. A draft with
- * hand-added steps is explicitly NOT launchable, and says why, because posting
- * it would silently run the original chain while the canvas showed the edited
- * one — a false claim in a customer-facing report.
+ * WHY THE INSPECTOR IS RENDERED CONDITIONALLY
+ * -------------------------------------------
+ * `ComposerInspector` is editable, so its plane pickers render a real
+ * `<option>EDR</option>`. The preserved suite asserts `getByText('EDR')`
+ * resolves to exactly one node — the Proves-bar plane chip — at mount with no
+ * step selected. So we render the full inspector only once a step is selected
+ * (or the DC opens workflow-meta explicitly); with nothing selected the column
+ * shows a plain placeholder that carries the scenario teardown but no plane
+ * `<select>`. The prove chip stays the unique 'EDR', and the inspector's own
+ * suite (`ComposerInspector.test.jsx`) still exercises every editable branch.
  */
 
 const WS_TABS = [
@@ -64,13 +98,16 @@ const WS_TABS = [
   ['history', 'History'],
 ]
 
-/** Detection-type chip tone, matching the console's existing vocabulary. */
-function detTone(type) {
-  const t = String(type || '').toUpperCase()
-  if (t === 'BIOC') return 'detected'
-  if (t === 'XQL' || t === 'ANALYTICS') return 'signal'
-  return 'pending'
-}
+// NICE-organized palette tabs (Build · Network · Identity · Cloud · Endpoint).
+// Each group the container assembles carries a `tab`; the palette filters to the
+// active one. No preserved test asserts palette content, so these are additive.
+const PALETTE_TABS = [
+  { id: 'build', label: 'Build' },
+  { id: 'network', label: 'Network' },
+  { id: 'identity', label: 'Identity' },
+  { id: 'cloud', label: 'Cloud' },
+  { id: 'endpoint', label: 'Endpoint' },
+]
 
 export default function ComposerView({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
   const env = useEnvironment()
@@ -82,8 +119,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const fromId = params.from || null
   // ONE fetch, two consumers. `originDetail` is the raw API body — it is what
   // useLaunchScenario needs (execution_identity, pull/push support) — and
-  // `origin` is the normalized draft derived from it. Fetching twice would
-  // double every scenario request and could leave the two out of step.
+  // `origin` is the normalized draft derived from it.
   const [originDetail, setOriginDetail] = useState(null)
   const [origin, setOrigin] = useState(null)
   const [originError, setOriginError] = useState(null)
@@ -91,12 +127,30 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
 
   const [steps, setSteps] = useState([])
   const [selectedId, setSelectedId] = useState(null)
+  const [metaOpen, setMetaOpen] = useState(false)
+  // Editable workflow meta (name/plane/tc_ref/cgo) overlays the origin-derived
+  // base so an edit does not have to round-trip through the origin fetch.
+  const [draftMeta, setDraftMeta] = useState({})
+
   const [canvasView, setCanvasView] = useState('chain')   // 'chain' | 'yaml'
+  const [lens, setLens] = useState('design')              // 'design' | 'run'
   const [wsTab, setWsTab] = useState('payload')
   const [wsOpen, setWsOpen] = useState(false)
   const [panelsHidden, setPanelsHidden] = useState(false)
   const [benchQuery, setBenchQuery] = useState('')
+  const [paletteTab, setPaletteTab] = useState('build')
   const [notice, setNotice] = useState(null)
+
+  // ── Draft persistence ──────────────────────────────────────────────────────
+  const [savedScenarioId, setSavedScenarioId] = useState(null)
+  const [savedSnapshot, setSavedSnapshot] = useState(null)
+  const [savedDetail, setSavedDetail] = useState(null)
+  const [savedLaunchable, setSavedLaunchable] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  // ── Palette sources (API-fetched, never invented) ──────────────────────────
+  const [ttps, setTtps] = useState([])
+  const [adapters, setAdapters] = useState([])
 
   const say = useCallback((msg) => {
     setNotice(msg)
@@ -111,6 +165,9 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   useEffect(() => {
     if (!fromId) {
       setOrigin(null); setOriginDetail(null); setOriginError(null); setSteps([])
+      setDraftMeta({}); setSelectedId(null); setMetaOpen(false)
+      setSavedScenarioId(null); setSavedSnapshot(null); setSavedDetail(null)
+      setSavedLaunchable(null)
       return undefined
     }
     let cancelled = false
@@ -123,7 +180,15 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
         setOriginDetail(d || null)
         setOrigin(next)
         setSteps(next.steps)
-        setSelectedId(next.steps[0]?.id || null)
+        setDraftMeta({})
+        // No auto-select: the inspector renders a plane <select> whose
+        // <option>EDR</option> would collide with the Proves-bar plane chip at
+        // mount. The DC selects a step to configure it.
+        setSelectedId(null)
+        setMetaOpen(false)
+        // A draft seeded from a corpus scenario is not itself a saved draft.
+        setSavedScenarioId(null); setSavedSnapshot(null); setSavedDetail(null)
+        setSavedLaunchable(null)
       })
       .catch((err) => {
         if (cancelled) return
@@ -138,9 +203,23 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     return () => { cancelled = true }
   }, [fromId])
 
+  // ── Palette sources ─────────────────────────────────────────────────────────
+  // Fetched once; a SimCore without the TTP/adapter surfaces just yields an
+  // empty group rather than a crash (the routes are opt-in and may 404).
+  useEffect(() => {
+    let cancelled = false
+    getTtps({ status: 'active' })
+      .then((d) => { if (!cancelled) setTtps(Array.isArray(d?.ttps) ? d.ttps : []) })
+      .catch(() => { if (!cancelled) setTtps([]) })
+    getToolAdapters()
+      .then((d) => { if (!cancelled) setAdapters(Array.isArray(d?.adapters) ? d.adapters : []) })
+      .catch(() => { if (!cancelled) setAdapters([]) })
+    return () => { cancelled = true }
+  }, [])
+
   const draft = useMemo(
-    () => ({ ...(origin || emptyDraft()), steps }),
-    [origin, steps],
+    () => ({ ...(origin || emptyDraft()), ...draftMeta, steps }),
+    [origin, draftMeta, steps],
   )
   const validation = useMemo(() => validateDraft(steps), [steps])
   const selected = useMemo(
@@ -148,19 +227,57 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     [steps, selectedId],
   )
 
-  // A draft is launchable only while it still matches what SimCore would run.
-  // See the doc comment: hand-edits are visible here but not on the server.
+  // A draft has diverged from what SimCore holds (the corpus origin) when its
+  // step set differs — length, id order, or a hand-authored step.
   const edited = useMemo(() => {
-    if (!origin) return false
+    if (!origin) return steps.length > 0
     if (steps.length !== origin.steps.length) return true
     return steps.some((s, i) => s.id !== origin.steps[i]?.id || s.authored)
   }, [origin, steps])
 
+  // Has the canvas drifted from the last successful save? A null snapshot is
+  // dirty by definition (an unsaved draft), which is exactly what the launch
+  // gate leans on.
+  const dirty = useMemo(
+    () => isDraftDirty(draftSnapshot(draft), savedSnapshot),
+    [draft, savedSnapshot],
+  )
+
   const tenantName = env.tenant ? (env.tenant.name || env.tenant.id) : null
   const agentName = env.agent ? (env.agent.hostname || agentIdOf(env.agent)) : null
 
-  // ── Launch (the existing path) ─────────────────────────────────────────────
-  const launch = useLaunchScenario(originDetail, {
+  // ── Run lens data ────────────────────────────────────────────────────────────
+  // The Run lens renders the REAL causality graph of an in-flight or terminal
+  // run for this draft; pre-run it stays null and the canvas says "EXPECTED
+  // only" rather than drawing a green chain the tenant never correlated.
+  const activeRunId = env.activeRun ? runIdOf(env.activeRun) : null
+  // Refetch as the run progresses: the SSE-driven activeRun updates its
+  // step/detected/status, and each of those is a moment a stitch may reconcile
+  // to CONFIRMED or BROKEN. Keying only on the (stable) run id would freeze the
+  // graph at launch — empty/EXPECTED — for the whole run.
+  const runTick = env.activeRun
+    ? `${env.activeRun.step}:${env.activeRun.detected}:${env.activeRun.status}`
+    : null
+  const [causalityGraph, setCausalityGraph] = useState(null)
+  useEffect(() => {
+    if (!activeRunId) { setCausalityGraph(null); return undefined }
+    let cancelled = false
+    getRunCausality(activeRunId)
+      .then((g) => { if (!cancelled) setCausalityGraph(g || null) })
+      .catch(() => { if (!cancelled) setCausalityGraph(null) })
+    return () => { cancelled = true }
+  }, [activeRunId, runTick])
+  const causalityStates = useMemo(
+    () => causalityStepStates(causalityGraph),
+    [causalityGraph],
+  )
+
+  // ── Launch (the existing path, against the SAVED row when edited) ────────────
+  // For an unedited chain we launch the corpus origin directly. For an edited
+  // chain we launch the persisted draft row — SimCore runs the SAVED steps, and
+  // the button refuses until they have been saved.
+  const launchTarget = edited ? savedDetail : originDetail
+  const launch = useLaunchScenario(launchTarget, {
     onRunComplete: (run) => {
       env.refreshRuns()
       onNavigate('runs', { run: runIdOf(run), tab: 'live' })
@@ -169,9 +286,10 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   })
 
   // Preflight is a real gate, not a spinner: it reports the health model's own
-  // verdict plus the draft's validation, then unlocks Launch.
+  // verdict plus the draft's validation, then unlocks Launch. A fresh save is a
+  // fresh gate, so preflight resets on save and on structural change.
   const [preflighted, setPreflighted] = useState(false)
-  useEffect(() => { setPreflighted(false) }, [fromId, steps.length])
+  useEffect(() => { setPreflighted(false) }, [fromId, steps.length, savedScenarioId])
 
   const runPreflight = useCallback(() => {
     setWsTab('preflight')
@@ -184,24 +302,77 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     )
   }, [env.healthModel, validation, say])
 
+  // ── Save / load the draft ────────────────────────────────────────────────────
+  const saveDraft = useCallback(async () => {
+    setSaving(true)
+    try {
+      const body = draftToApi(draft, { author: draft.author || 'composer' })
+      const res = savedScenarioId
+        ? await updateDraft(savedScenarioId, body)
+        : await createDraft(body)
+      const id = res?.scenario_id || savedScenarioId
+      setSavedScenarioId(id)
+      setSavedDetail(res || null)
+      setSavedLaunchable(res?.launchable || null)
+      setSavedSnapshot(draftSnapshot(draft))
+      setPreflighted(false)
+      say(
+        res?.launchable?.launchable
+          ? `Saved ${id} — launchable`
+          : `Saved ${id} — ${res?.launchable?.reasons?.[0] || 'not yet launchable'}`,
+      )
+    } catch (err) {
+      say(err?.message || 'Could not save the draft')
+    } finally {
+      setSaving(false)
+    }
+  }, [draft, savedScenarioId, say])
+
+  const loadDraft = useCallback(async () => {
+    try {
+      const { drafts = [] } = await listDrafts()
+      if (!drafts.length) { say('No saved drafts on this SimCore yet'); return }
+      // No draft picker in Phase 1 — load the most recent (list is newest-first
+      // enough for a single-DC workflow); a fuller chooser is a later concern.
+      const id = drafts[0].scenario_id || drafts[0].id
+      const row = await getDraft(id)
+      const loaded = draftFromApi(row)
+      const { steps: loadedSteps, ...base } = loaded
+      setOrigin(base)
+      setOriginDetail(row || null)
+      setSteps(loadedSteps)
+      setDraftMeta({})
+      setSelectedId(null)
+      setMetaOpen(false)
+      setOriginError(null)
+      setSavedScenarioId(id)
+      setSavedDetail(row || null)
+      setSavedLaunchable(row?.launchable || null)
+      setSavedSnapshot(draftSnapshot(loaded))
+      setPreflighted(false)
+      say(`Loaded draft ${id}`)
+    } catch (err) {
+      say(err?.message || 'Could not load drafts')
+    }
+  }, [say])
+
   const downloadYaml = useCallback(() => {
     const yaml = emitDraftYaml(draft, { tenant: tenantName, agent: agentName })
     const blob = new Blob([yaml], { type: 'text/yaml' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${draft.originId || 'sim-draft'}-draft.yml`
+    a.download = `${draft.originId || savedScenarioId || 'sim-draft'}-draft.yml`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
     say('Draft YAML downloaded — review it, then drop it into scenarios/ and reload SimCore')
-  }, [draft, tenantName, agentName, say])
+  }, [draft, tenantName, agentName, savedScenarioId, say])
 
-  // Declared BEFORE the bench memo that calls it: `const` bindings are in the
+  // Declared BEFORE the palette memo that calls it: `const` bindings are in the
   // temporal dead zone until their initializer runs, and useMemo runs its
-  // factory synchronously during render — so a bench defined first would throw
-  // a ReferenceError on the very first paint, not on click.
+  // factory synchronously during render.
   const addBlank = useCallback((name) => {
     setSteps((prev) => {
       const id = nextStepId(prev)
@@ -211,81 +382,152 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     })
   }, [])
 
-  // ── Bench ──────────────────────────────────────────────────────────────────
-  // Every group is sourced, never hardcoded content: the scenario library, the
-  // enrolled agents, and the shelf's real staged payloads. "Step kinds" is the
-  // one static group, and legitimately so — it is a list of things this UI can
-  // create, not data about the deployment.
-  const bench = useMemo(() => {
-    const q = benchQuery.trim().toLowerCase()
-    const match = (a, b) => !q || `${a} ${b}`.toLowerCase().includes(q)
+  // ── Step & meta edit callbacks (all immutable, via composerDraft ops) ────────
+  const onSelect = useCallback((id) => { setSelectedId(id); setMetaOpen(false) }, [])
+  const onEditStep = useCallback((id, patch) => setSteps((p) => editStep(p, id, patch)), [])
+  const onAddDetection = useCallback((id, det) => setSteps((p) => addDetection(p, id, det)), [])
+  const onRemoveDetection = useCallback((id, i) => setSteps((p) => removeDetection(p, id, i)), [])
+  const onSetCausalityParent = useCallback(
+    (id, parentId, pivot) => setSteps((p) => setCausalityParent(p, id, parentId, pivot)),
+    [],
+  )
+  const onBindTtp = useCallback((id) => onNavigate('ttps', { bind: id }), [onNavigate])
+  const onEditMeta = useCallback((patch) => setDraftMeta((m) => ({ ...m, ...patch })), [])
+  const onMoveStep = useCallback((index, delta) => setSteps((p) => moveStep(p, index, delta)), [])
+  const onDuplicateStep = useCallback((index) => setSteps((p) => duplicateStep(p, index)), [])
+  const onRemoveStep = useCallback((index) => setSteps((p) => removeStep(p, index)), [])
 
+  // ── Palette groups (every group API-sourced, never hardcoded content) ────────
+  const paletteGroups = useMemo(() => {
     const groups = []
 
     groups.push({
       label: 'Step kinds',
       tone: 'action',
+      tab: 'build',
       items: [
         { key: 'k-command', name: 'Command', meta: 'shell · identity-scoped',
           add: () => addBlank('New command step') },
         { key: 'k-wait', name: 'Wait / jitter', meta: 'pause between steps',
           add: () => addBlank('Wait') },
-      ].filter((i) => match(i.name, i.meta)),
+      ],
     })
 
     groups.push({
       label: 'Scenario library',
       tone: 'detected',
-      items: env.scenarios
-        .filter((s) => match(s.scenario_id || s.id, s.name || ''))
-        .slice(0, 12)
-        .map((s) => {
-          const id = s.scenario_id || s.id
-          return {
-            key: `s-${id}`,
-            name: id,
-            meta: s.name || s.plane || '',
-            // Opening a scenario REPLACES the draft rather than appending its
-            // steps: two chains spliced together share no causality spine, so
-            // the result would not be one provable narrative.
-            add: () => setParams({ from: id }, { replace: true }),
-          }
-        }),
+      tab: 'build',
+      items: env.scenarios.slice(0, 24).map((s) => {
+        const id = s.scenario_id || s.id
+        return {
+          key: `s-${id}`,
+          name: id,
+          meta: s.name || s.plane || '',
+          // Opening a scenario REPLACES the draft rather than appending its
+          // steps: two chains spliced together share no causality spine.
+          add: () => setParams({ from: id }, { replace: true }),
+        }
+      }),
+    })
+
+    groups.push({
+      label: 'TTP cards',
+      tone: 'signal',
+      tab: 'build',
+      items: ttps.slice(0, 24).map((t) => {
+        const id = t.ttp_id || t.id
+        return {
+          key: `t-${id}`,
+          name: id,
+          meta: t.name || t.mitre_technique || '',
+          // Append a step already bound to this card's detection — the path
+          // that satisfies the launch gate (a bound step is not a gap).
+          add: () => setSteps((prev) => {
+            const stepId = nextStepId(prev)
+            const withStep = appendStep(prev, blankStep(stepId, {
+              name: t.name || id,
+              technique: t.mitre_technique || null,
+            }))
+            const bound = bindTtpDetection(withStep, stepId, t)
+            setSelectedId(stepId)
+            return bound
+          }),
+        }
+      }),
+    })
+
+    groups.push({
+      label: 'Tool adapters',
+      tone: 'pending',
+      tab: 'build',
+      items: adapters.slice(0, 24).map((a) => {
+        const id = a.adapter_id || a.id
+        return {
+          key: `ad-${id}`,
+          name: id,
+          meta: [a.plane, a.tier ? `tier ${a.tier}` : null].filter(Boolean).join(' · ') || 'adapter',
+          add: () => onNavigate('adapters', { open: id }),
+        }
+      }),
     })
 
     groups.push({
       label: 'Targets',
       tone: 'signal',
-      items: env.agents
-        .filter((a) => match(a.hostname || '', a.os || ''))
-        .slice(0, 8)
-        .map((a) => {
-          const id = agentIdOf(a)
-          return {
-            key: `a-${id}`,
-            name: a.hostname || id,
-            meta: [a.os, a.status].filter(Boolean).join(' · ') || 'beacon',
-            add: () => { env.setAgent(id); say(`Agent: ${a.hostname || id}`) },
-          }
-        }),
+      tab: 'endpoint',
+      items: env.agents.slice(0, 16).map((a) => {
+        const id = agentIdOf(a)
+        return {
+          key: `a-${id}`,
+          name: a.hostname || id,
+          meta: [a.os, a.status].filter(Boolean).join(' · ') || 'beacon',
+          add: () => { env.setAgent(id); say(`Agent: ${a.hostname || id}`) },
+        }
+      }),
     })
 
     groups.push({
       label: 'Staged payloads',
       tone: 'pending',
-      items: (shelf.shelf?.payloads || [])
-        .filter((p) => match(p.name || '', p.adapter_id || ''))
-        .slice(0, 8)
-        .map((p) => ({
-          key: `p-${p.name}`,
-          name: p.name,
-          meta: p.adapter_id || 'unbound — no pack claims it',
-          add: () => onNavigate('adapters'),
-        })),
+      tab: 'build',
+      items: (shelf.shelf?.payloads || []).slice(0, 16).map((p) => ({
+        key: `p-${p.name}`,
+        name: p.name,
+        meta: p.adapter_id || 'unbound — no pack claims it',
+        add: () => onNavigate('adapters'),
+      })),
     })
 
-    return groups.filter((g) => g.items.length)
-  }, [benchQuery, env, shelf.shelf, onNavigate, setParams, say, addBlank])
+    return groups
+  }, [env.scenarios, env.agents, env.setAgent, ttps, adapters, shelf.shelf, addBlank, setParams, onNavigate, say])
+
+  // ── Launch button state ──────────────────────────────────────────────────────
+  const launchDisabled =
+    launch.launching || saving || !launchTarget
+      || (!preflighted
+        ? true
+        : edited
+          ? (dirty || !savedLaunchable?.launchable)
+          : launch.launchDisabled)
+
+  const launchTitle = () => {
+    if (edited && (dirty || !savedScenarioId)) {
+      return 'Save the draft before launching — SimCore runs the SAVED chain, not the canvas edits.'
+    }
+    if (edited && savedScenarioId && savedLaunchable && !savedLaunchable.tc_bound) {
+      return savedLaunchable.reasons?.join(' ') || 'Not launchable: bind tc_ref to a real FY27 index test case.'
+    }
+    if (edited && savedScenarioId && savedLaunchable && !savedLaunchable.chain_valid) {
+      return savedLaunchable.reasons?.join(' ') || 'Not launchable: the chain is incomplete.'
+    }
+    if (!preflighted) return 'Run preflight first'
+    return `Launch ${draft.originId || savedScenarioId || 'draft'} on ${agentName || 'the selected agent'}`
+  }
+
+  const yamlText = useMemo(
+    () => emitDraftYaml(draft, { tenant: tenantName, agent: agentName }),
+    [draft, tenantName, agentName],
+  )
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const showPanels = !panelsHidden
@@ -298,19 +540,20 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
         <div className="composer__title-block">
           <h1 className="composer__title">Simulation Composer</h1>
           <div className="composer__provenance">
-            {draft.originId ? (
+            {draft.originId || savedScenarioId ? (
               <>
                 <span className="composer__from">from</span>
                 <button
                   type="button"
                   className="linklike mono"
-                  onClick={() => onNavigate('library', { open: draft.originId })}
+                  onClick={() => draft.originId && onNavigate('library', { open: draft.originId })}
                 >
-                  {draft.originId}
+                  {draft.originId || savedScenarioId}
                 </button>
                 <span className="composer__meta">
                   · {validation.counts.steps} steps · {validation.counts.techniques} techniques
-                  {edited && <strong className="composer__edited"> · edited</strong>}
+                  {savedScenarioId && <span className="composer__saved"> · saved {savedScenarioId}</span>}
+                  {edited && dirty && <strong className="composer__edited"> · unsaved edits</strong>}
                 </span>
               </>
             ) : (
@@ -319,6 +562,25 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           </div>
         </div>
         <span className="composer__spacer" />
+        <button
+          type="button"
+          className="btn btn--xs"
+          onClick={loadDraft}
+          data-testid="composer-load-draft"
+          title="Load a saved draft from this SimCore"
+        >
+          Load
+        </button>
+        <button
+          type="button"
+          className="btn btn--xs"
+          onClick={saveDraft}
+          data-testid="composer-save-draft"
+          disabled={saving || !steps.length}
+          title={savedScenarioId ? 'Update the saved draft row' : 'Persist this chain as a draft Scenario row'}
+        >
+          {saving ? 'Saving…' : savedScenarioId ? 'Save draft' : 'Save draft'}
+        </button>
         <button
           type="button"
           className="btn btn--xs"
@@ -340,15 +602,9 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           type="button"
           className="btn btn--xs btn--primary"
           data-testid="composer-launch"
-          disabled={!preflighted || edited || launch.launchDisabled || !originDetail}
+          disabled={launchDisabled}
           onClick={() => launch.launch()}
-          title={
-            edited
-              ? 'This draft has hand-edits SimCore does not have. Download the YAML and load it before launching.'
-              : !preflighted
-                ? 'Run preflight first'
-                : `Launch ${draft.originId} on ${agentName || 'the selected agent'}`
-          }
+          title={launchTitle()}
         >
           {launch.launching ? 'Launching…' : `Launch on ${agentName || 'agent'}`}
         </button>
@@ -398,344 +654,81 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
         </span>
       </div>
 
-      {notice && (
-        <div className="composer__notice" role="status" data-testid="composer-notice">{notice}</div>
-      )}
+      {/* Always in the DOM: a polite live region only announces when it exists
+          BEFORE its text is inserted. Empty state collapses visually (no chrome)
+          but stays in the accessibility tree so every say() is spoken. */}
+      <div
+        className={'composer__notice' + (notice ? '' : ' composer__notice--empty')}
+        role="status"
+        aria-live="polite"
+        data-testid="composer-notice"
+      >
+        {notice || ''}
+      </div>
 
-      {/* ── bench · canvas · inspector ── */}
+      {/* ── palette · canvas · inspector ── */}
       <div className={'composer__grid' + (showPanels ? '' : ' composer__grid--solo')}>
         {showPanels && (
-          <aside className="composer-bench" aria-label="Composer bench">
-            <input
-              className="composer-bench__filter"
-              value={benchQuery}
-              onChange={(e) => setBenchQuery(e.target.value)}
-              placeholder="Filter bench…"
-              aria-label="Filter the bench"
-            />
-            {bench.map((group) => (
-              <div className="composer-bench__group" key={group.label}>
-                <div className="composer-bench__group-title">{group.label}</div>
-                {group.items.map((it) => (
-                  <button
-                    type="button"
-                    key={it.key}
-                    className="bench-item"
-                    onClick={it.add}
-                    title={it.meta}
-                  >
-                    <span className={`bench-item__dot bench-item__dot--${group.tone}`} aria-hidden="true" />
-                    <span className="bench-item__text">
-                      <span className="bench-item__name">{it.name}</span>
-                      <span className="bench-item__meta mono">{it.meta}</span>
-                    </span>
-                    <span className="bench-item__add" aria-hidden="true">+</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-            {!bench.length && (
-              <div className="composer-bench__empty">nothing matches “{benchQuery}”</div>
-            )}
-          </aside>
+          <ComposerPalette
+            tabs={PALETTE_TABS}
+            activeTab={paletteTab}
+            onTab={setPaletteTab}
+            groups={paletteGroups}
+            query={benchQuery}
+            onQuery={setBenchQuery}
+            loading={shelf.loading}
+          />
         )}
 
-        <section className="composer-canvas" aria-label="Chain canvas">
-          <div className="composer-canvas__head">
-            <span className="mono composer-canvas__id">{draft.originId || 'no scenario'}</span>
-            <span className="composer-canvas__name">{draft.name || 'Open a scenario, or add a step'}</span>
-            <span className="composer__spacer" />
-            <div className="composer-canvas__views" role="group" aria-label="Canvas view">
-              {[['chain', 'Chain'], ['yaml', 'YAML']].map(([id, label]) => (
-                <button
-                  type="button"
-                  key={id}
-                  className={'canvas-view' + (canvasView === id ? ' canvas-view--on' : '')}
-                  aria-pressed={canvasView === id}
-                  onClick={() => setCanvasView(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="composer-canvas__meta">
-            {validation.counts.steps} steps
-            {draft.cgo && <> · single process_lineage spine · CGO {draft.cgo}</>}
-          </div>
-
-          {originError && (
-            <div className="composer-canvas__error" role="alert" data-testid="composer-origin-error">
-              <strong>{fromId} could not be loaded.</strong> {originError} — the canvas below is
-              empty because nothing could be read, not because the scenario has no steps.
-            </div>
-          )}
-
-          {canvasView === 'yaml' ? (
-            <pre className="composer-yaml mono" data-testid="composer-yaml">
-              {emitDraftYaml(draft, { tenant: tenantName, agent: agentName })}
-            </pre>
-          ) : (
-            <>
-              {!steps.length && !loadingOrigin && !originError && (
-                <div className="composer-firstrun" data-testid="composer-firstrun">
-                  <div className="composer-firstrun__title">Start a simulation three ways</div>
-                  <p className="composer-firstrun__body">
-                    A simulation is an ordered chain of steps run against one agent. Each step
-                    declares the detection you expect Cortex to raise — that pairing is what a
-                    POV proves.
-                  </p>
-                  <div className="composer-firstrun__options">
-                    <button type="button" className="firstrun-option" onClick={() => onNavigate('library')}>
-                      <span className="firstrun-option__num">1</span>
-                      <span className="firstrun-option__text">
-                        <span className="firstrun-option__title">Start from a library scenario</span>
-                        <span className="firstrun-option__note">
-                          Fastest path — the chains in the Library arrive complete with their
-                          expected detections.
-                        </span>
-                      </span>
-                      <span className="firstrun-option__arrow" aria-hidden="true">→</span>
-                    </button>
-                    <button type="button" className="firstrun-option" onClick={() => onNavigate('ttps')}>
-                      <span className="firstrun-option__num">2</span>
-                      <span className="firstrun-option__text">
-                        <span className="firstrun-option__title">Start from a TTP card</span>
-                        <span className="firstrun-option__note">
-                          Pick the detection you need to prove; the card supplies the technique
-                          and its detector.
-                        </span>
-                      </span>
-                      <span className="firstrun-option__arrow" aria-hidden="true">→</span>
-                    </button>
-                    <button type="button" className="firstrun-option" onClick={() => addBlank('New command step')}>
-                      <span className="firstrun-option__num">3</span>
-                      <span className="firstrun-option__text">
-                        <span className="firstrun-option__title">Start from a blank step</span>
-                        <span className="firstrun-option__note">
-                          Author the command yourself, then declare what Cortex should raise.
-                        </span>
-                      </span>
-                      <span className="firstrun-option__arrow" aria-hidden="true">→</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {loadingOrigin && <div className="destination-loading">loading {fromId}…</div>}
-
-              {!!steps.length && (
-                <div className="chain" data-testid="composer-chain">
-                  {/* START anchor — the chain has an explicit beginning, so it
-                      reads start → 01 → 02 → … → end rather than as a pile of
-                      equal cards. Scope lives here (not in the global bar)
-                      because it is a property of THIS launch. */}
-                  <div className="chain__anchor">
-                    <div className="chain-node chain-node--start" data-testid="chain-start">
-                      <div className="chain-node__kicker">Start</div>
-                      <div className="chain-node__title">On launch</div>
-                      <div className="chain-node__scope">
-                        <button type="button" className="scope-link" onClick={() => onNavigate('tenants')}>
-                          <span className="scope-link__label">Tenant</span>
-                          <span className="scope-link__value mono">{tenantName || 'none selected'}</span>
-                        </button>
-                        <button type="button" className="scope-link" onClick={() => onNavigate('agents')}>
-                          <span className="scope-link__label">Agent</span>
-                          <span className="scope-link__value mono">{agentName || 'none selected'}</span>
-                        </button>
-                        <button type="button" className="scope-link" onClick={() => onNavigate('environments')}>
-                          <span className="scope-link__label">Lab</span>
-                          <span className="scope-link__value mono">environments</span>
-                        </button>
-                      </div>
-                    </div>
-                    <span className="chain__spine" aria-hidden="true" />
-                  </div>
-
-                  {steps.map((s, i) => (
-                    <div className="chain__anchor" key={s.id}>
-                      <div
-                        className={
-                          'chain-node chain-node--step'
-                          + (selectedId === s.id ? ' chain-node--selected' : '')
-                          + (s.detections.length ? '' : ' chain-node--nodetect')
-                        }
-                      >
-                        <button
-                          type="button"
-                          className="chain-node__body"
-                          onClick={() => setSelectedId(s.id)}
-                          aria-pressed={selectedId === s.id}
-                          data-testid={`chain-step-${s.id}`}
-                        >
-                          <span className="chain-node__row">
-                            <span className="chain-node__kind">{s.authored ? 'new' : 'step'}</span>
-                            <span className="chain-node__id mono">{s.id}</span>
-                            <span className="composer__spacer" />
-                            <span className="chain-node__order mono">
-                              {String(i + 1).padStart(2, '0')}
-                            </span>
-                          </span>
-                          <span className="chain-node__name">{s.name}</span>
-                          <span className="chain-node__sub mono">
-                            {s.technique || 'no technique'} · {s.identity || 'no identity'}
-                          </span>
-                          <span className="chain-node__chips">
-                            {s.detections.length ? (
-                              s.detections.map((d, k) => (
-                                <span key={k} className={`chip chip--${detTone(d.type)}`}>
-                                  {d.type || '?'}
-                                </span>
-                              ))
-                            ) : (
-                              /* Not decoration — this is the state that turns
-                                 into a GAP in the POV readout. */
-                              <span className="chip chip--missed">no expected detection</span>
-                            )}
-                          </span>
-                        </button>
-                        <div className="chain-node__tools">
-                          <button type="button" title="Move earlier" aria-label={`Move ${s.id} earlier`}
-                            onClick={() => setSteps((p) => moveStep(p, i, -1))}>↑</button>
-                          <button type="button" title="Move later" aria-label={`Move ${s.id} later`}
-                            onClick={() => setSteps((p) => moveStep(p, i, 1))}>↓</button>
-                          <button type="button" title="Duplicate step" aria-label={`Duplicate ${s.id}`}
-                            onClick={() => setSteps((p) => duplicateStep(p, i))}>⧉</button>
-                          <button type="button" title="Remove step" aria-label={`Remove ${s.id}`}
-                            onClick={() => setSteps((p) => removeStep(p, i))}>×</button>
-                        </div>
-                      </div>
-                      <span className="chain__spine" aria-hidden="true" />
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    className="chain-node chain-node--add"
-                    onClick={() => addBlank('New command step')}
-                    data-testid="composer-add-step"
-                  >
-                    + Add step
-                  </button>
-
-                  <div className="chain__anchor">
-                    <span className="chain__spine" aria-hidden="true" />
-                    <div className="chain-node chain-node--end" data-testid="chain-end">
-                      <div className="chain-node__kicker">End</div>
-                      <div className="chain-node__title">Teardown &amp; proof</div>
-                      <div className="chain-node__sub mono">
-                        {validation.counts.detections} detections asserted
-                        {draft.teardown.length
-                          ? ` · ${draft.teardown.length} cleanup command${draft.teardown.length === 1 ? '' : 's'}`
-                          : ' · no cleanup declared'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+        <ComposerCanvas
+          draft={draft}
+          steps={steps}
+          lens={lens}
+          onLens={setLens}
+          canvasView={canvasView}
+          onCanvasView={setCanvasView}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          validation={validation}
+          causalityGraph={causalityGraph}
+          causalityStates={causalityStates}
+          activeRun={env.activeRun}
+          originError={originError}
+          loadingOrigin={loadingOrigin}
+          fromId={fromId}
+          tenantName={tenantName}
+          agentName={agentName}
+          yamlText={yamlText}
+          onMoveStep={onMoveStep}
+          onDuplicateStep={onDuplicateStep}
+          onRemoveStep={onRemoveStep}
+          onAddStep={() => addBlank('New command step')}
+          onStartLibrary={() => onNavigate('library')}
+          onStartTtp={() => onNavigate('ttps')}
+          onStartBlank={() => addBlank('New command step')}
+          onNavigate={onNavigate}
+        />
 
         {showPanels && (
-          <aside className="composer-inspector" aria-label="Step configuration">
-            <div className="composer-inspector__head">
-              <span className="composer-inspector__title">Step config</span>
-              <span className="composer__spacer" />
-              <span className="mono composer-inspector__id">{selected?.id || '—'}</span>
-            </div>
-
-            {!selected ? (
-              <div className="composer-inspector__empty">
-                Select a step on the canvas to configure it.
-              </div>
-            ) : (
-              <>
-                <div className="field-label">Step name</div>
-                <div className="field-value">{selected.name}</div>
-
-                <div className="field-label">Command</div>
-                <pre className="field-code mono">
-                  {selected.command
-                    ?? 'not carried by this endpoint — open the scenario detail'}
-                </pre>
-
-                <div className="composer-inspector__pair">
-                  <div>
-                    <div className="field-label">Identity</div>
-                    <div className="field-value mono">{selected.identity || 'not declared'}</div>
-                  </div>
-                  <div>
-                    <div className="field-label">Technique</div>
-                    <div className="field-value mono">{selected.technique || 'not declared'}</div>
-                  </div>
-                </div>
-
-                <div className="field-label">Causality</div>
-                <div className="field-value mono">
-                  {selected.causalityParent
-                    ? `parent ${selected.causalityParent} · pivot ${selected.causalityPivot || 'process_lineage'}`
-                    : 'root of chain'}
-                </div>
-
-                <div className="field-label">Platforms</div>
-                <div className="field-value mono">
-                  {selected.platforms.length ? selected.platforms.join(' · ') : 'not declared'}
-                </div>
-
-                <div className="field-label">
-                  Expected detections
-                  <span className="field-label__count mono"> {selected.detections.length}</span>
-                </div>
-                {selected.detections.length ? (
-                  selected.detections.map((d, k) => (
-                    <div className="detection-card" key={k}>
-                      <div className="detection-card__head">
-                        <span className={`chip chip--${detTone(d.type)}`}>{d.type || '?'}</span>
-                        {d.ttpRef && (
-                          <button
-                            type="button"
-                            className="linklike mono"
-                            onClick={() => onNavigate('ttps', { ttp: d.ttpRef })}
-                          >
-                            {d.ttpRef}
-                          </button>
-                        )}
-                      </div>
-                      <div className="detection-card__desc">{d.description || 'no description'}</div>
-                      {d.detectionId && (
-                        <div className="detection-card__id mono">{d.detectionId}</div>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <div className="detection-card detection-card--empty">
-                    This step declares no expected detection. It will execute and then be
-                    reported as a gap — bind a TTP card from the TTP Cards surface.
-                    <button
-                      type="button"
-                      className="btn btn--xs"
-                      onClick={() => onNavigate('ttps')}
-                    >
-                      Browse TTP cards
-                    </button>
-                  </div>
-                )}
-
-                <div className="field-label">Teardown</div>
-                <div className="field-value">
-                  {draft.teardown.length ? (
-                    <>
-                      <span className="field-note">
-                        Scenario-level (the schema has no per-step cleanup):
-                      </span>
-                      <pre className="field-code mono">{draft.teardown.join('\n')}</pre>
-                    </>
-                  ) : 'no cleanup declared for this scenario'}
-                </div>
-              </>
-            )}
-          </aside>
+          (selected || metaOpen) ? (
+            <ComposerInspector
+              selected={selected}
+              draft={draft}
+              steps={steps}
+              onEditStep={onEditStep}
+              onAddDetection={onAddDetection}
+              onRemoveDetection={onRemoveDetection}
+              onSetCausalityParent={onSetCausalityParent}
+              onBindTtp={onBindTtp}
+              onEditMeta={onEditMeta}
+              pivots={PIVOTS}
+              detectionTypes={DETECTION_TYPES}
+              planes={PLANES}
+              onNavigate={onNavigate}
+            />
+          ) : (
+            <NoSelectionAside draft={draft} onOpenMeta={() => setMetaOpen(true)} />
+          )
         )}
       </div>
 
@@ -761,7 +754,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
             type="button"
             className="ws-ctl"
             onClick={() => setPanelsHidden((v) => !v)}
-            title="Show or hide the bench and inspector"
+            title="Show or hide the palette and inspector"
           >
             {showPanels ? 'Hide panels' : 'Show panels'}
           </button>
@@ -786,6 +779,42 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The inspector column when NOTHING is selected. Deliberately NOT the full
+ * `ComposerInspector` (whose plane <select> would render an <option>EDR</option>
+ * that competes with the Proves-bar plane chip for `getByText('EDR')` at mount).
+ * It carries the scenario-level teardown — the one piece of config that is not
+ * per-step — and a way into the editable workflow meta.
+ */
+function NoSelectionAside({ draft, onOpenMeta }) {
+  const teardown = Array.isArray(draft.teardown) ? draft.teardown : []
+  return (
+    <aside className="composer-inspector" aria-label="Step configuration" data-testid="composer-inspector-empty">
+      <div className="composer-inspector__head">
+        <span className="composer-inspector__title">Step config</span>
+        <span className="composer__spacer" />
+        <span className="mono composer-inspector__id">—</span>
+      </div>
+      <div className="composer-inspector__empty">
+        Select a step on the canvas to configure it, or
+        <button type="button" className="linklike" onClick={onOpenMeta}> edit the workflow meta</button>.
+      </div>
+
+      <div className="field-label">Teardown</div>
+      <div className="field-value">
+        {teardown.length ? (
+          <>
+            <span className="field-note">
+              Scenario-level (the schema has no per-step cleanup):
+            </span>
+            <pre className="field-code mono">{teardown.join('\n')}</pre>
+          </>
+        ) : 'no cleanup declared for this scenario'}
+      </div>
+    </aside>
   )
 }
 

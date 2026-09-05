@@ -35,6 +35,7 @@ import pytest
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 POS_DIR = os.path.join(REPO_ROOT, "assertions", "pos")
 MODULES = os.path.join(REPO_ROOT, "infra", "modules", "aws")
+SCENARIOS = os.path.join(REPO_ROOT, "scenarios")
 
 CSPM_001 = "POS-CSPM-001"
 CSPM_002 = "POS-CSPM-002"
@@ -49,8 +50,30 @@ AISP_003 = "POS-AISP-003"
 AISP_005 = "POS-AISP-005"
 ASM_001 = "POS-ASM-001"
 ASM_002 = "POS-ASM-002"
+ERV_002 = "POS-ERV-002"
+ERV_004 = "POS-ERV-004"
+AGTX_008 = "POS-AGTX-008"
 
 ALL_POS = (
+    CSPM_001, CSPM_002, CSPM_003, DSPM_001, DSPM_002, DSPM_003, DSPM_004,
+    AISP_001, AISP_002, AISP_003, AISP_005, ASM_001, ASM_002,
+    ERV_002, ERV_004, AGTX_008,
+)
+
+# The planted-arity subset: artifacts whose stimulus is an IaC fixture that
+# plants a KNOWN number of findings. For these, and only these, an empty answer
+# from a reachable dataset is a discovery FAILURE — the engine put 9 things in
+# the account and the posture engine found none, so `fail` is the honest verdict
+# and `pending` would launder a miss into "still owed".
+#
+# ERV_002/ERV_004/AGTX_008 are stimulated behaviourally instead, and their
+# populations are whatever the PLATFORM did — incidents it opened, actions an
+# agent took, providers that ingested. Empty there means the stimulus never
+# produced anything to measure ("the agent never ran", "NGFW never ingested"),
+# which is genuinely still-owed rather than a discovery miss. Holding them to
+# the planted-arity rule would manufacture red against tenants with a coverage
+# gap the assertion's own second check already reports precisely.
+PLANTED_POS = (
     CSPM_001, CSPM_002, CSPM_003, DSPM_001, DSPM_002, DSPM_003, DSPM_004,
     AISP_001, AISP_002, AISP_003, AISP_005, ASM_001, ASM_002,
 )
@@ -71,10 +94,13 @@ EXPECTED_BINDINGS = {
     AISP_005: ("UCS-AISP-05", "TC-AISP-05"),
     ASM_001: ("UCS-ASM-03", "TC-ASM-05"),
     ASM_002: ("UCS-ASM-04", "TC-ASM-06"),
+    ERV_002: ("UCS-ERV-01", "TC-ERV-02"),
+    ERV_004: ("UCS-ERV-02", "TC-ERV-04"),
+    AGTX_008: ("UCS-AGTX-04", "TC-AGTX-08"),
 }
 
 # Measurable threshold rows in the live index.
-SCOREABLE = {CSPM_003, DSPM_004}
+SCOREABLE = {CSPM_003, DSPM_004, AGTX_008}
 
 # Context every artifact needs to render. Values are shaped like the real
 # `terraform output` they come from.
@@ -82,6 +108,13 @@ CONTEXT = {
     "planted_resource_id": "cortexsim-cspm-public-3f9a1c",
     "asm_target_ip": "203.0.113.44",
     "asm_website_bucket": "cortexsim-asm-website-3f9a1c",
+    # Behaviourally-stimulated POS artifacts (scenario_run / eal_campaign) bind
+    # their own context. Without an entry here their queries cannot render and
+    # every outcome resolves PROBE_QUERY_FAILED, which masks the very codes the
+    # anti-inflation tests below are asserting.
+    "target_host": "cortexsim-lab-node-01",
+    "run_tag": "cortexsim-run-3f9a1c",
+    "canary": "cxs3f9a1c",
 }
 
 T0 = 1_800_000_000
@@ -213,6 +246,18 @@ def test_pack_contains_exactly_the_shipped_artifacts(pos_specs):
     assert sorted(pos_specs) == sorted(ALL_POS)
 
 
+def test_planted_subset_is_exactly_the_iac_backed_artifacts(pos_specs):
+    """PLANTED_POS is what the fixture-arity tests below run against. It must be
+    derivable from the artifacts themselves, not maintained by hand — otherwise
+    a new fixture-backed assertion could be added to ALL_POS, quietly skip the
+    empty-tenant and partial-discovery guards, and nobody would see it."""
+    derived = {aid for aid in ALL_POS
+               if spec_of(pos_specs, aid).stimulus.kind == "iac_fixture"}
+    assert derived == set(PLANTED_POS), (
+        f"PLANTED_POS is stale: iac_fixture-backed artifacts are {sorted(derived)}"
+    )
+
+
 def test_every_artifact_loads_clean_under_strict_refs(pos_specs):
     """No diagnostic of any severity. A POS artifact that only loads because
     CORTEXSIM_STRICT_REFS is off is an artifact bound to an index row nobody
@@ -270,22 +315,51 @@ def test_every_artifact_declares_what_it_does_not_prove(pos_specs):
     for aid in ALL_POS:
         spec = spec_of(pos_specs, aid)
         assert len(spec.scope_limitations) > 200, f"{aid}: scope_limitations is a stub"
-        assert "does NOT" in spec.scope_limitations, (
+        # The emphasised NOT is the signal — a scope block that never shouts a
+        # limitation is a box-tick. Sentence-initial capitalisation is not, so
+        # match [Dd]oes while keeping NOT case-sensitive.
+        assert re.search(r"\b[Dd]oes NOT\b", spec.scope_limitations), (
             f"{aid}: scope_limitations never states a thing this does not prove"
         )
 
 
-def test_every_artifact_names_the_iac_fixture_it_depends_on(pos_specs):
-    """A POS assertion without a planted fixture is asking a question about
-    somebody else's cloud account."""
+def test_every_artifact_plants_the_state_it_measures(pos_specs):
+    """A POS assertion whose stimulus the engine does not control is asking a
+    question about somebody else's cloud account.
+
+    The original form of this guard required `iac_fixture` outright, because
+    every POS artifact then shipping planted a misconfiguration with Terraform.
+    The principle was never the mechanism — it is that the ENGINE must own the
+    ground truth before it reads a posture back. A scenario run the engine
+    executed satisfies that as completely as a fixture it applied; `none` does
+    not, and that is what must stay unreachable. So the rule is now stated as
+    the principle, with the fixture-specific obligations still enforced in full
+    wherever a fixture IS the stimulus."""
+    engine_controlled = {"iac_fixture", "scenario_run", "eal_campaign"}
     for aid in ALL_POS:
         spec = spec_of(pos_specs, aid)
-        assert spec.stimulus.kind == "iac_fixture", f"{aid}: stimulus.kind={spec.stimulus.kind}"
-        module = (spec.stimulus.iac_module or "").split("/")[-1]
-        assert os.path.isdir(os.path.join(MODULES, module)), (
-            f"{aid} depends on infra module {spec.stimulus.iac_module!r}, which does not exist"
+        assert spec.stimulus.kind in engine_controlled, (
+            f"{aid}: stimulus.kind={spec.stimulus.kind} — a POS assertion must "
+            f"plant or generate the state it measures, not ask an uncontrolled tenant"
         )
-        assert spec.stimulus.detail and "terraform apply" in spec.stimulus.detail
+        assert spec.stimulus.detail, f"{aid}: stimulus carries no operator detail"
+        if spec.stimulus.kind == "iac_fixture":
+            module = (spec.stimulus.iac_module or "").split("/")[-1]
+            assert os.path.isdir(os.path.join(MODULES, module)), (
+                f"{aid} depends on infra module {spec.stimulus.iac_module!r}, "
+                f"which does not exist"
+            )
+            assert "terraform apply" in spec.stimulus.detail
+        if spec.stimulus.kind == "scenario_run":
+            # The scenario must actually be in the corpus, or the artifact names
+            # a stimulus nobody can run — the scenario_run equivalent of naming
+            # a Terraform module that was never written.
+            sid = spec.stimulus.scenario_id or ""
+            assert sid, f"{aid}: scenario_run stimulus names no scenario_id"
+            found = any(sid in open(os.path.join(dirpath, f)).read()
+                        for dirpath, _d, files in os.walk(SCENARIOS)
+                        for f in files if f.endswith(".yml"))
+            assert found, f"{aid} depends on scenario {sid!r}, which is not in the corpus"
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +372,7 @@ async def test_empty_tenant_is_fail_not_pass(pos_specs):
     """A reachable posture dataset that carries none of the planted findings is
     a DISCOVERY FAILURE. This is the single most important test in the file: an
     assertion that reads an empty answer as green proves nothing at all."""
-    for aid in ALL_POS:
+    for aid in PLANTED_POS:
         spec = spec_of(pos_specs, aid)
         if spec.primary_check.probe == "xql_latency":
             continue  # covered by the latency-specific tests below
@@ -314,7 +388,7 @@ async def test_empty_tenant_is_fail_not_pass(pos_specs):
 async def test_partial_discovery_is_fail(pos_specs):
     """One short of the fixture's arity is red. The bar is the planted count; a
     threshold that forgives a miss converts a reportable gap into a green tick."""
-    for aid in ALL_POS:
+    for aid in PLANTED_POS:
         spec = spec_of(pos_specs, aid)
         check = spec.primary_check
         if check.probe == "xql_latency":
@@ -420,7 +494,7 @@ async def test_satisfied_tenant_reports_evidence_not_a_scored_pass(pos_specs):
 
     if not registry.loaded:
         pytest.skip("UC/TC index snapshot absent")
-    for aid in ALL_POS:
+    for aid in PLANTED_POS:
         if aid in SCOREABLE:
             continue
         spec = spec_of(pos_specs, aid)

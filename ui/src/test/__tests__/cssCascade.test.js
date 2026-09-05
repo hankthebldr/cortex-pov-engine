@@ -41,23 +41,29 @@ afterEach(() => {
 describe('cssCascade — @media rules are not applied (per module contract)', () => {
   it('does not apply an @media-gated rule to the unconditional selector it targets', () => {
     invalidateRuleCache()
-    const root = mount('<div class="ttpb-detail">detail rail</div>')
-    const el = root.querySelector('.ttpb-detail')
+    const root = mount('<div class="ttpb-list">card grid</div>')
+    const el = root.querySelector('.ttpb-list')
 
-    // The unconditional `.ttpb-detail` rule (ttps.css ~line 270) declares
-    // `position: sticky`. The `@media (max-width: 980px)` block (~line 530)
-    // overrides it to `position: static` — but only when that condition
-    // holds, which this guard has no viewport to evaluate. A resolver that
-    // "skips" (or treats the media condition as false, per this app's jsdom
-    // `matchMedia` stub) must therefore report the unconditional value.
-    const position = resolveProperty(el, 'position')
+    // The unconditional `.ttpb-list` rule (ttps.css) declares an auto-fill grid.
+    // The `@media (max-width: 680px)` block collapses it to a single column —
+    // but only when that condition holds, which this guard has no viewport to
+    // evaluate. A resolver that "skips" @media (or treats the condition as
+    // false, per this app's jsdom `matchMedia` stub) must report the
+    // unconditional value.
+    //
+    // This example used to be `.ttpb-detail`'s `position: sticky` vs its
+    // `@media` `static`. That pair no longer exists: the TTP detail became a
+    // full-width breakout and stopped being a sticky rail. The CONTRACT under
+    // test is unchanged — only the worked example moved to a live rule pair.
+    const columns = resolveProperty(el, 'grid-template-columns')
     expect(
-      position,
-      `resolved position="${position}" — the @media (max-width: 980px) block was applied ` +
-        `unconditionally, contradicting the "no @media evaluation" contract in this module's doc comment`
-    ).toBe('sticky')
+      columns,
+      `resolved grid-template-columns="${columns}" — the @media (max-width: 680px) block was ` +
+        `applied unconditionally, contradicting the "no @media evaluation" contract in this module's doc comment`
+    ).toBe('repeat(auto-fill, minmax(300px, 1fr))')
 
-    const maxHeight = resolveProperty(el, 'max-height')
-    expect(maxHeight).toBe('calc(100vh - 48px)')
+    // A second property from the same unconditional rule, to prove the whole
+    // declaration block resolved rather than one lucky longhand.
+    expect(resolveProperty(el, 'gap')).toBe('12px')
   })
 })

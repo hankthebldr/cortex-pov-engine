@@ -230,3 +230,65 @@ products. A third option is to keep the union but split the output into
 
 Left as-is pending a decision. It is a semantics call about what "required"
 means in a POV quote, not a bug.
+
+---
+
+## 8 · 8 test cases measure a different capability than their title claims
+
+Surfaced 2026-09-04 while triaging the SecOps sheet. Regenerate with
+`python3 scripts/check_index_criteria_reuse.py`; `--check` fails if the index
+drifts from the verdicts below.
+
+`success_criteria` is not decoration in this engine — it is the sentence an
+artifact's claim is measured against, and it travels with `primary_kpi` and
+`threshold` into `verifier.score_run`. **10 groups of rows, covering 28 test
+cases, share byte-identical `success_criteria` across a use-case boundary.**
+Reuse *within* one UC is normal (two motions, one capability). Across a UC
+boundary it means text was pasted from a row about something else.
+
+In **8 of those rows the pasted criteria measure a different capability than the
+row's own title**, and both ways of authoring against them are wrong:
+
+- author from the **title** → the artifact is scored against the wrong claim;
+- author from the **criteria** → the artifact closes a test case whose title
+  promises something it never proved.
+
+The second is the one that reaches a customer: a POV report citing the test
+case *title* as covered.
+
+| TC | title promises | pasted criteria actually measure |
+|---|---|---|
+| `TC-IR-06` | auto-containment isolates the endpoint within an SLA | malware **detection** pre-execution + false-positive rate |
+| `TC-EDR-04` | auto-containment triggers on confirmed malware execution | malware detection across methods — containment never measured |
+| `TC-SOT-03` | the full loop: tuning → enrichment → response → feedback | enrichment only — the legs that make it a loop are absent |
+| `TC-NDR-06` | EDL policy management (network block lists) | endpoint protection-policy deployment + exceptions |
+| `TC-ERV-08` | compliance catalog with custom policy configurability | endpoint protection-policy deployment + exceptions |
+| `TC-CDR-03` | CSPM policy scanning detects multi-cloud misconfigurations | endpoint protection-policy deployment + exceptions |
+| `TC-CDR-04` | CIEM finds over-permissioned identities, recommends least-privilege | multi-IdP ingest + cross-provider correlation (verbatim `TC-ITDR-03/06`) |
+| `TC-TIM-02` | automated IOC-to-EDL push for blocking at the NGFW (**outbound**) | NGFW log ingest + correlation into incidents (**inbound**) |
+
+**`TC-IR-06` carries its own proof of the paste direction.** Its `primary_kpi` is
+`False Positive Rate` — which agrees with the pasted detection criteria and not
+with its own containment title. The KPI travelled with the criteria block.
+
+### Why this is a decision for the index owner, not an engine fix
+
+The engine must not edit `_v2.2-source/` — it is a versioned snapshot of an
+upstream artifact, and silently repairing it here would make the two disagree
+without anyone knowing which is right. Each row needs the owner to choose:
+rewrite the criteria to match the title, or re-title the row to match the
+criteria. For `TC-CDR-04` specifically, the CIEM capability the title describes
+has **no** correctly-specified row anywhere in the index, so repairing it is
+also a coverage question, not only an editorial one.
+
+### Engine-side consequence, already applied
+
+`scripts/secops_engine_scope.py` gained the reason code
+**`INDEX_ROW_SELF_CONTRADICTORY`**, and `TC-IR-06` and `TC-CDR-04` — both
+previously triaged **buildable** on the strength of their titles — moved to it.
+The SecOps buildable set went **27 → 25**. Nothing was authored against either
+row; the two verdicts had been written from the title before this check existed,
+which is precisely the failure the check now prevents.
+
+The other 20 rows in the 10 groups are legitimate reuse and are anchored by name
+in the script so a genuinely new group cannot hide among them.

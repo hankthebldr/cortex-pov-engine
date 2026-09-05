@@ -10,16 +10,28 @@
 import { describe, it, expect } from 'vitest'
 import {
   BLANK_COMMAND,
+  DETECTION_TYPES,
+  PIVOTS,
+  PLANES,
+  addDetection,
   appendStep,
+  bindTtpDetection,
   blankStep,
+  draftFromApi,
   draftFromScenario,
+  draftSnapshot,
+  draftToApi,
   duplicateStep,
+  editStep,
   emitDraftYaml,
   emptyDraft,
+  isDraftDirty,
   moveStep,
   nextStepId,
   normalizeStep,
+  removeDetection,
   removeStep,
+  setCausalityParent,
   validateDraft,
 } from '../console/composerDraft.js'
 
@@ -215,5 +227,242 @@ describe('emitDraftYaml', () => {
       { ...emptyDraft(), name: 'Dump: creds, now', steps: [] }, {},
     )
     expect(tricky).toMatch(/name: "Dump: creds, now"/)
+  })
+})
+
+// ─── Composer enums ───────────────────────────────────────────────────────────
+
+describe('composer enums mirror the backend verbatim', () => {
+  it('has exactly the seven causality pivots', () => {
+    expect(PIVOTS).toEqual([
+      'process_lineage', 'network_session', 'endpoint_network_stitch',
+      'shared_entity', 'exposure_exploit', 'exploit_impact', 'temporal',
+    ])
+  })
+  it('has exactly the six detection types, ABIOC included', () => {
+    expect(DETECTION_TYPES).toEqual(['BIOC', 'XQL', 'Analytics', 'Correlation', 'IOC', 'ABIOC'])
+  })
+  it('has the sixteen planes', () => {
+    expect(PLANES).toHaveLength(16)
+    expect(PLANES).toContain('DLP')
+    expect(PLANES[0]).toBe('EDR')
+  })
+})
+
+// ─── Immutable step edit operations ───────────────────────────────────────────
+
+describe('editStep', () => {
+  const steps = draftFromScenario(SCENARIO).steps
+
+  it('returns the SAME array for an unknown id (no-op identity)', () => {
+    expect(editStep(steps, 'step-99', { name: 'x' })).toBe(steps)
+  })
+
+  it('returns the SAME array when the patch changes nothing', () => {
+    expect(editStep(steps, 'step-01', { name: steps[0].name })).toBe(steps)
+  })
+
+  it('returns the SAME array for an empty/absent patch', () => {
+    expect(editStep(steps, 'step-01', {})).toBe(steps)
+    expect(editStep(steps, 'step-01', null)).toBe(steps)
+  })
+
+  it('patches only editable keys, without mutating the input', () => {
+    const out = editStep(steps, 'step-01', { command: 'whoami', identity: 'root', bogus: 1 })
+    expect(out).not.toBe(steps)
+    expect(out[0].command).toBe('whoami')
+    expect(out[0].identity).toBe('root')
+    expect(out[0]).not.toHaveProperty('bogus')
+    // input untouched
+    expect(steps[0].command).toBe('cat /etc/passwd')
+  })
+})
+
+describe('addDetection / removeDetection', () => {
+  const steps = draftFromScenario(SCENARIO).steps
+
+  it('addDetection returns the SAME array for an unknown id', () => {
+    expect(addDetection(steps, 'step-99', { plane: 'EDR', type: 'XQL' })).toBe(steps)
+  })
+
+  it('addDetection returns the SAME array when the detection is not an object', () => {
+    expect(addDetection(steps, 'step-01', null)).toBe(steps)
+  })
+
+  it('addDetection appends a normalised detection without mutating the input', () => {
+    const out = addDetection(steps, 'step-02', {
+      plane: 'EDR', type: 'BIOC', description: 'shadow read', ttp_ref: 'TTP-2026-0099',
+    })
+    expect(out[1].detections).toHaveLength(1)
+    expect(out[1].detections[0]).toMatchObject({
+      plane: 'EDR', type: 'BIOC', ttpRef: 'TTP-2026-0099',
+    })
+    expect(steps[1].detections).toHaveLength(0)
+  })
+
+  it('removeDetection returns the SAME array for an unknown id or bad index', () => {
+    expect(removeDetection(steps, 'step-99', 0)).toBe(steps)
+    expect(removeDetection(steps, 'step-01', 5)).toBe(steps)
+    expect(removeDetection(steps, 'step-01', -1)).toBe(steps)
+  })
+
+  it('removeDetection drops exactly one detection', () => {
+    const out = removeDetection(steps, 'step-01', 0)
+    expect(out[0].detections).toHaveLength(0)
+    expect(steps[0].detections).toHaveLength(1)
+  })
+})
+
+describe('setCausalityParent', () => {
+  const steps = draftFromScenario(SCENARIO).steps
+
+  it('returns the SAME array for an unknown step id', () => {
+    expect(setCausalityParent(steps, 'step-99', 'step-01')).toBe(steps)
+  })
+
+  it('refuses a self-ref (returns the SAME array)', () => {
+    expect(setCausalityParent(steps, 'step-02', 'step-02')).toBe(steps)
+  })
+
+  it('refuses a forward-ref by array order (returns the SAME array)', () => {
+    // step-01 cannot descend from step-02, which comes AFTER it.
+    expect(setCausalityParent(steps, 'step-01', 'step-02')).toBe(steps)
+  })
+
+  it('refuses an unknown parent id (returns the SAME array)', () => {
+    expect(setCausalityParent(steps, 'step-02', 'step-77')).toBe(steps)
+  })
+
+  it('returns the SAME array when the parent+pivot are unchanged', () => {
+    expect(setCausalityParent(steps, 'step-02', 'step-01', 'process_lineage')).toBe(steps)
+  })
+
+  it('sets a valid backward parent with a chosen pivot', () => {
+    const out = setCausalityParent(steps, 'step-02', 'step-01', 'network_session')
+    expect(out[1].causalityParent).toBe('step-01')
+    expect(out[1].causalityPivot).toBe('network_session')
+  })
+
+  it('clears the link to a chain root when parentId is null', () => {
+    const out = setCausalityParent(steps, 'step-02', null)
+    expect(out[1].causalityParent).toBeNull()
+  })
+})
+
+describe('bindTtpDetection', () => {
+  const steps = draftFromScenario(SCENARIO).steps
+
+  it('returns the SAME array for an unknown id or a non-object card', () => {
+    expect(bindTtpDetection(steps, 'step-99', { ttp_id: 'x' })).toBe(steps)
+    expect(bindTtpDetection(steps, 'step-02', null)).toBe(steps)
+  })
+
+  it('appends one detection pre-filled from a TTP card', () => {
+    const out = bindTtpDetection(steps, 'step-02', {
+      ttp_id: 'TTP-2026-0100', plane: 'EDR', detection_type: 'BIOC',
+      name: 'shadow read', detection_id: 'bioc-9',
+    })
+    expect(out[1].detections).toHaveLength(1)
+    expect(out[1].detections[0]).toMatchObject({
+      plane: 'EDR', type: 'BIOC', ttpRef: 'TTP-2026-0100', detectionId: 'bioc-9',
+    })
+  })
+})
+
+// ─── Round-trip serializers ───────────────────────────────────────────────────
+
+describe('draftToApi / draftFromApi', () => {
+  it('draftToApi builds the frozen snake_case body and omits server-derived fields', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const body = draftToApi(draft)
+    expect(body.name).toBe('Credential Dumping')
+    expect(body.plane).toBe('EDR')
+    expect(body.author).toBe('composer')
+    expect(body.uc_ref).toBe('UCS-EDR-02')
+    expect(body.tc_ref).toBe('TC-EDR-03')
+    expect(body.cgo_anchor).toEqual({ image_name: 'apache2', primary_username: 'www-data' })
+    expect(body.cleanup).toEqual({ commands: ['rm -f /tmp/mimipenguin.sh'] })
+    // steps carry snake_case detection keys + causality
+    expect(body.steps[0].mitre_technique).toBe('T1087.001')
+    expect(body.steps[0].expected_detections[0]).toMatchObject({
+      plane: 'EDR', type: 'XQL', ttp_ref: 'TTP-2026-0032', detection_id: 'xql-1',
+    })
+    expect(body.steps[1].causality).toEqual({ parent_step: 'step-01', pivot: 'process_lineage' })
+    // server-derived fields must NOT be present
+    expect(body).not.toHaveProperty('detection_types')
+    expect(body).not.toHaveProperty('push_supported')
+    expect(body).not.toHaveProperty('pull_supported')
+    expect(body).not.toHaveProperty('status')
+    expect(body).not.toHaveProperty('version')
+  })
+
+  it('respects an explicit author override', () => {
+    const body = draftToApi(emptyDraft(), { author: 'henry' })
+    expect(body.author).toBe('henry')
+  })
+
+  it('draftFromApi is a superset of draftFromScenario carrying persistence identity', () => {
+    const row = {
+      ...SCENARIO,
+      scenario_id: 'SIM-DRAFT-credential-dumping',
+      status: 'draft',
+      author: 'henry',
+      tags: ['composer-draft', 'edr'],
+    }
+    const d = draftFromApi(row)
+    expect(d.scenarioId).toBe('SIM-DRAFT-credential-dumping')
+    expect(d.status).toBe('draft')
+    expect(d.author).toBe('henry')
+    expect(d.tags).toEqual(['composer-draft', 'edr'])
+    // shared fields still come through
+    expect(d.plane).toBe('EDR')
+    expect(d.steps).toHaveLength(2)
+  })
+
+  it('draftFromApi(null) returns an empty draft, matching draftFromScenario(null) shape', () => {
+    expect(draftFromApi(null)).toEqual(emptyDraft())
+  })
+
+  it('round-trips a corpus scenario through api and back with matching launch fields', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const body = draftToApi({ ...draft, author: 'composer', tags: [] })
+    // Re-hydrate as if the server echoed the body back inside a Scenario.to_dict()
+    const echoed = {
+      scenario_id: 'SIM-DRAFT-credential-dumping', status: 'draft',
+      name: body.name, plane: body.plane, author: body.author, tags: body.tags,
+      uc_ref: body.uc_ref, tc_ref: body.tc_ref, cgo_anchor: body.cgo_anchor,
+      cleanup: body.cleanup, steps: body.steps,
+    }
+    const back = draftFromApi(echoed)
+    expect(draftSnapshot(back)).toEqual(draftSnapshot(draft))
+  })
+})
+
+// ─── Dirty tracking ───────────────────────────────────────────────────────────
+
+describe('draftSnapshot / isDraftDirty', () => {
+  it('isDraftDirty(current, null) is ALWAYS true — an unsaved draft is dirty by definition', () => {
+    const draft = draftFromScenario(SCENARIO)
+    expect(isDraftDirty(draftSnapshot(draft), null)).toBe(true)
+  })
+
+  it('is false when the snapshot matches the saved snapshot', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const saved = draftSnapshot(draft)
+    expect(isDraftDirty(draftSnapshot(draft), saved)).toBe(false)
+  })
+
+  it('is true after a launch-relevant edit (command change)', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const saved = draftSnapshot(draft)
+    const edited = { ...draft, steps: editStep(draft.steps, 'step-01', { command: 'id' }) }
+    expect(isDraftDirty(draftSnapshot(edited), saved)).toBe(true)
+  })
+
+  it('ignores a cosmetic field the run does not depend on (moatTier)', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const saved = draftSnapshot(draft)
+    const cosmetic = { ...draft, moatTier: 'CHANGED' }
+    expect(isDraftDirty(draftSnapshot(cosmetic), saved)).toBe(false)
   })
 })

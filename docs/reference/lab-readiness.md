@@ -21,14 +21,14 @@
 
 ## Summary
 
-- **Scenarios:** 177  (GREEN 145 · YELLOW 26 · RED 6)
-- **Steps:** 667 total · 147 detection-bearing steps produce no real signal
+- **Scenarios:** 177  (GREEN 146 · YELLOW 26 · RED 5)
+- **Steps:** 667 total · 141 detection-bearing steps produce no real signal
 - **Need target egress for a tool:** 26 scenarios
 - **Consent-gated:** 4 scenarios
 - **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 55 scenarios
-- **RED / signal-free (tabletop):** SIM-ASM-005, SIM-ASM-006, SIM-EDR-019, SIM-ITDR-016, SIM-MP-020, SIM-TIM-005
+- **RED / signal-free (tabletop):** SIM-ASM-005, SIM-ASM-006, SIM-EDR-019, SIM-ITDR-016, SIM-TIM-005
 
-## GREEN — 145 scenarios
+## GREEN — 146 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -88,6 +88,7 @@
 | SIM-ITDR-018 | ITDR | ABIOC/Analytics/XQL/Correlation | 3/3 | eal |  |
 | SIM-KOI-004 | KOI | BIOC/XQL | 3/3 | eal |  |
 | SIM-MP-007 | ANALYTICS | Analytics/BIOC/ABIOC/XQL/Correlation/IOC | 5/5 | agent |  |
+| SIM-MP-020 | ANALYTICS | BIOC/ABIOC/XQL/Correlation | 6/6 | agent |  |
 | SIM-NDR-001 | NDR | BIOC/XQL | 3/3 | eal |  |
 | SIM-NDR-002 | NDR | BIOC/XQL | 3/3 | eal |  |
 | SIM-NDR-003 | NDR | BIOC/XQL/IOC | 2/2 | eal |  |
@@ -209,7 +210,7 @@
 | SIM-MP-005 | ANALYTICS | BIOC/XQL/Correlation | 3/4 | agent | egress: TOOL-NMAP |
 | SIM-MP-006 | ANALYTICS | XQL/Correlation | 2/3 | agent | egress: install_inline; consent; c2: TOOL-SLIVER |
 
-## RED — 6 scenarios
+## RED — 5 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -217,6 +218,5 @@
 | SIM-ASM-006 | ASM | XQL/BIOC/ABIOC/Correlation | 0/4 | agent | signal-free: declares detections but no step invokes a real binary (tabletop only) |
 | SIM-EDR-019 | EDR | BIOC/ABIOC/XQL/Correlation | 0/7 | agent | signal-free: declares detections but no step invokes a real binary (tabletop only) |
 | SIM-ITDR-016 | ITDR | ABIOC/XQL/Correlation | 0/3 | agent | signal-free: declares detections but no step invokes a real binary (tabletop only) |
-| SIM-MP-020 | ANALYTICS | BIOC/ABIOC/XQL/Correlation | 0/6 | agent | signal-free: declares detections but no step invokes a real binary (tabletop only) |
 | SIM-TIM-005 | TIM | IOC/BIOC/XQL/Correlation | 0/4 | agent | signal-free: declares detections but no step invokes a real binary (tabletop only) |
 

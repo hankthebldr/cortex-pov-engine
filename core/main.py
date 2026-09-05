@@ -257,7 +257,7 @@ async def _db_context():
 
 app = FastAPI(
     title="CortexSim",
-    version="0.1.0",
+    version="1.0.0",
     description="Enterprise detection simulation engine for Palo Alto Networks Cortex",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -405,6 +405,10 @@ app.include_router(health_router, prefix="/api")
 # ---------------------------------------------------------------------------
 
 from api.scenarios import router as scenarios_router  # noqa: E402
+# Composer draft persistence — status='draft' Scenario rows authored in the
+# console. Registered BEFORE scenarios_router so /api/scenarios/drafts resolves
+# to this router rather than being swallowed by scenarios' /{scenario_id}.
+from api.drafts import router as drafts_router          # noqa: E402
 from api.runs import router as runs_router              # noqa: E402
 from api.runs import compat_router as runs_compat_router  # noqa: E402
 from api.results import router as results_router        # noqa: E402
@@ -440,6 +444,7 @@ from api.payloads import router as k8s_payloads_router  # noqa: E402
 # mount of the same handlers, never a redirect.
 from api.payloads import shelf_router  # noqa: E402
 
+app.include_router(drafts_router, prefix="/api")
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
 # GAP-API-008 — backward-compat alias for the historical singular launch path

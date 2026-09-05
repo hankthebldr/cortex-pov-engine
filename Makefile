@@ -14,7 +14,10 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-IMAGE       ?= cortexsim:dev
+# Version drives the image tag AND the container name (single source; override
+# with `make VERSION=… <target>` or export CORTEXSIM_VERSION). Working toward 1.0.
+VERSION     ?= 1.0.0
+IMAGE       ?= cortex-pov-engine-simcore:$(VERSION)
 COMPOSE     ?= docker compose
 # A high-entropy secret so the production-mode boot guard (validate_master_key
 # in core/config.py) doesn't refuse to start with the `changeme` default.
@@ -38,15 +41,64 @@ up: ## Start SimCore locally (scripts/dev-up.sh if present, else docker compose)
 		scripts/dev-up.sh; \
 	else \
 		echo "scripts/dev-up.sh not found — falling back to docker compose"; \
-		CORTEXSIM_SECRET=$(SECRET) $(COMPOSE) up -d --build; \
+		CORTEXSIM_SECRET=$(SECRET) CORTEXSIM_VERSION=$(VERSION) $(COMPOSE) up -d --build; \
 		echo "SimCore on http://localhost:8888  (health: /api/health)"; \
 	fi
 
 down: ## Stop SimCore
-	$(COMPOSE) down
+	CORTEXSIM_SECRET=$(SECRET) CORTEXSIM_VERSION=$(VERSION) $(COMPOSE) down
 
 build: ## Build the production simcore image
 	docker build -f core/Dockerfile -t $(IMAGE) .
+
+# -----------------------------------------------------------------------------
+# UI dev loop
+# -----------------------------------------------------------------------------
+# The console is BAKED into the image (core/Dockerfile: COPY --from=ui-builder
+# /ui/dist/ /app/core/static/) and nothing bind-mounts it, so out of the box a
+# one-line CSS change costs a trip through four builder stages. Measured on this
+# tree, edit -> visible:
+#
+#     ui-dev  (vite HMR, :5273)          ~50 ms   no container involved
+#     ui-sync (vite build + docker cp)   ~980 ms  container keeps running
+#     compose build + force-recreate     ~3340 ms container restarts
+#
+# The restart is the hidden cost, not the seconds: force-recreate drops enrolled
+# agents' connections and every open SSE stream, so a UI tweak mid-run destroys
+# the run you were looking at. `ui-sync` never restarts anything.
+
+ui-dev: ## UI hot-reload on :5273, API proxied to the running SimCore (fastest loop)
+	@echo "vite dev on http://localhost:5273  — /api proxies to $${CORTEXSIM_DEV_API:-http://localhost:8888}"
+	@echo "use this for component + CSS work; it does NOT exercise the production bundle"
+	cd ui && npm run dev -- --port 5273 --strictPort
+
+ui-sync: ## Build the real bundle and push it into the RUNNING container (no rebuild, no restart)
+	@# Target is checked BEFORE the build: a sync that cannot land should not
+	@# cost a bundle first. And the three ways this fails have three different
+	@# fixers - daemon, stack, container - so they get three different messages
+	@# rather than one 'not running' that sends you to the wrong one.
+	@docker info >/dev/null 2>&1 || { \
+	  echo "docker daemon unreachable - start Docker Desktop"; exit 1; }
+	@docker container inspect $(UI_CONTAINER) >/dev/null 2>&1 || { \
+	  echo "no container named '$(UI_CONTAINER)'"; \
+	  echo "  running simcore containers:"; \
+	  docker ps --filter name=simcore --format '    {{.Names}}' || true; \
+	  echo "  set UI_CONTAINER=<name>, or: make up"; exit 1; }
+	@[ "$$(docker container inspect -f '{{.State.Running}}' $(UI_CONTAINER))" = true ] || { \
+	  echo "container '$(UI_CONTAINER)' exists but is STOPPED - docker start $(UI_CONTAINER)"; exit 1; }
+	@cd ui && npx vite build
+	@# Clear hashed chunks so the container MIRRORS ui/dist instead of keeping a
+	@# chunk per build. Scoped to assets/: /app/core/static/agent is a read-only
+	@# bind mount and an rm -rf over the whole static dir fails on it.
+	@# stderr is NOT swallowed - a failure here is a real fault, not 'not running'.
+	@docker exec $(UI_CONTAINER) sh -c 'rm -rf /app/core/static/assets'
+	@docker cp ui/dist/. $(UI_CONTAINER):/app/core/static/
+	@echo "pushed ui/dist -> $(UI_CONTAINER):/app/core/static  (http://localhost:8888)"
+	@echo "no rebuild, no restart - enrolled agents and open SSE streams survive"
+
+# Overridable so this works against a differently-named stack (e.g. a worktree's
+# compose project, which prefixes the directory name).
+UI_CONTAINER ?= cortex-pov-engine-simcore-1
 
 agent-dist: ## Cross-compile the beacon matrix into ./agent-dist (served by /api/agents/binary)
 	scripts/build-agent-dist.sh
@@ -97,7 +149,7 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-adapters check-streamer check-agent-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + ground-truth gates
+validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + ground-truth gates
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -177,6 +229,12 @@ unscoreable-report: ## regenerate docs/uc_tc_mapping/unscoreable-tcs.md from the
 
 crosswalk-report: ## UC/TC crosswalk reconciliation summary
 	python3 scripts/uctc_crosswalk_v2.2.py --report
+
+uctc-sheet: ## regenerate the UC/TC-keyed engine coverage sheet + scoreboard
+	python3 scripts/uctc_crosswalk_v2.2.py --emit-xlsx
+
+check-uctc-sheet: ## gate: committed engine coverage sheet matches the tree (fail-closed)
+	python3 scripts/uctc_crosswalk_v2.2.py --emit-xlsx --check
 
 # scripts/generate_ground_truth.py runs uctc_crosswalk_v2.2.py --report and
 # coverage_report.py --json (the two named ground-truth commands) plus direct

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react'
 import PlaneSelector from './components/PlaneSelector.jsx'
 import ScenarioBrowser from './components/ScenarioBrowser.jsx'
 import UCTCMapper from './components/UCTCMapper.jsx'
@@ -7,9 +7,15 @@ import ToolStatusPanel from './components/ToolStatusPanel.jsx'
 import ResultsViewer from './components/ResultsViewer.jsx'
 import MitreHeatmap from './components/MitreHeatmap.jsx'
 import InfraGenerator from './components/InfraGenerator.jsx'
-import EalConsole from './components/EalConsole.jsx'
 import ResultsValidationWizard from './components/ResultsValidationWizard.jsx'
 import { getHealth, getRuns, getEalRuns } from './api/client.js'
+
+// Dynamic so EalConsole is imported by import() EVERYWHERE (the console's
+// Traffic/EAL surface already does). A module that is both statically and
+// dynamically imported can't be hoisted into its own chunk — Rollup folds it
+// into the static importer and warns. Lazy here → EalConsole gets its own
+// shared chunk, and it leaves the legacy entry it isn't needed on first paint.
+const EalConsole = lazy(() => import('./components/EalConsole.jsx'))
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -263,10 +269,12 @@ export default function App() {
       {/* MAIN PANEL */}
       <main className="app-main-panel">
         {showEal ? (
-          <EalConsole
-            onMessage={showToast}
-            onClose={() => setShowEal(false)}
-          />
+          <Suspense fallback={<div className="empty-state empty-state--compact">loading…</div>}>
+            <EalConsole
+              onMessage={showToast}
+              onClose={() => setShowEal(false)}
+            />
+          </Suspense>
         ) : showValidate ? (
           validateRunId ? (
             <ResultsValidationWizard

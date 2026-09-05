@@ -184,6 +184,15 @@ class BaseSimulation(abc.ABC):
             "eal_targets": list(getattr(meta, "eal_targets", [])),
             "params_schema": meta.params_model.model_json_schema(),
             "class": f"{cls.__module__}.{cls.__name__}",
+            # Analytics log-streamer family fields (empty for network EAL
+            # plugins). Declared on Meta and surfaced here so the console can
+            # split Traffic/EAL from Data Streams and join to the catalogue.
+            "data_sources": list(getattr(meta, "data_sources", [])),
+            "data_sources_partial": list(getattr(meta, "data_sources_partial", [])),
+            "datasets": list(getattr(meta, "datasets", [])),
+            "supports_negative_control": bool(
+                getattr(cls, "supports_negative_control", False)
+            ),
         }
 
     @classmethod

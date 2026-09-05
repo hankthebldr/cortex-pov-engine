@@ -164,11 +164,82 @@ def _campaign_c2_plugins(campaign: Campaign) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _plugin_family(manifest: dict[str, Any]) -> str:
+    """Classify a plugin manifest into a console destination family.
+
+    ``analytics_log_streamer`` — a collector-POST emitter that lands records in
+    a named dataset (declares ``data_sources`` / ``data_sources_partial``);
+    ``network_eal`` — everything else (live network-behaviour plugins). This is
+    what the console reads to split Traffic / EAL from Data Streams.
+    """
+    if manifest.get("data_sources") or manifest.get("data_sources_partial"):
+        return "analytics_log_streamer"
+    return "network_eal"
+
+
 @router.get("/plugins")
 async def list_plugins() -> dict[str, Any]:
     reg = _get_executor().registry
     plugins = reg.manifest()
+    for m in plugins:
+        m["family"] = _plugin_family(m)
     return {"plugins": plugins, "total": len(plugins)}
+
+
+@router.get("/data-streams")
+async def data_streams(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """The analytics log-streamer family + its coverage against the vendor
+    catalogue — the backend surface behind the Data Streams console.
+
+    Returns the full 34-source coverage table (gaps included, authored != proven),
+    the per-emitter manifests (dataset, detectors, negative-control support), and
+    each emitter's most recent delivery verdict derived from EAL run history.
+    Gaps are rendered as gaps — an unlisted gap reads as no gap.
+    """
+    from eal_simulator.analytics_catalogue import (  # noqa: PLC0415
+        coverage_report,
+        family_manifests,
+    )
+
+    reg = _get_executor().registry
+    coverage = coverage_report(reg)
+    emitters = family_manifests(reg)
+
+    # Most recent delivery verdict per emitter, derived from run history so the
+    # console can show "did this source's last run actually ingest?" without a
+    # second round-trip. A 2xx is not proof of ingest (see delivery.py); this is
+    # a delivery verdict, never a detection-fired claim.
+    result = await db.execute(
+        select(EalCampaignRun).order_by(EalCampaignRun.started_at.desc()).limit(200)
+    )
+    runs = result.scalars().all()
+    latest_by_plugin: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        for step in (run.step_results or []):
+            plugin = step.get("plugin")
+            if not plugin or plugin in latest_by_plugin:
+                continue
+            summary = summarise_step_results([step])
+            latest_by_plugin[plugin] = {
+                "run_id": run.run_id,
+                "delivery_verdict": summary["delivery_verdict"],
+                "records_delivered": summary["records_delivered"],
+                "records_attempted": summary["records_attempted"],
+                "started_at": run.started_at.isoformat() if run.started_at else None,
+                "dry_run": run.dry_run,
+            }
+
+    for m in emitters:
+        m["latest_delivery"] = latest_by_plugin.get(m["name"])
+
+    return {
+        "catalogue_source": coverage["catalogue_source"],
+        "catalogue_version": coverage["catalogue_version"],
+        "counts": coverage["counts"],
+        "sources": coverage["sources"],
+        "emitters": emitters,
+        "authored_not_proven": coverage["authored_not_proven"],
+    }
 
 
 @router.get("/plugins/{name}")

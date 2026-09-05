@@ -166,6 +166,7 @@ export default function EalConsole({ onMessage, onClose }) {
             <EalCampaignBuilder
               onCreated={handleCampaignCreated}
               onError={(msg) => onMessage?.(msg, 'error')}
+              family="network_eal"
             />
           </div>
         )}
