@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getUcTcSummary,
   getUcTcUseCases,
+  getUcTcUseCase,
   getUcTcTestCases,
   getUcTcTestCase,
   getUcTcCoverage,
@@ -366,6 +367,27 @@ export default function UcTcIndexView({
     return () => { cancelled = true }
   }, [selectedTc])
 
+  /* ── use-case detail drawer (drill-down) ── */
+  // Selecting a UC row already filters the TC list; it now ALSO drills into the
+  // use case itself — its entitlements, coverage, UCS sub-groups and the test
+  // cases under it. A selected TC's own drawer wins, so the UC drawer only shows
+  // when a use case is open WITHOUT a specific test case.
+  const [ucDetail, setUcDetail] = useState(null)
+  const [ucDetailLoading, setUcDetailLoading] = useState(false)
+  useEffect(() => {
+    if (!selectedUc || selectedTc) { setUcDetail(null); return undefined }
+    let cancelled = false
+    setUcDetailLoading(true)
+    setUcDetail(null)
+    getUcTcUseCase(selectedUc)
+      .then((d) => { if (!cancelled) setUcDetail(d) })
+      .catch((e) => {
+        if (!cancelled) setUcDetail({ _error: e?.message || 'Failed to load use case' })
+      })
+      .finally(() => { if (!cancelled) setUcDetailLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedUc, selectedTc])
+
   /* ── coverage mode (lazy) ── */
   const [coverage, setCoverage] = useState(null)
   const [coverageError, setCoverageError] = useState(null)
@@ -655,6 +677,17 @@ export default function UcTcIndexView({
           availability={availability}
           onClose={closeTc}
           onPickUc={(ucId) => setParams({ tab: 'index', uc: ucId, tc: null })}
+          onNavigate={onNavigate}
+        />
+      )}
+
+      {selectedUc && !selectedTc && indexLoaded && (
+        <UseCaseDetail
+          ucId={selectedUc}
+          detail={ucDetail}
+          loading={ucDetailLoading}
+          onClose={() => setParams({ uc: null, tc: null })}
+          onPickTc={openTc}
           onNavigate={onNavigate}
         />
       )}
@@ -1295,6 +1328,165 @@ function verdictTone(v) {
   if (v === 'pass') return 'uctc__tone-detected'
   if (v === 'fail') return 'uctc__tone-missed'
   return 'uctc__tone-muted'
+}
+
+/* ─── use-case detail drawer (drill-down) ─────────────────────────────── */
+
+function UseCaseDetail({ ucId, detail, loading, onClose, onPickTc }) {
+  if (loading || !detail) {
+    return (
+      <section className="competitive__detail uctc__detail" data-testid="uctc-uc-detail">
+        <div className="competitive__detail-head">
+          <div>
+            <div className="competitive__detail-eyebrow mono">use case</div>
+            <div className="competitive__detail-title mono">{ucId}</div>
+          </div>
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+        </div>
+        <div className="coverage__empty mono">
+          {loading ? 'loading use case…' : 'no detail'}
+        </div>
+      </section>
+    )
+  }
+
+  if (detail._error) {
+    return (
+      <section className="competitive__detail uctc__detail" data-testid="uctc-uc-detail">
+        <div className="competitive__detail-head">
+          <div>
+            <div className="competitive__detail-eyebrow mono">use case</div>
+            <div className="competitive__detail-title mono">{ucId}</div>
+          </div>
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+        </div>
+        <div className="adapter-registry__error mono" role="alert">{detail._error}</div>
+      </section>
+    )
+  }
+
+  const uc = detail.use_case || {}
+  const groups = detail.ucs_groups || []
+  const testCases = detail.test_cases || []
+  const base = uc.base_platform_list || []
+  const addons = uc.addons_list || []
+
+  return (
+    <section className="competitive__detail uctc__detail" data-testid="uctc-uc-detail">
+      <div className="competitive__detail-head">
+        <div>
+          <div className="competitive__detail-eyebrow mono">use case</div>
+          <div className="competitive__detail-title mono">{uc.uc_id || ucId}</div>
+          {uc.use_case && <div className="competitive__detail-sub">{uc.use_case}</div>}
+        </div>
+        <button type="button" className="btn" onClick={onClose}>Close</button>
+      </div>
+
+      {(uc.domain || uc.fy27_subdomain) && (
+        <div className="uctc__detail-meta mono">
+          {[uc.domain, uc.fy27_subdomain].filter(Boolean).join(' · ')}
+        </div>
+      )}
+
+      {/* Coverage — real counts joined by the engine, never invented. */}
+      <div className="uctc__detail-stats" data-testid="uctc-uc-detail-stats">
+        <div className="stack-coverage__stat">
+          <div className="stack-coverage__stat-value mono">
+            {uc.scenario_count ?? 0}
+          </div>
+          <div className="stack-coverage__stat-label">scenarios</div>
+        </div>
+        <div className="stack-coverage__stat">
+          <div className="stack-coverage__stat-value mono">
+            {uc.coverage_pct != null ? `${uc.coverage_pct}%` : '—'}
+          </div>
+          <div className="stack-coverage__stat-label">TC coverage</div>
+        </div>
+        <div className="stack-coverage__stat">
+          <div className="stack-coverage__stat-value mono">
+            {uc.det_coverage_pct != null ? `${uc.det_coverage_pct}%` : '—'}
+          </div>
+          <div className="stack-coverage__stat-label">DET coverage</div>
+        </div>
+      </div>
+
+      {/* Entitlements — what a tenant must own to run this use case. */}
+      {(base.length > 0 || addons.length > 0 || uc.min_license_path) && (
+        <div className="uctc__detail-section">
+          <div className="competitive__detail-eyebrow mono">entitlements</div>
+          {base.length > 0 && (
+            <div className="uctc__detail-row">
+              <span className="uctc__detail-key mono">base</span>
+              <span className="uctc__detail-val mono">{base.join(' · ')}</span>
+            </div>
+          )}
+          {addons.length > 0 && (
+            <div className="uctc__detail-row">
+              <span className="uctc__detail-key mono">add-ons</span>
+              <span className="uctc__detail-val mono">{addons.join(' · ')}</span>
+            </div>
+          )}
+          {uc.min_license_path && (
+            <div className="uctc__detail-row">
+              <span className="uctc__detail-key mono">min path</span>
+              <span className="uctc__detail-val mono">{uc.min_license_path}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* UCS sub-groups — the use case's internal structure. */}
+      {groups.length > 0 && (
+        <div className="uctc__detail-section">
+          <div className="competitive__detail-eyebrow mono">
+            use-case scenarios ({groups.length})
+          </div>
+          {groups.map((g) => (
+            <div className="uctc__detail-row" key={g.ucs_id}>
+              <span className="uctc__detail-key mono">{g.ucs_id}</span>
+              <span className="uctc__detail-val">
+                {g.ucs_name}
+                <span className="uctc__detail-count mono">
+                  {' '}· {g.evidenced_count ?? 0}/{g.test_case_count ?? 0} evidenced
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Test cases under this use case — each drills into its own detail. */}
+      <div className="uctc__detail-section">
+        <div className="competitive__detail-eyebrow mono">
+          test cases ({testCases.length})
+        </div>
+        {testCases.length === 0 ? (
+          <div className="coverage__empty mono">no test cases</div>
+        ) : (
+          <ul className="uctc__detail-tclist" data-testid="uctc-uc-detail-tclist">
+            {testCases.map((tc) => (
+              <li key={tc.tc_id}>
+                <button
+                  type="button"
+                  className="uctc__detail-tc"
+                  data-testid={`uctc-uc-detail-tc-${tc.tc_id}`}
+                  onClick={() => onPickTc(tc.tc_id)}
+                  title={`Open ${tc.tc_id}`}
+                >
+                  <span className="uctc__detail-tc-id mono">{tc.tc_id}</span>
+                  {tc.validation_class && (
+                    <span className="chip mono">{tc.validation_class}</span>
+                  )}
+                  <span className="uctc__detail-tc-title">{tc.title || ''}</span>
+                  <span className="uctc__detail-tc-arrow" aria-hidden="true">▸</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  )
 }
 
 /**

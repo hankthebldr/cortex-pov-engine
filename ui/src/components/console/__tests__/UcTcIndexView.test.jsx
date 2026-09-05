@@ -360,6 +360,48 @@ describe('UcTcIndexView', () => {
     await waitFor(() => expect(rowIds()).toHaveLength(4))
   })
 
+  it('drills into a use case: selecting a UC opens its detail drawer, and a TC in it drills further', async () => {
+    const useCaseDetail = {
+      index_loaded: true,
+      index_version: '2.2',
+      use_case: {
+        uc_id: 'UC-EDR',
+        use_case: 'Endpoint Detection & Response',
+        domain: 'SecOps',
+        min_license_path: 'Cortex XSIAM',
+        base_platform_list: ['Cortex XSIAM'],
+        addons_list: ['Endpoint Protection'],
+        coverage_pct: 50,
+        det_coverage_pct: 100,
+        scenario_count: 2,
+      },
+      ucs_groups: [
+        { ucs_id: 'UCS-EDR-01', ucs_name: 'Credential access', test_case_count: 2, evidenced_count: 1 },
+      ],
+      test_cases: [
+        { tc_id: 'TC-EDR-03', title: 'Credential dumping', validation_class: 'DET' },
+        { tc_id: 'TC-EDR-05', title: 'Reverse shell', validation_class: 'DET' },
+      ],
+    }
+    happyRoutes({ 'GET /api/uctc/use-cases/:id': useCaseDetail })
+    render(<Harness />)
+    await waitFor(() => expect(screen.getByTestId('uctc-uc-UC-EDR')).toBeInTheDocument())
+
+    // Selecting the use case opens its own drill-down drawer (was: filter only).
+    fireEvent.click(screen.getByTestId('uctc-uc-UC-EDR'))
+    await waitFor(() => expect(screen.getByTestId('uctc-uc-detail')).toBeInTheDocument())
+    const drawer = screen.getByTestId('uctc-uc-detail')
+    expect(drawer).toHaveTextContent('Endpoint Detection & Response')
+    expect(drawer).toHaveTextContent('Cortex XSIAM')                 // entitlement
+    expect(screen.getByTestId('uctc-uc-detail-stats')).toHaveTextContent('50%')
+    expect(screen.getByTestId('uctc-uc-detail-tclist')).toBeInTheDocument()
+
+    // One level deeper: a test case inside the UC drawer opens the TC drawer.
+    fireEvent.click(screen.getByTestId('uctc-uc-detail-tc-TC-EDR-05'))
+    await waitFor(() => expect(screen.getByTestId('uctc-detail')).toBeInTheDocument())
+    expect(screen.queryByTestId('uctc-uc-detail')).toBeNull()
+  })
+
   it('opens the detail drawer on row click and renders the evidencing scenarios', async () => {
     happyRoutes()
     render(<Harness />)
