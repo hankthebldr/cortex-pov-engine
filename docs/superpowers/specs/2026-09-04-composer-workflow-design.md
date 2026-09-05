@@ -371,6 +371,45 @@ principal/account). Where a plugin has no field for an entity it is skipped
   injected-transport integration test asserting CONFIRMED edges across ≥N planes
   under one `incident_id`.
 
+### 8.2 Phase 3b detailed design (concrete, grounded 2026-09-05)
+
+**Grounding.** `CampaignExecutor.execute(campaign, run_id=...)`
+(`core/eal_simulator/executor.py:151`) runs a `Campaign` of
+`CampaignStep{plugin, params}` **synchronously in-process** and returns an
+`ExecutorState` with `step_results` + a `delivery` rollup (2xx-only accounting,
+`core/eal_simulator/delivery.py`). `_run_step` validates params via
+`plugin_cls.validate_params(step.params)`. `dry_run` defaults **true**; real
+delivery (`dry_run=false`) requires `simulation_authorized` + `authorized_by` +
+a non-empty `target_allowlist`.
+
+**Dispatch.** In `_handle_pull`, after resolving the stitch binding, the
+orchestrator builds ONE `Campaign` from the run's eal-channel steps — each
+`CampaignStep` is `{plugin: step.eal.plugin, params: {**step.eal.params,
+**binding.as_raw()-projected fields}}` via a small per-family
+`binding → plugin params` adapter — and calls `CampaignExecutor.execute(...,
+run_id=run_id)` in-process. This REPLACES the 3a `EAL_ONLY_NOT_DISPATCHABLE`
+refusal: an all-EAL run now dispatches and terminates at launch; a mixed run
+dispatches EAL in-process AND enqueues the beacon tasks.
+
+**Safety default = dry_run.** An eal step runs `dry_run=true` (records
+pre-rendered, nothing POSTed) UNLESS the launch carries the existing consent
+(`consent.simulation_authorized`) AND a resolved collector AND a
+`target_allowlist`. No collector ⇒ the step reports `delivery: not_delivered`
+honestly, never a fabricated ingest. Reuses the campaign consent + collector +
+delivery machinery unchanged — the composer does not fork a second EAL path.
+
+**Results roll-up.** On dispatch, seed the eal step's `expected_detections` as
+`Result` rows with a real `executed_at` (the seeding 3a deferred), and attach
+the `delivery` verdict so the report/Run lens shows what the collector actually
+accepted. The `channel_dispatch` ledger flips the eal step from
+`EAL_DISPATCH_PENDING` to `dispatched` (or `not_delivered`).
+
+**Completion.** EAL is synchronous at launch, so it does NOT add to
+`Run.open_tasks` (the beacon-task counter). A mixed run still completes when the
+last beacon task reports; an all-EAL run has `open_tasks=0` and is terminalised
+at launch once the in-process dispatch returns. `tenant-verified` stays 0;
+nothing is marked CONFIRMED without real reconciliation.
+
 ## 9. Testing
 
 - **Phase 1 backend:** `DraftScenarioSchema` (accepts minimal draft; rejects
