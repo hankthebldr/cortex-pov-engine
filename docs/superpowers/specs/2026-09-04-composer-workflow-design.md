@@ -322,6 +322,55 @@ passthrough, and the idempotent migration. UI: panel authoring + canvas overlay.
   one causality instance, verified as CONFIRMED edges across ≥N NICE planes under
   one `incident_id`.
 
+### 8.1 Detailed design (concrete, grounded 2026-09-04)
+
+**Grounding.** An EAL run is an ordered list of `CampaignStep{plugin, params}`
+executed by `CampaignExecutor` **in SimCore's own process** (`core/eal_simulator/
+campaign.py`) — there is no EAL dispatch to a beacon. A scenario `Run` executes
+its `steps[]` on ONE agent via the beacon (pull) or a push bundle. The `Agent`
+ORM (`core/models.py`) has `hostname` but **no IP column**, so `from_agent` can
+resolve `host` but not a real `src_ip` — the documented Phase-2 gap.
+
+**The fork, resolved: COORDINATE, do not merge.** The multi-channel run keeps the
+two executors (beacon + `CampaignExecutor`) and their two run records; it does
+NOT merge `EalCampaignRun` into `Run`. The orchestrator resolves the stitch
+binding once (`seed=run_id`), then dispatches each step to its channel and rolls
+per-channel results up under the ONE scenario `Run`. This reuses both proven
+executors and avoids a schema/lifecycle merge.
+
+**Data model.** A step gains `channel: 'agent' | 'eal'` (absent ⇒ `agent`,
+back-compat) and, for `agent`, an optional `target` (a different `agent_id`, so
+some steps run on host A and others on host B — the "second endpoint"). An `eal`
+step carries `{plugin, params}`. All additive/optional; every existing scenario
+loads unchanged.
+
+**Real source IP (closes the Phase-2 gap).** Add `Agent.last_ip` (nullable),
+captured from the beacon's request source (client host / first `X-Forwarded-For`
+hop) on register + heartbeat. `from_agent` then resolves a real `src_ip`; absent,
+it stays synthetic and says so (never a fabricated address).
+
+**EAL param injection.** A small `binding → plugin params` adapter maps the
+resolved entities into each plugin family's own param fields (network plugins get
+`src_ip`/`dst_ip`/ports/`protocol`; identity/analytics emitters get the
+principal/account). Where a plugin has no field for an entity it is skipped
+(documented), same honesty rule as `{stitch:*}` passthrough.
+
+**Sub-phases (build in order; each verifies before the next).**
+- **3a — foundation (build first).** Channel-typed steps (`DraftStepSchema` +
+  `StepSchema` gain `channel`/`target`/`eal`, additive) + composer inspector
+  channel/target editors; `Agent.last_ip` capture + `from_agent` real `src_ip`;
+  the orchestrator's channel-dispatch skeleton (agent-channel with per-step
+  `target` works end-to-end; an `eal` step is recognised and validated but its
+  dispatch returns a clear `EAL_DISPATCH_PENDING` marker — no fabricated run).
+- **3b — EAL-channel dispatch.** Orchestrator invokes `CampaignExecutor`
+  in-process for `eal` steps with the binding injected into plugin params;
+  per-channel results roll up to the `Run`; the composer palette gains the
+  EAL-emitter group + eal-params editor.
+- **3c — coordinator + timing.** Order steps and fire them so cross-channel
+  signal lands within `correlation_window_seconds`; the north-star scenario as an
+  injected-transport integration test asserting CONFIRMED edges across ≥N planes
+  under one `incident_id`.
+
 ## 9. Testing
 
 - **Phase 1 backend:** `DraftScenarioSchema` (accepts minimal draft; rejects
