@@ -232,6 +232,11 @@ _TERMINAL_STATES = {"complete", "failed", "aborted", "staged"}
 _LAUNCH_PRECONDITION_CODES = frozenset({
     "CONSENT_REQUIRED",
     "ADAPTER_MISSING_CLEANUP",
+    # A composed multi-channel run named a per-step `target` agent that is not
+    # enrolled. The request body is well-formed; the precondition (the second
+    # endpoint exists) is not met — 409, not a 422 that sends the operator
+    # hunting a JSON typo. Refused all-or-nothing before any task is enqueued.
+    "TARGET_AGENT_NOT_ENROLLED",
 })
 
 
@@ -856,12 +861,38 @@ async def complete_run(
         orchestrator.clear_aborted(run_id)
         return {"status": run.status, "run_id": run_id}
 
-    run.status = "complete" if body.exit_code == 0 else "failed"
-    run.completed_at = datetime.utcnow()
+    # Multi-endpoint fan-out: a run may carry N beacon tasks (one per distinct
+    # target agent), each POSTing /complete. Terminalise the run only when the
+    # LAST endpoint reports — not the first — or a two-endpoint run would flip
+    # to complete the instant one host finished while the other kept running.
+    # `open_tasks` is NULL on a legacy single-task run ⇒ treated as 1, so the
+    # single-endpoint path stays byte-identical to today.
+    n = run.open_tasks if run.open_tasks is not None else 1
+    remaining = max(0, n - 1)
+    run.open_tasks = remaining
 
-    # Append summary to output
+    # Every endpoint's summary is appended.
     summary_text = f"\n--- COMPLETION SUMMARY ---\nExit code: {body.exit_code}\n{body.summary}\n"
     run.output = (run.output or "") + summary_text
+
+    # Sticky failure — once any endpoint fails, the run's verdict is failed.
+    if body.exit_code != 0:
+        run.status = "failed"
+
+    if remaining > 0:
+        # Not the last endpoint — hold; do NOT terminalise, publish a terminal
+        # frame, or score yet. The run stays 'running' (or 'failed' if an
+        # endpoint has already failed) until the final callback.
+        await db.commit()
+        logger.info(
+            "run_complete partial run_id=%s exit_code=%d remaining_endpoints=%d",
+            run_id, body.exit_code, remaining,
+        )
+        return {"status": run.status, "run_id": run_id, "pending_endpoints": remaining}
+
+    # Last endpoint in — terminalise with the aggregate verdict.
+    run.status = "failed" if run.status == "failed" else "complete"
+    run.completed_at = datetime.utcnow()
 
     await db.commit()
 
