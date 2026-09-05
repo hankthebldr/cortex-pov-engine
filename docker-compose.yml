@@ -1,7 +1,16 @@
-version: '3.8'
+# Compose PROJECT name — pinned so every worktree/checkout shares ONE project
+# instead of deriving it from the launch directory (which spawned per-worktree
+# orphan stacks and let two engine instances race on :8888 and :8890).
+name: cortex-pov-engine
 
 services:
   simcore:
+    # Versioned image + container name, single source CORTEXSIM_VERSION (default
+    # 1.0.0). Keeps the engine's namespace distinct from the SEPARATE
+    # cortex-pov-agent project. The engine's own beacon, if ever containerized,
+    # is reserved the name cortex-pov-engine-agent-v<version> — never pov-agent.
+    image: cortex-pov-engine-simcore:${CORTEXSIM_VERSION:-1.0.0}
+    container_name: cortex-pov-engine-simcore-v${CORTEXSIM_VERSION:-1.0.0}
     build:
       context: .
       dockerfile: core/Dockerfile

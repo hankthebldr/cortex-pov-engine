@@ -14,7 +14,10 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-IMAGE       ?= cortexsim:dev
+# Version drives the image tag AND the container name (single source; override
+# with `make VERSION=… <target>` or export CORTEXSIM_VERSION). Working toward 1.0.
+VERSION     ?= 1.0.0
+IMAGE       ?= cortex-pov-engine-simcore:$(VERSION)
 COMPOSE     ?= docker compose
 # A high-entropy secret so the production-mode boot guard (validate_master_key
 # in core/config.py) doesn't refuse to start with the `changeme` default.
@@ -38,12 +41,12 @@ up: ## Start SimCore locally (scripts/dev-up.sh if present, else docker compose)
 		scripts/dev-up.sh; \
 	else \
 		echo "scripts/dev-up.sh not found — falling back to docker compose"; \
-		CORTEXSIM_SECRET=$(SECRET) $(COMPOSE) up -d --build; \
+		CORTEXSIM_SECRET=$(SECRET) CORTEXSIM_VERSION=$(VERSION) $(COMPOSE) up -d --build; \
 		echo "SimCore on http://localhost:8888  (health: /api/health)"; \
 	fi
 
 down: ## Stop SimCore
-	$(COMPOSE) down
+	CORTEXSIM_SECRET=$(SECRET) CORTEXSIM_VERSION=$(VERSION) $(COMPOSE) down
 
 build: ## Build the production simcore image
 	docker build -f core/Dockerfile -t $(IMAGE) .
