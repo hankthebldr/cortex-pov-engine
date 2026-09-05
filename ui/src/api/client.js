@@ -1104,6 +1104,16 @@ export async function getEalRun(runId) {
   return request(`/api/eal/runs/${encodeURIComponent(runId)}`)
 }
 
+/**
+ * GET /api/eal/data-streams
+ * The analytics log-streamer family + its coverage against the vendor's
+ * 34-source catalogue (gaps included, authored != proven, tenant-verified 0),
+ * per-emitter manifests, and each emitter's latest delivery verdict.
+ */
+export async function getEalDataStreams() {
+  return request('/api/eal/data-streams')
+}
+
 // ─── XSIAM Tenant Management ─────────────────────────────────────────────────
 //
 // Tenant CRUD uses the generic /api/credentials/integrations surface (kind=xsiam_tenant).

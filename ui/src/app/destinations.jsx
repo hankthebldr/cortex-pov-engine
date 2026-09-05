@@ -105,6 +105,7 @@ const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'
 const TenantManager = makeLazySurface(() => import('../components/console/TenantManager.jsx'), 'Tenants')
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Readiness')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
+const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
 
 /** Wrap a lazily-loaded surface in its own Suspense boundary, so a mount
  * site never has to know whether the component behind it is lazy.
@@ -528,6 +529,7 @@ const AdaptersSurface = withSuspense(ToolAdapterCatalog)
 // Deep-linkable: #/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03
 const UcTcSurface = withSuspense(UcTcIndexView)
 const EalSurface = withSuspense(EalConsole)
+const DataStreamsSurface = withSuspense(DataStreamsView)
 const EnvironmentsSurface = withSuspense(LabView)
 // Readiness is grouped under Manage, next to Agents and Tenants — the three
 // things a DC configures before a POV. It is deliberately NOT the default
@@ -580,6 +582,7 @@ export const DESTINATIONS = [
   // ── 5 · Observe — what is happening right now ──
   { id: 'runs',         label: 'Runs & Proof',  group: 'Observe',   icon: '◈', Component: RunsSurface,      badge: 'live' },
   { id: 'eal',          label: 'Traffic / EAL', group: 'Observe',   icon: '∿', Component: EalSurface },
+  { id: 'datastreams',  label: 'Data Streams',  group: 'Observe',   icon: '≋', Component: DataStreamsSurface },
 
   // ── 6 · Prove — what the run established ──
   { id: 'coverage',     label: 'Coverage',      group: 'Prove',     icon: '▦', Component: CoverageSurface },
