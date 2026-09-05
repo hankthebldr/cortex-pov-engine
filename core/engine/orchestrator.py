@@ -404,22 +404,154 @@ class Orchestrator:
             binding,
         )
 
-        task = Task(
-            task_id=str(uuid.uuid4()),
-            run_id=run_id,
-            scenario_id=scenario.scenario_id,
-            steps=steps,
-            identity_context=identity,
-            identity_default=execution_identity.get("default"),
-            cgo_anchor=getattr(scenario, "cgo_anchor", None),
-            artifacts=artifacts,
-            runtime_install_authorized=runtime_install_authorized,
-        )
-        self._enqueue(target_agent_id, task)
-        # Mirror the task to the durable queue so a restart can rehydrate it.
-        await self._persist_task(db, target_agent_id, task)
+        # ── Channel dispatch (Phase 3a skeleton) ────────────────────────────
+        # A run is "multichannel" the moment ANY step carries a non-agent
+        # channel or a per-step target. A run with none — the whole shipped
+        # corpus and every Phase-1/2 draft — takes the ORIGINAL single-Task path
+        # below and Run.channel_dispatch stays NULL: byte-identical to today,
+        # proven by test. ``effective_channel`` is the ONE absent-⇒-'agent' rule
+        # (shared with the loader) so dispatch and persistence cannot disagree.
+        from engine.scenario_loader import effective_channel  # noqa: PLC0415
 
-        # Update run status to running
+        is_multichannel = any(
+            effective_channel(s) != "agent" or s.get("target") for s in steps
+        )
+
+        channel_dispatch: Optional[list[dict[str, Any]]] = None
+
+        if not is_multichannel:
+            task = Task(
+                task_id=str(uuid.uuid4()),
+                run_id=run_id,
+                scenario_id=scenario.scenario_id,
+                steps=steps,
+                identity_context=identity,
+                identity_default=execution_identity.get("default"),
+                cgo_anchor=getattr(scenario, "cgo_anchor", None),
+                artifacts=artifacts,
+                runtime_install_authorized=runtime_install_authorized,
+            )
+            self._enqueue(target_agent_id, task)
+            # Mirror the task to the durable queue so a restart can rehydrate it.
+            await self._persist_task(db, target_agent_id, task)
+            queued_message = f"Task queued for agent '{target_agent_id}'"
+            n_tasks = 1
+        else:
+            # Partition agent-channel steps by their EFFECTIVE target (the step's
+            # own `target` — the second-endpoint case — or the launch target).
+            # EAL steps are set aside for a pending marker: recognised and
+            # validated, but NEVER dispatched in 3a (that is 3b).
+            agent_partitions, eal_steps = _partition_channels(steps, target_agent_id)
+
+            # An all-EAL run has no beacon work in Phase 3a (EAL dispatch is 3b).
+            # Refuse honestly rather than parking a run at "running" with zero
+            # tasks that nothing would ever complete, and terminate the seeded
+            # run so it is not left orphaned.
+            if not agent_partitions:
+                run_row = (await db.execute(
+                    select(Run).where(Run.run_id == run_id)
+                )).scalar_one_or_none()
+                if run_row:
+                    run_row.status = "failed"
+                    run_row.completed_at = datetime.utcnow()
+                    run_row.channel_dispatch = _build_channel_dispatch(steps, target_agent_id)
+                    await db.commit()
+                logger.warning(
+                    "Launch refused run_id=%s code=EAL_ONLY_NOT_DISPATCHABLE eal_steps=%d",
+                    run_id, len(eal_steps),
+                )
+                return LaunchResult(
+                    success=False,
+                    run_id=run_id,
+                    error=(
+                        "EAL_ONLY_NOT_DISPATCHABLE: every step is channel='eal', "
+                        "whose dispatch lands in Phase 3b — this run has no "
+                        "agent-channel work to execute yet"
+                    ),
+                    error_code="EAL_ONLY_NOT_DISPATCHABLE",
+                    error_detail={"eal_steps": [s.get("id") for s in eal_steps]},
+                )
+            n_tasks = len(agent_partitions)
+
+            # All-or-nothing: verify every distinct target endpoint is enrolled
+            # BEFORE enqueuing anything. A step that names a phantom second
+            # endpoint is refused honestly (TARGET_AGENT_NOT_ENROLLED), never a
+            # silent no-op or a task nothing will ever collect (Gate A5).
+            missing: list[str] = []
+            for tgt in agent_partitions:
+                row = (await db.execute(
+                    select(Agent).where(Agent.agent_id == tgt)
+                )).scalar_one_or_none()
+                if row is None:
+                    missing.append(tgt)
+            if missing:
+                referencing = {
+                    tgt: [s.get("id") for s in agent_partitions[tgt]]
+                    for tgt in missing
+                }
+                logger.warning(
+                    "Launch refused run_id=%s code=TARGET_AGENT_NOT_ENROLLED missing=%s",
+                    run_id, sorted(missing),
+                )
+                # Terminate the seeded run so a refused multichannel launch does
+                # not leave an orphaned run stuck at its initial state.
+                run_row = (await db.execute(
+                    select(Run).where(Run.run_id == run_id)
+                )).scalar_one_or_none()
+                if run_row:
+                    run_row.status = "failed"
+                    run_row.completed_at = datetime.utcnow()
+                    await db.commit()
+                return LaunchResult(
+                    success=False,
+                    run_id=run_id,
+                    error=(
+                        "TARGET_AGENT_NOT_ENROLLED: composed step target(s) "
+                        f"{sorted(missing)} are not enrolled — enroll them or "
+                        "retarget the step(s) before launch"
+                    ),
+                    error_code="TARGET_AGENT_NOT_ENROLLED",
+                    error_detail={
+                        "missing_agents": sorted(missing),
+                        "referencing_steps": referencing,
+                    },
+                )
+
+            # Enqueue ONE Task per distinct target agent, each carrying only its
+            # own steps and the artifacts those steps need. Every endpoint shares
+            # the ONE resolved stitch binding (seed=run_id, above) so all channels
+            # plant identical entities.
+            for tgt, tgt_steps in agent_partitions.items():
+                step_ids = {s.get("id") for s in tgt_steps}
+                tgt_artifacts = [
+                    a for a in artifacts
+                    if not a.get("steps") or (set(a.get("steps") or []) & step_ids)
+                ]
+                task = Task(
+                    task_id=str(uuid.uuid4()),
+                    run_id=run_id,
+                    scenario_id=scenario.scenario_id,
+                    steps=tgt_steps,
+                    identity_context=identity,
+                    identity_default=execution_identity.get("default"),
+                    cgo_anchor=getattr(scenario, "cgo_anchor", None),
+                    artifacts=tgt_artifacts,
+                    runtime_install_authorized=runtime_install_authorized,
+                )
+                self._enqueue(tgt, task)
+                await self._persist_task(db, tgt, task)
+
+            # The honest routing ledger the report/Run lens reads: agent steps
+            # enqueued, eal steps EAL_DISPATCH_PENDING.
+            channel_dispatch = _build_channel_dispatch(steps, target_agent_id)
+            n_eal = len(eal_steps)
+            queued_message = (
+                f"Multi-channel run: {len(steps) - n_eal} agent step(s) queued "
+                f"across {len(agent_partitions)} endpoint(s); {n_eal} eal step(s) "
+                "EAL_DISPATCH_PENDING (dispatch lands in Phase 3b)"
+            )
+
+        # Update run status to running (shared by both paths).
         run_result = await db.execute(
             select(Run).where(Run.run_id == run_id)
         )
@@ -431,20 +563,24 @@ class Orchestrator:
             # resource, nothing invented (Gate A5). NULL for a context-less
             # scenario. The report and Run lens quote this to show what executed.
             run.stitch_binding = binding.values if binding else None
+            # NULL for a single-channel run (byte-identical); the routing ledger
+            # for a multichannel one.
+            run.channel_dispatch = channel_dispatch
+            # How many beacon tasks must report before the run is terminal — 1
+            # for a single endpoint, N for a multi-endpoint fan-out.
+            run.open_tasks = n_tasks
             await db.commit()
             await _publish_run_status(run_id, "running")
 
         logger.info(
-            "Task enqueued task_id=%s agent=%s run_id=%s",
-            task.task_id,
-            target_agent_id,
-            run_id,
+            "Task(s) enqueued run_id=%s target=%s multichannel=%s",
+            run_id, target_agent_id, is_multichannel,
         )
         return LaunchResult(
             success=True,
             run_id=run_id,
             mode="pull",
-            message=f"Task queued for agent '{target_agent_id}'",
+            message=queued_message,
         )
 
     # ------------------------------------------------------------------
@@ -507,11 +643,18 @@ class Orchestrator:
         """
         from models import Result  # noqa: PLC0415
         from engine.ttp_catalog import catalog  # noqa: PLC0415
+        from engine.scenario_loader import effective_channel  # noqa: PLC0415
 
         steps = scenario.steps or []
         count = 0
         enriched = 0
         for step in steps:
+            # An EAL-channel step is NOT dispatched in Phase 3a
+            # (EAL_DISPATCH_PENDING), so seeding a Result row with
+            # executed_at=now would falsely claim it ran. Skip it — 3b seeds
+            # the EAL detections when it actually dispatches the campaign.
+            if effective_channel(step) == "eal":
+                continue
             step_id = step.get("id", "unknown")
             step_name = step.get("name", "")
             step_technique = step.get("mitre_technique")
@@ -1181,6 +1324,76 @@ def _render_stitch(
         logger.warning("Stitch placeholder unresolved: %s", original_placeholder)
         return original_placeholder
     return str(value)
+
+
+def _partition_channels(
+    steps: list[dict[str, Any]],
+    launch_target: str,
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """Split a channel-typed step list into ``(agent_partitions, eal_steps)``.
+
+    Agent-channel steps are grouped by their EFFECTIVE target — the step's own
+    ``target`` (the "second endpoint" case) or, absent one, the launch target —
+    preserving step order within each partition and first-seen order across
+    partitions (dict insertion order). EAL-channel steps are returned separately:
+    in Phase 3a they are recognised and validated but NEVER dispatched (that is
+    3b), so they join no beacon task.
+
+    Pure — no DB, no I/O. The caller verifies each partition's target is enrolled
+    and enqueues one Task per partition.
+    """
+    from engine.scenario_loader import effective_channel  # noqa: PLC0415
+
+    agent_partitions: dict[str, list[dict[str, Any]]] = {}
+    eal_steps: list[dict[str, Any]] = []
+    for step in steps:
+        if effective_channel(step) == "eal":
+            eal_steps.append(step)
+            continue
+        target = step.get("target") or launch_target
+        agent_partitions.setdefault(target, []).append(step)
+    return agent_partitions, eal_steps
+
+
+def _build_channel_dispatch(
+    steps: list[dict[str, Any]],
+    launch_target: str,
+) -> list[dict[str, Any]]:
+    """Build the per-run ledger persisted on ``Run.channel_dispatch`` — one
+    entry per step, in step order.
+
+    An agent step records the endpoint it was enqueued to; an eal step records an
+    ``EAL_DISPATCH_PENDING`` marker — an honest "not dispatched yet" (Phase 3b),
+    never a fabricated EAL result (Gate A5). Populated only for a multichannel
+    run; a run with no channel-typed step keeps ``Run.channel_dispatch`` NULL.
+    """
+    from engine.scenario_loader import effective_channel  # noqa: PLC0415
+
+    ledger: list[dict[str, Any]] = []
+    for step in steps:
+        step_id = step.get("id")
+        if effective_channel(step) == "eal":
+            ledger.append({
+                "step_id": step_id,
+                "channel": "eal",
+                "plugin": (step.get("eal") or {}).get("plugin"),
+                "target": None,
+                "status": "pending",
+                "code": "EAL_DISPATCH_PENDING",
+                "detail": (
+                    "EAL dispatch wired in Phase 3b; no campaign run, no EAL "
+                    "result fabricated"
+                ),
+            })
+        else:
+            ledger.append({
+                "step_id": step_id,
+                "channel": "agent",
+                "target": step.get("target") or launch_target,
+                "status": "enqueued",
+                "code": None,
+            })
+    return ledger
 
 
 async def _publish_run_status(
