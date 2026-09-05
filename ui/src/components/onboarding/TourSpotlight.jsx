@@ -1,6 +1,32 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 /**
+ * Place the tour bubble ADJACENT to the anchor and fully inside the viewport.
+ *
+ * Pure so the placement can be tested without a browser (jsdom has no layout).
+ * Preference: to the RIGHT of the anchor, else LEFT, else aligned under it —
+ * then both axes are clamped to `edge` px inside the viewport so the bubble can
+ * never run off-screen or jut across the app the way the old below-left-with-no-
+ * clamp code did for a left-rail anchor like "Library".
+ */
+export function placeTourBubble(anchor, bubble, viewport, { gap = 12, edge = 10 } = {}) {
+  const vw = viewport.width || 1024
+  const vh = viewport.height || 768
+  let left
+  if (anchor.right + gap + bubble.width + edge <= vw) {
+    left = anchor.right + gap
+  } else if (anchor.left - gap - bubble.width >= edge) {
+    left = anchor.left - gap - bubble.width
+  } else {
+    left = anchor.left
+  }
+  let top = anchor.top
+  left = Math.max(edge, Math.min(left, vw - bubble.width - edge))
+  top = Math.max(edge, Math.min(top, vh - bubble.height - edge))
+  return { top, left }
+}
+
+/**
  * TourSpotlight — dim layer with a cutout over the anchored element, plus a
  * bubble beside it.
  *
@@ -24,6 +50,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
  */
 export default function TourSpotlight({ stop, index, total, onNext, onPrev, onExit }) {
   const [rect, setRect] = useState(null)
+  const [bubblePos, setBubblePos] = useState(null)
   const bubbleRef = useRef(null)
   const previouslyFocusedRef = useRef(null)
 
@@ -41,6 +68,24 @@ export default function TourSpotlight({ stop, index, total, onNext, onPrev, onEx
       window.removeEventListener('scroll', measure, true)
     }
   }, [stop])
+
+  // Place the bubble ADJACENT to the anchor and fully inside the viewport.
+  // The old code hard-pinned it below-left of the anchor with no clamping, so a
+  // left-rail anchor (e.g. "Library") threw the wide bubble across the main
+  // content and it read as floating, disconnected from what it points at.
+  // Preference: to the RIGHT of the anchor, else LEFT, else below/aligned —
+  // then clamp both axes so it can never run off-screen. Measured in a layout
+  // effect (before paint) so there is no flash at the fallback position.
+  useLayoutEffect(() => {
+    if (!rect || !bubbleRef.current) { setBubblePos(null); return undefined }
+    const b = bubbleRef.current.getBoundingClientRect()
+    setBubblePos(placeTourBubble(
+      rect,
+      { width: b.width, height: b.height },
+      { width: window.innerWidth, height: window.innerHeight },
+    ))
+    return undefined
+  }, [rect, stop])
 
   useEffect(() => {
     if (!stop) return undefined
@@ -169,7 +214,16 @@ export default function TourSpotlight({ stop, index, total, onNext, onPrev, onEx
         aria-label={stop.title}
         tabIndex={-1}
         ref={bubbleRef}
-        style={cut ? { top: cut.top + cut.height + 12, left: cut.left } : undefined}
+        style={
+          cut
+            ? (bubblePos
+                ? { top: bubblePos.top, left: bubblePos.left }
+                // Measuring: keep it out of sight for one frame rather than
+                // flashing at the fallback spot (the layout effect fills it in
+                // before paint).
+                : { top: cut.top + cut.height + 12, left: cut.left, visibility: 'hidden' })
+            : undefined
+        }
       >
         <h2 className="tour__title">{stop.title}</h2>
         <p className="tour__body">{stop.body}</p>

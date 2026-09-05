@@ -11,7 +11,7 @@ export const TOUR_STOPS = [
     anchor: 'nav-library',
     destination: 'library',
     title: 'Start here',
-    body: 'The Library holds 170 scenarios across 15 detection planes. Every POV starts by choosing one.',
+    body: 'The Library holds the full scenario catalog across every detection plane. Every POV starts by choosing one.',
   },
   {
     id: 'scenario',
