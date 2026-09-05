@@ -382,14 +382,34 @@ principal/account). Where a plugin has no field for an entity it is skipped
 delivery (`dry_run=false`) requires `simulation_authorized` + `authorized_by` +
 a non-empty `target_allowlist`.
 
+**CORRECTION (grounded 2026-09-05, supersedes the 5-tuple claim below).** The
+eight EAL analytics emitters (`ngfw_eal_emitter`, `cloud_audit_emitter`,
+`azure_audit_emitter`, `k8s_audit_emitter`, `m365_activity_emitter`,
+`ad_windows_emitter`, `idp_signin_emulator`, `cloud_storage_compute_emitter`)
+all subclass `AnalyticsEmitterParams` and **generate their record fields
+internally** — none accept a `src_ip`/`dst_ip`/port/protocol param. Their one
+shared-entity injection point is **`canary_token`**, which (via each emitter's
+`CANARY_FIELDS`) plants the SAME account/principal string into the record's
+user fields. Network-egress plugins (`c2_http_beacon`, `dns_tunnel_exfil`, …)
+take a *destination* (`target_url`) but POST from SimCore's own process, so
+their SOURCE is SimCore, not the lab endpoint. **Therefore the honest
+cross-channel entity for an EAL step is the identity principal (via
+`canary_token`), NOT the network 5-tuple.** A 5-tuple shared between an
+in-process EAL emitter and the agent's endpoint signal is not achievable and
+must not be claimed; the identity-principal stitch (one human across endpoint +
+identity + analytics logs) IS real and is what 3b delivers.
+
 **Dispatch.** In `_handle_pull`, after resolving the stitch binding, the
 orchestrator builds ONE `Campaign` from the run's eal-channel steps — each
 `CampaignStep` is `{plugin: step.eal.plugin, params: {**step.eal.params,
-**binding.as_raw()-projected fields}}` via a small per-family
-`binding → plugin params` adapter — and calls `CampaignExecutor.execute(...,
-run_id=run_id)` in-process. This REPLACES the 3a `EAL_ONLY_NOT_DISPATCHABLE`
-refusal: an all-EAL run now dispatches and terminates at launch; a mixed run
-dispatches EAL in-process AND enqueues the beacon tasks.
+**adapter(binding, plugin)}}` — and calls `CampaignExecutor.execute(...,
+run_id=run_id)` in-process. The `binding → plugin params` adapter injects
+`canary_token` (from the binding's `account`) for any `AnalyticsEmitterParams`
+plugin, and a destination (`target_url` etc.) for network-egress plugins that
+declare one; it skips entities a plugin has no field for. This REPLACES the 3a
+`EAL_ONLY_NOT_DISPATCHABLE` refusal: an all-EAL run now dispatches and
+terminates at launch; a mixed run dispatches EAL in-process AND enqueues the
+beacon tasks.
 
 **Safety default = dry_run.** An eal step runs `dry_run=true` (records
 pre-rendered, nothing POSTed) UNLESS the launch carries the existing consent
