@@ -678,3 +678,68 @@
   padding-top: 12px;
   border-top: 1px solid var(--c-hairline, rgba(255, 255, 255, 0.08));
 }
+
+/* ─── use-case detail drawer (drill-down) ───────────────────────────────── */
+.competitive__detail-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--c-text-dim, var(--tx2, #6B7E8E));
+}
+.uctc__detail-meta {
+  margin: 6px 0 12px;
+  font-size: 11px;
+  color: var(--c-text-dim, var(--tx3, #6B7E8E));
+}
+.uctc__detail-stats {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.uctc__detail-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-hairline, rgba(107, 126, 142, 0.22));
+}
+.uctc__detail-section .competitive__detail-eyebrow { margin-bottom: 8px; }
+.uctc__detail-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.uctc__detail-key {
+  flex: none;
+  min-width: 72px;
+  color: var(--c-text-dim, var(--tx3, #6B7E8E));
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.uctc__detail-val { color: var(--c-text, var(--tx, #003366)); min-width: 0; }
+.uctc__detail-count { color: var(--c-text-dim, var(--tx3, #6B7E8E)); }
+.uctc__detail-tclist { list-style: none; margin: 0; padding: 0; }
+.uctc__detail-tc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  margin-bottom: 4px;
+  text-align: left;
+  background: var(--c-surface-2, var(--s2, rgba(107, 126, 142, 0.06)));
+  border: 1px solid var(--c-hairline, rgba(107, 126, 142, 0.22));
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--c-text, var(--tx, #003366));
+}
+.uctc__detail-tc:hover { border-color: var(--c-accent, var(--ac, #00C0E8)); }
+.uctc__detail-tc-id { flex: none; font-size: 11px; font-weight: 600; }
+.uctc__detail-tc-title {
+  flex: 1; min-width: 0;
+  font-size: 11px;
+  color: var(--c-text-dim, var(--tx2, #6B7E8E));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.uctc__detail-tc-arrow { flex: none; color: var(--c-text-dim, var(--tx3, #6B7E8E)); }
