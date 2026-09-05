@@ -171,6 +171,10 @@ KNOWN_DATASETS = frozenset({
     # they must not WARN. Exact tenant dataset strings + detector predicates
     # await live-tenant confirmation (tenant-verified is 0 — authored, not proven).
     "third_party_firewall_raw", "third_party_vpn_raw", "third_party_alerts_raw",
+    # Duo MFA authentication feed (duo_auth_emitter). Real ingested product
+    # (Cisco Duo Auth Log), not invented; exact tenant field mapping awaits
+    # live-tenant confirmation (tenant-verified is 0).
+    "duo_auth_raw",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain
