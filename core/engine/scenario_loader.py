@@ -162,6 +162,33 @@ class StepExpectedDetection(BaseModel):
     kpi_contribution: Optional[KpiThreshold] = None
 
 
+class EalStepSchema(BaseModel):
+    """The EAL (Enhanced Application Log) emitter binding for a ``channel: eal``
+    step (Phase 3a).
+
+    An EAL step is NOT executed on a beacon — it is a ``CampaignStep`` the
+    ``CampaignExecutor`` would run in SimCore's own process. Here we only carry
+    the declaration: which emitter plugin, and its params. Dispatch itself lands
+    in Phase 3b; a 3a run records the step as ``EAL_DISPATCH_PENDING`` and
+    fabricates no campaign result.
+    """
+
+    plugin: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("plugin")
+    @classmethod
+    def _plugin_non_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("eal.plugin must be a non-empty string")
+        return v
+
+
+# The step channel vocabulary. Absent/None ⇒ 'agent' (back-compat): a bare step
+# with no channel key runs on the beacon exactly as it does today.
+_STEP_CHANNELS: frozenset[str] = frozenset({"agent", "eal"})
+
+
 class StepSchema(BaseModel):
     id: str
     name: str
@@ -169,6 +196,18 @@ class StepSchema(BaseModel):
     identity: str
     mitre_technique: str
     expected_detections: list[StepExpectedDetection] = []
+    # ── Channel contract (Phase 3a — all optional, additive, back-compat) ────
+    # channel: which executor runs this step — 'agent' (the beacon, the only
+    # Phase-1/2 path) or 'eal' (a CampaignExecutor emitter, dispatched in 3b).
+    # Absent/None ⇒ 'agent'. target: an agent-channel step may run on a DIFFERENT
+    # enrolled beacon (the "second endpoint" case) — a bare agent_id, resolved
+    # against the agents table only at dispatch, never an FK at schema time. eal:
+    # the emitter binding, permitted ONLY when channel == 'eal'. A step that
+    # declares none of these dumps byte-identically to the pre-3a corpus (see
+    # ``omit_unset_channel_fields``), so all 177 scenarios load unchanged.
+    channel: Optional[str] = None
+    target: Optional[str] = None
+    eal: Optional[EalStepSchema] = None
     # ── Causality contract (all optional, back-compat) ──────────────────────
     # causality: this step's lineage/pivot to an EARLIER step. Omitted on the
     # root step (which links from the CGO). platforms: OS/env coverage for this
@@ -196,6 +235,66 @@ class StepSchema(BaseModel):
         if bad:
             raise ValueError(f"platforms must be subset of {sorted(_PLATFORMS)}, got {bad}")
         return v
+
+    @model_validator(mode="after")
+    def _validate_channel(self) -> "StepSchema":
+        # (a) channel enum — None means 'agent' (back-compat), never blank.
+        if self.channel not in (None, "agent", "eal"):
+            raise ValueError(
+                f"channel must be one of {sorted(_STEP_CHANNELS)} (or absent for "
+                f"'agent'), got {self.channel!r}"
+            )
+        # (b) an 'eal' step REQUIRES an eal block with a truthy plugin.
+        if self.channel == "eal":
+            if self.eal is None or not (self.eal.plugin and self.eal.plugin.strip()):
+                raise ValueError(
+                    "channel 'eal' requires an eal block with a non-empty plugin"
+                )
+        # (c) an eal block is only meaningful on an 'eal' step.
+        if self.eal is not None and self.channel != "eal":
+            raise ValueError(
+                "an eal block is only permitted when channel == 'eal'"
+            )
+        # (d) target names a SECOND agent endpoint — non-empty when present, and
+        # agent-channel only (an eal step runs in-process, it has no beacon).
+        if self.target is not None:
+            if not (isinstance(self.target, str) and self.target.strip()):
+                raise ValueError(
+                    "target must be a non-empty agent id when present"
+                )
+            if self.channel == "eal":
+                raise ValueError(
+                    "target is only permitted on an agent-channel step"
+                )
+        return self
+
+
+def effective_channel(step: Any) -> str:
+    """The honest default: a step with no ``channel`` key runs on the agent
+    beacon. Reads from a plain dict (persisted/enqueued shape) or a StepSchema.
+
+    This is the ONE place the absent-⇒-'agent' rule lives, so the loader,
+    ``draft_to_orm_kwargs`` and the orchestrator's channel dispatch cannot drift
+    into two notions of the default channel.
+    """
+    if isinstance(step, dict):
+        return step.get("channel") or "agent"
+    return getattr(step, "channel", None) or "agent"
+
+
+def omit_unset_channel_fields(step: dict[str, Any]) -> dict[str, Any]:
+    """Strip ``channel``/``target``/``eal`` from a persisted or enqueued step
+    dict when they are unset (None), MUTATING and returning the dict.
+
+    Mirrors the omit-when-empty rule the causality/platforms fields already use:
+    a step that declares none of the Phase-3a channel fields serialises
+    byte-identically to the pre-3a corpus, so all 177 scenarios and every
+    Phase-1/2 draft persist unchanged.
+    """
+    for key in ("channel", "target", "eal"):
+        if step.get(key) is None:
+            step.pop(key, None)
+    return step
 
 
 class ExternalToolSchema(BaseModel):
@@ -1018,7 +1117,7 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "push_supported": schema.push_supported,
         "pull_supported": schema.pull_supported,
         "external_tools": [t.model_dump() for t in schema.external_tools],
-        "steps": [s.model_dump() for s in schema.steps],
+        "steps": [omit_unset_channel_fields(s.model_dump()) for s in schema.steps],
         "cleanup": schema.cleanup.model_dump() if schema.cleanup else None,
         "tags": schema.tags,
         "author": schema.author,
