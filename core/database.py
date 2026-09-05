@@ -173,6 +173,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_scenarios_columns)
         await conn.run_sync(_migrate_assertion_columns)
         await conn.run_sync(_migrate_runtime_dependency_columns)
+        await conn.run_sync(_migrate_composer_channel_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -343,6 +344,39 @@ def _migrate_runtime_dependency_columns(connection) -> None:
             if col_name in existing:
                 continue
             connection.execute(text(f"ALTER TABLE runs ADD COLUMN {col_name} {col_type}"))
+
+
+def _migrate_composer_channel_columns(connection) -> None:
+    """Add the Phase-3a composer channel columns if absent — same
+    ``create_all``-never-adds-a-COLUMN rationale as the helpers above.
+
+    Owned here by the ``agent-last-ip`` unit: ``agents.last_ip`` (the request
+    source IP captured on register / heartbeat / enroll; nullable, never
+    fabricated — see models.Agent.last_ip). The channel-dispatch unit extends
+    THIS function with ``runs.channel_dispatch`` (a per-run JSON record of
+    channel routing / EAL_DISPATCH_PENDING) so the two 3a column additions live
+    in one idempotent place.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+
+    if "agents" in tables:
+        existing = {col["name"] for col in inspector.get_columns("agents")}
+        if "last_ip" not in existing:
+            connection.execute(text("ALTER TABLE agents ADD COLUMN last_ip VARCHAR"))
+
+    if "runs" in tables:
+        existing = {col["name"] for col in inspector.get_columns("runs")}
+        if "channel_dispatch" not in existing:
+            connection.execute(text("ALTER TABLE runs ADD COLUMN channel_dispatch JSON"))
+        # open_tasks: how many beacon tasks a run is still waiting on. A
+        # single-endpoint run is 1 (byte-identical to today); a multi-endpoint
+        # fan-out is N, so complete_run terminalises the run only when the LAST
+        # endpoint reports, not the first. NULL on legacy rows ⇒ treated as 1.
+        if "open_tasks" not in existing:
+            connection.execute(text("ALTER TABLE runs ADD COLUMN open_tasks INTEGER"))
 
 
 async def get_db():
