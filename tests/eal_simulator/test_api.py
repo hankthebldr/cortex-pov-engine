@@ -359,3 +359,66 @@ class TestAbortAPI:
 
         run = api_client.get("/api/eal/runs/run-running-1").json()
         assert run["status"] == "aborted"
+
+
+class TestDataStreamsAPI:
+    def test_plugins_are_tagged_with_family(self, api_client: TestClient):
+        data = api_client.get("/api/eal/plugins").json()
+        by_name = {p["name"]: p for p in data["plugins"]}
+        # A collector-POST analytics emitter is tagged analytics_log_streamer.
+        assert by_name["third_party_firewall_emitter"]["family"] == "analytics_log_streamer"
+        assert by_name["ad_windows_emitter"]["family"] == "analytics_log_streamer"
+        # A live-network plugin is tagged network_eal.
+        assert by_name["c2_http_beacon"]["family"] == "network_eal"
+        assert by_name["dns_tunnel_exfil"]["family"] == "network_eal"
+
+    def test_data_streams_reports_full_catalogue_with_gaps(self, api_client: TestClient):
+        data = api_client.get("/api/eal/data-streams").json()
+        assert data["counts"]["total"] == 34
+        # Gaps are present, not omitted.
+        states = {s["state"] for s in data["sources"]}
+        assert "gap" in states and "covered" in states
+        # authored != proven, and proven is 0.
+        assert data["counts"]["proven"] == 0
+        assert "Authored is not proven" in data["authored_not_proven"]
+
+    def test_data_streams_lists_new_emitters_with_negative_control(self, api_client: TestClient):
+        data = api_client.get("/api/eal/data-streams").json()
+        emitters = {e["name"]: e for e in data["emitters"]}
+        fw = emitters["third_party_firewall_emitter"]
+        assert fw["supports_negative_control"] is True
+        assert fw["datasets"] == ["third_party_firewall_raw"]
+        # No run yet -> latest_delivery is None (not a fabricated "delivered").
+        assert fw["latest_delivery"] is None
+
+    def test_data_streams_delivery_verdict_after_run(self, api_client: TestClient):
+        from models import EalCampaignRun
+
+        async def _seed():
+            from api import eal as eal_api
+            async with eal_api.AsyncSessionLocal() as session:
+                session.add(EalCampaignRun(
+                    run_id="run-ds-1",
+                    campaign_id="CMP-DS-1",
+                    status="complete",
+                    dry_run=False,
+                    step_results=[{
+                        "plugin": "third_party_vpn_emitter",
+                        "step_id": "step-01",
+                        "status": "success",
+                        "detail": {"delivery": {
+                            "records_attempted": 2, "records_delivered": 2,
+                            "bytes_attempted": 100, "bytes_delivered": 100,
+                            "failures": [],
+                        }},
+                    }],
+                ))
+                await session.commit()
+
+        asyncio.run(_seed())
+        data = api_client.get("/api/eal/data-streams").json()
+        emitters = {e["name"]: e for e in data["emitters"]}
+        vpn = emitters["third_party_vpn_emitter"]["latest_delivery"]
+        assert vpn is not None
+        assert vpn["delivery_verdict"] == "delivered"
+        assert vpn["run_id"] == "run-ds-1"
