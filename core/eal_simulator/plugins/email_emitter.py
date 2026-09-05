@@ -343,6 +343,13 @@ class EmailEmitterParams(BaseModel):
 class EmailEmitter(BaseSimulation):
     class Meta:
         name = "email_emitter"
+        # Vendor analytics catalogue join (see analytics_catalogue.py). The
+        # email emitter POSTs Proofpoint TAP / M365 message telemetry; it only
+        # PARTIALLY reaches the "Microsoft 365 Emails" analytics source (built
+        # for the EMAIL plane's phishing detections, not authored against that
+        # source's analytics-alert predicates), so it is declared partial.
+        data_sources_partial = ["microsoft_365_emails"]
+        datasets = ["proofpoint_tap_raw", "msft_o365_email"]
         version = "1.0.0"
         description = (
             "Emits synthetic email-security audit events (Proofpoint TAP / "

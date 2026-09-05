@@ -305,6 +305,11 @@ class CloudStorageComputeEmitterParams(AnalyticsEmitterParams):
 class CloudStorageComputeEmitter(AnalyticsLogEmitter):
     class Meta:
         name = "cloud_storage_compute_emitter"
+        # Vendor analytics catalogue join (see analytics_catalogue.py). Cloud
+        # storage/compute control-plane calls land in cloud_audit_logs, the same
+        # AWS + GCP audit sources cloud_audit_emitter covers.
+        data_sources = ["aws_audit_log", "gcp_audit_log"]
+        datasets = ["cloud_audit_logs"]
         version = "1.0.0"
         description = (
             "Emits shape-true AWS CloudTrail records for the compute + "

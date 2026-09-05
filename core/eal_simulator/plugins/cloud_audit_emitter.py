@@ -560,6 +560,11 @@ class CloudAuditEmitter(AnalyticsLogEmitter):
 
     class Meta:
         name = "cloud_audit_emitter"
+        # Vendor analytics catalogue join (see analytics_catalogue.py). One
+        # emitter, two catalogue sources — AWS + GCP audit logs both normalise
+        # to cloud_audit_logs.
+        data_sources = ["aws_audit_log", "gcp_audit_log"]
+        datasets = ["cloud_audit_logs"]
         version = "1.1.0"
         description = (
             "Emits shape-true cloud control-plane audit records (AWS CloudTrail "
