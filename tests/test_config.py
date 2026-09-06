@@ -24,6 +24,7 @@ the only typo protection this config has (see
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -61,7 +62,7 @@ def dotenv_is_sole_source(monkeypatch: pytest.MonkeyPatch) -> None:
     ``EnvSettingsSource`` outranks the dotenv, so a developer (or CI runner) with
     ``CORTEXSIM_ENV`` exported would otherwise silently mask what the file says.
     """
-    for name in [key for key in __import__("os").environ if key.startswith("CORTEXSIM_")]:
+    for name in [key for key in os.environ if key.startswith("CORTEXSIM_")]:
         monkeypatch.delenv(name, raising=False)
 
 
