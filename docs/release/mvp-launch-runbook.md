@@ -110,7 +110,15 @@ sandbox structurally cannot satisfy. See §5.
 
 ## 3 · Defects found and fixed in this pass
 
-Three commits, each with the failing-before evidence Gate A requires.
+Each with the failing-before evidence Gate A requires.
+
+> **Coordination note.** A parallel session fixed SIM-MP-020 independently
+> (`0d01fd0`, on `dev`) while this pass was running. That fix restored
+> emittability by adding `platform_variants` and leaving `command` unchanged.
+> This branch is rebased onto it. Reviewing the two side by side is what
+> surfaced the generator defect below: their fix satisfied every test and the
+> bundle still shipped the wrong command, because no test compared the
+> generator's output to the resolver's answer.
 
 **`fix(scenarios): mp-020 could emit no push bundle for either target`**
 `bf4b307` converted SIM-MP-020's SAFE-MODE echoes to active signal by folding
@@ -137,6 +145,35 @@ POSIX fallback `curl http://127.0.0.1:8888/api/health`, a **SimCore call inside
 a bundle whose cardinal rule is no SimCore dependency at runtime**, and made
 cleanup actually `rm -rf` the staging directory rather than assert "no
 persistent artifacts" over one.
+
+**`fix(engine): the bash bundle shipped a command the resolver never chose`**
+The most consequential find, and it generalises beyond mp-020. `generate_bash`
+read `step["command"]` directly and ignored `platform_variants` entirely, while
+`resolve_target(..., "posix")` consults `platform_variants.linux` when the
+primary is Windows-shaped. A scenario could therefore be judged POSIX-emittable
+*because of* its Linux variant and then ship the Windows-shaped primary.
+`generate_powershell` has always resolved correctly; only the bash loop did not.
+
+On `dev` this produced, for SIM-MP-020 step-05:
+
+```
+run_as 'svc-backup' 'powershell.exe -NoProfile -Command Write-Output
+'\''[cortexsim-mp-020] rclone exfil check'\'' 2>nul ||
+(curl -s -m 2 http://127.0.0.1:8888/api/health || true)' 'step-05' || true
+```
+
+On a clean Ubuntu 22.04: `powershell.exe` absent, `2>nul` creates a file named
+`nul`, the fallback curls a SimCore that is not running, `|| true` swallows it,
+and the step reports success having emitted nothing.
+
+Nothing caught it because the emittability test and the golden digests both
+describe the *resolver's* answer — which was right — and the generator's answer
+was never compared to it. Two guards close that:
+`test_bash_bundle_ships_what_the_resolver_resolved`, and `:8888` added to
+`_SIMCORE_MARKERS` (the list held only k8s delivery paths, so a test whose
+docstring promises "names no SimCore endpoint" passed on a bundle curling
+SimCore). Behaviour-preserving: all 176 other scenarios emit byte-identical
+bundles.
 
 **`test(scripts): pin mp-020 on the real-signal side of the tier invariant`**
 The RED-list still named SIM-MP-020 after the conversion deliberately moved it.
