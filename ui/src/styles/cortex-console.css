@@ -501,7 +501,18 @@
   display: flex; align-items: center; gap: 12px;
   flex: 0 1 auto; min-width: 0; overflow: hidden;
 }
-.theme-console .header__right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* `flex-shrink: 0` here is why the tenant/agent/run infocard got CUT OFF at the
+   viewport edge instead of condensing. This strip runs ~1000px wide (two
+   switchers, a run pill carrying `scenario · step · elapsed`, the search
+   trigger and three icon buttons); refusing to shrink means that when
+   `header__left` has already given up everything it can, the overflow goes off
+   the right edge — and `.header` clips it, so the controls become unreachable
+   rather than merely tight. It may now shrink, with the run-pill meta
+   ellipsising (see below) as the first thing to give. */
+.theme-console .header__right {
+  display: flex; align-items: center; gap: 8px;
+  flex: 0 1 auto; min-width: 0;
+}
 /* `flex: none` + nowrap: a wordmark ellipsised to "C…" is worse than no
    wordmark at all, so the breakpoints below hide it whole rather than letting
    it shrink into nonsense. */
@@ -594,7 +605,15 @@
 .theme-console .env-pill__dot--warn { background: var(--c-pending); box-shadow: 0 0 6px var(--c-pending); }
 .theme-console .env-pill__dot--bad  { background: var(--c-missed);  box-shadow: 0 0 6px var(--c-missed); }
 .theme-console .env-pill__label { color: var(--c-text); }
-.theme-console .env-pill__meta  { color: var(--c-text-muted); }
+/* The run pill's meta is the longest free-form text in the header and the
+   right place for the header to give up width first — it ellipsises so the pill
+   (and everything right of it) stays on screen. Above 1120px it is visible and
+   truncating; at/below 1120px the media query near the top of this file hides it
+   outright, because a run id clipped to "SIM-…" is worse than no meta at all. */
+.theme-console .env-pill__meta  {
+  color: var(--c-text-muted);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .theme-console .cmd-trigger {
   display: inline-flex; align-items: center; gap: 8px;
@@ -5967,9 +5986,17 @@
 .theme-console .insp-tool__warn { margin-top: 8px; font-size: 11px; color: var(--c-pending); line-height: 1.5; }
 
 /* ── Global degraded banner ─────────────────────────────────────────── */
+/* Full-bleed shell row, not an in-view card. It used to render inside `.view`
+   as a bordered/rounded box with a bottom margin; moving it to AppShell's
+   `banner` slot (so the nav rail and each view's filter rail finally share a
+   top) also means it now spans the console like `.phase-bar` and the safety
+   banner above it — hence `flex: none`, the row background + single bottom
+   hairline, and header-matching 16px side padding instead of a card outline. */
 .theme-console .readiness-banner {
-  border: 1px solid var(--c-pending); background: var(--c-pending-soft);
-  border-radius: 3px; padding: 8px 12px; margin-bottom: 12px;
+  flex: none;
+  background: var(--c-pending-soft);
+  border-bottom: 1px solid var(--c-pending);
+  padding: 8px 16px;
 }
 .theme-console .readiness-banner__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .theme-console .readiness-banner__tag {

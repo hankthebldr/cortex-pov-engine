@@ -45,6 +45,14 @@ export default function AppShell({
   paletteItems = [],
   ticker = '',
   onExportPOV = null,
+  // Shell-level notice row (the SimCore health/degraded banner). It is a slot
+  // rather than a child on purpose: rendered as a child it lands INSIDE
+  // `.view`, above the destination's own content, which pushed every in-view
+  // filter rail down by its height while the nav rail stayed pinned to the top
+  // of `.workspace` — two sidebars with two different tops, measured at 159px
+  // apart. It is also a statement about SimCore, not about whichever
+  // destination happens to be open, so the shell is where it belongs.
+  banner = null,
   children,
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -208,6 +216,8 @@ export default function AppShell({
       {activeRun && (
         <TelemetryStrip run={activeRun} onAbort={onAbortRun} />
       )}
+
+      {banner}
 
       <div className={'workspace' + (railCollapsed ? ' workspace--rail-collapsed' : '')}>
         <DestinationNav
