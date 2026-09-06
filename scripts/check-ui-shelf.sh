@@ -18,11 +18,18 @@
 #
 # WHY THE REFERENCE IS BUILT IN DOCKER, NOT ON THE HOST
 #   Vite asset filenames are content hashes, so filename-set equality IS content
-#   equality — but only across one toolchain. This host runs node v26; the image
-#   builds with node:20-alpine. Comparing across that gap would turn minifier
-#   differences into "drift" and the guard would be muted within a week. So the
-#   reference bundle is produced by the image's OWN ui-builder stage. Any
-#   difference that survives is real.
+#   equality — but only within one toolchain. This host runs node v26; the image
+#   builds with node:20-alpine.
+#
+#   MEASURED 2026-09-06: those two produce byte-identical filenames on this tree
+#   (45/45), so a host-built reference would work TODAY. This stage is used
+#   anyway because that agreement is a property of the currently pinned
+#   vite/esbuild/rollup, not a guarantee — and the failure mode is silent. A
+#   toolchain bump that shifts one hash would read as "drift" on every run, and
+#   a guard that cries wolf gets muted rather than fixed. Building the reference
+#   from the image's OWN ui-builder stage removes the variable for ~3s (the
+#   stage is a warm cache hit after any docker build), so any difference that
+#   survives is drift and nothing else.
 #
 # Exit code:
 #   0  — image assets/ set == ui-builder assets/ set, and index.html agrees

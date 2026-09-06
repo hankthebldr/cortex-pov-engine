@@ -190,8 +190,10 @@ check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target (needs `
 #
 # The reference bundle is built by the image's OWN ui-builder stage rather than
 # on the host: vite filenames are content hashes, so a set comparison IS a
-# content comparison, but only within one toolchain (this host runs node 26, the
-# image node 20). See scripts/check-ui-shelf.sh for the full argument.
+# content comparison, but only within one toolchain. Host node 26 and image node
+# 20 were MEASURED to agree (45/45 on 2026-09-06) — the stage is used to keep
+# that from being load-bearing, not because it was seen to break. Full argument
+# in scripts/check-ui-shelf.sh.
 check-ui-shelf: ## assert the BUILT IMAGE serves the console this tree builds (needs `make build`)
 	IMAGE=$(IMAGE) scripts/check-ui-shelf.sh
 
