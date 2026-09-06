@@ -487,8 +487,9 @@ function AddDetection({ planes, detectionTypes, onAdd }) {
  *  - agent: an optional TARGET picker for the SECOND-endpoint case — blank means
  *    "run on the launch target". A picked agent that is not enrolled at launch is
  *    refused honestly (TARGET_AGENT_NOT_ENROLLED), never silently dropped.
- *  - eal: {plugin, params}. In Phase 3a the step is validated but NOT dispatched
- *    (recorded as EAL_DISPATCH_PENDING — no campaign, no fabricated result).
+ *  - eal: {plugin, params}. The step is dispatched IN-PROCESS at launch (dry-run
+ *    baseline — records pre-rendered, nothing POSTed), planting the shared
+ *    identity principal; the run records the real dispatch outcome, never a fake.
  *
  * Every editor keeps a mono TEXT value node above its control (matching the
  * identity/technique/causality pattern) so the value is queryable by text and
@@ -566,10 +567,11 @@ function ChannelSection({ selected, channels, agents, onSetChannel, onSetTarget,
             stepId={selected.id}
           />
           <p className="field-note">
-            In this phase an EAL step is validated but NOT dispatched — it is recorded on the
-            run as EAL_DISPATCH_PENDING (no campaign is run and no EAL result is fabricated;
-            dispatch lands in Phase 3b). Its expected detections still seed honest not-fired
-            result rows.
+            An EAL step is dispatched in-process at launch (dry-run baseline: records are
+            pre-rendered, nothing is POSTed), planting the shared identity principal so the
+            analytics logs stitch to the endpoint signal on the same user. Its expected
+            detections seed honest not-yet-observed result rows, and the run records the real
+            dispatch outcome (dispatched / dry_run / not_delivered) — never a fabricated ingest.
           </p>
         </div>
       )}
