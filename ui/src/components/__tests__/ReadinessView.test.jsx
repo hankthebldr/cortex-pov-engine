@@ -192,8 +192,20 @@ describe('ReadinessBanner', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('names the fault AND the fix for a silently broken deployment', () => {
+  it('states the degradation WITHOUT being expanded — folding detail must not fold the claim', () => {
+    // The detail is collapsed by default to buy back viewport height, so the
+    // collapsed line is the one a DC actually sees. If the claim could hide
+    // with the detail, a degraded deployment would render as a healthy one —
+    // the exact Gate-A5 failure this banner exists to prevent.
     render(<ReadinessBanner model={degraded} />)
+    expect(screen.getByTestId('readiness-banner')).toHaveTextContent(/SIMCORE DEGRADED/)
+    expect(screen.getByTestId('readiness-banner-count')).toHaveTextContent(/1 component/)
+    expect(screen.queryByTestId('readiness-banner-adapter_catalog')).not.toBeInTheDocument()
+  })
+
+  it('names the fault AND the fix for a silently broken deployment, one click away', async () => {
+    render(<ReadinessBanner model={degraded} />)
+    await userEvent.click(screen.getByTestId('readiness-banner-toggle'))
     const row = screen.getByTestId('readiness-banner-adapter_catalog')
     expect(row).toHaveTextContent(/count of 0/)
     expect(row).toHaveTextContent(/tools\//)

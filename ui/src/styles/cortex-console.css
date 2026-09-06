@@ -6003,7 +6003,24 @@
   font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
   font-weight: 700; color: var(--c-pending);
 }
-.theme-console .readiness-banner__count { font-size: 10.5px; color: var(--c-text-secondary); flex: 1; }
+.theme-console .readiness-banner__count { font-size: 10.5px; color: var(--c-text-secondary); }
+/* Sits between the always-visible claim and the actions. `margin-right: auto`
+   (rather than the count carrying `flex: 1`) keeps the toggle next to the text
+   it expands instead of stranding it against the buttons on a wide console. */
+.theme-console .readiness-banner__toggle {
+  margin-right: auto;
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.theme-console .readiness-banner__toggle:hover { color: var(--c-text); background: var(--c-hairline); }
 .theme-console .readiness-banner__x {
   background: none; border: none; color: var(--c-text-muted); cursor: pointer;
   font-size: 12px; padding: 2px 4px; border-radius: 2px;
@@ -7558,6 +7575,7 @@
   .theme-console .workspace,
   .theme-console .workspace--rail-collapsed {
     grid-template-columns: var(--w-rail-collapsed) 1fr;
+    position: relative;              /* anchor for the overlay rail below */
   }
   .theme-console .rail--nav .rail__section-title,
   .theme-console .rail--nav .plane-item__name,
@@ -7565,6 +7583,52 @@
   .theme-console .rail--nav .rail__hint { display: none; }
   .theme-console .rail--nav .plane-item { justify-content: center; padding: 8px 0; gap: 0; }
   .theme-console .rail--nav .rail__toggle { justify-content: center; padding: 0 0 12px; }
+
+  /* Reveal the labels on hover/focus by expanding the RAIL over the content,
+     rather than flying each label out beside it. A per-item flyout cannot work
+     here: `.rail` is `overflow-y: auto`, and an element that scrolls on one
+     axis clips on BOTH, so any label positioned outside the rail is cut off at
+     62px. Expanding the rail keeps the labels inside it, needs no JS, and gives
+     the icon strip a discoverable affordance instead of leaving eleven
+     unlabelled glyphs.
+
+     It overlays (position:absolute) instead of widening the grid track, so
+     revealing a label never reflows the content underneath — the thing a DC is
+     reading mid-demo must not jump because the pointer crossed the rail.
+     `:focus-within` is what makes it keyboard-reachable; without it this is a
+     mouse-only affordance and the nav is unusable from the keyboard. */
+  .theme-console .rail--nav {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: var(--w-rail-collapsed);
+    z-index: 30;
+    transition: width var(--dur-fast) var(--ease-out);
+  }
+  /* REQUIRED, not tidiness. An absolutely-positioned grid child is removed from
+     the grid FLOW, so auto-placement promotes `.main` into the first (62px)
+     track and the whole workspace renders as a blank 62px sliver. Pinning the
+     column keeps `.main` where the template intends while the rail floats. */
+  .theme-console .main { grid-column: 2; }
+  .theme-console .rail--nav:hover,
+  .theme-console .rail--nav:focus-within {
+    width: var(--w-rail);
+    box-shadow: var(--shadow-lg);
+  }
+  .theme-console .rail--nav:hover .rail__section-title,
+  .theme-console .rail--nav:focus-within .rail__section-title,
+  .theme-console .rail--nav:hover .plane-item__name,
+  .theme-console .rail--nav:focus-within .plane-item__name,
+  .theme-console .rail--nav:hover .plane-item__count,
+  .theme-console .rail--nav:focus-within .plane-item__count { display: block; }
+  .theme-console .rail--nav:hover .plane-item,
+  .theme-console .rail--nav:focus-within .plane-item {
+    justify-content: flex-start; padding: 8px 16px; gap: 10px;
+  }
+}
+
+/* Motion is an affordance here, not decoration, but it is still motion. */
+@media (max-width: 1000px) and (prefers-reduced-motion: reduce) {
+  .theme-console .rail--nav { transition: none; }
 }
 
 @media (max-width: 860px) {
