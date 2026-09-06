@@ -27,7 +27,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
-        wiki wiki-check ci clean
+        wiki wiki-check ci clean launch-preflight
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -309,6 +309,13 @@ check-lab-ready: lab-ready ## Determinism gate: regenerate the manifest and fail
 # -----------------------------------------------------------------------------
 ci: test validate e2e-tierc ## Run every CI gate (backend + agent + ui + detection + adapters + e2e-tierc)
 	@echo "All CI gates passed."
+
+# Gate B (dev -> main). Not part of `ci`: it asserts release-time facts (branch
+# topology, version coherence, no abandoned branches) that are meaningless on a
+# feature branch. Exit 2 = nothing failed but a gate could not RUN — see the
+# script header on why that is not the same as passing.
+launch-preflight: ## Gate B readiness for a dev -> main release merge (exit 2 = verdict withheld)
+	@scripts/launch-preflight.sh $(PREFLIGHT_ARGS)
 
 clean: ## Remove the built image
 	-docker rmi $(IMAGE) 2>/dev/null || true
