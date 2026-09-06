@@ -80,7 +80,11 @@ def test_known_narration_scenarios_are_red_and_real_ones_are_not():
         assert rows[sid]["tier"] == "RED", (sid, rows[sid]["reason"])
         assert rows[sid]["steps_real_signal"] == 0
     # Scenarios that run real binaries must never be RED.
-    for sid in ("SIM-EDR-001", "SIM-ITDR-015", "SIM-MP-019", "SIM-CDR-009"):
+    # SIM-MP-020 was narration-only until it was deliberately converted to
+    # active-signal telemetry; it is pinned on THIS side of the invariant so a
+    # regression back to `echo` narration fails here rather than passing quietly.
+    for sid in ("SIM-EDR-001", "SIM-ITDR-015", "SIM-MP-019", "SIM-CDR-009",
+                "SIM-MP-020"):
         assert rows[sid]["tier"] != "RED", sid
         assert rows[sid]["steps_real_signal"] > 0
 

@@ -1601,37 +1601,6 @@
     {
       "c2_tools": [],
       "consent_gated": false,
-      "delivery": "agent",
-      "detection_steps_without_signal": 0,
-      "detection_types": [
-        "BIOC",
-        "ABIOC",
-        "XQL",
-        "Correlation"
-      ],
-      "egress_tools": [],
-      "name": "Ransomware Precursor Auto-Containment \u2014 BlackSuit DCSync-to-ESXi Kill Chain Fires an XSOAR Response & Remediation Playbook Before Encryption",
-      "needs_target_egress": false,
-      "plane": "ANALYTICS",
-      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
-      "requires_interpreters": [],
-      "scenario_id": "SIM-MP-020",
-      "service_identities": [
-        "svc-backup",
-        "www-data"
-      ],
-      "shelf_backed_tools": [],
-      "signal_ratio": 1.0,
-      "status": "active",
-      "steps_real_signal": 6,
-      "steps_total": 6,
-      "steps_with_detections": 6,
-      "tier": "GREEN",
-      "unknown_adapter_refs": []
-    },
-    {
-      "c2_tools": [],
-      "consent_gated": false,
       "delivery": "eal",
       "detection_steps_without_signal": 0,
       "detection_types": [
@@ -1973,6 +1942,37 @@
       "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
       "requires_interpreters": [],
       "scenario_id": "SIM-MP-016",
+      "service_identities": [
+        "svc-backup",
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 0.833,
+      "status": "active",
+      "steps_real_signal": 5,
+      "steps_total": 6,
+      "steps_with_detections": 6,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 1,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Ransomware Precursor Auto-Containment \u2014 BlackSuit DCSync-to-ESXi Kill Chain Fires an XSOAR Response & Remediation Playbook Before Encryption",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-020",
       "service_identities": [
         "svc-backup",
         "www-data"
@@ -5270,7 +5270,7 @@
       "RED": 5,
       "YELLOW": 26
     },
-    "detection_steps_without_signal": 141,
+    "detection_steps_without_signal": 142,
     "eal_delivered": 55,
     "scenarios_consent_gated": 4,
     "scenarios_needing_target_egress": 26,
