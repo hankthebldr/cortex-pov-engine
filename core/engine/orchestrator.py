@@ -322,7 +322,13 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     async def _refuse_after_seed(
-        self, db: AsyncSession, run_id: str, *, error: str
+        self,
+        db: AsyncSession,
+        run_id: str,
+        *,
+        error: str,
+        error_code: str = "LAUNCH_FAILED",
+        error_detail: Optional[dict[str, Any]] = None,
     ) -> LaunchResult:
         """Refuse a launch whose Run row is already committed, leaving it TERMINAL.
 
@@ -362,7 +368,13 @@ class Orchestrator:
         logger.warning(
             "Launch refused after seeding run_id=%s reason=%s", run_id, error
         )
-        return LaunchResult(success=False, run_id=run_id, error=error)
+        return LaunchResult(
+            success=False,
+            run_id=run_id,
+            error=error,
+            error_code=error_code,
+            error_detail=error_detail or {},
+        )
 
     # ------------------------------------------------------------------
     # pull path
@@ -564,9 +576,8 @@ class Orchestrator:
             # A persisted spec that no longer validates must refuse at LAUNCH,
             # not inject a half-resolved binding onto a customer endpoint. The
             # operator is still at the console to read why (fail-closed, Gate A5).
-            return LaunchResult(
-                success=False,
-                run_id=run_id,
+            return await self._refuse_after_seed(
+                db, run_id,
                 error=f"STITCH_CONTEXT_INVALID: {exc}",
             )
 
@@ -642,18 +653,10 @@ class Orchestrator:
                     "Launch refused run_id=%s code=TARGET_AGENT_NOT_ENROLLED missing=%s",
                     run_id, sorted(missing),
                 )
-                # Terminate the seeded run so a refused multichannel launch does
-                # not leave an orphaned run stuck at its initial state.
-                run_row = (await db.execute(
-                    select(Run).where(Run.run_id == run_id)
-                )).scalar_one_or_none()
-                if run_row:
-                    run_row.status = "failed"
-                    run_row.completed_at = datetime.utcnow()
-                    await db.commit()
-                return LaunchResult(
-                    success=False,
-                    run_id=run_id,
+                # Terminate the seeded run so a refused multichannel launch
+                # does not leave an orphaned run stuck at its initial state.
+                return await self._refuse_after_seed(
+                    db, run_id,
                     error=(
                         "TARGET_AGENT_NOT_ENROLLED: composed step target(s) "
                         f"{sorted(missing)} are not enrolled — enroll them or "
