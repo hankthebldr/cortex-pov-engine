@@ -285,3 +285,64 @@ def test_draft_step_may_omit_identity_and_technique():
     assert kwargs["steps"][0]["identity"] == "direct"
     # A blank chain still has a plane and its detection type union.
     assert kwargs["status"] == "draft"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — stitch_context (additive/optional)
+# ---------------------------------------------------------------------------
+
+
+def test_draft_without_stitch_context_is_none_and_orm_null():
+    """A context-less draft is byte-identical to today: field None, ORM NULL."""
+    schema = DraftScenarioSchema(**_draft())
+    assert schema.stitch_context is None
+    kwargs = draft_to_orm_kwargs(schema)
+    assert kwargs["stitch_context"] is None
+
+
+def test_accepts_valid_stitch_context_block_and_persists_declared_keys():
+    sc = {
+        "src_ip": {"resolve": "auto_ip"},
+        "dst_ip": {"literal": "203.0.113.10"},
+        "dst_port": {"literal": 443},
+        "account": {"resolve": "canary_principal"},
+        "host": {"resolve": "from_agent"},
+    }
+    schema = DraftScenarioSchema(**_draft(stitch_context=sc))
+    assert schema.stitch_context is not None
+    kwargs = draft_to_orm_kwargs(schema)
+    stored = kwargs["stitch_context"]
+    # Declared-only, exact entries preserved (literals verbatim, resolves named).
+    assert stored == sc
+    # Undeclared keys are NOT persisted (exclude_none), not stored as null legs.
+    assert "src_port" not in stored
+    assert "cloud_resource" not in stored
+
+
+def test_empty_stitch_context_block_normalises_to_orm_null():
+    schema = DraftScenarioSchema(**_draft(stitch_context={}))
+    kwargs = draft_to_orm_kwargs(schema)
+    assert kwargs["stitch_context"] is None
+
+
+def test_rejects_unknown_stitch_directive():
+    with pytest.raises(ValidationError):
+        DraftScenarioSchema(**_draft(stitch_context={"src_ip": {"resolve": "auto_bogus"}}))
+
+
+def test_rejects_stitch_directive_on_incompatible_key():
+    # auto_5tuple is rejected on host (not one of the five tuple keys).
+    with pytest.raises(ValidationError):
+        DraftScenarioSchema(**_draft(stitch_context={"host": {"resolve": "auto_5tuple"}}))
+
+
+def test_rejects_stitch_entry_with_both_literal_and_resolve():
+    with pytest.raises(ValidationError):
+        DraftScenarioSchema(
+            **_draft(stitch_context={"src_ip": {"literal": "10.0.0.1", "resolve": "auto_ip"}})
+        )
+
+
+def test_rejects_unknown_stitch_key():
+    with pytest.raises(ValidationError):
+        DraftScenarioSchema(**_draft(stitch_context={"not_an_entity": {"literal": "x"}}))

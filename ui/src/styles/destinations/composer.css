@@ -918,3 +918,92 @@
   color: var(--tx2);
 }
 .theme-console .btn--ghost:hover { border-color: var(--crit); color: var(--crit); }
+
+/* ── Phase-2 Stitch Context ──────────────────────────────────────────────────
+   The scenario-level authoring panel (ComposerStitchPanel) lives inside the
+   workflow-meta view; the per-step consume section lives in the step view; the
+   canvas overlay is a design-lens layer. All additive — nothing above moves. */
+
+.theme-console .composer-stitch-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bd2);
+}
+.theme-console .composer-stitch-panel__intro { margin-bottom: 8px; }
+
+.theme-console .stitch-group {
+  margin-bottom: 10px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--s1);
+}
+.theme-console .stitch-group__head {
+  padding: 5px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tx2);
+  background: var(--s2);
+  border-bottom: 1px solid var(--bd2);
+}
+
+.theme-console .stitch-row {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--bd2);
+}
+.theme-console .stitch-row:last-child { border-bottom: none; }
+.theme-console .stitch-row__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.theme-console .stitch-row__label { font-size: 12px; font-weight: 600; color: var(--tx); }
+.theme-console .stitch-row__key { font-size: 10px; color: var(--tx3); }
+.theme-console .stitch-row__mode {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .stitch-row__mode--literal { color: var(--ink-detected); }
+.theme-console .stitch-row__mode--resolve { color: var(--ac); }
+.theme-console .stitch-row__editors {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+.theme-console .stitch-row__note { margin-top: 4px; margin-bottom: 0; }
+.theme-console .stitch-row__preview { margin-top: 4px; margin-bottom: 0; color: var(--tx2); }
+
+.theme-console .composer-stitch-panel__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--tx2);
+}
+.theme-console .stitch-foot__problems {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  width: 100%;
+}
+.theme-console .stitch-foot__problem { color: var(--crit); font-size: 11px; margin-top: 2px; }
+
+/* Per-step consume section. */
+.theme-console .step-stitch { margin-top: 10px; }
+.theme-console .step-stitch__consumed { display: flex; flex-wrap: wrap; gap: 6px; }
+.theme-console .step-stitch__none { font-size: 11px; color: var(--tx3); }
+.theme-console .step-stitch__insert { margin-top: 8px; }
+.theme-console .step-stitch__insert-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+
+/* Canvas run-lens binding readout — the REAL persisted values. */
+.theme-console .composer-canvas__binding-pair { color: var(--tx2); }
+.theme-console .composer-canvas__binding-pair strong { color: var(--ink); }

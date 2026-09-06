@@ -289,6 +289,37 @@ describe('ComposerView — inspector', () => {
   })
 })
 
+describe('ComposerView — Stitch Context wiring', () => {
+  it('opens the stitch panel from the workflow-meta view and authors an entity', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    // NoSelectionAside → open the editable workflow meta, which hosts the panel.
+    await user.click(screen.getByRole('button', { name: /edit the workflow meta/i }))
+    await waitFor(() => expect(screen.getByTestId('composer-stitch-panel')).toBeInTheDocument())
+    // Author a canary principal on account; the panel is a pure view, the model
+    // lives in ComposerView's draftMeta overlay.
+    await user.selectOptions(
+      screen.getByLabelText('Resolve directive for account'),
+      'canary_principal',
+    )
+    // The choice sticks (the select now reflects the authored value).
+    expect(screen.getByLabelText('Resolve directive for account')).toHaveValue('canary_principal')
+  })
+
+  it('toggles the design-lens stitch overlay from the canvas head', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    const toggle = screen.getByTestId('composer-stitch-toggle')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
 describe('ComposerView — YAML view and workstream', () => {
   it('emits real YAML for the current chain', async () => {
     const user = userEvent.setup()

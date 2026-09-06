@@ -47,6 +47,7 @@ import {
   setCausalityParent,
   validateDraft,
 } from './composerDraft.js'
+import { setEntity, stitchInsertToken } from './stitchContext.js'
 
 /**
  * ComposerView — the Simulation Composer's slim wiring layer.
@@ -140,6 +141,8 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const [benchQuery, setBenchQuery] = useState('')
   const [paletteTab, setPaletteTab] = useState('build')
   const [notice, setNotice] = useState(null)
+  // Design-lens stitch overlay is off by default (intent, not outcome).
+  const [showStitch, setShowStitch] = useState(false)
 
   // ── Draft persistence ──────────────────────────────────────────────────────
   const [savedScenarioId, setSavedScenarioId] = useState(null)
@@ -393,6 +396,24 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   )
   const onBindTtp = useCallback((id) => onNavigate('ttps', { bind: id }), [onNavigate])
   const onEditMeta = useCallback((patch) => setDraftMeta((m) => ({ ...m, ...patch })), [])
+  // Stitch context lives in the draftMeta overlay (like name/plane/tcRef/cgo):
+  // `draft.stitchContext` resolves to `origin.stitchContext` until the DC edits
+  // it, at which point the overlay carries it. `setEntity` refuses to author a
+  // rejected value (incompatible directive / both-or-neither), so the container
+  // never holds a spec the backend would 422.
+  const onSetStitchEntity = useCallback((key, entry) => {
+    setDraftMeta((m) => {
+      const cur = (m.stitchContext !== undefined ? m.stitchContext : origin?.stitchContext) ?? null
+      return { ...m, stitchContext: setEntity(cur, key, entry) }
+    })
+  }, [origin])
+  // Insert a planted key's {stitch:KEY} token into a step's command. Goes through
+  // onEditStep (not a controlled CommandEditor) — the effect re-seed on [stepId,
+  // initial] carries the change into the uncontrolled editor.
+  const onInsertStitch = useCallback((id, key) => {
+    const cmd = steps.find((s) => s.id === id)?.command ?? ''
+    onEditStep(id, { command: `${cmd} ${stitchInsertToken(key)}` })
+  }, [steps, onEditStep])
   const onMoveStep = useCallback((index, delta) => setSteps((p) => moveStep(p, index, delta)), [])
   const onDuplicateStep = useCallback((index) => setSteps((p) => duplicateStep(p, index)), [])
   const onRemoveStep = useCallback((index) => setSteps((p) => removeStep(p, index)), [])
@@ -707,6 +728,9 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           onStartTtp={() => onNavigate('ttps')}
           onStartBlank={() => addBlank('New command step')}
           onNavigate={onNavigate}
+          stitchModel={draft.stitchContext}
+          showStitch={showStitch}
+          onToggleStitch={() => setShowStitch((v) => !v)}
         />
 
         {showPanels && (
@@ -725,6 +749,10 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
               detectionTypes={DETECTION_TYPES}
               planes={PLANES}
               onNavigate={onNavigate}
+              stitchModel={draft.stitchContext}
+              onSetStitchEntity={onSetStitchEntity}
+              onInsertStitch={onInsertStitch}
+              agentName={agentName}
             />
           ) : (
             <NoSelectionAside draft={draft} onOpenMeta={() => setMetaOpen(true)} />

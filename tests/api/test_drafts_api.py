@@ -377,3 +377,72 @@ def _seed_active(session_factory, scenario_id: str):
             await db.commit()
 
     asyncio.run(_do())
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — stitch_context round-trip + rejection
+# ---------------------------------------------------------------------------
+
+
+def test_create_draft_without_stitch_context_returns_null(client):
+    """Additive/optional: a context-less draft carries stitch_context=None."""
+    doc = client.post("/api/scenarios/drafts", json=_draft_body()).json()
+    assert doc["stitch_context"] is None
+
+
+def test_create_and_get_draft_roundtrips_stitch_context(client):
+    sc = {
+        "src_ip": {"resolve": "auto_ip"},
+        "dst_ip": {"literal": "203.0.113.10"},
+        "dst_port": {"literal": 443},
+        "account": {"resolve": "canary_principal"},
+    }
+    created = client.post(
+        "/api/scenarios/drafts", json=_draft_body(stitch_context=sc)
+    )
+    assert created.status_code == 201, created.text
+    sid = created.json()["scenario_id"]
+    assert created.json()["stitch_context"] == sc
+    # Survives a GET read-back byte-identically.
+    got = client.get(f"/api/scenarios/drafts/{sid}").json()
+    assert got["stitch_context"] == sc
+
+
+def test_update_draft_replaces_stitch_context(client):
+    sid = client.post(
+        "/api/scenarios/drafts",
+        json=_draft_body(stitch_context={"src_ip": {"resolve": "auto_ip"}}),
+    ).json()["scenario_id"]
+    # Full-replace with a different context.
+    new_sc = {"dst_port": {"literal": 8443}}
+    resp = client.put(
+        f"/api/scenarios/drafts/{sid}",
+        json=_draft_body(stitch_context=new_sc),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["stitch_context"] == new_sc
+    # And clearing it entirely round-trips to null.
+    cleared = client.put(f"/api/scenarios/drafts/{sid}", json=_draft_body())
+    assert cleared.json()["stitch_context"] is None
+
+
+def test_create_draft_rejects_bad_stitch_context_with_named_code(client):
+    resp = client.post(
+        "/api/scenarios/drafts",
+        json=_draft_body(stitch_context={"src_ip": {"resolve": "auto_bogus"}}),
+    )
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "STITCH_CONTEXT_INVALID"
+    # The offending key + directive are named, not a generic sentence.
+    assert "src_ip" in detail["detail"]
+    assert "auto_bogus" in detail["detail"]
+
+
+def test_create_draft_rejects_incompatible_stitch_directive(client):
+    resp = client.post(
+        "/api/scenarios/drafts",
+        json=_draft_body(stitch_context={"host": {"resolve": "auto_5tuple"}}),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"]["code"] == "STITCH_CONTEXT_INVALID"

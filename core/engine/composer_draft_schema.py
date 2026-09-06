@@ -62,6 +62,11 @@ from engine.scenario_loader import (
     validate_causality_spine,
 )
 
+# The Stitch Context schema + directive vocabulary live in ONE place
+# (``engine.stitch_context``, the resolver module) so the authoring schema and
+# the launch-time resolver cannot drift into two notions of "a valid directive".
+from engine.stitch_context import StitchContextSchema
+
 __all__ = [
     "DraftScenarioSchema",
     "DraftValidationError",
@@ -146,6 +151,15 @@ class DraftScenarioSchema(BaseModel):
     correlation_window_seconds: Optional[int] = None
     stitching_key: Optional[str] = None
     required_planes_in_incident: list[str] = Field(default_factory=list)
+
+    # ── Optional Stitch Context (Phase 2) ───────────────────────────────────
+    # Additive/optional. Absent/None ⇒ the draft behaves exactly as a Phase-1
+    # draft (the corpus + every existing draft still load). When present, the
+    # nested StitchContextSchema validates each entry is exactly one of
+    # {literal|resolve} against the closed six-directive set — a malformed spec
+    # RAISES (surfaced by the drafts API as STITCH_CONTEXT_INVALID naming the
+    # offending key+directive), never silently reads as empty.
+    stitch_context: Optional[StitchContextSchema] = None
 
     # -- validators ----------------------------------------------------------
 
@@ -397,6 +411,14 @@ def draft_to_orm_kwargs(
         "tags": tags,
         "author": resolved_author,
         "cgo_anchor": draft.cgo_anchor.model_dump() if draft.cgo_anchor else None,
+        # Stitch Context (Phase 2). Persist ONLY the declared keys (exclude_none)
+        # and normalise an empty block to None, so a context-less draft is stored
+        # byte-identically to a Phase-1 draft (column NULL).
+        "stitch_context": (
+            (draft.stitch_context.model_dump(exclude_none=True) or None)
+            if draft.stitch_context is not None
+            else None
+        ),
         # Measurement contract (all optional on a draft).
         "validation_methodology": draft.validation_methodology,
         "methodology_family": draft.methodology_family,

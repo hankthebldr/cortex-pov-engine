@@ -17,6 +17,8 @@
  * the tenant never actually correlated.
  */
 
+import { plantedKeys, stitchPlaceholdersIn } from './stitchContext.js'
+
 /** Frozen layout constants the canvas uses to size the SVG. */
 export const LAYOUT = Object.freeze({
   nodeW: 240,
@@ -272,4 +274,71 @@ export function layoutSpine(steps) {
     .filter((e) => e.source !== START_ID && e.target !== END_ID)
     .map((e) => [e.source, e.target, e.kind])
   return { nodes: stepNodes, edges }
+}
+
+// ─── Design-lens Stitch overlay ───────────────────────────────────────────────
+
+/**
+ * The entity-join edges a Stitch Context implies on the DESIGN lens.
+ *
+ * For each key the context PLANTS (`plantedKeys(stitchModel)`), the consuming
+ * steps are the ones whose `command` references it (`{stitch:KEY}`, read with
+ * `stitchPlaceholdersIn` — the SAME honest consume set the inspector badges, so
+ * there is one parse source and one geometry source). An edge is emitted between
+ * each CONSECUTIVE pair of consumers, in step order, so a key consumed by three
+ * steps draws two hops rather than a fully-connected mesh. Ports are resolved
+ * from `layoutChain`'s node coordinates but taken at each node's RIGHT edge, off
+ * the vertical spine, so the overlay reads as a distinct secondary layer rather
+ * than doubling the spine.
+ *
+ * THE HONESTY RULE (this file's voice): `state` is ALWAYS `'EXPECTED'`. This is
+ * authored INTENT on the design lens — what the context says WILL stitch — never
+ * an outcome. It must never emit `CONFIRMED` or `BROKEN`; those belong only to
+ * the REAL causality graph the Run lens renders (`layoutCausalityGraph` passes
+ * real `edge.state` through verbatim and is untouched here). A key nothing
+ * consumes yields no edge (there is no join to draw yet); a key with a single
+ * consumer likewise yields none (a join needs two ends).
+ *
+ * Order-stable and deterministic — no randomness, no set iteration order
+ * dependence. Returns `[]` for an absent model or absent steps.
+ *
+ * @param {Array}  steps        draft steps (camelCase; each may carry `command`)
+ * @param {Object} stitchModel  the panel's `{[key]:{literal|resolve}}` model
+ * @param {Object} [opts]
+ * @param {Object} [opts.spacing]  defaults to LAYOUT
+ * @returns {Array<{id:string,key:string,source:string,target:string,from:{x,y},to:{x,y},state:'EXPECTED'}>}
+ */
+export function stitchOverlayEdges(steps, stitchModel, { spacing = LAYOUT } = {}) {
+  const list = Array.isArray(steps) ? steps : []
+  const planted = plantedKeys(stitchModel)
+  if (!list.length || !planted.length) return []
+
+  // One geometry source: the same layout the Design lens draws from.
+  const { nodes } = layoutChain({ steps: list }, { spacing })
+  const byId = new Map(nodes.filter((n) => n.kind === 'step').map((n) => [n.id, n]))
+
+  // A node's overlay port: its right edge, vertically centred, so the join arcs
+  // to the right of the spine instead of overdrawing it.
+  const port = (node) => ({ x: node.x + node.w, y: node.y + node.h / 2 })
+
+  const edges = []
+  for (const key of planted) {
+    // Consumers in step order (a command with no {stitch:*} is not a consumer).
+    const consumers = list.filter((s) => stitchPlaceholdersIn(s.command).includes(key))
+    for (let i = 0; i < consumers.length - 1; i += 1) {
+      const a = byId.get(consumers[i].id)
+      const b = byId.get(consumers[i + 1].id)
+      if (!a || !b) continue
+      edges.push({
+        id: `stitch:${key}:${consumers[i].id}->${consumers[i + 1].id}`,
+        key,
+        source: consumers[i].id,
+        target: consumers[i + 1].id,
+        from: port(a),
+        to: port(b),
+        state: 'EXPECTED', // intent, never outcome — see the doc-comment
+      })
+    }
+  }
+  return edges
 }

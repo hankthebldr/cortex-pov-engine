@@ -331,7 +331,7 @@ class Orchestrator:
         db: AsyncSession,
         runtime_install_authorized: bool = False,
     ) -> LaunchResult:
-        from models import Run  # noqa: PLC0415
+        from models import Agent, Run  # noqa: PLC0415
 
         if not target_agent_id:
             return LaunchResult(
@@ -364,11 +364,51 @@ class Orchestrator:
                 error=f"{exc.code}: {exc.detail}",
             )
 
+        # Phase-2 Composer Stitch Context. When the scenario carries an authored
+        # `stitch_context`, resolve it to the run's concrete shared entities and
+        # substitute {stitch:*} into every step's command AFTER the adapter pass,
+        # so each step (and, in Phase 3, each channel) emits the SAME 5-tuple /
+        # principal / host / container / cloud resource and the signals correlate.
+        # The launch target (the Agent row, exposing `.hostname`) feeds `from_agent`.
+        # A scenario with NO stitch_context yields `binding = None` and every
+        # {stitch:*} is left verbatim — byte-identical to today. `seed=run_id` makes
+        # the binding deterministic and reproducible, never random.
+        from engine.stitch_context import (  # noqa: PLC0415
+            StitchContextValidationError,
+            resolve_stitch_context,
+        )
+
+        stitch_spec = getattr(scenario, "stitch_context", None)
+        target_agent: Optional[Agent] = None
+        if stitch_spec:
+            agent_result = await db.execute(
+                select(Agent).where(Agent.agent_id == target_agent_id)
+            )
+            target_agent = agent_result.scalar_one_or_none()
+        try:
+            binding = resolve_stitch_context(
+                stitch_spec, seed=run_id, target=target_agent
+            )
+        except StitchContextValidationError as exc:
+            # A persisted spec that no longer validates must refuse at LAUNCH,
+            # not inject a half-resolved binding onto a customer endpoint. The
+            # operator is still at the console to read why (fail-closed, Gate A5).
+            return LaunchResult(
+                success=False,
+                run_id=run_id,
+                error=f"STITCH_CONTEXT_INVALID: {exc}",
+            )
+
+        steps = _resolve_stitch_placeholders(
+            _resolve_adapter_placeholders(scenario.steps or []),
+            binding,
+        )
+
         task = Task(
             task_id=str(uuid.uuid4()),
             run_id=run_id,
             scenario_id=scenario.scenario_id,
-            steps=_resolve_adapter_placeholders(scenario.steps or []),
+            steps=steps,
             identity_context=identity,
             identity_default=execution_identity.get("default"),
             cgo_anchor=getattr(scenario, "cgo_anchor", None),
@@ -386,6 +426,11 @@ class Orchestrator:
         run: Optional[Run] = run_result.scalar_one_or_none()
         if run:
             run.status = "running"
+            # The per-run home for the RESOLVED values actually injected into this
+            # run's step commands — the real 5-tuple / UPN / host / CI / cloud
+            # resource, nothing invented (Gate A5). NULL for a context-less
+            # scenario. The report and Run lens quote this to show what executed.
+            run.stitch_binding = binding.values if binding else None
             await db.commit()
             await _publish_run_status(run_id, "running")
 
@@ -721,6 +766,15 @@ class Orchestrator:
 
 
 _ADAPTER_PLACEHOLDER_RE = __import__("re").compile(r"\{adapter:(TOOL-[A-Z0-9-]+)\}")
+
+# Phase-2 Composer Stitch Context. Mirrors _ADAPTER_PLACEHOLDER_RE: a step command
+# reads `curl --local-port {stitch:src_port} https://{stitch:dst_ip}/...` and the
+# resolved binding substitutes the SAME concrete entities into every step so the
+# channels correlate. KEY is one of the nine entity keys (lowercase snake); the
+# grammar is deliberately loose (`[a-z_]+`) so an unknown key still MATCHES and is
+# then left verbatim by _render_stitch — the agent surfaces the miss, exactly as an
+# unresolved {adapter:*} does.
+_STITCH_PLACEHOLDER_RE = __import__("re").compile(r"\{stitch:([a-z_]+)\}")
 
 
 def _compose_artifacts(scenario: Any) -> list[dict[str, Any]]:
@@ -1070,6 +1124,63 @@ def _render_adapter(adapter: Optional[Any], original_placeholder: str) -> str:
             adapter.adapter_id, exc,
         )
         return original_placeholder
+
+
+def _resolve_stitch_placeholders(
+    steps: list[dict[str, Any]],
+    binding: Optional[Any],
+) -> list[dict[str, Any]]:
+    """Substitute ``{stitch:KEY}`` placeholders in step commands with the run's
+    resolved Stitch-Context entities — the SIBLING of
+    :func:`_resolve_adapter_placeholders`.
+
+    ``binding`` is the :class:`engine.stitch_context.StitchBinding` produced by
+    ``resolve_stitch_context(scenario.stitch_context, seed=run_id, target=agent)``,
+    or ``None`` when the scenario declares no ``stitch_context`` (Phase-1 drafts
+    and the whole shipped corpus). A ``None`` binding means every ``{stitch:*}`` is
+    left verbatim, so a scenario without a context runs byte-identically to today.
+
+    The honesty rule is identical to the adapter path: a ``{stitch:KEY}`` whose
+    KEY is not one of the nine entity keys, or whose value did not resolve (the
+    spec omitted that key), is LEFT AS-IS so the agent's own output surfaces the
+    miss — never expanded to an empty string, which would read as success.
+
+    Returns a NEW list of step dicts; the input is never mutated (scenarios are
+    loaded once at boot and shared across runs).
+    """
+    rendered_steps: list[dict[str, Any]] = []
+    for step in steps:
+        new_step = dict(step)  # shallow copy is sufficient — we only edit ``command``
+        cmd = new_step.get("command")
+        if isinstance(cmd, str) and "{stitch:" in cmd:
+            new_step["command"] = _STITCH_PLACEHOLDER_RE.sub(
+                lambda m: _render_stitch(binding, m.group(1), m.group(0)),
+                cmd,
+            )
+        rendered_steps.append(new_step)
+    return rendered_steps
+
+
+def _render_stitch(
+    binding: Optional[Any],
+    key: str,
+    original_placeholder: str,
+) -> str:
+    """Render one ``{stitch:KEY}`` to its concrete resolved value.
+
+    Returns the original placeholder text on any miss — no binding, an unknown
+    key, or a key the spec never declared (``binding.get`` yields ``None``) — so
+    the failure surfaces in the agent's output instead of expanding to an empty
+    command (which would look like success). ``StitchBinding.get`` never raises,
+    so an unknown key resolves to ``None`` and is left raw here.
+    """
+    if binding is None:
+        return original_placeholder
+    value = binding.get(key)
+    if value is None:
+        logger.warning("Stitch placeholder unresolved: %s", original_placeholder)
+        return original_placeholder
+    return str(value)
 
 
 async def _publish_run_status(

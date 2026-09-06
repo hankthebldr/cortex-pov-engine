@@ -78,6 +78,15 @@ class Scenario(Base):
     # migration. NOTE: prod needs `ALTER TABLE scenarios ADD COLUMN cgo_anchor JSON`.
     cgo_anchor: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # ── Stitch Context (Phase 2 — composer cross-surface stitching) ─────────
+    # The AUTHORED intent: a flat JSON object keyed by entity key, each value
+    # {literal:<v>} or {resolve:<directive>} (validated by
+    # engine.stitch_context.StitchContextSchema). Additive/optional — NULL for
+    # every corpus scenario and every context-less draft. Nullable JSON, same
+    # cgo_anchor pattern; see _migrate_scenarios_columns in database.py. The
+    # per-run RESOLVED values live on Run.stitch_binding, deliberately distinct.
+    stitch_context: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # ── Measurement contract (v2.0 KPI block) ──────────────────────────────
     # The scenario loader validated these for several releases and then dropped
     # them, so a run could report observed/not-observed and MTTD but never
@@ -139,6 +148,7 @@ class Scenario(Base):
             "tags": self.tags,
             "author": self.author,
             "cgo_anchor": self.cgo_anchor,
+            "stitch_context": self.stitch_context,
             "validation_methodology": self.validation_methodology,
             "methodology_family": self.methodology_family,
             "primary_kpi": self.primary_kpi,
@@ -178,6 +188,17 @@ class Run(Base):
     tc_verdict: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # pass|fail|pending|not_applicable
     tc_verdict_detail: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # ── Stitch Context binding (Phase 2 — the RESOLVED values used) ─────────
+    # The per-run home for engine.stitch_context.resolve_stitch_context(...).values
+    # — the 9-key dict of the REAL concrete entities (5-tuple / UPN / host /
+    # container / cloud resource) deterministically derived from this run id and
+    # injected into its {stitch:*} step commands. Distinct from
+    # Scenario.stitch_context (authored intent): this is what actually executed,
+    # so the report / Run lens can quote the exact values. NULL for runs of
+    # scenarios/drafts without a stitch_context. Set by the orchestrator (next
+    # unit); nullable JSON, added by _migrate_scenarios_columns in database.py.
+    stitch_binding: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # ── Runtime-dependency posture (docs/design/agent-runtime-dependencies.md) ─
     # runtime_install_authorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
     # an explicit, per-run, off-by-default record of whether THIS run was
@@ -208,6 +229,7 @@ class Run(Base):
             "status": self.status,
             "tc_verdict": self.tc_verdict,
             "tc_verdict_detail": self.tc_verdict_detail,
+            "stitch_binding": self.stitch_binding,
             "runtime_install_authorized": self.runtime_install_authorized,
             "runtime_dependency_gaps": self.runtime_dependency_gaps,
             "started_at": self.started_at.isoformat() if self.started_at else None,

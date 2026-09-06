@@ -466,3 +466,46 @@ describe('draftSnapshot / isDraftDirty', () => {
     expect(isDraftDirty(draftSnapshot(cosmetic), saved)).toBe(false)
   })
 })
+
+// ─── Phase-2 Stitch Context round-trip ────────────────────────────────────────
+
+describe('stitch_context carried through the draft round-trip', () => {
+  const CTX = {
+    dst_ip: { literal: '203.0.113.10' },
+    dst_port: { literal: 443 },
+    src_ip: { resolve: 'auto_ip' },
+    account: { resolve: 'canary_principal' },
+  }
+
+  it('draftFromScenario parses stitch_context into the camelCase model', () => {
+    const d = draftFromScenario({ ...SCENARIO, stitch_context: CTX })
+    expect(d.stitchContext).toEqual(CTX)
+  })
+
+  it('a context-less scenario yields stitchContext:null and OMITS the wire field', () => {
+    const d = draftFromScenario(SCENARIO)
+    expect(d.stitchContext).toBeNull()
+    expect('stitch_context' in draftToApi(d)).toBe(false)
+    // emptyDraft carries the null too, so the two shapes match key-for-key.
+    expect(emptyDraft().stitchContext).toBeNull()
+  })
+
+  it('draftToApi attaches stitch_context when present', () => {
+    const d = draftFromScenario({ ...SCENARIO, stitch_context: CTX })
+    expect(draftToApi(d).stitch_context).toEqual(CTX)
+  })
+
+  it('round-trips scenario → draft → api → draft byte-identically', () => {
+    const d = draftFromScenario({ ...SCENARIO, stitch_context: CTX })
+    const body = draftToApi(d)
+    const back = draftFromApi({ ...SCENARIO, status: 'draft', stitch_context: body.stitch_context })
+    expect(back.stitchContext).toEqual(CTX)
+  })
+
+  it('a stitch_context edit reads as DIRTY (it changes what executes)', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const saved = draftSnapshot(draft)
+    const edited = { ...draft, stitchContext: { dst_port: { literal: 443 } } }
+    expect(isDraftDirty(draftSnapshot(edited), saved)).toBe(true)
+  })
+})
