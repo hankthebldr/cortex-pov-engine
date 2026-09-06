@@ -1050,6 +1050,15 @@
   display: grid;
   grid-template-rows: auto 1fr;
   min-height: 0;
+  /* `min-width: 0` is load-bearing, and its absence is why narrow viewports
+     read as "broken sidebar spacing" rather than as an overflow. `.main` is the
+     `1fr` grid item of `.workspace`; a grid item's default `min-width: auto`
+     lets its MIN-CONTENT width push the track wider than the viewport instead
+     of shrinking. Combined with the `overflow: hidden` below, the excess is not
+     scrollable and not visible — it is silently clipped, so every overflow
+     probe (`scrollWidth - clientWidth`) still reports 0. Mirrors the
+     `min-height: 0` above, which solves the same problem on the other axis. */
+  min-width: 0;
   position: relative;
   overflow: hidden;
 }
@@ -7489,3 +7498,61 @@
 
 /* ─── CommandPalette.jsx ─── */
 .theme-console .cmd-palette__empty { padding-bottom: 24px; }
+
+/* ═══ Narrow-viewport reflow ═══════════════════════════════════════════════
+   Everything above assumes a desktop-width console. Two fixed rails stack up
+   horizontally — the shell's nav rail (`--w-rail`, 202px) and, inside a view,
+   a second filter rail that reuses the SAME token (`.library-layout`) — so the
+   layout has a hard floor near 760px: 202 + 202 + the 286px card minimum + view
+   padding. Below that floor nothing wrapped, stacked, or scrolled, because
+   `.main` is `overflow: hidden` and `.view` is `overflow-x: hidden`. The
+   remainder was silently CLIPPED and unreachable.
+
+   That silence is the whole bug. With the overflow hidden, `scrollWidth` equals
+   `clientWidth` and the document cannot be scrolled, so every standard overflow
+   check reports a clean zero while content is missing. The symptom surfaces as
+   a sidebar whose labels are cut off — which reads as a spacing/design fault
+   and gets fixed rule-by-rule, instead of as the layout having no reflow at
+   all. The pre-existing breakpoints (1700/1600/1500/1280/1120/1100) only hide
+   small header labels and captions; not one of them changes the grid.
+
+   The two steps below reclaim the two rails in the order that costs the least
+   information: icons first, then the filter rail's column. Paired with
+   `min-width: 0` on `.main` (see its rule) — without that, the main column
+   immediately takes back the space these queries free. */
+
+@media (max-width: 1000px) {
+  /* Nav rail -> icon strip. Forced by viewport rather than by flipping the
+     persisted `cortexsim.railCollapsed` preference: a DC who expanded the rail
+     on a wide monitor should not inherit a squeezed console on a narrow one,
+     and rewriting their stored choice on resize would silently discard a
+     decision they made elsewhere. Each item keeps its `title` (DestinationNav
+     sets it from the label), so the labels stay reachable on hover. */
+  .theme-console .workspace,
+  .theme-console .workspace--rail-collapsed {
+    grid-template-columns: var(--w-rail-collapsed) 1fr;
+  }
+  .theme-console .rail--nav .rail__section-title,
+  .theme-console .rail--nav .plane-item__name,
+  .theme-console .rail--nav .plane-item__count,
+  .theme-console .rail--nav .rail__hint { display: none; }
+  .theme-console .rail--nav .plane-item { justify-content: center; padding: 8px 0; gap: 0; }
+  .theme-console .rail--nav .rail__toggle { justify-content: center; padding: 0 0 12px; }
+}
+
+@media (max-width: 860px) {
+  /* The in-view filter rail gives up its column and stacks above the results.
+     It surrenders the column outright rather than becoming a second narrow one:
+     the `.library-layout` comment above records what the narrow-column version
+     cost last time — "two sidebars, two tops, two scroll contexts, which is
+     what kept reading as broken spacing". Stacked, it must also stop being an
+     independent scroll box, hence the overflow/height reset. */
+  .theme-console .library-layout { grid-template-columns: 1fr; }
+  .theme-console .rail--filter {
+    width: auto;
+    max-height: none;
+    overflow-y: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--c-hairline);
+  }
+}
