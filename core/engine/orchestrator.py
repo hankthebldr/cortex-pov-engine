@@ -312,11 +312,57 @@ class Orchestrator:
         elif mode == "push":
             return await self._handle_push(run_id, scenario, db)
         else:
-            return LaunchResult(
-                success=False,
-                run_id=run_id,
+            return await self._refuse_after_seed(
+                db, run_id,
                 error=f"Unknown mode '{mode}' — must be 'pull' or 'push'",
             )
+
+    # ------------------------------------------------------------------
+    # refusal after the Run row exists
+    # ------------------------------------------------------------------
+
+    async def _refuse_after_seed(
+        self, db: AsyncSession, run_id: str, *, error: str
+    ) -> LaunchResult:
+        """Refuse a launch whose Run row is already committed, leaving it TERMINAL.
+
+        ``launch()`` creates the Run and seeds its Result rows before several
+        checks that can still refuse. Returning from one of those without
+        touching the row left it in ``pending`` — a NON-terminal state that
+        means, everywhere else in this engine, *work still owed*. A refused
+        launch owes nothing. It is finished, and the only honest record of it is
+        a ``failed`` run carrying the reason.
+
+        Left ``pending`` the row is also swept by :meth:`rehydrate` on the next
+        restart and stamped as an orphan whose "queued task was lost" — a
+        SimCore failure that never happened, written into a record a DC exports.
+
+        The seeded Result rows are deliberately KEPT: they record what the
+        scenario expected to detect, and a failed run with its expectations
+        intact is evidence.
+
+        Refusals that fire BEFORE the row is committed (the launch consent gate)
+        must keep creating no run at all — a ``failed`` run would read as "we
+        tried", and an unauthorized launch never did.
+        """
+        from models import Run  # noqa: PLC0415
+
+        run: Optional[Run] = (await db.execute(
+            select(Run).where(Run.run_id == run_id)
+        )).scalar_one_or_none()
+        if run is not None:
+            run.status = "failed"
+            run.completed_at = datetime.utcnow()
+            run.output = (run.output or "") + (
+                f"\n--- LAUNCH REFUSED — {error} ---\n"
+            )
+            await db.commit()
+            await _publish_run_status(run_id, "failed")
+
+        logger.warning(
+            "Launch refused after seeding run_id=%s reason=%s", run_id, error
+        )
+        return LaunchResult(success=False, run_id=run_id, error=error)
 
     # ------------------------------------------------------------------
     # pull path
@@ -461,9 +507,8 @@ class Orchestrator:
         from models import Agent, Run  # noqa: PLC0415
 
         if not target_agent_id:
-            return LaunchResult(
-                success=False,
-                run_id=run_id,
+            return await self._refuse_after_seed(
+                db, run_id,
                 error="target_agent_id is required for pull mode",
             )
 
@@ -485,9 +530,8 @@ class Orchestrator:
             # Refuse at LAUNCH, not on the target. A run that cannot be tooled
             # must never reach a customer endpoint half-armed, and the operator
             # is still at the console to read why.
-            return LaunchResult(
-                success=False,
-                run_id=run_id,
+            return await self._refuse_after_seed(
+                db, run_id,
                 error=f"{exc.code}: {exc.detail}",
             )
 
