@@ -269,8 +269,9 @@ describe('ComposerInspector — channel / target / eal editors (Phase-3a)', () =
     expect(screen.getByLabelText('EAL plugin for step-02')).toHaveValue('ngfw_eal_emitter')
     // the second-endpoint target picker does not belong to an eal step
     expect(screen.queryByLabelText('Target agent for step-02')).not.toBeInTheDocument()
-    // the honesty note: not dispatched in this phase
-    expect(screen.getByText(/EAL_DISPATCH_PENDING/)).toBeInTheDocument()
+    // the honesty note: dispatched in-process (dry-run), never a fabricated ingest
+    expect(screen.getByText(/dispatched in-process at launch/i)).toBeInTheDocument()
+    expect(screen.getByText(/never a fabricated ingest/i)).toBeInTheDocument()
   })
 
   it('editing the eal plugin calls onSetEal with the plugin', async () => {
