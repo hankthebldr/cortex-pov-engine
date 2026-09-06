@@ -25,7 +25,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up down build agent-dist lab-ready check-lab-ready test test-backend test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
-        coverage-strict check-agent-shelf rust-dist check-rust-recipe \
+        coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
         wiki wiki-check ci clean
 
@@ -79,11 +79,15 @@ ui-sync: ## Build the real bundle and push it into the RUNNING container (no reb
 	@# rather than one 'not running' that sends you to the wrong one.
 	@docker info >/dev/null 2>&1 || { \
 	  echo "docker daemon unreachable - start Docker Desktop"; exit 1; }
+	@[ -n "$(UI_CONTAINER)" ] || { \
+	  echo "no running container matches 'simcore' - start the stack: make up"; \
+	  echo "  (or name one explicitly: make UI_CONTAINER=<name> ui-sync)"; exit 1; }
 	@docker container inspect $(UI_CONTAINER) >/dev/null 2>&1 || { \
 	  echo "no container named '$(UI_CONTAINER)'"; \
 	  echo "  running simcore containers:"; \
 	  docker ps --filter name=simcore --format '    {{.Names}}' || true; \
 	  echo "  set UI_CONTAINER=<name>, or: make up"; exit 1; }
+	@echo "ui-sync target: $(UI_CONTAINER)"
 	@[ "$$(docker container inspect -f '{{.State.Running}}' $(UI_CONTAINER))" = true ] || { \
 	  echo "container '$(UI_CONTAINER)' exists but is STOPPED - docker start $(UI_CONTAINER)"; exit 1; }
 	@cd ui && npx vite build
@@ -96,9 +100,16 @@ ui-sync: ## Build the real bundle and push it into the RUNNING container (no reb
 	@echo "pushed ui/dist -> $(UI_CONTAINER):/app/core/static  (http://localhost:8888)"
 	@echo "no rebuild, no restart - enrolled agents and open SSE streams survive"
 
-# Overridable so this works against a differently-named stack (e.g. a worktree's
-# compose project, which prefixes the directory name).
-UI_CONTAINER ?= cortex-pov-engine-simcore-1
+# Auto-detected, because the hardcoded default was wrong for the stack this repo
+# actually runs (cortex-pov-engine-simcore-v1.0.0, not -1), so every `make
+# ui-sync` needed UI_CONTAINER= on the command line. compose derives the name
+# from the project directory, so no single literal is right across a worktree, a
+# renamed checkout and a versioned service name.
+#
+# `?=` defines a RECURSIVELY-expanded variable, so this docker ps runs only when
+# a recipe actually references UI_CONTAINER — `make build` does not pay for it,
+# and it does not fail parsing when the daemon is down.
+UI_CONTAINER ?= $(shell docker ps --filter name=simcore --format '{{.Names}}' 2>/dev/null | head -1)
 
 agent-dist: ## Cross-compile the beacon matrix into ./agent-dist (served by /api/agents/binary)
 	scripts/build-agent-dist.sh
@@ -149,7 +160,7 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + ground-truth gates
+validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth gates
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -168,6 +179,23 @@ check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target (needs `
 	    test -s "cortexsim-agent-$$t" || { echo "MISSING cortexsim-agent-$$t"; exit 1; }; \
 	  done; \
 	  echo "shelf OK: $$(ls cortexsim-agent-* | wc -l) targets"'
+
+# The same argument once more, for the surface a DC actually stands in front of.
+# check-agent-shelf asks "does the image ship the beacon the tree builds"; this
+# asks it of the console, and the answer was no: on 2026-09-06 a running image
+# served a bundle predating the Composer/safety-banner/phase-bar work, and below
+# ~1179px the header and workspace were clipped with no scrollbar to hint at it.
+# Every CI job was green — `ui` proves the bundle BUILDS, never that the image
+# SHIPS it, which is precisely the Gate B image-parity requirement in CLAUDE.md.
+#
+# The reference bundle is built by the image's OWN ui-builder stage rather than
+# on the host: vite filenames are content hashes, so a set comparison IS a
+# content comparison, but only within one toolchain. Host node 26 and image node
+# 20 were MEASURED to agree (45/45 on 2026-09-06) — the stage is used to keep
+# that from being load-bearing, not because it was seen to break. Full argument
+# in scripts/check-ui-shelf.sh.
+check-ui-shelf: ## assert the BUILT IMAGE serves the console this tree builds (needs `make build`)
+	IMAGE=$(IMAGE) scripts/check-ui-shelf.sh
 
 check-rust-recipe: ## ~50ms: assert the Rust build recipes still match the submodule trees
 	scripts/build-rust-dist.sh --check-recipe

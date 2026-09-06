@@ -88,6 +88,22 @@ jobs:
             sh -c "pip install --no-cache-dir pytest pytest-asyncio httpx && \
                    pytest tests/ -v --tb=short --ignore=tests/smoke"
 
+      # Image parity for the console (Gate B: "the built image ships what the
+      # tree has, not merely compiles"). It lives in THIS job because this job
+      # already built the prod image, so the ui-builder stage the guard needs is
+      # a warm cache hit rather than a second full build.
+      #
+      # It runs LAST on purpose: a stale-console failure must not pre-empt the
+      # pytest result, since the two say different things and both are wanted.
+      #
+      # What was missing before this step: on 2026-09-06 a running image served
+      # a UI bundle predating the Composer work by three days, clipping the
+      # header below ~1179px with no scrollbar to hint at it — while every job
+      # here was green, because `ui` proves the bundle BUILDS, never that the
+      # image SHIPS it.
+      - name: UI image-parity gate (image serves the console this tree builds)
+        run: IMAGE=cortexsim:ci scripts/check-ui-shelf.sh
+
   # ---------------------------------------------------------------------------
   # agent — Go beacon: build + vet + race-tested.
   # ---------------------------------------------------------------------------

@@ -20,3 +20,12 @@ sources/*/*/target/
 # could be a different architecture or an older submodule commit.
 rust-dist/
 agent-dist/
+
+# Same argument as rust-dist/ and agent-dist/, and the one that actually bit us:
+# the ui-builder stage builds the console and the runtime stage COPYs it to
+# core/static/. But `COPY core/ /app/core/` runs FIRST and a COPY into an
+# existing directory UNIONS rather than replaces — so a host `npm run build`
+# left in core/static/ rides into the image and lingers beside the fresh bundle.
+# core/static/assets/ is gitignored, so it is invisible to every source-tree
+# gate. On 2026-09-06 an image carried three different App-*.js hashes this way.
+core/static/
