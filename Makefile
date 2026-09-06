@@ -79,11 +79,15 @@ ui-sync: ## Build the real bundle and push it into the RUNNING container (no reb
 	@# rather than one 'not running' that sends you to the wrong one.
 	@docker info >/dev/null 2>&1 || { \
 	  echo "docker daemon unreachable - start Docker Desktop"; exit 1; }
+	@[ -n "$(UI_CONTAINER)" ] || { \
+	  echo "no running container matches 'simcore' - start the stack: make up"; \
+	  echo "  (or name one explicitly: make UI_CONTAINER=<name> ui-sync)"; exit 1; }
 	@docker container inspect $(UI_CONTAINER) >/dev/null 2>&1 || { \
 	  echo "no container named '$(UI_CONTAINER)'"; \
 	  echo "  running simcore containers:"; \
 	  docker ps --filter name=simcore --format '    {{.Names}}' || true; \
 	  echo "  set UI_CONTAINER=<name>, or: make up"; exit 1; }
+	@echo "ui-sync target: $(UI_CONTAINER)"
 	@[ "$$(docker container inspect -f '{{.State.Running}}' $(UI_CONTAINER))" = true ] || { \
 	  echo "container '$(UI_CONTAINER)' exists but is STOPPED - docker start $(UI_CONTAINER)"; exit 1; }
 	@cd ui && npx vite build
@@ -96,9 +100,16 @@ ui-sync: ## Build the real bundle and push it into the RUNNING container (no reb
 	@echo "pushed ui/dist -> $(UI_CONTAINER):/app/core/static  (http://localhost:8888)"
 	@echo "no rebuild, no restart - enrolled agents and open SSE streams survive"
 
-# Overridable so this works against a differently-named stack (e.g. a worktree's
-# compose project, which prefixes the directory name).
-UI_CONTAINER ?= cortex-pov-engine-simcore-1
+# Auto-detected, because the hardcoded default was wrong for the stack this repo
+# actually runs (cortex-pov-engine-simcore-v1.0.0, not -1), so every `make
+# ui-sync` needed UI_CONTAINER= on the command line. compose derives the name
+# from the project directory, so no single literal is right across a worktree, a
+# renamed checkout and a versioned service name.
+#
+# `?=` defines a RECURSIVELY-expanded variable, so this docker ps runs only when
+# a recipe actually references UI_CONTAINER — `make build` does not pay for it,
+# and it does not fail parsing when the daemon is down.
+UI_CONTAINER ?= $(shell docker ps --filter name=simcore --format '{{.Names}}' 2>/dev/null | head -1)
 
 agent-dist: ## Cross-compile the beacon matrix into ./agent-dist (served by /api/agents/binary)
 	scripts/build-agent-dist.sh
