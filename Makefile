@@ -25,7 +25,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up down build agent-dist lab-ready check-lab-ready test test-backend test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
-        coverage-strict check-agent-shelf rust-dist check-rust-recipe \
+        coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
         wiki wiki-check ci clean
 
@@ -149,7 +149,7 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + ground-truth gates
+validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth gates
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -168,6 +168,21 @@ check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target (needs `
 	    test -s "cortexsim-agent-$$t" || { echo "MISSING cortexsim-agent-$$t"; exit 1; }; \
 	  done; \
 	  echo "shelf OK: $$(ls cortexsim-agent-* | wc -l) targets"'
+
+# The same argument once more, for the surface a DC actually stands in front of.
+# check-agent-shelf asks "does the image ship the beacon the tree builds"; this
+# asks it of the console, and the answer was no: on 2026-09-06 a running image
+# served a bundle predating the Composer/safety-banner/phase-bar work, and below
+# ~1179px the header and workspace were clipped with no scrollbar to hint at it.
+# Every CI job was green — `ui` proves the bundle BUILDS, never that the image
+# SHIPS it, which is precisely the Gate B image-parity requirement in CLAUDE.md.
+#
+# The reference bundle is built by the image's OWN ui-builder stage rather than
+# on the host: vite filenames are content hashes, so a set comparison IS a
+# content comparison, but only within one toolchain (this host runs node 26, the
+# image node 20). See scripts/check-ui-shelf.sh for the full argument.
+check-ui-shelf: ## assert the BUILT IMAGE serves the console this tree builds (needs `make build`)
+	IMAGE=$(IMAGE) scripts/check-ui-shelf.sh
 
 check-rust-recipe: ## ~50ms: assert the Rust build recipes still match the submodule trees
 	scripts/build-rust-dist.sh --check-recipe
