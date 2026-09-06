@@ -292,3 +292,142 @@ def test_a_refusal_before_seeding_still_creates_no_run(session_factory, monkeypa
     assert result.success is False
     assert result.run_id is None
     assert rows == []
+
+
+# ===========================================================================
+# 4 · The Composer-era refusals (Phase 2 stitch, Phase 3a channel dispatch)
+# ===========================================================================
+
+async def _seed_stitch_scenario(db, scenario_id="SIM-EDR-998"):
+    from models import Scenario  # noqa: PLC0415
+
+    db.add(Scenario(
+        scenario_id=scenario_id, name="T", version="1.0", status="active", plane="EDR",
+        uc_ref="UCS-EDR-01", uc_name="x", tc_ref="TC-EDR-01", tc_name="y",
+        mitre_tactic="TA0006", mitre_tactic_name="Credential Access",
+        mitre_technique="T1003", mitre_technique_name="OS Credential Dumping",
+        execution_identity={"default": "root"},
+        push_supported=True, pull_supported=True,
+        stitch_context={"principal": {"directive": "static", "value": "svc-backup"}},
+        steps=[{
+            "id": "step-01", "name": "s", "command": "id",
+            "expected_detections": [
+                {"detection_id": "d-1", "detection_type": "BIOC", "name": "n"},
+            ],
+        }],
+    ))
+    await db.commit()
+
+
+def test_stitch_refusal_leaves_the_run_terminal_failed(session_factory, monkeypatch):
+    """A persisted ``stitch_context`` that no longer validates refuses at launch.
+
+    The refusal is right — a half-resolved binding must never reach a customer
+    endpoint. But it left the same dangling ``pending`` run, so the fail-closed
+    guard produced a run that reads as still-in-flight.
+    """
+    from engine import stitch_context as sc  # noqa: PLC0415
+    from engine import orchestrator as orch  # noqa: PLC0415
+
+    def _boom(spec, *, seed=None, target=None):
+        raise sc.StitchContextValidationError(
+            "unknown directive 'teleport'", key="principal", directive="teleport",
+        )
+
+    monkeypatch.setattr(sc, "resolve_stitch_context", _boom)
+
+    async def _go():
+        async with session_factory() as db:
+            await _seed_stitch_scenario(db)
+            result = await orch.Orchestrator().launch(
+                scenario_id="SIM-EDR-998", mode="pull", db=db, target_agent_id="a1",
+            )
+            return result, await _run_row(db, result.run_id)
+
+    result, run = asyncio.run(_go())
+
+    assert result.success is False
+    assert "STITCH_CONTEXT_INVALID" in result.error
+    assert run.status == "failed"
+    assert run.status in TERMINAL_STATES
+    assert run.completed_at is not None
+    assert "STITCH_CONTEXT_INVALID" in (run.output or "")
+
+
+async def _seed_multichannel_scenario(db, scenario_id="SIM-EDR-997"):
+    from models import Scenario  # noqa: PLC0415
+
+    db.add(Scenario(
+        scenario_id=scenario_id, name="T", version="1.0", status="active", plane="EDR",
+        uc_ref="UCS-EDR-01", uc_name="x", tc_ref="TC-EDR-01", tc_name="y",
+        mitre_tactic="TA0006", mitre_tactic_name="Credential Access",
+        mitre_technique="T1003", mitre_technique_name="OS Credential Dumping",
+        execution_identity={"default": "root"},
+        push_supported=True, pull_supported=True,
+        steps=[{
+            "id": "step-01", "name": "s", "command": "id",
+            "target": "phantom-endpoint",
+            "expected_detections": [
+                {"detection_id": "d-1", "detection_type": "BIOC", "name": "n"},
+            ],
+        }],
+    ))
+    await db.commit()
+
+
+def test_target_not_enrolled_refusal_records_the_reason_on_the_run(session_factory):
+    """This path already set ``failed`` inline — but never wrote WHY.
+
+    A hand-rolled copy of the terminalisation drifted from the one every other
+    refusal uses: no reason in ``run.output``. An operator reading the run finds
+    a failure with no cause, and the HTTP detail that carried the cause is long
+    gone.
+    """
+    from engine import orchestrator as orch  # noqa: PLC0415
+
+    async def _go():
+        async with session_factory() as db:
+            await _seed_multichannel_scenario(db)
+            result = await orch.Orchestrator().launch(
+                scenario_id="SIM-EDR-997", mode="pull", db=db, target_agent_id="a1",
+            )
+            return result, await _run_row(db, result.run_id)
+
+    result, run = asyncio.run(_go())
+
+    assert result.success is False
+    assert result.error_code == "TARGET_AGENT_NOT_ENROLLED"
+    assert result.error_detail["missing_agents"] == ["phantom-endpoint"]
+    assert run.status == "failed"
+    assert "TARGET_AGENT_NOT_ENROLLED" in (run.output or "")
+
+
+def test_target_not_enrolled_refusal_publishes_the_terminal_status(session_factory):
+    """...and never told the live stream either, so a console watching the run
+    saw it stop at `pending` even though the DB said `failed`."""
+    from engine import orchestrator as orch  # noqa: PLC0415
+
+    async def _go():
+        from events import event_bus  # noqa: PLC0415
+
+        q = event_bus.subscribe(None)
+        try:
+            async with session_factory() as db:
+                await _seed_multichannel_scenario(db)
+                result = await orch.Orchestrator().launch(
+                    scenario_id="SIM-EDR-997", mode="pull", db=db, target_agent_id="a1",
+                )
+            frames = []
+            while not q.empty():
+                frames.append(q.get_nowait())
+            return result, frames
+        finally:
+            event_bus.unsubscribe(None, q)
+
+    result, frames = asyncio.run(_go())
+
+    statuses = [
+        f["data"]["status"] for f in frames
+        if f.get("type") == "run.status" and f.get("run_id") == result.run_id
+    ]
+    assert statuses == ["failed"]
