@@ -23,6 +23,29 @@ class Settings(BaseSettings):
     CORTEXSIM_SCENARIOS_DIR: str = "scenarios"
     CORTEXSIM_STATIC_DIR: str = "core/static"
 
+    # Compose-owned, not app-owned. CORTEXSIM_VERSION lives in .env because
+    # docker-compose.yml interpolates it into the image tag and container name
+    # (cortex-pov-engine-simcore:<version>); no Python reads it.
+    #
+    # It is declared here anyway because .env is a SUPERSET shared with compose,
+    # and pydantic-settings hands EVERY dotenv key to this model — an undeclared
+    # one makes Settings() raise, taking the documented `cp .env.example .env`
+    # quick-start, the pytest suite, and any local boot down with it. That is a
+    # real regression, not a hypothetical: 841add5 added this var to
+    # .env.example and dev could not construct Settings until it was declared.
+    #
+    # Declared rather than waved through with extra="ignore": rejecting unknown
+    # dotenv keys is the ONLY typo protection this config has (os.environ extras
+    # are already ignored by pydantic-settings, dotenv extras are not). A silent
+    # CORTEXSIM_STRICT_REFSS would read as "absent" and quietly change boot
+    # behaviour. Declare the next compose-only var here too — tests/test_config.py
+    # fails until you do.
+    #
+    # Defaults to "unknown", not "1.0.0": compose carries its own :-1.0.0
+    # fallback, and a plausible-looking default here would let a deploy that was
+    # never told its version report a specific one anyway.
+    CORTEXSIM_VERSION: str = "unknown"
+
     # Auto-reconcile loop (measurement loop). OFF by default — it makes outbound
     # calls to a configured Cortex tenant, so it must be opted into explicitly.
     # When on, a background task periodically reconciles recently-finished runs
