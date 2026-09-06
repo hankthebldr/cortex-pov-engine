@@ -46,9 +46,8 @@ superseded by the version number.
   contradicted their own title were corrected.
 - **Reported application version** is `1.0.0` (`GET /api/health`,
   OpenAPI/`/api/docs`), matching this tag.
-- **`docs/reference/ground-truth.*`** regenerated: 133 route decorators (the
-  Composer's drafts router adds six), 25 `APIRouter` instances, 23 router
-  files.
+- **`docs/reference/ground-truth.*`** regenerated: 134 route decorators, 25
+  `APIRouter` instances, 23 router files.
 
 ## [0.1.0] - 2026-08-31
 

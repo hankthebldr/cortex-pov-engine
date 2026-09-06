@@ -198,7 +198,7 @@ flowchart LR
         IDX["UC/TC index v2.2<br/>266 test cases"]
     end
 
-    subgraph CORE["SimCore — FastAPI :8888 · 127 routes"]
+    subgraph CORE["SimCore — FastAPI :8888 · 134 routes"]
         LOAD["scenario_loader<br/>S-01..S-19"]
         ORCH["orchestrator<br/>durable queue"]
         SHELF["payload_shelf<br/>digest-pinned"]
@@ -399,7 +399,7 @@ erDiagram
 
 ### API surface
 
-**127 routes across 21 router modules.** Interactive docs ship with the app at
+**134 routes across 23 router modules.** Interactive docs ship with the app at
 `/api/docs` (Swagger) and `/api/redoc`.
 
 <details>
@@ -865,7 +865,7 @@ cortex-pov-engine/
 ├── scripts/dev-up-native.sh  ← Docker-free twin
 ├── install.sh                ← full source bootstrap (contributors)
 ├── core/                     ← SimCore FastAPI app (Python 3.11)
-│   ├── api/                    21 routers · 127 routes
+│   ├── api/                    23 routers · 134 routes
 │   ├── engine/                 18 modules — loader · orchestrator · verifier
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
