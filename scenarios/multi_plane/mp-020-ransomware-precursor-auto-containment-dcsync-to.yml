@@ -134,6 +134,9 @@ steps:
     identity: svc-backup
     mitre_technique: "T1078"
     platforms: ["windows", "linux"]
+    platform_variants:
+      windows: "cmd.exe /c \"whoami & echo cortexsim-mp-020-auth\""
+      linux: "whoami && id"
     expected_detections:
       - plane: ANALYTICS
         type: BIOC
@@ -147,6 +150,9 @@ steps:
     identity: svc-backup
     mitre_technique: "T1003.006"
     platforms: ["windows", "linux"]
+    platform_variants:
+      windows: "cmd.exe /c \"nltest /dsgetdc: 2>nul || echo dcsync\""
+      linux: "python3 -c 'print(\"[CortexSim] Emulating DsGetNCChanges replication request\")'"
     # DCSync executes with the stolen VPN foothold; it shares the DC host +
     # stolen service account with the rest of the chain (shared_entity pivot).
     causality:
@@ -165,6 +171,9 @@ steps:
     identity: svc-backup
     mitre_technique: "T1053.005"
     platforms: ["windows", "linux"]
+    platform_variants:
+      windows: "cmd.exe /c \"schtasks /query /fo LIST 2>nul || echo scheduled-task\""
+      linux: "ls -la /etc/cron* 2>/dev/null || true"
     # The persistence write forks from the DCSync activity on the SAME DC
     # (process_lineage). This is the junction the auto-containment fires on.
     causality:
@@ -188,6 +197,9 @@ steps:
     identity: svc-backup
     mitre_technique: "T1021.001"
     platforms: ["windows", "linux"]
+    platform_variants:
+      windows: "cmd.exe /c \"netstat -ano 2>nul | findstr 3389 || echo rdp\""
+      linux: "netstat -tlpn 2>/dev/null || ip route || true"
     # Lateral movement opens network sessions to further hosts using the stolen
     # account (network_session pivot).
     causality:
@@ -206,6 +218,9 @@ steps:
     identity: svc-backup
     mitre_technique: "T1020"
     platforms: ["windows", "linux"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command Write-Output '[cortexsim-mp-020] rclone exfil check'"
+      linux: "curl -s -m 2 http://127.0.0.1:8888/api/health || true"
     # The exfil ties the endpoint (renamed-rclone process) to the network egress
     # session (endpoint_network_stitch pivot).
     causality:
@@ -224,6 +239,8 @@ steps:
     identity: svc-backup
     mitre_technique: "T1486"
     platforms: ["linux", "windows"]
+    platform_variants:
+      windows: "powershell.exe -NoProfile -Command \"Write-Output 'cortexsim-mp-020 SAFE-MODE: CR-MP-0020 raises ONE Ransomware Precursor incident; XSOAR auto-contains dc01, disables svc-backup, blocks egress'; Write-Output '[CortexSim] Pre-empted impact marker validated'\""
     # Terminal step: the T1486 ESXi encryption is the impact the playbook
     # pre-empts (exploit_impact pivot). The correlation + automation-metric
     # detections assert the playbook fired and closed before impact.

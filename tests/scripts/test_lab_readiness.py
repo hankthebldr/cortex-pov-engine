@@ -72,8 +72,11 @@ def test_known_narration_scenarios_are_red_and_real_ones_are_not():
     # SIM-EDR-019 is marketed as a causality-strong flagship but every step is
     # `echo '[SAFE-MODE ...]'` — it MUST classify RED so it is never demoed as a
     # detection scenario.
+    # NOTE: SIM-MP-020 was converted from echo/SAFE-MODE narration to real
+    # read-only signal-producers (bf4b307), so it is legitimately GREEN now and
+    # is no longer a narration scenario — dropped from this expected-RED list.
     for sid in ("SIM-EDR-019", "SIM-TIM-005", "SIM-ASM-005",
-                "SIM-ASM-006", "SIM-MP-020", "SIM-ITDR-016"):
+                "SIM-ASM-006", "SIM-ITDR-016"):
         assert rows[sid]["tier"] == "RED", (sid, rows[sid]["reason"])
         assert rows[sid]["steps_real_signal"] == 0
     # Scenarios that run real binaries must never be RED.
