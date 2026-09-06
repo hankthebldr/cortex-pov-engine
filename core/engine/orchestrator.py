@@ -138,6 +138,15 @@ class LaunchResult:
     # every refusal that has not been given a specific code yet.
     error_code: str = "LAUNCH_FAILED"
     error_detail: dict[str, Any] = field(default_factory=dict)
+    # The HTTP status this refusal should surface as, when the layer that
+    # refused already knows it — PayloadResolutionError carries its own
+    # `http_status`, and the shelf route (core/api/payloads.py) has always
+    # honoured it. Carrying the value beats re-deriving it from a hand-kept
+    # list of codes in the API, which cannot stay right: the payload family is
+    # NOT uniformly 409 (PayloadDestRefused is 400), so an enumeration makes
+    # the two routes disagree about the same exception. None = let the API
+    # decide from `error_code`, which is the historical behaviour.
+    http_status: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +338,7 @@ class Orchestrator:
         error: str,
         error_code: str = "LAUNCH_FAILED",
         error_detail: Optional[dict[str, Any]] = None,
+        http_status: Optional[int] = None,
     ) -> LaunchResult:
         """Refuse a launch whose Run row is already committed, leaving it TERMINAL.
 
@@ -374,6 +384,7 @@ class Orchestrator:
             error=error,
             error_code=error_code,
             error_detail=error_detail or {},
+            http_status=http_status,
         )
 
     # ------------------------------------------------------------------
@@ -542,9 +553,18 @@ class Orchestrator:
             # Refuse at LAUNCH, not on the target. A run that cannot be tooled
             # must never reach a customer endpoint half-armed, and the operator
             # is still at the console to read why.
+            # Forward the shelf's OWN code, structured payload and status.
+            # Rebuilding the refusal by hand collapsed all of it: the operator
+            # got a flat 422 saying their launch body was malformed, when the
+            # body was fine and the fix is ./scripts/build-payloads.sh on this
+            # host. `to_error()` is the exact envelope the shelf route returns,
+            # so a console parses both refusals with one code path.
             return await self._refuse_after_seed(
                 db, run_id,
                 error=f"{exc.code}: {exc.detail}",
+                error_code=exc.code,
+                error_detail=exc.to_error(),
+                http_status=exc.http_status,
             )
 
         # Phase-2 Composer Stitch Context. When the scenario carries an authored
