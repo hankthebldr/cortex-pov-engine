@@ -58,7 +58,7 @@ external secret that can be missing at release time.
 | `core/main.py` version | `1.0.0` |
 | `v1.0.0` tag on origin | does not exist |
 | `main` ahead of `dev` | 0 commits |
-| `dev` ahead of `main` | 62 commits |
+| `dev` ahead of `main` | 73 commits |
 
 Because `main` is 0 ahead, this is a clean merge with no risk of reverting a
 direct-to-`main` commit.
@@ -86,7 +86,7 @@ not run in this environment.
 
 | suite | result | evidence |
 |---|---|---|
-| backend (`pytest tests/`) | PASS | **5008 passed · 0 failed · 258 skipped** |
+| backend (`pytest tests/`) | PASS | **5070 passed · 0 failed · 258 skipped** |
 | ui (`vitest`) | PASS | **998 passed · 88 files** |
 | agent cross-compile | PASS | linux · darwin · windows |
 | agent (`go test -race`) | PASS | 4 packages |
@@ -192,39 +192,60 @@ fixture, passes 2/2 after.
 
 ## 4 · Open decisions before merging
 
-### 4a · Abandoned branch — `claude/composer-workflow-design-32785d`
+### 4a · Abandoned branch — RESOLVED
 
-`no-abandoned-branches` is the one gate currently red, and it is a scope
-decision, not a defect.
+`claude/composer-workflow-design-32785d` (Composer Phase 2 — XDM stitch-context
+resolver, `stitch_context` persistence, run-command injection, UI stitch panel)
+carried 5 unmerged commits while its *design* doc already sat on `dev`. It was
+merged as PR #104 on 2026-09-06 and `no-abandoned-branches` now passes: every
+remote branch is an ancestor of `dev`.
 
-| | |
-|---|---|
-| commits unmerged into `dev` | 5 |
-| diff | 27 files, +3,416 / −16 |
-| merges into `dev` | cleanly, zero conflicts |
-| its own tests on the merged tree | **49 passed** |
-| design doc | already on `dev` (`7938c19`, Composer Phase 2 §7.1) |
+The check that caught it had a flaw of its own — it also flagged the branch you
+are standing on, which is in flight, not abandoned. It now excludes the current
+branch and reports it separately as a `note`, so the gate cannot fail on every
+run from a topic branch and thereby train people to ignore it.
 
-This is Composer Phase 2 — the XDM stitch-context resolver, `stitch_context`
-persistence with an ORM migration, run-command injection, and the UI stitch
-panel with canvas entity-join overlay. The *design* landed on `dev` while the
-*implementation* stayed on the branch: the classic stranded-work signature.
+### 4b · GitHub publication surfaces
 
-Three options:
+Reviewed and corrected in the same pass. What was wrong and what it now says:
 
-1. **Merge into `dev` first, then release.** It is clean and tested, but it is
-   3,400 lines of feature work entering a release branch, and the 1.0.0
-   CHANGELOG does not describe it. Needs a CHANGELOG entry and its own Gate A
-   evidence.
-2. **Ship 1.0.0 without it; merge to `dev` immediately after for 1.1.0.** The
-   branch stays alive and the release stays as described in the CHANGELOG.
-   Recommended — the release notes and the tree agree, and nothing is lost.
-3. **Retire it.** Only if the stitch-context direction is dead; delete the
-   branch so the gate stops reporting it.
+| surface | was | now |
+|---|---|---|
+| Pages (`docs/site/index.html`) | 22 assertions · 21 plugins · 199 authored · Correlation 115 · IOC 40 | 28 · 26 · 205 · 114 · 39 |
+| README | 127 routes / 21 router modules · 21 plugins ×3 · no licence section | 134 / 23 · 26 plugins · Licence + Security sections |
+| Wiki (`docs/wiki/Home.md`) | 133 routes · 21 plugins · 22 assertions | 134 · 26 · 28 |
+| `LICENSE` | **absent** on a public repo (all rights reserved) | Apache-2.0, byte-identical to the canonical SPDX text |
+| `NOTICE` | absent | trademark + affiliation terms; not an official PANW product |
+| `SECURITY.md` | absent | disclosure path, non-vulnerabilities, enforced guarantees |
+| `wiki-sync.yml` | **failed on every no-op run** | publishes or exits 0 |
+| `ci.yml` / `test.yml` | no `permissions:` block | `contents: read` |
+| repo About / topics / homepage | already accurate (177 · 16 planes) | unchanged |
 
-Doing nothing is the one option that loses the work.
+Two of those are more than cosmetic:
 
-### 4b · CLAUDE.md counted-ground-truth drift
+**The wiki has not published since 2026-09-03 and the failure was self-inflicted.**
+The publish step checked for changes *before* `git add -A`, at a point where
+`git rm -rfq .` had just staged a deletion for every page — so it always entered
+the commit branch, `git commit` exited 1 with "nothing to commit, working tree
+clean", and `set -e` failed the job. A successful no-op published a red X.
+Reproduced locally byte-for-byte against the CI log, then fixed and verified
+across three cases: identical tree (exit 0, no publish), changed tree
+(publishes), deleted page (publishes).
+
+**`CORTEXSIM_MASTER_KEY` is not read by anything.** The variable the code
+validates is `CORTEXSIM_SECRET`. CLAUDE.md's quick-start and three reference
+docs named the wrong one, so an operator following them set a variable with no
+effect and got the development-mode warning path instead of the production boot
+refusal. Corrected in all four.
+
+### 4c · Pages and wiki republish on release
+
+`pages.yml` triggers on `docs/site/**` pushed to `main` **and** on
+`release: published`; `wiki-sync.yml` on `docs/wiki/**` or `scenarios/**`. The
+v1.0.0 release therefore rebuilds both automatically — which is only safe
+because the corrected counts and the wiki-sync fix land in the same merge.
+
+### 4d · CLAUDE.md counted-ground-truth drift
 
 `README.md` and `CHANGELOG.md` were corrected in this pass. `CLAUDE.md` was
 not, and several of its headline counts now lag the tree:

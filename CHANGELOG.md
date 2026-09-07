@@ -31,6 +31,22 @@ superseded by the version number.
   dispatches `release.yml` (multi-arch GHCR image + GitHub Release). It is
   idempotent: an unchanged top version never re-releases, so the existing
   Pages and wiki syncs on `main` are unaffected.
+- **Apache-2.0 licence, `NOTICE`, and `SECURITY.md`** — the repository was
+  public with no licence, which legally reserved all rights and made it
+  unusable by anyone who found it. `NOTICE` records the trademark and
+  affiliation terms: CortexSim is an independent project, not an official Palo
+  Alto Networks product. `SECURITY.md` gives the private disclosure path and,
+  as importantly, states which properties are deliberate design rather than
+  bugs — beginning with the fact that SimCore has no authentication on purpose,
+  and naming the assumption that carries it (never exposed to an untrusted
+  network).
+- **`make launch-preflight`** (`scripts/launch-preflight.sh`) — Gate B as one
+  command: branch topology, version coherence, no-abandoned-branches, the
+  CLAUDE.md Gate A5 honesty invariants, the corpus gates, and image parity.
+  Reports three outcomes, not two: a gate that could not RUN exits 2 and
+  withholds the verdict rather than reading as a pass.
+- **`docs/release/mvp-launch-runbook.md`** — the ordered `dev` -> `main`
+  procedure with the measured state of every gate.
 
 ### Changed
 
@@ -44,6 +60,35 @@ superseded by the version number.
   SecOps test cases (XTI/ERV/NDR/AGTX/APB) through the same
   `verifier.score_run` path, and UC/TC index rows whose success criteria
   contradicted their own title were corrected.
+- **`generate_bash` now resolves through `_resolve_step_posix`.** It read
+  `step["command"]` directly and ignored `platform_variants`, while
+  `resolve_target(..., "posix")` consults `platform_variants.linux` when the
+  primary command is Windows-shaped. A scenario could be judged POSIX-emittable
+  *because of* its Linux variant and then ship the Windows-shaped primary —
+  `SIM-MP-020`'s exfiltration step emitted `powershell.exe ... || curl
+  http://127.0.0.1:8888/api/health` into a bundle whose cardinal rule is no
+  SimCore dependency at runtime. On a clean Ubuntu 22.04 that step reported
+  success having emitted no telemetry, so its absent detection read as "Cortex
+  missed it". `generate_powershell` always resolved correctly; only the bash
+  loop did not. Guarded by
+  `test_bash_bundle_ships_what_the_resolver_resolved` plus `:8888` in
+  `_SIMCORE_MARKERS`. Behaviour-preserving: all other scenarios emit
+  byte-identical bundles.
+- **`wiki-sync` no longer fails on a no-op.** The change check ran before
+  `git add -A`, when `git rm -rfq .` had just staged a deletion for every page,
+  so it always entered the commit branch; `git commit` then exited 1 with
+  "nothing to commit" and `set -e` failed the job. A successful no-op published
+  a red X, which is how a real publish failure would have gone unnoticed.
+- **Corrected published counts** — Pages (28 assertions, 26 EAL plugins, 205
+  authored, Correlation 114, IOC 39), README (134 routes / 23 router modules,
+  26 EAL plugins), and the wiki (134 routes, 26 plugins, 28 assertions). Every
+  figure is from `scripts/generate_ground_truth.py`, not retyped.
+- **`CORTEXSIM_MASTER_KEY` -> `CORTEXSIM_SECRET`** across CLAUDE.md and three
+  reference docs. Nothing has ever read `CORTEXSIM_MASTER_KEY`; an operator
+  following the quick-start set a variable the code ignores.
+- **`ci.yml` and `test.yml` declare `permissions: contents: read`.** Neither
+  uses `GITHUB_TOKEN`; on a public repo an undeclared block is how a
+  compromised action escalates from running tests to writing code.
 - **Reported application version** is `1.0.0` (`GET /api/health`,
   OpenAPI/`/api/docs`), matching this tag.
 - **`docs/reference/ground-truth.*`** regenerated: 134 route decorators, 25

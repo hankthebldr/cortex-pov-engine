@@ -101,8 +101,14 @@ fi
 
 # Unmerged topic branches are abandoned work: a session's output that reaches
 # neither gate. Surfacing them at release time is the only reliable moment.
+#
+# The branch currently checked out is excluded. It is unmerged by definition —
+# it is the work in progress — and flagging it made this check fail on every
+# run from a topic branch, which is how a check earns the right to be ignored.
+# It is reported separately so it is still visible, just not as abandonment.
+CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 ORPHANS=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin \
-          | grep -vE "^origin/(HEAD|$BASE|$HEAD_BRANCH)$" \
+          | grep -vE "^origin/(HEAD|$BASE|$HEAD_BRANCH|$CURRENT)$" \
           | while read -r b; do
               git merge-base --is-ancestor "$b" "origin/$HEAD_BRANCH" 2>/dev/null || echo "$b"
             done)
@@ -113,6 +119,16 @@ else
   printf '%s\n' "$ORPHANS" | while read -r b; do
     printf '          | %s (+%s commits)\n' "$b" "$(git rev-list --count "origin/$HEAD_BRANCH..$b" 2>/dev/null)"
   done
+fi
+
+# The checked-out branch, if it is not itself the release head, is in flight —
+# stated so a release cut from here cannot silently omit it.
+if [ "$CURRENT" != "$HEAD_BRANCH" ] && [ "$CURRENT" != "$BASE" ]; then
+  AHEAD_CUR=$(git rev-list --count "origin/$HEAD_BRANCH..HEAD" 2>/dev/null || echo 0)
+  if [ "$AHEAD_CUR" != "0" ]; then
+    printf '          \033[36mnote\033[0m    %-38s %s\n' "in-flight branch" \
+      "$CURRENT is +$AHEAD_CUR ahead of $HEAD_BRANCH — merge it before releasing"
+  fi
 fi
 
 # ==============================================================================
