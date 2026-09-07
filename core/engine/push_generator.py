@@ -765,10 +765,34 @@ def generate_bash(scenario: dict[str, Any]) -> str:
     for step in steps:
         step_id = step.get("id", "step-??")
         step_name = step.get("name", "")
-        identity = step.get("identity", "direct")
-        command = step.get("command", "true")
         mitre_tech = step.get("mitre_technique", "")
         expected = step.get("expected_detections", [])
+
+        # Resolve through the SAME function `resolve_target(..., "posix")` uses,
+        # so what this bundle CONTAINS cannot disagree with what the resolver
+        # says it contains. Reading `step["command"]` directly (as this did)
+        # ignored `platform_variants.linux` entirely: a step whose primary is
+        # Windows-shaped resolved to its clean Linux variant for the
+        # emittability decision, then shipped the Windows-shaped primary in the
+        # bash bundle. `generate_powershell` already resolves this way; only
+        # this loop did not, and that asymmetry is the bug.
+        #
+        # Behaviour-preserving for every scenario whose primary is already
+        # POSIX-shaped: `_resolve_step_posix` returns the primary first, by
+        # design, so the golden digests are unchanged.
+        resolved = _resolve_step_posix(step)
+        if isinstance(resolved, StepResolution):
+            identity = resolved.identity
+            command = resolved.command
+        else:
+            # Unresolvable for POSIX. Callers are expected to have consulted
+            # resolve_target and returned 409 BUNDLE_TARGET_UNSATISFIABLE, so
+            # reaching here means a direct generate_bash() call on a scenario
+            # that cannot satisfy this target. Emit the primary rather than
+            # silently dropping the step: a visibly wrong line is debuggable, a
+            # missing attack step reads in a POV as "Cortex detected nothing".
+            identity = step.get("identity", "direct")
+            command = step.get("command", "true")
 
         script += f"# --- {step_id}: {step_name}\n"
         if mitre_tech:

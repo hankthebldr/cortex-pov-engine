@@ -321,6 +321,9 @@ class ADWindowsEmitter(AnalyticsLogEmitter):
 
     class Meta:
         name = "ad_windows_emitter"
+        # Vendor analytics catalogue join (see analytics_catalogue.py).
+        data_sources = ["windows_event_collector"]
+        datasets = ["msft_windows_security"]
         version = "1.0.0"
         description = (
             "Emits shape-true Windows Security Event Log records (4769 / 4624 / "

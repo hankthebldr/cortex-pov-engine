@@ -155,6 +155,10 @@
   --h-commandstrip:30px;
   --w-rail:        202px;
   --w-rail-collapsed: 62px;
+  /* Inset every destination gets from .view. Exposed as a token because a
+     full-bleed destination (Library) has to cancel it with a negative margin,
+     and a hardcoded 24px in two files drifts apart the moment one is tuned. */
+  --view-pad:      24px;
   --w-inspector:   420px;
 
   /* ── Motion ──────────────────────────────────────────────────────── */
@@ -474,8 +478,17 @@
      width exceeds what is left, the left cluster's text overflows its box and
      paints underneath the tenant/agent pills. Clipping here plus `min-width: 0`
      and per-element truncation below turns that into graceful loss instead of
-     illegible collision. */
-  overflow: hidden;
+     illegible collision.
+
+     CLIPPED ON .header__left, NOT HERE. `overflow: hidden` on the bar itself
+     also clipped every absolutely-positioned menu the bar owns: the tenant and
+     agent switchers open a `.switcher__menu` that extends BELOW the 56px bar,
+     so it was cut to the ~8px that happened to fall inside it. The switchers
+     looked broken — aria-expanded went true, the menu rendered, and the user
+     saw an empty sliver. CSS gives no way to clip one axis only (a `visible`
+     paired with a `hidden` computes to `auto`), so the clip has to move to the
+     element that actually overflows. */
+  overflow: visible;
   background: linear-gradient(180deg, var(--c-surface) 0%, var(--c-void) 100%);
   border-bottom: 1px solid var(--c-hairline);
   position: relative;
@@ -488,7 +501,18 @@
   display: flex; align-items: center; gap: 12px;
   flex: 0 1 auto; min-width: 0; overflow: hidden;
 }
-.theme-console .header__right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+/* `flex-shrink: 0` here is why the tenant/agent/run infocard got CUT OFF at the
+   viewport edge instead of condensing. This strip runs ~1000px wide (two
+   switchers, a run pill carrying `scenario · step · elapsed`, the search
+   trigger and three icon buttons); refusing to shrink means that when
+   `header__left` has already given up everything it can, the overflow goes off
+   the right edge — and `.header` clips it, so the controls become unreachable
+   rather than merely tight. It may now shrink, with the run-pill meta
+   ellipsising (see below) as the first thing to give. */
+.theme-console .header__right {
+  display: flex; align-items: center; gap: 8px;
+  flex: 0 1 auto; min-width: 0;
+}
 /* `flex: none` + nowrap: a wordmark ellipsised to "C…" is worse than no
    wordmark at all, so the breakpoints below hide it whole rather than letting
    it shrink into nonsense. */
@@ -581,7 +605,15 @@
 .theme-console .env-pill__dot--warn { background: var(--c-pending); box-shadow: 0 0 6px var(--c-pending); }
 .theme-console .env-pill__dot--bad  { background: var(--c-missed);  box-shadow: 0 0 6px var(--c-missed); }
 .theme-console .env-pill__label { color: var(--c-text); }
-.theme-console .env-pill__meta  { color: var(--c-text-muted); }
+/* The run pill's meta is the longest free-form text in the header and the
+   right place for the header to give up width first — it ellipsises so the pill
+   (and everything right of it) stays on screen. Above 1120px it is visible and
+   truncating; at/below 1120px the media query near the top of this file hides it
+   outright, because a run id clipped to "SIM-…" is worse than no meta at all. */
+.theme-console .env-pill__meta  {
+  color: var(--c-text-muted);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .theme-console .cmd-trigger {
   display: inline-flex; align-items: center; gap: 8px;
@@ -672,15 +704,63 @@
    dimmed in dark mode (the projector case is exactly when someone is about to
    launch in front of a customer). */
 .theme-console .safety-banner {
-  display: flex;
-  align-items: center;
-  gap: 16px;
   flex: none;
-  padding: 10px 16px;
   background: var(--warn-str);
   color: #0A0F0D;
   border-bottom: 2px solid #0A0F0D;
 }
+
+/* ── Not yet acknowledged: the gate. Deliberately large.
+   This is the one moment the DC is asked to understand what Launch does to a
+   customer's tenant, and the acknowledgement is per-session (SafetyBanner.jsx),
+   so this renders at the start of every session — it has to earn that space by
+   being read, not skimmed past as a 40px strip. ── */
+.theme-console .safety-banner--full {
+  display: block;
+  padding: 18px 26px 20px;
+}
+.theme-console .safety-banner__head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.theme-console .safety-banner--full .safety-banner__tag {
+  font-size: 20px;
+}
+.theme-console .safety-banner__scope {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.theme-console .safety-banner--full .safety-banner__msg {
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 104ch;
+  margin-bottom: 14px;
+}
+.theme-console .safety-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.theme-console .safety-banner--full .safety-banner__ack {
+  height: 38px;
+  padding: 0 22px;
+  font-size: 13px;
+}
+
+/* ── Acknowledged: the compact line. Same visual language, one row. ── */
+.theme-console .safety-banner--min {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+}
+.theme-console .safety-banner--min .safety-banner__msg { flex: 1; }
+
 .theme-console .safety-banner__tag {
   font-family: var(--font-display);
   font-size: 15px;
@@ -697,7 +777,6 @@
   font-size: 12px;
   line-height: 1.45;
   min-width: 0;
-  flex: 1;
 }
 .theme-console .safety-banner__msg strong { font-weight: 700; }
 .theme-console .safety-banner__link {
@@ -990,6 +1069,15 @@
   display: grid;
   grid-template-rows: auto 1fr;
   min-height: 0;
+  /* `min-width: 0` is load-bearing, and its absence is why narrow viewports
+     read as "broken sidebar spacing" rather than as an overflow. `.main` is the
+     `1fr` grid item of `.workspace`; a grid item's default `min-width: auto`
+     lets its MIN-CONTENT width push the track wider than the viewport instead
+     of shrinking. Combined with the `overflow: hidden` below, the excess is not
+     scrollable and not visible — it is silently clipped, so every overflow
+     probe (`scrollWidth - clientWidth`) still reports 0. Mirrors the
+     `min-height: 0` above, which solves the same problem on the other axis. */
+  min-width: 0;
   position: relative;
   overflow: hidden;
 }
@@ -1001,7 +1089,7 @@
      (position:absolute + translateX(100%)). Without this it added a spurious
      horizontal scrollbar and ~396px of dead width to every view. */
   overflow-x: hidden;
-  padding: 24px;
+  padding: var(--view-pad);
   position: relative;
 }
 
@@ -5898,16 +5986,41 @@
 .theme-console .insp-tool__warn { margin-top: 8px; font-size: 11px; color: var(--c-pending); line-height: 1.5; }
 
 /* ── Global degraded banner ─────────────────────────────────────────── */
+/* Full-bleed shell row, not an in-view card. It used to render inside `.view`
+   as a bordered/rounded box with a bottom margin; moving it to AppShell's
+   `banner` slot (so the nav rail and each view's filter rail finally share a
+   top) also means it now spans the console like `.phase-bar` and the safety
+   banner above it — hence `flex: none`, the row background + single bottom
+   hairline, and header-matching 16px side padding instead of a card outline. */
 .theme-console .readiness-banner {
-  border: 1px solid var(--c-pending); background: var(--c-pending-soft);
-  border-radius: 3px; padding: 8px 12px; margin-bottom: 12px;
+  flex: none;
+  background: var(--c-pending-soft);
+  border-bottom: 1px solid var(--c-pending);
+  padding: 8px 16px;
 }
 .theme-console .readiness-banner__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .theme-console .readiness-banner__tag {
   font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
   font-weight: 700; color: var(--c-pending);
 }
-.theme-console .readiness-banner__count { font-size: 10.5px; color: var(--c-text-secondary); flex: 1; }
+.theme-console .readiness-banner__count { font-size: 10.5px; color: var(--c-text-secondary); }
+/* Sits between the always-visible claim and the actions. `margin-right: auto`
+   (rather than the count carrying `flex: 1`) keeps the toggle next to the text
+   it expands instead of stranding it against the buttons on a wide console. */
+.theme-console .readiness-banner__toggle {
+  margin-right: auto;
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+  color: var(--c-text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+}
+.theme-console .readiness-banner__toggle:hover { color: var(--c-text); background: var(--c-hairline); }
 .theme-console .readiness-banner__x {
   background: none; border: none; color: var(--c-text-muted); cursor: pointer;
   font-size: 12px; padding: 2px 4px; border-radius: 2px;
@@ -7176,8 +7289,16 @@
 }
 
 /* ─── destinations.jsx ─── */
+/* `height: 100%` PINNED this grid to the viewport while its content ran to
+   ~18,300px, so the container reported 351px tall and everything inside
+   overflowed it. The visible symptom was the sidebar: `.rail--filter` became an
+   independently scrolling 555px box starting at y=412 while the shell's own nav
+   rail starts at y=291 — two sidebars, two tops, two scroll contexts, which is
+   what kept reading as broken spacing after the gutter was already fixed.
+   `min-height` fills the viewport when the corpus is short; the grid grows with
+   the content when it isn't, and `.view` stays the single scroll owner. */
 .theme-console .library-layout {
-  display: grid; grid-template-columns: var(--w-rail) 1fr; min-height: 0; height: 100%;
+  display: grid; grid-template-columns: var(--w-rail) 1fr; min-height: 100%;
 }
 .theme-console .guided-flow { display: flex; flex-direction: column; gap: 16px; padding: 4px; }
 .theme-console .guided-flow__library-link {
@@ -7421,3 +7542,108 @@
 
 /* ─── CommandPalette.jsx ─── */
 .theme-console .cmd-palette__empty { padding-bottom: 24px; }
+
+/* ═══ Narrow-viewport reflow ═══════════════════════════════════════════════
+   Everything above assumes a desktop-width console. Two fixed rails stack up
+   horizontally — the shell's nav rail (`--w-rail`, 202px) and, inside a view,
+   a second filter rail that reuses the SAME token (`.library-layout`) — so the
+   layout has a hard floor near 760px: 202 + 202 + the 286px card minimum + view
+   padding. Below that floor nothing wrapped, stacked, or scrolled, because
+   `.main` is `overflow: hidden` and `.view` is `overflow-x: hidden`. The
+   remainder was silently CLIPPED and unreachable.
+
+   That silence is the whole bug. With the overflow hidden, `scrollWidth` equals
+   `clientWidth` and the document cannot be scrolled, so every standard overflow
+   check reports a clean zero while content is missing. The symptom surfaces as
+   a sidebar whose labels are cut off — which reads as a spacing/design fault
+   and gets fixed rule-by-rule, instead of as the layout having no reflow at
+   all. The pre-existing breakpoints (1700/1600/1500/1280/1120/1100) only hide
+   small header labels and captions; not one of them changes the grid.
+
+   The two steps below reclaim the two rails in the order that costs the least
+   information: icons first, then the filter rail's column. Paired with
+   `min-width: 0` on `.main` (see its rule) — without that, the main column
+   immediately takes back the space these queries free. */
+
+@media (max-width: 1000px) {
+  /* Nav rail -> icon strip. Forced by viewport rather than by flipping the
+     persisted `cortexsim.railCollapsed` preference: a DC who expanded the rail
+     on a wide monitor should not inherit a squeezed console on a narrow one,
+     and rewriting their stored choice on resize would silently discard a
+     decision they made elsewhere. Each item keeps its `title` (DestinationNav
+     sets it from the label), so the labels stay reachable on hover. */
+  .theme-console .workspace,
+  .theme-console .workspace--rail-collapsed {
+    grid-template-columns: var(--w-rail-collapsed) 1fr;
+    position: relative;              /* anchor for the overlay rail below */
+  }
+  .theme-console .rail--nav .rail__section-title,
+  .theme-console .rail--nav .plane-item__name,
+  .theme-console .rail--nav .plane-item__count,
+  .theme-console .rail--nav .rail__hint { display: none; }
+  .theme-console .rail--nav .plane-item { justify-content: center; padding: 8px 0; gap: 0; }
+  .theme-console .rail--nav .rail__toggle { justify-content: center; padding: 0 0 12px; }
+
+  /* Reveal the labels on hover/focus by expanding the RAIL over the content,
+     rather than flying each label out beside it. A per-item flyout cannot work
+     here: `.rail` is `overflow-y: auto`, and an element that scrolls on one
+     axis clips on BOTH, so any label positioned outside the rail is cut off at
+     62px. Expanding the rail keeps the labels inside it, needs no JS, and gives
+     the icon strip a discoverable affordance instead of leaving eleven
+     unlabelled glyphs.
+
+     It overlays (position:absolute) instead of widening the grid track, so
+     revealing a label never reflows the content underneath — the thing a DC is
+     reading mid-demo must not jump because the pointer crossed the rail.
+     `:focus-within` is what makes it keyboard-reachable; without it this is a
+     mouse-only affordance and the nav is unusable from the keyboard. */
+  .theme-console .rail--nav {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: var(--w-rail-collapsed);
+    z-index: 30;
+    transition: width var(--dur-fast) var(--ease-out);
+  }
+  /* REQUIRED, not tidiness. An absolutely-positioned grid child is removed from
+     the grid FLOW, so auto-placement promotes `.main` into the first (62px)
+     track and the whole workspace renders as a blank 62px sliver. Pinning the
+     column keeps `.main` where the template intends while the rail floats. */
+  .theme-console .main { grid-column: 2; }
+  .theme-console .rail--nav:hover,
+  .theme-console .rail--nav:focus-within {
+    width: var(--w-rail);
+    box-shadow: var(--shadow-lg);
+  }
+  .theme-console .rail--nav:hover .rail__section-title,
+  .theme-console .rail--nav:focus-within .rail__section-title,
+  .theme-console .rail--nav:hover .plane-item__name,
+  .theme-console .rail--nav:focus-within .plane-item__name,
+  .theme-console .rail--nav:hover .plane-item__count,
+  .theme-console .rail--nav:focus-within .plane-item__count { display: block; }
+  .theme-console .rail--nav:hover .plane-item,
+  .theme-console .rail--nav:focus-within .plane-item {
+    justify-content: flex-start; padding: 8px 16px; gap: 10px;
+  }
+}
+
+/* Motion is an affordance here, not decoration, but it is still motion. */
+@media (max-width: 1000px) and (prefers-reduced-motion: reduce) {
+  .theme-console .rail--nav { transition: none; }
+}
+
+@media (max-width: 860px) {
+  /* The in-view filter rail gives up its column and stacks above the results.
+     It surrenders the column outright rather than becoming a second narrow one:
+     the `.library-layout` comment above records what the narrow-column version
+     cost last time — "two sidebars, two tops, two scroll contexts, which is
+     what kept reading as broken spacing". Stacked, it must also stop being an
+     independent scroll box, hence the overflow/height reset. */
+  .theme-console .library-layout { grid-template-columns: 1fr; }
+  .theme-console .rail--filter {
+    width: auto;
+    max-height: none;
+    overflow-y: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--c-hairline);
+  }
+}

@@ -362,6 +362,15 @@ class IdpSigninEmulator(AnalyticsLogEmitter):
 
     class Meta:
         name = "idp_signin_emulator"
+        # Vendor analytics catalogue join (see analytics_catalogue.py). Three
+        # sign-in sources are covered detector-true; AzureAD and Google Workspace
+        # Authentication are only PARTIALLY reached (the sign-in feed touches
+        # them but there is no dedicated detector-true builder for those two
+        # catalogue rows), so they are declared partial, not full — over-claiming
+        # them would inflate the coverage number.
+        data_sources = ["okta", "azure_signin_log", "google_workspace_audit_logs"]
+        data_sources_partial = ["azuread", "google_workspace_authentication"]
+        datasets = ["okta_sso", "msft_azure_ad_signin", "google_workspace_audit"]
         version = "2.0.0"
         description = (
             "Emits shape-true IdP sign-in audit records (Okta System Log / "

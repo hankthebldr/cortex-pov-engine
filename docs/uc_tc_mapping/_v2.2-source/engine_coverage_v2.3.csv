@@ -1,0 +1,267 @@
+tc_id,uc_id,validation_class,mechanism,data_source,platform_category,evidenced_by,authored,negative_control,tenant_verified,status
+TC-AEPS-01,UC-AEPS,AUT,M5,,unknown,,False,unknown,False,open
+TC-AEPS-02,UC-AEPS,AUT,M5,,unknown,,False,unknown,False,open
+TC-AEPS-03,UC-AEPS,PLT,M4,,unknown,,False,unknown,False,open
+TC-AES-01,UC-AES,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AES-02,UC-AES,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AES-03,UC-AES,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AES-04,UC-AES,PLT,M4,,unknown,,False,unknown,False,open
+TC-AES-05,UC-AES,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AES-06,UC-AES,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AES-07,UC-AES,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AES-08,UC-AES,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AES-09,UC-AES,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-AGRP-01,UC-AGRP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AGRP-02,UC-AGRP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AGRP-03,UC-AGRP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AGTX-01,UC-AGTX,DET,M2-quick,incidents,none,,False,unknown,False,open
+TC-AGTX-02,UC-AGTX,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AGTX-03,UC-AGTX,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AGTX-04,UC-AGTX,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-AGTX-05,UC-AGTX,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-AGTX-06,UC-AGTX,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-AGTX-07,UC-AGTX,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AGTX-08,UC-AGTX,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AGTX-09,UC-AGTX,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-AGTX-10,UC-AGTX,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-AGTX-11,UC-AGTX,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-AGTX-12,UC-AGTX,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-AIRS-01,UC-AIRS,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-AIRS-02,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AIRS-03,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AIRS-04,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AIRS-05,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AIRS-06,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AIRS-07,UC-AIRS,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-AIRS-08,UC-AIRS,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-AIRS-09,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AIRS-10,UC-AIRS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-AISP-01,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-AISP-02,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-AISP-03,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-AISP-04,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-AISP-05,UC-AISP,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-AISP-06,UC-AISP,PLT,M4,,unknown,scenario,True,unknown,False,authored
+TC-APB-01,UC-APB,AUT,M5,,unknown,,False,unknown,False,open
+TC-APB-02,UC-APB,AUT,M5,,unknown,,False,unknown,False,open
+TC-APB-03,UC-APB,AUT,M5,,unknown,,False,unknown,False,open
+TC-APB-04,UC-APB,AUT,M5,,unknown,,False,unknown,False,open
+TC-APB-05,UC-APB,PLT,M4,,unknown,,False,unknown,False,open
+TC-APB-06,UC-APB,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-APB-07,UC-APB,PLT,M4,,unknown,,False,unknown,False,open
+TC-APB-08,UC-APB,PLT,M4,,unknown,,False,unknown,False,open
+TC-APB-09,UC-APB,PLT,M4,,unknown,,False,unknown,False,open
+TC-APB-10,UC-APB,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-ASER-01,UC-ASER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASER-02,UC-ASER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASER-03,UC-ASER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASER-04,UC-ASER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASER-05,UC-ASER,PLT,M4,,unknown,,False,unknown,False,open
+TC-ASER-06,UC-ASER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASM-01,UC-ASM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ASM-02,UC-ASM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASM-03,UC-ASM,HNT,M2-longterm,asm_assets · asm_issues,external-surface,scenario,True,unknown,False,authored
+TC-ASM-04,UC-ASM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASM-05,UC-ASM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ASM-06,UC-ASM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ASM-07,UC-ASM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ASPM-01,UC-ASPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ASPM-03,UC-ASPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASPM-04,UC-ASPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ASPMC-01,UC-ASPMC,PLT,M4,,unknown,,False,unknown,False,open
+TC-BYOML-01,UC-BYOML,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-BYOML-02,UC-BYOML,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-CC2-01,UC-CC2,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CC2-02,UC-CC2,PLT,M4,,unknown,,False,unknown,False,open
+TC-CC2-03,UC-CC2,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CC2-04,UC-CC2,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CC2-05,UC-CC2,DET,M2-longterm,cloud_audit_logs · container_events,cloud,,False,unknown,False,open
+TC-CC2-06,UC-CC2,DET,M2-longterm,cloud_audit_logs · container_events,cloud,,False,unknown,False,open
+TC-CCMP-01,UC-CCMP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CCMP-02,UC-CCMP,PLT,M4,,unknown,,False,unknown,False,open
+TC-CCMP-03,UC-CCMP,PLT,M4,,unknown,,False,unknown,False,open
+TC-CCMP-04,UC-CCMP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CDR-01,UC-CDR,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-CDR-02,UC-CDR,DET,M2-longterm,cloud_inventory · posture_findings,cloud,scenario,True,unknown,False,authored
+TC-CDR-03,UC-CDR,DET,M2-longterm,cloud_inventory · posture_findings,cloud,scenario,True,unknown,False,authored
+TC-CDR-04,UC-CDR,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CDR-05,UC-CDR,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CIEM-01,UC-CIEM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-CIEM-02,UC-CIEM,PLT,M4,,unknown,,False,unknown,False,open
+TC-CIEM-03,UC-CIEM,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-CIEM-04,UC-CIEM,PLT,M4,,unknown,,False,unknown,False,open
+TC-CITH-01,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-02,UC-CITH,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-CITH-03,UC-CITH,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-CITH-04,UC-CITH,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-CITH-05,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-06,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-07,UC-CITH,DET,M2-quick,incidents,none,scenario,True,unknown,False,authored
+TC-CITH-08,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-09,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-10,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-11,UC-CITH,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-CITH-12,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-13,UC-CITH,PLT,M4,,unknown,,False,unknown,False,open
+TC-CITH-14,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-15,UC-CITH,PLT,M4,,unknown,,False,unknown,False,open
+TC-CITH-16,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-17,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-18,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-19,UC-CITH,PLT,M4,,unknown,,False,unknown,False,open
+TC-CITH-20,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CITH-21,UC-CITH,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CRPS-01,UC-CRPS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CRPS-02,UC-CRPS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CRPS-03,UC-CRPS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CRWA-01,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CRWA-02,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CRWA-03,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CRWA-04,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CRWA-05,UC-CRWA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CSPM-01,UC-CSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-CSPM-02,UC-CSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-CSPM-03,UC-CSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-CSPM-04,UC-CSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-CSPM-05,UC-CSPM,PLT,M4,,unknown,,False,unknown,False,open
+TC-CVM-01,UC-CVM,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-CVM-02,UC-CVM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-CVM-03,UC-CVM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-DEVX-01,UC-DEVX,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-DEVX-02,UC-DEVX,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-DEVX-03,UC-DEVX,PLT,M4,,unknown,,False,unknown,False,open
+TC-DEVX-04,UC-DEVX,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-DEVX-05,UC-DEVX,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-DLP-01,UC-DLP,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-DLP-02,UC-DLP,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-DLP-03,UC-DLP,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-DLP-04,UC-DLP,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-DLP-05,UC-DLP,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-DLP-06,UC-DLP,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-DLP-07,UC-DLP,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-DLP-08,UC-DLP,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-DLP-09,UC-DLP,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-DLP-10,UC-DLP,DET,M2-quick,incidents,none,,False,unknown,False,open
+TC-DLP-11,UC-DLP,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-DSPM-01,UC-DSPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-DSPM-02,UC-DSPM,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-DSPM-03,UC-DSPM,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-DSPM-04,UC-DSPM,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-EDR-01,UC-EDR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-EDR-02,UC-EDR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-EDR-03,UC-EDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-EDR-04,UC-EDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-EDR-05,UC-EDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-EDR-06,UC-EDR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-ERV-01,UC-ERV,PLT,M4,,unknown,assertion,True,unknown,False,authored
+TC-ERV-02,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ERV-03,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ERV-04,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ERV-05,UC-ERV,POS,M3,,unknown,scenario,True,unknown,False,authored
+TC-ERV-06,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ERV-07,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-ERV-08,UC-ERV,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-IACS-01,UC-IACS,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-IACS-02,UC-IACS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-IR-01,UC-IR,DET,M2-quick,incidents,none,scenario,True,unknown,False,authored
+TC-IR-02,UC-IR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-IR-03,UC-IR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-IR-04,UC-IR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-IR-05,UC-IR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-IR-06,UC-IR,PLT,M4,,unknown,,False,unknown,False,open
+TC-IR-07,UC-IR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-IR-08,UC-IR,PLT,M4,,unknown,assertion,True,unknown,False,authored
+TC-IR-09,UC-IR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-IR-10,UC-IR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-IR-11,UC-IR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-IR-12,UC-IR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-IR-13,UC-IR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-ITDR-01,UC-ITDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-ITDR-02,UC-ITDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-ITDR-03,UC-ITDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-ITDR-04,UC-ITDR,PLT,M4,,unknown,,False,unknown,False,open
+TC-ITDR-05,UC-ITDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-ITDR-06,UC-ITDR,PLT,M4,,unknown,assertion,True,unknown,False,authored
+TC-ITPA-01,UC-ITPA,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-KSPM-01,UC-KSPM,PLT,M4,,unknown,,False,unknown,False,open
+TC-KSPM-02,UC-KSPM,PLT,M4,,unknown,,False,unknown,False,open
+TC-KSPM-03,UC-KSPM,POS,M3,,unknown,assertion,True,unknown,False,authored
+TC-MDR-01,UC-MDR,PLT,M4,,unknown,,False,unknown,False,open
+TC-MDR-02,UC-MDR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-MSIAM-01,UC-MSIAM,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-MTH-01,UC-MTH,HNT,M1,xdr_data,none,,False,unknown,False,open
+TC-NDR-01,UC-NDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-NDR-02,UC-NDR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-NDR-03,UC-NDR,DET,M2-quick,panw_ngfw_traffic_raw · panw_ngfw_threat_raw,none,scenario,True,unknown,False,authored
+TC-NDR-04,UC-NDR,DET,M2-quick,panw_ngfw_traffic_raw · panw_ngfw_threat_raw,none,scenario,True,unknown,False,authored
+TC-NDR-05,UC-NDR,PLT,M4,,unknown,,False,unknown,False,open
+TC-NDR-06,UC-NDR,DET,M2-quick,panw_ngfw_traffic_raw · panw_ngfw_threat_raw,none,scenario,True,unknown,False,authored
+TC-PGE-01,UC-PGE,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-PGE-02,UC-PGE,PLT,M4,,unknown,,False,unknown,False,open
+TC-PGE-03,UC-PGE,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-PGE-04,UC-PGE,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-PGE-05,UC-PGE,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-PGE-06,UC-PGE,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-PGE-07,UC-PGE,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-PSER-01,UC-PSER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-PSER-02,UC-PSER,PLT,M4,,unknown,,False,unknown,False,open
+TC-RSER-01,UC-RSER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-RSER-02,UC-RSER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-RSER-03,UC-RSER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-RSER-04,UC-RSER,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-RSER-06,UC-RSER,PLT,M4,,unknown,,False,unknown,False,open
+TC-SCA-01,UC-SCA,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-SCA-02,UC-SCA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SCA-03,UC-SCA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SCA-04,UC-SCA,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SCS-01,UC-SCS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SCS-02,UC-SCS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SCS-03,UC-SCS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SCS-04,UC-SCS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SCS-05,UC-SCS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SIEM-01,UC-SIEM,PLT,M4,,unknown,,False,unknown,False,open
+TC-SIEM-02,UC-SIEM,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-SOAR-01,UC-SOAR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-SOAR-02,UC-SOAR,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-SOAR-03,UC-SOAR,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-SOT-01,UC-SOT,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-SOT-02,UC-SOT,DET,M2-quick,incidents,none,scenario,True,unknown,False,authored
+TC-SOT-03,UC-SOT,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-SSCAN-01,UC-SSCAN,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-SSCAN-02,UC-SSCAN,PLT,M4,,unknown,,False,unknown,False,open
+TC-SSCAN-03,UC-SSCAN,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SSCAN-04,UC-SSCAN,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-SSCAN-05,UC-SSCAN,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-TH-01,UC-TH,HNT,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-TH-02,UC-TH,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-TH-03,UC-TH,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-TH-04,UC-TH,PLT,M4,,unknown,,False,unknown,False,open
+TC-TH-05,UC-TH,HNT,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-TH-06,UC-TH,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-TH-07,UC-TH,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-TIM-01,UC-TIM,PLT,M4,,unknown,,False,unknown,False,open
+TC-TIM-02,UC-TIM,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-WAAS-01,UC-WAAS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-WAAS-02,UC-WAAS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-WAAS-03,UC-WAAS,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-WAAS-04,UC-WAAS,DET,M2-longterm,cloud_audit_logs · container_events,cloud,scenario,True,unknown,False,authored
+TC-WAAS-05,UC-WAAS,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-XDL-01,UC-XDL,PLT,M4,,unknown,assertion,True,unknown,False,authored
+TC-XDL-02,UC-XDL,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-XDL-03,UC-XDL,PLT,M4,,unknown,,False,unknown,False,open
+TC-XDL-04,UC-XDL,PLT,M4,,unknown,,False,unknown,False,open
+TC-XDL-05,UC-XDL,PLT,M4,,unknown,,False,unknown,False,open
+TC-XDL-06,UC-XDL,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-XDL-07,UC-XDL,PLT,M4,,unknown,,False,unknown,False,open
+TC-XDL-08,UC-XDL,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-XDL-09,UC-XDL,PLT,M4,,unknown,,False,unknown,False,open
+TC-XTI-01,UC-XTI,PLT,M4,,unknown,,False,unknown,False,open
+TC-XTI-02,UC-XTI,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-XTI-03,UC-XTI,DET,M2-quick,panw_ngfw_traffic_raw · panw_ngfw_threat_raw,none,scenario,True,unknown,False,authored
+TC-XTI-04,UC-XTI,DET,M2-quick,panw_ngfw_traffic_raw · panw_ngfw_threat_raw,none,scenario,True,unknown,False,authored
+TC-XTI-05,UC-XTI,HNT,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-XTI-06,UC-XTI,PLT,M4,,unknown,,False,unknown,False,open
+TC-XTI-07,UC-XTI,DET,M1,xdr_data,none,scenario,True,unknown,False,authored
+TC-XTI-08,UC-XTI,DET,M1,xdr_data,none,,False,unknown,False,open
+TC-XTI-09,UC-XTI,POS,M3,,unknown,,False,unknown,False,blocked(laab)
+TC-XTI-10,UC-XTI,DET,M1,xdr_data,none,,False,unknown,False,open

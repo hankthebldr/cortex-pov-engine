@@ -70,9 +70,12 @@ describe('console-view smoke renders', () => {
     expect(navigated).toBe('tenants')
   })
 
-  it('ConsoleHeader renders brand + env pill + ⌘K trigger', () => {
+  it('ConsoleHeader renders brand + ⌘K trigger (no env pill — see ConsoleHeader.jsx)', () => {
     render(<ConsoleHeader health={{ hostname: 'lab-test', version: 'v1.0', sensors: {} }} />)
-    expect(screen.getByText(/LAB-TEST/)).toBeInTheDocument()
+    // The LOCALHOST/sensors pill was removed: /api/health reports neither
+    // `hostname` nor `sensors`, so it showed the BROWSER's host and a
+    // permanently-"pending" status. See ConsoleHeader.jsx.
+    expect(screen.queryByText(/LAB-TEST/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /command palette/i })).toBeInTheDocument()
     expect(screen.getByText('v1.0', { exact: false })).toBeInTheDocument()
   })

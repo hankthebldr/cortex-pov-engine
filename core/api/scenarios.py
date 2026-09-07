@@ -116,16 +116,34 @@ async def list_scenarios(
     uc_ref: Optional[str] = Query(None, description="Filter by UC reference (e.g. UCS-CDR-03)"),
     ttp_ref: Optional[str] = Query(None, description="Filter to scenarios whose steps[].expected_detections[].ttp_ref cites this TTP id"),
     entitlement: Optional[str] = Query(None, description="Filter to scenarios a tenant profile can license: ng-siem-bare | enterprise | premium"),
+    status: Optional[str] = Query(
+        None,
+        description=(
+            "Filter by lifecycle status (active | draft | deprecated). "
+            "DEFAULTS to active-only: composer drafts (status='draft') never "
+            "leak into the Library. Pass an explicit status to opt in."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
 ):
     """List scenarios (summary projection), with optional plane / uc_ref /
-    ttp_ref / entitlement filters.
+    ttp_ref / entitlement / status filters.
 
     Rows are the SUMMARY shape — see ``_LIST_OMIT_FIELDS``. Fetch
     ``GET /api/scenarios/{id}`` for the full document (commands, cleanup,
     external_tools, success_criteria, per-detection logic).
+
+    The status guard is doctrine (Gate A5, "a draft is not corpus coverage"):
+    a composer draft is a persisted ``Scenario`` row with ``status='draft'``,
+    launchable via the existing path, but it must NOT appear in the Library.
+    So the default is active-only. ``?status=draft`` (or any explicit value)
+    is the deliberate opt-in — the only other draft-listing surface is
+    ``GET /api/scenarios/drafts``.
     """
     stmt = select(Scenario)
+    # Active-only by default so drafts never leak into the Library; an
+    # explicit ?status= is the opt-in for a debug/draft view.
+    stmt = stmt.where(Scenario.status == (status or "active"))
     if plane:
         stmt = stmt.where(Scenario.plane == plane.upper())
     if uc_ref:
@@ -146,8 +164,8 @@ async def list_scenarios(
         scenarios = [s for s in scenarios if _scenario_is_licensable(s, entitlement)]
 
     logger.info(
-        "list_scenarios plane=%s uc_ref=%s ttp_ref=%s entitlement=%s count=%d",
-        plane, uc_ref, ttp_ref, entitlement, len(scenarios),
+        "list_scenarios plane=%s uc_ref=%s ttp_ref=%s entitlement=%s status=%s count=%d",
+        plane, uc_ref, ttp_ref, entitlement, status or "active", len(scenarios),
     )
     # `projection` names the shape explicitly so a consumer can tell a summary
     # row from a detail document without guessing at which keys are missing.

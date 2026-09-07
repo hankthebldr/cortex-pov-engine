@@ -178,6 +178,34 @@ class AnalyticsEmitterParams(BaseModel):
         return v
 
 
+class NegativeControlEmitterParams(AnalyticsEmitterParams):
+    """Base params for emitters that ship a per-detector negative control.
+
+    A positive record that lands in the right dataset with plausible fields but
+    does not satisfy the detector's predicate produces silence, and silence in a
+    POV report reads as "Cortex missed it" — the manufactured false negative this
+    engine exists to avoid. The only way to tell "fired correctly" from "fires
+    on anything" is to also emit, from the SAME emitter, a record that lands in
+    the same dataset but must NOT fire the detector. This field is the toggle for
+    that record.
+
+    It defaults ``False`` so a campaign that does not ask for it is byte-identical
+    to the positive case. An emitter that does not set
+    ``supports_negative_control = True`` REJECTS ``negative_control=True`` at
+    ``records_for`` time rather than silently emitting the positive case — a
+    silent fallback would let an unfalsifiable claim read as a proven one.
+    """
+
+    negative_control: bool = Field(
+        default=False,
+        description="When true, emit the detector's negative control — a record "
+                    "that lands in the SAME dataset but must NOT fire the alert — "
+                    "instead of the positive case. It is what makes a coverage "
+                    "claim falsifiable: without it 'the detector fired' cannot be "
+                    "told apart from 'the detector fires on anything'.",
+    )
+
+
 # --------------------------------------------------------------------------
 # Ingestion round-trip canary
 #
@@ -305,6 +333,29 @@ class AnalyticsLogEmitter(BaseSimulation):
         dataset, e.g. ``cloud_audit_logs``) — exactly like ``email_emitter``.
         """
 
+    #: Whether this emitter implements ``build_negative_control`` — a record
+    #: that lands in the same dataset but must NOT fire the detector. Left
+    #: ``False`` on the base so the existing emitters (which do not ship one)
+    #: are unchanged and honestly report that they carry no falsifiability
+    #: control; new detector-true emitters set it ``True``.
+    supports_negative_control: bool = False
+
+    def build_negative_control(
+        self, params: AnalyticsEmitterParams, *, sim_run_id: str, iteration: int,
+    ) -> list[dict[str, Any]]:
+        """Return the detector's negative control — records that land in the
+        SAME dataset but must NOT fire the alert.
+
+        The default raises: an emitter that advertises
+        ``supports_negative_control = True`` and forgets to implement this must
+        fail loudly, never fall through to the positive builder (which would
+        make an unfalsifiable claim read as a proven one).
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} sets supports_negative_control=True but does "
+            f"not implement build_negative_control"
+        )
+
     #: Dotted path in this source's OWN record shape -> template over
     #: :func:`canary_bindings` (plus ``{value}``). Empty by default, so a plugin
     #: that does not declare it emits the raw marker only and is honest about
@@ -328,10 +379,27 @@ class AnalyticsLogEmitter(BaseSimulation):
         With ``params.canary_token`` unset this returns ``build_events``'s
         output unchanged, which is why adding the marker did not change any
         existing emitter's output shape.
+
+        When ``params.negative_control`` is set it dispatches to
+        ``build_negative_control`` instead of the positive builder. An emitter
+        that does not advertise ``supports_negative_control`` REFUSES the request
+        rather than silently emitting the positive case — collapsing the two
+        would let an unfalsifiable claim read as a proven one.
         """
-        events = self.build_events(
-            params, sim_run_id=sim_run_id, iteration=iteration,
-        )
+        if getattr(params, "negative_control", False):
+            if not self.supports_negative_control:
+                raise ValueError(
+                    f"{type(self).__name__} does not support a negative control "
+                    f"(supports_negative_control is False) — do not request "
+                    f"negative_control=True on this emitter"
+                )
+            events = self.build_negative_control(
+                params, sim_run_id=sim_run_id, iteration=iteration,
+            )
+        else:
+            events = self.build_events(
+                params, sim_run_id=sim_run_id, iteration=iteration,
+            )
         token = getattr(params, "canary_token", None)
         if not token:
             return events
@@ -344,6 +412,38 @@ class AnalyticsLogEmitter(BaseSimulation):
         return self.records_for(
             params, sim_run_id=sim_run_id, iteration=iteration,
         )
+
+    # ------------------------------------------------------------------
+    # Family manifest — the analytics log-streamer metadata the catalogue,
+    # coverage reporter and Data Streams console read. Kept off the generic
+    # BaseSimulation.metadata() so base plugins stay source-agnostic.
+    # ------------------------------------------------------------------
+
+    #: Vendor-catalogue data-source keys this emitter covers (see
+    #: analytics_catalogue.DATA_SOURCE_CATALOGUE). Declared on ``Meta`` and
+    #: joined to the catalogue by the coverage reporter. An emitter that
+    #: declares a key not in the catalogue is a hard error there — a typo must
+    #: raise, not silently vanish from the coverage number.
+    @classmethod
+    def analytics_manifest(cls) -> dict[str, Any]:
+        """Family-specific metadata for the analytics log-streamer console.
+
+        Reads ``Meta.data_sources`` (catalogue keys), ``Meta.datasets`` (the
+        XSIAM dataset(s) records land in), and the optional ``Meta.detectors``
+        (per-alert predicate descriptions). ``supports_negative_control`` is the
+        falsifiability flag every consumer keys on to tell an exercised detector
+        from a merely-fed one.
+        """
+        meta = cls.Meta
+        return {
+            "name": meta.name,
+            "family": "analytics_log_streamer",
+            "data_sources": list(getattr(meta, "data_sources", [])),
+            "datasets": list(getattr(meta, "datasets", [])),
+            "detectors": list(getattr(meta, "detectors", [])),
+            "supports_negative_control": bool(cls.supports_negative_control),
+            "mitre_techniques": list(getattr(meta, "mitre_techniques", [])),
+        }
 
     # ------------------------------------------------------------------
     # Shared run — identical shape to the exemplars, no per-source logic.

@@ -139,6 +139,11 @@ fi
 PORT="$(sed -n 's/^CORTEXSIM_PORT=\([0-9][0-9]*\).*/\1/p' "${ENV_FILE}" | head -n1)"
 PORT="${PORT:-8888}"
 
+# CORTEXSIM_VERSION drives the versioned image tag + container name
+# (cortex-pov-engine-simcore-v<version>). Compose defaults it to 1.0.0.
+VERSION="$(sed -n 's/^CORTEXSIM_VERSION=//p' "${ENV_FILE}" | head -n1)"
+VERSION="${VERSION:-1.0.0}"
+
 # ---------------------------------------------------------------------------
 # 2b. Adapter-source preflight (non-fatal).
 #     SimCore boots and serves the UI without the tier-2 adapter source trees
@@ -167,6 +172,7 @@ else
   exit 1
 fi
 
+log "Version ${VERSION}: image cortex-pov-engine-simcore:${VERSION}, container cortex-pov-engine-simcore-v${VERSION}"
 log "Building and starting SimCore: ${DC[*]} up -d --build"
 "${DC[@]}" up -d --build
 

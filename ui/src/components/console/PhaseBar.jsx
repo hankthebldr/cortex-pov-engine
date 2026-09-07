@@ -43,7 +43,7 @@ const PHASE_BY_DEST = {
   environments: 0, tenants: 0, agents: 0,
   composer: 1, library: 1, adapters: 1, uctc: 1,
   readiness: 2,
-  eal: 4, runs: 4,
+  eal: 4, runs: 4, datastreams: 4,
   coverage: 5, ttps: 5,
 }
 

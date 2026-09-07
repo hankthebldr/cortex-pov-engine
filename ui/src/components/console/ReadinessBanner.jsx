@@ -21,9 +21,25 @@ import { HS } from './readiness/healthModel.js'
  * degraded" must not also silence a payload-shelf regression that appears ten
  * minutes later. A banner that can be permanently silenced is a banner that
  * will be, on the day it matters.
+ *
+ * WHY THE DETAIL IS FOLDED BY DEFAULT
+ * ----------------------------------
+ * Expanded, this banner ran 103px, and it is PERSISTENT — unlike the safety
+ * banner, which leaves the grid once acknowledged. Stacked with the header,
+ * phase bar and command strip it left 183px of a 620px viewport for actual
+ * content (measured 70% chrome), which is what made the console read as "the
+ * library is overlapping the system announcements".
+ *
+ * What folds is the per-component detail, never the claim. The tag
+ * (DEGRADED/ERROR) and the component COUNT stay on the collapsed line, so the
+ * Gate-A5 rule that a degraded deployment must never render as a healthy one
+ * holds whether or not anyone expands it. The fault-and-fix text is one click
+ * away, and the row starts expanded when the state is ERROR — at that point the
+ * deployment is not merely incomplete and the detail is worth the height.
  */
 export default function ReadinessBanner({ model = null, onNavigate = () => {} }) {
   const [dismissedFingerprint, setDismissedFingerprint] = useState(null)
+  const [expanded, setExpanded] = useState(false)
 
   // Never probed, or unreachable — the unreachable case has its own louder
   // banner (`api-down`) and duplicating it here would just add noise.
@@ -37,15 +53,32 @@ export default function ReadinessBanner({ model = null, onNavigate = () => {} })
     (c) => c.status === HS.DEGRADED || c.status === HS.ERROR,
   )
 
+  const isError = model.overall === HS.ERROR
+  const open = expanded || isError
+
   return (
     <div className="readiness-banner" role="status" data-testid="readiness-banner">
       <div className="readiness-banner__head">
         <span className="readiness-banner__tag">
-          {model.overall === HS.ERROR ? 'SIMCORE ERROR' : 'SIMCORE DEGRADED'}
+          {isError ? 'SIMCORE ERROR' : 'SIMCORE DEGRADED'}
         </span>
         <span className="readiness-banner__count mono" data-testid="readiness-banner-count">
           {model.degraded.length} component{model.degraded.length === 1 ? '' : 's'}
         </span>
+        {/* Hidden on ERROR: there the detail is always open, so a control that
+            cannot close it would be a lie about what it does. */}
+        {!isError && (
+          <button
+            type="button"
+            className="readiness-banner__toggle"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={open}
+            aria-controls="readiness-banner-detail"
+            data-testid="readiness-banner-toggle"
+          >
+            {open ? '▾' : '▸'} {open ? 'Hide' : 'Details'}
+          </button>
+        )}
         <button
           type="button"
           className="btn btn--xs"
@@ -63,7 +96,8 @@ export default function ReadinessBanner({ model = null, onNavigate = () => {} })
           ✕
         </button>
       </div>
-      <ul className="readiness-banner__list">
+      {open && (
+      <ul className="readiness-banner__list" id="readiness-banner-detail">
         {rows.map((c) => (
           <li key={c.key} data-testid={`readiness-banner-${c.key}`}>
             <span className="mono">{c.label}</span>
@@ -76,6 +110,7 @@ export default function ReadinessBanner({ model = null, onNavigate = () => {} })
           </li>
         ))}
       </ul>
+      )}
     </div>
   )
 }

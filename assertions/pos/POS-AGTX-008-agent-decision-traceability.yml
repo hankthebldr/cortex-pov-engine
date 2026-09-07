@@ -1,0 +1,177 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Every autonomous action, traceable to a reason.
+#
+# TC-AGTX-08 carries a real 100% against Traceability Chain Completeness, so
+# unlike most of the AgentiX rows this one can produce a machine-certified pass
+# rather than evidence-only. The bar being absolute is the point: an audit trail
+# with a gap is not a partially-good audit trail, it is the specific record a
+# SOC 2 auditor will ask about.
+#
+# The shape that makes this falsifiable is a RATIO over the actions the platform
+# itself recorded, never a count of undocumented ones. "count of actions missing
+# a rationale = 0" passes on three tenants that prove nothing:
+#
+#   the agent never ran            -> 0 actions, 0 missing
+#   the field does not exist       -> query errors to empty, 0 missing
+#   AgentiX is not licensed        -> nothing to audit, 0 missing
+#
+# A ratio over the agent's own actions resolves all three to POPULATION_EMPTY
+# -> pending, which is the honest answer to "we cannot see the agent working".
+# ─────────────────────────────────────────────────────────────────────────────
+
+assertion_id: POS-AGTX-008
+name: Every autonomous agent action carries a traceable decision rationale
+version: "1.0"
+status: active
+
+validation_class: POS
+kind: state
+plane: ANALYTICS
+
+uc_ref: UCS-AGTX-04
+tc_ref: TC-AGTX-08
+tc_refs: [TC-AGTX-08]
+uc_name: "Agentic Automation (AgentiX)"
+tc_name: "Demonstrate comprehensive agent activity audit with decision transparency and regulatory compliance reporting"
+
+moat_tier: PARITY
+methodology_family: F5
+primary_kpi: "Traceability Chain Completeness"
+success_criteria: |
+  Every action an autonomous agent took against the seeded incident is recorded
+  with the actor that took it, the decision rationale behind it, and a timestamp
+  — with no gap anywhere in the chain — so the trail can be handed to an auditor
+  rather than reconstructed from memory.
+
+scope_limitations: >
+  Proves that the platform's own incident store records an actor, a rationale
+  and a timestamp for 100% of the agent actions it performed against this
+  scenario's activity. Does NOT prove the rationale is CORRECT or that the
+  explanation matches what the model actually did — explainability quality is
+  not machine-knowable from outside the model, and a plausible sentence attached
+  to a wrong action would pass here. Does NOT prove the test case's "report meets
+  SOC 2 audit requirements" leg: report generation is a console artifact with no
+  read API, and whether an auditor accepts it is a human judgement. Does NOT
+  prove retention of the trail beyond this run's lookback window. A tenant
+  without AgentiX licensed, or where the agent took no action, resolves
+  POPULATION_EMPTY -> pending, never a green on an audit trail nobody wrote.
+
+stimulus:
+  kind: scenario_run
+  scenario_id: SIM-MP-021
+  detail: >
+    Run SIM-MP-021 (AI SOC at volume — 800-alert labelled corpus). It is the
+    only stimulus in the corpus that reliably gives an autonomous agent enough
+    to DO: a large mixed corpus produces triage, grouping and disposition
+    actions in volume, so the population this ratio is computed over is big
+    enough for a single gap to be a real finding rather than noise. Wait out the
+    run, then — because the incident store indexes the audit record asynchronously —
+    allow at least 3 minutes before evaluating, and supply the run's
+    incident-tag as context.run_tag.
+
+
+context_vars: [run_tag]
+
+checks:
+  # ── COMPLETE ─────────────────────────────────────────────────────────────
+  - check_id: chk-01
+    title: Every agent action carries actor, rationale and timestamp
+    probe: xql_ratio
+    primary: true
+    weight: 2.0
+    params:
+      # POPULATION — the actions the PLATFORM recorded an agent taking. The
+      # engine does not assert how many there should be; it measures how many of
+      # the ones that happened are accounted for.
+      population_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter incident_tags contains "{{run_tag}}"
+        | filter automation_actor_type = "agent"
+        | fields incident_id, automation_action, automation_actor,
+                 automation_rationale, automation_action_ts
+        | limit 2000
+      # NUMERATOR — all three legs present. Any one missing breaks the chain:
+      # an action with no actor cannot be attributed, one with no rationale
+      # cannot be explained, one with no timestamp cannot be sequenced, and an
+      # audit trail that cannot be sequenced is not an audit trail.
+      numerator_query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter incident_tags contains "{{run_tag}}"
+        | filter automation_actor_type = "agent"
+        | filter automation_actor      != null and automation_actor      != ""
+        | filter automation_rationale  != null and automation_rationale  != ""
+        | filter automation_action_ts  != null
+        | fields incident_id, automation_action, automation_actor,
+                 automation_rationale, automation_action_ts
+        | limit 2000
+      min_population: 5
+    threshold:
+      kpi: "Traceability Chain Completeness"
+      op: ">="
+      value: 100
+      unit: "%"
+      source: index
+      rationale: >
+        Transcribed from the index verbatim — TC-AGTX-08 carries threshold
+        "100%" against a Traceability Chain Completeness KPI and a success
+        criterion of "100% action traceability with explainable AI decision
+        rationale for each step". Nothing was sharpened, and nothing was
+        softened: a chain with one gap is the finding.
+    negative_control:
+      description: >
+        The agent's triage and grouping actions are all recorded with an actor
+        and a timestamp, but the rationale field is populated only for the
+        actions that escalated — the ones it auto-closed carry no explanation at
+        all. 34 of 51 actions are fully traceable = 66.7%, and the auto-closures,
+        which are exactly the decisions an auditor will question, are the
+        undocumented ones.
+      measured_value: 66.7
+
+  # ── ATTRIBUTABLE TO A NAMED AGENT ────────────────────────────────────────
+  # A trail that says "automation" did it is not decision transparency. This
+  # separates "an agent acted and we know which" from "something automated
+  # happened", which are different answers to an auditor's first question.
+  - check_id: chk-02
+    title: Actions resolve to a named agent rather than a generic automation actor
+    probe: xql_distinct
+    weight: 1.0
+    params:
+      query: |
+        dataset = xsiam_incidents
+        | filter _time > to_timestamp(current_time() - {{lookback_seconds}})
+        | filter incident_tags contains "{{run_tag}}"
+        | filter automation_actor_type = "agent"
+        | filter automation_actor != null and automation_actor != ""
+        | filter automation_actor not in ("automation", "system", "unknown", "-")
+        | comp count() as action_count by automation_actor
+        | fields automation_actor, action_count
+        | limit 100
+      distinct_key: automation_actor
+    threshold:
+      kpi: distinct named agents attributable
+      op: ">="
+      value: 1
+      unit: ""
+      source: authored_sharpening
+      rationale: >
+        TC-AGTX-08's own threshold is "100%", which chk-01 transcribes; this
+        companion count is authored rather than taken from a "Qualitative pass"
+        row, and is named as such.
+        One is the floor, not an ambition: the claim is decision TRANSPARENCY,
+        and a trail attributing every action to the string "system" satisfies
+        chk-01's not-null test while telling an auditor nothing. The placeholder
+        exclusion list is what gives this check teeth — without it a tenant
+        writing a constant into the actor column scores identically to one
+        naming its agents.
+    negative_control:
+      description: >
+        Every action is stamped with the literal actor "automation" because the
+        agent identity is only present in a nested trace the incident store does
+        not surface. chk-01 goes green on a trail that cannot answer "which
+        agent decided this", which is the question the audit exists to answer.
+      measured_value: 0
+
+tags: [agentic, audit, traceability, governance, explainability, agtx]
+author: "CortexSim POS pack"

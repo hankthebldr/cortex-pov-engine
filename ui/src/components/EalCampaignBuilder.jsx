@@ -17,8 +17,11 @@ import { getEalPlugins, getEalPlugin, postEalCampaign } from '../api/client.js'
  * follow-up; today the "narrative" use case is best served by the
  * YAML-via-CLI path the DC already has.
  */
-export default function EalCampaignBuilder({ onCreated, onError }) {
+export default function EalCampaignBuilder({ onCreated, onError, family = null }) {
   // ── Catalog ────────────────────────────────────────────────────────────
+  // `family` scopes the plugin picker to one console destination's plugins
+  // (network_eal for Traffic/EAL, analytics_log_streamer for Data Streams).
+  // Left null it shows every plugin (back-compat with the pre-split console).
   const [plugins, setPlugins] = useState([])
   const [loadingCatalog, setLoadingCatalog] = useState(true)
 
@@ -45,10 +48,13 @@ export default function EalCampaignBuilder({ onCreated, onError }) {
   useEffect(() => {
     setLoadingCatalog(true)
     getEalPlugins()
-      .then(data => setPlugins(Array.isArray(data?.plugins) ? data.plugins : []))
+      .then(data => {
+        const all = Array.isArray(data?.plugins) ? data.plugins : []
+        setPlugins(family ? all.filter(p => p.family === family) : all)
+      })
       .catch(err => onError?.(`Failed to load plugins: ${err.message}`))
       .finally(() => setLoadingCatalog(false))
-  }, [onError])
+  }, [onError, family])
 
   // ── Load schema when plugin changes ───────────────────────────────────
   useEffect(() => {

@@ -232,6 +232,11 @@ _TERMINAL_STATES = {"complete", "failed", "aborted", "staged"}
 _LAUNCH_PRECONDITION_CODES = frozenset({
     "CONSENT_REQUIRED",
     "ADAPTER_MISSING_CLEANUP",
+    # A composed multi-channel run named a per-step `target` agent that is not
+    # enrolled. The request body is well-formed; the precondition (the second
+    # endpoint exists) is not met — 409, not a 422 that sends the operator
+    # hunting a JSON typo. Refused all-or-nothing before any task is enqueued.
+    "TARGET_AGENT_NOT_ENROLLED",
 })
 
 
@@ -242,6 +247,80 @@ async def _safe_publish(run_id: Optional[str], event: dict) -> None:
         await event_bus.publish(run_id, event)
     except Exception:  # pragma: no cover - defensive
         logger.exception("event_bus publish failed run_id=%s", run_id)
+
+
+async def _draft_launch_gate(scenario_id: str, db: AsyncSession) -> None:
+    """D5 launch gate (docs/superpowers/specs/2026-09-04-composer-workflow-design.md
+    §6.3). A ``status='draft'`` Composer row saves and edits freely, but it is
+    NOT launchable until it is (a) a valid chain — every step has a command and
+    at least one expected detection — and (b) bound to a real FY27 UC/TC index
+    test case. An UNBOUND draft that launched would seed Result rows whose
+    absent detections read as a manufactured false negative on the customer's
+    stack: this is an honesty gate (Gate A5), so it refuses regardless of
+    ``CORTEXSIM_STRICT_REFS``.
+
+    NON-draft scenarios (``status != 'draft'``) bypass this gate entirely — the
+    corpus launch path is untouched. A missing scenario_id is left for
+    ``orchestrator.launch`` to report (it owns the not-found path); this gate
+    only ever fetches to decide whether the draft predicates apply.
+
+    Raises ``HTTPException`` 409 with a structured ``{error, code, detail}``:
+      * ``DRAFT_CHAIN_INVALID`` — a step has no command or no expected detection
+        (detail names the offending step ids).
+      * ``DRAFT_NOT_TC_BOUND``  — the draft's ``tc_ref``/``tc_refs`` do not
+        resolve to a real index test case (the ``UNBOUND`` sentinel, an FK
+        error, or an absent snapshot — binding cannot be *proven* without the
+        index, so the honest verdict is "not bound", never a permissive pass).
+
+    Predicates are the ONE implementation shared with the read-only mirror
+    ``GET /api/scenarios/drafts/{id}/launchable`` (``api.drafts._chain_valid`` /
+    ``_tc_bound``); a second, weaker predicate path is how a launch gate and its
+    own console preview silently disagree.
+    """
+    # In the real request path ``db`` is always a live session (Depends(get_db)).
+    # A ``None`` here means a unit test drove ``_launch_run_impl`` with a mocked
+    # orchestrator and no DB; there is nothing to fetch, so the draft predicates
+    # do not apply and the mocked launch owns the outcome.
+    if db is None:
+        return
+
+    # Local import: keep one predicate implementation (the drafts router) and
+    # avoid any import-order coupling at module load. Matches the repo's
+    # local-import house style for cross-router reuse.
+    from api.drafts import _chain_valid, _tc_bound  # noqa: PLC0415
+
+    row = (
+        await db.execute(
+            select(Scenario).where(Scenario.scenario_id == scenario_id)
+        )
+    ).scalar_one_or_none()
+
+    # Not a draft (or not found): the existing launch path handles it. Active
+    # and deprecated corpus rows never see this gate.
+    if row is None or row.status != "draft":
+        return
+
+    chain_ok, chain_reasons = _chain_valid(row)
+    if not chain_ok:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "draft chain is not launchable",
+                "code": "DRAFT_CHAIN_INVALID",
+                "detail": "; ".join(chain_reasons),
+            },
+        )
+
+    tc_ok, _tc_reasons = _tc_bound(row)
+    if not tc_ok:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "draft is not launchable",
+                "code": "DRAFT_NOT_TC_BOUND",
+                "detail": "bind a real test case from the UC/TC Index before launching",
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +348,10 @@ async def _launch_run_impl(
         body.identity,
     )
 
+    # D5 launch gate (§6.3): refuse an unbound / chain-invalid Composer draft
+    # BEFORE the orchestrator seeds anything. NON-draft scenarios bypass this.
+    await _draft_launch_gate(body.scenario_id, db)
+
     result = await orchestrator.launch(
         scenario_id=body.scenario_id,
         mode=body.mode,
@@ -280,13 +363,25 @@ async def _launch_run_impl(
     )
 
     if not result.success:
-        # A missing consent flag is not a malformed request — the body was
-        # perfectly valid, the operator simply has not authorised the action
-        # yet. 409 puts it in the same position and posture as the other
-        # preconditions a launch can fail on (PAYLOAD_NOT_STAGED), and the
-        # structured detail means a console offers the exact checkbox instead
-        # of regexing the sentence for a key name.
-        status = 409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
+        # Two sources, in priority order.
+        #
+        # 1. A refusal that ALREADY knows its status says so. The payload-shelf
+        #    family carries its own `http_status` and the shelf route has always
+        #    honoured it; this route used to drop it and answer a flat 422,
+        #    telling the operator their launch body was malformed when the body
+        #    was fine and the fix was ./scripts/build-payloads.sh. Note the
+        #    family is NOT uniformly 409 — PayloadDestRefused is 400 — which is
+        #    why the status is carried rather than re-derived from a list of
+        #    codes here that would have to be kept in step by hand.
+        # 2. Otherwise, the code decides. A missing consent flag is not a
+        #    malformed request — the body was perfectly valid, the operator
+        #    simply has not authorised the action yet. 409 puts it in the same
+        #    posture as every other precondition a launch can fail on, and the
+        #    structured detail means a console offers the exact checkbox
+        #    instead of regexing the sentence for a key name.
+        status = result.http_status or (
+            409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
+        )
         raise HTTPException(
             status_code=status,
             detail={
@@ -778,12 +873,38 @@ async def complete_run(
         orchestrator.clear_aborted(run_id)
         return {"status": run.status, "run_id": run_id}
 
-    run.status = "complete" if body.exit_code == 0 else "failed"
-    run.completed_at = datetime.utcnow()
+    # Multi-endpoint fan-out: a run may carry N beacon tasks (one per distinct
+    # target agent), each POSTing /complete. Terminalise the run only when the
+    # LAST endpoint reports — not the first — or a two-endpoint run would flip
+    # to complete the instant one host finished while the other kept running.
+    # `open_tasks` is NULL on a legacy single-task run ⇒ treated as 1, so the
+    # single-endpoint path stays byte-identical to today.
+    n = run.open_tasks if run.open_tasks is not None else 1
+    remaining = max(0, n - 1)
+    run.open_tasks = remaining
 
-    # Append summary to output
+    # Every endpoint's summary is appended.
     summary_text = f"\n--- COMPLETION SUMMARY ---\nExit code: {body.exit_code}\n{body.summary}\n"
     run.output = (run.output or "") + summary_text
+
+    # Sticky failure — once any endpoint fails, the run's verdict is failed.
+    if body.exit_code != 0:
+        run.status = "failed"
+
+    if remaining > 0:
+        # Not the last endpoint — hold; do NOT terminalise, publish a terminal
+        # frame, or score yet. The run stays 'running' (or 'failed' if an
+        # endpoint has already failed) until the final callback.
+        await db.commit()
+        logger.info(
+            "run_complete partial run_id=%s exit_code=%d remaining_endpoints=%d",
+            run_id, body.exit_code, remaining,
+        )
+        return {"status": run.status, "run_id": run_id, "pending_endpoints": remaining}
+
+    # Last endpoint in — terminalise with the aggregate verdict.
+    run.status = "failed" if run.status == "failed" else "complete"
+    run.completed_at = datetime.utcnow()
 
     await db.commit()
 

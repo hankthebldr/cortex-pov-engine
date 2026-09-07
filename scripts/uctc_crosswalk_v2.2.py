@@ -920,8 +920,12 @@ def main() -> int:
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--emit", action="store_true")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--emit-xlsx", action="store_true",
+                    help="regenerate the UC/TC-keyed engine coverage sheet + scoreboard")
+    ap.add_argument("--check", action="store_true",
+                    help="with --emit-xlsx: fail if the committed sheet is stale")
     args = ap.parse_args()
-    if not (args.report or args.emit or args.apply):
+    if not (args.report or args.emit or args.apply or args.emit_xlsx):
         args.report = True
 
     tc, spec, lib = load_index()
@@ -939,6 +943,42 @@ def main() -> int:
         print(f"ERROR: crosswalk references non-existent test cases: {bad}", file=sys.stderr)
     if missing or extra or bad:
         return 1
+
+    if args.emit_xlsx:
+        sys.path.insert(0, os.path.join(REPO, "core"))
+        from engine.uctc_coverage_sheet import (
+            build_rows, rows_to_csv_text, scoreboard_markdown, write_xlsx,
+        )
+        evidenced_scen = {r for refs, _, _ in CROSSWALK.values() for r in refs}
+        evidenced_assert = (
+            {r for refs, _, _ in PLT_ASSERTION_CROSSWALK.values() for r in refs}
+            | {r for refs, _, _ in POS_ASSERTION_CROSSWALK.values() for r in refs}
+        )
+        srows = build_rows(spec, evidenced_scen, evidenced_assert)
+        csv_text = rows_to_csv_text(srows)
+        board_text = scoreboard_markdown(srows)
+        csv_path = os.path.join(IDX, "engine_coverage_v2.3.csv")
+        board_path = os.path.join(OUT, "scoreboard.md")
+        if args.check:
+            cur_csv = open(csv_path).read() if os.path.exists(csv_path) else ""
+            cur_board = open(board_path).read() if os.path.exists(board_path) else ""
+            if cur_csv != csv_text or cur_board != board_text:
+                print("ERROR: engine coverage sheet/scoreboard is stale — "
+                      "run `make uctc-sheet` and commit", file=sys.stderr)
+                return 1
+            print("engine coverage sheet: in sync")
+            return 0
+        with open(csv_path, "w") as fh:
+            fh.write(csv_text)
+        with open(board_path, "w") as fh:
+            fh.write(board_text)
+        try:
+            write_xlsx(os.path.join(IDX, "CortexUCTCIndex_v2.3_engine-coverage.xlsx"), srows)
+            xlsx_note = "csv + xlsx + scoreboard"
+        except ImportError:
+            xlsx_note = "csv + scoreboard (openpyxl absent — xlsx skipped)"
+        print(f"wrote {xlsx_note}: {csv_path}")
+        return 0
 
     rows = []
     import yaml

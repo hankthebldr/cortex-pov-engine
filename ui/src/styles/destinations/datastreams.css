@@ -1,0 +1,96 @@
+/* Data Streams destination — analytics log-streamer coverage surface.
+ * Reuses the .eal-console shell; only the coverage-specific bits live here.
+ * All colours come from the Cortex design tokens (cortex-theme.css). */
+
+.ds-banner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid var(--cortex-border);
+}
+.ds-banner--warn {
+  border-left: 4px solid var(--cortex-warning);
+  background: color-mix(in srgb, var(--cortex-warning) 10%, transparent);
+  color: var(--cortex-ink);
+}
+.ds-banner--error {
+  border-left: 4px solid var(--cortex-danger);
+  background: color-mix(in srgb, var(--cortex-danger) 10%, transparent);
+  color: var(--cortex-ink);
+}
+
+.ds-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0 14px;
+}
+.ds-stat {
+  flex: 1 1 120px;
+  min-width: 120px;
+  padding: 10px 12px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 8px;
+  border-top: 3px solid var(--cortex-steel);
+  background: var(--cortex-white);
+}
+.ds-stat--ok { border-top-color: var(--cortex-success); }
+.ds-stat--info { border-top-color: var(--cortex-teal); }
+.ds-stat--warn { border-top-color: var(--cortex-warning); }
+.ds-stat__k {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cortex-ink-muted);
+}
+.ds-stat__v {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--cortex-ink);
+}
+.ds-stat__sub {
+  font-size: 11px;
+  color: var(--cortex-ink-muted);
+}
+
+.ds-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ds-filter select {
+  font: inherit;
+  padding: 3px 6px;
+  border: 1px solid var(--cortex-border);
+  border-radius: 4px;
+  background: var(--cortex-white);
+  color: var(--cortex-ink);
+}
+
+.ds-src-chip {
+  display: inline-block;
+  margin: 1px 3px 1px 0;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--cortex-teal) 14%, transparent);
+  color: var(--cortex-ink);
+  white-space: nowrap;
+}
+.ds-src-chip--partial {
+  background: color-mix(in srgb, var(--cortex-steel) 18%, transparent);
+  color: var(--cortex-ink-muted);
+}
+
+.ds-launch-panel {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--cortex-border);
+  border-left: 4px solid var(--cortex-teal);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--cortex-teal) 6%, transparent);
+  font-size: 13px;
+}

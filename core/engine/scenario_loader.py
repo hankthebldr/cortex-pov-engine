@@ -88,6 +88,28 @@ _PIVOTS = {
 }
 _PLATFORMS = {"linux", "windows", "macos", "container", "k8s"}
 
+# Canonical detection-plane vocabulary. Single source of truth for the plane
+# enum, shared by ScenarioSchema.validate_plane (strict corpus loader) and the
+# composer DraftScenarioSchema so the two cannot drift into two notions of a
+# valid plane.
+VALID_PLANES: frozenset[str] = frozenset({
+    "EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS",
+    # AI / Browser / Agentic detection-set expansion
+    "AI_ACCESS",   # Cortex AI Access Security — egress to AI providers
+    "AIRS",        # Cortex AI Runtime Security — vulnerable LLM app
+    "AI_SPM",      # Cortex AI Security Posture Management — static AI asset inventory + config
+    "BROWSER",     # Prisma Browser — DLP / extension / phishing
+    "KOI",         # Agentic endpoint / supply-chain (MCPs, skills, exts)
+    # Exposure-management / posture / intel planes (IaC-backed surfaces)
+    "ASM",         # Cortex ASM / Xpanse — internet-exposed attack-surface discovery
+    "CSPM",        # Cortex Cloud Posture Management — misconfig findings
+    "TIM",         # Cortex Threat Intel Management — IOC feed + matching traffic
+    # Email line of defense — Proofpoint TAP / M365 ingestion + phishing/BEC correlation
+    "EMAIL",
+    # Data Loss Prevention & Data Security
+    "DLP",
+})
+
 
 class CgoAnchorSchema(BaseModel):
     """Scenario-level Causality Group Owner anchor. Drives the CGO node's
@@ -140,6 +162,33 @@ class StepExpectedDetection(BaseModel):
     kpi_contribution: Optional[KpiThreshold] = None
 
 
+class EalStepSchema(BaseModel):
+    """The EAL (Enhanced Application Log) emitter binding for a ``channel: eal``
+    step (Phase 3a).
+
+    An EAL step is NOT executed on a beacon — it is a ``CampaignStep`` the
+    ``CampaignExecutor`` would run in SimCore's own process. Here we only carry
+    the declaration: which emitter plugin, and its params. Dispatch itself lands
+    in Phase 3b; a 3a run records the step as ``EAL_DISPATCH_PENDING`` and
+    fabricates no campaign result.
+    """
+
+    plugin: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("plugin")
+    @classmethod
+    def _plugin_non_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("eal.plugin must be a non-empty string")
+        return v
+
+
+# The step channel vocabulary. Absent/None ⇒ 'agent' (back-compat): a bare step
+# with no channel key runs on the beacon exactly as it does today.
+_STEP_CHANNELS: frozenset[str] = frozenset({"agent", "eal"})
+
+
 class StepSchema(BaseModel):
     id: str
     name: str
@@ -147,6 +196,18 @@ class StepSchema(BaseModel):
     identity: str
     mitre_technique: str
     expected_detections: list[StepExpectedDetection] = []
+    # ── Channel contract (Phase 3a — all optional, additive, back-compat) ────
+    # channel: which executor runs this step — 'agent' (the beacon, the only
+    # Phase-1/2 path) or 'eal' (a CampaignExecutor emitter, dispatched in 3b).
+    # Absent/None ⇒ 'agent'. target: an agent-channel step may run on a DIFFERENT
+    # enrolled beacon (the "second endpoint" case) — a bare agent_id, resolved
+    # against the agents table only at dispatch, never an FK at schema time. eal:
+    # the emitter binding, permitted ONLY when channel == 'eal'. A step that
+    # declares none of these dumps byte-identically to the pre-3a corpus (see
+    # ``omit_unset_channel_fields``), so all 177 scenarios load unchanged.
+    channel: Optional[str] = None
+    target: Optional[str] = None
+    eal: Optional[EalStepSchema] = None
     # ── Causality contract (all optional, back-compat) ──────────────────────
     # causality: this step's lineage/pivot to an EARLIER step. Omitted on the
     # root step (which links from the CGO). platforms: OS/env coverage for this
@@ -174,6 +235,66 @@ class StepSchema(BaseModel):
         if bad:
             raise ValueError(f"platforms must be subset of {sorted(_PLATFORMS)}, got {bad}")
         return v
+
+    @model_validator(mode="after")
+    def _validate_channel(self) -> "StepSchema":
+        # (a) channel enum — None means 'agent' (back-compat), never blank.
+        if self.channel not in (None, "agent", "eal"):
+            raise ValueError(
+                f"channel must be one of {sorted(_STEP_CHANNELS)} (or absent for "
+                f"'agent'), got {self.channel!r}"
+            )
+        # (b) an 'eal' step REQUIRES an eal block with a truthy plugin.
+        if self.channel == "eal":
+            if self.eal is None or not (self.eal.plugin and self.eal.plugin.strip()):
+                raise ValueError(
+                    "channel 'eal' requires an eal block with a non-empty plugin"
+                )
+        # (c) an eal block is only meaningful on an 'eal' step.
+        if self.eal is not None and self.channel != "eal":
+            raise ValueError(
+                "an eal block is only permitted when channel == 'eal'"
+            )
+        # (d) target names a SECOND agent endpoint — non-empty when present, and
+        # agent-channel only (an eal step runs in-process, it has no beacon).
+        if self.target is not None:
+            if not (isinstance(self.target, str) and self.target.strip()):
+                raise ValueError(
+                    "target must be a non-empty agent id when present"
+                )
+            if self.channel == "eal":
+                raise ValueError(
+                    "target is only permitted on an agent-channel step"
+                )
+        return self
+
+
+def effective_channel(step: Any) -> str:
+    """The honest default: a step with no ``channel`` key runs on the agent
+    beacon. Reads from a plain dict (persisted/enqueued shape) or a StepSchema.
+
+    This is the ONE place the absent-⇒-'agent' rule lives, so the loader,
+    ``draft_to_orm_kwargs`` and the orchestrator's channel dispatch cannot drift
+    into two notions of the default channel.
+    """
+    if isinstance(step, dict):
+        return step.get("channel") or "agent"
+    return getattr(step, "channel", None) or "agent"
+
+
+def omit_unset_channel_fields(step: dict[str, Any]) -> dict[str, Any]:
+    """Strip ``channel``/``target``/``eal`` from a persisted or enqueued step
+    dict when they are unset (None), MUTATING and returning the dict.
+
+    Mirrors the omit-when-empty rule the causality/platforms fields already use:
+    a step that declares none of the Phase-3a channel fields serialises
+    byte-identically to the pre-3a corpus, so all 177 scenarios and every
+    Phase-1/2 draft persist unchanged.
+    """
+    for key in ("channel", "target", "eal"):
+        if step.get(key) is None:
+            step.pop(key, None)
+    return step
 
 
 class ExternalToolSchema(BaseModel):
@@ -231,6 +352,57 @@ class AdditionalTechnique(BaseModel):
 
     technique: str
     name: str = ""
+
+
+def validate_causality_spine(steps: list[Any]) -> None:
+    """Cross-check a declared step-level causality spine, raising ``ValueError``
+    on the first violation.
+
+    (a) every ``causality.parent_step`` must be the id of an EARLIER step
+        (index < the declaring step) — forward/self/unknown refs are errors.
+    (b) at most ONE step may omit ``causality`` (the root) once any step
+        declares it, keeping a single connected spine.
+
+    A collection where NO step declares causality is legacy/star and passes
+    untouched. ``steps`` may be any objects exposing ``.id`` and ``.causality``
+    (with ``.parent_step``) — ``StepSchema`` from the strict loader and the
+    composer draft schema both qualify, so scenarios and drafts share ONE
+    spine implementation and cannot drift into two notions of a valid spine.
+    """
+    step_ids = [s.id for s in steps]
+    index_of = {sid: i for i, sid in enumerate(step_ids)}
+
+    declared = [s for s in steps if s.causality is not None]
+    if not declared:
+        return  # legacy star — no contract
+
+    for i, step in enumerate(steps):
+        caus = step.causality
+        if caus is None:
+            continue
+        parent = caus.parent_step
+        if parent == step.id:
+            raise ValueError(
+                f"step '{step.id}' causality.parent_step is a self-reference"
+            )
+        if parent not in index_of:
+            raise ValueError(
+                f"step '{step.id}' causality.parent_step references unknown "
+                f"step '{parent}'"
+            )
+        if index_of[parent] >= i:
+            raise ValueError(
+                f"step '{step.id}' causality.parent_step '{parent}' must be an "
+                f"EARLIER step (forward/self references are not allowed)"
+            )
+
+    roots = [s for s in steps if s.causality is None]
+    if len(roots) > 1:
+        raise ValueError(
+            "a declared causality spine allows at most one root step "
+            f"(steps without causality), got {len(roots)}: "
+            f"{[s.id for s in roots]}"
+        )
 
 
 class ScenarioSchema(BaseModel):
@@ -366,25 +538,8 @@ class ScenarioSchema(BaseModel):
     @field_validator("plane")
     @classmethod
     def validate_plane(cls, v: str) -> str:
-        allowed = {
-            "EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS",
-            # AI / Browser / Agentic detection-set expansion
-            "AI_ACCESS",   # Cortex AI Access Security — egress to AI providers
-            "AIRS",        # Cortex AI Runtime Security — vulnerable LLM app
-            "AI_SPM",      # Cortex AI Security Posture Management — static AI asset inventory + config
-            "BROWSER",     # Prisma Browser — DLP / extension / phishing
-            "KOI",         # Agentic endpoint / supply-chain (MCPs, skills, exts)
-            # Exposure-management / posture / intel planes (IaC-backed surfaces)
-            "ASM",         # Cortex ASM / Xpanse — internet-exposed attack-surface discovery
-            "CSPM",        # Cortex Cloud Posture Management — misconfig findings
-            "TIM",         # Cortex Threat Intel Management — IOC feed + matching traffic
-            # Email line of defense — Proofpoint TAP / M365 ingestion + phishing/BEC correlation
-            "EMAIL",
-            # Data Loss Prevention & Data Security
-            "DLP",
-        }
-        if v not in allowed:
-            raise ValueError(f"plane must be one of {allowed}, got '{v}'")
+        if v not in VALID_PLANES:
+            raise ValueError(f"plane must be one of {set(VALID_PLANES)}, got '{v}'")
         return v
 
     @field_validator("detection_types")
@@ -437,42 +592,10 @@ class ScenarioSchema(BaseModel):
             declares it, keeping a single connected spine.
 
         A scenario where NO step declares causality is legacy/star and passes
-        untouched.
+        untouched. Delegates to the module-level ``validate_causality_spine`` so
+        scenarios and composer drafts share one implementation.
         """
-        step_ids = [s.id for s in self.steps]
-        index_of = {sid: i for i, sid in enumerate(step_ids)}
-
-        declared = [s for s in self.steps if s.causality is not None]
-        if not declared:
-            return self  # legacy star — no contract
-
-        for i, step in enumerate(self.steps):
-            caus = step.causality
-            if caus is None:
-                continue
-            parent = caus.parent_step
-            if parent == step.id:
-                raise ValueError(
-                    f"step '{step.id}' causality.parent_step is a self-reference"
-                )
-            if parent not in index_of:
-                raise ValueError(
-                    f"step '{step.id}' causality.parent_step references unknown "
-                    f"step '{parent}'"
-                )
-            if index_of[parent] >= i:
-                raise ValueError(
-                    f"step '{step.id}' causality.parent_step '{parent}' must be an "
-                    f"EARLIER step (forward/self references are not allowed)"
-                )
-
-        roots = [s for s in self.steps if s.causality is None]
-        if len(roots) > 1:
-            raise ValueError(
-                "a declared causality spine allows at most one root step "
-                f"(steps without causality), got {len(roots)}: "
-                f"{[s.id for s in roots]}"
-            )
+        validate_causality_spine(self.steps)
         return self
 
     @model_validator(mode="after")
@@ -994,7 +1117,7 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "push_supported": schema.push_supported,
         "pull_supported": schema.pull_supported,
         "external_tools": [t.model_dump() for t in schema.external_tools],
-        "steps": [s.model_dump() for s in schema.steps],
+        "steps": [omit_unset_channel_fields(s.model_dump()) for s in schema.steps],
         "cleanup": schema.cleanup.model_dump() if schema.cleanup else None,
         "tags": schema.tags,
         "author": schema.author,

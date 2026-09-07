@@ -25,12 +25,12 @@
     "tier4_undeclared": 0
   },
   "assertions": {
-    "artifacts_total": 22,
+    "artifacts_total": 28,
     "boot_verified": true,
     "by_validation_class": {
       "AUT": 3,
-      "PLT": 4,
-      "POS": 15
+      "PLT": 7,
+      "POS": 18
     },
     "rejected": 0,
     "warnings": 0
@@ -94,19 +94,19 @@
     },
     "ttp_cards": 175
   },
-  "eal_plugins": 21,
+  "eal_plugins": 26,
   "generated_by": "scripts/generate_ground_truth.py",
   "http_routes": {
-    "apirouter_instances": 24,
+    "apirouter_instances": 25,
     "by_method": {
       "api_route": 1,
-      "delete": 4,
-      "get": 83,
-      "post": 34,
-      "put": 5
+      "delete": 5,
+      "get": 87,
+      "post": 35,
+      "put": 6
     },
-    "decorator_count": 127,
-    "router_files": 22
+    "decorator_count": 134,
+    "router_files": 23
   },
   "iac_modules_aws": 11,
   "schema_version": 1,

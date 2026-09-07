@@ -263,9 +263,31 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
 
   useEffect(() => {
     if (loading.agents) return
-    if (agentId && !agents.some((a) => idMatches(agentIdOf(a), agentId))) {
-      const first = agents[0]
-      const next = agentIdOf(first)
+
+    const known = agentId && agents.some((a) => idMatches(agentIdOf(a), agentId))
+    if (known) return
+
+    if (agentId) {
+      // Selected agent vanished (deregistered, renamed) — fall back.
+      const next = agentIdOf(agents[0])
+      setAgentId(next)
+      writeLS(LS_AGENT, next)
+      return
+    }
+
+    // NOTHING SELECTED YET. This branch is new: the effect previously only
+    // reconciled a STALE id, so a browser with no localStorage entry sat on
+    // "AGENT none" even with a healthy agent enrolled — the switcher looked
+    // decorative because it never selected anything on its own, and pull-mode
+    // launches had no dispatch target for a reason nothing on screen explained.
+    //
+    // Only an ONLINE agent is auto-selected. Auto-selecting a stale or offline
+    // one would name a dispatch target that cannot receive the task, which is
+    // the same class of error as a step that looks like it ran and did not —
+    // better to keep showing "none" and make the operator choose.
+    const online = agents.find((a) => a && a.status === 'online')
+    if (online) {
+      const next = agentIdOf(online)
       setAgentId(next)
       writeLS(LS_AGENT, next)
     }

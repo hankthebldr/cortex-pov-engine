@@ -16,7 +16,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | ABIOC+Analytics share (step-detections) | 16.0% |
 | Correlation share (step-detections) | 10.6% |
 | Distinct MITRE techniques (base) | 207 (119) |
-| EAL plugins | 21 |
+| EAL plugins | 26 |
 | AWS IaC modules | 11 |
 
 ### Scenarios per plane
@@ -67,8 +67,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Assertion artifacts | 22 |
-| By validation class | `{"AUT": 3, "PLT": 4, "POS": 15}` |
+| Assertion artifacts | 28 |
+| By validation class | `{"AUT": 3, "PLT": 7, "POS": 18}` |
 | Rejected at load (strict) | 0 |
 | Boot-verified (real `AssertionCatalog`) | True |
 
@@ -89,10 +89,10 @@ Boot-free static count: every `@<router>.<verb>(` decorator across `core/api/*.p
 
 | Metric | Value |
 |---|---:|
-| Route decorators | 127 |
-| By HTTP method | `{"api_route": 1, "delete": 4, "get": 83, "post": 34, "put": 5}` |
-| `APIRouter()` instances | 24 |
-| Router files (`core/api/*.py`) | 22 |
+| Route decorators | 134 |
+| By HTTP method | `{"api_route": 1, "delete": 5, "get": 87, "post": 35, "put": 6}` |
+| `APIRouter()` instances | 25 |
+| Router files (`core/api/*.py`) | 23 |
 
 ## Strict UC/TC ref validation
 

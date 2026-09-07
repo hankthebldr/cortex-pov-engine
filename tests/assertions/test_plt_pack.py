@@ -46,7 +46,24 @@ IR_008 = "PLT-IR-008"
 ERV_001 = "PLT-ERV-001"
 ITDR_006 = "PLT-ITDR-006"
 XDL_001 = "PLT-XDL-001"
+XTI_001 = "PLT-XTI-001"
+NDR_005 = "PLT-NDR-005"
+APB_005 = "PLT-APB-005"
+
+# The emitter-replay subset. These four declare an eal_campaign whose emitters
+# this file can actually re-run, so their queries can be driven against a lake
+# built from real emitted records. The behavioural tests below parametrize over
+# THIS tuple, not over the directory.
 ALL_PLT = (IR_008, ERV_001, ITDR_006, XDL_001)
+
+# Everything the pack ships. XTI_001's stimulus is an IaC fixture (TAXII feeds),
+# NDR_005's names a source family with no emitter behind it (cisco_asa_raw), and
+# APB_005 reads xsiam_incidents — a dataset the PLATFORM writes and the engine
+# never emits. None can be replayed by the `emitted` fixture, so they are
+# inventory- and structure-guarded here rather than behaviour-guarded, and
+# forcing them into the replay harness would mean asserting against records this
+# repo fabricated rather than records an emitter produced.
+ALL_PLT_ON_DISK = ALL_PLT + (XTI_001, NDR_005, APB_005)
 
 TOKEN = "csim-9f2a41c0d3e7"
 COLLECTOR = "https://collector.cortexsim-canary.invalid/logs/v1/event"
@@ -371,10 +388,23 @@ def lake_for(spec_id: str, emitted: dict) -> _Lake:
 # ---------------------------------------------------------------------------
 
 
-def test_pack_is_exactly_the_four_provable_rows(plt_specs):
-    """The index carries 43 PLT rows. Four are bound here. The other 39 are an
-    honest gap, and inflating this list is the failure mode that matters."""
-    assert sorted(plt_specs) == sorted(ALL_PLT)
+def test_pack_is_exactly_the_artifacts_on_disk(plt_specs):
+    """The index carries 43 PLT rows. Seven are bound here. The other 36 are an
+    honest gap, and inflating this list is the failure mode that matters.
+
+    Asserted against the DIRECTORY, so a new artifact cannot land without being
+    named here — including one the emitter-replay harness below cannot cover."""
+    assert sorted(plt_specs) == sorted(ALL_PLT_ON_DISK)
+
+
+def test_replay_subset_is_a_subset(plt_specs):
+    """The behavioural tests parametrize over ALL_PLT. If an artifact is ever
+    added there without an `emitted` entry, lake_for raises a KeyError that
+    reads like a harness bug rather than a missing fixture — assert the
+    relationship directly so the failure names itself."""
+    assert set(ALL_PLT) <= set(ALL_PLT_ON_DISK)
+    for aid in ALL_PLT:
+        assert aid in plt_specs
 
 
 def test_every_artifact_loads_clean_under_strict_refs(plt_specs):

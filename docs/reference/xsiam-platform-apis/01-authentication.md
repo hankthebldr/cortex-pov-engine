@@ -131,6 +131,6 @@ Settings/Admin. The harness never needs them and `CLAUDE.md` forbids write-back.
 ## 5. Credential handling in CortexSim
 
 The key + key ID live only in the encrypted vault (`/api/credentials/integrations`, master
-key `CORTEXSIM_MASTER_KEY`) — never in scenario YAML, git, logs, or push bundles. The
+key `CORTEXSIM_SECRET`) — never in scenario YAML, git, logs, or push bundles. The
 harness reads them at call time and injects the headers above. See
 [`99-harness-design-notes.md`](99-harness-design-notes.md).

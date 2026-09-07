@@ -18,6 +18,36 @@ class Settings(BaseSettings):
     CORTEXSIM_PORT: int = 8888
     CORTEXSIM_ENV: str = "production"
     CORTEXSIM_SECRET: str = "changeme"
+    # Declared because `.env.example` tells operators to set it and
+    # docker-compose.yml consumes it (`${CORTEXSIM_VERSION:-1.0.0}` drives both
+    # the image tag and container_name). Nothing in the app branches on the
+    # value — it is deployment metadata — but pydantic-settings defaults
+    # BaseSettings to `extra='forbid'` and this class reads `.env`, so leaving
+    # it undeclared meant an operator who followed `.env.example` and ran
+    # SimCore ON THE HOST (the documented local-dev path in CLAUDE.md) got a
+    # boot-time ValidationError naming a variable the repo had just instructed
+    # them to add. The container path never hit it: `.env` is gitignored and is
+    # not COPYed into the image, so compose passes these through as real env
+    # vars and the file is absent.
+    #
+    # Declaring it is the honest fix; widening to `extra='ignore'` would have
+    # silenced this one typo-class of bug along with every genuine one. Note the
+    # two sources are NOT symmetric: pydantic-settings already ignores an unknown
+    # `os.environ` var (EnvSettingsSource looks up declared names only), while
+    # DotEnvSettingsSource hands every key in the file to the model. So
+    # `extra='forbid'` buys typo protection in exactly one place — the `.env`
+    # file, which is where a DC actually sets things. A silent
+    # CORTEXSIM_STRICT_REFSS would read as "absent" and quietly change boot
+    # behaviour. Declare the next compose-only var here too; tests/test_config.py
+    # fails until you do.
+    #
+    # Defaults to "unknown" rather than a pinned version: no workflow reads this
+    # variable (release.yml derives the image tag from the git tag),
+    # docker-compose.yml carries its own `:-1.0.0` fallback, and core/main.py
+    # already hardcodes FastAPI's own `version`. A plausible-looking default here
+    # would let a deploy that was never told its version report a specific one
+    # anyway — degraded should read as degraded.
+    CORTEXSIM_VERSION: str = "unknown"
     CORTEXSIM_BASE_DIR: str = "/app"
     CORTEXSIM_LOG_FILE: str = "logs/cortexsim.log"
     CORTEXSIM_SCENARIOS_DIR: str = "scenarios"

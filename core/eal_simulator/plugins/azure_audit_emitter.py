@@ -293,6 +293,9 @@ class AzureAuditEmitterParams(AnalyticsEmitterParams):
 class AzureAuditEmitter(AnalyticsLogEmitter):
     class Meta:
         name = "azure_audit_emitter"
+        # Vendor analytics catalogue join (see analytics_catalogue.py).
+        data_sources = ["azure_audit_log"]
+        datasets = ["msft_azure_audit"]
         version = "1.0.0"
         description = (
             "Emits shape-true Azure Activity Log control-plane audit records "

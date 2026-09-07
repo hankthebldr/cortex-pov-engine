@@ -19,6 +19,9 @@ import ConsoleHeader from '../console/ConsoleHeader.jsx'
 
 beforeEach(() => {
   window.localStorage.clear()
+  // The blast-radius gate is SESSION-scoped (SafetyBanner.jsx): consent belongs
+  // to the person at the keyboard now, not to the browser profile forever.
+  window.sessionStorage.clear()
 })
 
 describe('SafetyBanner — blast-radius consent', () => {
@@ -35,22 +38,39 @@ describe('SafetyBanner — blast-radius consent', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
   })
 
-  it('disappears once acknowledged for that tenant', async () => {
+  it('MINIMIZES once acknowledged — it must not vanish for the rest of the session', async () => {
     const user = userEvent.setup()
     render(<SafetyBanner tenantId="acme-pov-na" />)
+    expect(screen.getByTestId('safety-banner')).toHaveAttribute('data-state', 'pending')
+
     await user.click(screen.getByTestId('safety-banner-ack'))
-    expect(screen.queryByTestId('safety-banner')).not.toBeInTheDocument()
-    expect(window.localStorage.getItem(ackKey('acme-pov-na'))).toBe('true')
+
+    const banner = screen.getByTestId('safety-banner')
+    expect(banner).toHaveAttribute('data-state', 'acknowledged')
+    expect(banner.className).toContain('safety-banner--min')
+    // The tenant it applies to stays on screen in the minimized form.
+    expect(screen.getByText('acme-pov-na')).toBeInTheDocument()
+    // No longer an interrupting alert once read.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(window.sessionStorage.getItem(ackKey('acme-pov-na'))).toBe('true')
+  })
+
+  it('RE-ARMS in a new session — a localStorage ack from a past session does not count', () => {
+    // The defect this guards: acknowledging once used to silence the gate on
+    // every future day, in front of every future customer.
+    window.localStorage.setItem(ackKey('acme-pov-na'), 'true')
+    render(<SafetyBanner tenantId="acme-pov-na" />)
+    expect(screen.getByTestId('safety-banner')).toHaveAttribute('data-state', 'pending')
   })
 
   it('RE-ARMS on a different tenant — acknowledging a lab does not acknowledge a customer', () => {
     // This is the whole reason the acknowledgement is keyed rather than global.
-    window.localStorage.setItem(ackKey('my-lab'), 'true')
+    window.sessionStorage.setItem(ackKey('my-lab'), 'true')
     const { rerender } = render(<SafetyBanner tenantId="my-lab" />)
-    expect(screen.queryByTestId('safety-banner')).not.toBeInTheDocument()
+    expect(screen.getByTestId('safety-banner')).toHaveAttribute('data-state', 'acknowledged')
 
     rerender(<SafetyBanner tenantId="customer-prod" />)
-    expect(screen.getByTestId('safety-banner')).toBeInTheDocument()
+    expect(screen.getByTestId('safety-banner')).toHaveAttribute('data-state', 'pending')
   })
 
   it('treats "no tenant selected" as its own acknowledgeable scope', async () => {
@@ -58,15 +78,15 @@ describe('SafetyBanner — blast-radius consent', () => {
     const { rerender } = render(<SafetyBanner tenantId={null} />)
     expect(screen.getByText(/the active tenant/i)).toBeInTheDocument()
     await user.click(screen.getByTestId('safety-banner-ack'))
-    expect(screen.queryByTestId('safety-banner')).not.toBeInTheDocument()
+    expect(screen.getByTestId('safety-banner')).toHaveAttribute('data-state', 'acknowledged')
 
     // …and acknowledging "none" must not silence a real tenant.
     rerender(<SafetyBanner tenantId="acme-pov-na" />)
-    expect(screen.getByTestId('safety-banner')).toBeInTheDocument()
+    expect(screen.getByTestId('safety-banner')).toHaveAttribute('data-state', 'pending')
   })
 
   it('SHOWS when storage throws — a safety notice fails loud, not closed', () => {
-    const spy = vi.spyOn(window.localStorage.__proto__, 'getItem').mockImplementation(() => {
+    const spy = vi.spyOn(window.sessionStorage.__proto__, 'getItem').mockImplementation(() => {
       throw new Error('storage disabled')
     })
     render(<SafetyBanner tenantId="acme-pov-na" />)
@@ -177,7 +197,7 @@ describe('ConsoleHeader — the run view is always present', () => {
     const { container } = render(<ConsoleHeader health={health} />)
     expect(container.querySelector('.brand-marks__panw')).toBeTruthy()
     expect(screen.getByRole('button', { name: /command palette/i })).toBeInTheDocument()
-    expect(screen.getByText(/LAB-TEST/)).toBeInTheDocument()
+    expect(screen.queryByText(/LAB-TEST/)).not.toBeInTheDocument()
   })
 
   it('swaps the PANW lockup by theme — the dark asset has a WHITE wordmark', () => {

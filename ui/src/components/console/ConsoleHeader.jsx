@@ -64,19 +64,24 @@ export default function ConsoleHeader({
   colorTheme = 'light',
   onToggleColorTheme = null,
 }) {
-  const hostname = health.hostname || (typeof window !== 'undefined' ? window.location.hostname : 'lab')
-  const version  = health.version  || 'v1.0'
-  const sensors  = health.sensors  || {}
-
-  const worstStatus = Object.values(sensors).reduce((acc, s) => {
-    if (s === 'bad')  return 'bad'
-    if (s === 'warn' && acc !== 'bad') return 'warn'
-    return acc
-  }, 'healthy')
-
-  const sensorSummary = Object.keys(sensors).length
-    ? Object.entries(sensors).map(([k, v]) => `${k} ${v}`).join(' · ')
-    : 'sensors pending'
+  // REMOVED: the `LOCALHOST / sensors pending` env pill.
+  //
+  // It was not merely decorative, it was WRONG in two ways at once, and both
+  // were permanent rather than transient:
+  //   - `GET /api/health` returns no `hostname` key, so it fell back to
+  //     `window.location.hostname` — i.e. it displayed the BROWSER's host and
+  //     labelled it as the environment. On a DC's laptop that reads
+  //     "LOCALHOST" whether SimCore is local, in compose, or on a jumpbox.
+  //   - `GET /api/health` returns no `sensors` key either, so the summary was
+  //     the literal string "sensors pending" on every deployment that has ever
+  //     existed. "Pending" reads as a state that will resolve. It cannot.
+  // A status pill that always shows the same never-resolving status is worse
+  // than no pill: it occupies the spot a real health signal would occupy and
+  // trains the reader to ignore it. `/api/health` already has a truthful
+  // surface in ReadinessBanner + the Readiness destination; this duplicated it
+  // badly. If SimCore ever reports hostname/sensors, reinstate it from that
+  // data — not from `window.location`.
+  const version = health.version || 'v1.0'
 
   const fmtElapsed = (s) => {
     if (s == null) return '0:00'
@@ -107,16 +112,6 @@ export default function ConsoleHeader({
       <div className="header__right">
         <TenantSwitcher onManage={() => onNavigate('tenants')} />
         <AgentSwitcher onManage={() => onNavigate('agents')} />
-
-        <div className="env-pill" title={sensorSummary}>
-          <span className={
-            'env-pill__dot' +
-            (worstStatus === 'warn' ? ' env-pill__dot--warn' : '') +
-            (worstStatus === 'bad'  ? ' env-pill__dot--bad'  : '')
-          } />
-          <span className="env-pill__label">{hostname.toUpperCase()}</span>
-          <span className="env-pill__meta">/ {sensorSummary}</span>
-        </div>
 
         {/* The run view — see "WHY THE RUN VIEW IS UNCONDITIONAL" above. Three
             mutually exclusive states, one control, one destination. */}

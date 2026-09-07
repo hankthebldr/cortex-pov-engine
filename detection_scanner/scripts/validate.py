@@ -163,6 +163,18 @@ KNOWN_DATASETS = frozenset({
     # not WARN as a typo. Exact tenant dataset string to be confirmed against a
     # live Enterprise-DLP ingest.
     "panw_dlp_raw",
+    # Third-Party Data Streams & Analytics (feature/analytics-third-party-streams)
+    # — the generic third-party ingestion buckets from the vendor analytics
+    # data-source catalogue, POSTed by the third_party_{firewall,vpn,alert}
+    # emitters. Convention-named (<source>_raw) after the ArcaneDoor/Ivanti/
+    # GlobalProtect precedent; real vendor-catalogue sources, not invented, so
+    # they must not WARN. Exact tenant dataset strings + detector predicates
+    # await live-tenant confirmation (tenant-verified is 0 — authored, not proven).
+    "third_party_firewall_raw", "third_party_vpn_raw", "third_party_alerts_raw",
+    # Duo MFA authentication feed (duo_auth_emitter). Real ingested product
+    # (Cisco Duo Auth Log), not invented; exact tenant field mapping awaits
+    # live-tenant confirmation (tenant-verified is 0).
+    "duo_auth_raw",
 })
 
 # Datasets that carry SaaS/IdP sign-in telemetry ONLY — they do NOT contain

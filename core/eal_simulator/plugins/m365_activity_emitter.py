@@ -274,6 +274,9 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
 
     class Meta:
         name = "m365_activity_emitter"
+        # Vendor analytics catalogue join (see analytics_catalogue.py).
+        data_sources = ["office_365_audit"]
+        datasets = ["msft_o365_audit"]
         version = "1.0.0"
         description = (
             "Emits shape-true Microsoft 365 unified-audit-log records "

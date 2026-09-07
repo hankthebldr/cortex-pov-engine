@@ -612,8 +612,8 @@
     "powershell": null
   },
   "SIM-MP-020": {
-    "bash": "3bdc47d5ef274d45dce426922462ba8cd7fab398dd72d68609def43bb97327db",
-    "powershell": null
+    "bash": "3a16f6819d4bd445bffce6dc2f209a613cd5aeee9de87e8ef0dadd54a410705f",
+    "powershell": "d2e7e8443be38ef5e70ef71f8db734d44806c1f08d6580e7277aa03bdf4b2380"
   },
   "SIM-MP-021": {
     "bash": "0a9a9bd83a48aa7ec3a8f127c91ccce16a95fbb559b07c2423e5debb8e3a468a",

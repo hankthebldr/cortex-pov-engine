@@ -100,7 +100,10 @@ async def scope_pov(body: ScopeRequest, db: AsyncSession = Depends(get_db)) -> d
     """
     entitled_base, entitled_addons = _resolve_entitlements(body)
 
-    stmt = select(Scenario)
+    # Active-only: a status='draft' Composer row declares no entitlements, so
+    # left unfiltered it falls into the tenant-facing runnable/upsell output —
+    # an unbound draft presented as licensed coverage (Gate A5). Exclude it.
+    stmt = select(Scenario).where(Scenario.status == "active")
     if body.planes:
         stmt = stmt.where(Scenario.plane.in_([p.upper() for p in body.planes]))
     scenarios = list((await db.execute(stmt)).scalars().all())
