@@ -292,3 +292,63 @@ def test_a_refusal_before_seeding_still_creates_no_run(session_factory, monkeypa
     assert result.success is False
     assert result.run_id is None
     assert rows == []
+
+# ===========================================================================
+# 4 · The Composer-era refusals (Phase 2 stitch)
+# ===========================================================================
+
+async def _seed_stitch_scenario(db, scenario_id="SIM-EDR-998"):
+    from models import Scenario  # noqa: PLC0415
+
+    db.add(Scenario(
+        scenario_id=scenario_id, name="T", version="1.0", status="active", plane="EDR",
+        uc_ref="UCS-EDR-01", uc_name="x", tc_ref="TC-EDR-01", tc_name="y",
+        mitre_tactic="TA0006", mitre_tactic_name="Credential Access",
+        mitre_technique="T1003", mitre_technique_name="OS Credential Dumping",
+        execution_identity={"default": "root"},
+        push_supported=True, pull_supported=True,
+        stitch_context={"principal": {"directive": "static", "value": "svc-backup"}},
+        steps=[{
+            "id": "step-01", "name": "s", "command": "id",
+            "expected_detections": [
+                {"detection_id": "d-1", "detection_type": "BIOC", "name": "n"},
+            ],
+        }],
+    ))
+    await db.commit()
+
+
+def test_stitch_refusal_leaves_the_run_terminal_failed(session_factory, monkeypatch):
+    """A persisted ``stitch_context`` that no longer validates refuses at launch.
+
+    The refusal is right — a half-resolved binding must never reach a customer
+    endpoint. But it left the same dangling ``pending`` run, so the fail-closed
+    guard produced a run that reads as still-in-flight.
+    """
+    from engine import stitch_context as sc  # noqa: PLC0415
+    from engine import orchestrator as orch  # noqa: PLC0415
+
+    def _boom(spec, *, seed=None, target=None):
+        raise sc.StitchContextValidationError(
+            "unknown directive 'teleport'", key="principal", directive="teleport",
+        )
+
+    monkeypatch.setattr(sc, "resolve_stitch_context", _boom)
+
+    async def _go():
+        async with session_factory() as db:
+            await _seed_stitch_scenario(db)
+            result = await orch.Orchestrator().launch(
+                scenario_id="SIM-EDR-998", mode="pull", db=db, target_agent_id="a1",
+            )
+            return result, await _run_row(db, result.run_id)
+
+    result, run = asyncio.run(_go())
+
+    assert result.success is False
+    assert "STITCH_CONTEXT_INVALID" in result.error
+    assert run.status == "failed"
+    assert run.status in TERMINAL_STATES
+    assert run.completed_at is not None
+    assert "STITCH_CONTEXT_INVALID" in (run.output or "")
+

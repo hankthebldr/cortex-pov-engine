@@ -469,9 +469,8 @@ class Orchestrator:
             # A persisted spec that no longer validates must refuse at LAUNCH,
             # not inject a half-resolved binding onto a customer endpoint. The
             # operator is still at the console to read why (fail-closed, Gate A5).
-            return LaunchResult(
-                success=False,
-                run_id=run_id,
+            return await self._refuse_after_seed(
+                db, run_id,
                 error=f"STITCH_CONTEXT_INVALID: {exc}",
             )
 
