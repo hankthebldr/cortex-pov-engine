@@ -19,7 +19,7 @@ substrate and cross-plane stitching.
 
 | Term | Meaning | Count |
 |---|---|---|
-| **Authored** | Exists and loads clean under strict validation | 177 scenarios · 22 assertions |
+| **Authored** | Exists and loads clean under strict validation | 177 scenarios · 28 assertions |
 | **Executed** | Has run end-to-end through a beacon or push bundle | partial |
 | **Tenant-verified** | Has run against a **live Cortex tenant**, alert read back | **0** |
 
@@ -73,13 +73,13 @@ make validate && make check-refs && make coverage-strict
 ## Repo layout
 
 ```
-core/                  ← SimCore FastAPI app — 133 routes
+core/                  ← SimCore FastAPI app — 134 routes
   api/                   REST routers
   engine/                scenario_loader · orchestrator · push_generator
                          uctc_registry · verifier · assertions · payload_shelf
   connectors/            optional read-back measurement loop
   integrations/xsiam/    ~116 read-only operation packs + Tier-2 XQL
-  eal_simulator/         EAL traffic simulator + 21 plugins
+  eal_simulator/         EAL traffic simulator + 26 plugins
   planes/                declarative PlaneDescriptor registry (16 planes)
 agent/                 ← Go pull-model beacon (5-target build matrix)
 ui/                    ← React 18 + Vite console

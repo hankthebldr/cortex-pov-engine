@@ -5,6 +5,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege. Neither this workflow nor any job in it uses GITHUB_TOKEN:
+# there is no checkout-and-push, no release, no comment, no package write. With
+# no `permissions:` key the token is minted with the repository default, which
+# on a PUBLIC repo is how a compromised third-party action escalates from
+# "runs my tests" to "writes my code". Declaring read here costs nothing and
+# removes that reach. Any job that later needs more should raise it on ITSELF,
+# never here at workflow scope.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

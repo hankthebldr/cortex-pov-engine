@@ -94,16 +94,26 @@ jobs:
           git rm -rfq . 2>/dev/null || true
           cp -r "${GITHUB_WORKSPACE}/wiki-build/." .
 
-          if git status --porcelain | grep -q .; then
-            git add -A
-            SHA="${{ github.sha }}"
-            git commit -m "wiki: sync from main@${SHA:0:8}
+          # Decide AFTER staging, not before. `git rm -rfq .` stages a deletion
+          # for every tracked page, so `git status --porcelain` is non-empty at
+          # this point on EVERY run — including one where the regenerated tree
+          # is byte-identical. The old guard therefore always entered the commit
+          # branch, `git add -A` reconciled the deletes against the re-copied
+          # files, `git commit` exited 1 with "nothing to commit, working tree
+          # clean", and `set -e` failed the job. A successful no-op published a
+          # red X: run #9 on main failed exactly this way, and a permanently red
+          # wiki-sync is how a real publish failure would go unnoticed.
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no wiki changes to publish."
+            exit 0
+          fi
+
+          SHA="${{ github.sha }}"
+          git commit -m "wiki: sync from main@${SHA:0:8}
 
           Narrative pages from docs/wiki/; scenario catalog regenerated from the
           corpus by scripts/gen_wiki.py. Edit the source — direct wiki edits are
           overwritten."
-            git push origin master
-            echo "wiki updated: $(find . -name '*.md' | wc -l) pages"
-          else
-            echo "no wiki changes to publish."
-          fi
+          git push origin master
+          echo "wiki updated: $(find . -name '*.md' | wc -l) pages"

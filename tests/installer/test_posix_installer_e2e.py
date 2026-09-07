@@ -16,6 +16,7 @@ import socket
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -410,6 +411,27 @@ def test_installer_fails_when_agent_never_checks_in(simcore, sandbox):
     assert attempts[0]["stage"] == "verify"
 
 
+@pytest.fixture
+def clean_system_unit():
+    """Guarantee the root-branch system unit is absent before AND after.
+
+    The root branch of ``cs_install_systemd`` writes
+    ``/etc/systemd/system/cortexsim-agent.service``. That path is outside
+    ``tmp_path``, so it survives the test that created it: on a second run in
+    the same container the "first install" is no longer a first install, the
+    installer takes the stale-unit branch, and the ``restart`` assertion below
+    fails for a reason that has nothing to do with the code under test.
+
+    CI never noticed because each job gets a fresh container. Locally it turns
+    a green suite red on the second invocation, which is how a real signal
+    learns to get ignored.
+    """
+    unit = Path("/etc/systemd/system/cortexsim-agent.service")
+    unit.unlink(missing_ok=True)
+    yield unit
+    unit.unlink(missing_ok=True)
+
+
 @pytest.mark.skipif(
     os.geteuid() != 0,
     reason="asserts the ROOT branch of cs_install_systemd (system unit). As non-root the "
@@ -417,7 +439,9 @@ def test_installer_fails_when_agent_never_checks_in(simcore, sandbox):
            "a branch it never took. Covered as root by the CI workflow's `backend` job, "
            "which runs pytest inside the prod image.",
 )
-def test_reinstall_restarts_the_stale_unit_so_the_new_id_takes_over(simcore, sandbox, tmp_path):
+def test_reinstall_restarts_the_stale_unit_so_the_new_id_takes_over(
+    simcore, sandbox, tmp_path, clean_system_unit
+):
     """The exact MVP blocker, reproduced mechanically: `systemctl enable --now`
     is a no-op on an already-active unit of the same name, so a re-install
     used to rewrite the unit file's --id on disk while the OLD process (OLD

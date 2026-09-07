@@ -316,7 +316,7 @@ footer a{border-bottom:none}
 
           <rect x="374" y="159" width="150" height="44" fill="var(--surface)" stroke="var(--hairline)"/>
           <text x="386" y="178" fill="var(--ink)" font-weight="700">EAL — collector</text>
-          <text x="386" y="193" fill="var(--ink-muted)">21 plugins</text>
+          <text x="386" y="193" fill="var(--ink-muted)">26 plugins</text>
 
           <line x1="524" y1="37" x2="576" y2="90" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
           <line x1="524" y1="109" x2="576" y2="109" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
@@ -482,10 +482,10 @@ footer a{border-bottom:none}
         <thead><tr><th>Type</th><th>What it is</th><th class="n">Scenarios</th></tr></thead>
         <tbody>
           <tr><td class="mono">XQL</td><td>Query-defined detection</td><td class="n">160</td></tr>
-          <tr><td class="mono">Correlation</td><td>Multi-source stitched rule</td><td class="n">115</td></tr>
+          <tr><td class="mono">Correlation</td><td>Multi-source stitched rule</td><td class="n">114</td></tr>
           <tr><td class="mono">BIOC</td><td>Behavioral IOC</td><td class="n">112</td></tr>
           <tr><td class="mono">ABIOC</td><td>PANW-authored, auto-tuned behavioral ML</td><td class="n">66</td></tr>
-          <tr><td class="mono">IOC</td><td>Atomic indicator</td><td class="n">40</td></tr>
+          <tr><td class="mono">IOC</td><td>Atomic indicator</td><td class="n">39</td></tr>
           <tr><td class="mono">Analytics</td><td>Baseline-deviation analytic</td><td class="n">30</td></tr>
         </tbody>
       </table>
@@ -547,7 +547,7 @@ footer a{border-bottom:none}
           <text x="18" y="28" fill="var(--ink)" font-size="12" font-weight="700" letter-spacing=".08em">AUTHORED</text>
           <text x="18" y="45" fill="var(--ink-muted)">exists · loads clean under strict validation</text>
           <text x="470" y="28" fill="var(--ink-muted)" font-size="9.5">does not prove it ever executed</text>
-          <text x="702" y="40" fill="var(--cortex-green-text)" text-anchor="end" font-size="22" font-weight="700">199</text>
+          <text x="702" y="40" fill="var(--cortex-green-text)" text-anchor="end" font-size="22" font-weight="700">205</text>
 
           <!-- rung 2 -->
           <rect x="0" y="64" width="720" height="52" fill="var(--surface)" stroke="var(--hairline)"/>
@@ -573,7 +573,7 @@ footer a{border-bottom:none}
         </g>
       </svg>
       <figcaption>
-        <b>Figure 3 — The evidence ladder.</b> 177 scenarios plus 22 assertions are
+        <b>Figure 3 — The evidence ladder.</b> 177 scenarios plus 28 assertions are
         authored. Zero have executed against a live Cortex tenant. Every preflight
         response carries <code>queries_issued</code> for exactly this reason — so a
         run against a mock transport cannot later be quoted as tenant proof.

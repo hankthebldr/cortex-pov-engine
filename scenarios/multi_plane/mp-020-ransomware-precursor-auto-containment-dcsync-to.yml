@@ -130,13 +130,12 @@ external_tools: []
 steps:
   - id: step-01
     name: "Initial access — vished VPN credential authenticates (T1078)"
-    command: "cmd.exe /c \"whoami & echo cortexsim-mp-020-auth\" 2>nul || (whoami && id)"
+    command: "whoami && id && hostname"
     identity: svc-backup
     mitre_technique: "T1078"
     platforms: ["windows", "linux"]
     platform_variants:
-      windows: "cmd.exe /c \"whoami & echo cortexsim-mp-020-auth\""
-      linux: "whoami && id"
+      windows: "whoami.exe /all"
     expected_detections:
       - plane: ANALYTICS
         type: BIOC
@@ -146,13 +145,12 @@ steps:
 
   - id: step-02
     name: "DCSync credential theft on the domain controller (T1003.006)"
-    command: "cmd.exe /c \"nltest /dsgetdc: 2>nul || echo dcsync\" 2>nul || python3 -c 'print(\"[CortexSim] Emulating DsGetNCChanges replication request\")'"
+    command: "getent passwd | wc -l && hostname -f 2>/dev/null || hostname"
     identity: svc-backup
     mitre_technique: "T1003.006"
     platforms: ["windows", "linux"]
     platform_variants:
-      windows: "cmd.exe /c \"nltest /dsgetdc: 2>nul || echo dcsync\""
-      linux: "python3 -c 'print(\"[CortexSim] Emulating DsGetNCChanges replication request\")'"
+      windows: "nltest.exe /dsgetdc:%USERDNSDOMAIN%"
     # DCSync executes with the stolen VPN foothold; it shares the DC host +
     # stolen service account with the rest of the chain (shared_entity pivot).
     causality:
@@ -167,13 +165,12 @@ steps:
 
   - id: step-03
     name: "AnyDesk / RAT scheduled-task persistence on the domain controller (T1053.005)"
-    command: "cmd.exe /c \"schtasks /query /fo LIST 2>nul || echo scheduled-task\" 2>nul || (ls -la /etc/cron* 2>/dev/null || true)"
+    command: "ls -la /etc/cron.d /etc/crontab 2>/dev/null; crontab -l 2>/dev/null || true"
     identity: svc-backup
     mitre_technique: "T1053.005"
     platforms: ["windows", "linux"]
     platform_variants:
-      windows: "cmd.exe /c \"schtasks /query /fo LIST 2>nul || echo scheduled-task\""
-      linux: "ls -la /etc/cron* 2>/dev/null || true"
+      windows: "schtasks.exe /query /fo LIST"
     # The persistence write forks from the DCSync activity on the SAME DC
     # (process_lineage). This is the junction the auto-containment fires on.
     causality:
@@ -193,13 +190,12 @@ steps:
 
   - id: step-04
     name: "RDP + SMBExec lateral movement from the stolen service account (T1021.001 / T1570)"
-    command: "cmd.exe /c \"netstat -ano 2>nul | findstr 3389 || echo rdp\" 2>nul || (netstat -tlpn 2>/dev/null || ip route || true)"
+    command: "ss -tlpn 2>/dev/null || netstat -tlpn 2>/dev/null || true"
     identity: svc-backup
     mitre_technique: "T1021.001"
     platforms: ["windows", "linux"]
     platform_variants:
-      windows: "cmd.exe /c \"netstat -ano 2>nul | findstr 3389 || echo rdp\""
-      linux: "netstat -tlpn 2>/dev/null || ip route || true"
+      windows: "netstat.exe -ano | findstr.exe 3389"
     # Lateral movement opens network sessions to further hosts using the stolen
     # account (network_session pivot).
     causality:
@@ -214,13 +210,12 @@ steps:
 
   - id: step-05
     name: "Renamed-rclone bulk exfiltration (~400GB) (T1020)"
-    command: "powershell.exe -NoProfile -Command Write-Output '[cortexsim-mp-020] rclone exfil check' 2>nul || (curl -s -m 2 http://127.0.0.1:8888/api/health || true)"
+    command: "mkdir -p /tmp/.cortexsim-mp020 && tar -czf /tmp/.cortexsim-mp020/stage.tgz /etc/hostname 2>/dev/null; ls -la /tmp/.cortexsim-mp020"
     identity: svc-backup
     mitre_technique: "T1020"
     platforms: ["windows", "linux"]
     platform_variants:
-      windows: "powershell.exe -NoProfile -Command Write-Output '[cortexsim-mp-020] rclone exfil check'"
-      linux: "curl -s -m 2 http://127.0.0.1:8888/api/health || true"
+      windows: "powershell.exe -NoProfile -Command \"Compress-Archive -Path $env:WINDIR\\System32\\drivers\\etc\\hosts -DestinationPath $env:TEMP\\cortexsim-mp020.zip -Force\""
     # The exfil ties the endpoint (renamed-rclone process) to the network egress
     # session (endpoint_network_stitch pivot).
     causality:
@@ -235,12 +230,12 @@ steps:
 
   - id: step-06
     name: "IMPACT PRE-EMPTED — auto-containment fires before the ESXi mass-encryption (T1486)"
-    command: "echo 'cortexsim-mp-020 SAFE-MODE: CR-MP-0020 raises ONE Ransomware Precursor incident at the DCSync+persistence junction; XSOAR Ransomware-Precursor-AutoContain isolates dc01, disables svc-backup, blocks egress ASN' && python3 -c 'print(\"[CortexSim] Pre-empted impact marker validated\")'"
+    command: "echo 'cortexsim-mp-020: CR-MP-0020 raises ONE Ransomware Precursor incident at the DCSync+persistence junction'"
     identity: svc-backup
     mitre_technique: "T1486"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: "powershell.exe -NoProfile -Command \"Write-Output 'cortexsim-mp-020 SAFE-MODE: CR-MP-0020 raises ONE Ransomware Precursor incident; XSOAR auto-contains dc01, disables svc-backup, blocks egress'; Write-Output '[CortexSim] Pre-empted impact marker validated'\""
+      windows: "powershell.exe -NoProfile -Command \"Write-Output 'cortexsim-mp-020: CR-MP-0020 raises ONE Ransomware Precursor incident at the DCSync+persistence junction'\""
     # Terminal step: the T1486 ESXi encryption is the impact the playbook
     # pre-empts (exploit_impact pivot). The correlation + automation-metric
     # detections assert the playbook fired and closed before impact.
@@ -262,7 +257,11 @@ steps:
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 cleanup:
   commands:
-    - "echo 'cortexsim-mp-020 SAFE-MODE cleanup complete — no persistent artifacts, no real DCSync/persistence/exfil/encryption performed'"
+    # step-05 stages a real archive to emulate renamed-rclone collection; it is
+    # the one artifact this scenario writes, so cleanup must actually remove it
+    # rather than merely assert that nothing was written.
+    - "rm -rf /tmp/.cortexsim-mp020"
+    - "echo 'cortexsim-mp-020 cleanup complete — exfil staging dir removed; no real DCSync/persistence/encryption performed'"
 
 # ── Provenance ──────────────────────────────────────────────────────────────
 author: "Henry Reed"

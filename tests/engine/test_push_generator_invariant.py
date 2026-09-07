@@ -116,6 +116,14 @@ _SIMCORE_MARKERS = (
     "CORTEXSIM_SERVER",
     "cortexsim.io/delivery",
     "bootstrap.sh",
+    # SimCore's own listen port. The list above covers only the k8s DELIVERY
+    # paths, so a step that simply curls the running SimCore — e.g. mp-020
+    # step-05 once carried `curl -s -m 2 http://127.0.0.1:8888/api/health` as
+    # its Linux command — satisfied every marker and shipped anyway. On a clean
+    # Ubuntu 22.04 that curl cannot connect, `|| true` swallows it, and the step
+    # reports success having emitted no telemetry at all: a manufactured false
+    # negative that reads in a POV report as "Cortex missed it".
+    ":8888",
 )
 
 
@@ -136,6 +144,51 @@ def test_bundles_never_reference_simcore(repo_root: Path, fmt: str) -> None:
     assert not hits, (
         f"the {fmt} bundle referenced SimCore — it must run on a clean host with "
         "no SimCore dependency at runtime:\n  " + "\n  ".join(hits)
+    )
+
+
+def test_bash_bundle_ships_what_the_resolver_resolved(repo_root: Path) -> None:
+    """`generate_bash` must emit the command `resolve_target(..., "posix")` picked.
+
+    These two used to disagree. `resolve_target` consults
+    ``platform_variants.linux`` when a step's primary command is Windows-shaped;
+    ``generate_bash`` read ``step["command"]`` directly and ignored variants
+    entirely. So a scenario could be judged POSIX-emittable *because of* its
+    Linux variant and then ship the Windows-shaped primary in the bash bundle —
+    `powershell.exe ... 2>nul || (curl http://127.0.0.1:8888/...)` on a clean
+    Ubuntu host. The emittability gate and the golden digests both passed,
+    because both describe a resolution the generator never honoured.
+
+    `generate_powershell` already resolved this way; only the bash loop did not.
+    """
+    step = {
+        "id": "step-01",
+        "name": "windows-shaped primary with a clean linux variant",
+        "identity": "direct",
+        "command": "powershell.exe -NoProfile -Command Write-Output 'win'",
+        "platforms": ["windows", "linux"],
+        "platform_variants": {"linux": "id && hostname"},
+        "expected_detections": [],
+    }
+    scenario = {
+        "scenario_id": "SIM-TEST-RESOLVER",
+        "name": "resolver agreement",
+        "steps": [step],
+    }
+
+    resolution = resolve_target(scenario, "posix")
+    assert resolution.emittable, "fixture must be POSIX-emittable via its linux variant"
+    resolved_cmd = resolution.steps[0].command
+    assert resolved_cmd == "id && hostname"
+
+    bundle = generate_bash(scenario)
+    assert resolved_cmd in bundle, (
+        "the bash bundle does not contain the command the resolver resolved to"
+    )
+    assert "powershell.exe" not in bundle, (
+        "the bash bundle shipped the Windows-shaped primary instead of the "
+        "linux variant the resolver selected — a bundle that cannot run on the "
+        "clean Ubuntu 22.04 host push mode targets"
     )
 
 

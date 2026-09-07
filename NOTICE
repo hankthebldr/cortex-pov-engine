@@ -1,0 +1,48 @@
+CortexSim
+Copyright 2026 Henry Reed
+
+This product includes software developed by Henry Reed and contributors,
+licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------
+Affiliation
+--------------------------------------------------------------------------
+
+CortexSim is an independent, personal open-source project. It is NOT an
+official Palo Alto Networks product, is not published, endorsed, supported,
+or warranted by Palo Alto Networks, and carries no PANW support entitlement.
+
+"Cortex", "Cortex XDR", "Cortex XSIAM", "Cortex XSOAR", "Prisma", "WildFire",
+"PAN-OS", and "Palo Alto Networks" are trademarks or registered trademarks of
+Palo Alto Networks, Inc. They are used here nominatively, to identify the
+platforms whose detection logic this tool exercises. No affiliation,
+sponsorship, or endorsement is claimed or implied.
+
+MITRE ATT&CK(R) is a registered trademark of The MITRE Corporation. ATT&CK
+technique identifiers and tactic names are used under MITRE's terms of use to
+describe the behaviours each scenario emulates.
+
+--------------------------------------------------------------------------
+Intended use
+--------------------------------------------------------------------------
+
+CortexSim generates controlled, high-fidelity attack-shaped signal in order to
+validate that a detection stack fires as designed. It is a detection
+quality-assurance engine, not a red-team command-and-control framework, and it
+never writes to a Cortex tenant.
+
+Run it ONLY against systems you own or are explicitly authorised in writing to
+test. Several scenarios invoke real offensive tooling and produce telemetry
+that security operations staff will treat as a genuine intrusion. Coordinate
+with the owning SOC before execution.
+
+--------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------
+
+This repository references external security tools through declarative adapter
+packs under tools/packs/ and git submodules under sources/. Those tools are NOT
+redistributed here except where a pack explicitly stages a digest-pinned
+artifact; each remains under its own upstream licence, and pack metadata records
+the licence for every staged artifact. Consult the upstream project before
+redistributing any of them.

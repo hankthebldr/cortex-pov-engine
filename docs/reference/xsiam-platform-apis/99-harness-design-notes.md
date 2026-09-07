@@ -146,7 +146,7 @@ run launched ──▶ orchestrator seeds Result rows (expected_detections)
   DoS a customer tenant ([`02-conventions.md`](02-conventions.md) §4).
 - **Quota-aware:** check `get_quota` before large XQL sweeps; XQL is metered.
 - **Secrets stay in the vault:** key + key id live only in the Fernet store
-  (`CORTEXSIM_MASTER_KEY` / `CORTEXSIM_SECRET` boot guard) — never in scenario YAML, git,
+  (`CORTEXSIM_SECRET` boot guard) — never in scenario YAML, git,
   logs, SSE frames, or push bundles.
 - **Opt-in outbound:** `CORTEXSIM_AUTO_RECONCILE` off by default; `/api/xsiam` operations run
   only against a registered, verified tenant.

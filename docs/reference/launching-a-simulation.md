@@ -19,7 +19,7 @@ miss.
 
 ```bash
 export DOCKER_CONTEXT=default   # Docker Desktop hijacks the default context otherwise
-cp .env.example .env            # set CORTEXSIM_MASTER_KEY etc.
+cp .env.example .env            # set CORTEXSIM_SECRET etc.
 ./scripts/dev-up.sh             # builds the image + brings up SimCore on :8888
 curl -s http://localhost:8888/api/health | python3 -m json.tool
 ```

@@ -22,7 +22,7 @@
 ## Summary
 
 - **Scenarios:** 177  (GREEN 146 · YELLOW 26 · RED 5)
-- **Steps:** 667 total · 141 detection-bearing steps produce no real signal
+- **Steps:** 667 total · 142 detection-bearing steps produce no real signal
 - **Need target egress for a tool:** 26 scenarios
 - **Consent-gated:** 4 scenarios
 - **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 55 scenarios
@@ -88,7 +88,6 @@
 | SIM-ITDR-018 | ITDR | ABIOC/Analytics/XQL/Correlation | 3/3 | eal |  |
 | SIM-KOI-004 | KOI | BIOC/XQL | 3/3 | eal |  |
 | SIM-MP-007 | ANALYTICS | Analytics/BIOC/ABIOC/XQL/Correlation/IOC | 5/5 | agent |  |
-| SIM-MP-020 | ANALYTICS | BIOC/ABIOC/XQL/Correlation | 6/6 | agent |  |
 | SIM-NDR-001 | NDR | BIOC/XQL | 3/3 | eal |  |
 | SIM-NDR-002 | NDR | BIOC/XQL | 3/3 | eal |  |
 | SIM-NDR-003 | NDR | BIOC/XQL/IOC | 2/2 | eal |  |
@@ -101,6 +100,7 @@
 | SIM-MP-021 | ANALYTICS | BIOC/ABIOC/XQL/Analytics/Correlation | 6/7 | agent |  |
 | SIM-CLOUD-010 | CLOUD_APP | ABIOC/XQL/Analytics/Correlation | 5/6 | agent |  |
 | SIM-MP-016 | ANALYTICS | BIOC/XQL/ABIOC/Correlation | 5/6 | agent |  |
+| SIM-MP-020 | ANALYTICS | BIOC/ABIOC/XQL/Correlation | 5/6 | agent |  |
 | SIM-MP-022 | ANALYTICS | ABIOC/BIOC/XQL/Analytics/Correlation | 5/6 | agent |  |
 | SIM-CLOUD-007 | CLOUD_APP | ABIOC/XQL/Correlation | 4/5 | agent |  |
 | SIM-CSPM-005 | CSPM | XQL/Correlation/IOC | 4/5 | agent |  |
