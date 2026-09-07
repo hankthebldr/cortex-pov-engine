@@ -92,19 +92,44 @@ not run in this environment.
 | agent (`go test -race`) | PASS | 4 packages |
 | Tier-C isolated exec | PASS | 53 passed · 4 skipped |
 
-### Blocked here — must run elsewhere
+### Image-parity gates — BLOCKED locally, since proven green in CI
 
-| gate | why blocked |
-|---|---|
-| `check-refs` | runs inside the prod image |
-| `check-agent-shelf` | asserts the BUILT image serves all 5 beacon targets |
-| `make build` / image parity | Docker Hub blob CDN denied by egress policy |
-| `check-rust-shelf` / `check-rust-exec` | same |
-| docker-gated Tier-C e2e | same |
+`make launch-preflight` reports these BLOCKED on a host without Docker Hub blob
+egress (`production.cloudfront.docker.com` → 403 by policy), which is the case
+in the Claude Code web sandbox. That is a statement about the host, not about
+the tree — and it is deliberately not reported as a pass. GitHub's runners have
+the egress, so CI is where the claim actually gets settled.
 
-These are **not** failures. They are the Gate B image-parity requirement —
-"the built image ships what the tree has" — and it is the one requirement this
-sandbox structurally cannot satisfy. See §5.
+Settled on `d0fee34`, [CI run 34071919266](https://github.com/hankthebldr/cortex-pov-engine/actions/runs/34071919266) — **all 8 jobs green**:
+
+| gate | locally | in CI |
+|---|---|---|
+| `backend` — pytest inside the prod image | BLOCKED | **success** (image built, suite ran) |
+| UI image-parity — image serves the console this tree builds | BLOCKED | **success** |
+| `refs` — every scenario under `CORTEXSIM_STRICT_REFS` | BLOCKED | **success** |
+| ground-truth determinism | BLOCKED | **success** |
+| `rust-dist` — static musl matrix, SHA256SUMS, executed on clean ubuntu **and** alpine | BLOCKED | **success** |
+| `detection` · `adapters` · `agent` · `ui` · Tier-C | pass | **success** |
+
+The docker-gated Tier-C end-to-end stays opt-in behind the `tier-c-e2e` label
+and did not run; it is the one image-parity claim still unproven on this head.
+
+### Known red, pre-existing, non-blocking
+
+`e2e (smoke + playwright)` in the legacy `test.yml` fails at
+`ui/tests/e2e/05-eal-campaign.spec.ts:43`. It is red on `dev` identically
+(same spec, same line, `1 failed · 22 passed`), carries
+`continue-on-error: true`, and is therefore invisible in the run rollup — the
+*run* reports success while the *job* reports failure.
+
+Deterministic, not flaky: `PluginRegistry.manifest()` sorts by name so
+`/api/eal/plugins[0]` is always `ad_windows_emitter`, which declares
+`data_sources` and is classified `analytics_log_streamer`; the Traffic/EAL
+builder filters to `network_eal`, so that plugin can never be an `<option>`.
+The spec predates the Data Streams family split. Diagnosis and a proposed
+four-line patch: PR #105. Not a v1.0.0 blocker — the console works, the spec is
+wrong — but it should not ship red, and `continue-on-error` on a permanently
+red check is the same signal-erosion this pass fixed in `wiki-sync`.
 
 ---
 
@@ -276,7 +301,9 @@ are current claims and which are history.
 git checkout dev && git pull origin dev
 make launch-preflight              # must be exit 0
 
-# 2. Image parity — REQUIRED, and cannot be done in the cloud sandbox
+# 2. Image parity — REQUIRED. Skip locally ONLY if CI has already settled it
+#    on the exact head you are merging; otherwise run it here. Confirm the
+#    green belongs to THIS sha, not an earlier one.
 make build
 make check-agent-shelf             # image serves all 5 beacon targets
 make check-refs                    # strict refs through the real loader
@@ -294,6 +321,13 @@ After the tag lands, verify `GET /api/health` on the published image reports
 `1.0.0` and that `GET /api/agents/binary?os=windows&arch=amd64` returns a real
 `PE32+` — the two claims most likely to be true in the tree and false in the
 image.
+
+`check-agent-shelf` is worth keeping in the list even though CI is green: the
+`backend` job proves the image serves the **console**, and `rust-dist` proves
+the Rust matrix executes, but neither asserts the image serves all five
+**beacon** targets. That gap is exactly how the Windows beacon came to be
+compiled-but-not-shipped once already (`agent-builder` listed four targets
+while `build-agent-dist.sh` listed five).
 
 ---
 
