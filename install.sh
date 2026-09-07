@@ -79,7 +79,11 @@ log_err()  { echo -e "\n${RED}✗ ERROR:${NC} $*\n" >&2; }
 log_info() { echo -e "  ${BLUE}→${NC} $*"; }
 die()      { log_err "$*"; exit 1; }
 
-# Error trap: show line number on unexpected exits
+# Error trap: show line number on unexpected exits.
+# shellcheck disable=SC2154  # _ec IS assigned — it is the first statement in
+# this trap's own body. ShellCheck does not parse inside the single-quoted trap
+# argument, so it sees the reference without the assignment. Single quotes are
+# required: $? / $LINENO must evaluate when the trap FIRES, not when it is set.
 trap '_ec=$?; [[ $_ec -ne 0 ]] && log_err "Unexpected failure at line ${LINENO} (exit code: ${_ec}). Check output above."' ERR
 
 # ------------------------------------------------------------------------------
@@ -296,6 +300,9 @@ _install_go() {
     # Persist to shell config if not already present
     for profile in "$HOME/.bashrc" "$HOME/.profile"; do
         if [[ -f "$profile" ]] && ! grep -q '/usr/local/go/bin' "$profile"; then
+            # shellcheck disable=SC2016  # deferred expansion is the point: the
+            # literal $PATH must land in the profile and expand when the USER
+            # sources it. Double quotes would bake this installer's PATH in.
             echo 'export PATH=/usr/local/go/bin:$PATH' >> "$profile"
             break
         fi
@@ -320,6 +327,8 @@ _install_rust() {
     # Persist to shell config if not already present
     for profile in "$HOME/.bashrc" "$HOME/.profile"; do
         if [[ -f "$profile" ]] && ! grep -q '\.cargo/bin' "$profile"; then
+            # shellcheck disable=SC2016  # as above — $HOME and $PATH must stay
+            # literal so they resolve for whoever sources the profile later.
             echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$profile"
             break
         fi
