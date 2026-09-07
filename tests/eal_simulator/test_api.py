@@ -226,14 +226,23 @@ class TestC2ConsentGate:
         "name": "live c2",
         "authorized_by": "tester",
         "simulation_authorized": True,
-        "target_allowlist": ["testmynids.org"],
+        # Loopback, deliberately. This launch is LIVE (dry_run=False), so the
+        # beacon really runs. Pointed at testmynids.org it put real C2-shaped
+        # egress on the wire from whatever machine ran pytest, and on macOS
+        # that external resolution armed a Network.framework atfork handler
+        # that SIGSEGV'd every subprocess the suite forked afterwards — 25
+        # failures across 6 unrelated files, none of which pointed back here.
+        # Port 1 refuses instantly, so the consent gate is still exercised
+        # end to end without leaving the host. The dry-run specs elsewhere in
+        # this file keep the realistic hostname: they never execute.
+        "target_allowlist": ["127.0.0.1"],
         "dry_run": True,  # stored dry-run; launch flips to live
         "steps": [
             {
                 "step_id": "step-01",
                 "plugin": "c2_http_beacon",
                 "params": {
-                    "target_url": "http://testmynids.org/uid/index.html",
+                    "target_url": "http://127.0.0.1:1/uid/index.html",
                     "iterations": 1,
                     "sleep_seconds": 0.1,
                 },

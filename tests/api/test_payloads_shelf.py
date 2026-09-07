@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import socket
 import textwrap
 
 import pytest
@@ -536,6 +537,16 @@ def test_a_redirect_to_a_forbidden_host_is_refused_at_the_hop(client, tmp_path,
     hops = _HopRecordingClient("http://169.254.169.254/latest/meta-data/")
     monkeypatch.setattr(mod, "stage_client_factory", lambda: hops)
     monkeypatch.setattr(mod, "_guard_stage_url", mod._guard_stage_url)
+    # Resolve the ALLOWED host locally. _guard_stage_url calls getaddrinfo for
+    # real, so without this the assertion depends on GitHub's DNS being
+    # reachable; the suite is hermetic (see tests/conftest.py) and what is under
+    # test is that the redirect HOP is link-local, not that github resolves. The
+    # hop is an IP literal and still resolves locally.
+    _resolve = socket.getaddrinfo
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: (
+        [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("185.199.108.133", 443))]
+        if host == "raw.githubusercontent.com"
+        else _resolve(host, port, *a, **k)))
 
     r = client.post("/api/shelf/stage", json={
         "name": "x.sh", "url": "https://raw.githubusercontent.com/o/r/x.sh",
