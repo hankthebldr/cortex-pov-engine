@@ -35,7 +35,20 @@ test('EAL Plugins sub-view opens and shows the plugin surface', async ({ page, a
   // the catalogue as <option> elements, which Playwright never reports as
   // visible — assert on the select's option set instead of on visibility, or
   // this fails for a reason that has nothing to do with the plugin surface.
-  const firstName: string = pluginList[0].name
+  //
+  // Scope to the family this surface actually renders. EalCampaignBuilder is
+  // mounted here with family="network_eal"; the analytics_log_streamer family
+  // belongs to Data Streams and is filtered OUT of this picker by design.
+  // Taking pluginList[0] coupled the assertion to alphabetical order across
+  // BOTH families, so the analytics-streamer pass — which added
+  // `ad_windows_emitter`, sorting ahead of every network_eal plugin — made
+  // this fail while the plugin surface was working correctly.
+  const networkEal = pluginList.filter((p: { family?: string }) => p.family === 'network_eal')
+  expect(
+    networkEal.length,
+    'the Traffic / EAL picker is scoped to family=network_eal; the API reported none',
+  ).toBeGreaterThan(0)
+  const firstName: string = networkEal[0].name
   const pluginSelect = page.locator('select').filter({ hasText: /pick a plugin/i }).first()
   await expect(pluginSelect).toBeVisible({ timeout: 10_000 })
   await expect(
