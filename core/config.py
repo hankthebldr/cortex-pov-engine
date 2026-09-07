@@ -28,37 +28,30 @@ class Settings(BaseSettings):
     # boot-time ValidationError naming a variable the repo had just instructed
     # them to add. The container path never hit it: `.env` is gitignored and is
     # not COPYed into the image, so compose passes these through as real env
-    # vars and the file is absent. Declaring it is the honest fix; widening to
-    # `extra='ignore'` would have silenced this one typo-class of bug along with
-    # every genuine one.
-    CORTEXSIM_VERSION: str = "1.0.0"
+    # vars and the file is absent.
+    #
+    # Declaring it is the honest fix; widening to `extra='ignore'` would have
+    # silenced this one typo-class of bug along with every genuine one. Note the
+    # two sources are NOT symmetric: pydantic-settings already ignores an unknown
+    # `os.environ` var (EnvSettingsSource looks up declared names only), while
+    # DotEnvSettingsSource hands every key in the file to the model. So
+    # `extra='forbid'` buys typo protection in exactly one place — the `.env`
+    # file, which is where a DC actually sets things. A silent
+    # CORTEXSIM_STRICT_REFSS would read as "absent" and quietly change boot
+    # behaviour. Declare the next compose-only var here too; tests/test_config.py
+    # fails until you do.
+    #
+    # Defaults to "unknown" rather than a pinned version: no workflow reads this
+    # variable (release.yml derives the image tag from the git tag),
+    # docker-compose.yml carries its own `:-1.0.0` fallback, and core/main.py
+    # already hardcodes FastAPI's own `version`. A plausible-looking default here
+    # would let a deploy that was never told its version report a specific one
+    # anyway — degraded should read as degraded.
+    CORTEXSIM_VERSION: str = "unknown"
     CORTEXSIM_BASE_DIR: str = "/app"
     CORTEXSIM_LOG_FILE: str = "logs/cortexsim.log"
     CORTEXSIM_SCENARIOS_DIR: str = "scenarios"
     CORTEXSIM_STATIC_DIR: str = "core/static"
-
-    # Compose-owned, not app-owned. CORTEXSIM_VERSION lives in .env because
-    # docker-compose.yml interpolates it into the image tag and container name
-    # (cortex-pov-engine-simcore:<version>); no Python reads it.
-    #
-    # It is declared here anyway because .env is a SUPERSET shared with compose,
-    # and pydantic-settings hands EVERY dotenv key to this model — an undeclared
-    # one makes Settings() raise, taking the documented `cp .env.example .env`
-    # quick-start, the pytest suite, and any local boot down with it. That is a
-    # real regression, not a hypothetical: 841add5 added this var to
-    # .env.example and dev could not construct Settings until it was declared.
-    #
-    # Declared rather than waved through with extra="ignore": rejecting unknown
-    # dotenv keys is the ONLY typo protection this config has (os.environ extras
-    # are already ignored by pydantic-settings, dotenv extras are not). A silent
-    # CORTEXSIM_STRICT_REFSS would read as "absent" and quietly change boot
-    # behaviour. Declare the next compose-only var here too — tests/test_config.py
-    # fails until you do.
-    #
-    # Defaults to "unknown", not "1.0.0": compose carries its own :-1.0.0
-    # fallback, and a plausible-looking default here would let a deploy that was
-    # never told its version report a specific one anyway.
-    CORTEXSIM_VERSION: str = "unknown"
 
     # Auto-reconcile loop (measurement loop). OFF by default — it makes outbound
     # calls to a configured Cortex tenant, so it must be opted into explicitly.
