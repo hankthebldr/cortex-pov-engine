@@ -8,6 +8,40 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-07
+
+**The first release that actually ships artifacts.** `v1.0.0` was tagged
+correctly and then produced nothing: `release.yml` failed in its `lint-shell`
+job, so there is no GHCR image, no stage2 bundles, no `SHA256SUMS`, and no
+GitHub Release behind that tag. The engine at `v1.0.0` and at `v1.0.1` is
+byte-identical apart from three comments — the version exists because the
+release pipeline, not the product, was broken.
+
+The honest limitations recorded under `[0.1.0]` still stand and are not
+superseded by either version number. **`tenant-verified` is 0**; authored is
+not proven.
+
+### Fixed
+
+- **`release.yml` could never publish a release** — `shellcheck install.sh`
+  exits 1 on any finding regardless of severity, and it reported three, none
+  of them errors: one `SC2154` and two `SC2016`, all on code that is
+  deliberately written the way it is. `SC2154` is a false positive — `_ec=$?`
+  *is* assigned, as the first statement in that trap's own body, but
+  ShellCheck does not parse inside the single-quoted trap argument. The two
+  `SC2016` findings are backwards: deferred expansion is the point, because
+  the literal `$PATH` / `$HOME` must reach the user's profile unexpanded and
+  resolve when they source it — taking the advice would bake the installer
+  machine's `PATH` into `~/.bashrc`. Fixed with three targeted
+  `# shellcheck disable=` directives that each carry their reason, rather than
+  `shellcheck -S error`, which would have greened the job by disarming every
+  future genuine warning in these scripts.
+
+### Changed
+
+- Application version reported by `GET /api/health` and the OpenAPI document
+  is now `1.0.1`.
+
 ## [1.0.0] - 2026-09-04
 
 First official launch release — the MVP. Promotes CortexSim from its `v0.1.0`
@@ -251,6 +285,7 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/hankthebldr/cortex-pov-engine/releases/tag/v0.1.0
