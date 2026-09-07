@@ -94,6 +94,22 @@ superseded by the version number.
 - **`docs/reference/ground-truth.*`** regenerated: 134 route decorators, 25
   `APIRouter` instances, 23 router files.
 
+### Fixed
+
+- **`cp .env.example .env` no longer breaks the boot.** The quick-start's first
+  line made `core/config.py::Settings()` raise, which took down the entire
+  pytest suite and any local process constructing `Settings` from the repo root.
+  `.env.example` gained `CORTEXSIM_VERSION` (it drives the image tag and
+  container name) without a matching field on `Settings`, and pydantic-settings
+  hands every dotenv key to the model — so an undeclared one is rejected, not
+  ignored. The variable is now declared. Fixed by declaring it rather than by
+  relaxing to `extra="ignore"`: rejecting unknown dotenv keys is the only thing
+  that catches a typo'd setting name, which would otherwise read as "absent" and
+  silently change boot behaviour. `tests/test_config.py` constructs `Settings()`
+  against the shipped `.env.example` verbatim so the next compose-only variable
+  cannot re-open this, and asserts an unknown key still raises so the guard
+  cannot be removed quietly.
+
 ## [0.1.0] - 2026-08-31
 
 First tagged pre-release. CortexSim is an enterprise detection simulation
