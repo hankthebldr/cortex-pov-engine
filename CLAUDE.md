@@ -70,7 +70,7 @@ build but a **false claim about a customer's security coverage**:
 
 ### Quick start (local dev)
 ```bash
-cp .env.example .env        # set CORTEXSIM_MASTER_KEY etc.
+cp .env.example .env        # set CORTEXSIM_SECRET etc.
 ./scripts/dev-up.sh         # one-shot: builds the image + brings up SimCore via docker compose
 ```
 `scripts/dev-up.sh` is the canonical easy-deploy entry point; `.env.example`
