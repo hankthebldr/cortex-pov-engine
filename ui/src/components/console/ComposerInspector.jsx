@@ -26,7 +26,8 @@
  * into pure inputs — the text rendering is load-bearing.
  */
 import React, { memo, useEffect, useRef } from 'react'
-import { PIVOTS, DETECTION_TYPES, PLANES } from './composerDraft.js'
+import { PIVOTS, DETECTION_TYPES, PLANES, CHANNELS, effectiveChannel } from './composerDraft.js'
+import { agentIdOf } from '../../api/ids.js'
 import { plantedKeys, stitchPlaceholdersIn } from './stitchContext.js'
 import ComposerStitchPanel from './ComposerStitchPanel.jsx'
 
@@ -97,6 +98,12 @@ export default function ComposerInspector({
   onSetStitchEntity = () => {},
   onInsertStitch = () => {},
   agentName = null,
+  // ── Phase-3a channel routing (additive, defaulted for the same reason —
+  //    renderInspector() in the existing suite passes none of these) ──
+  agents = [],
+  onSetChannel = () => {},
+  onSetTarget = () => {},
+  onSetEal = () => {},
 }) {
   const teardown = Array.isArray(draft.teardown) ? draft.teardown : []
 
@@ -237,6 +244,20 @@ export default function ComposerInspector({
                   .filter(Boolean),
               })
             }
+          />
+
+          {/* ── channel: which executor runs this step (agent beacon or EAL
+              emitter), and — for an agent step — an optional SECOND endpoint.
+              Placed after Platforms and before StepStitchConsume so none of the
+              four preserved TEXT-node assertions move. `effectiveChannel` reads
+              an absent channel as 'agent' (never blank), the honest default. */}
+          <ChannelSection
+            selected={selected}
+            channels={CHANNELS}
+            agents={agents}
+            onSetChannel={onSetChannel}
+            onSetTarget={onSetTarget}
+            onSetEal={onSetEal}
           />
 
           {/* ── stitch: which shared entities this step's command consumes ── */}
@@ -449,6 +470,176 @@ function AddDetection({ planes, detectionTypes, onAdd }) {
       <button type="button" className="btn btn--xs" onClick={commit}>
         Add detection
       </button>
+    </div>
+  )
+}
+
+/**
+ * ChannelSection — the per-step execution-channel editor (Phase-3a).
+ *
+ * A step runs on either the agent beacon (the shipped path) or an EAL emitter.
+ * `effectiveChannel` reads an absent channel as 'agent' so a corpus step shows
+ * 'agent (beacon)', never a blank. The mutual-exclusivity invariants live in the
+ * draft ops (`setStepChannel` clears a stale target on switch to eal and a stale
+ * eal block on switch to agent), so the two conditional blocks below never show a
+ * control that does not belong to the current channel.
+ *
+ *  - agent: an optional TARGET picker for the SECOND-endpoint case — blank means
+ *    "run on the launch target". A picked agent that is not enrolled at launch is
+ *    refused honestly (TARGET_AGENT_NOT_ENROLLED), never silently dropped.
+ *  - eal: {plugin, params}. The step is dispatched IN-PROCESS at launch (dry-run
+ *    baseline — records pre-rendered, nothing POSTed), planting the shared
+ *    identity principal; the run records the real dispatch outcome, never a fake.
+ *
+ * Every editor keeps a mono TEXT value node above its control (matching the
+ * identity/technique/causality pattern) so the value is queryable by text and
+ * colour-blind-safe.
+ */
+function ChannelSection({ selected, channels, agents, onSetChannel, onSetTarget, onSetEal }) {
+  const ch = effectiveChannel(selected)
+
+  return (
+    <div data-testid="step-channel">
+      {/* ── channel ── */}
+      <div className="field-label">Channel</div>
+      <div className="field-value mono">{ch === 'eal' ? 'eal (emitter)' : 'agent (beacon)'}</div>
+      <select
+        className="field-input"
+        aria-label={`Channel for ${selected.id}`}
+        value={ch}
+        onChange={(e) => onSetChannel(selected.id, e.target.value)}
+      >
+        {channels.map((c) => (
+          <option key={c} value={c}>
+            {c === 'eal' ? 'eal (emitter)' : 'agent (beacon)'}
+          </option>
+        ))}
+      </select>
+
+      {/* ── target agent (AGENT channel only — the second-endpoint case) ── */}
+      {ch === 'agent' && (
+        <>
+          <div className="field-label">Target agent
+            <span className="field-label__count mono"> optional</span>
+          </div>
+          <div className="field-value mono">{selected.target || 'launch target (default)'}</div>
+          <select
+            className="field-input"
+            aria-label={`Target agent for ${selected.id}`}
+            value={selected.target || ''}
+            onChange={(e) => onSetTarget(selected.id, e.target.value || null)}
+          >
+            <option value="">— launch target agent (default)</option>
+            {agents.map((a) => {
+              const id = agentIdOf(a)
+              return (
+                <option key={id} value={id}>
+                  {(a.hostname || id) + (a.status ? ` · ${a.status}` : '')}
+                </option>
+              )
+            })}
+          </select>
+          <p className="field-note">
+            Empty = this step runs on the launch target. Pick a different enrolled agent to
+            run it on a SECOND endpoint; both endpoints plant the same stitch entities. A
+            target that is not enrolled is refused at launch (TARGET_AGENT_NOT_ENROLLED),
+            never silently dropped.
+          </p>
+        </>
+      )}
+
+      {/* ── EAL emitter (EAL channel only) ── */}
+      {ch === 'eal' && (
+        <div data-testid="step-eal">
+          <div className="field-label">EAL plugin</div>
+          <div className="field-value mono">{selected.eal?.plugin || 'not declared'}</div>
+          <input
+            className="field-input"
+            type="text"
+            value={selected.eal?.plugin || ''}
+            placeholder="ngfw_eal_emitter"
+            aria-label={`EAL plugin for ${selected.id}`}
+            onChange={(e) => onSetEal(selected.id, { plugin: e.target.value })}
+          />
+          <EalParams
+            params={selected.eal?.params || {}}
+            onChange={(params) => onSetEal(selected.id, { params })}
+            stepId={selected.id}
+          />
+          <p className="field-note">
+            An EAL step is dispatched in-process at launch (dry-run baseline: records are
+            pre-rendered, nothing is POSTed), planting the shared identity principal so the
+            analytics logs stitch to the endpoint signal on the same user. Its expected
+            detections seed honest not-yet-observed result rows, and the run records the real
+            dispatch outcome (dispatched / dry_run / not_delivered) — never a fabricated ingest.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * EalParams — plain key/value rows for an EAL step's `params`. Local ONLY to hold
+ * the in-progress new key/value before it is committed; every edit is immutable
+ * and flows up through `onChange`. It never holds params the rest of the app can
+ * see — the source of truth is the step's `eal.params`.
+ */
+function EalParams({ params, onChange, stepId }) {
+  const entries = Object.entries(params)
+  const [k, setK] = React.useState('')
+  const [v, setV] = React.useState('')
+  const add = () => {
+    const key = k.trim()
+    if (!key) return
+    onChange({ ...params, [key]: v })
+    setK('')
+    setV('')
+  }
+  const remove = (key) => {
+    const next = { ...params }
+    delete next[key]
+    onChange(next)
+  }
+  return (
+    <div className="detection-add" data-testid="eal-params">
+      <div className="field-label">Params<span className="field-label__count mono"> {entries.length}</span></div>
+      {entries.map(([key, val]) => (
+        <div className="composer-inspector__pair" key={key}>
+          <div className="field-value mono">{key}</div>
+          <input
+            className="field-input"
+            value={val}
+            aria-label={`EAL param ${key} for ${stepId}`}
+            onChange={(e) => onChange({ ...params, [key]: e.target.value })}
+          />
+          <button
+            type="button"
+            className="btn btn--xs btn--ghost"
+            aria-label={`Remove EAL param ${key} from ${stepId}`}
+            onClick={() => remove(key)}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      <div className="composer-inspector__pair">
+        <input
+          className="field-input"
+          value={k}
+          placeholder="param key"
+          aria-label={`New EAL param key for ${stepId}`}
+          onChange={(e) => setK(e.target.value)}
+        />
+        <input
+          className="field-input"
+          value={v}
+          placeholder="value"
+          aria-label={`New EAL param value for ${stepId}`}
+          onChange={(e) => setV(e.target.value)}
+        />
+      </div>
+      <button type="button" className="btn btn--xs" onClick={add}>Add param</button>
     </div>
   )
 }

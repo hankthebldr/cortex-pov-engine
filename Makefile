@@ -172,6 +172,18 @@ validate: validate-detection check-refs check-uctc-sheet check-adapters check-st
 # agent-builder stage that never built the target, which is exactly how the
 # windows/amd64 gap survived: the script emitted 5, the image shipped 4, and
 # every gate that looked at the source tree agreed with itself.
+# The unit suite cannot express this and never will: it is vitest + jsdom, and
+# jsdom has NO layout engine — getBoundingClientRect() returns zeros, so every
+# geometry assertion silently passes. Four separate layout defects shipped past
+# a fully green 1128-test suite in one session (2026-09-06) for exactly that
+# reason. This target runs the same assertions in a real browser, which is the
+# only place they mean anything. Needs a running SimCore (the playwright config
+# targets $(CORTEXSIM_BASE_URL), default http://localhost:8888).
+check-ui-layout: ## assert the console survives narrow viewports (real browser; needs a running SimCore)
+	@curl -fsS -o /dev/null http://localhost:8888/ 2>/dev/null || { \
+	  echo "no SimCore on :8888 — start it first (make up), or set CORTEXSIM_BASE_URL"; exit 1; }
+	cd ui && npx playwright test tests/e2e/08-viewport-matrix.spec.ts
+
 check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target (needs `make build`)
 	docker run --rm --entrypoint sh $(IMAGE) -c '\
 	  set -e; cd /app/agent-dist; sha256sum -c SHA256SUMS; \

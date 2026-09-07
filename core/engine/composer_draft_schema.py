@@ -59,6 +59,7 @@ from engine.scenario_loader import (
     ExternalToolSchema,
     KpiThreshold,
     StepSchema,
+    omit_unset_channel_fields,
     validate_causality_spine,
 )
 
@@ -335,6 +336,10 @@ def draft_to_orm_kwargs(
     for s in steps:
         if not s.get("identity"):
             s["identity"] = "direct"
+        # Phase 3a: a draft step that declares no channel/target/eal persists
+        # byte-identically to a pre-3a draft (the keys are omitted, not stored
+        # as null), mirroring the corpus dump site in scenario_loader.
+        omit_unset_channel_fields(s)
 
     # detection_types = union of every step's expected_detections[].type,
     # sorted and de-duped. The schema guarantees this is non-empty.

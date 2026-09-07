@@ -196,6 +196,71 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  ui-layout:
+    name: ui layout (viewport matrix, real browser)
+    runs-on: ubuntu-22.04
+    needs: [ui-unit]
+    # A HARD GATE, deliberately unlike `e2e-stack` above. That job carries
+    # `continue-on-error: true` while its legacy specs are migrated, and a
+    # soft-failing check reads exactly like a passing one — so putting this
+    # spec there would make it a decoration. It runs ONE spec, written against
+    # the current console and green today, so it can block without waiting on
+    # that migration to finish.
+    #
+    # It cannot live in `ui-unit` (or ci.yml's `ui`): those run vitest + jsdom,
+    # and jsdom has NO layout engine — getBoundingClientRect() returns zeros, so
+    # every geometry assertion passes vacuously. Four layout defects reached the
+    # console past a fully green 1128-test unit suite for precisely that reason.
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      PUPPETEER_SKIP_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: npm, cache-dependency-path: ui/package-lock.json }
+      - working-directory: ui
+        run: npm ci
+      - working-directory: ui
+        run: npm run build
+      - name: Copy UI to core/static
+        run: |
+          rm -rf core/static
+          cp -r ui/dist core/static
+      - name: Generate per-run CORTEXSIM_SECRET for SimCore
+        run: echo "CORTEXSIM_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: docker compose up SimCore
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8888/api/health >/dev/null 2>&1; then
+              echo "SimCore healthy after ${i}s"; break
+            fi
+            sleep 1
+          done
+          curl -fsS http://localhost:8888/api/health || (docker compose logs simcore && exit 1)
+      - name: Install Playwright chromium
+        working-directory: ui
+        run: npx playwright install --with-deps chromium
+      - name: Viewport-matrix layout guard
+        working-directory: ui
+        env:
+          CORTEXSIM_BASE_URL: http://localhost:8888
+        run: npx playwright test tests/e2e/08-viewport-matrix.spec.ts
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: viewport-matrix-report
+          path: ui/playwright-report
+          retention-days: 7
+      - name: docker compose logs on failure
+        if: failure()
+        run: docker compose logs simcore
+      - name: docker compose down
+        if: always()
+        run: docker compose down -v
+
   installer-preflight:
     name: installer (preflight read-only)
     runs-on: ubuntu-22.04

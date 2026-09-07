@@ -199,6 +199,25 @@ class Run(Base):
     # unit); nullable JSON, added by _migrate_scenarios_columns in database.py.
     stitch_binding: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # ── Channel dispatch record (Phase 3a — the composer multi-channel skeleton) ─
+    # The per-run log of how a channel-typed run's steps were routed. NULL for a
+    # run whose every step is a plain agent-channel step with no per-step target
+    # (the whole shipped corpus and every Phase-1/2 draft) — that run is dispatched
+    # by the ONE-Task path exactly as before, byte-identical. Populated only when
+    # a step carries channel/target: a list of per-step entries, one of
+    #   {step_id, channel:'agent', target:<agent_id>, status:'enqueued', code:None}
+    #   {step_id, channel:'eal', plugin:<name>, target:None, status:'pending',
+    #    code:'EAL_DISPATCH_PENDING', detail:...}
+    # An 'eal' step is recognised and validated but NOT run in Phase 3a — the
+    # pending marker is an honest "not yet", never a fabricated EAL result (Gate
+    # A5). Set by the orchestrator; nullable JSON, added by
+    # _migrate_composer_channel_columns in database.py.
+    channel_dispatch: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
+    # Beacon tasks this run is still waiting on. 1 for a single-endpoint run
+    # (byte-identical to today); N for a multi-endpoint fan-out, so the run
+    # completes only when the LAST endpoint reports. NULL ⇒ treated as 1.
+    open_tasks: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # ── Runtime-dependency posture (docs/design/agent-runtime-dependencies.md) ─
     # runtime_install_authorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
     # an explicit, per-run, off-by-default record of whether THIS run was
@@ -230,6 +249,8 @@ class Run(Base):
             "tc_verdict": self.tc_verdict,
             "tc_verdict_detail": self.tc_verdict_detail,
             "stitch_binding": self.stitch_binding,
+            "channel_dispatch": self.channel_dispatch,
+            "open_tasks": self.open_tasks,
             "runtime_install_authorized": self.runtime_install_authorized,
             "runtime_dependency_gaps": self.runtime_dependency_gaps,
             "started_at": self.started_at.isoformat() if self.started_at else None,
@@ -626,6 +647,15 @@ class Agent(Base):
     registered_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     status: Mapped[str] = mapped_column(String, nullable=False, default="online")  # online | stale | offline (derived from last_seen at read time)
+    # The request source IP observed on the beacon's last request-bearing call
+    # (register / heartbeat / enroll) — request.client.host, or the FIRST hop of
+    # X-Forwarded-For when proxied. NULLABLE and NEVER fabricated: a beacon that
+    # never made a request-bearing call, or a transport with no client address,
+    # leaves this None. The stitch-context resolver promotes it to a REAL
+    # src_ip when present (Phase 3a); when absent it stays a labelled synthetic
+    # lab-range address, never a made-up real one. See
+    # engine.stitch_context.from_agent and docs/superpowers/specs §8.1(2).
+    last_ip: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -638,6 +668,7 @@ class Agent(Base):
             "registered_at": self.registered_at.isoformat() if self.registered_at else None,
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "status": self.status,
+            "last_ip": self.last_ip,
         }
 
 

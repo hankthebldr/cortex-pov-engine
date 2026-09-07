@@ -473,6 +473,9 @@
 }
 .theme-console .chain-node__id,
 .theme-console .chain-node__order { font-size: 9px; color: var(--tx3); }
+/* Phase-3a channel badge — sized only; tone comes from the shared chip tokens
+   (chip--signal / chip--pending), so no colour or new token is introduced. */
+.theme-console .chain-node__chanbadge { font-size: 10px; }
 .theme-console .chain-node__name {
   display: block;
   font-size: 12px;

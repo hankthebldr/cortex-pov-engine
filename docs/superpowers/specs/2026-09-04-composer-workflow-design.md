@@ -322,6 +322,114 @@ passthrough, and the idempotent migration. UI: panel authoring + canvas overlay.
   one causality instance, verified as CONFIRMED edges across ≥N NICE planes under
   one `incident_id`.
 
+### 8.1 Detailed design (concrete, grounded 2026-09-04)
+
+**Grounding.** An EAL run is an ordered list of `CampaignStep{plugin, params}`
+executed by `CampaignExecutor` **in SimCore's own process** (`core/eal_simulator/
+campaign.py`) — there is no EAL dispatch to a beacon. A scenario `Run` executes
+its `steps[]` on ONE agent via the beacon (pull) or a push bundle. The `Agent`
+ORM (`core/models.py`) has `hostname` but **no IP column**, so `from_agent` can
+resolve `host` but not a real `src_ip` — the documented Phase-2 gap.
+
+**The fork, resolved: COORDINATE, do not merge.** The multi-channel run keeps the
+two executors (beacon + `CampaignExecutor`) and their two run records; it does
+NOT merge `EalCampaignRun` into `Run`. The orchestrator resolves the stitch
+binding once (`seed=run_id`), then dispatches each step to its channel and rolls
+per-channel results up under the ONE scenario `Run`. This reuses both proven
+executors and avoids a schema/lifecycle merge.
+
+**Data model.** A step gains `channel: 'agent' | 'eal'` (absent ⇒ `agent`,
+back-compat) and, for `agent`, an optional `target` (a different `agent_id`, so
+some steps run on host A and others on host B — the "second endpoint"). An `eal`
+step carries `{plugin, params}`. All additive/optional; every existing scenario
+loads unchanged.
+
+**Real source IP (closes the Phase-2 gap).** Add `Agent.last_ip` (nullable),
+captured from the beacon's request source (client host / first `X-Forwarded-For`
+hop) on register + heartbeat. `from_agent` then resolves a real `src_ip`; absent,
+it stays synthetic and says so (never a fabricated address).
+
+**EAL param injection.** A small `binding → plugin params` adapter maps the
+resolved entities into each plugin family's own param fields (network plugins get
+`src_ip`/`dst_ip`/ports/`protocol`; identity/analytics emitters get the
+principal/account). Where a plugin has no field for an entity it is skipped
+(documented), same honesty rule as `{stitch:*}` passthrough.
+
+**Sub-phases (build in order; each verifies before the next).**
+- **3a — foundation (build first).** Channel-typed steps (`DraftStepSchema` +
+  `StepSchema` gain `channel`/`target`/`eal`, additive) + composer inspector
+  channel/target editors; `Agent.last_ip` capture + `from_agent` real `src_ip`;
+  the orchestrator's channel-dispatch skeleton (agent-channel with per-step
+  `target` works end-to-end; an `eal` step is recognised and validated but its
+  dispatch returns a clear `EAL_DISPATCH_PENDING` marker — no fabricated run).
+- **3b — EAL-channel dispatch.** Orchestrator invokes `CampaignExecutor`
+  in-process for `eal` steps with the binding injected into plugin params;
+  per-channel results roll up to the `Run`; the composer palette gains the
+  EAL-emitter group + eal-params editor.
+- **3c — coordinator + timing.** Order steps and fire them so cross-channel
+  signal lands within `correlation_window_seconds`; the north-star scenario as an
+  injected-transport integration test asserting CONFIRMED edges across ≥N planes
+  under one `incident_id`.
+
+### 8.2 Phase 3b detailed design (concrete, grounded 2026-09-05)
+
+**Grounding.** `CampaignExecutor.execute(campaign, run_id=...)`
+(`core/eal_simulator/executor.py:151`) runs a `Campaign` of
+`CampaignStep{plugin, params}` **synchronously in-process** and returns an
+`ExecutorState` with `step_results` + a `delivery` rollup (2xx-only accounting,
+`core/eal_simulator/delivery.py`). `_run_step` validates params via
+`plugin_cls.validate_params(step.params)`. `dry_run` defaults **true**; real
+delivery (`dry_run=false`) requires `simulation_authorized` + `authorized_by` +
+a non-empty `target_allowlist`.
+
+**CORRECTION (grounded 2026-09-05, supersedes the 5-tuple claim below).** The
+eight EAL analytics emitters (`ngfw_eal_emitter`, `cloud_audit_emitter`,
+`azure_audit_emitter`, `k8s_audit_emitter`, `m365_activity_emitter`,
+`ad_windows_emitter`, `idp_signin_emulator`, `cloud_storage_compute_emitter`)
+all subclass `AnalyticsEmitterParams` and **generate their record fields
+internally** — none accept a `src_ip`/`dst_ip`/port/protocol param. Their one
+shared-entity injection point is **`canary_token`**, which (via each emitter's
+`CANARY_FIELDS`) plants the SAME account/principal string into the record's
+user fields. Network-egress plugins (`c2_http_beacon`, `dns_tunnel_exfil`, …)
+take a *destination* (`target_url`) but POST from SimCore's own process, so
+their SOURCE is SimCore, not the lab endpoint. **Therefore the honest
+cross-channel entity for an EAL step is the identity principal (via
+`canary_token`), NOT the network 5-tuple.** A 5-tuple shared between an
+in-process EAL emitter and the agent's endpoint signal is not achievable and
+must not be claimed; the identity-principal stitch (one human across endpoint +
+identity + analytics logs) IS real and is what 3b delivers.
+
+**Dispatch.** In `_handle_pull`, after resolving the stitch binding, the
+orchestrator builds ONE `Campaign` from the run's eal-channel steps — each
+`CampaignStep` is `{plugin: step.eal.plugin, params: {**step.eal.params,
+**adapter(binding, plugin)}}` — and calls `CampaignExecutor.execute(...,
+run_id=run_id)` in-process. The `binding → plugin params` adapter injects
+`canary_token` (from the binding's `account`) for any `AnalyticsEmitterParams`
+plugin, and a destination (`target_url` etc.) for network-egress plugins that
+declare one; it skips entities a plugin has no field for. This REPLACES the 3a
+`EAL_ONLY_NOT_DISPATCHABLE` refusal: an all-EAL run now dispatches and
+terminates at launch; a mixed run dispatches EAL in-process AND enqueues the
+beacon tasks.
+
+**Safety default = dry_run.** An eal step runs `dry_run=true` (records
+pre-rendered, nothing POSTed) UNLESS the launch carries the existing consent
+(`consent.simulation_authorized`) AND a resolved collector AND a
+`target_allowlist`. No collector ⇒ the step reports `delivery: not_delivered`
+honestly, never a fabricated ingest. Reuses the campaign consent + collector +
+delivery machinery unchanged — the composer does not fork a second EAL path.
+
+**Results roll-up.** On dispatch, seed the eal step's `expected_detections` as
+`Result` rows with a real `executed_at` (the seeding 3a deferred), and attach
+the `delivery` verdict so the report/Run lens shows what the collector actually
+accepted. The `channel_dispatch` ledger flips the eal step from
+`EAL_DISPATCH_PENDING` to `dispatched` (or `not_delivered`).
+
+**Completion.** EAL is synchronous at launch, so it does NOT add to
+`Run.open_tasks` (the beacon-task counter). A mixed run still completes when the
+last beacon task reports; an all-EAL run has `open_tasks=0` and is terminalised
+at launch once the in-process dispatch returns. `tenant-verified` stays 0;
+nothing is marked CONFIRMED without real reconciliation.
+
 ## 9. Testing
 
 - **Phase 1 backend:** `DraftScenarioSchema` (accepts minimal draft; rejects

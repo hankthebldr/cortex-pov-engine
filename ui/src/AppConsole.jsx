@@ -259,6 +259,17 @@ function ConsoleShell() {
         onExportPOV={handleExportPOV}
         paletteItems={paletteItems}
         ticker={ticker}
+        // SimCore answered, but is not whole. The two deployments that break
+        // hardest — booted without tools/ or without scenarios/ — both report
+        // `status: "ok"`, so the first signal a DC gets today is an empty
+        // Library that reads as "this product has no content".
+        // Passed as the shell's `banner` slot, NOT as a child: as a child it
+        // rendered inside `.view` and pushed the destination's own filter rail
+        // down by its height while the nav rail stayed pinned, leaving the two
+        // rails 159px out of alignment.
+        banner={router.destination !== 'readiness' ? (
+          <ReadinessBanner model={env.healthModel} onNavigate={router.navigate} />
+        ) : null}
       >
         {/* Every fetcher below swallows its failure into an empty list, so a
             dead SimCore reads as "nothing configured" on all ten destinations.
@@ -273,14 +284,6 @@ function ConsoleShell() {
             </span>
             <button type="button" className="btn btn--xs" onClick={env.refreshHealth}>↻ Retry now</button>
           </div>
-        )}
-
-        {/* SimCore answered, but is not whole. The two deployments that break
-            hardest — booted without tools/ or without scenarios/ — both report
-            `status: "ok"`, so the first signal a DC gets today is an empty
-            Library that reads as "this product has no content". */}
-        {router.destination !== 'readiness' && (
-          <ReadinessBanner model={env.healthModel} onNavigate={router.navigate} />
         )}
 
         <SurfaceBoundary resetKey={router.destination} title={dest.label}>
