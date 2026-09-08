@@ -485,8 +485,45 @@ _static_dir = settings.CORTEXSIM_STATIC_DIR
 if not os.path.isabs(_static_dir):
     _static_dir = os.path.join(settings.CORTEXSIM_BASE_DIR, settings.CORTEXSIM_STATIC_DIR)
 
+class ConsoleStatic(StaticFiles):
+    """StaticFiles that tells the browser which of these files may be reused.
+
+    Bare `StaticFiles` sends only `ETag` + `Last-Modified` and no
+    `Cache-Control`, which hands the browser the HEURISTIC caching rule
+    (RFC 9111 4.2.2): with no explicit freshness, a response may be treated
+    as fresh for a fraction of its last-modified age and served WITHOUT
+    revalidating. `index.html` keeps its name across every deploy, so a
+    browser holding a heuristically-fresh copy keeps loading the previous
+    build's hashed chunk names — and since a rebuild replaces `core/static`
+    wholesale, those chunks are gone. The observable symptom is the one that
+    costs a demo: the console renders the OLD app, or renders nothing, on a
+    SimCore that is serving the new one, with no error that names a cache.
+
+    Vite's `assets/` output is content-hashed, so the two halves want
+    opposite policies and both are stated explicitly rather than inferred:
+
+      assets/*  — the filename IS the version. `immutable`, one year.
+      anything else (index.html, favicons, manifests) — `no-cache`, which
+        means "you may keep it, but revalidate every time", not "do not
+        store it". The ETag then makes the revalidation a 304 in the normal
+        case, so this costs one conditional request per load, not a
+        re-download.
+
+    Deliberately NOT `no-store`: that would also defeat the back button.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        path = str(getattr(response, "path", "") or "")
+        if "/assets/" in path.replace(os.sep, "/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 if os.path.isdir(_static_dir):
-    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="ui")
+    app.mount("/", ConsoleStatic(directory=_static_dir, html=True), name="ui")
     logger.info("Serving React UI from %s", _static_dir)
 else:
     logger.warning(
