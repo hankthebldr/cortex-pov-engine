@@ -59,11 +59,17 @@ export const PLANE_LABELS = {
   ASM:       'Attack Surface',
   TIM:       'Threat Intel',
   EMAIL:     'Email',
+  // Without this entry humanizePlane() renders the acronym as 'Dlp'
+  // ('D' + 'lp'.toLowerCase()) — the fallback is built for word_separated
+  // codes and mangles an all-caps one. Short form matches the rest of the
+  // column (backend name is 'Data Loss Prevention', as EDR's is 'Endpoint
+  // Detection & Response' against a rail label of 'Endpoint').
+  DLP:       'Data Security',
   ANALYTICS: 'Multi-plane',
 }
 export const PLANE_ORDER = [
   'EDR', 'CDR', 'NDR', 'ITDR', 'CLOUD_APP', 'AI_ACCESS', 'AIRS', 'AI_SPM',
-  'BROWSER', 'KOI', 'CSPM', 'ASM', 'TIM', 'EMAIL', 'ANALYTICS',
+  'BROWSER', 'KOI', 'CSPM', 'ASM', 'TIM', 'EMAIL', 'DLP', 'ANALYTICS',
 ]
 
 function humanizePlane(code) {
