@@ -7636,3 +7636,70 @@
     border-bottom: 1px solid var(--c-hairline);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   DestinationNav — the rail must never present a truncated list as a
+   complete one
+   ═══════════════════════════════════════════════════════════════════
+
+   MEASURED PROBLEM. `.shell` is a fixed-height `overflow: hidden` column and
+   stacks four bands above `.workspace`: the un-acknowledged safety gate
+   (197px), the header (56px), the phase bar (59px) and the readiness line
+   (41px) — 353px. At 1280x720 that leaves the nav rail a 337px scrollport for
+   663px of destinations, so 326px of nav is scrolled off on first paint:
+   Readiness, Runs, EAL, Data Streams, Coverage and TTPs entirely, with
+   "Tools & Payloads" and "UC / TC Index" flush against the cut. Chromium
+   paints an OVERLAY scrollbar here — the rail measured `offsetWidth -
+   clientWidth = 1px` — so there was no cue at all that anything continued.
+   A rail that silently ends after "UC / TC Index" does not read as scrolled;
+   it reads as a console that has no Coverage surface.
+
+   TWO CHANGES, BOTH SCOPED TO `--nav` so the Library plane-filter rail
+   (`.rail--filter`, same `.plane-item` tokens) is untouched:
+
+   1. Density. Group gutters 20px -> 10px (and none after the last group),
+      section-title lead-out 8px -> 4px, item padding 8px -> 6px, rail padding
+      16px -> 10px. Reclaims ~144px — enough that the full destination list
+      fits without scrolling once the safety gate is acknowledged, which is
+      the state a POV actually runs in.
+   2. An announced edge. `data-overflow` (set by DestinationNav) drives a mask
+      that fades whichever edge has content beyond it, plus a scrollbar that
+      is asked to be real rather than overlay. The fade is the load-bearing
+      half: `scrollbar-width` is a request the platform may decline, a mask
+      is not.
+
+   The cue is deliberately cheap to be wrong about. `overflowEdges()` returns
+   `both` for unmeasurable metrics, so an environment we cannot measure shows
+   the fade. A false "there is more below" costs one scroll; a false "that is
+   everything" costs a destination the DC never opens. */
+
+.theme-console .rail--nav {
+  padding: 10px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-hairline-strong) transparent;
+}
+.theme-console .rail--nav .rail__group { margin-bottom: 10px; }
+.theme-console .rail--nav .rail__group:last-child { margin-bottom: 0; }
+.theme-console .rail--nav .rail__section-title { padding-bottom: 4px; }
+.theme-console .rail--nav .plane-item { padding: 6px 16px; }
+
+/* Edge fades. `mask-image` on a scroll container is resolved against the
+   border box, not the scrolled content, so these stay pinned to the
+   scrollport edges while the list moves underneath them. */
+.theme-console .rail--nav[data-overflow="bottom"] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
+}
+.theme-console .rail--nav[data-overflow="top"] {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+}
+.theme-console .rail--nav[data-overflow="both"] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0, #000 28px,
+    #000 calc(100% - 28px), transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-console .rail--nav { scroll-behavior: auto; }
+}
