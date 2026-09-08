@@ -365,4 +365,29 @@ describe('ComposerInspector — workflow meta (no step selected)', () => {
     expect(h.onEditMeta).toHaveBeenCalled()
     expect(h.onEditMeta.mock.calls[0][0]).toHaveProperty('tcRef')
   })
+
+  // ── The parent picker must not offer a parent the model will refuse ──────
+  //
+  // `setCausalityParent` returns the SAME steps array for a self- or FORWARD
+  // ref, mirroring the loader's spine rule. So an option for a LATER step is a
+  // choice the state silently discards: the controlled <select> snaps back, the
+  // canvas never redraws, and the author is told nothing. It reads exactly like
+  // "the composer won't link my nodes". Every option offered here must be one
+  // the model accepts.
+  it('offers ONLY earlier steps as a causality parent — never a forward ref', () => {
+    renderInspector({ selected: STEP_01 })   // the FIRST step in the draft
+    const select = screen.getByLabelText(`Causality parent for ${STEP_01.id}`)
+    const values = within(select).getAllByRole('option').map((o) => o.value)
+    // step-01 is first, so the only legal parent is the chain root.
+    expect(values).toEqual([''])
+    expect(values).not.toContain('step-02')
+  })
+
+  it('offers the preceding step for a later step, and never itself', () => {
+    renderInspector({ selected: STEP_02 })
+    const select = screen.getByLabelText(`Causality parent for ${STEP_02.id}`)
+    const values = within(select).getAllByRole('option').map((o) => o.value)
+    expect(values).toContain('step-01')      // legal: earlier in the spine
+    expect(values).not.toContain('step-02')  // self-ref
+  })
 })
