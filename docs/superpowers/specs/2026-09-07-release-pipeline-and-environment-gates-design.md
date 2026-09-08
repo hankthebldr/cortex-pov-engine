@@ -4,6 +4,13 @@
 **Status:** proposed
 **Issues:** #113 #114 #115 #116 #117 #118 #119 #120 #121 #122
 
+> **Update 2026-09-08.** Two of the observations below were overtaken by manual
+> remediation while this was being written: v1.0.0 and v1.0.1 have both now
+> released successfully with real artifacts (§9), and `origin/dev` is restored
+> (§5.4). Section 1 is preserved as the evidence that motivated the design —
+> read it in the past tense. **Every structural cause it identifies is still
+> open.** The pipeline was fixed by hand; it was not gated.
+
 ---
 
 ## 1. Problem
@@ -282,12 +289,16 @@ every topic-branch PR. The script's own header says several checks are
 meaningless off a release merge, and a check that is meaningless where it runs
 teaches people to ignore it.
 
-**Depends on #119.** `origin` currently has only `refs/heads/main`; `dev` is
-gone, though `CONTRIBUTING.md:35` declares it permanent. With no `dev`, the
-branch-topology and `version-advances` checks cannot evaluate and the script
-exits 2 by construction. #119 must land first, either by restoring `dev` or by
-amending the documents — and either way by adding a check that every branch
-`CONTRIBUTING.md` calls permanent actually exists.
+**#119 — restored 2026-09-08, guard still owed.** `origin/dev` was missing when
+this was written, which would have made the branch-topology and
+`version-advances` checks exit 2 by construction. It is now back
+(`refs/heads/dev` @ `8e9c18d`), so `gate-b` is unblocked.
+
+The restoration was manual, so the half of #119 that matters is still open: **a
+check that every branch `CONTRIBUTING.md:35` calls permanent actually exists on
+the remote.** `dev` went missing for four days across five direct-to-`main`
+merges without a single failing job. Restoring it by hand does not stop that
+recurring — a documented invariant with no check is exactly how it vanished.
 
 ---
 
@@ -379,37 +390,54 @@ All ten defects filed this session demote to **L1**:
 
 ---
 
-## 9. Recovery of v1.0.0
+## 9. Recovery of v1.0.0 — DONE 2026-09-08
 
-Closes #113. Independent of everything above and time-sensitive.
+Closes #113. Recorded here as history; no action remains.
 
-`main` (`99665f0`) passes `lint-shell`'s exact file set:
-
-```
-$ shellcheck installer/stage2/common/annotate.sh install.sh; echo "EXIT=$?"
-EXIT=0
-```
+### 9.1 What was wrong
 
 The fix (`021d077`, merged `99665f0`) landed **two commits after** the tag
 (`v1.0.0` -> `9c2b78a`). `release.yml` checks out the *tag's* tree, so
-re-dispatching at `v1.0.0` reproduces the same three findings. PR #111 unblocked
+re-dispatching at `v1.0.0` reproduced the same three findings. PR #111 unblocked
 v1.0.1+, not v1.0.0.
 
+Dispatching at `--ref main` instead would **not** have been equivalent: it builds
+the image from `99665f0` while creating the Release against tag ref `9c2b78a`,
+baking an image/tag mismatch into `manifest.json`.
+
+### 9.2 What was done — verified, not asserted
+
+Both recovery paths were taken. Measured 2026-09-08:
+
 ```
-1. main CI green                                 run 34151983369, 8/8 ✅
-2. git tag -f v1.0.0 99665f0
-   git push --force origin v1.0.0                REWRITES A PUBLISHED TAG
-3. gh workflow run release.yml --ref v1.0.0 -f tag=v1.0.0
-4. assert gh release view v1.0.0
-   assert docker pull ghcr.io/hankthebldr/cortexsim:v1.0.0
+$ git ls-remote --tags origin refs/tags/v1.0.0
+99665f09f6dcada6f1b3a5013d12904a0af077d5    refs/tags/v1.0.0      # moved onto main
+
+$ gh release list
+CortexSim v1.0.1          v1.0.1   2026-09-07T19:57:54Z
+CortexSim v1.0.0  Latest  v1.0.0   2026-09-08T13:50:09Z
+
+$ gh run list --workflow=release.yml
+success  Release  v1.0.0  push               34232499912  18m39s
+success  Release  v1.0.1  workflow_dispatch  34156539870  16m29s
 ```
 
-Step 2 requires explicit operator authorisation. It is defensible here only
-because nothing ever consumed the tag — no release, no image, no download.
+Both releases carry real assets — `install.sh` (29 310 B), `manifest.json`,
+`SHA256SUMS`, `stage2-linux.tar.gz`, `stage2-windows.zip`.
 
-Dispatching at `--ref main` instead is **not** equivalent: it builds the image
-from `99665f0` while creating the Release against tag ref `9c2b78a`, baking an
-image/tag mismatch into `manifest.json`.
+**The release pipeline has now succeeded twice.** The 0-for-3 record in §1 is
+history.
+
+### 9.3 What this does NOT resolve
+
+The recovery was manual. Every structural cause in §1.1 stands untouched:
+`lint-shell` still runs only at release time (#115), `tag-on-main.yml` still keys
+idempotence on tag existence (#114), and nothing verifies the published artifact
+(#120) — the assets above were confirmed by hand, by this spec's author, not by a
+gate.
+
+**A green release is not a gated release.** Two successes prove the tree is
+currently fixable, not that the next regression will be caught.
 
 ---
 
