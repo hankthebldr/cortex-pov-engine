@@ -526,7 +526,6 @@
    title, and the sensor summary is the env pill's `title` and the Readiness
    surface. The interactive controls are never hidden. */
 @media (max-width: 1700px) { .theme-console .brand__subtitle { display: none; } }
-@media (max-width: 1600px) { .theme-console .panw-mark { display: none; } }
 @media (max-width: 1500px) {
   /* The two lockups carry the identity on their own below this width; the
      version chip is 40px and stays until it too has to go. */
@@ -539,17 +538,18 @@
   .theme-console .theme-toggle__label { display: none; }
 }
 
-/* ─── Brand marks (PANW + Cortex lockups) ───
-   Height-locked, width auto: both PNGs are lockups of different aspect ratios
-   and forcing a width would letterbox one of them. 17px/19px are the design's
-   own values — the PANW asset is a full wordmark lockup, the Cortex one a
-   taller glyph, so they are NOT the same height by design. */
+/* ─── Brand mark (Cortex) ───
+   Height-locked, width auto: the PNG is a lockup and forcing a width would
+   letterbox it. 19px is the design's own value for the Cortex glyph.
+
+   The PANW lockup that used to sit to the left of this, and the hairline
+   divider between them, were removed deliberately: NOTICE states CortexSim is
+   an independent project and NOT an official Palo Alto Networks product, and a
+   console header leading with the PANW mark said the opposite to every viewer.
+   Cortex is named nominatively (the platform under test); the vendor lockup is
+   not ours to fly. */
 .theme-console .brand-marks { display: flex; align-items: center; gap: 12px; flex: none; }
-.theme-console .brand-marks__panw   { height: 17px; width: auto; display: block; }
 .theme-console .brand-marks__cortex { height: 19px; width: auto; display: block; }
-.theme-console .brand-marks__divider {
-  width: 1px; height: 24px; background: var(--c-hairline); flex: none;
-}
 .theme-console .brand__version {
   font-size: 10px; color: var(--c-text-muted);
   padding: 1px 6px; border: 1px solid var(--c-hairline); border-radius: 2px;
@@ -637,17 +637,6 @@
   font-family: var(--font-mono); font-size: 11px;
   color: var(--c-text-secondary);
 }
-
-.theme-console .panw-mark {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--c-text-muted);
-  padding-left: 14px;
-  border-left: 1px solid var(--c-hairline);
-}
-.theme-console .panw-mark span { color: var(--c-panw-orange); }
 
 /* ─── Guided-tour trigger (the `?` button + its one beacon) ───
    Round, same 32px as the other header controls so the right cluster keeps one
