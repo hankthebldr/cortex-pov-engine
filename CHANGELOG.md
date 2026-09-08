@@ -8,6 +8,72 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-08
+
+**Three console defects that a DC would hit inside the first minute of a
+demo, plus the deploy-hygiene defect that hid the fix for them.**
+
+Nothing here changes a count, a verdict, or a detection claim.
+**`tenant-verified` is still 0**; authored is not proven.
+
+### Fixed
+
+- **The destination rail presented a truncated list as a complete one.**
+  `.shell` is a fixed-height `overflow: hidden` column stacking four bands
+  above `.workspace` — the un-acknowledged safety gate (197px), header
+  (56px), phase bar (59px) and readiness line (41px), 353px total — which
+  left `.rail--nav` a 337px scrollport for 663px of destinations at
+  1280x720. Chromium paints an *overlay* scrollbar there (measured
+  `offsetWidth - clientWidth` = **1px**), so Readiness, Runs, EAL, Data
+  Streams, Coverage and TTPs were scrolled off with no cue at all, and
+  "Tools & Payloads" / "UC / TC Index" sat flush against the cut. A rail
+  that silently ends does not read as scrolled; it reads as a console that
+  has no Coverage surface. Density scoped to `--nav` reclaims 144px
+  (663px → 519px), and a new `overflowEdges()` classifier publishes
+  `data-overflow` on the nav which CSS turns into an edge fade over
+  whichever side has more. The classifier fails toward *showing* the cue:
+  unmeasurable scroll metrics return `both`, because a false "there is more
+  below" costs one scroll and a false "that is everything" costs a
+  destination the DC never opens. Routing was never implicated —
+  `#/adapters` and `#/uctc` resolved correctly throughout.
+
+- **A rebuilt console could keep serving the previous build.** The static
+  mount was bare `StaticFiles`, which sends `ETag` + `Last-Modified` and no
+  `Cache-Control`, handing the browser RFC 9111 heuristic caching (4.2.2):
+  with no stated freshness a response may be reused *without* revalidating.
+  `index.html` keeps its name across every deploy while `npm run build`
+  rewrites every hashed chunk name and deploying replaces `core/static`
+  wholesale, so a heuristically-fresh `index.html` kept requesting chunks
+  that no longer existed. `ConsoleStatic` now states both halves explicitly
+  — `assets/*` immutable for a year (the filename *is* the version),
+  everything else `no-cache` (keep it, but revalidate every load, which the
+  existing ETag turns into a 304). Deliberately not `no-store`, which would
+  also defeat the back button.
+
+- **The Composer's causality parent picker offered parents the model
+  silently refuses.** It listed every step except the selected one,
+  including *later* ones; `setCausalityParent` returns the same array
+  unchanged for a forward or self reference, mirroring the loader's rule
+  that a step may only descend from an earlier step. Selecting one produced
+  no error, no change and no explanation. The picker is now restricted to
+  steps preceding the selected one, so every offered option is one the
+  model accepts.
+
+### Changed
+
+- **Both Palo Alto Networks marks removed from the console header.** The
+  left brand block carried a `panw-mark` lockup beside the Cortex mark, and
+  a second text wordmark rendered further down the header. CortexSim is not
+  a Palo Alto Networks product and the header asserted otherwise in two
+  places. The Cortex mark stays as the sole brand. A negative guard now
+  checks class names *and* `innerHTML` — it is what located the second mark
+  after the first pass missed it.
+
+- **`CORTEXSIM_VERSION` default moves to `1.0.2`**, so the image tag and
+  container name (`cortex-pov-engine-simcore-v1.0.2`) change with the code
+  they carry. A container named for the old version cannot quietly serve the
+  new one, or the reverse.
+
 ## [1.0.1] - 2026-09-07
 
 **The first release that actually ships artifacts.** `v1.0.0` was tagged
@@ -285,7 +351,8 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/hankthebldr/cortex-pov-engine/releases/tag/v0.1.0

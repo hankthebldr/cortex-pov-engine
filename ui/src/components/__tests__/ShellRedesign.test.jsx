@@ -195,20 +195,32 @@ describe('ConsoleHeader — the run view is always present', () => {
     // Guard against a redesign pass "simplifying" the header by deleting the
     // provider-backed switchers.
     const { container } = render(<ConsoleHeader health={health} />)
-    expect(container.querySelector('.brand-marks__panw')).toBeTruthy()
+    expect(container.querySelector('.brand-marks__cortex')).toBeTruthy()
     expect(screen.getByRole('button', { name: /command palette/i })).toBeInTheDocument()
     expect(screen.queryByText(/LAB-TEST/)).not.toBeInTheDocument()
   })
 
-  it('swaps the PANW lockup by theme — the dark asset has a WHITE wordmark', () => {
-    // panw-mark.png is invisible on the light header; panw-primary.png is the
-    // black-wordmark pair. Getting this backwards makes the brand disappear.
+  it('swaps the Cortex lockup by theme — the wrong asset is invisible', () => {
+    // Same failure this guarded when it watched the PANW pair: cortex-mono is
+    // the dark-glyph asset for the LIGHT header, cortex-green the one that
+    // survives on dark. Getting it backwards makes the brand vanish, and the
+    // Cortex mark is now the only mark in the header, so nothing else covers.
     const { container, rerender } = render(<ConsoleHeader health={health} colorTheme="light" />)
-    expect(container.querySelector('.brand-marks__panw').getAttribute('src'))
-      .toContain('panw-primary')
+    expect(container.querySelector('.brand-marks__cortex').getAttribute('src'))
+      .toContain('cortex-mono')
     rerender(<ConsoleHeader health={health} colorTheme="dark" />)
-    expect(container.querySelector('.brand-marks__panw').getAttribute('src'))
-      .toContain('panw-mark')
+    expect(container.querySelector('.brand-marks__cortex').getAttribute('src'))
+      .toContain('cortex-green')
+  })
+
+  it('does NOT fly the Palo Alto Networks lockup — CortexSim is not a PANW product', () => {
+    // NOTICE says this is an independent project. A vendor mark in the header
+    // asserts otherwise to every viewer of a screenshot or a recording, so its
+    // absence is a requirement, not an accident of a redesign.
+    const { container } = render(<ConsoleHeader health={health} />)
+    expect(container.querySelector('.brand-marks__panw')).toBeNull()
+    expect(container.querySelector('.brand-marks__divider')).toBeNull()
+    expect(container.innerHTML).not.toMatch(/panw-mark|panw-primary/)
   })
 
   it('renders the tour trigger with a beacon only until the tour has been seen', () => {

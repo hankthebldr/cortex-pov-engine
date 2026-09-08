@@ -29,12 +29,17 @@ import AgentSwitcher from './GlobalContextBar/AgentSwitcher.jsx'
  * when there is genuinely nothing. All three are the same control and all three
  * deep-link into Runs & Proof, so the way back to the evidence never moves.
  *
- * Brand marks are two <img> lockups, not text. `panw-mark.png` is the
- * WHITE-wordmark lockup (correct on dark, invisible on the light header) and
- * `panw-primary.png` is the black-wordmark/orange-glyph one — so the pair is
- * selected on `colorTheme`, never fixed. Same for the Cortex mark
- * (mono → green). Both are decorative next to the text wordmark that follows,
- * hence `alt=""` on the Cortex mark and a real `alt` only on the PANW lockup.
+ * The brand mark is ONE <img> lockup, not text: the Cortex glyph, selected on
+ * `colorTheme` (cortex-mono on light, cortex-green on dark) and never fixed —
+ * the wrong asset is invisible against its header. It carries `alt=""` because
+ * it is decorative next to the `cortex sim` text wordmark that follows.
+ *
+ * There is deliberately NO Palo Alto Networks lockup here, in either the left
+ * brand block or the right rail. NOTICE states CortexSim is an independent
+ * project and NOT an official PANW product; a header flying the vendor mark
+ * asserted the opposite in every screenshot and recording. Cortex is named
+ * nominatively — it is the platform under test. See the negative guard in
+ * ShellRedesign.test.jsx.
  *
  * Props:
  *   health          — { hostname, version, sensors: {..}, tenantHealth }
@@ -91,15 +96,12 @@ export default function ConsoleHeader({
   }
 
   const dark = colorTheme === 'dark'
-  const panwMark = dark ? '/assets/panw-mark.png' : '/assets/panw-primary.png'
   const cortexMark = dark ? '/assets/cortex-green.png' : '/assets/cortex-mono.png'
 
   return (
     <header className="header">
       <div className="header__left">
         <div className="brand-marks">
-          <img className="brand-marks__panw" src={panwMark} alt="Palo Alto Networks" />
-          <span className="brand-marks__divider" aria-hidden="true" />
           <img className="brand-marks__cortex" src={cortexMark} alt="" />
         </div>
         <div className="brand">
@@ -217,7 +219,6 @@ export default function ConsoleHeader({
 
         <span className="header__divider" aria-hidden="true" />
         <div className="user-avatar" title="Domain Consultant">{userInitials}</div>
-        <div className="panw-mark">palo alto <span>networks</span></div>
       </div>
     </header>
   )
