@@ -335,3 +335,126 @@ test('NEGATIVE CONTROL: hidden overflow is flagged, scrollable overflow is not',
       'wide-but-scrollable surface trips it.',
   ).toBeNull()
 })
+
+/**
+ * The two guards below cover a DIFFERENT geometry failure from the clipping
+ * ones above: content that is neither clipped by an ancestor nor overflowing
+ * the viewport, but crushed inside a box its own stylesheet sized wrong. The
+ * landmark sweep cannot see these — the elements sit well inside `.view`, so
+ * every ancestor probe returns clean.
+ *
+ * Both shipped past the same green 1128-test unit suite, for the same reason
+ * recorded at the top of this file: jsdom returns zeros for
+ * `getBoundingClientRect()`, `scrollHeight` and `clientHeight` alike, so the
+ * assertions here are vacuously true there and meaningful only in a real
+ * browser.
+ */
+
+test('quick-launch selects are tall enough for their own text', async ({ page }) => {
+  // `cortex-console.css` pins `.insp-select { height: 26px; padding: 0 8px }`.
+  // The Library override restyled the padding to `8px 10px` and did NOT
+  // re-declare the height, forcing 16px of vertical padding inside a fixed
+  // 26px box — the selected option's text was clipped. Its sibling `.btn--xs`
+  // in the same override block re-declares its height and was unaffected,
+  // which is why this went unnoticed.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/#/library')
+  await page.waitForSelector('.scenario-card')
+  await page.locator('.scenario-card').first().click()
+  await page.waitForSelector('.insp-select')
+
+  // NOT `scrollHeight > clientHeight`. That is the natural probe and it does
+  // not work here: a <select> clips its selected option internally without
+  // ever reporting overflow, so scrollHeight === clientHeight even when the
+  // text is visibly cut. Written that way this guard PASSED against the
+  // reverted, still-broken build — an assertion with good syntax proving
+  // nothing. Measure the content box against the line it has to hold instead.
+  const selects = await page.evaluate(() =>
+    [...document.querySelectorAll('.insp-select')].map((el) => {
+      const s = el as HTMLSelectElement
+      const cs = getComputedStyle(s)
+      const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+      const lineH = parseFloat(cs.lineHeight) // NaN when 'normal'
+      return {
+        label:
+          s.closest('.insp-config__row')?.querySelector('.insp-config__label')?.textContent?.trim() ??
+          '(unlabelled)',
+        contentH: s.clientHeight - padY,
+        needs: Number.isFinite(lineH) ? lineH : parseFloat(cs.fontSize),
+        cssHeight: cs.height,
+        padding: cs.padding,
+      }
+    }),
+  )
+
+  // A zero here is degraded, not ok: if the selects stop rendering entirely
+  // this test must fail rather than pass over an empty list.
+  expect(
+    selects.length,
+    'no .insp-select rendered — the quick-launch config did not mount, so this ' +
+      'guard proved nothing. Fix the fixture, do not relax the assertion.',
+  ).toBeGreaterThan(0)
+
+  for (const s of selects) {
+    expect(
+      s.contentH,
+      `the ${s.label} select leaves ${s.contentH}px of content box for a ` +
+        `${s.needs}px line (height: ${s.cssHeight}, padding: ${s.padding}) — ` +
+        `its own text is clipped`,
+    ).toBeGreaterThanOrEqual(s.needs)
+  }
+})
+
+test('the plane filter rail aligns its names and wraps none of them', async ({ page }) => {
+  // `.plane-item` is shared by both rails, but `.rail--nav` puts a ~7px glyph
+  // in `__code` while `.rail--filter` puts a plane code spanning 21.1px (EDR)
+  // to 63.4px (CLOUD_APP / AI_ACCESS / ANALYTICS). Under the inherited
+  // `display: flex` the codes set the layout, so the name column started at six
+  // different offsets spanning 42.3px. Declaring a fixed column fixes that but
+  // introduces the opposite failure if sized too generously: inside a 202px
+  // rail, a 64px code column left 70px for names and wrapped 'Cloud Posture'
+  // and 'Attack Surface' onto two lines. Both directions are asserted here.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/#/library')
+  await page.waitForSelector('.rail--filter .plane-item')
+
+  const rows = await page.evaluate(() =>
+    [...document.querySelectorAll('.rail--filter .plane-item')].map((pi) => {
+      const code = pi.querySelector('.plane-item__code') as HTMLElement
+      const name = pi.querySelector('.plane-item__name') as HTMLElement
+      const nameBox = name.getBoundingClientRect()
+      const lineH = parseFloat(getComputedStyle(name).lineHeight) || 16
+      return {
+        code: (code.textContent || '').trim(),
+        name: (name.textContent || '').trim(),
+        nameX: Math.round(nameBox.x),
+        lines: Math.round(nameBox.height / lineH),
+        codeOverflow: code.scrollWidth - code.clientWidth,
+      }
+    }),
+  )
+
+  expect(rows.length, 'the filter rail rendered no planes').toBeGreaterThan(0)
+
+  const origins = [...new Set(rows.map((r) => r.nameX))]
+  expect(
+    origins.length,
+    `plane names start at ${origins.length} different offsets ` +
+      `(${origins.sort((a, b) => a - b).join(', ')}) — the code column is being ` +
+      `sized by its content instead of being declared`,
+  ).toBe(1)
+
+  const wrapped = rows.filter((r) => r.lines > 1).map((r) => r.name)
+  expect(
+    wrapped,
+    `these plane names wrapped onto a second line: ${wrapped.join(', ')} — the ` +
+      `code column is reserving width the name column needs`,
+  ).toEqual([])
+
+  const clipped = rows.filter((r) => r.codeOverflow > 0).map((r) => r.code)
+  expect(
+    clipped,
+    `these plane codes are cut off by the column: ${clipped.join(', ')} — the ` +
+      `column is now too narrow for the widest code`,
+  ).toEqual([])
+})
