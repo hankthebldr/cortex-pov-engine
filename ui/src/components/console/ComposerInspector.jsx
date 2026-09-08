@@ -200,8 +200,15 @@ export default function ComposerInspector({
                 }
               >
                 <option value="">— (chain root)</option>
+                {/* Only steps EARLIER in the spine are offerable. The model
+                    (`setCausalityParent`) refuses a self- or forward-ref by
+                    returning the same array, mirroring the loader's spine rule
+                    — so offering a later step here rendered a choice the state
+                    silently discarded: the select snapped back, the canvas did
+                    not redraw, and the author got no reason why. Filtering by
+                    index makes every offered option one the model accepts. */}
                 {steps
-                  .filter((s) => s.id !== selected.id)
+                  .slice(0, Math.max(0, steps.findIndex((s) => s.id === selected.id)))
                   .map((s) => (
                     <option key={s.id} value={s.id}>{s.id}</option>
                   ))}

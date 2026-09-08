@@ -526,7 +526,6 @@
    title, and the sensor summary is the env pill's `title` and the Readiness
    surface. The interactive controls are never hidden. */
 @media (max-width: 1700px) { .theme-console .brand__subtitle { display: none; } }
-@media (max-width: 1600px) { .theme-console .panw-mark { display: none; } }
 @media (max-width: 1500px) {
   /* The two lockups carry the identity on their own below this width; the
      version chip is 40px and stays until it too has to go. */
@@ -539,17 +538,18 @@
   .theme-console .theme-toggle__label { display: none; }
 }
 
-/* ─── Brand marks (PANW + Cortex lockups) ───
-   Height-locked, width auto: both PNGs are lockups of different aspect ratios
-   and forcing a width would letterbox one of them. 17px/19px are the design's
-   own values — the PANW asset is a full wordmark lockup, the Cortex one a
-   taller glyph, so they are NOT the same height by design. */
+/* ─── Brand mark (Cortex) ───
+   Height-locked, width auto: the PNG is a lockup and forcing a width would
+   letterbox it. 19px is the design's own value for the Cortex glyph.
+
+   The PANW lockup that used to sit to the left of this, and the hairline
+   divider between them, were removed deliberately: NOTICE states CortexSim is
+   an independent project and NOT an official Palo Alto Networks product, and a
+   console header leading with the PANW mark said the opposite to every viewer.
+   Cortex is named nominatively (the platform under test); the vendor lockup is
+   not ours to fly. */
 .theme-console .brand-marks { display: flex; align-items: center; gap: 12px; flex: none; }
-.theme-console .brand-marks__panw   { height: 17px; width: auto; display: block; }
 .theme-console .brand-marks__cortex { height: 19px; width: auto; display: block; }
-.theme-console .brand-marks__divider {
-  width: 1px; height: 24px; background: var(--c-hairline); flex: none;
-}
 .theme-console .brand__version {
   font-size: 10px; color: var(--c-text-muted);
   padding: 1px 6px; border: 1px solid var(--c-hairline); border-radius: 2px;
@@ -637,17 +637,6 @@
   font-family: var(--font-mono); font-size: 11px;
   color: var(--c-text-secondary);
 }
-
-.theme-console .panw-mark {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--c-text-muted);
-  padding-left: 14px;
-  border-left: 1px solid var(--c-hairline);
-}
-.theme-console .panw-mark span { color: var(--c-panw-orange); }
 
 /* ─── Guided-tour trigger (the `?` button + its one beacon) ───
    Round, same 32px as the other header controls so the right cluster keeps one
@@ -7646,4 +7635,71 @@
     border-right: none;
     border-bottom: 1px solid var(--c-hairline);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DestinationNav — the rail must never present a truncated list as a
+   complete one
+   ═══════════════════════════════════════════════════════════════════
+
+   MEASURED PROBLEM. `.shell` is a fixed-height `overflow: hidden` column and
+   stacks four bands above `.workspace`: the un-acknowledged safety gate
+   (197px), the header (56px), the phase bar (59px) and the readiness line
+   (41px) — 353px. At 1280x720 that leaves the nav rail a 337px scrollport for
+   663px of destinations, so 326px of nav is scrolled off on first paint:
+   Readiness, Runs, EAL, Data Streams, Coverage and TTPs entirely, with
+   "Tools & Payloads" and "UC / TC Index" flush against the cut. Chromium
+   paints an OVERLAY scrollbar here — the rail measured `offsetWidth -
+   clientWidth = 1px` — so there was no cue at all that anything continued.
+   A rail that silently ends after "UC / TC Index" does not read as scrolled;
+   it reads as a console that has no Coverage surface.
+
+   TWO CHANGES, BOTH SCOPED TO `--nav` so the Library plane-filter rail
+   (`.rail--filter`, same `.plane-item` tokens) is untouched:
+
+   1. Density. Group gutters 20px -> 10px (and none after the last group),
+      section-title lead-out 8px -> 4px, item padding 8px -> 6px, rail padding
+      16px -> 10px. Reclaims ~144px — enough that the full destination list
+      fits without scrolling once the safety gate is acknowledged, which is
+      the state a POV actually runs in.
+   2. An announced edge. `data-overflow` (set by DestinationNav) drives a mask
+      that fades whichever edge has content beyond it, plus a scrollbar that
+      is asked to be real rather than overlay. The fade is the load-bearing
+      half: `scrollbar-width` is a request the platform may decline, a mask
+      is not.
+
+   The cue is deliberately cheap to be wrong about. `overflowEdges()` returns
+   `both` for unmeasurable metrics, so an environment we cannot measure shows
+   the fade. A false "there is more below" costs one scroll; a false "that is
+   everything" costs a destination the DC never opens. */
+
+.theme-console .rail--nav {
+  padding: 10px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-hairline-strong) transparent;
+}
+.theme-console .rail--nav .rail__group { margin-bottom: 10px; }
+.theme-console .rail--nav .rail__group:last-child { margin-bottom: 0; }
+.theme-console .rail--nav .rail__section-title { padding-bottom: 4px; }
+.theme-console .rail--nav .plane-item { padding: 6px 16px; }
+
+/* Edge fades. `mask-image` on a scroll container is resolved against the
+   border box, not the scrolled content, so these stay pinned to the
+   scrollport edges while the list moves underneath them. */
+.theme-console .rail--nav[data-overflow="bottom"] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
+}
+.theme-console .rail--nav[data-overflow="top"] {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 28px);
+}
+.theme-console .rail--nav[data-overflow="both"] {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0, #000 28px,
+    #000 calc(100% - 28px), transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-console .rail--nav { scroll-behavior: auto; }
 }
