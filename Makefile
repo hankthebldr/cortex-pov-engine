@@ -23,7 +23,7 @@ COMPOSE     ?= docker compose
 # in core/config.py) doesn't refuse to start with the `changeme` default.
 SECRET      ?= $(shell openssl rand -hex 32)
 
-.PHONY: help up down build agent-dist lab-ready check-lab-ready test test-backend test-agent test-agent-cross \
+.PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
@@ -43,6 +43,14 @@ up: ## Start SimCore locally (scripts/dev-up.sh if present, else docker compose)
 		echo "scripts/dev-up.sh not found — falling back to docker compose"; \
 		CORTEXSIM_SECRET=$(SECRET) CORTEXSIM_VERSION=$(VERSION) $(COMPOSE) up -d --build; \
 		echo "SimCore on http://localhost:8888  (health: /api/health)"; \
+	fi
+
+dev: ## Start SimCore in continuous dev mode (live reload for core/ backend)
+	@if [ -x scripts/dev-up.sh ]; then \
+		scripts/dev-up.sh --dev; \
+	else \
+		CORTEXSIM_SECRET=$(SECRET) CORTEXSIM_VERSION=$(VERSION) $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml up -d --build; \
+		echo "SimCore (dev reload) on http://localhost:8888  (health: /api/health)"; \
 	fi
 
 down: ## Stop SimCore

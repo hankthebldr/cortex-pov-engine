@@ -1,0 +1,17 @@
+# docker-compose.dev.yml — Live reload development overlay for SimCore.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Binds ./core to /app/core and runs uvicorn with --reload, so Python backend edits
+# take effect immediately without rebuilding the image.
+# For UI development, run `make ui-dev` (vite on :5273 proxying to :8888) or `make ui-sync`.
+
+services:
+  simcore:
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--reload", "--reload-dir", "/app/core"]
+    volumes:
+      - ./core:/app/core
+      - ./payloads:/app/payloads:ro
+    environment:
+      - CORTEXSIM_ENV=development

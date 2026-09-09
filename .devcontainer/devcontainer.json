@@ -1,0 +1,35 @@
+{
+  "name": "CortexSim POV Engine Dev",
+  "dockerComposeFile": [
+    "../docker-compose.yml",
+    "../docker-compose.dev.yml"
+  ],
+  "service": "simcore",
+  "workspaceFolder": "/app",
+  "forwardPorts": [8888, 5273],
+  "portsAttributes": {
+    "8888": {
+      "label": "SimCore UI & API",
+      "onAutoForward": "openBrowser"
+    },
+    "5273": {
+      "label": "Vite UI Dev Server",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "dbaeumer.vscode-eslint",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

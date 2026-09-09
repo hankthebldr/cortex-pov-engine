@@ -172,9 +172,15 @@ else
   exit 1
 fi
 
+COMPOSE_FILES=(-f docker-compose.yml)
+if [[ "${1:-}" == "--dev" || "${1:-}" == "dev" ]]; then
+  log "Continuous dev mode enabled: overlaying docker-compose.dev.yml (mounts core/ with --reload)"
+  COMPOSE_FILES+=(-f docker-compose.dev.yml)
+fi
+
 log "Version ${VERSION}: image cortex-pov-engine-simcore:${VERSION}, container cortex-pov-engine-simcore-v${VERSION}"
-log "Building and starting SimCore: ${DC[*]} up -d --build"
-"${DC[@]}" up -d --build
+log "Building and starting SimCore: ${DC[*]} ${COMPOSE_FILES[*]} up -d --build"
+"${DC[@]}" "${COMPOSE_FILES[@]}" up -d --build
 
 # ---------------------------------------------------------------------------
 # 4. Poll health until it responds (timeout ~90s). "ok" and "degraded" both
