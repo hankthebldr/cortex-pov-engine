@@ -241,6 +241,7 @@ def _migrate_scenarios_columns(connection) -> None:
         # Phase 3 — license gating
         ("required_base_platform", "JSON"),
         ("required_addons", "JSON"),
+        ("additional_techniques", "JSON"),
     ]
     for col_name, col_type in additions:
         if col_name in existing:
