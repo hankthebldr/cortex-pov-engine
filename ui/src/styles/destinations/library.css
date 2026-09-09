@@ -569,10 +569,18 @@
 .theme-console .library-layout .insp-segmented button:disabled {
   color: var(--tx3);
 }
+/* The base rule (cortex-console.css `.insp-select`) pins `height: 26px` with
+   `padding: 0 8px`. This override used to restyle the padding to `8px 10px`
+   WITHOUT re-declaring the height, so 16px of vertical padding was forced
+   inside a fixed 26px box and the selected option's text was clipped — see the
+   sibling `.btn--xs` block below, which does re-declare its height and was
+   therefore unaffected. Set both, on one axis each: height owns the box,
+   padding owns the inline inset only. */
 .theme-console .library-layout .insp-select {
   border: 1px solid var(--bd2);
   border-radius: 6px;
-  padding: 8px 10px;
+  height: 30px;
+  padding: 0 10px;
   background: var(--s2);
   color: var(--tx);
   font-family: var(--font-mono);
@@ -734,4 +742,32 @@
   align-self: start;
   max-height: calc(100vh - var(--h-header, 56px));
   overflow-y: auto;
+}
+
+/* `.plane-item` is shared by BOTH rails, but its two `__code` shapes are not
+   comparable: `.rail--nav` puts a ~7px glyph there, `.rail--filter` puts a
+   plane code that measures 21.1px (EDR) to 63.4px (CLOUD_APP / AI_ACCESS /
+   ANALYTICS). The base rule is `display: flex` with `flex: 0 1 auto` on the
+   code, so in the filter rail the name column started at SIX different offsets
+   spanning 42.3px — the codes were setting the layout.
+
+   Declare the column instead of letting content imply it, scoped to
+   `.rail--filter` so the nav's glyph rail is untouched.
+
+   The column is 58px, not the 63.4px the widest code measures at the inherited
+   11px + mono tracking: inside a 202px rail, reserving 64px left the name
+   column 70px and wrapped 'Cloud Posture' and 'Attack Surface' onto two lines —
+   trading ragged alignment for ragged row heights. Dropping the code to 10px
+   and normal tracking fits CLOUD_APP / AI_ACCESS / ANALYTICS in 58px with zero
+   overflow and no name wraps, measured across all 16 rows. 56px and 54px also
+   clear, so this is not sized to the edge. */
+.theme-console .library-layout .rail--filter .plane-item {
+  display: grid;
+  grid-template-columns: 58px 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+.theme-console .library-layout .rail--filter .plane-item__code {
+  font-size: 10px;
+  letter-spacing: normal;
 }
