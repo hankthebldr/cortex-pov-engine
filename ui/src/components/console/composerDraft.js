@@ -99,6 +99,11 @@ export function draftFromScenario(scenario) {
     // Because `draftFromApi` spreads `...draftFromScenario(row)`, drafts round-
     // trip through this ONE place — no separate `draftFromApi` edit.
     stitchContext: parseStitchContext(scenario.stitch_context),
+    // Canvas node positions — presentation-only, never authored into the YAML
+    // (see `setNodePosition` below). Same round-trip-through-ONE-place shape
+    // as `stitchContext` immediately above, so `draftFromApi` needs no
+    // separate edit either.
+    layout: scenario.composer_layout || null,
     steps,
     // Persistence identity — null here, filled by `draftFromApi` when the row
     // came back from the drafts API. A draft seeded from a corpus scenario is
@@ -114,9 +119,28 @@ export function draftFromScenario(scenario) {
 export function emptyDraft() {
   return {
     originId: null, name: null, plane: null, ucRef: null, tcRef: null,
-    moatTier: null, cgo: null, teardown: [], stitchContext: null, steps: [],
+    moatTier: null, cgo: null, teardown: [], stitchContext: null, layout: null,
+    steps: [],
     scenarioId: null, status: null, author: null, tags: [],
   }
+}
+
+/**
+ * Canvas node positions, keyed by step id. Presentation-only — deliberately a
+ * draft-level map rather than a field on each step, so it structurally cannot
+ * reach emitDraftYaml (and therefore the shipped corpus). See the 2026-09-08
+ * direct-manipulation spec §5.2.
+ */
+export function setNodePosition(draft, stepId, x, y) {
+  return {
+    ...draft,
+    layout: { ...(draft.layout || {}), [stepId]: { x: Math.round(x), y: Math.round(y) } },
+  }
+}
+
+/** Drop every stored position — the Re-layout action's reducer. */
+export function clearLayout(draft) {
+  return { ...draft, layout: null }
 }
 
 /** Next free `step-NN` id for a draft, so duplicates never collide. */
@@ -675,6 +699,11 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
   // backend `stitch_context: Optional[StitchContextSchema] = None`.
   const sc = emitStitchContext(draft.stitchContext)
   if (sc) body.stitch_context = sc
+  // Only send a layout that exists, so a layout-less draft POSTs the exact
+  // body it did before this feature (backend stores NULL).
+  if (draft.layout && Object.keys(draft.layout).length > 0) {
+    body.composer_layout = draft.layout
+  }
   if (draft.povScenarioId) body.pov_scenario_id = draft.povScenarioId
   if (draft.mitreTactic) body.mitre_tactic = draft.mitreTactic
   if (draft.mitreTacticName) body.mitre_tactic_name = draft.mitreTacticName
@@ -732,6 +761,10 @@ export function draftSnapshot(draft) {
     // as dirty and force a re-save before launch, exactly like a step edit. The
     // emitted (wire) form is the stable comparison key.
     stitchContext: emitStitchContext(draft.stitchContext),
+    // Load-bearing, NOT cosmetic: a dragged node's saved position is part of
+    // what got persisted, so dragging marks the draft dirty and the launch
+    // gate offers a save — same reasoning as stitchContext above.
+    layout: draft.layout || null,
     steps: (draft.steps || []).map((s) => ({
       id: s.id,
       command: s.command ?? null,
