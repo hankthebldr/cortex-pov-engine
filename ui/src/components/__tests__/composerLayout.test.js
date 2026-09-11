@@ -15,6 +15,7 @@ import {
   layoutCausalityGraph,
   layoutChain,
   layoutSpine,
+  mergeStoredPositions,
   spineEdges,
   stitchOverlayEdges,
 } from '../console/composerLayout.js'
@@ -285,5 +286,42 @@ describe('stitchOverlayEdges — design-lens entity-join intent', () => {
   it('returns [] for absent steps', () => {
     expect(stitchOverlayEdges(null, model)).toEqual([])
     expect(stitchOverlayEdges([], model)).toEqual([])
+  })
+})
+
+describe('mergeStoredPositions', () => {
+  const draft = { steps: [
+    { id: 's1', name: 'a', detections: [] },
+    { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+  ] }
+
+  it('is a no-op with no stored positions — the back-compat guard', () => {
+    const base = layoutChain(draft)
+    expect(mergeStoredPositions(base, null)).toEqual(base)
+    expect(mergeStoredPositions(base, {})).toEqual(base)
+  })
+
+  it('overrides only the nodes that have a stored position', () => {
+    const base = layoutChain(draft)
+    const merged = mergeStoredPositions(base, { s2: { x: 500, y: 900 } })
+    const s1b = base.nodes.find(n => n.id === 's1')
+    const s1m = merged.nodes.find(n => n.id === 's1')
+    const s2m = merged.nodes.find(n => n.id === 's2')
+    expect({ x: s1m.x, y: s1m.y }).toEqual({ x: s1b.x, y: s1b.y })  // untouched
+    expect({ x: s2m.x, y: s2m.y }).toEqual({ x: 500, y: 900 })
+  })
+
+  it('ignores a stored position for a node that is not on the canvas', () => {
+    const base = layoutChain(draft)
+    expect(() => mergeStoredPositions(base, { ghost: { x: 1, y: 1 } })).not.toThrow()
+    expect(mergeStoredPositions(base, { ghost: { x: 1, y: 1 } }).nodes)
+      .toHaveLength(base.nodes.length)
+  })
+
+  it('grows bounds to contain a dragged-out node so the canvas can scroll to it', () => {
+    const base = layoutChain(draft)
+    const merged = mergeStoredPositions(base, { s2: { x: 5000, y: 4000 } })
+    expect(merged.bounds.width).toBeGreaterThan(base.bounds.width)
+    expect(merged.bounds.height).toBeGreaterThan(base.bounds.height)
   })
 })

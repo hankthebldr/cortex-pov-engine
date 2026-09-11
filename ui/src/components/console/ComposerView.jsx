@@ -28,6 +28,7 @@ import {
   appendStep,
   bindTtpDetection,
   blankStep,
+  clearLayout,
   DETECTION_TYPES,
   draftFromApi,
   draftFromScenario,
@@ -45,11 +46,13 @@ import {
   removeDetection,
   removeStep,
   setCausalityParent,
+  setNodePosition,
   setStepChannel,
   setStepEal,
   setStepTarget,
   validateDraft,
 } from './composerDraft.js'
+import { topologicallySortSteps } from './composerSpine.js'
 import { setEntity, stitchInsertToken } from './stitchContext.js'
 
 /**
@@ -253,17 +256,78 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const agentName = env.agent ? (env.agent.hostname || agentIdOf(env.agent)) : null
 
   // ── Run lens data ────────────────────────────────────────────────────────────
-  // The Run lens renders the REAL causality graph of an in-flight or terminal
-  // run for this draft; pre-run it stays null and the canvas says "EXPECTED
-  // only" rather than drawing a green chain the tenant never correlated.
-  const activeRunId = env.activeRun ? runIdOf(env.activeRun) : null
-  // Refetch as the run progresses: the SSE-driven activeRun updates its
-  // step/detected/status, and each of those is a moment a stitch may reconcile
-  // to CONFIRMED or BROKEN. Keying only on the (stable) run id would freeze the
-  // graph at launch — empty/EXPECTED — for the whole run.
-  const runTick = env.activeRun
-    ? `${env.activeRun.step}:${env.activeRun.detected}:${env.activeRun.status}`
+  // The Run lens renders the REAL causality graph of the run belonging to
+  // THIS draft's OWN origin scenario — in-flight or terminal — never a
+  // globally-active run of some other scenario.
+  //
+  // Previously this keyed on env.activeRun alone
+  // (docs/superpowers/plans/2026-09-08-run-lens-diagnosis.md), which fell
+  // out to two defects: (A) EnvironmentContext derives env.activeRun as
+  // `runs.find(r => r.status === 'running')` — app-wide AND running-only, so
+  // a completed/failed run never triggered the fetch even though the backend
+  // held a fully populated causality graph for it; (B) nothing guarded
+  // env.activeRun by scenario id, so an in-flight run of a DIFFERENT
+  // scenario could paint this canvas with another scenario's evidence.
+  //
+  // Field-name note (verified live against a running SimCore, not assumed —
+  // see the Task 13 test file header): env.runs holds RAW API rows —
+  // run_id / scenario_id / status / started_at. env.activeRun is NOT a raw
+  // row; it's the DERIVED view-model EnvironmentContext.jsx's `activeRun`
+  // useMemo builds — runId / scenarioId (camelCase) and no
+  // run_id/scenario_id/status fields at all (its existence already means
+  // "running"). `runIdOf()` reads run_id/id, so calling it on env.activeRun
+  // as before always resolved to null — the "prefer the live run" branch was
+  // dead code even before scoping, not merely unscoped.
+  const scenarioId = draft.originId || null
+
+  const scopedRun = useMemo(() => {
+    if (!scenarioId) return null
+    // Prefer the live run, but only when it is THIS scenario's.
+    if (env.activeRun && env.activeRun.scenarioId === scenarioId) return env.activeRun
+    const mine = (env.runs || []).filter((r) => r && r.scenario_id === scenarioId)
+    if (mine.length === 0) return null
+    return mine.reduce((best, r) =>
+      Date.parse(r.started_at || 0) > Date.parse(best.started_at || 0) ? r : best)
+  }, [scenarioId, env.activeRun, env.runs])
+
+  // scopedRun is either env.activeRun (camelCase runId) or a raw run row
+  // (snake_case run_id) — resolve both through the same fallback chain.
+  const activeRunId = scopedRun ? (scopedRun.runId ?? runIdOf(scopedRun)) : null
+
+  // Poll only while the matched run is non-terminal — a terminal run's graph
+  // is settled, so keying on its mutable fields would refetch forever for no
+  // new data. env.activeRun carries no `status` field (its existence already
+  // means "running"), so object identity with env.activeRun also counts.
+  const isLive = !!(scopedRun && (scopedRun === env.activeRun || scopedRun.status === 'running'))
+  const runTick = isLive
+    ? `${scopedRun.step}:${scopedRun.detected}:${scopedRun.status || 'running'}`
     : null
+
+  // ComposerCanvas's `activeRun` prop is RAW-ROW shaped by contract
+  // (run_id/status/stitch_binding — pinned by ComposerCanvas.test.jsx's own
+  // "quotes the run's REAL persisted binding" test). scopedRun is NOT always
+  // that shape — when it's env.activeRun (the live-run-of-this-scenario
+  // branch) it's the camelCase view-model, which carries none of those three
+  // fields. Passing it through unprojected would repeat exactly the bug this
+  // task exists to fix: a shape mismatch that silently renders blank instead
+  // of erroring. Project ONCE, here, into one canonical shape every
+  // downstream consumer can rely on — not another `??` at each call site.
+  const canonicalActiveRun = useMemo(() => {
+    if (!scopedRun) return null
+    // Already raw-row shaped (sourced from env.runs) — nothing to project.
+    if (scopedRun.run_id != null) return scopedRun
+    // scopedRun is env.activeRun. Its existence already means "running";
+    // look up the matching raw row (once the runs poll has caught up) for
+    // stitch_binding, which the view-model never carries at all.
+    const raw = (env.runs || []).find((r) => r && runIdOf(r) === scopedRun.runId)
+    return {
+      ...(raw || {}),
+      run_id: raw?.run_id ?? scopedRun.runId,
+      status: raw?.status ?? 'running',
+      stitch_binding: raw?.stitch_binding ?? null,
+    }
+  }, [scopedRun, env.runs])
+
   const [causalityGraph, setCausalityGraph] = useState(null)
   useEffect(() => {
     if (!activeRunId) { setCausalityGraph(null); return undefined }
@@ -343,10 +407,16 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
       const id = drafts[0].scenario_id || drafts[0].id
       const row = await getDraft(id)
       const loaded = draftFromApi(row)
-      const { steps: loadedSteps, ...base } = loaded
-      setOrigin(base)
+      // `origin` MUST carry `.steps` — the `edited` memo above reads
+      // `origin.steps.length` unconditionally (same contract the `fromId`
+      // load effect honours by storing its full `draftFromScenario` result).
+      // Stripping steps out of origin here left it a "pristine snapshot"
+      // with a missing snapshot: with no scenario open, clicking Load threw
+      // `Cannot read properties of undefined (reading 'length')` on the very
+      // next render, before Save/Download ever touched the loaded steps.
+      setOrigin(loaded)
       setOriginDetail(row || null)
-      setSteps(loadedSteps)
+      setSteps(loaded.steps)
       setDraftMeta({})
       setSelectedId(null)
       setMetaOpen(false)
@@ -393,10 +463,42 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const onEditStep = useCallback((id, patch) => setSteps((p) => editStep(p, id, patch)), [])
   const onAddDetection = useCallback((id, det) => setSteps((p) => addDetection(p, id, det)), [])
   const onRemoveDetection = useCallback((id, i) => setSteps((p) => removeDetection(p, id, i)), [])
+  // Inspector's manual "parent step" picker (`ComposerInspector.jsx`). Same
+  // composition as `handleConnectSteps` below, and for the same reason: a DC
+  // choosing a parent that sits AFTER the child in `steps[]` is a legal edit
+  // (`setCausalityParent`'s forward-ref guard exists to mirror the loader's
+  // array-order rule, not to refuse the edit outright), so `skipOrderCheck`
+  // applies it and `topologicallySortSteps` immediately repairs array order
+  // to match. Before this fix, this path had no such recovery — the guard's
+  // silent same-array return meant the Inspector picker could select a
+  // later-positioned parent and get nothing: no change, no error, no
+  // explanation. The canvas's drag-to-connect affordance (below) already
+  // worked this way; the two controls now share one guarantee instead of the
+  // DC's outcome depending on which one they happened to use.
   const onSetCausalityParent = useCallback(
-    (id, parentId, pivot) => setSteps((p) => setCausalityParent(p, id, parentId, pivot)),
+    (id, parentId, pivot) => setSteps((p) => topologicallySortSteps(
+      setCausalityParent(p, id, parentId, pivot, { skipOrderCheck: true }),
+    )),
     [],
   )
+  // Canvas drag-to-connect (Task 10, direct-manipulation). `canConnect`
+  // (composerSpine.js) already proved `fromId -> toId` legal on the
+  // causality PARENT GRAPH before `ComposerCanvas` ever calls this — no
+  // self-ref, no cycle, no second root — but that check says nothing about
+  // array POSITION. `setCausalityParent` still enforces its own forward-ref
+  // guard (parent index < child index, mirroring
+  // core/engine/scenario_loader.py:394); passing `skipOrderCheck` here means
+  // a canvas-approved edge is never silently swallowed by that guard — same
+  // composition `onSetCausalityParent` above now applies for the Inspector's
+  // manual picker. `topologicallySortSteps` then restores the array-order
+  // invariant immediately, so what the operator drew and what the loader
+  // will accept never diverge — see `composerSpine.js`'s header for the full
+  // split between the two invariants this closes.
+  const handleConnectSteps = useCallback((fromId, toId) => {
+    setSteps((p) => topologicallySortSteps(
+      setCausalityParent(p, toId, fromId, 'process_lineage', { skipOrderCheck: true }),
+    ))
+  }, [])
   const onBindTtp = useCallback((id) => onNavigate('ttps', { bind: id }), [onNavigate])
   const onEditMeta = useCallback((patch) => setDraftMeta((m) => ({ ...m, ...patch })), [])
   // Stitch context lives in the draftMeta overlay (like name/plane/tcRef/cgo):
@@ -417,6 +519,27 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     const cmd = steps.find((s) => s.id === id)?.command ?? ''
     onEditStep(id, { command: `${cmd} ${stitchInsertToken(key)}` })
   }, [steps, onEditStep])
+  // Canvas node position (Task 9, direct-manipulation). Same draftMeta-overlay
+  // shape as `onSetStitchEntity` right above: `draft.layout` resolves to
+  // `origin.layout` until the DC drags a node, at which point the overlay
+  // carries it (`composerDraft.js`'s own comment on `layout` calls this out
+  // as the same round-trip-through-ONE-place shape as `stitchContext`).
+  // `setNodePosition` already rounds and returns a NEW object rather than
+  // mutating, so this is just the overlay's read-current/write-back pattern.
+  const onNodeMoved = useCallback((stepId, x, y) => {
+    setDraftMeta((m) => {
+      const curLayout = m.layout !== undefined ? m.layout : (origin?.layout ?? null)
+      return setNodePosition({ ...m, layout: curLayout }, stepId, x, y)
+    })
+  }, [origin])
+  // Re-layout (Task 11): discard every dragged position and fall back to the
+  // computed layout. Same overlay shape as `onNodeMoved` above — writing
+  // `layout: null` into the `draftMeta` overlay is enough on its own
+  // (`clearLayout` just does that spread), since `draft.layout` always reads
+  // through the overlay when one is present.
+  const onClearLayout = useCallback(() => {
+    setDraftMeta((m) => clearLayout(m))
+  }, [])
   const onMoveStep = useCallback((index, delta) => setSteps((p) => moveStep(p, index, delta)), [])
   const onDuplicateStep = useCallback((index) => setSteps((p) => duplicateStep(p, index)), [])
   const onRemoveStep = useCallback((index) => setSteps((p) => removeStep(p, index)), [])
@@ -623,6 +746,16 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
         <button
           type="button"
           className="btn btn--xs"
+          onClick={onClearLayout}
+          data-testid="composer-relayout"
+          title="Discard dragged positions and re-run the automatic layout"
+          disabled={!draft.layout}
+        >
+          Re-layout
+        </button>
+        <button
+          type="button"
+          className="btn btn--xs"
           onClick={runPreflight}
           data-testid="composer-preflight"
         >
@@ -722,7 +855,8 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           validation={validation}
           causalityGraph={causalityGraph}
           causalityStates={causalityStates}
-          activeRun={env.activeRun}
+          activeRun={canonicalActiveRun}
+          hasRun={!!activeRunId}
           originError={originError}
           loadingOrigin={loadingOrigin}
           fromId={fromId}
@@ -732,6 +866,8 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           onMoveStep={onMoveStep}
           onDuplicateStep={onDuplicateStep}
           onRemoveStep={onRemoveStep}
+          onNodeMoved={onNodeMoved}
+          onConnectSteps={handleConnectSteps}
           onAddStep={() => addBlank('New command step')}
           onStartLibrary={() => onNavigate('library')}
           onStartTtp={() => onNavigate('ttps')}
@@ -740,6 +876,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           stitchModel={draft.stitchContext}
           showStitch={showStitch}
           onToggleStitch={() => setShowStitch((v) => !v)}
+          storedLayout={draft.layout}
         />
 
         {showPanels && (

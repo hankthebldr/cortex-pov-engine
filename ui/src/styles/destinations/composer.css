@@ -450,6 +450,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Drag handle (Task 9, review round 1, finding 1) — the only surface
+   `dragHandle: '.chain-node__grip'` lets a node drag start from. A small,
+   discoverable strip rather than a rework of `.chain-node__body`'s hit area
+   (see ComposerCanvas.jsx's StepNode doc comment for why). */
+.theme-console .chain-node__grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 12px;
+  margin: -2px 0 7px;
+  border-radius: 3px;
+  color: var(--tx3);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 2px;
+  cursor: grab;
+  background: var(--s2);
+}
+.theme-console .chain-node__grip:hover { background: var(--s3); color: var(--tx2); }
+.theme-console .chain-node__grip:active { cursor: grabbing; }
 .theme-console .chain-node__body {
   display: block;
   width: 100%;
@@ -806,14 +826,65 @@
 .theme-console .composer-canvas__lens { display: flex; gap: 3px; flex: none; }
 .theme-console .composer-canvas__zoom { display: flex; gap: 4px; flex: none; align-items: center; }
 
-/* The laid-out graph is absolutely positioned by composerLayout coordinates;
-   this wrapper just gives it a scroll context so a tall chain never pushes the
-   workstream off-screen. */
+/* START anchor / React Flow canvas / END anchor / add-step, stacked — the
+   Design lens moved off a hand-rolled absolutely-positioned SVG canvas onto
+   React Flow (2026-09-08 direct-manipulation Task 8). START/END stay plain,
+   non-draggable anchors OUTSIDE React Flow's own node graph (see the
+   `DesignGraph` doc comment), so this wrapper is back to ordinary block flow
+   instead of the old absolute-position + CSS-scale scheme. Overrides the
+   shared `.chain` flex-row rule (this is the only consumer of that class). */
 .theme-console .composer-canvas__graph {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   position: relative;
   max-width: 100%;
-  overflow: auto;
 }
+
+/* React Flow needs an ancestor with an explicit size — jsdom stubs this per
+   test file (ComposerCanvas.test.jsx / ComposerView.test.jsx), a real
+   browser needs the CSS. Pan (mouse-drag, unchanged default — see
+   `StepNode`'s `nodrag nopan` doc comment) + the built-in `<Controls>` zoom
+   stand in for the old manual-zoom canvas; nodes are laid out by
+   `composerLayout.js` and, in the Design lens, ARE draggable (Task 9, via
+   the `.chain-node__grip` drag handle) and connectable (Task 10, via each
+   node's `Handle`s) — both off in the Run lens's read-only spine. */
+.theme-console .composer-canvas__flow {
+  position: relative;
+  width: 100%;
+  height: 620px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--s1);
+}
+
+/* The restored START→first-step / last-step→END connector (`SpineConnector`)
+   — a small dashed vertical line + endpoint dots bridging the gap between
+   ordinary flow children, echoing the dashed `root`/`terminal` SVG edges the
+   old absolutely-positioned canvas drew. Not centred on the actual node
+   above/below it (React Flow's own pan/zoom moves those independently of
+   this static bridge) — advisory, like the stitch overlay. */
+.theme-console .composer-canvas__connector {
+  align-self: flex-start;
+  flex: none;
+  margin-left: 20px;
+}
+
+/* A refused canvas connect attempt (Task 10, direct-manipulation) — above the
+   graph, always with its reason, never a silent no-op. Existing tokens only:
+   `--crit` (the same danger token `.stitch-foot__problem` and the Run-lens
+   BROKEN edge colour use elsewhere in this file), `--ink`, `--font-ui`.
+   Scoped under `.theme-console` like every other rule in this file — the
+   only deviation from the brief's own snippet, which gave a bare selector. */
+.theme-console .canvas-refusal {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; margin-bottom: 8px;
+  border: 1px solid var(--crit); border-radius: 6px;
+  font: 500 12px/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.theme-console .canvas-refusal button { margin-left: auto; background: none; border: 0; cursor: pointer; }
 
 /* ─── Run lens ─── */
 .theme-console .composer-canvas__runempty {

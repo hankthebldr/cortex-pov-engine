@@ -10,12 +10,35 @@
  *   - a hand-edited draft CANNOT be launched, because SimCore would run the
  *     original chain while the canvas showed the edited one
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest'
+import { render, screen, waitFor, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
 import ComposerView from '../console/ComposerView.jsx'
+// getRunCausality is imported directly by ComposerView (not prop-injected), so
+// the Task 13 "Run lens scoping" tests below spy on it via a partial module
+// mock — every other export stays the real implementation.
+import { getRunCausality as mockGetRunCausality } from '../../api/client.js'
+
+vi.mock('../../api/client.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, getRunCausality: vi.fn() }
+})
+
+// ComposerView renders ComposerCanvas, whose Design lens mounts React Flow
+// (Task 8). jsdom reports 0x0 for offsetWidth/offsetHeight, which makes
+// React Flow refuse to render any node — see the identical stub and
+// rationale in ComposerCanvas.test.jsx. Scoped to this file rather than the
+// shared `src/test/setup.js`: each test file gets its own fresh jsdom
+// environment, so this cannot leak into unrelated suites.
+beforeAll(() => {
+  window.ResizeObserver = window.ResizeObserver || class {
+    observe() {} unobserve() {} disconnect() {}
+  }
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 1200 })
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 800 })
+})
 
 const SCENARIO = {
   scenario_id: 'SIM-EDR-001',
@@ -151,6 +174,23 @@ describe('ComposerView — seeded from a real scenario', () => {
     const start = screen.getByTestId('chain-start')
     expect(within(start).getByText('Tenant')).toBeInTheDocument()
     expect(within(start).getByText('Agent')).toBeInTheDocument()
+  })
+
+  it('wires a stored composer_layout through to the React Flow canvas (gap fix, Task 8)', async () => {
+    // Task 5 produces `draft.layout` (from the scenario's `composer_layout`);
+    // nothing before Task 8 read it back — a DC-dragged position would
+    // persist to the backend and then never re-apply, so the feature would
+    // look correct and be inert. This is the ComposerView -> ComposerCanvas
+    // leg of that wire, against a REAL scenario load (not a prop stub).
+    baseRoutes({
+      'GET /api/scenarios/SIM-EDR-001': { ...SCENARIO, composer_layout: { 'step-02': { x: 555, y: 111 } } },
+    })
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    const node = document.querySelector('[data-id="step-02"]')
+    expect(node).toBeTruthy()
+    expect(node.style.transform).toContain('555')
+    expect(node.style.transform).toContain('111')
   })
 })
 
@@ -360,5 +400,426 @@ describe('ComposerView — YAML view and workstream', () => {
     await waitFor(() => expect(screen.getByTestId('ws-tab-history')).toBeInTheDocument())
     await user.click(screen.getByTestId('ws-tab-history'))
     expect(screen.getByText(/No runs yet/i)).toBeInTheDocument()
+  })
+})
+
+describe('ComposerView — drawing causality edges maintains array order (Task 10, addition A)', () => {
+  // A fork off a single root (step-02 and step-03 both children of step-01)
+  // — the shape needed to prove the "spine parity gap": `canConnect`
+  // approves re-parenting step-02 onto step-03 (no cycle, no self-ref), but
+  // step-03 sits AFTER step-02 in `steps[]`, which is exactly what
+  // `setCausalityParent`'s own forward-ref guard would otherwise silently
+  // refuse. `handleConnectSteps` must apply the edge AND restore array order,
+  // or the drag would visually succeed (no refusal banner) while doing
+  // nothing — the failure mode this whole task exists to prevent.
+  const FORK_SCENARIO = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-FORK',
+    steps: [
+      {
+        id: 'step-01', name: 'Root', command: 'true', identity: 'www-data',
+        expected_detections: [],
+      },
+      {
+        id: 'step-02', name: 'Branch A', command: 'true', identity: 'www-data',
+        causality: { parent_step: 'step-01', pivot: 'process_lineage' },
+        expected_detections: [],
+      },
+      {
+        id: 'step-03', name: 'Branch B', command: 'true', identity: 'www-data',
+        causality: { parent_step: 'step-01', pivot: 'process_lineage' },
+        expected_detections: [],
+      },
+    ],
+  }
+
+  it('re-parenting step-02 onto step-03 (which sits AFTER it) reorders the array instead of silently dropping the edge', async () => {
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [FORK_SCENARIO] },
+      'GET /api/scenarios/SIM-EDR-FORK': FORK_SCENARIO,
+    })
+    mount({ from: 'SIM-EDR-FORK' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-03')).toBeInTheDocument())
+
+    const order = () => Array.from(document.querySelectorAll('[data-testid^="chain-step-"]'))
+      .map((el) => el.getAttribute('data-testid'))
+    // Before: authored order is step-01, step-02, step-03 (step-03 after step-02).
+    expect(order()).toEqual(['chain-step-step-01', 'chain-step-step-02', 'chain-step-step-03'])
+
+    // Draw the canvas edge: step-03 becomes step-02's parent.
+    act(() => { window.__rfOnConnect({ source: 'step-03', target: 'step-02' }) })
+
+    // After: the edge applied (no refusal banner) AND the array was
+    // re-sorted so the new parent (step-03) precedes its child (step-02) —
+    // the exact rule core/engine/scenario_loader.py:394 enforces.
+    expect(screen.queryByTestId('canvas-refusal')).not.toBeInTheDocument()
+    await waitFor(() => {
+      const ids = order()
+      expect(ids.indexOf('chain-step-step-03')).toBeLessThan(ids.indexOf('chain-step-step-02'))
+    })
+    // step-01 (the untouched root) still precedes everything.
+    expect(order().indexOf('chain-step-step-01')).toBe(0)
+
+    // The inspector confirms the actual causalityParent field, not just DOM order.
+    await userEvent.setup().click(screen.getByTestId('chain-step-step-02'))
+    expect(screen.getByText(/parent step-03/)).toBeInTheDocument()
+  })
+
+  // Task 10 fixed the CANVAS drag path (above) by composing `skipOrderCheck:
+  // true` with `topologicallySortSteps`. `onSetCausalityParent` — the
+  // INSPECTOR's manual "parent step" picker (`ComposerInspector.jsx`) — wired
+  // straight to `setCausalityParent` with no such composition, so the exact
+  // same forward-ref guard (`composerDraft.js`'s `setCausalityParent`) that
+  // the canvas path works around would silently no-op the Inspector path
+  // instead: no change, no error, no explanation. This is the asymmetry
+  // fixed here — same composition, same guarantee, on both affordances.
+  // (Fix round 1: `ComposerInspector.jsx`'s own option-list filter was ALSO
+  // broadened from array-position to graph legality, so this now goes
+  // through step-03 as a genuinely OFFERED <option>, not an injected one —
+  // see `ComposerInspector.test.jsx` for the option-list-level coverage.)
+  it('Inspector re-parenting step-02 onto step-03 (which sits AFTER it) reorders the array instead of silently dropping the edit', async () => {
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [FORK_SCENARIO] },
+      'GET /api/scenarios/SIM-EDR-FORK': FORK_SCENARIO,
+    })
+    mount({ from: 'SIM-EDR-FORK' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-03')).toBeInTheDocument())
+
+    const order = () => Array.from(document.querySelectorAll('[data-testid^="chain-step-"]'))
+      .map((el) => el.getAttribute('data-testid'))
+    expect(order()).toEqual(['chain-step-step-01', 'chain-step-step-02', 'chain-step-step-03'])
+
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId('chain-step-step-02'))
+    const parentSelect = screen.getByLabelText('Causality parent for step-02')
+
+    // ComposerInspector.jsx's "parent step" <option> list is graph-legal
+    // (`canConnect`), not array-position-limited (fix round 1) — step-03 is
+    // a legitimate sibling of step-02 (both children of step-01: no
+    // self-ref, no cycle), so it is genuinely OFFERED here despite sitting
+    // AFTER step-02 in `steps[]`. Selecting it through the real rendered
+    // <option>, with no DOM workaround, proves both halves end-to-end: the
+    // option reaches the DC, and the composed callback
+    // (onSetCausalityParent -> setCausalityParent + resort) applies it.
+    expect(within(parentSelect).getByRole('option', { name: 'step-03' })).toBeInTheDocument()
+    await user.selectOptions(parentSelect, 'step-03')
+
+    await waitFor(() => {
+      const ids = order()
+      expect(ids.indexOf('chain-step-step-03')).toBeLessThan(ids.indexOf('chain-step-step-02'))
+    })
+    expect(order().indexOf('chain-step-step-01')).toBe(0)
+    expect(screen.getByText(/parent step-03/)).toBeInTheDocument()
+  })
+})
+
+describe('ComposerView — Re-layout control (Task 11)', () => {
+  const LAYOUT_SCENARIO = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-LAYOUT',
+    composer_layout: { 'step-02': { x: 480, y: 260 } },
+  }
+
+  it('is disabled with no stored layout, and clears stored positions back to computed on click', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-relayout')).toBeInTheDocument())
+    expect(screen.getByTestId('composer-relayout')).toBeDisabled()
+    expect(screen.getByTestId('composer-canvas').dataset.storedLayout).toBe('none')
+  })
+
+  it('Re-layout clears stored positions back to computed', async () => {
+    const user = userEvent.setup()
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [LAYOUT_SCENARIO] },
+      'GET /api/scenarios/SIM-EDR-LAYOUT': LAYOUT_SCENARIO,
+    })
+    mount({ from: 'SIM-EDR-LAYOUT' })
+    await waitFor(() => expect(screen.getByTestId('composer-relayout')).toBeInTheDocument())
+    expect(screen.getByTestId('composer-relayout')).not.toBeDisabled()
+    expect(screen.getByTestId('composer-canvas').dataset.storedLayout).toBe('set')
+
+    await user.click(screen.getByTestId('composer-relayout'))
+    expect(screen.getByTestId('composer-canvas').dataset.storedLayout).toBe('none')
+    expect(screen.getByTestId('composer-relayout')).toBeDisabled()
+  })
+})
+
+describe('ComposerView — Run lens scoped to the open draft (Task 13)', () => {
+  // Diagnosis: docs/superpowers/plans/2026-09-08-run-lens-diagnosis.md
+  // Brief:     .superpowers/sdd/2026-09-08-composer-direct-manipulation/task-13-brief.md
+  //
+  // Field-name note (brief Step 1, verified live against localhost:8888, a
+  // running SimCore — not assumed): `curl -s localhost:8888/api/runs` rows
+  // carry run_id / scenario_id / status / started_at, exactly as the brief
+  // guessed. What the brief could NOT know: `env.activeRun` (the value these
+  // tests exercise) is not a raw run row at all — it's a DERIVED view-model
+  // built by EnvironmentContext.jsx's `activeRun` useMemo, and that object
+  // carries runId / scenarioId (camelCase) with NO run_id/scenario_id/status
+  // fields (confirmed by grep across AppConsole.jsx, ConsoleHeader.jsx,
+  // RunDetailView.jsx, and ComposerView.jsx's own existing `activeRun.runId`
+  // reads at ~line 1033). `renderComposer` below drives the REAL
+  // EnvironmentProvider + a mocked GET /api/runs, so `env.activeRun` in the
+  // component under test is the real derived shape, not the brief's guessed
+  // raw-row shape — the brief's test bodies are adapted (helper + async
+  // waitFor) to run against that reality, not copied as literally-sync
+  // pseudocode, since ComposerView loads its origin scenario over a mocked
+  // network fetch and cannot render synchronously.
+  const SCEN_ID = SCENARIO.scenario_id // 'SIM-EDR-001' — matches the brief's SCENARIO const
+
+  function runRow(over = {}) {
+    return {
+      run_id: 'r1', scenario_id: SCEN_ID, status: 'completed',
+      started_at: '2026-09-08T12:00:00Z', ...over,
+    }
+  }
+
+  // Folds a test's `activeRun` (in-flight run) description into a `status:
+  // 'running'` row for the mocked GET /api/runs — EnvironmentContext derives
+  // its own real `env.activeRun` from exactly that list, so this is what
+  // drives the REAL derivation rather than injecting a fake shape directly.
+  function activeRunRow(activeRun) {
+    if (!activeRun) return null
+    return {
+      run_id: activeRun.run_id || 'active',
+      scenario_id: activeRun.scenario_id,
+      status: activeRun.status || 'running',
+      started_at: activeRun.started_at || '2026-09-08T12:00:00Z',
+      step: activeRun.step,
+      detected: activeRun.detected,
+      // Forwarded so ComposerView's canonical-shape projection (Finding 1,
+      // fix round 1) has a real raw row to resolve stitch_binding from when
+      // scopedRun is the camelCase env.activeRun view-model, which never
+      // carries this field itself.
+      stitch_binding: activeRun.stitch_binding ?? null,
+    }
+  }
+
+  function renderComposer({ draft = {}, env = {}, getRunCausality: impl } = {}) {
+    const scenarioId = draft.originId || SCEN_ID
+    const runs = [...(env.runs || [])]
+    const activeRow = activeRunRow(env.activeRun)
+    if (activeRow) runs.push(activeRow)
+    baseRoutes({ 'GET /api/runs': runs })
+    mockGetRunCausality.mockReset()
+    if (impl) mockGetRunCausality.mockImplementation((...args) => impl(...args))
+    return mount({ from: scenarioId })
+  }
+
+  it('fetches causality for a TERMINAL run of the open scenario', async () => {
+    // Fails today: env.activeRun is running-only, so a completed/failed run
+    // never triggers the fetch and the canvas claims no run exists.
+    const getRunCausalityImpl = vi.fn().mockResolvedValue({ nodes: [], edges: [] })
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: { runs: [runRow()], activeRun: null },
+      getRunCausality: getRunCausalityImpl,
+    })
+    await waitFor(() => expect(getRunCausalityImpl).toHaveBeenCalledWith('r1'))
+  })
+
+  it("does NOT paint this canvas with another scenario's in-flight run", async () => {
+    // Defect B: evidence contamination across scenarios.
+    const getRunCausalityImpl = vi.fn()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: {
+        runs: [],
+        activeRun: { run_id: 'other', scenario_id: 'SIM-CDR-009', status: 'running', step: 1, detected: 0 },
+      },
+      getRunCausality: getRunCausalityImpl,
+    })
+    // Give every pending async effect (scenario load, runs poll, the
+    // causality effect itself) room to settle before asserting the negative.
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(getRunCausalityImpl).not.toHaveBeenCalled()
+  })
+
+  it('prefers the in-flight run when it belongs to THIS scenario', async () => {
+    const getRunCausalityImpl = vi.fn().mockResolvedValue({ nodes: [], edges: [] })
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: {
+        runs: [runRow({ run_id: 'old' })],
+        activeRun: { run_id: 'live', scenario_id: SCEN_ID, status: 'running', step: 2, detected: 1 },
+      },
+      getRunCausality: getRunCausalityImpl,
+    })
+    await waitFor(() => expect(getRunCausalityImpl).toHaveBeenCalledWith('live'))
+  })
+
+  it('shows "no run yet" only when NO run exists for this scenario', async () => {
+    const user = userEvent.setup()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: { runs: [runRow({ scenario_id: 'SIM-CDR-009' })], activeRun: null },
+    })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(screen.getByTestId('composer-run-graph')).toBeInTheDocument())
+    expect(screen.getByTestId('composer-run-graph').textContent).toMatch(/no run yet/i)
+  })
+
+  it('renders no drag grip in the Run lens — the lens is strictly read-only', async () => {
+    // Reviewer-found gap folded into Task 13: nodesDraggable is false in the
+    // Run lens, but the grip DOM rendered regardless (harmless, but reads as
+    // a live affordance that does nothing).
+    const user = userEvent.setup()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: { runs: [runRow()], activeRun: null },
+      getRunCausality: vi.fn().mockResolvedValue({ nodes: [], edges: [] }),
+    })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(screen.getByTestId('chain-node-grip-step-01')).toBeInTheDocument()
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(screen.getByTestId('composer-run-graph')).toBeInTheDocument())
+    expect(screen.queryByTestId('chain-node-grip-step-01')).not.toBeInTheDocument()
+  })
+
+  it('shows a run-exists-but-not-loaded state, not "no run", while the graph is pending', async () => {
+    // Reviewer fix-round-1, Finding 2: this transient — a scoped run exists
+    // (hasRun) but its causality graph has not arrived yet (fetch pending or
+    // failed) — is the entire honesty point of Task 13. Reusing the "no run"
+    // copy here would be exactly the false claim ("nothing is inferred
+    // before a run exists") the diagnosis was opened to close, just shifted
+    // one step later. A never-resolving getRunCausality pins the transient
+    // deterministically instead of racing a real promise resolution.
+    const getRunCausalityImpl = vi.fn(() => new Promise(() => {}))
+    const user = userEvent.setup()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: { runs: [runRow()], activeRun: null },
+      getRunCausality: getRunCausalityImpl,
+    })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(getRunCausalityImpl).toHaveBeenCalledWith('r1'))
+    await waitFor(() =>
+      expect(screen.getByTestId('composer-run-graph').textContent).toMatch(/causality graph not loaded yet/i))
+    // The false claim must be absent, not just the true one present.
+    expect(screen.getByTestId('composer-run-graph').textContent)
+      .not.toMatch(/Nothing on this canvas is inferred before a run exists/i)
+  })
+
+  it('projects the live-run-of-this-scenario branch into the SAME shape the terminal branch uses', async () => {
+    // Reviewer fix-round-1, Finding 1: ComposerCanvas's `activeRun` prop is
+    // raw-row shaped by contract (run_id/status/stitch_binding — pinned by
+    // ComposerCanvas.test.jsx's "quotes the run's REAL persisted binding"
+    // test). scopedRun on the LIVE branch is env.activeRun, the camelCase
+    // view-model, which carries none of those three fields — without the
+    // canonical projection in ComposerView, the header caption and the
+    // binding readout render blank on this branch even though they work on
+    // the terminal branch. Assert both are populated here, not just that
+    // the fetch fires (the prior "prefers the in-flight run..." test only
+    // proved the fetch).
+    const graph = {
+      run_id: 'live',
+      nodes: [{ id: 'proc:live:step-01', kind: 'process', label: 'cat' }],
+      edges: [],
+      causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+    }
+    const getRunCausalityImpl = vi.fn().mockResolvedValue(graph)
+    const user = userEvent.setup()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: {
+        runs: [runRow({ run_id: 'old' })],
+        activeRun: {
+          run_id: 'live', scenario_id: SCEN_ID, status: 'running', step: 2, detected: 1,
+          stitch_binding: { src_port: 51234, dst_ip: '203.0.113.10' },
+        },
+      },
+      getRunCausality: getRunCausalityImpl,
+    })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(getRunCausalityImpl).toHaveBeenCalledWith('live'))
+    await waitFor(() => expect(screen.getByTestId('composer-run-graph')).toBeInTheDocument())
+    // Header caption — scoped via querySelector (not screen.getByText) since
+    // .composer-canvas__meta's ancestors also "contain" the same substring
+    // in their fuller textContent, which makes getByText ambiguous here.
+    const meta = document.querySelector('.composer-canvas__meta')
+    expect(meta.textContent).toMatch(/· run live running/)
+    // Binding readout.
+    const readout = screen.getByTestId('composer-stitch-binding')
+    expect(readout.textContent).toMatch(/src_port=51234/)
+    expect(readout.textContent).toMatch(/dst_ip=203\.0\.113\.10/)
+  })
+})
+
+describe('ComposerView — Load a saved draft (Task 12 crash)', () => {
+  // Live-verified shapes: GET /api/scenarios/drafts returns `projection:
+  // "summary"` rows whose steps carry only id/name/mitre_technique/
+  // expected_detections (no command/platforms/causality); GET
+  // /api/scenarios/drafts/:id returns the FULL Scenario.to_dict() row, which
+  // DOES carry command/platforms/causality on every step. `loadDraft` fetches
+  // the summary only to read `.scenario_id`, then fetches and renders the
+  // full row — so a step ever missing platforms/detections is not what broke
+  // this. See ComposerView.jsx's `loadDraft` for the actual defect.
+  const DRAFT_SUMMARY = {
+    drafts: [{
+      id: 178,
+      scenario_id: 'SIM-DRAFT-browser-drive-by',
+      name: 'Browser — Drive-by Download',
+      steps: [
+        { id: 'step-01', name: 'Pre-flight', mitre_technique: 'T1566', expected_detections: [{ type: 'Analytics', plane: 'BROWSER' }] },
+        { id: 'step-02', name: 'Drive to phishing page', mitre_technique: 'T1189', expected_detections: [{ type: 'BIOC', plane: 'BROWSER' }] },
+      ],
+    }],
+    total: 1,
+    projection: 'summary',
+  }
+  const DRAFT_FULL = {
+    id: 178,
+    scenario_id: 'SIM-DRAFT-browser-drive-by',
+    name: 'Browser — Drive-by Download',
+    plane: 'BROWSER',
+    status: 'draft',
+    author: 'composer',
+    tags: ['composer-draft'],
+    uc_ref: 'UCS-AES-03',
+    tc_ref: 'TC-AES-06',
+    cgo_anchor: { image_name: 'chrome', primary_username: 'corp-user' },
+    cleanup: { commands: [] },
+    composer_layout: { 'step-02': { x: 216, y: 176 } },
+    steps: [
+      {
+        id: 'step-01', name: 'Pre-flight', command: 'echo pre-flight',
+        identity: 'container-runtime', mitre_technique: 'T1566',
+        expected_detections: [{ plane: 'BROWSER', type: 'Analytics', detection_id: 'xql-1' }],
+        causality: null, platforms: ['linux', 'container'], platform_variants: {},
+      },
+      {
+        id: 'step-02', name: 'Drive to phishing page', command: 'echo drive-by',
+        identity: 'container-runtime', mitre_technique: 'T1189',
+        expected_detections: [{ plane: 'BROWSER', type: 'BIOC', detection_id: 'bioc-1' }],
+        causality: { parent_step: 'step-01', pivot: 'process_lineage' },
+        platforms: ['linux', 'container'], platform_variants: {},
+      },
+    ],
+    launchable: { launchable: true, chain_valid: true, tc_bound: true, reasons: [] },
+  }
+
+  it('loading a draft with no scenario open does not crash the destination', async () => {
+    const user = userEvent.setup()
+    baseRoutes({
+      // No scenario open — `fromId` is absent, so ComposerView mounts empty.
+      'GET /api/scenarios/drafts': DRAFT_SUMMARY,
+      'GET /api/scenarios/drafts/SIM-DRAFT-browser-drive-by': DRAFT_FULL,
+    })
+    mount()
+    await waitFor(() => expect(screen.getByTestId('composer-firstrun')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-load-draft'))
+    // Before the fix: `origin` was set WITHOUT its `.steps` (loadDraft
+    // destructured steps out before calling setOrigin), so the very next
+    // render's `edited` memo threw reading `origin.steps.length` on
+    // undefined — replacing the whole destination with the error boundary
+    // ("Composer could not load — Cannot read properties of undefined
+    // (reading 'length')") before the chain ever painted.
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(screen.getByTestId('chain-start')).toBeInTheDocument()
+    expect(screen.queryByTestId('surface-error')).not.toBeInTheDocument()
   })
 })

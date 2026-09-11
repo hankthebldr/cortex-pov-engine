@@ -37,6 +37,8 @@ import {
   setStepChannel,
   setStepEal,
   setStepTarget,
+  setNodePosition,
+  clearLayout,
   validateDraft,
 } from '../console/composerDraft.js'
 
@@ -723,5 +725,59 @@ describe('validateDraft — missing EAL plugin', () => {
   })
   it('a corpus draft has an empty missingEalPlugin list', () => {
     expect(validateDraft(draftFromScenario(SCENARIO).steps).missingEalPlugin).toEqual([])
+  })
+})
+
+describe('composer layout', () => {
+  it('starts null so a fresh draft is byte-identical to a pre-feature draft', () => {
+    expect(emptyDraft().layout).toBeNull()
+  })
+
+  it('setNodePosition stores a position without mutating the input', () => {
+    const d0 = { ...emptyDraft(), steps: [{ id: 's1' }] }
+    const d1 = setNodePosition(d0, 's1', 120, 40)
+    expect(d1.layout).toEqual({ s1: { x: 120, y: 40 } })
+    expect(d0.layout).toBeNull()          // no mutation
+  })
+
+  it('round-trips through the API shape', () => {
+    // detections: [] — draftToApi maps over each step's detections, so a
+    // bare { id } (unlike the mutation-only tests above, which never reach
+    // draftToApi) needs the field normalizeStep would otherwise supply.
+    const d = setNodePosition(
+      { ...emptyDraft(), steps: [{ id: 's1', detections: [] }] }, 's1', 8, 16,
+    )
+    expect(draftToApi(d).composer_layout).toEqual({ s1: { x: 8, y: 16 } })
+    expect(draftFromApi({ ...draftToApi(d), composer_layout: { s1: { x: 8, y: 16 } } }).layout)
+      .toEqual({ s1: { x: 8, y: 16 } })
+  })
+
+  it('omits composer_layout entirely when there is no layout', () => {
+    expect('composer_layout' in draftToApi(emptyDraft())).toBe(false)
+  })
+
+  it('clearLayout resets to null for Re-layout', () => {
+    const d = setNodePosition({ ...emptyDraft(), steps: [{ id: 's1' }] }, 's1', 1, 2)
+    expect(clearLayout(d).layout).toBeNull()
+  })
+
+  it('NEVER leaks coordinates into emitted scenario YAML', () => {
+    // That YAML is dropped into scenarios/<plane>/ and validated by the strict
+    // loader. Coordinates there would reach the shipped corpus.
+    // platforms: [] — emitDraftYaml reads s.platforms.length directly (no
+    // Array.isArray guard, by design: an unrecognized step shape should
+    // raise, not silently read as empty), so a step built by hand here needs
+    // the field normalizeStep would otherwise supply.
+    const d = setNodePosition(
+      {
+        ...emptyDraft(),
+        name: 'x',
+        plane: 'EDR',
+        steps: [{ id: 's1', name: 'a', command: 'id', platforms: [], detections: [] }],
+      },
+      's1', 999, 777,
+    )
+    const yaml = emitDraftYaml(d)
+    expect(yaml).not.toMatch(/composer_layout|\bx:\s*999|\by:\s*777|position/)
   })
 })

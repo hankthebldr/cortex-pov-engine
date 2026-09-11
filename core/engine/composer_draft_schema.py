@@ -44,7 +44,7 @@ import re
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Reuse the strict loader's validated building blocks VERBATIM. Importing (not
 # copying) them is the whole point: a change to the step/detection/causality
@@ -106,6 +106,18 @@ class DraftStepSchema(StepSchema):
     mitre_technique: Optional[str] = None
 
 
+class NodePosition(BaseModel):
+    """One node's canvas position. ``extra='forbid'`` on purpose: an
+    unrecognised key here means the caller and the canvas disagree about the
+    shape, which must surface as 422 rather than a silently half-stored
+    position."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: int
+    y: int
+
+
 class DraftScenarioSchema(BaseModel):
     """A composer-authored draft chain, validated for structural well-formedness
     but NOT for a UC/TC index binding (that is the launch gate's job).
@@ -161,6 +173,13 @@ class DraftScenarioSchema(BaseModel):
     # RAISES (surfaced by the drafts API as STITCH_CONTEXT_INVALID naming the
     # offending key+directive), never silently reads as empty.
     stitch_context: Optional[StitchContextSchema] = None
+
+    # ── Optional Composer canvas layout (2026-09-08) ────────────────────────
+    # Presentation-only, keyed by step id. Declared EXPLICITLY rather than
+    # relying on the free-form steps JSON: DraftStepSchema/StepSchema declare
+    # no model_config, so Pydantic v2's extra='ignore' would silently discard
+    # a position and green every test (Gate A5, "tolerance hides bugs").
+    composer_layout: Optional[dict[str, NodePosition]] = None
 
     # -- validators ----------------------------------------------------------
 
@@ -248,6 +267,22 @@ class DraftScenarioSchema(BaseModel):
     def _validate_spine(self) -> "DraftScenarioSchema":
         # Same one-root/no-forward-ref spine rule as the strict loader.
         validate_causality_spine(self.steps)
+        return self
+
+    @model_validator(mode="after")
+    def _prune_orphan_layout_keys(self):
+        """Drop layout entries whose step no longer exists.
+
+        Steps are freely removable and a stale coordinate is presentation
+        debris, not a dangling reference — so this prunes rather than raises.
+        Contrast NodePosition's extra='forbid': a MALFORMED position is a
+        contract disagreement and does raise.
+        """
+        if self.composer_layout:
+            live = {s.id for s in self.steps}
+            self.composer_layout = {
+                k: v for k, v in self.composer_layout.items() if k in live
+            } or None
         return self
 
     @model_validator(mode="after")
@@ -422,6 +457,13 @@ def draft_to_orm_kwargs(
         "stitch_context": (
             (draft.stitch_context.model_dump(exclude_none=True) or None)
             if draft.stitch_context is not None
+            else None
+        ),
+        # Canvas layout: normalise an empty map to None so a layout-less draft
+        # stores NULL, exactly as stitch_context does.
+        "composer_layout": (
+            {k: v.model_dump() for k, v in draft.composer_layout.items()} or None
+            if draft.composer_layout
             else None
         ),
         # Measurement contract (all optional on a draft).

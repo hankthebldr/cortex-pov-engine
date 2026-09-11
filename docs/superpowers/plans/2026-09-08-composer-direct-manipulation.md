@@ -1495,3 +1495,161 @@ already uses. `canConnect` returns `{ok}` / `{ok, code, reason}` in Tasks 7 and
 are defined in Task 5 and consumed unchanged in Tasks 9 and 11.
 `mergeStoredPositions(layout, stored)` is defined in Task 6 and consumed in
 Task 8.
+
+---
+
+### Task 13: Scope the Run lens to the open draft's own scenario
+
+Added 2026-09-11 from Task 1's diagnosis (`docs/superpowers/plans/2026-09-08-run-lens-diagnosis.md`).
+Fixes TWO defects with one change.
+
+**Defect A — the lens is blind to terminal runs.** `ComposerView.jsx:259` keys the
+causality fetch on `env.activeRun`, and `EnvironmentContext.jsx:333` derives that as
+`runs.find(r => r.status === 'running')` — app-wide and running-only. A completed or
+failed run therefore never triggers the fetch, so the canvas renders "No run yet —
+EXPECTED only. … Nothing on this canvas is inferred before a run exists" while the
+backend serves a fully populated causality graph for that very run. The code contradicts
+its own comment three lines above, which claims it renders "an in-flight **or terminal**
+run for this draft".
+
+**Defect B — cross-scenario evidence contamination.** Nothing guards `env.activeRun` by
+scenario id, so an in-flight run of scenario B paints scenario A's Run lens while A's
+draft is open. That renders one scenario's detection evidence as another's.
+
+**Files:**
+- Modify: `ui/src/components/console/ComposerView.jsx:255-275`
+- Modify: `ui/src/components/console/ComposerCanvas.jsx` (`RunGraph` empty-state copy, ~line 374)
+- Test: `ui/src/components/__tests__/ComposerView.test.jsx`
+
+**Interfaces:**
+- Consumes: `env.runs` (already used in this component at `ComposerView.jsx:818` for `HistoryPane`), `env.activeRun`, `draft.originId`.
+- Produces: `scopedRun` — the run this lens renders. No new exports.
+
+- [ ] **Step 1: Confirm the field names before writing code**
+
+Do not assume the run row's shape. Run:
+
+```bash
+grep -n "scenario_id\|started_at\|run_id\|status" ui/src/components/console/ComposerView.jsx | sed -n '1,20p'
+curl -s localhost:8888/api/runs | python3 -c 'import sys,json;d=json.load(sys.stdin);r=(d.get("runs") or d)[0];print(sorted(r.keys()))'
+```
+
+Use the names that come back, not the names in this task text.
+
+- [ ] **Step 2: Write the failing tests**
+
+```javascript
+const SCENARIO = 'SIM-EDR-001'
+
+function runRow(over = {}) {
+  return { run_id: 'r1', scenario_id: SCENARIO, status: 'completed',
+           started_at: '2026-09-08T12:00:00Z', ...over }
+}
+
+it('fetches causality for a TERMINAL run of the open scenario', async () => {
+  // Fails today: env.activeRun is running-only, so a completed/failed run
+  // never triggers the fetch and the canvas claims no run exists.
+  const getRunCausality = vi.fn().mockResolvedValue({ nodes: [], edges: [] })
+  renderComposer({ draft: { originId: SCENARIO }, env: { runs: [runRow()], activeRun: null }, getRunCausality })
+  await waitFor(() => expect(getRunCausality).toHaveBeenCalledWith('r1'))
+})
+
+it('does NOT paint this canvas with another scenario\'s in-flight run', async () => {
+  // Defect B: evidence contamination across scenarios.
+  const getRunCausality = vi.fn()
+  renderComposer({
+    draft: { originId: SCENARIO },
+    env: { runs: [], activeRun: { run_id: 'other', scenario_id: 'SIM-CDR-009', status: 'running', step: 1, detected: 0 } },
+    getRunCausality,
+  })
+  await waitFor(() => expect(getRunCausality).not.toHaveBeenCalled())
+})
+
+it('prefers the in-flight run when it belongs to THIS scenario', async () => {
+  const getRunCausality = vi.fn().mockResolvedValue({ nodes: [], edges: [] })
+  renderComposer({
+    draft: { originId: SCENARIO },
+    env: { runs: [runRow({ run_id: 'old' })],
+           activeRun: { run_id: 'live', scenario_id: SCENARIO, status: 'running', step: 2, detected: 1 } },
+    getRunCausality,
+  })
+  await waitFor(() => expect(getRunCausality).toHaveBeenCalledWith('live'))
+})
+
+it('shows "no run yet" only when NO run exists for this scenario', () => {
+  const { getByTestId } = renderComposer({
+    draft: { originId: SCENARIO },
+    env: { runs: [runRow({ scenario_id: 'SIM-CDR-009' })], activeRun: null },
+    lens: 'run',
+  })
+  expect(getByTestId('composer-run-graph').textContent).toMatch(/no run yet/i)
+})
+```
+
+- [ ] **Step 3: Run to verify they fail**
+
+```bash
+cd ui && npm test -- ComposerView 2>&1 | tail -25
+```
+
+Expected: the terminal-run test FAILS (`getRunCausality` never called). That failure is
+the Gate A proof this fix is load-bearing.
+
+- [ ] **Step 4: Implement the scoped selection**
+
+Replace the `activeRunId` / `runTick` derivation in `ComposerView.jsx`:
+
+```javascript
+  // The run this lens renders: the most recent run OF THE OPEN DRAFT'S OWN
+  // scenario, in-flight or terminal.
+  //
+  // Previously this keyed on env.activeRun alone, which EnvironmentContext
+  // derives as `runs.find(r => r.status === 'running')` — app-wide and
+  // running-only. Two defects fell out of that: a terminal run never triggered
+  // the fetch (so the canvas claimed no run existed while the backend served a
+  // populated graph), and an in-flight run of a DIFFERENT scenario painted this
+  // canvas with another scenario's evidence.
+  const scenarioId = draft.originId || null
+
+  const scopedRun = useMemo(() => {
+    if (!scenarioId) return null
+    // Prefer the live run, but only when it is THIS scenario's.
+    if (env.activeRun && env.activeRun.scenario_id === scenarioId) return env.activeRun
+    const mine = (env.runs || []).filter((r) => r && r.scenario_id === scenarioId)
+    if (mine.length === 0) return null
+    return mine.reduce((best, r) =>
+      Date.parse(r.started_at || 0) > Date.parse(best.started_at || 0) ? r : best)
+  }, [scenarioId, env.activeRun, env.runs])
+
+  const activeRunId = scopedRun ? runIdOf(scopedRun) : null
+
+  // Poll only while non-terminal; a terminal run's graph is settled, so keying
+  // on its mutable fields would refetch forever for no new data.
+  const isLive = scopedRun ? scopedRun.status === 'running' : false
+  const runTick = isLive
+    ? `${scopedRun.step}:${scopedRun.detected}:${scopedRun.status}`
+    : null
+```
+
+- [ ] **Step 5: Correct the empty-state copy**
+
+In `ComposerCanvas.jsx`'s `RunGraph`, the empty state must distinguish "no run for this
+scenario" from "a run exists but its graph has not loaded". Keep the existing honest
+wording for the former; do NOT claim "nothing is inferred before a run exists" when a run
+does exist.
+
+- [ ] **Step 6: Run to verify they pass**
+
+```bash
+cd ui && npm test -- ComposerView 2>&1 | tail -15
+cd ui && npm test 2>&1 | tail -8
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add ui/src/components/console/ComposerView.jsx \
+        ui/src/components/console/ComposerCanvas.jsx \
+        ui/src/components/__tests__/ComposerView.test.jsx
+git commit -m "fix(ui): scope the Run lens to the open draft's own scenario"
+```
