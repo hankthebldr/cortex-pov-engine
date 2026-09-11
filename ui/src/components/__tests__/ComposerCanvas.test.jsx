@@ -363,6 +363,60 @@ describe('ComposerCanvas — Design lens through React Flow (Task 8, render only
   })
 })
 
+describe('ComposerCanvas — draggable nodes persist position (Task 9)', () => {
+  /** Emit the node-position change React Flow produces after a drag. */
+  function fireNodeDrag(id, position) {
+    // React Flow's onNodesChange receives {id, type:'position', position,
+    // dragging:false} on drag end. Driving the handler directly is the stable
+    // seam — synthesising pointer events against a transformed pane is not.
+    const handler = window.__rfOnNodesChange
+    handler([{ id, type: 'position', position, dragging: false }])
+  }
+
+  it('reports a moved node in FLOW coordinates, not screen pixels', () => {
+    // React Flow already divides screen delta by zoom before emitting a position
+    // change. The bug this guards is someone "helpfully" re-applying zoom on top,
+    // which double-scales every drag. See spec §5.4.
+    //
+    // NOTE (deviation from the task-9 brief, documented in task-9-report.md):
+    // the brief's literal fixture used {x:300,y:150}, asserting the callback
+    // receives that pair unchanged. 300/8 and 150/8 are not whole numbers —
+    // under ANY 8px-grid-snap implementation (which the very next test below
+    // requires), 300 must move to 296 or 304 and 150 to 152; it can never come
+    // back as 300/150. Using grid-aligned input here instead (320,160 — both
+    // exact multiples of SNAP=8) keeps the test's real intent — the value is
+    // NOT zoom-doubled — provable without colliding with the snap-grid test.
+    const onNodeMoved = vi.fn()
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onNodeMoved })} />)
+
+    // Simulate the change React Flow emits after a drag at zoom 2.
+    fireNodeDrag('s1', { x: 320, y: 160 })
+    expect(onNodeMoved).toHaveBeenCalledWith('s1', 320, 160)   // NOT 640/320
+  })
+
+  it('snaps a stored position to the 8px grid', () => {
+    const onNodeMoved = vi.fn()
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onNodeMoved })} />)
+    fireNodeDrag('s1', { x: 301, y: 149 })
+    expect(onNodeMoved).toHaveBeenCalledWith('s1', 304, 152)
+  })
+
+  it('exposes no drag affordance in the run lens', () => {
+    const graph = {
+      run_id: 'run-9', nodes: [{ id: 'proc:run-9:step-01', kind: 'process', label: 'curl' }],
+      edges: [], causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+    }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ lens: 'run', causalityGraph: graph })} />
+    )
+    container.querySelectorAll('.react-flow__node').forEach((n) => {
+      expect(n.classList.contains('draggable')).toBe(false)
+    })
+  })
+})
+
 describe('ComposerCanvas — storedLayout wiring (additional requirement, Task 8)', () => {
   // Task 5 produces `draft.layout`; nothing before this task read it back —
   // positions would persist to the backend and then never apply. This pins

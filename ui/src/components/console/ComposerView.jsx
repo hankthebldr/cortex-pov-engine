@@ -45,6 +45,7 @@ import {
   removeDetection,
   removeStep,
   setCausalityParent,
+  setNodePosition,
   setStepChannel,
   setStepEal,
   setStepTarget,
@@ -417,6 +418,19 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     const cmd = steps.find((s) => s.id === id)?.command ?? ''
     onEditStep(id, { command: `${cmd} ${stitchInsertToken(key)}` })
   }, [steps, onEditStep])
+  // Canvas node position (Task 9, direct-manipulation). Same draftMeta-overlay
+  // shape as `onSetStitchEntity` right above: `draft.layout` resolves to
+  // `origin.layout` until the DC drags a node, at which point the overlay
+  // carries it (`composerDraft.js`'s own comment on `layout` calls this out
+  // as the same round-trip-through-ONE-place shape as `stitchContext`).
+  // `setNodePosition` already rounds and returns a NEW object rather than
+  // mutating, so this is just the overlay's read-current/write-back pattern.
+  const onNodeMoved = useCallback((stepId, x, y) => {
+    setDraftMeta((m) => {
+      const curLayout = m.layout !== undefined ? m.layout : (origin?.layout ?? null)
+      return setNodePosition({ ...m, layout: curLayout }, stepId, x, y)
+    })
+  }, [origin])
   const onMoveStep = useCallback((index, delta) => setSteps((p) => moveStep(p, index, delta)), [])
   const onDuplicateStep = useCallback((index) => setSteps((p) => duplicateStep(p, index)), [])
   const onRemoveStep = useCallback((index) => setSteps((p) => removeStep(p, index)), [])
@@ -732,6 +746,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           onMoveStep={onMoveStep}
           onDuplicateStep={onDuplicateStep}
           onRemoveStep={onRemoveStep}
+          onNodeMoved={onNodeMoved}
           onAddStep={() => addBlank('New command step')}
           onStartLibrary={() => onNavigate('library')}
           onStartTtp={() => onNavigate('ttps')}

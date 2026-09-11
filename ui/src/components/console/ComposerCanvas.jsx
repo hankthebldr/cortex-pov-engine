@@ -29,15 +29,24 @@
  *
  * DESIGN LENS RENDERING (2026-09-08 direct-manipulation Task 8) — the step
  * cards render through React Flow (`@xyflow/react`) instead of a hand-rolled
- * absolutely-positioned SVG canvas. This pass is RENDER ONLY: node dragging
- * (Task 9) and connect-by-drag (Task 10) come later, which is why
- * `nodesDraggable`/`nodesConnectable` are false below and the `Handle`s on
- * `StepNode` currently do nothing but sit there for Task 10 to wire up.
- * START and END stay plain, non-draggable anchors OUTSIDE the React Flow
- * graph — they are not steps, so "one node per step" holds through React
- * Flow's own node count.
+ * absolutely-positioned SVG canvas. That pass was RENDER ONLY (nodes were not
+ * draggable). Task 9 (below) turns dragging on in the Design lens and
+ * persists the dropped position through `onNodeMoved`; `nodesConnectable`
+ * stays false and the `Handle`s on `StepNode` still do nothing — Task 10
+ * wires those up. START and END stay plain, non-draggable anchors OUTSIDE
+ * the React Flow graph — they are not steps, so "one node per step" holds
+ * through React Flow's own node count.
+ *
+ * DRAGGING (Task 9) — `DesignGraph.onNodesChange` commits a node's position
+ * to `onNodeMoved(stepId, x, y)` only on drag END (`dragging === false`),
+ * snapped to an 8px grid. React Flow already divides the screen-pixel delta
+ * by the current zoom before it reaches `onNodesChange` — the position it
+ * hands us is already in flow coordinates, so the handler must NOT re-apply
+ * zoom on top of it (that would double-scale every drag). Dragging is
+ * disabled in the Run lens (`nodesDraggable={!runLens}`) — that lens shows
+ * the authored spine for context, not a surface to redesign the chain on.
  */
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
@@ -118,21 +127,51 @@ function edgePath(from, to, orientation) {
  * wrapper around it. `Handle`s are the connect affordance Task 10 wires up —
  * inert for now because `nodesConnectable={false}` on the parent `<ReactFlow>`.
  *
- * `nodrag nopan` on the outer div: React Flow's defaults for
+ * `nodrag nopan` SCOPING (Task 8 introduced the classes on the node root;
+ * Task 9 re-scopes them, does not remove them). React Flow's defaults for
  * `noDragClassName`/`noPanClassName` are literally `'nodrag'`/`'nopan'`, and
  * the pane's own drag-to-pan filter walks up from `event.target` looking for
- * `.nopan` before starting a d3-zoom pan gesture. Without it, a mousedown on
- * any button in this card (move/duplicate/remove/select) bubbles to the pane
- * and d3-zoom's pan handler throws under jsdom — the FIX for that crash is
- * this class, not disabling pane panning globally (`panOnDrag` stays at its
- * default `true` on `<ReactFlow>` below).
+ * `.nopan` before starting a d3-zoom pan gesture. In Task 8, `nodesDraggable`
+ * was globally `false`, so nothing local ever claimed a card's mousedown —
+ * without `nodrag nopan` on the whole node root, a mousedown on ANY button in
+ * the card (move/duplicate/remove/select) bubbled all the way to the pane,
+ * whose d3-zoom pan handler threw under jsdom. A re-reviewer proved this by
+ * reverting the class and reproducing the crash.
+ *
+ * Task 9 turns `nodesDraggable` on for the Design lens, so `nodrag nopan`
+ * CANNOT stay on the whole node root any more — that would block dragging
+ * everywhere (defeating this task), since `nodrag` on an ancestor suppresses
+ * drag-start for every descendant mousedown, root included. Nor can the two
+ * classes simply come OFF the interactive buttons: a second, DIFFERENT jsdom
+ * crash surfaces the moment a button's mousedown is left for React Flow's
+ * per-node d3-drag to handle at all — d3-drag's own gesture setup
+ * (`d3-drag/src/nodrag.js`, called from `mousedowned`) dereferences
+ * `event.view.document`, and jsdom/`@testing-library/user-event`'s synthetic
+ * `MouseEvent` does not carry a `view`, so it throws `Cannot read properties
+ * of null (reading 'document')` — independent of, and in addition to, the
+ * pane-pan crash Task 8 fixed. Proven by first trying "nodrag/nopan on
+ * `.chain-node__tools` only, body carries neither": the "wires reorder /
+ * duplicate / remove..." test (which also clicks the body's select button)
+ * crashed with exactly that trace.
+ *
+ * So both classes stay on EVERY interactive control — `.chain-node__body`
+ * (the select button) AND `.chain-node__tools` (the move/duplicate/remove
+ * toolbar) — exactly the elements Task 8 already protected, just moved down
+ * from their shared ancestor onto each of them individually. What changes is
+ * the ROOT: `.chain-node.chain-node--step` itself now carries NEITHER class,
+ * so it — its border, padding, and any card surface outside the button and
+ * toolbar — is what React Flow drags. A click that starts and ends on a
+ * button (no intervening pointer movement) still fires that button's
+ * `onClick` normally; only a press-and-move gesture on the card frame itself
+ * initiates a node drag. `panOnDrag` stays at its default `true` on
+ * `<ReactFlow>` below either way — not the fix, same as Task 8.
  */
 function StepNode({ data }) {
   const s = data.step
   return (
     <div
       className={
-        'chain-node chain-node--step nodrag nopan'
+        'chain-node chain-node--step'
         + (data.selected ? ' chain-node--selected' : '')
         + (s.detections.length ? '' : ' chain-node--nodetect')
       }
@@ -141,7 +180,7 @@ function StepNode({ data }) {
       <Handle type="target" position={Position.Top} />
       <button
         type="button"
-        className="chain-node__body"
+        className="chain-node__body nodrag nopan"
         onClick={data.onSelectStep}
         aria-pressed={data.selected}
         data-testid={`chain-step-${s.id}`}
@@ -206,7 +245,7 @@ function StepNode({ data }) {
           )}
         </span>
       </button>
-      <div className="chain-node__tools">
+      <div className="chain-node__tools nodrag nopan">
         <button type="button" title="Move earlier" aria-label={`Move ${s.id} earlier`}
           onClick={data.onMoveEarlier}>↑</button>
         <button type="button" title="Move later" aria-label={`Move ${s.id} later`}
@@ -252,10 +291,18 @@ function SpineConnector({ testId }) {
   )
 }
 
+// Grid a dropped node snaps to, in flow-coordinate pixels. Shared by the
+// visual `snapGrid` prop (what the DC sees while dragging) and the manual
+// rounding in `onNodesChange` below (what actually gets committed) — the
+// commit path does its own rounding rather than trusting React Flow's
+// internal snap alone, since the test seam drives `onNodesChange` directly,
+// bypassing React Flow's own drag pipeline entirely.
+const SNAP = 8
+
 function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
-  onMoveStep, onDuplicateStep, onRemoveStep, onAddStep,
+  onMoveStep, onDuplicateStep, onRemoveStep, onAddStep, onNodeMoved = () => {},
   stitchModel = null, showStitch = false, storedLayout = null,
 }) {
   const layout = useMemo(
@@ -294,7 +341,10 @@ function DesignGraph({
         id: n.id,
         type: 'step',
         position: { x: n.x, y: n.y },
-        draggable: false,
+        // No per-node `draggable` override here (Task 9): that would pin
+        // every node's drag-ability regardless of the pane-level
+        // `nodesDraggable` prop below, which is what actually gates dragging
+        // off in the Run lens. `connectable` stays false — Task 10's wire.
         connectable: false,
         data: {
           step: s,
@@ -354,6 +404,27 @@ function DesignGraph({
     [showStitch, steps, stitchModel],
   )
 
+  // React Flow reports position changes ALREADY IN FLOW COORDINATES — it has
+  // done the zoom division for us. Do not re-apply zoom here; that would
+  // double-scale every drag (see the file-header note). Commit only on drag
+  // END (`dragging === false`): committing every intermediate animation
+  // frame would write a draft-dirty state dozens of times per drag.
+  const onNodesChange = useCallback((changes) => {
+    for (const c of changes) {
+      if (c.type === 'position' && c.dragging === false && c.position) {
+        onNodeMoved(
+          c.id,
+          Math.round(c.position.x / SNAP) * SNAP,
+          Math.round(c.position.y / SNAP) * SNAP,
+        )
+      }
+    }
+  }, [onNodeMoved])
+
+  // Test seam: the pane's transform makes synthetic pointer events unreliable
+  // in jsdom, so tests drive onNodesChange directly. Assignment only.
+  if (typeof window !== 'undefined') window.__rfOnNodesChange = onNodesChange
+
   return (
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
       {/* START anchor — not a step, so it stays outside React Flow. */}
@@ -380,7 +451,14 @@ function DesignGraph({
             nodes={rfNodes}
             edges={rfEdges}
             nodeTypes={nodeTypes}
-            nodesDraggable={false}
+            // Design lens only — the Run lens's own DesignGraph instance
+            // (below, in the root component) passes lens='run', so runLens
+            // is true there and dragging stays off: that render shows the
+            // authored spine for context, not a surface to redesign on.
+            nodesDraggable={!runLens}
+            onNodesChange={onNodesChange}
+            snapToGrid
+            snapGrid={[SNAP, SNAP]}
             nodesConnectable={false}
             fitView
             proOptions={{ hideAttribution: false }}
@@ -627,6 +705,11 @@ export default function ComposerCanvas({
   onDuplicateStep = () => {},
   onRemoveStep = () => {},
   onAddStep = () => {},
+  // Fires (stepId, x, y) on drag END, already in flow coordinates and
+  // snapped to the 8px grid (Task 9). ComposerView wires this to
+  // `setNodePosition`. Defaulted so a caller that doesn't drag anything
+  // never has to pass it.
+  onNodeMoved = () => {},
   onStartLibrary = () => {},
   onStartTtp = () => {},
   onStartBlank = () => {},
@@ -791,6 +874,7 @@ export default function ComposerCanvas({
               onDuplicateStep={onDuplicateStep}
               onRemoveStep={onRemoveStep}
               onAddStep={onAddStep}
+              onNodeMoved={onNodeMoved}
               stitchModel={stitchModel}
               showStitch={showStitch}
               storedLayout={storedLayout}
@@ -817,6 +901,7 @@ export default function ComposerCanvas({
                 onDuplicateStep={onDuplicateStep}
                 onRemoveStep={onRemoveStep}
                 onAddStep={onAddStep}
+                onNodeMoved={onNodeMoved}
                 storedLayout={storedLayout}
               />
             </>
