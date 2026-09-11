@@ -26,13 +26,25 @@
  *
  * Geometry is imported from `composerLayout.js` so the on-screen spine and the
  * layout tests read from ONE source of truth.
+ *
+ * DESIGN LENS RENDERING (2026-09-08 direct-manipulation Task 8) — the step
+ * cards render through React Flow (`@xyflow/react`) instead of a hand-rolled
+ * absolutely-positioned SVG canvas. This pass is RENDER ONLY: node dragging
+ * (Task 9) and connect-by-drag (Task 10) come later, which is why
+ * `nodesDraggable`/`nodesConnectable` are false below and the `Handle`s on
+ * `StepNode` currently do nothing but sit there for Task 10 to wire up.
+ * START and END stay plain, non-draggable anchors OUTSIDE the React Flow
+ * graph — they are not steps, so "one node per step" holds through React
+ * Flow's own node count.
  */
 import React, { useMemo, useState } from 'react'
+import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import {
-  LAYOUT,
   layoutChain,
   layoutCausalityGraph,
   stitchOverlayEdges,
+  mergeStoredPositions,
 } from './composerLayout.js'
 import { effectiveChannel } from './composerDraft.js'
 
@@ -97,18 +109,195 @@ function edgePath(from, to, orientation) {
 
 // ─── Design lens ──────────────────────────────────────────────────────────────
 
+/**
+ * One STEP, as a React Flow node. START and END are NOT React Flow nodes (see
+ * the file-header note) — this component only ever receives `data.kind ===
+ * 'step'`. Reuses the existing `.chain-node` / `.chain-node__*` classes and
+ * every existing testid/aria-label byte-for-byte, so the DOM the ComposerView
+ * and ComposerCanvas tests already pin is unchanged apart from the React Flow
+ * wrapper around it. `Handle`s are the connect affordance Task 10 wires up —
+ * inert for now because `nodesConnectable={false}` on the parent `<ReactFlow>`.
+ */
+function StepNode({ data }) {
+  const s = data.step
+  return (
+    <div
+      className={
+        'chain-node chain-node--step'
+        + (data.selected ? ' chain-node--selected' : '')
+        + (s.detections.length ? '' : ' chain-node--nodetect')
+      }
+      style={{ borderLeft: `3px solid ${data.tint}` }}
+    >
+      <Handle type="target" position={Position.Top} />
+      <button
+        type="button"
+        className="chain-node__body"
+        onClick={data.onSelectStep}
+        aria-pressed={data.selected}
+        data-testid={`chain-step-${s.id}`}
+      >
+        <span className="chain-node__row">
+          <span className="chain-node__kind">{s.authored ? 'new' : 'step'}</span>
+          <span className="chain-node__id mono">{s.id}</span>
+          {/* Channel badge — GATED so an agent-default node (no channel,
+              no target) renders byte-identically to today. An eal step
+              shows its emitter; an agent step with a second endpoint
+              shows where it runs. Reuses existing chip tones (no hex). */}
+          {data.channelKind === 'eal' ? (
+            <span
+              className="chip chip--signal chain-node__chanbadge"
+              data-testid={`chain-step-channel-${s.id}`}
+              title={`channel: eal · emitter ${s.eal?.plugin || '(unset)'}`}
+            >
+              EAL
+            </span>
+          ) : data.channelKind === 'target' ? (
+            <span
+              className="chip chip--pending chain-node__chanbadge"
+              data-testid={`chain-step-target-${s.id}`}
+              title={`runs on second endpoint ${s.target}`}
+            >
+              {`→ ${s.target}`}
+            </span>
+          ) : null}
+          <span className="composer__spacer" />
+          {data.runState && (
+            <span
+              className="chain-node__runbadge"
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: STATE_TINT[data.runState],
+                letterSpacing: '0.04em',
+              }}
+            >
+              {data.runState}
+            </span>
+          )}
+          <span className="chain-node__order mono">
+            {String(data.order).padStart(2, '0')}
+          </span>
+        </span>
+        <span className="chain-node__name">{s.name}</span>
+        <span className="chain-node__sub mono">
+          {s.technique || 'no technique'} · {s.identity || 'no identity'}
+        </span>
+        <span className="chain-node__chips">
+          {s.detections.length ? (
+            s.detections.map((d, k) => (
+              <span key={k} className={`chip chip--${detTone(d.type)}`}>
+                {d.type || '?'}
+              </span>
+            ))
+          ) : (
+            /* Not decoration — the on-canvas marker for the step that
+               becomes a GAP in the POV readout. */
+            <span className="chip chip--missed">no expected detection</span>
+          )}
+        </span>
+      </button>
+      <div className="chain-node__tools">
+        <button type="button" title="Move earlier" aria-label={`Move ${s.id} earlier`}
+          onClick={data.onMoveEarlier}>↑</button>
+        <button type="button" title="Move later" aria-label={`Move ${s.id} later`}
+          onClick={data.onMoveLater}>↓</button>
+        <button type="button" title="Duplicate step" aria-label={`Duplicate ${s.id}`}
+          onClick={data.onDuplicate}>⧉</button>
+        <button type="button" title="Remove step" aria-label={`Remove ${s.id}`}
+          onClick={data.onRemove}>×</button>
+      </div>
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  )
+}
+
+const nodeTypes = { step: StepNode }
+
 function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
-  onMoveStep, onDuplicateStep, onRemoveStep, onAddStep, zoom,
-  stitchModel = null, showStitch = false,
+  onMoveStep, onDuplicateStep, onRemoveStep, onAddStep,
+  stitchModel = null, showStitch = false, storedLayout = null,
 }) {
   const layout = useMemo(
     () => layoutChain({ ...draft, steps }),
     [draft, steps],
   )
-  const { nodes, edges, bounds } = layout
+  // Overlay any DC-dragged positions (Task 9) onto the computed layout. A
+  // draft that has never been touched (`storedLayout` null/empty) round-trips
+  // byte-identically — see `mergeStoredPositions`'s doc comment.
+  const laidOut = useMemo(
+    () => mergeStoredPositions(layout, storedLayout),
+    [layout, storedLayout],
+  )
+  const { bounds } = laidOut
   const runLens = lens === 'run'
+
+  const stepLaidOutNodes = useMemo(
+    () => laidOut.nodes.filter((n) => n.kind === 'step'),
+    [laidOut],
+  )
+  const stepIds = useMemo(
+    () => new Set(stepLaidOutNodes.map((n) => n.id)),
+    [stepLaidOutNodes],
+  )
+
+  // React Flow's node/edge shape. START and END are excluded on purpose (see
+  // the file-header note) — "one node per step" is the contract Task 8's own
+  // test pins.
+  const rfNodes = useMemo(
+    () => stepLaidOutNodes.map((n) => {
+      const s = n.step
+      const i = steps.indexOf(s)
+      const plane = stepPlane(s, draft)
+      const channel = effectiveChannel(s)
+      return {
+        id: n.id,
+        type: 'step',
+        position: { x: n.x, y: n.y },
+        draggable: false,
+        connectable: false,
+        data: {
+          step: s,
+          order: (i < 0 ? 0 : i) + 1,
+          selected: selectedId === s.id,
+          tint: PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)',
+          runState: runLens ? (causalityStates?.[s.id]?.state || 'EXPECTED') : null,
+          channelKind: channel === 'eal' ? 'eal' : (s.target ? 'target' : null),
+          onSelectStep: () => onSelect(s.id),
+          onMoveEarlier: () => onMoveStep(i, -1),
+          onMoveLater: () => onMoveStep(i, 1),
+          onDuplicate: () => onDuplicateStep(i),
+          onRemove: () => onRemoveStep(i),
+        },
+      }
+    }),
+    [
+      stepLaidOutNodes, steps, draft, selectedId, runLens, causalityStates,
+      onSelect, onMoveStep, onDuplicateStep, onRemoveStep,
+    ],
+  )
+
+  // Root (start→step) and terminal (leaf→end) edges reference START/END,
+  // which are not React Flow nodes here — an edge to a node React Flow
+  // doesn't have is simply dropped, so only the real inter-step causality
+  // edges are worth constructing.
+  const rfEdges = useMemo(
+    () => laidOut.edges
+      .filter((e) => stepIds.has(e.source) && stepIds.has(e.target))
+      .map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        type: 'default',
+        style: {
+          stroke: 'var(--ac, #00C0E8)',
+          strokeWidth: 1.5,
+        },
+      })),
+    [laidOut, stepIds],
+  )
 
   // Design-lens entity-join overlay: the stitch edges the context IMPLIES,
   // EXPECTED-only (authored intent, never outcome). Off by default; drawn as a
@@ -119,52 +308,45 @@ function DesignGraph({
   )
 
   return (
-    <div
-      className="chain composer-canvas__graph"
-      data-testid="composer-chain"
-      style={{
-        position: 'relative',
-        width: bounds.width * zoom,
-        height: bounds.height * zoom,
-        overflow: 'visible',
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: bounds.width,
-          height: bounds.height,
-          transform: `scale(${zoom})`,
-          transformOrigin: 'top left',
-        }}
-      >
-        {/* Edge + port layer. Curved cubic-bezier spine, IO port dots. */}
-        <svg
-          width={bounds.width}
-          height={bounds.height}
-          style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
-          aria-hidden="true"
-        >
-          {edges.map((e) => (
-            <g key={e.id}>
-              <path
-                d={edgePath(e.from, e.to, 'vertical')}
-                fill="none"
-                stroke={e.kind === 'root' || e.kind === 'terminal' ? 'var(--bd, #c1ccd6)' : 'var(--ac, #00C0E8)'}
-                strokeWidth={1.5}
-                strokeDasharray={e.kind === 'root' || e.kind === 'terminal' ? '4 4' : undefined}
-              />
-              {e.from && <circle cx={e.from.x} cy={e.from.y} r={3} fill="var(--cortex-steel, #6B7E8E)" />}
-              {e.to && <circle cx={e.to.x} cy={e.to.y} r={3} fill="var(--cortex-steel, #6B7E8E)" />}
-            </g>
-          ))}
-        </svg>
+    <div className="chain composer-canvas__graph" data-testid="composer-chain">
+      {/* START anchor — not a step, so it stays outside React Flow. */}
+      <div className="chain-node chain-node--start" data-testid="chain-start">
+        <div className="chain-node__kicker">Start</div>
+        <div className="chain-node__title">On launch</div>
+        <div className="chain-node__scope">
+          <button type="button" className="scope-link" onClick={() => onNavigate('tenants')}>
+            <span className="scope-link__label">Tenant</span>
+            <span className="scope-link__value mono">{tenantName || 'none selected'}</span>
+          </button>
+          <button type="button" className="scope-link" onClick={() => onNavigate('agents')}>
+            <span className="scope-link__label">Agent</span>
+            <span className="scope-link__value mono">{agentName || 'none selected'}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="composer-canvas__flow">
+        <ReactFlowProvider>
+          <ReactFlow
+            nodes={rfNodes}
+            edges={rfEdges}
+            nodeTypes={nodeTypes}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            panOnDrag={false}
+            fitView
+            proOptions={{ hideAttribution: false }}
+          >
+            <Background />
+            <Controls />
+          </ReactFlow>
+        </ReactFlowProvider>
 
         {/* Stitch overlay — additive, EXPECTED-only dashed entity-join edges the
             context implies. STATE_TINT.EXPECTED (never CONFIRMED/BROKEN; those
-            belong to the Run lens). Off unless showStitch && a model. */}
+            belong to the Run lens). Off unless showStitch && a model. Drawn
+            in the layout's own coordinate space, independent of React Flow's
+            pan/zoom — an advisory annotation, not a pixel-locked overlay. */}
         {stitchEdges.length > 0 && (
           <svg
             width={bounds.width}
@@ -195,157 +377,24 @@ function DesignGraph({
             })}
           </svg>
         )}
-
-        {nodes.map((n) => {
-          const style = { position: 'absolute', left: n.x, top: n.y, width: n.w }
-          if (n.kind === 'start') {
-            return (
-              <div
-                key={n.id}
-                className="chain-node chain-node--start"
-                data-testid="chain-start"
-                style={style}
-              >
-                <div className="chain-node__kicker">Start</div>
-                <div className="chain-node__title">On launch</div>
-                <div className="chain-node__scope">
-                  <button type="button" className="scope-link" onClick={() => onNavigate('tenants')}>
-                    <span className="scope-link__label">Tenant</span>
-                    <span className="scope-link__value mono">{tenantName || 'none selected'}</span>
-                  </button>
-                  <button type="button" className="scope-link" onClick={() => onNavigate('agents')}>
-                    <span className="scope-link__label">Agent</span>
-                    <span className="scope-link__value mono">{agentName || 'none selected'}</span>
-                  </button>
-                </div>
-              </div>
-            )
-          }
-          if (n.kind === 'end') {
-            return (
-              <div
-                key={n.id}
-                className="chain-node chain-node--end"
-                data-testid="chain-end"
-                style={style}
-              >
-                <div className="chain-node__kicker">End</div>
-                <div className="chain-node__title">Teardown &amp; proof</div>
-                <div className="chain-node__sub mono">
-                  {draft.teardown?.length
-                    ? `${draft.teardown.length} cleanup command${draft.teardown.length === 1 ? '' : 's'}`
-                    : 'no cleanup declared'}
-                </div>
-              </div>
-            )
-          }
-
-          // step node
-          const s = n.step
-          const i = steps.indexOf(s)
-          const plane = stepPlane(s, draft)
-          const tint = PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)'
-          const runState = runLens ? (causalityStates?.[s.id]?.state || 'EXPECTED') : null
-          return (
-            <div
-              key={n.id}
-              className={
-                'chain-node chain-node--step'
-                + (selectedId === s.id ? ' chain-node--selected' : '')
-                + (s.detections.length ? '' : ' chain-node--nodetect')
-              }
-              style={{ ...style, borderLeft: `3px solid ${tint}` }}
-            >
-              <button
-                type="button"
-                className="chain-node__body"
-                onClick={() => onSelect(s.id)}
-                aria-pressed={selectedId === s.id}
-                data-testid={`chain-step-${s.id}`}
-              >
-                <span className="chain-node__row">
-                  <span className="chain-node__kind">{s.authored ? 'new' : 'step'}</span>
-                  <span className="chain-node__id mono">{s.id}</span>
-                  {/* Channel badge — GATED so an agent-default node (no channel,
-                      no target) renders byte-identically to today. An eal step
-                      shows its emitter; an agent step with a second endpoint
-                      shows where it runs. Reuses existing chip tones (no hex). */}
-                  {effectiveChannel(s) === 'eal' ? (
-                    <span
-                      className="chip chip--signal chain-node__chanbadge"
-                      data-testid={`chain-step-channel-${s.id}`}
-                      title={`channel: eal · emitter ${s.eal?.plugin || '(unset)'}`}
-                    >
-                      EAL
-                    </span>
-                  ) : s.target ? (
-                    <span
-                      className="chip chip--pending chain-node__chanbadge"
-                      data-testid={`chain-step-target-${s.id}`}
-                      title={`runs on second endpoint ${s.target}`}
-                    >
-                      {`→ ${s.target}`}
-                    </span>
-                  ) : null}
-                  <span className="composer__spacer" />
-                  {runState && (
-                    <span
-                      className="chain-node__runbadge"
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: STATE_TINT[runState],
-                        letterSpacing: '0.04em',
-                      }}
-                    >
-                      {runState}
-                    </span>
-                  )}
-                  <span className="chain-node__order mono">
-                    {String((i < 0 ? 0 : i) + 1).padStart(2, '0')}
-                  </span>
-                </span>
-                <span className="chain-node__name">{s.name}</span>
-                <span className="chain-node__sub mono">
-                  {s.technique || 'no technique'} · {s.identity || 'no identity'}
-                </span>
-                <span className="chain-node__chips">
-                  {s.detections.length ? (
-                    s.detections.map((d, k) => (
-                      <span key={k} className={`chip chip--${detTone(d.type)}`}>
-                        {d.type || '?'}
-                      </span>
-                    ))
-                  ) : (
-                    /* Not decoration — the on-canvas marker for the step that
-                       becomes a GAP in the POV readout. */
-                    <span className="chip chip--missed">no expected detection</span>
-                  )}
-                </span>
-              </button>
-              <div className="chain-node__tools">
-                <button type="button" title="Move earlier" aria-label={`Move ${s.id} earlier`}
-                  onClick={() => onMoveStep(i, -1)}>↑</button>
-                <button type="button" title="Move later" aria-label={`Move ${s.id} later`}
-                  onClick={() => onMoveStep(i, 1)}>↓</button>
-                <button type="button" title="Duplicate step" aria-label={`Duplicate ${s.id}`}
-                  onClick={() => onDuplicateStep(i)}>⧉</button>
-                <button type="button" title="Remove step" aria-label={`Remove ${s.id}`}
-                  onClick={() => onRemoveStep(i)}>×</button>
-              </div>
-            </div>
-          )
-        })}
       </div>
 
-      {/* Add-step control sits below the laid-out spine (in flow, so it never
-          overlaps an absolutely-positioned node). */}
+      {/* END anchor — not a step, so it stays outside React Flow. */}
+      <div className="chain-node chain-node--end" data-testid="chain-end">
+        <div className="chain-node__kicker">End</div>
+        <div className="chain-node__title">Teardown &amp; proof</div>
+        <div className="chain-node__sub mono">
+          {draft.teardown?.length
+            ? `${draft.teardown.length} cleanup command${draft.teardown.length === 1 ? '' : 's'}`
+            : 'no cleanup declared'}
+        </div>
+      </div>
+
       <button
         type="button"
         className="chain-node chain-node--add"
         onClick={onAddStep}
         data-testid="composer-add-step"
-        style={{ position: 'absolute', left: LAYOUT.padX * zoom, top: bounds.height * zoom + 8 }}
       >
         + Add step
       </button>
@@ -537,6 +586,11 @@ export default function ComposerCanvas({
   stitchModel = null,
   showStitch = false,
   onToggleStitch = () => {},
+  // Stored per-node canvas positions (`draft.layout`, Task 5/6) — additive
+  // and defaulted so a draft that has never had a node dragged renders
+  // byte-identically. Task 9 is what actually writes to this map; Task 8
+  // only wires it through to the lens that reads it.
+  storedLayout = null,
 }) {
   const [zoom, setZoom] = useState(1)
   const runLens = lens === 'run'
@@ -687,9 +741,9 @@ export default function ComposerCanvas({
               onDuplicateStep={onDuplicateStep}
               onRemoveStep={onRemoveStep}
               onAddStep={onAddStep}
-              zoom={zoom}
               stitchModel={stitchModel}
               showStitch={showStitch}
+              storedLayout={storedLayout}
             />
           )}
 
@@ -713,7 +767,7 @@ export default function ComposerCanvas({
                 onDuplicateStep={onDuplicateStep}
                 onRemoveStep={onRemoveStep}
                 onAddStep={onAddStep}
-                zoom={zoom}
+                storedLayout={storedLayout}
               />
             </>
           )}

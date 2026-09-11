@@ -152,6 +152,23 @@ describe('ComposerView — seeded from a real scenario', () => {
     expect(within(start).getByText('Tenant')).toBeInTheDocument()
     expect(within(start).getByText('Agent')).toBeInTheDocument()
   })
+
+  it('wires a stored composer_layout through to the React Flow canvas (gap fix, Task 8)', async () => {
+    // Task 5 produces `draft.layout` (from the scenario's `composer_layout`);
+    // nothing before Task 8 read it back — a DC-dragged position would
+    // persist to the backend and then never re-apply, so the feature would
+    // look correct and be inert. This is the ComposerView -> ComposerCanvas
+    // leg of that wire, against a REAL scenario load (not a prop stub).
+    baseRoutes({
+      'GET /api/scenarios/SIM-EDR-001': { ...SCENARIO, composer_layout: { 'step-02': { x: 555, y: 111 } } },
+    })
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    const node = document.querySelector('[data-id="step-02"]')
+    expect(node).toBeTruthy()
+    expect(node.style.transform).toContain('555')
+    expect(node.style.transform).toContain('111')
+  })
 })
 
 describe('ComposerView — a failed load is not an empty scenario', () => {

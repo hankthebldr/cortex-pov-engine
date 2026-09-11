@@ -740,6 +740,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           stitchModel={draft.stitchContext}
           showStitch={showStitch}
           onToggleStitch={() => setShowStitch((v) => !v)}
+          storedLayout={draft.layout}
         />
 
         {showPanels && (

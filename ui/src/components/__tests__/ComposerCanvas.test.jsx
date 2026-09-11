@@ -39,9 +39,14 @@ const STEPS = [
 const VALIDATION = { counts: { steps: 2, detections: 1 } }
 
 function baseProps(over = {}) {
+  // `steps` defaults from `over.draft.steps` (falling back to the module
+  // STEPS) BEFORE `...over` is spread, so a caller overriding only `draft`
+  // (the Task 8 React Flow tests below) gets a `steps` prop that matches it,
+  // while every existing call that overrides `steps` explicitly is unchanged.
+  const draft = over.draft || { ...DRAFT, steps: STEPS }
   return {
-    draft: { ...DRAFT, steps: STEPS },
-    steps: STEPS,
+    draft,
+    steps: draft.steps ?? STEPS,
     validation: VALIDATION,
     yamlText: 'scenario:\n  - id: step-01\n    # NO EXPECTED DETECTION',
     tenantName: 'acme-xsiam',
@@ -281,5 +286,62 @@ describe('ComposerCanvas — Run lens honesty', () => {
     expect(within(s2).getByText('BROKEN')).toBeInTheDocument()
     // and never a fabricated CONFIRMED for a step with no confirmed stitch
     expect(within(s2).queryByText('CONFIRMED')).not.toBeInTheDocument()
+  })
+})
+
+describe('ComposerCanvas — Design lens through React Flow (Task 8, render only)', () => {
+  // React Flow measures its container; jsdom reports 0x0, which makes it
+  // refuse to render nodes. The stub lives globally in `src/test/setup.js`
+  // (every test that mounts a `<ReactFlow>` needs it, including
+  // ComposerView.test.jsx, which renders this component indirectly) — no
+  // local beforeAll needed here.
+
+  it('renders one node per step through React Flow, at stored positions', () => {
+    const draft = { steps: [
+      { id: 's1', name: 'drop', detections: [] },
+      { id: 's2', name: 'dump', detections: [], causalityParent: 's1' },
+    ] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design',
+                                      storedLayout: { s2: { x: 400, y: 300 } } })} />
+    )
+    expect(container.querySelectorAll('.react-flow__node')).toHaveLength(2)
+    const s2 = container.querySelector('[data-id="s2"]')
+    expect(s2.style.transform).toContain('400')
+    expect(s2.style.transform).toContain('300')
+  })
+
+  it('falls back to computed positions for a step with no stored position', () => {
+    const draft = { steps: [{ id: 's1', name: 'drop', detections: [] }] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design', storedLayout: null })} />
+    )
+    expect(container.querySelector('[data-id="s1"]')).toBeTruthy()
+  })
+
+  it('keeps START/END as plain anchors outside React Flow\'s own node graph', () => {
+    // "one node per step" above only holds if START/END are never counted as
+    // React Flow nodes — pin that directly against the 2-step fixture too.
+    render(<ComposerCanvas {...baseProps()} />)
+    expect(screen.getByTestId('chain-start')).toBeInTheDocument()
+    expect(screen.getByTestId('chain-end')).toBeInTheDocument()
+    expect(document.querySelectorAll('.react-flow__node')).toHaveLength(2)
+  })
+})
+
+describe('ComposerCanvas — storedLayout wiring (additional requirement, Task 8)', () => {
+  // Task 5 produces `draft.layout`; nothing before this task read it back —
+  // positions would persist to the backend and then never apply. This pins
+  // that ComposerCanvas actually threads a `storedLayout` prop down into the
+  // React Flow node it produces (the ComposerView → ComposerCanvas leg of the
+  // same wire is pinned in ComposerView.test.jsx, against the real draft).
+  it('reaches the canvas: a step with a stored position renders there, not at its computed one', () => {
+    const draft = { ...DRAFT, steps: STEPS }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, storedLayout: { 'step-02': { x: 555, y: 111 } } })} />
+    )
+    const node = container.querySelector('[data-id="step-02"]')
+    expect(node.style.transform).toContain('555')
+    expect(node.style.transform).toContain('111')
   })
 })
