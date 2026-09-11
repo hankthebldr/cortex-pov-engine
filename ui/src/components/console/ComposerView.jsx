@@ -302,6 +302,32 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const runTick = isLive
     ? `${scopedRun.step}:${scopedRun.detected}:${scopedRun.status || 'running'}`
     : null
+
+  // ComposerCanvas's `activeRun` prop is RAW-ROW shaped by contract
+  // (run_id/status/stitch_binding — pinned by ComposerCanvas.test.jsx's own
+  // "quotes the run's REAL persisted binding" test). scopedRun is NOT always
+  // that shape — when it's env.activeRun (the live-run-of-this-scenario
+  // branch) it's the camelCase view-model, which carries none of those three
+  // fields. Passing it through unprojected would repeat exactly the bug this
+  // task exists to fix: a shape mismatch that silently renders blank instead
+  // of erroring. Project ONCE, here, into one canonical shape every
+  // downstream consumer can rely on — not another `??` at each call site.
+  const canonicalActiveRun = useMemo(() => {
+    if (!scopedRun) return null
+    // Already raw-row shaped (sourced from env.runs) — nothing to project.
+    if (scopedRun.run_id != null) return scopedRun
+    // scopedRun is env.activeRun. Its existence already means "running";
+    // look up the matching raw row (once the runs poll has caught up) for
+    // stitch_binding, which the view-model never carries at all.
+    const raw = (env.runs || []).find((r) => r && runIdOf(r) === scopedRun.runId)
+    return {
+      ...(raw || {}),
+      run_id: raw?.run_id ?? scopedRun.runId,
+      status: raw?.status ?? 'running',
+      stitch_binding: raw?.stitch_binding ?? null,
+    }
+  }, [scopedRun, env.runs])
+
   const [causalityGraph, setCausalityGraph] = useState(null)
   useEffect(() => {
     if (!activeRunId) { setCausalityGraph(null); return undefined }
@@ -823,7 +849,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           validation={validation}
           causalityGraph={causalityGraph}
           causalityStates={causalityStates}
-          activeRun={scopedRun}
+          activeRun={canonicalActiveRun}
           hasRun={!!activeRunId}
           originError={originError}
           loadingOrigin={loadingOrigin}

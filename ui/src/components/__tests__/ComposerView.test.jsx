@@ -588,6 +588,11 @@ describe('ComposerView — Run lens scoped to the open draft (Task 13)', () => {
       started_at: activeRun.started_at || '2026-09-08T12:00:00Z',
       step: activeRun.step,
       detected: activeRun.detected,
+      // Forwarded so ComposerView's canonical-shape projection (Finding 1,
+      // fix round 1) has a real raw row to resolve stitch_binding from when
+      // scopedRun is the camelCase env.activeRun view-model, which never
+      // carries this field itself.
+      stitch_binding: activeRun.stitch_binding ?? null,
     }
   }
 
@@ -671,5 +676,75 @@ describe('ComposerView — Run lens scoped to the open draft (Task 13)', () => {
     await user.click(screen.getByTestId('composer-lens-run'))
     await waitFor(() => expect(screen.getByTestId('composer-run-graph')).toBeInTheDocument())
     expect(screen.queryByTestId('chain-node-grip-step-01')).not.toBeInTheDocument()
+  })
+
+  it('shows a run-exists-but-not-loaded state, not "no run", while the graph is pending', async () => {
+    // Reviewer fix-round-1, Finding 2: this transient — a scoped run exists
+    // (hasRun) but its causality graph has not arrived yet (fetch pending or
+    // failed) — is the entire honesty point of Task 13. Reusing the "no run"
+    // copy here would be exactly the false claim ("nothing is inferred
+    // before a run exists") the diagnosis was opened to close, just shifted
+    // one step later. A never-resolving getRunCausality pins the transient
+    // deterministically instead of racing a real promise resolution.
+    const getRunCausalityImpl = vi.fn(() => new Promise(() => {}))
+    const user = userEvent.setup()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: { runs: [runRow()], activeRun: null },
+      getRunCausality: getRunCausalityImpl,
+    })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(getRunCausalityImpl).toHaveBeenCalledWith('r1'))
+    await waitFor(() =>
+      expect(screen.getByTestId('composer-run-graph').textContent).toMatch(/causality graph not loaded yet/i))
+    // The false claim must be absent, not just the true one present.
+    expect(screen.getByTestId('composer-run-graph').textContent)
+      .not.toMatch(/Nothing on this canvas is inferred before a run exists/i)
+  })
+
+  it('projects the live-run-of-this-scenario branch into the SAME shape the terminal branch uses', async () => {
+    // Reviewer fix-round-1, Finding 1: ComposerCanvas's `activeRun` prop is
+    // raw-row shaped by contract (run_id/status/stitch_binding — pinned by
+    // ComposerCanvas.test.jsx's "quotes the run's REAL persisted binding"
+    // test). scopedRun on the LIVE branch is env.activeRun, the camelCase
+    // view-model, which carries none of those three fields — without the
+    // canonical projection in ComposerView, the header caption and the
+    // binding readout render blank on this branch even though they work on
+    // the terminal branch. Assert both are populated here, not just that
+    // the fetch fires (the prior "prefers the in-flight run..." test only
+    // proved the fetch).
+    const graph = {
+      run_id: 'live',
+      nodes: [{ id: 'proc:live:step-01', kind: 'process', label: 'cat' }],
+      edges: [],
+      causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+    }
+    const getRunCausalityImpl = vi.fn().mockResolvedValue(graph)
+    const user = userEvent.setup()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: {
+        runs: [runRow({ run_id: 'old' })],
+        activeRun: {
+          run_id: 'live', scenario_id: SCEN_ID, status: 'running', step: 2, detected: 1,
+          stitch_binding: { src_port: 51234, dst_ip: '203.0.113.10' },
+        },
+      },
+      getRunCausality: getRunCausalityImpl,
+    })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(getRunCausalityImpl).toHaveBeenCalledWith('live'))
+    await waitFor(() => expect(screen.getByTestId('composer-run-graph')).toBeInTheDocument())
+    // Header caption — scoped via querySelector (not screen.getByText) since
+    // .composer-canvas__meta's ancestors also "contain" the same substring
+    // in their fuller textContent, which makes getByText ambiguous here.
+    const meta = document.querySelector('.composer-canvas__meta')
+    expect(meta.textContent).toMatch(/· run live running/)
+    // Binding readout.
+    const readout = screen.getByTestId('composer-stitch-binding')
+    expect(readout.textContent).toMatch(/src_port=51234/)
+    expect(readout.textContent).toMatch(/dst_ip=203\.0\.113\.10/)
   })
 })
