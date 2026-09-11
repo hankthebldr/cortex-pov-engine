@@ -464,6 +464,10 @@ describe('ComposerView — drawing causality edges maintains array order (Task 1
   // the canvas path works around would silently no-op the Inspector path
   // instead: no change, no error, no explanation. This is the asymmetry
   // fixed here — same composition, same guarantee, on both affordances.
+  // (Fix round 1: `ComposerInspector.jsx`'s own option-list filter was ALSO
+  // broadened from array-position to graph legality, so this now goes
+  // through step-03 as a genuinely OFFERED <option>, not an injected one —
+  // see `ComposerInspector.test.jsx` for the option-list-level coverage.)
   it('Inspector re-parenting step-02 onto step-03 (which sits AFTER it) reorders the array instead of silently dropping the edit', async () => {
     baseRoutes({
       'GET /api/scenarios': { scenarios: [FORK_SCENARIO] },
@@ -480,18 +484,15 @@ describe('ComposerView — drawing causality edges maintains array order (Task 1
     await user.click(screen.getByTestId('chain-step-step-02'))
     const parentSelect = screen.getByLabelText('Causality parent for step-02')
 
-    // ComposerInspector.jsx's own "parent step" <option> list only offers
-    // steps EARLIER than step-02 in the CURRENT array (a belt-and-suspenders
-    // filter written when a forward ref was simply refused outright) —
-    // step-03 is not among the rendered options. Inject it directly so the
-    // native change event carries the exact value the real wiring (the
-    // select's onChange -> `onSetCausalityParent` -> `setCausalityParent` +
-    // resort) must now accept. This proves the CALLBACK composition — the
-    // actual defect under test — independent of that separate, pre-existing
-    // option-list restriction, which this task does not touch.
-    const forwardOption = document.createElement('option')
-    forwardOption.value = 'step-03'
-    parentSelect.appendChild(forwardOption)
+    // ComposerInspector.jsx's "parent step" <option> list is graph-legal
+    // (`canConnect`), not array-position-limited (fix round 1) — step-03 is
+    // a legitimate sibling of step-02 (both children of step-01: no
+    // self-ref, no cycle), so it is genuinely OFFERED here despite sitting
+    // AFTER step-02 in `steps[]`. Selecting it through the real rendered
+    // <option>, with no DOM workaround, proves both halves end-to-end: the
+    // option reaches the DC, and the composed callback
+    // (onSetCausalityParent -> setCausalityParent + resort) applies it.
+    expect(within(parentSelect).getByRole('option', { name: 'step-03' })).toBeInTheDocument()
     await user.selectOptions(parentSelect, 'step-03')
 
     await waitFor(() => {

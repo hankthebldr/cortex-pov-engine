@@ -547,26 +547,9 @@ describe('ComposerCanvas — drawing causality edges (Task 10, direct-manipulati
   })
 })
 
-describe('ComposerCanvas — zero-size mount guard (Task 11)', () => {
-  // The Composer is a LAZILY-MOUNTED destination (Task 8's file header) — it
-  // can mount while its tab is hidden, at 0x0. React Flow's bare `fitView`
-  // against a zero-sized container is exactly what the reference
-  // implementation hit (duplicated DOM on re-init). `DesignGraph` must not
-  // ask React Flow to fitView until a ResizeObserver has actually measured a
-  // non-zero pane.
-  //
-  // Placed LAST in this file and restored in a `finally`: every other test
-  // here (and the file's own `beforeAll`) assumes the 1200x800 stub, and
-  // `Object.defineProperty` on `HTMLElement.prototype` is global for the
-  // life of this file's jsdom environment.
-  it('does not fitView against a zero-sized container', () => {
-    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 0 })
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 0 })
-    try {
-      expect(() => render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)).not.toThrow()
-    } finally {
-      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 1200 })
-      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 800 })
-    }
-  })
-})
+// The zero-size mount guard's own test (Task 11) lives in
+// ComposerCanvas.fitViewGuard.test.jsx, not here — see that file's header
+// for why it needs its own `vi.mock('@xyflow/react', ...)` and therefore
+// its own file (mocking ReactFlow here would break every real-DOM
+// assertion above: `.react-flow__node`, node transforms, Handles, the
+// `window.__rfOnNodesChange` / `window.__rfOnConnect` drag/connect seams).
