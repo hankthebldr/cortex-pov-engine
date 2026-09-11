@@ -846,7 +846,9 @@
    browser needs the CSS. Pan (mouse-drag, unchanged default — see
    `StepNode`'s `nodrag nopan` doc comment) + the built-in `<Controls>` zoom
    stand in for the old manual-zoom canvas; nodes are laid out by
-   `composerLayout.js` and are not draggable/connectable yet (Tasks 9/10). */
+   `composerLayout.js` and, in the Design lens, ARE draggable (Task 9, via
+   the `.chain-node__grip` drag handle) and connectable (Task 10, via each
+   node's `Handle`s) — both off in the Run lens's read-only spine. */
 .theme-console .composer-canvas__flow {
   position: relative;
   width: 100%;

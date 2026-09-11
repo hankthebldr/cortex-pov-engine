@@ -62,7 +62,13 @@ describe('canConnect — the spine invariant (spec D2)', () => {
     expect(r.reason).toMatch(/root/i)
   })
 
-  it('refuses a second parent for an already-parented step', () => {
+  // Renamed (Minor 7, 2026-09 final-fix wave) — the old title, "refuses a
+  // second parent for an already-parented step", contradicted its own first
+  // assertion: re-asserting s2's EXISTING parent (s1) is `{ok: true}`, not a
+  // refusal. What this test actually pins is two-part: re-asserting an
+  // existing parent is an idempotent no-op (first case), and a DIFFERENT
+  // reparent that would still cycle is refused regardless (second case).
+  it('treats re-asserting an existing parent as an idempotent no-op, and still refuses a cycling reparent', () => {
     const r = canConnect(chain, 's1', 's2')   // s2 already has s1... via s1
     expect(r).toEqual({ ok: true })            // same parent is idempotent
     const r2 = canConnect(chain, 's3', 's2')   // s2 -> parent s3 would cycle
