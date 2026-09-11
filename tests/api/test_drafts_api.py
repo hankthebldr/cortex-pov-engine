@@ -446,3 +446,58 @@ def test_create_draft_rejects_incompatible_stitch_directive(client):
     )
     assert resp.status_code == 422, resp.text
     assert resp.json()["detail"]["code"] == "STITCH_CONTEXT_INVALID"
+
+
+# ---------------------------------------------------------------------------
+# Composer canvas layout (2026-09-08)
+# ---------------------------------------------------------------------------
+
+
+def test_composer_layout_round_trips(client):
+    """A canvas position POSTed with a draft survives GET.
+
+    Fails before the fix: DraftStepSchema/StepSchema declare no model_config,
+    so Pydantic v2 defaults to extra='ignore' and the field is silently
+    DISCARDED — the drag would appear to work until reload.
+    """
+    body = _draft_body(steps=[_step("s1"), _step("s2", causality={"parent_step": "s1"})])
+    body["composer_layout"] = {"s1": {"x": 240, "y": 80}, "s2": {"x": 240, "y": 260}}
+
+    created = client.post("/api/scenarios/drafts", json=body)
+    assert created.status_code == 201, created.text
+    sid = created.json()["scenario_id"]
+
+    got = client.get(f"/api/scenarios/drafts/{sid}")
+    assert got.status_code == 200, got.text
+    assert got.json()["composer_layout"] == {
+        "s1": {"x": 240, "y": 80},
+        "s2": {"x": 240, "y": 260},
+    }
+
+
+def test_draft_without_layout_stores_null(client):
+    """A layout-less draft is stored byte-identically to a pre-feature draft."""
+    body = _draft_body(steps=[_step("s1")])
+    sid = client.post("/api/scenarios/drafts", json=body).json()["scenario_id"]
+    assert client.get(f"/api/scenarios/drafts/{sid}").json()["composer_layout"] is None
+
+
+def test_update_draft_replaces_composer_layout(client):
+    """A PUT full-replace must actually persist a changed layout — mirrors
+    test_update_draft_replaces_stitch_context. Without composer_layout in
+    api/drafts.py's _MUTABLE_COLUMNS, a PUT silently drops the new positions
+    and the canvas would revert on reload after every edit past the first."""
+    body = _draft_body(steps=[_step("s1")])
+    body["composer_layout"] = {"s1": {"x": 10, "y": 20}}
+    sid = client.post("/api/scenarios/drafts", json=body).json()["scenario_id"]
+
+    new_layout = {"s1": {"x": 500, "y": 600}}
+    resp = client.put(
+        f"/api/scenarios/drafts/{sid}",
+        json=_draft_body(steps=[_step("s1")], composer_layout=new_layout),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["composer_layout"] == new_layout
+    # Survives a GET read-back byte-identically.
+    got = client.get(f"/api/scenarios/drafts/{sid}").json()
+    assert got["composer_layout"] == new_layout
