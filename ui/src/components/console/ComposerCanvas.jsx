@@ -31,11 +31,11 @@
  * cards render through React Flow (`@xyflow/react`) instead of a hand-rolled
  * absolutely-positioned SVG canvas. That pass was RENDER ONLY (nodes were not
  * draggable). Task 9 (below) turns dragging on in the Design lens and
- * persists the dropped position through `onNodeMoved`; `nodesConnectable`
- * stays false and the `Handle`s on `StepNode` still do nothing — Task 10
- * wires those up. START and END stay plain, non-draggable anchors OUTSIDE
- * the React Flow graph — they are not steps, so "one node per step" holds
- * through React Flow's own node count.
+ * persists the dropped position through `onNodeMoved`. Task 10 (further
+ * below) turns the `Handle`s on `StepNode` into a working connect
+ * affordance, Design lens only. START and END stay plain, non-draggable,
+ * non-connectable anchors OUTSIDE the React Flow graph — they are not
+ * steps, so "one node per step" holds through React Flow's own node count.
  *
  * DRAGGING (Task 9) — `DesignGraph.onNodesChange` commits a node's position
  * to `onNodeMoved(stepId, x, y)` only on drag END (`dragging === false`),
@@ -45,6 +45,25 @@
  * zoom on top of it (that would double-scale every drag). Dragging is
  * disabled in the Run lens (`nodesDraggable={!runLens}`) — that lens shows
  * the authored spine for context, not a surface to redesign the chain on.
+ *
+ * CONNECTING (Task 10) — `nodesConnectable={!runLens}` and `isValidConnection`
+ * (delegating to `canConnect`, `composerSpine.js`) gate a drag BEFORE React
+ * Flow accepts the drop — an illegal target simply never highlights as a
+ * valid drop zone, so the edge is refused before it ever exists rather than
+ * created and reverted. `onConnect` re-checks the same predicate (the drop
+ * can land on a target `isValidConnection` never got to evaluate, e.g. a
+ * click-to-connect flow) and, on refusal, surfaces the reason in a banner
+ * (`.canvas-refusal`) rather than silently dropping the gesture — a refusal
+ * with no visible cause reads as a broken canvas, not a respected rule. Like
+ * dragging, this is Design-lens only: the Run lens renders the REAL observed
+ * spine, and drawing on it would imply authorship over a record. Per-node
+ * `isConnectable` (forwarded from React Flow's own node wrapper into
+ * `StepNode`, driven by the pane-level `nodesConnectable` above — no
+ * per-node override) also decides whether `StepNode` renders its `Handle`s
+ * at all: the library always renders a `Handle`'s DOM node regardless of its
+ * `isConnectable` value (it only toggles a CSS class), so hiding the
+ * affordance in the Run lens requires not rendering the JSX in the first
+ * place, not just disabling it.
  */
 import React, { useCallback, useMemo, useState } from 'react'
 import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position } from '@xyflow/react'
@@ -56,6 +75,7 @@ import {
   mergeStoredPositions,
 } from './composerLayout.js'
 import { effectiveChannel } from './composerDraft.js'
+import { canConnect } from './composerSpine.js'
 
 // Detection-type → chip tone. Identical mapping to the inspector's `detTone`
 // (they are two new files; the mapping is duplicated deliberately rather than
@@ -124,8 +144,14 @@ function edgePath(from, to, orientation) {
  * 'step'`. Reuses the existing `.chain-node` / `.chain-node__*` classes and
  * every existing testid/aria-label byte-for-byte, so the DOM the ComposerView
  * and ComposerCanvas tests already pin is unchanged apart from the React Flow
- * wrapper around it. `Handle`s are the connect affordance Task 10 wires up —
- * inert for now because `nodesConnectable={false}` on the parent `<ReactFlow>`.
+ * wrapper around it. `Handle`s are the connect affordance (Task 10) — React
+ * Flow forwards this node's resolved `isConnectable` (per-node `connectable`
+ * combined with the pane's `nodesConnectable`, see `DesignGraph`'s CONNECTING
+ * note) as a component prop, and it is ONLY rendered when true: the library's
+ * own `Handle` always renders its DOM node regardless of `isConnectable` (the
+ * prop just toggles a CSS class), so the Run lens's "no connect affordance at
+ * all" contract has to be enforced by not mounting the JSX, not by disabling
+ * it.
  *
  * `nodrag nopan` SCOPING (Task 8 introduced the classes on the node root;
  * Task 9 re-scopes them, does not remove them). React Flow's defaults for
@@ -179,7 +205,7 @@ function edgePath(from, to, orientation) {
  * Flow's drag hook, so leaving both in place is belt-and-braces against
  * both jsdom crashes, not redundant with the fix).
  */
-function StepNode({ data }) {
+function StepNode({ data, isConnectable }) {
   const s = data.step
   return (
     <div
@@ -190,7 +216,7 @@ function StepNode({ data }) {
       }
       style={{ borderLeft: `3px solid ${data.tint}` }}
     >
-      <Handle type="target" position={Position.Top} />
+      {isConnectable && <Handle type="target" position={Position.Top} />}
       {/* Drag handle (review round 1, finding 1) — the only surface
           `dragHandle: '.chain-node__grip'` (set on the node object below)
           allows a drag gesture to start from. Deliberately NOT a <button>:
@@ -286,7 +312,7 @@ function StepNode({ data }) {
         <button type="button" title="Remove step" aria-label={`Remove ${s.id}`}
           onClick={data.onRemove}>×</button>
       </div>
-      <Handle type="source" position={Position.Bottom} />
+      {isConnectable && <Handle type="source" position={Position.Bottom} />}
     </div>
   )
 }
@@ -334,6 +360,11 @@ function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
   onMoveStep, onDuplicateStep, onRemoveStep, onAddStep, onNodeMoved = () => {},
+  // Fires (fromId, toId) when a legal causality edge is drawn (Task 10,
+  // direct-manipulation) — `fromId` is the proposed parent, `toId` the step
+  // that would take it. Defaulted so a caller that never mounts the Design
+  // lens (or a test not exercising connect) needs nothing extra.
+  onConnectSteps = () => {},
   stitchModel = null, showStitch = false, storedLayout = null,
 }) {
   const layout = useMemo(
@@ -349,6 +380,11 @@ function DesignGraph({
   )
   const { bounds } = laidOut
   const runLens = lens === 'run'
+
+  // The last refused connect attempt, or null. Design-lens-only state (the
+  // Run lens never offers the affordance that would set it) — see the
+  // CONNECTING file-header note and `onConnect` below.
+  const [refusal, setRefusal] = useState(null)
 
   const stepLaidOutNodes = useMemo(
     () => laidOut.nodes.filter((n) => n.kind === 'step'),
@@ -372,11 +408,10 @@ function DesignGraph({
         id: n.id,
         type: 'step',
         position: { x: n.x, y: n.y },
-        // No per-node `draggable` override here (Task 9): that would pin
-        // every node's drag-ability regardless of the pane-level
-        // `nodesDraggable` prop below, which is what actually gates dragging
-        // off in the Run lens. `connectable` stays false — Task 10's wire.
-        connectable: false,
+        // No per-node `draggable`/`connectable` override here (Task 9/10):
+        // that would pin every node's drag/connect-ability regardless of the
+        // pane-level `nodesDraggable`/`nodesConnectable` props below, which
+        // are what actually gate both off in the Run lens.
         // Review round 1, finding 1 — restrict where a drag gesture may
         // START to the small grip StepNode renders, instead of the whole
         // card (which would refight the nodrag-scoping problem) or a
@@ -469,8 +504,45 @@ function DesignGraph({
     window.__rfOnNodesChange = onNodesChange
   }
 
+  // ── Connecting (Task 10) ──────────────────────────────────────────────────
+  // `isValidConnection` runs WHILE the DC is still dragging the edge, so an
+  // illegal target simply never accepts — the edge is refused BEFORE it
+  // exists rather than created and reverted. This is where the D2 spine
+  // constraint lives now that a drag affordance exists at all.
+  const isValidConnection = useCallback(
+    ({ source, target }) => canConnect(steps, source, target).ok,
+    [steps],
+  )
+
+  const onConnect = useCallback(({ source, target }) => {
+    const verdict = canConnect(steps, source, target)
+    if (!verdict.ok) {
+      setRefusal(verdict) // visible, with its reason — never a silent no-op
+      return
+    }
+    setRefusal(null)
+    onConnectSteps(source, target)
+  }, [steps, onConnectSteps])
+
+  // Same test seam as `window.__rfOnNodesChange` above, same production gate.
+  if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
+    window.__rfOnConnect = onConnect
+  }
+
   return (
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
+      {/* A refused connect attempt, ABOVE the canvas — visible and reasoned,
+          never a silent no-op (Task 10). Design-lens-only by construction:
+          `refusal` can only be set by `onConnect`, which only the Design
+          lens's ReactFlow instance wires up (see CONNECTING file-header
+          note). */}
+      {refusal && (
+        <div className="canvas-refusal" data-testid="canvas-refusal" role="status" aria-live="polite">
+          <strong>Edge refused</strong> — {refusal.reason}
+          <button type="button" onClick={() => setRefusal(null)} aria-label="Dismiss">×</button>
+        </div>
+      )}
+
       {/* START anchor — not a step, so it stays outside React Flow. */}
       <div className="chain-node chain-node--start" data-testid="chain-start">
         <div className="chain-node__kicker">Start</div>
@@ -503,7 +575,13 @@ function DesignGraph({
             onNodesChange={onNodesChange}
             snapToGrid
             snapGrid={[SNAP, SNAP]}
-            nodesConnectable={false}
+            // Design lens only — same reasoning as `nodesDraggable` above.
+            // No per-node `connectable` override (see `rfNodes`), so this is
+            // the single source of truth `StepNode` reads via its own
+            // resolved `isConnectable` prop.
+            nodesConnectable={!runLens}
+            onConnect={onConnect}
+            isValidConnection={isValidConnection}
             fitView
             proOptions={{ hideAttribution: false }}
           >
@@ -754,6 +832,11 @@ export default function ComposerCanvas({
   // `setNodePosition`. Defaulted so a caller that doesn't drag anything
   // never has to pass it.
   onNodeMoved = () => {},
+  // Fires (fromId, toId) when a legal causality edge is drawn on the canvas
+  // (Task 10). ComposerView wires this to `setCausalityParent` (plus a
+  // topological re-sort — see `composerSpine.js`'s `topologicallySortSteps`).
+  // Defaulted so a caller that never draws a connection never has to pass it.
+  onConnectSteps = () => {},
   onStartLibrary = () => {},
   onStartTtp = () => {},
   onStartBlank = () => {},
@@ -919,6 +1002,7 @@ export default function ComposerCanvas({
               onRemoveStep={onRemoveStep}
               onAddStep={onAddStep}
               onNodeMoved={onNodeMoved}
+              onConnectSteps={onConnectSteps}
               stitchModel={stitchModel}
               showStitch={showStitch}
               storedLayout={storedLayout}
@@ -946,6 +1030,7 @@ export default function ComposerCanvas({
                 onRemoveStep={onRemoveStep}
                 onAddStep={onAddStep}
                 onNodeMoved={onNodeMoved}
+                onConnectSteps={onConnectSteps}
                 storedLayout={storedLayout}
               />
             </>

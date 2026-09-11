@@ -11,7 +11,7 @@
  *     original chain while the canvas showed the edited one
  */
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
@@ -391,5 +391,68 @@ describe('ComposerView — YAML view and workstream', () => {
     await waitFor(() => expect(screen.getByTestId('ws-tab-history')).toBeInTheDocument())
     await user.click(screen.getByTestId('ws-tab-history'))
     expect(screen.getByText(/No runs yet/i)).toBeInTheDocument()
+  })
+})
+
+describe('ComposerView — drawing causality edges maintains array order (Task 10, addition A)', () => {
+  // A fork off a single root (step-02 and step-03 both children of step-01)
+  // — the shape needed to prove the "spine parity gap": `canConnect`
+  // approves re-parenting step-02 onto step-03 (no cycle, no self-ref), but
+  // step-03 sits AFTER step-02 in `steps[]`, which is exactly what
+  // `setCausalityParent`'s own forward-ref guard would otherwise silently
+  // refuse. `handleConnectSteps` must apply the edge AND restore array order,
+  // or the drag would visually succeed (no refusal banner) while doing
+  // nothing — the failure mode this whole task exists to prevent.
+  const FORK_SCENARIO = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-FORK',
+    steps: [
+      {
+        id: 'step-01', name: 'Root', command: 'true', identity: 'www-data',
+        expected_detections: [],
+      },
+      {
+        id: 'step-02', name: 'Branch A', command: 'true', identity: 'www-data',
+        causality: { parent_step: 'step-01', pivot: 'process_lineage' },
+        expected_detections: [],
+      },
+      {
+        id: 'step-03', name: 'Branch B', command: 'true', identity: 'www-data',
+        causality: { parent_step: 'step-01', pivot: 'process_lineage' },
+        expected_detections: [],
+      },
+    ],
+  }
+
+  it('re-parenting step-02 onto step-03 (which sits AFTER it) reorders the array instead of silently dropping the edge', async () => {
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [FORK_SCENARIO] },
+      'GET /api/scenarios/SIM-EDR-FORK': FORK_SCENARIO,
+    })
+    mount({ from: 'SIM-EDR-FORK' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-03')).toBeInTheDocument())
+
+    const order = () => Array.from(document.querySelectorAll('[data-testid^="chain-step-"]'))
+      .map((el) => el.getAttribute('data-testid'))
+    // Before: authored order is step-01, step-02, step-03 (step-03 after step-02).
+    expect(order()).toEqual(['chain-step-step-01', 'chain-step-step-02', 'chain-step-step-03'])
+
+    // Draw the canvas edge: step-03 becomes step-02's parent.
+    act(() => { window.__rfOnConnect({ source: 'step-03', target: 'step-02' }) })
+
+    // After: the edge applied (no refusal banner) AND the array was
+    // re-sorted so the new parent (step-03) precedes its child (step-02) —
+    // the exact rule core/engine/scenario_loader.py:394 enforces.
+    expect(screen.queryByTestId('canvas-refusal')).not.toBeInTheDocument()
+    await waitFor(() => {
+      const ids = order()
+      expect(ids.indexOf('chain-step-step-03')).toBeLessThan(ids.indexOf('chain-step-step-02'))
+    })
+    // step-01 (the untouched root) still precedes everything.
+    expect(order().indexOf('chain-step-step-01')).toBe(0)
+
+    // The inspector confirms the actual causalityParent field, not just DOM order.
+    await userEvent.setup().click(screen.getByTestId('chain-step-step-02'))
+    expect(screen.getByText(/parent step-03/)).toBeInTheDocument()
   })
 })

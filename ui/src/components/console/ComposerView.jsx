@@ -51,6 +51,7 @@ import {
   setStepTarget,
   validateDraft,
 } from './composerDraft.js'
+import { topologicallySortSteps } from './composerSpine.js'
 import { setEntity, stitchInsertToken } from './stitchContext.js'
 
 /**
@@ -398,6 +399,25 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     (id, parentId, pivot) => setSteps((p) => setCausalityParent(p, id, parentId, pivot)),
     [],
   )
+  // Canvas drag-to-connect (Task 10, direct-manipulation). `canConnect`
+  // (composerSpine.js) already proved `fromId -> toId` legal on the
+  // causality PARENT GRAPH before `ComposerCanvas` ever calls this — no
+  // self-ref, no cycle, no second root — but that check says nothing about
+  // array POSITION. `setCausalityParent` still enforces its own forward-ref
+  // guard (parent index < child index, mirroring
+  // core/engine/scenario_loader.py:394); passing `skipOrderCheck` here means
+  // a canvas-approved edge is never silently swallowed by that guard the way
+  // `onSetCausalityParent` above (the Inspector's manual picker, which has
+  // no array-order recovery of its own) still can be. `topologicallySortSteps`
+  // then restores the array-order invariant immediately, so what the
+  // operator drew and what the loader will accept never diverge — see
+  // `composerSpine.js`'s header for the full split between the two
+  // invariants this closes.
+  const handleConnectSteps = useCallback((fromId, toId) => {
+    setSteps((p) => topologicallySortSteps(
+      setCausalityParent(p, toId, fromId, 'process_lineage', { skipOrderCheck: true }),
+    ))
+  }, [])
   const onBindTtp = useCallback((id) => onNavigate('ttps', { bind: id }), [onNavigate])
   const onEditMeta = useCallback((patch) => setDraftMeta((m) => ({ ...m, ...patch })), [])
   // Stitch context lives in the draftMeta overlay (like name/plane/tcRef/cgo):
@@ -747,6 +767,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           onDuplicateStep={onDuplicateStep}
           onRemoveStep={onRemoveStep}
           onNodeMoved={onNodeMoved}
+          onConnectSteps={handleConnectSteps}
           onAddStep={() => addBlank('New command step')}
           onStartLibrary={() => onNavigate('library')}
           onStartTtp={() => onNavigate('ttps')}

@@ -487,11 +487,29 @@ export function removeDetection(steps, id, detIndex) {
  * (the step becomes a chain root, hanging off the CGO).
  *
  * Returns the SAME array when the edit would author an invalid spine — a
- * self-ref, or a FORWARD ref (a parent that appears at or after this step in
- * array order). That mirrors the loader's spine rule (`no self/forward refs`),
- * so the canvas physically cannot build a chain the backend would reject.
+ * self-ref, or (unless `skipOrderCheck`) a FORWARD ref (a parent that appears
+ * at or after this step in array order). That mirrors the loader's spine rule
+ * (`no self/forward refs`), so the canvas physically cannot build a chain the
+ * backend would reject.
+ *
+ * `skipOrderCheck` (default false — every pre-existing caller is unaffected)
+ * exists for exactly one caller: the Composer canvas's drag-to-connect flow
+ * (`ComposerView.jsx`'s `handleConnectSteps`, direct-manipulation Task 10).
+ * That flow validates the edge against the causality PARENT GRAPH first via
+ * `canConnect` (`composerSpine.js`) — acyclic, single root — which says
+ * nothing about array POSITION, so a `canConnect`-approved edge can still
+ * collide with the forward-ref guard below. Refusing it here a second time
+ * would be a refusal with no visible cause (canConnect already said yes) —
+ * exactly the silent-drop failure mode this feature exists to prevent. The
+ * caller instead passes `skipOrderCheck: true` and immediately re-sorts the
+ * result with `topologicallySortSteps` (`composerSpine.js`) to restore the
+ * array-order invariant, so what the operator drew and what the loader will
+ * accept never diverge. See that module's header for the full split between
+ * the two invariants.
  */
-export function setCausalityParent(steps, id, parentId, pivot = 'process_lineage') {
+export function setCausalityParent(
+  steps, id, parentId, pivot = 'process_lineage', { skipOrderCheck = false } = {},
+) {
   const index = steps.findIndex((s) => s.id === id)
   if (index < 0) return steps
 
@@ -499,7 +517,7 @@ export function setCausalityParent(steps, id, parentId, pivot = 'process_lineage
     if (parentId === id) return steps // self-ref
     const parentIndex = steps.findIndex((s) => s.id === parentId)
     if (parentIndex < 0) return steps // unknown parent
-    if (parentIndex >= index) return steps // forward (or self) ref
+    if (!skipOrderCheck && parentIndex >= index) return steps // forward (or self) ref
   }
 
   const current = steps[index]

@@ -869,6 +869,21 @@
   margin-left: 20px;
 }
 
+/* A refused canvas connect attempt (Task 10, direct-manipulation) — above the
+   graph, always with its reason, never a silent no-op. Existing tokens only:
+   `--crit` (the same danger token `.stitch-foot__problem` and the Run-lens
+   BROKEN edge colour use elsewhere in this file), `--ink`, `--font-ui`.
+   Scoped under `.theme-console` like every other rule in this file — the
+   only deviation from the brief's own snippet, which gave a bare selector. */
+.theme-console .canvas-refusal {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; margin-bottom: 8px;
+  border: 1px solid var(--crit); border-radius: 6px;
+  font: 500 12px/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.theme-console .canvas-refusal button { margin-left: auto; background: none; border: 0; cursor: pointer; }
+
 /* ─── Run lens ─── */
 .theme-console .composer-canvas__runempty {
   margin-bottom: 14px;

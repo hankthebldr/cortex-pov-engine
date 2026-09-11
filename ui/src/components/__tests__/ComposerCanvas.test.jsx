@@ -8,7 +8,7 @@
  * CONFIRMED, and a BROKEN stitch renders BROKEN.
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ComposerCanvas from '../console/ComposerCanvas.jsx'
 
@@ -52,6 +52,15 @@ const STEPS = [
 ]
 
 const VALIDATION = { counts: { steps: 2, detections: 1 } }
+
+// Same shape as the other Run-lens graph fixtures below — just needs enough
+// structure for `layoutCausalityGraph` to run without throwing.
+const GRAPH_FIXTURE = {
+  run_id: 'run-9',
+  nodes: [{ id: 'proc:run-9:step-01', kind: 'process', label: 'curl' }],
+  edges: [],
+  causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+}
 
 function baseProps(over = {}) {
   // `steps` defaults from `over.draft.steps` (falling back to the module
@@ -466,5 +475,74 @@ describe('ComposerCanvas — storedLayout wiring (additional requirement, Task 8
     const node = container.querySelector('[data-id="step-02"]')
     expect(node.style.transform).toContain('555')
     expect(node.style.transform).toContain('111')
+  })
+})
+
+describe('ComposerCanvas — drawing causality edges (Task 10, direct-manipulation)', () => {
+  // `window.__rfOnConnect` is the same test-seam pattern Task 9 established
+  // for `window.__rfOnNodesChange` — jsdom cannot reliably drive React
+  // Flow's own pointer-based connect gesture, so tests call the handler
+  // React Flow would call directly.
+  it('re-parents a step when a legal edge is drawn', () => {
+    const onConnectSteps = vi.fn()
+    const draft = { steps: [
+      { id: 's1', name: 'a', detections: [] },
+      { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+      { id: 's3', name: 'c', detections: [], causalityParent: 's2' },
+    ] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onConnectSteps })} />)
+    window.__rfOnConnect({ source: 's1', target: 's3' })
+    expect(onConnectSteps).toHaveBeenCalledWith('s1', 's3')
+  })
+
+  it('REFUSES a cycle and renders the reason — a silent no-op reads as a broken canvas', () => {
+    const onConnectSteps = vi.fn()
+    const draft = { steps: [
+      { id: 's1', name: 'a', detections: [] },
+      { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+    ] }
+    const { getByTestId } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design', onConnectSteps })} />
+    )
+    // DEVIATION from the brief's literal (unwrapped) call, documented in
+    // task-10-report.md: unlike the success path above (whose `setRefusal(null)`
+    // is a same-value bail-out React never schedules a render for), this path
+    // sets a NEW `refusal` object — a real state update outside any React
+    // event, which React 18's `createRoot` does not guarantee is committed
+    // before this synchronous call returns. Without `act()` the assertion
+    // below intermittently races the commit (observed here as a real,
+    // reproducible failure, not a flake) and prints the standard "not wrapped
+    // in act(...)" warning. `act()` changes nothing about what is asserted.
+    act(() => { window.__rfOnConnect({ source: 's2', target: 's1' }) })
+    expect(onConnectSteps).not.toHaveBeenCalled()
+    expect(getByTestId('canvas-refusal').textContent).toMatch(/cycle|loop/i)
+  })
+
+  it('exposes no connect affordance in the run lens', () => {
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ lens: 'run', causalityGraph: GRAPH_FIXTURE })} />
+    )
+    expect(container.querySelectorAll('.react-flow__handle')).toHaveLength(0)
+  })
+
+  it('dismisses the refusal banner on click, without touching onConnectSteps', async () => {
+    const onConnectSteps = vi.fn()
+    const draft = { steps: [
+      { id: 's1', name: 'a', detections: [] },
+      { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+    ] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onConnectSteps })} />)
+    act(() => { window.__rfOnConnect({ source: 's2', target: 's1' }) }) // see note above
+    const banner = screen.getByTestId('canvas-refusal')
+    await userEvent.setup().click(within(banner).getByLabelText('Dismiss'))
+    expect(screen.queryByTestId('canvas-refusal')).not.toBeInTheDocument()
+    expect(onConnectSteps).not.toHaveBeenCalled()
+  })
+
+  it('offers the connect affordance (Handles) in the design lens', () => {
+    const { container } = render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
+    // Two steps in the default fixture, each with a target (top) and source
+    // (bottom) handle.
+    expect(container.querySelectorAll('.react-flow__handle').length).toBe(4)
   })
 })
