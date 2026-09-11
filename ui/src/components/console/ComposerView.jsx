@@ -407,10 +407,16 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
       const id = drafts[0].scenario_id || drafts[0].id
       const row = await getDraft(id)
       const loaded = draftFromApi(row)
-      const { steps: loadedSteps, ...base } = loaded
-      setOrigin(base)
+      // `origin` MUST carry `.steps` — the `edited` memo above reads
+      // `origin.steps.length` unconditionally (same contract the `fromId`
+      // load effect honours by storing its full `draftFromScenario` result).
+      // Stripping steps out of origin here left it a "pristine snapshot"
+      // with a missing snapshot: with no scenario open, clicking Load threw
+      // `Cannot read properties of undefined (reading 'length')` on the very
+      // next render, before Save/Download ever touched the loaded steps.
+      setOrigin(loaded)
       setOriginDetail(row || null)
-      setSteps(loadedSteps)
+      setSteps(loaded.steps)
       setDraftMeta({})
       setSelectedId(null)
       setMetaOpen(false)

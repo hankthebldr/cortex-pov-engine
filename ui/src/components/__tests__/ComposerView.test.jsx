@@ -748,3 +748,78 @@ describe('ComposerView — Run lens scoped to the open draft (Task 13)', () => {
     expect(readout.textContent).toMatch(/dst_ip=203\.0\.113\.10/)
   })
 })
+
+describe('ComposerView — Load a saved draft (Task 12 crash)', () => {
+  // Live-verified shapes: GET /api/scenarios/drafts returns `projection:
+  // "summary"` rows whose steps carry only id/name/mitre_technique/
+  // expected_detections (no command/platforms/causality); GET
+  // /api/scenarios/drafts/:id returns the FULL Scenario.to_dict() row, which
+  // DOES carry command/platforms/causality on every step. `loadDraft` fetches
+  // the summary only to read `.scenario_id`, then fetches and renders the
+  // full row — so a step ever missing platforms/detections is not what broke
+  // this. See ComposerView.jsx's `loadDraft` for the actual defect.
+  const DRAFT_SUMMARY = {
+    drafts: [{
+      id: 178,
+      scenario_id: 'SIM-DRAFT-browser-drive-by',
+      name: 'Browser — Drive-by Download',
+      steps: [
+        { id: 'step-01', name: 'Pre-flight', mitre_technique: 'T1566', expected_detections: [{ type: 'Analytics', plane: 'BROWSER' }] },
+        { id: 'step-02', name: 'Drive to phishing page', mitre_technique: 'T1189', expected_detections: [{ type: 'BIOC', plane: 'BROWSER' }] },
+      ],
+    }],
+    total: 1,
+    projection: 'summary',
+  }
+  const DRAFT_FULL = {
+    id: 178,
+    scenario_id: 'SIM-DRAFT-browser-drive-by',
+    name: 'Browser — Drive-by Download',
+    plane: 'BROWSER',
+    status: 'draft',
+    author: 'composer',
+    tags: ['composer-draft'],
+    uc_ref: 'UCS-AES-03',
+    tc_ref: 'TC-AES-06',
+    cgo_anchor: { image_name: 'chrome', primary_username: 'corp-user' },
+    cleanup: { commands: [] },
+    composer_layout: { 'step-02': { x: 216, y: 176 } },
+    steps: [
+      {
+        id: 'step-01', name: 'Pre-flight', command: 'echo pre-flight',
+        identity: 'container-runtime', mitre_technique: 'T1566',
+        expected_detections: [{ plane: 'BROWSER', type: 'Analytics', detection_id: 'xql-1' }],
+        causality: null, platforms: ['linux', 'container'], platform_variants: {},
+      },
+      {
+        id: 'step-02', name: 'Drive to phishing page', command: 'echo drive-by',
+        identity: 'container-runtime', mitre_technique: 'T1189',
+        expected_detections: [{ plane: 'BROWSER', type: 'BIOC', detection_id: 'bioc-1' }],
+        causality: { parent_step: 'step-01', pivot: 'process_lineage' },
+        platforms: ['linux', 'container'], platform_variants: {},
+      },
+    ],
+    launchable: { launchable: true, chain_valid: true, tc_bound: true, reasons: [] },
+  }
+
+  it('loading a draft with no scenario open does not crash the destination', async () => {
+    const user = userEvent.setup()
+    baseRoutes({
+      // No scenario open — `fromId` is absent, so ComposerView mounts empty.
+      'GET /api/scenarios/drafts': DRAFT_SUMMARY,
+      'GET /api/scenarios/drafts/SIM-DRAFT-browser-drive-by': DRAFT_FULL,
+    })
+    mount()
+    await waitFor(() => expect(screen.getByTestId('composer-firstrun')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-load-draft'))
+    // Before the fix: `origin` was set WITHOUT its `.steps` (loadDraft
+    // destructured steps out before calling setOrigin), so the very next
+    // render's `edited` memo threw reading `origin.steps.length` on
+    // undefined — replacing the whole destination with the error boundary
+    // ("Composer could not load — Cannot read properties of undefined
+    // (reading 'length')") before the chain ever painted.
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(screen.getByTestId('chain-start')).toBeInTheDocument()
+    expect(screen.queryByTestId('surface-error')).not.toBeInTheDocument()
+  })
+})
