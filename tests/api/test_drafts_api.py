@@ -501,3 +501,39 @@ def test_update_draft_replaces_composer_layout(client):
     # Survives a GET read-back byte-identically.
     got = client.get(f"/api/scenarios/drafts/{sid}").json()
     assert got["composer_layout"] == new_layout
+
+
+def test_replace_preserves_untouched_step_positions(client):
+    body = _draft_body(steps=[_step("s1"), _step("s2", causality={"parent_step": "s1"})])
+    body["composer_layout"] = {"s1": {"x": 10, "y": 20}, "s2": {"x": 10, "y": 200}}
+    sid = client.post("/api/scenarios/drafts", json=body).json()["scenario_id"]
+
+    body["steps"][1]["name"] = "renamed"          # edit s2, touch no positions
+    resp = client.put(f"/api/scenarios/drafts/{sid}", json=body)
+    assert resp.status_code == 200, resp.text
+    assert client.get(f"/api/scenarios/drafts/{sid}").json()["composer_layout"] == {
+        "s1": {"x": 10, "y": 20},
+        "s2": {"x": 10, "y": 200},
+    }
+
+
+def test_orphan_layout_key_is_pruned_not_an_error(client):
+    """A position for a removed step is presentation debris, not a broken
+    reference — dropped silently, never a 422."""
+    body = _draft_body(steps=[_step("s1")])
+    body["composer_layout"] = {"s1": {"x": 1, "y": 2}, "ghost": {"x": 9, "y": 9}}
+    resp = client.post("/api/scenarios/drafts", json=body)
+    assert resp.status_code == 201, resp.text
+    sid = resp.json()["scenario_id"]
+    assert client.get(f"/api/scenarios/drafts/{sid}").json()["composer_layout"] == {
+        "s1": {"x": 1, "y": 2}
+    }
+
+
+def test_malformed_position_is_422_not_dropped(client):
+    """Gate A5: an unrecognised shape raises. extra='forbid' on NodePosition."""
+    body = _draft_body(steps=[_step("s1")])
+    body["composer_layout"] = {"s1": {"x": 1, "y": 2, "z": 3}}
+    resp = client.post("/api/scenarios/drafts", json=body)
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"]["code"] == "DRAFT_SCHEMA_INVALID"

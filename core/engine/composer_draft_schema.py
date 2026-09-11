@@ -270,6 +270,22 @@ class DraftScenarioSchema(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _prune_orphan_layout_keys(self):
+        """Drop layout entries whose step no longer exists.
+
+        Steps are freely removable and a stale coordinate is presentation
+        debris, not a dangling reference — so this prunes rather than raises.
+        Contrast NodePosition's extra='forbid': a MALFORMED position is a
+        contract disagreement and does raise.
+        """
+        if self.composer_layout:
+            live = {s.id for s in self.steps}
+            self.composer_layout = {
+                k: v for k, v in self.composer_layout.items() if k in live
+            } or None
+        return self
+
+    @model_validator(mode="after")
     def _require_a_detection(self) -> "DraftScenarioSchema":
         # The derived detection_types union must be non-empty — mirrors
         # ScenarioSchema.validate_detection_types. A draft where NO step carries
