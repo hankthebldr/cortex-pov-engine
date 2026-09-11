@@ -165,6 +165,19 @@ function edgePath(from, to, orientation) {
  * `onClick` normally; only a press-and-move gesture on the card frame itself
  * initiates a node drag. `panOnDrag` stays at its default `true` on
  * `<ReactFlow>` below either way — not the fix, same as Task 8.
+ *
+ * DRAG HANDLE (Task 9, review round 1, finding 1) — the card's own border/
+ * padding strip left over after the scoping above is a ~10-14% sliver that
+ * never sits under the labels/chips a cursor naturally lands on; without a
+ * discoverable affordance a DC reads that as "dragging is broken". Fixed
+ * with React Flow's per-node `dragHandle` (set to `.chain-node__grip` in
+ * `rfNodes` below), which restricts where a drag gesture may START to the
+ * small grip rendered at the top of the card, rather than trying to further
+ * carve up `.chain-node__body`'s hit area. This changes nothing about the
+ * `nodrag`/`nopan` placement above (still needed: `dragHandle` filtering and
+ * the `nodrag` classname filter are two independent checks inside React
+ * Flow's drag hook, so leaving both in place is belt-and-braces against
+ * both jsdom crashes, not redundant with the fix).
  */
 function StepNode({ data }) {
   const s = data.step
@@ -178,6 +191,24 @@ function StepNode({ data }) {
       style={{ borderLeft: `3px solid ${data.tint}` }}
     >
       <Handle type="target" position={Position.Top} />
+      {/* Drag handle (review round 1, finding 1) — the only surface
+          `dragHandle: '.chain-node__grip'` (set on the node object below)
+          allows a drag gesture to start from. Deliberately NOT a <button>:
+          it performs no click action of its own, so it isn't focusable or
+          exposed as an actionable control — `title`+`aria-label` alone make
+          it discoverable to a mouse user and a screen reader without
+          claiming keyboard operability the drag gesture doesn't have. */}
+      <div
+        className="chain-node__grip"
+        title="Drag to reposition"
+        aria-label="Drag to reposition"
+        // NOT `chain-step-grip-...`: several existing tests scan
+        // `getAllByTestId(/^chain-step-/)` to pin step-card DOM order and
+        // would pick this up as a spurious extra "step" entry.
+        data-testid={`chain-node-grip-${s.id}`}
+      >
+        ⠿
+      </div>
       <button
         type="button"
         className="chain-node__body nodrag nopan"
@@ -346,6 +377,13 @@ function DesignGraph({
         // `nodesDraggable` prop below, which is what actually gates dragging
         // off in the Run lens. `connectable` stays false — Task 10's wire.
         connectable: false,
+        // Review round 1, finding 1 — restrict where a drag gesture may
+        // START to the small grip StepNode renders, instead of the whole
+        // card (which would refight the nodrag-scoping problem) or a
+        // useless sliver of card border (undiscoverable). Harmless in the
+        // Run lens even though it's rendered there too: `nodesDraggable`
+        // being false means no drag can start regardless of the handle.
+        dragHandle: '.chain-node__grip',
         data: {
           step: s,
           order: (i < 0 ? 0 : i) + 1,
@@ -422,8 +460,14 @@ function DesignGraph({
   }, [onNodeMoved])
 
   // Test seam: the pane's transform makes synthetic pointer events unreliable
-  // in jsdom, so tests drive onNodesChange directly. Assignment only.
-  if (typeof window !== 'undefined') window.__rfOnNodesChange = onNodesChange
+  // in jsdom, so tests drive onNodesChange directly. Assignment only. Gated
+  // out of production builds (review round 1, minor finding) — Vite/Vitest
+  // set `import.meta.env.MODE` to `'test'` under `vitest run`, so this stays
+  // live for the test suite and is stripped by `vite build`'s production
+  // mode, which also dead-code-eliminates the whole branch.
+  if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
+    window.__rfOnNodesChange = onNodesChange
+  }
 
   return (
     <div className="chain composer-canvas__graph" data-testid="composer-chain">

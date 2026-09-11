@@ -450,6 +450,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Drag handle (Task 9, review round 1, finding 1) — the only surface
+   `dragHandle: '.chain-node__grip'` lets a node drag start from. A small,
+   discoverable strip rather than a rework of `.chain-node__body`'s hit area
+   (see ComposerCanvas.jsx's StepNode doc comment for why). */
+.theme-console .chain-node__grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 12px;
+  margin: -2px 0 7px;
+  border-radius: 3px;
+  color: var(--tx3);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 2px;
+  cursor: grab;
+  background: var(--s2);
+}
+.theme-console .chain-node__grip:hover { background: var(--s3); color: var(--tx2); }
+.theme-console .chain-node__grip:active { cursor: grabbing; }
 .theme-console .chain-node__body {
   display: block;
   width: 100%;

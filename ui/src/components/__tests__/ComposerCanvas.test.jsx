@@ -403,6 +403,41 @@ describe('ComposerCanvas — draggable nodes persist position (Task 9)', () => {
     expect(onNodeMoved).toHaveBeenCalledWith('s1', 304, 152)
   })
 
+  // Review round 1, finding 2: the three tests above all drive
+  // `window.__rfOnNodesChange` directly and never touch `nodesDraggable`, so
+  // none of them notice if the pane-level prop that actually turns dragging
+  // on regresses back to `false`. This is the missing POSITIVE guard —
+  // proven a real guard by temporarily reverting `nodesDraggable={!runLens}`
+  // to `nodesDraggable={false}` in ComposerCanvas.jsx, re-running this exact
+  // test, and confirming it fails; before/after output is in
+  // task-9-report.md.
+  it('is actually draggable in the Design lens (positive guard on nodesDraggable)', () => {
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design' })} />
+    )
+    const node = container.querySelector('.react-flow__node')
+    expect(node).toBeTruthy()
+    expect(node.classList.contains('draggable')).toBe(true)
+  })
+
+  // Finding 1's fix: dragging is scoped to a small, discoverable grip
+  // (`dragHandle: '.chain-node__grip'` on the node object) rather than the
+  // near-invisible card-border sliver `nodrag`/`nopan` scoping alone left
+  // behind. This pins that the selector `dragHandle` actually names exists
+  // in the rendered DOM (so the handle isn't pointed at nothing) and is
+  // discoverable via an aria-label, independent of the draggable-class
+  // guard above.
+  it('renders a discoverable grip handle matching the dragHandle selector', () => {
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design' })} />
+    )
+    const grip = container.querySelector('.chain-node__grip')
+    expect(grip).toBeTruthy()
+    expect(grip.getAttribute('aria-label')).toBe('Drag to reposition')
+  })
+
   it('exposes no drag affordance in the run lens', () => {
     const graph = {
       run_id: 'run-9', nodes: [{ id: 'proc:run-9:step-01', kind: 'process', label: 'curl' }],
