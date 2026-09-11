@@ -16,6 +16,15 @@ import userEvent from '@testing-library/user-event'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
 import ComposerView from '../console/ComposerView.jsx'
+// getRunCausality is imported directly by ComposerView (not prop-injected), so
+// the Task 13 "Run lens scoping" tests below spy on it via a partial module
+// mock — every other export stays the real implementation.
+import { getRunCausality as mockGetRunCausality } from '../../api/client.js'
+
+vi.mock('../../api/client.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, getRunCausality: vi.fn() }
+})
 
 // ComposerView renders ComposerCanvas, whose Design lens mounts React Flow
 // (Task 8). jsdom reports 0x0 for offsetWidth/offsetHeight, which makes
@@ -534,5 +543,133 @@ describe('ComposerView — Re-layout control (Task 11)', () => {
     await user.click(screen.getByTestId('composer-relayout'))
     expect(screen.getByTestId('composer-canvas').dataset.storedLayout).toBe('none')
     expect(screen.getByTestId('composer-relayout')).toBeDisabled()
+  })
+})
+
+describe('ComposerView — Run lens scoped to the open draft (Task 13)', () => {
+  // Diagnosis: docs/superpowers/plans/2026-09-08-run-lens-diagnosis.md
+  // Brief:     .superpowers/sdd/2026-09-08-composer-direct-manipulation/task-13-brief.md
+  //
+  // Field-name note (brief Step 1, verified live against localhost:8888, a
+  // running SimCore — not assumed): `curl -s localhost:8888/api/runs` rows
+  // carry run_id / scenario_id / status / started_at, exactly as the brief
+  // guessed. What the brief could NOT know: `env.activeRun` (the value these
+  // tests exercise) is not a raw run row at all — it's a DERIVED view-model
+  // built by EnvironmentContext.jsx's `activeRun` useMemo, and that object
+  // carries runId / scenarioId (camelCase) with NO run_id/scenario_id/status
+  // fields (confirmed by grep across AppConsole.jsx, ConsoleHeader.jsx,
+  // RunDetailView.jsx, and ComposerView.jsx's own existing `activeRun.runId`
+  // reads at ~line 1033). `renderComposer` below drives the REAL
+  // EnvironmentProvider + a mocked GET /api/runs, so `env.activeRun` in the
+  // component under test is the real derived shape, not the brief's guessed
+  // raw-row shape — the brief's test bodies are adapted (helper + async
+  // waitFor) to run against that reality, not copied as literally-sync
+  // pseudocode, since ComposerView loads its origin scenario over a mocked
+  // network fetch and cannot render synchronously.
+  const SCEN_ID = SCENARIO.scenario_id // 'SIM-EDR-001' — matches the brief's SCENARIO const
+
+  function runRow(over = {}) {
+    return {
+      run_id: 'r1', scenario_id: SCEN_ID, status: 'completed',
+      started_at: '2026-09-08T12:00:00Z', ...over,
+    }
+  }
+
+  // Folds a test's `activeRun` (in-flight run) description into a `status:
+  // 'running'` row for the mocked GET /api/runs — EnvironmentContext derives
+  // its own real `env.activeRun` from exactly that list, so this is what
+  // drives the REAL derivation rather than injecting a fake shape directly.
+  function activeRunRow(activeRun) {
+    if (!activeRun) return null
+    return {
+      run_id: activeRun.run_id || 'active',
+      scenario_id: activeRun.scenario_id,
+      status: activeRun.status || 'running',
+      started_at: activeRun.started_at || '2026-09-08T12:00:00Z',
+      step: activeRun.step,
+      detected: activeRun.detected,
+    }
+  }
+
+  function renderComposer({ draft = {}, env = {}, getRunCausality: impl } = {}) {
+    const scenarioId = draft.originId || SCEN_ID
+    const runs = [...(env.runs || [])]
+    const activeRow = activeRunRow(env.activeRun)
+    if (activeRow) runs.push(activeRow)
+    baseRoutes({ 'GET /api/runs': runs })
+    mockGetRunCausality.mockReset()
+    if (impl) mockGetRunCausality.mockImplementation((...args) => impl(...args))
+    return mount({ from: scenarioId })
+  }
+
+  it('fetches causality for a TERMINAL run of the open scenario', async () => {
+    // Fails today: env.activeRun is running-only, so a completed/failed run
+    // never triggers the fetch and the canvas claims no run exists.
+    const getRunCausalityImpl = vi.fn().mockResolvedValue({ nodes: [], edges: [] })
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: { runs: [runRow()], activeRun: null },
+      getRunCausality: getRunCausalityImpl,
+    })
+    await waitFor(() => expect(getRunCausalityImpl).toHaveBeenCalledWith('r1'))
+  })
+
+  it("does NOT paint this canvas with another scenario's in-flight run", async () => {
+    // Defect B: evidence contamination across scenarios.
+    const getRunCausalityImpl = vi.fn()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: {
+        runs: [],
+        activeRun: { run_id: 'other', scenario_id: 'SIM-CDR-009', status: 'running', step: 1, detected: 0 },
+      },
+      getRunCausality: getRunCausalityImpl,
+    })
+    // Give every pending async effect (scenario load, runs poll, the
+    // causality effect itself) room to settle before asserting the negative.
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(getRunCausalityImpl).not.toHaveBeenCalled()
+  })
+
+  it('prefers the in-flight run when it belongs to THIS scenario', async () => {
+    const getRunCausalityImpl = vi.fn().mockResolvedValue({ nodes: [], edges: [] })
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: {
+        runs: [runRow({ run_id: 'old' })],
+        activeRun: { run_id: 'live', scenario_id: SCEN_ID, status: 'running', step: 2, detected: 1 },
+      },
+      getRunCausality: getRunCausalityImpl,
+    })
+    await waitFor(() => expect(getRunCausalityImpl).toHaveBeenCalledWith('live'))
+  })
+
+  it('shows "no run yet" only when NO run exists for this scenario', async () => {
+    const user = userEvent.setup()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: { runs: [runRow({ scenario_id: 'SIM-CDR-009' })], activeRun: null },
+    })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(screen.getByTestId('composer-run-graph')).toBeInTheDocument())
+    expect(screen.getByTestId('composer-run-graph').textContent).toMatch(/no run yet/i)
+  })
+
+  it('renders no drag grip in the Run lens — the lens is strictly read-only', async () => {
+    // Reviewer-found gap folded into Task 13: nodesDraggable is false in the
+    // Run lens, but the grip DOM rendered regardless (harmless, but reads as
+    // a live affordance that does nothing).
+    const user = userEvent.setup()
+    renderComposer({
+      draft: { originId: SCEN_ID },
+      env: { runs: [runRow()], activeRun: null },
+      getRunCausality: vi.fn().mockResolvedValue({ nodes: [], edges: [] }),
+    })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(screen.getByTestId('chain-node-grip-step-01')).toBeInTheDocument()
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(screen.getByTestId('composer-run-graph')).toBeInTheDocument())
+    expect(screen.queryByTestId('chain-node-grip-step-01')).not.toBeInTheDocument()
   })
 })

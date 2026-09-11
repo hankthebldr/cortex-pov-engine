@@ -223,18 +223,23 @@ function StepNode({ data, isConnectable }) {
           it performs no click action of its own, so it isn't focusable or
           exposed as an actionable control — `title`+`aria-label` alone make
           it discoverable to a mouse user and a screen reader without
-          claiming keyboard operability the drag gesture doesn't have. */}
-      <div
-        className="chain-node__grip"
-        title="Drag to reposition"
-        aria-label="Drag to reposition"
-        // NOT `chain-step-grip-...`: several existing tests scan
-        // `getAllByTestId(/^chain-step-/)` to pin step-card DOM order and
-        // would pick this up as a spurious extra "step" entry.
-        data-testid={`chain-node-grip-${s.id}`}
-      >
-        ⠿
-      </div>
+          claiming keyboard operability the drag gesture doesn't have.
+          Task 13: NOT rendered in the Run lens at all — `nodesDraggable` is
+          already false there, but a visible-and-inert grip still reads as a
+          live affordance; the Run lens must read as strictly read-only. */}
+      {!data.runLens && (
+        <div
+          className="chain-node__grip"
+          title="Drag to reposition"
+          aria-label="Drag to reposition"
+          // NOT `chain-step-grip-...`: several existing tests scan
+          // `getAllByTestId(/^chain-step-/)` to pin step-card DOM order and
+          // would pick this up as a spurious extra "step" entry.
+          data-testid={`chain-node-grip-${s.id}`}
+        >
+          ⠿
+        </div>
+      )}
       <button
         type="button"
         className="chain-node__body nodrag nopan"
@@ -415,9 +420,11 @@ function DesignGraph({
         // Review round 1, finding 1 — restrict where a drag gesture may
         // START to the small grip StepNode renders, instead of the whole
         // card (which would refight the nodrag-scoping problem) or a
-        // useless sliver of card border (undiscoverable). Harmless in the
-        // Run lens even though it's rendered there too: `nodesDraggable`
-        // being false means no drag can start regardless of the handle.
+        // useless sliver of card border (undiscoverable). `nodesDraggable`
+        // being false in the Run lens already means no drag can start
+        // regardless of this handle — but Task 13 stopped rendering the
+        // grip's DOM there at all (see `data.runLens` below and `StepNode`),
+        // since an inert-but-visible grip reads as a live affordance.
         dragHandle: '.chain-node__grip',
         data: {
           step: s,
@@ -425,6 +432,11 @@ function DesignGraph({
           selected: selectedId === s.id,
           tint: PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)',
           runState: runLens ? (causalityStates?.[s.id]?.state || 'EXPECTED') : null,
+          // Task 13 (reviewer-found gap): the grip renders in BOTH lenses
+          // via this same StepNode, but a drag can only ever start in the
+          // Design lens (`nodesDraggable={!runLens}` below) — an inert grip
+          // in the Run lens looks like a live affordance that does nothing.
+          runLens,
           channelKind: channel === 'eal' ? 'eal' : (s.target ? 'target' : null),
           onSelectStep: () => onSelect(s.id),
           onMoveEarlier: () => onMoveStep(i, -1),
@@ -677,7 +689,7 @@ function DesignGraph({
 
 // ─── Run lens ─────────────────────────────────────────────────────────────────
 
-function RunGraph({ causalityGraph, zoom, binding = null }) {
+function RunGraph({ causalityGraph, zoom, binding = null, hasRun = false }) {
   const summary = causalityGraph?.causality_summary || {}
   // The REAL resolved 5-tuple/UPN/host/CI/cloud-resource the run used, persisted
   // on the run (runs.stitch_binding). Quoted verbatim — Gate A5: real values,
@@ -694,6 +706,30 @@ function RunGraph({ causalityGraph, zoom, binding = null }) {
   )
 
   if (!causalityGraph) {
+    // Honesty, both directions (Task 13): a scenario with NO run at all gets
+    // the original "EXPECTED only" copy — nothing is inferred because there
+    // is genuinely nothing to infer from. A scenario that DOES have a
+    // scoped run, but whose graph hasn't arrived yet (fetch in flight, or
+    // failed), must NOT reuse that copy — claiming "nothing is inferred
+    // before a run exists" while a run demonstrably exists is exactly the
+    // false claim this task was opened to close.
+    if (hasRun) {
+      return (
+        <div
+          className="composer-canvas__runempty"
+          data-testid="composer-run-graph"
+          style={{
+            border: '1px dashed var(--bd, #c1ccd6)', borderRadius: 8, padding: '18px 20px',
+            color: 'var(--cortex-steel, #6B7E8E)', fontSize: 13,
+          }}
+        >
+          <strong style={{ color: 'var(--ink, #003366)' }}>Run found — causality graph not loaded yet.</strong>
+          {' '}A run exists for this scenario; its causality graph has not finished
+          loading (or the fetch failed). This is not "no run" — it will render here
+          with CONFIRMED / BROKEN edges once the graph arrives.
+        </div>
+      )
+    }
     // Honesty: no run has produced observations. EXPECTED only — never a
     // fabricated CONFIRMED.
     return (
@@ -840,6 +876,12 @@ export default function ComposerCanvas({
   causalityGraph = null,
   causalityStates = {},
   activeRun = null,
+  // Whether a run exists for THIS draft's own scenario (Task 13) — distinct
+  // from `causalityGraph` being populated: a scoped run can exist while its
+  // graph is still loading, and RunGraph's empty-state copy must not claim
+  // "no run" in that case. Defaulted so a caller that never scopes a run
+  // (e.g. existing ComposerCanvas.test.jsx callers) keeps today's copy.
+  hasRun = false,
   originError = null,
   loadingOrigin = false,
   fromId = null,
@@ -1045,7 +1087,12 @@ export default function ComposerCanvas({
 
           {hasSteps && runLens && (
             <>
-              <RunGraph causalityGraph={causalityGraph} zoom={zoom} binding={activeRun?.stitch_binding || null} />
+              <RunGraph
+                causalityGraph={causalityGraph}
+                zoom={zoom}
+                binding={activeRun?.stitch_binding || null}
+                hasRun={hasRun}
+              />
               {/* The authored spine stays visible under the Run lens, each card
                   badged with its REAL run status (default EXPECTED before a run
                   produces observations) so the DC sees intent against outcome. */}

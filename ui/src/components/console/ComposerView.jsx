@@ -256,16 +256,51 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const agentName = env.agent ? (env.agent.hostname || agentIdOf(env.agent)) : null
 
   // ── Run lens data ────────────────────────────────────────────────────────────
-  // The Run lens renders the REAL causality graph of an in-flight or terminal
-  // run for this draft; pre-run it stays null and the canvas says "EXPECTED
-  // only" rather than drawing a green chain the tenant never correlated.
-  const activeRunId = env.activeRun ? runIdOf(env.activeRun) : null
-  // Refetch as the run progresses: the SSE-driven activeRun updates its
-  // step/detected/status, and each of those is a moment a stitch may reconcile
-  // to CONFIRMED or BROKEN. Keying only on the (stable) run id would freeze the
-  // graph at launch — empty/EXPECTED — for the whole run.
-  const runTick = env.activeRun
-    ? `${env.activeRun.step}:${env.activeRun.detected}:${env.activeRun.status}`
+  // The Run lens renders the REAL causality graph of the run belonging to
+  // THIS draft's OWN origin scenario — in-flight or terminal — never a
+  // globally-active run of some other scenario.
+  //
+  // Previously this keyed on env.activeRun alone
+  // (docs/superpowers/plans/2026-09-08-run-lens-diagnosis.md), which fell
+  // out to two defects: (A) EnvironmentContext derives env.activeRun as
+  // `runs.find(r => r.status === 'running')` — app-wide AND running-only, so
+  // a completed/failed run never triggered the fetch even though the backend
+  // held a fully populated causality graph for it; (B) nothing guarded
+  // env.activeRun by scenario id, so an in-flight run of a DIFFERENT
+  // scenario could paint this canvas with another scenario's evidence.
+  //
+  // Field-name note (verified live against a running SimCore, not assumed —
+  // see the Task 13 test file header): env.runs holds RAW API rows —
+  // run_id / scenario_id / status / started_at. env.activeRun is NOT a raw
+  // row; it's the DERIVED view-model EnvironmentContext.jsx's `activeRun`
+  // useMemo builds — runId / scenarioId (camelCase) and no
+  // run_id/scenario_id/status fields at all (its existence already means
+  // "running"). `runIdOf()` reads run_id/id, so calling it on env.activeRun
+  // as before always resolved to null — the "prefer the live run" branch was
+  // dead code even before scoping, not merely unscoped.
+  const scenarioId = draft.originId || null
+
+  const scopedRun = useMemo(() => {
+    if (!scenarioId) return null
+    // Prefer the live run, but only when it is THIS scenario's.
+    if (env.activeRun && env.activeRun.scenarioId === scenarioId) return env.activeRun
+    const mine = (env.runs || []).filter((r) => r && r.scenario_id === scenarioId)
+    if (mine.length === 0) return null
+    return mine.reduce((best, r) =>
+      Date.parse(r.started_at || 0) > Date.parse(best.started_at || 0) ? r : best)
+  }, [scenarioId, env.activeRun, env.runs])
+
+  // scopedRun is either env.activeRun (camelCase runId) or a raw run row
+  // (snake_case run_id) — resolve both through the same fallback chain.
+  const activeRunId = scopedRun ? (scopedRun.runId ?? runIdOf(scopedRun)) : null
+
+  // Poll only while the matched run is non-terminal — a terminal run's graph
+  // is settled, so keying on its mutable fields would refetch forever for no
+  // new data. env.activeRun carries no `status` field (its existence already
+  // means "running"), so object identity with env.activeRun also counts.
+  const isLive = !!(scopedRun && (scopedRun === env.activeRun || scopedRun.status === 'running'))
+  const runTick = isLive
+    ? `${scopedRun.step}:${scopedRun.detected}:${scopedRun.status || 'running'}`
     : null
   const [causalityGraph, setCausalityGraph] = useState(null)
   useEffect(() => {
@@ -788,7 +823,8 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           validation={validation}
           causalityGraph={causalityGraph}
           causalityStates={causalityStates}
-          activeRun={env.activeRun}
+          activeRun={scopedRun}
+          hasRun={!!activeRunId}
           originError={originError}
           loadingOrigin={loadingOrigin}
           fromId={fromId}
