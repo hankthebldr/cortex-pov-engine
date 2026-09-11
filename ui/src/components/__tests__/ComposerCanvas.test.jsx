@@ -7,10 +7,25 @@
  * rule that is this component's alone — the Run lens never fabricates a
  * CONFIRMED, and a BROKEN stitch renders BROKEN.
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ComposerCanvas from '../console/ComposerCanvas.jsx'
+
+// jsdom has no layout engine — every element reports 0x0 for offsetWidth /
+// offsetHeight, and React Flow (Composer Design lens, Task 8) measures its
+// container on mount, refusing to render any node until it gets a non-zero
+// size. Scoped to THIS file (and ComposerView.test.jsx, which mounts
+// ComposerCanvas indirectly and carries the identical stub) rather than the
+// shared `src/test/setup.js` — each test file gets its own fresh jsdom
+// environment, so a `beforeAll` here cannot leak into unrelated suites.
+beforeAll(() => {
+  window.ResizeObserver = window.ResizeObserver || class {
+    observe() {} unobserve() {} disconnect() {}
+  }
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 1200 })
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 800 })
+})
 
 const DRAFT = {
   originId: 'SIM-EDR-001',
@@ -326,6 +341,25 @@ describe('ComposerCanvas — Design lens through React Flow (Task 8, render only
     expect(screen.getByTestId('chain-start')).toBeInTheDocument()
     expect(screen.getByTestId('chain-end')).toBeInTheDocument()
     expect(document.querySelectorAll('.react-flow__node')).toHaveLength(2)
+  })
+
+  it('draws the START->first-step and last-step->END dashed connectors (review round 1, finding 1)', () => {
+    // START/END are excluded from `rfEdges` (they aren't React Flow nodes),
+    // so the `root`/`terminal` spine edges that used to draw the dashed
+    // connector + endpoint dots into/out of them were silently dropped with
+    // nothing replacing them. Without this the canvas is visually three
+    // disconnected blocks (START card / React Flow box / END card).
+    render(<ComposerCanvas {...baseProps()} />)
+    const root = screen.getByTestId('composer-connector-root')
+    const terminal = screen.getByTestId('composer-connector-terminal')
+    // Dashed line + a dot at each end — the same visual language the removed
+    // SVG root/terminal edges used (`strokeDasharray`, steel endpoint dots).
+    for (const connector of [root, terminal]) {
+      const line = connector.querySelector('line')
+      expect(line).toBeTruthy()
+      expect(line.getAttribute('stroke-dasharray')).toBe('4 4')
+      expect(connector.querySelectorAll('circle')).toHaveLength(2)
+    }
   })
 })
 

@@ -49,19 +49,6 @@ if (typeof window !== 'undefined') {
     }
   }
 
-  // jsdom has no layout engine — every element reports 0x0 for offsetWidth /
-  // offsetHeight. React Flow (Composer Design lens, Task 8) measures its
-  // container on mount and refuses to render any node until it gets a
-  // non-zero size, so every test that mounts a `<ReactFlow>` — directly via
-  // ComposerCanvas.test.jsx, or indirectly through ComposerView.test.jsx —
-  // needs this globally rather than duplicated per-file. `configurable: true`
-  // so an individual test can still override it if it ever needs to.
-  if (!('__cortexsimOffsetStub' in window.HTMLElement.prototype)) {
-    Object.defineProperty(window.HTMLElement.prototype, '__cortexsimOffsetStub', { value: true })
-    Object.defineProperty(window.HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 1200 })
-    Object.defineProperty(window.HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 800 })
-  }
-
   if (!window.scrollTo) {
     window.scrollTo = vi.fn()
   }

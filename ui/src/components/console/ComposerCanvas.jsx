@@ -117,13 +117,22 @@ function edgePath(from, to, orientation) {
  * and ComposerCanvas tests already pin is unchanged apart from the React Flow
  * wrapper around it. `Handle`s are the connect affordance Task 10 wires up —
  * inert for now because `nodesConnectable={false}` on the parent `<ReactFlow>`.
+ *
+ * `nodrag nopan` on the outer div: React Flow's defaults for
+ * `noDragClassName`/`noPanClassName` are literally `'nodrag'`/`'nopan'`, and
+ * the pane's own drag-to-pan filter walks up from `event.target` looking for
+ * `.nopan` before starting a d3-zoom pan gesture. Without it, a mousedown on
+ * any button in this card (move/duplicate/remove/select) bubbles to the pane
+ * and d3-zoom's pan handler throws under jsdom — the FIX for that crash is
+ * this class, not disabling pane panning globally (`panOnDrag` stays at its
+ * default `true` on `<ReactFlow>` below).
  */
 function StepNode({ data }) {
   const s = data.step
   return (
     <div
       className={
-        'chain-node chain-node--step'
+        'chain-node chain-node--step nodrag nopan'
         + (data.selected ? ' chain-node--selected' : '')
         + (s.detections.length ? '' : ' chain-node--nodetect')
       }
@@ -214,6 +223,35 @@ function StepNode({ data }) {
 
 const nodeTypes = { step: StepNode }
 
+/**
+ * The dashed connector + endpoint dots that used to be the `root`/`terminal`
+ * SVG edges (START→first step, last leaf→END) before those steps' spine
+ * edges got filtered out of `rfEdges` (START/END are not React Flow nodes,
+ * so React Flow has nowhere to attach them). Without a replacement the chain
+ * visually breaks apart into three floating blocks — this restores the same
+ * dashed-grey/steel-dot visual language as the removed SVG paths, just drawn
+ * in normal document flow between the blocks rather than in the old
+ * absolute-coordinate SVG. Advisory, like the stitch overlay below: it is
+ * not wired to React Flow's own pan/zoom, because it doesn't need to be —
+ * it only ever bridges the fixed gap between two ordinary flow children.
+ */
+function SpineConnector({ testId }) {
+  return (
+    <div className="composer-canvas__connector" data-testid={testId} aria-hidden="true">
+      <svg width="20" height="24" viewBox="0 0 20 24">
+        <line
+          x1="10" y1="0" x2="10" y2="24"
+          stroke="var(--bd, #c1ccd6)"
+          strokeWidth="1.5"
+          strokeDasharray="4 4"
+        />
+        <circle cx="10" cy="0" r="3" fill="var(--cortex-steel, #6B7E8E)" />
+        <circle cx="10" cy="24" r="3" fill="var(--cortex-steel, #6B7E8E)" />
+      </svg>
+    </div>
+  )
+}
+
 function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
@@ -299,6 +337,15 @@ function DesignGraph({
     [laidOut, stepIds],
   )
 
+  // Whether to draw the START/END spine connectors (see `SpineConnector`).
+  // `spineEdges` guarantees a `root` edge for every parentless step and
+  // exactly one `terminal` edge whenever there is at least one leaf, so with
+  // any steps at all both are normally present — computed rather than
+  // assumed unconditional, so a future edge-case in the layout module fails
+  // toward "no stray connector" rather than a silent throw.
+  const hasRootEdge = laidOut.edges.some((e) => e.kind === 'root')
+  const hasTerminalEdge = laidOut.edges.some((e) => e.kind === 'terminal')
+
   // Design-lens entity-join overlay: the stitch edges the context IMPLIES,
   // EXPECTED-only (authored intent, never outcome). Off by default; drawn as a
   // distinct dashed secondary layer offset to the right of the spine.
@@ -325,6 +372,8 @@ function DesignGraph({
         </div>
       </div>
 
+      {hasRootEdge && <SpineConnector testId="composer-connector-root" />}
+
       <div className="composer-canvas__flow">
         <ReactFlowProvider>
           <ReactFlow
@@ -333,7 +382,6 @@ function DesignGraph({
             nodeTypes={nodeTypes}
             nodesDraggable={false}
             nodesConnectable={false}
-            panOnDrag={false}
             fitView
             proOptions={{ hideAttribution: false }}
           >
@@ -378,6 +426,8 @@ function DesignGraph({
           </svg>
         )}
       </div>
+
+      {hasTerminalEdge && <SpineConnector testId="composer-connector-terminal" />}
 
       {/* END anchor — not a step, so it stays outside React Flow. */}
       <div className="chain-node chain-node--end" data-testid="chain-end">

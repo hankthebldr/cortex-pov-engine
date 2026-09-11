@@ -10,12 +10,26 @@
  *   - a hand-edited draft CANNOT be launched, because SimCore would run the
  *     original chain while the canvas showed the edited one
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
 import ComposerView from '../console/ComposerView.jsx'
+
+// ComposerView renders ComposerCanvas, whose Design lens mounts React Flow
+// (Task 8). jsdom reports 0x0 for offsetWidth/offsetHeight, which makes
+// React Flow refuse to render any node — see the identical stub and
+// rationale in ComposerCanvas.test.jsx. Scoped to this file rather than the
+// shared `src/test/setup.js`: each test file gets its own fresh jsdom
+// environment, so this cannot leak into unrelated suites.
+beforeAll(() => {
+  window.ResizeObserver = window.ResizeObserver || class {
+    observe() {} unobserve() {} disconnect() {}
+  }
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 1200 })
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 800 })
+})
 
 const SCENARIO = {
   scenario_id: 'SIM-EDR-001',

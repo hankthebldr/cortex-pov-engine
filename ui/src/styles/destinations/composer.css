@@ -821,11 +821,12 @@
   max-width: 100%;
 }
 
-/* React Flow needs an ancestor with an explicit size — jsdom stubs this in
-   tests (`ui/src/test/setup.js`), a real browser needs the CSS. Pan + the
-   built-in `<Controls>` zoom stand in for the old manual-zoom canvas; nodes
-   are laid out by `composerLayout.js` and are not draggable/connectable yet
-   (Tasks 9/10). */
+/* React Flow needs an ancestor with an explicit size — jsdom stubs this per
+   test file (ComposerCanvas.test.jsx / ComposerView.test.jsx), a real
+   browser needs the CSS. Pan (mouse-drag, unchanged default — see
+   `StepNode`'s `nodrag nopan` doc comment) + the built-in `<Controls>` zoom
+   stand in for the old manual-zoom canvas; nodes are laid out by
+   `composerLayout.js` and are not draggable/connectable yet (Tasks 9/10). */
 .theme-console .composer-canvas__flow {
   position: relative;
   width: 100%;
@@ -834,6 +835,18 @@
   border-radius: 8px;
   overflow: hidden;
   background: var(--s1);
+}
+
+/* The restored START→first-step / last-step→END connector (`SpineConnector`)
+   — a small dashed vertical line + endpoint dots bridging the gap between
+   ordinary flow children, echoing the dashed `root`/`terminal` SVG edges the
+   old absolutely-positioned canvas drew. Not centred on the actual node
+   above/below it (React Flow's own pan/zoom moves those independently of
+   this static bridge) — advisory, like the stitch overlay. */
+.theme-console .composer-canvas__connector {
+  align-self: flex-start;
+  flex: none;
+  margin-left: 20px;
 }
 
 /* ─── Run lens ─── */
