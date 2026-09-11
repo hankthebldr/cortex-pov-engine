@@ -65,7 +65,7 @@
  * affordance in the Run lens requires not rendering the JSX in the first
  * place, not just disabling it.
  */
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
@@ -529,6 +529,29 @@ function DesignGraph({
     window.__rfOnConnect = onConnect
   }
 
+  // Zero-size mount guard (Task 11). The Composer is a LAZILY-MOUNTED
+  // destination (see the file-header note on Task 8) — it can mount while
+  // its tab is hidden, at 0x0. A bare `fitView` asks React Flow to compute a
+  // viewport transform that fits the graph into a container with no real
+  // dimensions yet; the reference implementation observed this producing
+  // duplicated DOM on re-init once the pane was later measured. Only pass
+  // `fitView` once a ResizeObserver has actually reported a non-zero pane —
+  // a hidden-then-shown tab gets exactly one real fit, on the first
+  // dimensions that are real.
+  const paneRef = useRef(null)
+  const [measured, setMeasured] = useState(false)
+
+  useEffect(() => {
+    const el = paneRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setMeasured(width > 0 && height > 0)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   return (
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
       {/* A refused connect attempt, ABOVE the canvas — visible and reasoned,
@@ -561,7 +584,7 @@ function DesignGraph({
 
       {hasRootEdge && <SpineConnector testId="composer-connector-root" />}
 
-      <div className="composer-canvas__flow">
+      <div className="composer-canvas__flow" ref={paneRef}>
         <ReactFlowProvider>
           <ReactFlow
             nodes={rfNodes}
@@ -582,7 +605,7 @@ function DesignGraph({
             nodesConnectable={!runLens}
             onConnect={onConnect}
             isValidConnection={isValidConnection}
-            fitView
+            fitView={measured}
             proOptions={{ hideAttribution: false }}
           >
             <Background />
@@ -860,8 +883,19 @@ export default function ComposerCanvas({
   const zoomIn = () => setZoom((z) => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))
   const zoomReset = () => setZoom(1)
 
+  // Task 11: whether the canvas is currently overlaying any DC-dragged
+  // positions onto the computed layout — read by the Re-layout control's
+  // test (`ComposerView.test.jsx`) via this element's own dataset, so the
+  // assertion goes through the real prop rather than reaching into state.
+  const hasStoredLayout = !!(storedLayout && Object.keys(storedLayout).length)
+
   return (
-    <section className="composer-canvas" aria-label="Chain canvas">
+    <section
+      className="composer-canvas"
+      aria-label="Chain canvas"
+      data-testid="composer-canvas"
+      data-stored-layout={hasStoredLayout ? 'set' : 'none'}
+    >
       <div className="composer-canvas__head">
         <span className="mono composer-canvas__id">{draft.originId || 'no scenario'}</span>
         <span className="composer-canvas__name">{draft.name || 'Open a scenario, or add a step'}</span>

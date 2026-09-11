@@ -28,6 +28,7 @@ import {
   appendStep,
   bindTtpDetection,
   blankStep,
+  clearLayout,
   DETECTION_TYPES,
   draftFromApi,
   draftFromScenario,
@@ -395,8 +396,22 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const onEditStep = useCallback((id, patch) => setSteps((p) => editStep(p, id, patch)), [])
   const onAddDetection = useCallback((id, det) => setSteps((p) => addDetection(p, id, det)), [])
   const onRemoveDetection = useCallback((id, i) => setSteps((p) => removeDetection(p, id, i)), [])
+  // Inspector's manual "parent step" picker (`ComposerInspector.jsx`). Same
+  // composition as `handleConnectSteps` below, and for the same reason: a DC
+  // choosing a parent that sits AFTER the child in `steps[]` is a legal edit
+  // (`setCausalityParent`'s forward-ref guard exists to mirror the loader's
+  // array-order rule, not to refuse the edit outright), so `skipOrderCheck`
+  // applies it and `topologicallySortSteps` immediately repairs array order
+  // to match. Before this fix, this path had no such recovery — the guard's
+  // silent same-array return meant the Inspector picker could select a
+  // later-positioned parent and get nothing: no change, no error, no
+  // explanation. The canvas's drag-to-connect affordance (below) already
+  // worked this way; the two controls now share one guarantee instead of the
+  // DC's outcome depending on which one they happened to use.
   const onSetCausalityParent = useCallback(
-    (id, parentId, pivot) => setSteps((p) => setCausalityParent(p, id, parentId, pivot)),
+    (id, parentId, pivot) => setSteps((p) => topologicallySortSteps(
+      setCausalityParent(p, id, parentId, pivot, { skipOrderCheck: true }),
+    )),
     [],
   )
   // Canvas drag-to-connect (Task 10, direct-manipulation). `canConnect`
@@ -406,13 +421,12 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   // array POSITION. `setCausalityParent` still enforces its own forward-ref
   // guard (parent index < child index, mirroring
   // core/engine/scenario_loader.py:394); passing `skipOrderCheck` here means
-  // a canvas-approved edge is never silently swallowed by that guard the way
-  // `onSetCausalityParent` above (the Inspector's manual picker, which has
-  // no array-order recovery of its own) still can be. `topologicallySortSteps`
-  // then restores the array-order invariant immediately, so what the
-  // operator drew and what the loader will accept never diverge — see
-  // `composerSpine.js`'s header for the full split between the two
-  // invariants this closes.
+  // a canvas-approved edge is never silently swallowed by that guard — same
+  // composition `onSetCausalityParent` above now applies for the Inspector's
+  // manual picker. `topologicallySortSteps` then restores the array-order
+  // invariant immediately, so what the operator drew and what the loader
+  // will accept never diverge — see `composerSpine.js`'s header for the full
+  // split between the two invariants this closes.
   const handleConnectSteps = useCallback((fromId, toId) => {
     setSteps((p) => topologicallySortSteps(
       setCausalityParent(p, toId, fromId, 'process_lineage', { skipOrderCheck: true }),
@@ -451,6 +465,14 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
       return setNodePosition({ ...m, layout: curLayout }, stepId, x, y)
     })
   }, [origin])
+  // Re-layout (Task 11): discard every dragged position and fall back to the
+  // computed layout. Same overlay shape as `onNodeMoved` above — writing
+  // `layout: null` into the `draftMeta` overlay is enough on its own
+  // (`clearLayout` just does that spread), since `draft.layout` always reads
+  // through the overlay when one is present.
+  const onClearLayout = useCallback(() => {
+    setDraftMeta((m) => clearLayout(m))
+  }, [])
   const onMoveStep = useCallback((index, delta) => setSteps((p) => moveStep(p, index, delta)), [])
   const onDuplicateStep = useCallback((index) => setSteps((p) => duplicateStep(p, index)), [])
   const onRemoveStep = useCallback((index) => setSteps((p) => removeStep(p, index)), [])
@@ -653,6 +675,16 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           title="Emit this chain as scenario YAML you can drop into scenarios/"
         >
           Download draft YAML
+        </button>
+        <button
+          type="button"
+          className="btn btn--xs"
+          onClick={onClearLayout}
+          data-testid="composer-relayout"
+          title="Discard dragged positions and re-run the automatic layout"
+          disabled={!draft.layout}
+        >
+          Re-layout
         </button>
         <button
           type="button"

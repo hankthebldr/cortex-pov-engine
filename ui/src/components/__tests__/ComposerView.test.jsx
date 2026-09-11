@@ -455,4 +455,83 @@ describe('ComposerView — drawing causality edges maintains array order (Task 1
     await userEvent.setup().click(screen.getByTestId('chain-step-step-02'))
     expect(screen.getByText(/parent step-03/)).toBeInTheDocument()
   })
+
+  // Task 10 fixed the CANVAS drag path (above) by composing `skipOrderCheck:
+  // true` with `topologicallySortSteps`. `onSetCausalityParent` — the
+  // INSPECTOR's manual "parent step" picker (`ComposerInspector.jsx`) — wired
+  // straight to `setCausalityParent` with no such composition, so the exact
+  // same forward-ref guard (`composerDraft.js`'s `setCausalityParent`) that
+  // the canvas path works around would silently no-op the Inspector path
+  // instead: no change, no error, no explanation. This is the asymmetry
+  // fixed here — same composition, same guarantee, on both affordances.
+  it('Inspector re-parenting step-02 onto step-03 (which sits AFTER it) reorders the array instead of silently dropping the edit', async () => {
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [FORK_SCENARIO] },
+      'GET /api/scenarios/SIM-EDR-FORK': FORK_SCENARIO,
+    })
+    mount({ from: 'SIM-EDR-FORK' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-03')).toBeInTheDocument())
+
+    const order = () => Array.from(document.querySelectorAll('[data-testid^="chain-step-"]'))
+      .map((el) => el.getAttribute('data-testid'))
+    expect(order()).toEqual(['chain-step-step-01', 'chain-step-step-02', 'chain-step-step-03'])
+
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId('chain-step-step-02'))
+    const parentSelect = screen.getByLabelText('Causality parent for step-02')
+
+    // ComposerInspector.jsx's own "parent step" <option> list only offers
+    // steps EARLIER than step-02 in the CURRENT array (a belt-and-suspenders
+    // filter written when a forward ref was simply refused outright) —
+    // step-03 is not among the rendered options. Inject it directly so the
+    // native change event carries the exact value the real wiring (the
+    // select's onChange -> `onSetCausalityParent` -> `setCausalityParent` +
+    // resort) must now accept. This proves the CALLBACK composition — the
+    // actual defect under test — independent of that separate, pre-existing
+    // option-list restriction, which this task does not touch.
+    const forwardOption = document.createElement('option')
+    forwardOption.value = 'step-03'
+    parentSelect.appendChild(forwardOption)
+    await user.selectOptions(parentSelect, 'step-03')
+
+    await waitFor(() => {
+      const ids = order()
+      expect(ids.indexOf('chain-step-step-03')).toBeLessThan(ids.indexOf('chain-step-step-02'))
+    })
+    expect(order().indexOf('chain-step-step-01')).toBe(0)
+    expect(screen.getByText(/parent step-03/)).toBeInTheDocument()
+  })
+})
+
+describe('ComposerView — Re-layout control (Task 11)', () => {
+  const LAYOUT_SCENARIO = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-LAYOUT',
+    composer_layout: { 'step-02': { x: 480, y: 260 } },
+  }
+
+  it('is disabled with no stored layout, and clears stored positions back to computed on click', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-relayout')).toBeInTheDocument())
+    expect(screen.getByTestId('composer-relayout')).toBeDisabled()
+    expect(screen.getByTestId('composer-canvas').dataset.storedLayout).toBe('none')
+  })
+
+  it('Re-layout clears stored positions back to computed', async () => {
+    const user = userEvent.setup()
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [LAYOUT_SCENARIO] },
+      'GET /api/scenarios/SIM-EDR-LAYOUT': LAYOUT_SCENARIO,
+    })
+    mount({ from: 'SIM-EDR-LAYOUT' })
+    await waitFor(() => expect(screen.getByTestId('composer-relayout')).toBeInTheDocument())
+    expect(screen.getByTestId('composer-relayout')).not.toBeDisabled()
+    expect(screen.getByTestId('composer-canvas').dataset.storedLayout).toBe('set')
+
+    await user.click(screen.getByTestId('composer-relayout'))
+    expect(screen.getByTestId('composer-canvas').dataset.storedLayout).toBe('none')
+    expect(screen.getByTestId('composer-relayout')).toBeDisabled()
+  })
 })
