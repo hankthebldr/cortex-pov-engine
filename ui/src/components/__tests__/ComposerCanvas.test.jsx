@@ -165,6 +165,56 @@ describe('ComposerCanvas — lens toggle', () => {
   })
 })
 
+describe('ComposerCanvas — Design-lens zoom toolbar is real, not inert (Important 1)', () => {
+  // Before this fix the −/100%/+ toolbar in the head was wired to a piece of
+  // React state (`zoom`) that only `RunGraph` ever read — in the Design lens
+  // the buttons changed nothing and the number could never leave 100%, a
+  // false claim to the operator (React Flow's own `<Controls>` had already
+  // taken over the actual zoom mechanism when Task 8 swapped renderers).
+
+  it('starts at the real pane zoom (100%) and updates when React Flow\'s OWN <Controls> zoom — not our button', async () => {
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design' })} />
+    )
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('100%')
+
+    // Click React Flow's own zoom-in control (rendered by <Controls/>, not by
+    // our header) — this proves the header percentage is read from the real
+    // viewport (via DesignGraph's onInit/onMove), not merely a value our own
+    // button handler happens to set in lockstep with itself.
+    const rfZoomIn = container.querySelector('.react-flow__controls-zoomin')
+    expect(rfZoomIn).toBeTruthy()
+    await userEvent.setup().click(rfZoomIn)
+    // React Flow's own contract: "Zooms viewport in by 1.2."
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('120%')
+  })
+
+  it('the header Zoom in / out buttons drive that SAME real viewport', async () => {
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design' })} />)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Zoom in' }))
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('120%')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Zoom out' }))
+    // zoomOut() is the exact inverse (1/1.2) React Flow applies, back to 100%.
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('100%')
+  })
+
+  it('leaves the Run lens\'s zoom toolbar on the pre-existing state-backed control', async () => {
+    // Unchanged behaviour guard: RunGraph has no React Flow instance under
+    // it (it is a manually CSS-scaled <svg>), so the Run lens's toolbar must
+    // keep driving the plain `zoom` state, not a (nonexistent) pane.
+    const graph = {
+      run_id: 'run-9', nodes: [{ id: 'proc:run-9:step-01', kind: 'process', label: 'curl' }],
+      edges: [], causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+    }
+    render(<ComposerCanvas {...baseProps({ lens: 'run', causalityGraph: graph })} />)
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('100%')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Zoom in' }))
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('110%')
+  })
+})
+
 describe('ComposerCanvas — Stitch overlay (design intent)', () => {
   // Two steps consume the SAME planted key, so a join edge exists to draw.
   const STITCH_STEPS = [
@@ -203,6 +253,27 @@ describe('ComposerCanvas — Stitch overlay (design intent)', () => {
     expect(overlay.querySelector('[data-stitch-key="src_port"]')).toBeTruthy()
     expect(overlay.textContent).toMatch(/EXPECTED/)
     expect(overlay.textContent).not.toMatch(/CONFIRMED|BROKEN/)
+  })
+
+  it('renders the overlay INSIDE React Flow\'s transformed viewport pane, not as a misaligned sibling (Important 2)', () => {
+    // Regression guard: before this fix the overlay was a plain sibling
+    // `<svg>` drawn in `layout.bounds` pixel space next to (not inside) the
+    // ReactFlow pane — so it visually diverged from the node positions the
+    // moment React Flow's own `fitView` panned/scaled that pane to anything
+    // but the identity transform. `<ViewportPortal>` fixes this by rendering
+    // the overlay inside the pane's own `.react-flow__viewport` layer, which
+    // carries the SAME pan/zoom transform node positions ride — this asserts
+    // the DOM actually lives there now, not merely that it renders somewhere.
+    const { container } = render(<ComposerCanvas {...baseProps({
+      steps: STITCH_STEPS,
+      draft: { ...DRAFT, steps: STITCH_STEPS },
+      stitchModel: MODEL,
+      showStitch: true,
+    })} />)
+    const overlay = screen.getByTestId('composer-stitch-overlay')
+    const viewport = container.querySelector('.react-flow__viewport')
+    expect(viewport).toBeTruthy()
+    expect(viewport.contains(overlay)).toBe(true)
   })
 
   it('draws no overlay layer when the toggle is on but nothing is planted', () => {
@@ -384,8 +455,20 @@ describe('ComposerCanvas — draggable nodes persist position (Task 9)', () => {
 
   it('reports a moved node in FLOW coordinates, not screen pixels', () => {
     // React Flow already divides screen delta by zoom before emitting a position
-    // change. The bug this guards is someone "helpfully" re-applying zoom on top,
-    // which double-scales every drag. See spec §5.4.
+    // change, so whatever reaches `onNodesChange` is already in flow space. The
+    // bug this guards — re-applying zoom on top, which would double-scale every
+    // drag (spec §5.4) — is now closed STRUCTURALLY, not just by this test:
+    // `onNodesChange` (`DesignGraph`, ComposerCanvas.jsx) never receives a zoom
+    // value at all, so there is no live zoom for a handler to multiply by — at
+    // zoom 1 or any other value. (Minor 6, 2026-09 final-fix wave: an earlier
+    // version of this comment claimed the fixture below exercised "a drag at
+    // zoom 2", but nothing here ever sets a non-1 zoom, so it could not have
+    // discriminated a handler that multiplied by the live zoom from one that
+    // didn't.) What this test actually covers is narrower and still real: the
+    // position `fireNodeDrag` hands the handler comes back out of
+    // `onNodeMoved` UNCHANGED (modulo the 8px-grid rounding the next test below
+    // pins), a regression guard should a zoom parameter ever be reintroduced
+    // and misused here.
     //
     // NOTE (deviation from the task-9 brief, documented in task-9-report.md):
     // the brief's literal fixture used {x:300,y:150}, asserting the callback
@@ -399,9 +482,9 @@ describe('ComposerCanvas — draggable nodes persist position (Task 9)', () => {
     const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
     render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onNodeMoved })} />)
 
-    // Simulate the change React Flow emits after a drag at zoom 2.
+    // The change React Flow's onNodesChange emits after a drag ends.
     fireNodeDrag('s1', { x: 320, y: 160 })
-    expect(onNodeMoved).toHaveBeenCalledWith('s1', 320, 160)   // NOT 640/320
+    expect(onNodeMoved).toHaveBeenCalledWith('s1', 320, 160)   // unchanged, not scaled
   })
 
   it('snaps a stored position to the 8px grid', () => {
@@ -546,6 +629,16 @@ describe('ComposerCanvas — drawing causality edges (Task 10, direct-manipulati
     expect(container.querySelectorAll('.react-flow__handle').length).toBe(4)
   })
 })
+
+// Important 3's own test (non-process_lineage pivots render a typed edge)
+// lives in ComposerCanvas.pivotEdges.test.jsx, not here — same reason as the
+// fitView guard below: it needs a partial `@xyflow/react` mock to inspect the
+// `edges` PROP `<ReactFlow>` receives, since the real library never renders
+// an edge between two nodes jsdom cannot measure (no `DOMMatrixReadOnly`/
+// `getBBox`), and no test in this file (or this codebase) depends on real
+// rendered `.react-flow__edge` DOM for exactly that reason. `vi.mock` is
+// file-scoped, so isolating it there keeps this file's ~40 real-DOM
+// assertions (`.react-flow__node`, Handles, the `window.__rf*` seams) honest.
 
 // The zero-size mount guard's own test (Task 11) lives in
 // ComposerCanvas.fitViewGuard.test.jsx, not here — see that file's header

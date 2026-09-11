@@ -65,8 +65,12 @@
  * affordance in the Run lens requires not rendering the JSX in the first
  * place, not just disabling it.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position } from '@xyflow/react'
+import React, {
+  useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef,
+} from 'react'
+import {
+  ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position, ViewportPortal,
+} from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
   layoutChain,
@@ -361,7 +365,7 @@ function SpineConnector({ testId }) {
 // bypassing React Flow's own drag pipeline entirely.
 const SNAP = 8
 
-function DesignGraph({
+const DesignGraph = forwardRef(function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
   onMoveStep, onDuplicateStep, onRemoveStep, onAddStep, onNodeMoved = () => {},
@@ -371,7 +375,17 @@ function DesignGraph({
   // lens (or a test not exercising connect) needs nothing extra.
   onConnectSteps = () => {},
   stitchModel = null, showStitch = false, storedLayout = null,
-}) {
+  // Reports the REAL pane zoom (from React Flow's own `onInit`/`onMove`,
+  // never a locally-tracked counter) whenever it changes (Important 1,
+  // 2026-09 final-fix wave). Lets a caller-owned header control display the
+  // actual number instead of the dead −/100%/+ toolbar the review found:
+  // `zoom` state at the ComposerCanvas root used to be rendered there but
+  // consumed only by RunGraph, so in the Design lens the buttons changed
+  // nothing and the percentage never moved off 100%. Defaulted so the Run
+  // lens's own read-only DesignGraph instance (the authored-spine-under-the-
+  // real-graph render, below in the root component) needs nothing extra.
+  onZoomChange = () => {},
+}, ref) {
   const layout = useMemo(
     () => layoutChain({ ...draft, steps }),
     [draft, steps],
@@ -456,19 +470,38 @@ function DesignGraph({
   // which are not React Flow nodes here — an edge to a node React Flow
   // doesn't have is simply dropped, so only the real inter-step causality
   // edges are worth constructing.
+  //
+  // PIVOT TYPING (Important 3, 2026-09 final-fix wave). Spec §5.5: "a
+  // `process_lineage` pivot chains parent→child process nodes; any
+  // non-process pivot emits its own typed edge and leaves the step rooted at
+  // the CGO... the canvas must render that difference, not flatten it into a
+  // process chain." `composerLayout.js`'s `spineEdges` already carries the
+  // authored pivot as `e.kind` (defaulting `process_lineage`) — a plan
+  // snippet for this task labelled non-lineage edges (`e.pivot !==
+  // 'process_lineage' ? e.pivot : undefined`) but that was lost when the
+  // field was corrected from the never-real `e.pivot` to the actual `e.kind`,
+  // leaving every edge styled identically regardless of pivot. Restored here:
+  // a typed pivot gets React Flow's own edge `label` (free — `BaseEdge`
+  // renders it) plus a dashed stroke, so it reads as a distinct edge kind
+  // rather than another link in the process chain.
   const rfEdges = useMemo(
     () => laidOut.edges
       .filter((e) => stepIds.has(e.source) && stepIds.has(e.target))
-      .map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        type: 'default',
-        style: {
-          stroke: 'var(--ac, #00C0E8)',
-          strokeWidth: 1.5,
-        },
-      })),
+      .map((e) => {
+        const typedPivot = e.kind && e.kind !== 'process_lineage' ? e.kind : null
+        return {
+          id: e.id,
+          source: e.source,
+          target: e.target,
+          type: 'default',
+          label: typedPivot || undefined,
+          style: {
+            stroke: 'var(--ac, #00C0E8)',
+            strokeWidth: 1.5,
+            ...(typedPivot ? { strokeDasharray: '5 4' } : {}),
+          },
+        }
+      }),
     [laidOut, stepIds],
   )
 
@@ -564,13 +597,47 @@ function DesignGraph({
     return () => ro.disconnect()
   }, [])
 
+  // ── Live zoom (Important 1) ───────────────────────────────────────────────
+  // Captured via `onInit` rather than `useReactFlow()` because the control
+  // that needs it (the canvas head, in the root component below) is a
+  // SIBLING of this pane, not a descendant of the `ReactFlowProvider` a few
+  // lines down — a hook only resolves inside the provider it belongs to, but
+  // the plain `ReactFlowInstance` object `onInit` hands back can be called
+  // from anywhere holding a ref to it, which is exactly what `useImperativeHandle`
+  // below exposes.
+  const rfInstanceRef = useRef(null)
+
+  const handleInit = useCallback((instance) => {
+    rfInstanceRef.current = instance
+    onZoomChange(instance.getZoom())
+  }, [onZoomChange])
+
+  // Fires on EVERY viewport change — wheel zoom, drag-pan, React Flow's own
+  // built-in `<Controls>` zoom buttons, AND the imperative calls below — so
+  // whatever reads `onZoomChange` is always the REAL pane, never a value
+  // that can silently drift from it.
+  const handleMove = useCallback((_event, viewport) => {
+    onZoomChange(viewport.zoom)
+  }, [onZoomChange])
+
+  useImperativeHandle(ref, () => ({
+    zoomIn: () => rfInstanceRef.current?.zoomIn(),
+    zoomOut: () => rfInstanceRef.current?.zoomOut(),
+    zoomReset: () => rfInstanceRef.current?.zoomTo(1),
+  }), [])
+
   return (
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
       {/* A refused connect attempt, ABOVE the canvas — visible and reasoned,
-          never a silent no-op (Task 10). Design-lens-only by construction:
-          `refusal` can only be set by `onConnect`, which only the Design
-          lens's ReactFlow instance wires up (see CONNECTING file-header
-          note). */}
+          never a silent no-op (Task 10). Design-lens-only in practice, but
+          NOT because `onConnect` is only wired up in the Design lens — both
+          lenses' `DesignGraph` instances wire it identically. What actually
+          keeps `refusal` from ever being set by the Run lens's read-only
+          spine is `nodesConnectable={!runLens}` below suppressing the
+          `Handle`s `StepNode` would otherwise render (see the CONNECTING
+          file-header note) — with no Handle to drag from, no connect gesture
+          can start there, so `onConnect` never fires regardless of being
+          wired. */}
       {refusal && (
         <div className="canvas-refusal" data-testid="canvas-refusal" role="status" aria-live="polite">
           <strong>Edge refused</strong> — {refusal.reason}
@@ -618,48 +685,64 @@ function DesignGraph({
             onConnect={onConnect}
             isValidConnection={isValidConnection}
             fitView={measured}
+            onInit={handleInit}
+            onMove={handleMove}
             proOptions={{ hideAttribution: false }}
           >
             <Background />
             <Controls />
+
+            {/* Stitch overlay — additive, EXPECTED-only dashed entity-join
+                edges the context implies. STATE_TINT.EXPECTED (never
+                CONFIRMED/BROKEN; those belong to the Run lens). Off unless
+                showStitch && a model.
+                REGRESSION FIX (Important 2, 2026-09 final-fix wave): this used
+                to be a plain sibling `<svg>` drawn in `layout.bounds` PIXEL
+                space next to (not inside) the ReactFlow pane above — but
+                React Flow's own `fitView` independently pans/scales that
+                pane, so the two disagreed at any non-identity transform, not
+                only long chains (it was correctly aligned before this branch,
+                d7f9ad0, when overlay and nodes shared one scaled space).
+                `<ViewportPortal>` renders this INSIDE the pane's own
+                transformed `.react-flow__viewport` layer, so the overlay's
+                flow-space coordinates (the SAME `layoutChain` coordinates
+                `rfNodes` above uses for `position`) ride the identical
+                pan/zoom transform node positions do — pixel-locked, not
+                advisory. */}
+            {stitchEdges.length > 0 && (
+              <ViewportPortal>
+                <svg
+                  width={bounds.width}
+                  height={bounds.height}
+                  data-testid="composer-stitch-overlay"
+                  style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none' }}
+                  aria-hidden="true"
+                >
+                  {stitchEdges.map((se) => {
+                    // Bulge to the right of the spine so the join reads as a second layer.
+                    const bulge = 28 + Math.abs(se.to.y - se.from.y) / 3
+                    const d = `M ${se.from.x} ${se.from.y} `
+                      + `C ${se.from.x + bulge} ${se.from.y} `
+                      + `${se.to.x + bulge} ${se.to.y} ${se.to.x} ${se.to.y}`
+                    return (
+                      <path
+                        key={se.id}
+                        d={d}
+                        fill="none"
+                        stroke={STATE_TINT.EXPECTED}
+                        strokeWidth={1.5}
+                        strokeDasharray="4 4"
+                        data-stitch-key={se.key}
+                      >
+                        <title>{`stitch ${se.key} · EXPECTED (authored intent)`}</title>
+                      </path>
+                    )
+                  })}
+                </svg>
+              </ViewportPortal>
+            )}
           </ReactFlow>
         </ReactFlowProvider>
-
-        {/* Stitch overlay — additive, EXPECTED-only dashed entity-join edges the
-            context implies. STATE_TINT.EXPECTED (never CONFIRMED/BROKEN; those
-            belong to the Run lens). Off unless showStitch && a model. Drawn
-            in the layout's own coordinate space, independent of React Flow's
-            pan/zoom — an advisory annotation, not a pixel-locked overlay. */}
-        {stitchEdges.length > 0 && (
-          <svg
-            width={bounds.width}
-            height={bounds.height}
-            data-testid="composer-stitch-overlay"
-            style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
-            aria-hidden="true"
-          >
-            {stitchEdges.map((se) => {
-              // Bulge to the right of the spine so the join reads as a second layer.
-              const bulge = 28 + Math.abs(se.to.y - se.from.y) / 3
-              const d = `M ${se.from.x} ${se.from.y} `
-                + `C ${se.from.x + bulge} ${se.from.y} `
-                + `${se.to.x + bulge} ${se.to.y} ${se.to.x} ${se.to.y}`
-              return (
-                <path
-                  key={se.id}
-                  d={d}
-                  fill="none"
-                  stroke={STATE_TINT.EXPECTED}
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                  data-stitch-key={se.key}
-                >
-                  <title>{`stitch ${se.key} · EXPECTED (authored intent)`}</title>
-                </path>
-              )
-            })}
-          </svg>
-        )}
       </div>
 
       {hasTerminalEdge && <SpineConnector testId="composer-connector-terminal" />}
@@ -685,7 +768,7 @@ function DesignGraph({
       </button>
     </div>
   )
-}
+})
 
 // ─── Run lens ─────────────────────────────────────────────────────────────────
 
@@ -917,6 +1000,9 @@ export default function ComposerCanvas({
   // only wires it through to the lens that reads it.
   storedLayout = null,
 }) {
+  // Run lens: zoom stays a plain piece of state — RunGraph is a manually
+  // CSS-scaled `<svg>` layer, not a React Flow pane, so there is no live
+  // viewport for a control to read from; this state IS the ground truth.
   const [zoom, setZoom] = useState(1)
   const runLens = lens === 'run'
   const hasSteps = steps.length > 0
@@ -924,6 +1010,23 @@ export default function ComposerCanvas({
   const zoomOut = () => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))
   const zoomIn = () => setZoom((z) => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))
   const zoomReset = () => setZoom(1)
+
+  // Design lens (Important 1, 2026-09 final-fix wave): the zoom toolbar used
+  // to render unconditionally against the Run lens's `zoom` state above, but
+  // the Design lens's own React Flow pane owns its zoom independently (its
+  // `<Controls>` replaced the mechanism when Task 8 swapped renderers) — so
+  // in that lens the buttons changed nothing and the percentage never left
+  // 100%, a display that lies to the operator. `designZoom` mirrors the REAL
+  // pane zoom (via `DesignGraph`'s `onZoomChange`, fed by React Flow's own
+  // `onInit`/`onMove`, never a locally-incremented counter); `designGraphRef`
+  // exposes that same pane's imperative `zoomIn`/`zoomOut`/`zoomReset` so the
+  // header buttons drive it for real. Only wired to the Design lens's OWN
+  // `DesignGraph` instance below — the Run lens also mounts a second,
+  // read-only `DesignGraph` (the authored spine under the real graph), which
+  // deliberately does not feed this, since the header toolbar there controls
+  // `zoom`/RunGraph instead.
+  const designGraphRef = useRef(null)
+  const [designZoom, setDesignZoom] = useState(1)
 
   // Task 11: whether the canvas is currently overlaying any DC-dragged
   // positions onto the computed layout — read by the Re-layout control's
@@ -986,12 +1089,28 @@ export default function ComposerCanvas({
           ))}
         </div>
 
-        {/* Zoom controls — presentation-only, act on the graph layers. */}
+        {/* Zoom controls. Design lens: wired to the real React Flow pane
+            (`designGraphRef` / `designZoom`, see the state doc-comment above)
+            so the number IS the actual viewport zoom and the buttons drive
+            it — the pre-fix version was inert here (React Flow's own
+            `<Controls>` had already taken over the mechanism). Run lens:
+            unchanged, state-backed (`zoom`/`setZoom`), since RunGraph has no
+            React Flow instance underneath it to read. */}
         {canvasView !== 'yaml' && (
           <div className="composer-canvas__zoom" role="group" aria-label="Zoom" style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
-            <button type="button" className="canvas-view" aria-label="Zoom out" onClick={zoomOut}>−</button>
-            <button type="button" className="canvas-view" aria-label="Reset zoom" onClick={zoomReset}>{Math.round(zoom * 100)}%</button>
-            <button type="button" className="canvas-view" aria-label="Zoom in" onClick={zoomIn}>+</button>
+            {runLens ? (
+              <>
+                <button type="button" className="canvas-view" aria-label="Zoom out" onClick={zoomOut}>−</button>
+                <button type="button" className="canvas-view" aria-label="Reset zoom" onClick={zoomReset}>{Math.round(zoom * 100)}%</button>
+                <button type="button" className="canvas-view" aria-label="Zoom in" onClick={zoomIn}>+</button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="canvas-view" aria-label="Zoom out" onClick={() => designGraphRef.current?.zoomOut()}>−</button>
+                <button type="button" className="canvas-view" aria-label="Reset zoom" onClick={() => designGraphRef.current?.zoomReset()}>{Math.round(designZoom * 100)}%</button>
+                <button type="button" className="canvas-view" aria-label="Zoom in" onClick={() => designGraphRef.current?.zoomIn()}>+</button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1064,6 +1183,8 @@ export default function ComposerCanvas({
 
           {hasSteps && !runLens && (
             <DesignGraph
+              ref={designGraphRef}
+              onZoomChange={setDesignZoom}
               draft={draft}
               steps={steps}
               selectedId={selectedId}
