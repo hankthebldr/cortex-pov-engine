@@ -298,6 +298,7 @@ _MUTABLE_COLUMNS = (
     "tags",
     "cgo_anchor",
     "stitch_context",
+    "composer_layout",
     "validation_methodology",
     "methodology_family",
     "primary_kpi",

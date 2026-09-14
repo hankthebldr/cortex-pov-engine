@@ -27,6 +27,7 @@
  */
 import React, { memo, useEffect, useRef } from 'react'
 import { PIVOTS, DETECTION_TYPES, PLANES, CHANNELS, effectiveChannel } from './composerDraft.js'
+import { canConnect } from './composerSpine.js'
 import { agentIdOf } from '../../api/ids.js'
 import { plantedKeys, stitchPlaceholdersIn } from './stitchContext.js'
 import ComposerStitchPanel from './ComposerStitchPanel.jsx'
@@ -200,15 +201,23 @@ export default function ComposerInspector({
                 }
               >
                 <option value="">— (chain root)</option>
-                {/* Only steps EARLIER in the spine are offerable. The model
-                    (`setCausalityParent`) refuses a self- or forward-ref by
-                    returning the same array, mirroring the loader's spine rule
-                    — so offering a later step here rendered a choice the state
-                    silently discarded: the select snapped back, the canvas did
-                    not redraw, and the author got no reason why. Filtering by
-                    index makes every offered option one the model accepts. */}
+                {/* Offered parents are GRAPH-legal, not array-position-limited.
+                    `canConnect` (composerSpine.js) is the same self-ref /
+                    cycle / second-root predicate the canvas's drag-to-connect
+                    flow evaluates before drawing an edge — reused here rather
+                    than re-derived, so there is one legality rule with two
+                    call sites. Array position is no longer a correctness
+                    proxy for this select: `onSetCausalityParent`
+                    (ComposerView.jsx) composes `setCausalityParent(...,
+                    {skipOrderCheck: true})` with `topologicallySortSteps`,
+                    exactly like the canvas's `handleConnectSteps`, so a
+                    chosen parent that currently sits AFTER `selected` in
+                    `steps[]` is applied and the array is re-sorted to match
+                    rather than refused. Self-ref falls out of `canConnect`
+                    for free (SELF_REF), so no separate `s.id !== selected.id`
+                    check is needed. */}
                 {steps
-                  .slice(0, Math.max(0, steps.findIndex((s) => s.id === selected.id)))
+                  .filter((s) => canConnect(steps, s.id, selected.id).ok)
                   .map((s) => (
                     <option key={s.id} value={s.id}>{s.id}</option>
                   ))}

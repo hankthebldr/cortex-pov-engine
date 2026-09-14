@@ -7,10 +7,25 @@
  * rule that is this component's alone — the Run lens never fabricates a
  * CONFIRMED, and a BROKEN stitch renders BROKEN.
  */
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { render, screen, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ComposerCanvas from '../console/ComposerCanvas.jsx'
+
+// jsdom has no layout engine — every element reports 0x0 for offsetWidth /
+// offsetHeight, and React Flow (Composer Design lens, Task 8) measures its
+// container on mount, refusing to render any node until it gets a non-zero
+// size. Scoped to THIS file (and ComposerView.test.jsx, which mounts
+// ComposerCanvas indirectly and carries the identical stub) rather than the
+// shared `src/test/setup.js` — each test file gets its own fresh jsdom
+// environment, so a `beforeAll` here cannot leak into unrelated suites.
+beforeAll(() => {
+  window.ResizeObserver = window.ResizeObserver || class {
+    observe() {} unobserve() {} disconnect() {}
+  }
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, value: 1200 })
+  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 800 })
+})
 
 const DRAFT = {
   originId: 'SIM-EDR-001',
@@ -38,10 +53,24 @@ const STEPS = [
 
 const VALIDATION = { counts: { steps: 2, detections: 1 } }
 
+// Same shape as the other Run-lens graph fixtures below — just needs enough
+// structure for `layoutCausalityGraph` to run without throwing.
+const GRAPH_FIXTURE = {
+  run_id: 'run-9',
+  nodes: [{ id: 'proc:run-9:step-01', kind: 'process', label: 'curl' }],
+  edges: [],
+  causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+}
+
 function baseProps(over = {}) {
+  // `steps` defaults from `over.draft.steps` (falling back to the module
+  // STEPS) BEFORE `...over` is spread, so a caller overriding only `draft`
+  // (the Task 8 React Flow tests below) gets a `steps` prop that matches it,
+  // while every existing call that overrides `steps` explicitly is unchanged.
+  const draft = over.draft || { ...DRAFT, steps: STEPS }
   return {
-    draft: { ...DRAFT, steps: STEPS },
-    steps: STEPS,
+    draft,
+    steps: draft.steps ?? STEPS,
     validation: VALIDATION,
     yamlText: 'scenario:\n  - id: step-01\n    # NO EXPECTED DETECTION',
     tenantName: 'acme-xsiam',
@@ -136,6 +165,56 @@ describe('ComposerCanvas — lens toggle', () => {
   })
 })
 
+describe('ComposerCanvas — Design-lens zoom toolbar is real, not inert (Important 1)', () => {
+  // Before this fix the −/100%/+ toolbar in the head was wired to a piece of
+  // React state (`zoom`) that only `RunGraph` ever read — in the Design lens
+  // the buttons changed nothing and the number could never leave 100%, a
+  // false claim to the operator (React Flow's own `<Controls>` had already
+  // taken over the actual zoom mechanism when Task 8 swapped renderers).
+
+  it('starts at the real pane zoom (100%) and updates when React Flow\'s OWN <Controls> zoom — not our button', async () => {
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design' })} />
+    )
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('100%')
+
+    // Click React Flow's own zoom-in control (rendered by <Controls/>, not by
+    // our header) — this proves the header percentage is read from the real
+    // viewport (via DesignGraph's onInit/onMove), not merely a value our own
+    // button handler happens to set in lockstep with itself.
+    const rfZoomIn = container.querySelector('.react-flow__controls-zoomin')
+    expect(rfZoomIn).toBeTruthy()
+    await userEvent.setup().click(rfZoomIn)
+    // React Flow's own contract: "Zooms viewport in by 1.2."
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('120%')
+  })
+
+  it('the header Zoom in / out buttons drive that SAME real viewport', async () => {
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design' })} />)
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Zoom in' }))
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('120%')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Zoom out' }))
+    // zoomOut() is the exact inverse (1/1.2) React Flow applies, back to 100%.
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('100%')
+  })
+
+  it('leaves the Run lens\'s zoom toolbar on the pre-existing state-backed control', async () => {
+    // Unchanged behaviour guard: RunGraph has no React Flow instance under
+    // it (it is a manually CSS-scaled <svg>), so the Run lens's toolbar must
+    // keep driving the plain `zoom` state, not a (nonexistent) pane.
+    const graph = {
+      run_id: 'run-9', nodes: [{ id: 'proc:run-9:step-01', kind: 'process', label: 'curl' }],
+      edges: [], causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+    }
+    render(<ComposerCanvas {...baseProps({ lens: 'run', causalityGraph: graph })} />)
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('100%')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Zoom in' }))
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('110%')
+  })
+})
+
 describe('ComposerCanvas — Stitch overlay (design intent)', () => {
   // Two steps consume the SAME planted key, so a join edge exists to draw.
   const STITCH_STEPS = [
@@ -174,6 +253,27 @@ describe('ComposerCanvas — Stitch overlay (design intent)', () => {
     expect(overlay.querySelector('[data-stitch-key="src_port"]')).toBeTruthy()
     expect(overlay.textContent).toMatch(/EXPECTED/)
     expect(overlay.textContent).not.toMatch(/CONFIRMED|BROKEN/)
+  })
+
+  it('renders the overlay INSIDE React Flow\'s transformed viewport pane, not as a misaligned sibling (Important 2)', () => {
+    // Regression guard: before this fix the overlay was a plain sibling
+    // `<svg>` drawn in `layout.bounds` pixel space next to (not inside) the
+    // ReactFlow pane — so it visually diverged from the node positions the
+    // moment React Flow's own `fitView` panned/scaled that pane to anything
+    // but the identity transform. `<ViewportPortal>` fixes this by rendering
+    // the overlay inside the pane's own `.react-flow__viewport` layer, which
+    // carries the SAME pan/zoom transform node positions ride — this asserts
+    // the DOM actually lives there now, not merely that it renders somewhere.
+    const { container } = render(<ComposerCanvas {...baseProps({
+      steps: STITCH_STEPS,
+      draft: { ...DRAFT, steps: STITCH_STEPS },
+      stitchModel: MODEL,
+      showStitch: true,
+    })} />)
+    const overlay = screen.getByTestId('composer-stitch-overlay')
+    const viewport = container.querySelector('.react-flow__viewport')
+    expect(viewport).toBeTruthy()
+    expect(viewport.contains(overlay)).toBe(true)
   })
 
   it('draws no overlay layer when the toggle is on but nothing is planted', () => {
@@ -283,3 +383,266 @@ describe('ComposerCanvas — Run lens honesty', () => {
     expect(within(s2).queryByText('CONFIRMED')).not.toBeInTheDocument()
   })
 })
+
+describe('ComposerCanvas — Design lens through React Flow (Task 8, render only)', () => {
+  // React Flow measures its container; jsdom reports 0x0, which makes it
+  // refuse to render nodes. The stub lives globally in `src/test/setup.js`
+  // (every test that mounts a `<ReactFlow>` needs it, including
+  // ComposerView.test.jsx, which renders this component indirectly) — no
+  // local beforeAll needed here.
+
+  it('renders one node per step through React Flow, at stored positions', () => {
+    const draft = { steps: [
+      { id: 's1', name: 'drop', detections: [] },
+      { id: 's2', name: 'dump', detections: [], causalityParent: 's1' },
+    ] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design',
+                                      storedLayout: { s2: { x: 400, y: 300 } } })} />
+    )
+    expect(container.querySelectorAll('.react-flow__node')).toHaveLength(2)
+    const s2 = container.querySelector('[data-id="s2"]')
+    expect(s2.style.transform).toContain('400')
+    expect(s2.style.transform).toContain('300')
+  })
+
+  it('falls back to computed positions for a step with no stored position', () => {
+    const draft = { steps: [{ id: 's1', name: 'drop', detections: [] }] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design', storedLayout: null })} />
+    )
+    expect(container.querySelector('[data-id="s1"]')).toBeTruthy()
+  })
+
+  it('keeps START/END as plain anchors outside React Flow\'s own node graph', () => {
+    // "one node per step" above only holds if START/END are never counted as
+    // React Flow nodes — pin that directly against the 2-step fixture too.
+    render(<ComposerCanvas {...baseProps()} />)
+    expect(screen.getByTestId('chain-start')).toBeInTheDocument()
+    expect(screen.getByTestId('chain-end')).toBeInTheDocument()
+    expect(document.querySelectorAll('.react-flow__node')).toHaveLength(2)
+  })
+
+  it('draws the START->first-step and last-step->END dashed connectors (review round 1, finding 1)', () => {
+    // START/END are excluded from `rfEdges` (they aren't React Flow nodes),
+    // so the `root`/`terminal` spine edges that used to draw the dashed
+    // connector + endpoint dots into/out of them were silently dropped with
+    // nothing replacing them. Without this the canvas is visually three
+    // disconnected blocks (START card / React Flow box / END card).
+    render(<ComposerCanvas {...baseProps()} />)
+    const root = screen.getByTestId('composer-connector-root')
+    const terminal = screen.getByTestId('composer-connector-terminal')
+    // Dashed line + a dot at each end — the same visual language the removed
+    // SVG root/terminal edges used (`strokeDasharray`, steel endpoint dots).
+    for (const connector of [root, terminal]) {
+      const line = connector.querySelector('line')
+      expect(line).toBeTruthy()
+      expect(line.getAttribute('stroke-dasharray')).toBe('4 4')
+      expect(connector.querySelectorAll('circle')).toHaveLength(2)
+    }
+  })
+})
+
+describe('ComposerCanvas — draggable nodes persist position (Task 9)', () => {
+  /** Emit the node-position change React Flow produces after a drag. */
+  function fireNodeDrag(id, position) {
+    // React Flow's onNodesChange receives {id, type:'position', position,
+    // dragging:false} on drag end. Driving the handler directly is the stable
+    // seam — synthesising pointer events against a transformed pane is not.
+    const handler = window.__rfOnNodesChange
+    handler([{ id, type: 'position', position, dragging: false }])
+  }
+
+  it('reports a moved node in FLOW coordinates, not screen pixels', () => {
+    // React Flow already divides screen delta by zoom before emitting a position
+    // change, so whatever reaches `onNodesChange` is already in flow space. The
+    // bug this guards — re-applying zoom on top, which would double-scale every
+    // drag (spec §5.4) — is now closed STRUCTURALLY, not just by this test:
+    // `onNodesChange` (`DesignGraph`, ComposerCanvas.jsx) never receives a zoom
+    // value at all, so there is no live zoom for a handler to multiply by — at
+    // zoom 1 or any other value. (Minor 6, 2026-09 final-fix wave: an earlier
+    // version of this comment claimed the fixture below exercised "a drag at
+    // zoom 2", but nothing here ever sets a non-1 zoom, so it could not have
+    // discriminated a handler that multiplied by the live zoom from one that
+    // didn't.) What this test actually covers is narrower and still real: the
+    // position `fireNodeDrag` hands the handler comes back out of
+    // `onNodeMoved` UNCHANGED (modulo the 8px-grid rounding the next test below
+    // pins), a regression guard should a zoom parameter ever be reintroduced
+    // and misused here.
+    //
+    // NOTE (deviation from the task-9 brief, documented in task-9-report.md):
+    // the brief's literal fixture used {x:300,y:150}, asserting the callback
+    // receives that pair unchanged. 300/8 and 150/8 are not whole numbers —
+    // under ANY 8px-grid-snap implementation (which the very next test below
+    // requires), 300 must move to 296 or 304 and 150 to 152; it can never come
+    // back as 300/150. Using grid-aligned input here instead (320,160 — both
+    // exact multiples of SNAP=8) keeps the test's real intent — the value is
+    // NOT zoom-doubled — provable without colliding with the snap-grid test.
+    const onNodeMoved = vi.fn()
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onNodeMoved })} />)
+
+    // The change React Flow's onNodesChange emits after a drag ends.
+    fireNodeDrag('s1', { x: 320, y: 160 })
+    expect(onNodeMoved).toHaveBeenCalledWith('s1', 320, 160)   // unchanged, not scaled
+  })
+
+  it('snaps a stored position to the 8px grid', () => {
+    const onNodeMoved = vi.fn()
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onNodeMoved })} />)
+    fireNodeDrag('s1', { x: 301, y: 149 })
+    expect(onNodeMoved).toHaveBeenCalledWith('s1', 304, 152)
+  })
+
+  // Review round 1, finding 2: the three tests above all drive
+  // `window.__rfOnNodesChange` directly and never touch `nodesDraggable`, so
+  // none of them notice if the pane-level prop that actually turns dragging
+  // on regresses back to `false`. This is the missing POSITIVE guard —
+  // proven a real guard by temporarily reverting `nodesDraggable={!runLens}`
+  // to `nodesDraggable={false}` in ComposerCanvas.jsx, re-running this exact
+  // test, and confirming it fails; before/after output is in
+  // task-9-report.md.
+  it('is actually draggable in the Design lens (positive guard on nodesDraggable)', () => {
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design' })} />
+    )
+    const node = container.querySelector('.react-flow__node')
+    expect(node).toBeTruthy()
+    expect(node.classList.contains('draggable')).toBe(true)
+  })
+
+  // Finding 1's fix: dragging is scoped to a small, discoverable grip
+  // (`dragHandle: '.chain-node__grip'` on the node object) rather than the
+  // near-invisible card-border sliver `nodrag`/`nopan` scoping alone left
+  // behind. This pins that the selector `dragHandle` actually names exists
+  // in the rendered DOM (so the handle isn't pointed at nothing) and is
+  // discoverable via an aria-label, independent of the draggable-class
+  // guard above.
+  it('renders a discoverable grip handle matching the dragHandle selector', () => {
+    const draft = { steps: [{ id: 's1', name: 'a', detections: [] }] }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design' })} />
+    )
+    const grip = container.querySelector('.chain-node__grip')
+    expect(grip).toBeTruthy()
+    expect(grip.getAttribute('aria-label')).toBe('Drag to reposition')
+  })
+
+  it('exposes no drag affordance in the run lens', () => {
+    const graph = {
+      run_id: 'run-9', nodes: [{ id: 'proc:run-9:step-01', kind: 'process', label: 'curl' }],
+      edges: [], causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+    }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ lens: 'run', causalityGraph: graph })} />
+    )
+    container.querySelectorAll('.react-flow__node').forEach((n) => {
+      expect(n.classList.contains('draggable')).toBe(false)
+    })
+  })
+})
+
+describe('ComposerCanvas — storedLayout wiring (additional requirement, Task 8)', () => {
+  // Task 5 produces `draft.layout`; nothing before this task read it back —
+  // positions would persist to the backend and then never apply. This pins
+  // that ComposerCanvas actually threads a `storedLayout` prop down into the
+  // React Flow node it produces (the ComposerView → ComposerCanvas leg of the
+  // same wire is pinned in ComposerView.test.jsx, against the real draft).
+  it('reaches the canvas: a step with a stored position renders there, not at its computed one', () => {
+    const draft = { ...DRAFT, steps: STEPS }
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ draft, storedLayout: { 'step-02': { x: 555, y: 111 } } })} />
+    )
+    const node = container.querySelector('[data-id="step-02"]')
+    expect(node.style.transform).toContain('555')
+    expect(node.style.transform).toContain('111')
+  })
+})
+
+describe('ComposerCanvas — drawing causality edges (Task 10, direct-manipulation)', () => {
+  // `window.__rfOnConnect` is the same test-seam pattern Task 9 established
+  // for `window.__rfOnNodesChange` — jsdom cannot reliably drive React
+  // Flow's own pointer-based connect gesture, so tests call the handler
+  // React Flow would call directly.
+  it('re-parents a step when a legal edge is drawn', () => {
+    const onConnectSteps = vi.fn()
+    const draft = { steps: [
+      { id: 's1', name: 'a', detections: [] },
+      { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+      { id: 's3', name: 'c', detections: [], causalityParent: 's2' },
+    ] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onConnectSteps })} />)
+    window.__rfOnConnect({ source: 's1', target: 's3' })
+    expect(onConnectSteps).toHaveBeenCalledWith('s1', 's3')
+  })
+
+  it('REFUSES a cycle and renders the reason — a silent no-op reads as a broken canvas', () => {
+    const onConnectSteps = vi.fn()
+    const draft = { steps: [
+      { id: 's1', name: 'a', detections: [] },
+      { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+    ] }
+    const { getByTestId } = render(
+      <ComposerCanvas {...baseProps({ draft, lens: 'design', onConnectSteps })} />
+    )
+    // DEVIATION from the brief's literal (unwrapped) call, documented in
+    // task-10-report.md: unlike the success path above (whose `setRefusal(null)`
+    // is a same-value bail-out React never schedules a render for), this path
+    // sets a NEW `refusal` object — a real state update outside any React
+    // event, which React 18's `createRoot` does not guarantee is committed
+    // before this synchronous call returns. Without `act()` the assertion
+    // below intermittently races the commit (observed here as a real,
+    // reproducible failure, not a flake) and prints the standard "not wrapped
+    // in act(...)" warning. `act()` changes nothing about what is asserted.
+    act(() => { window.__rfOnConnect({ source: 's2', target: 's1' }) })
+    expect(onConnectSteps).not.toHaveBeenCalled()
+    expect(getByTestId('canvas-refusal').textContent).toMatch(/cycle|loop/i)
+  })
+
+  it('exposes no connect affordance in the run lens', () => {
+    const { container } = render(
+      <ComposerCanvas {...baseProps({ lens: 'run', causalityGraph: GRAPH_FIXTURE })} />
+    )
+    expect(container.querySelectorAll('.react-flow__handle')).toHaveLength(0)
+  })
+
+  it('dismisses the refusal banner on click, without touching onConnectSteps', async () => {
+    const onConnectSteps = vi.fn()
+    const draft = { steps: [
+      { id: 's1', name: 'a', detections: [] },
+      { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+    ] }
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onConnectSteps })} />)
+    act(() => { window.__rfOnConnect({ source: 's2', target: 's1' }) }) // see note above
+    const banner = screen.getByTestId('canvas-refusal')
+    await userEvent.setup().click(within(banner).getByLabelText('Dismiss'))
+    expect(screen.queryByTestId('canvas-refusal')).not.toBeInTheDocument()
+    expect(onConnectSteps).not.toHaveBeenCalled()
+  })
+
+  it('offers the connect affordance (Handles) in the design lens', () => {
+    const { container } = render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
+    // Two steps in the default fixture, each with a target (top) and source
+    // (bottom) handle.
+    expect(container.querySelectorAll('.react-flow__handle').length).toBe(4)
+  })
+})
+
+// Important 3's own test (non-process_lineage pivots render a typed edge)
+// lives in ComposerCanvas.pivotEdges.test.jsx, not here — same reason as the
+// fitView guard below: it needs a partial `@xyflow/react` mock to inspect the
+// `edges` PROP `<ReactFlow>` receives, since the real library never renders
+// an edge between two nodes jsdom cannot measure (no `DOMMatrixReadOnly`/
+// `getBBox`), and no test in this file (or this codebase) depends on real
+// rendered `.react-flow__edge` DOM for exactly that reason. `vi.mock` is
+// file-scoped, so isolating it there keeps this file's ~40 real-DOM
+// assertions (`.react-flow__node`, Handles, the `window.__rf*` seams) honest.
+
+// The zero-size mount guard's own test (Task 11) lives in
+// ComposerCanvas.fitViewGuard.test.jsx, not here — see that file's header
+// for why it needs its own `vi.mock('@xyflow/react', ...)` and therefore
+// its own file (mocking ReactFlow here would break every real-DOM
+// assertion above: `.react-flow__node`, node transforms, Handles, the
+// `window.__rfOnNodesChange` / `window.__rfOnConnect` drag/connect seams).
