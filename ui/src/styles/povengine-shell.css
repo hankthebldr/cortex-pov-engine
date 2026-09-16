@@ -5,20 +5,36 @@
    class rather than the prototype's inline styles: the prototype is a
    single-file mockup, this has to be themeable, testable and diffable.
 
-   THE 1200px FLOOR IS DELIBERATE. Below it the console scrolls horizontally
-   rather than reflowing its own chrome. The header carries ten controls that
-   each have to stay readable — brand, evidence collection, tenant, agent, the
-   live pill, search, account — and letting them wrap produced a two-line
-   header on a projector at the exact moment a DC needed the LIVE pill. Every
-   header child is `flex: none; white-space: nowrap` for the same reason. The
-   measured natural width of the header at its widest state is 1194px, which is
-   where the 1200 comes from; it is not a round number chosen for looks.
+   THE 1200px FLOOR LIVES ON THE BARS, NOT ON THE DOCUMENT.
+   The design declares a 1200px minimum and scrolls horizontally below it. The
+   reason is sound: the header carries ten controls that each have to stay
+   readable — brand, evidence collection, tenant, agent, the live pill, search,
+   account — and letting them wrap produced a two-line header on a projector at
+   the exact moment a DC needed the LIVE pill. Every header child is
+   `flex: none; white-space: nowrap` for that reason, and the measured natural
+   width of the header at its widest state is 1194px, which is where 1200 comes
+   from.
+
+   But putting `min-width` on the SHELL made the whole document scroll, and that
+   is a defect this repo has already paid for four times over (see
+   tests/e2e/08-viewport-matrix.spec.ts): when the document scrolls, the nav
+   rail and the header scroll away with it, which reads as "the sidebar labels
+   are cut off". Worse, `.pov-shell` does not scroll its own overflow, so below
+   1200px the header and flow bar were clipped AND unreachable — silently gone,
+   which is the exact failure mode that spec exists to catch.
+
+   So the floor moved to where it belongs. The shell is fluid and the document
+   never scrolls sideways; the header and the flow bar each scroll THEMSELVES
+   when their own content outgrows the viewport. Both intents hold: chrome
+   never reflows to two lines, and nothing is unreachable. That is also what
+   the viewport spec's own doctrine asks for — content wider than the viewport
+   is fine when its nearest clipping ancestor scrolls.
    ============================================================ */
 
 .pov-shell {
   --rail-w: 214px;
   --header-h: 54px;
-  min-width: 1200px;
+  min-width: 0;
   height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr auto;
@@ -39,6 +55,12 @@
   height: var(--header-h);
   background: var(--s1);
   border-bottom: 1px solid var(--bd);
+  /* The bar scrolls itself rather than making the document scroll. Its
+     children are all `flex: none`, so the row never wraps — it overflows, and
+     this is what keeps that overflow reachable. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 .pov-header > * { flex: none; white-space: nowrap; }
 .pov-header__spacer { flex: 1 1 auto; min-width: 0; }
@@ -200,6 +222,7 @@ button.pov-chip:hover { border-color: var(--bd2); }
   display: grid;
   grid-template-columns: var(--rail-w) minmax(0, 1fr);
   min-height: 0;
+  min-width: 0;
 }
 .pov-workspace--rail-collapsed { --rail-w: 56px; }
 .pov-main { min-width: 0; overflow: auto; position: relative; }
@@ -280,6 +303,12 @@ button.pov-chip:hover { border-color: var(--bd2); }
   height: 52px;
   background: var(--s1);
   border-top: 1px solid var(--bd);
+  /* Same treatment as the header: six phase pills, a where-am-I block and a
+     CTA do not fit at 845px, and the CTA is the one control that must never be
+     the thing that falls off. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 .pov-flow__where { min-width: 0; }
 .pov-flow__title {
