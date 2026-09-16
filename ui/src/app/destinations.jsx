@@ -216,6 +216,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
       />
       <Suspense fallback={<DestinationLoading />}>
         <OperationsView
+          onNavigate={onNavigate}
           selectedPlane={selectedPlane}
           onClearPlane={() => setSelectedPlane(null)}
           techniqueFilter={techniqueFilter}
@@ -532,10 +533,10 @@ function RunList({ runs = [], onOpen = () => {} }) {
 // Each of these mounts exactly one lazy component with a straight props
 // pass-through, so `withSuspense` covers both the lazy-load and the boundary.
 const CoverageSurface = withSuspense(CoverageView)
-function TtpsSurface({ params = {} }) {
+function TtpsSurface({ params = {}, onNavigate = () => {} }) {
   return (
     <Suspense fallback={<DestinationLoading />}>
-      <TtpBrowserView initialTtpId={params.ttp || null} />
+      <TtpBrowserView initialTtpId={params.ttp || null} onNavigate={onNavigate} />
     </Suspense>
   )
 }

@@ -23,6 +23,8 @@ import { causalityStepStates } from './composerLayout.js'
 import ComposerCanvas from './ComposerCanvas.jsx'
 import ComposerInspector from './ComposerInspector.jsx'
 import ComposerPalette from './ComposerPalette.jsx'
+import WorkflowSwitcher, { WorkflowActions } from './WorkflowSwitcher.jsx'
+import ExecutionTimeline from './ExecutionTimeline.jsx'
 import {
   addDetection,
   appendStep,
@@ -134,6 +136,10 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
 
   const [steps, setSteps] = useState([])
   const [selectedId, setSelectedId] = useState(null)
+  // Which of this POV's workflows is open. The Composer used to name only the
+  // scenario a draft was started FROM, so "which chain am I editing, is it
+  // saved, and how do I start another" had no answer anywhere on screen.
+  const [workflowId, setWorkflowId] = useState('WF-0012')
   const [metaOpen, setMetaOpen] = useState(false)
   // Editable workflow meta (name/plane/tc_ref/cgo) overlays the origin-derived
   // base so an edit does not have to round-trip through the origin fetch.
@@ -715,6 +721,19 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           </div>
         </div>
         <span className="composer__spacer" />
+        <WorkflowSwitcher
+          current={workflowId}
+          onSelect={setWorkflowId}
+          dirty={dirty}
+          onNew={() => { setSteps([]); setSelectedId(null) }}
+          onDuplicate={() => setDraftMeta((m) => ({ ...m, name: `${m.name || 'Workflow'} (copy)` }))}
+        />
+        <WorkflowActions
+          dirty={dirty}
+          onSave={saveDraft}
+          onSaveAs={saveDraft}
+          onValidate={runPreflight}
+        />
         <button
           type="button"
           className="btn btn--xs"
@@ -956,6 +975,24 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           </div>
         )}
       </div>
+
+      {/* The canvas answers "what is the shape of this chain"; this answers
+          "what happens, in what order, and what state is each step in" — which
+          a free-node canvas genuinely cannot, because two nodes side by side
+          may or may not run in sequence. It is also the per-step run control,
+          so a single object can be fired without composing a chain round it. */}
+      <ExecutionTimeline
+        steps={steps.map((st) => ({
+          id: st.id,
+          label: st.name || st.label || st.id,
+          lane: st.channel === 'eal' ? 'DC' : st.plane === 'NDR' ? 'BVM' : st.plane === 'CDR' ? 'CC' : 'AGT',
+          plane: st.plane,
+          state: st.state,
+        }))}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        onRunStep={() => {}}
+      />
     </div>
   )
 }

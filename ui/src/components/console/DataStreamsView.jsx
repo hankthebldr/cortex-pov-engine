@@ -4,6 +4,7 @@ import '../../styles/destinations/datastreams.css'
 import { getEalDataStreams, launchEalCampaign } from '../../api/client.js'
 import EalCampaignBuilder from '../EalCampaignBuilder.jsx'
 import EalRunProgress from '../EalRunProgress.jsx'
+import ComposeTabs from './ComposeTabs.jsx'
 
 /**
  * DataStreamsView — the Data Streams console destination.
@@ -41,7 +42,7 @@ const VERDICT_TONE = {
   not_applicable: 'pill-neutral',
 }
 
-export default function DataStreamsView({ onMessage }) {
+export default function DataStreamsView({ onMessage, onNavigate = () => {} }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -84,6 +85,7 @@ export default function DataStreamsView({ onMessage }) {
 
   return (
     <section className="eal-console" data-testid="data-streams-view">
+      <ComposeTabs active="streams" onNavigate={onNavigate} />
       <header className="eal-console__head">
         <div className="eal-console__hero">
           <div className="eal-console__heading">

@@ -7,6 +7,7 @@ import PayloadShelfBanner from './PayloadShelfBanner.jsx'
 import StagePayloadDialog from './StagePayloadDialog.jsx'
 import PayloadComposer from './PayloadComposer.jsx'
 import ProvenanceBlock from './ProvenanceBlock.jsx'
+import ComposeTabs from './ComposeTabs.jsx'
 
 /**
  * ToolAdapterCatalog — "Tools & Payloads".
@@ -133,11 +134,14 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
 
   return (
     <div className="adapter-registry tools-destination" data-testid="tool-adapter-catalog">
+      <ComposeTabs active="packages" onNavigate={onNavigate} />
       <div className="tools-destination__head">
         <div className="tools-destination__head-copy">
           <div className="tools-destination__accent-bar" aria-hidden="true" />
-          <div className="tools-destination__eyebrow mono">Analyze</div>
-          <h1 className="tools-destination__title">Tools &amp; Payloads</h1>
+          {/* Agrees with the rail group. A package is something you deploy to
+              drive a detection — a composition input, not proof output. */}
+          <div className="tools-destination__eyebrow mono">Phase 2 · Compose</div>
+          <h1 className="tools-destination__title">Packages</h1>
         </div>
       </div>
 
