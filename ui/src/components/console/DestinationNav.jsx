@@ -28,8 +28,29 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
  * the cue rather than hiding it, because a false "there is more" costs a
  * glance and a false "that is everything" costs a destination.
  *
+ * THE RAIL IS THE PHASE MODEL
+ * ---------------------------
+ * Groups are the POV phases, in run order, and each carries its phase numeral
+ * in the accent color. There used to be a separate phase bar above the
+ * workspace answering the same question in a different vocabulary; two
+ * wayfinding systems that could disagree about the same fourteen destinations
+ * was the redesign's original complaint. The bar is gone and this is the
+ * single answer, with the flow bar at the foot of the shell naming the next
+ * action (see FlowBar.jsx).
+ *
+ * ICONS ARE REAL ASSETS, NOT GLYPHS
+ * ---------------------------------
+ * Every item carries one of the design system's own thin-stroke line icons as
+ * a CSS background image, inverted for the dark rail, full opacity when active
+ * and 50% at rest. They are backgrounds rather than <img> so nothing requests
+ * an unresolved path during first paint. The DS forbids Unicode-glyph icons in
+ * brand material and the previous rail was built entirely from them
+ * (▤ ⌗ ⚙ ≣ ✓ ◈ ∿ ≋ ▦ ◆). `iconUrl` in the registry returns null rather than an
+ * interpolated undefined — an earlier revision emitted `url("icons/undefined")`
+ * and fired a 404 per render.
+ *
  * Props:
- *   groups        — [{ label, items: [{ id, label, icon, badge }] }]
+ *   groups        — [{ label, num, items: [{ id, label, iconUrl, badge, badgeVariant }] }]
  *   active        — current destination id
  *   onNavigate    — (destinationId) => void
  *   collapsed     — boolean (rail collapse persisted by the shell)
@@ -92,7 +113,7 @@ export default function DestinationNav({
       ref={navRef}
       onScroll={measure}
       data-overflow={overflow}
-      className={'rail rail--nav' + (collapsed ? ' rail--collapsed' : '')}
+      className={'pov-rail rail rail--nav' + (collapsed ? ' rail--collapsed' : '')}
       aria-label="Console destinations"
     >
       {onToggleCollapse && (
@@ -108,8 +129,14 @@ export default function DestinationNav({
       )}
 
       {groups.map((group) => (
-        <div className="rail__group" key={group.label}>
-          {!collapsed && <div className="rail__section-title">{group.label}</div>}
+        <div className="pov-rail__group rail__group" key={group.label}>
+          <div className="pov-rail__head rail__section-title">
+            {/* '' for "Start here", which sits before the run order rather
+                than inside it, and for any future group without a phase. */}
+            {group.num ? <span className="pov-rail__num">{group.num}</span> : null}
+            {!collapsed && <span className="pov-rail__label">{group.label}</span>}
+            {!collapsed && <span className="pov-rail__hr" />}
+          </div>
           {group.items.map((item) => {
             const isActive = item.id === active
             return (
@@ -118,18 +145,22 @@ export default function DestinationNav({
                 type="button"
                 data-testid={`dest-button-${item.id}`}
                 data-tour-id={`nav-${item.id}`}
-                className={'plane-item' + (isActive ? ' plane-item--active' : '')}
+                className={'pov-rail__item plane-item' + (isActive ? ' pov-rail__item--on plane-item--active' : '')}
                 aria-current={isActive ? 'page' : undefined}
                 onClick={() => onNavigate(item.id)}
                 title={item.label}
               >
-                <span className="plane-item__code" aria-hidden="true">{item.icon || '▸'}</span>
-                <span className="plane-item__name">{item.label}</span>
+                <span
+                  className="pov-rail__icon"
+                  aria-hidden="true"
+                  style={{ backgroundImage: item.iconUrl ? `url("${item.iconUrl}")` : 'none' }}
+                />
+                <span className="pov-rail__text plane-item__name">{item.label}</span>
                 {item.badge != null && item.badge !== '' && (
                   <span
                     className={
-                      'plane-item__count' +
-                      (item.badgeVariant === 'live' ? ' plane-item__count--live' : '')
+                      'pov-rail__badge plane-item__count'
+                      + (item.badgeVariant === 'live' ? ' pov-rail__badge--live plane-item__count--live' : '')
                     }
                   >
                     {item.badge}

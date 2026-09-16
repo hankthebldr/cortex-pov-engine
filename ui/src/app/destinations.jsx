@@ -94,18 +94,29 @@ export function makeLazySurface(loader, title) {
 const OperationsView = makeLazySurface(() => import('../components/console/OperationsView.jsx'), 'Library')
 const ComposerView = makeLazySurface(() => import('../components/console/ComposerView.jsx'), 'Composer')
 const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
-const TargetsView = makeLazySurface(() => import('../components/console/TargetsView.jsx'), 'Targets')
-const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs & Proof')
-const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs & Proof · Compare')
+const TargetsView = makeLazySurface(() => import('../components/console/TargetsView.jsx'), 'Agents')
+const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs')
+const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs · Compare')
 const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Coverage')
 const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP Cards')
-const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Tools & Payloads')
+const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
-const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Environments')
-const TenantManager = makeLazySurface(() => import('../components/console/TenantManager.jsx'), 'Tenants')
-const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Readiness')
+const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')
+const TenantManager = makeLazySurface(() => import('../components/console/TenantManager.jsx'), 'Tenant')
+const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
+const EvidenceView = makeLazySurface(() => import('../components/console/EvidenceView.jsx'), 'Proof & Export')
+
+// ── Surfaces the redesign adds ───────────────────────────────────────────────
+// These five had no destination before: the front door, the guided setup, the
+// component inventory, the authored CLI items, and the tenant read-back. Each
+// was a thing the console already implied and never gave you a place to do.
+const OverviewView = makeLazySurface(() => import('../components/console/OverviewView.jsx'), 'Overview')
+const SetupWizardView = makeLazySurface(() => import('../components/console/SetupWizardView.jsx'), 'Setup Wizard')
+const ComponentsView = makeLazySurface(() => import('../components/console/ComponentsView.jsx'), 'Components')
+const CliItemsView = makeLazySurface(() => import('../components/console/CliItemsView.jsx'), 'CLI Items')
+const TenantValidationView = makeLazySurface(() => import('../components/console/TenantValidationView.jsx'), 'Tenant Validation')
 
 /** Wrap a lazily-loaded surface in its own Suspense boundary, so a mount
  * site never has to know whether the component behind it is lazy.
@@ -521,77 +532,134 @@ function TtpsSurface({ params = {} }) {
     </Suspense>
   )
 }
-// "Tools & Payloads" — the catalog plus the payload shelf. Staging state is a
-// PROPERTY of an adapter, not a new noun, so it lives on this destination
-// rather than an eleventh one: splitting them would list `linpeas.sh` in one
-// place and `TOOL-LINPEAS` in another and make the DC hold the join.
+// "Packages" — the tool catalog plus the payload shelf. Staging state is a
+// PROPERTY of a package, not a new noun, so it lives on this destination
+// rather than its own: splitting them would list `linpeas.sh` in one place and
+// `TOOL-LINPEAS` in another and make the DC hold the join. Renamed from
+// "Tools & Payloads" because the rail now names it by what a DC deploys.
 const AdaptersSurface = withSuspense(ToolAdapterCatalog)
 // Deep-linkable: #/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03
 const UcTcSurface = withSuspense(UcTcIndexView)
 const EalSurface = withSuspense(EalConsole)
 const DataStreamsSurface = withSuspense(DataStreamsView)
 const EnvironmentsSurface = withSuspense(LabView)
-// Readiness is grouped under Manage, next to Agents and Tenants — the three
-// things a DC configures before a POV. It is deliberately NOT the default
-// destination: a health page that greets you every morning stops being read.
+// The Launch Gate: "will this chain actually reach the target?". Deliberately
+// NOT the default destination — a health page that greets you every morning
+// stops being read.
 const ReadinessSurface = withSuspense(ReadinessView)
 const AgentsSurface = withSuspense(TargetsView)
 const TenantsSurface = withSuspense(TenantManager)
+// Proof & Export is its own destination now. It used to be a sub-tab of a run,
+// which meant the artefact a POV actually delivers was two clicks inside the
+// thing that produced it. EvidenceView takes its run as props rather than
+// reading the provider, so this wrapper supplies the same active/last run the
+// header pill and the telemetry read — the three cannot disagree — and lets a
+// `?run=` deep link pin a specific one.
+function ProofSurface({ params = {} }) {
+  const { runs, activeRun, lastRun } = useEnvironment()
+  const pinnedRun = useMemo(() => {
+    if (!params.run) return null
+    return runs.find((r) => idMatches(runIdOf(r), params.run)) || null
+  }, [runs, params.run])
+  return (
+    <Suspense fallback={<DestinationLoading />}>
+      <EvidenceView
+        activeRun={activeRun}
+        lastRun={lastRun}
+        pinnedRun={pinnedRun ? { runId: runIdOf(pinnedRun), scenarioId: pinnedRun.scenario_id, status: pinnedRun.status } : null}
+        onError={() => {}}
+      />
+    </Suspense>
+  )
+}
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
+//
+// ORDER IS THE POV RUN ORDER, and that is a contract, not a preference.
+//
+// THE RAIL *IS* THE PHASE MODEL. There used to be two wayfinding systems — a
+// job-grouped rail (Operate / Analyze / Traffic / Infrastructure / Manage) AND
+// a separate phase bar — which answered two different questions about the same
+// destinations and could disagree with each other. The phase bar is gone; the
+// rail groups ARE the phases, carrying the phase numeral, and the flow bar at
+// the foot of the shell names where you are and what comes next (see
+// `app/povflow.js`).
+//
+// Two phases have no group:
+//   Phase 4 (Launch) is a state the Composer enters after preflight. Inventing
+//   a nav entry for it would offer a destination that does not exist.
+//   "Start here" carries no numeral because Overview and the Setup Wizard sit
+//   before the run order rather than inside it.
+//
+// `groupNum` is what the rail prints in the accent color; '' renders nothing.
+// `icon` is a real PANW line icon under /icons — never a Unicode glyph. The DS
+// forbids glyph icons in brand material, and the previous rail was built
+// entirely from them (▤ ⌗ ⚙ ≣ ✓ ◈ ∿ ≋ ▦ ◆).
 export const DESTINATIONS = [
-  // ORDER IS THE POV RUN ORDER, and that is a contract, not a preference.
-  //
-  // The sidebar used to group by JOB (Operate / Analyze / Traffic /
-  // Infrastructure / Manage). That answers "what kind of surface is this?" —
-  // a question nobody asks — while the DC's actual question is "where am I in
-  // the run?". PhaseBar already answers that at the top of the workspace, so
-  // the sidebar disagreeing with it forced a DC to hold two different mental
-  // models of the same fourteen destinations at once.
-  //
-  // The groups below are PhaseBar's phases, in PhaseBar's order. Keep them in
-  // sync with PHASES / PHASE_BY_DEST in components/console/PhaseBar.jsx —
-  // `navOrderMatchesPhaseBar.test.js` fails if they ever drift, so this comment
-  // is not the only thing holding the two together.
-  //
-  // Phase 4 (Launch) has no group of its own: Launch is a state the Composer
-  // enters after preflight, not a place you navigate to. Inventing a nav entry
-  // for it would offer a destination that does not exist.
+  // ── Start here — the front door and the guided setup ──
+  { id: 'overview', label: 'Overview',      group: 'Start here', groupNum: '',  icon: 'doc-search',      Component: OverviewView },
+  { id: 'setup',    label: 'Setup Wizard',  group: 'Start here', groupNum: '',  icon: 'keyboard',        Component: SetupWizardView, badge: 'wizardSteps' },
 
-  // ── 1 · Scope — whose tenant, which agent, what lab ──
-  { id: 'environments', label: 'Environments',  group: 'Scope',     icon: '☁', Component: EnvironmentsSurface },
-  { id: 'tenants',      label: 'Tenants',       group: 'Scope',     icon: '⬡', Component: TenantsSurface },
-  { id: 'agents',       label: 'Agents',        group: 'Scope',     icon: '◉', Component: AgentsSurface },
+  // ── 1 · Scope — the pieces this POV runs on ──
+  // 'scope' is the Components inventory: one card per actual piece (agent,
+  // BVM, collectors, NGFW, connectors, engine content, API). It replaced a
+  // page that was trying to be an inventory, a tenant list and an agent list
+  // at once.
+  { id: 'scope',    label: 'Components',    group: 'Scope',      groupNum: '1', icon: 'building',        Component: ComponentsView, badge: 'componentCount' },
+  // One tenant per instance — the instance is deployed once for a POV and dies
+  // with the lab, so a tenant LIST was modelling a thing that cannot happen.
+  { id: 'tenants',  label: 'Tenant',        group: 'Scope',      groupNum: '1', icon: 'people',          Component: TenantsSurface, badge: 'tenantCount' },
+  { id: 'agents',   label: 'Agents',        group: 'Scope',      groupNum: '1', icon: 'fingerprint-scan', Component: AgentsSurface, badge: 'agentCount' },
 
   // ── 2 · Compose — choosing and building what to prove ──
-  // Library is the DEFAULT destination, not Composer, and deliberately so: the
-  // fastest path for most sessions is an existing Unit 42-anchored chain, and
-  // landing a new DC on an empty canvas would hide the 170+ scenarios that
-  // already exist. Composer is one click away and deep-linkable as
-  // `#/composer?from=SIM-EDR-001`.
-  { id: 'library',      label: 'Library',       group: 'Compose',   icon: '▤', Component: LibrarySurface,   badge: 'scenarioCount' },
-  { id: 'composer',     label: 'Composer',      group: 'Compose',   icon: '⌗', Component: ComposerView },
-  // id stays 'adapters' — it is the route (#/adapters), the data-testid and the
-  // ⌘K entry. Only the label changed.
-  { id: 'adapters',     label: 'Tools & Payloads', group: 'Compose', icon: '⚙', Component: AdaptersSurface, badge: 'targetEgress' },
-  { id: 'uctc',         label: 'UC / TC Index', group: 'Compose',   icon: '≣', Component: UcTcSurface },
+  // Library is the DEFAULT destination, not Composer: the fastest path for most
+  // sessions is an existing Unit 42-anchored chain, and landing a new DC on an
+  // empty canvas hides the 170+ scenarios that already exist.
+  { id: 'library',  label: 'Library',       group: 'Compose',    groupNum: '2', icon: 'line-chart',      Component: LibrarySurface, badge: 'scenarioCount' },
+  { id: 'cli',      label: 'CLI Items',     group: 'Compose',    groupNum: '2', icon: 'password',        Component: CliItemsView,   badge: 'cliCount' },
+  { id: 'composer', label: 'Composer',      group: 'Compose',    groupNum: '2', icon: 'apps-grid',       Component: ComposerView },
+  { id: 'packages', label: 'Packages',      group: 'Compose',    groupNum: '2', icon: 'settings-edit',   Component: AdaptersSurface, badge: 'packageCount' },
+  // Data Streams is a composition INPUT — a third-party stream relayed to the
+  // Broker VM, chosen while you compose — not an observation surface. It used
+  // to sit under Observe, which put a thing you configure next to the things
+  // you watch.
+  { id: 'streams',  label: 'Data Streams',  group: 'Compose',    groupNum: '2', icon: 'threat-network',  Component: DataStreamsSurface, badge: 'streamCount' },
+  // Same argument for TTP cards: authored content, not proof output.
+  { id: 'ttps',     label: 'TTP Cards',     group: 'Compose',    groupNum: '2', icon: 'threat-warning',  Component: TtpsSurface,    badge: 'ttpCount' },
+  { id: 'uctc',     label: 'UC / TC Index', group: 'Compose',    groupNum: '2', icon: 'bar-chart',       Component: UcTcSurface,    badge: 'uctcCount' },
 
-  // ── 3 · Preflight — will it actually reach the target ──
-  { id: 'readiness',    label: 'Readiness',     group: 'Preflight', icon: '✓', Component: ReadinessSurface, badge: 'degraded' },
+  // ── 3 · Preflight — will this chain actually reach the target ──
+  { id: 'preflight', label: 'Launch Gate',  group: 'Preflight',  groupNum: '3', icon: 'user-lock',       Component: ReadinessSurface, badge: 'gateWarn' },
 
   // ── 5 · Observe — what is happening right now ──
-  { id: 'runs',         label: 'Runs & Proof',  group: 'Observe',   icon: '◈', Component: RunsSurface,      badge: 'live' },
-  { id: 'eal',          label: 'Traffic / EAL', group: 'Observe',   icon: '∿', Component: EalSurface },
-  { id: 'datastreams',  label: 'Data Streams',  group: 'Observe',   icon: '≋', Component: DataStreamsSurface },
+  { id: 'runs',     label: 'Runs',          group: 'Observe',    groupNum: '5', icon: 'donut-chart',     Component: RunsSurface,    badge: 'live' },
 
   // ── 6 · Prove — what the run established ──
-  { id: 'coverage',     label: 'Coverage',      group: 'Prove',     icon: '▦', Component: CoverageSurface },
-  { id: 'ttps',         label: 'TTP Cards',     group: 'Prove',     icon: '◆', Component: TtpsSurface },
-  // Hidden route — the optional guided demo path, reachable from Library + ⌘K.
-  { id: 'guided',       label: 'New POV run',   group: null, hidden: true, icon: '▸', Component: GuidedPovFlow },
+  { id: 'validation', label: 'Tenant Validation', group: 'Prove', groupNum: '6', icon: 'person',         Component: TenantValidationView, badge: 'verified' },
+  { id: 'coverage', label: 'Coverage',      group: 'Prove',      groupNum: '6', icon: 'donut-chart',     Component: CoverageSurface },
+  { id: 'proof',    label: 'Proof & Export', group: 'Prove',     groupNum: '6', icon: 'bar-chart',       Component: ProofSurface },
+
+  // ── Hidden routes ──
+  // Not in the rail, but deliberately still routable. `environments` and `eal`
+  // lost their rail slots to Components and Data Streams respectively; their
+  // content is reachable from those surfaces. They stay mounted so existing
+  // deep links, bookmarks and ⌘K muscle memory resolve instead of 404ing to
+  // the default destination, which would silently look like data loss.
+  { id: 'guided',   label: 'New POV run',   group: null, hidden: true, icon: 'apps-grid',       Component: GuidedPovFlow },
+  { id: 'environments', label: 'Lab',       group: null, hidden: true, icon: 'building',        Component: EnvironmentsSurface },
+  { id: 'eal',      label: 'Traffic / EAL', group: null, hidden: true, icon: 'threat-network',  Component: EalSurface },
+  // Legacy id for the Launch Gate. It was 'readiness' for the whole of the
+  // previous IA, so it is aliased rather than broken.
+  { id: 'readiness', label: 'Launch Gate',  group: null, hidden: true, icon: 'user-lock',       Component: ReadinessSurface },
 ]
 
 export const DEFAULT_DESTINATION = 'library'
+
+/** Path to a destination's rail icon. One guarded place, because interpolating
+ *  a missing id emitted `url("icons/undefined")` and fired a 404 per render. */
+export function iconUrl(icon) {
+  return icon ? `/icons/${icon}.png` : null
+}
 
 const BY_ID = new Map(DESTINATIONS.map((d) => [d.id, d]))
 
@@ -603,22 +671,27 @@ export function isValidDestination(id) {
   return BY_ID.has(id)
 }
 
-/** Grouped, nav-visible destinations in registry order. */
+/** Grouped, nav-visible destinations in registry order. Each group carries the
+ *  phase numeral the rail prints beside its label. */
 export function navGroups(badges = {}) {
   const order = []
   const byLabel = new Map()
   for (const d of DESTINATIONS) {
     if (d.hidden || !d.group) continue
-    if (!byLabel.has(d.group)) { byLabel.set(d.group, []); order.push(d.group) }
+    if (!byLabel.has(d.group)) {
+      byLabel.set(d.group, { num: d.groupNum || '', items: [] })
+      order.push(d.group)
+    }
     const badgeVal = d.badge ? badges[d.badge] : null
     const isLive = badgeVal && typeof badgeVal === 'object' && badgeVal.variant === 'live'
-    byLabel.get(d.group).push({
+    byLabel.get(d.group).items.push({
       id: d.id,
       label: d.label,
       icon: d.icon,
+      iconUrl: iconUrl(d.icon),
       badge: isLive ? badgeVal.text : badgeVal,
       badgeVariant: isLive ? 'live' : undefined,
     })
   }
-  return order.map((label) => ({ label, items: byLabel.get(label) }))
+  return order.map((label) => ({ label, num: byLabel.get(label).num, items: byLabel.get(label).items }))
 }

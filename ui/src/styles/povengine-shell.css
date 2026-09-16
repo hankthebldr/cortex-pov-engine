@@ -1,0 +1,347 @@
+/* ============================================================
+   POVengine — shell chrome.
+
+   The header, the phase-ordered rail and the flow bar. Everything here is a
+   class rather than the prototype's inline styles: the prototype is a
+   single-file mockup, this has to be themeable, testable and diffable.
+
+   THE 1200px FLOOR IS DELIBERATE. Below it the console scrolls horizontally
+   rather than reflowing its own chrome. The header carries ten controls that
+   each have to stay readable — brand, evidence collection, tenant, agent, the
+   live pill, search, account — and letting them wrap produced a two-line
+   header on a projector at the exact moment a DC needed the LIVE pill. Every
+   header child is `flex: none; white-space: nowrap` for the same reason. The
+   measured natural width of the header at its widest state is 1194px, which is
+   where the 1200 comes from; it is not a round number chosen for looks.
+   ============================================================ */
+
+.pov-shell {
+  --rail-w: 214px;
+  --header-h: 54px;
+  min-width: 1200px;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--s0);
+  color: var(--tx);
+  font-family: var(--font-ui);
+}
+/* The safety gate is a consent banner for the whole console, so it takes its
+   own row above the header and removes itself from the grid once acknowledged. */
+.pov-shell--gated { grid-template-rows: auto auto 1fr auto; }
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.pov-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 18px;
+  height: var(--header-h);
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd);
+}
+.pov-header > * { flex: none; white-space: nowrap; }
+.pov-header__spacer { flex: 1 1 auto; min-width: 0; }
+
+.pov-brand { display: flex; align-items: center; gap: 9px; }
+/* The REAL Cortex product mark from the design system's on-dark set. The DS
+   forbids drawing or reconstructing a brand mark, and an earlier revision of
+   this header carried a hand-drawn "P" square. */
+.pov-brand__mark { height: 20px; width: auto; display: block; }
+.pov-brand__word {
+  font: 700 15px/1 var(--font-display);
+  letter-spacing: -0.01em;
+}
+/* POVengine has no asset of its own, so the wordmark stays as type: "POV"
+   weighted against "engine" rather than two colors, which would spend the
+   accent on a logo. */
+.pov-brand__word b { font-weight: 700; }
+.pov-brand__word span { font-weight: 400; color: var(--tx2); }
+.pov-brand__version {
+  font: 500 9.5px/1 var(--font-mono);
+  color: var(--tx3);
+  padding: 3px 5px;
+  border: 1px solid var(--bd);
+  border-radius: 3px;
+}
+
+/* ── The evidence collection trigger ─────────────────────────────────────
+   This is the POV chip, and it is the collection rather than a label because
+   the instance is ephemeral: it is deployed once for this POV and dies with
+   the lab, so the export IS the deliverable. The artefact count and the export
+   bar live inside the panel, not on the trigger — on the trigger they pushed
+   it to 410px and the header past its own floor. */
+.pov-collection { position: relative; }
+.pov-collection__trigger {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 10px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.pov-collection__trigger:hover { border-color: var(--bd2); }
+.pov-collection__trigger[aria-expanded='true'] { border-color: var(--bd2); }
+.pov-collection__kicker {
+  font: 600 9px/1 var(--font-mono);
+  letter-spacing: .09em;
+  color: var(--tx2);
+}
+.pov-collection__name { font: 600 12px/1 var(--font-ui); color: var(--tx); }
+.pov-collection__rule { width: 1px; height: 13px; background: var(--bd2); }
+.pov-collection__state {
+  font: 700 8.5px/1 var(--font-mono);
+  letter-spacing: .07em;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: rgba(255, 203, 6, .13);
+  color: var(--warn);
+}
+
+.pov-collection__panel {
+  position: absolute; top: 38px; left: 0; z-index: 60;
+  width: 428px;
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  white-space: normal;
+}
+.pov-collection__head { padding: 13px 14px; background: var(--s2); border-bottom: 1px solid var(--bd); }
+.pov-collection__head-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pov-collection__id { font: 500 10px/1 var(--font-mono); color: var(--tx3); margin-left: auto; }
+.pov-collection__count { font: 700 17px/1 var(--font-mono); color: var(--tx); }
+.pov-collection__meter { flex: 1; height: 4px; background: var(--s3); border-radius: 2px; overflow: hidden; }
+.pov-collection__meter i { display: block; height: 4px; background: var(--warn); }
+.pov-collection__pct { font: 700 8.5px/1 var(--font-mono); letter-spacing: .07em; color: var(--warn); }
+.pov-collection__note { font: 400 11px/1.55 var(--font-ui); color: var(--tx2); }
+.pov-collection__list { max-height: 264px; overflow-y: auto; }
+.pov-collection__group {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) 58px 50px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 14px;
+  border: 0; border-bottom: 1px solid var(--bd);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+.pov-collection__group:hover { background: var(--s2); }
+.pov-collection__box {
+  width: 14px; height: 14px; border-radius: 3px;
+  border: 1px solid var(--bd2);
+  display: grid; place-items: center;
+}
+.pov-collection__box--on { border-color: var(--ac); background: var(--ac-soft); }
+.pov-collection__box i { width: 6px; height: 6px; border-radius: 1px; background: transparent; }
+.pov-collection__box--on i { background: var(--ac); }
+.pov-collection__glabel { display: block; font: 600 11.5px/1.2 var(--font-ui); color: var(--tx); }
+.pov-collection__gsub { display: block; font: 400 9.5px/1.4 var(--font-ui); color: var(--tx3); margin-top: 3px; }
+.pov-collection__n { font: 600 10.5px/1 var(--font-mono); text-align: right; color: var(--tx2); }
+.pov-collection__n--zero { color: var(--tx3); }
+.pov-collection__size { font: 400 9.5px/1 var(--font-mono); color: var(--tx3); text-align: right; }
+.pov-collection__foot { padding: 12px 14px; background: var(--s2); border-top: 1px solid var(--bd); }
+.pov-collection__total { font: 500 10.5px/1 var(--font-mono); color: var(--tx2); }
+.pov-collection__last { font: 400 10px/1 var(--font-ui); color: var(--warn); margin-left: auto; }
+.pov-collection__actions { display: flex; gap: 7px; }
+.pov-collection__seal-note { font: 400 10px/1.6 var(--font-ui); color: var(--tx3); margin-top: 9px; }
+
+/* ── Header chips ────────────────────────────────────────────────────────── */
+.pov-chip {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 9px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  font: 500 10.5px/1 var(--font-mono);
+  color: var(--tx2);
+}
+button.pov-chip { cursor: pointer; }
+button.pov-chip:hover { border-color: var(--bd2); }
+.pov-chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pos); }
+.pov-chip__dot--off { background: var(--tx3); }
+.pov-chip__dot--warn { background: var(--warn); }
+.pov-chip__kbd {
+  font: 600 10px/1 var(--font-mono);
+  padding: 2px 4px; background: var(--s3); border-radius: 3px;
+}
+.pov-chip__label { font: 400 11px/1 var(--font-ui); }
+
+/* The LIVE pill is the ONE place green appears in the chrome, and it is not
+   chrome — it is a state. It links to Runs, so the way to the evidence never
+   moves. */
+.pov-live {
+  background: var(--pos-soft);
+  border-color: var(--pos-line);
+}
+.pov-live .pov-chip__dot { animation: povblink 1.4s ease-in-out infinite; }
+.pov-live__tag { font: 700 9.5px/1 var(--font-mono); letter-spacing: .1em; color: var(--pos); }
+
+.pov-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--s3); border: 1px solid var(--bd2);
+  display: grid; place-items: center;
+  font: 700 10px/1 var(--font-mono); color: var(--tx2);
+}
+
+@keyframes povblink { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+@media (prefers-reduced-motion: reduce) {
+  .pov-live .pov-chip__dot { animation: none }
+}
+
+/* ── Workspace ───────────────────────────────────────────────────────────── */
+.pov-workspace {
+  display: grid;
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  min-height: 0;
+}
+.pov-workspace--rail-collapsed { --rail-w: 56px; }
+.pov-main { min-width: 0; overflow: auto; position: relative; }
+
+/* ── Rail ────────────────────────────────────────────────────────────────── */
+.pov-rail {
+  background: var(--s1);
+  border-right: 1px solid var(--bd);
+  padding: 14px 0 20px;
+  overflow-y: auto;
+}
+.pov-rail__group { margin-bottom: 16px; }
+.pov-rail__head { display: flex; align-items: center; gap: 7px; padding: 0 14px 7px; }
+/* The phase numeral is the only accent-colored text in the rail — it is what
+   makes the rail read AS the phase model rather than as a list of pages. */
+.pov-rail__num { font: 700 9px/1 var(--font-mono); color: var(--ac-ink); }
+.pov-rail__label {
+  font: 700 9px/1 var(--font-ui);
+  letter-spacing: .13em; text-transform: uppercase;
+  color: var(--tx3);
+}
+.pov-rail__hr { flex: 1; height: 1px; background: var(--bd); }
+
+.pov-rail__item {
+  width: 100%;
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 14px 6px 11px;
+  border: 0; border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--tx2);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.pov-rail__item:hover { background: var(--s2); }
+.pov-rail__item--on {
+  border-left-color: var(--ac);
+  background: var(--s2);
+  color: var(--tx);
+}
+/* Icons are the DS's own thin-stroke black line set, inverted for the dark
+   rail, full opacity when active and 50% at rest. `filter: invert(1)` is the
+   correct treatment in dark theme only — in light the icons are already black
+   on a light rail, so inverting would erase them. */
+.pov-rail__icon {
+  width: 15px; height: 15px; flex: none;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  opacity: .5;
+}
+[data-theme='dark'] .pov-rail__icon { filter: invert(1); }
+.pov-rail__item--on .pov-rail__icon { opacity: 1; }
+.pov-rail__text { flex: 1; font: 500 12.5px/1.3 var(--font-ui); }
+.pov-rail__badge {
+  font: 500 9.5px/1 var(--font-mono);
+  color: var(--tx3);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.pov-rail__item--on .pov-rail__badge { color: var(--tx2); }
+.pov-rail__badge--live { color: var(--pos); background: var(--pos-soft); }
+
+.pov-workspace--rail-collapsed .pov-rail__text,
+.pov-workspace--rail-collapsed .pov-rail__badge,
+.pov-workspace--rail-collapsed .pov-rail__label,
+.pov-workspace--rail-collapsed .pov-rail__hr { display: none; }
+.pov-workspace--rail-collapsed .pov-rail__head { justify-content: center; padding: 0 0 7px; }
+.pov-workspace--rail-collapsed .pov-rail__item { justify-content: center; padding: 8px 0; }
+
+/* ── Flow bar ────────────────────────────────────────────────────────────
+   Replaces BOTH the old phase bar and the old command-strip ticker. It always
+   names where you are and what the next action is, so the wizard the console
+   implies is actually visible. */
+.pov-flow {
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 18px;
+  height: 52px;
+  background: var(--s1);
+  border-top: 1px solid var(--bd);
+}
+.pov-flow__where { min-width: 0; }
+.pov-flow__title {
+  display: block;
+  font: 600 12px/1.2 var(--font-ui);
+  color: var(--tx);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pov-flow__sub {
+  display: block;
+  font: 400 10px/1.4 var(--font-ui);
+  color: var(--tx3);
+  margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pov-flow__phases { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.pov-flow__phase {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--tx3);
+  font: inherit;
+  white-space: nowrap;
+}
+.pov-flow__phase:hover { background: var(--s2); }
+.pov-flow__phase--on { border-color: var(--ac-line); background: var(--ac-soft); color: var(--tx); }
+.pov-flow__phase--done { color: var(--tx2); }
+.pov-flow__glyph {
+  width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center;
+  font: 700 8.5px/1 var(--font-mono);
+  background: var(--s3); color: var(--tx2);
+}
+.pov-flow__phase--on .pov-flow__glyph { background: var(--ac); color: var(--ac-tx); }
+.pov-flow__phase--done .pov-flow__glyph { background: var(--pos-soft); color: var(--pos); }
+.pov-flow__plabel { font: 600 10.5px/1 var(--font-ui); }
+.pov-flow__cta {
+  flex: none;
+  padding: 9px 14px;
+  background: var(--ac);
+  border: 0; border-radius: 6px;
+  font: 700 11.5px/1 var(--font-ui);
+  color: var(--ac-tx);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pov-flow__cta:hover { filter: brightness(1.08); }
+
+/* ── Shared primitives used by every surface ─────────────────────────────── */
+.pov-btn {
+  padding: 8px 12px;
+  background: var(--s3);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  font: 600 11.5px/1 var(--font-ui);
+  color: var(--tx);
+  cursor: pointer;
+}
+.pov-btn:hover { border-color: var(--ac-line); }
+.pov-btn--primary { background: var(--ac); border-color: var(--ac); color: var(--ac-tx); font-weight: 700; }
+.pov-btn--primary:hover { filter: brightness(1.08); border-color: var(--ac); }
+.pov-btn--flex { flex: 1; }

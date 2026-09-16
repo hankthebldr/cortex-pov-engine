@@ -15,6 +15,7 @@ import {
 import { downloadReportBundle, getToolAdapters } from './api/client.js'
 import useShelf from './components/console/useShelf.js'
 import { agentIdOf } from './api/ids.js'
+import { componentTally, toolCatalog, cliCatalog, ttpCatalog, streamCatalog } from './components/console/povdata/catalogs.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -114,13 +115,40 @@ function ConsoleShell() {
   // a DC open that surface BEFORE the customer meeting rather than during it.
   const shelf = useShelf({ adapters: toolAdapters })
   const degradedCount = env.healthModel ? env.healthModel.degraded.length : 0
+
+  // Seed-catalog tallies for the surfaces SimCore does not serve yet. Derived
+  // from the catalog rather than written as literals, so the rail badge and the
+  // surface's own summary strip cannot disagree — see povdata/.
+  const seed = useMemo(() => ({
+    components: componentTally(),
+    packages: toolCatalog().length,
+    cli: cliCatalog().length,
+    ttps: ttpCatalog().length,
+    streams: streamCatalog().length,
+  }), [])
+
   const badges = useMemo(() => ({
+    // Real, provider-backed counts.
     scenarioCount: env.scenarios.length ? String(env.scenarios.length) : null,
+    agentCount: env.agents.length ? String(env.agents.length) : null,
     live: env.activeRun ? { text: 'LIVE', variant: 'live' } : null,
-    targetEgress: shelf.counts.target_egress > 0 ? String(shelf.counts.target_egress) : null,
     // A count, never a dot: "3" sends a DC to the page, a coloured pip does not.
-    degraded: degradedCount > 0 ? String(degradedCount) : null,
-  }), [env.scenarios.length, env.activeRun, shelf.counts.target_egress, degradedCount])
+    gateWarn: degradedCount > 0 ? String(degradedCount) : null,
+    // One tenant per instance, so this badge is a statement of that rule
+    // rather than a count that could ever be interesting.
+    tenantCount: '1',
+    // Seed-backed until the API serves them.
+    componentCount: String(seed.components.total),
+    packageCount: String(seed.packages),
+    cliCount: String(seed.cli),
+    ttpCount: String(seed.ttps),
+    streamCount: String(seed.streams),
+    uctcCount: '266',
+    wizardSteps: '5',
+    // The honest number until the probes actually run. It reads as a failure
+    // and it should: nothing is tenant-verified before it has been re-asked.
+    verified: '0/11',
+  }), [env.scenarios.length, env.agents.length, env.activeRun, degradedCount, seed])
 
   const groups = useMemo(() => navGroups(badges), [badges])
 
@@ -185,7 +213,7 @@ function ConsoleShell() {
         id: `go-${d.id}`,
         title: `Go to ${d.label}`,
         meta: d.group,
-        icon: d.icon || '⚡',
+        icon: d.icon || 'apps-grid',
         onSelect: () => router.navigate(d.id),
       }))
 
@@ -204,7 +232,7 @@ function ConsoleShell() {
         title: 'Stage a tool payload',
         meta: 'pull a public tool onto this SimCore',
         icon: '⇩',
-        onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
+        onSelect: () => router.navigate('packages', { supply: 'unstaged' }),
       },
       {
         section: 'Actions',
@@ -227,15 +255,26 @@ function ConsoleShell() {
     ]
   }, [env, router, handleExportPOV, surfaceToast])
 
-  // ── Ticker (most recent event) ────────────────────────────────────────────
-  const ticker = useMemo(() => {
-    const latest = env.runs[0]
-    if (!latest) return 'idle'
-    const ts = latest.last_event_at || latest.updated_at || latest.started_at
-    return `${ts ? new Date(ts).toISOString().substring(11, 19) + 'Z' : 'now'} · ${
-      latest.scenario_id || latest.id
-    } · ${latest.status || 'unknown'}`
-  }, [env.runs])
+  // ── Flow-bar context ──────────────────────────────────────────────────────
+  // The bar quotes numbers; they have to be the SAME numbers the surface under
+  // it quotes. Passing derived values down (rather than letting the bar make
+  // its own) is what keeps a component strip reading 4 ready while the footer
+  // claims 6.
+  const flowCtx = useMemo(() => ({
+    components: seed.components,
+    scenarioCount: env.scenarios.length,
+    agentCount: env.agents.length,
+    gate: {
+      total: 9,
+      pass: Math.max(0, 9 - degradedCount),
+      warn: degradedCount,
+    },
+    runStep: env.activeRun
+      ? `Step ${env.activeRun.step} of ${env.activeRun.totalSteps} running`
+      : env.lastRun
+        ? `Last run ${env.lastRun.scenarioId || env.lastRun.runId}`
+        : 'No run in flight',
+  }), [seed, env.scenarios.length, env.agents.length, env.activeRun, env.lastRun, degradedCount])
 
   // ── Resolve + mount the current destination surface ───────────────────────
   const dest = getDestination(router.destination) || getDestination(DEFAULT_DESTINATION)
@@ -250,6 +289,9 @@ function ConsoleShell() {
         activeRun={env.activeRun}
         lastRun={env.lastRun}
         health={env.health}
+        tenant={env.tenant}
+        agent={env.agent}
+        flowCtx={flowCtx}
         // Drives the safety banner's per-tenant acknowledgement: switching to a
         // customer tenant re-arms the blast-radius warning that was
         // acknowledged against a lab one. `tenant` is the resolved object, so
@@ -258,7 +300,6 @@ function ConsoleShell() {
         onAbortRun={() => setAbortConfirmOpen(true)}
         onExportPOV={handleExportPOV}
         paletteItems={paletteItems}
-        ticker={ticker}
         // SimCore answered, but is not whole. The two deployments that break
         // hardest — booted without tools/ or without scenarios/ — both report
         // `status: "ok"`, so the first signal a DC gets today is an empty
@@ -267,7 +308,7 @@ function ConsoleShell() {
         // rendered inside `.view` and pushed the destination's own filter rail
         // down by its height while the nav rail stayed pinned, leaving the two
         // rails 159px out of alignment.
-        banner={router.destination !== 'readiness' ? (
+        banner={router.destination !== 'preflight' && router.destination !== 'readiness' ? (
           <ReadinessBanner model={env.healthModel} onNavigate={router.navigate} />
         ) : null}
       >
