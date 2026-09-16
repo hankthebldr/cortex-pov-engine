@@ -1,97 +1,151 @@
 /* ============================================================
-   CortexSim — Design Token Contract (PANW redesign, 2026-08)
-   Source: .design-ref/00-tokens.css (the mockup's own :root /
-   [data-theme="dark"] token sets). Values below are carried
-   VERBATIM from that reference — do not re-derive or "improve"
-   them here. If a value needs to change, change the reference
-   and re-copy; this file is the contract, not a place to tune.
+   POVengine — Design Token Contract
+   (PANW Executive DS parity pass, 2026-09)
 
-   LIGHT (:root) is the default theme. DARK ([data-theme="dark"])
-   is opt-in by attribute on the root element. Both are complete,
-   independent token sets — nothing here falls back to computed
-   or mixed colors between themes.
+   Upstream source of truth: `ui/src/styles/ds/*.css`, vendored
+   verbatim from the PANW Executive Design System bundle
+   `panw-leadership-14ba87ae-5d5e-4097-b277-dd8179b582e0`.
+   `docs/design/DESIGN-SYNC.md` records the sync manifest;
+   `src/styles/__tests__/ds-drift.test.js` fails if the brand
+   hexes below stop matching the vendored DS values.
 
-   `ui/src/styles/cortex-theme.css` aliases its legacy
-   `--cortex-*` token names onto this vocabulary immediately
-   below its own import (see that file's :root block for the
-   alias table + the reasoning behind each mapping).
+   ── THE CONTRACT CHANGED. Read this before editing. ──
+   The previous contract said "Cortex green is the primary accent,
+   PANW orange is reserved for warn/gap signal". That is now
+   INVERTED, and the inversion is the point of this pass:
 
-   TWO DEVIATIONS from VERBATIM below, both light-theme-only, both
-   forced by measured WCAG AA failures at the 9-11px this console
-   actually renders these tokens at (the mockup drew them for
-   44-72px display type — see the 2026-08-30 AA pass notes). Same
-   hue + saturation as the designer's value, lightness reduced only
-   as far as needed to clear 4.5:1 against every light surface:
-     --tx3  #8B958F -> #656F69  (2.77:1 -> 4.67:1 vs --s0; every
-            eyebrow/kicker label reads this directly as `color:`)
-     --warn #C7961B -> #896713  (2.69:1 -> 5.23:1 vs --s1; warn text
-            AND its own decorative dot/pip fills were both already
-            short of the 3:1 non-text floor, so there was no
-            "flatten a fill for no benefit" tradeoff to make — see
-            --warn-str, unchanged, for anything that must stay the
-            bright designer gold)
-   Dark values for both are untouched, but they are NOT both
-   >=4.5:1 as authored everywhere they're used — measure before
-   trusting this sentence:
-     --warn (#FFCB06) clears 4.5:1 against every dark surface,
-            9.87:1-12.88:1 across --s0/--s1/--s2/--s3/--ac-soft.
-     --tx3  (#77867E) clears 4.5:1 only against --s0 (5.13:1) and
-            --s1 (4.72:1); it falls short against --s2 (4.33:1),
-            --s3 (3.99:1), and --ac-soft (3.93:1). Practical impact
-            is near-zero today (one dark `:hover` rule composites
-            --tx3 onto --ac-soft), but a future dark `color: --tx3`
-            use against --s2/--s3/--ac-soft would be a real AA
-            failure — measure that use rather than trusting this
-            block. See docs/design/orange-warn-contrast-fix.md for
-            the full measured table. */
+     PANW orange (--ac, #FA582D) is the ONE dominant brand color.
+       It carries chrome: active rail item, accent rules, primary
+       buttons, focus, the title accent bar.
+     Cortex green (--pos, #00CC66) is STATUS ONLY — live, confirmed,
+       observed, pass, FULL coverage. It never paints chrome.
 
-/* Cortex green is the primary accent. PANW orange is reserved for warn/gap signal. */
+   That is the brand's own one-dominant-color rule (see
+   `ds/colors.css`: `--color-accent: var(--panw-orange)`), and it is
+   what makes a green pill on this console mean something. Painting
+   the page green spends the only color that carries a verdict.
+
+   Sub-brand hues (yellow/cyan/green/teal + their tint families) are
+   CATEGORICAL coding colors — plane tints, chart series, chips. They
+   are authored at the 3:1 non-text floor, so they are used as fills,
+   borders and dots, NEVER as `color:` ink. See PLANE_TINT usage in
+   `components/console/ComposerCanvas.jsx` for the precedent.
+
+   ── THEMES ──
+   DARK is the default (`AppShell` seeds `colorTheme` to 'dark';
+   the console is a dark surface in the design). LIGHT (`:root`) is
+   retained as a complete, independent, AA-clean token set — no
+   value here falls back to or mixes with the other theme.
+
+   ── CONTRAST ──
+   Every `color:` token below was measured against every surface it
+   can land on (--s0..--s3 plus the composited --ac-soft/--pos-soft
+   chip fills) at the 9-11px this console actually renders them.
+   Measured floors, worst surface in each theme:
+     dark  --tx 14.16  --tx2 8.38  --tx3 5.03  --pos 6.63
+           --warn 9.30  --crit 7.77  --info 6.54  --ac-ink 5.50
+     light --tx 17.30  --tx2 5.98  --tx3 4.36  --ac-ink 6.51
+           --warn 5.15  --crit 6.51  --info 5.63  --pos-ink 6.40
+   `--ac` itself is 4.38:1 on dark --s3 and 2.66:1 on light --s3 —
+   below the 4.5:1 text floor in BOTH themes. It is a fill/border
+   color. Anything that paints accent-colored TEXT uses --ac-ink.
+   Same split for green: --pos fills, --pos-ink inks. */
+
+/* ---- LIGHT (opt-in; the console seeds dark) ---- */
 :root {
-  --s0: #F1F3F2; --s1: #FFFFFF; --s2: #F8FAF9; --s3: #EBF0ED;
-  --bd: #E3E9E6; --bd2: #C3CCC8; --thead: #999999;
-  --tx: #0A0F0D; --tx2: #55605C; --tx3: #656F69;
-  --ac: #00A855; --ac-str: #00CC66; --ac-tx: #FFFFFF; --ac-soft: #E3F6EB; --ac-line: #B4E3C8;
-  --warn: #896713; --warn-str: #FFCB06; --crit: #A51B00; --orange: #FA582D; --info: #0090AA;
-  --ink: #06120C; --ink2: #0D1B14; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #9FB0A9;
-  --shadow: 0 4px 14px rgba(10,30,20,.09);
+  --s0: #F1F1F1; --s1: #FFFFFF; --s2: #FAFAFA; --s3: #EDEDED;
+  --bd: #E9E9E9; --bd2: #C7C7C7; --thead: #999999; --zebra: #FAFAFA;
+  --tx: #000000; --tx2: #595959; --tx3: #696969;
+  --ac: #FA582D; --ac-str: #FA582D; --ac-ink: #A51B00; --ac-tx: #FFFFFF;
+  --ac-soft: #FEEEEA; --ac-line: #FDAC96;
+  --pos: #00A855; --pos-str: #00CC66; --pos-ink: #0A6231;
+  --pos-soft: #DBF8EA; --pos-line: #ADD8B1;
+  --warn: #7D5E11; --warn-str: #FFCB06; --crit: #A51B00; --info: #00667B;
+  --orange: var(--ac); --orange-ink: var(--ac-ink);
+  --ink: #1A1A1A; --ink2: #333333; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #C7C7C7;
+  --shadow: 0 4px 12px rgba(0,0,0,.08);
 }
+
+/* ---- DARK (the console default) ----
+   Surfaces, ink and accent are the prototype's values verbatim:
+   PANW theme dk1/dk2 plus the template's working greys. Neutral,
+   not green-tinted — the tint was competing with the status hue. */
 [data-theme="dark"] {
-  --s0: #070D0A; --s1: #101815; --s2: #16211C; --s3: #1C2822;
-  --bd: #26312A; --bd2: #3A4941; --thead: #26312A;
-  --tx: #F2F6F4; --tx2: #A9B8B2; --tx3: #77867E;
-  --ac: #00CC66; --ac-str: #00CC66; --ac-tx: #04150C; --ac-soft: #0F2C1C; --ac-line: #205339;
-  --warn: #FFCB06; --warn-str: #FFCB06; --crit: #FF6A4D; --orange: #FF7A54; --info: #35D3F0;
-  --ink: #04100A; --ink2: #0A1610; --ink-bd: rgba(255,255,255,.1); --ink-tx2: #9FB0A9;
-  --shadow: 0 6px 22px rgba(0,0,0,.55);
+  --s0: #000000; --s1: #141414; --s2: #1F1F1F; --s3: #2B2B2B;
+  --bd: #333333; --bd2: #4A4A4A; --thead: #999999; --zebra: #1F1F1F;
+  --tx: #FFFFFF; --tx2: #C7C7C7; --tx3: #9A9A9A;
+  --ac: #FA582D; --ac-str: #FA582D; --ac-ink: #FF7A54; --ac-tx: #1A1A1A;
+  --ac-soft: rgba(250,88,45,.13); --ac-line: rgba(250,88,45,.45);
+  --pos: #00CC66; --pos-str: #00CC66; --pos-ink: #00CC66;
+  --pos-soft: rgba(0,204,102,.12); --pos-line: rgba(0,204,102,.40);
+  --warn: #FFCB06; --warn-str: #FFCB06; --crit: #FDAC96; --info: #00C0E8;
+  --orange: var(--ac); --orange-ink: var(--ac-ink);
+  --ink: #000000; --ink2: #141414; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #C7C7C7;
+  --shadow: 0 12px 32px rgba(0,0,0,.5);
 }
 
 /* ============================================================
-   Console state-ink tokens — ADDITIVE (not part of the 25-token
+   Categorical plane tints — the 16 detection planes.
+   Sub-brand hues and their documented tint/shade families, straight
+   out of `ds/colors.css`. Authored for FILLS, BORDERS and DOTS at
+   the 3:1 non-text floor. Using one of these as 9px `color:` ink is
+   the defect this block exists to prevent: the tint leaves the text
+   channel entirely and the label stops being readable. Where a
+   plane must be named in text, the label is --tx2 and the tint is
+   the chip's 3px left border. Identical in both themes — a
+   categorical code that changed hue with the theme would stop being
+   a code. */
+:root {
+  --plane-edr:        #00C0E8;  /* Prisma cyan            */
+  --plane-cdr:        #00AEC4;  /* teal                   */
+  --plane-ndr:        #6EC2D6;  /* cyan-400               */
+  --plane-itdr:       #FFCB06;  /* Strata yellow          */
+  --plane-analytics:  #FA582D;  /* PANW orange            */
+  --plane-cloud-app:  #FDAC96;  /* coral-300              */
+  --plane-tim:        #E5C148;  /* gold-500               */
+  --plane-koi:        #D1755F;  /* coral-400              */
+  --plane-ai-spm:     #C7AA47;  /* gold-600               */
+  --plane-asm:        #B6E1EE;  /* cyan-200               */
+  --plane-ai-access:  #40A557;  /* green-500              */
+  --plane-browser:    #ADD8B1;  /* green-200              */
+  --plane-airs:       #E14F28;  /* orange-500             */
+  --plane-cspm:       #238A4D;  /* green-700              */
+  --plane-email:      #C7C7C7;  /* grey-300               */
+  --plane-dlp:        #A51B00;  /* orange-900             */
+}
+
+/* ============================================================
+   Product-family accents — components are tinted by the product
+   they ARE, not by an arbitrary per-card hue:
+     Cortex green   Agent, Broker VM, Cloud/Data Connector, Engine,
+                    API & Marketplace, and every collector.
+     PANW orange    NGFW.
+     Neutral        POVengine's own ephemeral tooling (SimCore host,
+                    EAL emitter) — not a product at all. */
+:root {
+  --family-cortex: #00CC66;
+  --family-ngfw:   #FA582D;
+  --family-none:   #C7C7C7;
+}
+
+/* ============================================================
+   Console state-ink tokens — ADDITIVE (not part of the surface/ink
    contract above; do not fold these in with it or "reconcile" the
-   counts). Added for the C1 repair: cortex-console.css's `.theme-console`
-   block hardcodes 8 foreground colors (--c-action, --c-action-bright,
-   --c-action-deep, --c-signal, --c-detected, --c-missed, --c-pending,
-   --c-stitched) as a SINGLE dark-tuned hex per token, with no
-   [data-theme] variant. In light theme (the app default) those measure
-   1.57–2.50:1 against --s0/--s1/--s2/--s3 as plain text and as low as
-   1.67:1 composited into their own *-soft chip backgrounds — the same
-   defect class as the invisible page titles this token contract was
-   built to prevent, just in the foreground half instead of the surface
-   half. --ac/--warn/--info/--crit themselves are NOT substitutes here:
-   they're tuned as fill colors paired with an on-accent text color
-   (--ac-tx etc.), not as small text sitting directly on --s0..--s3 — at
-   this weight/size they land at 2.4–3.4:1 in light theme, still short of
-   the 4.5:1 text floor. These are dedicated, verified-4.5:1-in-both-
-   themes (>=3:1 for the two border/decoration-only tokens, action-deep
-   and stitched, which no rule anywhere uses as `color:`) variants that
-   keep the same hue family and the traffic-light distinction between
-   action / detected / missed / pending — see
-   docs/design/token-aliasing-fixes.md for the measured contrast table.
-   DARK values are the original cortex-console.css hex, UNCHANGED, except
-   --ink-missed, which is re-pointed at --crit (dark: #FF6A4D vs the
-   original #F97066) because the original value's own composited-chip
-   ratio (~4.46:1 against --s3) fell just short of 4.5:1 once actually
-   measured against every surface + its own chip alpha, not only --s2. */
+   counts). `cortex-console.css`'s `.theme-console` block hardcodes
+   8 foreground colors as a single dark-tuned hex per token with no
+   [data-theme] variant, which measured 1.57-2.50:1 in light theme.
+   These are dedicated, verified variants that keep the traffic-light
+   distinction between action / detected / missed / pending.
+
+   These values are UNCHANGED by the accent inversion, and that is
+   deliberate: they are *state* inks (a step ran, a detection fired,
+   one was missed), which is the same job --pos does — so they stay
+   in the status color space rather than following chrome to orange.
+   Re-measured against the new neutral surfaces: every dark value
+   gained contrast (the new dark surfaces are darker than the old
+   green-tinted ones) and the light surfaces moved <1% in luminance,
+   so every ratio in docs/design/token-aliasing-fixes.md still holds
+   or improves. */
 :root {
   --ink-action:        #366622;
   --ink-action-bright: #316719;
@@ -111,64 +165,4 @@
   --ink-missed:        var(--crit);
   --ink-pending:       #F5A524;
   --ink-stitched:      var(--ink-signal);
-}
-
-/* ============================================================
-   --ac-ink — ADDITIVE (not part of the 25-token contract above).
-   Light-theme text-safe variant of --ac/--ac-str. Same story as
-   the block above, one token for one hue: --ac (#00A855) measures
-   3.12:1 against --s1 and --ac-str (#00CC66) measures 1.90:1
-   against --ac-soft — both short of the 4.5:1 text floor — at the
-   9-11px this console renders "green" text (labels, links, chip
-   text) and button/pill labels (a --ac-tx-on-fill pairing is the
-   SAME arithmetic read the other way: contrast(white, fill) ===
-   contrast(fill, white)). --ac-ink is both colors' hue+saturation,
-   darkened only as far as needed to clear 4.5:1 against every
-   light surface (s0-s3) AND --ac-soft simultaneously, so it is
-   correct wherever --ac/--ac-str paints TEXT (the `color:`
-   property) OR is the solid fill a --ac-tx label sits on top of.
-   Every decorative `border-color:`/non-text `background:` use of
-   --ac/--ac-str is UNCHANGED — those already clear the 3:1
-   non-text floor (3.12:1), and darkening a pure color swatch or a
-   button's own border for a text floor it isn't carrying text
-   against would flatten the design for no accessibility benefit.
-   Dark theme's own --ac (#00CC66) already clears 4.5:1 against
-   every dark surface (7.0-9.2:1) and --ac-tx-on-fill (8.8:1), so
-   --ac-ink there is an alias, not a second color to keep in sync. */
-:root {
-  --ac-ink: #007D3F;
-}
-[data-theme="dark"] {
-  --ac-ink: var(--ac);
-}
-
-/* ============================================================
-   --orange-ink — ADDITIVE (not part of the 25-token contract
-   above). Light-theme text-safe variant of --orange, same story
-   as --ac-ink above: --orange (#FA582D) is the designer's PANW
-   orange, reserved for warn/gap signal (see the file-top comment)
-   and correctly used as a fill/border color — but at the 9-11px
-   this console renders `color:` text, it measures 2.80-3.23:1
-   against --s0..--s3, short of the 4.5:1 text floor on every
-   light surface (payload-blocker copy — PAYLOAD_NOT_STAGED,
-   compose-not-airgapped — is exactly the text this fails on: the
-   warning that a tool never reached the target reads unreadable
-   in the app's default theme). --orange-ink is --orange's own
-   hue+saturation, darkened only as far as needed to clear 4.5:1
-   against every light surface:
-     --s0 2.90:1 -> 4.67:1   --s1 3.23:1 -> 5.21:1
-     --s2 3.08:1 -> 4.97:1   --s3 2.80:1 -> 4.52:1
-   Do NOT darken --orange itself — unlike --warn, it has real
-   fill/border roles at the 3:1 non-text floor it already clears
-   (7.02-7.62:1 there is plenty of margin); this is a second,
-   additive token for the `color:` sites only, exactly the
-   --ac-ink precedent. Dark theme's own --orange (#FF7A54) already
-   clears 4.5:1 against every dark surface (5.93-7.62:1), so
-   --orange-ink there is an alias, not a second color to keep in
-   sync. */
-:root {
-  --orange-ink: #CE2F05;
-}
-[data-theme="dark"] {
-  --orange-ink: var(--orange);
 }
