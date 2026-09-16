@@ -70,12 +70,24 @@ export default function DataStreamsView({ onMessage, onNavigate = () => {} }) {
     return sources.filter((s) => s.state === stateFilter)
   }, [sources, stateFilter])
 
+  // The loading and error branches carry the SAME head as the loaded one.
+  // They used to render a bare paragraph with no heading at all, so a DC who
+  // clicked "Data Streams" against an unreachable SimCore landed on a page
+  // that did not say what it was — which reads as a broken console rather than
+  // as a surface that could not load. Every other destination names itself
+  // while degraded; this one is no longer the exception.
   if (loading) {
-    return <section className="eal-console"><p className="muted" style={{ padding: 24 }}>Loading data streams…</p></section>
+    return (
+      <section className="eal-console" data-testid="data-streams-view">
+        <StreamsHead onNavigate={onNavigate} counts={null} />
+        <p className="muted" style={{ padding: 24 }}>Loading data streams…</p>
+      </section>
+    )
   }
   if (error) {
     return (
-      <section className="eal-console">
+      <section className="eal-console" data-testid="data-streams-view">
+        <StreamsHead onNavigate={onNavigate} counts={null} />
         <div className="ds-banner ds-banner--error" role="alert" style={{ margin: 24 }}>
           Could not load the analytics coverage surface: {error}
         </div>
@@ -85,21 +97,8 @@ export default function DataStreamsView({ onMessage, onNavigate = () => {} }) {
 
   return (
     <section className="eal-console" data-testid="data-streams-view">
-      <ComposeTabs active="streams" onNavigate={onNavigate} />
+      <StreamsHead onNavigate={onNavigate} counts={counts} />
       <header className="eal-console__head">
-        <div className="eal-console__hero">
-          <div className="eal-console__heading">
-            <div className="eal-console__accent-bar" aria-hidden="true" />
-            <div className="eal-console__eyebrow">Traffic</div>
-            <h2 className="eal-console__title">
-              <span className="eal-console__title-accent">Data</span> Streams
-            </h2>
-            <p className="eal-console__meta">
-              Analytics log-streamer coverage against the vendor's{' '}
-              <span className="mono">{counts?.total ?? '—'}</span>-source catalogue
-            </p>
-          </div>
-        </div>
 
         {/* Honesty banner — surfaced verbatim from the backend. authored != proven. */}
         <div className="ds-banner ds-banner--warn" role="note" data-testid="ds-authored-not-proven">
@@ -351,5 +350,35 @@ function EmittersTable({ emitters }) {
         </table>
       </div>
     </div>
+  )
+}
+
+/**
+ * The Data Streams masthead — extracted so the loading and error branches can
+ * carry it too. A destination that renders no heading while degraded looks
+ * like a broken console rather than like a surface that could not load, and
+ * this was the only one of the seventeen that did that.
+ */
+function StreamsHead({ onNavigate = () => {}, counts = null }) {
+  return (
+    <>
+      <ComposeTabs active="streams" onNavigate={onNavigate} />
+      <div className="eal-console__hero">
+        <div className="eal-console__heading">
+          <div className="eal-console__accent-bar" aria-hidden="true" />
+          <div className="eal-console__eyebrow">Phase 2 · Compose</div>
+          {/* h1, not h2. This is the top heading of its own destination, and
+              starting the document outline at depth 2 is a real screen-reader
+              defect rather than only a test inconvenience. */}
+          <h1 className="eal-console__title">
+            <span className="eal-console__title-accent">Data</span> Streams
+          </h1>
+          <p className="eal-console__meta">
+            Analytics log-streamer coverage against the vendor's{' '}
+            <span className="mono">{counts?.total ?? '—'}</span>-source catalogue
+          </p>
+        </div>
+      </div>
+    </>
   )
 }

@@ -305,7 +305,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
   )
 }
 
-// ─── Runs & Proof surface ────────────────────────────────────────────────────
+// ─── Runs surface ────────────────────────────────────────────────────────────
 // Run history list → single Run Detail surface keyed by runId with
 // Live / Evidence / Storyline / Causality SUB-tabs (collapses the four former
 // top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
@@ -329,7 +329,7 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
     return (
       <div className="runs-surface">
         <div className="view-head">
-          <div><h1>Runs & Proof · Compare</h1></div>
+          <div><h1>Runs · Compare</h1></div>
           <button className="btn" onClick={() => setParams({ compare: null }, { replace: true })}>← Back to runs</button>
         </div>
         <Suspense fallback={<DestinationLoading />}>
@@ -344,7 +344,10 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
       <div className="runs-surface">
         <div className="view-head">
           <div>
-            <h1>Runs &amp; Proof</h1>
+            {/* "Runs", not "Runs & Proof". Proof & Export is its own
+                destination now, so a title claiming both would disagree with
+                the rail entry that opened this page. */}
+            <h1>Runs</h1>
             <div className="view-head__meta"><span className="mono">{runs.length}</span> runs</div>
           </div>
           <button className="btn" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</button>
