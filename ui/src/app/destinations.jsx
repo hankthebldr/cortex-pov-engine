@@ -103,7 +103,7 @@ const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBr
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
 const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')
-const TenantManager = makeLazySurface(() => import('../components/console/TenantManager.jsx'), 'Tenant')
+const TenantView = makeLazySurface(() => import('../components/console/TenantView.jsx'), 'Tenant')
 const ReadinessView = makeLazySurface(() => import('../components/console/ReadinessView.jsx'), 'Launch Gate')
 const EalConsole = makeLazySurface(() => import('../components/EalConsole.jsx'), 'Traffic / EAL')
 const DataStreamsView = makeLazySurface(() => import('../components/console/DataStreamsView.jsx'), 'Data Streams')
@@ -555,7 +555,10 @@ const EnvironmentsSurface = withSuspense(LabView)
 // stops being read.
 const ReadinessSurface = withSuspense(ReadinessView)
 const AgentsSurface = withSuspense(TargetsView)
-const TenantsSurface = withSuspense(TenantManager)
+// One tenant per instance, in four tabs. The registration wizard is not gone
+// — it is the Binding tab inside TenantView, because binding a tenant is a real
+// operation that has to happen once, it just stopped being the whole page.
+const TenantsSurface = withSuspense(TenantView)
 // Proof & Export is its own destination now. It used to be a sub-tab of a run,
 // which meant the artefact a POV actually delivers was two clicks inside the
 // thing that produced it. EvidenceView takes its run as props rather than
