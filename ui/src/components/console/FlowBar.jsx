@@ -47,6 +47,11 @@ export default function FlowBar({ destination, ctx = {}, onNavigate = () => {} }
             <button
               key={p.label}
               type="button"
+              // Same selector convention the old phase bar used, kept so the
+              // guards that watched wayfinding did not have to be rewritten
+              // around a regex that also matches the CTA ("Compose" vs
+              // "Next: Composer").
+              data-testid={`phase-button-${p.label.toLowerCase()}`}
               className={
                 'pov-flow__phase'
                 + (on ? ' pov-flow__phase--on' : '')

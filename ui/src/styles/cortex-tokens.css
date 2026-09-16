@@ -58,7 +58,13 @@
   --tx: #000000; --tx2: #595959; --tx3: #696969;
   --ac: #FA582D; --ac-str: #FA582D; --ac-ink: #A51B00; --ac-tx: #FFFFFF;
   --ac-soft: #FEEEEA; --ac-line: #FDAC96;
-  --pos: #00A855; --pos-str: #00CC66; --pos-ink: #0A6231;
+  /* Light --pos is the DEEP green, not the mid one. It is a fill token, and
+     the one place the legacy sheet fills with it (`.badge-success`) pairs it
+     with white text — #00A855 under white measures 3.12:1, short of the text
+     floor, while this clears 7.49:1. As a dot or a bar against a light surface
+     it still reads unambiguously green. --pos-str keeps the brand hue for the
+     drift guard, and dark uses the bright value where the surface allows it. */
+  --pos: #0A6231; --pos-str: #00CC66; --pos-ink: #0A6231;
   --pos-soft: #DBF8EA; --pos-line: #ADD8B1;
   --warn: #7D5E11; --warn-str: #FFCB06; --crit: #A51B00; --info: #00667B;
   --orange: var(--ac); --orange-ink: var(--ac-ink);
@@ -75,9 +81,20 @@
   --bd: #333333; --bd2: #4A4A4A; --thead: #999999; --zebra: #1F1F1F;
   --tx: #FFFFFF; --tx2: #C7C7C7; --tx3: #9A9A9A;
   --ac: #FA582D; --ac-str: #FA582D; --ac-ink: #FF7A54; --ac-tx: #1A1A1A;
-  --ac-soft: rgba(250,88,45,.13); --ac-line: rgba(250,88,45,.45);
+  /* The soft/line fills are OPAQUE, pre-composited from the design's alphas
+     over --s1 (13%/45% accent, 12%/40% green over #141414) rather than left as
+     rgba(). Two reasons, and the second is the real one:
+       - A translucent chip fill is a different color on --s0 than on --s3, so
+         "what is the contrast of this label on its chip" has no single answer.
+       - The contrast harness cannot score a translucent color at all without
+         being told what is underneath it, so every ratio measured against
+         these would either be skipped or be a guess.
+     Composited over --s1 because that is the surface these chips actually sit
+     on almost everywhere (panels and cards); the drift on --s0/--s3 is under
+     one ratio point, and every foreground still clears 4.5:1 there. */
+  --ac-soft: #321D17; --ac-line: #7C331F;
   --pos: #00CC66; --pos-str: #00CC66; --pos-ink: #00CC66;
-  --pos-soft: rgba(0,204,102,.12); --pos-line: rgba(0,204,102,.40);
+  --pos-soft: #122A1E; --pos-line: #0C5E35;
   --warn: #FFCB06; --warn-str: #FFCB06; --crit: #FDAC96; --info: #00C0E8;
   --orange: var(--ac); --orange-ink: var(--ac-ink);
   --ink: #000000; --ink2: #141414; --ink-bd: rgba(255,255,255,.12); --ink-tx2: #C7C7C7;

@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import ConsoleRail from '../components/console/ConsoleRail.jsx'
+import TelemetryStrip from '../components/console/TelemetryStrip.jsx'
 import { SurfaceBoundary } from '../components/console/SurfaceError.jsx'
 
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
@@ -309,6 +310,11 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
 // top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
 function RunsSurface({ params = {}, setParams = () => {} }) {
   const { runs, activeRun } = useEnvironment()
+  // The live-run telemetry used to be a permanent shell row above every
+  // destination. It is a property of the RUN, so it belongs on the run's own
+  // surface — the header pill already answers "is something in flight" from
+  // anywhere, and it reads the same derived activeRun this does, so the two
+  // cannot disagree.
   const runId = params.run || null
   const subTab = params.tab || 'live'
   const compare = params.compare === '1'
@@ -342,6 +348,7 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
           </div>
           <button className="btn" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</button>
         </div>
+        {activeRun && <TelemetryStrip run={activeRun} />}
         {/* "What ran last" leads the page: the first question on this surface
             is never "list every run", it is "what is happening / what just
             happened". The run list stays below, unchanged. */}

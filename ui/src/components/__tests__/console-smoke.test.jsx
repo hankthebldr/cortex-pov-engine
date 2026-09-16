@@ -15,7 +15,6 @@ import AppShell from '../console/AppShell.jsx'
 import ConsoleHeader from '../console/ConsoleHeader.jsx'
 import ConsoleRail from '../console/ConsoleRail.jsx'
 import DestinationNav from '../console/DestinationNav.jsx'
-import CommandStrip from '../console/CommandStrip.jsx'
 import CommandPalette from '../console/CommandPalette.jsx'
 import TelemetryStrip from '../console/TelemetryStrip.jsx'
 import PinButton from '../console/PinButton.jsx'
@@ -97,12 +96,6 @@ describe('console-view smoke renders', () => {
     expect(screen.getByText(/APT29/)).toBeInTheDocument()
   })
 
-  it('CommandStrip renders default keyboard hints', () => {
-    render(<CommandStrip ticker="" />)
-    expect(screen.getByText('search')).toBeInTheDocument()
-    expect(screen.getByText('launch')).toBeInTheDocument()
-    expect(screen.getByText('export')).toBeInTheDocument()
-  })
 
   it('CommandPalette mounts closed (no overlay visible)', () => {
     render(<CommandPalette open={false} items={[]} />)
