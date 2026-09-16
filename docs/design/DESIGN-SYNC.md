@@ -43,10 +43,16 @@ follow, the suite fails and names both values.
 Brand assets are copied, not referenced:
 
 ```
-ui/public/brand/cortex.png          Cortex product mark, on-dark (green) set
-ui/public/brand/panw-reversed.png   PANW master lockup, reversed for dark
+ui/public/assets/cortex-green.png   Cortex product mark, on-dark set
+ui/public/assets/cortex-mono.png    Cortex product mark, on-light set
+ui/public/assets/panw-reversed.png  PANW master lockup, reversed (see delta 3)
 ui/public/icons/*.png               15 DS line icons, one per rail destination
 ```
+
+The two Cortex marks and the PANW lockup were already in the repo and are
+byte-identical to the design bundle's, so only the icon set was new. The header
+selects between the Cortex pair on theme — the wrong one is invisible against
+its own header, which is why it is selected rather than fixed.
 
 No brand mark in this console is drawn, traced or reconstructed — the DS
 forbids it, and every mark above is the real embedded asset.
@@ -84,7 +90,7 @@ Where each design surface landed in the code.
 | Overview & Readiness | Start here | `components/console/OverviewView.jsx` |
 | Setup Wizard (5 steps) | Start here | `components/console/SetupWizardView.jsx` |
 | Components | 1 · Scope | `components/console/ComponentsView.jsx` |
-| Tenant (4 tabs) | 1 · Scope | `components/console/TenantManager.jsx` |
+| Tenant (4 tabs) | 1 · Scope | `components/console/TenantView.jsx` (Binding tab mounts `TenantManager.jsx`) |
 | Agents | 1 · Scope | `components/console/TargetsView.jsx` |
 | Library | 2 · Compose | `components/console/OperationsView.jsx` |
 | CLI Items | 2 · Compose | `components/console/CliItemsView.jsx` |
@@ -94,12 +100,19 @@ Where each design surface landed in the code.
 | TTP Cards | 2 · Compose | `components/console/TtpBrowserView.jsx` |
 | UC / TC Index | 2 · Compose | `components/console/UcTcIndexView.jsx` |
 | Launch Gate | 3 · Preflight | `components/console/ReadinessView.jsx` |
-| Runs (list → detail → topology) | 5 · Observe | `components/console/RunDetailView.jsx` · `InflightView.jsx` |
+| Runs (list → detail → topology) | 5 · Observe | `app/destinations.jsx::RunsSurface` · `RunDetailView.jsx` · `InflightView.jsx` |
 | Tenant Validation | 6 · Prove | `components/console/TenantValidationView.jsx` |
 | Coverage | 6 · Prove | `components/console/CoverageView.jsx` |
 | Proof & Export | 6 · Prove | `components/console/EvidenceView.jsx` |
-| Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `FlowBar.jsx` |
-| Object pop-out | — | `components/console/ObjectSheet.jsx` |
+| Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `FlowBar.jsx` · `EvidenceCollection.jsx` |
+| Object pop-out | — | `components/console/ObjectSheet.jsx` + `sheets.js` |
+| Coverage cross-tab + analytics sources | — | `components/console/PlaneCoverageMatrix.jsx` |
+| Launch gate checks | — | `components/console/LaunchGate.jsx` |
+| Workflow switcher / execution timeline | — | `WorkflowSwitcher.jsx` · `ExecutionTimeline.jsx` |
+| Run topology / techniques | — | `RunTopology.jsx` · `RunTechniques.jsx` |
+| Compose sibling strip | — | `components/console/ComposeTabs.jsx` |
+| Seed catalogs | — | `components/console/povdata/` |
+| Flow model / CTA rule | — | `app/povflow.js` |
 | Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` |
 
 ## IA decisions carried over from the design thread
@@ -125,17 +138,79 @@ preferences. Changing one means changing it on both tracks.
   `Launch chain` button because that is an action, not navigation.
 - **Detection objects are categorical; the verdict carries the color.**
 
-## Known deltas from the prototype
+## What is NOT at parity yet
 
-Recorded so the next sync does not "rediscover" them as bugs.
+Recorded plainly so the next sync does not rediscover these as bugs, and does
+not assume they were done.
 
-- The prototype is demo-data only. Surfaces with a real SimCore API behind them
-  (Library, Composer, Runs, Coverage, Readiness) are bound to it; surfaces the
-  backend does not serve yet (Setup wizard, Components, CLI items, Tenant
-  Validation, the evidence collection) read from seed catalogs under
-  `components/console/povdata/`, which are marked as such and are the exact
-  shape the API should eventually return.
+**1. The Composer canvas has no swimlane bands.** The design bands the canvas by
+launch area (LAUNCH · ENDPOINT · CLOUD · NETWORK · DATA STREAMS · ANALYTICS ·
+PROOF), keyed to the same `LANE_CATALOG` the Runs topology uses, so that
+dragging a node into another band *retargets* it and its ingestion badge
+changes with it. This repo's Design lens lays the chain out as a vertical
+spine (`composerLayout.js::layoutChain`), and converting it to horizontal
+swimlanes means replacing the layout engine, the stitch-overlay geometry that
+rides its coordinates, and the tests that pin both. `COMPOSER_LANES` and
+`LANE_BANDS` are already vendored in `povdata/corpus.js` for that work.
+Partially covered today: the execution timeline shows each step's lane, and
+the Runs topology bands by the same doors, so the vocabulary is consistent
+even though the canvas does not yet draw it.
+
+**2. The evidence collection's group toggles do not reach an export.** The
+panel tallies what is included and what that weighs, and `Export collection`
+navigates to Proof & Export rather than emitting a filtered bundle. The
+selection is real; the plumbing from it to `downloadReportBundle` is not.
+
+**3. The PANW master lockup is not on the Overview page.** The design puts the
+reversed lockup there under an "internal tooling for Cortex Domain Consulting,
+not a customer-facing product" framing. `NOTICE` states the opposite — that
+this is an independent project, NOT an official PANW product, with no
+affiliation claimed — and `ShellRedesign.test.jsx` guards against flying the
+vendor mark. Those two framings are mutually exclusive, and choosing between
+them is an affiliation and trademark decision rather than a design one, so it
+is left to the repo owner. The asset is present at
+`ui/public/assets/panw-reversed.png` if the framing changes. The Cortex product
+mark IS used, in the header, theme-swapped — Cortex is named nominatively as
+the platform under test, which NOTICE already covers.
+
+**4. Surfaces without a SimCore endpoint read from seed catalogs.** Setup
+wizard, Components, CLI items, Tenant Validation and the evidence collection
+have no API behind them yet. They read `povdata/`, whose shape is what those
+endpoints should return.
+
+## Other deltas from the prototype
+
+Deliberate, and not gaps.
+
+- **Light theme is retained.** The prototype is dark-only. Dark is the default
+  here, and light is a complete, independent, AA-clean token set — the measured
+  contrast floors are at the top of `cortex-tokens.css`.
+- **The soft chip fills are opaque.** The prototype authors them as `rgba()`
+  over black. A translucent fill is a different colour on `--s0` than on `--s3`,
+  so "what is the contrast of this label on its chip" has no single answer, and
+  the contrast harness cannot score one at all. They are pre-composited over
+  `--s1`, which is the surface those chips actually sit on.
+- **Tenant registration survives.** The prototype's Tenant page is read-only.
+  Binding a tenant is a real operation that has to happen once, so the existing
+  wizard is the fourth tab rather than being deleted.
+- **`environments`, `eal` and the legacy `readiness` id stay routable** but
+  unlisted. Their content moved into Components and Data Streams; the routes
+  remain so existing deep links resolve instead of silently falling back to the
+  default destination, which would look like data loss.
 - The prototype declares a **1200px minimum width** and scrolls horizontally
   below it, rather than reflowing its own chrome. That is carried over.
 - Canvas node positions are per-session in the prototype. Here they persist per
   workflow in `localStorage`; nothing is written back to the server yet.
+
+## Guards
+
+Four suites hold this seam together. Each exists because the corresponding
+mistake was actually made:
+
+| Suite | What it catches |
+|---|---|
+| `styles/__tests__/ds-drift.test.js` | a DS refresh moving a brand hue without the console following, and a revert of the accent inversion |
+| `styles/__tests__/cortex-tokens.test.js` | the contract itself — surfaces, the fill/ink split, opaque chip fills, and `--cortex-success` drifting back onto the accent |
+| `app/__tests__/everyDestinationRenders.test.jsx` | one destination's markup swallowing or leaking into another's |
+| `console/povdata/__tests__/povdata.test.js` | a lifted function referencing a symbol that is no longer in scope, and the topology being drawn rather than derived |
+| `console/__tests__/navOrderMatchesPhases.test.js` | the rail and the flow bar disagreeing about which phase owns a destination |

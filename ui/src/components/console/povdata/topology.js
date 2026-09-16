@@ -15,6 +15,8 @@
  * quoted on more than one surface precisely so those surfaces cannot disagree.
  * Every tally is DERIVED from these rows, never restated as a literal.
  */
+import { RUN_LOG, RUN_SHAPES, LANE_CATALOG } from './corpus.js'
+
 
 export function topology(state) {
   const lr = RUN_LOG.find((r) => r.id === state.runOpen) || RUN_LOG[0]
