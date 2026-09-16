@@ -25,7 +25,7 @@ import React from 'react'
 const TABS = [
   ['library', 'Scenarios'],
   ['cli', 'CLI items'],
-  ['packages', 'Packages'],
+  ['adapters', 'Packages'],
   ['ttps', 'TTP cards'],
   ['streams', 'Data streams'],
 ]

@@ -632,7 +632,13 @@ export const DESTINATIONS = [
   { id: 'library',  label: 'Library',       group: 'Compose',    groupNum: '2', icon: 'line-chart',      Component: LibrarySurface, badge: 'scenarioCount' },
   { id: 'cli',      label: 'CLI Items',     group: 'Compose',    groupNum: '2', icon: 'password',        Component: CliItemsView,   badge: 'cliCount' },
   { id: 'composer', label: 'Composer',      group: 'Compose',    groupNum: '2', icon: 'apps-grid',       Component: ComposerView },
-  { id: 'packages', label: 'Packages',      group: 'Compose',    groupNum: '2', icon: 'settings-edit',   Component: AdaptersSurface, badge: 'packageCount' },
+  // id stays 'adapters' and that is deliberate, not an oversight. It is the
+  // route (#/adapters), the data-testid, the ⌘K entry and the e2e fixture's
+  // key — all of which derive from the id, none of which derive from the
+  // label. Renaming it to match the new label broke `#/adapters` silently:
+  // the router fell back to the default destination, so the deep link did not
+  // 404, it just quietly showed the Library. Only the label changed.
+  { id: 'adapters',  label: 'Packages',      group: 'Compose',    groupNum: '2', icon: 'settings-edit',   Component: AdaptersSurface, badge: 'packageCount' },
   // Data Streams is a composition INPUT — a third-party stream relayed to the
   // Broker VM, chosen while you compose — not an observation surface. It used
   // to sit under Observe, which put a thing you configure next to the things

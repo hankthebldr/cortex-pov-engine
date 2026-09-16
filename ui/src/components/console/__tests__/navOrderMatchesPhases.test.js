@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 
-import { DESTINATIONS, navGroups } from '../../../app/destinations.jsx'
+import fs from 'node:fs'
+import path from 'node:path'
+
+import { DESTINATIONS, navGroups, isValidDestination } from '../../../app/destinations.jsx'
 import { PHASES, flowFor } from '../../../app/povflow.js'
 
 /**
@@ -108,5 +111,49 @@ describe('nav order follows the POV run phases', () => {
       expect(cta, `'${d.id}' CTA`).toMatch(/^Next: /)
       expect(ids.has(ctaDest), `'${d.id}' points at unknown destination '${ctaDest}'`).toBe(true)
     }
+  })
+
+  /**
+   * A DESTINATION ID IS A ROUTE, NOT A LABEL.
+   *
+   * This caught a live one. Renaming `adapters` to `packages` — purely to match
+   * the rail's new label — silently broke `#/adapters`. It did not 404: the
+   * hash router validates the id and falls back to the default destination, so
+   * a deep link, a bookmark, a ⌘K entry and an e2e fixture all quietly landed
+   * on the Library instead. The only thing that noticed was the e2e suite,
+   * which needs a live SimCore and therefore only runs in CI.
+   *
+   * So the unit suite reads the e2e specs' own routes and checks them against
+   * the registry. It is a slightly unusual coupling and it is deliberate: the
+   * routes those specs navigate are the closest thing this repo has to a
+   * published URL contract, and a rename that orphans one should fail in
+   * seconds locally rather than in a CI job that needs a backend.
+   */
+  describe('route ids the e2e suite depends on still resolve', () => {
+    const E2E_DIR = path.resolve(__dirname, '../../../../tests/e2e')
+
+    const routes = (() => {
+      const found = new Map()
+      for (const file of fs.readdirSync(E2E_DIR).filter((f) => f.endsWith('.ts'))) {
+        const src = fs.readFileSync(path.join(E2E_DIR, file), 'utf8')
+        // `goto('/#/adapters?tool=…')` and `{ dest: 'adapters' }`
+        for (const m of src.matchAll(/#\/([a-z][a-z-]*)/g)) found.set(m[1], file)
+        for (const m of src.matchAll(/\bdest:\s*'([a-z][a-z-]*)'/g)) found.set(m[1], file)
+      }
+      return [...found.entries()]
+    })()
+
+    it('finds routes to check', () => {
+      expect(routes.length).toBeGreaterThan(3)
+    })
+
+    it.each(routes)('#/%s (used by %s) is a real destination', (id) => {
+      expect(
+        isValidDestination(id),
+        `'${id}' is not in the registry, so the router silently falls back to ` +
+        "the default destination. If this id was renamed, keep the old one as a " +
+        'hidden destination rather than letting the route disappear.',
+      ).toBe(true)
+    })
   })
 })

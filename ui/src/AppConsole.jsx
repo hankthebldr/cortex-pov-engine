@@ -232,7 +232,7 @@ function ConsoleShell() {
         title: 'Stage a tool payload',
         meta: 'pull a public tool onto this SimCore',
         icon: '⇩',
-        onSelect: () => router.navigate('packages', { supply: 'unstaged' }),
+        onSelect: () => router.navigate('adapters', { supply: 'unstaged' }),
       },
       {
         section: 'Actions',

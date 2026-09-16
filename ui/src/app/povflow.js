@@ -60,7 +60,7 @@ export function flowFor(destination, ctx = {}) {
     library: [1, ctx.armed ? `${ctx.armed} armed` : `${ctx.scenarioCount ?? 0} scenarios`,
       '7 steps · 11 expected detections', 'Composer'],
     cli: [1, '4 CLI items authored', '2 ready · 2 draft · all digest-pinned', 'Composer'],
-    packages: [1, '8 packages staged', '48 exemption-declared · 0 undeclared', 'Composer'],
+    adapters: [1, '8 packages staged', '48 exemption-declared · 0 undeclared', 'Composer'],
     streams: [1, '21 of 34 streams mapped', '7 gaps · relayed to the Broker VM', 'Composer'],
     ttps: [1, '175 TTP cards bound', '1,797 detection objects resolve', 'Composer'],
     uctc: [1, '34 test cases in scope', '12 use cases · 140 assertion-shaped', 'Composer'],

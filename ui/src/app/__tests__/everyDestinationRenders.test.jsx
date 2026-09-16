@@ -45,7 +45,7 @@ const TITLES = {
   library: /^library$/i,
   cli: /^cli items$/i,
   composer: /composer/i,
-  packages: /^packages$/i,
+  adapters: /^packages$/i,
   streams: /data\s*streams/i,
   ttps: /ttp cards/i,
   uctc: /uc \/ tc index/i,

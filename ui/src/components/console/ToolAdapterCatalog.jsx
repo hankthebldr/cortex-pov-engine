@@ -134,7 +134,7 @@ export default function ToolAdapterCatalog({ params = {}, setParams = () => {}, 
 
   return (
     <div className="adapter-registry tools-destination" data-testid="tool-adapter-catalog">
-      <ComposeTabs active="packages" onNavigate={onNavigate} />
+      <ComposeTabs active="adapters" onNavigate={onNavigate} />
       <div className="tools-destination__head">
         <div className="tools-destination__head-copy">
           <div className="tools-destination__accent-bar" aria-hidden="true" />
