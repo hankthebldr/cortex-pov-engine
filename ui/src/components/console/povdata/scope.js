@@ -102,3 +102,65 @@ export function resources(state) {
     })),
   }))
 }
+
+
+/**
+ * The derived requirements list — the wizard's actual output.
+ *
+ * Every row names WHAT REQUIRES IT. That is the difference between this and a
+ * readiness checklist: pick Correlation and "correlation content installed in
+ * the tenant" appears, attributed to Correlation; deselect it and the row is
+ * gone. A list that is the same on every POV trains a DC to skip it.
+ *
+ * The step-3 scope dispositions fold into the SAME list rather than living in
+ * their own panel — a "prove it" becomes a customer prerequisite, a workaround
+ * becomes an accepted caveat, a drop becomes an exclusion — so the goals in
+ * step 5 stay scored off one chain instead of two.
+ */
+export function requirements(state) {
+  const d = state.wizDets, t = state.wizTargets
+  const has = (arr, k) => arr.indexOf(k) >= 0
+  const out = []
+  const add = (label, detail, state, because) => out.push({ label, detail, state, because })
+
+  add('Tenant bound with a read-only credential', 'acme-prod.xdr.us · the credential can read but never write', 'met', 'every detection type')
+
+  add('Artifacts staged and digest-pinned', '8 packages on the shelf · nothing fetches at dispatch', 'met', 'every target')
+  add('Detonation authorised and the SOC told', 'Acknowledged by dc-lead@acme on 11 Sep', 'met', 'every target')
+
+  if (has(t, 'host')) {
+    add('A beacon online on at least one endpoint', '2 of 4 endpoints online · jumpbox-lin-01, mac-dc-07', 'met', 'endpoint hosts')
+    add('Identity harness on every targeted host', 'win-dc-01 has none — identity-wrapped steps collapse to direct and the run records IDENTITY NOT HONOURED', 'warn', 'endpoint hosts')
+  }
+  if (has(t, 'cloud')) {
+    add('Cloud Connector enrolled per environment', 'acme-prod-aws and acme-gcp-lab live · acme-azure-01 not enrolled', 'warn', 'cloud environments')
+  }
+  if (has(t, 'net')) {
+    add('Relay rule on the Broker VM', 'broker-relay-01 has no relay rule, so nothing reaches the network plane', 'blocked', 'network / Broker VM')
+  }
+  if (has(t, 'stream')) {
+    add('An emitter behind every stream shape', '21 of 34 shapes covered · 7 have no emitter authored', 'warn', 'third-party data streams')
+  }
+  if (has(d, 'ABIOC')) {
+    add('Engine holds 24h of baseline telemetry', 'Baseline present since 11 Sep — anomaly scoring will not cold-start', 'met', 'ABIOC')
+  }
+  if (has(d, 'Correlation')) {
+    add('Correlation content installed in the tenant', 'corr-edr-001 is not present in this tenant — it will export as NOT PRESENT, never as a miss', 'blocked', 'Correlation')
+    add('API scope covers the correlations dataset', 'The read-only role can read alerts but not correlations, so absence there is a permissions artefact', 'warn', 'Correlation')
+  }
+  if (has(d, 'IOC')) {
+    add('Marketplace indicator pack installed', 'Required for atomic indicator matching', 'warn', 'IOC')
+  }
+  // Scope dispositions fold into the same list: a "prove it" becomes a
+  // prerequisite, a workaround becomes a caveat, a drop becomes an exclusion.
+  constraintRows(state).filter((c) => c.needed).forEach((c) => {
+    if (c.choice === 'prove') {
+      add(c.label, c.effects.prove, 'warn', c.id + ' · customer prerequisite')
+    } else if (c.choice === 'around') {
+      add(c.label, c.effects.around, 'met', c.id + ' · workaround accepted')
+    } else {
+      add(c.label, c.effects.drop, 'blocked', c.id + ' · dropped from scope')
+    }
+  })
+  return out
+}
