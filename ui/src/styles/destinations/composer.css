@@ -1081,3 +1081,42 @@
 /* Canvas run-lens binding readout — the REAL persisted values. */
 .theme-console .composer-canvas__binding-pair { color: var(--tx2); }
 .theme-console .composer-canvas__binding-pair strong { color: var(--ink); }
+
+/* ── Lanes lens — swimlane bands behind the chain (composerLanes.js) ──────────
+   Bands are drawn in flow space via <ViewportPortal>, so they pan and zoom
+   with the nodes. Fills come from COMPOSER_LANES (plane tints at 5%); here we
+   only give each band its rule, its label, and the terminal bands their
+   quieter treatment. */
+.theme-console .composer-lane {
+  position: absolute;
+  left: 0;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--bd);
+  padding: 8px 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.theme-console .composer-lane--terminal {
+  border-bottom-style: dashed;
+}
+.theme-console .composer-lane__label {
+  font: 700 9px/1 var(--font-ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--tx2);
+}
+.theme-console .composer-lane--terminal .composer-lane__label { color: var(--tx3); }
+.theme-console .composer-lane__sub {
+  font: 400 10px/1.2 var(--font-ui);
+  color: var(--tx3);
+}
+
+/* The door badge on a step card in the Lanes lens — the retargeting readout.
+   It is the same chip the execution timeline uses, docked top-right so the
+   card's title row stays where the Design lens put it. */
+.theme-console .chain-node__doorbadge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}

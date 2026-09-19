@@ -143,18 +143,26 @@ preferences. Changing one means changing it on both tracks.
 Recorded plainly so the next sync does not rediscover these as bugs, and does
 not assume they were done.
 
-**1. The Composer canvas has no swimlane bands.** The design bands the canvas by
-launch area (LAUNCH · ENDPOINT · CLOUD · NETWORK · DATA STREAMS · ANALYTICS ·
-PROOF), keyed to the same `LANE_CATALOG` the Runs topology uses, so that
-dragging a node into another band *retargets* it and its ingestion badge
-changes with it. This repo's Design lens lays the chain out as a vertical
-spine (`composerLayout.js::layoutChain`), and converting it to horizontal
-swimlanes means replacing the layout engine, the stitch-overlay geometry that
-rides its coordinates, and the tests that pin both. `COMPOSER_LANES` and
-`LANE_BANDS` are already vendored in `povdata/corpus.js` for that work.
-Partially covered today: the execution timeline shows each step's lane, and
-the Runs topology bands by the same doors, so the vocabulary is consistent
-even though the canvas does not yet draw it.
+**1. The Composer swimlanes are a lens, not the only layout.** The design
+bands the canvas by launch door (LAUNCH · ENDPOINT · CLOUD · NETWORK · DATA
+STREAMS · ANALYTICS · PROOF), keyed to the same `LANE_CATALOG` the Runs
+topology uses, so that dragging a node into another band retargets it and its
+door badge changes with it. That now exists as the **Lanes** lens beside
+Design and Run: `composerLanes.js` is the one lane derivation (`laneOf`) the
+canvas, the execution timeline and the Runs topology all share; `layoutLanes`
+puts execution order on x and door on y; a drag that ends in another band
+calls `setStepLane`, which records the lane on the draft (`laneOverrides`,
+persisted as `composer_lanes` beside `composer_layout`) and re-badges the
+card. What remains deliberately different from the design: the Design lens
+keeps the vertical spine and the stitch overlay that rides its coordinates,
+because that is what the stitch geometry and its tests were built on; and a
+lane drag writes through to the step's data ONLY for the two channel-backed
+doors (DATA STREAMS ⇄ `channel: eal`, ENDPOINT ⇄ `channel: agent`). Dragging
+a NDR step into CLOUD records the intent and moves the badge but does not
+rewrite its plane — the plane is what its expected detections were authored
+against, and silently changing it on a drag would be a claim the readout later
+paid for. Guards: `composerLanes.test.js`, the Lanes block in
+`ComposerCanvas.test.jsx`.
 
 **2. The evidence collection's group toggles do not reach an export.** The
 panel tallies what is included and what that weighs, and `Export collection`

@@ -1,6 +1,7 @@
 import React from 'react'
 import { COMPOSER_LANES } from './povdata/corpus.js'
 import { planeTint } from './povdata/planes.js'
+import { laneOf } from './composerLanes.js'
 
 /**
  * ExecutionTimeline — the chain as an ordered strip, under the canvas.
@@ -22,14 +23,25 @@ import { planeTint } from './povdata/planes.js'
  * Clicking a card selects that node on the canvas, so the two views stay a
  * single selection rather than two parallel ones.
  *
+ * THE LANE COMES FROM `laneOf()`, NOT FROM A LOCAL RULE.
+ * This file used to derive a step's lane inline (channel eal → DC, plane NDR →
+ * BVM, …). The canvas now needs the same derivation, and two copies of "which
+ * door is this step behind" would drift the moment one of them learned a new
+ * plane. `composerLanes.laneOf` is the one source; the timeline accepts raw
+ * steps and the draft's overrides and asks it.
+ *
  * Props:
- *   steps      — [{ id, label, lane, plane, state }] in execution order
+ *   steps         — draft steps in execution order
+ *   laneOverrides — `{ [stepId]: laneKey }` from the draft (Lanes-lens drags)
+ *   draftPlane    — the draft's plane, for steps that carry none
  *   selectedId — currently selected step id
  *   onSelect   — (id) => void
  *   onRunStep  — (id) => void | null
  */
 export default function ExecutionTimeline({
   steps = [],
+  laneOverrides = null,
+  draftPlane = null,
   selectedId = null,
   onSelect = () => {},
   onRunStep = null,
@@ -60,7 +72,14 @@ export default function ExecutionTimeline({
       </div>
 
       <div style={{ display: 'flex', gap: 0, overflowX: 'auto', paddingBottom: 6 }}>
-        {steps.map((s, i) => {
+        {steps.map((raw, i) => {
+          const s = {
+            id: raw.id,
+            label: raw.name || raw.label || raw.id,
+            lane: laneOf(raw, laneOverrides, draftPlane),
+            plane: raw.plane || draftPlane,
+            state: raw.state,
+          }
           const on = s.id === selectedId
           const tone = s.state === 'CONFIRMED' ? 'pos'
             : s.state === 'BROKEN' ? 'crit'
