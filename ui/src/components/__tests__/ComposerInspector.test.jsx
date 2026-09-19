@@ -368,26 +368,58 @@ describe('ComposerInspector — workflow meta (no step selected)', () => {
 
   // ── The parent picker must not offer a parent the model will refuse ──────
   //
-  // `setCausalityParent` returns the SAME steps array for a self- or FORWARD
-  // ref, mirroring the loader's spine rule. So an option for a LATER step is a
-  // choice the state silently discards: the controlled <select> snaps back, the
-  // canvas never redraws, and the author is told nothing. It reads exactly like
-  // "the composer won't link my nodes". Every option offered here must be one
-  // the model accepts.
-  it('offers ONLY earlier steps as a causality parent — never a forward ref', () => {
+  // The offered options are GRAPH-legal (`canConnect`, composerSpine.js: no
+  // self-ref, no cycle, never the chain's only root), not limited to
+  // earlier array positions. `onSetCausalityParent` (ComposerView.jsx)
+  // composes `setCausalityParent(..., {skipOrderCheck: true})` with
+  // `topologicallySortSteps`, the same way the canvas's `handleConnectSteps`
+  // does — so a chosen parent that currently sits AFTER `selected` in
+  // `steps[]` is applied and the array is re-sorted to match, not refused.
+  // In this file's two-step DRAFT fixture, the only steps ever excluded
+  // (step-02 as a parent of step-01; step-02 as its own parent) happen to
+  // ALSO be later-array-position — that is a property of this two-step
+  // fixture's shape (each exclusion is a genuine self-ref or would-be
+  // cycle), not evidence the filter is still position-based. See the
+  // "offers a graph-legal LATER step" test below (a three-step fork) for
+  // the case that actually distinguishes the two.
+  it('offers only the chain root for the first step — every other step would form a cycle', () => {
     renderInspector({ selected: STEP_01 })   // the FIRST step in the draft
     const select = screen.getByLabelText(`Causality parent for ${STEP_01.id}`)
     const values = within(select).getAllByRole('option').map((o) => o.value)
-    // step-01 is first, so the only legal parent is the chain root.
+    // step-02's only parent is step-01, so making step-02 the parent of
+    // step-01 would close a two-node cycle — canConnect refuses it.
     expect(values).toEqual([''])
     expect(values).not.toContain('step-02')
   })
 
-  it('offers the preceding step for a later step, and never itself', () => {
+  it('offers the existing parent for a later step, and never itself', () => {
     renderInspector({ selected: STEP_02 })
     const select = screen.getByLabelText(`Causality parent for ${STEP_02.id}`)
     const values = within(select).getAllByRole('option').map((o) => o.value)
-    expect(values).toContain('step-01')      // legal: earlier in the spine
+    expect(values).toContain('step-01')      // legal: step-02's actual parent
     expect(values).not.toContain('step-02')  // self-ref
+  })
+
+  it('offers a graph-legal LATER step as a causality parent (siblings can cross-link)', async () => {
+    // A fork off a single root: step-02 and step-03 both children of
+    // step-01. Re-parenting step-02 onto step-03 is graph-legal (no
+    // self-ref, no cycle, step-02 is not the chain's only root) even
+    // though step-03 sits AFTER step-02 in `steps[]` — the exact case the
+    // old array-position filter used to hide from the DC entirely.
+    const step03 = {
+      id: 'step-03', name: 'Branch B', command: 'true', identity: 'www-data',
+      technique: null, platforms: [], causalityParent: 'step-01', causalityPivot: 'process_lineage',
+      detections: [], authored: false,
+    }
+    const steps = [STEP_01, STEP_02, step03]
+    const user = userEvent.setup()
+    const h = renderInspector({ selected: STEP_02, steps, draft: { ...DRAFT, steps } })
+
+    const select = screen.getByLabelText(`Causality parent for ${STEP_02.id}`)
+    const values = within(select).getAllByRole('option').map((o) => o.value)
+    expect(values).toContain('step-03')
+
+    await user.selectOptions(select, 'step-03')
+    expect(h.onSetCausalityParent).toHaveBeenCalledWith('step-02', 'step-03', 'process_lineage')
   })
 })

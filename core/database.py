@@ -226,6 +226,7 @@ def _migrate_scenarios_columns(connection) -> None:
     additions = [
         ("cgo_anchor", "JSON"),          # causality contract
         ("stitch_context", "JSON"),      # Phase 2 — composer stitch context (authored intent)
+        ("composer_layout", "JSON"),     # Composer canvas node positions
         ("pov_scenario_id", "VARCHAR"),  # UC/TC payload join
         ("tc_refs", "JSON"),             # full TC evidence set
         # Phase 2 — measurement contract

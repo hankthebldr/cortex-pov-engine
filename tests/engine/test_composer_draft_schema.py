@@ -346,3 +346,31 @@ def test_rejects_stitch_entry_with_both_literal_and_resolve():
 def test_rejects_unknown_stitch_key():
     with pytest.raises(ValidationError):
         DraftScenarioSchema(**_draft(stitch_context={"not_an_entity": {"literal": "x"}}))
+
+
+# ---------------------------------------------------------------------------
+# Composer canvas layout — corpus/draft schema separation guards
+# ---------------------------------------------------------------------------
+
+
+def test_corpus_step_schema_carries_no_coordinates():
+    """A shipped scenario must never carry canvas coordinates.
+
+    composer_layout is draft-level presentation state. If it ever appears on
+    StepSchema, positions can reach scenarios/<plane>/ YAML and the shipped
+    corpus. Structural guard, in the spirit of this repo's AST drift guards.
+    """
+    from engine.scenario_loader import StepSchema
+
+    banned = {"x", "y", "position", "coords", "composer_layout", "layout"}
+    assert not (banned & set(StepSchema.model_fields)), (
+        "StepSchema gained a presentation field — see the 2026-09-08 composer "
+        "direct-manipulation spec §5.2"
+    )
+
+
+def test_draft_layout_is_scenario_level_not_step_level():
+    from engine.composer_draft_schema import DraftScenarioSchema, DraftStepSchema
+
+    assert "composer_layout" in DraftScenarioSchema.model_fields
+    assert "composer_layout" not in DraftStepSchema.model_fields

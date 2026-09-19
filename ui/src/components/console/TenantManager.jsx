@@ -615,7 +615,7 @@ export default function TenantManager() {
         <div className="tenant-mgr__accent-bar" />
         {/* Masthead eyebrow: the nav group alone, no "· Phase N" — this
             product has no app-level phase stepper to echo (M-4). */}
-        <div className="tenant-mgr__eyebrow">Manage</div>
+        <div className="tenant-mgr__eyebrow">Phase 1 · Scope</div>
         <div className="tenant-mgr__header-row">
           <h2 className="tenant-mgr__title">
             XSIAM Tenants

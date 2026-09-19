@@ -99,6 +99,16 @@ export function draftFromScenario(scenario) {
     // Because `draftFromApi` spreads `...draftFromScenario(row)`, drafts round-
     // trip through this ONE place — no separate `draftFromApi` edit.
     stitchContext: parseStitchContext(scenario.stitch_context),
+    // Canvas node positions — presentation-only, never authored into the YAML
+    // (see `setNodePosition` below). Same round-trip-through-ONE-place shape
+    // as `stitchContext` immediately above, so `draftFromApi` needs no
+    // separate edit either.
+    layout: scenario.composer_layout || null,
+    // Swimlane overrides — which ingestion door a step was DRAGGED into on the
+    // Lanes lens. Presentation-tier like `layout`, persisted the same way, and
+    // round-tripped through this one place. See composerLanes.js for what an
+    // override does and does not change about the step.
+    laneOverrides: scenario.composer_lanes || null,
     steps,
     // Persistence identity — null here, filled by `draftFromApi` when the row
     // came back from the drafts API. A draft seeded from a corpus scenario is
@@ -114,8 +124,60 @@ export function draftFromScenario(scenario) {
 export function emptyDraft() {
   return {
     originId: null, name: null, plane: null, ucRef: null, tcRef: null,
-    moatTier: null, cgo: null, teardown: [], stitchContext: null, steps: [],
+    moatTier: null, cgo: null, teardown: [], stitchContext: null, layout: null,
+    laneOverrides: null,
+    steps: [],
     scenarioId: null, status: null, author: null, tags: [],
+  }
+}
+
+/**
+ * Canvas node positions, keyed by step id. Presentation-only — deliberately a
+ * draft-level map rather than a field on each step, so it structurally cannot
+ * reach emitDraftYaml (and therefore the shipped corpus). See the 2026-09-08
+ * direct-manipulation spec §5.2.
+ */
+export function setNodePosition(draft, stepId, x, y) {
+  return {
+    ...draft,
+    layout: { ...(draft.layout || {}), [stepId]: { x: Math.round(x), y: Math.round(y) } },
+  }
+}
+
+/** Drop every stored position — the Re-layout action's reducer. Lane
+ *  overrides go with it: Fit / Re-layout restores BOTH positions and lanes,
+ *  which is the design's own definition of the action. */
+export function clearLayout(draft) {
+  return { ...draft, layout: null, laneOverrides: null }
+}
+
+/**
+ * Record that a step was dragged into `lane` on the Lanes lens.
+ *
+ * Two of the lanes are backed by a real step field and WRITE THROUGH:
+ *   'DC'  → channel 'eal'    (the step becomes a data-stream emitter)
+ *   'AGT' → channel 'agent'  (the step runs on the beacon)
+ * The other three (CC / BVM / ENG) are plane-derived. A drag does NOT rewrite
+ * the plane — the plane is what the step's expected detections were authored
+ * against, and moving a card is not authoring — so those are recorded as an
+ * override the door badge and the inspector read, nothing more.
+ *
+ * Returns the SAME array-identity semantics as the other reducers: a no-op
+ * lane (already there) returns `draft` unchanged.
+ */
+export function setStepLane(draft, stepId, lane) {
+  const steps = draft.steps || []
+  const step = steps.find((s) => s.id === stepId)
+  if (!step) return draft
+  const cur = (draft.laneOverrides || {})[stepId] || null
+  let nextSteps = steps
+  if (lane === 'DC') nextSteps = setStepChannel(steps, stepId, 'eal')
+  else if (lane === 'AGT') nextSteps = setStepChannel(steps, stepId, 'agent')
+  if (cur === lane && nextSteps === steps) return draft
+  return {
+    ...draft,
+    steps: nextSteps,
+    laneOverrides: { ...(draft.laneOverrides || {}), [stepId]: lane },
   }
 }
 
@@ -463,11 +525,29 @@ export function removeDetection(steps, id, detIndex) {
  * (the step becomes a chain root, hanging off the CGO).
  *
  * Returns the SAME array when the edit would author an invalid spine — a
- * self-ref, or a FORWARD ref (a parent that appears at or after this step in
- * array order). That mirrors the loader's spine rule (`no self/forward refs`),
- * so the canvas physically cannot build a chain the backend would reject.
+ * self-ref, or (unless `skipOrderCheck`) a FORWARD ref (a parent that appears
+ * at or after this step in array order). That mirrors the loader's spine rule
+ * (`no self/forward refs`), so the canvas physically cannot build a chain the
+ * backend would reject.
+ *
+ * `skipOrderCheck` (default false — every pre-existing caller is unaffected)
+ * exists for exactly one caller: the Composer canvas's drag-to-connect flow
+ * (`ComposerView.jsx`'s `handleConnectSteps`, direct-manipulation Task 10).
+ * That flow validates the edge against the causality PARENT GRAPH first via
+ * `canConnect` (`composerSpine.js`) — acyclic, single root — which says
+ * nothing about array POSITION, so a `canConnect`-approved edge can still
+ * collide with the forward-ref guard below. Refusing it here a second time
+ * would be a refusal with no visible cause (canConnect already said yes) —
+ * exactly the silent-drop failure mode this feature exists to prevent. The
+ * caller instead passes `skipOrderCheck: true` and immediately re-sorts the
+ * result with `topologicallySortSteps` (`composerSpine.js`) to restore the
+ * array-order invariant, so what the operator drew and what the loader will
+ * accept never diverge. See that module's header for the full split between
+ * the two invariants.
  */
-export function setCausalityParent(steps, id, parentId, pivot = 'process_lineage') {
+export function setCausalityParent(
+  steps, id, parentId, pivot = 'process_lineage', { skipOrderCheck = false } = {},
+) {
   const index = steps.findIndex((s) => s.id === id)
   if (index < 0) return steps
 
@@ -475,7 +555,7 @@ export function setCausalityParent(steps, id, parentId, pivot = 'process_lineage
     if (parentId === id) return steps // self-ref
     const parentIndex = steps.findIndex((s) => s.id === parentId)
     if (parentIndex < 0) return steps // unknown parent
-    if (parentIndex >= index) return steps // forward (or self) ref
+    if (!skipOrderCheck && parentIndex >= index) return steps // forward (or self) ref
   }
 
   const current = steps[index]
@@ -675,6 +755,14 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
   // backend `stitch_context: Optional[StitchContextSchema] = None`.
   const sc = emitStitchContext(draft.stitchContext)
   if (sc) body.stitch_context = sc
+  // Only send a layout that exists, so a layout-less draft POSTs the exact
+  // body it did before this feature (backend stores NULL).
+  if (draft.layout && Object.keys(draft.layout).length > 0) {
+    body.composer_layout = draft.layout
+  }
+  if (draft.laneOverrides && Object.keys(draft.laneOverrides).length > 0) {
+    body.composer_lanes = draft.laneOverrides
+  }
   if (draft.povScenarioId) body.pov_scenario_id = draft.povScenarioId
   if (draft.mitreTactic) body.mitre_tactic = draft.mitreTactic
   if (draft.mitreTacticName) body.mitre_tactic_name = draft.mitreTacticName
@@ -732,6 +820,11 @@ export function draftSnapshot(draft) {
     // as dirty and force a re-save before launch, exactly like a step edit. The
     // emitted (wire) form is the stable comparison key.
     stitchContext: emitStitchContext(draft.stitchContext),
+    // Load-bearing, NOT cosmetic: a dragged node's saved position is part of
+    // what got persisted, so dragging marks the draft dirty and the launch
+    // gate offers a save — same reasoning as stitchContext above.
+    layout: draft.layout || null,
+    laneOverrides: draft.laneOverrides || null,
     steps: (draft.steps || []).map((s) => ({
       id: s.id,
       command: s.command ?? null,

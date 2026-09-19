@@ -1,0 +1,83 @@
+/* PANW Executive Design System — Color tokens
+   Sourced from the 2026 Palo Alto Networks Corporate Presentation Template
+   (theme clrScheme + Color Palette slide). */
+:root {
+  /* ---- Brand core ---- */
+  --panw-orange: #FA582D;      /* primary brand color */
+  --panw-orange-600: #E14F28;
+  --panw-orange-700: #C94727;
+  --panw-orange-800: #C84624;
+  --panw-orange-900: #A51B00;
+  --panw-orange-500: #E55539;
+
+  /* ---- Sub-brand accents ---- */
+  --panw-yellow: #FFCB06;      /* Strata */
+  --panw-cyan:   #00C0E8;      /* Prisma */
+  --panw-green:  #00CC66;      /* Cortex */
+  --panw-teal:   #00AEC4;
+  --panw-green-700: #238A4D;
+
+  /* ---- Tints & shades: orange/coral ---- */
+  --coral-300: #FDAC96;
+  --coral-200: #FECDC0;
+  --coral-100: #F6E4DF;
+  --coral-400: #D1755F;
+
+  /* ---- Tints & shades: yellow/gold ---- */
+  --gold-600: #C7AA47;
+  --gold-500: #E5C148;
+  --gold-200: #FBE1A2;
+  --gold-100: #FDF0D0;
+
+  /* ---- Tints & shades: cyan ---- */
+  --cyan-400: #6EC2D6;
+  --cyan-200: #B6E1EE;
+  --cyan-100: #DAF0F6;
+
+  /* ---- Tints & shades: green ---- */
+  --green-500: #40A557;
+  --green-200: #ADD8B1;
+  --green-100: #D6ECD8;
+
+  /* ---- Neutrals (theme dk1/dk2/lt1/lt2 + working greys) ---- */
+  --ink-900: #000000;
+  --ink-800: #1A1A1A;
+  --ink-700: #333333;
+  --ink-600: #595959;   /* theme dk2 */
+  --ink-500: #767676;
+  --ink-400: #9A9A9A;
+  --grey-300: #C7C7C7;
+  --grey-200: #E9E9E9;  /* theme lt2 */
+  --grey-100: #F4F4F4;
+  --white:    #FFFFFF;
+
+  /* ---- Semantic aliases ---- */
+  --color-accent: var(--panw-orange);
+  --color-accent-hover: var(--panw-orange-800);
+
+  --text-primary: var(--ink-900);
+  --text-secondary: var(--ink-600);
+  --text-muted: var(--ink-400);
+  --text-inverse: var(--white);
+  --text-accent: var(--panw-orange);
+
+  --surface-page: var(--white);
+  --surface-card: var(--white);
+  --surface-subtle: var(--grey-100);
+  --surface-muted: var(--grey-200);
+  --surface-dark: var(--ink-900);
+  --surface-dark-2: var(--ink-800);
+
+  --border-subtle: var(--grey-200);
+  --border-default: var(--grey-300);
+  --border-strong: var(--ink-900);
+
+  --link: var(--panw-orange);
+  --link-hover: var(--panw-orange-800);
+
+  /* ---- Status (mapped to brand hues) ---- */
+  --status-positive: var(--panw-green);
+  --status-caution: var(--panw-yellow);
+  --status-info: var(--panw-cyan);
+  --status-critical: var(--panw-orange-900);
+}
