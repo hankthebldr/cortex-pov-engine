@@ -1118,5 +1118,6 @@
 .theme-console .chain-node__doorbadge {
   position: absolute;
   top: 6px;
-  right: 6px;
+  /* Clear of the step index the card's header row keeps at its far right. */
+  right: 30px;
 }

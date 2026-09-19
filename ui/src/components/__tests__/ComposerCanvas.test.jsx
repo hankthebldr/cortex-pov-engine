@@ -184,6 +184,12 @@ describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
     // Both fixture steps are EDR → ENDPOINT (AGT) by derivation.
     expect(screen.getByTestId('chain-step-door-step-01')).toHaveTextContent('AGT')
     expect(screen.getByTestId('chain-step-door-step-02')).toHaveTextContent('AGT')
+    // The LAUNCH / PROOF bands replace the Design lens's START / END anchors
+    // — two statements of where the chain begins would be one too many.
+    expect(screen.queryByTestId('chain-start')).toBeNull()
+    expect(screen.queryByTestId('chain-end')).toBeNull()
+    expect(screen.queryByTestId('composer-connector-root')).toBeNull()
+    expect(screen.getByTestId('composer-add-step')).toBeInTheDocument()
   })
 
   it('a draft lane override moves the badge, and the Design lens draws no bands', () => {

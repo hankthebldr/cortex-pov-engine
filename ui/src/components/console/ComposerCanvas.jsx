@@ -678,6 +678,25 @@ const DesignGraph = forwardRef(function DesignGraph({
     zoomReset: () => rfInstanceRef.current?.zoomTo(1),
   }), [])
 
+  // ── Lens fit ──────────────────────────────────────────────────────────────
+  // `fitView` (the prop above) fits the NODES, which on the Lanes lens is
+  // wrong: three steps in one band fit at 189% with every other band
+  // off-screen, so the lens shows a chain and no lanes. The Lanes lens fits
+  // the whole stage — all seven bands — and switching back to Design refits
+  // the nodes, so each lens opens on the thing it exists to show. Keyed on
+  // the stage bounds too, so a step added while on Lanes widens the fit.
+  const laneStageW = laneLayout ? laneLayout.bounds.width : 0
+  const laneStageH = laneLayout ? laneLayout.bounds.height : 0
+  useEffect(() => {
+    const rf = rfInstanceRef.current
+    if (!rf || !measured) return
+    if (lanesLens) {
+      rf.fitBounds({ x: 0, y: 0, width: laneStageW, height: laneStageH }, { padding: 0.04, duration: 0 })
+    } else {
+      rf.fitView({ duration: 0 })
+    }
+  }, [lanesLens, measured, laneStageW, laneStageH])
+
   return (
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
       {/* A refused connect attempt, ABOVE the canvas — visible and reasoned,
@@ -697,23 +716,28 @@ const DesignGraph = forwardRef(function DesignGraph({
         </div>
       )}
 
-      {/* START anchor — not a step, so it stays outside React Flow. */}
-      <div className="chain-node chain-node--start" data-testid="chain-start">
-        <div className="chain-node__kicker">Start</div>
-        <div className="chain-node__title">On launch</div>
-        <div className="chain-node__scope">
-          <button type="button" className="scope-link" onClick={() => onNavigate('tenants')}>
-            <span className="scope-link__label">Tenant</span>
-            <span className="scope-link__value mono">{tenantName || 'none selected'}</span>
-          </button>
-          <button type="button" className="scope-link" onClick={() => onNavigate('agents')}>
-            <span className="scope-link__label">Agent</span>
-            <span className="scope-link__value mono">{agentName || 'none selected'}</span>
-          </button>
+      {/* START anchor — not a step, so it stays outside React Flow. In the
+          Lanes lens the LAUNCH band says the same thing inside the pane, so
+          the anchor and its connector would be a second, disagreeing
+          statement of where the chain begins. */}
+      {!lanesLens && (
+        <div className="chain-node chain-node--start" data-testid="chain-start">
+          <div className="chain-node__kicker">Start</div>
+          <div className="chain-node__title">On launch</div>
+          <div className="chain-node__scope">
+            <button type="button" className="scope-link" onClick={() => onNavigate('tenants')}>
+              <span className="scope-link__label">Tenant</span>
+              <span className="scope-link__value mono">{tenantName || 'none selected'}</span>
+            </button>
+            <button type="button" className="scope-link" onClick={() => onNavigate('agents')}>
+              <span className="scope-link__label">Agent</span>
+              <span className="scope-link__value mono">{agentName || 'none selected'}</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {hasRootEdge && <SpineConnector testId="composer-connector-root" />}
+      {hasRootEdge && !lanesLens && <SpineConnector testId="composer-connector-root" />}
 
       <div className="composer-canvas__flow" ref={paneRef}>
         <ReactFlowProvider>
@@ -827,18 +851,21 @@ const DesignGraph = forwardRef(function DesignGraph({
         </ReactFlowProvider>
       </div>
 
-      {hasTerminalEdge && <SpineConnector testId="composer-connector-terminal" />}
+      {hasTerminalEdge && !lanesLens && <SpineConnector testId="composer-connector-terminal" />}
 
-      {/* END anchor — not a step, so it stays outside React Flow. */}
-      <div className="chain-node chain-node--end" data-testid="chain-end">
-        <div className="chain-node__kicker">End</div>
-        <div className="chain-node__title">Teardown &amp; proof</div>
-        <div className="chain-node__sub mono">
-          {draft.teardown?.length
-            ? `${draft.teardown.length} cleanup command${draft.teardown.length === 1 ? '' : 's'}`
-            : 'no cleanup declared'}
+      {/* END anchor — not a step, so it stays outside React Flow. The PROOF
+          band stands in for it on the Lanes lens, as LAUNCH does for START. */}
+      {!lanesLens && (
+        <div className="chain-node chain-node--end" data-testid="chain-end">
+          <div className="chain-node__kicker">End</div>
+          <div className="chain-node__title">Teardown &amp; proof</div>
+          <div className="chain-node__sub mono">
+            {draft.teardown?.length
+              ? `${draft.teardown.length} cleanup command${draft.teardown.length === 1 ? '' : 's'}`
+              : 'no cleanup declared'}
+          </div>
         </div>
-      </div>
+      )}
 
       <button
         type="button"
