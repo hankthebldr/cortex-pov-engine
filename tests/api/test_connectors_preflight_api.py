@@ -71,7 +71,7 @@ def test_preflight_returns_200_with_blocked_rather_than_an_http_error(
     # Every stage is present, none silently omitted: an absent stage reads as
     # "fine", an explicit `skipped` reads as "unknown".
     assert [s["id"] for s in r.json()["stages"]] == [
-        "config", "dns_tls", "auth", "scope_alerts"]
+        "config", "dns_tls", "auth", "scope_alerts", "alert_shape"]
 
 
 def test_preflight_on_an_unknown_kind_is_a_structured_400(client):
