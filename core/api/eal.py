@@ -33,13 +33,13 @@ a host that can actually reach it.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -119,6 +119,14 @@ class PreflightRequest(BaseModel):
     step_id: Optional[str] = None
 
 
+class DetectorReadinessRequest(BaseModel):
+    # When each data source STARTED landing in the tenant -- not when this
+    # campaign ran. Operator-declared, because the alternative is querying the
+    # tenant, and this endpoint deliberately makes no outbound call. An omitted
+    # source yields `unknown`, never `armed`.
+    source_onboarded_at: dict[str, str] = Field(default_factory=dict)
+
+
 class AbortResponse(BaseModel):
     run_id: str
     campaign_id: str
@@ -196,6 +204,10 @@ async def data_streams(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     each emitter's most recent delivery verdict derived from EAL run history.
     Gaps are rendered as gaps — an unlisted gap reads as no gap.
     """
+    from eal_simulator.analytics_alerts import (  # noqa: PLC0415
+        ALERT_PROFILES,
+        detector_bindings,
+    )
     from eal_simulator.analytics_catalogue import (  # noqa: PLC0415
         coverage_report,
         family_manifests,
@@ -232,12 +244,30 @@ async def data_streams(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     for m in emitters:
         m["latest_delivery"] = latest_by_plugin.get(m["name"])
 
+    # Which vendor alert each declared detector claims. An emitter writing to a
+    # source's dataset is NOT the same as an emitter targeting a documented
+    # detector, and the two were previously indistinguishable here. Undocumented
+    # claims are listed, never omitted -- an unlisted gap reads as no gap.
+    detectors = detector_bindings(reg)
+    documented = [d for d in detectors if d["documented"]]
+
     return {
         "catalogue_source": coverage["catalogue_source"],
         "catalogue_version": coverage["catalogue_version"],
         "counts": coverage["counts"],
         "sources": coverage["sources"],
         "emitters": emitters,
+        "detectors": detectors,
+        "detector_counts": {
+            "total": len(detectors),
+            "documented": len(documented),
+            "undocumented": len(detectors) - len(documented),
+            "alerts_transcribed": len(ALERT_PROFILES),
+            "emitters_declaring_none": sum(
+                1 for e in emitters
+                if not any(d["emitter"] == e["name"] for d in detectors)
+            ),
+        },
         "authored_not_proven": coverage["authored_not_proven"],
     }
 
@@ -569,6 +599,87 @@ async def preflight_campaign_collectors(
         "collectors_probed": len(probes),
         "collectors_delivering": len(delivered),
         "ready": len(delivered) == len(probes),
+    }
+
+
+@router.post("/campaigns/{campaign_id}/detector-readiness")
+async def campaign_detector_readiness(
+    campaign_id: str,
+    body: DetectorReadinessRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Can this campaign's analytics detectors fire at all?
+
+    The vendor publishes each alert's Activation / Training / Test / Dedup
+    periods and its Required Data, but no threshold, no field name and no
+    predicate. So the one thing that can be checked before a POV is whether the
+    detector is **armed**: a 30-day-training alert aimed at a dataset the tenant
+    began carrying last week cannot fire, and that silence otherwise reads in a
+    POV report as "Cortex missed it".
+
+    Makes **zero outbound calls** -- transcribed vendor preconditions against
+    the operator's own declaration. ``armed`` is a precondition, never evidence;
+    ``tenant_verified`` is 0.
+    """
+    from eal_simulator.analytics_alerts import readiness_report  # noqa: PLC0415
+    from eal_simulator.analytics_catalogue import (  # noqa: PLC0415
+        UnknownDataSourceError,
+        get_source,
+    )
+
+    campaign = await _load_campaign(campaign_id, db)
+
+    declared: dict[str, datetime] = {}
+    for key, raw in body.source_onboarded_at.items():
+        try:
+            get_source(key)
+        except UnknownDataSourceError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "Unknown data source",
+                "code": "UNKNOWN_DATA_SOURCE",
+                "detail": str(exc),
+            }) from exc
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "Unparseable onboarding timestamp",
+                "code": "ONBOARDING_TIMESTAMP_INVALID",
+                "detail": f"source '{key}': {raw!r} is not an ISO-8601 datetime",
+            }) from exc
+        if parsed.tzinfo is None:
+            raise HTTPException(status_code=422, detail={
+                "error": "Naive onboarding timestamp",
+                "code": "ONBOARDING_TIMESTAMP_NAIVE",
+                "detail": (
+                    f"source '{key}': {raw!r} carries no timezone. Assuming UTC "
+                    f"would shift the readiness gate by the operator's own UTC "
+                    f"offset and answer wrongly with no error anywhere."
+                ),
+            })
+        declared[key] = parsed
+
+    plugins = {step.plugin for step in campaign.steps}
+    report = readiness_report(
+        _get_executor().registry, plugins=plugins, onboarded_at=declared,
+    )
+
+    if report["counts"]["total"] == 0:
+        raise HTTPException(status_code=422, detail={
+            "error": "No analytics detector to evaluate",
+            "code": "NO_ANALYTICS_DETECTOR",
+            "detail": (
+                f"campaign '{campaign_id}' has no step whose plugin declares an "
+                f"analytics detector; readiness is a property of the Analytics "
+                f"engine and does not apply to live-network EAL plugins"
+            ),
+        })
+
+    return {
+        "campaign_id": campaign.campaign_id,
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        "sources_declared": sorted(declared),
+        **report,
     }
 
 

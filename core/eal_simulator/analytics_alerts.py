@@ -515,3 +515,76 @@ def detector_bindings(registry: Any) -> list[dict[str, Any]]:
 def validate_detector_bindings(registry: Any) -> None:
     """Raise if any detector in ``registry`` is unbound or unsatisfiable."""
     detector_bindings(registry)
+
+
+def readiness_report(
+    registry: Any,
+    *,
+    plugins: Optional[set[str]] = None,
+    onboarded_at: Optional[dict[str, datetime]] = None,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """Every detector's readiness, optionally scoped to one campaign's plugins.
+
+    Makes **zero outbound calls**: it reads transcribed vendor preconditions
+    against the operator's own declaration of when each data source began
+    landing in the tenant. It never asks the tenant anything, and ``armed``
+    therefore says the preconditions are met — never that the detector has been
+    observed firing. ``tenant_verified`` is 0 and stays 0.
+
+    ``ready`` is true only when EVERY detector is ``armed``. An undocumented
+    claim can never be armed, so a campaign carrying one is never ready: that
+    detector's silence would have no documented explanation, which is precisely
+    the reading this gate exists to prevent.
+    """
+    rows = detector_bindings(registry)
+    if plugins is not None:
+        rows = [r for r in rows if r["emitter"] in plugins]
+    declared = onboarded_at or {}
+
+    counts = {"total": 0, "armed": 0, "not_armed": 0, "unknown": 0, "undocumented": 0}
+    out: list[dict[str, Any]] = []
+
+    for row in rows:
+        counts["total"] += 1
+        if not row["documented"]:
+            counts["undocumented"] += 1
+            readiness: dict[str, Any] = {
+                "state": "undocumented",
+                "armed": False,
+                "code": "DETECTOR_UNDOCUMENTED",
+                "days_of_data": None,
+                "days_remaining": None,
+                "gate_basis": GATE_BASIS,
+                "detail": (
+                    f"No documented vendor analytics alert backs "
+                    f"{row['alert']!r}: {row['undocumented_reason']} Readiness "
+                    f"cannot be evaluated, so silence from this claim has no "
+                    f"documented explanation."
+                ),
+            }
+        else:
+            profile = get_alert(row["alert_ref"])
+            verdict = readiness_for(
+                profile, row["data_source"], declared.get(row["data_source"]), now=now,
+            )
+            readiness = verdict.to_dict()
+            counts[verdict.state] += 1
+        out.append({**row, "readiness": readiness})
+
+    ready = counts["total"] > 0 and counts["armed"] == counts["total"]
+    return {
+        "gate_basis": GATE_BASIS,
+        "tenant_verified": 0,
+        "alerts_transcribed": len(ALERT_PROFILES),
+        "detectors": out,
+        "counts": counts,
+        "ready": ready,
+        "banner": (
+            f"{counts['armed']} of {counts['total']} detectors armed "
+            f"({counts['not_armed']} not armed, {counts['unknown']} unknown, "
+            f"{counts['undocumented']} undocumented); tenant-verified is 0. "
+            f"ARMED means the alert's documented preconditions are met -- it is "
+            f"NOT evidence that the detector has ever been observed firing."
+        ),
+    }
