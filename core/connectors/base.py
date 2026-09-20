@@ -56,6 +56,13 @@ class ObservedAlert:
     techniques: list[str] = field(default_factory=list)  # MITRE technique ids
     host: Optional[str] = None                   # hostname/endpoint, if known
     detection_id: Optional[str] = None           # source rule/BIOC id, if known
+    #: The tenant's own statement of WHICH engine raised the alert ("XDR BIOC",
+    #: "XDR Analytics BIOC", "Correlation", "XDR IOC", "XDR Agent", ...). The
+    #: matcher maps this and ``Result.signal_type`` onto one family vocabulary
+    #: so a BIOC firing cannot satisfy a Correlation expectation. None when the
+    #: source did not say — an unknown source is unconstrained, never wrong.
+    alert_source: Optional[str] = None
+    category: Optional[str] = None               # tenant alert category, if any
     raw: dict[str, Any] = field(default_factory=dict)    # untouched source record
 
     def to_dict(self) -> dict[str, Any]:
@@ -68,6 +75,8 @@ class ObservedAlert:
             "techniques": list(self.techniques),
             "host": self.host,
             "detection_id": self.detection_id,
+            "alert_source": self.alert_source,
+            "category": self.category,
         }
 
     @classmethod
@@ -104,7 +113,10 @@ class ObservedAlert:
             severity=_str_or_none(d.get("severity")),
             techniques=[str(t) for t in techs if t],
             host=_str_or_none(d.get("host") or d.get("hostname") or d.get("endpoint")),
-            detection_id=_str_or_none(d.get("detection_id") or d.get("rule_id")),
+            detection_id=_str_or_none(d.get("detection_id") or d.get("rule_id")
+                                      or d.get("matching_service_rule_id")),
+            alert_source=_str_or_none(d.get("alert_source") or d.get("alert_type")),
+            category=_str_or_none(d.get("category")),
             raw=d if isinstance(d, dict) else {},
         )
 
