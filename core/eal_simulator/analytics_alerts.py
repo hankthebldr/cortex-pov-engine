@@ -418,3 +418,100 @@ def readiness_for(
         ),
         **common,
     )
+
+
+# ---------------------------------------------------------------------------
+# The emitter -> alert binding.
+# ---------------------------------------------------------------------------
+
+
+def _emitter_meta(cls: Any) -> Optional[tuple[str, list[str], list[dict[str, Any]]]]:
+    """``(name, data_sources, detectors)`` for a family member, else ``None``."""
+    meta = getattr(cls, "Meta", None)
+    if meta is None:
+        return None
+    sources = list(getattr(meta, "data_sources", []) or [])
+    partial = list(getattr(meta, "data_sources_partial", []) or [])
+    if not sources and not partial:
+        return None
+    detectors = list(getattr(meta, "detectors", []) or [])
+    return getattr(meta, "name", cls.__name__), sources + partial, detectors
+
+
+def detector_bindings(registry: Any) -> list[dict[str, Any]]:
+    """Every declared detector, joined to the vendor alert it claims.
+
+    A detector must declare **exactly one** of ``alert_ref`` (the vendor's own
+    slug) or ``undocumented_reason`` (prose saying why no documented analytics
+    alert backs this claim). Declaring neither raises; declaring both raises.
+    This mirrors the payload shelf's ``TA-13``/``TA-14`` for the same reason: an
+    emitter that claims a detector nobody can point at is a coverage claim with
+    nothing behind it, and a POV report is where that surfaces.
+
+    Undocumented claims are RETURNED, not dropped. An unlisted gap reads as no
+    gap.
+    """
+    rows: list[dict[str, Any]] = []
+    for cls in registry:
+        meta = _emitter_meta(cls)
+        if meta is None:
+            continue
+        emitter, sources, detectors = meta
+        for det in detectors:
+            our_name = det.get("alert")
+            alert_ref = det.get("alert_ref")
+            reason = det.get("undocumented_reason")
+
+            if bool(alert_ref) == bool(reason):
+                raise ValueError(
+                    f"detector {our_name!r} on emitter '{emitter}' must declare "
+                    f"exactly one of 'alert_ref' or 'undocumented_reason' "
+                    f"(got alert_ref={alert_ref!r}, "
+                    f"undocumented_reason={reason!r}). A detector naming neither "
+                    f"is an unbacked coverage claim; naming both hides which one "
+                    f"is true."
+                )
+
+            if reason:
+                rows.append({
+                    "emitter": emitter,
+                    "alert": our_name,
+                    "alert_ref": None,
+                    "documented": False,
+                    "undocumented_reason": reason,
+                    "data_source": sources[0] if sources else None,
+                    "data_sources": list(sources),
+                    "profile": None,
+                    "dataset": det.get("dataset"),
+                    "negative_control": det.get("negative_control"),
+                })
+                continue
+
+            profile = get_alert(alert_ref)  # raises UnknownAlertError
+            feeding = [s for s in sources if s in profile.required_data]
+            if not feeding:
+                raise ValueError(
+                    f"emitter '{emitter}' binds alert '{alert_ref}' but none of "
+                    f"its data sources {sources} is in that alert's documented "
+                    f"Required Data {list(profile.required_data)}. This emitter "
+                    f"can never fire this alert -- the binding is unsatisfiable "
+                    f"by construction, not merely unproven."
+                )
+            rows.append({
+                "emitter": emitter,
+                "alert": our_name,
+                "alert_ref": alert_ref,
+                "documented": True,
+                "undocumented_reason": None,
+                "data_source": feeding[0],
+                "data_sources": feeding,
+                "profile": profile.to_dict(),
+                "dataset": det.get("dataset"),
+                "negative_control": det.get("negative_control"),
+            })
+    return rows
+
+
+def validate_detector_bindings(registry: Any) -> None:
+    """Raise if any detector in ``registry`` is unbound or unsatisfiable."""
+    detector_bindings(registry)

@@ -139,3 +139,104 @@ class TestReadiness:
                 datetime(2026, 8, 1, 0, 0),  # naive
                 now=UTC_NOW,
             )
+
+
+# ---------------------------------------------------------------------------
+# The emitter -> alert binding.
+#
+# Our shipped detector names were invented ("Port scan detected"); the vendor's
+# are not ("Port Scan"). Nothing joined them, so a detector could name an alert
+# the vendor does not document for its data source and no check would notice.
+# Mirrors the payload shelf's TA-13/TA-14: a detector must declare EXACTLY ONE
+# of alert_ref or undocumented_reason. Declaring neither is a reject, not a
+# warning -- a boot warning is how 48 adapter packs came to share one
+# byte-identical non-explanation.
+# ---------------------------------------------------------------------------
+
+from eal_simulator.analytics_alerts import (  # noqa: E402
+    detector_bindings,
+    validate_detector_bindings,
+)
+from eal_simulator import get_default_registry  # noqa: E402
+
+
+def _emitter(name: str, sources: list[str], detectors: list[dict]):
+    """A minimal stand-in carrying only the Meta the validator reads."""
+
+    class _E:
+        class Meta:
+            pass
+
+    _E.Meta.name = name
+    _E.Meta.data_sources = sources
+    _E.Meta.detectors = detectors
+    _E.__name__ = name
+    return _E
+
+
+class TestDetectorBinding:
+    def test_detector_declaring_neither_alert_ref_nor_reason_raises(self):
+        reg = [_emitter("e", ["third_party_firewalls"], [{"alert": "Port scan detected"}])]
+        with pytest.raises(ValueError) as exc:
+            validate_detector_bindings(reg)
+        assert "Port scan detected" in str(exc.value)
+
+    def test_detector_declaring_both_raises(self):
+        reg = [_emitter("e", ["third_party_firewalls"], [
+            {"alert": "x", "alert_ref": "port-scan", "undocumented_reason": "also this"},
+        ])]
+        with pytest.raises(ValueError) as exc:
+            validate_detector_bindings(reg)
+        assert "exactly one" in str(exc.value).lower()
+
+    def test_unknown_alert_ref_raises(self):
+        reg = [_emitter("e", ["third_party_firewalls"], [
+            {"alert": "x", "alert_ref": "port-scan-detected"},
+        ])]
+        with pytest.raises(UnknownAlertError):
+            validate_detector_bindings(reg)
+
+    def test_emitter_source_outside_the_alerts_required_data_raises(self):
+        # An Okta emitter cannot fire Port Scan. This binding is unsatisfiable
+        # by construction, not merely unproven.
+        reg = [_emitter("e", ["okta"], [{"alert": "x", "alert_ref": "port-scan"}])]
+        with pytest.raises(ValueError) as exc:
+            validate_detector_bindings(reg)
+        assert "okta" in str(exc.value)
+
+    def test_undocumented_claim_is_allowed_but_surfaced_not_hidden(self):
+        reg = [_emitter("e", ["duo"], [
+            {"alert": "MFA push-bombing / fatigue",
+             "undocumented_reason": "no documented Duo analytics alert for MFA fatigue"},
+        ])]
+        validate_detector_bindings(reg)  # allowed
+        rows = detector_bindings(reg)
+        assert len(rows) == 1
+        assert rows[0]["documented"] is False
+        assert rows[0]["alert_ref"] is None
+        assert "MFA fatigue" in rows[0]["undocumented_reason"]
+
+    def test_documented_binding_carries_the_profile(self):
+        reg = [_emitter("e", ["third_party_firewalls"], [
+            {"alert": "Port scan detected", "alert_ref": "port-scan"},
+        ])]
+        rows = detector_bindings(reg)
+        assert rows[0]["documented"] is True
+        assert rows[0]["profile"]["name"] == "Port Scan"
+        assert rows[0]["profile"]["gate_basis"] == "inferred:max(activation,training)"
+        # The source the binding resolved through, for the readiness join.
+        assert rows[0]["data_source"] == "third_party_firewalls"
+
+
+class TestShippedCorpus:
+    def test_every_shipped_detector_binds_or_explains_itself(self):
+        # The real corpus must satisfy the same rule it enforces.
+        validate_detector_bindings(get_default_registry())
+
+    def test_shipped_undocumented_claims_are_counted_not_absent(self):
+        rows = detector_bindings(get_default_registry())
+        undocumented = [r for r in rows if not r["documented"]]
+        # An unlisted gap reads as no gap: these must be visible and explained.
+        assert undocumented, "expected the known undocumented detector claims"
+        for row in undocumented:
+            assert row["undocumented_reason"]
