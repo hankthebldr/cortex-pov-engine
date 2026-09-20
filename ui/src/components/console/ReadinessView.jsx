@@ -6,6 +6,7 @@ import { HS, HS_CHIP, HS_LABEL, healthHeadline } from './readiness/healthModel.j
 import { RS, RS_CHIP, RUNG } from './readiness/connectorState.js'
 import { preflightXsiamTenant, preflightConnector } from '../../api/client.js'
 import Term from '../onboarding/Term.jsx'
+import LaunchGate from './LaunchGate.jsx'
 
 /**
  * ReadinessView — "am I ready to run this in front of a customer?", answered
@@ -60,6 +61,12 @@ export default function ReadinessView({ onNavigate = () => {} }) {
         </div>
       ) : (
         <>
+          {/* The gate LEADS this surface now. The three sections below it
+              answer "is this SimCore whole", which is a question about the
+              product; the gate answers "will THIS chain reach its target",
+              which is the question the phase is named for and the only one
+              with a launch button attached to its answer. */}
+          <LaunchGate onNavigate={onNavigate} />
           <ConnectorSection ladder={r.ladder} tenants={r.tenants} onNavigate={onNavigate} />
           <ComponentSection model={r.health} onNavigate={onNavigate} />
           <GapSection model={r.health} ladder={r.ladder} />
@@ -76,7 +83,7 @@ function ViewHead({ model = null, ladder = null, onRefresh, refreshing = false, 
   return (
     <header className="view-head">
       <div>
-        <h1>Readiness</h1>
+        <h1>Launch Gate</h1>
         <div className="view-head__meta">
           <span className={HS_CHIP[status] || 'chip'} data-testid="readiness-overall">
             {HS_LABEL[status] || 'UNKNOWN'}

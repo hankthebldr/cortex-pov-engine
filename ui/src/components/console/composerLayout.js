@@ -342,3 +342,38 @@ export function stitchOverlayEdges(steps, stitchModel, { spacing = LAYOUT } = {}
   }
   return edges
 }
+
+/**
+ * Overlay stored canvas positions on a computed layout.
+ *
+ * The computed layout stays authoritative for any node the DC has never
+ * dragged, which is what makes adopting a position opt-in per node and keeps
+ * every pre-existing draft opening unchanged. Unknown keys are ignored rather
+ * than raising: a position whose step was deleted is presentation debris.
+ *
+ * Bounds are recomputed so a node dragged outside the computed extent stays
+ * reachable — without this the canvas cannot scroll to it.
+ *
+ * @param {{nodes:Array, edges:Array, bounds:{width:number,height:number}}} layout
+ * @param {Object|null} stored  `{[stepId]: {x, y}}`, or null/{} for none
+ * @returns {{nodes:Array, edges:Array, bounds:{width:number,height:number}}}
+ */
+export function mergeStoredPositions(layout, stored) {
+  if (!stored || Object.keys(stored).length === 0) return layout
+
+  const nodes = layout.nodes.map((n) => {
+    const p = stored[n.id]
+    if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') return n
+    return { ...n, x: p.x, y: p.y }
+  })
+
+  const bounds = nodes.reduce(
+    (acc, n) => ({
+      width: Math.max(acc.width, n.x + (n.w || 0) + LAYOUT.padX),
+      height: Math.max(acc.height, n.y + (n.h || LAYOUT.nodeH || 0) + LAYOUT.padY),
+    }),
+    { width: layout.bounds.width, height: layout.bounds.height },
+  )
+
+  return { ...layout, nodes, bounds }
+}

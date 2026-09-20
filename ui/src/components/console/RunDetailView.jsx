@@ -2,6 +2,8 @@ import React, { useMemo } from 'react'
 import InflightView from './InflightView.jsx'
 import EvidenceView from './EvidenceView.jsx'
 import DetectionStoryline, { isRunUnproven } from '../DetectionStoryline.jsx'
+import RunTechniques from './RunTechniques.jsx'
+import RunTopology from './RunTopology.jsx'
 import CausalityGraph from '../CausalityGraph.jsx'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
@@ -49,6 +51,14 @@ export const RUN_SUBTABS = [
   { id: 'live',      label: 'Live'      },
   { id: 'evidence',  label: 'Evidence'  },
   { id: 'storyline', label: 'Storyline' },
+  // Techniques and the Storyline are the SAME run in two vocabularies. The
+  // storyline is the narrative a DC walks a room through; this is the table a
+  // customer's detection engineer audits. Collapsing them gave a page that was
+  // too narrative to audit and too tabular to follow.
+  { id: 'techniques', label: 'Techniques' },
+  // The generated lane topology: which ingestion doors this run actually
+  // touched, and where the causality crossed between them.
+  { id: 'topology', label: 'Topology' },
   { id: 'causality', label: 'Causality' },
 ]
 
@@ -108,7 +118,15 @@ export default function RunDetailView({
           {/* Masthead eyebrow: the nav group alone ("Operate", per this
               destination's registry entry), matching every other redesigned
               destination — not the destination's own name (M-4). */}
-          <div className="run-detail__eyebrow">Operate</div>
+          {/* NOT a phase eyebrow. Every other masthead names its phase,
+              because a phase is a property of the SURFACE. A run detail's
+              eyebrow has a better job: it carries the facts that differ
+              between two runs of the same workflow, so two attempts are
+              distinguishable at a glance. A generic "PHASE 5 · OBSERVE" here
+              told a DC something they already knew from the rail. */}
+          <div className="run-detail__eyebrow">
+            {descriptor.scenarioId || 'run'} · {run?.started_at || 'start unknown'}
+          </div>
           <h1 className={scenarioName ? undefined : 'mono'}>
             {scenarioName || descriptor.scenarioId || runId}
           </h1>
@@ -197,6 +215,12 @@ export default function RunDetailView({
             onOpenEvidence={() => onSubTab('evidence')}
             onError={onError}
           />
+        )}
+        {tab === 'topology' && (
+          <RunTopology runId={runId} />
+        )}
+        {tab === 'techniques' && (
+          <RunTechniques run={run} />
         )}
         {tab === 'causality' && (
           <CausalityGraph

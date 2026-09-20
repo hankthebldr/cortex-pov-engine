@@ -3,6 +3,7 @@ import useMitreCoverage from './useMitreCoverage.js'
 import StackCoverageView from './StackCoverageView.jsx'
 import CompetitiveView from './CompetitiveView.jsx'
 import { downloadLayer } from './exportNavigatorLayer.js'
+import PlaneCoverageMatrix from './PlaneCoverageMatrix.jsx'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import '../../styles/destinations/coverage.css'
 
@@ -35,7 +36,12 @@ export default function CoverageView({ onNavigate } = {}) {
   const { tenant } = useEnvironment()
   const { data, loading, error, refresh } = useMitreCoverage(tenant?.name || null)
   const [selectedTechnique, setSelectedTechnique] = useState(null)
-  const [viewMode, setViewMode] = useState('attack') // 'attack' | 'stack' | 'competitive'
+  // 'planes' is the DEFAULT and it is the redesign's own cross-tab: 16
+  // detection planes against the 6 Cortex ingestion doors, plus the analytics
+  // data-source breakdown underneath it. It leads because it answers the
+  // question a DC is actually asked ("what does this POV cover, and through
+  // what?"); the ATT&CK matrix answers a narrower one and stays a click away.
+  const [viewMode, setViewMode] = useState('planes') // 'planes' | 'attack' | 'stack' | 'competitive'
 
   // A sibling surface (the Tool Adapters destination's detail panel) can emit
   // a cortex:navigate-ttp custom event when a DC clicks a TTP-ref chip. The
@@ -63,6 +69,24 @@ export default function CoverageView({ onNavigate } = {}) {
     if (typeof onNavigate === 'function') {
       onNavigate('library', { technique: tid, scenarios: (scenarioIds || []).join(',') })
     }
+  }
+
+  if (viewMode === 'planes') {
+    return (
+      <div className="coverage">
+        <div className="view-head">
+          <div>
+            <CoverageKicker />
+            <h1>Coverage</h1>
+            <div className="view-head__meta">
+              detection planes × ingestion doors · click a cell for what carries it
+            </div>
+          </div>
+          <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
+        </div>
+        <PlaneCoverageMatrix />
+      </div>
+    )
   }
 
   if (viewMode === 'stack') {
@@ -411,6 +435,16 @@ function TechniqueDetailPanel({ technique, onClose, onFilterByTechnique }) {
 function ViewModeToggle({ viewMode, onChange }) {
   return (
     <div className="lab__segmented" role="tablist" aria-label="Coverage view mode">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={viewMode === 'planes'}
+        className={viewMode === 'planes' ? 'is-active' : ''}
+        onClick={() => onChange('planes')}
+        title="Detection planes × Cortex ingestion doors, plus analytics data sources"
+      >
+        Planes × doors
+      </button>
       <button
         type="button"
         role="tab"

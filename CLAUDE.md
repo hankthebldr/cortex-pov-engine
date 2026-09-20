@@ -217,6 +217,8 @@ Every scenario has: UC/TC alignment refs, MITRE ATT&CK mapping, execution identi
 - **`platforms`** (per-step): subset of `linux · windows · macos · container · k8s`.
 - **`platform_variants`** (per-step): `{os: command}` per-OS equivalents so a cross-platform TTP is exercised across environments (keys must be in the enum; lint warns if a key isn't also in that step's `platforms`).
 
+**Composer canvas layout (2026-09-08).** `Scenario.composer_layout` is a separate, presentation-only JSON column — `{"<step_id>": {"x": int, "y": int}}` — for the Composer's drag-and-drop node positions. Deliberately NOT part of the scenario YAML schema or `steps[]`: it is set/read only through `POST`/`PUT /api/scenarios/drafts`, never reaches the strict corpus loader, and stays NULL for every shipped scenario. Same nullable-JSON pattern as `cgo_anchor` / `stitch_context`; prod needs `ALTER TABLE scenarios ADD COLUMN composer_layout JSON`.
+
 ## UC/TC Alignment (FY27 v2.2 index)
 
 The FY27 Use-Case / Test-Case master index is the sales-motion source of truth. Its versioned snapshot lives at `docs/uc_tc_mapping/_v2.2-source/` (**49 UC · 203 UCS · 266 TC · 140 POV-SC payloads · 38 SKU**) and is loaded at boot by `core/engine/uctc_registry.py` into frozen dataclasses.

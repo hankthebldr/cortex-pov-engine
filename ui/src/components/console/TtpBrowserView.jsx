@@ -6,6 +6,7 @@ import DetectionTypeChip from './DetectionTypeChip.jsx'
 import { tokeniserFor } from './syntaxHighlight.js'
 import { runIdOf } from '../../api/ids.js'
 import '../../styles/destinations/ttps.css'
+import ComposeTabs from './ComposeTabs.jsx'
 
 // Maps a card detection-family key to the canonical detection-type chip token
 // so Correlation (the XSIAM differentiator) and XQL render with their distinct
@@ -35,7 +36,7 @@ const DETECTION_KIND_CHIP = {
  * list+rail pattern (`.design-ref/06-ttp-cards.html` /
  * `07-ttpdetail-name.html`).
  */
-export default function TtpBrowserView({ initialTtpId = null }) {
+export default function TtpBrowserView({ initialTtpId = null, onNavigate = () => {} }) {
   const [ttps, setTtps]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(null)
@@ -178,6 +179,7 @@ export default function TtpBrowserView({ initialTtpId = null }) {
 
   return (
     <div className="ttpb" data-testid="ttp-browser">
+      <ComposeTabs active="ttps" onNavigate={onNavigate} />
       <div className="view-head">
         <div>
           <h1>TTP Cards</h1>

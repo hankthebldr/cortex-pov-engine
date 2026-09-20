@@ -36,10 +36,20 @@ test.describe('app shell', () => {
     }
   })
 
-  test('UI loads and shows the Cortex header + detection-plane rail', async ({ page }) => {
+  test('UI loads and shows the POVengine header + detection-plane rail', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByText(/cortex/i).first()).toBeVisible()
-    await expect(page.getByText(/Detection Simulation Engine/i)).toBeVisible()
+    // The console rebranded to POVengine in-app, and the header lost its
+    // "Detection Simulation Engine" subtitle with it — the redesigned bar is
+    // the Cortex product mark, the POVengine wordmark and a version chip, with
+    // the ten scope/run controls that used to compete with a tagline for the
+    // same row. Asserting on the WORDMARK rather than the tagline is also more
+    // durable: the mark is an <img alt=""> (decorative, since the wordmark
+    // beside it carries the name), so there is no "cortex" text to match.
+    // `.brand__wordmark` rather than a /POV/ text match: the header carries
+    // "POV" twice — once as the wordmark and once as the evidence-collection
+    // chip's kicker — so a text regex trips Playwright's strict mode.
+    await expect(page.getByTestId('console-header')).toBeVisible()
+    await expect(page.locator('.brand__wordmark')).toHaveText(/POVengine/)
 
     // The rail lists all 11 detection planes; each plane button carries a
     // stable data-testid (the scenario grid also surfaces plane names, so a
@@ -49,15 +59,19 @@ test.describe('app shell', () => {
     }
   })
 
-  test('stepper + More menu flip the workspace without errors', async ({ page }) => {
+  test('touring every view leaves the workspace alive', async ({ page }) => {
     await page.goto('/')
-    // Redesign v2: primary workflow is a numbered stepper (Targets /
-    // Library / Launch / Live / Evidence); ATT&CK Coverage + Environments
-    // live under the "More ▾" menu. gotoView handles both.
+    // The stepper and its "More ▾" overflow are long gone; navigation is the
+    // phase-ordered rail, and three of these destinations are reachable by
+    // route rather than by a rail button (see VIEW_ROUTES). gotoView handles
+    // both, which is the reason this list did not need to change when the IA
+    // did — only how each entry is addressed.
     for (const name of ['Targets', 'Library', 'Live', 'Evidence', 'ATT&CK Coverage', 'Environments', 'Launch']) {
       await gotoView(page, name)
     }
-    // App is still alive after the full tour
-    await expect(page.getByText(/Detection Simulation Engine/i)).toBeVisible()
+    // App is still alive after the full tour: the shell chrome is the thing
+    // that survives every destination, so it is what "alive" means here.
+    await expect(page.getByTestId('console-header')).toBeVisible()
+    await expect(page.getByTestId('flow-bar')).toBeVisible()
   })
 })

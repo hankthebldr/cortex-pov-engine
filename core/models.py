@@ -87,6 +87,16 @@ class Scenario(Base):
     # per-run RESOLVED values live on Run.stitch_binding, deliberately distinct.
     stitch_context: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # ── Composer canvas layout (2026-09-08) ─────────────────────────────────
+    # Presentation-only: {"<step_id>": {"x": int, "y": int}} for the Composer
+    # canvas. Deliberately NOT inside steps[] — steps are content and are
+    # emitted into scenarios/<plane>/ YAML, which the strict loader validates;
+    # coordinates must never reach the shipped corpus. Nullable, so a draft
+    # with no dragged node stores NULL and is byte-identical to a pre-feature
+    # draft. NOTE: prod needs
+    #   ALTER TABLE scenarios ADD COLUMN composer_layout JSON
+    composer_layout: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # ── Measurement contract (v2.0 KPI block) ──────────────────────────────
     # The scenario loader validated these for several releases and then dropped
     # them, so a run could report observed/not-observed and MTTD but never
@@ -149,6 +159,7 @@ class Scenario(Base):
             "author": self.author,
             "cgo_anchor": self.cgo_anchor,
             "stitch_context": self.stitch_context,
+            "composer_layout": self.composer_layout,
             "validation_methodology": self.validation_methodology,
             "methodology_family": self.methodology_family,
             "primary_kpi": self.primary_kpi,
