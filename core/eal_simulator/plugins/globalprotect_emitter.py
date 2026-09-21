@@ -156,6 +156,7 @@ class GlobalProtectEmitter(AnalyticsLogEmitter):
         detectors = [
             {
                 "alert": "GlobalProtect brute-force authentication",
+                "alert_ref": "vpn-login-brute-force-attempt",
                 "dataset": _DATASET,
                 "key_fields": ["srcuser", "status"],
                 "predicate": (
@@ -167,6 +168,7 @@ class GlobalProtectEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "GlobalProtect impossible travel",
+                "alert_ref": "impossible-traveler-vpn",
                 "dataset": _DATASET,
                 "key_fields": ["srcuser", "public_ip_country", "status", "timestamp"],
                 "predicate": (
@@ -178,6 +180,7 @@ class GlobalProtectEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "GlobalProtect login from an anomalous country",
+                "alert_ref": "a-user-connected-to-a-vpn-from-a-new-country",
                 "dataset": _DATASET,
                 "key_fields": ["srcuser", "public_ip_country", "status"],
                 "predicate": "status=success from an anomalous public_ip_country",
