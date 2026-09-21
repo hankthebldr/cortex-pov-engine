@@ -46,7 +46,7 @@ sprint-2 decision once one real tenant has answered.
 |---|---|---|
 | 2a | `apply_verdicts` passes `matched / seeded` as `measured_value` into `score_run` for scenarios whose `primary_kpi` is Detection Accuracy. Zero extra tenant calls. | machine-PASS-reachable DET/HNT rows 6 → 14 |
 | 2b | `get_incidents` read on the `xsiam` connector, a `CorrelationRate` measured value (`incidents / alerts` collapse ratio) for the 33 correlation/stitch/causality scenarios and the five `UC-IR` rows on the `incidents` dataset. | +18 scoreable DET/HNT rows behind it |
-| 2c | Cards carry the tenant-facing rule name per detection object so a step with N expected detections needs N distinct alerts, not one alert N times. | closes the residual of audit item 4 |
+| 2c | Cards carry the tenant-facing rule name per detection object so a step with N expected detections needs N distinct alerts, not one alert N times. **Shipped as mechanism:** `Result.detection_name` is seeded from the card's existing `name`; whether it matches on a real tenant is card authoring, visible per match in `matched_on`. | closes the residual of audit item 4 |
 | 2d | Alerts endpoint path becomes a credential config field with the v1 default; the shape probe records which path answered. | closes audit item 5 |
 
 ## Sprint 3 — tell the truth about it
@@ -71,5 +71,5 @@ sprint-2 decision once one real tenant has answered.
 | sprint | state | shas |
 |---|---|---|
 | 1 | shipped (branch `claude/dazzling-ritchie-38r2qr`, awaiting Gate A) | `51deca2` 1a+1c · `e31f4c1` 1b · `8e57eb6` 1d |
-| 2 | not started | — |
+| 2 | shipped (same branch, stacked on PR #129 pending a split decision) | `30d0808` 2b/2c/2d substrate · `f08980a` 2a/2b wiring |
 | 3 | not started | — |

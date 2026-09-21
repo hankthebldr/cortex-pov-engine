@@ -42,6 +42,42 @@ path to Cortex; `tenant-verified` is still 0.**
   used `re.search`; `findall` now keeps them all. `matching_service_rule_id`
   (the field Cortex documents) joins the rule-id keys.
 
+### Added — sprint 2: the loop can now measure two more KPIs (still `tenant-verified: 0`)
+
+- **Detection Accuracy is measured** (`core/connectors/measures.py`). The
+  reconcile loop always computed matched and seeded and threw the ratio
+  away; `reconcile_run` now hands the scorer a pull context (host scope,
+  truncation, matched alerts' incident ids) and `score_run` receives
+  `observed / seeded` as the measured value for the 47 scenarios whose
+  primary KPI is Detection Accuracy. Machine-PASS-reachable DET/HNT rows go
+  from 6 to 14 with zero extra tenant calls.
+- **Correlation rate is measured** for the 20 scenarios whose KPI is
+  Cross-Source Correlation Rate / Stitch Completeness / Correlation
+  Coverage: the collapse ratio `(alerts − incidents) / (alerts − 1)`, from
+  the `incident_id` the tenant stamps on alert objects when it does, else
+  from one host-scoped `get_incidents` read (`XsiamConnector.pull_incidents`,
+  same paging and truncation accounting). The basis is recorded
+  (`alert_incident_ids` | `host_incidents`).
+- **One honesty guard on both.** An **unscoped** pull may never produce a
+  PASS (any endpoint's alert could have been credited; a FAIL stands since
+  extra alerts only raise the number). A **truncated** pull may never
+  produce a FAIL (the value is a floor; a floor that clears the bar passes).
+  **Zero matched** stays `pending` — not landed yet is not missed. Every
+  withheld value carries its reason in `tc_verdict_detail.measurement`, and
+  a re-score with no new evidence keeps the last measured value rather than
+  flipping a pass back to pending.
+- **Exact rule-name key.** `Result.detection_name` is seeded from the card's
+  detection name (new nullable column, migrated on boot) and the matcher
+  consumes an alert taken on that key, so a step expecting N distinct
+  detections needs N alerts instead of one alert N times. Whether the key
+  fires on a real tenant depends on card names matching the tenant's alert
+  names — authored content, reported per match in `matched_on`.
+- **API paths are credential config.** `alerts_path` / `incidents_path`
+  (v1 defaults) so a tenant on the newer alerts endpoint is a setting, not a
+  patch; the path that answered is on `PullResult.detail.path` and the
+  preflight `alert_shape` rung, which also reports which correlation basis
+  the tenant will get.
+
 ### Added
 
 - **Preflight `alert_shape` rung** on `POST /api/connectors/xsiam/preflight`:

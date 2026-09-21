@@ -84,4 +84,28 @@ the 8 platform-ops P1 DET rows); the UI Coverage view until sprint 3.
   session, so this note lives in DEFERRED.md until replayed.
 - next: run preflight against the first real tenant and read the
   `alert_shape` rung before any POV → [WI:xsiam-readback-trust] in Things
+
+### 2026-09-21 · claude-code · Fable 5.1
+- state: cortex-pov-engine@f08980a · branch claude/dazzling-ritchie-38r2qr ·
+  PR #129 open against dev (CI green on c5e5e4c) · sprint 2 shipped on the
+  same branch, push pending full-suite green
+- did: sprint 2. `30d0808` measures.py (accuracy, correlation rate, the
+  honesty guard), `pull_incidents` via one shared `_harvest`, `incident_id`
+  off alerts, `alerts_path`/`incidents_path` config, `Result.detection_name`
+  + exact rule-name key with consumption. `f08980a` reconcile_run builds the
+  pull context, optional host-scoped incidents read for correlation
+  scenarios, `score_run_for_run(pull_context=…)`, re-score keeps the last
+  measurement, manual /observations scores under `basis: manual`. 23 new
+  tests (each observed red first); 361 connector/API tests green.
+- decided: D6 — unscoped withholds PASS, truncated withholds FAIL, zero
+  matched stays pending (the sweep's attempt cap is the only "gave up").
+  D7 — correlation basis order: alert-carried incident ids, then one
+  host-scoped get_incidents read, never unscoped. D8 — only alerts taken
+  on the exact rule-name key are consumed; technique/name matches are not,
+  or every scenario without card names would break.
+- open: PR #129 now carries sprint 1 + 2 (harness pins this branch);
+  Henry to say split or keep. vault-os still not attached from cloud
+  sessions — this ledger is still in DEFERRED.md.
+- next: sprint 3a — make `--emit-xlsx` walk assertions/ (28, not 6) →
+  [WI:xsiam-readback-trust] in Things
 ```
