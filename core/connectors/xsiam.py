@@ -40,6 +40,7 @@ from .base import (
     ConnectorConfig,
     ConnectorError,
     ObservedAlert,
+    ObservedIncident,
     PullResult,
     coerce_utc,
     register_connector,
@@ -65,8 +66,13 @@ class XsiamConnector(Connector):
     kind = "xsiam"
     description = "Cortex XSIAM / XDR — pull alerts to auto-validate detections (read-only)."
 
-    # Public API path for the multi-event alert query.
+    # Default Public API paths. Both are overridable per credential
+    # (``config["alerts_path"]`` / ``config["incidents_path"]``) because the
+    # vendor lists the v1 alerts call as legacy; a tenant on the newer path is
+    # a setting, not a patch. Whichever path answered is recorded in
+    # ``PullResult.detail["path"]`` and the preflight ``alert_shape`` rung.
     _ALERTS_PATH = "/public_api/v1/alerts/get_alerts_multi_events"
+    _INCIDENTS_PATH = "/public_api/v1/incidents/get_incidents"
 
     #: The tenant's hard page ceiling (search_to - search_from <= 100).
     _PAGE_SIZE_MAX = 100
@@ -81,6 +87,39 @@ class XsiamConnector(Connector):
         since: datetime,
         until: datetime,
         filters: Optional[dict[str, Any]] = None,
+    ) -> PullResult:
+        """Alerts in ``[since, until]``, paged, with truncation accounted for."""
+        conf = cfg.config or {}
+        path = str(conf.get("alerts_path") or self._ALERTS_PATH)
+        return self._harvest(cfg, path, since=since, until=until, filters=filters or {},
+                             list_key="alerts", normalize=self._normalize_alert,
+                             kind="alerts")
+
+    def pull_incidents(
+        self,
+        cfg: ConnectorConfig,
+        *,
+        since: datetime,
+        until: datetime,
+        filters: Optional[dict[str, Any]] = None,
+    ) -> PullResult:
+        """Incidents created in ``[since, until]``, on ``PullResult.incidents``.
+
+        The fallback basis for the correlation rate when the tenant does not
+        stamp ``incident_id`` on alert objects. Same paging, same truncation
+        accounting, same error vocabulary as the alert pull.
+        """
+        conf = cfg.config or {}
+        path = str(conf.get("incidents_path") or self._INCIDENTS_PATH)
+        return self._harvest(cfg, path, since=since, until=until, filters=filters or {},
+                             list_key="incidents", normalize=self._normalize_incident,
+                             kind="incidents")
+
+    # ── the one paged harvest both reads share ─────────────────────────
+
+    def _harvest(
+        self, cfg: ConnectorConfig, path: str, *, since: datetime, until: datetime,
+        filters: dict[str, Any], list_key: str, normalize: Any, kind: str,
     ) -> PullResult:
         conf = cfg.config or {}
         # `base_url` first so ONE registration (the xsiam_tenant spelling) can
@@ -105,7 +144,7 @@ class XsiamConnector(Connector):
             return PullResult(ok=False, connector=self.kind,
                               code=codes.XSIAM_CONFIG_ERROR, error=str(e))
 
-        url = base + self._ALERTS_PATH
+        url = base + path
         mode = str(conf.get("auth_mode", "standard")).lower()
         # One signer, shared with the tenant client. Two byte-identical copies of
         # a signature scheme is two edits when PANW changes it, and one of them
@@ -114,7 +153,6 @@ class XsiamConnector(Connector):
                    if mode == "advanced"
                    else standard_auth_headers(cfg.secret, str(api_key_id)))
 
-        filters = filters or {}
         # An explicit ``limit`` (the preflight probes with 1) is a single page
         # and never a harvest; otherwise page up to ``max_pages`` x 100.
         explicit_limit = "limit" in filters
@@ -123,7 +161,7 @@ class XsiamConnector(Connector):
         max_pages = 1 if explicit_limit else max(
             1, int(filters.get("max_pages", conf.get("max_pages", self._DEFAULT_MAX_PAGES))))
 
-        observations: list[ObservedAlert] = []
+        items: list[Any] = []
         dropped = 0
         pages = 0
         total_count: Optional[int] = None
@@ -136,7 +174,7 @@ class XsiamConnector(Connector):
             try:
                 status, text = self._fetch("POST", url, headers, body, 30.0)
             except Exception as e:  # noqa: BLE001 — offline-safe boundary
-                logger.warning("xsiam pull transport error: %s", e)
+                logger.warning("xsiam %s pull transport error: %s", kind, e)
                 return PullResult(ok=False, connector=self.kind,
                                   code=codes.XSIAM_TRANSPORT_ERROR, error=str(e))
 
@@ -148,39 +186,41 @@ class XsiamConnector(Connector):
                 # the server log; ship only a status and a digest the operator
                 # can correlate with it. A failure on page N>1 fails the WHOLE
                 # pull: page 1 alone would read as "the tenant held this many".
-                logger.warning("xsiam pull HTTP %s from %s (page %d); body=%s",
-                               status, _host_only(url), pages + 1, text[:500])
+                logger.warning("xsiam %s pull HTTP %s from %s (page %d); body=%s",
+                               kind, status, _host_only(url), pages + 1, text[:500])
                 return PullResult(
                     ok=False, connector=self.kind, code=codes.code_for_status(status),
                     error=f"tenant returned HTTP {status}" + (
                         f" on page {pages + 1}" if pages else ""),
-                    detail={"status": status, "page": pages + 1,
+                    detail={"status": status, "page": pages + 1, "path": path,
                             "body_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]},
                 )
 
             try:
-                page_obs, page_dropped, meta = self._parse_alerts(text)
+                page_items, page_dropped, meta = self._parse_page(text, list_key, normalize)
             except Exception as e:  # noqa: BLE001
                 return PullResult(ok=False, connector=self.kind,
                                   code=codes.XSIAM_PARSE_ERROR,
-                                  error=f"failed to parse tenant response: {e}")
+                                  error=f"failed to parse tenant response: {e}",
+                                  detail={"path": path})
 
             pages += 1
-            observations.extend(page_obs)
+            items.extend(page_items)
             dropped += page_dropped
             if meta.get("total_count") is not None:
                 total_count = meta["total_count"]
             total_capped = total_capped or bool(meta.get("total_count_capped"))
-            page_rows = meta.get("result_count") or (len(page_obs) + page_dropped)
+            page_rows = meta.get("result_count") or (len(page_items) + page_dropped)
             search_from += page_rows
             if page_rows < page_size:
                 break                                   # short page: the end
             if total_count is not None and not total_capped and search_from >= total_count:
                 break                                   # everything accounted for
 
-        returned = len(observations) + dropped
+        returned = len(items) + dropped
         detail: dict[str, Any] = {
             "queried_host": _host_only(url),
+            "path": path,
             "window": [since.isoformat(), until.isoformat()],
             "pages": pages,
             "page_size": page_size,
@@ -202,15 +242,18 @@ class XsiamConnector(Connector):
                 "pages": pages,
                 "max_pages": max_pages,
                 "consequence": (
-                    "the tenant holds more alerts in this window than were fetched, "
+                    f"the tenant holds more {kind} in this window than were fetched, "
                     "so any coverage/MTTD derived from this pull is a floor, not a "
-                    "measurement — alerts sorted after the cut were never seen"),
+                    "measurement — rows sorted after the cut were never seen"),
             }
         if dropped:
-            # Visible, not absorbed: a dropped alert is one the DC's coverage
+            # Visible, not absorbed: a dropped row is one the DC's coverage
             # number will not include, and they must be told why.
             detail["unparseable_timestamps"] = dropped
-        return PullResult(ok=True, connector=self.kind, observations=observations,
+        if kind == "incidents":
+            return PullResult(ok=True, connector=self.kind, incidents=items,
+                              dropped=dropped, detail=detail)
+        return PullResult(ok=True, connector=self.kind, observations=items,
                           dropped=dropped, detail=detail)
 
     # ── request / response shaping ──────────────────────────────────────
@@ -241,7 +284,12 @@ class XsiamConnector(Connector):
         return {"request_data": request_data}
 
     def _parse_alerts(self, text: str) -> "tuple[list[ObservedAlert], int, dict[str, Any]]":
-        """Return ``(alerts, dropped, meta)``.
+        """Alert-page parser; see :meth:`_parse_page`."""
+        return self._parse_page(text, "alerts", self._normalize_alert)
+
+    def _parse_page(self, text: str, list_key: str, normalize: Any,
+                    ) -> "tuple[list[Any], int, dict[str, Any]]":
+        """Return ``(rows, dropped, meta)`` for one page of ``list_key``.
 
         ``dropped`` counts unreadable timestamps; ``meta`` carries the tenant's
         own ``total_count`` / ``result_count`` so the caller can tell a complete
@@ -269,23 +317,23 @@ class XsiamConnector(Connector):
                 )
         reply = doc.get("reply", doc)
         if isinstance(reply, dict):
-            alerts = reply.get("alerts", reply.get("data", []))
+            alerts = reply.get(list_key, reply.get("data", []))
         else:
             alerts = []
         if not isinstance(alerts, list):
             # A dict where a list belongs means the envelope is not what we
             # think it is. Guessing is how `len({"data": []}) == 1` happened.
             raise ConnectorError(
-                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a list of alerts, got "
-                f"{type(alerts).__name__}. Refusing to infer an alert count from "
+                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a list of {list_key}, got "
+                f"{type(alerts).__name__}. Refusing to infer a count from "
                 f"an envelope this connector does not recognise."
             )
-        out: list[ObservedAlert] = []
+        out: list[Any] = []
         dropped = 0
         for a in alerts:
             if not isinstance(a, dict):
                 continue
-            alert = self._normalize_alert(a)
+            alert = normalize(a)
             if alert is None:
                 dropped += 1
                 continue
@@ -332,7 +380,40 @@ class XsiamConnector(Connector):
                             or a.get("bioc_id") or a.get("rule_id")),
             alert_source=_s(a.get("source") or a.get("alert_source")),
             category=_s(a.get("category")),
+            incident_id=_s(a.get("incident_id") or a.get("case_id")),
             raw=a,
+        )
+
+    def _normalize_incident(self, i: dict[str, Any]) -> Optional[ObservedIncident]:
+        """One ``get_incidents`` row → :class:`ObservedIncident`.
+
+        ``hosts`` arrive as ``"web-01:aef3..."`` (hostname, colon, endpoint id);
+        only the hostname is kept so host scoping compares like with like.
+        """
+        iid = _s(i.get("incident_id") or i.get("case_id") or i.get("id"))
+        if not iid:
+            return None
+        hosts_raw = i.get("hosts")
+        hosts: list[str] = []
+        if isinstance(hosts_raw, list):
+            for h in hosts_raw:
+                name = str(h).split(":", 1)[0].strip()
+                if name:
+                    hosts.append(name)
+        count = i.get("alert_count")
+        try:
+            alert_count = int(count) if count is not None and not isinstance(count, bool) else 0
+        except (TypeError, ValueError):
+            alert_count = 0
+        return ObservedIncident(
+            incident_id=iid,
+            created_at=coerce_utc(i.get("creation_time") or i.get("detection_time")),
+            name=_s(i.get("incident_name") or i.get("description")),
+            severity=_s(i.get("severity")),
+            status=_s(i.get("status")),
+            alert_count=alert_count,
+            hosts=hosts,
+            raw=i,
         )
 
     @staticmethod

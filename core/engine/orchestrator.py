@@ -884,6 +884,7 @@ class Orchestrator:
                     result.detection_kind = card.kind
                     result.detection_logic = card.logic
                     result.detection_severity = card.severity
+                    result.detection_name = card.name
                     # Surface the card's MITRE technique back into the
                     # Result row when it is more specific than the step's.
                     if not result.mitre_technique and card.mitre_techniques:

@@ -196,6 +196,7 @@ def _migrate_results_columns(connection) -> None:
         ("detection_logic", "TEXT"),
         ("detection_severity", "VARCHAR"),
         ("mitre_technique", "VARCHAR"),
+        ("detection_name", "VARCHAR"),       # sprint 2c — exact rule-name key
         # Phase 2 — verification
         ("verification_xql", "TEXT"),
         ("kpi_contribution", "JSON"),

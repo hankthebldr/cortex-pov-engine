@@ -300,6 +300,10 @@ class Result(Base):
     detection_logic: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     detection_severity: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     mitre_technique: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # The card detection's NAME — the tenant-facing rule name the matcher can
+    # compare with an alert's `name` exactly, so a step expecting N distinct
+    # detections needs N distinct alerts (sprint 2c).
+    detection_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # ── Verification (Phase 2) ─────────────────────────────────────────────
     # `observed` answers "did we see it". These answer "did it MEET the bar".
@@ -347,6 +351,7 @@ class Result(Base):
             "detection_kind": self.detection_kind,
             "detection_logic": self.detection_logic,
             "detection_severity": self.detection_severity,
+            "detection_name": self.detection_name,
             "mitre_technique": self.mitre_technique,
         }
 

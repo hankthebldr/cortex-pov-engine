@@ -63,6 +63,9 @@ class ObservedAlert:
     #: source did not say — an unknown source is unconstrained, never wrong.
     alert_source: Optional[str] = None
     category: Optional[str] = None               # tenant alert category, if any
+    #: The case the tenant grouped this alert into, when the alert object says
+    #: so (``incident_id`` / ``case_id``). Exact basis for the correlation rate.
+    incident_id: Optional[str] = None
     raw: dict[str, Any] = field(default_factory=dict)    # untouched source record
 
     def to_dict(self) -> dict[str, Any]:
@@ -77,6 +80,7 @@ class ObservedAlert:
             "detection_id": self.detection_id,
             "alert_source": self.alert_source,
             "category": self.category,
+            "incident_id": self.incident_id,
         }
 
     @classmethod
@@ -117,6 +121,7 @@ class ObservedAlert:
                                       or d.get("matching_service_rule_id")),
             alert_source=_str_or_none(d.get("alert_source") or d.get("alert_type")),
             category=_str_or_none(d.get("category")),
+            incident_id=_str_or_none(d.get("incident_id") or d.get("case_id")),
             raw=d if isinstance(d, dict) else {},
         )
 
@@ -140,6 +145,35 @@ class ObservedAlert:
                 continue
             alerts.append(alert)
         return alerts, dropped
+
+
+@dataclass
+class ObservedIncident:
+    """One case/incident the tenant built from correlated alerts.
+
+    The fallback basis for the correlation rate when alert objects carry no
+    ``incident_id``: ``alert_count`` per incident, scoped by ``hosts``.
+    """
+
+    incident_id: str
+    created_at: Optional[datetime] = None
+    name: Optional[str] = None
+    severity: Optional[str] = None
+    status: Optional[str] = None
+    alert_count: int = 0
+    hosts: list[str] = field(default_factory=list)     # short hostnames, id suffix stripped
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "incident_id": self.incident_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "name": self.name,
+            "severity": self.severity,
+            "status": self.status,
+            "alert_count": self.alert_count,
+            "hosts": list(self.hosts),
+        }
 
 
 def _str_or_none(v: Any) -> Optional[str]:
@@ -289,6 +323,7 @@ class PullResult:
     code: Optional[str] = None
     detail: dict[str, Any] = field(default_factory=dict)
     dropped: int = 0
+    incidents: list[ObservedIncident] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         from integrations.xsiam.codes import remediation_for  # noqa: PLC0415
@@ -303,6 +338,7 @@ class PullResult:
             "remediation": remediation_for(self.code),
             "dropped": self.dropped,
             "detail": self.detail,
+            "incidents": [i.to_dict() for i in self.incidents],
         }
 
 
