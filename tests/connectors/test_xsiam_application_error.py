@@ -49,5 +49,5 @@ def test_a_dict_where_a_list_belongs_is_refused_not_counted():
 def test_a_genuine_empty_result_is_still_zero_alerts():
     """The guard must not turn a real 'nothing fired' into an error — that would
     be the opposite failure, hiding a true detection miss behind an exception."""
-    alerts, dropped = _conn()._parse_alerts(json.dumps({"reply": {"alerts": []}}))
+    alerts, dropped, _meta = _conn()._parse_alerts(json.dumps({"reply": {"alerts": []}}))
     assert alerts == [] and dropped == 0

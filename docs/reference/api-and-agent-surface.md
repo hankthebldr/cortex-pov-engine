@@ -557,11 +557,24 @@ unreachable in the field (it 403s with `ARTIFACT_FORBIDDEN` naming the fix).
 
 **Preflight stages**, in order, each with a stable `code` and a `remediation`
 naming the consequence *in verdict terms*: `config` → `dns_tls` → `auth` →
-`scope_alerts` (kind `xsiam`) / `scope_xql` (kind `xsiam_tenant`) → `datasets`
-(opt-in, priced one XQL query per dataset) → `clock`. **Every stage runs even
-when an earlier one degraded**, and a skipped stage is reported explicitly as
-`SKIPPED` / `PF_SKIPPED_UNREACHABLE` — an absent stage would read as "fine". Only
-an unreachable host short-circuits.
+`scope_alerts` → `alert_shape` (kind `xsiam`) / `scope_xql` → `datasets`
+(opt-in, priced one XQL query per dataset) → `clock` (kind `xsiam_tenant`).
+**Every stage runs even when an earlier one degraded**, and a skipped stage is
+reported explicitly as `SKIPPED` / `PF_SKIPPED_UNREACHABLE` — an absent stage
+would read as "fine". Only an unreachable host short-circuits.
+
+**`alert_shape` (2026-09-20)** answers "will matching work on *this* tenant's
+alert objects?" — the question a POV used to answer with zero matches. It
+reuses the scope probe's alert or issues one more 1-row call over a 7-day
+lookback (so an empty tenant costs `queries_issued: 2`), then reports under
+`keys` which of the field names the reconcile connector reads are present by
+role (`timestamp · technique · name · host · source · rule_id`), the alert
+`source` value, the tenant `total_count`, and `keys_seen`. Codes:
+`PF_ALERT_SHAPE_PARTIAL` (degraded: no rule-id key, matching rests on
+technique/name), `PF_ALERT_SHAPE_UNMATCHABLE` (blocked: neither technique nor
+name — reconcile could only ever read 0 %, and that 0 % would be wrong),
+`PF_ALERT_SHAPE_UNKNOWN` (degraded: no alert in 7 days, shape unverified). A
+tenant with no alert to inspect is therefore **degraded, not ready**.
 
 `queries_issued` is in every response **on purpose**: a preflight driven by an
 injected transport reports `0`, and the `proves` string says so verbatim, so a

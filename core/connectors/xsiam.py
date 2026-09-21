@@ -68,6 +68,12 @@ class XsiamConnector(Connector):
     # Public API path for the multi-event alert query.
     _ALERTS_PATH = "/public_api/v1/alerts/get_alerts_multi_events"
 
+    #: The tenant's hard page ceiling (search_to - search_from <= 100).
+    _PAGE_SIZE_MAX = 100
+    #: Default harvest cap per pull: 20 pages x 100 = 2 000 alerts. A window
+    #: holding more than that is reported as truncated, never silently cut.
+    _DEFAULT_MAX_PAGES = 20
+
     def pull(
         self,
         cfg: ConnectorConfig,
@@ -108,42 +114,98 @@ class XsiamConnector(Connector):
                    if mode == "advanced"
                    else standard_auth_headers(cfg.secret, str(api_key_id)))
 
-        payload = self._build_request(since, until, filters or {})
-        body = json.dumps(payload).encode("utf-8")
+        filters = filters or {}
+        # An explicit ``limit`` (the preflight probes with 1) is a single page
+        # and never a harvest; otherwise page up to ``max_pages`` x 100.
+        explicit_limit = "limit" in filters
+        page_size = max(1, min(int(filters.get("limit", self._PAGE_SIZE_MAX)),
+                               self._PAGE_SIZE_MAX))
+        max_pages = 1 if explicit_limit else max(
+            1, int(filters.get("max_pages", conf.get("max_pages", self._DEFAULT_MAX_PAGES))))
 
-        try:
-            status, text = self._fetch("POST", url, headers, body, 30.0)
-        except Exception as e:  # noqa: BLE001 — offline-safe boundary
-            logger.warning("xsiam pull transport error: %s", e)
-            return PullResult(ok=False, connector=self.kind,
-                              code=codes.XSIAM_TRANSPORT_ERROR, error=str(e))
+        observations: list[ObservedAlert] = []
+        dropped = 0
+        pages = 0
+        total_count: Optional[int] = None
+        total_capped = False
+        search_from = 0
+        while pages < max_pages:
+            payload = self._build_request(since, until, filters,
+                                          search_from=search_from, page_size=page_size)
+            body = json.dumps(payload).encode("utf-8")
+            try:
+                status, text = self._fetch("POST", url, headers, body, 30.0)
+            except Exception as e:  # noqa: BLE001 — offline-safe boundary
+                logger.warning("xsiam pull transport error: %s", e)
+                return PullResult(ok=False, connector=self.kind,
+                                  code=codes.XSIAM_TRANSPORT_ERROR, error=str(e))
 
-        if status != 200:
-            # The tenant's response body is attacker-influenceable and unbounded,
-            # and this error string is persisted to
-            # IntegrationCredential.last_verified_error, which /api/credentials
-            # and the console both return. Keep the body in the server log; ship
-            # only a status and a digest the operator can correlate with it.
-            logger.warning("xsiam pull HTTP %s from %s; body=%s",
-                           status, _host_only(url), text[:500])
-            return PullResult(
-                ok=False, connector=self.kind, code=codes.code_for_status(status),
-                error=f"tenant returned HTTP {status}",
-                detail={"status": status,
-                        "body_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]},
-            )
+            if status != 200:
+                # The tenant's response body is attacker-influenceable and
+                # unbounded, and this error string is persisted to
+                # IntegrationCredential.last_verified_error, which
+                # /api/credentials and the console both return. Keep the body in
+                # the server log; ship only a status and a digest the operator
+                # can correlate with it. A failure on page N>1 fails the WHOLE
+                # pull: page 1 alone would read as "the tenant held this many".
+                logger.warning("xsiam pull HTTP %s from %s (page %d); body=%s",
+                               status, _host_only(url), pages + 1, text[:500])
+                return PullResult(
+                    ok=False, connector=self.kind, code=codes.code_for_status(status),
+                    error=f"tenant returned HTTP {status}" + (
+                        f" on page {pages + 1}" if pages else ""),
+                    detail={"status": status, "page": pages + 1,
+                            "body_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]},
+                )
 
-        try:
-            observations, dropped = self._parse_alerts(text)
-        except Exception as e:  # noqa: BLE001
-            return PullResult(ok=False, connector=self.kind,
-                              code=codes.XSIAM_PARSE_ERROR,
-                              error=f"failed to parse tenant response: {e}")
+            try:
+                page_obs, page_dropped, meta = self._parse_alerts(text)
+            except Exception as e:  # noqa: BLE001
+                return PullResult(ok=False, connector=self.kind,
+                                  code=codes.XSIAM_PARSE_ERROR,
+                                  error=f"failed to parse tenant response: {e}")
 
+            pages += 1
+            observations.extend(page_obs)
+            dropped += page_dropped
+            if meta.get("total_count") is not None:
+                total_count = meta["total_count"]
+            total_capped = total_capped or bool(meta.get("total_count_capped"))
+            page_rows = meta.get("result_count") or (len(page_obs) + page_dropped)
+            search_from += page_rows
+            if page_rows < page_size:
+                break                                   # short page: the end
+            if total_count is not None and not total_capped and search_from >= total_count:
+                break                                   # everything accounted for
+
+        returned = len(observations) + dropped
         detail: dict[str, Any] = {
             "queried_host": _host_only(url),
             "window": [since.isoformat(), until.isoformat()],
+            "pages": pages,
+            "page_size": page_size,
+            "returned": returned,
+            "total_count": total_count,
         }
+        # Truncated means: the tenant told us it holds more than we fetched
+        # (or capped its own count, which is the same admission). The number
+        # downstream is then a FLOOR on coverage, and every consumer says so.
+        truncated = bool(total_capped or (total_count is not None and total_count > returned))
+        detail["truncated"] = truncated
+        if total_capped:
+            detail["total_count_capped"] = True
+        if truncated:
+            detail["truncation"] = {
+                "total_count": ("9,999+" if total_capped and total_count is None
+                                else total_count),
+                "returned": returned,
+                "pages": pages,
+                "max_pages": max_pages,
+                "consequence": (
+                    "the tenant holds more alerts in this window than were fetched, "
+                    "so any coverage/MTTD derived from this pull is a floor, not a "
+                    "measurement — alerts sorted after the cut were never seen"),
+            }
         if dropped:
             # Visible, not absorbed: a dropped alert is one the DC's coverage
             # number will not include, and they must be told why.
@@ -153,8 +215,12 @@ class XsiamConnector(Connector):
 
     # ── request / response shaping ──────────────────────────────────────
 
-    def _build_request(self, since: datetime, until: datetime, filters: dict) -> dict:
-        """Cortex get_alerts request: time-window filter + sane page size."""
+    def _build_request(self, since: datetime, until: datetime, filters: dict, *,
+                       search_from: int = 0, page_size: Optional[int] = None) -> dict:
+        """Cortex get_alerts request: time-window filter + one page window."""
+        if page_size is None:
+            page_size = max(1, min(int(filters.get("limit", self._PAGE_SIZE_MAX)),
+                                   self._PAGE_SIZE_MAX))
         request_data: dict[str, Any] = {
             "filters": [
                 {
@@ -168,14 +234,21 @@ class XsiamConnector(Connector):
                     "value": int(until.replace(microsecond=0).timestamp() * 1000),
                 },
             ],
-            "search_from": 0,
-            "search_to": int(filters.get("limit", 100)),
+            "search_from": int(search_from),
+            "search_to": int(search_from) + int(page_size),
             "sort": {"field": "creation_time", "keyword": "asc"},
         }
         return {"request_data": request_data}
 
-    def _parse_alerts(self, text: str) -> "tuple[list[ObservedAlert], int]":
-        """Return ``(alerts, dropped)``; ``dropped`` counts unreadable timestamps."""
+    def _parse_alerts(self, text: str) -> "tuple[list[ObservedAlert], int, dict[str, Any]]":
+        """Return ``(alerts, dropped, meta)``.
+
+        ``dropped`` counts unreadable timestamps; ``meta`` carries the tenant's
+        own ``total_count`` / ``result_count`` so the caller can tell a complete
+        harvest from a truncated one. Cortex caps ``total_count`` at the string
+        ``"9,999+"``, which is read as *capped* — an admission of more, not a
+        number.
+        """
         doc = json.loads(text)
         # XSIAM signals application errors INSIDE a 200 — {"reply": {"err_code":
         # .., "err_msg": ..}} — so a permissions problem, a bad tenant or an
@@ -217,7 +290,14 @@ class XsiamConnector(Connector):
                 dropped += 1
                 continue
             out.append(alert)
-        return out, dropped
+        meta: dict[str, Any] = {}
+        if isinstance(reply, dict):
+            total, capped = _count_or_capped(reply.get("total_count"))
+            meta["total_count"] = total
+            meta["total_count_capped"] = capped
+            rc = reply.get("result_count")
+            meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
+        return out, dropped, meta
 
     def _normalize_alert(self, a: dict[str, Any]) -> Optional[ObservedAlert]:
         """One alert → :class:`ObservedAlert`, or None if its time is unreadable.
@@ -235,8 +315,9 @@ class XsiamConnector(Connector):
         techs = self._extract_techniques(a)
         sev_raw = str(a.get("severity", ""))
         severity = _SEVERITY_MAP.get(sev_raw, sev_raw.lower() or None)
+        hosts = a.get("hosts")
         host = (a.get("host_name") or a.get("endpoint_name")
-                or (a.get("hosts") or [None])[0] if a.get("hosts") else a.get("host_name"))
+                or (hosts[0] if isinstance(hosts, list) and hosts else None))
         return ObservedAlert(
             source=self.kind,
             observed_at=observed_at,
@@ -245,7 +326,12 @@ class XsiamConnector(Connector):
             severity=severity,
             techniques=techs,
             host=_s(host),
-            detection_id=_s(a.get("detector_id") or a.get("bioc_id") or a.get("rule_id")),
+            # `matching_service_rule_id` is the field Cortex documents on the
+            # alert object; the other three were guesses that never matched.
+            detection_id=_s(a.get("matching_service_rule_id") or a.get("detector_id")
+                            or a.get("bioc_id") or a.get("rule_id")),
+            alert_source=_s(a.get("source") or a.get("alert_source")),
+            category=_s(a.get("category")),
             raw=a,
         )
 
@@ -257,13 +343,9 @@ class XsiamConnector(Connector):
             val = a.get(key)
             if isinstance(val, list):
                 for item in val:
-                    tid = _technique_id(item)
-                    if tid:
-                        out.append(tid)
+                    out.extend(_technique_ids(item))
             elif isinstance(val, str):
-                tid = _technique_id(val)
-                if tid:
-                    out.append(tid)
+                out.extend(_technique_ids(val))
         # de-dupe, preserve order
         seen: set[str] = set()
         deduped = []
@@ -288,7 +370,37 @@ def _s(v: Any) -> Optional[str]:
 _TECH_RE = __import__("re").compile(r"T\d{4}(?:\.\d{3})?")
 
 
+def _technique_ids(item: Any) -> list[str]:
+    """Every `Txxxx[.yyy]` id in a string like 'T1059.001 - PowerShell, T1003 - ...'.
+
+    ``search`` (first match only) used to lose every technique after the first
+    in a comma-joined value — and the second one was the one the step declared.
+    """
+    return _TECH_RE.findall(str(item))
+
+
 def _technique_id(item: Any) -> Optional[str]:
-    """Extract a `Txxxx[.yyy]` id from a string like 'T1059.001 - Command...'."""
-    m = _TECH_RE.search(str(item))
-    return m.group(0) if m else None
+    """First `Txxxx[.yyy]` id, kept for callers that want exactly one."""
+    ids = _technique_ids(item)
+    return ids[0] if ids else None
+
+
+def _count_or_capped(value: Any) -> "tuple[Optional[int], bool]":
+    """``(count, capped)`` from a tenant ``total_count``.
+
+    Ints pass through. Cortex caps the field at ``"9,999+"``; a string ending in
+    ``+`` is *capped* — the tenant admits to more than it will count — and its
+    digits are the floor. Anything else is unknown (None, not 0).
+    """
+    if isinstance(value, bool):
+        return None, False
+    if isinstance(value, int):
+        return value, False
+    if isinstance(value, str):
+        s = value.strip()
+        capped = s.endswith("+")
+        digits = s.rstrip("+").replace(",", "").strip()
+        if digits.isdigit():
+            return int(digits), capped
+        return None, capped
+    return None, False

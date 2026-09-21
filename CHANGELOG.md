@@ -8,6 +8,52 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Fixed — the alert read-back path could not be trusted on a shared, busy tenant
+
+Sprint 1 of `docs/uc_tc_mapping/IMPL-PLAN-xsiam-readback-and-index-honesty.md`,
+from the findings in `docs/uc_tc_mapping/audit-2026-09-20.md`. **No new write
+path to Cortex; `tenant-verified` is still 0.**
+
+- **One page of 100 alerts, silently.** `XsiamConnector.pull` asked for a single
+  `search_to: 100` page sorted ascending over the whole run window, so on any
+  tenant raising more than 100 alerts in that window the run's own (newest)
+  alerts were the ones dropped, and `reply.total_count` was never read. The
+  pull now pages (`search_from`/`search_to`, ≤100/page, `max_pages` cap,
+  default 20), reads `total_count`/`result_count` (including Cortex's capped
+  `"9,999+"` string), and reports `truncated` / `truncation` in
+  `PullResult.detail`; `reconcile_run` carries it into the summary with a
+  warning that names coverage a **floor**. A non-200 on page N fails the whole
+  pull rather than returning page 1 as the tenant's total.
+- **No host scoping.** `ObservedAlert.host` was captured and never used, so an
+  earlier alert from another endpoint won MTTD via the technique-base key.
+  `reconcile_run` resolves `Run.target → Agent.hostname` and
+  `matcher.scope_to_host` drops alerts naming a *different* host (host-less
+  alerts are kept — identity/cloud alerts carry none). The summary reports
+  `host_scope` and an unscoped run says so in `warning`.
+- **One alert satisfied every detection type in a step.** All N `Result` rows
+  of a step share the step's technique, so one BIOC firing marked BIOC, XQL
+  and Correlation expectations observed. The alert's `source` is now captured
+  (`ObservedAlert.alert_source`) and both sides map onto one family
+  vocabulary (`bioc · abioc · analytics · correlation · ioc`); known-and-
+  different families are not a match, agreement adds `source` to
+  `matched_on`, and an unknown source ("XDR Agent") stays unconstrained but
+  is recorded on the verdict.
+- **Multi-technique strings lost every id after the first.** `_technique_id`
+  used `re.search`; `findall` now keeps them all. `matching_service_rule_id`
+  (the field Cortex documents) joins the rule-id keys.
+
+### Added
+
+- **Preflight `alert_shape` rung** on `POST /api/connectors/xsiam/preflight`:
+  samples one alert and reports which of the keys the connector reads are
+  present, the `source` value and `total_count`, with codes
+  `PF_ALERT_SHAPE_PARTIAL` / `_UNMATCHABLE` / `_UNKNOWN`. An empty tenant is
+  now **degraded, not ready** — auth can be green while nothing proves
+  matching would work.
+- `docs/uc_tc_mapping/audit-2026-09-20.md` (counted state vs the five in-tree
+  "current state" documents; the generated scoreboard under-counts assertion
+  bindings 4×) and the three-sprint implementation plan.
+
 ## [1.0.2] - 2026-09-08
 
 **Three console defects that a DC would hit inside the first minute of a
