@@ -128,6 +128,86 @@ of taxonomy codes with per-code `remediation`. Taxonomy:
   `target_allowlist` gates it; a non-allowlisted host is reported as
   `target_not_authorised` and never contacted.
 
+### Detector readiness (`analytics_alerts.py`) — armed before the POV, not during it
+
+Collector preflight answers *"will this record land?"*. It cannot answer the
+question a DC actually has when the demo goes quiet: *"the records landed —
+why did nothing fire?"*
+
+Walking the vendor's own alert pages settles what can be answered. Every page at
+`https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/<slug>`
+publishes **Severity**, **Activation Period**, **Training Period**, **Test
+Period**, **Deduplication Period**, Detection Modules, ATT&CK, and a **Required
+Data** line naming the sources that can feed the alert. No page publishes a
+numeric threshold, a dataset field name, or the predicate.
+
+So "tune the stream to match the detection" cannot mean matching a predicate —
+there is none published. What *is* published is a **precondition contract**, and
+a failed precondition is the one failure that is invisible: an alert with a
+30-day training period, aimed at a dataset the tenant began carrying last week,
+is **not armed**. The records were perfect. The silence still reads in a POV
+report as *"Cortex missed it"* — the manufactured false negative this engine
+exists to avoid, reproduced at the layer meant to prove coverage.
+
+- `POST /api/eal/campaigns/{id}/detector-readiness` — per detector: `armed` /
+  `not_armed` (with `days_remaining`) / `unknown` / `undocumented`. Body is
+  `{"source_onboarded_at": {"<source_key>": "<ISO-8601 with timezone>"}}` —
+  when each source **started landing in the tenant**, not when the campaign ran.
+- `GET /api/eal/data-streams` — carries `detectors[]` + `detector_counts`
+  alongside the source coverage table.
+
+**Zero outbound calls.** Transcribed vendor preconditions against the operator's
+own declaration; the tenant is never queried. `armed` therefore means the
+documented preconditions are met and **never** that the detector has been
+observed firing. `tenant_verified` is `0` in the response body.
+
+Four rules, each with a test that fails without it:
+
+| Rule | Mechanism |
+|---|---|
+| **Documented is not derived.** | `activation_days` / `training_days` are transcribed verbatim and stay separately quotable. The one-number gate `max(activation, training)` is OUR inference and ships as `gate_basis: "inferred:max(activation,training)"`. |
+| **Unknown is degraded, not ok.** | An undeclared onboarding date yields `unknown`, which is never `armed`. Defaulting it to armed restores the exact silence this gate explains. |
+| **A typo must raise, not vanish.** | An unknown alert slug raises; a `required_data` key that is not a catalogue source raises at import; a typo'd key in the request is `422 UNKNOWN_DATA_SOURCE` rather than a silently dropped declaration. |
+| **An unsatisfiable binding raises.** | If an emitter's data source is outside the alert's Required Data OR-set, that emitter can never fire that alert. Raises rather than returning a soft verdict. |
+
+A naive `onboarded_at` is `422 ONBOARDING_TIMESTAMP_NAIVE`, deliberately unlike
+`connectors.base.coerce_utc`, which accepts naive-as-UTC. The difference is the
+input class: `coerce_utc` parses *tenant-supplied* alert timestamps where
+tolerance beats a crash; this reads an *operator-typed config date*, where
+assuming UTC shifts the gate by the DC's own offset and answers wrongly with no
+error anywhere. **Do not unify them.**
+
+#### Counted state (2026-09-20)
+
+`detectors 15 · documented 11 · undocumented 4 · alerts transcribed 8 ·
+emitters declaring no detector 9`
+
+Two numbers deserve reading twice:
+
+- **9 of 14 family emitters declare no detector at all.** They cover 11 of the
+  16 `covered` sources. `covered` in the source coverage table means *an emitter
+  writes to this source's dataset* — it has never meant *an emitter targets a
+  documented detection*. The two were indistinguishable before `detector_counts`
+  existed. Surfaced here as `emitters_declaring_none`; closing it is separate work.
+- **4 declared detectors name no documented vendor alert.** `duo_auth_emitter`'s
+  *"MFA push-bombing / fatigue"* and *"User reported a fraudulent push"* (Duo's
+  documented alert list has neither; the nearest MFA-fatigue alert is Okta-only),
+  and `third_party_alert_emitter`'s *"Third-party alert surfaced (high/critical)"*
+  and *"Third-party malware verdict"* (every documented Third-Party Alerts alert
+  is an aggregation detector over multiple alerts; none fires on one alert alone).
+  They are kept and labelled `documented: false` with a reason rather than
+  deleted — the emitters really do produce those record shapes, and deleting the
+  claim would hide that we had been making it. An unlisted gap reads as no gap.
+
+Each detector declares **exactly one** of `alert_ref` (the vendor's own slug) or
+`undocumented_reason`. Neither raises; both raise — the same reject-not-warn rule
+as the payload shelf's `TA-13`/`TA-14`, for the same reason: a boot warning is
+how 48 adapter packs came to share one byte-identical non-explanation.
+
+**Not covered by this gate:** a baseline/backfill stream. Every emitter is still
+burst-only, so a `not_armed` verdict is a diagnosis, not something CortexSim can
+remediate by streaming for longer.
+
 ### Offline bundle (`bundle.py`) — run it where the collector lives
 
 `POST /api/eal/campaigns/{id}/bundle` exports a campaign as a self-contained

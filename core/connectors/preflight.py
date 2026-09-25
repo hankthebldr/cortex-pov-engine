@@ -60,6 +60,26 @@ PF_QUOTA_EXHAUSTED = "PF_QUOTA_EXHAUSTED"
 PF_CLOCK_SKEW = "PF_CLOCK_SKEW"
 PF_UPSTREAM_ERROR = "PF_UPSTREAM_ERROR"
 PF_NOT_PROBED = "PF_NOT_PROBED"
+PF_ALERT_SHAPE_PARTIAL = "PF_ALERT_SHAPE_PARTIAL"
+PF_ALERT_SHAPE_UNMATCHABLE = "PF_ALERT_SHAPE_UNMATCHABLE"
+PF_ALERT_SHAPE_UNKNOWN = "PF_ALERT_SHAPE_UNKNOWN"
+
+#: How far back the alert-shape probe looks for ONE alert to inspect. A tenant
+#: with nothing in seven days is reported as *unverified*, not as ready.
+ALERT_SHAPE_LOOKBACK_DAYS = 7
+
+#: The keys the reconcile connector reads off a tenant alert, by role. The
+#: shape probe reports which one (if any) this tenant's alerts carry, so
+#: "will matching work?" is a rung with a code instead of a POV with zero
+#: matches. Keep in lock-step with ``connectors/xsiam.py::_normalize_alert``.
+ALERT_SHAPE_KEYS: dict[str, tuple[str, ...]] = {
+    "timestamp": ("detection_timestamp", "creation_time", "local_insert_ts"),
+    "technique": ("mitre_technique_ids", "mitre_technique_id_and_name", "mitre_techniques"),
+    "name": ("name", "alert_name", "description"),
+    "host": ("host_name", "endpoint_name", "hosts"),
+    "source": ("source", "alert_source"),
+    "rule_id": ("matching_service_rule_id", "detector_id", "bioc_id", "rule_id"),
+}
 
 #: Clock skew beyond this makes MTTD untrustworthy. MTTD is the only KPI the
 #: engine measures natively, and it is computed as
@@ -173,7 +193,7 @@ def preflight_reconcile(
                          "API key id (x-xdr-auth-id). Until then every reconcile "
                          "fails and coverage stays at whatever was marked by hand."),
         ))
-        _skip_rest(report, ["dns_tls", "auth", "scope_alerts"])
+        _skip_rest(report, ["dns_tls", "auth", "scope_alerts", "alert_shape"])
         return report
     try:
         base = normalize_tenant_base_url(str(raw_url))
@@ -183,7 +203,7 @@ def preflight_reconcile(
             remediation=(f"The tenant URL must be {EXPECTED_SHAPE}. This is refused "
                          f"before any request, so the API key was NOT sent anywhere."),
         ))
-        _skip_rest(report, ["dns_tls", "auth", "scope_alerts"])
+        _skip_rest(report, ["dns_tls", "auth", "scope_alerts", "alert_shape"])
         return report
 
     host = base.split("://", 1)[1]
@@ -201,10 +221,11 @@ def preflight_reconcile(
                                    "the xsiam connector is not registered"))
         return report
 
+    ccfg = ConnectorConfig(integration_name=integration_name or "preflight",
+                           config=dict(config), secret=secret)
     started = time.monotonic()
     pull = conn.pull(
-        ConnectorConfig(integration_name=integration_name or "preflight",
-                        config=dict(config), secret=secret),
+        ccfg,
         # A one-minute window ending now: we are probing scope, not harvesting.
         since=now - timedelta(minutes=1), until=now,
         filters={"limit": 1},
@@ -223,6 +244,20 @@ def preflight_reconcile(
             f"for a 1-row window",
         ))
         report.capabilities_confirmed.append("read_alerts")
+
+        # ── alert_shape: will matching work on THIS tenant's alert objects? ──
+        sample = pull.observations[0] if pull.observations else None
+        total_count = (pull.detail or {}).get("total_count")
+        if sample is None:
+            # Nothing in the last minute (normal). One more 1-row call over a
+            # bounded lookback — still not a harvest, and priced as one query.
+            probe = conn.pull(ccfg, since=now - timedelta(days=ALERT_SHAPE_LOOKBACK_DAYS),
+                              until=now, filters={"limit": 1})
+            report.queries_issued += 1
+            if probe.ok and probe.observations:
+                sample = probe.observations[0]
+                total_count = (probe.detail or {}).get("total_count")
+        report.stages.append(_alert_shape_stage(sample, total_count))
         return report
 
     code = pull.code
@@ -230,7 +265,7 @@ def preflight_reconcile(
         report.stages.append(Stage(
             "dns_tls", BLOCKED, PF_UNREACHABLE, pull.error or "unreachable",
             remediation=codes.remediation_for(codes.XSIAM_TRANSPORT_ERROR), ms=elapsed_ms))
-        _skip_rest(report, ["auth", "scope_alerts"])
+        _skip_rest(report, ["auth", "scope_alerts", "alert_shape"])
         return report
 
     report.stages.append(Stage("dns_tls", OK, PF_OK,
@@ -239,7 +274,7 @@ def preflight_reconcile(
         report.stages.append(Stage(
             "auth", BLOCKED, PF_AUTH_REJECTED, pull.error or "HTTP 401",
             remediation=codes.remediation_for(codes.XSIAM_AUTH_ERROR)))
-        _skip_rest(report, ["scope_alerts"])
+        _skip_rest(report, ["scope_alerts", "alert_shape"])
         report.capabilities_denied.append("read_alerts")
         return report
 
@@ -250,6 +285,7 @@ def preflight_reconcile(
         report.stages.append(Stage(
             "scope_alerts", DEGRADED, PF_QUOTA_EXHAUSTED, pull.error or "HTTP 429",
             remediation=codes.remediation_for(codes.XSIAM_QUOTA_ERROR)))
+        _skip_rest(report, ["alert_shape"])
         return report
     report.stages.append(Stage(
         "scope_alerts", BLOCKED,
@@ -262,6 +298,7 @@ def preflight_reconcile(
             if status == 403 else codes.remediation_for(code)),
     ))
     report.capabilities_denied.append("read_alerts")
+    _skip_rest(report, ["alert_shape"])
     return report
 
 
@@ -490,6 +527,73 @@ async def _probe_clock(client: Any, report: PreflightReport, now: datetime) -> S
             f"run it in UTC) before quoting MTTD against a threshold."),
         extra={"skew_seconds": round(skew, 1)},
     )
+
+
+def _alert_shape_stage(sample: Any, total_count: Any) -> Stage:
+    """Grade ONE sampled alert against the keys the connector reads.
+
+    * no alert to inspect → ``degraded`` / ``PF_ALERT_SHAPE_UNKNOWN``: the
+      tenant shape is unverified, which is not the same as verified;
+    * neither a technique key nor a name key → ``blocked`` /
+      ``PF_ALERT_SHAPE_UNMATCHABLE``: nothing the matcher keys on exists, so a
+      run against this tenant can only ever read 0 % — and that 0 % would be
+      reported as the customer's coverage;
+    * no rule-id key → ``degraded`` / ``PF_ALERT_SHAPE_PARTIAL``: matching rests
+      on technique and name only;
+    * otherwise ``ok``.
+    The rung never touches the earlier ones: auth and scope stay green when
+    they were green — this is about the OBJECT, not the connection.
+    """
+    if sample is None:
+        return Stage(
+            "alert_shape", DEGRADED, PF_ALERT_SHAPE_UNKNOWN,
+            f"no alert in the last {ALERT_SHAPE_LOOKBACK_DAYS} days to inspect — "
+            f"the tenant's alert shape is unverified",
+            remediation=("Raise one alert on the tenant (any BIOC firing will do) and "
+                         "re-run preflight. Until an alert has been inspected, whether "
+                         "reconcile can match anything is an assumption, not a check."),
+            extra={"keys": {role: None for role in ALERT_SHAPE_KEYS},
+                   "source": None, "total_count": total_count},
+        )
+    raw = sample.raw if isinstance(getattr(sample, "raw", None), dict) else {}
+    keys: dict[str, Optional[str]] = {}
+    for role, candidates in ALERT_SHAPE_KEYS.items():
+        keys[role] = next((k for k in candidates if raw.get(k) not in (None, "", [])), None)
+    extra: dict[str, Any] = {
+        "keys": keys,
+        "source": getattr(sample, "alert_source", None),
+        "total_count": total_count,
+        "keys_seen": sorted(str(k) for k in raw)[:60],
+    }
+    found = ", ".join(f"{r}={k}" for r, k in keys.items() if k) or "none of the expected keys"
+    if keys["technique"] is None and keys["name"] is None:
+        return Stage(
+            "alert_shape", BLOCKED, PF_ALERT_SHAPE_UNMATCHABLE,
+            f"the sampled alert carries neither a MITRE technique key nor a name "
+            f"key (found: {found})",
+            remediation=("The matcher correlates on technique, rule id or name; this "
+                         "tenant's alert objects expose none of them under the keys "
+                         "CortexSim reads. Reconcile would report 0 % coverage and "
+                         "that number would be wrong. Compare `keys_seen` with "
+                         "ALERT_SHAPE_KEYS and add the tenant's field names before "
+                         "running a POV against it."),
+            extra=extra,
+        )
+    if keys["rule_id"] is None:
+        return Stage(
+            "alert_shape", DEGRADED, PF_ALERT_SHAPE_PARTIAL,
+            f"the sampled alert carries no rule-id key; matching will rest on "
+            f"technique and name only (found: {found})",
+            remediation=("Without a rule id, a step's expected detections can only be "
+                         "matched on MITRE technique or on a two-token name overlap, "
+                         "so distinct rules on one technique are indistinguishable. "
+                         "Acceptable for a POV; read every `matched_on` before quoting "
+                         "per-detection coverage."),
+            extra=extra,
+        )
+    return Stage("alert_shape", OK, PF_OK,
+                 f"the sampled alert carries every key the matcher reads ({found})",
+                 extra=extra)
 
 
 def _skip_rest(report: PreflightReport, stage_ids: list[str]) -> None:

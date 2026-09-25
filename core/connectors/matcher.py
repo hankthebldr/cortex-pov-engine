@@ -30,6 +30,78 @@ from .base import ObservedAlert
 
 DEFAULT_WINDOW_SECONDS = 3600
 
+#: One family vocabulary for "which engine raised this". Both sides map onto
+#: it: ``Result.signal_type`` (the scenario's declared detection_type — BIOC |
+#: XQL | Analytics | Correlation | IOC | ABIOC) and the tenant's alert
+#: ``source`` ("XDR BIOC", "XDR Analytics BIOC", "Correlation", ...). A pair
+#: whose families are BOTH known and DIFFERENT is not a match: one BIOC firing
+#: used to mark a step's BIOC, XQL and Correlation expectations all observed,
+#: because every Result in a step shares the step's technique.
+_FAMILIES = ("bioc", "abioc", "analytics", "correlation", "ioc")
+
+
+def signal_family(value: Optional[str]) -> Optional[str]:
+    """Map a ``Result.signal_type`` or an alert ``source`` onto a family.
+
+    Returns None for a value that names no rule family ("XDR Agent" is the
+    agent's own prevention modules, not a rule) — None is *unconstrained*, so
+    an unknown source can still match on technique/name and the verdict
+    records what it matched. It is never read as a disagreement.
+    """
+    s = (value or "").strip().lower()
+    if not s:
+        return None
+    if "analytics bioc" in s or s == "abioc":
+        return "abioc"
+    if "correlation" in s or s == "xql":
+        # A saved XQL raises an alert only through a correlation rule.
+        return "correlation"
+    if "analytics" in s:
+        return "analytics"
+    if "bioc" in s:
+        return "bioc"
+    if "ioc" in s or "indicator" in s:
+        return "ioc"
+    return None
+
+
+def _short_host(value: Optional[str]) -> str:
+    """Case-folded first DNS label: ``WEB-01.corp.local`` and ``web-01`` agree."""
+    return (value or "").strip().lower().split(".")[0]
+
+
+def scope_to_host(
+    observations: list[ObservedAlert], host: Optional[str],
+) -> "tuple[list[ObservedAlert], dict[str, Any]]":
+    """Keep the alerts that could be about ``host``; account for the rest.
+
+    An alert naming a DIFFERENT host is not evidence for this run — on a shared
+    tenant the technique-base key would otherwise credit a detection that fired
+    on someone else's endpoint, and an earlier one at that (lower MTTD). An
+    alert naming NO host is kept: identity-plane and cloud alerts carry none,
+    and dropping them would manufacture false negatives. With no ``host`` the
+    list is returned unchanged and the accounting says so — the caller surfaces
+    "unscoped" rather than letting it pass as scoped.
+    """
+    want = _short_host(host)
+    if not want:
+        return list(observations), {"host": None, "eligible": len(observations),
+                                    "excluded_other_host": 0, "without_host": 0}
+    kept: list[ObservedAlert] = []
+    excluded = 0
+    without = 0
+    for a in observations:
+        have = _short_host(a.host)
+        if not have:
+            without += 1
+            kept.append(a)
+        elif have == want:
+            kept.append(a)
+        else:
+            excluded += 1
+    return kept, {"host": want, "eligible": len(kept),
+                  "excluded_other_host": excluded, "without_host": without}
+
 # Tokens too generic to carry evidence — a shared "alert" or "cortex" must
 # never be one of the two overlapping words that credits a detection.
 _STOPWORDS = frozenset({
@@ -49,6 +121,7 @@ class MatchVerdict:
     matched_on: list[str] = field(default_factory=list)   # which keys lined up
     alert_external_id: Optional[str] = None
     alert_name: Optional[str] = None
+    alert_source: Optional[str] = None      # what the tenant said raised it
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +132,7 @@ class MatchVerdict:
             "matched_on": list(self.matched_on),
             "alert_external_id": self.alert_external_id,
             "alert_name": self.alert_name,
+            "alert_source": self.alert_source,
         }
 
 
@@ -105,6 +179,7 @@ class _ResultSide:
     technique_base: str     # technique with the sub-id stripped
     detection_id: str       # normalized, "" when absent
     tokens: set[str]        # evidence tokens of expected_detection
+    family: Optional[str] = None   # signal_family(Result.signal_type)
 
 
 @dataclass(frozen=True)
@@ -116,6 +191,7 @@ class _AlertSide:
     detection_id: str           # normalized, "" when absent
     has_name: bool
     tokens: set[str]            # evidence tokens of the alert name
+    family: Optional[str] = None   # signal_family(alert.alert_source)
 
 
 def _prepare_result(result: Any) -> _ResultSide:
@@ -125,6 +201,7 @@ def _prepare_result(result: Any) -> _ResultSide:
         technique_base=technique.split(".")[0] if technique else "",
         detection_id=_norm(getattr(result, "detection_id", None)),
         tokens=_evidence_tokens(getattr(result, "expected_detection", "") or ""),
+        family=signal_family(getattr(result, "signal_type", None)),
     )
 
 
@@ -136,6 +213,7 @@ def _prepare_alert(alert: ObservedAlert) -> _AlertSide:
         detection_id=_norm(alert.detection_id),
         has_name=bool(alert.name),
         tokens=_evidence_tokens(alert.name) if alert.name else set(),
+        family=signal_family(getattr(alert, "alert_source", None)),
     )
 
 
@@ -146,6 +224,11 @@ def _keys_for(rs: _ResultSide, als: _AlertSide) -> list[str]:
     is a thin adapter over it so the object and prepared paths can never drift.
     """
     keys: list[str] = []
+
+    # Engine family. Both known and different ⇒ not a match, whatever else
+    # agrees: a BIOC alert is not evidence that a correlation rule fired.
+    if rs.family and als.family and rs.family != als.family:
+        return keys
 
     # MITRE technique (exact, or base technique without sub-id).
     if rs.technique:
@@ -162,6 +245,11 @@ def _keys_for(rs: _ResultSide, als: _AlertSide) -> list[str]:
     # Name/description overlap.
     if als.has_name and len(rs.tokens & als.tokens) >= 2:
         keys.append("name")
+
+    # Family agreement is corroboration, never sufficient alone: an identity
+    # key must already have lined up.
+    if keys and rs.family and als.family and rs.family == als.family:
+        keys.append("source")
 
     return keys
 
@@ -236,6 +324,7 @@ def reconcile(
                     matched_on=keys,
                     alert_external_id=alert.external_id,
                     alert_name=alert.name,
+                    alert_source=getattr(alert, "alert_source", None),
                 )
                 break  # ascending order ⇒ first hit is the earliest (lowest MTTD)
             idx += 1

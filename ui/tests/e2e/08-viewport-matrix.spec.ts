@@ -50,19 +50,33 @@ const MATRIX = [
 
 /**
  * Landmarks that must never be clipped. Each earned its place by breaking:
- * `.header__right` is the tenant/agent/run infocard that overflowed behind
- * `flex-shrink: 0`; `.rail--nav` is the sidebar that scrolled out of view;
- * `.main` is the column that could not shrink without `min-width: 0`.
+ * `.rail--nav` is the sidebar that scrolled out of view, and `.main` is the
+ * column that could not shrink without `min-width: 0`.
+ *
+ * UPDATED FOR THE POVENGINE CHROME. `.header`, `.header__right`, `.phase-bar`
+ * and `.command-strip` no longer exist — the phase bar and the command strip
+ * were replaced by one flow bar, and the header was rebuilt. `measure()`
+ * returns a zero box for a selector that matches nothing, so those four had
+ * become four assertions that silently passed on an empty result: half this
+ * guard was measuring nothing at all. Selectors that do not exist are worse
+ * than no selectors, because the count of "landmarks checked" still looks
+ * healthy.
+ *
+ * `.pov-header` and `.pov-flow` are the bars that replaced them, and they are
+ * the two that carry the 1200px content floor — see the note at the top of
+ * povengine-shell.css. They scroll THEMSELVES rather than making the document
+ * scroll, which is why they belong in this list: the first version of that
+ * chrome put `min-width: 1200px` on the shell, and below 1200 both bars were
+ * clipped by a non-scrolling ancestor. Exactly this spec's failure mode, and
+ * exactly what it caught.
  */
 const LANDMARKS = [
-  '.header',
-  '.header__right',
-  '.phase-bar',
+  '.pov-header',
+  '.pov-flow',
   '.workspace',
   '.rail--nav',
   '.main',
   '.view',
-  '.command-strip',
 ]
 
 type Box = { sel: string; left: number; right: number; width: number; clippedBy: string | null }
@@ -225,7 +239,14 @@ test('chrome leaves the content most of the viewport height', async ({ page }) =
     // The safety banner is EXCLUDED on purpose: it is a blast-radius consent
     // gate that leaves the grid permanently once acknowledged, so counting it
     // would make this budget depend on consent state rather than on layout.
-    const chrome = h('.header') + h('.phase-bar') + h('.readiness-banner') + h('.command-strip')
+    //
+    // These are the POVengine chrome rows. The previous three selectors
+    // (.header, .phase-bar, .command-strip) no longer match anything, so this
+    // budget was summing to ZERO and passing on an empty measurement — a
+    // budget nobody was keeping, which is the exact thing this test was
+    // written to prevent, now one level up. Measured after the fix: 106px of
+    // 620 (17%), against the 45% ceiling.
+    const chrome = h('.pov-header') + h('.readiness-banner') + h('.pov-flow')
     return { chrome, viewport: window.innerHeight, view: h('.view') }
   })
 

@@ -4,6 +4,11 @@ import AppConsole from './AppConsole.jsx'
 import './styles/cortex-tokens.css'
 import './styles/cortex-theme.css'
 import './styles/cortex-console.css'
+// The POVengine chrome (header, phase-ordered rail, flow bar) and the surface
+// primitives the redesign's screens are built from. Loaded here rather than
+// colocated with a component because every destination renders inside them.
+import './styles/povengine-shell.css'
+import './styles/povengine-surfaces.css'
 
 // main.jsx renders exactly ONE root per session. It used to STATICALLY import
 // both — the console AND the legacy ?theme=legacy App — so every console

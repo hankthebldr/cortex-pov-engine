@@ -1,0 +1,360 @@
+/* ============================================================
+   POVengine — surface primitives.
+
+   The vocabulary every redesigned destination is built from: the page head
+   (accent rule + eyebrow + title + lede), cards and card grids, state pills,
+   plane chips, key/value fact rows, the section divider, the tab strip, the
+   wizard step strip, and the object pop-out.
+
+   TWO RULES THIS FILE ENFORCES, both learned the expensive way:
+
+   1. THE ACCENT IS A FILL, NOT INK. `--ac` paints bars, borders, buttons and
+      dots. Anything that paints accent-colored TEXT uses `--ac-ink`. Same for
+      green: `--pos` fills, `--pos-ink` inks. `--ac` measures 4.38:1 on dark
+      --s3 and 2.66:1 on light --s3 — below the text floor in both themes.
+
+   2. A CATEGORICAL TINT IS NEVER TEXT. Plane tints are authored at the 3:1
+      non-text floor for fills and borders. A whole revision of this console
+      shipped them as 9px `color:` on chips, which moved the hue out of the
+      text channel entirely. `.pov-chip-plane` is the fix: --tx2 label, tint as
+      a 3px left border. Identity preserved, ink legible.
+   ============================================================ */
+
+/* ── Page head ───────────────────────────────────────────────────────────
+   The brand's signature title device: a short accent rule, an uppercase
+   eyebrow, then the title. Display type here does NOT take the DS's -0.02em
+   display tracking — that is drawn for 44-72px slide titles and reads as
+   crunched at the 27px this renders at. Heading tracking at weight 700. */
+.pov-page { padding: 22px 26px 26px; }
+.pov-page__rule { width: 44px; height: 4px; background: var(--ac); margin-bottom: 11px; }
+.pov-page__eyebrow {
+  font: 700 10px/1 var(--font-ui);
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ac-ink);
+}
+.pov-page__title {
+  font: 700 27px/1.22 var(--font-display);
+  letter-spacing: -0.01em;
+  margin: 9px 0 10px;
+  color: var(--tx);
+}
+.pov-page__lede {
+  font: 400 12.5px/1.6 var(--font-ui);
+  color: var(--tx2);
+  margin: 0; max-width: 700px;
+}
+
+/* ── Section divider ─────────────────────────────────────────────────────── */
+.pov-section { display: flex; align-items: center; gap: 9px; margin: 22px 0 11px; }
+.pov-section__label {
+  flex: none;
+  font: 700 10px/1 var(--font-ui);
+  letter-spacing: .13em; text-transform: uppercase;
+  color: var(--tx2);
+}
+.pov-section__hr { flex: 1; height: 1px; background: var(--bd); }
+
+/* ── Stats strip ─────────────────────────────────────────────────────────── */
+.pov-stats { display: flex; gap: 1px; background: var(--bd); border: 1px solid var(--bd); border-radius: 9px; overflow: hidden; }
+.pov-stat { flex: 1; padding: 11px 14px; background: var(--s1); }
+.pov-stat__n { display: block; font: 700 19px/1 var(--font-mono); color: var(--tx); }
+.pov-stat__k {
+  display: block; margin-top: 6px;
+  font: 400 9.5px/1.3 var(--font-ui);
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--tx3);
+}
+.pov-stat--pos .pov-stat__n { color: var(--pos-ink); }
+.pov-stat--warn .pov-stat__n { color: var(--warn); }
+.pov-stat--crit .pov-stat__n { color: var(--crit); }
+
+/* ── Card grid ───────────────────────────────────────────────────────────── */
+.pov-grid { display: grid; gap: 12px; }
+.pov-grid--sm { grid-template-columns: repeat(auto-fit, minmax(228px, 1fr)); }
+.pov-grid--md { grid-template-columns: repeat(auto-fit, minmax(252px, 1fr)); }
+.pov-grid--lg { grid-template-columns: repeat(auto-fit, minmax(296px, 1fr)); align-items: start; }
+
+.pov-card {
+  display: block; width: 100%; text-align: left;
+  padding: 13px;
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  color: inherit;
+  font: inherit;
+}
+button.pov-card { cursor: pointer; }
+button.pov-card:hover { border-color: var(--bd2); }
+.pov-card--on { border-color: var(--ac-line); background: var(--ac-soft); }
+/* The DS's card device: a colored TOP border in a brand tone. Not a
+   colored-left-border cliché — the left accent bar is reserved for the title
+   block and the plane chip. */
+.pov-card--tinted { border-top-width: 3px; border-top-style: solid; }
+.pov-card__head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.pov-card__title { font: 600 12.5px/1.3 var(--font-ui); color: var(--tx); }
+.pov-card__blurb { display: block; font: 400 10.5px/1.5 var(--font-ui); color: var(--tx2); margin-bottom: 9px; }
+.pov-card__foot { display: flex; gap: 5px; flex-wrap: wrap; padding-top: 9px; border-top: 1px solid var(--bd); }
+.pov-card__code { font: 600 11px/1 var(--font-mono); color: var(--tx2); }
+.pov-card__meta { font: 500 10px/1.4 var(--font-mono); color: var(--tx2); }
+.pov-card__spacer { flex: 1; }
+
+/* ── Panels (a card with a header band) ──────────────────────────────────── */
+.pov-panel { background: var(--s1); border: 1px solid var(--bd); border-radius: 10px; overflow: hidden; }
+.pov-panel__head { padding: 12px 14px; background: var(--s2); border-bottom: 1px solid var(--bd); }
+.pov-panel__title {
+  font: 700 9.5px/1 var(--font-ui);
+  letter-spacing: .13em; text-transform: uppercase;
+  color: var(--tx);
+}
+.pov-panel__sub { font: 500 10.5px/1.4 var(--font-mono); color: var(--tx2); margin-top: 6px; }
+.pov-panel__body { padding: 13px 14px; }
+.pov-panel__row {
+  width: 100%; display: block; text-align: left;
+  padding: 11px 14px;
+  border: 0; border-bottom: 1px solid var(--bd);
+  background: transparent; color: inherit; font: inherit;
+}
+button.pov-panel__row { cursor: pointer; }
+button.pov-panel__row:hover { background: var(--s2); }
+.pov-panel__row:last-child { border-bottom: 0; }
+
+/* ── Pills and chips ─────────────────────────────────────────────────────
+   State pills carry the verdict, so they are the one place status color is
+   used at full strength. `--pos-ink`/`--ac-ink` rather than `--pos`/`--ac`
+   because these are text on a soft fill. */
+.pov-pill {
+  display: inline-flex; align-items: center;
+  font: 700 9px/1 var(--font-mono);
+  letter-spacing: .07em;
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: var(--s3);
+  color: var(--tx2);
+  white-space: nowrap;
+}
+.pov-pill--pos { background: var(--pos-soft); color: var(--pos-ink); }
+.pov-pill--warn { background: rgba(255, 203, 6, .13); color: var(--warn); }
+.pov-pill--crit { background: var(--ac-soft); color: var(--crit); }
+.pov-pill--dim { color: var(--tx3); }
+
+.pov-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--tx3); }
+.pov-dot--pos { background: var(--pos); }
+.pov-dot--warn { background: var(--warn); }
+.pov-dot--crit { background: var(--crit); }
+
+/* THE PLANE CHIP. The tint is the 3px LEFT BORDER; the label is --tx2. See
+   rule 2 at the top of this file — this shape exists because the tint as ink
+   was unreadable at 9px and the fix is structural, not a darker hue. */
+.pov-chip-plane {
+  display: inline-flex; align-items: center;
+  font: 600 9px/1 var(--font-mono);
+  letter-spacing: .06em;
+  padding: 3px 5px 3px 6px;
+  border-radius: 3px;
+  background: var(--s3);
+  color: var(--tx2);
+  border-left: 3px solid var(--bd2);
+  white-space: nowrap;
+}
+.pov-chip-det {
+  display: inline-flex; align-items: center;
+  font: 600 8.5px/1 var(--font-mono);
+  letter-spacing: .06em;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: var(--s3);
+  color: var(--tx2);
+  border: 0;
+  cursor: pointer;
+}
+.pov-chip-det:hover { color: var(--tx); }
+
+/* ── Checkbox (wizard pickers) ───────────────────────────────────────────── */
+.pov-box {
+  width: 14px; height: 14px; flex: none;
+  border-radius: 3px; border: 1px solid var(--bd2);
+  display: grid; place-items: center;
+}
+.pov-box--on { border-color: var(--ac); background: var(--ac-soft); }
+.pov-box i { width: 6px; height: 6px; border-radius: 1px; background: transparent; }
+.pov-box--on i { background: var(--ac); }
+
+/* ── Tab strips ──────────────────────────────────────────────────────────
+   Used for the Library's sibling destinations AND for the object sheet's
+   per-kind tabs. The Library strip NAVIGATES rather than holding local state,
+   so the rail and the tabs cannot disagree by construction. */
+.pov-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--bd); }
+.pov-tab {
+  padding: 8px 12px;
+  border: 0; border-bottom: 2px solid transparent;
+  background: transparent;
+  font: 600 11.5px/1 var(--font-ui);
+  color: var(--tx3);
+  cursor: pointer;
+}
+.pov-tab:hover { color: var(--tx2); }
+.pov-tab--on { color: var(--tx); border-bottom-color: var(--ac); }
+
+/* ── Wizard step strip ───────────────────────────────────────────────────── */
+.pov-steps {
+  display: flex; gap: 1px;
+  background: var(--bd); border: 1px solid var(--bd);
+  border-radius: 9px; overflow: hidden;
+}
+.pov-step {
+  flex: 1; display: block; text-align: left;
+  padding: 11px 14px;
+  border: 0; border-top: 3px solid transparent;
+  background: var(--s1);
+  cursor: pointer; font: inherit; color: inherit;
+}
+.pov-step:hover { background: var(--s2); }
+.pov-step--on { border-top-color: var(--ac); background: var(--s2); }
+.pov-step__head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.pov-step__n {
+  width: 17px; height: 17px; flex: none;
+  border-radius: 50%; display: grid; place-items: center;
+  font: 700 9px/1 var(--font-mono);
+  background: var(--s3); color: var(--tx2);
+}
+.pov-step--on .pov-step__n { background: var(--ac); color: var(--ac-tx); }
+.pov-step--done .pov-step__n { background: var(--pos-soft); color: var(--pos-ink); }
+.pov-step__label {
+  font: 700 9px/1 var(--font-ui);
+  letter-spacing: .13em; text-transform: uppercase;
+  color: var(--tx2);
+  white-space: nowrap;
+}
+.pov-step--on .pov-step__label { color: var(--tx); }
+.pov-step__sub { display: block; font: 400 10px/1.4 var(--font-ui); color: var(--tx3); }
+
+/* ── Fact rows ───────────────────────────────────────────────────────────── */
+.pov-facts { display: grid; gap: 7px; }
+.pov-fact { display: flex; align-items: baseline; gap: 9px; }
+.pov-fact__k {
+  flex: none; min-width: 108px;
+  font: 400 9.5px/1.4 var(--font-ui);
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--tx3);
+}
+.pov-fact__v { font: 500 11px/1.4 var(--font-mono); color: var(--tx); }
+.pov-fact__v--pos { color: var(--pos-ink); }
+.pov-fact__v--warn { color: var(--warn); }
+.pov-fact__v--crit { color: var(--crit); }
+.pov-fact__v--dim { color: var(--tx3); }
+
+/* ── Code / command blocks ───────────────────────────────────────────────── */
+.pov-code {
+  display: block;
+  padding: 11px 12px;
+  background: var(--s0);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  font: 400 10.5px/1.7 var(--font-mono);
+  color: var(--tx2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+.pov-code--in { border-left: 3px solid var(--bd2); }
+
+/* ── Tables ──────────────────────────────────────────────────────────────
+   The DS's own table formatting: grey header with white text, zebra body
+   rows. Wide tables scroll INTERNALLY rather than crushing their columns —
+   a squeezed column that truncates a digest is worse than a scrollbar. */
+.pov-table { width: 100%; border-collapse: collapse; }
+.pov-table__scroll { overflow-x: auto; border: 1px solid var(--bd); border-radius: 9px; }
+.pov-table th {
+  text-align: left;
+  padding: 9px 12px;
+  background: var(--thead);
+  color: #FFFFFF;
+  font: 700 9px/1 var(--font-ui);
+  letter-spacing: .1em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.pov-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--bd);
+  font: 400 11px/1.4 var(--font-ui);
+  color: var(--tx2);
+}
+.pov-table tbody tr:nth-child(even) { background: var(--zebra); }
+.pov-table td.mono { font-family: var(--font-mono); }
+.pov-table td.pov-td-strong { color: var(--tx); font-weight: 500; }
+
+/* ── The object sheet ────────────────────────────────────────────────────
+   ONE pop-out page for every object kind. It replaced three different
+   sidebars — a Library inspector, a package drawer and a chain-step panel —
+   that each showed a different subset of the same shape. The accent bar, the
+   type chip, the id, the status and the object's own actions are the header;
+   grouped editable fields are the body; detections and side facts are the
+   aside. Component kinds get tabs; everything else gets one form, so the
+   standard interaction is unchanged where depth is not needed. */
+.pov-sheet-scrim {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(0, 0, 0, .55);
+  display: flex; justify-content: flex-end;
+}
+.pov-sheet {
+  width: min(880px, 92vw);
+  height: 100%;
+  background: var(--s1);
+  border-left: 1px solid var(--bd2);
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 0;
+}
+.pov-sheet__accent { height: 4px; background: var(--ac); }
+.pov-sheet__head { padding: 15px 20px; border-bottom: 1px solid var(--bd); }
+.pov-sheet__head-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.pov-sheet__id { font: 500 10.5px/1 var(--font-mono); color: var(--tx3); }
+.pov-sheet__title {
+  font: 700 19px/1.25 var(--font-display);
+  letter-spacing: -0.01em;
+  color: var(--tx);
+  margin: 9px 0 0;
+}
+.pov-sheet__actions { display: flex; gap: 7px; margin-left: auto; }
+.pov-sheet__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 20px;
+  padding: 18px 20px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.pov-sheet__aside { display: grid; gap: 14px; align-content: start; }
+.pov-sheet__foot {
+  display: flex; gap: 8px; justify-content: flex-end;
+  padding: 12px 20px;
+  border-top: 1px solid var(--bd);
+  background: var(--s2);
+}
+.pov-field { display: block; margin-bottom: 12px; }
+.pov-field__k {
+  display: block;
+  font: 400 9.5px/1.4 var(--font-ui);
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--tx3);
+  margin-bottom: 5px;
+}
+.pov-field__input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  font: 400 11.5px/1.4 var(--font-mono);
+  color: var(--tx);
+}
+.pov-field__input:focus { outline: 2px solid var(--ac-line); outline-offset: 1px; border-color: var(--ac-line); }
+textarea.pov-field__input { min-height: 132px; resize: vertical; line-height: 1.7; }
+
+/* ── Legend ──────────────────────────────────────────────────────────────
+   Every matrix gets one. An unexplained '·' in a coverage cell is not a
+   neutral mark — a DC reads it as a gap. */
+.pov-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.pov-legend__item { display: flex; align-items: center; gap: 7px; }
+.pov-legend__def { font: 400 10px/1.4 var(--font-ui); color: var(--tx3); }

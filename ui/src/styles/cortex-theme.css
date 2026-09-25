@@ -36,10 +36,12 @@
      summary — this is flagged, not silently fixed, per instructions. */
   --cortex-navy:     var(--ink);
 
-  /* --cortex-teal was the primary accent (#00C0E8, cyan). The
-     redesign's primary accent is Cortex GREEN (--ac) — this is
-     the single most visible change in the redesign, and this is
-     the one line that makes the whole console green-forward. */
+  /* --cortex-teal was the primary accent (#00C0E8, cyan), then Cortex
+     green. It is now PANW orange: --ac is the ONE dominant brand color and
+     carries chrome, while Cortex green has been demoted to status only
+     (--pos). The token name is legacy and deliberately not renamed — 130+
+     call sites read it, and what matters is what it resolves to. This one
+     line is what makes the whole console orange-chromed. */
   --cortex-teal:     var(--ac);
 
   /* --cortex-teal-deep was never actually defined in :root before
@@ -75,11 +77,19 @@
   --cortex-ink-muted: var(--tx2);
 
   /* Semantic status */
-  --cortex-success:  var(--ac-str);
-  /* --cortex-warning maps to --warn, NOT --orange. Per the design's
-     own stated intent ("PANW orange is reserved for warn/gap
-     signal"), orange is a signal color, never a primary or
-     decorative one — using it here would make every warning badge
+  /* --cortex-success maps to --pos, NOT --ac-str. This changed with the
+     accent inversion and it is the alias that would have failed loudest if
+     it had not: --ac-str used to BE Cortex green, so `var(--ac-str)` read
+     correctly as "success is green". Now --ac-str is PANW orange, and leaving
+     this alias alone would have painted every success badge in the console
+     orange — a warning color — without a single call site changing. Success
+     is a status, and status is --pos. */
+  --cortex-success:  var(--pos);
+  /* --cortex-warning maps to --warn (Strata yellow), NOT --orange. Under
+     the OLD contract orange was the warn/gap signal, so this distinction was
+     about not spending a signal color on decoration. Under the NEW one it
+     matters even more: --orange now aliases --ac, the chrome accent, so
+     pointing warning at it would make every warning badge
      in the app orange, which is a much louder claim on that color
      than "this one thing needs attention" warrants. --warn is the
      token actually named for this semantic. */

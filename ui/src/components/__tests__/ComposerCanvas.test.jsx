@@ -8,7 +8,7 @@
  * CONFIRMED, and a BROKEN stitch renders BROKEN.
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { render, screen, within, act } from '@testing-library/react'
+import { render, screen, within, act, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ComposerCanvas from '../console/ComposerCanvas.jsx'
 
@@ -149,9 +149,10 @@ describe('ComposerCanvas — preserved DOM', () => {
 })
 
 describe('ComposerCanvas — lens toggle', () => {
-  it('exposes Design / Run lens buttons and Chain / YAML view buttons', () => {
+  it('exposes Design / Lanes / Run lens buttons and Chain / YAML view buttons', () => {
     render(<ComposerCanvas {...baseProps()} />)
     expect(screen.getByTestId('composer-lens-design')).toBeInTheDocument()
+    expect(screen.getByTestId('composer-lens-lanes')).toBeInTheDocument()
     expect(screen.getByTestId('composer-lens-run')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Chain' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'YAML' })).toBeInTheDocument()
@@ -160,8 +161,45 @@ describe('ComposerCanvas — lens toggle', () => {
   it('calls onLens when a lens button is clicked', async () => {
     const onLens = vi.fn()
     render(<ComposerCanvas {...baseProps({ onLens })} />)
-    await userEvent.setup().click(screen.getByTestId('composer-lens-run'))
+    const user = userEvent.setup()
+    await user.click(screen.getByTestId('composer-lens-run'))
     expect(onLens).toHaveBeenCalledWith('run')
+    await user.click(screen.getByTestId('composer-lens-lanes'))
+    expect(onLens).toHaveBeenCalledWith('lanes')
+  })
+})
+
+describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
+  // The design bands the canvas by launch door so that where a node sits
+  // means the same thing as where the Runs topology will band it. The Design
+  // lens draws none of this; the Lanes lens draws all of it, and every card
+  // wears the door it launches through.
+  it('draws the seven lane bands and badges each step with its door', () => {
+    render(<ComposerCanvas {...baseProps({ lens: 'lanes' })} />)
+    const bands = screen.getByTestId('composer-lane-bands')
+    expect(bands.querySelectorAll('.composer-lane')).toHaveLength(7)
+    expect(bands.querySelectorAll('.composer-lane--terminal')).toHaveLength(2)
+    expect(bands).toHaveTextContent('ENDPOINT')
+    expect(bands).toHaveTextContent('DATA STREAMS')
+    // Both fixture steps are EDR → ENDPOINT (AGT) by derivation.
+    expect(screen.getByTestId('chain-step-door-step-01')).toHaveTextContent('AGT')
+    expect(screen.getByTestId('chain-step-door-step-02')).toHaveTextContent('AGT')
+    // The LAUNCH / PROOF bands replace the Design lens's START / END anchors
+    // — two statements of where the chain begins would be one too many.
+    expect(screen.queryByTestId('chain-start')).toBeNull()
+    expect(screen.queryByTestId('chain-end')).toBeNull()
+    expect(screen.queryByTestId('composer-connector-root')).toBeNull()
+    expect(screen.getByTestId('composer-add-step')).toBeInTheDocument()
+  })
+
+  it('a draft lane override moves the badge, and the Design lens draws no bands', () => {
+    render(<ComposerCanvas {...baseProps({ lens: 'lanes', laneOverrides: { 'step-02': 'BVM' } })} />)
+    expect(screen.getByTestId('chain-step-door-step-01')).toHaveTextContent('AGT')
+    expect(screen.getByTestId('chain-step-door-step-02')).toHaveTextContent('BVM')
+    cleanup()
+    render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
+    expect(screen.queryByTestId('composer-lane-bands')).toBeNull()
+    expect(screen.queryByTestId('chain-step-door-step-01')).toBeNull()
   })
 })
 
