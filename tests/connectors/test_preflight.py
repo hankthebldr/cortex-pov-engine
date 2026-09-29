@@ -36,13 +36,29 @@ def _ids(report):
 
 def test_a_working_reconcile_credential_reads_ready():
     def fetcher(method, url, headers, body, timeout):
-        return 200, json.dumps({"reply": {"alerts": []}})
+        return 200, json.dumps({"reply": {"alerts": [{
+            "alert_id": "1", "name": "LSASS Memory Access", "source": "XDR BIOC",
+            "detection_timestamp": 1780000000000,
+            "mitre_technique_id_and_name": ["T1003.001 - LSASS Memory"],
+            "matching_service_rule_id": "bioc-1"}]}})
 
     r = pf.preflight_reconcile(_CFG, "key", fetcher=fetcher)
     assert r.overall == pf.READY
-    assert _ids(r) == ["config", "dns_tls", "auth", "scope_alerts"]
+    assert _ids(r) == ["config", "dns_tls", "auth", "scope_alerts", "alert_shape"]
     assert r.capabilities_confirmed == ["read_alerts"]
     assert r.queries_issued == 1, "one cheap call, not a harvest"
+
+
+def test_an_empty_tenant_is_degraded_not_ready():
+    """Auth and scope can be green while nothing proves matching would work."""
+    def fetcher(method, url, headers, body, timeout):
+        return 200, json.dumps({"reply": {"alerts": []}})
+
+    r = pf.preflight_reconcile(_CFG, "key", fetcher=fetcher)
+    assert r.overall == pf.DEGRADED
+    assert _stage(r, "scope_alerts").status == pf.OK
+    assert _stage(r, "alert_shape").code == pf.PF_ALERT_SHAPE_UNKNOWN
+    assert r.queries_issued == 2, "one scope probe + one bounded lookback, both 1-row"
 
 
 def test_a_bad_tenant_url_is_caught_before_any_request_is_made():
@@ -296,7 +312,8 @@ def test_the_report_states_what_it_does_and_does_not_prove():
     r = pf.preflight_reconcile(_CFG, "k",
                                fetcher=lambda *a: (200, json.dumps({"reply": {"alerts": []}})))
     body = r.to_dict()
-    assert body["queries_issued"] == 1
+    # scope probe + the alert-shape lookback an empty tenant forces: both 1-row.
+    assert body["queries_issued"] == 2
     assert "queries_issued=0 was not answered by a tenant" in body["proves"]
 
     blocked = pf.preflight_reconcile({"fqdn": "http://x", "api_key_id": "1"}, "k")

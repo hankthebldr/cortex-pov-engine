@@ -80,6 +80,8 @@ import {
 } from './composerLayout.js'
 import { effectiveChannel } from './composerDraft.js'
 import { canConnect } from './composerSpine.js'
+import { layoutLanes, laneAtY, STEP_LANES } from './composerLanes.js'
+import { COMPOSER_LANES } from './povdata/corpus.js'
 
 // Detection-type → chip tone. Identical mapping to the inspector's `detTone`
 // (they are two new files; the mapping is duplicated deliberately rather than
@@ -258,6 +260,15 @@ function StepNode({ data, isConnectable }) {
               no target) renders byte-identically to today. An eal step
               shows its emitter; an agent step with a second endpoint
               shows where it runs. Reuses existing chip tones (no hex). */}
+          {data.door && (
+            <span
+              className="pov-chip-plane chain-node__doorbadge"
+              data-testid={`chain-step-door-${s.id}`}
+              title={`launches through ${LANE_LABEL[data.door] || data.door} — drag into another lane to retarget`}
+            >
+              {data.door}
+            </span>
+          )}
           {data.channelKind === 'eal' ? (
             <span
               className="chip chip--signal chain-node__chanbadge"
@@ -328,6 +339,9 @@ function StepNode({ data, isConnectable }) {
 
 const nodeTypes = { step: StepNode }
 
+/** Lane key → the band label the canvas prints ('AGT' → 'ENDPOINT'). */
+const LANE_LABEL = Object.fromEntries(COMPOSER_LANES.map(([key, label]) => [key, label]))
+
 /**
  * The dashed connector + endpoint dots that used to be the `root`/`terminal`
  * SVG edges (START→first step, last leaf→END) before those steps' spine
@@ -369,6 +383,10 @@ const DesignGraph = forwardRef(function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
   onMoveStep, onDuplicateStep, onRemoveStep, onAddStep, onNodeMoved = () => {},
+  // Lanes lens (swimlanes). `laneOverrides` is the draft's `{stepId: lane}`
+  // map; `onLaneChange(stepId, lane)` fires when a drag ends inside a
+  // different band. Defaulted so the Design and Run lenses need nothing.
+  laneOverrides = null, onLaneChange = () => {},
   // Fires (fromId, toId) when a legal causality edge is drawn (Task 10,
   // direct-manipulation) — `fromId` is the proposed parent, `toId` the step
   // that would take it. Defaulted so a caller that never mounts the Design
@@ -399,6 +417,23 @@ const DesignGraph = forwardRef(function DesignGraph({
   )
   const { bounds } = laidOut
   const runLens = lens === 'run'
+  const lanesLens = lens === 'lanes'
+
+  // Swimlane geometry. EDGES still come from `laidOut` (spineEdges, drawn by
+  // React Flow from wherever the nodes are), so the lane layout only has to
+  // answer where each node sits: x by execution order, y by the band of the
+  // door it launches through. Stored drag positions are deliberately NOT
+  // merged here — on this lens horizontal position IS order and vertical
+  // position IS the lane, so a free position would un-say both.
+  const laneLayout = useMemo(
+    () => (lanesLens ? layoutLanes(steps, laneOverrides, draft.plane) : null),
+    [lanesLens, steps, laneOverrides, draft.plane],
+  )
+  const lanePos = useMemo(() => {
+    const m = new Map()
+    if (laneLayout) for (const n of laneLayout.nodes) m.set(n.id, n)
+    return m
+  }, [laneLayout])
 
   // The last refused connect attempt, or null. Design-lens-only state (the
   // Run lens never offers the affordance that would set it) — see the
@@ -423,10 +458,11 @@ const DesignGraph = forwardRef(function DesignGraph({
       const i = steps.indexOf(s)
       const plane = stepPlane(s, draft)
       const channel = effectiveChannel(s)
+      const laneNode = lanesLens ? lanePos.get(n.id) : null
       return {
         id: n.id,
         type: 'step',
-        position: { x: n.x, y: n.y },
+        position: laneNode ? { x: laneNode.x, y: laneNode.y } : { x: n.x, y: n.y },
         // No per-node `draggable`/`connectable` override here (Task 9/10):
         // that would pin every node's drag/connect-ability regardless of the
         // pane-level `nodesDraggable`/`nodesConnectable` props below, which
@@ -451,6 +487,10 @@ const DesignGraph = forwardRef(function DesignGraph({
           // Design lens (`nodesDraggable={!runLens}` below) — an inert grip
           // in the Run lens looks like a live affordance that does nothing.
           runLens,
+          // The door this step launches through — Lanes lens only, where the
+          // band it sits in already says so and the badge makes it legible
+          // once the node is scrolled away from the band label.
+          door: laneNode ? laneNode.lane : null,
           channelKind: channel === 'eal' ? 'eal' : (s.target ? 'target' : null),
           onSelectStep: () => onSelect(s.id),
           onMoveEarlier: () => onMoveStep(i, -1),
@@ -461,7 +501,7 @@ const DesignGraph = forwardRef(function DesignGraph({
       }
     }),
     [
-      stepLaidOutNodes, steps, draft, selectedId, runLens, causalityStates,
+      stepLaidOutNodes, steps, draft, selectedId, runLens, lanesLens, lanePos, causalityStates,
       onSelect, onMoveStep, onDuplicateStep, onRemoveStep,
     ],
   )
@@ -517,9 +557,12 @@ const DesignGraph = forwardRef(function DesignGraph({
   // Design-lens entity-join overlay: the stitch edges the context IMPLIES,
   // EXPECTED-only (authored intent, never outcome). Off by default; drawn as a
   // distinct dashed secondary layer offset to the right of the spine.
+  // Design lens only: the overlay's coordinates are `layoutChain`'s vertical
+  // spine, which the Lanes lens does not use — drawn there it would join
+  // points that are not where the nodes are.
   const stitchEdges = useMemo(
-    () => (showStitch ? stitchOverlayEdges(steps, stitchModel) : []),
-    [showStitch, steps, stitchModel],
+    () => (showStitch && !lanesLens ? stitchOverlayEdges(steps, stitchModel) : []),
+    [showStitch, lanesLens, steps, stitchModel],
   )
 
   // React Flow reports position changes ALREADY IN FLOW COORDINATES — it has
@@ -530,6 +573,15 @@ const DesignGraph = forwardRef(function DesignGraph({
   const onNodesChange = useCallback((changes) => {
     for (const c of changes) {
       if (c.type === 'position' && c.dragging === false && c.position) {
+        if (lanesLens) {
+          // On the Lanes lens a drop means "this step launches through THAT
+          // door". The band under the drop decides; x is recomputed from
+          // execution order on the next render, so nothing is stored for it.
+          const before = lanePos.get(c.id)
+          const lane = laneAtY(c.position.y)
+          if (!before || before.lane !== lane) onLaneChange(c.id, lane)
+          continue
+        }
         onNodeMoved(
           c.id,
           Math.round(c.position.x / SNAP) * SNAP,
@@ -537,7 +589,7 @@ const DesignGraph = forwardRef(function DesignGraph({
         )
       }
     }
-  }, [onNodeMoved])
+  }, [onNodeMoved, onLaneChange, lanesLens, lanePos])
 
   // Test seam: the pane's transform makes synthetic pointer events unreliable
   // in jsdom, so tests drive onNodesChange directly. Assignment only. Gated
@@ -626,6 +678,25 @@ const DesignGraph = forwardRef(function DesignGraph({
     zoomReset: () => rfInstanceRef.current?.zoomTo(1),
   }), [])
 
+  // ── Lens fit ──────────────────────────────────────────────────────────────
+  // `fitView` (the prop above) fits the NODES, which on the Lanes lens is
+  // wrong: three steps in one band fit at 189% with every other band
+  // off-screen, so the lens shows a chain and no lanes. The Lanes lens fits
+  // the whole stage — all seven bands — and switching back to Design refits
+  // the nodes, so each lens opens on the thing it exists to show. Keyed on
+  // the stage bounds too, so a step added while on Lanes widens the fit.
+  const laneStageW = laneLayout ? laneLayout.bounds.width : 0
+  const laneStageH = laneLayout ? laneLayout.bounds.height : 0
+  useEffect(() => {
+    const rf = rfInstanceRef.current
+    if (!rf || !measured) return
+    if (lanesLens) {
+      rf.fitBounds({ x: 0, y: 0, width: laneStageW, height: laneStageH }, { padding: 0.04, duration: 0 })
+    } else {
+      rf.fitView({ duration: 0 })
+    }
+  }, [lanesLens, measured, laneStageW, laneStageH])
+
   return (
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
       {/* A refused connect attempt, ABOVE the canvas — visible and reasoned,
@@ -645,23 +716,28 @@ const DesignGraph = forwardRef(function DesignGraph({
         </div>
       )}
 
-      {/* START anchor — not a step, so it stays outside React Flow. */}
-      <div className="chain-node chain-node--start" data-testid="chain-start">
-        <div className="chain-node__kicker">Start</div>
-        <div className="chain-node__title">On launch</div>
-        <div className="chain-node__scope">
-          <button type="button" className="scope-link" onClick={() => onNavigate('tenants')}>
-            <span className="scope-link__label">Tenant</span>
-            <span className="scope-link__value mono">{tenantName || 'none selected'}</span>
-          </button>
-          <button type="button" className="scope-link" onClick={() => onNavigate('agents')}>
-            <span className="scope-link__label">Agent</span>
-            <span className="scope-link__value mono">{agentName || 'none selected'}</span>
-          </button>
+      {/* START anchor — not a step, so it stays outside React Flow. In the
+          Lanes lens the LAUNCH band says the same thing inside the pane, so
+          the anchor and its connector would be a second, disagreeing
+          statement of where the chain begins. */}
+      {!lanesLens && (
+        <div className="chain-node chain-node--start" data-testid="chain-start">
+          <div className="chain-node__kicker">Start</div>
+          <div className="chain-node__title">On launch</div>
+          <div className="chain-node__scope">
+            <button type="button" className="scope-link" onClick={() => onNavigate('tenants')}>
+              <span className="scope-link__label">Tenant</span>
+              <span className="scope-link__value mono">{tenantName || 'none selected'}</span>
+            </button>
+            <button type="button" className="scope-link" onClick={() => onNavigate('agents')}>
+              <span className="scope-link__label">Agent</span>
+              <span className="scope-link__value mono">{agentName || 'none selected'}</span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
-      {hasRootEdge && <SpineConnector testId="composer-connector-root" />}
+      {hasRootEdge && !lanesLens && <SpineConnector testId="composer-connector-root" />}
 
       <div className="composer-canvas__flow" ref={paneRef}>
         <ReactFlowProvider>
@@ -709,6 +785,36 @@ const DesignGraph = forwardRef(function DesignGraph({
                 `rfNodes` above uses for `position`) ride the identical
                 pan/zoom transform node positions do — pixel-locked, not
                 advisory. */}
+            {/* Swimlane bands — Lanes lens only. Same ViewportPortal
+                mechanism as the stitch overlay below, for the same reason:
+                flow-space coordinates that ride the pane's own pan/zoom, so
+                a band and the nodes it contains cannot drift apart at any
+                transform. Pointer-transparent so a drag that starts over a
+                band still reaches the node. */}
+            {laneLayout && (
+              <ViewportPortal>
+                <div
+                  data-testid="composer-lane-bands"
+                  aria-hidden="true"
+                  style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', zIndex: -1 }}
+                >
+                  {laneLayout.lanes.map((b) => (
+                    <div
+                      key={b.key}
+                      className={'composer-lane' + (STEP_LANES.includes(b.key) ? '' : ' composer-lane--terminal')}
+                      data-lane={b.key}
+                      style={{ top: b.top, height: b.h, width: Math.max(laneLayout.bounds.width, 1200), background: b.fill }}
+                    >
+                      <span className="composer-lane__label">{b.label}</span>
+                      <span className="composer-lane__sub">
+                        {b.sub}{STEP_LANES.includes(b.key) ? ` · ${b.count}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </ViewportPortal>
+            )}
+
             {stitchEdges.length > 0 && (
               <ViewportPortal>
                 <svg
@@ -745,18 +851,21 @@ const DesignGraph = forwardRef(function DesignGraph({
         </ReactFlowProvider>
       </div>
 
-      {hasTerminalEdge && <SpineConnector testId="composer-connector-terminal" />}
+      {hasTerminalEdge && !lanesLens && <SpineConnector testId="composer-connector-terminal" />}
 
-      {/* END anchor — not a step, so it stays outside React Flow. */}
-      <div className="chain-node chain-node--end" data-testid="chain-end">
-        <div className="chain-node__kicker">End</div>
-        <div className="chain-node__title">Teardown &amp; proof</div>
-        <div className="chain-node__sub mono">
-          {draft.teardown?.length
-            ? `${draft.teardown.length} cleanup command${draft.teardown.length === 1 ? '' : 's'}`
-            : 'no cleanup declared'}
+      {/* END anchor — not a step, so it stays outside React Flow. The PROOF
+          band stands in for it on the Lanes lens, as LAUNCH does for START. */}
+      {!lanesLens && (
+        <div className="chain-node chain-node--end" data-testid="chain-end">
+          <div className="chain-node__kicker">End</div>
+          <div className="chain-node__title">Teardown &amp; proof</div>
+          <div className="chain-node__sub mono">
+            {draft.teardown?.length
+              ? `${draft.teardown.length} cleanup command${draft.teardown.length === 1 ? '' : 's'}`
+              : 'no cleanup declared'}
+          </div>
         </div>
-      </div>
+      )}
 
       <button
         type="button"
@@ -999,6 +1108,9 @@ export default function ComposerCanvas({
   // byte-identically. Task 9 is what actually writes to this map; Task 8
   // only wires it through to the lens that reads it.
   storedLayout = null,
+  // Lanes lens (swimlanes): the draft's lane overrides and the drop handler.
+  laneOverrides = null,
+  onLaneChange = () => {},
 }) {
   // Run lens: zoom stays a plain piece of state — RunGraph is a manually
   // CSS-scaled `<svg>` layer, not a React Flow pane, so there is no live
@@ -1048,7 +1160,7 @@ export default function ComposerCanvas({
 
         {/* Lens toggle — Design edits structure, Run renders the real graph. */}
         <div className="composer-canvas__lens" role="group" aria-label="Canvas lens">
-          {[['design', 'Design'], ['run', 'Run']].map(([id, label]) => (
+          {[['design', 'Design'], ['lanes', 'Lanes'], ['run', 'Run']].map(([id, label]) => (
             <button
               type="button"
               key={id}
@@ -1203,6 +1315,8 @@ export default function ComposerCanvas({
               stitchModel={stitchModel}
               showStitch={showStitch}
               storedLayout={storedLayout}
+              laneOverrides={laneOverrides}
+              onLaneChange={onLaneChange}
             />
           )}
 

@@ -147,6 +147,13 @@ class DuoAuthEmitter(AnalyticsLogEmitter):
         detectors = [
             {
                 "alert": "MFA push-bombing / fatigue",
+                "undocumented_reason": (
+                    "Duo's documented analytics alert list carries no MFA-fatigue / "
+                    "push-bombing detector. The nearest documented alert, 'Multiple Okta "
+                    "MFA requests sent to a user', is Okta-only. This emits the record "
+                    "shape a custom BIOC would key on, not a documented Analytics "
+                    "detector."
+                ),
                 "dataset": _DATASET,
                 "key_fields": ["user.name", "factor", "result"],
                 "predicate": (
@@ -158,6 +165,11 @@ class DuoAuthEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "User reported a fraudulent push",
+                "undocumented_reason": (
+                    "No documented Duo analytics alert keys on a user-reported fraudulent "
+                    "push; this is BIOC / correlation territory, not the Analytics "
+                    "engine."
+                ),
                 "dataset": _DATASET,
                 "key_fields": ["result"],
                 "predicate": "result=fraud",
@@ -166,6 +178,7 @@ class DuoAuthEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "Duo login from an anomalous country",
+                "alert_ref": "a-user-connected-from-a-new-country",
                 "dataset": _DATASET,
                 "key_fields": ["user.name", "access_device.location.country", "result"],
                 "predicate": "result=success from an anomalous access-device country",

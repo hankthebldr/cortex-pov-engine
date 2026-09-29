@@ -169,6 +169,7 @@ class ThirdPartyVpnEmitter(AnalyticsLogEmitter):
         detectors = [
             {
                 "alert": "Impossible travel (VPN)",
+                "alert_ref": "impossible-traveler-vpn",
                 "dataset": _DATASET,
                 "key_fields": ["user", "src_country", "auth_result", "timestamp"],
                 "predicate": (
@@ -180,6 +181,7 @@ class ThirdPartyVpnEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "Brute-force VPN authentication",
+                "alert_ref": "vpn-login-brute-force-attempt",
                 "dataset": _DATASET,
                 "key_fields": ["user", "auth_result"],
                 "predicate": (
@@ -191,6 +193,7 @@ class ThirdPartyVpnEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "VPN login from an anomalous country",
+                "alert_ref": "a-user-connected-to-a-vpn-from-a-new-country",
                 "dataset": _DATASET,
                 "key_fields": ["user", "src_country", "auth_result"],
                 "predicate": "success from a first-seen / anomalous src_country",

@@ -7,6 +7,7 @@ FastAPI app instance so middleware/lifespan from ``main.py`` don't leak in.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import AsyncIterator
 
 import pytest
@@ -431,3 +432,167 @@ class TestDataStreamsAPI:
         assert vpn is not None
         assert vpn["delivery_verdict"] == "delivered"
         assert vpn["run_id"] == "run-ds-1"
+
+
+class TestDetectorReadinessAPI:
+    """The gate that stops a POV report reading NOT-ARMED silence as a miss.
+
+    A detector with a 30-day training period, pointed at a dataset the tenant
+    started carrying last week, cannot fire. The records are correct and the
+    silence still reads as "Cortex missed it" unless something says otherwise
+    BEFORE the run. This endpoint is that something, and it makes zero outbound
+    calls — it reads transcribed vendor preconditions against an operator
+    declaration, never the tenant.
+    """
+
+    _CAMPAIGN = {
+        "campaign_id": "CMP-DET-001",
+        "name": "readiness campaign",
+        "authorized_by": "tester",
+        "simulation_authorized": True,
+        "target_allowlist": ["collector.test"],
+        "dry_run": True,
+        "steps": [
+            {
+                "step_id": "step-01",
+                "plugin": "third_party_firewall_emitter",
+                "params": {"collector_url": "https://collector.test/logs/v1/event"},
+            },
+        ],
+    }
+
+    def _create(self, api_client: TestClient):
+        resp = api_client.post("/api/eal/campaigns", json=self._CAMPAIGN)
+        assert resp.status_code == 201, resp.text
+
+    def test_undeclared_onboarding_is_unknown_and_not_ready(self, api_client: TestClient):
+        self._create(api_client)
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness", json={},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["counts"]["unknown"] == 3
+        assert body["counts"]["armed"] == 0
+        assert body["ready"] is False
+        for row in body["detectors"]:
+            assert row["readiness"]["code"] == "DETECTOR_READINESS_UNKNOWN"
+
+    def test_recently_onboarded_source_reports_not_armed_with_days_left(
+        self, api_client: TestClient,
+    ):
+        self._create(api_client)
+        recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"source_onboarded_at": {"third_party_firewalls": recent}},
+        )
+        body = resp.json()
+        assert body["counts"]["not_armed"] == 3
+        assert body["ready"] is False
+        row = body["detectors"][0]
+        assert row["readiness"]["code"] == "DETECTOR_NOT_ARMED"
+        assert row["readiness"]["days_remaining"] == 25
+
+    def test_long_carried_source_is_armed_and_ready(self, api_client: TestClient):
+        self._create(api_client)
+        old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"source_onboarded_at": {"third_party_firewalls": old}},
+        )
+        body = resp.json()
+        assert body["counts"]["armed"] == 3
+        assert body["ready"] is True
+
+    def test_armed_never_claims_the_detector_was_observed_firing(
+        self, api_client: TestClient,
+    ):
+        self._create(api_client)
+        old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+        body = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"source_onboarded_at": {"third_party_firewalls": old}},
+        ).json()
+        # tenant-verified is 0; armed is a precondition, never evidence.
+        assert body["tenant_verified"] == 0
+        assert "not" in body["banner"].lower()
+        assert "armed" in body["banner"].lower()
+
+    def test_naive_onboarding_timestamp_is_422_not_a_silent_utc_assumption(
+        self, api_client: TestClient,
+    ):
+        self._create(api_client)
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"source_onboarded_at": {"third_party_firewalls": "2026-01-01T00:00:00"}},
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "ONBOARDING_TIMESTAMP_NAIVE"
+
+    def test_typod_source_key_is_422_not_a_silently_ignored_declaration(
+        self, api_client: TestClient,
+    ):
+        # Dropping an unrecognised key would leave the operator believing they
+        # declared the source while the verdict silently stayed "unknown".
+        self._create(api_client)
+        old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+        resp = api_client.post(
+            "/api/eal/campaigns/CMP-DET-001/detector-readiness",
+            json={"source_onboarded_at": {"third_party_firewall": old}},  # missing 's'
+        )
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "UNKNOWN_DATA_SOURCE"
+
+    def test_campaign_without_an_analytics_detector_is_422(self, api_client: TestClient):
+        spec = {**self._CAMPAIGN, "campaign_id": "CMP-DET-002"}
+        spec["target_allowlist"] = ["testmynids.org"]
+        spec["steps"] = [{
+            "step_id": "step-01",
+            "plugin": "c2_http_beacon",
+            "params": {"target_url": "http://testmynids.org/uid/index.html"},
+        }]
+        api_client.post("/api/eal/campaigns", json=spec)
+        resp = api_client.post("/api/eal/campaigns/CMP-DET-002/detector-readiness", json={})
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["code"] == "NO_ANALYTICS_DETECTOR"
+
+    def test_undocumented_claim_blocks_ready_and_says_why(self, api_client: TestClient):
+        spec = {**self._CAMPAIGN, "campaign_id": "CMP-DET-003"}
+        spec["steps"] = [{
+            "step_id": "step-01",
+            "plugin": "duo_auth_emitter",
+            "params": {"collector_url": "https://collector.test/logs/v1/event"},
+        }]
+        api_client.post("/api/eal/campaigns", json=spec)
+        old = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+        body = api_client.post(
+            "/api/eal/campaigns/CMP-DET-003/detector-readiness",
+            json={"source_onboarded_at": {"duo": old}},
+        ).json()
+        # 1 documented Duo detector is armed; 2 are unbacked claims.
+        assert body["counts"]["armed"] == 1
+        assert body["counts"]["undocumented"] == 2
+        # An unbacked claim can never be armed, so the campaign is not ready.
+        assert body["ready"] is False
+        und = [d for d in body["detectors"] if not d["documented"]]
+        assert all(d["undocumented_reason"] for d in und)
+
+
+class TestDataStreamsDetectorRows:
+    def test_data_streams_surfaces_detector_bindings(self, api_client: TestClient):
+        data = api_client.get("/api/eal/data-streams").json()
+        assert data["detector_counts"]["documented"] == 11
+        assert data["detector_counts"]["undocumented"] == 4
+        assert data["detector_counts"]["alerts_transcribed"] == 8
+        refs = {d["alert_ref"] for d in data["detectors"] if d["documented"]}
+        assert "port-scan" in refs
+
+    def test_undocumented_detectors_are_listed_not_omitted(self, api_client: TestClient):
+        data = api_client.get("/api/eal/data-streams").json()
+        und = [d for d in data["detectors"] if not d["documented"]]
+        assert {d["emitter"] for d in und} == {
+            "duo_auth_emitter", "third_party_alert_emitter",
+        }
+        for row in und:
+            assert row["undocumented_reason"]

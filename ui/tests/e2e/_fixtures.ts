@@ -36,18 +36,30 @@ type Helpers = {
  * under test. Tab-scoped views go through the hash router, since there is no rail
  * entry to click.
  */
-const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string> }> = {
+const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string>; hidden?: boolean }> = {
   'Targets': { dest: 'agents' },
   'Library': { dest: 'library' },
   'ATT&CK Coverage': { dest: 'coverage' },
-  'Environments': { dest: 'environments' },
-  'Launch': { dest: 'guided' },
+  // `hidden` means "routable but not in the rail", so gotoView addresses it by
+  // URL instead of clicking a button that does not exist. Three of these are
+  // hidden as of the POVengine IA:
+  //   environments — its content is the Components destination now, but the
+  //                  Lab surface itself is still mounted and still worth
+  //                  testing, so the route stays.
+  //   eal          — same story, folded into Data Streams.
+  //   guided       — always was hidden; the optional demo path.
+  // Marking them here rather than deleting the specs is deliberate: the
+  // surfaces still exist and still have behaviour worth guarding. What changed
+  // is how you reach them, and that is exactly what this table is for.
+  'Environments': { dest: 'environments', hidden: true },
+  'Launch': { dest: 'guided', hidden: true },
   'Live': { dest: 'runs', params: { tab: 'live' } },
   'Evidence': { dest: 'runs', params: { tab: 'evidence' } },
-  'EAL Plugins': { dest: 'eal' },
-  // The tool-adapter catalog, relabelled "Tools & Payloads" when the payload
-  // shelf landed on it. The destination id is unchanged, which is the point of
-  // keeping it: routes, testids and ⌘K entries all derive from the id.
+  'EAL Plugins': { dest: 'eal', hidden: true },
+  // The tool-adapter catalog, relabelled "Packages" in the rail. The
+  // destination id is unchanged, which is the point of keeping it: routes,
+  // testids and ⌘K entries all derive from the id, and a rename to match the
+  // label silently broke this route once already.
   'Tools & Payloads': { dest: 'adapters' },
   'Payload Shelf': { dest: 'adapters', params: { supply: 'unstaged' } },
 }
@@ -67,7 +79,7 @@ export async function gotoView(
   }
 
   const params = { ...(route.params ?? {}), ...extra }
-  const hidden = route.dest === 'guided'   // not in the rail by design
+  const hidden = route.hidden === true   // not in the rail by design — see VIEW_ROUTES
   if (hidden || Object.keys(params).length) {
     const qs = new URLSearchParams(params).toString()
     await page.goto(`/#/${route.dest}${qs ? `?${qs}` : ''}`)

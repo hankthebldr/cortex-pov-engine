@@ -1,225 +1,244 @@
 import React from 'react'
-import TenantSwitcher from './GlobalContextBar/TenantSwitcher.jsx'
-import AgentSwitcher from './GlobalContextBar/AgentSwitcher.jsx'
+import EvidenceCollection from './EvidenceCollection.jsx'
 
 /**
- * ConsoleHeader — the persistent GLOBAL CONTEXT BAR.
+ * ConsoleHeader — the persistent global bar.
  *
- * Always visible, top of shell. Left→right:
- *   1. PANW + Cortex brand marks, then the product wordmark + version
- *   2. Tenant switcher pill (provider-backed; status dot + Manage… footer)
- *   3. Agent switcher pill  (provider-backed; liveness dot + Manage… footer)
- *   4. Connectivity/health chip — the real sensor summary for the active tenant
- *   5. Global RUN view — always present; LIVE when in flight, last-run when idle
- *   6. ⌘K command-palette trigger
- *   7. Guided-tour trigger (carries a beacon until the tour is first taken)
- *   8. Theater-mode + colour-theme toggles
+ * Left→right: the Cortex product mark + POVengine wordmark + version, the
+ * evidence collection, then (pushed right) the bound tenant, the active agent,
+ * the run pill, ⌘K, the utility toggles, and the account chip.
  *
- * The two switchers + the ⌘K palette all write to the SAME provider, so the
- * active tenant/agent is switchable from three places and reflected everywhere.
+ * EVERY CHILD IS `flex: none; white-space: nowrap`.
+ * This bar carries ten controls that each have to stay readable. Letting them
+ * wrap produced a two-line header at exactly the width a projector runs at,
+ * and the control that fell to the second line was the LIVE pill. The shell
+ * declares a 1200px floor and scrolls horizontally below it instead — see the
+ * note at the top of povengine-shell.css. The floor is 1200 because the
+ * header's measured natural width at its widest state is 1194; it is not a
+ * round number picked for looks.
  *
- * WHY THE RUN VIEW IS UNCONDITIONAL
- * ---------------------------------
- * It used to render only while `activeRun` was non-null. That is the state a DC
- * is in for about three minutes of a two-hour session, so in practice the
- * header carried scope (tenant, agent) and no answer at all to "what is this
- * thing doing right now / what did it last do" — the single most common
- * question between runs. It now always renders: LIVE + step counter while a run
- * is in flight, the last terminal run when idle, and an explicit "no runs yet"
- * when there is genuinely nothing. All three are the same control and all three
- * deep-link into Runs & Proof, so the way back to the evidence never moves.
+ * THE BRAND MARK IS THE REAL ASSET, AND IT SWAPS BY THEME.
+ * `/assets/cortex-{green,mono}.png` are the design system's own Cortex product
+ * marks — green for the on-dark set, mono for on-light. The wrong one is
+ * invisible against its own header, which is why this is selected rather than
+ * fixed. The DS forbids drawing or reconstructing a brand mark; POVengine
+ * itself has no asset, so its wordmark stays as type.
  *
- * The brand mark is ONE <img> lockup, not text: the Cortex glyph, selected on
- * `colorTheme` (cortex-mono on light, cortex-green on dark) and never fixed —
- * the wrong asset is invisible against its header. It carries `alt=""` because
- * it is decorative next to the `cortex sim` text wordmark that follows.
+ * THERE IS DELIBERATELY NO PALO ALTO NETWORKS MASTER LOCKUP HERE.
+ * NOTICE states this is an independent project and NOT an official PANW
+ * product; a header flying the vendor lockup asserts the opposite in every
+ * screenshot and recording. Cortex is named nominatively — it is the platform
+ * under test. Guarded by ShellRedesign.test.jsx. (The design track asks for the
+ * reversed PANW lockup on the Overview page under an "internal tooling for
+ * Cortex Domain Consulting" framing. That framing and NOTICE's are mutually
+ * exclusive, and choosing between them is an affiliation call rather than a
+ * design one — so it is recorded as an open question in
+ * docs/design/DESIGN-SYNC.md rather than silently applied.)
  *
- * There is deliberately NO Palo Alto Networks lockup here, in either the left
- * brand block or the right rail. NOTICE states CortexSim is an independent
- * project and NOT an official PANW product; a header flying the vendor mark
- * asserted the opposite in every screenshot and recording. Cortex is named
- * nominatively — it is the platform under test. See the negative guard in
- * ShellRedesign.test.jsx.
+ * TENANT AND AGENT ARE READ-OUTS HERE, NOT SWITCHERS.
+ * One tenant per instance is a design decision, and it follows from the
+ * product: the instance is deployed once for a POV and dies with the lab, so a
+ * header dropdown offering to change tenant was modelling a thing that cannot
+ * happen. Both chips navigate to the surface that owns them. Switching an
+ * agent is still available from ⌘K and from the Agents surface, so the
+ * capability is intact — only the duplicate control is gone.
  *
  * Props:
- *   health          — { hostname, version, sensors: {..}, tenantHealth }
- *   activeRun       — { scenarioId, step, totalSteps, elapsed } | null
- *   lastRun         — { runId, scenarioId, status } | null  (idle run view)
- *   onOpenPalette   — () => void
- *   onNavigate      — (destinationId, params?) => void  (Manage… + run view)
- *   onStartTour     — () => void | null   (renders the ? button when provided)
- *   tourSeen        — boolean; false puts a beacon on the ? button
- *   userInitials    — string
- *   theaterMode     — boolean
- *   onToggleTheater — () => void
- *   colorTheme      — 'light' | 'dark'
- *   onToggleColorTheme — () => void
+ *   health        — { hostname, version, ... }
+ *   tenant        — resolved tenant object | null
+ *   agent         — resolved agent object | null
+ *   activeRun     — { runId, scenarioId, step, totalSteps, elapsed } | null
+ *   lastRun       — { runId, scenarioId, status } | null
+ *   onOpenPalette — () => void
+ *   onNavigate    — (destinationId, params?) => void
+ *   onStartTour   — () => void | null   (renders the ? button when provided)
+ *   tourSeen      — boolean; false puts a beacon on the ? button
+ *   colorTheme / onToggleColorTheme, theaterMode / onToggleTheater
  */
 export default function ConsoleHeader({
   health = {},
+  tenant = null,
+  agent = null,
   activeRun = null,
   lastRun = null,
-  onOpenPalette,
+  onOpenPalette = () => {},
   onNavigate = () => {},
   onStartTour = null,
   tourSeen = true,
   userInitials = 'DC',
   theaterMode = false,
   onToggleTheater = null,
-  colorTheme = 'light',
+  colorTheme = 'dark',
   onToggleColorTheme = null,
+  povName,
 }) {
-  // REMOVED: the `LOCALHOST / sensors pending` env pill.
-  //
-  // It was not merely decorative, it was WRONG in two ways at once, and both
-  // were permanent rather than transient:
-  //   - `GET /api/health` returns no `hostname` key, so it fell back to
-  //     `window.location.hostname` — i.e. it displayed the BROWSER's host and
-  //     labelled it as the environment. On a DC's laptop that reads
-  //     "LOCALHOST" whether SimCore is local, in compose, or on a jumpbox.
-  //   - `GET /api/health` returns no `sensors` key either, so the summary was
-  //     the literal string "sensors pending" on every deployment that has ever
-  //     existed. "Pending" reads as a state that will resolve. It cannot.
-  // A status pill that always shows the same never-resolving status is worse
-  // than no pill: it occupies the spot a real health signal would occupy and
-  // trains the reader to ignore it. `/api/health` already has a truthful
-  // surface in ReadinessBanner + the Readiness destination; this duplicated it
-  // badly. If SimCore ever reports hostname/sensors, reinstate it from that
-  // data — not from `window.location`.
-  const version = health.version || 'v1.0'
-
-  const fmtElapsed = (s) => {
-    if (s == null) return '0:00'
-    const m = Math.floor(s / 60)
-    const sec = String(s % 60).padStart(2, '0')
-    return `${m}:${sec}`
-  }
-
+  // NOT derived from window.location. The previous env pill fell back to the
+  // BROWSER's hostname when /api/health omitted one, so it read "LOCALHOST" on
+  // a DC's laptop whether SimCore was local, in compose or on a jumpbox — a
+  // status that is always the same is worse than none, because it occupies the
+  // spot a real signal would occupy.
+  const version = health.version ? `v${String(health.version).replace(/^v/, '')}` : 'v0.2.0'
   const dark = colorTheme === 'dark'
   const cortexMark = dark ? '/assets/cortex-green.png' : '/assets/cortex-mono.png'
 
+  const tenantLabel = tenant ? (tenant.host || tenant.name || tenant.id) : 'no tenant bound'
+  const agentLabel = agent ? (agent.hostname || agent.agent_id || agent.id) : 'no agent selected'
+
   return (
-    <header className="header">
-      <div className="header__left">
-        <div className="brand-marks">
-          <img className="brand-marks__cortex" src={cortexMark} alt="" />
+    <header className="pov-header" data-testid="console-header">
+      <div className="pov-brand brand-marks">
+        <img className="pov-brand__mark brand-marks__cortex" src={cortexMark} alt="" />
+        <div className="pov-brand__word brand__wordmark">
+          <b>POV</b><span>engine</span>
         </div>
-        <div className="brand">
-          <div className="brand__wordmark">cortex<em>sim</em></div>
-          <div className="brand__subtitle">Detection Simulation Engine</div>
-        </div>
-        <span className="brand__version mono">{version}</span>
+        <span className="pov-brand__version brand__version mono">{version}</span>
       </div>
 
-      <div className="header__right">
-        <TenantSwitcher onManage={() => onNavigate('tenants')} />
-        <AgentSwitcher onManage={() => onNavigate('agents')} />
+      <EvidenceCollection povName={povName} onNavigate={onNavigate} />
 
-        {/* The run view — see "WHY THE RUN VIEW IS UNCONDITIONAL" above. Three
-            mutually exclusive states, one control, one destination. */}
-        {activeRun ? (
-          <button
-            type="button"
-            className="env-pill live-pill"
-            data-testid="header-run-view"
-            data-run-state="live"
-            onClick={() => onNavigate('runs', { run: activeRun.runId, tab: 'live' })}
-            title="Jump to the live run"
-            aria-label={`Live run ${activeRun.scenarioId || ''} — open in Runs & Proof`}
-          >
-            <span className="env-pill__dot live-pill__dot" />
-            <span className="env-pill__label live-pill__label">LIVE</span>
-            <span className="env-pill__meta mono">
-              {activeRun.scenarioId} · {activeRun.step}/{activeRun.totalSteps} · {fmtElapsed(activeRun.elapsed)}
-            </span>
-          </button>
-        ) : lastRun ? (
-          <button
-            type="button"
-            className="env-pill run-pill run-pill--last"
-            data-testid="header-run-view"
-            data-run-state="last"
-            onClick={() => onNavigate('runs', { run: lastRun.runId, tab: 'evidence' })}
-            title="Open the evidence for the most recent run"
-            aria-label={`Last run ${lastRun.scenarioId || ''} — open its evidence`}
-          >
-            <span className="env-pill__dot run-pill__dot" />
-            <span className="env-pill__label run-pill__label">LAST RUN</span>
-            <span className="env-pill__meta mono">
-              {lastRun.scenarioId} · {lastRun.status}
-            </span>
-          </button>
-        ) : (
-          /* Not a placeholder for a value we failed to fetch — genuinely no run
-             has ever completed on this SimCore. Says so, and still routes to
-             the surface that would show one. */
-          <button
-            type="button"
-            className="env-pill run-pill run-pill--none"
-            data-testid="header-run-view"
-            data-run-state="none"
-            onClick={() => onNavigate('runs')}
-            title="No run has completed yet — open Runs & Proof"
-            aria-label="No runs yet — open Runs & Proof"
-          >
-            <span className="env-pill__dot run-pill__dot" />
-            <span className="env-pill__label run-pill__label">NO RUNS</span>
-            <span className="env-pill__meta mono">nothing launched yet</span>
-          </button>
-        )}
+      <div className="pov-header__spacer" />
 
-        <button className="cmd-trigger" onClick={onOpenPalette} aria-label="Open command palette (search, launch, export)" title="Search · launch · export">
-          <span className="kbd">⌘K</span>
-          <span className="cmd-trigger__label">Search</span>
+      <button
+        type="button"
+        className="pov-chip"
+        data-testid="header-tenant"
+        onClick={() => onNavigate('tenants')}
+        title="Tenant — one per instance"
+      >
+        <span className={'pov-chip__dot' + (tenant ? '' : ' pov-chip__dot--off')} />
+        <span>{tenantLabel}</span>
+      </button>
+
+      <button
+        type="button"
+        className="pov-chip"
+        data-testid="header-agent"
+        onClick={() => onNavigate('agents')}
+        title="Active agent"
+      >
+        <span className={'pov-chip__dot' + (agent ? '' : ' pov-chip__dot--off')} />
+        <span>{agentLabel}</span>
+      </button>
+
+      {/* The run view is unconditional. A DC is in the "a run is in flight"
+          state for about three minutes of a two-hour session, so a pill that
+          rendered only then left the header with no answer at all to "what is
+          this doing / what did it last do" — the most common question between
+          runs. All three states are the same control and all three land on
+          Runs, so the way back to the evidence never moves. */}
+      <RunPill activeRun={activeRun} lastRun={lastRun} onNavigate={onNavigate} />
+
+      <button type="button" className="pov-chip" onClick={onOpenPalette} data-testid="header-palette"
+        aria-label="Open command palette (search, launch, export)">
+        <span className="pov-chip__kbd">⌘K</span>
+        <span className="pov-chip__label">Search</span>
+      </button>
+
+      {onStartTour && (
+        <button
+          type="button"
+          className="pov-chip tour-trigger"
+          onClick={onStartTour}
+          data-testid="header-tour-trigger"
+          aria-label="Take the guided tour of the console"
+          title="Guided tour"
+        >
+          ?
+          {/* One beacon, on one genuinely new affordance, cleared for good on
+              first use. `tourSeen` fails CLOSED in onboardingState (unreadable
+              storage reports "seen"), so a browser we cannot remember never
+              gets a permanent beacon. */}
+          {!tourSeen && <span className="tour-trigger__beacon" aria-hidden="true" />}
         </button>
+      )}
 
-        {onStartTour && (
-          <button
-            type="button"
-            className="tour-trigger"
-            onClick={onStartTour}
-            data-testid="header-tour-trigger"
-            aria-label="Take the guided tour of the console"
-            title="Guided tour"
-          >
-            ?
-            {/* One beacon, on one genuinely new affordance, cleared for good on
-                first use — the design's own rule. `tourSeen` fails CLOSED in
-                onboardingState (unreadable storage reports "seen"), so a
-                browser we cannot remember never gets a permanent beacon. */}
-            {!tourSeen && <span className="tour-trigger__beacon" aria-hidden="true" />}
-          </button>
-        )}
+      {onToggleTheater && (
+        <button
+          type="button"
+          className={'pov-chip theater-toggle' + (theaterMode ? ' is-active' : '')}
+          onClick={onToggleTheater}
+          aria-pressed={theaterMode}
+          title={theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly'}
+        >
+          {theaterMode ? 'Theater on' : 'Theater'}
+        </button>
+      )}
 
-        {onToggleTheater && (
-          <button
-            type="button"
-            className={'theater-toggle' + (theaterMode ? ' is-active' : '')}
-            onClick={onToggleTheater}
-            aria-pressed={theaterMode}
-            aria-label={theaterMode ? 'Exit theater mode' : 'Enter theater mode for sales demos and briefings'}
-            title={theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly, hides debug chrome'}
-          >
-            {theaterMode ? '◼' : '◻'}<span className="theater-toggle__label">Theater</span>
-          </button>
-        )}
+      {onToggleColorTheme && (
+        <button
+          type="button"
+          className="pov-chip theme-toggle"
+          onClick={onToggleColorTheme}
+          aria-pressed={dark}
+          aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+          title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+        >
+          {dark ? 'Dark' : 'Light'}
+        </button>
+      )}
 
-        {onToggleColorTheme && (
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={onToggleColorTheme}
-            aria-pressed={colorTheme === 'dark'}
-            aria-label={colorTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            title={colorTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          >
-            {colorTheme === 'dark' ? '🌙' : '☀'}<span className="theme-toggle__label">{colorTheme === 'dark' ? 'Dark' : 'Light'}</span>
-          </button>
-        )}
-
-        <span className="header__divider" aria-hidden="true" />
-        <div className="user-avatar" title="Domain Consultant">{userInitials}</div>
-      </div>
+      <div className="pov-avatar user-avatar" title="Domain Consultant">{userInitials}</div>
     </header>
+  )
+}
+
+function fmtElapsed(s) {
+  if (s == null) return null
+  if (typeof s === 'string') return s
+  const m = Math.floor(s / 60)
+  return `${m}:${String(s % 60).padStart(2, '0')}`
+}
+
+function RunPill({ activeRun, lastRun, onNavigate }) {
+  if (activeRun) {
+    const elapsed = fmtElapsed(activeRun.elapsed)
+    return (
+      <button
+        type="button"
+        className="pov-chip pov-live live-pill"
+        data-testid="header-run-view"
+        data-run-state="live"
+        onClick={() => onNavigate('runs', { run: activeRun.runId, tab: 'live' })}
+        aria-label={`Live run ${activeRun.scenarioId || ''} — open in Runs`}
+      >
+        <span className="pov-chip__dot" />
+        <span className="pov-live__tag">LIVE</span>
+        <span>
+          {activeRun.scenarioId} · {activeRun.step}/{activeRun.totalSteps}
+          {elapsed ? ` · ${elapsed}` : ''}
+        </span>
+      </button>
+    )
+  }
+  if (lastRun) {
+    return (
+      <button
+        type="button"
+        className="pov-chip run-pill run-pill--last"
+        data-testid="header-run-view"
+        data-run-state="last"
+        onClick={() => onNavigate('runs', { run: lastRun.runId, tab: 'evidence' })}
+        aria-label={`Last run ${lastRun.scenarioId || ''} — open its evidence`}
+      >
+        <span className={'pov-chip__dot' + (lastRun.status === 'completed' ? '' : ' pov-chip__dot--warn')} />
+        <span>{lastRun.scenarioId || lastRun.runId} · {lastRun.status || 'done'}</span>
+      </button>
+    )
+  }
+  // Not a placeholder for a value we failed to fetch — genuinely no run has
+  // ever completed on this SimCore. Says so, and still routes to the surface
+  // that would show one.
+  return (
+    <button
+      type="button"
+      className="pov-chip run-pill run-pill--none"
+      data-testid="header-run-view"
+      data-run-state="none"
+      onClick={() => onNavigate('runs')}
+      aria-label="No runs yet — open Runs"
+    >
+      <span className="pov-chip__dot pov-chip__dot--off" />
+      <span>no runs yet</span>
+    </button>
   )
 }

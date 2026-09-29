@@ -78,43 +78,79 @@ describe('design token contract (cortex-tokens.css)', () => {
     darkTokens = parseDeclarations(darkBlock)
   })
 
-  it('defines a complete LIGHT (:root) token set matching the design reference', () => {
-    // Spot-check one token from each family named in the task brief.
+  it('defines a complete LIGHT (:root) token set on the inverted contract', () => {
+    // THE CONTRACT INVERTED. It used to read "Cortex green is the primary
+    // accent, PANW orange is reserved for warn/gap signal". It now reads the
+    // other way round, per the brand's own one-dominant-color rule and the DS's
+    // `--color-accent: var(--panw-orange)`. These assertions are the inversion
+    // written down: if a future pass reverts it, this is what says so.
     expect(lightTokens.s1).toBe('#FFFFFF')
-    expect(lightTokens.ac).toBe('#00A855') // primary accent, light theme
-    expect(lightTokens.tx).toBe('#0A0F0D')
-    expect(lightTokens.bd).toBe('#E3E9E6')
-    // --warn is a recorded WCAG AA deviation (2026-08-31), not the designer's
-    // verbatim #C7961B — that value measured 2.69:1 against --s1, short of
-    // the 4.5:1 text floor at the 9-11px this console renders warn text at
-    // (and even short of the 3:1 non-text floor for its own decorative
-    // fills). Same hue/saturation, darkened only as far as 4.5:1 requires —
-    // see the deviation note atop cortex-tokens.css's :root block.
-    expect(lightTokens.warn).toBe('#896713')
+    expect(lightTokens.ac).toBe('#FA582D')      // chrome accent — PANW orange
+    expect(lightTokens.pos).toBe('#0A6231')     // status — Cortex green, deep
+    expect(lightTokens.tx).toBe('#000000')
+    expect(lightTokens.bd).toBe('#E9E9E9')
+    // --warn is Strata yellow darkened for AA: #FFCB06 measures 2.69:1 against
+    // --s1, short of the 4.5:1 text floor at the 9-11px this console renders
+    // warn text at. Same hue/saturation, darkened only as far as 4.5:1
+    // requires. --warn-str keeps the brand value for fills.
+    expect(lightTokens.warn).toBe('#7D5E11')
+    expect(lightTokens['warn-str']).toBe('#FFCB06')
     expect(lightTokens.crit).toBe('#A51B00')
-    expect(lightTokens.orange).toBe('#FA582D')
-    expect(lightTokens.info).toBe('#0090AA')
-    expect(lightTokens.ink).toBe('#06120C')
+    expect(lightTokens.info).toBe('#00667B')
+    // --orange is now an ALIAS of the accent rather than a separate signal
+    // hue. Every legacy `var(--orange)` call site keeps resolving; what it
+    // resolves to is the chrome accent.
+    expect(lightTokens.orange).toBe('var(--ac)')
   })
 
-  it('defines a complete DARK ([data-theme="dark"]) token set matching the design reference', () => {
-    expect(darkTokens.s1).toBe('#101815')
-    expect(darkTokens.ac).toBe('#00CC66') // primary accent, dark theme
-    expect(darkTokens.tx).toBe('#F2F6F4')
-    expect(darkTokens.bd).toBe('#26312A')
+  it('defines a complete DARK ([data-theme="dark"]) token set on the same contract', () => {
+    // Dark surfaces are the DS neutrals verbatim — PANW theme dk1/dk2 plus the
+    // template's working greys. Deliberately NOT green-tinted any more: the
+    // tint competed with the status hue it sat behind.
+    expect(darkTokens.s0).toBe('#000000')
+    expect(darkTokens.s1).toBe('#141414')
+    expect(darkTokens.ac).toBe('#FA582D')
+    expect(darkTokens.pos).toBe('#00CC66')
+    expect(darkTokens.tx).toBe('#FFFFFF')
+    expect(darkTokens.tx2).toBe('#C7C7C7')
+    expect(darkTokens.bd).toBe('#333333')
     expect(darkTokens.warn).toBe('#FFCB06')
-    expect(darkTokens.crit).toBe('#FF6A4D')
-    expect(darkTokens.orange).toBe('#FF7A54')
-    expect(darkTokens.info).toBe('#35D3F0')
-    expect(darkTokens.ink).toBe('#04100A')
+    expect(darkTokens.crit).toBe('#FDAC96')
+    expect(darkTokens.info).toBe('#00C0E8')
+    expect(darkTokens.orange).toBe('var(--ac)')
+  })
+
+  it('keeps the soft chip fills OPAQUE so their contrast is well defined', () => {
+    // The design authors these as rgba() over black. Left translucent, a chip
+    // fill is a different colour on --s0 than on --s3, so "what is the contrast
+    // of this label on its chip" has no single answer — and the contrast
+    // harness cannot score one at all without being told what is underneath.
+    for (const key of ['ac-soft', 'ac-line', 'pos-soft', 'pos-line']) {
+      expect(lightTokens[key], `light --${key}`).toMatch(/^#[0-9A-Fa-f]{6}$/)
+      expect(darkTokens[key], `dark --${key}`).toMatch(/^#[0-9A-Fa-f]{6}$/)
+    }
+  })
+
+  it('separates the fill hue from the text-safe ink for BOTH brand colours', () => {
+    // --ac measures 4.38:1 on dark --s3 and 2.66:1 on light --s3 — below the
+    // text floor in both themes. It is a fill. Anything painting accent TEXT
+    // uses --ac-ink, and the same split exists for green. Collapsing either
+    // pair is how the console shipped unreadable 9px labels last time.
+    expect(lightTokens['ac-ink']).not.toBe(lightTokens.ac)
+    expect(lightTokens['pos-ink']).toBeDefined()
+    expect(darkTokens['ac-ink']).not.toBe(darkTokens.ac)
+    expect(darkTokens['pos-ink']).toBeDefined()
   })
 
   it('actually gives light and dark two different palettes (not a copy-paste no-op)', () => {
-    // If dark ever regressed to being byte-identical to light, the whole
-    // point of shipping two token sets would be silently defeated.
-    for (const key of ['s0', 's1', 'ac', 'tx', 'tx2', 'bd', 'ink']) {
+    // If dark ever regressed to being byte-identical to light, the whole point
+    // of shipping two token sets would be silently defeated. --ac is NOT in
+    // this list any more, and that is correct: a brand colour that changed
+    // between themes would stop being the brand colour.
+    for (const key of ['s0', 's1', 'tx', 'tx2', 'bd', 'ink', 'warn', 'crit']) {
       expect(darkTokens[key], `--${key} should differ between themes`).not.toBe(lightTokens[key])
     }
+    expect(darkTokens.ac, '--ac is a brand hue and must NOT differ by theme').toBe(lightTokens.ac)
   })
 
   it('imports cortex-tokens.css ahead of cortex-theme.css so aliases resolve', () => {
@@ -164,8 +200,21 @@ describe('design token contract (cortex-tokens.css)', () => {
       }
     )
 
-    it('routes the primary accent alias (--cortex-teal) onto Cortex green (--ac), not the old teal', () => {
+    it('routes the primary accent alias (--cortex-teal) onto --ac, whatever --ac now is', () => {
+      // The legacy name is cyan, the value has been green, and it is now PANW
+      // orange. What this guards is the indirection, not the hue: 130+ call
+      // sites read --cortex-teal and every one of them must follow the accent.
       expect(aliases['teal']).toBe('var(--ac)')
+    })
+
+    it('routes --cortex-success onto the STATUS hue, never onto the accent', () => {
+      // The alias that would have failed loudest and most silently. --ac-str
+      // used to BE Cortex green, so `--cortex-success: var(--ac-str)` read
+      // correctly. After the inversion --ac-str is PANW orange, and leaving
+      // the alias alone would have painted every success badge in the console
+      // a warning colour without one call site changing.
+      expect(aliases['success']).toBe('var(--pos)')
+      expect(aliases['success']).not.toMatch(/--ac/)
     })
 
     it('routes --cortex-warning onto the warn signal token, never onto --orange', () => {

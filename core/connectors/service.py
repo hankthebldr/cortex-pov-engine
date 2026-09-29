@@ -28,9 +28,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from connectors import ConnectorConfig, get_connector, reconcile
 from connectors.base import HttpFetcher
+from connectors.matcher import scope_to_host
 from events import event_bus
 from integrations.xsiam.codes import remediation_for
-from models import Result, Run, Scenario
+from models import Agent, Result, Run, Scenario
 from security.credentials import CredentialStore
 
 logger = logging.getLogger("cortexsim.connectors.service")
@@ -61,9 +62,16 @@ async def reconcile_run(
     integration_name: Optional[str] = None,
     window_seconds: int = 3600,
     fetcher: Optional[HttpFetcher] = None,
+    host: Optional[str] = None,
 ) -> ReconcileOutcome:
     """Resolve the integration credential, pull observations for the run's
-    window, correlate to ``results``, persist matches, emit SSE.
+    window, scope them to the run's target host, correlate to ``results``,
+    persist matches, emit SSE.
+
+    ``host`` overrides the scope host; when omitted it is resolved from
+    ``Run.target`` → ``Agent.hostname``. A run with no resolvable host is
+    reconciled UNSCOPED and the summary says so — on a shared tenant that means
+    an alert from any endpoint could have been credited.
 
     Raises :class:`ReconcileError` (never HTTP) on any failure.
     """
@@ -106,22 +114,61 @@ async def reconcile_run(
                              detail=detail)
 
     await store.mark_integration_verified(integ.name, ok=True, error=None)
-    verdicts = reconcile(results, pull.observations, window_seconds=window_seconds)
+
+    scope_host = host if host is not None else await resolve_run_host(db, run)
+    eligible, host_scope = scope_to_host(pull.observations, scope_host)
+    verdicts = reconcile(results, eligible, window_seconds=window_seconds)
     summary, newly = await apply_verdicts(db, run.run_id, results, verdicts,
                                           source=f"{connector_kind}:{integ.name}")
     summary["pulled"] = len(pull.observations)
+    summary["host_scope"] = host_scope
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
+
+    warnings: list[str] = []
+    if host_scope["host"] is None:
+        warnings.append(
+            "unscoped: this run has no resolvable target host, so an alert from "
+            "ANY endpoint in the tenant was eligible to be credited — on a shared "
+            "tenant treat every match here as unconfirmed.")
+    truncation = (pull.detail or {}).get("truncation")
+    if truncation:
+        summary["truncated"] = True
+        summary["truncation"] = truncation
+        warnings.append(
+            f"the tenant holds {truncation.get('total_count')} alerts in this window "
+            f"and {truncation.get('returned')} were fetched ({truncation.get('pages')} "
+            f"page(s), cap {truncation.get('max_pages')}) — coverage below is a floor, "
+            f"not a measurement.")
     if pull.dropped:
         # Never absorbed into the coverage number: these alerts existed in the
         # tenant and CortexSim could not date them, so they are NOT evidence
         # that a detection failed to fire.
         summary["dropped_unparseable_timestamps"] = pull.dropped
-        summary["warning"] = (
+        warnings.append(
             f"{pull.dropped} of {pull.dropped + len(pull.observations)} alerts had "
             f"an unreadable timestamp and were not counted — coverage below is a "
-            f"floor, not a measurement."
-        )
+            f"floor, not a measurement.")
+    if warnings:
+        summary["warnings"] = warnings
+        summary["warning"] = " ".join(warnings)
     return ReconcileOutcome(summary=summary, newly_matched=newly)
+
+
+async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
+    """The hostname the run executed on, or None when it cannot be known.
+
+    ``Run.target`` is the launch agent id; the beacon registered its hostname.
+    Push-mode runs and runs whose agent row is gone resolve None, which the
+    caller reports as *unscoped* rather than silently matching tenant-wide.
+    """
+    target = getattr(run, "target", None)
+    if not target:
+        return None
+    agent = (await db.execute(
+        select(Agent).where(Agent.agent_id == target))).scalar_one_or_none()
+    if agent is None or not agent.hostname:
+        return None
+    return agent.hostname
 
 
 async def apply_verdicts(

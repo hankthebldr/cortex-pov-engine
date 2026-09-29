@@ -105,11 +105,25 @@
   --c-panw-orange:     #FA582D;
   --c-accent-violet:   #8E7CFF;
 
-  /* ── Typography ──────────────────────────────────────────────────── */
-  --font-display:   'Funnel Display', ui-serif, Georgia, serif;
-  --font-ui:        'Archivo', ui-sans-serif, system-ui, sans-serif;
+  /* ── Typography ───────────────────────────────────────────────────
+     The PANW Executive DS families (see `ds/typography.css`), not the
+     old Funnel Display / Archivo pair. Montserrat is the brand display
+     face and matches the family embedded in the corporate template;
+     Helvetica Neue is the brand body face, served off the OS stack
+     because it is not freely webfont-distributable (the DS flags this
+     substitution — drop licensed .woff2 files in and add @font-face
+     rules if the org has them). JetBrains Mono is this console's own
+     addition for IDs, digests, commands and telemetry; the DS has no
+     mono face and a POV console is mostly those four things.
+
+     Display type here does NOT carry the DS's -0.02em display
+     tracking: that is authored for 44-72px slide titles, and at the
+     20-27px this console renders headings it reads as crunched.
+     Headings use heading tracking (-0.01em) at weight 700 instead. */
+  --font-display:   'Montserrat', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-ui:        'Helvetica Neue', Helvetica, Arial, 'Montserrat', sans-serif;
   --font-mono:      'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
-  --font-narrative: 'Fraunces', ui-serif, Georgia, serif;
+  --font-narrative: var(--font-ui);
 
   --fs-display-xl:  48px;
   --fs-display-lg:  32px;

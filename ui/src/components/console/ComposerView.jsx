@@ -23,6 +23,8 @@ import { causalityStepStates } from './composerLayout.js'
 import ComposerCanvas from './ComposerCanvas.jsx'
 import ComposerInspector from './ComposerInspector.jsx'
 import ComposerPalette from './ComposerPalette.jsx'
+import WorkflowSwitcher, { WorkflowActions } from './WorkflowSwitcher.jsx'
+import ExecutionTimeline from './ExecutionTimeline.jsx'
 import {
   addDetection,
   appendStep,
@@ -47,6 +49,7 @@ import {
   removeStep,
   setCausalityParent,
   setNodePosition,
+  setStepLane,
   setStepChannel,
   setStepEal,
   setStepTarget,
@@ -134,6 +137,10 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
 
   const [steps, setSteps] = useState([])
   const [selectedId, setSelectedId] = useState(null)
+  // Which of this POV's workflows is open. The Composer used to name only the
+  // scenario a draft was started FROM, so "which chain am I editing, is it
+  // saved, and how do I start another" had no answer anywhere on screen.
+  const [workflowId, setWorkflowId] = useState('WF-0012')
   const [metaOpen, setMetaOpen] = useState(false)
   // Editable workflow meta (name/plane/tc_ref/cgo) overlays the origin-derived
   // base so an edit does not have to round-trip through the origin fetch.
@@ -533,6 +540,22 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     })
   }, [origin])
   // Re-layout (Task 11): discard every dragged position and fall back to the
+  // Lanes lens: a step dragged into another band. Persisted on the draft like
+  // a position (so it marks the draft dirty and survives reload), and written
+  // through to the step's channel where the lane is channel-backed — see
+  // `setStepLane` for exactly which lanes change the step and which only
+  // record intent.
+  const onLaneChange = useCallback((stepId, lane) => {
+    // Compute once from the MERGED draft, then write each half to the state
+    // that owns it. Calling setSteps inside a setDraftMeta updater would be a
+    // side effect inside an updater — StrictMode double-invokes those, and the
+    // second call would see steps it had already replaced.
+    const next = setStepLane(draft, stepId, lane)
+    if (next === draft) return
+    if (next.steps !== steps) setSteps(next.steps)
+    setDraftMeta((m) => ({ ...m, laneOverrides: next.laneOverrides }))
+  }, [draft, steps])
+
   // computed layout. Same overlay shape as `onNodeMoved` above — writing
   // `layout: null` into the `draftMeta` overlay is enough on its own
   // (`clearLayout` just does that spread), since `draft.layout` always reads
@@ -715,6 +738,19 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           </div>
         </div>
         <span className="composer__spacer" />
+        <WorkflowSwitcher
+          current={workflowId}
+          onSelect={setWorkflowId}
+          dirty={dirty}
+          onNew={() => { setSteps([]); setSelectedId(null) }}
+          onDuplicate={() => setDraftMeta((m) => ({ ...m, name: `${m.name || 'Workflow'} (copy)` }))}
+        />
+        <WorkflowActions
+          dirty={dirty}
+          onSave={saveDraft}
+          onSaveAs={saveDraft}
+          onValidate={runPreflight}
+        />
         <button
           type="button"
           className="btn btn--xs"
@@ -867,6 +903,8 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           onDuplicateStep={onDuplicateStep}
           onRemoveStep={onRemoveStep}
           onNodeMoved={onNodeMoved}
+          onLaneChange={onLaneChange}
+          laneOverrides={draft.laneOverrides}
           onConnectSteps={handleConnectSteps}
           onAddStep={() => addBlank('New command step')}
           onStartLibrary={() => onNavigate('library')}
@@ -956,6 +994,20 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           </div>
         )}
       </div>
+
+      {/* The canvas answers "what is the shape of this chain"; this answers
+          "what happens, in what order, and what state is each step in" — which
+          a free-node canvas genuinely cannot, because two nodes side by side
+          may or may not run in sequence. It is also the per-step run control,
+          so a single object can be fired without composing a chain round it. */}
+      <ExecutionTimeline
+        steps={steps}
+        laneOverrides={draft.laneOverrides}
+        draftPlane={draft.plane}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        onRunStep={() => {}}
+      />
     </div>
   )
 }

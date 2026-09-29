@@ -1,0 +1,33 @@
+/* PANW Executive Design System — Gradient tokens
+   Extracted from the corporate template's graphic-element pages (text containers,
+   containers, image overlays). PPTX angles converted to CSS (CSS = PPTX + 90°). */
+:root {
+  /* ---- Vertical fade: brand color (top) → white (bottom). Text containers (90° PPTX). ---- */
+  --grad-fade-orange: linear-gradient(180deg, #FA582D 0%, #FFFFFF 100%); /* @kind color */
+  --grad-fade-darkorange: linear-gradient(180deg, #C84624 0%, #FFFFFF 100%); /* @kind color */
+  --grad-fade-yellow: linear-gradient(180deg, #FFCB06 0%, #FFFFFF 100%); /* @kind color */
+  --grad-fade-cyan: linear-gradient(180deg, #00C0E8 0%, #FFFFFF 100%); /* @kind color */
+  --grad-fade-green: linear-gradient(180deg, #00CC66 0%, #FFFFFF 100%); /* @kind color */
+  --grad-fade-grey: linear-gradient(180deg, #595959 0%, #FFFFFF 100%); /* @kind color */
+
+  /* ---- Diagonal corner fade: brand color → white. Containers (225° PPTX). ---- */
+  --grad-corner-orange: linear-gradient(315deg, #FA582D 0%, #FFFFFF 33%, #FFFFFF 100%); /* @kind color */
+  --grad-corner-yellow: linear-gradient(315deg, #FFCB06 0%, #FFFFFF 33%, #FFFFFF 100%); /* @kind color */
+  --grad-corner-cyan: linear-gradient(315deg, #00C0E8 0%, #FFFFFF 33%, #FFFFFF 100%); /* @kind color */
+  --grad-corner-green: linear-gradient(315deg, #00CC66 0%, #FFFFFF 33%, #FFFFFF 100%); /* @kind color */
+  --grad-corner-red: linear-gradient(315deg, #AA251B 0%, #FFFFFF 33%, #FFFFFF 100%); /* @kind color */
+
+  /* ---- Deep fill: dark shade → brand color. Solid containers (0° PPTX, horizontal). ---- */
+  --grad-deep-orange: linear-gradient(90deg, #B23808 0%, #FA582D 100%); /* @kind color */
+  --grad-deep-red: linear-gradient(90deg, #7A1912 0%, #AA251B 100%); /* @kind color */
+  --grad-deep-amber: linear-gradient(90deg, #C87A10 0%, #FE9F25 100%); /* @kind color */
+  --grad-deep-cyan: linear-gradient(90deg, #016B80 0%, #0196B3 100%); /* @kind color */
+  --grad-deep-green: linear-gradient(90deg, #0A6231 0%, #0F9347 100%); /* @kind color */
+
+  /* ---- Image overlay: brand color → transparent-white → brand color (65° PPTX). ---- */
+  --grad-image-orange: linear-gradient(155deg, #FA582D 0%, rgba(255,255,255,0.85) 61%, #FA582D 100%); /* @kind color */
+
+  /* ---- Semantic aliases ---- */
+  --gradient-primary: var(--grad-deep-orange); /* @kind color */
+  --gradient-panel: var(--grad-corner-orange); /* @kind color */
+}

@@ -1,11 +1,9 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import ConsoleHeader from './ConsoleHeader.jsx'
-import TelemetryStrip from './TelemetryStrip.jsx'
 import DestinationNav from './DestinationNav.jsx'
-import CommandStrip from './CommandStrip.jsx'
 import CommandPalette from './CommandPalette.jsx'
 import SafetyBanner from './SafetyBanner.jsx'
-import PhaseBar from './PhaseBar.jsx'
+import FlowBar from './FlowBar.jsx'
 import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverlay.jsx'
 import { useTour } from '../onboarding/useTour.js'
 import TourSpotlight from '../onboarding/TourSpotlight.jsx'
@@ -15,11 +13,11 @@ import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
 /**
  * AppShell — Mission Ops Console layout wrapper.
  *
- * Provides the 4-region shell (global context bar · telemetry · workspace ·
- * command strip). The primary nav is the PERSISTENT DestinationNav sidebar —
- * every destination is one click away at any time (the linear ConsoleStepper +
- * More▾ overflow are gone). The active tenant/agent live in the global bar's
- * switchers, not as destinations.
+ * Provides the 3-region shell (header · workspace · flow bar), plus the safety
+ * gate row while it is unacknowledged. The primary nav is the PERSISTENT
+ * DestinationNav sidebar, whose groups ARE the POV phases — the separate phase
+ * bar and the command-strip ticker are both gone, replaced by one flow bar at
+ * the foot that names where you are and what the next action is.
  *
  * Props:
  *   destination   — current destination id (was activeTab)
@@ -29,7 +27,7 @@ import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
  *   health        — { hostname, version, sensors, tenantHealth }
  *   onAbortRun    — () => void
  *   paletteItems  — items for ⌘K
- *   ticker        — string for the bottom strip
+ *   flowCtx       — derived tallies for the flow bar (see povflow.js)
  *   onExportPOV   — () => void  triggered by ⌘E from anywhere
  *   children      — the mounted destination surface
  */
@@ -40,10 +38,17 @@ export default function AppShell({
   activeRun = null,
   lastRun = null,
   health = {},
+  tenant = null,
+  agent = null,
   tenantId = null,
+  povName = undefined,
+  // Derived tallies for the flow bar. Passed through rather than recomputed
+  // here so the bar quotes the SAME numbers the surfaces do — the component
+  // strip claiming 6 ready against a catalog that says 4 is exactly the class
+  // of disagreement this console cannot afford on a readiness screen.
+  flowCtx = {},
   onAbortRun = () => {},
   paletteItems = [],
-  ticker = '',
   onExportPOV = null,
   // Shell-level notice row (the SimCore health/degraded banner). It is a slot
   // rather than a child on purpose: rendered as a child it lands INSIDE
@@ -80,14 +85,16 @@ export default function AppShell({
     })
   }, [])
   // Colour theme (light/dark) — same persisted-preference pattern as
-  // railCollapsed/theaterMode above. Defaults to LIGHT: the token layer
-  // (cortex-tokens.css) treats :root as the light theme and [data-theme]
-  // as opt-in, so no attribute at all IS light. Note this is a different
-  // key/concept than `cortexsim.theme` in main.jsx, which picks between
-  // the Mission Ops Console and the legacy shell — this one picks the
-  // colour palette *within* the console shell.
+  // railCollapsed/theaterMode above. Defaults to DARK, which is a change: the
+  // console is a dark surface in the design, and the light set it used to
+  // default to was drawn for a different accent contract. Light is still a
+  // complete, AA-clean token set and one click away; it is opt-in now rather
+  // than the default, so `[data-theme]` is written on every render instead of
+  // only for dark. Note this is a different key/concept than `cortexsim.theme`
+  // in main.jsx, which picks between this console and the legacy shell — this
+  // one picks the colour palette *within* the console.
   const [colorTheme, setColorTheme] = useState(() => {
-    try { return window.localStorage.getItem('cortexsim.colorTheme') === 'dark' ? 'dark' : 'light' } catch { return 'light' }
+    try { return window.localStorage.getItem('cortexsim.colorTheme') === 'light' ? 'light' : 'dark' } catch { return 'dark' }
   })
   const toggleColorTheme = useCallback(() => {
     setColorTheme((v) => {
@@ -170,19 +177,25 @@ export default function AppShell({
     markFirstRunSeen()
   }, [])
 
-  // The shell is a CSS grid whose row template must match the rows actually
-  // rendered — a mismatch silently collapses the last row (the command strip)
-  // rather than erroring. Theater mode hides the phase bar (projector view
-  // shows the work, not the wayfinding), and the safety banner disappears once
-  // acknowledged, so both are tracked as modifier classes rather than assumed.
-  const showPhaseBar = !theaterMode
-  const shellClass = 'shell'
-    + (activeRun ? '' : ' shell--no-telemetry')
-    + (showPhaseBar ? '' : ' shell--no-phasebar')
+  // The shell is a three-row CSS grid — header / workspace / flow bar — with a
+  // fourth row only while the safety gate is unacknowledged. The row template
+  // must match the rows actually rendered: a mismatch silently collapses the
+  // last row rather than erroring, and the last row is now the flow bar, which
+  // is the one piece of chrome that must never be the thing that falls off.
+  //
+  // Theater mode still hides the wayfinding (a projector view shows the work),
+  // which now means the flow bar rather than the old phase bar.
+  const showFlow = !theaterMode
+  const shellClass = 'pov-shell shell'
+    + (showFlow ? '' : ' shell--no-phasebar')
   const themeClass = `theme-console ${theaterMode ? 'theme-console--theater' : ''}`
 
   return (
-    <div className={`${themeClass} ${shellClass}`} data-theme={colorTheme === 'dark' ? 'dark' : undefined}>
+    // `data-theme` is written on EVERY render now, not only for dark. Dark is
+    // the default and light is opt-in, so "no attribute" can no longer mean
+    // "light" — it would mean the token layer's :root light set leaking under
+    // a shell that expects dark surfaces.
+    <div className={`${themeClass} ${shellClass}`} data-theme={colorTheme}>
       {/* Skip link — keyboard users land here on Tab; jumps past bar/nav to the
           main workspace. Invisible until focused. */}
       <a href="#cortexsim-main" className="skip-link">
@@ -197,8 +210,11 @@ export default function AppShell({
 
       <ConsoleHeader
         health={health}
+        tenant={tenant}
+        agent={agent}
         activeRun={activeRun}
         lastRun={lastRun}
+        povName={povName}
         onOpenPalette={() => setPaletteOpen(true)}
         onNavigate={onNavigate}
         onStartTour={() => tour.start()}
@@ -209,17 +225,9 @@ export default function AppShell({
         onToggleColorTheme={toggleColorTheme}
       />
 
-      {showPhaseBar && (
-        <PhaseBar destination={destination} onNavigate={onNavigate} />
-      )}
-
-      {activeRun && (
-        <TelemetryStrip run={activeRun} onAbort={onAbortRun} />
-      )}
-
       {banner}
 
-      <div className={'workspace' + (railCollapsed ? ' workspace--rail-collapsed' : '')}>
+      <div className={'pov-workspace workspace' + (railCollapsed ? ' pov-workspace--rail-collapsed workspace--rail-collapsed' : '')}>
         <DestinationNav
           groups={navGroups}
           active={destination}
@@ -228,14 +236,22 @@ export default function AppShell({
           onToggleCollapse={toggleRail}
         />
 
-        <main className="main" id="cortexsim-main" aria-label="CortexSim workspace">
+        <main className="pov-main main" id="cortexsim-main" aria-label="POVengine workspace">
           <div className="view" key={destination}>
             {children}
           </div>
         </main>
       </div>
 
-      <CommandStrip ticker={ticker} />
+      {/* Replaces BOTH the old phase bar (which sat above the workspace and
+          competed with the rail for the same job) and the old command-strip
+          ticker (which spent a shell row restating the latest run's status
+          where nobody looked). One bar that names where you are and what comes
+          next. The live-run telemetry the strip used to carry is on the Runs
+          surface, where the rest of the run is. */}
+      {showFlow && (
+        <FlowBar destination={destination} ctx={flowCtx} onNavigate={onNavigate} />
+      )}
 
       <CommandPalette
         open={paletteOpen}

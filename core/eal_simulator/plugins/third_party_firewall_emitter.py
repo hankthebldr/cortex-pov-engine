@@ -173,6 +173,7 @@ class ThirdPartyFirewallEmitter(AnalyticsLogEmitter):
         detectors = [
             {
                 "alert": "Port scan detected",
+                "alert_ref": "port-scan",
                 "dataset": _DATASET,
                 "key_fields": ["src_ip", "dst_ip", "dst_port", "action"],
                 "predicate": (
@@ -184,6 +185,7 @@ class ThirdPartyFirewallEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "Network host sweep",
+                "alert_ref": "port-sweep",
                 "dataset": _DATASET,
                 "key_fields": ["src_ip", "dst_ip", "dst_port"],
                 "predicate": (
@@ -195,6 +197,7 @@ class ThirdPartyFirewallEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "Unusual volume of denied connections",
+                "alert_ref": "failed-connections",
                 "dataset": _DATASET,
                 "key_fields": ["src_ip", "action"],
                 "predicate": (

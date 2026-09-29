@@ -470,7 +470,7 @@ export default function UcTcIndexView({
         <div className="uctc__pagehead-bar" aria-hidden="true" />
         {/* Masthead eyebrow: the nav group alone, matching every other
             redesigned destination (M-4) — not group+destination-name. */}
-        <div className="uctc__pagehead-eyebrow mono">Analyze</div>
+        <div className="uctc__pagehead-eyebrow mono">Phase 2 · Compose</div>
         <h1 className="uctc__pagehead-title">UC / TC Index</h1>
       </div>
       <div className="adapter-registry__intro">

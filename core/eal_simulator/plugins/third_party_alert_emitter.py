@@ -152,6 +152,11 @@ class ThirdPartyAlertEmitter(AnalyticsLogEmitter):
         detectors = [
             {
                 "alert": "Third-party alert surfaced (high/critical)",
+                "undocumented_reason": (
+                    "Every documented Third-Party Alerts analytics alert is an "
+                    "AGGREGATION detector over multiple alerts; none fires on a single "
+                    "high/critical alert arriving on its own."
+                ),
                 "dataset": _DATASET,
                 "key_fields": ["severity"],
                 "predicate": f"severity in {sorted(_SURFACING_SEVERITIES)}",
@@ -160,6 +165,11 @@ class ThirdPartyAlertEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "Third-party malware verdict",
+                "undocumented_reason": (
+                    "No documented Third-Party Alerts analytics alert keys on a malware "
+                    "verdict in isolation; the documented set aggregates across alerts, "
+                    "MITRE tactics or detectors."
+                ),
                 "dataset": _DATASET,
                 "key_fields": ["category", "action"],
                 "predicate": (
@@ -171,6 +181,9 @@ class ThirdPartyAlertEmitter(AnalyticsLogEmitter):
             },
             {
                 "alert": "Repeated third-party alerts on one host",
+                "alert_ref": (
+                    "abnormal-increase-in-network-related-alerts-on-the-same-host"
+                ),
                 "dataset": _DATASET,
                 "key_fields": ["src_host"],
                 "predicate": f"count(alert) for one src_host >= {_REPEAT_MIN}",

@@ -1,0 +1,39 @@
+/* PANW Executive Design System — Typography tokens */
+:root {
+  /* ---- Families ---- */
+  --font-display: 'Montserrat', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-body: 'Helvetica Neue', Helvetica, Arial, 'Montserrat', sans-serif;
+  --font-mono: 'SFMono-Regular', ui-monospace, 'Menlo', Consolas, monospace;
+
+  /* ---- Weights ---- */
+  --fw-regular: 400;   /* @kind font */
+  --fw-medium: 500;    /* @kind font */
+  --fw-semibold: 600;  /* @kind font */
+  --fw-bold: 700;      /* @kind font */
+  --fw-extrabold: 800; /* @kind font */
+
+  /* ---- Type scale (presentation-first, px-based for 1280+ frames) ---- */
+  --fs-display: 72px;   /* section dividers / title slides */
+  --fs-h1: 44px;        /* slide titles */
+  --fs-h2: 32px;
+  --fs-h3: 24px;
+  --fs-title: 20px;     /* card / block titles */
+  --fs-lead: 18px;      /* lead paragraph */
+  --fs-body: 16px;
+  --fs-small: 14px;
+  --fs-caption: 12px;
+  --fs-overline: 11px;  /* eyebrow / kicker labels */
+  --fs-stat: 56px;      /* big numbers on stat blocks */
+
+  /* ---- Line heights ---- */
+  --lh-tight: 1.05;    /* @kind font */
+  --lh-heading: 1.15;  /* @kind font */
+  --lh-snug: 1.3;      /* @kind font */
+  --lh-body: 1.5;      /* @kind font */
+
+  /* ---- Letter spacing ---- */
+  --ls-display: -0.02em;
+  --ls-heading: -0.01em;
+  --ls-normal: 0;         /* @kind font */
+  --ls-overline: 0.14em;  /* uppercase eyebrows */
+}
