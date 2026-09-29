@@ -1,0 +1,707 @@
+# =============================================================================
+# CortexSim — Third-Party Content Import & Contribution Spec
+# =============================================================================
+# A standalone, executable specification. An agent holding ONLY this file plus a
+# checkout of hankthebldr/cortex-pov-engine has everything needed to build the
+# feature. Every fact in `current_state` was measured on the tree at the commit
+# named there — re-measure before trusting, and correct this file if it drifted.
+# =============================================================================
+
+spec:
+  id: SPEC-IMPORT-001
+  title: Third-party detection & index import (Sigma rules + MITRE Navigator layers)
+  version: 1.0.0
+  status: draft-awaiting-review
+  authored_on: "2026-09-29"
+  measured_against:
+    branch: dev
+    commit: b3ce46f
+    note: >-
+      Every count under current_state was measured on this commit. `make
+      check-ground-truth` and `docs/reference/ground-truth.json` are the
+      canonical sources; when they disagree with this file, THEY win.
+  audience: >-
+    A coding agent implementing the feature, and the Cortex threat-research team
+    contributing content through it.
+  companion_docs:
+    - path: docs/authoring/late-breaking-scenarios.md
+      role: >-
+        The HAND-AUTHORING contract (Tiers A-D: scenario YAML, TTP card, adapter
+        pack, EAL plugin). This spec is its complement: bulk IMPORT from a
+        foreign schema. Do not duplicate it — reference it.
+    - path: CONTRIBUTING.md
+      role: Branching, the two QA gates, commit discipline.
+    - path: CLAUDE.md
+      role: Repo-wide invariants and architecture.
+
+# -----------------------------------------------------------------------------
+# 1. WHY — the problem, stated as observable behaviour
+# -----------------------------------------------------------------------------
+problem:
+  user_goal: >-
+    Develop Cortex detection rules AGAINST an external definition (a Sigma rule),
+    and keep the library easy to update as that upstream definition changes.
+    Separately, accept a customer's or partner's MITRE Navigator layer and say
+    honestly what CortexSim can and cannot exercise against it.
+
+  observable_today:
+    - id: OBS-1
+      statement: >-
+        There is no import path at all. Every one of the 175 TTP cards was
+        hand-authored. Adopting an external corpus (SigmaHQ is ~3000 rules) means
+        hand-transcribing it, so in practice it does not happen.
+    - id: OBS-2
+      statement: >-
+        The Sigma EXPORT is hollow. All 408 rule documents across the 159 files
+        in detection_scanner/exports/sigma/ carry
+        `detection.selection.placeholder: replace_with_target_dialect_translation_of_xql`
+        and `logsource.category: process_creation` — including the Okta SaaS,
+        AWS cloud-audit and Kubernetes rules. The XQL body is embedded in the
+        `description` as prose. The corpus matches nothing and mis-declares its
+        logsource universally.
+      verify: |
+        grep -c 'replace_with_target_dialect_translation_of_xql' detection_scanner/exports/sigma/*.yml \
+          | awk -F: '{s+=$2} END {print s}'    # -> 408
+        grep -h '  category:' detection_scanner/exports/sigma/*.yml | sort | uniq -c
+                                                 # -> 408 process_creation
+      why_it_matters: >-
+        The CI `detection` job asserts export DETERMINISM via `sha256sum -c`. It
+        therefore verifies the placeholder is reproduced byte-identically on
+        every run. This is a green gate over a hollow artifact, and it is the
+        inbound trap in mirror image: if Sigma->XQL cannot be rendered faithfully
+        outbound, then auto-generating XQL inbound produces the same unbacked
+        claim in the other direction.
+    - id: OBS-3
+      statement: >-
+        A Navigator layer can be exported but never imported, so a customer's own
+        layer cannot be compared against CortexSim's corpus.
+      evidence: ui/src/components/console/exportNavigatorLayer.js
+
+# -----------------------------------------------------------------------------
+# 2. THE LAW — non-negotiable invariants. Violating any is a rejected PR.
+# -----------------------------------------------------------------------------
+invariants:
+  - id: INV-1
+    name: Authored is not imported is not proven
+    rule: >-
+      These are THREE separate fields and are never summed into one number.
+      `authored` = we wrote it. `imported` = it came from upstream and we have
+      not written Cortex logic for it. `proven` = observed firing against a live
+      Cortex tenant. `proven` is 0 and stays 0 for all imported content.
+    rationale: >-
+      Extends the repo's existing `authored != proven` law. Import introduces a
+      third state, and collapsing it into `authored` would let 3000 upstream
+      Sigma rules read as 3000 detections CortexSim covers.
+
+  - id: INV-2
+    name: Upstream bytes are never edited
+    rule: >-
+      Vendored upstream content is read-only, digest-pinned, and reproduced
+      verbatim. All CortexSim authorship lives in a separate binding file. A
+      tool that rewrites an upstream file is a bug.
+    rationale: >-
+      This is what makes "easily update the library" a diff instead of a merge.
+      Same integrity model as the payload shelf.
+
+  - id: INV-3
+    name: No mechanical Sigma-to-XQL translation lands in the corpus
+    rule: >-
+      An auto-generated XQL body MUST NOT be written into a card's
+      `detections.xql_queries[]`. That array means "Cortex logic that exists and
+      a human stands behind". A translation nobody executed is a coverage claim
+      with nothing behind it.
+    allowed_alternative: >-
+      A translation MAY be emitted as a non-authoritative `suggestion` on the
+      binding, clearly typed, for a human to promote by hand.
+
+  - id: INV-4
+    name: A zero is degraded, not ok
+    rule: >-
+      "No bindings imported" and "import never ran" must never render as the same
+      response. Every import surface reports its source, its pin, and its run
+      time, or reports itself degraded.
+
+  - id: INV-5
+    name: Tolerance hides bugs
+    rule: >-
+      An unrecognised upstream shape RAISES. It must not be skipped, coerced, or
+      counted as zero. A rule the importer cannot parse appears in `rejected[]`
+      with a reason — a guard nobody can see is not a guard.
+
+  - id: INV-6
+    name: No write path to Cortex
+    rule: >-
+      Nothing here contacts a tenant. CORTEXSIM_XSIAM_ALLOW_WRITE and
+      CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE stay default-off.
+
+  - id: INV-7
+    name: Licence before bytes
+    rule: >-
+      No upstream content is vendored until its source-registry entry declares a
+      licence and a redistribution verdict. Sigma (DRL 1.1), Atomic Red Team
+      (MIT) and Elastic detection rules (Elastic Licence) have three different
+      answers. Vendoring first and asking later is not available.
+
+# -----------------------------------------------------------------------------
+# 3. CURRENT STATE — measured, not assumed. Re-verify before building.
+# -----------------------------------------------------------------------------
+current_state:
+  corpus:
+    loadable_scenarios: 177
+    ttp_cards: 175
+    detection_planes: 16
+    step_detections: 1116
+    catalog_detection_objects: 1797
+    eal_plugins: 26
+    adapter_packs: 91
+    routes: 135
+    tenant_verified: 0
+    verify_command: make check-ground-truth
+
+  existing_contracts:
+    - path: detection_scanner/schema/ttp-entry.schema.json
+      role: JSON Schema for a TTP card.
+      top_level_required: [id, schema_version, status, metadata, identity,
+                           mitre_attack, execution, detections, panw_mapping,
+                           references]
+      detection_object_keys: [iocs, biocs, xql_queries, correlation_rules,
+                              analytics_modules, abiocs, modeling_rules]
+      bioc_required: [name, description, logic]
+      xql_required: [purpose, query]
+      note: >-
+        This six-type vocabulary is the whole mapping problem. A Sigma rule maps
+        onto NONE of these cleanly — see mapping.sigma below.
+
+    - path: detection_scanner/sources/source-registry.json
+      role: >-
+        The provenance spine. 40 sources, each {id, name, tier, weight,
+        publisher_class, homepage, feeds[], data_endpoints[], scrape_hints{},
+        purpose}. Already carries SRC-ATOMIC-RED-TEAM, SRC-STRATUS-RED-TEAM,
+        SRC-MITRE-ATTACK.
+      enforced_by: detection_scanner/scripts/validate.py
+      measured_2026_09_29:
+        source_count: 40
+        sources_with_license_field: 0
+        src_sigmahq_exists: false
+      gap: >-
+        NO licence field and NO redistribution verdict. This spec adds both
+        (see work_items.WI-1). The payload shelf already models `license` on
+        artifacts, so the concept exists in-repo but not here.
+
+    - path: detection_scanner/scripts/validate.py
+      role: Corpus validator; CI `detection` job. FAIL/WARN model.
+      relevant_behaviour: >-
+        Enforces metadata.source_refs[] and references[].publisher_id against the
+        source registry. Unknown XQL dataset -> WARN, not FAIL (dialect is broad).
+
+    - path: ui/src/components/console/exportNavigatorLayer.js
+      role: The Navigator EXPORT. Import must be its exact inverse.
+      layer_format:
+        versions: {attack: "15", navigator: "5.0.1", layer: "4.5"}
+        domain: enterprise-attack
+        spec_url: https://github.com/mitre-attack/attack-navigator/blob/master/layers/spec/v4.5/LAYERFORMAT.md
+      status_mapping:
+        detected:         {color: "#4FD1A1", score: 100}
+        run_not_detected: {color: "#F5A524", score: 60}
+        not_run:          {color: "#5A6B84", score: 30}
+        no_scenario:      {note: "omitted from layer entirely"}
+
+    - path: core/engine/uctc_registry.py
+      role: Loads the FY27 UC/TC index.
+      constraint: >-
+        SINGLETON keyed to hard-coded `*_v2.2.csv` filenames, flat globally-unique
+        IDs. DO NOT de-singleton it for this feature. A Navigator layer is a
+        technique-scored overlay, not a UC/TC catalog — see design.navigator.
+
+    - path: core/engine/payload_shelf.py
+      role: >-
+        THE PATTERN TO COPY. Digest-pinned third-party artifacts; payloads/sources.json
+        is GENERATED from declarations (`python3 -m engine.payload_shelf --write|--check`),
+        never hand-maintained; refuses at compose time on PAYLOAD_PIN_MISMATCH.
+        Validation codes TA-01..TA-17 live in core/tools/adapter_loader.py.
+      reuse: >-
+        The Sigma vendoring model is this model with the nouns changed. Follow it
+        rather than inventing a second integrity scheme.
+
+# -----------------------------------------------------------------------------
+# 4. DESIGN
+# -----------------------------------------------------------------------------
+design:
+
+  # ---------------------------------------------------------------------------
+  shared_foundation:
+    summary: >-
+      One provenance vocabulary both imports use. Build this first; both halves
+      depend on it and neither is reviewable without it.
+
+    origin_field:
+      added_to: TTP card `metadata.origin`, and every binding record
+      enum:
+        authored: Written by the Cortex team. Current behaviour; the default.
+        imported: Came from upstream verbatim. No Cortex logic authored yet.
+        derived:  Cortex logic authored BY A HUMAN against an upstream definition.
+      backfill: >-
+        All 175 existing cards are `authored`. Set explicitly — do not let the
+        field default, or "unset" and "authored" become the same answer (INV-4).
+
+    source_registry_extension:
+      file: detection_scanner/sources/source-registry.json
+      new_fields_per_source:
+        license:
+          type: string
+          description: SPDX identifier where one exists, else the licence's own name.
+          examples: ["DRL-1.1", "MIT", "Elastic-2.0", "Apache-2.0", "proprietary"]
+        redistribution:
+          type: string
+          enum: [vendor_ok, attribution_required, reference_only, prohibited]
+          description: >-
+            Whether CortexSim may VENDOR the bytes into this repo. `reference_only`
+            means we may cite and link but must not copy the content in.
+        license_url: {type: string}
+        attribution_text:
+          type: string
+          description: >-
+            Exact attribution string reproduced in any export carrying derived
+            content. Required when redistribution is attribution_required.
+      enforcement: >-
+        New validator code SRC-01: a source referenced by vendored content must
+        declare `license` + `redistribution`. FAIL, not WARN — see INV-7 and the
+        precedent that TA-13 rejects rather than warns.
+
+  # ---------------------------------------------------------------------------
+  sigma:
+    approach: >-
+      Vendored + digest-pinned upstream, with a thin authored binding layer.
+      Chosen over mechanical conversion; see decisions.D-1.
+
+    layout:
+      third_party/sigma/upstream/:
+        content: Verbatim upstream .yml rules, path-mirrored from the source repo.
+        rules: READ-ONLY (INV-2). Never edited, never reformatted.
+        committed: true
+        note: >-
+          Vendor a SUBSET, not all ~3000 SigmaHQ rules. Selection is declared in
+          import.yml; an unselected rule is simply absent.
+      third_party/sigma/pins.json:
+        content: "{rule_path: {sha256, sigma_id, upstream_ref, vendored_at}}"
+        generated: true
+        generator: python3 -m engine.sigma_shelf --write
+        check: python3 -m engine.sigma_shelf --check
+        rules: >-
+          GENERATED, never hand-edited — exactly like payloads/sources.json.
+      third_party/sigma/import.yml:
+        content: What to pull and from where.
+        fields:
+          source_ref: {type: string, example: SRC-SIGMAHQ, must_exist_in: source-registry.json}
+          repo: {type: string, example: "https://github.com/SigmaHQ/sigma"}
+          ref: {type: string, description: "A TAG or COMMIT SHA. Never a branch name."}
+          select: {type: array, description: "Glob patterns of rule paths to vendor."}
+          exclude: {type: array}
+      third_party/sigma/bindings/<SIGMA-ID>.yml:
+        content: >-
+          THE AUTHORED LAYER. One per bound rule. This is the only file a human
+          edits, and it is where Cortex logic lives.
+        fields:
+          sigma_id: {type: string, description: "Upstream rule UUID; the join key."}
+          sigma_path: {type: string, description: "Path under upstream/, must exist in pins.json."}
+          sigma_sha256: {type: string, description: "Pin the binding was authored against."}
+          state:
+            type: string
+            enum: [unbound, bound, stale, rejected]
+            meaning:
+              unbound:  Rule is vendored; no Cortex logic authored. Counts as `imported`, never `authored`.
+              bound:    A human authored Cortex logic against it. Counts as `derived`.
+              stale:    Upstream changed since binding was authored (sha mismatch). Blocks release.
+              rejected: Deliberately not portable to Cortex. MUST carry `rejected_reason`.
+          rejected_reason: {type: string, required_when: "state == rejected"}
+          ttp_ref: {type: string, description: "TTP card this binds into. Required when state == bound."}
+          detection_id: {type: string, description: "The card detection object this rule corresponds to."}
+          fidelity:
+            type: string
+            enum: [equivalent, narrower, broader, approximate]
+            description: >-
+              How the authored Cortex logic relates to the Sigma definition.
+              REQUIRED when state == bound. `approximate` must carry `fidelity_note`.
+              This is the honest replacement for pretending translation is lossless.
+          fidelity_note: {type: string, required_when: "fidelity == approximate"}
+          suggestion:
+            type: object
+            description: >-
+              OPTIONAL non-authoritative machine translation, clearly typed as a
+              suggestion. Never promoted automatically (INV-3). A human copies it
+              into the card by hand or does not.
+
+    validation_codes:
+      prefix: SIG
+      note: >-
+        `SIG-` and not `A-`/`TA-`/`S-`: assertions.py owns A-10..A-24,
+        adapter_loader.py owns TA-01..TA-17, scenario_loader.py owns S-10..S-16.
+      codes:
+        SIG-01: {severity: FAIL, rule: "binding's sigma_path is absent from pins.json"}
+        SIG-02: {severity: FAIL, rule: "binding's sigma_sha256 != the pin (upstream drifted) -> state must be `stale`"}
+        SIG-03: {severity: FAIL, rule: "state == bound but ttp_ref or detection_id is missing or unresolvable"}
+        SIG-04: {severity: FAIL, rule: "state == bound but `fidelity` is absent"}
+        SIG-05: {severity: FAIL, rule: "state == rejected but `rejected_reason` is absent or a placeholder"}
+        SIG-06: {severity: FAIL, rule: "fidelity == approximate but `fidelity_note` is absent"}
+        SIG-07: {severity: FAIL, rule: "import.yml `ref` is a branch name rather than a tag or commit SHA (unpinnable)"}
+        SIG-08: {severity: FAIL, rule: "source_ref's registry entry lacks license or redistribution, or redistribution is `reference_only`/`prohibited` while bytes are vendored"}
+        SIG-09: {severity: FAIL, rule: "an upstream file on disk is absent from pins.json, or its sha256 does not match (someone edited upstream — INV-2)"}
+        SIG-10: {severity: WARN, rule: "rule vendored but unbound for > 2 sync cycles (adoption backlog, not an error)"}
+
+    resync_loop:
+      summary: The "easily update the library" requirement, mechanically.
+      command: make sigma-sync
+      steps:
+        - Fetch the upstream repo at import.yml `ref`.
+        - Re-vendor the `select`/`exclude` set into upstream/.
+        - Recompute sha256 for every file; rewrite pins.json.
+        - "Diff old pins vs new. Classify each rule: unchanged | modified | added | removed."
+        - For every `modified` rule with a binding, flip that binding to `state: stale`.
+        - Emit a report. NEVER auto-edit a binding's Cortex logic.
+      report_fields: [unchanged, added, removed, modified, newly_stale, still_unbound]
+      release_rule: >-
+        A `stale` binding blocks Gate B. A human re-reads the upstream diff and
+        either re-affirms the binding (bump sigma_sha256) or re-authors the logic.
+
+    counting:
+      surface: GET /api/sigma/bindings
+      must_return:
+        vendored: Count of rules under upstream/, pinned.
+        unbound:  Vendored, no Cortex logic. Reported as `imported`.
+        bound:    Cortex logic authored. Reported as `derived`.
+        stale:    Upstream drifted. Reported separately; never inside `bound`.
+        rejected: With reasons, listed not omitted (INV-5).
+        proven:   Hard 0. Present as a literal field (INV-1).
+      banner_must_state: >-
+        "<bound> of <vendored> vendored Sigma rules have authored Cortex logic;
+        tenant-verified is 0. A binding means a human wrote Cortex logic against
+        the upstream definition — it is NOT evidence the detection fires."
+
+  # ---------------------------------------------------------------------------
+  navigator:
+    approach: >-
+      A Navigator layer is a technique-scored OVERLAY, not a UC/TC catalog. It
+      becomes a third coverage LENS keyed on ATT&CK technique IDs, alongside
+      plane and UC/TC. It does NOT touch uctc_registry. See decisions.D-2.
+
+    layout:
+      third_party/navigator/layers/<name>.json:
+        content: An imported v4.x layer, verbatim.
+        provenance_sidecar: <name>.meta.yml with {source, imported_at, submitted_by, intent}
+        intent_enum:
+          claim:  "This is coverage the customer/partner says they already have."
+          target: "This is coverage they WANT. The gap list is the work."
+
+    comparison:
+      endpoint: POST /api/mitre/layers/compare
+      input: An imported layer (or an uploaded one) + CortexSim's own coverage.
+      output_per_technique:
+        technique_id: {type: string}
+        they_claim: {type: bool, description: "Present and enabled in their layer."}
+        their_score: {type: [integer, "null"]}
+        we_can_exercise: {type: bool, description: "A loadable scenario in this corpus covers the technique."}
+        our_status: {type: string, enum: [detected, run_not_detected, not_run, no_scenario]}
+        proven: {type: bool, description: "ALWAYS false. tenant-verified is 0."}
+        verdict:
+          type: string
+          enum: [aligned, we_cover_they_dont, they_claim_we_cannot_exercise, neither]
+          meaning:
+            aligned: Both present. Still not proof — see `proven`.
+            we_cover_they_dont: A CortexSim scenario exists for a technique absent from their layer. The upsell / demo list.
+            they_claim_we_cannot_exercise: >-
+              THE IMPORTANT ONE. They claim coverage CortexSim cannot generate
+              signal for, so this POV cannot test that claim. Must be reported
+              prominently, never silently dropped.
+            neither: In neither. Honest whitespace.
+      aggregate_must_never: >-
+        Sum `they_claim` and `we_can_exercise` into a single coverage percentage.
+        They are different populations measured by different parties.
+
+    validation_codes:
+      prefix: NAV
+      codes:
+        NAV-01: {severity: FAIL, rule: "layer `versions.layer` is unsupported (accept 4.3-4.5; raise on anything else — INV-5)"}
+        NAV-02: {severity: FAIL, rule: "layer `domain` is not enterprise-attack (ics/mobile unsupported; raise, do not silently filter)"}
+        NAV-03: {severity: FAIL, rule: "a techniqueID is malformed or absent from the ATT&CK version in use"}
+        NAV-04: {severity: WARN, rule: "layer's ATT&CK version differs from CortexSim's (currently 15); report the delta, do not coerce"}
+        NAV-05: {severity: FAIL, rule: "meta sidecar missing `intent` (claim vs target changes what the diff MEANS)"}
+
+# -----------------------------------------------------------------------------
+# 5. DECISIONS — recorded with their rejected alternatives
+# -----------------------------------------------------------------------------
+decisions:
+  - id: D-1
+    decision: Vendor + pin Sigma upstream; author bindings by hand.
+    rejected: Mechanical pySigma -> XQL conversion at import time.
+    why: >-
+      There is no pySigma XQL backend of record, so CortexSim would own and
+      maintain one. Its output would be an XQL body nobody executed, landing in
+      `detections.xql_queries[]`, which the corpus reads as "Cortex logic that
+      exists" — manufacturing the exact coverage claim the repo refuses (INV-3).
+      Re-sync would also fight hand-edits forever. Vendoring makes update a diff
+      against a pin: cheap, mechanical, reviewable.
+
+  - id: D-2
+    decision: Navigator layers are a comparison lens, not a second index.
+    rejected: De-singletoning core/engine/uctc_registry.py to host a second index.
+    why: >-
+      A layer scores ATT&CK techniques; the UC/TC index is a sales-motion catalog
+      of test cases with thresholds and SKU bindings. They are not the same kind
+      of object, and forcing one into the other's registry would require
+      namespacing IDs the registry assumes are flat and globally unique — a large
+      change for no gain. The comparison lens delivers the actual user value and
+      touches no existing loader.
+
+  - id: D-3
+    decision: Imported content gets its own `origin` value and never counts as authored.
+    rejected: Marking imported rules `authored` so coverage numbers rise.
+    why: INV-1. This is the whole reason the feature needs a spec.
+
+  - id: D-4
+    decision: Fix the hollow Sigma export as part of this work (WI-6).
+    rejected: Leaving it; treating import and export as unrelated.
+    why: >-
+      The user goal is to develop rules AGAINST a definition, which implies a
+      round trip. Shipping an import that respects fidelity while the export
+      emits 408 placeholder rules would leave the dishonest half in place and
+      make the honest half incoherent.
+
+# -----------------------------------------------------------------------------
+# 6. WORK ITEMS — ordered. Each is one branch, one PR.
+# -----------------------------------------------------------------------------
+work_items:
+
+  - id: WI-1
+    title: Source-registry licence + redistribution
+    branch: feature/api-source-registry-licence
+    depends_on: []
+    files:
+      - detection_scanner/sources/source-registry.json
+      - detection_scanner/scripts/validate.py
+      - tests/detection/test_source_registry_licence.py
+    do:
+      - Add license / redistribution / license_url / attribution_text to the schema.
+      - Populate for all 40 existing sources. Unknown licence -> `redistribution: reference_only`, never a guess.
+      - >-
+        CREATE the SRC-SIGMAHQ entry — it does not exist today (verified
+        2026-09-29: 40 sources, none matching SIGMA). Sigma rules ship under
+        Detection Rule Licence 1.1; re-read the current licence text at the
+        upstream repo before setting `redistribution`, and set
+        `attribution_text`, because DRL requires attribution on redistribution.
+      - Add SRC-01 as a FAIL.
+    acceptance:
+      - Every source declares license + redistribution.
+      - A source with redistribution reference_only cannot have vendored bytes.
+    proof_guard_fails: >-
+      Remove `license` from one source, run the validator, watch SRC-01 go red.
+
+  - id: WI-2
+    title: origin field on TTP cards, backfilled explicitly
+    branch: feature/ttp-origin-provenance
+    depends_on: [WI-1]
+    files:
+      - detection_scanner/schema/ttp-entry.schema.json
+      - detection_scanner/ttps/*.json
+      - detection_scanner/scripts/validate.py
+    do:
+      - Add metadata.origin, required, enum [authored, imported, derived].
+      - Set all 175 existing cards to `authored` EXPLICITLY (no defaulting — INV-4).
+    acceptance:
+      - "`make validate` green; 175 cards carry origin: authored."
+      - A card with no origin FAILs rather than defaulting.
+
+  - id: WI-3
+    title: Sigma vendoring shelf + pins
+    branch: feature/api-sigma-shelf
+    depends_on: [WI-1]
+    files:
+      - third_party/sigma/import.yml
+      - core/engine/sigma_shelf.py
+      - tests/engine/test_sigma_shelf.py
+      - Makefile
+    do:
+      - Implement --write / --check mirroring engine/payload_shelf.
+      - Vendor a deliberately SMALL first set (10-20 rules) to prove the loop.
+      - Codes SIG-07, SIG-08, SIG-09.
+    acceptance:
+      - "`python3 -m engine.sigma_shelf --check` green; pins.json generated."
+      - Editing a vendored upstream file makes SIG-09 FAIL.
+      - A branch-name `ref` is refused by SIG-07.
+
+  - id: WI-4
+    title: Binding layer + validation
+    branch: feature/api-sigma-bindings
+    depends_on: [WI-2, WI-3]
+    files:
+      - third_party/sigma/bindings/
+      - core/engine/sigma_bindings.py
+      - core/api/sigma.py
+      - tests/engine/test_sigma_bindings.py
+    do:
+      - Implement the binding schema and SIG-01..SIG-06, SIG-10.
+      - "GET /api/sigma/bindings returning the counting contract above."
+      - Author 3-5 real bindings by hand as the worked example.
+    acceptance:
+      - Counting surface reports vendored/unbound/bound/stale/rejected/proven separately.
+      - "`proven` is literally 0 in the payload."
+      - rejected[] is surfaced, not omitted.
+    proof_guard_fails: >-
+      Drop `fidelity` from a bound binding -> SIG-04 red. Point a binding at a
+      nonexistent ttp_ref -> SIG-03 red.
+
+  - id: WI-5
+    title: make sigma-sync — the update loop
+    branch: feature/api-sigma-sync
+    depends_on: [WI-4]
+    files: [scripts/sigma-sync.sh, core/engine/sigma_shelf.py, Makefile]
+    do:
+      - Implement the resync_loop steps exactly as specified.
+      - Staleness flip must NEVER touch authored logic.
+    acceptance:
+      - Bumping `ref` to a newer tag produces a report with all six fields.
+      - A modified upstream rule flips its binding to `stale` and nothing else changes.
+      - A `stale` binding fails the release gate.
+
+  - id: WI-6
+    title: Make the Sigma export faithful (or honestly refuse)
+    branch: fix/detection-sigma-export-fidelity
+    depends_on: []
+    parallel_ok: true
+    files:
+      - detection_scanner/scripts/export_artifacts.py
+      - detection_scanner/exports/sigma/
+      - tests/engine/test_export_artifacts.py
+    do:
+      - Derive logsource from the card's dataset/platform instead of the hardcoded process_creation.
+      - >-
+        For the detection body, pick ONE and implement it honestly: (a) emit a
+        real Sigma selection where the XQL is mechanically expressible, or (b)
+        stop emitting a rule at all for cards where it is not, and report them as
+        `not_exportable` with a reason. Do NOT keep shipping a placeholder that
+        parses as a rule.
+    acceptance:
+      - Zero exported rule documents contain `replace_with_target_dialect_translation_of_xql`.
+      - "`logsource.category` is no longer constant across 408 documents."
+      - Export determinism gate still green.
+    note: >-
+      Option (b) is acceptable and probably correct for most cards. An honest
+      refusal is worth more than 408 rules that match nothing.
+
+  - id: WI-7
+    title: Navigator layer import + comparison
+    branch: feature/api-navigator-import
+    depends_on: [WI-1]
+    parallel_ok: true
+    files:
+      - third_party/navigator/layers/
+      - core/engine/navigator_layer.py
+      - core/api/mitre.py
+      - tests/engine/test_navigator_layer.py
+    do:
+      - Parser with NAV-01..NAV-05.
+      - "POST /api/mitre/layers/compare implementing the four-verdict contract."
+      - Inverse of exportNavigatorLayer.js; reuse its status/score mapping.
+    acceptance:
+      - A v4.5 enterprise-attack layer round-trips export -> import -> compare.
+      - An ics-attack layer RAISES (NAV-02), not silently filters.
+      - "`they_claim_we_cannot_exercise` appears as its own reported bucket."
+      - No aggregate sums they_claim with we_can_exercise.
+
+  - id: WI-8
+    title: Docs + counted ground truth
+    branch: docs/reference-third-party-import
+    depends_on: [WI-4, WI-7]
+    files:
+      - docs/reference/third-party-import.md
+      - docs/authoring/late-breaking-scenarios.md
+      - docs/reference/ground-truth.{json,md}
+      - CLAUDE.md
+    do:
+      - Cross-link from the authoring spec ("importing rather than authoring? -> here").
+      - Regenerate ground truth (`make ground-truth`). Never hand-edit a count.
+    acceptance:
+      - "`make check-ground-truth` green."
+      - Docs state vendored/bound/proven as three numbers.
+
+# -----------------------------------------------------------------------------
+# 7. GATES — run these; do not assert green without output
+# -----------------------------------------------------------------------------
+gates:
+  local:
+    - {cmd: "pytest tests/ -q", note: "Run with TZ=UTC. See known_traps.TZ."}
+    - {cmd: "make validate", note: "Detection corpus + refs + adapters + ground truth."}
+    - {cmd: "make check-refs"}
+    - {cmd: "make check-ground-truth"}
+    - {cmd: "make detection", note: "validate.py + export determinism (CI 'detection' job)."}
+    - {cmd: "python3 -m engine.sigma_shelf --check", note: "New in WI-3."}
+  ci_jobs: [backend, agent, ui, detection, refs, adapters, rust-dist, e2e-isolated]
+  gate_a:
+    applies_to: "feature/* -> dev"
+    requires: >-
+      All CI green, PLUS evidence in the PR body: what was observably wrong, how
+      it was verified, and PROOF THE NEW GUARD FAILS WITHOUT THE FIX. Each work
+      item above names its guard-removal test.
+  gate_b:
+    applies_to: "dev -> main"
+    requires: >-
+      Image parity, counted ground truth regenerated, CHANGELOG updated, every
+      public README claim backed. A `stale` Sigma binding blocks this gate.
+
+# -----------------------------------------------------------------------------
+# 8. KNOWN TRAPS — measured on this tree; do not rediscover them
+# -----------------------------------------------------------------------------
+known_traps:
+  - id: TZ
+    trap: >-
+      tests/connectors/test_reconcile_scope.py passes ONLY on a UTC host. The
+      helper builds an epoch with `datetime.utcnow().timestamp()`; utcnow() is
+      naive, so .timestamp() reads it as local time and the value is off by the
+      host's UTC offset.
+    measured: "TZ=UTC 3 passed; Chicago/LA/Tokyo each 2 failed, 1 passed."
+    implication: >-
+      CI runs pytest inside the prod image (UTC), so this class of bug is
+      invisible there. Any timestamp logic you add must be tested at a non-zero
+      offset. Do NOT copy `datetime.utcnow().timestamp()`.
+
+  - id: SQUASH
+    trap: >-
+      A squash-merged PR leaves a local branch showing unmerged commits whose
+      content is already on the target. Judge by content, not commit count.
+    command: "git diff <target>..<branch> --diff-filter=A --name-only"
+
+  - id: GREEN_OVER_HOLLOW
+    trap: >-
+      The export-determinism gate verifies the Sigma placeholder byte-for-byte.
+      A passing gate over an artifact that does nothing is the failure mode this
+      whole repo is built to avoid. When adding a gate, ask what it would catch.
+
+  - id: COUNT_DONT_QUOTE
+    trap: >-
+      Never hand-edit a number into a doc. Counts come from
+      `make ground-truth` / the crosswalk. A naive `grep -c` over a content
+      directory is usually off by one because of `_schema.yml`.
+
+# -----------------------------------------------------------------------------
+# 9. OUT OF SCOPE — stated so it is not assumed
+# -----------------------------------------------------------------------------
+out_of_scope:
+  - Importing Elastic, Splunk ESCU, or any corpus other than Sigma. The shelf
+    generalises, but each source needs its own licence verdict and mapping pass.
+  - Executing an imported rule against a tenant. tenant-verified stays 0.
+  - Replacing or extending the FY27 UC/TC index (see decisions.D-2).
+  - Auto-promoting a translation suggestion into a card (INV-3).
+  - A UI for any of this. API and files first; console is separate work.
+
+open_questions:
+  - id: Q-1
+    question: >-
+      Which SigmaHQ subset is vendored first? Recommend a narrow, high-signal
+      slice (e.g. Linux process-creation rules matching techniques already in the
+      corpus) so the loop is proven before breadth.
+    blocks: WI-3
+  - id: Q-2
+    question: >-
+      For WI-6, option (a) real translation or option (b) honest refusal? (b) is
+      cheaper and more honest; (a) is more useful IF a faithful mapping exists for
+      a meaningful subset.
+    blocks: WI-6
