@@ -21,6 +21,7 @@ applies the verdicts to the ORM and emits SSE.
 """
 from __future__ import annotations
 
+import re
 from bisect import bisect_left
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -63,6 +64,39 @@ def signal_family(value: Optional[str]) -> Optional[str]:
     if "ioc" in s or "indicator" in s:
         return "ioc"
     return None
+
+
+#: A detection id may be credited by CONTAINMENT (a tenant rule named
+#: "cortexsim-<slug>" or "<slug>-v2") only when the contained id is at least
+#: this many alphanumeric tokens and sits on token boundaries. A raw substring
+#: test let a tenant rule id of "2" — custom BIOC rule ids are small integers —
+#: or "edr" / "shell" be "contained in" every scenario slug, so an unrelated
+#: alert on the same host credited the detection with a real-looking MTTD.
+_MIN_CONTAINED_ID_TOKENS = 3
+
+_ID_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _id_tokens(value: str) -> tuple[str, ...]:
+    """Alphanumeric runs of a normalized (lower-cased) detection id."""
+    return tuple(_ID_TOKEN_RE.findall(value)) if value else ()
+
+
+def _contains_run(longer: tuple[str, ...], shorter: tuple[str, ...]) -> bool:
+    n = len(shorter)
+    return any(longer[i:i + n] == shorter for i in range(len(longer) - n + 1))
+
+
+def _detection_ids_agree(r_det: str, r_tok: tuple[str, ...],
+                         a_det: str, a_tok: tuple[str, ...]) -> bool:
+    """Exact id, same token sequence, or a SPECIFIC id embedded on token
+    boundaries in the other. Never a bare substring."""
+    if not r_det or not a_det:
+        return False
+    if r_det == a_det or (r_tok and r_tok == a_tok):
+        return True
+    short, long_ = (r_tok, a_tok) if len(r_tok) <= len(a_tok) else (a_tok, r_tok)
+    return len(short) >= _MIN_CONTAINED_ID_TOKENS and _contains_run(long_, short)
 
 
 def _short_host(value: Optional[str]) -> str:
@@ -180,6 +214,7 @@ class _ResultSide:
     detection_id: str       # normalized, "" when absent
     tokens: set[str]        # evidence tokens of expected_detection
     family: Optional[str] = None   # signal_family(Result.signal_type)
+    detection_id_tokens: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -192,25 +227,30 @@ class _AlertSide:
     has_name: bool
     tokens: set[str]            # evidence tokens of the alert name
     family: Optional[str] = None   # signal_family(alert.alert_source)
+    detection_id_tokens: tuple[str, ...] = ()
 
 
 def _prepare_result(result: Any) -> _ResultSide:
     technique = _norm(getattr(result, "mitre_technique", None))
+    detection_id = _norm(getattr(result, "detection_id", None))
     return _ResultSide(
         technique=technique,
         technique_base=technique.split(".")[0] if technique else "",
-        detection_id=_norm(getattr(result, "detection_id", None)),
+        detection_id=detection_id,
         tokens=_evidence_tokens(getattr(result, "expected_detection", "") or ""),
         family=signal_family(getattr(result, "signal_type", None)),
+        detection_id_tokens=_id_tokens(detection_id),
     )
 
 
 def _prepare_alert(alert: ObservedAlert) -> _AlertSide:
     techniques = {_norm(t) for t in alert.techniques}
+    detection_id = _norm(alert.detection_id)
     return _AlertSide(
         techniques=techniques,
         technique_bases={t.split(".")[0] for t in techniques if t},
-        detection_id=_norm(alert.detection_id),
+        detection_id=detection_id,
+        detection_id_tokens=_id_tokens(detection_id),
         has_name=bool(alert.name),
         tokens=_evidence_tokens(alert.name) if alert.name else set(),
         family=signal_family(getattr(alert, "alert_source", None)),
@@ -237,9 +277,10 @@ def _keys_for(rs: _ResultSide, als: _AlertSide) -> list[str]:
         elif rs.technique_base in als.technique_bases:
             keys.append("technique-base")
 
-    # Source rule / detection id.
-    r_det, a_det = rs.detection_id, als.detection_id
-    if r_det and a_det and (r_det == a_det or r_det in a_det or a_det in r_det):
+    # Source rule / detection id — exact, or a specific id embedded on token
+    # boundaries (see _MIN_CONTAINED_ID_TOKENS). Never a bare substring.
+    if _detection_ids_agree(rs.detection_id, rs.detection_id_tokens,
+                            als.detection_id, als.detection_id_tokens):
         keys.append("detection_id")
 
     # Name/description overlap.
