@@ -598,6 +598,20 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
         strict_breaches.append({"kind": "below_target_detection_type", "target": "correlation",
                                 "detail": f"{correlation_share} vs {_r4(correlation_target)}"})
 
+    # A skipped corpus file (unparseable / not a mapping) is a hard failure under
+    # --strict, not just a WARN line: the boot loader would REJECT that same file,
+    # so a coverage gate that computes over the readable remainder and exits 0 is
+    # a green that proves less than it claims. Surface it as a breach so the
+    # existing strict path gates on it; WARN-only mode still exits 0 via _exit_code.
+    if warnings:
+        strict_breaches.append({
+            "kind": "unreadable_corpus_file",
+            "detail": (
+                f"{len(warnings)} corpus file(s) skipped (unparseable / not a "
+                "mapping) — the boot loader would REJECT these; fix or remove them"
+            ),
+        })
+
     exit_code = _exit_code(strict, strict_breaches)
 
     return {
