@@ -593,6 +593,14 @@ _CLEANUP_TMPL = """\
 # Cleanup / Teardown
 # ---------------------------------------------------------------------------
 cleanup() {{
+    # Teardown is best-effort and MUST run to completion. The bundle runs under
+    # `set -euo pipefail`, so without disabling errexit here the FIRST cleanup
+    # command that exits non-zero — `pkill` with no match, `rm` of an absent
+    # file, `docker rm` of a container that never started — would abort this
+    # function and skip every later teardown, leaving attack artifacts on the
+    # customer's host and never logging completion. Each command is attempted;
+    # a failing teardown command is the teardown's concern, not fatal to it.
+    set +e
     log INFO "Running cleanup for scenario={scenario_id}"
 {cleanup_commands}
     log INFO "Cleanup complete"
