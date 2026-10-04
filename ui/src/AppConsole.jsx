@@ -291,12 +291,13 @@ function ConsoleShell() {
       components: seed.components,
       // Counts only once their fetch has settled — "0 scenarios" while the list
       // is still loading is a zero nobody measured.
-      scenarioCount: env.loading.scenarios ? undefined : env.scenarios.length,
-      agentCount: env.loading.agents ? undefined : env.agents.length,
-      agentsOnline: env.loading.agents
+      // ...and not after a FAILED fetch either, which is not an empty list.
+      scenarioCount: env.loading.scenarios || env.errors?.scenarios ? undefined : env.scenarios.length,
+      agentCount: env.loading.agents || env.errors?.agents ? undefined : env.agents.length,
+      agentsOnline: env.loading.agents || env.errors?.agents
         ? undefined
         : env.agents.filter((a) => a && a.status === 'online').length,
-      tenantCount: env.loading.tenants ? undefined : env.tenants.length,
+      tenantCount: env.loading.tenants || env.errors?.tenants ? undefined : env.tenants.length,
       gate,
       runStep: env.activeRun
         ? `Step ${env.activeRun.step} of ${env.activeRun.totalSteps} running`
@@ -305,8 +306,8 @@ function ConsoleShell() {
           : 'No run in flight',
       runDetections,
     }
-  }, [seed, env.scenarios.length, env.agents, env.tenants.length, env.loading, env.activeRun,
-    env.lastRun, env.runs, env.healthModel])
+  }, [seed, env.scenarios.length, env.agents, env.tenants.length, env.loading, env.errors,
+    env.activeRun, env.lastRun, env.runs, env.healthModel])
 
   // ── Resolve + mount the current destination surface ───────────────────────
   const dest = getDestination(router.destination) || getDestination(DEFAULT_DESTINATION)

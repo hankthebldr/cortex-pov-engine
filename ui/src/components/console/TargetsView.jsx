@@ -59,7 +59,8 @@ const AGENT_STALE_MS = 60_000 // beacon considered stale after 60s of silence
 
 export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {} }) {
   // ── Global scope from the provider (agents + active agent are ambient) ─────
-  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents } = useEnvironment()
+  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors } = useEnvironment()
+  const agentsError = errors?.agents || null
   const activeAgentId = activeAgent ? agentIdOf(activeAgent) : null
 
   // ── Local scope: IaC bundles are not part of the ambient env, fetched here.
@@ -253,7 +254,17 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             </button>
           </div>
           {loading && agents.length === 0 && <div className="target-card target-card--ghost">polling beacons…</div>}
-          {!loading && agents.length === 0 && (
+          {agentsError && (
+            <div className="target-card target-card--empty" role="alert" data-testid="agents-load-error">
+              <div className="target-card__title">Agent list could not be loaded</div>
+              <p className="target-card__sub">
+                <span className="mono">{agentsError}</span> — the roster below is the last one
+                SimCore returned{agents.length === 0 ? ' (none yet)' : ''}, not a fresh answer.
+              </p>
+              <button type="button" className="btn" onClick={refresh}>↻ Retry</button>
+            </div>
+          )}
+          {!loading && !agentsError && agents.length === 0 && (
             <div className="target-card target-card--empty">
               <div className="target-card__title">No agents registered</div>
               <p className="target-card__sub">
