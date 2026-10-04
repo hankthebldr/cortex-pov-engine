@@ -8,6 +8,7 @@ import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
 import { runIdOf, idMatches } from '../api/ids.js'
+import { agentIsOnline } from '../components/console/setupProgress.js'
 
 export function DestinationLoading() {
   return (
@@ -114,10 +115,16 @@ const EvidenceView = makeLazySurface(() => import('../components/console/Evidenc
 // component inventory, the authored CLI items, and the tenant read-back. Each
 // was a thing the console already implied and never gave you a place to do.
 const OverviewView = makeLazySurface(() => import('../components/console/OverviewView.jsx'), 'Overview')
-const SetupWizardView = makeLazySurface(() => import('../components/console/SetupWizardView.jsx'), 'Setup Wizard')
-const ComponentsView = makeLazySurface(() => import('../components/console/ComponentsView.jsx'), 'Components')
-const CliItemsView = makeLazySurface(() => import('../components/console/CliItemsView.jsx'), 'CLI Items')
-const TenantValidationView = makeLazySurface(() => import('../components/console/TenantValidationView.jsx'), 'Tenant Validation')
+const GetStartedView = makeLazySurface(() => import('../components/console/GetStartedView.jsx'), 'Get started')
+
+/** A surface that only forwards to another destination (replacing the
+ *  history entry), for ids whose page was retired. */
+function redirectTo(target) {
+  return function Redirect({ onNavigate = () => {} }) {
+    useEffect(() => { onNavigate(target) }, [onNavigate])
+    return null
+  }
+}
 
 /** Wrap a lazily-loaded surface in its own Suspense boundary, so a mount
  * site never has to know whether the component behind it is lazy.
@@ -246,7 +253,19 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
   const armId = params.arm || null
   const [scenario, setScenario] = useState(null)
   const [selectedTarget, setSelectedTarget] = useState(null)
-  const { refreshRuns } = useEnvironment()
+  const { refreshRuns, agent } = useEnvironment()
+  // Default the target to the active agent when it is online. Arriving from
+  // Get started with a healthy beacon and being met by "Target: BLOCKED — no
+  // target selected" put a red blocker one click after the console said what
+  // to do next. The DC can still pick a different target below; this only
+  // fills the empty state, it never overrides a choice.
+  useEffect(() => {
+    if (selectedTarget || !agent) return
+    const id = agent.agent_id || agent.id
+    if (id && agentIsOnline(agent)) {
+      setSelectedTarget({ kind: 'agent', id, label: agent.hostname || id })
+    }
+  }, [agent, selectedTarget])
   // A composed payload plan arrives in the URL from Tools & Payloads. Decoding
   // here (rather than re-composing) keeps the launch reload-safe and means the
   // exact digests the DC saw are the ones the launch carries. `resolving` is a
@@ -271,7 +290,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
           <div className="view-head__meta">
             {scenario
               ? <>Armed: <strong className="mono">{scenario.scenario_id || scenario.id}</strong> · {scenario.name}</>
-              : <>Arm a scenario from the <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Library</button> to begin.</>}
+              : <>Arm a scenario from <button className="linklike guided-flow__library-link" onClick={() => onNavigate('library')}>Simulate</button> to begin.</>}
           </div>
         </div>
       </div>
@@ -403,7 +422,7 @@ function LastRunCard({ onOpen = () => {} }) {
     return (
       <div className="last-run last-run--empty" data-testid="last-run-card">
         No run has completed on this SimCore yet. Compose a chain, or open a scenario
-        from the Library and launch it.
+        from Simulate and launch it.
       </div>
     )
   }
@@ -500,7 +519,7 @@ function RunList({ runs = [], onOpen = () => {} }) {
   if (!runs.length) {
     return (
       <div className="run-list-empty">
-        no runs yet — launch a scenario from the Library
+        no runs yet — launch a scenario from Simulate
       </div>
     )
   }
@@ -589,91 +608,89 @@ function ProofSurface({ params = {} }) {
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 //
-// ORDER IS THE POV RUN ORDER, and that is a contract, not a preference.
+// THE RAIL IS A TASK LIST, NOT A MAP OF THE PRODUCT.
 //
-// THE RAIL *IS* THE PHASE MODEL. There used to be two wayfinding systems — a
-// job-grouped rail (Operate / Analyze / Traffic / Infrastructure / Manage) AND
-// a separate phase bar — which answered two different questions about the same
-// destinations and could disagree with each other. The phase bar is gone; the
-// rail groups ARE the phases, carrying the phase numeral, and the flow bar at
-// the foot of the shell names where you are and what comes next (see
-// `app/povflow.js`).
+// The previous rail carried 17 destinations grouped by POV phase. Every one of
+// them was real, and together they answered "what does this console contain"
+// instead of "what do I do next" — which is the only question a DC opening it
+// cold actually has. So the rail is now five tasks plus two management pages:
 //
-// Two phases have no group:
-//   Phase 4 (Launch) is a state the Composer enters after preflight. Inventing
-//   a nav entry for it would offer a destination that does not exist.
-//   "Start here" carries no numeral because Overview and the Setup Wizard sit
-//   before the run order rather than inside it.
+//   Get started   the setup checklist, built on real state (default home)
+//   Simulate      pick or build a chain, check it, launch it
+//   Runs          what is executing and what just finished
+//   Results       the report, the coverage it adds up to, tenant read-back
+//   Catalog       reference content: TTP cards, packages, CLI, streams, UC/TC
+//   ── Manage ──  Agents · Tenant
 //
-// `groupNum` is what the rail prints in the accent color; '' renders nothing.
-// `icon` is a real PANW line icon under /icons — never a Unicode glyph. The DS
-// forbids glyph icons in brand material, and the previous rail was built
-// entirely from them (▤ ⌗ ⚙ ≣ ✓ ◈ ∿ ≋ ▦ ◆).
+// NOTHING WAS DELETED. Every former destination is still routable (deep links,
+// bookmarks and ⌘K resolve) and the ones that belong to a task are reachable
+// as tabs inside it. `navParent` says which rail item lights up while a hidden
+// route is open, and `SECTIONS` below is the one place the tab strips are
+// defined — the rail, the tab strip and the router all read this file.
+//
+// `icon` is a real PANW line icon under /icons — never a Unicode glyph.
 export const DESTINATIONS = [
-  // ── Start here — the front door and the guided setup ──
-  { id: 'overview', label: 'Overview',      group: 'Start here', groupNum: '',  icon: 'doc-search',      Component: OverviewView },
-  { id: 'setup',    label: 'Setup Wizard',  group: 'Start here', groupNum: '',  icon: 'keyboard',        Component: SetupWizardView, badge: 'wizardSteps' },
+  // ── The five tasks ──
+  { id: 'start',    label: 'Get started',  group: 'Tasks',  icon: 'keyboard',        Component: GetStartedView, badge: 'setupLeft' },
+  // Library keeps its id: it is the route, the data-testid and the e2e key.
+  { id: 'library',  label: 'Simulate',     group: 'Tasks',  icon: 'line-chart',      Component: LibrarySurface },
+  { id: 'runs',     label: 'Runs',         group: 'Tasks',  icon: 'donut-chart',     Component: RunsSurface,    badge: 'live' },
+  { id: 'proof',    label: 'Results',      group: 'Tasks',  icon: 'bar-chart',       Component: ProofSurface },
+  { id: 'ttps',     label: 'Catalog',      group: 'Tasks',  icon: 'threat-warning',  Component: TtpsSurface },
 
-  // ── 1 · Scope — the pieces this POV runs on ──
-  // 'scope' is the Components inventory: one card per actual piece (agent,
-  // BVM, collectors, NGFW, connectors, engine content, API). It replaced a
-  // page that was trying to be an inventory, a tenant list and an agent list
-  // at once.
-  { id: 'scope',    label: 'Components',    group: 'Scope',      groupNum: '1', icon: 'building',        Component: ComponentsView, badge: 'componentCount' },
-  // One tenant per instance — the instance is deployed once for a POV and dies
-  // with the lab, so a tenant LIST was modelling a thing that cannot happen.
-  { id: 'tenants',  label: 'Tenant',        group: 'Scope',      groupNum: '1', icon: 'people',          Component: TenantsSurface, badge: 'tenantCount' },
-  { id: 'agents',   label: 'Agents',        group: 'Scope',      groupNum: '1', icon: 'fingerprint-scan', Component: AgentsSurface, badge: 'agentCount' },
+  // ── Manage ──
+  { id: 'agents',   label: 'Agents',       group: 'Manage', icon: 'fingerprint-scan', Component: AgentsSurface, badge: 'agentCount' },
+  { id: 'tenants',  label: 'Tenant',       group: 'Manage', icon: 'people',          Component: TenantsSurface },
 
-  // ── 2 · Compose — choosing and building what to prove ──
-  // Library is the DEFAULT destination, not Composer: the fastest path for most
-  // sessions is an existing Unit 42-anchored chain, and landing a new DC on an
-  // empty canvas hides the 170+ scenarios that already exist.
-  { id: 'library',  label: 'Library',       group: 'Compose',    groupNum: '2', icon: 'line-chart',      Component: LibrarySurface, badge: 'scenarioCount' },
-  { id: 'cli',      label: 'CLI Items',     group: 'Compose',    groupNum: '2', icon: 'password',        Component: CliItemsView,   badge: 'cliCount' },
-  { id: 'composer', label: 'Composer',      group: 'Compose',    groupNum: '2', icon: 'apps-grid',       Component: ComposerView },
-  // id stays 'adapters' and that is deliberate, not an oversight. It is the
-  // route (#/adapters), the data-testid, the ⌘K entry and the e2e fixture's
-  // key — all of which derive from the id, none of which derive from the
-  // label. Renaming it to match the new label broke `#/adapters` silently:
-  // the router fell back to the default destination, so the deep link did not
-  // 404, it just quietly showed the Library. Only the label changed.
-  { id: 'adapters',  label: 'Packages',      group: 'Compose',    groupNum: '2', icon: 'settings-edit',   Component: AdaptersSurface, badge: 'packageCount' },
-  // Data Streams is a composition INPUT — a third-party stream relayed to the
-  // Broker VM, chosen while you compose — not an observation surface. It used
-  // to sit under Observe, which put a thing you configure next to the things
-  // you watch.
-  { id: 'streams',  label: 'Data Streams',  group: 'Compose',    groupNum: '2', icon: 'threat-network',  Component: DataStreamsSurface, badge: 'streamCount' },
-  // Same argument for TTP cards: authored content, not proof output.
-  { id: 'ttps',     label: 'TTP Cards',     group: 'Compose',    groupNum: '2', icon: 'threat-warning',  Component: TtpsSurface,    badge: 'ttpCount' },
-  { id: 'uctc',     label: 'UC / TC Index', group: 'Compose',    groupNum: '2', icon: 'bar-chart',       Component: UcTcSurface,    badge: 'uctcCount' },
-
-  // ── 3 · Preflight — will this chain actually reach the target ──
-  { id: 'preflight', label: 'Launch Gate',  group: 'Preflight',  groupNum: '3', icon: 'user-lock',       Component: ReadinessSurface, badge: 'gateWarn' },
-
-  // ── 5 · Observe — what is happening right now ──
-  { id: 'runs',     label: 'Runs',          group: 'Observe',    groupNum: '5', icon: 'donut-chart',     Component: RunsSurface,    badge: 'live' },
-
-  // ── 6 · Prove — what the run established ──
-  { id: 'validation', label: 'Tenant Validation', group: 'Prove', groupNum: '6', icon: 'person',         Component: TenantValidationView, badge: 'verified' },
-  { id: 'coverage', label: 'Coverage',      group: 'Prove',      groupNum: '6', icon: 'donut-chart',     Component: CoverageSurface },
-  { id: 'proof',    label: 'Proof & Export', group: 'Prove',     groupNum: '6', icon: 'bar-chart',       Component: ProofSurface },
-
-  // ── Hidden routes ──
-  // Not in the rail, but deliberately still routable. `environments` and `eal`
-  // lost their rail slots to Components and Data Streams respectively; their
-  // content is reachable from those surfaces. They stay mounted so existing
-  // deep links, bookmarks and ⌘K muscle memory resolve instead of 404ing to
-  // the default destination, which would silently look like data loss.
-  { id: 'guided',   label: 'New POV run',   group: null, hidden: true, icon: 'apps-grid',       Component: GuidedPovFlow },
-  { id: 'environments', label: 'Lab',       group: null, hidden: true, icon: 'building',        Component: EnvironmentsSurface },
-  { id: 'eal',      label: 'Traffic / EAL', group: null, hidden: true, icon: 'threat-network',  Component: EalSurface },
-  // Legacy id for the Launch Gate. It was 'readiness' for the whole of the
-  // previous IA, so it is aliased rather than broken.
-  { id: 'readiness', label: 'Launch Gate',  group: null, hidden: true, icon: 'user-lock',       Component: ReadinessSurface },
+  // ── Off-rail, reached as tabs or links ──
+  { id: 'composer',  label: 'Build a chain',     hidden: true, navParent: 'library', icon: 'apps-grid',      Component: ComposerView },
+  { id: 'preflight', label: 'Launch gate',       hidden: true, navParent: 'library', icon: 'user-lock',      Component: ReadinessSurface },
+  { id: 'guided',    label: 'New POV run',       hidden: true, navParent: 'library', icon: 'apps-grid',      Component: GuidedPovFlow },
+  { id: 'coverage',  label: 'Coverage',          hidden: true, navParent: 'proof',   icon: 'donut-chart',    Component: CoverageSurface },
+  // id stays 'adapters' deliberately — it is the route; only the label moved.
+  { id: 'adapters',  label: 'Packages',          hidden: true, navParent: 'ttps',    icon: 'settings-edit',  Component: AdaptersSurface },
+  { id: 'streams',   label: 'Data streams',      hidden: true, navParent: 'ttps',    icon: 'threat-network', Component: DataStreamsSurface },
+  { id: 'uctc',      label: 'UC / TC index',     hidden: true, navParent: 'ttps',    icon: 'bar-chart',      Component: UcTcSurface },
+  { id: 'overview',  label: 'About POVengine',   hidden: true, navParent: 'start',   icon: 'doc-search',     Component: OverviewView },
+  // Retired seed-only pages. The ids stay routable so an old link lands
+  // somewhere sensible instead of silently falling back to the default.
+  { id: 'setup',      label: 'Get started', hidden: true, redirect: true, navParent: 'start', icon: 'keyboard', Component: redirectTo('start') },
+  { id: 'scope',      label: 'Get started', hidden: true, redirect: true, navParent: 'start', icon: 'keyboard', Component: redirectTo('start') },
+  { id: 'cli',        label: 'Catalog',     hidden: true, redirect: true, navParent: 'ttps',  icon: 'password', Component: redirectTo('ttps') },
+  { id: 'validation', label: 'Results',     hidden: true, redirect: true, navParent: 'proof', icon: 'person',   Component: redirectTo('proof') },
+  { id: 'environments', label: 'Lab',            hidden: true, navParent: 'agents',  icon: 'building',       Component: EnvironmentsSurface },
+  { id: 'eal',       label: 'Traffic / EAL',     hidden: true, navParent: 'library', icon: 'threat-network', Component: EalSurface },
+  // Legacy id for the Launch Gate, aliased rather than broken.
+  { id: 'readiness', label: 'Launch gate',       hidden: true, navParent: 'library', icon: 'user-lock',      Component: ReadinessSurface },
 ]
 
-export const DEFAULT_DESTINATION = 'library'
+/**
+ * The tab strip each task shows across the top of its pages. A tab IS a
+ * destination, so the strip navigates and holds no state of its own — the rail
+ * and the strip cannot disagree about where you are.
+ */
+export const SECTIONS = {
+  library: [['library', 'Scenarios'], ['composer', 'Build a chain'], ['preflight', 'Launch gate']],
+  proof: [['proof', 'Report'], ['coverage', 'Coverage']],
+  ttps: [['ttps', 'TTP cards'], ['adapters', 'Packages'], ['streams', 'Data streams'], ['uctc', 'UC / TC index']],
+}
+
+/** The rail item that represents a destination (itself, or its parent). */
+export function navOwner(id) {
+  const d = BY_ID.get(id)
+  if (!d) return null
+  return d.navParent || d.id
+}
+
+/** The tab set for a destination, or null when its task has no tabs. */
+export function sectionFor(id) {
+  const owner = id === 'readiness' ? 'library' : navOwner(id)
+  const tabs = SECTIONS[owner]
+  if (!tabs) return null
+  return { owner, tabs, active: id === 'readiness' ? 'preflight' : id }
+}
+
+export const DEFAULT_DESTINATION = 'start'
 
 /** Path to a destination's rail icon. One guarded place, because interpolating
  *  a missing id emitted `url("icons/undefined")` and fired a 404 per render. */
@@ -691,15 +708,14 @@ export function isValidDestination(id) {
   return BY_ID.has(id)
 }
 
-/** Grouped, nav-visible destinations in registry order. Each group carries the
- *  phase numeral the rail prints beside its label. */
+/** Grouped, nav-visible destinations in registry order. */
 export function navGroups(badges = {}) {
   const order = []
   const byLabel = new Map()
   for (const d of DESTINATIONS) {
     if (d.hidden || !d.group) continue
     if (!byLabel.has(d.group)) {
-      byLabel.set(d.group, { num: d.groupNum || '', items: [] })
+      byLabel.set(d.group, { items: [] })
       order.push(d.group)
     }
     const badgeVal = d.badge ? badges[d.badge] : null
@@ -713,5 +729,7 @@ export function navGroups(badges = {}) {
       badgeVariant: isLive ? 'live' : undefined,
     })
   }
-  return order.map((label) => ({ label, num: byLabel.get(label).num, items: byLabel.get(label).items }))
+  // The task group is the rail's body and carries no heading; only the
+  // secondary group is labelled, which is what makes it read as secondary.
+  return order.map((label) => ({ label: label === 'Tasks' ? '' : label, items: byLabel.get(label).items }))
 }

@@ -450,7 +450,9 @@ function validateStep(step, form) {
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function TenantManager() {
+export default function TenantManager({ embedded = false } = {}) {
+  // `embedded` drops the page masthead so the wizard can sit inside another
+  // surface's step (Get started) without announcing itself as a second page.
   // ── Ambient scope from the EnvironmentProvider ──────────────────────────
   // The tenant LIST + the ACTIVE tenant pointer live in the provider so this
   // surface and the global header switcher share one source of truth. This
@@ -612,11 +614,10 @@ export default function TenantManager() {
       )}
 
       {/* ── View header ───────────────────────────────────────────────────── */}
-      <div className="tenant-mgr__header">
+      {!embedded && <div className="tenant-mgr__header">
         <div className="tenant-mgr__accent-bar" />
         {/* Masthead eyebrow: the nav group alone, no "· Phase N" — this
             product has no app-level phase stepper to echo (M-4). */}
-        <div className="tenant-mgr__eyebrow">Phase 1 · Scope</div>
         <div className="tenant-mgr__header-row">
           <h2 className="tenant-mgr__title">
             XSIAM Tenants
@@ -636,7 +637,7 @@ export default function TenantManager() {
           )}
           <span className="tenant-mgr__scope-suffix">— shared with the global header switcher.</span>
         </div>
-      </div>
+      </div>}
 
       <div className="tenant-mgr__layout">
 

@@ -7,7 +7,6 @@ import { tokeniserFor } from './syntaxHighlight.js'
 import { runIdOf } from '../../api/ids.js'
 import { serverDate } from '../../api/time.js'
 import '../../styles/destinations/ttps.css'
-import ComposeTabs from './ComposeTabs.jsx'
 
 // Maps a card detection-family key to the canonical detection-type chip token
 // so Correlation (the XSIAM differentiator) and XQL render with their distinct
@@ -180,7 +179,6 @@ export default function TtpBrowserView({ initialTtpId = null, onNavigate = () =>
 
   return (
     <div className="ttpb" data-testid="ttp-browser">
-      <ComposeTabs active="ttps" onNavigate={onNavigate} />
       <div className="view-head">
         <div>
           <h1>TTP Cards</h1>

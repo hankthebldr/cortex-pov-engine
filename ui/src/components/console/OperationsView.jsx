@@ -7,7 +7,6 @@ import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
 import useScenarioRunHistory from './useScenarioRunHistory.js'
 import { getScenarios, getScenario } from '../../api/client.js'
-import ComposeTabs from './ComposeTabs.jsx'
 
 /**
  * OperationsView — the default tab in AppConsole.
@@ -250,14 +249,12 @@ export default function OperationsView({
 
   return (
     <div className="operations grid-bg">
-      <ComposeTabs active="library" onNavigate={onNavigate} />
       <div className="view-head">
         <div>
           <div className="ops-accent-bar" aria-hidden="true" />
           {/* Masthead eyebrow: the nav group alone, no "· Phase N" — this
               product has no app-level phase stepper to echo (M-4; mirrors
               CoverageView's CoverageKicker, the reference for this pattern). */}
-          <div className="ops-eyebrow">Phase 2 · Compose</div>
           <h1>Library</h1>
           <div className="view-head__meta">
             Plane: <strong>{headMeta.planeLabel}</strong>

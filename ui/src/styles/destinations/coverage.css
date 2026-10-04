@@ -37,16 +37,16 @@
   --c-hairline:        var(--bd);
   --c-hairline-strong: var(--bd2);
 
-  --c-action:          var(--ac);
-  --c-action-bright:   var(--ac-str);
+  --c-action:          var(--ink-action);
+  --c-action-bright:   var(--ink-action-bright);
   --c-action-soft:     var(--ac-soft);
 
   --c-signal:          var(--info);
   --c-signal-soft:     color-mix(in srgb, var(--info) 14%, transparent);
   --c-signal-glow:     color-mix(in srgb, var(--info) 45%, transparent);
 
-  --c-detected:        var(--ac);
-  --c-detected-soft:   var(--ac-soft);
+  --c-detected:        var(--ink-detected);
+  --c-detected-soft:   var(--pos-soft);
   --c-pending:         var(--warn);
   --c-pending-soft:    color-mix(in srgb, var(--warn) 14%, transparent);
   --c-missed:          var(--crit);
@@ -177,7 +177,7 @@
   border-radius: 10px;
   padding: 15px 16px;
 }
-.theme-console .coverage__kpi--ac   { border-top-color: var(--ac); }
+.theme-console .coverage__kpi--ac   { border-top-color:var(--ac-line); }
 .theme-console .coverage__kpi--warn { border-top-color: var(--warn-str); }
 .theme-console .coverage__kpi-label {
   font-family: 'Montserrat', var(--font-ui), sans-serif;
@@ -303,7 +303,7 @@
   filter: brightness(1.05);
 }
 .theme-console .coverage .cov-cell--selected {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   box-shadow: 0 0 0 1px var(--ac-soft);
 }
 .theme-console .coverage .cov-cell__tid {
@@ -333,7 +333,7 @@
 
 .theme-console .coverage .cov-cell--detected {
   background: var(--ac-ink);
-  border-color: var(--ac);
+  border-color:var(--pos);
   color: var(--ac-tx);
 }
 .theme-console .coverage .cov-cell--detected .cov-cell__tid,
@@ -368,7 +368,7 @@
 .theme-console .coverage .cov-detail {
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 8px;
 }
 .theme-console .coverage .cov-detail__tid { color: var(--ac-ink); }
@@ -394,7 +394,7 @@
 .theme-console .stack-coverage .stack-coverage__intro {
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 10px;
 }
 .theme-console .stack-coverage .stack-coverage__intro-prose { color: var(--tx2); }
@@ -439,18 +439,18 @@
   border-radius: 4px;
 }
 .theme-console .stack-coverage .stack-coverage__cell:not(:disabled):hover {
-  box-shadow: inset 0 0 0 1px var(--ac);
+  box-shadow:inset 0 0 0 1px var(--ac-line);
 }
 .theme-console .stack-coverage .stack-coverage__cell--selected {
-  box-shadow: inset 0 0 0 2px var(--ac),
-              inset 0 0 12px color-mix(in srgb, var(--ac) 30%, transparent);
+  box-shadow:inset 0 0 0 2px var(--ac-line),
+              inset 0 0 12px color-mix(in srgb, var(--ac-line) 30%, transparent);
 }
 .theme-console .stack-coverage .stack-coverage__cell--empty { opacity: .5; }
 
 .theme-console .stack-coverage .stack-coverage__panel {
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 8px;
 }
 .theme-console .stack-coverage .stack-coverage__panel-eyebrow { color: var(--ac-ink); }
@@ -498,7 +498,7 @@
   color: var(--cortex-steel);
 }
 .coverage-heat-legacy .mitre-heatmap__detail {
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
 }
 .coverage-heat-legacy .mitre-heatmap__tactic-head {
   background: var(--s2);

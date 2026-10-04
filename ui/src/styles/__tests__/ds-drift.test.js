@@ -76,7 +76,7 @@ describe('design-system drift', () => {
   // [DS token name, the console token that must equal it].
   const SOURCED = [
     ['panw-orange', 'ac', 'chrome accent — the one dominant brand color'],
-    ['panw-orange', 'ac-str', 'accent, strong variant'],
+    ['panw-orange', 'ac-brand', 'the brand orange every orange alias resolves to'],
     ['panw-green', 'pos-str', 'Cortex green — status only'],
     ['panw-yellow', 'warn-str', 'Strata yellow — warn'],
   ]

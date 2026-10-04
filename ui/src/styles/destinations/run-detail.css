@@ -67,7 +67,7 @@
   color: var(--tx);
 }
 .theme-console .run-detail__back:focus-visible {
-  outline: 2px solid var(--ac);
+  outline:2px solid var(--tx2);
   outline-offset: 3px;
   border-radius: 2px;
 }
@@ -367,7 +367,7 @@
   border-radius: 8px;
   padding: 14px 16px 13px;
 }
-.theme-console .evidence .kpi--ac   { border-top-color: var(--ac-str); }
+.theme-console .evidence .kpi--ac   { border-top-color:var(--ac-str); }
 .theme-console .evidence .kpi--info { border-top-color: var(--info); }
 .theme-console .evidence .kpi--warn { border-top-color: var(--warn); }
 .theme-console .evidence .kpi--tx   { border-top-color: var(--bd2); }
@@ -439,7 +439,7 @@
   width: 3px;
 }
 .theme-console .evidence .scorecard__row:focus-visible {
-  outline: 2px solid var(--ac);
+  outline:2px solid var(--tx2);
   outline-offset: -2px;
 }
 .theme-console .evidence .scorecard__tid { color: var(--info); }
@@ -467,7 +467,7 @@
 .theme-console .evidence .scorecard__status--detected {
   color: var(--ac-ink);
   background: transparent;
-  border-color: var(--ac-str);
+  border-color:var(--pos);
 }
 .theme-console .evidence .scorecard__status--missed {
   color: var(--crit);
@@ -488,7 +488,7 @@
 }
 .theme-console .evidence .row-action--detected:hover {
   color: var(--ac-ink);
-  border-color: var(--ac-str);
+  border-color:var(--pos);
 }
 .theme-console .evidence .row-action--missed:hover {
   color: var(--crit);
@@ -531,14 +531,14 @@
 }
 .theme-console .evidence .detection-drawer__copy:hover {
   color: var(--ac-ink);
-  border-color: var(--ac);
+  border-color:var(--ac-line);
 }
 .theme-console .evidence .detection-drawer__notes {
   color: var(--tx);
   background: var(--s2);
   border-color: var(--bd);
 }
-.theme-console .evidence .detection-drawer__notes:focus { border-color: var(--ac); }
+.theme-console .evidence .detection-drawer__notes:focus { border-color:var(--ac-line); }
 .theme-console .evidence .detection-drawer__actions {
   background: var(--s2);
   border-top-color: var(--bd);
@@ -613,7 +613,7 @@
 }
 .theme-console .narrative__timeline .tl-track-progress {
   background: linear-gradient(90deg, var(--info), var(--ac-str));
-  box-shadow: 0 0 8px color-mix(in srgb, var(--ac-str) 45%, transparent);
+  box-shadow:0 0 8px color-mix(in srgb, var(--ac-str) 45%, transparent);
 }
 
 .theme-console .narrative__timeline .tl-step__time { color: var(--tx3); }
@@ -653,7 +653,7 @@
 }
 .theme-console .narrative__timeline .tl-det__plane { color: var(--tx2); }
 .theme-console .narrative__timeline .tl-det--detected {
-  border-color: var(--ac-str);
+  border-color:var(--pos);
   background: var(--ac-soft);
   color: var(--ac-ink);
 }
@@ -734,7 +734,7 @@
   height: 6px;
   flex: none;
   border-radius: 50%;
-  background: var(--ac-str);
+  background:var(--pos);
   animation: run-detail-live-pulse 1.6s ease-in-out infinite;
 }
 

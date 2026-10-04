@@ -66,21 +66,3 @@ describe('active agent / tenant survive a failed list fetch', () => {
     expect(screen.getByTestId('agents-load-error').textContent).toContain('SimCore restarting')
   })
 })
-
-describe('the flow bar does not count a failed agent list as zero beacons', () => {
-  it('renders words, not "0 beacons enrolled", when /api/agents failed', async () => {
-    const { default: AppConsole } = await import('../../AppConsole.jsx')
-    const { markTourSeen } = await import('../onboarding/onboardingState.js')
-    markTourSeen()
-    window.location.hash = '#/agents'
-    installRoutes({
-      'GET /api/agents': down,
-      'GET /api/scenarios': { scenarios: [] },
-      'GET /api/runs': { runs: [] },
-      'GET /api/health': { status: 'ok', components: {} },
-    })
-    render(<AppConsole />)
-    await waitFor(() => expect(screen.getByTestId('agents-load-error')).toBeInTheDocument())
-    expect(screen.getByTestId('flow-bar').textContent).not.toMatch(/0 beacons enrolled/)
-  })
-})
