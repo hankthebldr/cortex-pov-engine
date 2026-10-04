@@ -447,6 +447,13 @@
    pill), a label/value grid in JetBrains Mono, then actions.  */
 
 .theme-console .tenant-mgr__row {
+  /* display:block is load-bearing, not cosmetic: cortex-console.css carries a
+     pre-refactor `.tenant-mgr__row { display:grid; grid-template-columns:auto
+     1fr auto auto }` at equal specificity. Because it never sets `display`,
+     this card rule used to inherit that grid, which crushed the base-URL cell
+     to ~1 character wide and blew the row to ~1000px tall. Resetting display
+     here neutralises the stale grid regardless of file load order. */
+  display: block;
   background: var(--s1, var(--cortex-white));
   border: 1px solid var(--bd, var(--cortex-border));
   border-radius: 10px;
