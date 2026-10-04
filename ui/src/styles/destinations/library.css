@@ -252,6 +252,14 @@
   font-family: var(--font-mono);
 }
 
+/* A failed list fetch must not read like an empty filter result. */
+.theme-console .library-layout .ops-load-error {
+  color: var(--tx2);
+  border: 1px solid var(--c-pending);
+  border-radius: 6px;
+  padding: 24px 16px;
+}
+
 /* ── Scenario card grid ───────────────────────────────────────────────── */
 
 .theme-console .library-layout .scenario-grid {
