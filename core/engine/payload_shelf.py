@@ -877,7 +877,13 @@ def _cli(argv: list[str]) -> int:  # pragma: no cover - exercised via subprocess
     parser.add_argument("--sources", default=None)
     args = parser.parse_args(argv)
 
-    base = os.environ.get("CORTEXSIM_BASE_DIR", os.getcwd())
+    # Default to the repo root (this file is core/engine/payload_shelf.py), not
+    # cwd: the documented gate is `cd core && python -m engine.payload_shelf
+    # --check`, and a cwd default makes that read core/payloads/sources.json
+    # (absent) and fail closed — unrunnable exactly as documented. Mirrors
+    # check-adapter-wiring.py. CORTEXSIM_BASE_DIR still wins when set.
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    base = os.environ.get("CORTEXSIM_BASE_DIR", repo_root)
     packs_dir = args.packs_dir or os.path.join(base, "tools", "packs")
     sources = args.sources or os.path.join(base, "payloads", "sources.json")
 
