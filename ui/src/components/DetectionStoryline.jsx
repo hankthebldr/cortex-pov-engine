@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
+import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
 import './DetectionStoryline.css'
 
@@ -43,7 +44,7 @@ function formatMttd(seconds) {
 function formatClock(iso) {
   if (!iso) return null
   try {
-    return new Date(iso).toLocaleTimeString(undefined, {
+    return serverDate(iso).toLocaleTimeString(undefined, {
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     })
   } catch {

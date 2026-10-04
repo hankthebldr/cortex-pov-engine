@@ -6,13 +6,14 @@ import {
   mintEnrollmentToken,
 } from '../../api/client.js'
 import { agentIdOf } from '../../api/ids.js'
+import { parseServerTime, serverDate } from '../../api/time.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import '../../styles/destinations/agents.css'
 
 // Compact relative time for last-seen ("12s" / "5m" / "3h" / "2d").
 function relTime(iso) {
   if (!iso) return 'never'
-  const ms = Date.now() - new Date(iso).getTime()
+  const ms = Date.now() - parseServerTime(iso)
   if (Number.isNaN(ms)) return '—'
   const s = Math.max(0, Math.floor(ms / 1000))
   if (s < 60) return `${s}s ago`
@@ -201,7 +202,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   const agentStatus = (a) => {
     const seen = a.last_seen || a.last_seen_at || a.updated_at
     if (!seen) return 'unknown'
-    const age = Date.now() - new Date(seen).getTime()
+    const age = Date.now() - parseServerTime(seen)
     return age < AGENT_STALE_MS ? 'live' : 'stale'
   }
 
@@ -399,7 +400,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 </div>
                 <p className="target-card__sub">
                   {(b.modules || b.selected_modules || []).join(', ') || b.provider || 'aws'} ·{' '}
-                  {b.created_at ? new Date(b.created_at).toLocaleDateString() : 'bundle'}
+                  {b.created_at ? serverDate(b.created_at).toLocaleDateString() : 'bundle'}
                 </p>
               </button>
             )
@@ -539,7 +540,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   </div>
                   <span className="deploy-hint mono">
                     {token.remaining_uses ?? token.max_uses} use(s)
-                    {token.expires_at && ` · expires ${new Date(token.expires_at).toLocaleString()}`}
+                    {token.expires_at && ` · expires ${serverDate(token.expires_at).toLocaleString()}`}
                   </span>
                 </div>
 

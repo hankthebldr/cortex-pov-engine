@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react'
 import useRunEventStream from './useRunEventStream.js'
+import { serverDate } from '../../api/time.js'
 
 /**
  * EventStream — real-time agent stdout/stderr viewer for the In-Flight tab.
@@ -207,7 +208,8 @@ export default function EventStream({ runId, compact = false }) {
 function formatTs(ts) {
   if (!ts) return '--:--:--'
   try {
-    const d = new Date(ts)
+    const d = serverDate(ts)
+    if (Number.isNaN(d.getTime())) return String(ts).slice(11, 19) || '--:--:--'
     const hh = String(d.getUTCHours()).padStart(2, '0')
     const mm = String(d.getUTCMinutes()).padStart(2, '0')
     const ss = String(d.getUTCSeconds()).padStart(2, '0')

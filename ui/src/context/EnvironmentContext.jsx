@@ -18,6 +18,7 @@ import {
   getXsiamTenantHealth,
 } from '../api/client.js'
 import { agentIdOf, runIdOf, idMatches } from '../api/ids.js'
+import { parseServerTime } from '../api/time.js'
 
 /**
  * EnvironmentContext — the single home for ALL ambient console scope.
@@ -336,7 +337,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     const totalSteps = running.total_steps ?? running.steps?.length ?? 0
     const currentStep = running.current_step ?? running.step ?? 0
     const elapsedSec = running.started_at
-      ? Math.floor((Date.now() - new Date(running.started_at).getTime()) / 1000)
+      ? Math.floor((Date.now() - parseServerTime(running.started_at)) / 1000)
       : running.elapsed_seconds ?? 0
     return {
       runId: runIdOf(running),
