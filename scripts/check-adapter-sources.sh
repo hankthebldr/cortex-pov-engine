@@ -112,7 +112,11 @@ for file in "$PACKS_DIR"/*.yml; do
             fi
             # resolve relative to repo root
             if [[ "$src" = /* ]]; then resolved="$src"; else resolved="${REPO_ROOT}/${src}"; fi
-            if [[ -d "$resolved" ]]; then
+            # A `git clone` without --recursive still creates an EMPTY directory
+            # at every gitlink path, so `-d` alone passes an uninitialised
+            # submodule. Require a non-empty tree — the source is only present
+            # when its files actually are.
+            if [[ -d "$resolved" && -n "$(ls -A "$resolved" 2>/dev/null)" ]]; then
                 pass=$((pass + 1))
                 echo -e "  ${GREEN}PASS${NC} ${aid} (tier 2): ${src} present"
             else
