@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { getResultsForRun, validateResult } from '../../api/client.js'
 
 /**
@@ -10,28 +10,46 @@ import { getResultsForRun, validateResult } from '../../api/client.js'
  * local state and refetches on completion.
  *
  * @param {string|null} runId
- * @returns {{ rows, kpis, loading, error, validate, refresh }}
+ * @returns {{ rows, kpis, loading, loaded, error, validate, refresh }}
  */
 export default function useResultsData(runId) {
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
+  // Monotonic request id. Only the newest request may write state: an 8 s poll
+  // against a slow SimCore, or a switch from run A to run B while A's fetch is
+  // still in flight, otherwise lets an OLDER answer land last — run A's
+  // scorecard under run B's header, or a pre-validate snapshot overwriting the
+  // row the DC just marked.
+  const seqRef = useRef(0)
+  // Whether `payload` currently holds an answer for THIS runId. A failed first
+  // fetch leaves it false, which is what lets the view say "could not load"
+  // rather than render an empty scorecard as 0% coverage.
+  const [loaded, setLoaded]   = useState(false)
 
   const refresh = useCallback(async () => {
-    if (!runId) { setPayload(null); return }
+    const seq = ++seqRef.current
+    if (!runId) { setPayload(null); setLoaded(false); return }
     setLoading(true)
     try {
       const data = await getResultsForRun(runId)
+      if (seq !== seqRef.current) return
       setPayload(data)
+      setLoaded(true)
       setError(null)
     } catch (err) {
+      if (seq !== seqRef.current) return
       setError(err.message || String(err))
     } finally {
-      setLoading(false)
+      if (seq === seqRef.current) setLoading(false)
     }
   }, [runId])
 
+  // A different run starts from nothing — never from the previous run's rows.
   useEffect(() => {
+    setPayload(null)
+    setLoaded(false)
+    setError(null)
     refresh()
   }, [refresh])
 
@@ -75,7 +93,9 @@ export default function useResultsData(runId) {
     const median = mttdList.length
       ? mttdList[Math.floor(mttdList.length / 2)]
       : null
-    const coverage = total > 0 ? Math.round((detected / total) * 100) : 0
+    // 0 of 0 is not 0 % — it is "nothing to score", and must not render as a
+    // measured coverage figure.
+    const coverage = total > 0 ? Math.round((detected / total) * 100) : null
     const stitched = rows.filter((r) =>
       r.plane === 'ANALYTICS' && r.observed === true
     ).length
@@ -107,5 +127,5 @@ export default function useResultsData(runId) {
     }
   }, [refresh])
 
-  return { rows, kpis, loading, error, validate, refresh }
+  return { rows, kpis, loading, loaded, error, validate, refresh }
 }

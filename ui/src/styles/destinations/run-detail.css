@@ -342,6 +342,15 @@
 .theme-console .evidence .evidence-empty__desc {
   color: var(--tx2);
 }
+/* A poll that failed after a good answer: the rows stay, the staleness is said. */
+.theme-console .evidence .evidence-stale {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--c-pending);
+  background: var(--s2);
+  color: var(--tx2);
+  font-size: 12px;
+}
 
 /* ── KPI row ──────────────────────────────────────────────────────── */
 

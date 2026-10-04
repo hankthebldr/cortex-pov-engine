@@ -52,11 +52,12 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
 from .audit import ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
 from .delivery import REMEDIATION, DeliveryLedger, response_evidence
+from .safety import url_host_port
 
 
 logger = logging.getLogger("cortexsim.eal.analytics_emitter")
@@ -146,6 +147,27 @@ class AnalyticsEmitterParams(BaseModel):
                     "it None (the default) and the emitted records are "
                     "byte-identical to what they were before this field existed.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_undeclared_negative_control(cls, data: Any) -> Any:
+        # pydantic's default extra='ignore' would DROP a `negative_control` key
+        # on a params model that does not declare it, and the emitter would then
+        # send the POSITIVE records — a requested negative control silently
+        # becoming the case it exists to be contrasted with. Refuse instead, the
+        # same way records_for refuses it on an emitter that cannot build one.
+        if (
+            isinstance(data, dict)
+            and data.get("negative_control")
+            and "negative_control" not in cls.model_fields
+        ):
+            raise ValueError(
+                "negative_control is not supported by this emitter (its params "
+                "do not declare it) — it would otherwise be ignored and the "
+                "POSITIVE records emitted instead; remove it or use an emitter "
+                "that ships a negative control"
+            )
+        return data
 
     @field_validator("collector_url")
     @classmethod
@@ -453,9 +475,10 @@ class AnalyticsLogEmitter(BaseSimulation):
         params: AnalyticsEmitterParams = ctx.params  # type: ignore[assignment]
         started_at = self.utcnow()
 
-        host = urlparse(params.collector_url).hostname or ""
-        # Mandatory per-target gate BEFORE any emit.
-        ctx.authorise(host)
+        host, port = url_host_port(params.collector_url)
+        # Mandatory per-target gate BEFORE any emit — at port granularity, so a
+        # `host:8088` allowlist pin does not also authorise the host's 443.
+        ctx.authorise(host, port=port)
 
         descriptor = self._descriptor(params)
 

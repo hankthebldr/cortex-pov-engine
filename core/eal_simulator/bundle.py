@@ -322,7 +322,8 @@ def _render_readme(manifest: dict[str, Any]) -> str:
         "| `collector_rejected` | collector answered 4xx — wrong path, content-type or dataset |",
         "| `collector_unauthorized` | 401/403/407 — wrong or missing ingestion token |",
         "| `collector_throttled` | 429 — lower burst/iterations or enable batch |",
-        "| `collector_redirected` | 3xx — proxy/captive portal, not an ingestion endpoint |",
+        "| `collector_redirected` | 3xx — proxy/captive portal, not an ingestion endpoint (never followed) |",
+        "| `collector_intercepted` | 2xx carrying an HTML page — captive portal / SSO wall, not an ingest ack |",
         "| `collector_unavailable` | 503 — collector reports itself down |",
         "| `collector_error` | 5xx — collector-side failure, records not ingested |",
         "| `collector_unreachable` | nothing answered — DNS, routing or firewall |",
@@ -391,6 +392,7 @@ COLLECTOR_REJECTED = "collector_rejected"
 COLLECTOR_UNAUTHORIZED = "collector_unauthorized"
 COLLECTOR_THROTTLED = "collector_throttled"
 COLLECTOR_REDIRECTED = "collector_redirected"
+COLLECTOR_INTERCEPTED = "collector_intercepted"
 COLLECTOR_ERROR = "collector_error"
 COLLECTOR_UNAVAILABLE = "collector_unavailable"
 COLLECTOR_UNREACHABLE = "collector_unreachable"
@@ -406,7 +408,12 @@ REMEDIATION = {
     COLLECTOR_THROTTLED: "Collector is rate-limiting — slow the send down or "
                          "regenerate the bundle with batch mode on.",
     COLLECTOR_REDIRECTED: "Collector answered with a redirect (proxy/captive "
-                          "portal). Point at the final ingestion endpoint.",
+                          "portal). Redirects are never followed. Point at the "
+                          "final ingestion endpoint.",
+    COLLECTOR_INTERCEPTED: "Collector answered 200 with an HTML page, not an "
+                           "ingest acknowledgement — a captive portal, SSO wall "
+                           "or inspecting proxy took the records. Check the URL "
+                           "with `curl -i` from this host.",
     COLLECTOR_ERROR: "Collector returned a server error — records not ingested.",
     COLLECTOR_UNAVAILABLE: "Collector reports itself unavailable — confirm the "
                            "Broker VM HTTP applet is running.",
@@ -420,8 +427,25 @@ REMEDIATION = {
 }
 
 
-def classify_status(status_code):
+HTML_MARKERS = (b"<html", b"<!doctype html", b"<head", b"<body")
+
+
+def looks_like_html(content_type="", body_prefix=b""):
+    ctype = (content_type or "").strip().lower()
+    if ctype.startswith("text/html") or ctype.startswith("application/xhtml"):
+        return True
+    if body_prefix:
+        head = bytes(body_prefix[:512]).lstrip().lower()
+        return any(head.startswith(m) or m in head for m in HTML_MARKERS)
+    return False
+
+
+def classify_status(status_code, content_type="", body_prefix=b""):
+    # Only a 2xx that is NOT an HTML document is a delivery: a log collector
+    # never answers a JSON/NDJSON POST with <html>, a captive portal does.
     if 200 <= status_code < 300:
+        if looks_like_html(content_type, body_prefix):
+            return COLLECTOR_INTERCEPTED
         return None
     if 300 <= status_code < 400:
         return COLLECTOR_REDIRECTED
@@ -466,13 +490,14 @@ class Ledger(object):
         self.status_counts = {}
         self.failures = {}
 
-    def response(self, status_code, records, wire_bytes):
+    def response(self, status_code, records, wire_bytes, content_type="",
+                 body_prefix=b""):
         self.records_attempted += records
         self.requests_attempted += 1
         self.bytes_attempted += wire_bytes
         key = str(status_code)
         self.status_counts[key] = self.status_counts.get(key, 0) + 1
-        code = classify_status(status_code)
+        code = classify_status(status_code, content_type, body_prefix)
         if code is None:
             self.records_delivered += records
             self.requests_delivered += 1
@@ -540,24 +565,47 @@ def build_ssl_context(verify_tls):
     return ctx
 
 
-def post(url, body, headers, timeout, ssl_ctx):
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect — surface the 3xx as an HTTPError instead.
+
+    urllib's default handler turns a POST answered 301/302/303 into a GET to
+    Location, drops the body, and re-sends every header — including the
+    ingestion token — to whatever host Location names. A captive portal's login
+    page then answers 200 and the records read as delivered. SimCore's online
+    path runs with follow_redirects=False; this keeps the bundle in step.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def build_opener(ssl_ctx):
+    return urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=ssl_ctx), _NoRedirect,
+    )
+
+
+def post(url, body, headers, timeout, opener):
+    """POST once. Returns (status, exc, content_type, body_prefix)."""
     req = urllib.request.Request(url, data=body, method="POST")
     for key, value in headers.items():
         req.add_header(key, value)
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as resp:
+        with opener.open(req, timeout=timeout) as resp:
+            content_type = resp.headers.get("content-type", "") or ""
+            prefix = resp.read(512) or b""
             resp.read()
-            return int(resp.status), None
+            return int(resp.status), None, content_type, prefix
     except urllib.error.HTTPError as exc:
         # An HTTP error IS a response — classify it by status, not as transport.
         try:
             exc.read()
         except Exception:
             pass
-        return int(exc.code), None
+        return int(exc.code), None, "", b""
     except (urllib.error.URLError, ssl.SSLError, socket.timeout, OSError) as exc:
         inner = getattr(exc, "reason", None)
-        return None, inner if isinstance(inner, BaseException) else exc
+        return None, (inner if isinstance(inner, BaseException) else exc), "", b""
 
 
 def step_headers(step, manifest, token):
@@ -587,7 +635,7 @@ def load_records(base, relative):
     return [json.loads(line) for line in lines if line.strip()]
 
 
-def run_step(step, manifest, base, args, ssl_ctx):
+def run_step(step, manifest, base, args, opener):
     ledger = Ledger()
     token = resolve_token(step, manifest)
     headers = step_headers(step, manifest, token)
@@ -615,12 +663,14 @@ def run_step(step, manifest, base, args, ssl_ctx):
                 print("  [dry-run] %s -> %s (%d record(s), %d bytes)"
                       % (step["step_id"], url, count, len(body)))
                 continue
-            status, exc = post(url, body, send_headers, timeout, ssl_ctx)
+            status, exc, content_type, prefix = post(
+                url, body, send_headers, timeout, opener)
             if exc is not None:
                 code = ledger.exception(exc, count, len(body))
                 print("  [FAIL] %s %s: %s" % (step["step_id"], code, exc))
             else:
-                code = ledger.response(status, count, len(body))
+                code = ledger.response(status, count, len(body),
+                                       content_type, prefix)
                 if code:
                     print("  [FAIL] %s status=%s %s" % (step["step_id"], status, code))
 
@@ -651,7 +701,7 @@ def main(argv=None):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     base = manifest_path.parent
 
-    ssl_ctx = build_ssl_context(args.verify_tls)
+    opener = build_opener(build_ssl_context(args.verify_tls))
     print("CortexSim EAL offline bundle — campaign %s (%d step(s), %d record(s))"
           % (manifest["campaign_id"], len(manifest["steps"]),
              manifest.get("total_records", 0)))
@@ -662,7 +712,7 @@ def main(argv=None):
         print("- %s (%s) -> %s"
               % (step["step_id"], step["plugin"],
                  args.collector_url or step["collector_url"]))
-        ledger = run_step(step, manifest, base, args, ssl_ctx)
+        ledger = run_step(step, manifest, base, args, opener)
         step_results.append({
             "step_id": step["step_id"],
             "plugin": step["plugin"],

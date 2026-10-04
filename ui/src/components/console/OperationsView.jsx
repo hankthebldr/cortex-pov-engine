@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import '../../styles/destinations/library.css'
 import ScenarioGrid from './ScenarioGrid.jsx'
 import ScenarioInspector from './ScenarioInspector.jsx'
@@ -54,6 +54,13 @@ export default function OperationsView({
 }) {
   const [scenarios, setScenarios]       = useState([])
   const [loading, setLoading]           = useState(true)
+  // A failed list fetch is NOT an empty library. It used to fold into
+  // setScenarios([]) and report through `onError` — which the Library
+  // destination wires to a no-op — so a 500 or a 20 s timeout on
+  // /api/scenarios rendered "No scenarios match the current filter." on a
+  // SimCore whose /api/health was fine (no global banner either).
+  const [loadError, setLoadError]       = useState(null)
+  const [reloadKey, setReloadKey]       = useState(0)
   const [selected, setSelected]         = useState(null)
   const [drawerOpen, setDrawerOpen]     = useState(false)
   const [filterPaletteOpen, setFilterPaletteOpen] = useState(false)
@@ -74,31 +81,49 @@ export default function OperationsView({
 
   // ── Fetch scenario list ──────────────────────────────────────────────
   useEffect(() => {
+    // Only the newest plane's answer may land: switching EDR → CDR while the
+    // EDR fetch is still in flight otherwise shows EDR's list under CDR.
+    let cancelled = false
     setLoading(true)
+    setLoadError(null)
     const params = selectedPlane ? { plane: selectedPlane } : {}
     getScenarios(params)
       .then((data) => {
+        if (cancelled) return
         const list = Array.isArray(data) ? data : (data && data.scenarios) || []
         setScenarios(list)
       })
       .catch((err) => {
-        onError(err.message || 'Failed to load scenarios')
+        if (cancelled) return
+        const msg = err.message || 'Failed to load scenarios'
         setScenarios([])
+        setLoadError(msg)
+        onError(msg)
       })
-      .finally(() => setLoading(false))
-  }, [selectedPlane]) // eslint-disable-line react-hooks/exhaustive-deps
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedPlane, reloadKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handle card selection — hydrate full detail ──────────────────────
+  // The newest selection wins. Without this, clicking card A (slow detail
+  // fetch) and then card B (fast) let A's detail land LAST: the drawer showed
+  // A, `selected` — and therefore useLaunchScenario and ⌘L — targeted A, while
+  // the armed id and the operator's intent were B. The wrong scenario would be
+  // launched against the customer environment.
+  const selectSeqRef = useRef(0)
   const handleSelect = useCallback(async (summary) => {
     const id = summary.scenario_id || summary.id
+    const seq = ++selectSeqRef.current
     setSelected(summary)
     setDrawerOpen(true)
     // Arm this scenario for the ③ Launch step (redesign v2).
     onArmScenario(id)
     try {
       const detail = await getScenario(id)
+      if (seq !== selectSeqRef.current) return
       setSelected(detail || summary)
     } catch (err) {
+      if (seq !== selectSeqRef.current) return
       onError(err.message || `Failed to load ${id}`)
     }
   }, [onError, onArmScenario])
@@ -113,13 +138,17 @@ export default function OperationsView({
     if (existing) {
       handleSelect(existing)
     } else {
+      const seq = ++selectSeqRef.current
       getScenario(requestOpenScenarioId)
         .then((detail) => {
-          if (!detail) return
+          if (!detail || seq !== selectSeqRef.current) return
           setSelected(detail)
           setDrawerOpen(true)
         })
-        .catch((err) => onError(err.message || `Failed to load ${requestOpenScenarioId}`))
+        .catch((err) => {
+          if (seq !== selectSeqRef.current) return
+          onError(err.message || `Failed to load ${requestOpenScenarioId}`)
+        })
     }
   }, [requestOpenScenarioId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -230,7 +259,7 @@ export default function OperationsView({
           <div className="view-head__meta">
             Plane: <strong>{headMeta.planeLabel}</strong>
             {' · '}<span className="mono">
-              {headMeta.count}
+              {loadError ? '—' : headMeta.count}
               {techniqueFilter && headMeta.count !== headMeta.totalCount && (
                 <span className="ops-head__total">
                   /{headMeta.totalCount}
@@ -297,6 +326,15 @@ export default function OperationsView({
       {loading ? (
         <div className="ops-loading-note">
           loading scenarios…
+        </div>
+      ) : loadError ? (
+        <div className="ops-loading-note ops-load-error" role="alert" data-testid="library-load-error">
+          <strong>Scenarios could not be loaded.</strong>{' '}
+          <span className="mono">{loadError}</span>{' '}
+          The library is not empty — SimCore did not answer the list request.{' '}
+          <button type="button" className="btn btn--xs" onClick={() => setReloadKey((k) => k + 1)}>
+            ↻ Retry
+          </button>
         </div>
       ) : (
         <ScenarioGrid

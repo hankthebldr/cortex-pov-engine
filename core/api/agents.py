@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -1316,14 +1316,33 @@ async def enroll_agent(body: EnrollRequest, request: Request, db: AsyncSession =
     Returns the assigned ``agent_id`` and the ``server`` URL to beacon.
     """
     now = datetime.utcnow()
-    token_row = (await db.execute(
-        select(EnrollmentToken).where(EnrollmentToken.token == body.token)
-    )).scalar_one_or_none()
-    if token_row is None or not token_row.is_valid(now):
+    # Claim one use ATOMICALLY: the validity predicate (EnrollmentToken.is_valid)
+    # and the increment are one guarded UPDATE. Checking on a SELECT and writing
+    # `used_count + 1` from Python let N concurrent installers all pass the check
+    # on a single-use token, enrol N agents, and leave the counter reading 1/1.
+    claim = await db.execute(
+        update(EnrollmentToken)
+        .where(
+            EnrollmentToken.token == body.token,
+            EnrollmentToken.revoked.is_(False),
+            EnrollmentToken.used_count < EnrollmentToken.max_uses,
+            or_(EnrollmentToken.expires_at.is_(None), EnrollmentToken.expires_at > now),
+        )
+        .values(used_count=EnrollmentToken.used_count + 1)
+        .execution_options(synchronize_session=False)
+    )
+    if claim.rowcount == 0:
+        await db.rollback()
         # Single opaque error — don't distinguish "wrong" from "expired/used".
         raise HTTPException(status_code=403, detail={
             "error": "Invalid or expired enrollment token", "code": "ENROLL_DENIED",
             "detail": "mint a fresh token via POST /api/agents/enroll/tokens"})
+    # Same write transaction as the claim, so this reads exactly our increment.
+    token_row = (await db.execute(
+        select(EnrollmentToken)
+        .where(EnrollmentToken.token == body.token)
+        .execution_options(populate_existing=True)
+    )).scalar_one()
 
     # Assign a unique agent id from the name stem + a short random suffix.
     stem = _slugify_name(body.desired_name, body.hostname)
@@ -1340,7 +1359,6 @@ async def enroll_agent(body: EnrollRequest, request: Request, db: AsyncSession =
         # The installer runs ON the jumpbox, so the request source IS the target.
         last_ip=_client_ip(request),
     ))
-    token_row.used_count += 1
     await db.commit()
     logger.info("enroll_agent assigned agent_id=%s (token tail=...%s, use %d/%d)",
                 agent_id, body.token[-6:], token_row.used_count, token_row.max_uses)
@@ -1463,9 +1481,14 @@ async def _refuse_unstageable_task(
         "curl -fsSL '<server>/api/agents/install?os=linux' | CORTEXSIM_TOKEN='cxs_…' bash"
     )
 
+    from api.runs import _is_terminal  # noqa: PLC0415
+
     run_row = await db.execute(select(Run).where(Run.run_id == task.run_id))
     run: Optional[Run] = run_row.scalar_one_or_none()
-    if run is not None and run.status not in ("complete", "failed", "aborted"):
+    # `_is_terminal`, not a status list: a multi-endpoint run whose first
+    # endpoint already failed reads `failed` while still owed this endpoint, and
+    # skipping it left the run waiting forever on a task that was just refused.
+    if run is not None and not _is_terminal(run):
         run.status = "failed"
         run.completed_at = datetime.utcnow()
         run.output = (run.output or "") + (

@@ -267,3 +267,77 @@ class TestPreflightCollector:
         record = canary_record("CMP-COLL-001")
         assert "discard" in record["message"].lower()
         assert record["cortexsim_campaign_id"] == "CMP-COLL-001"
+
+
+# --------------------------------------------------------------------------
+# Preflight must judge a 2xx exactly as a live run does. A captive portal or
+# SSO wall answers the canary POST with 200 + an HTML login page; the live
+# run classifies that as collector_intercepted, so a preflight that reports
+# `delivered: true, ready: true` for it green-lights a campaign that will
+# ingest nothing.
+# --------------------------------------------------------------------------
+
+
+def _mock_factory(status_code, *, headers=None, content=b""):
+    def handler(request):
+        return httpx.Response(status_code, headers=headers or {}, content=content)
+
+    return lambda timeout, verify: httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), follow_redirects=False,
+    )
+
+
+class TestPreflightAgreesWithTheLiveRun:
+    _PORTAL = b"<!DOCTYPE html><html><head><title>Sign in</title></head></html>"
+
+    def test_html_login_page_is_intercepted_not_delivered(self):
+        result = asyncio.run(preflight_collector(
+            _target(), campaign_id="CMP-COLL-001",
+            client_factory=_mock_factory(
+                200, headers={"content-type": "text/html; charset=utf-8"},
+                content=self._PORTAL),
+        ))
+        assert result["reachable"] is True
+        assert result["delivered"] is False
+        assert result["code"] == "collector_intercepted"
+        assert result["remediation"]
+
+    def test_html_body_under_a_json_content_type_is_intercepted(self):
+        result = asyncio.run(preflight_collector(
+            _target(), campaign_id="CMP-COLL-001",
+            client_factory=_mock_factory(
+                200, headers={"content-type": "application/json"},
+                content=self._PORTAL),
+        ))
+        assert result["delivered"] is False
+        assert result["code"] == "collector_intercepted"
+
+    def test_json_ack_is_delivered(self):
+        result = asyncio.run(preflight_collector(
+            _target(), campaign_id="CMP-COLL-001",
+            client_factory=_mock_factory(
+                200, headers={"content-type": "application/json"},
+                content=b'{"status":"ok"}'),
+        ))
+        assert result["delivered"] is True
+        assert result["code"] is None
+
+    def test_preflight_and_live_ledger_classify_identically(self):
+        from eal_simulator.delivery import DeliveryLedger, response_evidence
+
+        cases = [
+            (200, {"content-type": "text/html"}, self._PORTAL),
+            (200, {"content-type": "application/json"}, b"{}"),
+            (202, {}, b""),
+            (302, {"location": "https://portal.invalid/login"}, b""),
+            (401, {}, b""),
+        ]
+        for status, headers, content in cases:
+            pre = asyncio.run(preflight_collector(
+                _target(), campaign_id="CMP-COLL-001",
+                client_factory=_mock_factory(status, headers=headers, content=content),
+            ))
+            ct, bp = response_evidence(httpx.Response(status, headers=headers, content=content))
+            live = DeliveryLedger().record_response(
+                status, records=1, wire_bytes=1, content_type=ct, body_prefix=bp)
+            assert pre["code"] == live, (status, headers, pre["code"], live)

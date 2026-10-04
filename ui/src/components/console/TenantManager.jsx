@@ -6,6 +6,7 @@ import {
   testXsiamTenant,
 } from '../../api/client.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
+import { serverDate } from '../../api/time.js'
 
 // Resolve the stable key a tenant is addressed by (matches EnvironmentContext).
 const tenantKey = (t) => (t && (t.name || t.id)) || null
@@ -344,7 +345,7 @@ function TenantRow({ tenant, active, onSelect, onTest, onDelete, testing }) {
   const cfg   = tenant.config || {}
   const name  = tenantKey(tenant)
   const verAt = tenant.last_verified_at
-    ? new Date(tenant.last_verified_at).toLocaleString(undefined, { hour12: false })
+    ? serverDate(tenant.last_verified_at).toLocaleString(undefined, { hour12: false })
     : null
 
   const rows = [

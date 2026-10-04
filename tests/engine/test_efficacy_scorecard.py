@@ -223,6 +223,27 @@ def test_render_markdown_no_mttd_when_none():
     assert "_No evidence-backed MTTD measured" in md
 
 
+def test_all_pending_scope_is_not_a_coverage_gap():
+    # Every seeded detection still pending (nothing adjudicated). The exec
+    # summary must NOT assert a coverage gap or recommend authoring content —
+    # that is a false-negative claim about the customer's stack in a CISO
+    # one-pager, before anything was measured.
+    rows = [_result(id=i, observed=False, observed_at=None, mttd_seconds=None)
+            for i in range(4)]
+    sc = es.build_efficacy_scorecard(rows, run_ids=["r1"])
+    for doc in (es.render_markdown(sc), es.render_html(sc)):
+        assert "Coverage gap" not in doc
+        assert "authoring" not in doc
+        assert "not been validated" in doc or "not been adjudicated" in doc
+
+
+def test_empty_scope_is_not_a_coverage_gap():
+    sc = es.build_efficacy_scorecard([])
+    for doc in (es.render_markdown(sc), es.render_html(sc)):
+        assert "Coverage gap" not in doc
+        assert "authoring" not in doc
+
+
 def test_render_html_is_self_contained_and_branded():
     hd = es.render_html(es.build_efficacy_scorecard(_results()))
     assert "<style>" in hd

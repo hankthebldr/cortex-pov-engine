@@ -52,11 +52,17 @@ export default function useRunEventStream(runId, { paused = false, maxEvents = 5
     })
   }
 
+  // Reset the buffer when the RUN changes — and only then. This used to live in
+  // the subscription effect below, whose deps include `paused`, so clicking
+  // "⏸ pause" wiped the log; SSE does not replay, so resuming could never get
+  // those lines back.
   useEffect(() => {
-    // Reset when run changes.
     setEvents([])
     seenIds.current = new Set()
     lastTimestamp.current = null
+  }, [runId])
+
+  useEffect(() => {
     setConnected(false)
     setMode('idle')
     if (!runId || paused) return undefined
@@ -64,6 +70,7 @@ export default function useRunEventStream(runId, { paused = false, maxEvents = 5
     let cancelled = false
     let eventSource = null
     let pollTimer = null
+    let polling = false
 
     // Try SSE first.
     try {
@@ -92,21 +99,29 @@ export default function useRunEventStream(runId, { paused = false, maxEvents = 5
       }
 
       eventSource.onerror = () => {
-        // Connection failed / 404. Tear down and fall through to polling.
+        // Connection failed / 404 — OR an established stream dropped (SimCore
+        // restart, proxy idle close). Tear down and fall through to polling in
+        // BOTH cases. Closing suppresses EventSource's own reconnect, and the
+        // drop case used to be skipped (`if (!sseAlive)`), so the badge kept
+        // saying LIVE over a stream that could never deliver another event.
         if (eventSource) {
           eventSource.close()
           eventSource = null
         }
-        if (!sseAlive && !cancelled) {
-          startPolling()
+        if (cancelled) return
+        if (sseAlive) {
+          sseAlive = false
+          setConnected(false)
         }
+        startPolling()
       }
     } catch {
       startPolling()
     }
 
     function startPolling() {
-      if (cancelled) return
+      if (cancelled || pollTimer || polling) return
+      polling = true
       setMode('poll')
       setConnected(true)
       const tick = async () => {
@@ -115,12 +130,18 @@ export default function useRunEventStream(runId, { paused = false, maxEvents = 5
           const r = await fetch(`${BASE_URL}/api/runs/${runId}`)
           if (!r.ok) throw new Error(`http ${r.status}`)
           const run = await r.json()
+          if (cancelled) return
+          // A tick that succeeds after a failed one clears the error — the
+          // badge used to stay wrong while events were flowing again.
+          setMode('poll')
+          setConnected(true)
           const synthetic = projectEvents(run, lastTimestamp.current)
           if (synthetic.length > 0) {
             lastTimestamp.current = synthetic[synthetic.length - 1].timestamp
             append(synthetic)
           }
         } catch {
+          if (cancelled) return
           setMode('error')
           setConnected(false)
         }

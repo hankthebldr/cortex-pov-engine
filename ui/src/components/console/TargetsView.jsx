@@ -6,13 +6,14 @@ import {
   mintEnrollmentToken,
 } from '../../api/client.js'
 import { agentIdOf } from '../../api/ids.js'
+import { parseServerTime, serverDate } from '../../api/time.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import '../../styles/destinations/agents.css'
 
 // Compact relative time for last-seen ("12s" / "5m" / "3h" / "2d").
 function relTime(iso) {
   if (!iso) return 'never'
-  const ms = Date.now() - new Date(iso).getTime()
+  const ms = Date.now() - parseServerTime(iso)
   if (Number.isNaN(ms)) return '—'
   const s = Math.max(0, Math.floor(ms / 1000))
   if (s < 60) return `${s}s ago`
@@ -58,7 +59,8 @@ const AGENT_STALE_MS = 60_000 // beacon considered stale after 60s of silence
 
 export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {} }) {
   // ── Global scope from the provider (agents + active agent are ambient) ─────
-  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents } = useEnvironment()
+  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors } = useEnvironment()
+  const agentsError = errors?.agents || null
   const activeAgentId = activeAgent ? agentIdOf(activeAgent) : null
 
   // ── Local scope: IaC bundles are not part of the ambient env, fetched here.
@@ -201,7 +203,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   const agentStatus = (a) => {
     const seen = a.last_seen || a.last_seen_at || a.updated_at
     if (!seen) return 'unknown'
-    const age = Date.now() - new Date(seen).getTime()
+    const age = Date.now() - parseServerTime(seen)
     return age < AGENT_STALE_MS ? 'live' : 'stale'
   }
 
@@ -248,7 +250,17 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             </button>
           </div>
           {loading && agents.length === 0 && <div className="target-card target-card--ghost">polling beacons…</div>}
-          {!loading && agents.length === 0 && (
+          {agentsError && (
+            <div className="target-card target-card--empty" role="alert" data-testid="agents-load-error">
+              <div className="target-card__title">Agent list could not be loaded</div>
+              <p className="target-card__sub">
+                <span className="mono">{agentsError}</span> — the roster below is the last one
+                SimCore returned{agents.length === 0 ? ' (none yet)' : ''}, not a fresh answer.
+              </p>
+              <button type="button" className="btn" onClick={refresh}>↻ Retry</button>
+            </div>
+          )}
+          {!loading && !agentsError && agents.length === 0 && (
             <div className="target-card target-card--empty">
               <div className="target-card__title">No agents registered</div>
               <p className="target-card__sub">
@@ -395,7 +407,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 </div>
                 <p className="target-card__sub">
                   {(b.modules || b.selected_modules || []).join(', ') || b.provider || 'aws'} ·{' '}
-                  {b.created_at ? new Date(b.created_at).toLocaleDateString() : 'bundle'}
+                  {b.created_at ? serverDate(b.created_at).toLocaleDateString() : 'bundle'}
                 </p>
               </button>
             )
@@ -535,7 +547,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   </div>
                   <span className="deploy-hint mono">
                     {token.remaining_uses ?? token.max_uses} use(s)
-                    {token.expires_at && ` · expires ${new Date(token.expires_at).toLocaleString()}`}
+                    {token.expires_at && ` · expires ${serverDate(token.expires_at).toLocaleString()}`}
                   </span>
                 </div>
 

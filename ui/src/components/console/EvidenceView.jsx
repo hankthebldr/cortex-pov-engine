@@ -37,10 +37,25 @@ export default function EvidenceView({
 
   // Same run-status truth the Storyline uses: a run that never executed has no
   // coverage to report, and "Validate all" on it would manufacture evidence.
-  const runStatus = pinnedRun?.status || activeRun?.status || lastRun?.status || null
+  //
+  // The status MUST come from the same run as `targetRunId`. It used to be
+  // `pinnedRun?.status || activeRun?.status || lastRun?.status`, and the
+  // provider's activeRun carried no status — so while run A was in flight the
+  // page read the status of the PREVIOUS terminal run B, and a failed B
+  // stamped "Coverage n/a — run failed — signal never generated" onto A.
+  // activeRun only ever exists for a run in `running`, which is its fallback.
+  const runStatus = pinnedRun
+    ? pinnedRun.status || null
+    : activeRun
+      ? activeRun.status || 'running'
+      : lastRun?.status || null
   const unproven = isRunUnproven(runStatus)
 
-  const { rows, kpis, loading, validate, refresh } = useResultsData(targetRunId)
+  const { rows, kpis, loading, loaded, error, validate, refresh } = useResultsData(targetRunId)
+  // A fetch that failed before any answer arrived is NOT an empty scorecard:
+  // rendering it as one printed "Coverage 0 % · 0 / 0" and "no results yet —
+  // ingestion typically takes 30–120s" for a SimCore that never answered.
+  const loadFailed = !!error && !loaded
   const [selectedRowId, setSelectedRowId] = useState(null)
   const [viewMode, setViewMode] = useState('this-run') // 'this-run' | 'compare'
 
@@ -140,8 +155,23 @@ export default function EvidenceView({
 
       {viewMode === 'compare' ? (
         <MultiRunCompare />
+      ) : loadFailed ? (
+        <div className="evidence-empty" role="alert" data-testid="evidence-load-error">
+          <h2 className="evidence-empty__title">Results for {targetRunId} could not be loaded</h2>
+          <p className="evidence-empty__desc mono">{error}</p>
+          <p className="evidence-empty__desc">
+            Nothing below is a measurement until SimCore answers — coverage and MTTD are not shown
+            rather than shown as zero.
+          </p>
+          <button type="button" className="btn" onClick={refresh}>↻ Retry</button>
+        </div>
       ) : (
         <>
+      {error && (
+        <div className="evidence-stale" role="status" data-testid="evidence-refresh-error">
+          Last refresh failed — showing the previous answer. <span className="mono">{error}</span>
+        </div>
+      )}
       <KpiRow kpis={kpis} unproven={unproven} runStatus={runStatus} />
 
       <MttdHistogram rows={rows} />
@@ -178,6 +208,13 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           label="Coverage"
           value="n/a"
           meta={`run ${runStatus} — signal never generated`}
+          tone="tx"
+        />
+      ) : kpis.coverage == null ? (
+        <Kpi
+          label="Coverage"
+          value="—"
+          meta="no detections seeded for this run"
           tone="tx"
         />
       ) : (

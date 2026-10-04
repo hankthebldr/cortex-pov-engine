@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import '../../styles/destinations/run-detail.css'
+import { serverDate } from '../../api/time.js'
 
 /**
  * NarrativeTimeline — the hero artifact.
@@ -154,7 +155,7 @@ function detClass(status) {
 
 function formatTime(ts) {
   try {
-    const d = new Date(ts)
+    const d = serverDate(ts)
     return d.toISOString().substring(11, 19) + 'Z'
   } catch {
     return ts

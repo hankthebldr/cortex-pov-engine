@@ -225,6 +225,28 @@ class TestExecSummary:
                                               _results(0, 4, 0))
         assert "coverage gap" in md
 
+    def test_all_pending_is_not_a_coverage_gap(self):
+        # A run where nothing has been validated yet (every seeded result is
+        # pending) must NOT read as a coverage gap. 0 observed / N pending is
+        # "nothing measured", not "measured and missed" — rendering it as the
+        # latter puts a false-negative claim about the customer's coverage into
+        # a customer-facing exec summary, before any adjudication happened.
+        md = rg.render_exec_summary_markdown(_run(), _scenario(),
+                                             _results(0, 0, 4))
+        conclusion = md.split("## Conclusion", 1)[1]
+        assert "coverage gap" not in conclusion
+        assert "authoring" not in conclusion
+        assert "not" in conclusion.lower() and "validat" in conclusion.lower()
+
+    def test_no_expected_detections_is_not_a_coverage_gap(self):
+        # A run with no expected detections at all cannot have a coverage gap;
+        # there is nothing to have missed. "none defined" and "measured 0%" must
+        # not render as the same verdict.
+        md = rg.render_exec_summary_markdown(_run(), _scenario(), [])
+        conclusion = md.split("## Conclusion", 1)[1]
+        assert "coverage gap" not in conclusion
+        assert "authoring" not in conclusion
+
 
 # ---------------------------------------------------------------------------
 # Bundle (tar.gz)

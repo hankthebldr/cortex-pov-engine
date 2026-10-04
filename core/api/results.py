@@ -128,7 +128,8 @@ async def validate_result(
 ):
     """
     DC marks a detection as observed or not observed.
-    When observed=true, sets observed_at to now (enabling MTTD calculation).
+    When observed=true on a not-yet-observed row, sets observed_at to now
+    (enabling MTTD calculation); an already-observed row keeps its observed_at.
     When observed=false, clears observed_at.
     """
     stmt = select(Result).where(Result.id == result_id)
@@ -141,9 +142,16 @@ async def validate_result(
             detail={"error": "Result not found", "code": "RESULT_NOT_FOUND", "detail": f"id={result_id}"},
         )
 
+    # Re-asserting `observed: true` on an already-observed row is idempotent:
+    # it must NOT move observed_at. The console's "save notes" sends exactly
+    # that call, and re-stamping replaced a reconcile-matched alert time (real
+    # MTTD) with the moment a DC typed a note — the POV report's MTTD, and the
+    # next score against a `<= N s` threshold, then measured the typing.
+    already_observed = bool(result.observed) and result.observed_at is not None
     result.observed = body.observed
     if body.observed:
-        result.observed_at = datetime.utcnow()
+        if not already_observed:
+            result.observed_at = datetime.utcnow()
     else:
         result.observed_at = None
 

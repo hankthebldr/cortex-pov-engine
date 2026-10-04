@@ -228,6 +228,14 @@ class Run(Base):
     # (byte-identical to today); N for a multi-endpoint fan-out, so the run
     # completes only when the LAST endpoint reports. NULL ⇒ treated as 1.
     open_tasks: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # When a beacon first COLLECTED one of this run's tasks (GET
+    # /api/agents/{id}/tasks). Delivery deletes the durable queued_tasks row, so
+    # without this a restart cannot tell "delivered and executing on the target"
+    # from "never delivered and lost" — and rehydrate() used to fail (and, via
+    # /control, kill) every executing run while telling the POV report it never
+    # reached the target. NULL ⇒ never delivered. Added by
+    # _migrate_run_delivery_columns in database.py.
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # ── Runtime-dependency posture (docs/design/agent-runtime-dependencies.md) ─
     # runtime_install_authorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
@@ -262,6 +270,7 @@ class Run(Base):
             "stitch_binding": self.stitch_binding,
             "channel_dispatch": self.channel_dispatch,
             "open_tasks": self.open_tasks,
+            "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
             "runtime_install_authorized": self.runtime_install_authorized,
             "runtime_dependency_gaps": self.runtime_dependency_gaps,
             "started_at": self.started_at.isoformat() if self.started_at else None,
@@ -738,6 +747,42 @@ class EnrollmentToken(Base):
 # ---------------------------------------------------------------------------
 
 
+#: Step params that carry a collector credential. The stored spec keeps them —
+#: the live run reads the token from there — but no API response returns them.
+_CAMPAIGN_SECRET_PARAMS = ("auth_token",)
+
+
+def _redact_campaign_spec(spec: Any) -> Any:
+    """Copy of a stored campaign spec with step credentials removed.
+
+    Each secret param comes back as ``None`` plus ``<name>_configured: true`` so
+    a caller can still see THAT a token is set, never what it is. A client that
+    re-posts the redacted spec gets a campaign with no token, which the run
+    reports as ``collector_unauthorized`` rather than sending a placeholder.
+    """
+    if not isinstance(spec, dict):
+        return spec
+    steps = spec.get("steps")
+    if not isinstance(steps, list):
+        return spec
+    out = dict(spec)
+    redacted_steps = []
+    for step in steps:
+        params = step.get("params") if isinstance(step, dict) else None
+        if isinstance(params, dict) and any(
+            params.get(k) is not None for k in _CAMPAIGN_SECRET_PARAMS
+        ):
+            params = dict(params)
+            for key in _CAMPAIGN_SECRET_PARAMS:
+                if params.get(key) is not None:
+                    params[key] = None
+                    params[f"{key}_configured"] = True
+            step = {**step, "params": params}
+        redacted_steps.append(step)
+    out["steps"] = redacted_steps
+    return out
+
+
 class EalCampaign(Base):
     """Persisted declarative campaign — equivalent of a Scenario for the EAL
     simulator subsystem. Stored so the UI can render history without re-reading
@@ -768,7 +813,7 @@ class EalCampaign(Base):
             "campaign_id": self.campaign_id,
             "name": self.name,
             "description": self.description,
-            "spec": self.spec,
+            "spec": _redact_campaign_spec(self.spec),
             "authorized_by": self.authorized_by,
             "simulation_authorized": self.simulation_authorized,
             "target_allowlist": self.target_allowlist,

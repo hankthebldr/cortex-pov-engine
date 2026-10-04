@@ -278,3 +278,35 @@ class TestI2PermissionDenied:
         verdict = classify.build_verdict(run, "SIM-EDR-001")
 
         assert verdict["steps"][0]["class"] == "ENVIRONMENT"
+
+
+class TestI3DashNotFound:
+    """I3 — a missing interpreter under dash/sh must read as ENVIRONMENT.
+
+    The Tier-D target's /bin/sh is dash, which writes
+    "sh: 2: python3: not found" where bash writes
+    "python3: command not found". The ENVIRONMENT regex matched only bash's
+    wording, so every dash missing-interpreter failure (observed across 42
+    steps in the 2026-10-04 GREEN sweep: python3, jq, dig, ...) was
+    classified TTP — "the technique ran and legitimately failed" — when the
+    step never executed. That is the harness's own inversion of the lie it
+    exists to prevent, so it is pinned here. Run against the pre-fix module
+    these two assert TTP (RED); with the `: not found` pattern they pass.
+    """
+
+    def _cls(self, body):
+        classify = _load_classify()
+        output = step_block(1, 1, "step-01", "T1059", "www-data", 127, body_extra=body)
+        run = {"status": "failed", "output": output}
+        return classify.build_verdict(run, "SIM-AIACC-001")["steps"][0]
+
+    def test_dash_missing_interpreter_is_environment(self):
+        assert self._cls("sh: 2: python3: not found\n")["class"] == "ENVIRONMENT"
+
+    def test_dash_missing_tool_with_shim_label_is_environment(self):
+        assert self._cls("containerd-shim: 6: dig: not found\n")["class"] == "ENVIRONMENT"
+
+    def test_a_tools_own_midline_not_found_is_still_ttp(self):
+        """A real tool that RAN and printed '... not found' as its own result
+        (no shell/lineno diagnostic shape) stays TTP — the technique executed."""
+        assert self._cls("query returned: record not found in zone\n")["class"] == "TTP"

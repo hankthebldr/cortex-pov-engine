@@ -596,3 +596,80 @@ class TestDataStreamsDetectorRows:
         }
         for row in und:
             assert row["undocumented_reason"]
+
+
+class TestCampaignSecretsAreNotReturned:
+    """A step's collector ``auth_token`` is an ingestion credential.
+
+    ``create_campaign`` stores ``campaign.to_dict()`` and every campaign
+    endpoint returned ``spec`` verbatim, so ``POST``/``GET /api/eal/campaigns``
+    and ``GET /api/eal/campaigns/{id}`` handed the token back in clear text to
+    any caller of the console API — while the collector surfaces state "the
+    secret never crosses this boundary". The stored spec must still carry it,
+    because the live run reads the token from there.
+    """
+
+    _TOKEN = "s3cr3t-ingest-token-9f2a41"
+
+    def _spec(self):
+        return {
+            "campaign_id": "CMP-SECRET-001",
+            "name": "token-bearing campaign",
+            "authorized_by": "tester",
+            "simulation_authorized": True,
+            "target_allowlist": ["collector.cortexsim-canary.invalid"],
+            "dry_run": False,
+            "steps": [{
+                "step_id": "step-01",
+                "plugin": "k8s_audit_emitter",
+                "params": {
+                    "collector_url": "https://collector.cortexsim-canary.invalid/logs/v1/event",
+                    "provider": "kubernetes",
+                    "event_pattern": "pod_exec",
+                    "auth_token": self._TOKEN,
+                },
+            }],
+        }
+
+    def test_no_campaign_endpoint_returns_the_token(self, api_client: TestClient):
+        created = api_client.post("/api/eal/campaigns", json=self._spec())
+        assert created.status_code == 201, created.text
+        listed = api_client.get("/api/eal/campaigns")
+        single = api_client.get("/api/eal/campaigns/CMP-SECRET-001")
+        for label, resp in (("POST", created), ("LIST", listed), ("GET", single)):
+            assert resp.status_code in (200, 201)
+            assert self._TOKEN not in resp.text, f"{label} /api/eal/campaigns returned the token"
+        params = single.json()["spec"]["steps"][0]["params"]
+        assert params["auth_token"] is None
+        assert params["auth_token_configured"] is True
+
+    def test_the_live_run_still_authenticates_with_the_stored_token(
+        self, api_client: TestClient, monkeypatch,
+    ):
+        from eal_simulator.plugins.k8s_audit_emitter import K8sAuditEmitter
+
+        seen: dict = {}
+        original = K8sAuditEmitter._build_client
+
+        class _Stub:
+            async def post(self, url, *, headers=None, content=None):
+                class _R:
+                    status_code = 202
+                    headers = {"content-type": "application/json"}
+                    content = b"{}"
+                return _R()
+
+            async def aclose(self):
+                return None
+
+        def _capture(self, params):
+            real = original(self, params)
+            seen["authorization"] = real.headers.get("authorization")
+            return _Stub()
+
+        monkeypatch.setattr(K8sAuditEmitter, "_build_client", _capture)
+        api_client.post("/api/eal/campaigns", json=self._spec())
+        resp = api_client.post("/api/eal/campaigns/CMP-SECRET-001/launch",
+                               json={"operator": "tester", "dry_run": False})
+        assert resp.status_code == 200, resp.text
+        assert seen.get("authorization") == f"Bearer {self._TOKEN}"

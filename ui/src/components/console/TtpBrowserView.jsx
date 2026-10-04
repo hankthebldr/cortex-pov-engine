@@ -5,6 +5,7 @@ import TtpEditorView from './TtpEditorView.jsx'
 import DetectionTypeChip from './DetectionTypeChip.jsx'
 import { tokeniserFor } from './syntaxHighlight.js'
 import { runIdOf } from '../../api/ids.js'
+import { serverDate } from '../../api/time.js'
 import '../../styles/destinations/ttps.css'
 
 // Maps a card detection-family key to the canonical detection-type chip token
@@ -883,7 +884,7 @@ function RunHistory({ runs }) {
 function formatStartedAt(iso) {
   if (!iso) return '—'
   try {
-    const d = new Date(iso)
+    const d = serverDate(iso)
     return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
   } catch {
     return iso

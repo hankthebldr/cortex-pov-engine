@@ -174,6 +174,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_assertion_columns)
         await conn.run_sync(_migrate_runtime_dependency_columns)
         await conn.run_sync(_migrate_composer_channel_columns)
+        await conn.run_sync(_migrate_run_delivery_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -379,6 +380,20 @@ def _migrate_composer_channel_columns(connection) -> None:
         # endpoint reports, not the first. NULL on legacy rows ⇒ treated as 1.
         if "open_tasks" not in existing:
             connection.execute(text("ALTER TABLE runs ADD COLUMN open_tasks INTEGER"))
+
+
+def _migrate_run_delivery_columns(connection) -> None:
+    """Add ``runs.delivered_at`` if absent — same ``create_all``-never-adds-a-
+    COLUMN rationale as the helpers above. Nullable: a legacy row reads as
+    "never delivered", which is exactly what rehydrate() assumed before."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "runs" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("runs")}
+    if "delivered_at" not in existing:
+        connection.execute(text("ALTER TABLE runs ADD COLUMN delivered_at DATETIME"))
 
 
 async def get_db():

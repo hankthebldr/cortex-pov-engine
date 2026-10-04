@@ -18,6 +18,7 @@ import {
   getXsiamTenantHealth,
 } from '../api/client.js'
 import { agentIdOf, runIdOf, idMatches } from '../api/ids.js'
+import { parseServerTime } from '../api/time.js'
 
 /**
  * EnvironmentContext — the single home for ALL ambient console scope.
@@ -92,6 +93,7 @@ const DEFAULT_ENV = {
   health: { hostname: '', version: 'v1.0', sensors: {}, tenantHealth: null },
   apiError: null,
   healthModel: null,
+  errors: { scenarios: null, agents: null, tenants: null },
   scenarios: [],
   planes: [],
   runs: [],
@@ -145,6 +147,13 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   const [loading, setLoading] = useState({
     scenarios: true, runs: true, agents: true, tenants: true,
   })
+  // Per-list fetch failures. A failed fetch is NOT an empty list: the
+  // stale-pointer guards below only trust a list that actually arrived, and
+  // surfaces can say "could not load" instead of "none registered".
+  const [errors, setErrors] = useState({ scenarios: null, agents: null, tenants: null })
+  const setListError = useCallback((key, err) => {
+    setErrors((e) => (e[key] === err ? e : { ...e, [key]: err }))
+  }, [])
 
   // ── Active-scope pointers (persisted) ─────────────────────────────────────
   const [tenantId, setTenantId] = useState(() => readLS(LS_TENANT))
@@ -158,10 +167,11 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       .then((data) => {
         const list = Array.isArray(data) ? data : (data && data.scenarios) || []
         setScenarios(list)
+        setListError('scenarios', null)
       })
-      .catch(() => setScenarios([]))
+      .catch((err) => setListError('scenarios', err?.message || 'scenario list failed'))
       .finally(() => setLoading((l) => ({ ...l, scenarios: false })))
-  }, [])
+  }, [setListError])
 
   const refreshRuns = useCallback(() => {
     return getRuns()
@@ -170,19 +180,28 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       .finally(() => setLoading((l) => ({ ...l, runs: false })))
   }, [])
 
+  // On failure the last list that DID arrive is kept (it is the best-known
+  // roster) and the error is recorded — folding the failure into [] used to
+  // make the stale-pointer guard erase the persisted selection.
   const refreshAgents = useCallback(() => {
     return getAgents()
-      .then((data) => setAgents(Array.isArray(data) ? data : []))
-      .catch(() => setAgents([]))
+      .then((data) => {
+        setAgents(Array.isArray(data) ? data : [])
+        setListError('agents', null)
+      })
+      .catch((err) => setListError('agents', err?.message || 'agent list failed'))
       .finally(() => setLoading((l) => ({ ...l, agents: false })))
-  }, [])
+  }, [setListError])
 
   const refreshTenants = useCallback(() => {
     return listXsiamTenants()
-      .then((data) => setTenants(Array.isArray(data) ? data : []))
-      .catch(() => setTenants([]))
+      .then((data) => {
+        setTenants(Array.isArray(data) ? data : [])
+        setListError('tenants', null)
+      })
+      .catch((err) => setListError('tenants', err?.message || 'tenant list failed'))
       .finally(() => setLoading((l) => ({ ...l, tenants: false })))
-  }, [])
+  }, [setListError])
 
   // ── Derived active tenant / agent (resolve pointer against live list) ─────
   const tenant = useMemo(() => {
@@ -258,17 +277,18 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   // Once tenants load, if the persisted active id no longer resolves, clear it
   // and fall back to first-available. Ditto for agents.
   useEffect(() => {
-    if (loading.tenants) return
+    // Only a list that ARRIVED can prove a pointer stale.
+    if (loading.tenants || errors.tenants) return
     if (tenantId && !tenants.some((t) => (t.name || t.id) === tenantId)) {
       const first = tenants[0]
       const next = first ? (first.name || first.id) : null
       setTenantId(next)
       writeLS(LS_TENANT, next)
     }
-  }, [loading.tenants, tenants, tenantId])
+  }, [loading.tenants, errors.tenants, tenants, tenantId])
 
   useEffect(() => {
-    if (loading.agents) return
+    if (loading.agents || errors.agents) return
 
     const known = agentId && agents.some((a) => idMatches(agentIdOf(a), agentId))
     if (known) return
@@ -297,7 +317,7 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       setAgentId(next)
       writeLS(LS_AGENT, next)
     }
-  }, [loading.agents, agents, agentId])
+  }, [loading.agents, errors.agents, agents, agentId])
 
   // ── Setters (write-through to localStorage) ───────────────────────────────
   const setTenant = useCallback((id) => {
@@ -336,11 +356,14 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     const totalSteps = running.total_steps ?? running.steps?.length ?? 0
     const currentStep = running.current_step ?? running.step ?? 0
     const elapsedSec = running.started_at
-      ? Math.floor((Date.now() - new Date(running.started_at).getTime()) / 1000)
+      ? Math.floor((Date.now() - parseServerTime(running.started_at)) / 1000)
       : running.elapsed_seconds ?? 0
     return {
       runId: runIdOf(running),
       scenarioId: running.scenario_id,
+      // Carried so a consumer reading `activeRun.status` gets THIS run's
+      // status rather than falling through to some other run's.
+      status: running.status,
       step: currentStep,
       totalSteps,
       elapsed: elapsedSec,
@@ -398,12 +421,13 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     runs, activeRun, lastRun,
     pinnedIds,
     loading,
+    errors,
     isPinned, togglePin, unpin,
     setTenant, setAgent,
     refreshHealth, refreshRuns, refreshScenarios, refreshAgents, refreshTenants,
   }), [
     tenant, tenants, agent, agents, health, apiError, healthModel, scenarios, planes, runs, activeRun,
-    lastRun, pinnedIds, loading, isPinned, togglePin, unpin, setTenant, setAgent,
+    lastRun, pinnedIds, loading, errors, isPinned, togglePin, unpin, setTenant, setAgent,
     refreshHealth, refreshRuns, refreshScenarios, refreshAgents, refreshTenants,
   ])
 

@@ -184,3 +184,32 @@ def test_malformed_scenario_is_skipped_not_fatal(module, corpus):
     # Still only the 4 well-formed active scenarios (e1, e2, e3, c1).
     assert result["meta"]["scenario_count"] == 4
     assert any("broken.yml" in w for w in result["_warnings"])
+
+
+def test_malformed_scenario_fails_the_strict_gate(module, corpus):
+    """--strict must fail closed on a skipped (unreadable) corpus file.
+
+    The boot loader would REJECT that file; a coverage gate that computes over
+    the readable remainder and exits 0 is a green that proves less than it
+    claims. A parse-skip must surface as a strict breach.
+    """
+    scen, ttps = corpus
+    bad = scen / "edr" / "broken.yml"
+    bad.write_text("name: [unterminated\n:::\n  bad", encoding="utf-8")
+
+    result = module.compute_report(str(scen), str(ttps), module.default_config())
+    breaches = result["strict_breaches"]
+    assert any(b.get("kind") == "unreadable_corpus_file" for b in breaches), (
+        "a skipped corpus file must raise a strict breach, got: "
+        f"{[b.get('kind') for b in breaches]}"
+    )
+    assert module._exit_code(True, breaches) == 1
+
+
+def test_a_readable_corpus_raises_no_unreadable_breach(module, corpus):
+    """Guard against over-correction: a clean corpus adds no unreadable breach."""
+    scen, ttps = corpus
+    result = module.compute_report(str(scen), str(ttps), module.default_config())
+    assert not any(
+        b.get("kind") == "unreadable_corpus_file" for b in result["strict_breaches"]
+    )

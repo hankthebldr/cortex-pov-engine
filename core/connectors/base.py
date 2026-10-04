@@ -215,13 +215,36 @@ def coerce_utc(value: Any) -> Optional[datetime]:
 HttpFetcher = Callable[[str, str, dict, Optional[bytes], float], "tuple[int, str]"]
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Surface every 3xx as an HTTP status instead of following it.
+
+    urllib's default handler re-issues a POST answered 301/302/303 as a GET to
+    ``Location`` with every header attached — in standard auth mode that is the
+    raw API key, sent to whatever host the redirect names.
+    ``normalize_tenant_base_url`` pins the first hop to the tenant; a followed
+    redirect walks straight past that pin. The tenant client (httpx) never
+    follows redirects either, so both call paths now agree.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def default_http_fetcher(
     method: str, url: str, headers: dict, body: Optional[bytes], timeout: float
 ) -> "tuple[int, str]":
-    """Real stdlib HTTP fetcher. Raises ``ConnectorError`` on transport failure."""
+    """Real stdlib HTTP fetcher. Raises ``ConnectorError`` on transport failure.
+
+    Redirects are returned as their 3xx status, never followed (see
+    :class:`_NoRedirect`), so the connector reports ``XSIAM_API_ERROR`` rather
+    than reading a portal's or proxy's reply as the tenant's.
+    """
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with _OPENER.open(req, timeout=timeout) as resp:  # noqa: S310
             return resp.status, resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as e:
         body_text = e.read().decode("utf-8", errors="replace") if e.fp else ""

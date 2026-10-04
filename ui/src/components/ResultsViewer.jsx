@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { getRuns, getResultsForRun, validateResult, downloadReport } from '../api/client.js'
 import { runIdOf } from '../api/ids.js'
+import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
 
 // --- Helpers ----------------------------------------------------------------
@@ -18,8 +19,8 @@ function StatusBadge({ status }) {
 
 function formatDuration(startedAt, completedAt) {
   if (!startedAt) return '—'
-  const start = new Date(startedAt)
-  const end = completedAt ? new Date(completedAt) : new Date()
+  const start = serverDate(startedAt)
+  const end = completedAt ? serverDate(completedAt) : new Date()
   const secs = Math.round((end - start) / 1000)
   if (secs < 60) return `${secs}s`
   if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`
@@ -29,7 +30,7 @@ function formatDuration(startedAt, completedAt) {
 function formatTime(iso) {
   if (!iso) return '—'
   try {
-    return new Date(iso).toLocaleString(undefined, {
+    return serverDate(iso).toLocaleString(undefined, {
       month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit',
     })

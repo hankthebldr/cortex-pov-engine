@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from connectors.base import ObservedAlert
 from connectors.matcher import reconcile
 
@@ -107,3 +109,55 @@ def test_results_without_executed_at_are_skipped():
     results = [_result(1, executed_at=None, technique="T1003")]
     alerts = [_alert(observed_at=T0, techniques=["T1003"])]
     assert reconcile(results, alerts) == []
+
+
+# --------------------------------------------------------------------------
+# detection_id containment must be specific. It used to be a raw substring
+# test in both directions, so a tenant rule id of "2" (custom BIOC rule ids are
+# small integers), "0", "edr" or "shell" was "contained in" a scenario slug
+# like "bioc-edr-002-bash-devtcp-reverse-shell-redirection" — and an
+# unrelated alert (different technique, unrelated name) on the same host
+# credited the detection with a real-looking MTTD.
+# --------------------------------------------------------------------------
+
+_SLUG = "bioc-edr-002-bash-devtcp-reverse-shell-redirection"
+
+
+@pytest.mark.parametrize("tenant_id", ["2", "0", "002", "edr", "shell", "bioc-edr",
+                                       "reverse-shell"])
+def test_a_short_or_generic_rule_id_does_not_credit_a_detection(tenant_id):
+    results = [_result(1, executed_at=T0, technique="T1059.004", detection_id=_SLUG,
+                       expected="Bash devtcp reverse shell redirection")]
+    alerts = [_alert(observed_at=T0 + timedelta(seconds=30), techniques=["T1003.001"],
+                     detection_id=tenant_id, name="Possible LSASS memory dump")]
+    [v] = reconcile(results, alerts)
+    assert v.matched is False, f"rule id {tenant_id!r} credited {_SLUG!r} on {v.matched_on}"
+
+
+def test_digit_runs_are_not_split_into_matches():
+    """'bioc-001' is not contained in 'bioc-0011' — different rules."""
+    results = [_result(1, executed_at=T0, detection_id="bioc-0011")]
+    alerts = [_alert(observed_at=T0 + timedelta(seconds=5), detection_id="bioc-001")]
+    [v] = reconcile(results, alerts)
+    assert v.matched is False
+
+
+@pytest.mark.parametrize("tenant_id", [
+    _SLUG,                                   # exact
+    _SLUG.upper(),                           # case-folded exact
+    f"cortexsim-{_SLUG}",                    # tenant prefixed the slug
+    f"{_SLUG}-v2",                           # tenant versioned the rule
+    f"CortexSim: {_SLUG} (copy)",            # rule named after the slug
+])
+def test_the_slug_embedded_in_a_tenant_rule_id_still_matches(tenant_id):
+    results = [_result(1, executed_at=T0, detection_id=_SLUG)]
+    alerts = [_alert(observed_at=T0 + timedelta(seconds=5), detection_id=tenant_id)]
+    [v] = reconcile(results, alerts)
+    assert v.matched and "detection_id" in v.matched_on
+
+
+def test_an_exact_numeric_rule_id_still_matches():
+    results = [_result(1, executed_at=T0, detection_id="1234")]
+    alerts = [_alert(observed_at=T0 + timedelta(seconds=5), detection_id="1234")]
+    [v] = reconcile(results, alerts)
+    assert v.matched and v.matched_on == ["detection_id"]
