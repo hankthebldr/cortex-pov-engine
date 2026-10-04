@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import '../../styles/destinations/library.css'
 import ScenarioGrid from './ScenarioGrid.jsx'
 import ScenarioInspector from './ScenarioInspector.jsx'
@@ -106,16 +106,25 @@ export default function OperationsView({
   }, [selectedPlane, reloadKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handle card selection — hydrate full detail ──────────────────────
+  // The newest selection wins. Without this, clicking card A (slow detail
+  // fetch) and then card B (fast) let A's detail land LAST: the drawer showed
+  // A, `selected` — and therefore useLaunchScenario and ⌘L — targeted A, while
+  // the armed id and the operator's intent were B. The wrong scenario would be
+  // launched against the customer environment.
+  const selectSeqRef = useRef(0)
   const handleSelect = useCallback(async (summary) => {
     const id = summary.scenario_id || summary.id
+    const seq = ++selectSeqRef.current
     setSelected(summary)
     setDrawerOpen(true)
     // Arm this scenario for the ③ Launch step (redesign v2).
     onArmScenario(id)
     try {
       const detail = await getScenario(id)
+      if (seq !== selectSeqRef.current) return
       setSelected(detail || summary)
     } catch (err) {
+      if (seq !== selectSeqRef.current) return
       onError(err.message || `Failed to load ${id}`)
     }
   }, [onError, onArmScenario])
@@ -130,13 +139,17 @@ export default function OperationsView({
     if (existing) {
       handleSelect(existing)
     } else {
+      const seq = ++selectSeqRef.current
       getScenario(requestOpenScenarioId)
         .then((detail) => {
-          if (!detail) return
+          if (!detail || seq !== selectSeqRef.current) return
           setSelected(detail)
           setDrawerOpen(true)
         })
-        .catch((err) => onError(err.message || `Failed to load ${requestOpenScenarioId}`))
+        .catch((err) => {
+          if (seq !== selectSeqRef.current) return
+          onError(err.message || `Failed to load ${requestOpenScenarioId}`)
+        })
     }
   }, [requestOpenScenarioId]) // eslint-disable-line react-hooks/exhaustive-deps
 
