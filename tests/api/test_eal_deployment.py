@@ -310,3 +310,23 @@ class TestRunDeliveryRollup:
         }])
         body = client.get("/api/eal/runs").json()
         assert body["runs"][0]["delivery"]["delivery_verdict"] == "partial"
+
+
+class TestPreflightHonoursPortPins:
+    """A canary POST is a live send: an allowlist entry pinned to :8088 must
+    not let preflight probe the same host on :443 (see
+    tests/eal_simulator/test_collector_port_pins.py for the run path)."""
+
+    def test_an_unpinned_port_is_never_probed(self, client, monkeypatch):
+        from eal_simulator import collector as collector_mod
+
+        stub = _StubClient(status_code=202)
+        monkeypatch.setattr(collector_mod, "_default_client", lambda timeout, verify: stub)
+        campaign_id = _create(client, _campaign_body(
+            allowlist=["collector.cortexsim-canary.invalid:8088"]))
+
+        resp = client.post(
+            f"/api/eal/campaigns/{campaign_id}/collectors/preflight", json={})
+        assert resp.status_code == 200, resp.text
+        assert stub.requests == []
+        assert resp.json()["probes"][0]["code"] == "target_not_authorised"

@@ -60,6 +60,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from typing import Iterable
+from urllib.parse import urlparse
 
 
 class SafetyError(Exception):
@@ -204,6 +205,28 @@ def _split_host_port(token: str) -> tuple[str, int | None]:
         return host, None
 
     return token, None
+
+
+_SCHEME_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def url_host_port(url: str) -> tuple[str, int | None]:
+    """``(hostname, port)`` a request to ``url`` will actually touch.
+
+    The port is the explicit one, else the scheme default — never ``None`` for
+    http/https — so a port-pinned allowlist entry is evaluated against the
+    port the bytes go to. Passing ``port=None`` to :meth:`SafetyPolicy.authorise`
+    matches on host alone, which is how a ``host:8088`` pin used to authorise
+    every port on that host for the collector-POST plugins.
+    """
+    parsed = urlparse(url)
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port is None:
+        port = _SCHEME_DEFAULT_PORTS.get((parsed.scheme or "").lower())
+    return parsed.hostname or "", port
 
 
 class SafetyPolicy:

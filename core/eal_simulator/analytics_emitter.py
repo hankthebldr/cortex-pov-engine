@@ -57,6 +57,7 @@ from pydantic import BaseModel, Field, SecretStr, field_validator, model_validat
 from .audit import ecs_event
 from .base import BaseSimulation, SimulationContext, SimulationResult
 from .delivery import REMEDIATION, DeliveryLedger, response_evidence
+from .safety import url_host_port
 
 
 logger = logging.getLogger("cortexsim.eal.analytics_emitter")
@@ -474,9 +475,10 @@ class AnalyticsLogEmitter(BaseSimulation):
         params: AnalyticsEmitterParams = ctx.params  # type: ignore[assignment]
         started_at = self.utcnow()
 
-        host = urlparse(params.collector_url).hostname or ""
-        # Mandatory per-target gate BEFORE any emit.
-        ctx.authorise(host)
+        host, port = url_host_port(params.collector_url)
+        # Mandatory per-target gate BEFORE any emit — at port granularity, so a
+        # `host:8088` allowlist pin does not also authorise the host's 443.
+        ctx.authorise(host, port=port)
 
         descriptor = self._descriptor(params)
 
