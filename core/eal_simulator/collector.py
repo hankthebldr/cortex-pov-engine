@@ -36,7 +36,9 @@ import httpx
 from pydantic import SecretStr
 
 from .campaign import Campaign
-from .delivery import REMEDIATION, classify_exception, classify_status
+from .delivery import (
+    REMEDIATION, classify_exception, classify_status, response_evidence,
+)
 from .registry import PluginRegistry
 
 
@@ -305,7 +307,13 @@ async def preflight_collector(
     finally:
         await client.aclose()
 
-    code = classify_status(resp.status_code)
+    # Same evidence the live run hands DeliveryLedger: a 200 carrying a
+    # captive-portal login page must not read as `delivered`/`ready` here
+    # when the run itself would classify it collector_intercepted.
+    content_type, body_prefix = response_evidence(resp)
+    code = classify_status(
+        resp.status_code, content_type=content_type, body_prefix=body_prefix,
+    )
     return {
         "step_id": target.step_id,
         "url": target.url,
