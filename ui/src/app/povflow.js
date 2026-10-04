@@ -40,41 +40,66 @@ export const PHASES = [
  *
  * @param {string} destination
  * @param {Object} ctx  derived tallies, so the bar quotes the same numbers the
- *                      surface does rather than restating literals:
- *                      { gate:{total,pass,warn}, components:{total,ready,partial,missing},
- *                        scenarioCount, chainSteps, runStep }
+ *                      surface does rather than restating literals. Every field
+ *                      is optional; an absent one renders as words, never as 0:
+ *                      { gate:{state,total,pass,warn,unreported},
+ *                        components:{total,ready,partial,missing},
+ *                        tenantCount, agentCount, agentsOnline, scenarioCount,
+ *                        armed, chainSteps, runStep, runDetections }
  * @returns {{ phase:number, title:string, sub:string, cta:string, ctaDest:string|null }}
  */
 export function flowFor(destination, ctx = {}) {
-  const gate = ctx.gate || { total: 0, pass: 0, warn: 0 }
   const comp = ctx.components || { total: 0, ready: 0, partial: 0, missing: 0 }
+  const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+  const known = (n) => typeof n === 'number' && Number.isFinite(n)
 
+  // NEVER QUOTE A NUMBER THAT WAS NOT GIVEN.
+  // Every row over a surface that renders live SimCore data takes its numbers
+  // from `ctx` and falls back to WORDS, never to a figure. This file used to
+  // carry the design prototype's literals — "6 of 11 detections observed" on
+  // Runs, "Report ready · 6 observed · 5 pending · 0 missed" on Proof & Export,
+  // "3 online" on Agents, "9 of 9 checks pass" on a Launch Gate whose SimCore
+  // was unreachable — and they rendered on every POV regardless of what had
+  // run, directly under the surface showing the real (different) numbers.
+  //
+  // Rows marked SEED sit over surfaces that still render the seed catalog
+  // (povdata/), so their figures mirror what the surface under them shows.
   const MAP = {
     overview: [-1, 'POVengine · overview', 'what it does, how it stays honest', 'Setup Wizard'],
     setup: [0, 'Setup wizard', 'detections → targets → scope → requirements → goals', 'Library'],
+    // SEED — componentTally() is passed in, so the bar and the strip agree.
     scope: [0, `${comp.total} components`,
       `${comp.ready} ready · ${comp.partial} partial · ${comp.missing} missing`, 'Library'],
-    tenants: [0, '1 tenant bound', 'read-only · 6 of 9 datasets readable', 'Library'],
-    agents: [0, `${ctx.agentCount ?? 5} beacons enrolled`, '3 online · identity harness on 3', 'Library'],
+    tenants: [0,
+      !known(ctx.tenantCount) ? 'Tenant'
+        : ctx.tenantCount === 0 ? 'No tenant bound' : plural(ctx.tenantCount, 'tenant') + ' bound',
+      'read-only — nothing here writes to the tenant', 'Library'],
+    agents: [0,
+      known(ctx.agentCount) ? `${plural(ctx.agentCount, 'beacon')} enrolled` : 'Agents',
+      known(ctx.agentsOnline) ? `${ctx.agentsOnline} online` : 'pull-mode dispatch targets', 'Library'],
 
-    library: [1, ctx.armed ? `${ctx.armed} armed` : `${ctx.scenarioCount ?? 0} scenarios`,
-      '7 steps · 11 expected detections', 'Composer'],
+    library: [1,
+      ctx.armed ? `${ctx.armed} armed`
+        : known(ctx.scenarioCount) ? plural(ctx.scenarioCount, 'scenario') : 'Library',
+      'pick a scenario to arm it for launch', 'Composer'],
+    // SEED — CLI Items and Data Streams render the seed catalog.
     cli: [1, '4 CLI items authored', '2 ready · 2 draft · all digest-pinned', 'Composer'],
-    adapters: [1, '8 packages staged', '48 exemption-declared · 0 undeclared', 'Composer'],
+    adapters: [1, 'Packages', 'what the target runs · staged on this SimCore or fetched at run time', 'Composer'],
     streams: [1, '21 of 34 streams mapped', '7 gaps · relayed to the Broker VM', 'Composer'],
-    ttps: [1, '175 TTP cards bound', '1,797 detection objects resolve', 'Composer'],
-    uctc: [1, '34 test cases in scope', '12 use cases · 140 assertion-shaped', 'Composer'],
-    composer: [1, `${ctx.chainSteps ?? 6} steps on the spine`,
-      'one lineage · 1 step with no expected detection', 'Launch Gate'],
+    ttps: [1, 'TTP cards', 'authored detection content, bound to scenarios', 'Composer'],
+    uctc: [1, 'UC / TC index', 'use cases → test cases → the evidence that binds them', 'Composer'],
+    composer: [1,
+      known(ctx.chainSteps) ? `${plural(ctx.chainSteps, 'step')} on the spine` : 'Composer',
+      'steps · payload plan', 'Launch Gate'],
 
-    preflight: [2, `${gate.pass} of ${gate.total} checks pass`,
-      `${gate.warn} warn · 0 blocking`, 'Runs'],
+    preflight: [2, ...gateLine(ctx.gate), 'Runs'],
 
-    runs: [4, ctx.runStep || 'No run in flight', '6 of 11 detections observed', 'Proof & Export'],
+    runs: [4, ctx.runStep || 'No run in flight', ctx.runDetections || 'live steps · events', 'Proof & Export'],
 
+    // SEED — Tenant Validation renders the seed validation sheets.
     validation: [5, '0 of 11 tenant-verified', '6 awaiting probe · 2 not present', 'Proof & Export'],
-    coverage: [5, 'Coverage assembled', '16 planes × 6 doors · 12 gaps', 'Proof & Export'],
-    proof: [5, 'Report ready', '6 observed · 5 pending · 0 missed', null],
+    coverage: [5, 'Coverage', 'planes × detection types, across runs', 'Proof & Export'],
+    proof: [5, 'Proof & Export', 'observed · pending · missed, per run', null],
   }
 
   const row = MAP[destination] || MAP.scope
@@ -87,6 +112,28 @@ export function flowFor(destination, ctx = {}) {
     cta: nextLabel ? `Next: ${nextLabel}` : 'Export report',
     ctaDest: nextLabel ? DEST_BY_LABEL[nextLabel] || null : 'proof',
   }
+}
+
+/**
+ * The Launch Gate line. A check that never ran is not a check that passed:
+ * before the first /api/health answer, and while SimCore is unreachable, the
+ * bar says so instead of "9 of 9 checks pass".
+ *
+ * @param {{state?:'unknown'|'unreachable'|'checked', total?, pass?, warn?, unreported?}|undefined} gate
+ * @returns {[string, string]} [title, sub]
+ */
+function gateLine(gate) {
+  if (!gate || gate.state === 'unknown') {
+    return ['Readiness not checked yet', 'waiting on the first /api/health answer']
+  }
+  if (gate.state === 'unreachable') {
+    return ['SimCore unreachable', 'no readiness check could run']
+  }
+  const { total = 0, pass = 0, warn = 0, unreported = 0 } = gate
+  return [
+    `${pass} of ${total} components ok`,
+    `${warn} degraded · ${unreported} not reported`,
+  ]
 }
 
 /** Rail label → destination id. Built from the labels the CTA rule quotes, so

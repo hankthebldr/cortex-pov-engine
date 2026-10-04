@@ -14,7 +14,7 @@ import {
 } from './app/destinations.jsx'
 import { downloadReportBundle, getToolAdapters } from './api/client.js'
 import useShelf from './components/console/useShelf.js'
-import { agentIdOf } from './api/ids.js'
+import { agentIdOf, runIdOf, idMatches } from './api/ids.js'
 import { componentTally, toolCatalog, cliCatalog, ttpCatalog, streamCatalog } from './components/console/povdata/catalogs.js'
 
 /**
@@ -143,7 +143,10 @@ function ConsoleShell() {
     cliCount: String(seed.cli),
     ttpCount: String(seed.ttps),
     streamCount: String(seed.streams),
-    uctcCount: '266',
+    // No badge rather than a literal: the shell does not fetch /api/uctc, and a
+    // snapshot-less deploy answers `index_loaded: false` — a hard-coded "266"
+    // claimed a loaded index on exactly the build that has none.
+    uctcCount: null,
     wizardSteps: '5',
     // The honest number until the probes actually run. It reads as a failure
     // and it should: nothing is tenant-verified before it has been re-asked.
@@ -260,21 +263,50 @@ function ConsoleShell() {
   // it quotes. Passing derived values down (rather than letting the bar make
   // its own) is what keeps a component strip reading 4 ready while the footer
   // claims 6.
-  const flowCtx = useMemo(() => ({
-    components: seed.components,
-    scenarioCount: env.scenarios.length,
-    agentCount: env.agents.length,
-    gate: {
-      total: 9,
-      pass: Math.max(0, 9 - degradedCount),
-      warn: degradedCount,
-    },
-    runStep: env.activeRun
-      ? `Step ${env.activeRun.step} of ${env.activeRun.totalSteps} running`
-      : env.lastRun
-        ? `Last run ${env.lastRun.scenarioId || env.lastRun.runId}`
-        : 'No run in flight',
-  }), [seed, env.scenarios.length, env.agents.length, env.activeRun, env.lastRun, degradedCount])
+  //
+  // A number the shell does not have is left OUT, and the bar renders words in
+  // its place: "9 of 9 checks pass" used to show while SimCore was unreachable,
+  // because a model with no components has zero degraded ones.
+  const flowCtx = useMemo(() => {
+    const hm = env.healthModel
+    const gate = !hm ? { state: 'unknown' }
+      : !hm.reachable ? { state: 'unreachable' }
+        : {
+          state: 'checked',
+          total: hm.components.length,
+          pass: hm.components.filter((c) => c.status === 'ok').length,
+          warn: hm.degraded.length,
+          unreported: hm.gaps.length,
+        }
+    const shownRunId = env.activeRun?.runId || env.lastRun?.runId || null
+    const shownRun = shownRunId
+      ? env.runs.find((r) => idMatches(runIdOf(r), shownRunId)) || null
+      : null
+    const runDetections = shownRun
+      && typeof shownRun.detected_count === 'number'
+      && typeof shownRun.expected_detections === 'number'
+      ? `${shownRun.detected_count} of ${shownRun.expected_detections} detections observed`
+      : undefined
+    return {
+      components: seed.components,
+      // Counts only once their fetch has settled — "0 scenarios" while the list
+      // is still loading is a zero nobody measured.
+      scenarioCount: env.loading.scenarios ? undefined : env.scenarios.length,
+      agentCount: env.loading.agents ? undefined : env.agents.length,
+      agentsOnline: env.loading.agents
+        ? undefined
+        : env.agents.filter((a) => a && a.status === 'online').length,
+      tenantCount: env.loading.tenants ? undefined : env.tenants.length,
+      gate,
+      runStep: env.activeRun
+        ? `Step ${env.activeRun.step} of ${env.activeRun.totalSteps} running`
+        : env.lastRun
+          ? `Last run ${env.lastRun.scenarioId || env.lastRun.runId}`
+          : 'No run in flight',
+      runDetections,
+    }
+  }, [seed, env.scenarios.length, env.agents, env.tenants.length, env.loading, env.activeRun,
+    env.lastRun, env.runs, env.healthModel])
 
   // ── Resolve + mount the current destination surface ───────────────────────
   const dest = getDestination(router.destination) || getDestination(DEFAULT_DESTINATION)
