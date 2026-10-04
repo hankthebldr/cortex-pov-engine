@@ -52,8 +52,18 @@ ENVIRONMENT_PATTERNS = [
      "identity account does not exist on the target"),
     (r"su: user (\S+) does not exist",
      "identity account does not exist on the target"),
+    # Two shell dialects, one meaning. bash writes "<cmd>: command not found";
+    # dash/sh (the Tier-D target's /bin/sh) writes "<label>: <lineno>: <cmd>:
+    # not found". Matching only bash's wording silently reclassified every
+    # dash missing-interpreter failure (python3, jq, dig, ...) as TTP — "the
+    # technique ran and failed" — when the step never executed at all. The
+    # dash form is anchored to its diagnostic shape (a shell/label prefix, a
+    # bare command token, end of line) so a tool's own "... not found" output
+    # mid-line is not swept up as ENVIRONMENT.
     (r"(command not found|No such file or directory: )",
      "a tool the step invokes is not installed on the target"),
+    (r"(?m)^\S.*:\s*\d+:\s*\S+: not found\s*$",
+     "a tool the step invokes is not installed on the target (sh: not found)"),
     (r"(Could not resolve host|Temporary failure in name resolution|"
      r"Connection timed out|Network is unreachable|SSL certificate problem)",
      "step needs public-internet egress the target does not have"),
