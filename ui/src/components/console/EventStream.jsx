@@ -90,11 +90,13 @@ export default function EventStream({ runId, compact = false }) {
     )
   }
 
-  const modeBadge = connected
-    ? mode === 'stream' ? { text: 'LIVE',  cls: 'event-stream__mode--live' }
-    : mode === 'poll'   ? { text: 'POLL',  cls: 'event-stream__mode--poll' }
-    :                     { text: 'ERR',   cls: 'event-stream__mode--err'  }
-    : { text: '...', cls: 'event-stream__mode--poll' }
+  // ERR is checked FIRST: the hook reports a failed fetch as mode 'error' with
+  // connected=false, and nesting ERR inside the `connected` branch meant it
+  // could never render — a dead SimCore read as "..." (still connecting).
+  const modeBadge = mode === 'error' ? { text: 'ERR',   cls: 'event-stream__mode--err'  }
+    : !connected                     ? { text: '...',   cls: 'event-stream__mode--poll' }
+    : mode === 'stream'              ? { text: 'LIVE',  cls: 'event-stream__mode--live' }
+    :                                  { text: 'POLL',  cls: 'event-stream__mode--poll' }
 
   return (
     <section
