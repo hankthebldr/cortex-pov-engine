@@ -186,7 +186,7 @@ export default function LaunchView({
         <div className="launch-gate">
           <div className="launch-gate__num">②</div>
           <h2>No scenario armed</h2>
-          <p>Pick a scenario in the Library to arm it for launch.</p>
+          <p>Pick a scenario in Simulate to arm it for launch.</p>
           <button type="button" className="btn btn--primary" onClick={onGoLibrary}>Go to Library ▸</button>
         </div>
       </div>

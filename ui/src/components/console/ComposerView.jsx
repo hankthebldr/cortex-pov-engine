@@ -23,7 +23,6 @@ import { causalityStepStates } from './composerLayout.js'
 import ComposerCanvas from './ComposerCanvas.jsx'
 import ComposerInspector from './ComposerInspector.jsx'
 import ComposerPalette from './ComposerPalette.jsx'
-import WorkflowSwitcher, { WorkflowActions } from './WorkflowSwitcher.jsx'
 import ExecutionTimeline from './ExecutionTimeline.jsx'
 import {
   addDetection,
@@ -140,7 +139,6 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   // Which of this POV's workflows is open. The Composer used to name only the
   // scenario a draft was started FROM, so "which chain am I editing, is it
   // saved, and how do I start another" had no answer anywhere on screen.
-  const [workflowId, setWorkflowId] = useState('WF-0012')
   const [metaOpen, setMetaOpen] = useState(false)
   // Editable workflow meta (name/plane/tc_ref/cgo) overlays the origin-derived
   // base so an edit does not have to round-trip through the origin fetch.
@@ -738,19 +736,6 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           </div>
         </div>
         <span className="composer__spacer" />
-        <WorkflowSwitcher
-          current={workflowId}
-          onSelect={setWorkflowId}
-          dirty={dirty}
-          onNew={() => { setSteps([]); setSelectedId(null) }}
-          onDuplicate={() => setDraftMeta((m) => ({ ...m, name: `${m.name || 'Workflow'} (copy)` }))}
-        />
-        <WorkflowActions
-          dirty={dirty}
-          onSave={saveDraft}
-          onSaveAs={saveDraft}
-          onValidate={runPreflight}
-        />
         <button
           type="button"
           className="btn btn--xs"

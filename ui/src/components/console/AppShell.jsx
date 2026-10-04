@@ -3,8 +3,7 @@ import ConsoleHeader from './ConsoleHeader.jsx'
 import DestinationNav from './DestinationNav.jsx'
 import CommandPalette from './CommandPalette.jsx'
 import SafetyBanner from './SafetyBanner.jsx'
-import FlowBar from './FlowBar.jsx'
-import HelpOverlay, { shouldShowOnFirstRun, markFirstRunSeen } from './HelpOverlay.jsx'
+import HelpOverlay, { markFirstRunSeen } from './HelpOverlay.jsx'
 import { useTour } from '../onboarding/useTour.js'
 import TourSpotlight from '../onboarding/TourSpotlight.jsx'
 import { TOUR_STOPS } from '../onboarding/tourStops.js'
@@ -13,11 +12,10 @@ import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
 /**
  * AppShell — Mission Ops Console layout wrapper.
  *
- * Provides the 3-region shell (header · workspace · flow bar), plus the safety
- * gate row while it is unacknowledged. The primary nav is the PERSISTENT
- * DestinationNav sidebar, whose groups ARE the POV phases — the separate phase
- * bar and the command-strip ticker are both gone, replaced by one flow bar at
- * the foot that names where you are and what the next action is.
+ * Two regions — header and workspace — plus the safety gate row above them.
+ * The primary nav is the DestinationNav task rail. There is no footer bar: the
+ * flow bar that used to sit there restated the rail in a second vocabulary,
+ * and "what do I do next" is now answered by Get started, on real state.
  *
  * Props:
  *   destination   — current destination id (was activeTab)
@@ -27,7 +25,6 @@ import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
  *   health        — { hostname, version, sensors, tenantHealth }
  *   onAbortRun    — () => void
  *   paletteItems  — items for ⌘K
- *   flowCtx       — derived tallies for the flow bar (see povflow.js)
  *   onExportPOV   — () => void  triggered by ⌘E from anywhere
  *   children      — the mounted destination surface
  */
@@ -42,11 +39,8 @@ export default function AppShell({
   agent = null,
   tenantId = null,
   povName = undefined,
-  // Derived tallies for the flow bar. Passed through rather than recomputed
-  // here so the bar quotes the SAME numbers the surfaces do — the component
-  // strip claiming 6 ready against a catalog that says 4 is exactly the class
-  // of disagreement this console cannot afford on a readiness screen.
-  flowCtx = {},
+  // The rail item that owns the open page (a tab's parent task).
+  activeNav = null,
   onAbortRun = () => {},
   paletteItems = [],
   onExportPOV = null,
@@ -127,13 +121,14 @@ export default function AppShell({
     onNavigateRef.current(destId, ...rest)
   }, [])
 
-  // First-run tour — appears once per browser (unless the help overlay was
-  // already dismissed first), then suppressed. Replaces the old first-run
-  // help-overlay auto-open.
+  // The tour no longer auto-starts. Get started is the first-run guidance now,
+  // and it is built on what this instance actually has; a spotlight popping
+  // over it on first load was a second, competing set of instructions. The
+  // tour is still one click away on the ? button.
   const tour = useTour({
     stops: TOUR_STOPS,
     onNavigate: tourNavigate,
-    autoStart: shouldShowOnFirstRun(),
+    autoStart: false,
   })
 
   // See tourNavTargetRef above: while the tour is active, any change to the
@@ -177,17 +172,22 @@ export default function AppShell({
     markFirstRunSeen()
   }, [])
 
-  // The shell is a three-row CSS grid — header / workspace / flow bar — with a
-  // fourth row only while the safety gate is unacknowledged. The row template
-  // must match the rows actually rendered: a mismatch silently collapses the
-  // last row rather than erroring, and the last row is now the flow bar, which
-  // is the one piece of chrome that must never be the thing that falls off.
-  //
-  // Theater mode still hides the wayfinding (a projector view shows the work),
-  // which now means the flow bar rather than the old phase bar.
-  const showFlow = !theaterMode
-  const shellClass = 'pov-shell shell'
-    + (showFlow ? '' : ' shell--no-phasebar')
+  // Header / workspace, with the safety gate above while it is shown.
+  const shellClass = 'pov-shell shell shell--no-phasebar'
+
+  // Theater mode lost its header button (one fewer control in a bar that had
+  // ten) and lives in ⌘K instead, beside the other view toggles.
+  const allPaletteItems = [
+    ...paletteItems,
+    {
+      section: 'View',
+      id: 'toggle-theater',
+      title: theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly',
+      meta: 'larger type, hides the rail',
+      icon: '▭',
+      onSelect: toggleTheater,
+    },
+  ]
   const themeClass = `theme-console ${theaterMode ? 'theme-console--theater' : ''}`
 
   return (
@@ -219,8 +219,6 @@ export default function AppShell({
         onNavigate={onNavigate}
         onStartTour={() => tour.start()}
         tourSeen={readTourSeen()}
-        theaterMode={theaterMode}
-        onToggleTheater={toggleTheater}
         colorTheme={colorTheme}
         onToggleColorTheme={toggleColorTheme}
       />
@@ -230,7 +228,7 @@ export default function AppShell({
       <div className={'pov-workspace workspace' + (railCollapsed ? ' pov-workspace--rail-collapsed workspace--rail-collapsed' : '')}>
         <DestinationNav
           groups={navGroups}
-          active={destination}
+          active={activeNav || destination}
           onNavigate={onNavigate}
           collapsed={railCollapsed}
           onToggleCollapse={toggleRail}
@@ -243,19 +241,9 @@ export default function AppShell({
         </main>
       </div>
 
-      {/* Replaces BOTH the old phase bar (which sat above the workspace and
-          competed with the rail for the same job) and the old command-strip
-          ticker (which spent a shell row restating the latest run's status
-          where nobody looked). One bar that names where you are and what comes
-          next. The live-run telemetry the strip used to carry is on the Runs
-          surface, where the rest of the run is. */}
-      {showFlow && (
-        <FlowBar destination={destination} ctx={flowCtx} onNavigate={onNavigate} />
-      )}
-
       <CommandPalette
         open={paletteOpen}
-        items={paletteItems}
+        items={allPaletteItems}
         onClose={() => setPaletteOpen(false)}
       />
 

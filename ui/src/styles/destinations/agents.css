@@ -32,18 +32,18 @@
   --c-hairline:        var(--bd);
   --c-hairline-strong: var(--bd2);
 
-  --c-action:          var(--ac);
-  --c-action-bright:   var(--ac-str);
-  --c-action-deep:     var(--ac);
+  --c-action:          var(--ink-action);
+  --c-action-bright:   var(--ink-action-bright);
+  --c-action-deep:     var(--ink-action-deep);
   --c-action-soft:     var(--ac-soft);
-  --c-action-glow:     color-mix(in srgb, var(--ac) 45%, transparent);
+  --c-action-glow:     transparent;
 
   --c-signal:          var(--info);
   --c-signal-soft:     color-mix(in srgb, var(--info) 14%, transparent);
   --c-signal-glow:     color-mix(in srgb, var(--info) 45%, transparent);
 
-  --c-detected:        var(--ac);
-  --c-detected-soft:   var(--ac-soft);
+  --c-detected:        var(--ink-detected);
+  --c-detected-soft:   var(--pos-soft);
   --c-missed:          var(--crit);
   --c-missed-soft:     color-mix(in srgb, var(--crit) 14%, transparent);
   --c-pending:         var(--warn);
@@ -130,19 +130,19 @@
 .theme-console .targets .target-card { border-radius: 8px; }
 .theme-console .targets .target-card--push,
 .theme-console .targets .target-card--iac {
-  border-top: 3px solid var(--ac);
+  border-top:3px solid var(--ac-line);
   border-radius: 4px 4px 8px 8px;
 }
 .theme-console .targets .target-card--agent {
   border-radius: 4px 4px 8px 8px;
   overflow: hidden;
 }
-.theme-console .targets .target-card--agent:has(.target-card__pill--live) { border-top: 3px solid var(--ac); }
+.theme-console .targets .target-card--agent:has(.target-card__pill--live) { border-top:3px solid var(--pos); }
 .theme-console .targets .target-card--agent:has(.target-card__pill--stale) { border-top: 3px solid var(--warn); }
 .theme-console .targets .target-card--agent:has(.target-card__pill--unknown) { border-top: 3px solid var(--tx3); }
 .theme-console .targets .target-card.is-active {
-  border-color: var(--ac);
-  box-shadow: 0 0 0 1px var(--ac);
+  border-color:var(--ac-line);
+  box-shadow:0 0 0 1px var(--ac-line);
 }
 
 /* ── 5. State pills — outlined mono chips (the redesign's chip()

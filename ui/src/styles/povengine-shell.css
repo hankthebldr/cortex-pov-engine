@@ -160,9 +160,9 @@
   border: 1px solid var(--bd2);
   display: grid; place-items: center;
 }
-.pov-collection__box--on { border-color: var(--ac); background: var(--ac-soft); }
+.pov-collection__box--on { border-color:var(--ac-line); background: var(--ac-soft); }
 .pov-collection__box i { width: 6px; height: 6px; border-radius: 1px; background: transparent; }
-.pov-collection__box--on i { background: var(--ac); }
+.pov-collection__box--on i { background:var(--ac-str); }
 .pov-collection__glabel { display: block; font: 600 11.5px/1.2 var(--font-ui); color: var(--tx); }
 .pov-collection__gsub { display: block; font: 400 9.5px/1.4 var(--font-ui); color: var(--tx3); margin-top: 3px; }
 .pov-collection__n { font: 600 10.5px/1 var(--font-mono); text-align: right; color: var(--tx2); }
@@ -259,7 +259,7 @@ button.pov-chip:hover { border-color: var(--bd2); }
 }
 .pov-rail__item:hover { background: var(--s2); }
 .pov-rail__item--on {
-  border-left-color: var(--ac);
+  border-left-color:var(--ac-line);
   background: var(--s2);
   color: var(--tx);
 }
@@ -345,7 +345,7 @@ button.pov-chip:hover { border-color: var(--bd2); }
   font: 700 8.5px/1 var(--font-mono);
   background: var(--s3); color: var(--tx2);
 }
-.pov-flow__phase--on .pov-flow__glyph { background: var(--ac); color: var(--ac-tx); }
+.pov-flow__phase--on .pov-flow__glyph { background:var(--ac-str); color: var(--ac-tx); }
 .pov-flow__phase--done .pov-flow__glyph { background: var(--pos-soft); color: var(--pos); }
 .pov-flow__plabel { font: 600 10.5px/1 var(--font-ui); }
 .pov-flow__cta {

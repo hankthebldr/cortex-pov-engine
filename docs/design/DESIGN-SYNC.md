@@ -14,7 +14,62 @@ from drifting apart silently.
 | Design system | PANW Executive Design System `panw-leadership-14ba87ae-5d5e-4097-b277-dd8179b582e0` |
 | Repo | `hankthebldr/cortex-pov-engine` · branch `main` · path `ui/src` |
 | Design-side last sync | 2026-09-14T18:14:52Z · tree `a4130a9fe88a` |
-| Implemented in | `feat/povengine-console-design-parity` |
+| Implemented in | `feat/povengine-console-design-parity` (parity pass) · `feat/console-minimal-guided-setup` (minimal pass) |
+
+> **The development track is now AHEAD of the design track.** The minimal pass
+> (2026-10, below) collapsed the 17-surface rail to a task rail, added a
+> Get started checklist, narrowed the colour rule and removed every seed-data
+> surface. The Claude Design prototype still shows the 17-surface IA and the
+> seed numbers. Until the prototype is updated to match, treat this file — not
+> the prototype — as the source of truth for IA and colour, and port the
+> sections below back into the design project on its next sync.
+
+## Minimal pass (2026-10)
+
+Driven by DC feedback on a live install: the console was overwhelming, did not
+say what the next task was, used colour without a purpose, and showed numbers
+that were not this instance's (a tenant called Acme Financial, a jumpbox that
+answered every poll, twelve components) while the header — reading real state
+— contradicted them.
+
+```
+Rail                         Tabs inside the task
+────────────────────────     ──────────────────────────────────────────────
+Get started   (home)         —   setup checklist on real state
+Simulate      #/library      Scenarios · Build a chain · Launch gate
+Runs                         —
+Results       #/proof        Report · Coverage
+Catalog       #/ttps         TTP cards · Packages · Data streams · UC/TC index
+── Manage
+Agents · Tenant
+```
+
+- **Get started** (`GetStartedView.jsx`, model in `setupProgress.js`) is the
+  default destination: install an agent → connect the tenant → data collector
+  (optional) → Broker VM (optional) → first simulation. Agent, tenant and run
+  state are read from SimCore; collector and Broker VM have no SimCore API, so
+  the DC confirms them and the page says "you confirmed", never "verified". A
+  failed first run is not "done" — the step says it stopped early and links to
+  the run. The suggested first run hands off to the guided launch with the
+  active online agent preselected as the target.
+- **Colour rule.** Orange = the single primary action on a screen. Green =
+  healthy / done / detected. Amber = a real warning; red = a real failure
+  (dark `--crit` moved off salmon, which read as brand orange). Everything
+  else is neutral, and "selected" reads as brightness, not hue. Implemented at
+  the token layer (`--ac-str/-ink/-soft/-line` neutral, `--ac-brand` holds the
+  hex) plus `styles/povengine-minimal.css`, loaded last.
+- **Chrome.** Flow bar removed. The acknowledged safety notice is a slim
+  neutral line (the unacknowledged consent gate is unchanged and still loud).
+  The degraded-health band is one neutral line. Theater moved into ⌘K. The
+  evidence-collection pill (seed POV name) left the header. Phase eyebrows and
+  accent bars left every page. The first-run tour no longer auto-starts.
+- **Seed data removed.** Components, CLI items, the setup/scope wizard and
+  Tenant validation pages are retired (their routes redirect). The Tenant page
+  shows the real registry. The Launch Gate's canned "will this chain reach the
+  target" block, the Coverage planes × doors matrix, the run-detail topology
+  and techniques tabs and the composer's seed workflow switcher are gone.
+  `povdata/` is vocabulary only (lane and plane names, tints, band geometry),
+  guarded by `povdata.test.js`.
 
 ## What is vendored, and what that means
 
@@ -59,6 +114,9 @@ forbids it, and every mark above is the real embedded asset.
 
 ## The contract that changed
 
+> Superseded in part by the minimal pass above: orange is now the primary
+> action only, not "chrome". Selection, rules and eyebrows are neutral.
+
 The previous token contract made **Cortex green the primary accent** and
 reserved **PANW orange for warn/gap signal**. This pass **inverts** that:
 
@@ -83,59 +141,44 @@ AA-clean token set — see the measured contrast table at the top of
 
 ## Screen map
 
-Where each design surface landed in the code.
+Where each surface lives in the code after the minimal pass.
 
-| Design surface | Rail group | Implementation |
+| Surface | Rail / tab | Implementation |
 |---|---|---|
-| Overview & Readiness | Start here | `components/console/OverviewView.jsx` |
-| Setup Wizard (5 steps) | Start here | `components/console/SetupWizardView.jsx` |
-| Components | 1 · Scope | `components/console/ComponentsView.jsx` |
-| Tenant (4 tabs) | 1 · Scope | `components/console/TenantView.jsx` (Binding tab mounts `TenantManager.jsx`) |
-| Agents | 1 · Scope | `components/console/TargetsView.jsx` |
-| Library | 2 · Compose | `components/console/OperationsView.jsx` |
-| CLI Items | 2 · Compose | `components/console/CliItemsView.jsx` |
-| Composer node canvas | 2 · Compose | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
-| Packages | 2 · Compose | `components/console/ToolAdapterCatalog.jsx` |
-| Data Streams | 2 · Compose | `components/console/DataStreamsView.jsx` |
-| TTP Cards | 2 · Compose | `components/console/TtpBrowserView.jsx` |
-| UC / TC Index | 2 · Compose | `components/console/UcTcIndexView.jsx` |
-| Launch Gate | 3 · Preflight | `components/console/ReadinessView.jsx` |
-| Runs (list → detail → topology) | 5 · Observe | `app/destinations.jsx::RunsSurface` · `RunDetailView.jsx` · `InflightView.jsx` |
-| Tenant Validation | 6 · Prove | `components/console/TenantValidationView.jsx` |
-| Coverage | 6 · Prove | `components/console/CoverageView.jsx` |
-| Proof & Export | 6 · Prove | `components/console/EvidenceView.jsx` |
-| Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `FlowBar.jsx` · `EvidenceCollection.jsx` |
-| Object pop-out | — | `components/console/ObjectSheet.jsx` + `sheets.js` |
-| Coverage cross-tab + analytics sources | — | `components/console/PlaneCoverageMatrix.jsx` |
-| Launch gate checks | — | `components/console/LaunchGate.jsx` |
-| Workflow switcher / execution timeline | — | `WorkflowSwitcher.jsx` · `ExecutionTimeline.jsx` |
-| Run topology / techniques | — | `RunTopology.jsx` · `RunTechniques.jsx` |
-| Compose sibling strip | — | `components/console/ComposeTabs.jsx` |
-| Seed catalogs | — | `components/console/povdata/` |
-| Flow model / CTA rule | — | `app/povflow.js` |
-| Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` |
+| Get started | Get started | `components/console/GetStartedView.jsx` · `setupProgress.js` · `useSetupProgress.js` |
+| Scenarios (Library) | Simulate › Scenarios | `components/console/OperationsView.jsx` |
+| Composer node canvas | Simulate › Build a chain | `components/console/ComposerView.jsx` · `ComposerCanvas.jsx` |
+| Launch Gate | Simulate › Launch gate | `components/console/ReadinessView.jsx` |
+| Guided launch | (from Get started / ⌘K) | `app/destinations.jsx::GuidedPovFlow` · `LaunchView.jsx` |
+| Runs (list → detail) | Runs | `app/destinations.jsx::RunsSurface` · `RunDetailView.jsx` · `InflightView.jsx` |
+| Report | Results › Report | `components/console/EvidenceView.jsx` |
+| Coverage | Results › Coverage | `components/console/CoverageView.jsx` |
+| TTP Cards | Catalog › TTP cards | `components/console/TtpBrowserView.jsx` |
+| Packages | Catalog › Packages | `components/console/ToolAdapterCatalog.jsx` |
+| Data Streams | Catalog › Data streams | `components/console/DataStreamsView.jsx` |
+| UC / TC Index | Catalog › UC / TC index | `components/console/UcTcIndexView.jsx` |
+| Agents | Manage | `components/console/TargetsView.jsx` |
+| Tenant | Manage | `components/console/TenantView.jsx` → `TenantManager.jsx` |
+| About POVengine | (link from Get started) | `components/console/OverviewView.jsx` |
+| Shell chrome | — | `AppShell.jsx` · `ConsoleHeader.jsx` · `DestinationNav.jsx` · `SectionTabs.jsx` |
+| Execution timeline / lanes | — | `ExecutionTimeline.jsx` · `composerLanes.js` |
+| Lane and plane vocabulary | — | `components/console/povdata/` |
+| Tokens / theme | — | `styles/cortex-tokens.css` ← `styles/ds/` · `styles/povengine-minimal.css` |
 
 ## IA decisions carried over from the design thread
 
 These were argued out in the design conversation and are contracts, not
 preferences. Changing one means changing it on both tracks.
 
-- **The rail *is* the phase model.** Groups are `Start here` → `1 · Scope` →
-  `2 · Compose` → `3 · Preflight` → `5 · Observe` → `6 · Prove`. The old
-  separate phase bar is gone: two wayfinding systems that could disagree were
-  the redesign's original complaint.
-- **Phase 4 (Launch) has no rail entry**, and neither does Preflight-as-a-page
-  beyond the Launch Gate. Both are *actions*, not destinations.
-- **Overview is phase-less** (flow index `-1`). It is the front door; showing
-  Scope and Compose as already ticked on the app's entry page was a real bug.
-- **Data Streams and TTP Cards live in Compose, not Observe/Prove.** A stream
-  is a composition input and a TTP card is authored content; neither is proof
-  output.
+- **The rail is a task list** (minimal pass). Five tasks plus Manage; every
+  other page is a tab inside one task (`SECTIONS` in `app/destinations.jsx`).
+  This replaced "the rail is the phase model", which was correct as a model
+  but answered "what does this contain" rather than "what do I do next".
+- **A destination id is a route, not a label.** `library` is labelled
+  Simulate, `ttps` Catalog, `proof` Results, `adapters` Packages. Retired pages
+  keep their ids and redirect.
 - **One tenant per instance.** The instance is deployed once for a POV and dies
   with the lab, so a tenant list was modelling something that cannot happen.
-- **Every flow CTA reads `Next: <destination as the rail names it>`**, with
-  `Export report` as the single terminal action. Launch Gate keeps its own
-  `Launch chain` button because that is an action, not navigation.
 - **Detection objects are categorical; the verdict carries the color.**
 
 ## What is NOT at parity yet
@@ -164,10 +207,11 @@ against, and silently changing it on a drag would be a claim the readout later
 paid for. Guards: `composerLanes.test.js`, the Lanes block in
 `ComposerCanvas.test.jsx`.
 
-**2. The evidence collection's group toggles do not reach an export.** The
-panel tallies what is included and what that weighs, and `Export collection`
-navigates to Proof & Export rather than emitting a filtered bundle. The
-selection is real; the plumbing from it to `downloadReportBundle` is not.
+**2. Collector and Broker VM setup cannot be verified.** SimCore has no
+endpoint that can see a tenant-side collector or Broker VM, so Get started
+takes the DC's confirmation and labels it as such. The EAL collector preflight
+(`POST /api/eal/campaigns/{id}/collectors/preflight`) is campaign-scoped; a
+campaign-free variant would let these steps become verified.
 
 **3. The PANW master lockup is not on the Overview page.** The design puts the
 reversed lockup there under an "internal tooling for Cortex Domain Consulting,
@@ -181,10 +225,11 @@ is left to the repo owner. The asset is present at
 mark IS used, in the header, theme-swapped — Cortex is named nominatively as
 the platform under test, which NOTICE already covers.
 
-**4. Surfaces without a SimCore endpoint read from seed catalogs.** Setup
-wizard, Components, CLI items, Tenant Validation and the evidence collection
-have no API behind them yet. They read `povdata/`, whose shape is what those
-endpoints should return.
+**4. Seed-only design surfaces are not implemented.** The prototype's
+Components inventory, CLI items, scoping wizard, Tenant validation sheets,
+evidence collection, planes × doors matrix and run topology have no SimCore
+data behind them. Rather than render seed numbers as facts, the minimal pass
+removed them. Each can come back when an endpoint exists to back it.
 
 ## Other deltas from the prototype
 
@@ -198,13 +243,10 @@ Deliberate, and not gaps.
   so "what is the contrast of this label on its chip" has no single answer, and
   the contrast harness cannot score one at all. They are pre-composited over
   `--s1`, which is the surface those chips actually sit on.
-- **Tenant registration survives.** The prototype's Tenant page is read-only.
-  Binding a tenant is a real operation that has to happen once, so the existing
-  wizard is the fourth tab rather than being deleted.
-- **`environments`, `eal` and the legacy `readiness` id stay routable** but
-  unlisted. Their content moved into Components and Data Streams; the routes
-  remain so existing deep links resolve instead of silently falling back to the
-  default destination, which would look like data loss.
+- **Tenant registration is the Tenant page.** The prototype's Tenant page is
+  read-only and seeded; here it is the real registry and registration form.
+- **`environments`, `eal`, `guided` and the legacy `readiness` id stay
+  routable** but unlisted, so existing deep links resolve.
 - The prototype declares a **1200px minimum width** and scrolls horizontally
   below it, rather than reflowing its own chrome. That is carried over.
 - Canvas node positions are per-session in the prototype. Here they persist per
@@ -212,13 +254,14 @@ Deliberate, and not gaps.
 
 ## Guards
 
-Four suites hold this seam together. Each exists because the corresponding
-mistake was actually made:
+Each exists because the corresponding mistake was actually made:
 
 | Suite | What it catches |
 |---|---|
-| `styles/__tests__/ds-drift.test.js` | a DS refresh moving a brand hue without the console following, and a revert of the accent inversion |
-| `styles/__tests__/cortex-tokens.test.js` | the contract itself — surfaces, the fill/ink split, opaque chip fills, and `--cortex-success` drifting back onto the accent |
-| `app/__tests__/everyDestinationRenders.test.jsx` | one destination's markup swallowing or leaking into another's |
-| `console/povdata/__tests__/povdata.test.js` | a lifted function referencing a symbol that is no longer in scope, and the topology being drawn rather than derived |
-| `console/__tests__/navOrderMatchesPhases.test.js` | the rail and the flow bar disagreeing about which phase owns a destination |
+| `styles/__tests__/ds-drift.test.js` | a DS refresh moving a brand hue without the console following |
+| `styles/__tests__/cortex-tokens.test.js` | the contract — surfaces, opaque chip fills, and any accent role other than the primary action turning orange again |
+| `app/__tests__/everyDestinationRenders.test.jsx` | the rail drifting from the five tasks + Manage; one page's markup leaking into another's |
+| `app/__tests__/mastheadEyebrow.test.jsx` | the retired phase vocabulary reappearing on a page |
+| `console/__tests__/navTaskRail.test.js` | an off-rail page whose parent is not on the rail; a tab pointing at nothing; an e2e route id that no longer resolves |
+| `console/povdata/__tests__/povdata.test.js` | `povdata/` growing record-shaped (seed) exports again |
+| `components/__tests__/setupProgress.test.js` · `GetStartedView.test.jsx` | a setup step marked done without real state, a confirmed step presented as verified, a failed run counted as done |
