@@ -521,7 +521,9 @@ work_items:
       - Makefile
     do:
       - Implement --write / --check mirroring engine/payload_shelf.
-      - Vendor a deliberately SMALL first set (10-20 rules) to prove the loop.
+      - >-
+        Vendor the set defined in resolved_questions.Q-1 (Linux
+        process_creation, techniques already in the corpus, 15-20 rules).
       - Codes SIG-07, SIG-08, SIG-09.
     acceptance:
       - "`python3 -m engine.sigma_shelf --check` green; pins.json generated."
@@ -584,8 +586,9 @@ work_items:
       - "`logsource.category` is no longer constant across 408 documents."
       - Export determinism gate still green.
     note: >-
-      Option (b) is acceptable and probably correct for most cards. An honest
-      refusal is worth more than 408 rules that match nothing.
+      Settled in resolved_questions.Q-2: option (b) with a narrow (a)
+      carve-out. An honest refusal is worth more than 408 rules that match
+      nothing. Emit _manifest.json with a closed not_exportable_reason set.
 
   - id: WI-7
     title: Navigator layer import + comparison
@@ -692,16 +695,64 @@ out_of_scope:
   - Auto-promoting a translation suggestion into a card (INV-3).
   - A UI for any of this. API and files first; console is separate work.
 
-open_questions:
+resolved_questions:
   - id: Q-1
-    question: >-
-      Which SigmaHQ subset is vendored first? Recommend a narrow, high-signal
-      slice (e.g. Linux process-creation rules matching techniques already in the
-      corpus) so the loop is proven before breadth.
-    blocks: WI-3
+    question: Which SigmaHQ subset is vendored first?
+    resolved_on: "2026-10-03"
+    decision: >-
+      Linux `process_creation` rules whose `tags: attack.tNNNN` intersect a
+      technique ALREADY present in this corpus. Target 15-20 rules, not more.
+    reasoning:
+      - >-
+        Linux is where CortexSim's signal actually lives — 265 of the 408
+        exported rule documents are `product: linux`. Vendoring Windows rules
+        first would bind against the corpus's thinnest execution path.
+      - >-
+        Intersecting techniques already in the corpus means a card exists to
+        bind INTO, so `state: bound` is reachable on day one. Vendoring rules for
+        uncovered techniques produces a pile of `unbound` rows and proves
+        nothing about the loop.
+      - >-
+        `process_creation` is the one Sigma category whose field vocabulary
+        (Image / CommandLine / ParentImage) maps cleanly onto XDM process fields,
+        so `fidelity: equivalent` is genuinely achievable for some rules rather
+        than every binding landing on `approximate`.
+    selection_method: |
+      1. GET /api/mitre/coverage -> the technique set the corpus can exercise.
+      2. Filter SigmaHQ rules/linux/process_creation/ by `tags: attack.tNNNN`
+         membership in that set.
+      3. Rank by how specific the rule's logsource is; take the top 15-20.
+    applies_to: WI-3
+
   - id: Q-2
-    question: >-
-      For WI-6, option (a) real translation or option (b) honest refusal? (b) is
-      cheaper and more honest; (a) is more useful IF a faithful mapping exists for
-      a meaningful subset.
-    blocks: WI-6
+    question: "WI-6: real Sigma translation, or honest refusal?"
+    resolved_on: "2026-10-03"
+    decision: >-
+      Option (b), honest refusal, with a NARROW option-(a) carve-out. Emit a real
+      Sigma rule only where the card's detection is a single-dataset,
+      single-condition predicate over process / file / network fields. Everything
+      else becomes `not_exportable` carrying a machine-readable reason, and is
+      NOT written as a rule file.
+    reasoning:
+      - >-
+        The XQL corpus is not expressible in Sigma. Real bodies in the tree use
+        `join`, `sequence within 10m`, and lookups like
+        `last_30d_fingerprints[user_id]`. Sigma's taxonomy has no expression for
+        a temporal sequence join or a per-entity historical baseline, and ABIOC
+        is behavioural-ML semantics with no rule text at all.
+      - >-
+        Shipping a parseable rule whose selection is a placeholder is worse than
+        shipping nothing: it loads into a customer's Sigma pipeline and matches
+        nothing, which reads as "the content is bad" rather than "this was never
+        translatable".
+      - >-
+        An export manifest stating `exported: N · not_exportable: M` with a
+        reason per card is useful. 408 hollow rules are not.
+    required_outputs:
+      - detection_scanner/exports/sigma/_manifest.json with per-card
+        {exported|not_exportable, reason}.
+      - >-
+        A `not_exportable_reason` vocabulary, closed set, e.g.
+        [TEMPORAL_SEQUENCE, ENTITY_BASELINE_LOOKUP, MULTI_DATASET_JOIN,
+        ABIOC_NO_RULE_TEXT, CORRELATION_OVER_ALERTS].
+    applies_to: WI-6
