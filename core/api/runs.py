@@ -226,6 +226,25 @@ class CompleteRequest(BaseModel):
 _TERMINAL_STATES = {"complete", "failed", "aborted", "staged"}
 
 
+def _is_terminal(run: Run) -> bool:
+    """Is this run finished — i.e. must the beacon stop and is /abort a no-op?
+
+    ``status`` alone is not enough. ``complete_run`` makes failure sticky the
+    moment ANY endpoint of a multi-endpoint fan-out reports non-zero, so a run
+    can read ``failed`` while it still waits on other endpoints (``open_tasks``
+    > 0, ``completed_at`` unset). Treating that as terminal made the control
+    channel stop every surviving endpoint within one 2 s poll — the beacon then
+    reported "aborted by operator" for an abort nobody issued, and that
+    endpoint's detections never happened. Every path that genuinely finishes a
+    run stamps ``completed_at``; a ``failed`` run without it is still in flight.
+    """
+    if run.status not in _TERMINAL_STATES:
+        return False
+    if run.status == "failed" and run.completed_at is None and (run.open_tasks or 0) > 0:
+        return False
+    return True
+
+
 #: Refusal codes that mean "the request was fine, a precondition is not met".
 #: These get 409 (same posture as PAYLOAD_NOT_STAGED) rather than 422, which
 #: says the body was malformed and sends the operator looking at their JSON.
@@ -957,7 +976,7 @@ async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
             detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
         )
 
-    if run.status in _TERMINAL_STATES:
+    if _is_terminal(run):
         logger.info("abort_run idempotent no-op run_id=%s status=%s", run_id, run.status)
         return {"status": run.status, "run_id": run_id, "was_terminal": True}
 
@@ -1042,7 +1061,7 @@ async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
     if run is None:
         return {"abort": True, "run_id": run_id, "status": "unknown"}
 
-    if run.status in _TERMINAL_STATES:
+    if _is_terminal(run):
         abort = True
 
     return {"abort": abort, "run_id": run_id, "status": run.status}

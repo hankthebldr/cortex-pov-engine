@@ -1463,9 +1463,14 @@ async def _refuse_unstageable_task(
         "curl -fsSL '<server>/api/agents/install?os=linux' | CORTEXSIM_TOKEN='cxs_…' bash"
     )
 
+    from api.runs import _is_terminal  # noqa: PLC0415
+
     run_row = await db.execute(select(Run).where(Run.run_id == task.run_id))
     run: Optional[Run] = run_row.scalar_one_or_none()
-    if run is not None and run.status not in ("complete", "failed", "aborted"):
+    # `_is_terminal`, not a status list: a multi-endpoint run whose first
+    # endpoint already failed reads `failed` while still owed this endpoint, and
+    # skipping it left the run waiting forever on a task that was just refused.
+    if run is not None and not _is_terminal(run):
         run.status = "failed"
         run.completed_at = datetime.utcnow()
         run.output = (run.output or "") + (
