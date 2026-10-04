@@ -186,8 +186,9 @@ async def lifespan(app: FastAPI):
         async with _db_context() as db:
             stats = await orchestrator.rehydrate(db)
         logger.info(
-            "Task queue rehydrated: %d restored, %d orphan(s) failed",
-            stats["rehydrated"], stats["failed_orphans"],
+            "Task queue rehydrated: %d restored, %d orphan(s) failed, "
+            "%d delivered run(s) still executing",
+            stats["rehydrated"], stats["failed_orphans"], stats.get("in_flight", 0),
         )
     except Exception:
         logger.exception("orchestrator rehydrate failed — continuing with empty queue")

@@ -968,10 +968,23 @@ class Orchestrator:
     ) -> Optional[Task]:
         """DB-aware dequeue: pop the next deliverable task AND delete its
         durable ``queued_tasks`` row so it is not re-delivered after a restart.
+
+        The run is stamped ``delivered_at`` in the same commit. Deleting the
+        row erases the only other evidence that the task reached a beacon, and
+        :meth:`rehydrate` needs that evidence to leave an executing run alone.
         """
         task = self.dequeue(agent_id)
         if task is not None:
-            await self._delete_persisted_task(db, task.task_id)
+            from models import QueuedTask, Run  # noqa: PLC0415
+            from sqlalchemy import delete, update  # noqa: PLC0415
+
+            await db.execute(delete(QueuedTask).where(QueuedTask.task_id == task.task_id))
+            await db.execute(
+                update(Run)
+                .where(Run.run_id == task.run_id, Run.delivered_at.is_(None))
+                .values(delivered_at=datetime.utcnow())
+            )
+            await db.commit()
         return task
 
     def peek_queue(self, agent_id: str) -> list[Task]:
@@ -1034,14 +1047,6 @@ class Orchestrator:
         ))
         await db.commit()
 
-    async def _delete_persisted_task(self, db: AsyncSession, task_id: str) -> None:
-        """Remove a delivered/aborted task's durable row."""
-        from models import QueuedTask  # noqa: PLC0415
-        from sqlalchemy import delete  # noqa: PLC0415
-
-        await db.execute(delete(QueuedTask).where(QueuedTask.task_id == task_id))
-        await db.commit()
-
     async def rehydrate(self, db: AsyncSession) -> dict[str, int]:
         """Rebuild the in-memory queue from the durable ``queued_tasks`` table
         and reconcile orphaned ``running`` runs. Called once from the FastAPI
@@ -1051,10 +1056,16 @@ class Orchestrator:
           * Every persisted task is re-loaded into the in-memory queue so a
             waiting agent receives it after the restart.
           * Any Run still in ``pending``/``running`` whose task did NOT survive
-            in the durable queue is marked ``failed`` (its work was lost) so it
-            does not hang forever. A note is appended to the run output.
+            in the durable queue AND was never delivered is marked ``failed``
+            (its work was lost) so it does not hang forever. A note is appended
+            to the run output.
+          * A run whose task WAS delivered (``delivered_at`` set) has no row by
+            design — delivery deletes it — and is executing on its beacon. It
+            is left ``running``: failing it made /control stop the beacon
+            mid-step and put "the run never reached the target" in the POV
+            report of a run that did. Its own /complete terminalises it.
 
-        Returns counts ``{rehydrated, failed_orphans}`` for logging.
+        Returns counts ``{rehydrated, failed_orphans, in_flight}`` for logging.
         """
         from models import QueuedTask, Run  # noqa: PLC0415
 
@@ -1076,9 +1087,13 @@ class Orchestrator:
             select(Run).where(Run.status.in_(("pending", "running")))
         )
         failed_orphans = 0
+        in_flight = 0
         now = datetime.utcnow()
         for run in run_result.scalars().all():
             if run.run_id in live_run_ids:
+                continue
+            if run.delivered_at is not None:
+                in_flight += 1
                 continue
             # Push-mode runs are not queue-backed; a push run advanced to a
             # terminal staged state below would not be 'pending' here, so any
@@ -1094,10 +1109,12 @@ class Orchestrator:
             await db.commit()
 
         logger.info(
-            "orchestrator rehydrate: %d task(s) restored, %d orphaned run(s) failed",
-            rehydrated, failed_orphans,
+            "orchestrator rehydrate: %d task(s) restored, %d orphaned run(s) failed, "
+            "%d delivered run(s) left running on their beacon",
+            rehydrated, failed_orphans, in_flight,
         )
-        return {"rehydrated": rehydrated, "failed_orphans": failed_orphans}
+        return {"rehydrated": rehydrated, "failed_orphans": failed_orphans,
+                "in_flight": in_flight}
 
 
 # ---------------------------------------------------------------------------
