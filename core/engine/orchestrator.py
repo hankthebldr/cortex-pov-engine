@@ -622,6 +622,14 @@ class Orchestrator:
         channel_dispatch: Optional[list[dict[str, Any]]] = None
         eal_outcomes: dict[str, dict[str, Any]] = {}
         now = datetime.utcnow()
+        # Tasks are persisted as they are built but put on the in-memory queue —
+        # which is what wakes a long-polling beacon — only AFTER the run's
+        # `running` / `open_tasks` commit below. Enqueuing first let a fast
+        # beacon collect and /complete the run inside the launch window (a
+        # multichannel launch dispatches its EAL steps in between), after which
+        # the launch wrote `running` over the finished run and it never
+        # terminalised again.
+        to_enqueue: list[tuple[str, Task]] = []
 
         if not is_multichannel:
             task = Task(
@@ -635,9 +643,9 @@ class Orchestrator:
                 artifacts=artifacts,
                 runtime_install_authorized=runtime_install_authorized,
             )
-            self._enqueue(target_agent_id, task)
             # Mirror the task to the durable queue so a restart can rehydrate it.
             await self._persist_task(db, target_agent_id, task)
+            to_enqueue.append((target_agent_id, task))
             queued_message = f"Task queued for agent '{target_agent_id}'"
             n_tasks = 1
         else:
@@ -710,8 +718,8 @@ class Orchestrator:
                     artifacts=tgt_artifacts,
                     runtime_install_authorized=runtime_install_authorized,
                 )
-                self._enqueue(tgt, task)
                 await self._persist_task(db, tgt, task)
+                to_enqueue.append((tgt, task))
 
             # Phase 3b: dispatch the EAL steps IN-PROCESS (synchronous),
             # injecting the shared identity principal, and seed their results.
@@ -767,6 +775,12 @@ class Orchestrator:
             # for a multichannel one.
             run.channel_dispatch = channel_dispatch
             await db.commit()
+
+        # Only now is the run's state durable enough for a beacon to act on.
+        for agent_id, task in to_enqueue:
+            self._enqueue(agent_id, task)
+
+        if run:
             await _publish_run_status(run_id, run.status)
 
         logger.info(
