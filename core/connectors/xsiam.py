@@ -27,7 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from integrations.xsiam import codes
@@ -226,12 +226,12 @@ class XsiamConnector(Connector):
                 {
                     "field": "creation_time",
                     "operator": "gte",
-                    "value": int(since.replace(microsecond=0).timestamp() * 1000),
+                    "value": _epoch_ms_utc(since),
                 },
                 {
                     "field": "creation_time",
                     "operator": "lte",
-                    "value": int(until.replace(microsecond=0).timestamp() * 1000),
+                    "value": _epoch_ms_utc(until),
                 },
             ],
             "search_from": int(search_from),
@@ -354,6 +354,21 @@ class XsiamConnector(Connector):
                 seen.add(t)
                 deduped.append(t)
         return deduped
+
+
+def _epoch_ms_utc(dt: datetime) -> int:
+    """Epoch milliseconds for a request bound, read in UTC — never host-local.
+
+    Naive is the storage contract (``Result.executed_at`` / ``utcnow()`` are
+    naive UTC), but ``naive.timestamp()`` interprets a naive value as LOCAL
+    time. On a host-run SimCore in UTC-7 that moved the alert window seven
+    hours into the future and the run's own alerts fell before ``since``. The
+    parse side of this leak was closed in ``coerce_utc``; this is the request
+    side. Aware values are converted, never stripped.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.replace(microsecond=0).timestamp() * 1000)
 
 
 def _s(v: Any) -> Optional[str]:
