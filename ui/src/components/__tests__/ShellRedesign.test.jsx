@@ -14,8 +14,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import SafetyBanner, { ackKey } from '../console/SafetyBanner.jsx'
-import FlowBar from '../console/FlowBar.jsx'
-import { PHASES, flowFor } from '../../app/povflow.js'
+import SectionTabs from '../console/SectionTabs.jsx'
 import ConsoleHeader from '../console/ConsoleHeader.jsx'
 
 beforeEach(() => {
@@ -96,64 +95,28 @@ describe('SafetyBanner — blast-radius consent', () => {
   })
 })
 
-describe('FlowBar — where am I in a POV run, and what is next', () => {
-  it('renders all six phases in run order', () => {
-    render(<FlowBar destination="library" />)
-    expect(PHASES).toHaveLength(6)
-    for (const p of PHASES) {
-      expect(screen.getByTestId(`phase-button-${p.label.toLowerCase()}`)).toBeInTheDocument()
-    }
+describe('SectionTabs — the pages inside a task', () => {
+  // The flow bar (six phases + a "Next:" CTA at the foot of every page) is
+  // gone. Wayfinding is the task rail plus this strip, which only exists on
+  // tasks that have more than one page.
+  it('shows the Simulate pages, with the open one selected', () => {
+    render(<SectionTabs destination="composer" />)
+    expect(screen.getByTestId('section-tab-library')).toHaveTextContent('Scenarios')
+    expect(screen.getByTestId('section-tab-composer')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByTestId('section-tab-preflight')).toHaveAttribute('aria-selected', 'false')
   })
 
-  it('marks the phase that owns the current destination', () => {
-    render(<FlowBar destination="runs" />)
-    expect(screen.getByTestId('phase-button-observe')).toHaveAttribute('aria-current', 'step')
-    expect(screen.getByTestId('phase-button-scope')).not.toHaveAttribute('aria-current')
-  })
-
-  it('routes each phase to the destination that owns it', async () => {
+  it('navigates by destination id — a tab is a route, not local state', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
-    render(<FlowBar destination="library" onNavigate={onNavigate} />)
-    await user.click(screen.getByTestId('phase-button-compose'))
-    expect(onNavigate).toHaveBeenCalledWith('composer')
-    await user.click(screen.getByTestId('phase-button-prove'))
-    expect(onNavigate).toHaveBeenCalledWith('proof')
+    render(<SectionTabs destination="proof" onNavigate={onNavigate} />)
+    await user.click(screen.getByTestId('section-tab-coverage'))
+    expect(onNavigate).toHaveBeenCalledWith('coverage')
   })
 
-  it('puts `composer` in Compose, never in Launch', () => {
-    // Launch is a state the Composer ENTERS after preflight, not a place you
-    // navigate to — highlighting it on arrival would claim progress not made.
-    expect(flowFor('composer').phase).toBe(1)
-    expect(PHASES[1].label).toBe('Compose')
-  })
-
-  it('marks NO phase on the Overview, rather than inheriting one', () => {
-    // The readme front door used to SHARE the preflight destination, so it
-    // inherited phase index 2 and the app's entry page showed Scope and
-    // Compose as already ticked. Overview's flow index is -1 on purpose.
-    expect(flowFor('overview').phase).toBe(-1)
-    render(<FlowBar destination="overview" />)
-    expect(document.querySelectorAll('[aria-current="step"]')).toHaveLength(0)
-    // …and must not mark every earlier step "done" either.
-    expect(document.querySelectorAll('.pov-flow__phase--done')).toHaveLength(0)
-  })
-
-  it('phrases every CTA by the one rule, and only the terminal one differs', () => {
-    const { rerender } = render(<FlowBar destination="library" />)
-    expect(screen.getByTestId('flow-cta')).toHaveTextContent('Next: Composer')
-    rerender(<FlowBar destination="composer" />)
-    expect(screen.getByTestId('flow-cta')).toHaveTextContent('Next: Launch Gate')
-    rerender(<FlowBar destination="proof" />)
-    expect(screen.getByTestId('flow-cta')).toHaveTextContent('Export report')
-  })
-
-  it('quotes the tallies it is given rather than inventing its own', () => {
-    // The bar and the surface under it must never disagree about a number. It
-    // takes them as context for exactly that reason.
-    render(<FlowBar destination="scope" ctx={{ components: { total: 12, ready: 4, partial: 6, missing: 2 } }} />)
-    expect(screen.getByTestId('flow-bar')).toHaveTextContent('12 components')
-    expect(screen.getByTestId('flow-bar')).toHaveTextContent('4 ready · 6 partial · 2 missing')
+  it('renders nothing on a single-page task', () => {
+    const { container } = render(<SectionTabs destination="start" />)
+    expect(container).toBeEmptyDOMElement()
   })
 })
 

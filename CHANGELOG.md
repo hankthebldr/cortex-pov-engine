@@ -8,6 +8,37 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Changed — the console says what to do next, in fewer colours, on real state only
+
+From DC feedback on a live install: overwhelming, no clear next task, colour
+without purpose, and numbers that were not this instance's. See
+`docs/design/DESIGN-SYNC.md` § Minimal pass.
+
+- **Get started is the home page.** A five-step checklist — install an agent,
+  connect the Cortex tenant, data collector (optional), Broker VM (optional),
+  first simulation — read from SimCore (`/api/agents`, registered tenants,
+  `/api/runs`). The agent step mints a one-use enrollment token and shows the
+  install command, warns when the address is loopback or the server has no
+  prebuilt beacons, and polls until the agent checks in. Collector and Broker
+  VM have no SimCore API, so they are confirmed by the DC and labelled as
+  such. A failed first run is not "done": the step says it stopped early and
+  links to the run. The suggested first run opens the guided launch with the
+  active online agent preselected as the target.
+- **Task rail.** Seventeen phase-grouped destinations became five tasks
+  (Get started · Simulate · Runs · Results · Catalog) plus Agents and Tenant;
+  other pages are tabs inside a task. Every old route still resolves. The
+  footer flow bar is removed; the tour no longer auto-starts.
+- **Colour rule.** Orange is the single primary action; green means healthy /
+  done / detected; amber and red are real warnings and failures; everything
+  else is neutral. Fixes legacy aliases that painted healthy agents, detected
+  chips and "ok" dots orange, and a dark `--crit` that read as brand orange.
+- **Seed data removed from live surfaces.** The prototype's catalogs rendered
+  as facts (tenant "Acme Financial" with 7/9 checks passing, a `jumpbox-lin-01`
+  launch-gate PASS, 12 components, a fixed coverage matrix, seed workflows in
+  the composer). The Tenant page now shows the real registry; Components, CLI
+  items, the scoping wizard and Tenant validation are retired behind
+  redirects; `povdata/` is lane/plane vocabulary only.
+
 ### Fixed — the alert read-back path could not be trusted on a shared, busy tenant
 
 Sprint 1 of `docs/uc_tc_mapping/IMPL-PLAN-xsiam-readback-and-index-honesty.md`,

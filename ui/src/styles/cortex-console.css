@@ -59,8 +59,8 @@
   --c-action:          var(--ink-action);
   --c-action-bright:   var(--ink-action-bright);
   --c-action-deep:     var(--ink-action-deep);
-  --c-action-soft:     rgba(108, 194, 74, 0.14);
-  --c-action-glow:     rgba(108, 194, 74, 0.45);
+  --c-action-soft:     var(--ac-soft);
+  --c-action-glow:     transparent;
 
   /* ── Signal (Cortex teal — SECONDARY accent: info, links, stitching) ─ */
   --c-signal:          var(--ink-signal);
@@ -668,7 +668,7 @@
   cursor: pointer;
   line-height: 1;
 }
-.theme-console .tour-trigger:hover { color: var(--c-text); border-color: var(--ac); }
+.theme-console .tour-trigger:hover { color: var(--c-text); border-color:var(--ac-line); }
 .theme-console .tour-trigger__beacon {
   position: absolute; top: -2px; right: -2px;
   width: 8px; height: 8px; border-radius: 50%;
@@ -695,10 +695,10 @@
 .theme-console .run-pill { cursor: pointer; }
 .theme-console .run-pill__dot { background: var(--bd2); }
 .theme-console .run-pill__label { color: var(--c-text-secondary); }
-.theme-console .run-pill--last .run-pill__dot { background: var(--ac); }
+.theme-console .run-pill--last .run-pill__dot { background:var(--ac-str); }
 .theme-console .run-pill--last .run-pill__label { color: var(--ac-ink); }
 .theme-console .run-pill--none { opacity: 0.72; }
-.theme-console .run-pill:hover { border-color: var(--ac); opacity: 1; }
+.theme-console .run-pill:hover { border-color:var(--ac-line); opacity: 1; }
 
 /* ─── Safety banner (blast-radius consent) ───
    Full-bleed, above the header, `flex: none` so it never absorbs the shell's
@@ -874,7 +874,7 @@
   color: var(--tx3);
 }
 .theme-console .phase-step--done .phase-step__num { background: var(--tx); color: var(--s1); }
-.theme-console .phase-step--on   .phase-step__num { background: var(--ac); color: var(--ac-tx); }
+.theme-console .phase-step--on   .phase-step__num { background:var(--ac-str); color: var(--ac-tx); }
 .theme-console .phase-step__text {
   display: flex;
   flex-direction: column;
@@ -7345,8 +7345,8 @@
   box-shadow: var(--shadow);
   color: var(--tx);
 }
-.theme-console .last-run:hover { border-color: var(--ac); }
-.theme-console .last-run--live { border-left-color: var(--ac); }
+.theme-console .last-run:hover { border-color:var(--ac-line); }
+.theme-console .last-run--live { border-left-color:var(--pos); }
 .theme-console .last-run--empty {
   cursor: default;
   box-shadow: none;
@@ -7362,7 +7362,7 @@
   width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--bd2);
 }
 .theme-console .last-run--live .last-run__pulse {
-  background: var(--ac-str);
+  background:var(--pos);
   animation: pulse 1.4s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -7423,7 +7423,7 @@
 .theme-console .scope-health__dot {
   width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--warn);
 }
-.theme-console .scope-health__dot--ok { background: var(--ac); }
+.theme-console .scope-health__dot--ok { background:var(--pos); }
 .theme-console .scope-health__value {
   font-size: 12px; font-weight: 500; margin-top: 8px; color: var(--tx);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

@@ -62,9 +62,9 @@ const MATRIX = [
  * than no selectors, because the count of "landmarks checked" still looks
  * healthy.
  *
- * `.pov-header` and `.pov-flow` are the bars that replaced them, and they are
- * the two that carry the 1200px content floor — see the note at the top of
- * povengine-shell.css. They scroll THEMSELVES rather than making the document
+ * `.pov-header` is the bar that replaced them and carries the 1200px content
+ * floor — see the note at the top of povengine-shell.css. (`.pov-flow`, the
+ * footer flow bar, was removed in the task-rail pass.) They scroll THEMSELVES rather than making the document
  * scroll, which is why they belong in this list: the first version of that
  * chrome put `min-width: 1200px` on the shell, and below 1200 both bars were
  * clipped by a non-scrolling ancestor. Exactly this spec's failure mode, and
@@ -72,7 +72,6 @@ const MATRIX = [
  */
 const LANDMARKS = [
   '.pov-header',
-  '.pov-flow',
   '.workspace',
   '.rail--nav',
   '.main',
@@ -185,6 +184,11 @@ test('the two rails share a top — a global notice must not push only one of th
   //
   // The tolerance is `.view`'s own padding, not zero: the filter rail is inside
   // a padded scroll container and legitimately starts slightly lower.
+  //
+  // The task tab strip (SectionTabs: Scenarios · Build a chain · Launch gate)
+  // is the ONE thing deliberately rendered inside `.view` above content — it
+  // is page-level wayfinding, not a notice. Its own measured height is
+  // subtracted, so an unplanned notice still fails exactly as before.
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/#/library')
   await page.waitForSelector('.rail--filter')
@@ -197,9 +201,14 @@ test('the two rails share a top — a global notice must not push only one of th
     }
     const banner = document.querySelector('.readiness-banner')
     const view = document.querySelector('.view')
+    const tabs = document.querySelector('[data-testid="section-tabs"]') as HTMLElement | null
+    const tabsBlock = tabs
+      ? Math.round(tabs.getBoundingClientRect().height + parseFloat(getComputedStyle(tabs).marginBottom || '0'))
+      : 0
     return {
       nav: t('.rail--nav'),
       filter: t('.rail--filter'),
+      tabsBlock,
       // A global notice inside the scrolling view is the mechanism, so name it.
       bannerInsideView: banner ? !!view?.contains(banner) : false,
     }
@@ -214,7 +223,7 @@ test('the two rails share a top — a global notice must not push only one of th
       '`banner` slot, not as a child.',
   ).toBe(false)
 
-  const delta = (tops.filter as number) - (tops.nav as number)
+  const delta = (tops.filter as number) - (tops.nav as number) - (tops.tabsBlock as number)
   expect(
     delta,
     `the two rails are ${delta}px out of alignment (nav ${tops.nav}, filter ` +
@@ -246,7 +255,9 @@ test('chrome leaves the content most of the viewport height', async ({ page }) =
     // budget nobody was keeping, which is the exact thing this test was
     // written to prevent, now one level up. Measured after the fix: 106px of
     // 620 (17%), against the 45% ceiling.
-    const chrome = h('.pov-header') + h('.readiness-banner') + h('.pov-flow')
+    // The footer flow bar is gone (task-rail pass); the acknowledged safety
+    // line is persistent chrome now, so it counts.
+    const chrome = h('.pov-header') + h('.readiness-banner') + h('.safety-banner--min')
     return { chrome, viewport: window.innerHeight, view: h('.view') }
   })
 

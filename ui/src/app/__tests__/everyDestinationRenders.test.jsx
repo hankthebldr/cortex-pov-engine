@@ -34,40 +34,40 @@ import { DESTINATIONS } from '../destinations.jsx'
 void React
 
 // The heading each destination is expected to own. Where a surface titles
-// itself from data (the tenant's name, a run id), the expectation is the
-// stable part of it.
+// itself from data (a run id), the expectation is the stable part of it.
 const TITLES = {
-  overview: /prove what the stack/i,
-  setup: /set up the pov/i,
-  scope: /^components$/i,
-  tenants: /acme financial|no tenant/i,
-  agents: /agents/i,
+  start: /^get started$/i,
   library: /^library$/i,
-  cli: /^cli items$/i,
+  runs: /^runs$/i,
+  proof: /.+/,
+  ttps: /ttp cards/i,
+  agents: /agents/i,
+  tenants: /^tenant$/i,
   composer: /composer/i,
+  preflight: /launch gate/i,
+  coverage: /coverage/i,
   adapters: /^packages$/i,
   streams: /data\s*streams/i,
-  ttps: /ttp cards/i,
   uctc: /uc \/ tc index/i,
-  preflight: /launch gate/i,
-  runs: /^runs$/i,
-  validation: /tenant validation/i,
-  coverage: /^coverage$/i,
-  proof: /.+/,
+  overview: /prove what the stack/i,
 }
 
 // Titles that must NOT appear on a destination that is not theirs. Deliberately
 // the distinctive ones — a generic word would false-positive on body copy.
 const FOREIGN = [
-  ['setup', /set up the pov/i],
-  ['scope', /^components$/i],
-  ['cli', /^cli items$/i],
+  ['start', /^get started$/i],
   ['preflight', /launch gate/i],
-  ['validation', /tenant validation/i],
   ['overview', /prove what the stack/i],
+  ['tenants', /^tenant$/i],
 ]
 
-const VISIBLE = DESTINATIONS.filter((d) => !d.hidden && d.group)
+// The five tasks and the Manage pair are the rail; their tab pages are walked
+// too, because a tab is a page a DC lands on as often as a rail item. Redirect
+// stubs (retired seed pages) render nothing by design, and the legacy aliases
+// (guided/eal/environments/readiness) compose other surfaces and are covered
+// by their own suites.
+const RAIL = DESTINATIONS.filter((d) => !d.hidden && d.group)
+const WALKED = DESTINATIONS.filter((d) => TITLES[d.id])
 
 function mount(dest) {
   const Surface = dest.Component
@@ -92,11 +92,18 @@ describe('every destination renders itself, and only itself', () => {
   })
   afterEach(cleanup)
 
-  it('registers exactly the seventeen surfaces the rail shows', () => {
-    expect(VISIBLE).toHaveLength(17)
+  it('the rail is the five tasks plus the Manage pair', () => {
+    expect(RAIL.map((d) => d.label)).toEqual(
+      ['Get started', 'Simulate', 'Runs', 'Results', 'Catalog', 'Agents', 'Tenant'],
+    )
   })
 
-  it.each(VISIBLE.map((d) => [d.id, d]))('%s mounts and owns its heading', async (id, dest) => {
+  it('retired seed pages redirect instead of rendering', () => {
+    const retired = DESTINATIONS.filter((d) => d.redirect).map((d) => d.id).sort()
+    expect(retired).toEqual(['cli', 'scope', 'setup', 'validation'])
+  })
+
+  it.each(WALKED.map((d) => [d.id, d]))('%s mounts and owns its heading', async (id, dest) => {
     mount(dest)
     // Lazy surfaces resolve their chunk first; a heading is the signal the real
     // component (not the Suspense fallback) is on screen.
@@ -110,7 +117,7 @@ describe('every destination renders itself, and only itself', () => {
     expect(h1s[0].textContent).toMatch(TITLES[id])
   })
 
-  it.each(VISIBLE.map((d) => [d.id, d]))('%s does not leak another destination onto the page', async (id, dest) => {
+  it.each(WALKED.map((d) => [d.id, d]))('%s does not leak another destination onto the page', async (id, dest) => {
     mount(dest)
     await waitFor(
       () => expect(screen.queryAllByRole('heading', { level: 1 }).length).toBeGreaterThan(0),

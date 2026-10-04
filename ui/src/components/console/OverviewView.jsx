@@ -1,6 +1,4 @@
 import React from 'react'
-import { PLANES, SOURCES } from './povdata/planes.js'
-import { toolCatalog, ttpCatalog, componentTally } from './povdata/catalogs.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
 /**
@@ -23,20 +21,20 @@ import { useEnvironment } from '../../context/EnvironmentContext.jsx'
  */
 export default function OverviewView({ onNavigate = () => {} }) {
   const env = useEnvironment()
-  const comp = componentTally()
-
-  // Corpus figures prefer the live API and fall back to the authored corpus.
-  // A dash where SimCore did not answer, never a zero: "0 scenarios" reads as
-  // "this product has no content", which is exactly the wrong conclusion to
-  // draw from an unreachable SimCore.
-  const scenarioCount = env.scenarios.length || 177
+  // Every figure is what THIS SimCore reports in /api/health. A dash where it
+  // did not answer, never a zero and never a literal: "0 scenarios" reads as
+  // "this product has no content", and a hard-coded "177" reads as a fact
+  // about an instance that may hold something else entirely.
+  const count = (key) => {
+    const c = (env.healthModel?.components || []).find((x) => x.key === key)
+    return c && c.count != null ? c.count : '—'
+  }
   const corpus = [
-    [scenarioCount, 'scenarios'],
-    [ttpCatalog().length ? 175 : '—', 'TTP cards'],
-    [toolCatalog().length ? 91 : '—', 'packages'],
-    [PLANES.length, 'detection planes'],
-    [SOURCES.length, 'ingestion doors'],
-    [266, 'UC / TC'],
+    [env.scenarios.length || count('scenario_catalog'), 'scenarios'],
+    [count('ttp_catalog'), 'TTP cards'],
+    [count('adapter_catalog'), 'packages'],
+    [env.planes?.length || '—', 'detection planes'],
+    [count('uctc_registry'), 'UC / TC'],
   ]
 
   const doors = [
@@ -139,29 +137,14 @@ export default function OverviewView({ onNavigate = () => {} }) {
         <span className="pov-section__hr" />
       </div>
       <div className="pov-panel">
-        <div className="pov-panel__head">
-          <div className="pov-panel__title">Readiness</div>
-          <div className="pov-panel__sub">
-            {comp.ready} ready · {comp.partial} partial · {comp.missing} missing
-          </div>
-        </div>
         <div className="pov-panel__body">
-          <p style={{ font: '400 11.5px/1.6 var(--font-ui)', color: 'var(--tx2)', margin: '0 0 12px' }}>
-            The setup wizard derives what this POV needs from what you choose to prove,
-            rather than handing you a fixed checklist. Start there; it ends with the
-            goals scored against the requirements it produced.
+          <p style={{ font: '400 12.5px/1.6 var(--font-ui)', color: 'var(--tx2)', margin: '0 0 12px' }}>
+            Get started walks through what this instance still needs — an agent, a tenant
+            connection, and optionally a collector and Broker VM — then your first run.
           </p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="pov-btn pov-btn--primary" onClick={() => onNavigate('setup')}>
-              Open the setup wizard
-            </button>
-            <button type="button" className="pov-btn" onClick={() => onNavigate('scope')}>
-              Review components
-            </button>
-            <button type="button" className="pov-btn" onClick={() => onNavigate('preflight')}>
-              Launch gate
-            </button>
-          </div>
+          <button type="button" className="pov-btn pov-btn--primary" onClick={() => onNavigate('start')}>
+            Open Get started
+          </button>
         </div>
       </div>
     </div>

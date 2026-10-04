@@ -4,7 +4,6 @@ import '../../styles/destinations/datastreams.css'
 import { getEalDataStreams, launchEalCampaign } from '../../api/client.js'
 import EalCampaignBuilder from '../EalCampaignBuilder.jsx'
 import EalRunProgress from '../EalRunProgress.jsx'
-import ComposeTabs from './ComposeTabs.jsx'
 
 /**
  * DataStreamsView — the Data Streams console destination.
@@ -362,11 +361,9 @@ function EmittersTable({ emitters }) {
 function StreamsHead({ onNavigate = () => {}, counts = null }) {
   return (
     <>
-      <ComposeTabs active="streams" onNavigate={onNavigate} />
       <div className="eal-console__hero">
         <div className="eal-console__heading">
           <div className="eal-console__accent-bar" aria-hidden="true" />
-          <div className="eal-console__eyebrow">Phase 2 · Compose</div>
           {/* h1, not h2. This is the top heading of its own destination, and
               starting the document outline at depth 2 is a real screen-reader
               defect rather than only a test inconvenience. */}

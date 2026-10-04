@@ -37,9 +37,12 @@ type Helpers = {
  * entry to click.
  */
 const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string>; hidden?: boolean }> = {
+  'Get started': { dest: 'start' },
   'Targets': { dest: 'agents' },
+  // 'library' is the Simulate rail item — the id is the route, the label moved.
   'Library': { dest: 'library' },
-  'ATT&CK Coverage': { dest: 'coverage' },
+  // Coverage is a tab inside Results since the task-rail pass, not a rail item.
+  'ATT&CK Coverage': { dest: 'coverage', hidden: true },
   // `hidden` means "routable but not in the rail", so gotoView addresses it by
   // URL instead of clicking a button that does not exist. Three of these are
   // hidden as of the POVengine IA:
@@ -60,7 +63,7 @@ const VIEW_ROUTES: Record<string, { dest: string; params?: Record<string, string
   // destination id is unchanged, which is the point of keeping it: routes,
   // testids and ⌘K entries all derive from the id, and a rename to match the
   // label silently broke this route once already.
-  'Tools & Payloads': { dest: 'adapters' },
+  'Tools & Payloads': { dest: 'adapters', hidden: true },
   'Payload Shelf': { dest: 'adapters', params: { supply: 'unstaged' } },
 }
 

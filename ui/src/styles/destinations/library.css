@@ -120,7 +120,7 @@
 }
 .theme-console .library-layout .ops-search:focus {
   outline: none;
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   background: var(--s1);
 }
 
@@ -270,13 +270,13 @@
 .theme-console .library-layout .scenario-card:hover,
 .theme-console .library-layout .scenario-card:focus-visible {
   border-color: var(--bd2);
-  border-top-color: var(--ac-str);
+  border-top-color:var(--ac-str);
   transform: translateY(-1px);
   box-shadow: var(--shadow);
 }
 .theme-console .library-layout .scenario-card--selected {
   border-color: var(--ac-line);
-  border-top-color: var(--ac-str);
+  border-top-color:var(--ac-str);
   background: var(--ac-soft);
 }
 .theme-console .library-layout .scenario-card--selected::before {
@@ -284,10 +284,10 @@
   box-shadow: none;
 }
 .theme-console .library-layout .scenario-card--pinned {
-  border-top-color: var(--ac-str);
+  border-top-color:var(--ac-str);
 }
 .theme-console .library-layout .scenario-card--pinned::after {
-  border-top-color: var(--ac-str) transparent transparent transparent;
+  border-top-color:var(--ac-str) transparent transparent transparent;
 }
 
 .theme-console .library-layout .scenario-card__corner {
@@ -343,12 +343,12 @@
 .theme-console .library-layout .chip--plane-edr {
   color: var(--ac-ink);
   background: transparent;
-  border-color: var(--ac);
+  border-color:var(--ac-line);
 }
 .theme-console .library-layout .chip--plane-analytics {
   color: var(--ac-ink);
   background: transparent;
-  border-color: var(--ac);
+  border-color:var(--ac-line);
 }
 .theme-console .library-layout .chip--plane-cdr,
 .theme-console .library-layout .chip--plane-ndr {
@@ -416,7 +416,7 @@
   height: 6px;
   border-radius: 50%;
 }
-.theme-console .library-layout .sc-history.is-ok .sc-history__dot { background: var(--ac-str); }
+.theme-console .library-layout .sc-history.is-ok .sc-history__dot { background:var(--pos); }
 .theme-console .library-layout .sc-history.is-fail .sc-history__dot { background: var(--crit); }
 .theme-console .library-layout .sc-history.is-run .sc-history__dot { background: var(--info); }
 .theme-console .library-layout .sc-history.is-idle .sc-history__dot { background: var(--bd2); }
@@ -587,7 +587,7 @@
   font-size: 11px;
 }
 .theme-console .library-layout .insp-select:focus {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   outline: none;
 }
 .theme-console .library-layout .insp-config__no-agents {
@@ -653,7 +653,7 @@
 }
 .theme-console .library-layout .dmx-row {
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 0 6px 6px 0;
   background: var(--s2);
   padding: 9px 11px;
@@ -693,7 +693,7 @@
   background: var(--s2);
   margin-bottom: 4px;
 }
-.theme-console .library-layout .insp-history__row--completed { border-left: 2px solid var(--ac-str); }
+.theme-console .library-layout .insp-history__row--completed { border-left:2px solid var(--pos); }
 .theme-console .library-layout .insp-history__row--failed    { border-left: 2px solid var(--crit); }
 .theme-console .library-layout .insp-history__row--aborted   { border-left: 2px solid var(--warn); }
 .theme-console .library-layout .insp-history__row--running   { border-left: 2px solid var(--info); }

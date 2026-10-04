@@ -98,7 +98,7 @@
   border-radius: 6px;
   cursor: pointer;
 }
-.theme-console .prove-chip:hover { border-color: var(--ac); }
+.theme-console .prove-chip:hover { border-color:var(--ac-line); }
 .theme-console .prove-chip__kind {
   font-family: var(--font-display);
   font-size: 7px;
@@ -126,14 +126,14 @@
 .theme-console .chain-validation--ok {
   background: var(--ac-soft);
   border-color: var(--ac-line);
-  border-left-color: var(--ac);
+  border-left-color:var(--pos);
 }
 .theme-console .chain-validation__dot {
   width: 7px; height: 7px; flex: none;
   border-radius: 50%;
   background: var(--warn);
 }
-.theme-console .chain-validation--ok .chain-validation__dot { background: var(--ac); }
+.theme-console .chain-validation--ok .chain-validation__dot { background:var(--pos); }
 .theme-console .chain-validation__title {
   font-size: 11px; font-weight: 600; flex: none; color: var(--tx);
 }
@@ -202,7 +202,7 @@
   font-size: 11px;
   color: var(--tx);
 }
-.theme-console .composer-bench__filter:focus { outline: none; border-color: var(--ac); }
+.theme-console .composer-bench__filter:focus { outline: none; border-color:var(--ac-line); }
 .theme-console .composer-bench__group { margin-bottom: 16px; }
 .theme-console .composer-bench__group-title {
   font-family: var(--font-display);
@@ -228,7 +228,7 @@
   text-align: left;
   cursor: pointer;
 }
-.theme-console .bench-item:hover { border-color: var(--ac); background: var(--s1); }
+.theme-console .bench-item:hover { border-color:var(--ac-line); background: var(--s1); }
 .theme-console .bench-item__dot {
   width: 7px; height: 7px; flex: none;
   border-radius: 50%;
@@ -364,12 +364,12 @@
   flex: none;
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-top: 3px solid var(--ac-str);
+  border-top:3px solid var(--ac-str);
   border-radius: 8px;
   padding: 10px 12px 8px;
   text-align: left;
 }
-.theme-console .chain-node--selected { border-color: var(--ac); box-shadow: var(--shadow); }
+.theme-console .chain-node--selected { border-color:var(--ac-line); box-shadow: var(--shadow); }
 /* A step with no expected detection is the one state that costs a POV — it
    runs, proves nothing, and shows up as a gap in the readout. Amber top rule
    so it is visible without opening the inspector. */
@@ -378,7 +378,7 @@
   width: 162px;
   background: var(--ac-soft);
   border: 1px solid var(--ac-line);
-  border-left: 3px solid var(--ac);
+  border-left:3px solid var(--ac-line);
   border-top-width: 1px;
   border-top-color: var(--ac-line);
   border-radius: 4px 8px 8px 4px;
@@ -402,7 +402,7 @@
   font-size: 12px;
   cursor: pointer;
 }
-.theme-console .chain-node--add:hover { border-color: var(--ac); color: var(--ac-ink); }
+.theme-console .chain-node--add:hover { border-color:var(--ac-line); color: var(--ac-ink); }
 .theme-console .chain-node__kicker {
   font-family: var(--font-display);
   font-size: 8px;
@@ -532,7 +532,7 @@
   max-width: 640px;
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-top: 3px solid var(--ac-str);
+  border-top:3px solid var(--ac-str);
   border-radius: 10px;
   padding: 20px 22px 18px;
 }
@@ -561,7 +561,7 @@
   cursor: pointer;
   text-align: left;
 }
-.theme-console .firstrun-option:hover { border-color: var(--ac); background: var(--s1); }
+.theme-console .firstrun-option:hover { border-color:var(--ac-line); background: var(--s1); }
 .theme-console .firstrun-option__num {
   display: flex;
   align-items: center;
@@ -653,7 +653,7 @@
 }
 .theme-console .detection-card {
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 0 6px 6px 0;
   padding: 9px 11px;
   margin-bottom: 6px;
@@ -705,7 +705,7 @@
   cursor: pointer;
 }
 .theme-console .ws-tab--on {
-  border-bottom-color: var(--ac);
+  border-bottom-color:var(--ac-line);
   color: var(--tx);
   font-weight: 700;
 }
@@ -757,7 +757,7 @@
   line-height: 1.5;
   color: var(--tx2);
 }
-.theme-console .ws-verdict--ok { border-left-color: var(--ac); background: var(--ac-soft); }
+.theme-console .ws-verdict--ok { border-left-color:var(--pos); background: var(--ac-soft); }
 .theme-console .ws-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
@@ -779,7 +779,7 @@
   border-radius: 50%;
   background: var(--bd2);
 }
-.theme-console .ws-check__dot--ok  { background: var(--ac); }
+.theme-console .ws-check__dot--ok  { background:var(--pos); }
 .theme-console .ws-check__dot--bad { background: var(--warn); }
 .theme-console .ws-check__text { min-width: 0; }
 .theme-console .ws-check__name {
@@ -922,7 +922,7 @@
   color: var(--tx2);
   border: 1px solid var(--bd2);
 }
-.theme-console .composer-bench__tab:hover { border-color: var(--ac); color: var(--tx); }
+.theme-console .composer-bench__tab:hover { border-color:var(--ac-line); color: var(--tx); }
 .theme-console .composer-bench__tab--active {
   background: var(--tx);
   color: var(--s1);
@@ -943,7 +943,7 @@
   box-sizing: border-box;
 }
 .theme-console select.field-input { cursor: pointer; }
-.theme-console .field-input:focus { outline: none; border-color: var(--ac); }
+.theme-console .field-input:focus { outline: none; border-color:var(--ac-line); }
 .theme-console .field-sub {
   display: block;
   font-family: var(--font-display);
@@ -959,8 +959,8 @@
 .theme-console .field-code[contenteditable="true"] { cursor: text; }
 .theme-console .field-code[contenteditable="true"]:focus {
   outline: none;
-  border-color: var(--ac);
-  box-shadow: 0 0 0 1px var(--ac);
+  border-color:var(--ac-line);
+  box-shadow:0 0 0 1px var(--tx2);
 }
 /* Null / empty command: show the help text as a real placeholder, never as
    editable content the DC would turn into the command by typing. */
@@ -1044,7 +1044,7 @@
   color: var(--tx3);
 }
 .theme-console .stitch-row__mode--literal { color: var(--ink-detected); }
-.theme-console .stitch-row__mode--resolve { color: var(--ac); }
+.theme-console .stitch-row__mode--resolve { color:var(--ac-str); }
 .theme-console .stitch-row__editors {
   display: grid;
   grid-template-columns: 1fr auto;
