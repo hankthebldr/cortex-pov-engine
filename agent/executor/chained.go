@@ -142,6 +142,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 	var outB, errB strings.Builder
 	var rc int
 	var rcErr error
+	var sawRC bool // true once the anchor emitted this step's exit-code sentinel
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -161,6 +162,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 				if clean := stripANSI(line); strings.HasPrefix(clean, s.marker+" ") {
 					if v, e := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(clean, s.marker+" "))); e == nil {
 						rc = v
+						sawRC = true
 					} else {
 						rcErr = e
 					}
@@ -204,6 +206,17 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 	}
 	if rcErr != nil {
 		return outB.String(), errB.String(), -1, fmt.Errorf("chain sentinel parse: %w", rcErr)
+	}
+	if !sawRC {
+		// The anchor closed its pipes before emitting this step's exit-code
+		// sentinel — it died mid-step (OOM-killed, or a step that killed the
+		// anchor shell, e.g. `kill $$` in a subshell). The step's outcome is
+		// UNKNOWN. Returning the zero-valued rc here would report exit 0 for a
+		// step that never completed — the exact false-green the engine exists to
+		// eliminate. Surface it as an execution error with a non-zero exit so
+		// executeTaskChained fails the run instead of recording a passing step.
+		return outB.String(), errB.String(), -1,
+			fmt.Errorf("chain anchor shell terminated before step completed — step result unknown")
 	}
 	return outB.String(), errB.String(), rc, nil
 }
