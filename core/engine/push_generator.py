@@ -807,8 +807,15 @@ def generate_bash(scenario: dict[str, Any]) -> str:
             script += f"# MITRE: {mitre_tech}\n"
         for det in expected:
             script += f"# Expected: [{det.get('plane','?')}] {det.get('type','?')}: {det.get('description','')}\n"
-        # Escape the command for embedding in the run_as call
+        # Escape EVERY value embedded in the run_as call, not just the command.
+        # identity and step_id are single-quoted positional args too, and a quote
+        # in either breaks out and injects a top-level command into the bundle a
+        # DC runs on a customer host — invisibly, since `bash -n` stays clean.
+        # These come from scenario YAML; the generator must still never emit an
+        # injectable artifact.
         escaped_cmd = command.replace("'", "'\\''")
+        escaped_identity = identity.replace("'", "'\\''")
+        escaped_step_id = step_id.replace("'", "'\\''")
         # `|| true` is load-bearing, not sloppiness: under `set -euo pipefail` a
         # bare `run_as` call aborts the ENTIRE bundle the moment any step exits
         # non-zero — and a non-zero exit is routinely EXPECTED here (a blocked
@@ -818,7 +825,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         # run_as (bash disables -e in a function invoked in a tested context),
         # so the harness reaches its own per-step exit-code logging instead of
         # dying mid-step. This mirrors the PowerShell path's per-step isolation.
-        script += f"run_as '{identity}' '{escaped_cmd}' '{step_id}' || true\n\n"
+        script += f"run_as '{escaped_identity}' '{escaped_cmd}' '{escaped_step_id}' || true\n\n"
 
     # --- Footer ---
     script += _FOOTER.format(scenario_id=scenario_id)
@@ -1257,9 +1264,15 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
                 f"{det.get('description','')}\n"
             )
         var = _ps_var(res.step_id)
+        # Escape step id and identity for their single-quoted PowerShell literals
+        # (double the quote). Unescaped, a quote in either closes the literal and
+        # injects into the invoke call — the PowerShell analogue of the bash
+        # run_as breakout. res.shell is a fixed enum, so it needs no escaping.
+        sid_lit = res.step_id.replace("'", "''")
+        ident_lit = res.identity.replace("'", "''")
         script += f"{var} = {_ps_literal(res.command)}\n"
         script += (
-            f"Invoke-CsStep -StepId '{res.step_id}' -Identity '{res.identity}' "
+            f"Invoke-CsStep -StepId '{sid_lit}' -Identity '{ident_lit}' "
             f"-Shell '{res.shell}' -Command {var}\n\n"
         )
     script += "    Write-CsLog INFO ('CortexSim bundle complete — scenario=' + $CortexSimScenarioId)\n"
