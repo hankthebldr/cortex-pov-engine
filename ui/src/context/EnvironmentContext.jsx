@@ -342,6 +342,9 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
     return {
       runId: runIdOf(running),
       scenarioId: running.scenario_id,
+      // Carried so a consumer reading `activeRun.status` gets THIS run's
+      // status rather than falling through to some other run's.
+      status: running.status,
       step: currentStep,
       totalSteps,
       elapsed: elapsedSec,
