@@ -67,22 +67,34 @@ def _norm(s: str | None) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
-def _load_yaml(path: str) -> dict | None:
+def _load_yaml(path: str, parse_failures: list[str] | None = None) -> dict | None:
     try:
         doc = yaml.safe_load(open(path, encoding="utf-8"))
-    except Exception:  # noqa: BLE001 — a malformed file is not this lint's concern
+    except Exception as exc:  # noqa: BLE001
+        # A file that cannot be parsed is NOT silently skipped: the boot loader
+        # would REJECT it, so a lint that reads it as "nothing to wire" would
+        # green a file the engine refuses. Record it so the gate fails closed.
+        if parse_failures is not None:
+            parse_failures.append(f"{path}: {exc}")
         return None
     return doc if isinstance(doc, dict) else None
 
 
-def build_adapter_index() -> dict[str, str]:
+def build_adapter_index(parse_failures: list[str] | None = None) -> tuple[dict[str, str], int]:
     """Map every comparable token (name / install-binary / adapter-id suffix) to
     its adapter id, EXCLUDING reference-only packs (tier 5 or c2-framework).
     First writer wins so a canonical name is not shadowed by a suffix collision.
+
+    Returns ``(tok2id, pack_file_count)`` — the count is how many ``*.yml`` were
+    globbed under the packs dir, so main() can refuse an empty/missing packs set.
     """
     tok2id: dict[str, str] = {}
+    pack_files = 0
     for path in sorted(glob.glob(os.path.join(PACKS_DIR, "*.yml"))):
-        d = _load_yaml(path)
+        if os.path.basename(path).startswith("_"):
+            continue  # _schema.yml et al.
+        pack_files += 1
+        d = _load_yaml(path, parse_failures)
         if not d or not d.get("adapter_id"):
             continue
         # Mirror ToolAdapterSchema.reference_only: tier 5 or c2-framework.
@@ -98,23 +110,28 @@ def build_adapter_index() -> dict[str, str]:
         for tok in tokens:
             if tok:
                 tok2id.setdefault(tok, aid)
-    return tok2id
+    return tok2id, pack_files
 
 
-def scan() -> tuple[list[tuple[str, str, str]], int, int]:
-    """Return (candidates, redundant_count, generic_count).
+def scan() -> tuple[list[tuple[str, str, str]], int, int, dict]:
+    """Return (candidates, redundant_count, generic_count, stats).
 
     candidates: (scenario_relpath, tool_name, matched_adapter_id).
+    stats: discovery counts + parse failures so main() can fail closed when the
+    lint scanned nothing (a zero is degraded, not ok) or hit an unreadable file.
     """
-    tok2id = build_adapter_index()
+    parse_failures: list[str] = []
+    tok2id, pack_files = build_adapter_index(parse_failures)
     candidates: list[tuple[str, str, str]] = []
     redundant = 0
     generic = 0
+    scenario_files = 0
 
     for path in sorted(glob.glob(os.path.join(SCENARIOS_DIR, "**", "*.yml"), recursive=True)):
         if path.endswith("_schema.yml"):
             continue
-        d = _load_yaml(path)
+        scenario_files += 1
+        d = _load_yaml(path, parse_failures)
         if not d:
             continue
         ets = d.get("external_tools") or []
@@ -134,7 +151,12 @@ def scan() -> tuple[list[tuple[str, str, str]], int, int]:
                 redundant += 1
             else:
                 candidates.append((rel, et.get("name") or et.get("tool") or "?", aid))
-    return candidates, redundant, generic
+    stats = {
+        "pack_files": pack_files,
+        "scenario_files": scenario_files,
+        "parse_failures": parse_failures,
+    }
+    return candidates, redundant, generic, stats
 
 
 def main() -> int:
@@ -145,7 +167,30 @@ def main() -> int:
                     help="also print redundant/generic tallies")
     args = ap.parse_args()
 
-    candidates, redundant, generic = scan()
+    candidates, redundant, generic, stats = scan()
+
+    # Fail closed before interpreting any result: a lint that scanned nothing, or
+    # that could not read a file the loader would reject, must not read as PASS.
+    hard_errors: list[str] = []
+    if stats["pack_files"] == 0:
+        hard_errors.append(
+            f"no adapter packs found under {PACKS_DIR} — is CORTEXSIM_BASE_DIR "
+            f"({REPO_ROOT}) the repo root?"
+        )
+    if stats["scenario_files"] == 0:
+        hard_errors.append(
+            f"no scenarios found under {SCENARIOS_DIR} — is CORTEXSIM_BASE_DIR "
+            f"({REPO_ROOT}) the repo root?"
+        )
+    for pf in stats["parse_failures"]:
+        hard_errors.append(f"unparseable file (the boot loader would REJECT it): {pf}")
+    if hard_errors:
+        print(f"{BOLD}Adapter-wiring lint — scenarios vs tools/packs{NC}")
+        for e in hard_errors:
+            print(f"  {RED}✗{NC} {e}")
+        print(f"\n{RED}ERROR{NC} — the lint could not run against a complete, "
+              f"readable corpus; refusing to report PASS.")
+        return 2
 
     print(f"{BOLD}Adapter-wiring lint — scenarios vs tools/packs{NC}")
     if candidates:
