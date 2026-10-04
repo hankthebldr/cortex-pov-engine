@@ -130,3 +130,56 @@ def test_exporter_output_is_deterministic(exporter):
             a = fn(ttp)
             b = fn(ttp)
             assert a == b, f"{ttp['id']}: {fn.__name__} non-deterministic"
+
+
+# (sub-dir, render-fn attribute, filename suffix) — mirrors main()'s write loop.
+_EXPORT_KINDS = (
+    ("sigma", "render_sigma", ".yml"),
+    ("xql", "render_xql", ".xql"),
+    ("modeling", "render_modeling", ".xql"),
+    ("correlation", "render_correlation", ".json"),
+    ("xsoar_playbook", "render_xsoar_playbook", ".yml"),
+)
+
+
+def test_committed_exports_match_a_clean_regeneration(exporter):
+    """The committed exports/ FILE SET must equal a clean regeneration's.
+
+    ``git diff --exit-code`` (the pre-fix gate) only compares TRACKED files that
+    change. It is blind to two drifts that ship deployable detection content:
+
+      * a STALE committed export a clean regen no longer produces (the card lost
+        the detection kind), and
+      * an UNTRACKED export a clean regen DOES produce but was never committed.
+
+    Neither rewrites a tracked file, so ``git diff`` stays green while a customer
+    pulls a Sigma/XQL rule the card disowns. This asserts set equality against
+    what ``export_artifacts.py --clean`` would leave on disk, so either drift is
+    caught without shelling out to git.
+    """
+    expected: set[str] = set()
+    for ttp in exporter.iter_active_ttps(None):
+        tid = ttp["id"]
+        for sub, fn_name, suffix in _EXPORT_KINDS:
+            if getattr(exporter, fn_name)(ttp):
+                expected.add(f"{sub}/{tid}{suffix}")
+
+    actual: set[str] = set()
+    for sub, _fn, _suffix in _EXPORT_KINDS:
+        d = exporter.EXPORTS_DIR / sub
+        if not d.exists():
+            continue
+        for p in d.glob("*"):
+            if p.is_file():
+                actual.add(f"{sub}/{p.name}")
+
+    stale = sorted(actual - expected)
+    missing = sorted(expected - actual)
+    assert not stale, (
+        "stale committed exports a clean regeneration would NOT produce "
+        f"(delete via `export_artifacts.py --clean`): {stale}"
+    )
+    assert not missing, (
+        "exports a clean regeneration WOULD produce but are not committed "
+        f"(run `export_artifacts.py` and commit): {missing}"
+    )
