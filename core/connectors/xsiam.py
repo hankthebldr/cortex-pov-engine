@@ -267,11 +267,32 @@ class XsiamConnector(Connector):
                     f"absence of alerts — no observation was made, so the run "
                     f"stays pending rather than being scored."
                 )
+        if not isinstance(doc, dict):
+            raise ConnectorError(
+                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
+                f"{type(doc).__name__}. Refusing to read it as zero alerts."
+            )
         reply = doc.get("reply", doc)
-        if isinstance(reply, dict):
-            alerts = reply.get("alerts", reply.get("data", []))
+        if not isinstance(reply, dict):
+            raise ConnectorError(
+                f"XSIAM_ENVELOPE_UNRECOGNISED: 'reply' is a "
+                f"{type(reply).__name__}, not an object. Refusing to read it as "
+                f"zero alerts."
+            )
+        # A reply that names NEITHER list key is not "no alerts" — the tenant
+        # always sends `alerts` (possibly empty). Defaulting the missing key to
+        # [] turned a login wall, a proxy's JSON, or an API change into a
+        # successful pull that observed nothing and reported 0 % coverage.
+        if "alerts" in reply:
+            alerts = reply["alerts"]
+        elif "data" in reply:
+            alerts = reply["data"]
         else:
-            alerts = []
+            raise ConnectorError(
+                f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries neither 'alerts' "
+                f"nor 'data' (keys: {sorted(str(k) for k in reply)[:20]}). This is "
+                f"NOT an absence of alerts — no observation was made."
+            )
         if not isinstance(alerts, list):
             # A dict where a list belongs means the envelope is not what we
             # think it is. Guessing is how `len({"data": []}) == 1` happened.
@@ -291,12 +312,11 @@ class XsiamConnector(Connector):
                 continue
             out.append(alert)
         meta: dict[str, Any] = {}
-        if isinstance(reply, dict):
-            total, capped = _count_or_capped(reply.get("total_count"))
-            meta["total_count"] = total
-            meta["total_count_capped"] = capped
-            rc = reply.get("result_count")
-            meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
+        total, capped = _count_or_capped(reply.get("total_count"))
+        meta["total_count"] = total
+        meta["total_count_capped"] = capped
+        rc = reply.get("result_count")
+        meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
         return out, dropped, meta
 
     def _normalize_alert(self, a: dict[str, Any]) -> Optional[ObservedAlert]:
