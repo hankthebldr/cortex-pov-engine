@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useState } from 'react'
 import { tenantCatalog } from './povdata/catalogs.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
+import { serverDate } from '../../api/time.js'
 
 const TenantManager = lazy(() => import('./TenantManager.jsx'))
 
@@ -34,14 +35,20 @@ export default function TenantView({ onNavigate = () => {} }) {
   const [tab, setTab] = useState(0)
   const env = useEnvironment()
 
-  // The bound tenant: the provider's active scope where there is one, else the
-  // seed catalog's bound row. Never a silent default to "the first tenant" —
-  // that is the bug that made every tenant open as a green BOUND Acme.
+  // The bound tenant is the provider's active scope — and ONLY that. This used
+  // to fall back to the seed catalog's "bound" row, so a SimCore with no
+  // credential at all opened on "Acme Financial — acme-prod.xdr.us, the one
+  // tenant this instance is bound to", with nine PASS checks under it.
+  //
+  // The first three tabs still render the design prototype's seed (povdata/):
+  // SimCore does not serve that read-back yet. They are marked as SAMPLE
+  // output and never presented as measurements of the live tenant — whose
+  // real, cached liveness verdict leads the Health check tab instead.
   const seed = tenantCatalog()
-  const bound = seed.find((t) => t.state === 'bound') || seed[0]
+  const sampleTenant = seed.find((t) => t.state === 'bound') || seed[0]
   const live = env.tenant
-  const host = live ? (live.host || live.name || live.id) : bound.host
-  const name = live ? (live.name || live.id) : bound.name
+  const host = live ? (live.host || live.base_url || live.config?.base_url || live.name || live.id) : null
+  const name = live ? (live.name || live.id) : null
 
   const TABS = ['Health check', 'Read-back surface', 'Integrations & MCP', 'Binding']
 
@@ -49,12 +56,19 @@ export default function TenantView({ onNavigate = () => {} }) {
     <div className="pov-page">
       <div className="pov-page__rule" />
       <div className="pov-page__eyebrow">Phase 1 · Scope</div>
-      <h1 className="pov-page__title">{name}</h1>
-      <p className="pov-page__lede">
-        <span className="mono">{host}</span> — the one tenant this instance is bound to.
-        Everything this POV claims is re-asked of it, so what it can and cannot read is
-        what the readout is allowed to say.
-      </p>
+      <h1 className="pov-page__title">{name || 'No tenant bound'}</h1>
+      {live ? (
+        <p className="pov-page__lede">
+          <span className="mono">{host}</span> — the one tenant this instance is bound to.
+          Everything this POV claims is re-asked of it, so what it can and cannot read is
+          what the readout is allowed to say.
+        </p>
+      ) : (
+        <p className="pov-page__lede">
+          No XSIAM tenant credential is registered on this SimCore, so nothing on this page
+          has been asked of a real tenant. Bind one on the <strong>Binding</strong> tab.
+        </p>
+      )}
 
       <div className="pov-tabs" style={{ marginTop: 18 }} data-testid="tenant-tabs">
         {TABS.map((t, i) => (
@@ -69,14 +83,88 @@ export default function TenantView({ onNavigate = () => {} }) {
         ))}
       </div>
 
-      {tab === 0 && <HealthCheckTab />}
-      {tab === 1 && <ReadBackTab tenant={bound} />}
-      {tab === 2 && <IntegrationsTab onNavigate={onNavigate} />}
+      {tab === 0 && (
+        <>
+          <MeasuredHealth live={live} tenantHealth={env.health?.tenantHealth ?? null} />
+          <SampleNotice liveName={name} sampleName={sampleTenant.name} />
+          <HealthCheckTab />
+        </>
+      )}
+      {tab === 1 && (
+        <>
+          <SampleNotice liveName={name} sampleName={sampleTenant.name} />
+          <ReadBackTab tenant={sampleTenant} />
+        </>
+      )}
+      {tab === 2 && (
+        <>
+          <SampleNotice liveName={name} sampleName={sampleTenant.name} />
+          <IntegrationsTab onNavigate={onNavigate} />
+        </>
+      )}
       {tab === 3 && (
         <Suspense fallback={<div className="destination-loading">loading…</div>}>
           <TenantManager />
         </Suspense>
       )}
+    </div>
+  )
+}
+
+/**
+ * What SimCore actually knows about the bound tenant: the cached result of the
+ * last liveness probe (GET /api/xsiam/tenants/{name}/health). Never verified is
+ * said as such — it is not a pass.
+ */
+function MeasuredHealth({ live, tenantHealth }) {
+  let tone = 'warn'
+  let line
+  if (!live) {
+    line = 'No tenant is bound, so nothing has been checked.'
+  } else if (!tenantHealth) {
+    line = 'Verification state unavailable — SimCore did not answer the tenant health request.'
+  } else if (tenantHealth.last_verified_ok === true) {
+    tone = 'pos'
+    line = `Liveness probe passed${tenantHealth.last_verified_at ? ` at ${serverDate(tenantHealth.last_verified_at).toLocaleString()}` : ''}.`
+  } else if (tenantHealth.last_verified_ok === false) {
+    tone = 'crit'
+    line = `Liveness probe FAILED${tenantHealth.last_verified_at ? ` at ${serverDate(tenantHealth.last_verified_at).toLocaleString()}` : ''}`
+      + `${tenantHealth.last_verified_error ? ` — ${tenantHealth.last_verified_error}` : ''}.`
+  } else {
+    line = 'Never verified — run the liveness probe on the Binding tab, or the connector preflight on the Launch Gate.'
+  }
+  return (
+    <div className="pov-panel" data-testid="tenant-measured-health" style={{ marginBottom: 12 }}>
+      <div className="pov-panel__row">
+        <div className="pov-card__head">
+          <span className={`pov-dot pov-dot--${tone}`} />
+          <span className="pov-card__title">Measured</span>
+          <span className="pov-card__spacer" />
+          <span className={`pov-pill pov-pill--${tone}`}>
+            {tone === 'pos' ? 'PASS' : tone === 'crit' ? 'FAIL' : 'NOT VERIFIED'}
+          </span>
+        </div>
+        <div className="pov-card__blurb" style={{ marginBottom: 0 }}>{line}</div>
+      </div>
+    </div>
+  )
+}
+
+/** The seed tabs are the design prototype's example output, said in words. */
+function SampleNotice({ liveName, sampleName }) {
+  return (
+    <div className="pov-panel" role="note" data-testid="tenant-sample-notice" style={{ marginBottom: 12 }}>
+      <div className="pov-panel__row">
+        <div className="pov-card__head">
+          <span className="pov-dot pov-dot--warn" />
+          <span className="pov-card__title">Sample output — not measured</span>
+        </div>
+        <div className="pov-card__blurb" style={{ marginBottom: 0 }}>
+          The rows below are the design prototype&apos;s example for a fictional tenant
+          ({sampleName}). None of them was asked of {liveName ? <strong className="mono">{liveName}</strong> : 'any tenant'}
+          {' '}— tenant-verified is 0 until a probe re-asks it.
+        </div>
+      </div>
     </div>
   )
 }
