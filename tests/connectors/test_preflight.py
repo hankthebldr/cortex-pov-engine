@@ -145,13 +145,22 @@ def _client(handler):
     return XsiamClient(cfg, "key", transport=httpx.MockTransport(handler))
 
 
-def _tenant(*, health=200, xql_status=200, rows=None, dataset_ok=True, now=None):
+def _tenant(*, health=200, xql_status=200, rows=None, dataset_ok=True, now=None,
+            server_date=None, send_date=True):
     rows = rows if rows is not None else [{"_time": _iso(now)}]
+    # The clock stage reads the tenant's current time from the HTTP Date header,
+    # not from an event. Default it to real-now (synced); server_date drives a
+    # skew; send_date=False models a response with no Date header.
+    from email.utils import format_datetime
+    date_hdr = format_datetime(
+        (server_date or datetime.utcnow()).replace(tzinfo=timezone.utc))
 
     def handler(request: httpx.Request) -> httpx.Response:
         p = request.url.path
         if p.endswith("healthcheck"):
-            return httpx.Response(health, json={"reply": {"status": "ok"}})
+            headers = {"date": date_hdr} if send_date else {}
+            return httpx.Response(health, json={"reply": {"status": "ok"}},
+                                  headers=headers)
         if p.endswith("start_xql_query"):
             body = json.loads(request.content or b"{}")
             q = (body.get("request_data") or {}).get("query", "")
@@ -251,21 +260,32 @@ def test_a_missing_dataset_is_degraded_and_named():
 
 
 def test_clock_skew_is_measured_because_mttd_depends_on_it():
-    """MTTD is (tenant alert time) - (SimCore executed_at): two clocks. This
-    codebase already lost nine hours to timestamp handling once."""
+    """MTTD is (tenant time) - (SimCore executed_at): two clocks. Skew is read
+    from the tenant's CURRENT clock (its Date header), not an event's age."""
     skewed = datetime.utcnow() - timedelta(minutes=9)
     r = asyncio.run(pf.preflight_tenant(
-        _client(_tenant(rows=[{"_time": _iso(skewed)}])), integration_name="acme"))
+        _client(_tenant(server_date=skewed)), integration_name="acme"))
     stage = _stage(r, "clock")
     assert stage.code == pf.PF_CLOCK_SKEW
     assert stage.extra["skew_seconds"] > 500
     assert "MTTD" in stage.remediation
 
 
-def test_a_tenant_with_no_recent_event_reports_unknown_not_ok():
+def test_clock_is_measurable_even_when_the_tenant_has_no_events():
+    """The whole point of reading the Date header: an old-but-synced tenant is
+    not skewed. A tenant with ZERO ingested events still has a trustworthy clock
+    — the event-age probe used to report it as unmeasured."""
     r = asyncio.run(pf.preflight_tenant(_client(_tenant(rows=[])),
                                         integration_name="acme"))
+    assert _stage(r, "clock").code == pf.PF_OK
+
+
+def test_clock_is_skipped_only_when_no_date_header_is_present():
+    """The one genuinely-unmeasured case: a response with no Date header."""
+    r = asyncio.run(pf.preflight_tenant(_client(_tenant(send_date=False)),
+                                        integration_name="acme"))
     assert _stage(r, "clock").status == pf.SKIPPED
+    assert "Date header" in _stage(r, "clock").detail
 
 
 def test_every_non_ok_stage_carries_a_remediation():

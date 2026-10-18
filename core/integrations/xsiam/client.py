@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Optional
 
 import httpx
@@ -62,6 +64,25 @@ class XsiamClient:
         data = self._unwrap(resp)
         # Some tenants wrap in {reply: {...}}, others return the object directly.
         return data.get("reply", data) if isinstance(data, dict) else {"status": data}
+
+    async def server_time(self) -> Optional[datetime]:
+        """The tenant's CURRENT clock, read from the HTTP ``Date`` response header.
+
+        True clock skew for MTTD needs the tenant's *now*, not the timestamp of
+        some ingested event: an old-but-perfectly-synced tenant (one whose most
+        recent event is 14 min old) would otherwise read as 14 min of skew. The
+        ``Date`` header is on every HTTP response — including a 403 — so this
+        needs no XQL and no ingested data, and it does not go through
+        ``_unwrap`` (a non-2xx still carries its clock). Returns ``None`` only
+        when the response carries no ``Date`` header.
+        """
+        async with self._client() as c:
+            resp = await c.get("/public_api/v1/healthcheck")
+        raw = resp.headers.get("date")
+        if not raw:
+            return None
+        dt = parsedate_to_datetime(raw)
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
     async def ping_via_endpoints(self) -> int:
         """Liveness fallback when /healthcheck is license-gated (403).

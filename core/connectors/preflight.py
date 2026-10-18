@@ -31,8 +31,10 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
+
+import httpx
 
 logger = logging.getLogger("cortexsim.connectors.preflight")
 
@@ -493,27 +495,29 @@ async def _probe_clock(client: Any, report: PreflightReport, now: datetime) -> S
     different hat.
     """
     from integrations.xsiam.exceptions import XsiamError  # noqa: PLC0415
-    from integrations.xsiam.queries import result_rows  # noqa: PLC0415
 
-    from .base import coerce_utc  # noqa: PLC0415
-
+    # TRUE clock skew is (tenant's current time) - (SimCore's current time). It
+    # is read from the tenant's HTTP Date header (client.server_time), NOT from
+    # an ingested event's _time: a healthy tenant whose most recent event is 14
+    # min old is not 14 min skewed, and the old event-age probe reported exactly
+    # that false degradation. The Date header needs no XQL and no data, so it is
+    # a free liveness call (still counted — it is a real tenant round-trip).
     try:
-        reply = await client.run_xql(
-            "dataset = xdr_data | fields _time | limit 1", {"relativeTime": 3600 * 1000})
+        tenant_time = await client.server_time()
         report.queries_issued += 1
-    except XsiamError as exc:
+    except (XsiamError, httpx.HTTPError) as exc:
         return Stage("clock", SKIPPED, PF_NOT_PROBED, str(exc),
                      remediation=("Clock skew could not be measured, so MTTD from this "
                                   "tenant is unverified. It is still reported — treat "
                                   "it as approximate."))
-    rows = result_rows(reply)
-    tenant_time = coerce_utc(rows[0].get("_time")) if rows else None
     if tenant_time is None:
         return Stage("clock", SKIPPED, PF_NOT_PROBED,
-                     "the tenant returned no timestamped row to compare against",
-                     remediation=("No event in the last hour, so skew is unmeasured. "
-                                  "Re-run preflight after the first scenario executes."))
-    skew = abs((tenant_time - now).total_seconds())
+                     "the tenant's response carried no Date header to read its clock from",
+                     remediation=("Clock skew is unmeasured (no Date header), so MTTD "
+                                  "from this tenant is approximate. This is rare — any "
+                                  "HTTP response normally carries one."))
+    ref = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+    skew = abs((tenant_time - ref).total_seconds())
     if skew <= CLOCK_SKEW_WARN_SECONDS:
         return Stage("clock", OK, PF_OK,
                      f"tenant clock within {skew:.1f}s of SimCore; MTTD is trustworthy",
