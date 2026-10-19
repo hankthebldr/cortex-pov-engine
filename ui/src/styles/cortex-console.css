@@ -7125,14 +7125,11 @@
 .theme-console .tenant-mgr__footnote { font-size: 10px; color: var(--cortex-steel); margin-top: 8px; }
 
 /* ── Tenant list rows ─────────────────────────────────────────────────── */
-.theme-console .tenant-mgr__row {
-  display: grid; grid-template-columns: auto 1fr auto auto;
-  gap: 14px; align-items: start;
-  padding: 14px 12px 14px 10px;
-  border-bottom: 1px solid var(--cortex-border);
-  border-left: 3px solid transparent;
-  background: transparent;
-}
+/* The tenant card is now fully owned by destinations/tenants.css (card layout:
+   row-top / row-grid / row-actions). The pre-refactor grid rule that lived here
+   was superseded but leaked its `display:grid` into the new card — it never
+   conflicted textually, so the merge kept both — crushing the base-URL cell.
+   Removed; tenants.css is the single owner. */
 .theme-console .tenant-mgr__row--active { border-left-color: var(--cortex-teal); background: rgba(0,192,232,0.05); }
 .theme-console .tenant-mgr__badge-active {
   align-self: center;
