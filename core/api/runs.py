@@ -922,8 +922,13 @@ async def complete_run(
     # Every endpoint's summary is appended. Sticky failure — once any endpoint
     # fails, the run's verdict is failed.
     #
-    # An operator abort wins over a late completion callback: the WHERE clause
-    # leaves an aborted run untouched (the agent reports exit 130 on abort).
+    # A finished run stays finished. The WHERE clause matches only a run still
+    # in flight (`_in_flight_clause`, the guard abort_run uses), so a late or
+    # duplicate callback cannot re-stamp `completed_at`, flip `complete` to
+    # `failed` (or `staged` to `complete`), re-publish the terminal frame or
+    # re-score the run. That covers an operator abort (the agent reports exit
+    # 130 on abort) and a staging refusal, which stops the surviving endpoints
+    # the same way. A sticky-failed fan-out still owed endpoints is in flight.
     summary_text = f"\n--- COMPLETION SUMMARY ---\nExit code: {body.exit_code}\n{body.summary}\n"
     values: dict = {
         "open_tasks": func.max(func.coalesce(Run.open_tasks, 1) - 1, 0),
@@ -933,20 +938,25 @@ async def complete_run(
         values["status"] = "failed"
     res = await db.execute(
         update(Run)
-        .where(Run.run_id == run_id, Run.status != "aborted")
+        .where(Run.run_id == run_id, _in_flight_clause())
         .values(**values)
         .execution_options(synchronize_session=False)
     )
     if res.rowcount == 0:
         await db.rollback()
+        # No writer moves a run out of a terminal state, so this re-read
+        # reports the verdict the run finished with.
         run = await _reload_run(db, run_id)
         if run is None:
             raise _run_not_found(run_id)
-        logger.info("run_complete ignored — run already aborted run_id=%s", run_id)
+        logger.info(
+            "run_complete ignored — run already terminal run_id=%s status=%s exit_code=%d",
+            run_id, run.status, body.exit_code,
+        )
         # Run is already terminal — drop it from the orchestrator's aborted set
         # so the in-memory set stays bounded even on the abort→late-complete path.
         orchestrator.clear_aborted(run_id)
-        return {"status": run.status, "run_id": run_id}
+        return {"status": run.status, "run_id": run_id, "already_terminal": True}
 
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes
