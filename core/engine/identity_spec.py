@@ -33,14 +33,16 @@ from config import settings
 
 logger = logging.getLogger("cortexsim.identity_spec")
 
-# Hard-coded fallback — MUST stay in sync with spec/identity_harness.json. The
-# JSON file is authoritative; this only guards generation when the file is
-# unreadable.
+# Hard-coded fallback — MUST stay in sync with spec/identity_harness.json,
+# ORDER INCLUDED: the bash run_as case arm renders service_accounts in this
+# order, so a transposed copy changes every bash bundle's bytes. The JSON file
+# is authoritative; this only guards generation when the file is unreadable.
+# Guarded by tests/engine/test_identity_spec_fallback.py.
 _FALLBACK_DIRECT = ("root", "container-runtime", "direct")
 _FALLBACK_WINDOWS_IDENTITIES = ("administrator", "user")
 
 _FALLBACK_SERVICE = (
-    "app", "developer", "mysql", "node", "nobody", "postgres", "python3",
+    "app", "developer", "mysql", "nobody", "node", "postgres", "python3",
     "runner", "svc-backup", "vertex-agent", "www-data",
 )
 _FALLBACK_IMPERSONATION_PLATFORMS = ("linux", "darwin")
