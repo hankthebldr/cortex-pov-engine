@@ -603,10 +603,14 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 `pending`, never `fail`.**
 
 > [!NOTE]
-> **Quantified limit:** only **59 of 177** scenarios declare an MTTD-shaped
-> primary KPI — the only KPI the engine measures natively. The rest declare
-> thresholds nothing produces a `measured_value` for, so they score `pending`
-> permanently. Wiring the scorer didn't create that; it made it visible.
+> **Quantified limit:** **134 of 177** scenarios declare a primary KPI the
+> scorer can be given a measured value for — **66** MTTD-shaped, **47** Detection
+> Accuracy and **21** correlation rate, the last two derived from the alert
+> read-back since sprint 2. The other **43** declare thresholds nothing produces
+> a `measured_value` for (Causality Chain Completeness, Asset Discovery Coverage
+> and a long tail), so they score `pending` permanently. Measurable is not
+> measured: accuracy and correlation need a reconcile pull against a tenant,
+> and `tenant-verified` is still 0.
 
 ---
 ## Detection planes

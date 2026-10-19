@@ -82,7 +82,7 @@ path to Cortex; `tenant-verified` is still 0.**
   `observed / seeded` as the measured value for the 47 scenarios whose
   primary KPI is Detection Accuracy. Machine-PASS-reachable DET/HNT rows go
   from 6 to 14 with zero extra tenant calls.
-- **Correlation rate is measured** for the 20 scenarios whose KPI is
+- **Correlation rate is measured** for the 21 scenarios whose KPI is
   Cross-Source Correlation Rate / Stitch Completeness / Correlation
   Coverage: the collapse ratio `(alerts − incidents) / (alerts − 1)`, from
   the `incident_id` the tenant stamps on alert objects when it does, else
