@@ -154,11 +154,13 @@ language deps — nothing after that). No submodules touched, no toolchain
 installed on your host. This is the path verified live above and the one the
 rest of this README assumes.
 
-A prebuilt image (`ghcr.io/hankthebldr/cortexsim`) is the intended fast path
-once a release is cut, but **v0.1.0 has not been pushed yet** — see
-[Releases & Packaging](#releases--packaging). Don't `docker pull` it today;
-it 404s. `scripts/dev-up.sh` builds the equivalent image locally instead, and
-is the working path right now.
+CortexSim ships as tagged GitHub Releases — **v1.0.2** is the latest, cut
+2026-09-08 — and the release pipeline pushes a multi-arch image
+(`ghcr.io/hankthebldr/cortexsim`, linux/amd64 + linux/arm64) to GHCR. That
+image is **not publicly pullable today** (an anonymous pull-token request is
+denied), so don't `docker pull` it — see
+[Releases & Packaging](#releases--packaging). `scripts/dev-up.sh` builds the
+equivalent image locally from the tree, and is the working path right now.
 
 ### Source build path — contributors, or building the toolchain itself
 
@@ -963,21 +965,37 @@ make test-agent-cross   # beacon cross-compile gate
 ---
 ## Releases & Packaging
 
-- **Container image:** `ghcr.io/hankthebldr/cortexsim`, tagged `:v0.1.0` and
-  `:latest` — **not yet pushed.** `docker pull` today 404s. Build it locally
-  instead (`./scripts/dev-up.sh`, or `docker build -f core/Dockerfile -t
-  cortexsim:v0.1.0 .` directly).
-- **`v0.1.0` is tagged locally, not pushed to the remote** — the operator's
-  exact publish commands (including a real blocker in the tag-triggered CI
-  workflow, and a working manual `docker buildx` path around it) are in
-  **[`docs/release/PUBLISH-v0.1.0.md`](docs/release/PUBLISH-v0.1.0.md)**.
-  Changelog: **[`CHANGELOG.md`](CHANGELOG.md)**.
 - **GitHub Releases:** https://github.com/hankthebldr/cortex-pov-engine/releases
-  — empty until the tag above is pushed.
-- **Landing page:** [`docs/site/`](docs/site/) — a GitHub Pages site that
-  queries the GitHub Releases API at load time and renders "no release yet"
-  honestly until one exists; deploys on push to `main` via
-  [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
+  — **v1.0.0**, **v1.0.1** and **v1.0.2** are published; **v1.0.2** is the
+  latest, cut 2026-09-08. Each release attaches `install.sh`,
+  `stage2-linux.tar.gz`, `stage2-windows.zip`, `SHA256SUMS` and
+  `manifest.json`. Changelog: **[`CHANGELOG.md`](CHANGELOG.md)**.
+- **Container image:** the tag-triggered pipeline
+  ([`.github/workflows/release.yml`](.github/workflows/release.yml)) pushes
+  `ghcr.io/hankthebldr/cortexsim:<tag>` plus `:latest` for linux/amd64 and
+  linux/arm64, and the release's `manifest.json` records the image digest.
+  That image is **not publicly pullable** — an anonymous GHCR pull-token
+  request returns 401 (checked 2026-10-19) — so don't `docker pull` it today.
+  Build it locally instead (`./scripts/dev-up.sh`, or `docker build -f
+  core/Dockerfile -t cortexsim:v1.0.2 .` directly).
+- **The release's `install.sh` is the full source bootstrap, not an image
+  puller.** The pipeline copies in the tree's own `./install.sh` (v1.0.2's
+  asset is byte-identical to it): it installs a Go/Rust/Node/Python toolchain
+  and builds every component from source — the
+  [source build path](#source-build-path--contributors-or-building-the-toolchain-itself)
+  above. It neither clones the repo nor pulls the image, so run it from
+  inside a checkout.
+- **History:** `v0.1.0` was tagged and pushed, but its tag-triggered release
+  runs failed and no v0.1.0 Release exists.
+  **[`docs/release/PUBLISH-v0.1.0.md`](docs/release/PUBLISH-v0.1.0.md)** is
+  kept as the historical v0.1.0 runbook (the CI blocker it hit, and the manual
+  `docker buildx` path around it) — not the current publish procedure.
+- **Landing page:** [`docs/site/`](docs/site/) — a self-contained static
+  GitHub Pages page with no runtime API calls, so its release wording is
+  written into the HTML and re-measured by hand. Deploys via
+  [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on a push to
+  `main` that touches `docs/site/`, on each published release, or on manual
+  dispatch.
 
 ---
 
