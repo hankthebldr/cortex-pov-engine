@@ -3,15 +3,27 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from tests.connectors.test_verification_service import _seed
+
+# The reconcile window is naive UTC; run under a non-UTC host so a fixture that
+# mints its alert epochs in host-local time fails here, not only on a DC laptop.
+pytestmark = pytest.mark.usefixtures("non_utc_host")
+
+
+def _epoch_ms(naive_utc: datetime) -> int:
+    """Epoch-ms for a naive-UTC datetime. ``naive.timestamp()`` reads it as host-local."""
+    return int(naive_utc.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
 
 def _alert(ext, *, host, seconds, technique="T1003.001"):
     return {"alert_id": ext, "name": f"alert {ext}", "host_name": host, "source": "XDR BIOC",
             "mitre_technique_ids": [technique],
-            "detection_timestamp": int(((datetime.utcnow() - timedelta(minutes=10))
-                                        + timedelta(seconds=seconds)).timestamp() * 1000)}
+            "detection_timestamp": _epoch_ms(datetime.utcnow() - timedelta(minutes=10)
+                                             + timedelta(seconds=seconds))}
 
 
 def _fetcher(alerts, *, total_count=None):

@@ -6,6 +6,7 @@ plumbing — these tests drive the service layer directly.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import AsyncIterator, Callable
 
 import pytest
@@ -78,3 +79,22 @@ def reset_tenant_quota_ledger():
     ledger.reset()
     yield
     ledger.reset()
+
+
+@pytest.fixture(params=["America/Los_Angeles", "Asia/Kolkata"])
+def non_utc_host(request, monkeypatch):
+    """Run the test with the process in a non-UTC zone, one behind and one ahead.
+
+    CI and the image run UTC, where reading a naive-UTC datetime as host-local
+    time costs nothing, so a fixture that does it passes there and fails on a
+    DC's laptop. Forcing the zone makes that mistake fail on every host, CI
+    included. Same zones as ``test_request_window_utc.py``'s local copy.
+    """
+    if not hasattr(time, "tzset"):
+        pytest.skip("needs time.tzset")
+    monkeypatch.setenv("TZ", request.param)
+    time.tzset()
+    assert time.timezone != 0 or time.altzone != 0, "zone did not take effect"
+    yield request.param
+    monkeypatch.undo()
+    time.tzset()
