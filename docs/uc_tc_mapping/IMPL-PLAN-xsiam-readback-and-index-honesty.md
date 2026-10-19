@@ -71,5 +71,5 @@ sprint-2 decision once one real tenant has answered.
 | sprint | state | shas |
 |---|---|---|
 | 1 | shipped (branch `claude/dazzling-ritchie-38r2qr`, awaiting Gate A) | `51deca2` 1a+1c · `e31f4c1` 1b · `8e57eb6` 1d |
-| 2 | shipped (same branch, stacked on PR #129 pending a split decision) | `30d0808` 2b/2c/2d substrate · `f08980a` 2a/2b wiring |
+| 2 | shipped — PR #137 against `main` (`dev` retired 2026-10) | `30d0808` 2b/2c/2d substrate · `f08980a` 2a/2b wiring · `3a8cc89` merge of main |
 | 3 | not started | — |

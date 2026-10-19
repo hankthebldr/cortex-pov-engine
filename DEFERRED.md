@@ -108,4 +108,24 @@ the 8 platform-ops P1 DET rows); the UI Coverage view until sprint 3.
   sessions — this ledger is still in DEFERRED.md.
 - next: sprint 3a — make `--emit-xlsx` walk assertions/ (28, not 6) →
   [WI:xsiam-readback-trust] in Things
+
+### 2026-10-19 · claude-code · Fable 5.1
+- state: cortex-pov-engine@3a8cc89 · branch claude/dazzling-ritchie-38r2qr ·
+  PR #137 against main (dev was retired; main is the integration branch
+  now) · PR #129 merged 2026-09-21 · sprint 2 on the branch, merge of main
+  resolved, full suite running, push + PR body pending
+- did: resumed after a month idle. Merged main (52 commits) into the branch;
+  two conflicts in connectors — kept main's token-boundary detection_id
+  containment beside the exact rule-name key, and generalised main's strict
+  envelope rule (neither list key nor `data` → raise, never zero rows) to
+  the incidents read. 407 connector/API tests green on the merged tree.
+- decided: D9 — merge, not rebase, to bring main into an open PR head
+  (the rebase exception in sprint 2 was the merged-PR case; this PR is
+  live). D10 — the PR template's "cut from dev" checklist line is answered
+  honestly as N/A: no dev branch exists on the remote.
+- open: CONTRIBUTING.md and the PR template still describe `dev` as the
+  trunk while the remote has none — index-owner-style decision for Henry.
+  Sprint 3 not started; it needs its own branch once #137 merges.
+- next: push the merged head, fill PR #137's body from the template, watch
+  CI once → [WI:xsiam-readback-trust] in Things
 ```
