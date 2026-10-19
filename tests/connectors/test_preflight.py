@@ -288,6 +288,18 @@ def test_clock_is_skipped_only_when_no_date_header_is_present():
     assert "Date header" in _stage(r, "clock").detail
 
 
+def test_elapsed_preflight_time_is_not_counted_as_clock_skew():
+    """Both clocks must be read at the same instant. The clock stage runs AFTER
+    the XQL-scope poll, which can take many seconds; if SimCore's side used the
+    preflight-START timestamp, that elapsed wall-time would read as skew. A
+    synced tenant (Date == now) must stay OK even when preflight started long
+    ago — proven by passing a 60s-stale start `now`."""
+    stale_start = datetime.utcnow() - timedelta(seconds=60)
+    r = asyncio.run(pf.preflight_tenant(
+        _client(_tenant()), integration_name="acme", now=stale_start))
+    assert _stage(r, "clock").code == pf.PF_OK
+
+
 def test_every_non_ok_stage_carries_a_remediation():
     """A code with no remediation sends the DC to guess. Enforced, not hoped."""
     reports = [

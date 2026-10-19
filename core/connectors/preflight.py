@@ -502,8 +502,15 @@ async def _probe_clock(client: Any, report: PreflightReport, now: datetime) -> S
     # min old is not 14 min skewed, and the old event-age probe reported exactly
     # that false degradation. The Date header needs no XQL and no data, so it is
     # a free liveness call (still counted — it is a real tenant round-trip).
+    # Both clocks must be read at the SAME instant. SimCore's local time is
+    # captured bracketing the tenant read (NOT the preflight-start `now`, which
+    # is stale by however long the earlier XQL-scope poll took — reusing it
+    # turns elapsed wall-time into fake skew), and compared against the RTT
+    # midpoint so the network round-trip nets out.
     try:
+        before = datetime.now(timezone.utc)
         tenant_time = await client.server_time()
+        after = datetime.now(timezone.utc)
         report.queries_issued += 1
     except (XsiamError, httpx.HTTPError) as exc:
         return Stage("clock", SKIPPED, PF_NOT_PROBED, str(exc),
@@ -516,8 +523,8 @@ async def _probe_clock(client: Any, report: PreflightReport, now: datetime) -> S
                      remediation=("Clock skew is unmeasured (no Date header), so MTTD "
                                   "from this tenant is approximate. This is rare — any "
                                   "HTTP response normally carries one."))
-    ref = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
-    skew = abs((tenant_time - ref).total_seconds())
+    local_mid = before + (after - before) / 2
+    skew = abs((tenant_time - local_mid).total_seconds())
     if skew <= CLOCK_SKEW_WARN_SECONDS:
         return Stage("clock", OK, PF_OK,
                      f"tenant clock within {skew:.1f}s of SimCore; MTTD is trustworthy",
