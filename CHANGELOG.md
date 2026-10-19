@@ -39,6 +39,19 @@ without purpose, and numbers that were not this instance's. See
   items, the scoping wizard and Tenant validation are retired behind
   redirects; `povdata/` is lane/plane vocabulary only.
 
+### Fixed — a finished run's verdict could change after the fact
+
+- **A late or duplicate `/complete` reopened a finished run.** The only guard
+  on `complete_run`'s UPDATE was `status != "aborted"`. A second `/complete`
+  with exit 1 on a run that had completed with exit 0 flipped it `complete` →
+  `failed`, re-stamped `completed_at`, appended a second summary, re-published
+  the terminal SSE frame and re-scored it; a push-mode `staged` run flipped to
+  `complete` the same way. The UPDATE now uses the in-flight guard `/abort`
+  already uses, and a callback on a finished run is a 200 no-op with
+  `already_terminal: true`. A sticky-failed fan-out still owed endpoints is in
+  flight and keeps accepting them. The beacon does not retry `/complete`, so
+  the trigger was a replay, a proxy or another caller.
+
 ### Fixed — the alert read-back path could not be trusted on a shared, busy tenant
 
 Sprint 1 of `docs/uc_tc_mapping/IMPL-PLAN-xsiam-readback-and-index-honesty.md`,

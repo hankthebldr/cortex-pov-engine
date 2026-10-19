@@ -133,7 +133,7 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
 | POST | `/api/runs/{run_id}/output` | Agent streams output (append) | `OutputRequest`: `{output}` | `{"status":"ok","run_id"}`; 404 |
-| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary}` | `{"status":"complete"\|"failed","run_id","tc_verdict"}`; 404 |
+| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary}` | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: `{"status":<terminal>,"run_id","already_terminal":true}`; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification against a registered XSIAM tenant (outbound XQL) | query: `force=0\|1` | `{run_id, tc_verdict, reverified, tenant, queries_issued, reason?}`; 200 + `pending` + `reason:"no_tenant_integration"` when no credential; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/abort` | Operator-initiated abort | — | `{"status":"aborted"\|<terminal>,"run_id","was_terminal"}`; 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
@@ -148,9 +148,18 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   `simulation_authorized` (for `dual-use-lab-only`). The orchestrator refuses to
   create a Run and returns 422 `LAUNCH_FAILED` if a gated adapter lacks consent
   (see §3.1 / `_check_adapter_consent`).
-- `/complete` sets run status to `complete` if `exit_code == 0` else `failed`,
-  stamps `completed_at`, and appends a `--- COMPLETION SUMMARY ---` block to
-  `run.output`.
+- `/complete` appends a `--- COMPLETION SUMMARY ---` block to `run.output` and
+  decrements `open_tasks`. A non-zero `exit_code` makes the run `failed`, and
+  failure is sticky across a fan-out. The endpoint that brings `open_tasks` to 0
+  terminalises the run (`failed` if any endpoint failed, else `complete`), stamps
+  `completed_at`, publishes the terminal `run.status` frame and scores the run.
+  It acts only on a run still in flight — the same guard `/abort` uses, so a
+  `failed` fan-out still owed endpoints keeps accepting them. On a run that
+  already finished (`complete`, `failed` with `completed_at`, `staged`,
+  `aborted`, or failed by an `AGENT_CANNOT_STAGE_ARTIFACTS` refusal) a late or
+  duplicate `/complete` is a 200 no-op with `already_terminal: true`: status,
+  `completed_at`, output and verdict are unchanged, and nothing is published or
+  re-scored.
 - **`/abort`** (GAP-API-001, **closed 2026-06-08**) transitions a `pending`/`running`
   run to the `aborted` state, stamps `completed_at`, dequeues the task via
   `orchestrator.abort(run_id)`, and publishes a `run.status` SSE frame. It is
