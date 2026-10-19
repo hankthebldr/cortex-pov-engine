@@ -120,6 +120,13 @@ path to Cortex; `tenant-verified` is still 0.**
 - `docs/uc_tc_mapping/audit-2026-09-20.md` (counted state vs the five in-tree
   "current state" documents; the generated scoreboard under-counts assertion
   bindings 4×) and the three-sprint implementation plan.
+- **A non-UTC pass in the `backend` CI job.** The runner and the image are UTC,
+  so a naive-UTC datetime read as host-local time went green in CI and red on
+  DC laptops, twice. The step reruns the whole `tests/` tree in the same image
+  and order under `TZ=America/Los_Angeles` (`scripts/test-backend-non-utc.sh`,
+  `make test-backend-non-utc`). It refuses to start pytest if the zone resolves
+  to UTC, because an unknown zone name or an image without tzdata does that
+  silently.
 
 ## [1.0.2] - 2026-09-08
 

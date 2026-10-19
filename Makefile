@@ -5,7 +5,7 @@
 #   make up        — bring SimCore up locally (scripts/dev-up.sh, else docker compose)
 #   make down      — stop SimCore
 #   make build     — build the production simcore image
-#   make test      — backend + agent + ui suites (the three code-test gates)
+#   make test      — backend (UTC + non-UTC pass) + agent + ui suites (the three code-test gates)
 #   make validate  — detection corpus validity + export determinism
 #   make ci        — everything CI runs, in one shot
 #
@@ -23,7 +23,7 @@ COMPOSE     ?= docker compose
 # in core/config.py) doesn't refuse to start with the `changeme` default.
 SECRET      ?= $(shell openssl rand -hex 32)
 
-.PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-agent test-agent-cross \
+.PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-backend-non-utc test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
@@ -133,7 +133,7 @@ rust-dist: ## Build the static-musl Rust tool matrix into ./rust-dist (served by
 # -----------------------------------------------------------------------------
 # Code-test gates (mirror ci.yml backend / agent / ui jobs)
 # -----------------------------------------------------------------------------
-test: test-backend test-agent test-ui ## Run backend + agent + ui suites
+test: test-backend test-backend-non-utc test-agent test-ui ## Run backend + agent + ui suites
 
 test-backend: build ## pytest INSIDE the built prod image (CI 'backend' job)
 	docker run --rm \
@@ -146,6 +146,13 @@ test-backend: build ## pytest INSIDE the built prod image (CI 'backend' job)
 		$(IMAGE) \
 		sh -c "pip install --no-cache-dir pytest pytest-asyncio httpx && \
 		       pytest tests/ -v --tb=short --ignore=tests/smoke"
+
+# The runner and the image both run UTC, so code or a fixture that reads a
+# naive-UTC datetime as host-local time passes there and fails on a DC laptop
+# (7 connector tests on 2026-10-19). Same suite, same image, TZ set to a zone
+# behind UTC; the script fails closed if the zone resolves to UTC anyway.
+test-backend-non-utc: build ## pytest again in the prod image under TZ=America/Los_Angeles (CI 'backend' job)
+	IMAGE=$(IMAGE) CORTEXSIM_SECRET="$(SECRET)" scripts/test-backend-non-utc.sh
 
 test-agent: test-agent-cross ## go build + vet + test -race, all target platforms (CI 'agent' job)
 	cd agent && go build ./... && go vet ./... && go test ./... -race -count=1 -v
