@@ -134,7 +134,15 @@ async def ingest_observations(
     alerts, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
     verdicts = reconcile(results, alerts, window_seconds=body.window_seconds,
                          only_unobserved=not body.reevaluate)
-    summary, _ = await apply_verdicts(db, run_id, results, verdicts, source="manual-import")
+    matched_ext = [v.alert_external_id for v in verdicts if v.matched and v.alert_external_id]
+    by_ext = {a.external_id: a for a in alerts if a.external_id}
+    summary, _ = await apply_verdicts(
+        db, run_id, results, verdicts, source="manual-import",
+        # The DC chose these alerts by hand: scoped and complete by construction,
+        # so the honesty guard withholds nothing — and the basis says `manual`.
+        pull_context={"basis": "manual", "unscoped": False, "truncated": False,
+                      "alert_incidents": {e: by_ext[e].incident_id for e in matched_ext
+                                          if e in by_ext}})
     summary["ingested"] = len(alerts)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
     if dropped:

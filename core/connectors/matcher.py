@@ -214,6 +214,7 @@ class _ResultSide:
     detection_id: str       # normalized, "" when absent
     tokens: set[str]        # evidence tokens of expected_detection
     family: Optional[str] = None   # signal_family(Result.signal_type)
+    rule_name: str = ""     # normalized card detection name, "" when absent
     detection_id_tokens: tuple[str, ...] = ()
 
 
@@ -227,6 +228,7 @@ class _AlertSide:
     has_name: bool
     tokens: set[str]            # evidence tokens of the alert name
     family: Optional[str] = None   # signal_family(alert.alert_source)
+    name_norm: str = ""         # normalized alert name for the exact key
     detection_id_tokens: tuple[str, ...] = ()
 
 
@@ -239,6 +241,7 @@ def _prepare_result(result: Any) -> _ResultSide:
         detection_id=detection_id,
         tokens=_evidence_tokens(getattr(result, "expected_detection", "") or ""),
         family=signal_family(getattr(result, "signal_type", None)),
+        rule_name=_norm(getattr(result, "detection_name", None)),
         detection_id_tokens=_id_tokens(detection_id),
     )
 
@@ -254,6 +257,7 @@ def _prepare_alert(alert: ObservedAlert) -> _AlertSide:
         has_name=bool(alert.name),
         tokens=_evidence_tokens(alert.name) if alert.name else set(),
         family=signal_family(getattr(alert, "alert_source", None)),
+        name_norm=_norm(alert.name),
     )
 
 
@@ -269,6 +273,12 @@ def _keys_for(rs: _ResultSide, als: _AlertSide) -> list[str]:
     # agrees: a BIOC alert is not evidence that a correlation rule fired.
     if rs.family and als.family and rs.family != als.family:
         return keys
+
+    # Exact rule name — the card's detection name equals the alert name. The
+    # one key strong enough to CONSUME an alert (see `reconcile`): with it, a
+    # step expecting N distinct detections needs N distinct alerts.
+    if rs.rule_name and als.name_norm and rs.rule_name == als.name_norm:
+        keys.append("rule_name")
 
     # MITRE technique (exact, or base technique without sub-id).
     if rs.technique:
@@ -342,6 +352,14 @@ def reconcile(
     alert_times = [a.observed_at for a in timed]
     prepared = [_prepare_alert(a) for a in timed]
 
+    # Alerts taken on the exact rule-name key are consumed: every Result in a
+    # step shares the step's technique, so without consumption one BIOC
+    # firing satisfied a step's BIOC, XQL and Correlation expectations alike,
+    # and two expected firings of the same rule were satisfied by one.
+    # Technique/name matches are NOT consumed — that would break every corpus
+    # scenario that declares no card name.
+    consumed: set[int] = set()
+
     verdicts: list[MatchVerdict] = []
     for rid, executed_at, rs in candidates:
         # Window is [executed_at, executed_at + window]; anything earlier can't
@@ -354,8 +372,13 @@ def reconcile(
             observed_at = alert_times[idx]
             if observed_at > upper:
                 break
+            if idx in consumed:
+                idx += 1
+                continue
             keys = _keys_for(rs, prepared[idx])
             if keys:
+                if "rule_name" in keys:
+                    consumed.add(idx)
                 alert = timed[idx]
                 verdict = MatchVerdict(
                     result_id=rid,

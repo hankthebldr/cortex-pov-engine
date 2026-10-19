@@ -79,6 +79,8 @@ ALERT_SHAPE_KEYS: dict[str, tuple[str, ...]] = {
     "host": ("host_name", "endpoint_name", "hosts"),
     "source": ("source", "alert_source"),
     "rule_id": ("matching_service_rule_id", "detector_id", "bioc_id", "rule_id"),
+    # informational — decides the correlation-rate basis, never the grade
+    "incident": ("incident_id", "case_id"),
 }
 
 #: Clock skew beyond this makes MTTD untrustworthy. MTTD is the only KPI the
@@ -257,7 +259,9 @@ def preflight_reconcile(
             if probe.ok and probe.observations:
                 sample = probe.observations[0]
                 total_count = (probe.detail or {}).get("total_count")
-        report.stages.append(_alert_shape_stage(sample, total_count))
+        report.stages.append(_alert_shape_stage(
+            sample, total_count,
+            path=(pull.detail or {}).get("path") or config.get("alerts_path")))
         return report
 
     code = pull.code
@@ -529,7 +533,7 @@ async def _probe_clock(client: Any, report: PreflightReport, now: datetime) -> S
     )
 
 
-def _alert_shape_stage(sample: Any, total_count: Any) -> Stage:
+def _alert_shape_stage(sample: Any, total_count: Any, path: Optional[str] = None) -> Stage:
     """Grade ONE sampled alert against the keys the connector reads.
 
     * no alert to inspect → ``degraded`` / ``PF_ALERT_SHAPE_UNKNOWN``: the
@@ -553,7 +557,7 @@ def _alert_shape_stage(sample: Any, total_count: Any) -> Stage:
                          "re-run preflight. Until an alert has been inspected, whether "
                          "reconcile can match anything is an assumption, not a check."),
             extra={"keys": {role: None for role in ALERT_SHAPE_KEYS},
-                   "source": None, "total_count": total_count},
+                   "source": None, "total_count": total_count, "alerts_path": path},
         )
     raw = sample.raw if isinstance(getattr(sample, "raw", None), dict) else {}
     keys: dict[str, Optional[str]] = {}
@@ -563,6 +567,10 @@ def _alert_shape_stage(sample: Any, total_count: Any) -> Stage:
         "keys": keys,
         "source": getattr(sample, "alert_source", None),
         "total_count": total_count,
+        "alerts_path": path,
+        # Which correlation-rate basis this tenant will get: exact (incident id
+        # on the alert) or the host-scoped incident fallback.
+        "correlation_basis": ("alert_incident_ids" if keys.get("incident") else "host_incidents"),
         "keys_seen": sorted(str(k) for k in raw)[:60],
     }
     found = ", ".join(f"{r}={k}" for r, k in keys.items() if k) or "none of the expected keys"

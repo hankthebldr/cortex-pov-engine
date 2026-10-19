@@ -29,6 +29,7 @@ from config import settings
 from connectors import ConnectorConfig, get_connector, reconcile
 from connectors.base import HttpFetcher
 from connectors.matcher import scope_to_host
+from connectors.measures import CORRELATION, build_measurement, kpi_family
 from events import event_bus
 from integrations.xsiam.codes import remediation_for
 from models import Agent, Result, Run, Scenario
@@ -118,10 +119,46 @@ async def reconcile_run(
     scope_host = host if host is not None else await resolve_run_host(db, run)
     eligible, host_scope = scope_to_host(pull.observations, scope_host)
     verdicts = reconcile(results, eligible, window_seconds=window_seconds)
+
+    # ── what the scorer cannot know on its own: the pull context ──────────
+    truncation = (pull.detail or {}).get("truncation")
+    by_ext = {a.external_id: a for a in eligible if a.external_id}
+    matched_ext = [v.alert_external_id for v in verdicts if v.matched and v.alert_external_id]
+    ctx: dict[str, Any] = {
+        "basis": "reconcile",
+        "unscoped": host_scope["host"] is None,
+        "truncated": bool(truncation),
+        "alert_incidents": {e: getattr(by_ext.get(e), "incident_id", None) for e in matched_ext},
+    }
+    scenario = (await db.execute(
+        select(Scenario).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
+    family = kpi_family(getattr(scenario, "primary_kpi", None),
+                        getattr(scenario, "threshold", None))
+    if (family == CORRELATION and host_scope["host"] is not None
+            and not any(ctx["alert_incidents"].values())
+            and hasattr(conn, "pull_incidents")):
+        # The tenant put no incident id on the alerts: one more read, the
+        # incident list for the same window, scoped to the run's host. Only
+        # for correlation-shaped scenarios — accuracy never needs it.
+        ipull = conn.pull_incidents(cfg, since=since, until=until)
+        if ipull.ok:
+            want = host_scope["host"]
+            ctx["incidents"] = [i for i in ipull.incidents
+                                if any(h.lower() == want for h in i.hosts)]
+            ctx["incidents_truncated"] = bool((ipull.detail or {}).get("truncated"))
+        else:
+            ctx["incidents_error"] = {"code": ipull.code, "error": ipull.error,
+                                      "remediation": remediation_for(ipull.code)}
+
     summary, newly = await apply_verdicts(db, run.run_id, results, verdicts,
-                                          source=f"{connector_kind}:{integ.name}")
+                                          source=f"{connector_kind}:{integ.name}",
+                                          pull_context=ctx)
     summary["pulled"] = len(pull.observations)
     summary["host_scope"] = host_scope
+    if "incidents" in ctx:
+        summary["incidents_considered"] = len(ctx["incidents"])
+    if "incidents_error" in ctx:
+        summary["incidents_error"] = ctx["incidents_error"]
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
 
     warnings: list[str] = []
@@ -130,7 +167,6 @@ async def reconcile_run(
             "unscoped: this run has no resolvable target host, so an alert from "
             "ANY endpoint in the tenant was eligible to be credited — on a shared "
             "tenant treat every match here as unconfirmed.")
-    truncation = (pull.detail or {}).get("truncation")
     if truncation:
         summary["truncated"] = True
         summary["truncation"] = truncation
@@ -172,9 +208,16 @@ async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
 
 
 async def apply_verdicts(
-    db: AsyncSession, run_id: str, results: list[Result], verdicts: list, source: str
+    db: AsyncSession, run_id: str, results: list[Result], verdicts: list, source: str,
+    *, pull_context: Optional[dict[str, Any]] = None,
 ) -> tuple[dict[str, Any], int]:
     """Persist matched verdicts (observed/observed_at), emit SSE, summarise.
+
+    ``pull_context`` is what the reconcile path knows and the scorer cannot
+    (host scope, truncation, the matched alerts' incident ids); it is what
+    turns matched/seeded into a Detection-Accuracy measurement and incident
+    membership into a correlation rate. Omitted by the completion-time score,
+    where nothing has been measured yet.
 
     Returns ``(summary, newly_matched)``.
     """
@@ -222,7 +265,11 @@ async def apply_verdicts(
     run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
     if run is not None:
         summary["tc_verdict"] = await score_run_safely(
-            db, run, source=f"reconcile:{source}", results=results)
+            db, run, source=f"reconcile:{source}", results=results,
+            pull_context=pull_context)
+        detail = run.tc_verdict_detail if isinstance(run.tc_verdict_detail, dict) else {}
+        if detail.get("measurement"):
+            summary["measurement"] = detail["measurement"]
     return summary, matched
 
 
@@ -281,6 +328,7 @@ async def score_run_for_run(
     results: Optional[list[Result]] = None,
     extra_detail: Optional[dict[str, Any]] = None,
     commit: bool = True,
+    pull_context: Optional[dict[str, Any]] = None,
 ) -> Any:
     """Score one run against its scenario's threshold and persist the verdict.
 
@@ -302,16 +350,38 @@ async def score_run_for_run(
     )).scalar_one_or_none()
 
     mttds = [r.mttd_seconds for r in results if r.mttd_seconds is not None]
+    # Sprint 2: the two non-MTTD values the loop can derive. None when the
+    # scenario's KPI is MTTD-shaped, when nothing was pulled (completion-time
+    # score), or when the honesty guard withholds it — all of which score
+    # exactly as before.
+    measured_value, measurement = build_measurement(
+        getattr(scenario, "primary_kpi", None), getattr(scenario, "threshold", None),
+        results, pull_context)
+    prior = (run.tc_verdict_detail.get("measurement")
+             if isinstance(run.tc_verdict_detail, dict) else None)
+    if pull_context is None and isinstance(prior, dict) and prior.get("scored") is not None:
+        # A re-score with no new evidence (a Tier-2 verify pass, a completion
+        # callback that arrived late) keeps the last measured value: it must
+        # not flip a measured `pass` back to `pending` because THIS caller
+        # happened not to be the one holding the pull.
+        measured_value = prior["scored"]
+        measurement = prior
     score = verifier.score_run(
         results,
         threshold=getattr(scenario, "threshold", None),
         primary_kpi=getattr(scenario, "primary_kpi", None),
         mttd_seconds=(sum(mttds) / len(mttds)) if mttds else None,
+        measured_value=measured_value,
         tc_scoreable=verifier.tc_scoreable_for(getattr(scenario, "tc_ref", None)),
     )
 
     detail = score.to_dict()
     detail["source"] = source
+    if measurement:
+        detail["measurement"] = measurement
+    elif isinstance(prior, dict):
+        # A re-score must not erase the last real measurement record either.
+        detail["measurement"] = prior
     detail["scored_at"] = datetime.utcnow().isoformat()
     # Carry the verification bookkeeping across a re-score. Tier 1 runs far
     # more often than Tier 2 (every reconcile, every completion) and rebuilds
@@ -346,6 +416,7 @@ async def score_run_for_run(
 async def score_run_safely(
     db: AsyncSession, run: Run, *, source: str,
     results: Optional[list[Result]] = None,
+    pull_context: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     """:func:`score_run_for_run` that can never break its caller.
 
@@ -355,7 +426,8 @@ async def score_run_safely(
     on an agent callback.
     """
     try:
-        score = await score_run_for_run(db, run, source=source, results=results)
+        score = await score_run_for_run(db, run, source=source, results=results,
+                                        pull_context=pull_context)
         return score.verdict
     except Exception:  # noqa: BLE001 — scoring is advisory to its caller
         logger.exception("tc_verdict scoring failed run_id=%s source=%s",

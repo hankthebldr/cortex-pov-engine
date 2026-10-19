@@ -552,7 +552,7 @@ unreachable in the field (it 403s with `ARTIFACT_FORBIDDEN` naming the fix).
 | GET | `/api/connectors` | List connector kinds and, per kind, whether a usable integration credential is **configured** and **verified** | includes `preflight_url`; reports **both** credential kinds (`xsiam` = alert read-back, `xsiam_tenant` = XQL) |
 | POST | `/api/connectors/{kind}/preflight` | **Staged tenant preflight** — "is my connection working?" answered *before* the POV | `{tenant, kind, base_url_host, overall, stages[], queries_issued, capabilities_confirmed[], capabilities_denied[], proves}` |
 | POST | `/api/runs/{run_id}/observations` | Manual batch ingest of alerts a DC exported from the console — no credential, fully offline | seeded `Result` rows gain `observed_at` → MTTD |
-| POST | `/api/runs/{run_id}/reconcile?connector=xsiam` | Credential-backed pull for the run's window | same funnel (`apply_verdicts`) as the manual path |
+| POST | `/api/runs/{run_id}/reconcile?connector=xsiam` | Credential-backed pull for the run's window | same funnel (`apply_verdicts`) as the manual path; summary carries `host_scope`, `truncated`/`truncation`, `warnings[]`, `measurement`, and `incidents_considered` when a correlation scenario needed the incidents read |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification via read-only XQL (see §1.3) | 200 + `pending` + `reason` when no credential |
 
 **Preflight stages**, in order, each with a stable `code` and a `remediation`
@@ -579,6 +579,27 @@ tenant with no alert to inspect is therefore **degraded, not ready**.
 `queries_issued` is in every response **on purpose**: a preflight driven by an
 injected transport reports `0`, and the `proves` string says so verbatim, so a
 mocked green can never be quoted as "connection validated".
+
+**What the reconcile loop measures (2026-09-21, sprint 2).** Beyond MTTD the
+loop now produces two values `verifier.score_run` accepts as `measured_value`,
+recorded under `tc_verdict_detail.measurement` with `family`, `basis`, `value`,
+`scored` and, when the guard held it back, `withheld`:
+
+| scenario `primary_kpi` (unit `%`) | value | basis |
+|---|---|---|
+| Detection Accuracy | `observed / seeded` over results that executed | `reconcile` or `manual` |
+| Cross-Source Correlation Rate · Stitch Completeness · Correlation Coverage | `(alerts − incidents) / (alerts − 1)` | `alert_incident_ids` when the tenant stamps `incident_id`/`case_id` on alerts, else `host_incidents` from one `get_incidents` read scoped to the run's host |
+
+The guard: an **unscoped** pull withholds a PASS, a **truncated** pull
+withholds a FAIL, **zero matched** stays `pending`, and fewer than two alerts
+cannot yield a correlation rate. A re-score with no new evidence keeps the last
+measured value.
+
+**Credential config keys the `xsiam` connector reads:** `base_url` |
+`fqdn` | `tenant_url`, `api_key_id` | `auth_id`, `auth_mode`
+(`standard`|`advanced`), `max_pages` (default 20 × 100 alerts), `alerts_path`
+(default `/public_api/v1/alerts/get_alerts_multi_events`), `incidents_path`
+(default `/public_api/v1/incidents/get_incidents`).
 
 > **Wire caveat (open as of 2026-08-06).** The console's Readiness surface calls
 > `POST /api/xsiam/tenants/{name}/preflight` for `kind: xsiam_tenant`. **That
