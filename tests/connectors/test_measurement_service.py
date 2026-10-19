@@ -5,19 +5,30 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from tests.connectors.test_verification_service import _seed
+
+# The reconcile window is naive UTC; run under a non-UTC host so a fixture that
+# mints its alert epochs in host-local time fails here, not only on a DC laptop.
+pytestmark = pytest.mark.usefixtures("non_utc_host")
 
 ACC = {"kpi": "Detection Accuracy", "op": "≥", "value": 50, "unit": "%"}
 CORR = {"kpi": "Cross-Source Correlation Rate", "op": "≥", "value": 80, "unit": "%"}
 
 
+def _epoch_ms(naive_utc: datetime) -> int:
+    """Epoch-ms for a naive-UTC datetime. ``naive.timestamp()`` reads it as host-local."""
+    return int(naive_utc.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
 def _alert(ext, *, host="web-01", seconds=30, technique="T1003.001", incident=None):
     a = {"alert_id": ext, "name": f"alert {ext}", "host_name": host, "source": "XDR BIOC",
          "mitre_technique_ids": [technique],
-         "detection_timestamp": int(((datetime.utcnow() - timedelta(minutes=10))
-                                     + timedelta(seconds=seconds)).timestamp() * 1000)}
+         "detection_timestamp": _epoch_ms(datetime.utcnow() - timedelta(minutes=10)
+                                          + timedelta(seconds=seconds))}
     if incident:
         a["incident_id"] = incident
     return a
@@ -129,9 +140,9 @@ def test_correlation_falls_back_to_host_scoped_incidents(session_factory):
     fetcher, calls = _tenant(
         [_alert("a"), _alert("b", technique="T1059")],
         incidents=[{"incident_id": "104", "alert_count": 6, "hosts": ["web-01:aef3"],
-                    "creation_time": int(datetime.utcnow().timestamp() * 1000)},
+                    "creation_time": _epoch_ms(datetime.utcnow())},
                    {"incident_id": "105", "alert_count": 3, "hosts": ["db-02:1"],
-                    "creation_time": int(datetime.utcnow().timestamp() * 1000)}])
+                    "creation_time": _epoch_ms(datetime.utcnow())}])
     summary, run = asyncio.run(_reconcile(session_factory, fetcher))
     m = summary["measurement"]
     assert any("incidents" in c for c in calls)
