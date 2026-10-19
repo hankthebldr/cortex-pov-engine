@@ -96,6 +96,42 @@ def test_two_endpoints_completing_together_terminalise_the_run(file_db):
     assert "endpoint-a" in run.output and "endpoint-b" in run.output
 
 
+def test_partial_completion_reports_the_status_its_own_transaction_saw(file_db):
+    """A partial /complete must describe its OWN write transaction.
+
+    Forces the interleaving the gather() test above only hits by luck: endpoint
+    A commits its decrement (2 -> 1), then endpoint B's /complete runs to the end
+    and terminalises the run before A builds its response. A post-commit re-read
+    answered ``status: complete`` with ``pending_endpoints: 1`` — the stored row
+    was right, the response contradicted itself.
+    """
+    from api.runs import CompleteRequest, complete_run
+
+    async def _go():
+        await _seed(file_db, "fan-x", open_tasks=2)
+        out_b: dict = {}
+        async with file_db() as db_a:
+            real_commit = db_a.commit
+
+            async def _commit_then_b_finishes():
+                await real_commit()
+                if not out_b:
+                    async with file_db() as db_b:
+                        out_b.update(await complete_run(
+                            "fan-x", CompleteRequest(exit_code=0, summary="endpoint-b"), db_b))
+
+            db_a.commit = _commit_then_b_finishes
+            out_a = await complete_run(
+                "fan-x", CompleteRequest(exit_code=0, summary="endpoint-a"), db_a)
+        return out_a, out_b, await _read(file_db, "fan-x")
+
+    out_a, out_b, run = asyncio.run(_go())
+    # The interleaving really happened: B landed between A's commit and A's reply.
+    assert out_b.get("status") == "complete", out_b
+    assert run.status == "complete" and run.open_tasks == 0
+    assert out_a == {"status": "running", "run_id": "fan-x", "pending_endpoints": 1}, out_a
+
+
 def test_concurrent_output_chunks_are_all_kept(file_db):
     from api.runs import OutputRequest, append_output
 

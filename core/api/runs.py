@@ -949,22 +949,24 @@ async def complete_run(
         return {"status": run.status, "run_id": run_id}
 
     # Still inside the write transaction that the UPDATE opened, so this read
-    # sees exactly the decrement this request made.
-    remaining = (await db.execute(
-        select(Run.open_tasks).where(Run.run_id == run_id)
-    )).scalar_one()
+    # sees exactly the decrement this request made — and the status that goes
+    # with it.
+    run = await _reload_run(db, run_id)
+    remaining, status = run.open_tasks, run.status
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal
         # frame, or score yet. The run stays 'running' (or 'failed' if an
         # endpoint has already failed) until the final callback.
         await db.commit()
-        run = await _reload_run(db, run_id)
         logger.info(
             "run_complete partial run_id=%s exit_code=%d remaining_endpoints=%d",
             run_id, body.exit_code, remaining,
         )
-        return {"status": run.status, "run_id": run_id, "pending_endpoints": remaining}
+        # Reply with the status read inside the transaction, never a re-read
+        # after commit: the last endpoint can terminalise the run in between,
+        # and `complete` alongside `pending_endpoints: 1` contradicts itself.
+        return {"status": status, "run_id": run_id, "pending_endpoints": remaining}
 
     # Last endpoint in — terminalise with the aggregate verdict, in the same
     # transaction as the decrement.
