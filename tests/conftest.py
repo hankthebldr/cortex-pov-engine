@@ -31,6 +31,19 @@ def fixtures_dir() -> Path:
     return REPO_ROOT / "tests" / "fixtures"
 
 
+@pytest.fixture
+def restore_core_modules():
+    """Required by any test that re-imports core/ via ``reimport_core``.
+
+    Without it the throwaway ``config`` outlives the test and every later
+    import binds to a dead tmp BASE_DIR. See tests/_core_reimport.py.
+    """
+    from tests._core_reimport import core_modules_restored  # noqa: PLC0415
+
+    with core_modules_restored():
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Hermetic payload shelf
 # ---------------------------------------------------------------------------

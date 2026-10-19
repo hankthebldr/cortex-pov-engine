@@ -28,6 +28,9 @@ import pytest
 
 from tests.integration.xsiam.test_operations_api import _build_app, _ret
 
+# _build_app re-imports core/ against tmp_path; this puts the originals back.
+pytestmark = pytest.mark.usefixtures("restore_core_modules")
+
 
 def _wire(monkeypatch, xsiam_api):
     """Swap the stub for a real XsiamClient whose transport records the wire."""
