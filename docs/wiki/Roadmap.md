@@ -33,7 +33,7 @@ These are tracked because quantifying a gap is more useful than hiding it.
 | Gap | Detail |
 |---|---|
 | **tenant-verified = 0** | No run and no assertion has executed against a live Cortex tenant. |
-| KPI coverage | Only **59 of 177** scenarios declare an MTTD-shaped primary KPI — the only KPI the engine measures natively. The rest score `pending` permanently. |
+| KPI coverage | **134 of 177** scenarios declare a primary KPI the engine can measure (66 MTTD, 47 Detection Accuracy, 21 correlation rate). The other **43** score `pending` permanently. Measurable is not measured — no tenant has answered yet. |
 | Index coverage | 94 of 266 index test cases evidenced; 172 open. Only 91 carry a measurable threshold at all. |
 | Windows execution | A correct PE is served, but **no Windows host has executed** the beacon or the PowerShell installer. |
 | Rust tool delivery | `rust-dist/` is baked into the image but there is no `/api/tools/binary/{tool}` route — `docker cp` is the only way out. |

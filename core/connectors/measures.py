@@ -1,7 +1,7 @@
 """Measured values the read-back loop can derive for ``verifier.score_run``.
 
 Until sprint 2 the scorer had exactly one native input, mean MTTD, so the 47
-scenarios whose primary KPI is *Detection Accuracy* and the 20 whose KPI is a
+scenarios whose primary KPI is *Detection Accuracy* and the 21 whose KPI is a
 *correlation rate* resolved ``pending`` forever — even though the reconcile
 loop already computed both halves of the accuracy ratio and threw it away.
 
