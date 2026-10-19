@@ -235,23 +235,86 @@ jobs:
           name: release-bundle
           path: dist/
 
+      - name: Probe anonymous GHCR pull
+        id: ghcr
+        env:
+          TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          # The notes may call the image pullable only if an anonymous client
+          # can actually pull it, so measure that here instead of asserting it.
+          # GHCR answers an anonymous pull-token request with 200 for a public
+          # package, 401 for a private one and 403 for a missing one. A token
+          # is not a pull, so "public" also needs the tag's manifest to answer.
+          REPO="${GITHUB_REPOSITORY_OWNER,,}/cortexsim"
+          BODY="$(mktemp)"
+          CODE="$(curl -s -o "$BODY" -w '%{http_code}' \
+            "https://ghcr.io/token?scope=repository:${REPO}:pull&service=ghcr.io" || true)"
+          STATE=unverified
+          if [ "$CODE" = "200" ]; then
+            TOKEN="$(jq -r '.token // empty' "$BODY" 2>/dev/null || true)"
+            MCODE="$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/${REPO}/manifests/${TAG}" || true)"
+            if [ "$MCODE" = "200" ]; then
+              STATE=public
+            fi
+            CODE="${CODE} token, ${MCODE} manifest"
+          elif [ "$CODE" = "401" ] || [ "$CODE" = "403" ]; then
+            STATE=not_public
+          fi
+          {
+            echo "state=${STATE}"
+            echo "code=${CODE}"
+            echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+          echo "GHCR anonymous pull of ${REPO}:${TAG}: ${STATE} (HTTP ${CODE})"
+
       - name: Generate release notes
         id: notes
         env:
           TAG: ${{ needs.resolve-tag.outputs.tag }}
+          GHCR_STATE: ${{ steps.ghcr.outputs.state }}
+          GHCR_CODE: ${{ steps.ghcr.outputs.code }}
+          GHCR_AT: ${{ steps.ghcr.outputs.at }}
         run: |
           PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
+          IMG="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cortexsim:${TAG}"
+          # The install.sh paragraph below describes the ROOT ./install.sh, the
+          # full source bootstrap. If build-stage2 staged anything else (e.g. an
+          # installer/bootstrap/install.sh), those words no longer describe the
+          # asset, so stop rather than publish them over a different script.
+          if [ -f dist/install.sh ] && ! cmp -s dist/install.sh install.sh; then
+            echo "::error::dist/install.sh is not the root install.sh, but the notes describe the root source bootstrap. Rewrite the install.sh paragraph in this step before releasing."
+            exit 1
+          fi
           {
             echo "## CortexSim ${TAG}"
             echo
-            echo "**Container image** — \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cortexsim:${TAG}\` (linux/amd64, linux/arm64)"
+            echo "**Container image** — \`${IMG}\` (linux/amd64, linux/arm64) was pushed by this release run."
+            case "$GHCR_STATE" in
+              public)
+                echo "An anonymous pull was verified at ${GHCR_AT} (HTTP ${GHCR_CODE})." ;;
+              not_public)
+                echo "It is **not publicly pullable**: an anonymous pull-token request returned HTTP ${GHCR_CODE} at ${GHCR_AT}. Pulling it needs credentials with access to the package; without them, build the same image from a clone (below)." ;;
+              *)
+                echo "Anonymous pullability was **not verified** (the probe returned HTTP ${GHCR_CODE} at ${GHCR_AT}). Do not assume \`docker pull\` works; build the image from a clone (below)." ;;
+            esac
             echo
-            echo "**One-line install (Linux jumpbox):**"
+            echo "**Install from a clone.** No asset attached here fetches the source for you. Use a plain clone; do not pass \`--recurse-submodules\`, because two of the submodules may be private."
             echo
             echo '```bash'
-            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/install.sh | sudo bash"
+            echo "git clone --branch ${TAG} https://github.com/${GITHUB_REPOSITORY}.git"
+            echo "cd ${GITHUB_REPOSITORY#*/}"
+            echo "./scripts/dev-up.sh"
             echo '```'
             echo
+            echo "\`scripts/dev-up.sh\` needs only Docker. It builds the image locally (\`docker compose up -d --build\`) and waits for \`/api/health\`."
+            echo
+            if [ -f dist/install.sh ]; then
+              echo "**\`install.sh\` is the source bootstrap, not a one-line installer.** It installs a Go/Rust/Node/Python toolchain, initialises the submodules, builds every component and runs \`docker compose up -d --build\`, all relative to the directory it runs in. Run it from the root of the clone above as your normal user (\`./install.sh\`); it calls \`sudo\` itself. Do not pipe it (\`curl … | bash\`). Outside a checkout it installs the toolchain, skips every build step with a warning, starts nothing, and still prints \"Installation complete\". The attached copy is the same file as \`install.sh\` at the root of the tree this release was built from."
+              echo
+            fi
             echo "Verify artifact integrity with \`SHA256SUMS\` or \`manifest.json\`."
             echo
             if [ -n "$PREV" ]; then
