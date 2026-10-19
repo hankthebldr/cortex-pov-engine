@@ -123,7 +123,7 @@ This is the substantive gate. Everything below is required.
 
 | Job | Proves |
 |---|---|
-| `backend` | Python suite inside the **prod image** (not the host venv) |
+| `backend` | Python suite inside the **prod image** (not the host venv), then again under `TZ=America/Los_Angeles` |
 | `agent` | Go beacon build + vet + `test -race`, cross-compile linux/darwin/**windows** |
 | `ui` | vitest + `vite build` |
 | `detection` | corpus validator + deterministic export regeneration (`sha256sum -c`) |
