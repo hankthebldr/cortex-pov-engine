@@ -951,9 +951,8 @@ async def complete_run(
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes
     # with it.
-    remaining, status = (await db.execute(
-        select(Run.open_tasks, Run.status).where(Run.run_id == run_id)
-    )).one()
+    run = await _reload_run(db, run_id)
+    remaining, status = run.open_tasks, run.status
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal
