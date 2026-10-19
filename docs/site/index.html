@@ -232,7 +232,7 @@ footer a{border-bottom:none}
     <dl class="meta">
       <div><dt>For</dt><dd>Cortex Domain Consultants</dd></div>
       <div><dt>From</dt><dd>Henry Reed</dd></div>
-      <div><dt>Counts measured</dt><dd>2026-08-30</dd></div>
+      <div><dt>Counts measured</dt><dd>2026-10-19</dd></div>
       <div><dt>Source</dt><dd><a href="https://github.com/__GH_OWNER__/__GH_REPO__">__GH_OWNER__/__GH_REPO__</a></dd></div>
     </dl>
   </header>
@@ -298,7 +298,7 @@ footer a{border-bottom:none}
           <text x="233" y="112" text-anchor="middle" fill="var(--ink-muted)">identity harness</text>
           <text x="233" y="127" text-anchor="middle" fill="var(--ink-muted)">payload shelf</text>
           <text x="233" y="142" text-anchor="middle" fill="var(--ink-muted)">orchestrator</text>
-          <text x="233" y="160" text-anchor="middle" fill="var(--cortex-green)" font-size="9" letter-spacing="1">133 ROUTES</text>
+          <text x="233" y="160" text-anchor="middle" fill="var(--cortex-green)" font-size="9" letter-spacing="1">135 ROUTES</text>
 
           <!-- fan out -->
           <path d="M299 109 H326 V37 H370" fill="none" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
@@ -501,7 +501,7 @@ footer a{border-bottom:none}
   <section class="sec">
     <div class="sechead"><span class="sechead__i">03</span><h2>Detections are not the only proof</h2></div>
     <p>
-      140 rows in the FY27 index are not detections at all, and no amount of
+      159 rows in the FY27 index are not detections at all, and no amount of
       additional scenario YAML can close them. A posture question asks whether a
       state <em>holds</em>; a platform question asks whether a capability is
       <em>present</em>; an automation question asks whether an outcome lands
@@ -513,8 +513,8 @@ footer a{border-bottom:none}
         <thead><tr><th>Artifact</th><th>Asks</th><th class="n">Count</th></tr></thead>
         <tbody>
           <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">177</td></tr>
-          <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">15</td></tr>
-          <tr><td class="mono">PLT</td><td>Is a capability present?</td><td class="n">4</td></tr>
+          <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">18</td></tr>
+          <tr><td class="mono">PLT</td><td>Is a capability present?</td><td class="n">7</td></tr>
           <tr><td class="mono">AUT</td><td>Does an outcome hit its budget?</td><td class="n">3</td></tr>
         </tbody>
       </table>
@@ -583,9 +583,9 @@ footer a{border-bottom:none}
     <div class="note">
       <p class="note__k">Read this before quoting a coverage number</p>
       <p>
-        The index is not one population. Of its 266 test cases, 94 are evidenced by
-        a scenario or an assertion and 172 remain open — but only 91 carry a
-        measurable threshold at all. A flat percentage hides which mechanism owes
+        The index is not one population. Of its 266 test cases, 106 are evidenced
+        — 90 by a scenario, 16 more only by an assertion — and 160 remain open,
+        but only 91 carry a measurable threshold at all. A flat percentage hides which mechanism owes
         the work, and none of it is tenant-verified.
       </p>
     </div>
@@ -595,10 +595,14 @@ footer a{border-bottom:none}
   <section class="sec">
     <div class="sechead"><span class="sechead__i">05</span><h2>Getting it running</h2></div>
     <p>
-      CortexSim is distributed as source. There is no tagged release and no
-      published container image — the release pipeline exists and fires on a
-      <code>v*.*.*</code> tag, but no tag has been cut. Everything you run comes
-      from the tree.
+      CortexSim ships as tagged
+      <a href="https://github.com/__GH_OWNER__/__GH_REPO__/releases">GitHub Releases</a>
+      — <strong>v1.0.2</strong> is the latest, cut 2026-09-08. Each release
+      attaches an installer, Linux and Windows stage-2 archives,
+      <code>SHA256SUMS</code> and a <code>manifest.json</code>, and the pipeline
+      pushes a multi-arch image (linux/amd64, linux/arm64) to GHCR. That image is
+      not publicly pullable today, so the bring-up below still builds from the
+      tree.
     </p>
 
     <h3>Docker — canonical bring-up</h3>
@@ -638,6 +642,7 @@ cp .env.example .env
     <p>CortexSim · Palo Alto Networks · Cortex Domain Consulting</p>
     <p>
       <a href="https://github.com/__GH_OWNER__/__GH_REPO__">Source</a> ·
+      <a href="https://github.com/__GH_OWNER__/__GH_REPO__/releases">Releases</a> ·
       <a href="https://github.com/__GH_OWNER__/__GH_REPO__/wiki">Wiki</a> ·
       <a href="https://github.com/__GH_OWNER__/__GH_REPO__/issues">Issues</a>
     </p>
