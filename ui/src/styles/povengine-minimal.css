@@ -1,0 +1,94 @@
+/* povengine-minimal.css — the minimal pass, loaded LAST.
+   ---------------------------------------------------------------------------
+   One colour rule for the whole console:
+     orange  — the single primary action on a screen (.pov-btn--primary et al.)
+     green   — something is actually healthy / done / detected
+     amber   — a real warning; red — a real failure
+     neutral — everything else, including "selected", which reads as brightness
+   The token layer carries most of this (cortex-tokens.css). What lives here is
+   the shell chrome that used hue for emphasis rather than for meaning. */
+
+/* ── Page masthead ──────────────────────────────────────────────────────────
+   The 44px orange rule and the "PHASE 2 · COMPOSE" eyebrow sat above every
+   title. The phase vocabulary left with the phase rail, and the rule was the
+   largest block of orange on most pages without meaning anything. The title
+   and the task tab strip already say where you are. */
+.theme-console .pov-page__rule,
+.theme-console .pov-page__eyebrow,
+.theme-console .view-head__eyebrow { display: none; }
+
+/* ── Rail ───────────────────────────────────────────────────────────────── */
+.theme-console .pov-rail__item--on {
+  border-left-color: var(--tx);
+  background: var(--s2);
+  color: var(--tx);
+}
+.theme-console .pov-rail__item--on .pov-rail__text { font-weight: 600; }
+/* Some DS icons carry brand colour; inverted they turned blue and red in the
+   rail. Grayscale first, then invert, so every icon is the same neutral line. */
+[data-theme='dark'] .theme-console .pov-rail__icon,
+.theme-console[data-theme='dark'] .pov-rail__icon { filter: grayscale(1) invert(1); }
+.theme-console[data-theme='light'] .pov-rail__icon { filter: grayscale(1); }
+.theme-console .pov-rail__badge { color: var(--tx2); background: var(--s3); }
+.theme-console .pov-rail__group + .pov-rail__group { margin-top: 14px; }
+
+/* ── Task tab strip (SectionTabs) ───────────────────────────────────────── */
+.theme-console .pov-section-tabs { margin: 0 0 18px; }
+.theme-console .pov-tab--on { border-bottom-color: var(--tx); color: var(--tx); }
+
+/* ── Safety gate, once acknowledged ─────────────────────────────────────────
+   The unacknowledged gate stays exactly as loud as before — it is a consent
+   step, and it re-arms every session and every tenant switch. Acknowledged, it
+   was still a full-width yellow band for the rest of the session; now it is a
+   slim neutral line that keeps the tenant name and the way back to scope. */
+.theme-console .safety-banner--min {
+  background: var(--s1);
+  color: var(--tx2);
+  border-bottom: 1px solid var(--bd);
+  padding: 5px 16px;
+  gap: 12px;
+  font-size: 12px;
+}
+.theme-console .safety-banner--min .safety-banner__tag {
+  font: 600 10.5px/1 var(--font-ui);
+  letter-spacing: .06em;
+  color: var(--warn);
+}
+.theme-console .safety-banner--min .safety-banner__rule { display: none; }
+.theme-console .safety-banner--min .safety-banner__msg strong { color: var(--tx); }
+.theme-console .safety-banner--min .safety-banner__link { color: var(--tx2); font-size: 12px; }
+
+/* ── Readiness line ─────────────────────────────────────────────────────────
+   A server fault is worth one line, not a tinted band across the console. */
+.theme-console .readiness-banner {
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd);
+  padding: 5px 16px;
+}
+.theme-console .readiness-banner__tag { color: var(--warn); }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.theme-console .tour-trigger__beacon { background: var(--tx2); box-shadow: none; animation: none; }
+
+/* ── Primary action ─────────────────────────────────────────────────────────
+   The one place orange is allowed to be loud. */
+.theme-console .pov-btn--primary { background: var(--ac-brand); border-color: var(--ac-brand); color: #1A1A1A; }
+
+/* Per-page accent bars from the parity pass — the same 44px orange-then-white
+   block above each page title, under a different class on each page. */
+.theme-console .tools-destination__accent,
+.theme-console .tenant-mgr__accent,
+.theme-console .tenant-mgr__accent-bar,
+.theme-console .run-detail__accent,
+.theme-console .lab__accent,
+.theme-console .eal-console__accent,
+.theme-console .coverage-kicker__bar,
+.theme-console .composer__accent,
+.theme-console .agents-kicker,
+.theme-console .ops-eyebrow,
+.theme-console .uctc__pagehead-eyebrow { display: none; }
+
+/* Rail icons: legible at rest now that they are neutral. */
+.theme-console .pov-rail__icon { opacity: .7; }
+.theme-console .pov-rail__item--on .pov-rail__icon { opacity: 1; }
+.theme-console .coverage-kicker { display: none; }

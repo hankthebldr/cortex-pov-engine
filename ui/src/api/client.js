@@ -131,14 +131,29 @@ export async function request(path, options = {}) {
     try {
       const errorBody = await response.json()
       // FastAPI returns errors as { detail: ... } where detail is one of:
-      //   • an ARRAY  — Pydantic request-validation failures (422)
+      //   • an ARRAY  — Pydantic request-validation failures (422) from a
+      //                 SimCore older than the main.py validation handler
       //   • an OBJECT — this project's {error, code, detail} contract
       //   • a STRING  — a plain HTTPException message
-      // All three carry the actionable part; only the status line does not.
+      // and SimCore's own exception handlers answer with the contract at the
+      // TOP level: {error, code, detail}. All of them carry the actionable
+      // part; only the status line does not.
       if (Array.isArray(errorBody.detail)) {
         detail = errorBody.detail
         errorMessage = formatValidationDetail(errorBody.detail) || fallback
         code = 'VALIDATION_ERROR'
+      } else if (
+        errorBody.detail && typeof errorBody.detail === 'object'
+        && (typeof errorBody.error === 'string' || typeof errorBody.code === 'string')
+      ) {
+        // Top-level envelope with a STRUCTURED detail — the RequestValidation
+        // handler's `{error: "mode: Field required", code: "VALIDATION_ERROR",
+        // detail: {fields: [...]}}`. Without this branch it fell into the
+        // nested one below, read `detail.error` (undefined) and every 422
+        // reached the operator as "HTTP 422 — Unprocessable Entity", code null.
+        code = errorBody.code || null
+        detail = errorBody.detail
+        errorMessage = errorBody.error || fallback
       } else if (errorBody.detail && typeof errorBody.detail === 'object') {
         const d = errorBody.detail
         code = d.code || null

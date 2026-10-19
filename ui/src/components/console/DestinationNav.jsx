@@ -28,15 +28,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
  * the cue rather than hiding it, because a false "there is more" costs a
  * glance and a false "that is everything" costs a destination.
  *
- * THE RAIL IS THE PHASE MODEL
- * ---------------------------
- * Groups are the POV phases, in run order, and each carries its phase numeral
- * in the accent color. There used to be a separate phase bar above the
- * workspace answering the same question in a different vocabulary; two
- * wayfinding systems that could disagree about the same fourteen destinations
- * was the redesign's original complaint. The bar is gone and this is the
- * single answer, with the flow bar at the foot of the shell naming the next
- * action (see FlowBar.jsx).
+ * THE RAIL IS A TASK LIST
+ * -----------------------
+ * Five tasks and a small Manage group (see the registry note in
+ * app/destinations.jsx). `active` is the rail item that OWNS the open page, so
+ * a tab inside a task — Coverage inside Results — still lights up its task.
  *
  * ICONS ARE REAL ASSETS, NOT GLYPHS
  * ---------------------------------
@@ -50,7 +46,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
  * and fired a 404 per render.
  *
  * Props:
- *   groups        — [{ label, num, items: [{ id, label, iconUrl, badge, badgeVariant }] }]
+ *   groups        — [{ label, items: [{ id, label, iconUrl, badge, badgeVariant }] }]
  *   active        — current destination id
  *   onNavigate    — (destinationId) => void
  *   collapsed     — boolean (rail collapse persisted by the shell)
@@ -130,13 +126,14 @@ export default function DestinationNav({
 
       {groups.map((group) => (
         <div className="pov-rail__group rail__group" key={group.label}>
-          <div className="pov-rail__head rail__section-title">
-            {/* '' for "Start here", which sits before the run order rather
-                than inside it, and for any future group without a phase. */}
-            {group.num ? <span className="pov-rail__num">{group.num}</span> : null}
-            {!collapsed && <span className="pov-rail__label">{group.label}</span>}
-            {!collapsed && <span className="pov-rail__hr" />}
-          </div>
+          {/* Only the secondary group is labelled — the task list is the
+              rail's body and a heading over it would just be one more line. */}
+          {group.label ? (
+            <div className="pov-rail__head rail__section-title">
+              {!collapsed && <span className="pov-rail__label">{group.label}</span>}
+              {!collapsed && <span className="pov-rail__hr" />}
+            </div>
+          ) : null}
           {group.items.map((item) => {
             const isActive = item.id === active
             return (

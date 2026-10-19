@@ -5,6 +5,7 @@ import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { getToolAdapters } from '../../api/client.js'
 import useShelf from './useShelf.js'
+import { parseServerTime } from '../../api/time.js'
 import { SUPPLY, supplyOf } from './supplyState.js'
 
 /**
@@ -462,7 +463,7 @@ function RunHistorySection({ runs = [], onOpenRunEvidence = () => {} }) {
 
 function RunHistoryRow({ run, onOpen = () => {} }) {
   const id     = runIdOf(run)
-  const ts     = Date.parse(run.started_at || run.created_at || '') || 0
+  const ts     = parseServerTime(run.started_at || run.created_at || '') || 0
   const ago    = formatAgo(ts) || '—'
   // Backend terminal token is 'complete'; runStatusToken folds it (and the
   // legacy 'completed') onto the canonical 'completed' CSS state, and surfaces

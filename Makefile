@@ -252,8 +252,19 @@ check-rust-exec: ## execute every rust-dist binary on clean ubuntu + alpine (nee
 
 validate-detection: ## validate.py (0 fail) + export-determinism gate (CI 'detection' job)
 	python3 detection_scanner/scripts/validate.py --quiet
-	python3 detection_scanner/scripts/export_artifacts.py
-	git diff --exit-code detection_scanner/exports/
+	python3 detection_scanner/scripts/export_artifacts.py --clean
+	@# --clean + `git status --porcelain` (not `git diff --exit-code`): the diff
+	@# form is blind to a STALE committed export (a card that lost a detection
+	@# kind leaves the old file byte-identical, so diff stays green) and to an
+	@# UNTRACKED new export (git diff never sees it). Porcelain reports D/??/M,
+	@# so either drift fails the gate.
+	@drift="$$(git status --porcelain -- detection_scanner/exports/)"; \
+	if [ -n "$$drift" ]; then \
+	  echo "export-determinism gate FAILED — committed exports drifted from the cards:"; \
+	  echo "$$drift"; \
+	  echo "run 'python3 detection_scanner/scripts/export_artifacts.py --clean' and commit the result."; \
+	  exit 1; \
+	fi
 
 check-refs: ## every scenario through the REAL loader under CORTEXSIM_STRICT_REFS
 	docker run --rm -v "$(CURDIR):/repo" -w /repo -e CORTEXSIM_BASE_DIR=/repo \

@@ -149,7 +149,7 @@
   flex-direction: column;
   gap: 7px;
 }
-.theme-console .rdy-rung--yes { border-left-color: var(--ac-str); }
+.theme-console .rdy-rung--yes { border-left-color:var(--ac-str); }
 .theme-console .rdy-rung--no { border-left-color: var(--warn); }
 .theme-console .rdy-rung--unknown { border-left-style: dashed; border-left-color: var(--tx3); }
 .theme-console .rdy-rung__top { display: flex; align-items: center; gap: 8px; }
@@ -316,7 +316,7 @@
   flex-direction: column;
   gap: 6px;
 }
-.theme-console .rdy-comp--ok { border-left-color: var(--ac-str); }
+.theme-console .rdy-comp--ok { border-left-color:var(--pos); }
 .theme-console .rdy-comp--degraded { border-left-color: var(--warn); }
 .theme-console .rdy-comp--error { border-left-color: var(--crit); }
 .theme-console .rdy-comp--unknown,
@@ -378,7 +378,7 @@
 .theme-console .readiness .chip--detected {
   background: var(--ac-ink);
   color: var(--ac-tx);
-  border-color: var(--ac);
+  border-color:var(--pos);
 }
 .theme-console .readiness .chip--pending {
   background: var(--warn);
@@ -413,6 +413,6 @@
 .theme-console .readiness .btn--xs { height: 25px; padding: 0 10px; font-size: 10.5px; }
 
 .theme-console .readiness *:focus-visible {
-  outline: 2px solid var(--ac-str);
+  outline:2px solid var(--ac-str);
   outline-offset: 2px;
 }

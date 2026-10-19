@@ -37,7 +37,9 @@ test.describe('app shell', () => {
   })
 
   test('UI loads and shows the POVengine header + detection-plane rail', async ({ page }) => {
-    await page.goto('/')
+    // `/` is Get started since the task-rail pass; the plane filter rail lives
+    // on Simulate › Scenarios, whose route id is still `library`.
+    await page.goto('/#/library')
     // The console rebranded to POVengine in-app, and the header lost its
     // "Detection Simulation Engine" subtitle with it — the redesigned bar is
     // the Cortex product mark, the POVengine wordmark and a version chip, with
@@ -61,17 +63,26 @@ test.describe('app shell', () => {
 
   test('touring every view leaves the workspace alive', async ({ page }) => {
     await page.goto('/')
-    // The stepper and its "More ▾" overflow are long gone; navigation is the
-    // phase-ordered rail, and three of these destinations are reachable by
-    // route rather than by a rail button (see VIEW_ROUTES). gotoView handles
-    // both, which is the reason this list did not need to change when the IA
-    // did — only how each entry is addressed.
-    for (const name of ['Targets', 'Library', 'Live', 'Evidence', 'ATT&CK Coverage', 'Environments', 'Launch']) {
+    // Navigation is the task rail (Get started · Simulate · Runs · Results ·
+    // Catalog, plus Agents and Tenant); pages inside a task are tabs and are
+    // addressed by route (see VIEW_ROUTES). gotoView handles both, which is
+    // why this list survives IA changes — only how each entry is addressed.
+    for (const name of ['Get started', 'Targets', 'Library', 'Live', 'Evidence', 'ATT&CK Coverage', 'Environments', 'Launch']) {
       await gotoView(page, name)
     }
     // App is still alive after the full tour: the shell chrome is the thing
     // that survives every destination, so it is what "alive" means here.
     await expect(page.getByTestId('console-header')).toBeVisible()
-    await expect(page.getByTestId('flow-bar')).toBeVisible()
+    await expect(page.getByTestId('dest-button-start')).toBeVisible()
+  })
+
+  test('a fresh session lands on Get started, built on real state', async ({ page }) => {
+    await page.goto('/')
+    await expect(page.getByTestId('get-started')).toBeVisible()
+    // Five steps, and no tour spotlight competing with them on first load.
+    for (const id of ['agent', 'tenant', 'collector', 'bvm', 'simulate']) {
+      await expect(page.getByTestId(`gs-step-${id}`)).toBeVisible()
+    }
+    await expect(page.getByTestId('tour-spotlight')).toHaveCount(0)
   })
 })

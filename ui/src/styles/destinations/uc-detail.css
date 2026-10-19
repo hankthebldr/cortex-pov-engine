@@ -79,16 +79,16 @@
 }
 
 .uc-detail .badge-teal {
-  background: color-mix(in srgb, var(--ac) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ac) 32%, transparent);
+  background:color-mix(in srgb, var(--ac-str) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--ac-line) 32%, transparent);
   color: var(--ac-ink);
 }
 
 /* ── Loading state ──────────────────────────────────────────────────── */
 
 .uc-detail .spinner {
-  border-color: color-mix(in srgb, var(--ac) 25%, transparent);
-  border-top-color: var(--ac);
+  border-color:color-mix(in srgb, var(--ac-line) 25%, transparent);
+  border-top-color:var(--ac-line);
 }
 
 /* ── UC header block ────────────────────────────────────────────────── */
@@ -185,7 +185,7 @@
 
 .uc-detail .uctc-step__toggle:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--s1), 0 0 0 4px var(--ac);
+  box-shadow:0 0 0 2px var(--s1), 0 0 0 4px var(--tx2);
 }
 
 .uc-detail .uctc-step__name {
@@ -224,7 +224,7 @@
 .uc-detail .uctc-detection-row {
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 0 6px 6px 0;
 }
 

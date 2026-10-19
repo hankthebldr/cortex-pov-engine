@@ -31,9 +31,12 @@ except ImportError:
     print("lint-scenario: pyyaml unavailable, skipping (boot loader is authoritative)")
     sys.exit(0)
 
+# Must mirror core/engine/scenario_loader.VALID_PLANES exactly — a plane the
+# loader accepts but this set omits makes the hook block an edit the boot loader
+# would load cleanly (DLP was the drift this comment now guards against).
 PLANES = {
     "EDR", "CDR", "NDR", "ITDR", "CLOUD_APP", "ANALYTICS", "AI_ACCESS", "AIRS",
-    "AI_SPM", "BROWSER", "KOI", "ASM", "CSPM", "TIM", "EMAIL",
+    "AI_SPM", "BROWSER", "KOI", "ASM", "CSPM", "TIM", "EMAIL", "DLP",
 }
 DETECTION_TYPES = {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC"}
 STATUSES = {"active", "draft", "deprecated"}
@@ -284,22 +287,25 @@ def main() -> int:
                         f"step[{i}].expected_detections[{j}] type '{dtype}' invalid"
                     )
 
-    # ---- causality spine cross-step check (mirrors loader model_validator) ----
-    # A declared spine (cgo_anchor present OR any step declares causality) allows
-    # at most one root step lacking a parent; zero-causality scenarios pass
-    # silently (legacy star).
+    # ---- causality spine cross-step check (mirrors loader validate_causality_spine) ----
+    # The loader only enforces "at most one root" once a STEP declares causality
+    # (``if not declared: return`` — a zero-causality collection is a legacy star
+    # it accepts untouched). cgo_anchor alone does NOT make a spine: a cgo_anchor
+    # with 2+ steps and no per-step causality is accepted by the loader, so it
+    # must only WARN here, never error — otherwise the hook blocks a loader-valid
+    # edit and the warning branch below is dead.
     has_cgo = isinstance(cgo_anchor, dict)
-    if has_cgo or steps_declaring_causality:
+    if steps_declaring_causality:
         if steps_missing_causality > 1:
             errors.append(
                 f"more than one root step in a declared causality spine "
                 f"({steps_missing_causality} steps lack causality; at most one root allowed)"
             )
-        elif has_cgo and steps_declaring_causality == 0 and isinstance(steps, list) and len(steps) > 1:
-            warnings.append(
-                "cgo_anchor is declared but no step wires a causality.parent_step "
-                "— the chain is not connected (steps 2..n should declare causality)"
-            )
+    elif has_cgo and isinstance(steps, list) and len(steps) > 1:
+        warnings.append(
+            "cgo_anchor is declared but no step wires a causality.parent_step "
+            "— the chain is not connected (steps 2..n should declare causality)"
+        )
 
     # ---- cleanup shape (ERROR — loader's CleanupSchema rejects a list) ----
     cleanup = raw.get("cleanup")

@@ -211,12 +211,23 @@ jobs:
       - name: Validate TTP corpus (0 fail)
         run: python3 detection_scanner/scripts/validate.py --quiet
       - name: Regenerate detection exports
-        run: python3 detection_scanner/scripts/export_artifacts.py
+        # --clean removes previously-generated files first, so a STALE export (a
+        # card that lost a detection kind) does not survive the regeneration.
+        run: python3 detection_scanner/scripts/export_artifacts.py --clean
       - name: Export-determinism gate (committed exports must match cards)
+        # `git status --porcelain`, NOT `git diff --exit-code`: the diff form is
+        # blind to a stale committed export (byte-identical, so no diff) and to an
+        # untracked new export (git diff never sees it). Porcelain reports D/??/M.
         # If this fails the committed exports drifted from the TTP cards: run
-        # `python3 detection_scanner/scripts/export_artifacts.py` locally and
-        # commit the result.
-        run: git diff --exit-code detection_scanner/exports/
+        # `python3 detection_scanner/scripts/export_artifacts.py --clean` locally
+        # and commit the result.
+        run: |
+          drift="$(git status --porcelain -- detection_scanner/exports/)"
+          if [ -n "$drift" ]; then
+            echo "committed exports drifted from the TTP cards:"
+            echo "$drift"
+            exit 1
+          fi
 
   # ---------------------------------------------------------------------------
   # refs — the UC/TC enforcement path, run against the REAL corpus.

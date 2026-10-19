@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react'
 import useRunEventStream from './useRunEventStream.js'
+import { serverDate } from '../../api/time.js'
 
 /**
  * EventStream — real-time agent stdout/stderr viewer for the In-Flight tab.
@@ -89,11 +90,13 @@ export default function EventStream({ runId, compact = false }) {
     )
   }
 
-  const modeBadge = connected
-    ? mode === 'stream' ? { text: 'LIVE',  cls: 'event-stream__mode--live' }
-    : mode === 'poll'   ? { text: 'POLL',  cls: 'event-stream__mode--poll' }
-    :                     { text: 'ERR',   cls: 'event-stream__mode--err'  }
-    : { text: '...', cls: 'event-stream__mode--poll' }
+  // ERR is checked FIRST: the hook reports a failed fetch as mode 'error' with
+  // connected=false, and nesting ERR inside the `connected` branch meant it
+  // could never render — a dead SimCore read as "..." (still connecting).
+  const modeBadge = mode === 'error' ? { text: 'ERR',   cls: 'event-stream__mode--err'  }
+    : !connected                     ? { text: '...',   cls: 'event-stream__mode--poll' }
+    : mode === 'stream'              ? { text: 'LIVE',  cls: 'event-stream__mode--live' }
+    :                                  { text: 'POLL',  cls: 'event-stream__mode--poll' }
 
   return (
     <section
@@ -207,7 +210,8 @@ export default function EventStream({ runId, compact = false }) {
 function formatTs(ts) {
   if (!ts) return '--:--:--'
   try {
-    const d = new Date(ts)
+    const d = serverDate(ts)
+    if (Number.isNaN(d.getTime())) return String(ts).slice(11, 19) || '--:--:--'
     const hh = String(d.getUTCHours()).padStart(2, '0')
     const mm = String(d.getUTCMinutes()).padStart(2, '0')
     const ss = String(d.getUTCSeconds()).padStart(2, '0')

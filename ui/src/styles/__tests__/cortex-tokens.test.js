@@ -97,10 +97,17 @@ describe('design token contract (cortex-tokens.css)', () => {
     expect(lightTokens['warn-str']).toBe('#FFCB06')
     expect(lightTokens.crit).toBe('#A51B00')
     expect(lightTokens.info).toBe('#00667B')
-    // --orange is now an ALIAS of the accent rather than a separate signal
-    // hue. Every legacy `var(--orange)` call site keeps resolving; what it
-    // resolves to is the chrome accent.
-    expect(lightTokens.orange).toBe('var(--ac)')
+    // --orange is an ALIAS of the brand orange rather than a separate signal
+    // hue. Every legacy `var(--orange)` call site keeps resolving.
+    expect(lightTokens.orange).toBe('var(--ac-brand)')
+    expect(lightTokens['ac-brand']).toBe('#FA582D')
+    // MINIMAL PASS: orange is the primary action ONLY. Every other accent role
+    // (--ac-str selected fill, --ac-ink selected text, --ac-soft / --ac-line
+    // selected surfaces) is neutral, so "selected" reads as brightness and
+    // orange keeps a single meaning. If a pass re-tints these, this fails.
+    for (const key of ['ac-str', 'ac-ink', 'ac-soft', 'ac-line']) {
+      expect(lightTokens[key], `light --${key} must not be orange`).not.toBe('#FA582D')
+    }
   })
 
   it('defines a complete DARK ([data-theme="dark"]) token set on the same contract', () => {
@@ -114,10 +121,18 @@ describe('design token contract (cortex-tokens.css)', () => {
     expect(darkTokens.tx).toBe('#FFFFFF')
     expect(darkTokens.tx2).toBe('#C7C7C7')
     expect(darkTokens.bd).toBe('#333333')
-    expect(darkTokens.warn).toBe('#FFCB06')
-    expect(darkTokens.crit).toBe('#FDAC96')
-    expect(darkTokens.info).toBe('#00C0E8')
-    expect(darkTokens.orange).toBe('var(--ac)')
+    // --crit moved off #FDAC96: that salmon read as brand orange, so a
+    // failure and a primary button looked alike. --warn is a calmer amber than
+    // the brand yellow (which --warn-str keeps for fills); --info is muted so
+    // it stops competing with status colours.
+    expect(darkTokens.warn).toBe('#E8B730')
+    expect(darkTokens.crit).toBe('#FF6B6B')
+    expect(darkTokens.info).toBe('#6FB7C9')
+    expect(darkTokens.orange).toBe('var(--ac-brand)')
+    expect(darkTokens['ac-brand']).toBe('#FA582D')
+    for (const key of ['ac-str', 'ac-ink', 'ac-soft', 'ac-line']) {
+      expect(darkTokens[key], `dark --${key} must not be orange`).not.toBe('#FA582D')
+    }
   })
 
   it('keeps the soft chip fills OPAQUE so their contrast is well defined', () => {

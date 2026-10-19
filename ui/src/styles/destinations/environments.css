@@ -220,7 +220,7 @@
   letter-spacing: var(--tracking-mono);
 }
 .theme-console .lab__input:focus {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   box-shadow: 0 0 0 3px var(--ac-soft);
 }
 .theme-console .lab__input::placeholder {
@@ -326,12 +326,12 @@
   transform: translateY(-1px);
 }
 .theme-console .lab-module:focus-within {
-  outline: 2px solid var(--ac);
+  outline:2px solid var(--tx2);
   outline-offset: 1px;
 }
 .theme-console .lab-module--checked {
   border-color: var(--ac-line);
-  border-top-color: var(--ac);
+  border-top-color:var(--ac-line);
   background: var(--ac-soft);
 }
 .theme-console .lab-module--locked {
@@ -340,7 +340,7 @@
 }
 .theme-console .lab-module input[type="checkbox"] {
   margin-top: 3px;
-  accent-color: var(--ac);
+  accent-color:var(--ac-str);
   width: 15px;
   height: 15px;
   cursor: inherit;
@@ -408,7 +408,7 @@
   cursor: pointer;
 }
 .theme-console [data-testid="scenario-hint-apply"]:hover:not(:disabled) {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   color: var(--ac-ink);
 }
 .theme-console [data-testid="scenario-hint-apply"]:disabled {
@@ -532,7 +532,7 @@
 }
 .theme-console .lab__last-bundle-download:hover,
 .theme-console .lab__bundle-row-download:hover {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   color: var(--ac-ink);
 }
 

@@ -72,17 +72,22 @@ RUN cd agent && \
 # ui-builder hits the npm registry). Adding crates.io changes the build time,
 # not the class of build — and it is what makes `docker build` alone sufficient
 # to produce a servable tool, with no host toolchain anywhere.
-# --platform=$BUILDPLATFORM, for a subtler reason than the Go stage.
+# --platform=linux/amd64 — NOT $BUILDPLATFORM, unlike the Go and UI stages.
 #
 # These binaries are NOT SimCore runtime code — they are PAYLOADS served to
 # targets (/app/rust-dist; core/api/tools_dist.py hands them out). A lab target
 # is x86_64, so the artifact wanted is x86_64-unknown-linux-musl regardless of
 # whether SimCore itself runs on amd64 or arm64.
 #
-# Without this pin, `docker buildx --platform linux/arm64` runs this stage under
-# QEMU-aarch64 while the cargo target triple below stays x86_64 — which fails
-# outright (exit 101) and takes the whole multi-arch build with it.
-FROM --platform=$BUILDPLATFORM rust:1.90-alpine AS rust-builder
+# The stage must therefore RUN as x86_64: this image's rustc ships only its
+# native sysroot, so an aarch64 stage compiling for the x86_64 triple fails on
+# the first crate with `E0463: can't find crate for core` (cargo exit 101). The
+# old `$BUILDPLATFORM` pin avoided that only on amd64 build hosts — on Apple
+# Silicon it IS arm64, and the build died as soon as the tier-2 submodules were
+# checked out (it silently SKIPs without them). linux/amd64 is a no-op on amd64
+# CI and runs under emulation on arm64 hosts. Guarded by
+# tests/installer/test_rust_builder_platform.py.
+FROM --platform=linux/amd64 rust:1.90-alpine AS rust-builder
 
 # musl-dev/gcc: the linker cc invokes. openssl-dev + openssl-libs-static: xdrtop
 # depends on reqwest 0.12 WITHOUT `default-features = false`, so it resolves

@@ -8,6 +8,7 @@ live tenant: liveness, health, ingestion metrics, and XQL.
 from __future__ import annotations
 
 from typing import Any, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -128,12 +129,28 @@ def _op_or_404(op_id: str):
 
 
 def _resolve_path(op, path_params: dict[str, Any]) -> str:
+    """Substitute path params, each as exactly ONE encoded path segment.
+
+    The catalog path is what selects the operation — and therefore which gate
+    (read / write / destructive) applies. A raw substitution let the param
+    rewrite it: httpx resolves dot-segments, so ``group_id="../delete/123"`` on
+    the write-gated ``asset-groups/update/{group_id}`` sent
+    ``POST asset-groups/delete/123`` on write consent alone, skipping the
+    destructive gate; ``?``/``#`` could smuggle a query. A value that is a
+    dot-segment or contains a path separator is refused (an ID never is one);
+    everything else is percent-encoded so it cannot leave its segment.
+    """
     path = op.path
     for p in op.path_params:
         val = path_params.get(p)
         if val in (None, ""):
             raise XsiamConfigError(f"operation {op.op_id} requires path param '{p}'")
-        path = path.replace("{" + p + "}", str(val))
+        raw = str(val)
+        if raw in (".", "..") or "/" in raw or "\\" in raw:
+            raise XsiamConfigError(
+                f"operation {op.op_id} path param '{p}' must be a single path "
+                f"segment (no '/', '\\', '.' or '..'); got {raw!r}")
+        path = path.replace("{" + p + "}", quote(raw, safe=""))
     return path
 
 

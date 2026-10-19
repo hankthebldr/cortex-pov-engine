@@ -31,10 +31,20 @@ beforeEach(() => { window.localStorage.clear() })
 const GROUPS = [{ label: 'Operate', items: [{ id: 'library', label: 'Library' }] }]
 
 describe('AppShell first-run', () => {
-  it('starts the tour on a fresh profile, not the help overlay', async () => {
-    render(<AppShell destination="library" navGroups={GROUPS} paletteItems={[]}><div /></AppShell>)
-    expect(await screen.findByTestId('tour-spotlight')).toBeTruthy()
+  it('does NOT auto-start on a fresh profile — Get started is the first-run guidance', async () => {
+    // The tour used to pop a spotlight over the Library on first load. Get
+    // started now answers "what do I do first" on real state, and two
+    // competing sets of first-run instructions was part of the overload.
+    render(<AppShell destination="start" navGroups={GROUPS} paletteItems={[]}><div /></AppShell>)
+    await new Promise((r) => setTimeout(r, 500))
+    expect(screen.queryByTestId('tour-spotlight')).toBeNull()
     expect(screen.queryByText(/Keyboard shortcuts/i)).toBeNull()
+  })
+
+  it('still starts from the ? button on demand', async () => {
+    render(<AppShell destination="library" navGroups={GROUPS} paletteItems={[]}><div /></AppShell>)
+    fireEvent.click(screen.getByTestId('header-tour-trigger'))
+    expect(await screen.findByTestId('tour-spotlight')).toBeTruthy()
   })
 
   it('does not start the tour when it has already been seen', async () => {
@@ -77,6 +87,7 @@ function ControlledAppShell({ initial = 'library' }) {
 describe('AppShell tour — exits on navigation it did not initiate (I4)', () => {
   it('exits and marks seen when the user navigates via the persistent nav rail mid-tour', async () => {
     render(<ControlledAppShell />)
+    fireEvent.click(screen.getByTestId('header-tour-trigger'))
     await screen.findByTestId('tour-spotlight')
 
     // Stop 1 is anchored on nav-library; the user instead clicks nav-agents

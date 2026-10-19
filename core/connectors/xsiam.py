@@ -27,7 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from integrations.xsiam import codes
@@ -269,12 +269,12 @@ class XsiamConnector(Connector):
                 {
                     "field": "creation_time",
                     "operator": "gte",
-                    "value": int(since.replace(microsecond=0).timestamp() * 1000),
+                    "value": _epoch_ms_utc(since),
                 },
                 {
                     "field": "creation_time",
                     "operator": "lte",
-                    "value": int(until.replace(microsecond=0).timestamp() * 1000),
+                    "value": _epoch_ms_utc(until),
                 },
             ],
             "search_from": int(search_from),
@@ -315,11 +315,33 @@ class XsiamConnector(Connector):
                     f"absence of alerts — no observation was made, so the run "
                     f"stays pending rather than being scored."
                 )
+        if not isinstance(doc, dict):
+            raise ConnectorError(
+                f"XSIAM_ENVELOPE_UNRECOGNISED: expected a JSON object, got "
+                f"{type(doc).__name__}. Refusing to read it as zero alerts."
+            )
         reply = doc.get("reply", doc)
-        if isinstance(reply, dict):
-            alerts = reply.get(list_key, reply.get("data", []))
+        if not isinstance(reply, dict):
+            raise ConnectorError(
+                f"XSIAM_ENVELOPE_UNRECOGNISED: 'reply' is a "
+                f"{type(reply).__name__}, not an object. Refusing to read it as "
+                f"zero {list_key}."
+            )
+        # A reply that names NEITHER list key is not "no rows" — the tenant
+        # always sends `alerts` / `incidents` (possibly empty). Defaulting the
+        # missing key to [] turned a login wall, a proxy's JSON, or an API
+        # change into a successful pull that observed nothing and reported
+        # 0 % coverage.
+        if list_key in reply:
+            alerts = reply[list_key]
+        elif "data" in reply:
+            alerts = reply["data"]
         else:
-            alerts = []
+            raise ConnectorError(
+                f"XSIAM_ENVELOPE_UNRECOGNISED: the reply carries neither '{list_key}' "
+                f"nor 'data' (keys: {sorted(str(k) for k in reply)[:20]}). This is "
+                f"NOT an absence of {list_key} — no observation was made."
+            )
         if not isinstance(alerts, list):
             # A dict where a list belongs means the envelope is not what we
             # think it is. Guessing is how `len({"data": []}) == 1` happened.
@@ -339,12 +361,11 @@ class XsiamConnector(Connector):
                 continue
             out.append(alert)
         meta: dict[str, Any] = {}
-        if isinstance(reply, dict):
-            total, capped = _count_or_capped(reply.get("total_count"))
-            meta["total_count"] = total
-            meta["total_count_capped"] = capped
-            rc = reply.get("result_count")
-            meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
+        total, capped = _count_or_capped(reply.get("total_count"))
+        meta["total_count"] = total
+        meta["total_count_capped"] = capped
+        rc = reply.get("result_count")
+        meta["result_count"] = rc if isinstance(rc, int) and not isinstance(rc, bool) else None
         return out, dropped, meta
 
     def _normalize_alert(self, a: dict[str, Any]) -> Optional[ObservedAlert]:
@@ -435,6 +456,21 @@ class XsiamConnector(Connector):
                 seen.add(t)
                 deduped.append(t)
         return deduped
+
+
+def _epoch_ms_utc(dt: datetime) -> int:
+    """Epoch milliseconds for a request bound, read in UTC — never host-local.
+
+    Naive is the storage contract (``Result.executed_at`` / ``utcnow()`` are
+    naive UTC), but ``naive.timestamp()`` interprets a naive value as LOCAL
+    time. On a host-run SimCore in UTC-7 that moved the alert window seven
+    hours into the future and the run's own alerts fell before ``since``. The
+    parse side of this leak was closed in ``coerce_utc``; this is the request
+    side. Aware values are converted, never stripped.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.replace(microsecond=0).timestamp() * 1000)
 
 
 def _s(v: Any) -> Optional[str]:

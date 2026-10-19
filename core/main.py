@@ -186,8 +186,9 @@ async def lifespan(app: FastAPI):
         async with _db_context() as db:
             stats = await orchestrator.rehydrate(db)
         logger.info(
-            "Task queue rehydrated: %d restored, %d orphan(s) failed",
-            stats["rehydrated"], stats["failed_orphans"],
+            "Task queue rehydrated: %d restored, %d orphan(s) failed, "
+            "%d delivered run(s) still executing",
+            stats["rehydrated"], stats["failed_orphans"], stats.get("in_flight", 0),
         )
     except Exception:
         logger.exception("orchestrator rehydrate failed — continuing with empty queue")
@@ -367,13 +368,28 @@ async def validation_error_handler(
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception("Unhandled error %s %s", request.method, request.url)
+    """Structured 500 that never echoes the exception text.
+
+    ``str(exc)`` for a SQLAlchemy error is the full statement plus its bound
+    parameters: a double-submitted ``PUT /api/credentials/integrations`` used
+    to return the tenant API key's ciphertext and preview tail to an
+    unauthenticated caller. The full exception goes to the server log under a
+    ``ref`` the response carries, so the operator can still find the cause.
+    """
+    import uuid  # noqa: PLC0415
+
+    ref = uuid.uuid4().hex[:12]
+    logger.exception("Unhandled error ref=%s %s %s", ref, request.method, request.url)
     return JSONResponse(
         status_code=500,
         content={
             "error": "Internal server error",
             "code": "INTERNAL_ERROR",
-            "detail": str(exc),
+            "detail": (
+                f"{type(exc).__name__}; the message is withheld from the response "
+                f"because it can carry stored values. See the server log for ref={ref}."
+            ),
+            "ref": ref,
         },
     )
 

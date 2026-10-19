@@ -2,8 +2,6 @@ import React, { useMemo } from 'react'
 import InflightView from './InflightView.jsx'
 import EvidenceView from './EvidenceView.jsx'
 import DetectionStoryline, { isRunUnproven } from '../DetectionStoryline.jsx'
-import RunTechniques from './RunTechniques.jsx'
-import RunTopology from './RunTopology.jsx'
 import CausalityGraph from '../CausalityGraph.jsx'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
@@ -55,10 +53,8 @@ export const RUN_SUBTABS = [
   // storyline is the narrative a DC walks a room through; this is the table a
   // customer's detection engineer audits. Collapsing them gave a page that was
   // too narrative to audit and too tabular to follow.
-  { id: 'techniques', label: 'Techniques' },
   // The generated lane topology: which ingestion doors this run actually
   // touched, and where the causality crossed between them.
-  { id: 'topology', label: 'Topology' },
   { id: 'causality', label: 'Causality' },
 ]
 
@@ -215,12 +211,6 @@ export default function RunDetailView({
             onOpenEvidence={() => onSubTab('evidence')}
             onError={onError}
           />
-        )}
-        {tab === 'topology' && (
-          <RunTopology runId={runId} />
-        )}
-        {tab === 'techniques' && (
-          <RunTechniques run={run} />
         )}
         {tab === 'causality' && (
           <CausalityGraph

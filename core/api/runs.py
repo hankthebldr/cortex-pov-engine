@@ -23,7 +23,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import and_, case, func, not_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -224,6 +224,48 @@ class CompleteRequest(BaseModel):
 # /abort an idempotent no-op. ``staged`` is the terminal state for a push-mode
 # run (GAP-API-004): the bundle was generated and SimCore's role is done.
 _TERMINAL_STATES = {"complete", "failed", "aborted", "staged"}
+
+
+def _is_terminal(run: Run) -> bool:
+    """Is this run finished — i.e. must the beacon stop and is /abort a no-op?
+
+    ``status`` alone is not enough. ``complete_run`` makes failure sticky the
+    moment ANY endpoint of a multi-endpoint fan-out reports non-zero, so a run
+    can read ``failed`` while it still waits on other endpoints (``open_tasks``
+    > 0, ``completed_at`` unset). Treating that as terminal made the control
+    channel stop every surviving endpoint within one 2 s poll — the beacon then
+    reported "aborted by operator" for an abort nobody issued, and that
+    endpoint's detections never happened. Every path that genuinely finishes a
+    run stamps ``completed_at``; a ``failed`` run without it is still in flight.
+    """
+    if run.status not in _TERMINAL_STATES:
+        return False
+    if run.status == "failed" and run.completed_at is None and (run.open_tasks or 0) > 0:
+        return False
+    return True
+
+
+def _in_flight_clause():
+    """SQL twin of ``not _is_terminal(run)`` — for a guarded atomic UPDATE."""
+    return or_(
+        not_(Run.status.in_(tuple(_TERMINAL_STATES))),
+        and_(Run.status == "failed", Run.completed_at.is_(None),
+             func.coalesce(Run.open_tasks, 0) > 0),
+    )
+
+
+def _run_not_found(run_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
+    )
+
+
+async def _reload_run(db: AsyncSession, run_id: str) -> Optional[Run]:
+    """Re-read a Run after an atomic UPDATE, refreshing any identity-mapped copy."""
+    return (await db.execute(
+        select(Run).where(Run.run_id == run_id).execution_options(populate_existing=True)
+    )).scalar_one_or_none()
 
 
 #: Refusal codes that mean "the request was fine, a precondition is not met".
@@ -826,17 +868,22 @@ async def append_output(
     body: OutputRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Agent streams execution output back to SimCore."""
-    result = await db.execute(select(Run).where(Run.run_id == run_id))
-    run: Optional[Run] = result.scalar_one_or_none()
-    if run is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
-        )
+    """Agent streams execution output back to SimCore.
 
-    existing = run.output or ""
-    run.output = existing + body.output
+    The append is ONE SQL statement (``output = coalesce(output,'') || chunk``),
+    never read-in-Python-then-write: the beacon's stdout and stderr writers POST
+    concurrently, and a read-modify-write dropped every chunk but the last —
+    including the refusal markers the POV report's integrity check reads.
+    """
+    res = await db.execute(
+        update(Run)
+        .where(Run.run_id == run_id)
+        .values(output=func.coalesce(Run.output, "") + body.output)
+        .execution_options(synchronize_session=False)
+    )
+    if res.rowcount == 0:
+        await db.rollback()
+        raise _run_not_found(run_id)
     await db.commit()
 
     await _safe_publish(
@@ -855,58 +902,83 @@ async def complete_run(
     body: CompleteRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Agent reports that execution is complete."""
-    result = await db.execute(select(Run).where(Run.run_id == run_id))
-    run: Optional[Run] = result.scalar_one_or_none()
-    if run is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
-        )
+    """Agent reports that execution is complete.
 
-    # An operator abort wins over a late completion callback: if the run was
-    # already aborted, keep it aborted (the agent reports exit 130 on abort).
-    if run.status == "aborted":
-        logger.info("run_complete ignored — run already aborted run_id=%s", run_id)
-        # Run is already terminal — drop it from the orchestrator's aborted set
-        # so the in-memory set stays bounded even on the abort→late-complete path.
-        orchestrator.clear_aborted(run_id)
-        return {"status": run.status, "run_id": run_id}
-
+    Every mutation here is an atomic SQL expression inside ONE write
+    transaction — no value is read into Python and written back. A
+    multi-endpoint fan-out POSTs /complete once per endpoint, and two endpoints
+    finishing together used to both read ``open_tasks=2`` and both write 1, so
+    the run never terminalised, was never scored and never sent its terminal
+    SSE frame. The same read-modify-write let a racing operator abort be
+    overwritten by ``complete`` (or lose this summary).
+    """
     # Multi-endpoint fan-out: a run may carry N beacon tasks (one per distinct
     # target agent), each POSTing /complete. Terminalise the run only when the
     # LAST endpoint reports — not the first — or a two-endpoint run would flip
     # to complete the instant one host finished while the other kept running.
     # `open_tasks` is NULL on a legacy single-task run ⇒ treated as 1, so the
     # single-endpoint path stays byte-identical to today.
-    n = run.open_tasks if run.open_tasks is not None else 1
-    remaining = max(0, n - 1)
-    run.open_tasks = remaining
-
-    # Every endpoint's summary is appended.
+    #
+    # Every endpoint's summary is appended. Sticky failure — once any endpoint
+    # fails, the run's verdict is failed.
+    #
+    # An operator abort wins over a late completion callback: the WHERE clause
+    # leaves an aborted run untouched (the agent reports exit 130 on abort).
     summary_text = f"\n--- COMPLETION SUMMARY ---\nExit code: {body.exit_code}\n{body.summary}\n"
-    run.output = (run.output or "") + summary_text
-
-    # Sticky failure — once any endpoint fails, the run's verdict is failed.
+    values: dict = {
+        "open_tasks": func.max(func.coalesce(Run.open_tasks, 1) - 1, 0),
+        "output": func.coalesce(Run.output, "") + summary_text,
+    }
     if body.exit_code != 0:
-        run.status = "failed"
+        values["status"] = "failed"
+    res = await db.execute(
+        update(Run)
+        .where(Run.run_id == run_id, Run.status != "aborted")
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+    if res.rowcount == 0:
+        await db.rollback()
+        run = await _reload_run(db, run_id)
+        if run is None:
+            raise _run_not_found(run_id)
+        logger.info("run_complete ignored — run already aborted run_id=%s", run_id)
+        # Run is already terminal — drop it from the orchestrator's aborted set
+        # so the in-memory set stays bounded even on the abort→late-complete path.
+        orchestrator.clear_aborted(run_id)
+        return {"status": run.status, "run_id": run_id}
+
+    # Still inside the write transaction that the UPDATE opened, so this read
+    # sees exactly the decrement this request made.
+    remaining = (await db.execute(
+        select(Run.open_tasks).where(Run.run_id == run_id)
+    )).scalar_one()
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal
         # frame, or score yet. The run stays 'running' (or 'failed' if an
         # endpoint has already failed) until the final callback.
         await db.commit()
+        run = await _reload_run(db, run_id)
         logger.info(
             "run_complete partial run_id=%s exit_code=%d remaining_endpoints=%d",
             run_id, body.exit_code, remaining,
         )
         return {"status": run.status, "run_id": run_id, "pending_endpoints": remaining}
 
-    # Last endpoint in — terminalise with the aggregate verdict.
-    run.status = "failed" if run.status == "failed" else "complete"
-    run.completed_at = datetime.utcnow()
-
+    # Last endpoint in — terminalise with the aggregate verdict, in the same
+    # transaction as the decrement.
+    await db.execute(
+        update(Run)
+        .where(Run.run_id == run_id)
+        .values(
+            status=case((Run.status == "failed", "failed"), else_="complete"),
+            completed_at=datetime.utcnow(),
+        )
+        .execution_options(synchronize_session=False)
+    )
     await db.commit()
+    run = await _reload_run(db, run_id)
 
     # Run reached a terminal state — drop it from the orchestrator's aborted
     # set so the in-memory set stays bounded.
@@ -949,22 +1021,28 @@ async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
     ``/control``). Idempotent: a run already in a terminal state returns 200
     with its existing status and ``was_terminal: true`` — never an error.
     """
-    result = await db.execute(select(Run).where(Run.run_id == run_id))
-    run: Optional[Run] = result.scalar_one_or_none()
-    if run is None:
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
+    # One guarded UPDATE: only an in-flight run is aborted, and the marker is
+    # appended in SQL. Read-then-write here let a racing /complete land
+    # `complete` over `aborted` (or this marker over its summary).
+    res = await db.execute(
+        update(Run)
+        .where(Run.run_id == run_id, _in_flight_clause())
+        .values(
+            status="aborted",
+            completed_at=datetime.utcnow(),
+            output=func.coalesce(Run.output, "") + "\n--- RUN ABORTED BY OPERATOR ---\n",
         )
-
-    if run.status in _TERMINAL_STATES:
+        .execution_options(synchronize_session=False)
+    )
+    if res.rowcount == 0:
+        await db.rollback()
+        run = await _reload_run(db, run_id)
+        if run is None:
+            raise _run_not_found(run_id)
         logger.info("abort_run idempotent no-op run_id=%s status=%s", run_id, run.status)
         return {"status": run.status, "run_id": run_id, "was_terminal": True}
-
-    run.status = "aborted"
-    run.completed_at = datetime.utcnow()
-    run.output = (run.output or "") + "\n--- RUN ABORTED BY OPERATOR ---\n"
     await db.commit()
+    await _reload_run(db, run_id)
 
     # Drop any queued task (in-memory + durable) + record the id so the agent's
     # /control poll stops it.
@@ -1042,7 +1120,7 @@ async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
     if run is None:
         return {"abort": True, "run_id": run_id, "status": "unknown"}
 
-    if run.status in _TERMINAL_STATES:
+    if _is_terminal(run):
         abort = True
 
     return {"abort": abort, "run_id": run_id, "status": run.status}

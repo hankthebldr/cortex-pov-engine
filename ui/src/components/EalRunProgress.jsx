@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { getEalRun } from '../api/client.js'
+import { parseServerTime } from '../api/time.js'
 
 const POLL_INTERVAL_MS = 2000
 const TERMINAL_STATES = new Set(['complete', 'failed', 'aborted'])
@@ -172,8 +173,8 @@ function tone(status) {
 
 function computeDurationSec(run) {
   if (!run?.started_at) return null
-  const start = Date.parse(run.started_at)
-  const end = run.completed_at ? Date.parse(run.completed_at) : Date.now()
+  const start = parseServerTime(run.started_at)
+  const end = run.completed_at ? parseServerTime(run.completed_at) : Date.now()
   if (!isFinite(start) || !isFinite(end)) return null
   return (end - start) / 1000
 }

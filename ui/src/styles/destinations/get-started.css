@@ -1,0 +1,107 @@
+/* Get started — the setup checklist.
+   Colour rule (same as the rest of the console after the minimal pass):
+   neutral by default; orange only on the single primary button; green only on
+   a step that is actually done; amber only on a real warning. */
+
+.theme-console .gs { max-width: 760px; }
+.theme-console .gs__head { margin-bottom: 22px; }
+.theme-console .gs__title { font: 600 26px/1.2 var(--font-ui); color: var(--tx); margin: 0 0 8px; }
+.theme-console .gs__lede { font: 400 14px/1.6 var(--font-ui); color: var(--tx2); margin: 0 0 16px; max-width: 62ch; }
+
+.theme-console .gs__progress { display: flex; align-items: center; gap: 12px; }
+.theme-console .gs__bar { flex: 1; max-width: 240px; height: 4px; background: var(--s3); border-radius: 2px; overflow: hidden; }
+.theme-console .gs__bar i { display: block; height: 100%; background: var(--pos); transition: width .3s ease; }
+.theme-console .gs__progress-text { font: 500 12px/1 var(--font-ui); color: var(--tx2); }
+
+.theme-console .gs__steps { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--bd); }
+
+.theme-console .gs-step { border-bottom: 1px solid var(--bd); }
+.theme-console .gs-step__row {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 16px 4px; background: none; border: 0; color: inherit; text-align: left; cursor: pointer;
+}
+.theme-console .gs-step__row:hover .gs-step__title { color: var(--tx); }
+.theme-console .gs-step__n {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  font: 600 12px/1 var(--font-ui);
+  border: 1px solid var(--bd2); color: var(--tx2);
+}
+.theme-console .gs-step--open .gs-step__n { border-color: var(--tx); color: var(--tx); }
+.theme-console .gs-step--done .gs-step__n { border-color: var(--pos); background: var(--pos-soft); color: var(--pos-ink); }
+.theme-console .gs-step__text { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.theme-console .gs-step__title { font: 600 15px/1.3 var(--font-ui); color: var(--tx); display: flex; align-items: center; gap: 8px; }
+.theme-console .gs-step--done .gs-step__title { color: var(--tx2); }
+.theme-console .gs-step__opt {
+  font: 500 10px/1 var(--font-ui); letter-spacing: .04em; text-transform: uppercase;
+  color: var(--tx3); border: 1px solid var(--bd); border-radius: 3px; padding: 3px 5px;
+}
+.theme-console .gs-step__status { font: 400 12.5px/1.4 var(--font-ui); color: var(--tx3); }
+.theme-console .gs-step__chev { flex: none; width: 20px; text-align: center; color: var(--tx3); font: 400 18px/1 var(--font-ui); }
+
+.theme-console .gs-step__body { padding: 0 4px 20px 44px; display: flex; flex-direction: column; gap: 14px; }
+.theme-console .gs-step__why { margin: 0; font: 400 13.5px/1.6 var(--font-ui); color: var(--tx2); }
+
+.theme-console .gs-form, .theme-console .gs-guide, .theme-console .gs-embed, .theme-console .gs-done { display: flex; flex-direction: column; gap: 14px; }
+.theme-console .gs-field { display: flex; flex-direction: column; gap: 6px; }
+.theme-console .gs-label { font: 500 12px/1.3 var(--font-ui); color: var(--tx2); }
+.theme-console .gs-input {
+  background: var(--s1); border: 1px solid var(--bd2); border-radius: 6px;
+  color: var(--tx); padding: 8px 10px; font-size: 13px; max-width: 420px;
+}
+.theme-console .gs-input:focus { outline: none; border-color: var(--tx2); }
+
+.theme-console .gs-seg { display: inline-flex; border: 1px solid var(--bd2); border-radius: 6px; overflow: hidden; width: max-content; }
+.theme-console .gs-seg__opt { background: none; border: 0; color: var(--tx2); padding: 7px 14px; font: 500 12.5px/1 var(--font-ui); cursor: pointer; }
+.theme-console .gs-seg__opt + .gs-seg__opt { border-left: 1px solid var(--bd2); }
+.theme-console .gs-seg__opt.is-on { background: var(--s3); color: var(--tx); }
+
+.theme-console .gs-hint { margin: 0; font: 400 12.5px/1.55 var(--font-ui); color: var(--tx3); }
+.theme-console .gs-hint--warn { color: var(--warn); }
+.theme-console .gs-hint--err { color: var(--crit); }
+.theme-console .gs-hint code, .theme-console .gs-howto code { font-family: var(--font-mono); font-size: 12px; color: var(--tx); }
+
+.theme-console .gs-cmd { display: flex; flex-direction: column; gap: 8px; }
+.theme-console .gs-cmd__text {
+  margin: 0; padding: 12px 14px; background: var(--s1); border: 1px solid var(--bd);
+  border-radius: 6px; color: var(--tx); font-size: 12px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-all;
+}
+
+.theme-console .gs-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.theme-console .gs-wait { display: inline-flex; align-items: center; gap: 8px; font: 400 12.5px/1 var(--font-ui); color: var(--tx2); }
+.theme-console .gs-muted { color: var(--tx3); font-size: 12.5px; }
+
+.theme-console .gs-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--tx3); }
+.theme-console .gs-dot--ok { background: var(--pos); }
+.theme-console .gs-dot--pulse { background: var(--tx2); animation: gs-pulse 1.4s ease-in-out infinite; }
+@keyframes gs-pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .theme-console .gs-dot--pulse { animation: none; } }
+
+.theme-console .gs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font: 400 13px/1.5 var(--font-ui); color: var(--tx2); }
+.theme-console .gs-list b { color: var(--tx); font-weight: 600; }
+
+.theme-console .gs-howto { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font: 400 13px/1.6 var(--font-ui); color: var(--tx2); }
+.theme-console .gs-howto b { color: var(--tx); font-weight: 600; }
+
+.theme-console .gs-pick { display: flex; flex-direction: column; gap: 6px; }
+.theme-console .gs-pick__card {
+  display: flex; flex-direction: column; gap: 3px; padding: 12px 14px;
+  border: 1px solid var(--bd); border-radius: 6px; background: var(--s1);
+  font: 400 13.5px/1.4 var(--font-ui); color: var(--tx); max-width: 520px;
+}
+
+.theme-console .gs-link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--tx); text-decoration: underline; text-underline-offset: 3px;
+  text-decoration-color: var(--bd2); font: inherit;
+}
+.theme-console .gs-link:hover { text-decoration-color: var(--tx); }
+.theme-console .gs__foot { margin: 22px 0 0; font: 400 12.5px/1.5 var(--font-ui); color: var(--tx3); }
+
+.theme-console .gs-alert {
+  padding: 12px 14px; border: 1px solid var(--bd); border-left: 3px solid var(--crit);
+  border-radius: 6px; background: var(--s1);
+  font: 400 13px/1.6 var(--font-ui); color: var(--tx2);
+}
+.theme-console .gs-alert b { color: var(--tx); }

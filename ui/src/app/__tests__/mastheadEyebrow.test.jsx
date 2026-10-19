@@ -1,22 +1,14 @@
 /**
- * Masthead eyebrow copy — one pattern across every destination.
+ * No phase vocabulary on any page.
  *
- * This guard originally locked the OPPOSITE rule: nav group alone, never
- * "· Phase N", on the reasoning that the product had no app-level phase
- * stepper and a phase reference therefore pointed at nothing.
+ * The phase rail ("1 · Scope … 6 · Prove") and the flow bar that restated it
+ * are gone; the rail is a task list now. Every page that carried a
+ * "Phase 2 · Compose" eyebrow was therefore naming a model the console no
+ * longer shows, which is the same drift this guard has always existed to stop
+ * — a page describing itself in a vocabulary the navigation does not use.
  *
- * That premise no longer holds. The rail groups ARE the phase model, they
- * carry the phase numeral, and the flow bar names the current phase on every
- * surface. So the pattern inverted with it: `Phase N · Group`, exactly as the
- * rail names it. A page whose eyebrow disagreed with the rail entry that
- * opened it is precisely the drift the single wayfinding model exists to
- * remove — which is the same argument the old rule made, pointed the other
- * way now that there is a model to point at.
- *
- * One deliberate exception, asserted below: the run detail. Its eyebrow
- * carries the facts that differ between two runs of the SAME workflow, so two
- * attempts are distinguishable at a glance. A generic "PHASE 5 · OBSERVE"
- * there restated what the rail already said.
+ * One exception survives unchanged: the run detail's eyebrow carries per-RUN
+ * facts so two attempts at the same workflow are distinguishable at a glance.
  */
 import React from 'react'
 import { describe, it, expect } from 'vitest'
@@ -31,29 +23,37 @@ import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContex
 
 void React
 
-describe('masthead eyebrow copy — one pattern, no "· Phase N" (M-4)', () => {
-  it('OperationsView (Library): the phase the rail puts it in', async () => {
+describe('page mastheads carry no phase vocabulary', () => {
+  it('OperationsView (Simulate › Scenarios)', async () => {
     installRoutes({ 'GET /api/scenarios': { scenarios: [] }, 'GET /api/agents': [] })
     render(<OperationsView />)
     await waitFor(() => expect(screen.getByRole('heading', { name: /library/i })).toBeInTheDocument())
-    expect(screen.getByText('Phase 2 · Compose')).toBeInTheDocument()
+    expect(screen.queryByText(/Phase \d/)).not.toBeInTheDocument()
   })
 
-  it('TenantManager: the phase the rail puts it in', () => {
+  it('TenantManager (Tenant, and Get started step 2)', () => {
     render(
       <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, tenants: [], tenant: null }}>
         <TenantManager />
       </EnvironmentContext.Provider>,
     )
-    expect(screen.getByText('Phase 1 · Scope')).toBeInTheDocument()
+    expect(screen.queryByText(/Phase \d/)).not.toBeInTheDocument()
   })
 
-  it('UcTcIndexView: the phase the rail puts it in', async () => {
+  it('TenantManager embedded drops its masthead entirely', () => {
+    render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, tenants: [], tenant: null }}>
+        <TenantManager embedded />
+      </EnvironmentContext.Provider>,
+    )
+    expect(screen.queryByText('XSIAM Tenants')).not.toBeInTheDocument()
+  })
+
+  it('UcTcIndexView (Catalog › UC / TC index)', async () => {
     installRoutes({})
     render(<UcTcIndexView />)
     await waitFor(() => expect(screen.getByTestId('uctc-index')).toBeInTheDocument())
-    expect(screen.getByText('Phase 2 · Compose')).toBeInTheDocument()
-    expect(screen.queryByText(/Analyze · UC \/ TC Index/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Phase \d/)).not.toBeInTheDocument()
   })
 
   it('RunDetailView: per-RUN facts, not the phase — two attempts must differ', () => {

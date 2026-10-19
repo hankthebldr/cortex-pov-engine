@@ -53,6 +53,7 @@ from pydantic import BaseModel, Field, field_validator
 from ..audit import ecs_event
 from ..base import BaseSimulation, SimulationContext, SimulationResult
 from ..delivery import REMEDIATION, DeliveryLedger, response_evidence
+from ..safety import url_host_port
 
 
 logger = logging.getLogger("cortexsim.eal.plugins.email_emitter")
@@ -383,8 +384,8 @@ class EmailEmitter(BaseSimulation):
         params: EmailEmitterParams = ctx.params  # type: ignore[assignment]
         started_at = self.utcnow()
 
-        host = urlparse(params.collector_url).hostname or ""
-        getattr(ctx, "authorise")(host)
+        host, port = url_host_port(params.collector_url)
+        getattr(ctx, "authorise")(host, port=port)
 
         if ctx.dry_run:
             await ctx.emit_event(ecs_event(

@@ -231,7 +231,7 @@
   border-color: var(--crit, var(--cortex-danger));
 }
 .theme-console .tenant-mgr__input:focus {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   box-shadow: 0 0 0 3px var(--ac-soft);
 }
 
@@ -264,7 +264,7 @@
   opacity: 0.45;
 }
 .theme-console .tenant-mgr__radio-input {
-  accent-color: var(--ac);
+  accent-color:var(--ac-str);
 }
 .theme-console .tenant-mgr__radio-note {
   font-size: 9px;

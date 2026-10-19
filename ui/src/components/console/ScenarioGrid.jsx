@@ -175,7 +175,7 @@ export default function ScenarioGrid({
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-function collectPlanes(scenario) {
+export function collectPlanes(scenario) {
   const result = new Set()
   const primary = (scenario.plane || '').toUpperCase()
   if (primary) result.add(primary)
@@ -189,7 +189,7 @@ function collectPlanes(scenario) {
   return Array.from(result).filter(Boolean)
 }
 
-function collectTechniques(scenario) {
+export function collectTechniques(scenario) {
   const tids = new Set()
   if (scenario.mitre_technique) tids.add(scenario.mitre_technique)
   ;(scenario.additional_techniques || []).forEach((t) => {

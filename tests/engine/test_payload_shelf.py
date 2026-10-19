@@ -364,3 +364,31 @@ def test_an_adapter_binding_wins_over_a_bare_literal_of_the_same_name(wired, she
     )
     assert len(plan.artifacts) == 1
     assert plan.artifacts[0].origin == "adapter_ref"
+
+
+def test_documented_cli_check_runs_from_core_without_base_dir(repo_root):
+    """`cd core && python -m engine.payload_shelf --check` must run as documented.
+
+    The CLI defaulted its base to os.getcwd(); run from core/ (the documented
+    cwd) with no CORTEXSIM_BASE_DIR that resolved sources to
+    core/payloads/sources.json, which does not exist, so the gate failed closed
+    and was unrunnable exactly as documented. The base must default to the repo
+    root instead.
+    """
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    env = {k: v for k, v in os.environ.items() if k != "CORTEXSIM_BASE_DIR"}
+    result = subprocess.run(
+        [sys.executable, "-m", "engine.payload_shelf", "--check"],
+        cwd=str(repo_root / "core"),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        "documented `cd core && python -m engine.payload_shelf --check` must exit 0\n"
+        f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    assert "OK" in result.stdout

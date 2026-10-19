@@ -26,7 +26,6 @@ and under which header, never the token itself.
 from __future__ import annotations
 
 import dataclasses
-import ipaddress
 import json
 import time
 from typing import Any, Callable, Optional
@@ -36,8 +35,11 @@ import httpx
 from pydantic import SecretStr
 
 from .campaign import Campaign
-from .delivery import REMEDIATION, classify_exception, classify_status
+from .delivery import (
+    REMEDIATION, classify_exception, classify_status, response_evidence,
+)
 from .registry import PluginRegistry
+from .safety import SafetyError, SafetyPolicy
 
 
 #: Default port per scheme, so a target always reports a concrete port for the
@@ -77,32 +79,25 @@ def _params_value(params: Any, name: str) -> Any:
     return value
 
 
-def _host_allowlisted(host: str, allowlist: list[str]) -> bool:
-    """Mirror the safety policy's host match closely enough to preflight it.
+def _host_allowlisted(host: str, allowlist: list[str], port: Optional[int] = None) -> bool:
+    """Ask the run-time authority itself whether ``host``/``port`` is allowed.
 
-    Exact hostname match, suffix match on a leading-dot entry, or containment
-    in a CIDR entry. Deliberately permissive on parse errors — the authority is
-    ``SafetyPolicy.authorise`` at run time; this is an advisory check so the
-    API can warn *before* a live launch is refused mid-campaign.
+    This used to re-implement the host match and ignored ``host:port`` entries
+    entirely, so a collector ON a pinned port read as blocked here while the
+    live run accepted it. Evaluating the real ``SafetyPolicy`` (as a live send)
+    makes the advisory and the run agree by construction.
     """
     if not allowlist:
         return False
-    for entry in allowlist:
-        entry = entry.strip()
-        if not entry:
-            continue
-        if host == entry or host.endswith("." + entry.lstrip(".")):
-            return True
-        try:
-            network = ipaddress.ip_network(entry, strict=False)
-        except ValueError:
-            continue
-        try:
-            if ipaddress.ip_address(host) in network:
-                return True
-        except ValueError:
-            continue
-    return False
+    policy = SafetyPolicy(
+        simulation_authorized=True, authorized_by="collector-advisory",
+        target_allowlist=allowlist, dry_run=False,
+    )
+    try:
+        policy.authorise(host, port=port)
+    except SafetyError:
+        return False
+    return True
 
 
 def resolve_step_collector(
@@ -147,7 +142,7 @@ def resolve_step_collector(
     )
 
     allowlist = list(target_allowlist or [])
-    target.allowlisted = _host_allowlisted(host, allowlist)
+    target.allowlisted = _host_allowlisted(host, allowlist, port or None)
     if not target.allowlisted:
         target.warnings.append(
             f"collector host '{host}' is not covered by the campaign "
@@ -305,7 +300,13 @@ async def preflight_collector(
     finally:
         await client.aclose()
 
-    code = classify_status(resp.status_code)
+    # Same evidence the live run hands DeliveryLedger: a 200 carrying a
+    # captive-portal login page must not read as `delivered`/`ready` here
+    # when the run itself would classify it collector_intercepted.
+    content_type, body_prefix = response_evidence(resp)
+    code = classify_status(
+        resp.status_code, content_type=content_type, body_prefix=body_prefix,
+    )
     return {
         "step_id": target.step_id,
         "url": target.url,

@@ -126,7 +126,7 @@
   margin-left: auto;
 }
 .eal-console__tab--new.is-active {
-  box-shadow: inset 0 0 0 2px var(--ac-str);
+  box-shadow:inset 0 0 0 2px var(--ac-str);
 }
 
 .eal-console__tab {
@@ -151,7 +151,7 @@
 .eal-console__tab.is-active {
   color: var(--tx);
   font-weight: 700;
-  border-bottom-color: var(--ac);
+  border-bottom-color:var(--ac-line);
 }
 
 .eal-console__tab-count {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getRuns } from '../../api/client.js'
 import { runIdOf } from '../../api/ids.js'
+import { parseServerTime } from '../../api/time.js'
 
 /**
  * useScenarioRunHistory — fetch the run list once and roll it up
@@ -79,7 +80,7 @@ function buildHistory(runs) {
 
 function parseTs(t) {
   if (!t) return 0
-  const n = Date.parse(t)
+  const n = parseServerTime(t)
   return Number.isFinite(n) ? n : 0
 }
 

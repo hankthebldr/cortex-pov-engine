@@ -44,18 +44,18 @@
   --c-hairline:        var(--bd);
   --c-hairline-strong: var(--bd2);
 
-  --c-action:          var(--ac);
-  --c-action-bright:   var(--ac-str);
-  --c-action-deep:     var(--ac);
+  --c-action:          var(--ink-action);
+  --c-action-bright:   var(--ink-action-bright);
+  --c-action-deep:     var(--ink-action-deep);
   --c-action-soft:     var(--ac-soft);
-  --c-action-glow:     color-mix(in srgb, var(--ac) 45%, transparent);
+  --c-action-glow:     transparent;
 
   --c-signal:          var(--info);
   --c-signal-soft:     color-mix(in srgb, var(--info) 14%, transparent);
   --c-signal-glow:     color-mix(in srgb, var(--info) 45%, transparent);
 
-  --c-detected:        var(--ac);
-  --c-detected-soft:   var(--ac-soft);
+  --c-detected:        var(--ink-detected);
+  --c-detected-soft:   var(--pos-soft);
   --c-missed:          var(--crit);
   --c-missed-soft:     color-mix(in srgb, var(--crit) 14%, transparent);
   --c-pending:         var(--warn);
@@ -78,7 +78,7 @@
   background: var(--s1);
   border: 1px solid var(--bd);
   border-left: none;
-  border-top: 3px solid var(--ac-str);
+  border-top:3px solid var(--ac-str);
   border-radius: 10px;
   padding: 20px 22px;
   box-shadow: var(--shadow, 0 4px 14px rgba(10, 30, 20, .09));
@@ -133,7 +133,7 @@
   color: var(--crit);
 }
 .theme-console .ttp-editor .ttp-editor__saved-msg {
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   color: var(--ac-ink);
 }
 
@@ -169,7 +169,7 @@
 }
 .theme-console .ttp-editor .ttp-editor__textarea:focus-visible {
   outline: none;
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   box-shadow: 0 0 0 3px var(--ac-soft);
 }
 .theme-console .ttp-editor .ttp-editor__textarea--error {
@@ -198,7 +198,7 @@
   color: var(--crit);
 }
 .theme-console .ttp-editor .ttp-editor__valid-msg {
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   color: var(--ac-ink);
 }
 .theme-console .ttp-editor .ttp-editor__validate-path {

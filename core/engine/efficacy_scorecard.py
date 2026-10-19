@@ -354,7 +354,26 @@ def format_mttd(seconds: Optional[float]) -> str:
     return f"{int(seconds // 3600)}h {int((seconds % 3600) // 60)}m"
 
 
-def _verdict(pct: float) -> str:
+def _verdict(coverage: CoverageStats) -> str:
+    """The exec-summary verdict, degraded-aware.
+
+    ``pct`` is ``detected / expected`` with pending folded into the denominator,
+    so a scope where nothing has been adjudicated reads as 0% — and emitting the
+    coverage-gap verdict there puts a false-negative claim about the customer's
+    stack into a CISO one-pager before anything was measured. A zero is degraded,
+    not ok: "none defined" and "none validated yet" get their own verdict, never
+    the authored-content recommendation that only an actual miss warrants.
+    """
+    adjudicated = coverage.detected + coverage.missed
+    if coverage.expected == 0:
+        return ("No expected detections were defined for this scope, so Cortex "
+                "detection coverage cannot be assessed — there was nothing to "
+                "detect.")
+    if adjudicated == 0:
+        return (f"No detections have been validated yet ({coverage.pending} "
+                f"pending), so coverage cannot be concluded — the seeded results "
+                f"have not been adjudicated against the Cortex console.")
+    pct = coverage.pct
     if pct >= 80:
         return ("Strong Cortex detection coverage confirmed across the simulated "
                 "surface. Recommend promoting to a customer-facing POV report.")
@@ -363,6 +382,11 @@ def _verdict(pct: float) -> str:
                 "detections and considering custom-rule remediation before hand-off.")
     return ("Coverage gap identified. Recommend authoring BIOC / correlation "
             "content to close the missed-detection delta before hand-off.")
+
+
+def _is_degraded(coverage: CoverageStats) -> bool:
+    """True when nothing in scope was measured (no expected, or all pending)."""
+    return coverage.expected == 0 or (coverage.detected + coverage.missed) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +417,7 @@ def render_markdown(scorecard: EfficacyScorecard) -> str:
     lines.append(
         f"Cortex detected **{cov.detected} of {cov.expected}** expected "
         f"detections (**{cov.pct}% coverage**) across {scope}. "
-        f"{_verdict(cov.pct)}"
+        f"{_verdict(cov)}"
     )
     lines.append("")
 
@@ -580,8 +604,13 @@ def render_html(scorecard: EfficacyScorecard) -> str:
                         + ", ".join(f"<code>{html.escape(r)}</code>" for r in sc.run_ids)
                         + "</div>")
 
-    accent = (_DETECTED_GREEN if cov.pct >= 80
-              else _CORTEX_TEAL if cov.pct >= 50 else _MISSED_RED)
+    # A degraded scope (nothing measured) must not paint the coverage KPI red —
+    # red reads as "missed", and nothing was missed. Neutral steel instead.
+    if _is_degraded(cov):
+        accent = _CORTEX_STEEL
+    else:
+        accent = (_DETECTED_GREEN if cov.pct >= 80
+                  else _CORTEX_TEAL if cov.pct >= 50 else _MISSED_RED)
 
     doc = (
         f"<style>{style}</style>"
@@ -593,7 +622,7 @@ def render_html(scorecard: EfficacyScorecard) -> str:
         f'<div class="cs-summary">Cortex detected '
         f"<strong>{cov.detected} of {cov.expected}</strong> expected detections "
         f"(<strong>{cov.pct}% coverage</strong>) across {html.escape(scope)}. "
-        f"{html.escape(_verdict(cov.pct))}</div>"
+        f"{html.escape(_verdict(cov))}</div>"
         '<div class="cs-kpis">'
         + _kpi(f"{cov.pct}%", "Coverage", accent)
         + _kpi(str(cov.detected), "Detected", _DETECTED_GREEN)

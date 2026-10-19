@@ -26,7 +26,7 @@
    display tracking — that is drawn for 44-72px slide titles and reads as
    crunched at the 27px this renders at. Heading tracking at weight 700. */
 .pov-page { padding: 22px 26px 26px; }
-.pov-page__rule { width: 44px; height: 4px; background: var(--ac); margin-bottom: 11px; }
+.pov-page__rule { width: 44px; height: 4px; background:var(--ac-str); margin-bottom: 11px; }
 .pov-page__eyebrow {
   font: 700 10px/1 var(--font-ui);
   letter-spacing: .14em; text-transform: uppercase;
@@ -175,9 +175,9 @@ button.pov-panel__row:hover { background: var(--s2); }
   border-radius: 3px; border: 1px solid var(--bd2);
   display: grid; place-items: center;
 }
-.pov-box--on { border-color: var(--ac); background: var(--ac-soft); }
+.pov-box--on { border-color:var(--ac-line); background: var(--ac-soft); }
 .pov-box i { width: 6px; height: 6px; border-radius: 1px; background: transparent; }
-.pov-box--on i { background: var(--ac); }
+.pov-box--on i { background:var(--ac-str); }
 
 /* ── Tab strips ──────────────────────────────────────────────────────────
    Used for the Library's sibling destinations AND for the object sheet's
@@ -193,7 +193,7 @@ button.pov-panel__row:hover { background: var(--s2); }
   cursor: pointer;
 }
 .pov-tab:hover { color: var(--tx2); }
-.pov-tab--on { color: var(--tx); border-bottom-color: var(--ac); }
+.pov-tab--on { color: var(--tx); border-bottom-color:var(--ac-line); }
 
 /* ── Wizard step strip ───────────────────────────────────────────────────── */
 .pov-steps {
@@ -209,7 +209,7 @@ button.pov-panel__row:hover { background: var(--s2); }
   cursor: pointer; font: inherit; color: inherit;
 }
 .pov-step:hover { background: var(--s2); }
-.pov-step--on { border-top-color: var(--ac); background: var(--s2); }
+.pov-step--on { border-top-color:var(--ac-line); background: var(--s2); }
 .pov-step__head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
 .pov-step__n {
   width: 17px; height: 17px; flex: none;
@@ -217,7 +217,7 @@ button.pov-panel__row:hover { background: var(--s2); }
   font: 700 9px/1 var(--font-mono);
   background: var(--s3); color: var(--tx2);
 }
-.pov-step--on .pov-step__n { background: var(--ac); color: var(--ac-tx); }
+.pov-step--on .pov-step__n { background:var(--ac-str); color: var(--ac-tx); }
 .pov-step--done .pov-step__n { background: var(--pos-soft); color: var(--pos-ink); }
 .pov-step__label {
   font: 700 9px/1 var(--font-ui);
@@ -306,7 +306,7 @@ button.pov-panel__row:hover { background: var(--s2); }
   grid-template-rows: auto auto 1fr auto;
   min-height: 0;
 }
-.pov-sheet__accent { height: 4px; background: var(--ac); }
+.pov-sheet__accent { height: 4px; background:var(--ac-str); }
 .pov-sheet__head { padding: 15px 20px; border-bottom: 1px solid var(--bd); }
 .pov-sheet__head-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .pov-sheet__id { font: 500 10.5px/1 var(--font-mono); color: var(--tx3); }

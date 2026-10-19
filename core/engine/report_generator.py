@@ -202,6 +202,10 @@ def render_exec_summary_markdown(
     s = scenario_dict or {}
     total = len(results)
     observed = sum(1 for r in results if r.get("observed"))
+    # A result is ADJUDICATED once a DC has marked it observed or explicitly
+    # missed (observed_at set). A still-pending result is "not measured yet",
+    # never "missed" — folding pending into a miss manufactures a false negative.
+    validated = sum(1 for r in results if r.get("observed") or r.get("observed_at"))
     coverage_pct = round(observed / total * 100, 1) if total else 0.0
     mttds = [r["mttd_seconds"] for r in results if r.get("mttd_seconds") is not None]
     avg_mttd = round(sum(mttds) / len(mttds), 1) if mttds else None
@@ -243,7 +247,27 @@ def render_exec_summary_markdown(
     lines.append("")
     lines.append("## Conclusion")
     lines.append("")
-    if coverage_pct >= 80:
+    if validated == 0:
+        # Nothing has been measured, so there is no coverage to conclude on. This
+        # must NOT render as a gap: "none defined" and "none validated yet" are
+        # degraded states, not a detection miss, and emitting the coverage-gap
+        # verdict here would put a false-negative claim about the customer's
+        # stack into a deliverable before any adjudication occurred.
+        if total == 0:
+            verdict = (
+                "No expected detections were defined for this run, so Cortex "
+                "detection coverage cannot be assessed from it — there was "
+                "nothing to detect. Bind the scenario's expected detections "
+                "before using this run for a POV readout."
+            )
+        else:
+            verdict = (
+                f"No detections have been validated yet ({total} pending DC "
+                f"validation), so coverage cannot be concluded — the seeded "
+                f"results have simply not been adjudicated against the Cortex "
+                f"console yet. Validate them before customer hand-off."
+            )
+    elif coverage_pct >= 80:
         verdict = (
             "The simulation confirmed strong Cortex detection coverage for the "
             "scenario surface. Recommend promoting to customer-facing POV report."

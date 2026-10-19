@@ -388,3 +388,168 @@ class TestBundleEndToEnd:
 
         assert proc.returncode == 0
         assert sink.received
+
+
+# --------------------------------------------------------------------------
+# Offline/online parity: send.py must classify a response EXACTLY as
+# delivery.classify_status does. The bundle is the path a DC uses from inside
+# the customer network — the most likely place for a captive portal or an
+# intercepting proxy — so a disagreement here is a false "delivered" in the
+# results.json a DC quotes.
+# --------------------------------------------------------------------------
+
+
+class _Responder:
+    """HTTP endpoint answering every request with one canned response.
+
+    Records method, path and headers of every request (GET included) so a test
+    can prove a redirect target was never contacted.
+    """
+
+    def __init__(self, status_code=200, *, headers=None, body=b""):
+        self.status_code = status_code
+        self.headers = dict(headers or {})
+        self.body = body
+        self.received: list[dict] = []
+        self._server = None
+        self._thread = None
+
+    def __enter__(self):
+        responder = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def _answer(self):
+                length = int(self.headers.get("content-length") or 0)
+                if length:
+                    self.rfile.read(length)
+                responder.received.append({
+                    "method": self.command,
+                    "path": self.path,
+                    "headers": {k.lower(): v for k, v in self.headers.items()},
+                })
+                self.send_response(responder.status_code)
+                for key, value in responder.headers.items():
+                    self.send_header(key, value)
+                self.send_header("content-length", str(len(responder.body)))
+                self.end_headers()
+                self.wfile.write(responder.body)
+
+            do_POST = _answer  # noqa: N815 - BaseHTTPRequestHandler contract
+            do_GET = _answer  # noqa: N815
+
+            def log_message(self, *args):
+                return
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+    @property
+    def url(self) -> str:
+        host, port = self._server.server_address[:2]
+        return f"http://{host}:{port}/logs/v1/event"
+
+
+_PORTAL_HTML = b"<!DOCTYPE html><html><head><title>Login required</title></head></html>"
+
+
+def _send_py_namespace(tmp_path):
+    """Load the generated send.py as a module namespace (not __main__)."""
+    result = generate_bundle(
+        _campaign([_k8s_step("https://collector.cortexsim-canary.invalid/logs/v1/event")]),
+        get_default_registry(), tmp_path,
+    )
+    source = (Path(result["path"]) / "send.py").read_text()
+    namespace: dict = {"__name__": "cortexsim_send_py_under_test"}
+    exec(compile(source, "send.py", "exec"), namespace)  # noqa: S102 - our own artifact
+    return namespace
+
+
+class TestOfflineOnlineParity:
+    def _bundle(self, tmp_path, collector_url, **step_kw):
+        result = generate_bundle(
+            _campaign([_k8s_step(collector_url, **step_kw)]),
+            get_default_registry(), tmp_path,
+        )
+        return Path(result["path"]), result["manifest"]
+
+    def test_redirect_is_not_followed_and_the_token_never_leaves(self, tmp_path):
+        # A captive portal 302s the POST to its login page, which answers 200.
+        # Following it turns the POST into a GET, counts the 200 as delivered
+        # records, and hands the ingestion token to the portal host.
+        with _Responder(200, headers={"content-type": "application/json"},
+                        body=b'{"ok": true}') as portal:
+            with _Responder(302, headers={"location": portal.url}) as collector:
+                bundle, _ = self._bundle(tmp_path, collector.url)
+                proc = _run_send(bundle, env={"CORTEXSIM_COLLECTOR_TOKEN": "tok-must-not-leak"})
+
+        assert portal.received == [], (
+            "send.py followed the redirect: the portal received "
+            f"{[(r['method'], r['headers'].get('authorization')) for r in portal.received]}"
+        )
+        assert proc.returncode == 2, proc.stdout
+        results = json.loads((bundle / "results.json").read_text())
+        assert results["delivery"]["records_delivered"] == 0
+        assert results["delivery"]["failures"][0]["code"] == "collector_redirected"
+
+    def test_html_answer_is_intercepted_not_delivered(self, tmp_path):
+        with _Responder(200, headers={"content-type": "text/html; charset=utf-8"},
+                        body=_PORTAL_HTML) as portal:
+            bundle, _ = self._bundle(tmp_path, portal.url)
+            proc = _run_send(bundle)
+
+        assert proc.returncode == 2, proc.stdout
+        results = json.loads((bundle / "results.json").read_text())
+        assert results["delivery"]["records_delivered"] == 0
+        assert results["delivery"]["failures"][0]["code"] == "collector_intercepted"
+
+    def test_html_body_without_html_content_type_is_intercepted(self, tmp_path):
+        # Some interceptors lie about content-type; the body sniff must catch it.
+        with _Responder(200, headers={"content-type": "application/json"},
+                        body=_PORTAL_HTML) as portal:
+            bundle, _ = self._bundle(tmp_path, portal.url)
+            proc = _run_send(bundle)
+
+        assert proc.returncode == 2, proc.stdout
+        results = json.loads((bundle / "results.json").read_text())
+        assert results["delivery"]["failures"][0]["code"] == "collector_intercepted"
+
+    def test_json_ack_is_still_delivered(self, tmp_path):
+        with _Responder(200, headers={"content-type": "application/json"},
+                        body=b'{"status": "ok"}') as collector:
+            bundle, manifest = self._bundle(tmp_path, collector.url)
+            proc = _run_send(bundle)
+
+        assert proc.returncode == 0, proc.stdout
+        results = json.loads((bundle / "results.json").read_text())
+        assert results["delivery"]["records_delivered"] == manifest["total_records"]
+
+    def test_send_py_classifies_every_response_like_simcore(self, tmp_path):
+        from eal_simulator.delivery import classify_status as simcore_classify
+
+        send_py = _send_py_namespace(tmp_path)
+        statuses = (200, 201, 202, 204, 301, 302, 303, 307, 308, 400, 401, 403,
+                    404, 407, 413, 429, 500, 502, 503, 504)
+        evidence = (
+            ("", b""),
+            ("application/json", b'{"ok":true}'),
+            ("text/html", b""),
+            ("text/html; charset=utf-8", _PORTAL_HTML),
+            ("application/xhtml+xml", b"<html/>"),
+            ("application/json", _PORTAL_HTML),
+            ("", b"   <html><body>portal</body></html>"),
+        )
+        drift = []
+        for status in statuses:
+            for ctype, body in evidence:
+                want = simcore_classify(status, content_type=ctype, body_prefix=body)
+                got = send_py["classify_status"](status, ctype, body)
+                if want != got:
+                    drift.append((status, ctype, body[:20], want, got))
+        assert not drift, f"send.py disagrees with delivery.classify_status: {drift}"

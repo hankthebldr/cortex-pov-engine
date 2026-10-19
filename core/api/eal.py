@@ -556,7 +556,9 @@ async def preflight_campaign_collectors(
         if target is None:
             continue
         try:
-            policy.authorise(target.host)
+            # At port granularity: a `host:8088` pin must not let the canary
+            # probe the same host on 443.
+            policy.authorise(target.host, port=target.port or None)
         except SafetyError as exc:
             probes.append({
                 "step_id": step.step_id,

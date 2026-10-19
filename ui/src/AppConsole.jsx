@@ -11,11 +11,13 @@ import {
   getDestination,
   isValidDestination,
   navGroups,
+  navOwner,
 } from './app/destinations.jsx'
+import SectionTabs from './components/console/SectionTabs.jsx'
+import useSetupProgress from './components/console/useSetupProgress.js'
 import { downloadReportBundle, getToolAdapters } from './api/client.js'
 import useShelf from './components/console/useShelf.js'
 import { agentIdOf } from './api/ids.js'
-import { componentTally, toolCatalog, cliCatalog, ttpCatalog, streamCatalog } from './components/console/povdata/catalogs.js'
 
 /**
  * AppConsole — Mission Ops Console root.
@@ -114,41 +116,19 @@ function ConsoleShell() {
   // from the internet mid-run. A number on the nav is the only thing that makes
   // a DC open that surface BEFORE the customer meeting rather than during it.
   const shelf = useShelf({ adapters: toolAdapters })
-  const degradedCount = env.healthModel ? env.healthModel.degraded.length : 0
 
-  // Seed-catalog tallies for the surfaces SimCore does not serve yet. Derived
-  // from the catalog rather than written as literals, so the rail badge and the
-  // surface's own summary strip cannot disagree — see povdata/.
-  const seed = useMemo(() => ({
-    components: componentTally(),
-    packages: toolCatalog().length,
-    cli: cliCatalog().length,
-    ttps: ttpCatalog().length,
-    streams: streamCatalog().length,
-  }), [])
+  const setup = useSetupProgress()
 
+  // Real counts only. The rail used to badge nearly every item with a number
+  // from the prototype's seed catalogs ("12 components", "0/11 verified"),
+  // which a DC reasonably read as facts about THEIR instance. A badge now
+  // appears only when it says something true and actionable.
   const badges = useMemo(() => ({
-    // Real, provider-backed counts.
-    scenarioCount: env.scenarios.length ? String(env.scenarios.length) : null,
+    // Required setup steps still open — the reason to open Get started.
+    setupLeft: setup.requiredLeft > 0 ? String(setup.requiredLeft) : null,
     agentCount: env.agents.length ? String(env.agents.length) : null,
     live: env.activeRun ? { text: 'LIVE', variant: 'live' } : null,
-    // A count, never a dot: "3" sends a DC to the page, a coloured pip does not.
-    gateWarn: degradedCount > 0 ? String(degradedCount) : null,
-    // One tenant per instance, so this badge is a statement of that rule
-    // rather than a count that could ever be interesting.
-    tenantCount: '1',
-    // Seed-backed until the API serves them.
-    componentCount: String(seed.components.total),
-    packageCount: String(seed.packages),
-    cliCount: String(seed.cli),
-    ttpCount: String(seed.ttps),
-    streamCount: String(seed.streams),
-    uctcCount: '266',
-    wizardSteps: '5',
-    // The honest number until the probes actually run. It reads as a failure
-    // and it should: nothing is tenant-verified before it has been re-asked.
-    verified: '0/11',
-  }), [env.scenarios.length, env.agents.length, env.activeRun, degradedCount, seed])
+  }), [setup.requiredLeft, env.agents.length, env.activeRun])
 
   const groups = useMemo(() => navGroups(badges), [badges])
 
@@ -206,13 +186,14 @@ function ConsoleShell() {
       }
     })
 
+    // Every page, rail or not — ⌘K is how an off-rail page stays one step away.
     const destinationActions = DESTINATIONS
-      .filter((d) => !d.hidden && d.group)
+      .filter((d) => d.id !== 'readiness' && !d.redirect)
       .map((d) => ({
         section: 'Go to',
         id: `go-${d.id}`,
         title: `Go to ${d.label}`,
-        meta: d.group,
+        meta: d.navParent ? getDestination(d.navParent)?.label : d.group,
         icon: d.icon || 'apps-grid',
         onSelect: () => router.navigate(d.id),
       }))
@@ -255,27 +236,6 @@ function ConsoleShell() {
     ]
   }, [env, router, handleExportPOV, surfaceToast])
 
-  // ── Flow-bar context ──────────────────────────────────────────────────────
-  // The bar quotes numbers; they have to be the SAME numbers the surface under
-  // it quotes. Passing derived values down (rather than letting the bar make
-  // its own) is what keeps a component strip reading 4 ready while the footer
-  // claims 6.
-  const flowCtx = useMemo(() => ({
-    components: seed.components,
-    scenarioCount: env.scenarios.length,
-    agentCount: env.agents.length,
-    gate: {
-      total: 9,
-      pass: Math.max(0, 9 - degradedCount),
-      warn: degradedCount,
-    },
-    runStep: env.activeRun
-      ? `Step ${env.activeRun.step} of ${env.activeRun.totalSteps} running`
-      : env.lastRun
-        ? `Last run ${env.lastRun.scenarioId || env.lastRun.runId}`
-        : 'No run in flight',
-  }), [seed, env.scenarios.length, env.agents.length, env.activeRun, env.lastRun, degradedCount])
-
   // ── Resolve + mount the current destination surface ───────────────────────
   const dest = getDestination(router.destination) || getDestination(DEFAULT_DESTINATION)
   const Surface = dest.Component
@@ -291,7 +251,7 @@ function ConsoleShell() {
         health={env.health}
         tenant={env.tenant}
         agent={env.agent}
-        flowCtx={flowCtx}
+        activeNav={navOwner(dest.id)}
         // Drives the safety banner's per-tenant acknowledgement: switching to a
         // customer tenant re-arms the blast-radius warning that was
         // acknowledged against a lab one. `tenant` is the resolved object, so
@@ -326,6 +286,8 @@ function ConsoleShell() {
             <button type="button" className="btn btn--xs" onClick={env.refreshHealth}>↻ Retry now</button>
           </div>
         )}
+
+        <SectionTabs destination={dest.id} onNavigate={router.navigate} />
 
         <SurfaceBoundary resetKey={router.destination} title={dest.label}>
           <Surface

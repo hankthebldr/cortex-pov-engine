@@ -1,12 +1,15 @@
 import React from 'react'
-import EvidenceCollection from './EvidenceCollection.jsx'
 
 /**
  * ConsoleHeader — the persistent global bar.
  *
- * Left→right: the Cortex product mark + POVengine wordmark + version, the
- * evidence collection, then (pushed right) the bound tenant, the active agent,
- * the run pill, ⌘K, the utility toggles, and the account chip.
+ * Left→right: the Cortex product mark + POVengine wordmark + version, then
+ * (pushed right) the bound tenant, the active agent, the run pill, ⌘K, help,
+ * the theme toggle and the account chip.
+ *
+ * Deliberately sparse. The evidence-collection pill ("Acme Financial · FY27
+ * Q3 · UNEXPORTED") is gone — it named a POV this instance never had, from
+ * prototype seed data — and Theater moved into ⌘K.
  *
  * EVERY CHILD IS `flex: none; white-space: nowrap`.
  * This bar carries ten controls that each have to stay readable. Letting them
@@ -53,7 +56,7 @@ import EvidenceCollection from './EvidenceCollection.jsx'
  *   onNavigate    — (destinationId, params?) => void
  *   onStartTour   — () => void | null   (renders the ? button when provided)
  *   tourSeen      — boolean; false puts a beacon on the ? button
- *   colorTheme / onToggleColorTheme, theaterMode / onToggleTheater
+ *   colorTheme / onToggleColorTheme
  */
 export default function ConsoleHeader({
   health = {},
@@ -66,8 +69,6 @@ export default function ConsoleHeader({
   onStartTour = null,
   tourSeen = true,
   userInitials = 'DC',
-  theaterMode = false,
-  onToggleTheater = null,
   colorTheme = 'dark',
   onToggleColorTheme = null,
   povName,
@@ -93,8 +94,6 @@ export default function ConsoleHeader({
         </div>
         <span className="pov-brand__version brand__version mono">{version}</span>
       </div>
-
-      <EvidenceCollection povName={povName} onNavigate={onNavigate} />
 
       <div className="pov-header__spacer" />
 
@@ -149,18 +148,6 @@ export default function ConsoleHeader({
               storage reports "seen"), so a browser we cannot remember never
               gets a permanent beacon. */}
           {!tourSeen && <span className="tour-trigger__beacon" aria-hidden="true" />}
-        </button>
-      )}
-
-      {onToggleTheater && (
-        <button
-          type="button"
-          className={'pov-chip theater-toggle' + (theaterMode ? ' is-active' : '')}
-          onClick={onToggleTheater}
-          aria-pressed={theaterMode}
-          title={theaterMode ? 'Exit theater mode' : 'Theater mode — projector-friendly'}
-        >
-          {theaterMode ? 'Theater on' : 'Theater'}
         </button>
       )}
 

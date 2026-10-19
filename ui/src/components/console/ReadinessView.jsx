@@ -6,7 +6,6 @@ import { HS, HS_CHIP, HS_LABEL, healthHeadline } from './readiness/healthModel.j
 import { RS, RS_CHIP, RUNG } from './readiness/connectorState.js'
 import { preflightXsiamTenant, preflightConnector } from '../../api/client.js'
 import Term from '../onboarding/Term.jsx'
-import LaunchGate from './LaunchGate.jsx'
 
 /**
  * ReadinessView — "am I ready to run this in front of a customer?", answered
@@ -61,12 +60,11 @@ export default function ReadinessView({ onNavigate = () => {} }) {
         </div>
       ) : (
         <>
-          {/* The gate LEADS this surface now. The three sections below it
-              answer "is this SimCore whole", which is a question about the
-              product; the gate answers "will THIS chain reach its target",
-              which is the question the phase is named for and the only one
-              with a launch button attached to its answer. */}
-          <LaunchGate onNavigate={onNavigate} />
+          {/* The per-chain "will this reach the target" block that used to
+              lead here was prototype seed data (a jumpbox, a cloud connector
+              and a Broker VM this instance never had). The real per-scenario
+              agent preflight runs inside the launch flow, against the agent
+              you actually pick. */}
           <ConnectorSection ladder={r.ladder} tenants={r.tenants} onNavigate={onNavigate} />
           <ComponentSection model={r.health} onNavigate={onNavigate} />
           <GapSection model={r.health} ladder={r.ladder} />

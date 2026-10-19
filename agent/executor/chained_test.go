@@ -153,3 +153,30 @@ func TestChainSession_MultiLineCommand(t *testing.T) {
 		t.Fatalf("stdout = %q, want 3", out)
 	}
 }
+
+// If the ANCHOR shell itself dies mid-step (OOM-killed, or a step that kills its
+// grandparent), the sentinel the anchor emits after the step never arrives. The
+// scanner channels close on the broken pipe and RunStep must NOT report that
+// absence as a clean exit 0 — "the step completed successfully" is the exact
+// false-green the whole engine exists to eliminate. It must surface a non-zero
+// exit and an error so executeTaskChained fails the run instead of recording a
+// passing step that never produced a result.
+func TestChainSession_AnchorDiesMidStep(t *testing.T) {
+	s, err := NewChainSession(context.Background(), "")
+	if err != nil {
+		t.Fatalf("NewChainSession: %v", err)
+	}
+	defer s.Close()
+
+	// `kill -9 $$` inside the per-step subshell targets the anchor shell ($$ is
+	// the invoking shell's pid, inherited by the subshell), so the anchor dies
+	// before it can print the exit-code sentinel.
+	_, _, rc, err := s.RunStep("kill -9 $$")
+	if err == nil && rc == 0 {
+		t.Fatalf("anchor died mid-step but RunStep reported success (rc=%d err=%v) — a step whose "+
+			"shell died must never read as exit 0", rc, err)
+	}
+	if rc == 0 {
+		t.Fatalf("anchor died mid-step: rc=%d, want non-zero", rc)
+	}
+}

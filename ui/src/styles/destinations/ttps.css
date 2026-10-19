@@ -81,7 +81,7 @@
 .ttpb-search::placeholder { color: var(--tx3); }
 .ttpb-search:focus {
   outline: none;
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   box-shadow: 0 0 0 3px var(--ac-soft);
 }
 
@@ -129,10 +129,10 @@
   cursor: pointer;
   transition: border-color .12s ease, color .12s ease, background .12s ease;
 }
-.ttpb-chip:hover { border-color: var(--ac); color: var(--tx); }
+.ttpb-chip:hover { border-color:var(--ac-line); color: var(--tx); }
 .ttpb-chip.is-active {
   background: var(--ac-ink);
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   color: var(--ac-tx);
   font-weight: 600;
 }
@@ -206,11 +206,11 @@
   transition: border-color .12s ease, box-shadow .12s ease;
 }
 .ttpb-row:hover, .ttpb-row:focus-visible {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   outline: none;
 }
 .ttpb-row--selected {
-  border-color: var(--ac-str);
+  border-color:var(--ac-str);
   background: var(--ac-soft);
   box-shadow: 0 0 0 1px var(--ac-line);
 }
@@ -299,7 +299,7 @@
   padding: 22px 24px;
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-top: 3px solid var(--ac-str);
+  border-top:3px solid var(--ac-str);
   border-radius: 10px;
   width: 100%;
   min-width: 0;

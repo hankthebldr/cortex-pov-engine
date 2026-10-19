@@ -75,7 +75,7 @@
 .theme-console .tools-destination .adapter-registry__intro {
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 10px;
   padding: 18px 20px;
 }
@@ -186,7 +186,7 @@
   font-family: var(--font-primary, 'Inter', sans-serif);
 }
 .theme-console .tools-destination .adapter-registry__search-input:focus {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   box-shadow: 0 0 0 3px var(--ac-soft);
 }
 .theme-console .tools-destination .adapter-registry__search-input::placeholder {
@@ -218,7 +218,7 @@
 }
 .theme-console .tools-destination .competitive__filter.is-active {
   background: var(--ac-ink);
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   color: var(--ac-tx);
   font-weight: 700;
 }
@@ -283,11 +283,11 @@
   outline: none;
 }
 .theme-console .tools-destination .adapter-card--selected {
-  border-color: var(--ac);
+  border-color:var(--ac-line);
   box-shadow: 0 0 0 1px var(--ac-soft);
 }
 .theme-console .tools-destination .adapter-card--selected::before {
-  background: var(--ac);
+  background:var(--ac-str);
   box-shadow: none;
 }
 
@@ -384,7 +384,7 @@
 }
 .theme-console .tools-destination .chip--detected {
   color: var(--ac-ink);
-  border-color: var(--ac);
+  border-color:var(--pos);
   background: transparent;
 }
 .theme-console .tools-destination .chip--pending {
@@ -402,7 +402,7 @@
 }
 .theme-console .tools-destination .chip--clickable:hover {
   color: var(--ac-ink);
-  border-color: var(--ac);
+  border-color:var(--ac-line);
 }
 .theme-console .tools-destination .tool-adapter-catalog__chip-sm {
   font-size: 9px;
@@ -412,7 +412,7 @@
 .theme-console .tools-destination .competitive__detail {
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 10px;
   padding: 20px 22px;
 }
@@ -529,7 +529,7 @@
 }
 .theme-console .tools-destination .provenance__copy:hover {
   color: var(--ac-ink);
-  border-color: var(--ac);
+  border-color:var(--ac-line);
 }
 .theme-console .tools-destination .provenance__hint {
   color: var(--tx3);
@@ -542,7 +542,7 @@
 .theme-console .tools-destination .confirm-dialog {
   background: var(--s1);
   border: 1px solid var(--bd);
-  border-left: 3px solid var(--ac-str);
+  border-left:3px solid var(--ac-str);
   border-radius: 10px;
   box-shadow: var(--shadow);
 }
@@ -572,7 +572,7 @@
 }
 .theme-console .tools-destination .stage-dialog__spinner {
   border-color: var(--bd2);
-  border-top-color: var(--ac);
+  border-top-color:var(--ac-line);
 }
 .theme-console .tools-destination .stage-dialog__snippet pre {
   background: var(--s2);
