@@ -146,13 +146,14 @@ def _client(handler):
 
 
 def _tenant(*, health=200, xql_status=200, rows=None, dataset_ok=True, now=None,
-            server_date=None, send_date=True):
+            server_date=None, send_date=True, raw_date=None):
     rows = rows if rows is not None else [{"_time": _iso(now)}]
     # The clock stage reads the tenant's current time from the HTTP Date header,
     # not from an event. Default it to real-now (synced); server_date drives a
-    # skew; send_date=False models a response with no Date header.
+    # skew; send_date=False models a response with no Date header; raw_date
+    # injects a literal (e.g. malformed) header value.
     from email.utils import format_datetime
-    date_hdr = format_datetime(
+    date_hdr = raw_date if raw_date is not None else format_datetime(
         (server_date or datetime.utcnow()).replace(tzinfo=timezone.utc))
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -286,6 +287,32 @@ def test_clock_is_skipped_only_when_no_date_header_is_present():
                                         integration_name="acme"))
     assert _stage(r, "clock").status == pf.SKIPPED
     assert "Date header" in _stage(r, "clock").detail
+
+
+def test_a_malformed_date_header_is_an_unmeasured_clock_not_a_preflight_crash():
+    """A garbage Date (proxy quirk) makes parsedate_to_datetime raise; it must
+    be handled as an unmeasured clock (skipped), not escape and abort the whole
+    preflight — auth/scope stayed green, so the report must still be returned."""
+    r = asyncio.run(pf.preflight_tenant(
+        _client(_tenant(raw_date="not-a-real-date")), integration_name="acme"))
+    assert _stage(r, "clock").status == pf.SKIPPED
+    assert _stage(r, "auth").code == pf.PF_OK
+    assert _stage(r, "scope_xql").code == pf.PF_OK
+
+
+def test_a_failed_clock_probe_still_counts_its_live_attempt():
+    """queries_issued is the operator's live-call evidence. A clock probe that
+    raised a transport error still ATTEMPTED a round-trip, and must be counted
+    like the auth/scope stages count theirs."""
+    class _RaisingClient:
+        async def server_time(self):
+            raise httpx.ConnectError("boom")
+
+    report = pf.PreflightReport(tenant="t", kind="xsiam_tenant")
+    stage = asyncio.run(pf._probe_clock(
+        _RaisingClient(), report, datetime.now(timezone.utc)))
+    assert stage.status == pf.SKIPPED
+    assert report.queries_issued == 1
 
 
 def test_elapsed_preflight_time_is_not_counted_as_clock_skew():

@@ -508,10 +508,14 @@ async def _probe_clock(client: Any, report: PreflightReport, now: datetime) -> S
     # turns elapsed wall-time into fake skew), and compared against the RTT
     # midpoint so the network round-trip nets out.
     try:
+        # Count the live round-trip BEFORE awaiting it: the auth and XQL stages
+        # count their attempt whether it succeeds or fails, and a failed clock
+        # probe that silently undercounts queries_issued would understate the
+        # live-call evidence the operator reads.
+        report.queries_issued += 1
         before = datetime.now(timezone.utc)
         tenant_time = await client.server_time()
         after = datetime.now(timezone.utc)
-        report.queries_issued += 1
     except (XsiamError, httpx.HTTPError) as exc:
         return Stage("clock", SKIPPED, PF_NOT_PROBED, str(exc),
                      remediation=("Clock skew could not be measured, so MTTD from this "

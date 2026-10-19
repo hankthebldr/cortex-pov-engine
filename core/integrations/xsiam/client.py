@@ -81,7 +81,15 @@ class XsiamClient:
         raw = resp.headers.get("date")
         if not raw:
             return None
-        dt = parsedate_to_datetime(raw)
+        try:
+            dt = parsedate_to_datetime(raw)
+        except (ValueError, TypeError):
+            # A malformed Date (a proxy quirk, a truncated header) is an
+            # UNMEASURED clock, not a preflight-aborting error: treat it exactly
+            # like a missing header so _probe_clock reports `skipped`.
+            return None
+        if dt is None:  # older stdlib returned None instead of raising
+            return None
         return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
     async def ping_via_endpoints(self) -> int:
