@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
+
+from tests._core_reimport import reimport_core
 
 os.environ.setdefault("CORTEXSIM_SECRET", "test-master-key-please-ignore-32+chars-entropy")
 os.environ.setdefault("CORTEXSIM_ENV", "development")
 
 
 @pytest_asyncio.fixture
-async def db_session(tmp_path: Path, monkeypatch):
+async def db_session(tmp_path: Path, monkeypatch, restore_core_modules):
     db_path = tmp_path / "xsiam-test.db"
     monkeypatch.setenv("CORTEXSIM_BASE_DIR", str(tmp_path))
-    for mod in ("database", "models", "config"):
-        sys.modules.pop(mod, None)
-    for mod in [m for m in sys.modules if m.startswith("security") or m.startswith("integrations")]:
-        sys.modules.pop(mod, None)
+    reimport_core("database", "models", "config", prefixes=("security", "integrations"))
 
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     engine = create_async_engine(

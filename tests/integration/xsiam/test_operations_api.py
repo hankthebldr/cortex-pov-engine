@@ -5,10 +5,17 @@ from __future__ import annotations
 import asyncio
 import os
 
+import pytest
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from tests._core_reimport import reimport_core
+
+# _build_app re-imports core/ against tmp_path; this puts the originals back.
+# test_operations_path_params imports _build_app and carries the same mark.
+pytestmark = pytest.mark.usefixtures("restore_core_modules")
 
 
 async def _create_all(engine, Base):
@@ -32,14 +39,10 @@ class _StubClient:
 
 
 def _build_app(tmp_path, monkeypatch):
-    import sys
     monkeypatch.setenv("CORTEXSIM_BASE_DIR", str(tmp_path))
     monkeypatch.setenv("CORTEXSIM_SECRET", "test-master-key-please-ignore-32+chars")
     monkeypatch.setenv("CORTEXSIM_ENV", "development")
-    for mod in ("database", "models", "config"):
-        sys.modules.pop(mod, None)
-    for mod in [m for m in sys.modules if m.startswith("security") or m.startswith("api.")]:
-        sys.modules.pop(mod, None)
+    reimport_core("database", "models", "config", prefixes=("security", "api."))
 
     engine = create_async_engine(
         f"sqlite+aiosqlite:///{tmp_path/'api.db'}",
