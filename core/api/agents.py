@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -1481,22 +1481,32 @@ async def _refuse_unstageable_task(
         "curl -fsSL '<server>/api/agents/install?os=linux' | CORTEXSIM_TOKEN='cxs_…' bash"
     )
 
-    from api.runs import _is_terminal  # noqa: PLC0415
+    from api.runs import _in_flight_clause  # noqa: PLC0415
 
-    run_row = await db.execute(select(Run).where(Run.run_id == task.run_id))
-    run: Optional[Run] = run_row.scalar_one_or_none()
-    # `_is_terminal`, not a status list: a multi-endpoint run whose first
+    # One guarded UPDATE, the marker appended in SQL. Reading the run and
+    # writing it back let the fan-out's other endpoints lose their /output and
+    # /complete summary, and let a racing abort be overwritten with `failed`.
+    # `_in_flight_clause`, not a status list: a multi-endpoint run whose first
     # endpoint already failed reads `failed` while still owed this endpoint, and
     # skipping it left the run waiting forever on a task that was just refused.
-    if run is not None and not _is_terminal(run):
-        run.status = "failed"
-        run.completed_at = datetime.utcnow()
-        run.output = (run.output or "") + (
-            "\n--- RUN FAILED: AGENT_CANNOT_STAGE_ARTIFACTS ---\n"
-            f"ARTIFACT STAGING FAILED: {detail}\n"
-            "NO STEPS RAN. This run proves NOTHING about the customer's detection coverage.\n"
+    res = await db.execute(
+        update(Run)
+        .where(Run.run_id == task.run_id, _in_flight_clause())
+        .values(
+            status="failed",
+            completed_at=datetime.utcnow(),
+            output=func.coalesce(Run.output, "") + (
+                "\n--- RUN FAILED: AGENT_CANNOT_STAGE_ARTIFACTS ---\n"
+                f"ARTIFACT STAGING FAILED: {detail}\n"
+                "NO STEPS RAN. This run proves NOTHING about the customer's detection coverage.\n"
+            ),
         )
-        await db.commit()
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    # Only the request that failed the run announces it; a run that was
+    # already terminal (or is missing) keeps the verdict it has.
+    if res.rowcount == 1:
         await _publish_run_status(task.run_id, "failed")
 
     logger.warning(
