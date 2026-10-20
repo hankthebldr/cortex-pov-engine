@@ -51,6 +51,16 @@ without purpose, and numbers that were not this instance's. See
   `already_terminal: true`. A sticky-failed fan-out still owed endpoints is in
   flight and keeps accepting them. The beacon does not retry `/complete`, so
   the trigger was a replay, a proxy or another caller.
+- **An `AGENT_CANNOT_STAGE_ARTIFACTS` refusal overwrote writes that landed
+  while it ran.** It read the run, checked it was in flight, then wrote back
+  `failed`, `completed_at` and `output` computed from that read. A fan-out's
+  other endpoints keep calling back meanwhile: their `/output` chunk or
+  `/complete` summary was dropped, an operator abort was turned into `failed`
+  with its marker gone, and two beacons refused at once published two terminal
+  frames. The refusal is now one guarded UPDATE that appends its marker in
+  SQL, the same in-flight guard `/complete` and `/abort` use, and only the
+  request that failed the run publishes the frame. The beacon still gets the
+  409.
 
 ### Fixed — the alert read-back path could not be trusted on a shared, busy tenant
 
