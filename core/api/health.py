@@ -265,6 +265,43 @@ def probe_uctc_registry() -> dict[str, Any]:
     )
 
 
+def probe_identity_spec() -> dict[str, Any]:
+    """spec/identity_harness.json — every push bundle's run_as arm and S-17.
+
+    An absent spec is served from a built-in copy pinned identical to it, so the
+    bundles stay right and nothing used to say anything. That is how a deployed
+    image ran without spec/ (tests/tools/test_image_ships_runtime_content.py):
+    right output, broken deployment, no signal. A malformed spec raises
+    everywhere it is read; this names it without making the probe the failure.
+    """
+    from engine import identity_spec  # noqa: PLC0415
+
+    try:
+        source = identity_spec.spec_source()
+    except identity_spec.IdentitySpecError as exc:
+        return _degraded(
+            "IDENTITY_SPEC_MALFORMED",
+            f"{exc} Until it parses, push-bundle generation and the S-17 identity "
+            f"check raise, and SimCore will not boot with scenarios present. "
+            f"Fix: restore spec/identity_harness.json from this build's source "
+            f"tree and restart SimCore.",
+            path=identity_spec._spec_path(),
+        )
+    if source["source"] == "fallback":
+        return _degraded(
+            "IDENTITY_SPEC_ABSENT",
+            f"no identity harness spec at {source['path']} — SimCore is serving its "
+            f"built-in copy, which a test pins identical to the spec this build "
+            f"shipped, so push bundles and S-17 are unaffected. The deployment is "
+            f"still wrong: spec/ was not shipped, or CORTEXSIM_BASE_DIR points at "
+            f"the wrong tree and other base-dir content is likely missing with it. "
+            f"Fix: confirm core/Dockerfile COPYs spec/, or set CORTEXSIM_BASE_DIR "
+            f"to the checkout root, then restart SimCore (the spec is read once).",
+            **source,
+        )
+    return _ok(**source)
+
+
 def probe_eal() -> dict[str, Any]:
     from eal_simulator import get_default_registry  # noqa: PLC0415
 
@@ -673,6 +710,7 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "assertion_catalog",
     "adapter_catalog",
     "uctc_registry",
+    "identity_spec",
     "eal",
     "xsiam_operation_catalog",
     "payload_shelf",
@@ -737,6 +775,7 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["assertion_catalog"] = _guard("assertion_catalog", probe_assertion_catalog)
     components["adapter_catalog"] = _guard("adapter_catalog", probe_adapter_catalog)
     components["uctc_registry"] = _guard("uctc_registry", probe_uctc_registry)
+    components["identity_spec"] = _guard("identity_spec", probe_identity_spec)
     components["eal"] = _guard("eal", probe_eal)
     components["xsiam_operation_catalog"] = _guard(
         "xsiam_operation_catalog", probe_xsiam_operation_catalog

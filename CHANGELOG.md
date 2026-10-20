@@ -73,6 +73,33 @@ path to Cortex; `tenant-verified` is still 0.**
   used `re.search`; `findall` now keeps them all. `matching_service_rule_id`
   (the field Cortex documents) joins the rule-id keys.
 
+### Changed — a malformed identity spec stops SimCore; an absent one shows on `/api/health`
+
+`engine.identity_spec` used to answer any failure to read
+`spec/identity_harness.json` with its hard-coded copy, and any empty key with
+the same copy, logging one warning.
+
+- **Present but malformed now raises `IdentitySpecError`, naming the file and
+  the fault.** This covers invalid JSON, a non-object root, a missing list, a
+  non-list, an empty list, a blank or non-string entry, a duplicate entry, and
+  a path that exists but is not a readable file. The old reading was wrong, not
+  merely quiet: `"service_accounts": "www-data"` served its characters, and on
+  boot S-17 rejected 71 of 177 scenarios, each blaming the *scenario*
+  ("identity 'www-data' is not declared"). `/api/health` then reported 106
+  scenarios as ok. **SimCore now refuses to boot** with a malformed spec and
+  scenarios present (uvicorn exit 3, the error is the last traceback line).
+- **Absent still serves the built-in copy, which is pinned identical to the
+  file, so bundle bytes do not change.** It is no longer silent:
+  `/api/health` gains an `identity_spec` component that reports
+  `IDENTITY_SPEC_ABSENT` (degraded, with the path and the `COPY spec/` fix) or
+  `IDENTITY_SPEC_MALFORMED`. `identity_spec.spec_source()` says which source is
+  in force.
+- **Removed:** the import-time constants `DIRECT_IDENTITIES`,
+  `SERVICE_ACCOUNTS` and `IMPERSONATION_PLATFORMS`. Call the accessors instead.
+  Importing the module no longer reads the spec, so a malformed file raises at
+  the call that needs it and the health probe can still import the module to
+  report it.
+
 ### Added — sprint 2: the loop can now measure two more KPIs (still `tenant-verified: 0`)
 
 - **Detection Accuracy is measured** (`core/connectors/measures.py`). The

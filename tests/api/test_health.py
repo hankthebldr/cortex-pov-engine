@@ -626,3 +626,61 @@ def test_the_async_guard_routes_the_operator_to_the_db_component_first():
 
     src = inspect.getsource(health.component_health)
     assert "Fix: check the `db` component first" in src
+
+
+# ---------------------------------------------------------------------------
+# identity_spec — the file every push bundle's run_as arm and S-17 are built from
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def identity_spec_at(monkeypatch, tmp_path):
+    """Point the identity-spec loader at a tmp path; nothing is written until asked."""
+    from engine import identity_spec
+
+    path = tmp_path / "identity_harness.json"
+    monkeypatch.setattr(identity_spec, "_spec_path", lambda: str(path))
+    identity_spec._load.cache_clear()
+    yield path
+    identity_spec._load.cache_clear()
+
+
+def test_identity_spec_is_a_registered_component():
+    from api import health
+
+    assert "identity_spec" in health.COMPONENT_KEYS
+
+
+def test_an_absent_identity_spec_is_degraded_though_the_bundles_are_right(identity_spec_at):
+    """The deployment tests/tools/test_image_ships_runtime_content.py found:
+    spec/ never shipped, the fallback answered, and nothing said so. The
+    fallback keeps the bytes right; this keeps the deployment honest."""
+    from api import health
+
+    comp = health.probe_identity_spec()
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "IDENTITY_SPEC_ABSENT"
+    assert str(identity_spec_at) in comp["detail"]
+    assert "COPY" in comp["detail"], "the remediation must name the packaging cause"
+
+
+def test_a_malformed_identity_spec_is_degraded_and_says_what_is_wrong(identity_spec_at):
+    from api import health
+
+    identity_spec_at.write_text('{"service_accounts": "www-data"}')
+    comp = health.probe_identity_spec()
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "IDENTITY_SPEC_MALFORMED"
+    assert str(identity_spec_at) in comp["detail"]
+
+
+def test_a_well_formed_identity_spec_is_ok(identity_spec_at):
+    from pathlib import Path
+
+    from api import health
+
+    repo_spec = Path(__file__).resolve().parents[2] / "spec" / "identity_harness.json"
+    identity_spec_at.write_text(repo_spec.read_text())
+    comp = health.probe_identity_spec()
+    assert comp["status"] == "ok"
+    assert comp["source"] == "file"

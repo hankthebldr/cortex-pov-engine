@@ -842,10 +842,10 @@ def _check_step_identities(schema, filepath) -> Optional[str]:
     Returns an error string (the caller rejects) or None.
     """
     from engine.identity_spec import (  # noqa: PLC0415
-        DIRECT_IDENTITIES, SERVICE_ACCOUNTS, windows_identities,
+        direct_identities, service_accounts, windows_identities,
     )
 
-    allowed = set(DIRECT_IDENTITIES) | set(SERVICE_ACCOUNTS)
+    allowed = set(direct_identities()) | set(service_accounts())
     win_only = set(windows_identities())
     bad: list[str] = []
 

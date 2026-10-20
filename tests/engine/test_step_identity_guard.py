@@ -160,10 +160,10 @@ def test_the_real_corpus_declares_only_declared_identities():
     import glob  # noqa: PLC0415
     import yaml  # noqa: PLC0415
     from engine.identity_spec import (  # noqa: PLC0415
-        DIRECT_IDENTITIES, SERVICE_ACCOUNTS, windows_identities,
+        direct_identities, service_accounts, windows_identities,
     )
 
-    allowed = set(DIRECT_IDENTITIES) | set(SERVICE_ACCOUNTS)
+    allowed = set(direct_identities()) | set(service_accounts())
     win_only = set(windows_identities())
     offenders = []
 
