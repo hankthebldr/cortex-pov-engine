@@ -12,6 +12,7 @@ import {
   BLANK_COMMAND,
   CHANNELS,
   DETECTION_TYPES,
+  spineProblems,
   PIVOTS,
   PLANES,
   addDetection,
@@ -779,5 +780,44 @@ describe('composer layout', () => {
     )
     const yaml = emitDraftYaml(d)
     expect(yaml).not.toMatch(/composer_layout|\bx:\s*999|\by:\s*777|position/)
+  })
+})
+
+// ─── Spine shape (Composer mode: drop-to-create makes a second root one
+//     gesture away; the strict loader rejects it at save) ─────────────────────
+
+describe('spineProblems / validateDraft — off-chain roots and dangling parents', () => {
+  const st = (id, parent = null) => ({
+    id, name: id, command: `echo ${id}`, causalityParent: parent,
+    causalityPivot: 'process_lineage', channel: null, target: null, eal: null,
+    platforms: [], detections: [{ plane: 'EDR', type: 'BIOC', description: 'd' }],
+  })
+
+  it('names every root after the first as off-chain once causality is declared', () => {
+    const steps = [st('s1'), st('s2', 's1'), st('s3')]
+    expect(spineProblems(steps).offChain).toEqual(['s3'])
+    const v = validateDraft(steps)
+    expect(v.ok).toBe(false)
+    expect(v.offChain).toEqual(['s3'])
+    expect(v.problems.join(' ')).toMatch(/1 step is not connected to the chain \(s3\)/)
+  })
+
+  it('a legacy star (no declared causality) may have many roots — not off-chain', () => {
+    const steps = [st('s1'), st('s2'), st('s3')]
+    expect(spineProblems(steps).offChain).toEqual([])
+    expect(validateDraft(steps).ok).toBe(true)
+  })
+
+  it('names a dangling parent once, and never also as off-chain', () => {
+    const steps = [st('s1'), st('s2', 's1'), st('s3', 'gone')]
+    const { offChain, danglingParents } = spineProblems(steps)
+    expect(danglingParents).toEqual(['s3'])
+    expect(offChain).toEqual([])
+    expect(validateDraft(steps).problems.join(' ')).toMatch(/from a step that no longer exists \(s3\)/)
+  })
+
+  it('a single connected spine has no spine problems', () => {
+    const steps = [st('s1'), st('s2', 's1'), st('s3', 's2')]
+    expect(spineProblems(steps)).toEqual({ offChain: [], danglingParents: [] })
   })
 })

@@ -269,6 +269,14 @@ export function validateDraft(steps) {
     .filter((s) => (s.channel || 'agent') === 'eal' && !(s.eal && s.eal.plugin))
     .map((s) => s.id)
 
+  // Spine shape, mirroring `validate_causality_spine` (scenario_loader.py): a
+  // parent must name a step that exists, and once ANY step declares a parent
+  // the chain may have exactly ONE root. Before Composer mode a second root was
+  // rare; dropping a node onto the canvas now makes one in a single gesture, and
+  // the backend rejects it at save with a prose 422 — so it is named here, at
+  // compose time, with the step ids, instead of after "Chain valid".
+  const { offChain, danglingParents } = spineProblems(steps)
+
   const detectionCount = steps.reduce((n, s) => n + s.detections.length, 0)
   const techniques = steps
     .map((s) => s.technique)
@@ -278,6 +286,23 @@ export function validateDraft(steps) {
   const problems = []
   if (!steps.length) {
     problems.push('The chain is empty — add at least one step before preflight.')
+  }
+  // Spine shape first: on a node canvas a disconnected card is the structural
+  // fault to fix before its contents (the pill shows problems[0]).
+  if (offChain.length) {
+    const one = offChain.length === 1
+    problems.push(
+      `${offChain.length} step${one ? ' is' : 's are'} not connected to the chain `
+      + `(${offChain.join(', ')}) — a chain has one root; connect ${one ? 'it' : 'each'} `
+      + `to a step or the draft will not save.`,
+    )
+  }
+  if (danglingParents.length) {
+    const one = danglingParents.length === 1
+    problems.push(
+      `${danglingParents.length} step${one ? '' : 's'} ${one ? 'descends' : 'descend'} `
+      + `from a step that no longer exists (${danglingParents.join(', ')}).`,
+    )
   }
   // Agreement matters here because this string is read aloud in a review:
   // "1 step declare no expected detection" is the kind of wrong that makes a
@@ -312,9 +337,38 @@ export function validateDraft(steps) {
     missingDetections,
     missingCommands,
     missingEalPlugin,
+    offChain,
+    danglingParents,
     counts: { steps: steps.length, detections: detectionCount, techniques: techniques.length },
     techniques,
   }
+}
+
+/**
+ * The two spine-shape defects the strict loader rejects, named by step id.
+ *
+ *  - `danglingParents`: steps whose `causalityParent` names no present step.
+ *  - `offChain`: once ANY step declares a parent, every root after the FIRST
+ *    (array order — the spine's head) is off the chain. A chain with no
+ *    declared causality at all is a legacy star and may have many roots.
+ *
+ * Shared by `validateDraft` (named problems) and the graph builder (the
+ * off-chain badge), so the canvas and the validation pill cannot disagree.
+ */
+export function spineProblems(steps) {
+  const list = Array.isArray(steps) ? steps : []
+  const ids = new Set(list.map((s) => s.id))
+  const danglingParents = list
+    .filter((s) => s.causalityParent && !ids.has(s.causalityParent))
+    .map((s) => s.id)
+  const declared = list.some((s) => s.causalityParent && ids.has(s.causalityParent))
+  const roots = list.filter((s) => !(s.causalityParent && ids.has(s.causalityParent)))
+  const dangling = new Set(danglingParents)
+  // A dangling step is already named once (above); don't name it twice.
+  const offChain = declared
+    ? roots.slice(1).map((s) => s.id).filter((id) => !dangling.has(id))
+    : []
+  return { offChain, danglingParents }
 }
 
 // ─── YAML emit ───────────────────────────────────────────────────────────────
