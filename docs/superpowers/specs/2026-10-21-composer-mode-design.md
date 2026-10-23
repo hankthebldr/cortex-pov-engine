@@ -164,7 +164,14 @@ no handles, no drag, no delete).
   silently dropped by `DraftScenarioSchema`. In this pass they attach to a step
   (badges, inspector, palette actions).
 * **Navigation guard.** Exit and Esc confirm on unsaved edits, but header chips,
-  ⌘K and cross-surface links still unmount the Composer silently (pre-existing).
+  ⌘K, cross-surface links and the browser **Back** button still unmount the
+  Composer silently — Back to `#/library` drops an added step with no prompt,
+  and Forward reopens the origin chain (pre-existing; verified on the synced
+  production bundle).
+* **"unsaved edits" marker clips below ~1150px.** The provenance line needs
+  ~317px and gets ~260px at 1024×768 because the six workflow-bar actions take
+  ~593px. Main clipped it below 1280px (the rail was still there); the exit and
+  Esc confirms still guard the edit.
 * **Skip link** writes `#cortexsim-main` into the hash router and unmounts the
   current page (pre-existing; affects composer mode like every page).
 * **Undo/redo, copy/paste, sticky notes** — no schema home yet.
