@@ -174,10 +174,24 @@ export function useDecodedPlan(encoded) {
  * a destination is a one-file edit.
  *
  * Surface components are mounted with a stable prop contract:
- *     ({ params, setParams, onNavigate }) => JSX
+ *     ({ params, setParams, onNavigate, onExit? }) => JSX
  *   - params      — surface-local query params from the hash router
  *   - setParams   — merge/replace this surface's params (deep-linkable)
  *   - onNavigate  — (destinationId, params?) => void  cross-surface jumps
+ *   - onExit      — OPTIONAL. () => void, passed only to immersive
+ *                   destinations (`immersive: true` below); returns to the
+ *                   previous non-immersive destination, with the params it
+ *                   had (fallback: the destination's `navParent`, for a cold
+ *                   deep link that has no previous page). Undefined for every
+ *                   other surface, so a surface can render its Exit control
+ *                   only when it is actually in a mode there is a way out of.
+ *
+ * `immersive: true` puts the shell in immersive mode while that destination is
+ * open: the header and the banners above/below it stay (consent and SimCore
+ * health are never hidden), the nav rail and the task tab strip are not
+ * rendered, and the surface fills the workspace edge to edge with no padding
+ * and no page scroll. It is derived from the route on every render and is
+ * never persisted — reloading a non-immersive page can never land in it.
  *
  * Surfaces read ambient scope (tenant/agent/scenarios/runs/…) from the
  * EnvironmentProvider via useEnvironment — never prop-drilled. Where a surface
@@ -643,7 +657,9 @@ export const DESTINATIONS = [
   { id: 'tenants',  label: 'Tenant',       group: 'Manage', icon: 'people',          Component: TenantsSurface },
 
   // ── Off-rail, reached as tabs or links ──
-  { id: 'composer',  label: 'Build a chain',     hidden: true, navParent: 'library', icon: 'apps-grid',      Component: ComposerView },
+  // Immersive: the Composer is a full-screen node-graph editor, not a page
+  // inside the rail + tab strip (docs/superpowers/specs/2026-10-21-composer-mode-design.md).
+  { id: 'composer',  label: 'Build a chain',     hidden: true, navParent: 'library', icon: 'apps-grid',      Component: ComposerView, immersive: true },
   { id: 'preflight', label: 'Launch gate',       hidden: true, navParent: 'library', icon: 'user-lock',      Component: ReadinessSurface },
   { id: 'guided',    label: 'New POV run',       hidden: true, navParent: 'library', icon: 'apps-grid',      Component: GuidedPovFlow },
   { id: 'coverage',  label: 'Coverage',          hidden: true, navParent: 'proof',   icon: 'donut-chart',    Component: CoverageSurface },
@@ -702,6 +718,11 @@ const BY_ID = new Map(DESTINATIONS.map((d) => [d.id, d]))
 
 export function getDestination(id) {
   return BY_ID.get(id) || null
+}
+
+/** True only when `id` resolves to a destination flagged `immersive: true`. */
+export function isImmersive(id) {
+  return getDestination(id)?.immersive === true
 }
 
 export function isValidDestination(id) {
