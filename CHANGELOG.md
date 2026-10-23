@@ -39,6 +39,21 @@ without purpose, and numbers that were not this instance's. See
   items, the scoping wizard and Tenant validation are retired behind
   redirects; `povdata/` is lane/plane vocabulary only.
 
+### Fixed — `install.sh` reported success when it had installed nothing
+
+- **Outside a checkout, `install.sh` ended "Installation complete" with exit
+  0.** It builds from the files next to it. Piped (`curl … | bash`) or run as
+  a lone downloaded copy, it installed the Go/Rust/Node toolchain, skipped
+  every build step and `docker compose up` with a warning, and still printed
+  the success banner with nothing listening on :8888. It now refuses first,
+  before the OS check or any `sudo`, with `INSTALL_NOT_A_CHECKOUT` (exit 2),
+  the missing files, and the `git clone` / `scripts/dev-up.sh` fix. The
+  in-tree skips (`.gitmodules`, `agent/`, `ui/`, `ui/dist`,
+  `docker-compose.yml`) are now hard failures; absent submodule tools still
+  warn. The published v1.0.0–v1.0.2 `install.sh` assets predate this guard.
+  `tests/installer/test_install_sh_checkout_guard.py` runs the real script
+  with every host-changing command stubbed.
+
 ### Fixed — a finished run's verdict could change after the fact
 
 - **A late or duplicate `/complete` reopened a finished run.** The only guard
