@@ -121,7 +121,7 @@ no handles, no drag, no delete).
    the steps it must, so adding a step never reorders a branching chain.
 5. **Launch runs only what validates.** On the saved-row path Launch also
    requires `validateDraft().ok`: the server's chain check accepts the
-   `# no command configured` placeholder, which would run a shell comment and
+   `# configure the command for this step` placeholder, which would run a shell comment and
    report its detection as missed.
 6. **The Run lens never lends a verdict.** A step that changed since the run
    reads "not in run"; Run-lens edges carry no edit callbacks.
@@ -169,7 +169,7 @@ no handles, no drag, no delete).
   current page (pre-existing; affects composer mode like every page).
 * **Undo/redo, copy/paste, sticky notes** — no schema home yet.
 * **Backend `_chain_valid` accepts the placeholder command.** The client now
-  refuses Launch; the server should reject `# no command configured` too.
+  refuses Launch; the server should reject `# configure the command for this step` too.
 * **Carried fields that go stale.** `platform_variants` is carried as-is, so
   editing a step's main command leaves the old per-OS variant in the `.ps1`
   bundle; a re-saved draft keeps the `mitre_technique` the server derived

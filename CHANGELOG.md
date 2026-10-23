@@ -73,7 +73,7 @@ and five stacked rows of its own around a fixed 620px canvas. See
   never touched. A valid array is now left alone and an invalid one moves only
   the steps it must.
 - **Launch accepted a placeholder command.** A saved draft whose step still
-  read `# no command configured` passed the server's chain check and would have
+  read `# configure the command for this step` passed the server's chain check and would have
   run a shell comment, reporting that step's detection as missed. Launch stays
   off until validation passes.
 - **The Run lens could lend a verdict to an edited step.** A step that changed
