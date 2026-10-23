@@ -542,7 +542,11 @@ advertises `artifact-fetch` alongside `shell` / `identity-harness` on all three
 hand an artifact-carrying task to an agent that lacks it — **409
 `AGENT_CANNOT_STAGE_ARTIFACTS`** naming the artifact, the agent's actual roster
 and the re-install one-liner — and fails the run rather than letting it hang in
-`running`. Without that gate an old beacon would silently drop the unknown
+`running`. The failure is one guarded UPDATE (the in-flight guard `/complete`
+and `/abort` use) that appends its marker in SQL, so a fan-out's other endpoints
+keep the `/output` and `/complete` writes they land meanwhile; a run that
+already finished keeps its verdict, and only the refusal that failed the run
+publishes the terminal `run.status` frame. Without that gate an old beacon would silently drop the unknown
 `artifacts` key and run every step **without its tooling**: a manufactured false
 negative delivered by the back-compat mechanism itself. Optional
 `--artifact-token` / `CORTEXSIM_ARTIFACT_TOKEN` carries a shelf bearer token;
