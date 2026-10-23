@@ -1145,6 +1145,13 @@
   flex: 1 1 auto;
   min-height: 0;
   background: var(--s0);
+  /* Drawer widths, declared once (layout, not design tokens). The drawers,
+     the Controls / MiniMap offsets beside them and the caption's centring all
+     derive from these two, so the <=1100px narrowing moves all of them —
+     hand-copied 300/360 offsets left the panels 64px adrift of the narrow
+     drawers. */
+  --composer-drawer-l: 300px;
+  --composer-drawer-r: 360px;
 }
 
 /* ─── Workflow bar: the one row of chrome above the stage ─── */
@@ -1297,13 +1304,18 @@
 }
 
 /* Run lens stacks the REAL causality graph over the read-only spine; give the
-   real graph a scrollable band and let the spine take the rest. */
+   real graph a scrollable band and let the spine take the rest. The band
+   starts right under the canvas head, where the "＋ Add" / "Inspector" tabs
+   and the caption pill float (stage top 56px, 32px tall) — so its first line,
+   the completeness readout or the "No run yet — EXPECTED only." disclaimer,
+   is padded clear of them rather than printed underneath (head 44 + 52 = 96,
+   8px below the tabs). */
 .theme-console .composer--mode .composer-canvas__rungraph,
 .theme-console .composer--mode .composer-canvas__runempty {
   flex: none;
   max-height: 42%;
   margin: 0;
-  padding: 12px 16px;
+  padding: 52px 16px 12px;
   overflow: auto;
   background: var(--s1);
   border-bottom: 1px solid var(--bd);
@@ -1385,8 +1397,8 @@
   box-shadow: var(--shadow);
   overflow: hidden;
 }
-.theme-console .composer--mode .composer-mode__drawer--left { left: 12px; width: 300px; }
-.theme-console .composer--mode .composer-mode__drawer--right { right: 12px; width: 360px; }
+.theme-console .composer--mode .composer-mode__drawer--left { left: 12px; width: var(--composer-drawer-l); }
+.theme-console .composer--mode .composer-mode__drawer--right { right: 12px; width: var(--composer-drawer-r); }
 .theme-console .composer--mode .composer-mode__drawer-head {
   display: flex;
   align-items: center;
@@ -1406,8 +1418,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* `display: block` is load-bearing: the windowed layout hides the bench and
+   inspector below 1150px (they would squeeze the canvas grid), and without
+   this override both drawers opened EMPTY at 1024 and 845. The drawer is an
+   overlay, so the reason for hiding them does not exist in this mode. */
 .theme-console .composer--mode .composer-mode__drawer .composer-bench,
 .theme-console .composer--mode .composer-mode__drawer .composer-inspector {
+  display: block;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -1452,12 +1469,26 @@
 }
 .theme-console .composer--mode .composer-mode__dock .composer-ws__tabs { border-bottom: 0; }
 .theme-console .composer--mode .composer-ws--open .composer-ws__tabs { border-bottom: 1px solid var(--bd); }
-.theme-console .composer--mode .composer-mode__dock .composer-ws__body { max-height: 220px; }
+/* Open, the dock body is capped by the STAGE as well as by 220px (`cqh` is the
+   stage's height — it is the size container below): at 845x620 with the
+   consent banner open the stage is ~240px, and a 220px body made the open dock
+   taller than the whole stage, burying the drawers and their reopen tabs. */
+.theme-console .composer--mode .composer-mode__dock .composer-ws__body { max-height: min(220px, 40cqh); }
+/* …and the drawers stop above an open dock instead of running under it: it
+   painted over their bottom ~205px, so the inspector's last fields could not
+   be scrolled into view. 48px = the 39px tab row + a gap. */
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-ws--open) .composer-mode__drawer {
+  bottom: calc(min(220px, 40cqh) + 48px);
+}
 
 /* ─── React Flow, themed onto console tokens ─── */
 .theme-console .composer--mode .react-flow {
   --xy-background-color: var(--s0);
-  --xy-background-pattern-dots-color: var(--bd2);
+  /* The name React Flow 12 reads for the dot grid (style.css: `.dots { fill:
+     var(--xy-background-pattern-color-props, var(--xy-background-pattern-color,
+     …-dots-color-default)) }`); `--xy-background-pattern-dots-color` is not
+     read anywhere and left the grid on the library's #91919a. */
+  --xy-background-pattern-color: var(--bd2);
   --xy-edge-stroke: var(--tx3);
   --xy-edge-stroke-selected: var(--ac-str);
   --xy-edge-stroke-width: 1.5;
@@ -1468,7 +1499,9 @@
   --xy-selection-background-color: var(--ac-soft);
   --xy-selection-border: 1px dashed var(--ac-line);
   --xy-minimap-background-color: var(--s1);
-  --xy-minimap-mask-background-color: var(--s0);
+  /* Translucent: an opaque mask hid every node outside the viewport, which is
+     the one thing the overview map exists to show. */
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--s0) 60%, transparent);
   --xy-minimap-mask-stroke-color: var(--ac-line);
   --xy-minimap-node-stroke-color: var(--s0);
   --xy-controls-button-background-color: var(--s1);
@@ -1484,13 +1517,16 @@
 .theme-console .composer--mode .react-flow__node { background: transparent; border: 0; padding: 0; }
 
 /* Keep the built-in Controls / MiniMap clear of the docked workstream and of
-   whichever drawer is open, so nothing on the pane hides behind a panel. */
+   whichever drawer is open, so nothing on the pane hides behind a panel. They
+   sit 12px beside a drawer (12px gutter + width + 12px); the caption re-centres
+   on the stage the drawers leave free — half of (left edge − right edge), where
+   an open drawer's edge is its width + its 12px gutter. */
 .theme-console .composer--mode .react-flow__panel.bottom { margin-bottom: 56px; }
-.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left) .react-flow__panel.left { margin-left: 324px; }
-.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--right) .react-flow__panel.right { margin-right: 384px; }
-.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--right) .composer-canvas__meta { margin-left: -186px; }
-.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left) .composer-canvas__meta { margin-left: 156px; }
-.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left):has(> .composer-mode__drawer--right) .composer-canvas__meta { margin-left: -30px; }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left) .react-flow__panel.left { margin-left: calc(var(--composer-drawer-l) + 24px); }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--right) .react-flow__panel.right { margin-right: calc(var(--composer-drawer-r) + 24px); }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--right) .composer-canvas__meta { margin-left: calc((var(--composer-drawer-r) + 12px) / -2); }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left) .composer-canvas__meta { margin-left: calc((var(--composer-drawer-l) + 12px) / 2); }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left):has(> .composer-mode__drawer--right) .composer-canvas__meta { margin-left: calc((var(--composer-drawer-l) - var(--composer-drawer-r)) / 2); }
 .theme-console .composer--mode .composer-minimap {
   border: 1px solid var(--bd);
   border-radius: 8px;
@@ -1534,10 +1570,31 @@
   cursor: pointer;
 }
 
-/* Tool row reads as a quiet footer and lights up on hover / selection. */
-.theme-console .composer--mode .chain-node__tools { opacity: 0.55; transition: opacity var(--dur-fast) var(--ease-out); }
+/* Tool row reads as a quiet footer and comes up fully on hover, keyboard focus
+   or selection. Resting at .85, not lower: at .55 its glyphs measured ~2.7:1,
+   under the 3:1 a control needs. */
+.theme-console .composer--mode .chain-node__tools { opacity: 0.85; transition: opacity var(--dur-fast) var(--ease-out); }
 .theme-console .composer--mode .chain-node--step:hover .chain-node__tools,
+.theme-console .composer--mode .react-flow__node:focus-within .chain-node__tools,
 .theme-console .composer--mode .chain-node--selected .chain-node__tools { opacity: 1; }
+
+/* Keyboard focus on a step card rings in the selection colour: its body button,
+   and React Flow's node wrapper whenever the canvas makes it a tab stop (the
+   library strips the wrapper to `outline: none`). */
+.theme-console .composer--mode .chain-node__body:focus-visible,
+.theme-console .composer--mode .react-flow__node:focus-visible {
+  outline: 2px solid var(--ac-str);
+  outline-offset: 2px;
+}
+
+/* A selected or keyboard-focused causality edge. `!important` because the
+   edge path carries an INLINE stroke (the edge's own style prop), which beats
+   any selector — including React Flow's own --xy-edge-stroke-selected. */
+.theme-console .composer--mode .react-flow__edge.selected .react-flow__edge-path,
+.theme-console .composer--mode .react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--ac-str) !important;
+  stroke-width: 2.5 !important;
+}
 
 /* Trigger (CGO) and terminal (Proof) anchors. */
 .theme-console .composer--mode .chain-node--cgo,
@@ -1601,10 +1658,13 @@
 /* Lanes lens in mode: bands still ride the pane transform; nothing else changes. */
 .theme-console .composer--mode .composer-lane { position: absolute; left: 0; }
 
-/* Narrow stages: drawers shrink before they cover the graph entirely. */
+/* Narrow stages: drawers shrink before they cover the graph entirely (the
+   panel offsets and caption centring follow — they read the same vars). */
 @media (max-width: 1100px) {
-  .theme-console .composer--mode .composer-mode__drawer--left { width: 248px; }
-  .theme-console .composer--mode .composer-mode__drawer--right { width: 300px; }
+  .theme-console .composer--mode {
+    --composer-drawer-l: 248px;
+    --composer-drawer-r: 300px;
+  }
 }
 
 /* ─── Narrow and short stages ───
@@ -1641,6 +1701,13 @@
   .theme-console .composer--mode .composer-add-step {
     bottom: 50px; height: 28px; left: auto; right: 12px; transform: none;
   }
+  /* …but never under the open inspector, which owns that corner. */
+  .theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--right) .composer-add-step {
+    right: calc(var(--composer-drawer-r) + 24px);
+  }
+  /* The run band's padding tracks the tabs, which moved up to 50px (82 + 8). */
+  .theme-console .composer--mode .composer-canvas__rungraph,
+  .theme-console .composer--mode .composer-canvas__runempty { padding-top: 46px; }
   /* Horizontal zoom controls, so they don't cover the trigger node. */
   .theme-console .composer--mode .react-flow__controls { flex-direction: row; }
   .theme-console .composer--mode .react-flow__panel.bottom { margin-bottom: 46px; }
