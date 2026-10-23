@@ -988,7 +988,9 @@ make test-agent-cross   # beacon cross-compile gate
   and builds every component from source — the
   [source build path](#source-build-path--contributors-or-building-the-toolchain-itself)
   above. It neither clones the repo nor pulls the image, so run it from
-  inside a checkout.
+  inside a checkout. The tree's `install.sh` now refuses to start anywhere
+  else (`INSTALL_NOT_A_CHECKOUT`, before it installs anything); the
+  v1.0.0–v1.0.2 assets predate that guard and do not refuse.
 - **History:** `v0.1.0` was tagged and pushed, but its tag-triggered release
   runs failed and no v0.1.0 Release exists.
   **[`docs/release/PUBLISH-v0.1.0.md`](docs/release/PUBLISH-v0.1.0.md)** is
