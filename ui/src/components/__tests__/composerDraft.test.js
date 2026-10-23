@@ -182,6 +182,18 @@ describe('step operations', () => {
     expect(nextStepId([{ id: 'step-01' }, { id: 'step-03' }])).toBe('step-04')
   })
 
+  // Review finding: a deleted id was minted again on the next add, so a stored
+  // position / lane override keyed by it attached to an unrelated new step.
+  it('nextStepId never reuses an id named in `taken` (a Set or an array)', () => {
+    const live = [{ id: 'step-01' }, { id: 'step-02' }] // step-03 was deleted
+    const everUsed = ['step-01', 'step-02', 'step-03']
+    expect(nextStepId(live)).toBe('step-03') // the unguarded call does reuse it
+    expect(nextStepId(live, new Set(everUsed))).toBe('step-04')
+    expect(nextStepId(live, everUsed)).toBe('step-04')
+    expect(nextStepId(live, null)).toBe('step-03')
+    expect(nextStepId([], ['step-01'])).toBe('step-02')
+  })
+
   it('removeStep drops exactly one step', () => {
     expect(removeStep(steps, 0).map((s) => s.id)).toEqual(['step-02'])
     expect(removeStep(steps, 99)).toBe(steps)
@@ -434,6 +446,10 @@ describe('draftToApi / draftFromApi', () => {
     expect(draftFromApi(null)).toEqual(emptyDraft())
   })
 
+  it('draftFromScenario and emptyDraft match key-for-key', () => {
+    expect(Object.keys(draftFromScenario(SCENARIO)).sort()).toEqual(Object.keys(emptyDraft()).sort())
+  })
+
   it('round-trips a corpus scenario through api and back with matching launch fields', () => {
     const draft = draftFromScenario(SCENARIO)
     const body = draftToApi({ ...draft, author: 'composer', tags: [] })
@@ -446,6 +462,175 @@ describe('draftToApi / draftFromApi', () => {
     }
     const back = draftFromApi(echoed)
     expect(draftSnapshot(back)).toEqual(draftSnapshot(draft))
+  })
+})
+
+// ─── Forking keeps what the source declared ───────────────────────────────────
+// Review finding (HIGH): `draftFromScenario` / `normalizeStep` carried only the
+// fields the canvas edits, so `draftToApi` had nothing to send for the rest and
+// a saved fork silently lost them — `external_tools` among them, which drives
+// the launch consent gate and payload staging. Field names are the ones
+// `DraftScenarioSchema` / `DraftStepSchema` / `StepExpectedDetection` accept.
+
+describe('draftToApi — a fork carries every declared scenario field', () => {
+  const MTTD_120 = { kpi: 'MTTD', op: '≤', value: 120, unit: 'seconds' }
+  const FULL = {
+    ...SCENARIO,
+    tc_refs: ['TC-EDR-03', 'TC-EDR-05'],
+    pov_scenario_id: 'POV-SC-001',
+    mitre_tactic: 'TA0006',
+    mitre_tactic_name: 'Credential Access',
+    mitre_technique: 'T1003.008',
+    mitre_technique_name: '/etc/passwd and /etc/shadow',
+    additional_techniques: [{ technique: 'T1087.001', name: 'Local Account' }],
+    execution_identity: { default: 'www-data', options: ['www-data', 'direct'] },
+    external_tools: [{
+      name: 'linpeas', source: null, type: 'script', install_inline: false,
+      adapter_ref: 'TOOL-LINPEAS', stage_as: '/tmp/.cache/sysinfo.sh',
+    }],
+    threshold: { kpi: 'MTTD', op: '≤', value: 300, unit: 'seconds' },
+    primary_kpi: 'MTTD',
+    validation_methodology: 'Detonate and observe the alert',
+    methodology_family: 'F1',
+    success_criteria: 'An alert within five minutes',
+    moat_tier: 'LEAD',
+    correlation_window_seconds: 600,
+    stitching_key: 'causality_id',
+    required_planes_in_incident: ['EDR', 'NDR'],
+    cleanup: { commands: ['rm -f /tmp/mimipenguin.sh'], k8s_teardown: 'kubectl delete ns cortexsim' },
+    // Server-derived — never sent back.
+    detection_types: ['XQL'],
+    push_supported: true,
+    pull_supported: true,
+    required_base_platform: ['XSIAM'],
+    required_addons: ['PAN-XSIAM-ADDON'],
+    status: 'active',
+    version: '1.0',
+    steps: [
+      {
+        ...SCENARIO.steps[0],
+        platform_variants: { windows: 'net user' },
+        requires_interpreters: ['python'],
+        expected_detections: [{
+          ...SCENARIO.steps[0].expected_detections[0],
+          verification_xql: 'dataset = xdr_data | filter action_file_path = "/etc/passwd"',
+          kpi_contribution: MTTD_120,
+        }],
+      },
+      SCENARIO.steps[1],
+    ],
+  }
+
+  const SCENARIO_KEYS = [
+    'tc_refs', 'pov_scenario_id', 'mitre_tactic', 'mitre_tactic_name', 'mitre_technique',
+    'mitre_technique_name', 'additional_techniques', 'execution_identity', 'external_tools',
+    'threshold', 'primary_kpi', 'validation_methodology', 'methodology_family',
+    'success_criteria', 'moat_tier', 'correlation_window_seconds', 'stitching_key',
+    'required_planes_in_incident', 'cleanup',
+  ]
+  const SERVER_DERIVED = [
+    'detection_types', 'push_supported', 'pull_supported', 'required_base_platform',
+    'required_addons', 'status', 'version',
+  ]
+
+  it('round-trips every scenario, step and detection field it declares, equal', () => {
+    const body = draftToApi(draftFromScenario(FULL))
+    for (const key of SCENARIO_KEYS) expect(body[key], key).toEqual(FULL[key])
+    expect(body.cleanup.k8s_teardown).toBe('kubectl delete ns cortexsim')
+    expect(body.steps[0].platform_variants).toEqual({ windows: 'net user' })
+    expect(body.steps[0].requires_interpreters).toEqual(['python'])
+    expect(body.steps[0].expected_detections[0].verification_xql)
+      .toBe(FULL.steps[0].expected_detections[0].verification_xql)
+    expect(body.steps[0].expected_detections[0].kpi_contribution).toEqual(MTTD_120)
+    for (const key of SERVER_DERIVED) expect(body, key).not.toHaveProperty(key)
+  })
+
+  it('survives a save → reload → save cycle unchanged (the persisted draft keeps them)', () => {
+    const body = draftToApi(draftFromScenario(FULL))
+    const reloaded = draftFromApi({ ...body, scenario_id: 'SIM-DRAFT-x', status: 'draft' })
+    expect(draftToApi(reloaded)).toEqual(body)
+  })
+
+  it('external_tools adapter refs reach the body — the consent gate and the shelf read them', () => {
+    const body = draftToApi(draftFromScenario(FULL))
+    expect(body.external_tools.map((t) => t.adapter_ref)).toEqual(['TOOL-LINPEAS'])
+  })
+
+  it('copies carried values rather than aliasing the source scenario', () => {
+    const d = draftFromScenario(FULL)
+    expect(d.externalTools).toEqual(FULL.external_tools)
+    expect(d.externalTools).not.toBe(FULL.external_tools)
+    expect(d.steps[0].platformVariants).toEqual(FULL.steps[0].platform_variants)
+    expect(d.steps[0].platformVariants).not.toBe(FULL.steps[0].platform_variants)
+  })
+
+  it('a k8s_teardown with no commands still emits cleanup', () => {
+    const d = draftFromScenario({ ...SCENARIO, cleanup: { commands: [], k8s_teardown: 'kubectl delete ns x' } })
+    expect(draftToApi(d).cleanup).toEqual({ commands: [], k8s_teardown: 'kubectl delete ns x' })
+  })
+
+  it('a scenario WITHOUT them emits none of the new keys — the body is the one sent before', () => {
+    const { moat_tier: _omit, ...bare } = SCENARIO
+    const body = draftToApi(draftFromScenario(bare))
+    for (const key of SCENARIO_KEYS.filter((k) => k !== 'cleanup')) {
+      expect(body, key).not.toHaveProperty(key)
+    }
+    // Pinned literally, key order included: byte-identical to the pre-carry body.
+    expect(JSON.stringify(body)).toBe(JSON.stringify({
+      name: 'Credential Dumping',
+      plane: 'EDR',
+      author: 'composer',
+      tags: [],
+      steps: [
+        {
+          id: 'step-01',
+          name: 'Read /etc/passwd',
+          command: 'cat /etc/passwd',
+          identity: 'www-data',
+          mitre_technique: 'T1087.001',
+          expected_detections: [{
+            plane: 'EDR', type: 'XQL', description: 'passwd read',
+            ttp_ref: 'TTP-2026-0032', detection_id: 'xql-1',
+          }],
+          platforms: ['linux'],
+        },
+        {
+          id: 'step-02',
+          name: 'Read /etc/shadow',
+          command: 'cat /etc/shadow',
+          identity: 'www-data',
+          mitre_technique: 'T1003.008',
+          expected_detections: [],
+          causality: { parent_step: 'step-01', pivot: 'process_lineage' },
+        },
+      ],
+      uc_ref: 'UCS-EDR-02',
+      tc_ref: 'TC-EDR-03',
+      cgo_anchor: { image_name: 'apache2', primary_username: 'www-data' },
+      cleanup: { commands: ['rm -f /tmp/mimipenguin.sh'] },
+    }))
+  })
+
+  it('a hand-added step carries the new step keys as null and emits none of them', () => {
+    const b = blankStep('step-09')
+    expect(b.platformVariants).toBeNull()
+    expect(b.requiresInterpreters).toBeNull()
+    const step = draftToApi({ ...emptyDraft(), steps: [b] }).steps[0]
+    expect(step).not.toHaveProperty('platform_variants')
+    expect(step).not.toHaveProperty('requires_interpreters')
+  })
+
+  it('drops the origin evidence set once the DC rebinds tc_ref, and never sends UNBOUND as evidence', () => {
+    const d = draftFromScenario(FULL)
+    expect(draftToApi(d).tc_refs).toEqual(['TC-EDR-03', 'TC-EDR-05'])
+    // Rebound in the meta editor: the origin's set no longer describes this chain.
+    expect(draftToApi({ ...d, tcRef: 'TC-EDR-07' })).not.toHaveProperty('tc_refs')
+    // An unbound saved draft echoes tc_refs ['UNBOUND'] from Scenario.to_dict().
+    const unbound = draftFromApi({
+      ...SCENARIO, scenario_id: 'SIM-DRAFT-y', status: 'draft',
+      uc_ref: 'UNBOUND', tc_ref: 'UNBOUND', tc_refs: ['UNBOUND'],
+    })
+    expect(draftToApi(unbound)).not.toHaveProperty('tc_refs')
   })
 })
 
@@ -475,6 +660,51 @@ describe('draftSnapshot / isDraftDirty', () => {
     const saved = draftSnapshot(draft)
     const cosmetic = { ...draft, moatTier: 'CHANGED' }
     expect(isDraftDirty(draftSnapshot(cosmetic), saved)).toBe(false)
+  })
+
+  // Review finding: the snapshot omitted the step name, so a rename read as
+  // clean and the launch ran the saved chain under the OLD name — the name
+  // the run report and the POV readout print.
+  it('a step RENAME reads as dirty (the run report prints the step name)', () => {
+    const draft = draftFromScenario(SCENARIO)
+    const saved = draftSnapshot(draft)
+    const renamed = { ...draft, steps: editStep(draft.steps, 'step-01', { name: 'Enumerate local users' }) }
+    expect(isDraftDirty(draftSnapshot(renamed), saved)).toBe(true)
+  })
+
+  // Review finding: clearing an edge keeps the step's old pivot, so a
+  // connect-then-delete-edge left 'process_lineage' where the origin had null
+  // and read as an edit — though no pivot without a parent is ever sent.
+  it('connect-then-delete-edge on a root is NOT an edit (pivot without a parent normalises to null)', () => {
+    const star = draftFromScenario({
+      ...SCENARIO,
+      steps: SCENARIO.steps.map(({ causality, ...rest }) => rest), // two roots, pivot null
+    })
+    expect(star.steps[1].causalityPivot).toBeNull()
+    const saved = draftSnapshot(star)
+    const connected = setCausalityParent(star.steps, 'step-02', 'step-01')
+    expect(isDraftDirty(draftSnapshot({ ...star, steps: connected }), saved)).toBe(true)
+    const disconnected = setCausalityParent(connected, 'step-02', null)
+    expect(disconnected[1].causalityPivot).toBe('process_lineage') // the leftover
+    expect(isDraftDirty(draftSnapshot({ ...star, steps: disconnected }), saved)).toBe(false)
+  })
+
+  it('a hand-added root step round-trips through the API without reading dirty', () => {
+    // blankStep seeds pivot 'process_lineage' with no parent; the API never
+    // carries a parent-less pivot back, so the echo has null.
+    const draft = {
+      ...emptyDraft(),
+      name: 'Hand built',
+      plane: 'EDR',
+      steps: [{
+        ...blankStep('step-01', { name: 'whoami' }),
+        command: 'whoami',
+        detections: [{ plane: 'EDR', type: 'BIOC', description: 'd', ttpRef: null, detectionId: null }],
+      }],
+    }
+    const body = draftToApi(draft)
+    const back = draftFromApi({ ...body, scenario_id: 'SIM-DRAFT-x', status: 'draft' })
+    expect(isDraftDirty(draftSnapshot(back), draftSnapshot(draft))).toBe(false)
   })
 })
 
@@ -818,6 +1048,55 @@ describe('spineProblems / validateDraft — off-chain roots and dangling parents
 
   it('a single connected spine has no spine problems', () => {
     const steps = [st('s1'), st('s2', 's1'), st('s3', 's2')]
-    expect(spineProblems(steps)).toEqual({ offChain: [], danglingParents: [] })
+    expect(spineProblems(steps)).toEqual({ offChain: [], danglingParents: [], forwardRefs: [] })
+  })
+
+  // Review finding: the head root was chosen BEFORE dangling steps were set
+  // aside, so a dangling step sitting first in the array took the head slot
+  // and the chain's real head was reported as disconnected.
+  it('excludes dangling steps before choosing the head root — the real head is not off-chain', () => {
+    const steps = [st('s3', 'gone'), st('s1'), st('s2', 's1')]
+    const { offChain, danglingParents } = spineProblems(steps)
+    expect(danglingParents).toEqual(['s3'])
+    expect(offChain).toEqual([])
+    expect(validateDraft(steps).problems.join(' ')).not.toMatch(/not connected/)
+  })
+
+  // Review finding: `validate_causality_spine` rejects a parent at the same
+  // or a later index ("must be an EARLIER step"); the pill said nothing and
+  // the save 422'd after the draft read as valid.
+  it('names a step that sits before its parent as a forward ref, ahead of content problems', () => {
+    const steps = [
+      { ...st('step-02', 'step-01'), command: BLANK_COMMAND }, // also a content problem
+      st('step-01'),
+    ]
+    expect(spineProblems(steps).forwardRefs).toEqual(['step-02'])
+    const v = validateDraft(steps)
+    expect(v.ok).toBe(false)
+    expect(v.forwardRefs).toEqual(['step-02'])
+    expect(v.problems[0]).toBe(
+      '1 step runs before its parent (step-02) — move it after step-01 or re-link it.',
+    )
+    expect(v.problems[1]).toMatch(/no command configured/)
+  })
+
+  it('the ↑/↓ reorder can author a forward ref, and validation names it', () => {
+    const chain = [st('step-01'), st('step-02', 'step-01'), st('step-03', 'step-02')]
+    expect(validateDraft(chain).ok).toBe(true)
+    const swapped = moveStep(chain, 2, -1) // step-03 now sits above its parent step-02
+    expect(validateDraft(swapped).forwardRefs).toEqual(['step-03'])
+    expect(validateDraft(swapped).ok).toBe(false)
+  })
+
+  it('names every forward ref with its parent when there are several, and a self-ref as such', () => {
+    const steps = [st('s2', 's1'), st('s4', 's3'), st('s1'), st('s3', 's1')]
+    const v = validateDraft(steps)
+    expect(v.forwardRefs).toEqual(['s2', 's4'])
+    expect(v.problems.join(' ')).toMatch(
+      /2 steps run before their parents \(s2, s4\) — move each after its parent \(s2 after s1, s4 after s3\)/,
+    )
+    const self = validateDraft([st('s1', 's1')])
+    expect(self.forwardRefs).toEqual(['s1'])
+    expect(self.problems.join(' ')).toMatch(/names itself as its parent \(s1\)/)
   })
 })
