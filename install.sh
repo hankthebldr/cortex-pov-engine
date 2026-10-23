@@ -12,11 +12,16 @@
 #
 # Supported OS: Ubuntu 22.04 LTS+, Debian 12+
 #
-# Usage:
-#   git clone <repo> && cd cortexsim && ./install.sh
-#   curl -sSL https://raw.githubusercontent.com/<org>/cortexsim/main/install.sh | bash
+# Usage (from the root of a clone, as your normal user; it calls sudo itself):
+#   git clone https://github.com/hankthebldr/cortex-pov-engine.git
+#   cd cortex-pov-engine && ./install.sh
+#
+# It must run from a checkout. Every step below works on files next to this
+# script, so piping it (curl … | bash) or running a lone downloaded copy is
+# refused up front with INSTALL_NOT_A_CHECKOUT, before anything is installed.
 #
 # What this does (in order):
+#   0. Refuse to run outside a checkout
 #   1. Check OS compatibility
 #   2. Install system dependencies (git, curl, docker, go, rust, python3, node)
 #   3. Initialize git submodules
@@ -31,7 +36,9 @@
 set -euo pipefail
 
 # ------------------------------------------------------------------------------
-# Script directory — works whether called as ./install.sh or piped via curl|bash
+# Script directory. Run by path, this is the checkout the script lives in.
+# Piped (curl … | bash), BASH_SOURCE[0] is empty and this falls back to $PWD,
+# which require_checkout then rejects unless $PWD really is a checkout.
 # ------------------------------------------------------------------------------
 _src="${BASH_SOURCE[0]:-}"
 if [[ -n "$_src" && "$_src" != "bash" ]]; then
@@ -94,6 +101,38 @@ trap '_ec=$?; [[ $_ec -ne 0 ]] && log_err "Unexpected failure at line ${LINENO} 
 # Uses GNU sort -V (available on Ubuntu/Debian coreutils)
 version_gte() {
     printf '%s\n%s\n' "$2" "$1" | sort -V -C
+}
+
+# ==============================================================================
+# STEP 0 — Refuse to run outside a checkout
+# ==============================================================================
+# Every later step works on files next to this script. Without a checkout they
+# used to skip one by one with a warning, `docker compose up` included, and the
+# run still ended "Installation complete" with exit 0 after installing a
+# toolchain for nothing. Refuse first, before anything touches the host.
+require_checkout() {
+    local missing=() marker
+
+    # File tests only, no git binary: git may not be installed until step 2,
+    # the CI image has none, and under `sudo` git's ownership check can reject
+    # a valid clone. `-e .git` (not -d) because .git is a FILE in a worktree.
+    # Requiring .git also turns a GitHub source tarball, which step 3 cannot
+    # use, into this clear refusal instead of a misleading failure later.
+    # The rest are the in-tree inputs of steps 3, 4, 7 and 9.
+    for marker in .git .gitmodules agent/ ui/package.json docker-compose.yml core/Dockerfile; do
+        [[ -e "${SCRIPT_DIR}/${marker}" ]] || missing+=("$marker")
+    done
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log_err "INSTALL_NOT_A_CHECKOUT: ${SCRIPT_DIR} is not a CortexSim checkout (missing: ${missing[*]})."
+        echo "  install.sh builds everything from the files next to it, so it cannot" >&2
+        echo "  run piped (curl … | bash) or as a lone downloaded copy. Instead:" >&2
+        echo "    git clone https://github.com/hankthebldr/cortex-pov-engine.git" >&2
+        echo "    cd cortex-pov-engine && ./install.sh      # source bootstrap" >&2
+        echo "    cd cortex-pov-engine && ./scripts/dev-up.sh  # container path, Docker only" >&2
+        exit 2
+    fi
+    log_ok "Checkout: ${SCRIPT_DIR}"
 }
 
 # ==============================================================================
@@ -378,11 +417,10 @@ init_submodules() {
 
     cd "$SCRIPT_DIR"
 
-    if [[ ! -f .gitmodules ]]; then
-        log_warn ".gitmodules not found — skipping submodule init."
-        log_warn "If this is a fresh clone, ensure the repo includes .gitmodules."
-        return
-    fi
+    # In-tree inputs are guaranteed by require_checkout; if one is still
+    # missing the tree is broken, and skipping would end in a false success.
+    [[ -f .gitmodules ]] \
+        || die ".gitmodules not found in ${SCRIPT_DIR} — incomplete checkout. Re-clone the repository."
 
     # This fetches every submodule registered in .gitmodules, including the
     # tier-2 tool-adapter source trees. NOTE: sources/atomic-red-team is the
@@ -468,10 +506,8 @@ build_go_agent() {
 
     cd "$SCRIPT_DIR"
 
-    if [[ ! -d agent ]]; then
-        log_warn "agent/ directory not found — skipping Go agent build."
-        return
-    fi
+    [[ -d agent ]] \
+        || die "agent/ not found in ${SCRIPT_DIR} — incomplete checkout. Re-clone the repository."
 
     mkdir -p bin
 
@@ -576,15 +612,8 @@ build_ui() {
 
     cd "$SCRIPT_DIR"
 
-    if [[ ! -d ui ]]; then
-        log_warn "ui/ directory not found — skipping React build."
-        return
-    fi
-
-    if [[ ! -f ui/package.json ]]; then
-        log_warn "ui/package.json not found — skipping React build."
-        return
-    fi
+    [[ -f ui/package.json ]] \
+        || die "ui/package.json not found in ${SCRIPT_DIR} — incomplete checkout. Re-clone the repository."
 
     cd ui
 
@@ -617,10 +646,8 @@ copy_ui_to_core() {
     local src="ui/dist"
     local dst="core/static"
 
-    if [[ ! -d "$src" ]]; then
-        log_warn "ui/dist not found — skipping copy. (Did the UI build succeed?)"
-        return
-    fi
+    [[ -d "$src" ]] \
+        || die "ui/dist not found after the UI build — npm run build produced nothing to copy."
 
     mkdir -p "$dst"
 
@@ -639,11 +666,8 @@ start_simcore() {
 
     cd "$SCRIPT_DIR"
 
-    if [[ ! -f docker-compose.yml ]]; then
-        log_warn "docker-compose.yml not found — skipping docker-compose up."
-        log_warn "Run '${DOCKER_COMPOSE_CMD} up -d --build' manually once docker-compose.yml exists."
-        return
-    fi
+    [[ -f docker-compose.yml ]] \
+        || die "docker-compose.yml not found in ${SCRIPT_DIR} — incomplete checkout. Re-clone the repository."
 
     log_info "Running: ${DOCKER_COMPOSE_CMD} up -d --build"
     ${DOCKER_COMPOSE_CMD} up -d --build \
@@ -704,6 +728,7 @@ main() {
     echo -e "Date: $(date '+%Y-%m-%d %H:%M:%S %Z')"
     echo ""
 
+    require_checkout    # Step 0
     check_os            # Step 1
     install_system_deps # Step 2
     init_submodules     # Step 3

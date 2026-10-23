@@ -9,12 +9,26 @@ it is built to run on a customer-lab jumpbox where the operating DC already
 has full admin access.
 
 **Container image** — `ghcr.io/hankthebldr/cortexsim:v0.1.0` (`linux/amd64`,
-`linux/arm64`)
+`linux/arm64`). The package is **not publicly pullable**: an anonymous
+pull-token request for `hankthebldr/cortexsim` returned HTTP 401 on
+2026-10-19 and 2026-10-21. Re-check before publishing these notes. Without
+credentials for the package, build the same image from a clone (below).
 
-**One-line install (Linux jumpbox):**
+**Install from a clone.** No asset attached to this release fetches the
+source for you. Use a plain clone; do not pass `--recurse-submodules`,
+because two of the submodules may be private.
 ```bash
-curl -fsSL https://github.com/hankthebldr/cortex-pov-engine/releases/download/v0.1.0/install.sh | sudo bash
+git clone --branch v0.1.0 https://github.com/hankthebldr/cortex-pov-engine.git
+cd cortex-pov-engine
+./scripts/dev-up.sh
 ```
+`scripts/dev-up.sh` needs only Docker. It builds the image locally and waits
+for `/api/health`. `install.sh` is the source bootstrap for contributors:
+run it as `./install.sh` from the root of the clone. Do not pipe it
+(`curl … | bash`). The v0.1.0 copy has no checkout guard, so outside a
+checkout it installs the toolchain, skips every build step, starts nothing,
+and still prints "Installation complete".
+
 Verify artifact integrity with `SHA256SUMS` or `manifest.json` on this
 release.
 
