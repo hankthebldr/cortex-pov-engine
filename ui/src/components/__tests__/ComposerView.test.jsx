@@ -11,7 +11,7 @@
  *     original chain while the canvas showed the edited one
  */
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest'
-import { render, screen, waitFor, within, act } from '@testing-library/react'
+import { render, screen, waitFor, within, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
@@ -288,6 +288,36 @@ describe('ComposerView — editing the chain', () => {
     })
   })
 
+  it('an IN-PLACE edit (a pivot change) forces a save before launch — never runs the origin', async () => {
+    // Regression: `edited` used to compare only step ids, so changing a
+    // relationship left the draft "unedited" and Launch would have run the
+    // ORIGIN corpus row instead of what the canvas shows.
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('chain-step-step-02'))
+    await user.selectOptions(screen.getByLabelText('Causality pivot for step-02'), 'network_session')
+    expect(screen.getByText(/unsaved edits/i)).toBeInTheDocument()
+    await user.click(screen.getByTestId('composer-preflight'))
+    const launch = screen.getByTestId('composer-launch')
+    expect(launch).toBeDisabled()
+    expect(launch.getAttribute('title')).toMatch(/save the draft/i)
+  })
+
+  it('a pure layout drag does NOT count as an edit (presentation never forces a save)', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    act(() => {
+      window.__rfOnNodesChange([{ id: 'step-02', type: 'position', position: { x: 640, y: 320 }, dragging: false }])
+    })
+    expect(screen.queryByText(/unsaved edits/i)).toBeNull()
+    await user.click(screen.getByTestId('composer-preflight'))
+    expect(screen.getByTestId('composer-launch').getAttribute('title')).not.toMatch(/save the draft/i)
+  })
+
   it('keeps Launch disabled until preflight has actually run', async () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
@@ -321,11 +351,72 @@ describe('ComposerView — inspector', () => {
   })
 
   it('shows scenario-level teardown, labelled as scenario-level', async () => {
+    const user = userEvent.setup()
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    // Composer mode: the inspector is an overlay drawer, closed until asked for.
+    await user.click(screen.getByRole('button', { name: 'Inspector' }))
     expect(screen.getByText(/the schema has no per-step cleanup/i)).toBeInTheDocument()
     expect(screen.getByText(/rm -f \/tmp\/mimipenguin\.sh/)).toBeInTheDocument()
+  })
+})
+
+describe('ComposerView — composer mode drawers', () => {
+  it('gives the stage to the graph: palette and inspector start closed', async () => {
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(screen.queryByTestId('composer-palette')).toBeNull()
+    expect(screen.queryByTestId('composer-inspector-empty')).toBeNull()
+    expect(screen.getByRole('button', { name: /＋ Add/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Inspector' })).toBeInTheDocument()
+  })
+
+  it('opens the palette on demand and the inspector when a step is selected', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    expect(screen.getByTestId('composer-palette')).toBeInTheDocument()
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    expect(screen.getByTestId('composer-inspector')).toBeInTheDocument()
+  })
+
+  it('+ Add step extends a declared chain from its last leaf — never an off-chain root', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-add-step'))
+    expect(screen.getByTestId('composer-validation').textContent).not.toMatch(/not connected to the chain/i)
+    await user.click(screen.getByRole('button', { name: 'YAML' }))
+    expect(screen.getByTestId('composer-yaml').textContent).toMatch(/- id: step-03[\s\S]*?parent_step: step-02/)
+  })
+
+  it('+ Add step appends after the SELECTED step when one is selected', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    await user.click(screen.getByTestId('composer-add-step'))
+    await user.click(screen.getByRole('button', { name: 'YAML' }))
+    expect(screen.getByTestId('composer-yaml').textContent).toMatch(/- id: step-03[\s\S]*?parent_step: step-01/)
+  })
+
+  it('renders palette items as drag sources carrying their key', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    const item = screen.getByRole('button', { name: /Command/ })
+    expect(item).toHaveAttribute('draggable', 'true')
+    const setData = vi.fn()
+    fireEvent.dragStart(item, { dataTransfer: { setData, effectAllowed: '' } })
+    expect(setData).toHaveBeenCalledWith('application/cortexsim-node', 'k-command')
   })
 })
 
@@ -335,7 +426,9 @@ describe('ComposerView — Stitch Context wiring', () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
-    // NoSelectionAside → open the editable workflow meta, which hosts the panel.
+    // Open the inspector drawer (closed by default in composer mode), then
+    // NoSelectionAside → the editable workflow meta, which hosts the panel.
+    await user.click(screen.getByRole('button', { name: 'Inspector' }))
     await user.click(screen.getByRole('button', { name: /edit the workflow meta/i }))
     await waitFor(() => expect(screen.getByTestId('composer-stitch-panel')).toBeInTheDocument())
     // Author a canary principal on account; the panel is a pure view, the model
@@ -821,5 +914,51 @@ describe('ComposerView — Load a saved draft (Task 12 crash)', () => {
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
     expect(screen.getByTestId('chain-start')).toBeInTheDocument()
     expect(screen.queryByTestId('surface-error')).not.toBeInTheDocument()
+  })
+})
+
+describe('ComposerView — canvas delete re-parents (Composer mode)', () => {
+  // React Flow reports the edges attached to a deleted node in the SAME
+  // deletion; handling them as edge deletions first used to clear the
+  // children's parents, so the child fell off the chain instead of
+  // re-attaching to the deleted step's parent (caught live, not by jsdom).
+  const LINEAR = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-LINE',
+    steps: [
+      { id: 'step-01', name: 'One', command: 'true', identity: 'www-data', expected_detections: [] },
+      {
+        id: 'step-02', name: 'Two', command: 'true', identity: 'www-data',
+        causality: { parent_step: 'step-01', pivot: 'process_lineage' }, expected_detections: [],
+      },
+      {
+        id: 'step-03', name: 'Three', command: 'true', identity: 'www-data',
+        causality: { parent_step: 'step-02', pivot: 'network_session' }, expected_detections: [],
+      },
+    ],
+  }
+
+  it('deleting a middle step re-attaches its child to the deleted step’s parent, keeping the pivot', async () => {
+    const user = userEvent.setup()
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [LINEAR] },
+      'GET /api/scenarios/SIM-EDR-LINE': LINEAR,
+    })
+    mount({ from: 'SIM-EDR-LINE' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-03')).toBeInTheDocument())
+    act(() => {
+      window.__rfOnDelete({
+        nodes: [{ id: 'step-02', type: 'step' }],
+        edges: [
+          { id: 'step-01->step-02', source: 'step-01', target: 'step-02', type: 'causality' },
+          { id: 'step-02->step-03', source: 'step-02', target: 'step-03', type: 'causality' },
+        ],
+      })
+    })
+    await waitFor(() => expect(screen.queryByTestId('chain-step-step-02')).not.toBeInTheDocument())
+    expect(screen.getByTestId('composer-validation').textContent).not.toMatch(/not connected to the chain/i)
+    await user.click(screen.getByRole('button', { name: 'YAML' }))
+    expect(screen.getByTestId('composer-yaml').textContent)
+      .toMatch(/- id: step-03[\s\S]*?parent_step: step-01[\s\S]*?pivot: network_session/)
   })
 })

@@ -182,8 +182,8 @@ describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
     expect(bands).toHaveTextContent('ENDPOINT')
     expect(bands).toHaveTextContent('DATA STREAMS')
     // Both fixture steps are EDR → ENDPOINT (AGT) by derivation.
-    expect(screen.getByTestId('chain-step-door-step-01')).toHaveTextContent('AGT')
-    expect(screen.getByTestId('chain-step-door-step-02')).toHaveTextContent('AGT')
+    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent('AGT')
+    expect(screen.getByTestId('chain-door-step-02')).toHaveTextContent('AGT')
     // The LAUNCH / PROOF bands replace the Design lens's START / END anchors
     // — two statements of where the chain begins would be one too many.
     expect(screen.queryByTestId('chain-start')).toBeNull()
@@ -194,12 +194,14 @@ describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
 
   it('a draft lane override moves the badge, and the Design lens draws no bands', () => {
     render(<ComposerCanvas {...baseProps({ lens: 'lanes', laneOverrides: { 'step-02': 'BVM' } })} />)
-    expect(screen.getByTestId('chain-step-door-step-01')).toHaveTextContent('AGT')
-    expect(screen.getByTestId('chain-step-door-step-02')).toHaveTextContent('BVM')
+    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent('AGT')
+    expect(screen.getByTestId('chain-door-step-02')).toHaveTextContent('BVM')
     cleanup()
     render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
     expect(screen.queryByTestId('composer-lane-bands')).toBeNull()
-    expect(screen.queryByTestId('chain-step-door-step-01')).toBeNull()
+    // Composer mode shows the door on every lens (it is a real property of the
+    // step, not a lanes-only decoration) — the Design lens simply draws no bands.
+    expect(screen.getByTestId('chain-door-step-01')).toHaveTextContent('AGT')
   })
 })
 
@@ -429,7 +431,7 @@ describe('ComposerCanvas — Design lens through React Flow (Task 8, render only
   // ComposerView.test.jsx, which renders this component indirectly) — no
   // local beforeAll needed here.
 
-  it('renders one node per step through React Flow, at stored positions', () => {
+  it('renders one node per step plus the CGO and Proof anchors, at stored positions', () => {
     const draft = { steps: [
       { id: 's1', name: 'drop', detections: [] },
       { id: 's2', name: 'dump', detections: [], causalityParent: 's1' },
@@ -438,7 +440,11 @@ describe('ComposerCanvas — Design lens through React Flow (Task 8, render only
       <ComposerCanvas {...baseProps({ draft, lens: 'design',
                                       storedLayout: { s2: { x: 400, y: 300 } } })} />
     )
-    expect(container.querySelectorAll('.react-flow__node')).toHaveLength(2)
+    // Composer mode makes the CGO trigger and the Proof terminal real React
+    // Flow nodes (they were DOM anchors outside the graph before), so the node
+    // count is steps + 2. Step nodes still carry their stored positions.
+    expect(container.querySelectorAll('.react-flow__node-step')).toHaveLength(2)
+    expect(container.querySelectorAll('.react-flow__node')).toHaveLength(4)
     const s2 = container.querySelector('[data-id="s2"]')
     expect(s2.style.transform).toContain('400')
     expect(s2.style.transform).toContain('300')
@@ -452,32 +458,18 @@ describe('ComposerCanvas — Design lens through React Flow (Task 8, render only
     expect(container.querySelector('[data-id="s1"]')).toBeTruthy()
   })
 
-  it('keeps START/END as plain anchors outside React Flow\'s own node graph', () => {
-    // "one node per step" above only holds if START/END are never counted as
-    // React Flow nodes — pin that directly against the 2-step fixture too.
+  it('makes the CGO trigger and Proof terminal real React Flow nodes (one connected graph)', () => {
+    // Composer mode: START/END are no longer DOM cards outside the graph joined
+    // by static connectors — they are the `cgo` and `proof` React Flow nodes,
+    // wired by real derived edges, so the chain is ONE connected graph rather
+    // than three floating blocks. The 2-step fixture → 4 nodes total.
     render(<ComposerCanvas {...baseProps()} />)
-    expect(screen.getByTestId('chain-start')).toBeInTheDocument()
-    expect(screen.getByTestId('chain-end')).toBeInTheDocument()
-    expect(document.querySelectorAll('.react-flow__node')).toHaveLength(2)
-  })
-
-  it('draws the START->first-step and last-step->END dashed connectors (review round 1, finding 1)', () => {
-    // START/END are excluded from `rfEdges` (they aren't React Flow nodes),
-    // so the `root`/`terminal` spine edges that used to draw the dashed
-    // connector + endpoint dots into/out of them were silently dropped with
-    // nothing replacing them. Without this the canvas is visually three
-    // disconnected blocks (START card / React Flow box / END card).
-    render(<ComposerCanvas {...baseProps()} />)
-    const root = screen.getByTestId('composer-connector-root')
-    const terminal = screen.getByTestId('composer-connector-terminal')
-    // Dashed line + a dot at each end — the same visual language the removed
-    // SVG root/terminal edges used (`strokeDasharray`, steel endpoint dots).
-    for (const connector of [root, terminal]) {
-      const line = connector.querySelector('line')
-      expect(line).toBeTruthy()
-      expect(line.getAttribute('stroke-dasharray')).toBe('4 4')
-      expect(connector.querySelectorAll('circle')).toHaveLength(2)
-    }
+    const start = screen.getByTestId('chain-start')
+    const end = screen.getByTestId('chain-end')
+    expect(start.closest('.react-flow__node')).toBeTruthy()
+    expect(end.closest('.react-flow__node')).toBeTruthy()
+    expect(document.querySelectorAll('.react-flow__node')).toHaveLength(4)
+    expect(document.querySelectorAll('.react-flow__node-step')).toHaveLength(2)
   })
 })
 
@@ -546,9 +538,15 @@ describe('ComposerCanvas — draggable nodes persist position (Task 9)', () => {
     const { container } = render(
       <ComposerCanvas {...baseProps({ draft, lens: 'design' })} />
     )
-    const node = container.querySelector('.react-flow__node')
+    // Query the STEP node: the first `.react-flow__node` in document order is
+    // now the CGO trigger, which is deliberately not draggable (it is derived,
+    // never persisted). The step card is what the DC moves.
+    const node = container.querySelector('[data-id="s1"]')
     expect(node).toBeTruthy()
     expect(node.classList.contains('draggable')).toBe(true)
+    // …and the derived anchors are pinned in place.
+    expect(container.querySelector('.react-flow__node-cgo').classList.contains('draggable')).toBe(false)
+    expect(container.querySelector('.react-flow__node-proof').classList.contains('draggable')).toBe(false)
   })
 
   // Finding 1's fix: dragging is scoped to a small, discoverable grip
@@ -662,9 +660,15 @@ describe('ComposerCanvas — drawing causality edges (Task 10, direct-manipulati
 
   it('offers the connect affordance (Handles) in the design lens', () => {
     const { container } = render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
-    // Two steps in the default fixture, each with a target (top) and source
-    // (bottom) handle.
-    expect(container.querySelectorAll('.react-flow__handle').length).toBe(4)
+    // Two steps in the default fixture, each with a target (left, `in`) and a
+    // source (right, `out`) port — the flow now runs left-to-right.
+    const stepHandles = container.querySelectorAll('.react-flow__node-step .react-flow__handle')
+    expect(stepHandles.length).toBe(4)
+    expect(container.querySelectorAll('.react-flow__node-step .react-flow__handle-left').length).toBe(2)
+    expect(container.querySelectorAll('.react-flow__node-step .react-flow__handle-right').length).toBe(2)
+    // Plus one inert port each on the CGO (out) and Proof (in) anchors, which
+    // the derived edges attach to: 6 in total.
+    expect(container.querySelectorAll('.react-flow__handle').length).toBe(6)
   })
 })
 
@@ -684,3 +688,52 @@ describe('ComposerCanvas — drawing causality edges (Task 10, direct-manipulati
 // its own file (mocking ReactFlow here would break every real-DOM
 // assertion above: `.react-flow__node`, node transforms, Handles, the
 // `window.__rfOnNodesChange` / `window.__rfOnConnect` drag/connect seams).
+
+describe('ComposerCanvas — one delete handler (Composer mode)', () => {
+  const draft = { steps: [
+    { id: 's1', name: 'a', detections: [] },
+    { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+    { id: 's3', name: 'c', detections: [], causalityParent: 's2' },
+  ] }
+
+  it('a deleted node owns its attached edges — only the node delete fires', () => {
+    const onDeleteStepId = vi.fn()
+    const onEdgeDelete = vi.fn()
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onDeleteStepId, onEdgeDelete })} />)
+    act(() => {
+      window.__rfOnDelete({
+        nodes: [{ id: 's2', type: 'step' }],
+        edges: [
+          { id: 's1->s2', source: 's1', target: 's2', type: 'causality' },
+          { id: 's2->s3', source: 's2', target: 's3', type: 'causality' },
+        ],
+      })
+    })
+    expect(onDeleteStepId).toHaveBeenCalledTimes(1)
+    expect(onDeleteStepId).toHaveBeenCalledWith('s2')
+    expect(onEdgeDelete).not.toHaveBeenCalled()
+  })
+
+  it('an edge deleted on its own (both ends survive) re-roots its child', () => {
+    const onDeleteStepId = vi.fn()
+    const onEdgeDelete = vi.fn()
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onDeleteStepId, onEdgeDelete })} />)
+    act(() => {
+      window.__rfOnDelete({
+        nodes: [],
+        edges: [{ id: 's2->s3', source: 's2', target: 's3', type: 'causality' }],
+      })
+    })
+    expect(onEdgeDelete).toHaveBeenCalledWith('s3')
+    expect(onDeleteStepId).not.toHaveBeenCalled()
+  })
+
+  it('derived edges (trigger / proof) are never treated as edge deletions', () => {
+    const onEdgeDelete = vi.fn()
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onEdgeDelete })} />)
+    act(() => {
+      window.__rfOnDelete({ nodes: [], edges: [{ id: '__cgo__->s1', source: '__cgo__', target: 's1', type: 'derived' }] })
+    })
+    expect(onEdgeDelete).not.toHaveBeenCalled()
+  })
+})
