@@ -17,6 +17,8 @@ import React, { useEffect, useRef } from 'react'
  *   confirmLabel  — string (default "Confirm")
  *   confirmVariant — 'danger' | 'primary' (default 'danger')
  *   cancelLabel    — string (default "Cancel")
+ *   initialFocus   — 'confirm' | 'cancel' (default 'confirm'). Use 'cancel' where
+ *                    the confirm DISCARDS work, so a reflexive Enter is safe.
  */
 export default function ConfirmDialog({
   open,
@@ -27,8 +29,10 @@ export default function ConfirmDialog({
   confirmLabel = 'Confirm',
   confirmVariant = 'danger',
   cancelLabel = 'Cancel',
+  initialFocus = 'confirm',
 }) {
   const confirmRef = useRef(null)
+  const cancelRef = useRef(null)
   const previousFocusRef = useRef(null)
 
   // Focus management — capture previous focus, focus the confirm
@@ -36,13 +40,14 @@ export default function ConfirmDialog({
   useEffect(() => {
     if (!open) return undefined
     previousFocusRef.current = document.activeElement
-    setTimeout(() => confirmRef.current && confirmRef.current.focus(), 20)
+    const target = initialFocus === 'cancel' ? cancelRef : confirmRef
+    setTimeout(() => target.current && target.current.focus(), 20)
     return () => {
       if (previousFocusRef.current && previousFocusRef.current.focus) {
         previousFocusRef.current.focus()
       }
     }
-  }, [open])
+  }, [open, initialFocus])
 
   // Esc to close, Enter to confirm
   useEffect(() => {
@@ -83,6 +88,7 @@ export default function ConfirmDialog({
         )}
         <div className="confirm-dialog__actions">
           <button
+            ref={cancelRef}
             type="button"
             className="btn"
             onClick={onClose}

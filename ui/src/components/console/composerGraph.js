@@ -80,6 +80,8 @@ export const STATE_TINT = {
   CONFIRMED: 'var(--cortex-success, #2f9e44)',
   BROKEN: 'var(--cortex-danger, #e03131)',
   EXPECTED: 'var(--cortex-steel, #6B7E8E)',
+  // A step the shown run did not execute (new, or edited since): no verdict.
+  NOT_RUN: 'var(--cortex-steel, #6B7E8E)',
 }
 
 /** Tint a step by its first detection's plane, else the draft's plane. */
@@ -313,7 +315,10 @@ export function buildGraph(draft = {}, steps = [], opts = {}) {
         targetHandle: 'in',
         type: 'causality',
         deletable: !runLens,
-        reconnectable: runLens ? false : 'target',
+        // Re-attach by the TAIL: dragging the source end to another step
+        // changes this child's parent (what a re-parent means). The head is not
+        // movable — moving it would detach one child and steal another.
+        reconnectable: runLens ? false : 'source',
         label: typed ? pivot : undefined,
         data: { pivot, runLens },
         // Neutral bright stroke for the process spine; the signal ink for a

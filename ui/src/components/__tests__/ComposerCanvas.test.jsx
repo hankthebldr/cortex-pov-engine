@@ -8,7 +8,7 @@
  * CONFIRMED, and a BROKEN stitch renders BROKEN.
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest'
-import { render, screen, within, act, cleanup } from '@testing-library/react'
+import { render, screen, within, act, cleanup, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ComposerCanvas from '../console/ComposerCanvas.jsx'
 
@@ -735,5 +735,48 @@ describe('ComposerCanvas — one delete handler (Composer mode)', () => {
       window.__rfOnDelete({ nodes: [], edges: [{ id: '__cgo__->s1', source: '__cgo__', target: 's1', type: 'derived' }] })
     })
     expect(onEdgeDelete).not.toHaveBeenCalled()
+  })
+})
+
+// The Delete key belongs to the canvas, not the document: React Flow's own
+// listener (deleteKeyCode) is switched off, so a Backspace typed anywhere else
+// on the page — the inspector, the palette filter — can never remove a step.
+describe('ComposerCanvas — the Delete key is scoped to the graph', () => {
+  const draft = { steps: [
+    { id: 's1', name: 'a', detections: [] },
+    { id: 's2', name: 'b', detections: [], causalityParent: 's1' },
+  ] }
+
+  it('Delete with focus inside the graph removes the selected step', () => {
+    const onDeleteStepId = vi.fn()
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', selectedId: 's2', onDeleteStepId })} />)
+    fireEvent.keyDown(screen.getByTestId('chain-step-s2'), { key: 'Delete' })
+    expect(onDeleteStepId).toHaveBeenCalledWith('s2')
+  })
+
+  it('the same key pressed outside the graph deletes nothing', () => {
+    const onDeleteStepId = vi.fn()
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', selectedId: 's2', onDeleteStepId })} />)
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    fireEvent.keyDown(document.body, { key: 'Backspace' })
+    expect(onDeleteStepId).not.toHaveBeenCalled()
+  })
+
+  it('the Run lens is read-only — Delete inside it deletes nothing', () => {
+    const onDeleteStepId = vi.fn()
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'run', selectedId: 's2', onDeleteStepId })} />)
+    const flow = document.querySelector('.composer-canvas__flow')
+    expect(flow).not.toBeNull()
+    fireEvent.keyDown(flow, { key: 'Delete' })
+    expect(onDeleteStepId).not.toHaveBeenCalled()
+  })
+
+  it('a card’s × removes it without first selecting it', async () => {
+    const onRemoveStep = vi.fn()
+    const onSelect = vi.fn()
+    render(<ComposerCanvas {...baseProps({ draft, lens: 'design', onRemoveStep, onSelect })} />)
+    await userEvent.setup().click(screen.getByLabelText('Remove s2'))
+    expect(onRemoveStep).toHaveBeenCalledWith(1)
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

@@ -67,6 +67,27 @@ function detTone(type) {
   return 'pending'
 }
 
+/**
+ * What the spine actually is, said in the caption. It used to read "single
+ * process_lineage spine" for every draft with a CGO — untrue with a typed
+ * pivot on screen, a legacy star, or a card flagged off-chain.
+ */
+function spinePhrase(steps, validation) {
+  const parented = steps.filter((s) => s.causalityParent)
+  if (!parented.length) return steps.length > 1 ? 'no declared spine' : 'single step'
+  const pivots = [...new Set(parented.map((s) => s.causalityPivot || 'process_lineage'))]
+  const kind = pivots.length === 1 && pivots[0] === 'process_lineage'
+    ? 'process_lineage spine'
+    : `spine (${pivots.join(', ')})`
+  const broken = (validation?.offChain?.length || 0)
+    + (validation?.danglingParents?.length || 0)
+    + (validation?.forwardRefs?.length || 0)
+  return `${broken ? 'broken' : 'single'} ${kind}`
+}
+
+/** Wrap a card tool's handler so its click does not also select the card. */
+const stop = (fn) => (e) => { e.stopPropagation(); if (fn) fn() }
+
 // Run-lens node kind → colour (real causality graph; token-driven).
 const KIND_TINT = {
   cgo: 'var(--ink, #003366)', process: 'var(--ac, #00C0E8)',
@@ -200,7 +221,7 @@ function StepNode({ data, isConnectable }) {
                 color: STATE_TINT[data.runState], letterSpacing: '0.04em',
               }}
             >
-              {data.runState}
+              {data.runState === 'NOT_RUN' ? 'not in run' : data.runState}
             </span>
           )}
           <span className="chain-node__order mono">
@@ -226,13 +247,13 @@ function StepNode({ data, isConnectable }) {
       {!data.runLens && (
         <div className="chain-node__tools nodrag nopan">
           <button type="button" title="Move earlier" aria-label={`Move ${s.id} earlier`}
-            onClick={data.onMoveEarlier}>↑</button>
+            onClick={stop(data.onMoveEarlier)}>↑</button>
           <button type="button" title="Move later" aria-label={`Move ${s.id} later`}
-            onClick={data.onMoveLater}>↓</button>
+            onClick={stop(data.onMoveLater)}>↓</button>
           <button type="button" title="Duplicate step" aria-label={`Duplicate ${s.id}`}
-            onClick={data.onDuplicate}>⧉</button>
+            onClick={stop(data.onDuplicate)}>⧉</button>
           <button type="button" title="Remove step" aria-label={`Remove ${s.id}`}
-            onClick={data.onRemove}>×</button>
+            onClick={stop(data.onRemove)}>×</button>
         </div>
       )}
       {isConnectable && <Handle type="source" id="out" position={Position.Right} />}
@@ -270,7 +291,7 @@ const nodeTypes = { cgo: CgoNode, step: StepNode, proof: ProofNode }
  * pane. A derived edge (cgo→root, leaf→proof) is muted and inert.
  */
 function CausalityEdge({
-  id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
+  id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
   markerEnd, style, data, selected,
 }) {
   const [path, labelX, labelY] = getBezierPath({
@@ -278,6 +299,9 @@ function CausalityEdge({
   })
   const pivot = data?.pivot || 'process_lineage'
   const showChip = selected || pivot !== 'process_lineage'
+  // The Run lens shows the spine that RAN: its pivot is a label there, never
+  // a control that would rewrite the draft from a read-only view.
+  const editable = !data?.runLens && typeof data?.onCyclePivot === 'function'
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} interactionWidth={24} />
@@ -286,23 +310,29 @@ function CausalityEdge({
           className={'composer-edge-label nodrag nopan' + (selected ? ' composer-edge-label--on' : '')}
           style={{ transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)` }}
         >
-          {showChip && (
+          {showChip && (editable ? (
             <button
               type="button"
               className="composer-edge-pivot"
               title={`pivot: ${pivot} — click to change`}
-              aria-label={`Pivot for edge ${id}`}
-              onClick={() => data?.onCyclePivot?.()}
+              // The VALUE leads the name: a screen reader must hear which pivot
+              // will be saved, and voice control can say the visible text.
+              aria-label={`${pivot} pivot, ${source} to ${target} — activate to change`}
+              onClick={() => data.onCyclePivot()}
             >
               {pivot}
             </button>
-          )}
-          {!data?.runLens && selected && (
+          ) : (
+            <span className="composer-edge-pivot composer-edge-pivot--static" title={`pivot: ${pivot}`}>
+              {pivot}
+            </span>
+          ))}
+          {editable && selected && (
             <button
               type="button"
               className="composer-edge-del"
               title="Delete this link (the child becomes a root)"
-              aria-label={`Delete edge ${id}`}
+              aria-label={`Delete the link from ${source} to ${target}`}
               onClick={() => data?.onDelete?.()}
             >
               ×
@@ -422,7 +452,10 @@ const DesignGraph = forwardRef(function DesignGraph({
   // The pure graph, then callbacks injected into node/edge data.
   const built = useMemo(
     () => buildGraph(draft, steps, {
-      selectedId, runLens, causalityStates, laneOverrides, layout: storedLayout,
+      // The door badge on Design/Run reads the step's own channel/plane: a
+      // lane override is arrangement on the Lanes lens, and the plane lanes
+      // (CC/BVM/ENG) do not change how the step launches.
+      selectedId, runLens, causalityStates, laneOverrides: null, layout: storedLayout,
     }),
     [draft, steps, selectedId, runLens, causalityStates, laneOverrides, storedLayout],
   )
@@ -488,9 +521,13 @@ const DesignGraph = forwardRef(function DesignGraph({
       if (e.type !== 'causality') {
         return { ...e, markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--bd2, #4A4A4A)' } }
       }
+      const markerEnd = { type: MarkerType.ArrowClosed, color: e.style?.stroke || 'var(--tx2, #C7C7C7)' }
+      // Read-only lens: no edit callbacks at all, so nothing on an edge can
+      // rewrite the draft from the Run lens.
+      if (runLens) return { ...e, markerEnd }
       return {
         ...e,
-        markerEnd: { type: MarkerType.ArrowClosed, color: e.style?.stroke || 'var(--tx2, #C7C7C7)' },
+        markerEnd,
         data: {
           ...e.data,
           onDelete: () => onEdgeDelete(e.target),
@@ -502,7 +539,7 @@ const DesignGraph = forwardRef(function DesignGraph({
         },
       }
     })
-  }, [built, lanesLens, onEdgeDelete, onSetPivot])
+  }, [built, lanesLens, runLens, onEdgeDelete, onSetPivot])
 
   // Design-lens stitch overlay: the entity-join edges the context IMPLIES,
   // EXPECTED-only (authored intent, never outcome). Computed from the LTR node
@@ -613,18 +650,52 @@ const DesignGraph = forwardRef(function DesignGraph({
     window.__rfOnConnect = onConnect
   }
 
-  // n8n create-on-drop: releasing a connection on empty canvas spawns a step
-  // there, parented to the source card when the drag began on one.
+  // Releasing a connection drag that React Flow did NOT accept. React Flow never
+  // calls onConnect for a connection isValidConnection rejected, so this is
+  // the only place a refusal can be explained. Three outcomes, each visible:
+  //  - released over a card (its port, or anywhere on its body) → connect if
+  //    canConnect allows it, otherwise show WHY not (it used to end silently,
+  //    with only a red port as the cue);
+  //  - released over empty canvas from a step's OUTPUT port → n8n
+  //    create-on-drop: a new step there, parented to the source card;
+  //  - anything else → nothing: a drag out of an INPUT port into space, or an
+  //    edge reconnect being abandoned (React Flow routes those here too, and
+  //    used to spawn a phantom step).
+  const reconnectingRef = useRef(false)
   const onConnectEnd = useCallback((event, state) => {
-    if (!state || state.isValid || state.toNode) return
+    if (!state || state.isValid) return
+    if (reconnectingRef.current) return
+    const from = state.fromNode
+    if (!from || from.type !== 'step') return
+    const fromSource = (state.fromHandle?.type || 'source') === 'source'
+    const pt = (event && 'changedTouches' in event && event.changedTouches?.[0]) || event
+    const under = (typeof document.elementFromPoint === 'function'
+      && document.elementFromPoint(pt.clientX, pt.clientY)) || event?.target || null
+    const nodeEl = under && typeof under.closest === 'function' ? under.closest('.react-flow__node') : null
+    const toId = state.toNode?.id || nodeEl?.getAttribute('data-id') || null
+    if (toId) {
+      if (toId === from.id) return
+      if (toId === CGO_ID || toId === PROOF_ID) {
+        setRefusal({ reason: 'The trigger and the proof are the fixed ends of the chain — connect a step to a step.' })
+        return
+      }
+      const [parent, child] = fromSource ? [from.id, toId] : [toId, from.id]
+      const verdict = canConnect(steps, parent, child)
+      if (!verdict.ok) { setRefusal(verdict); return }
+      setRefusal(null)
+      onConnectSteps(parent, child)
+      return
+    }
+    if (!fromSource) return
+    const onPane = under && typeof under.closest === 'function' && under.closest('.react-flow__pane')
+    if (!onPane) return
     const rf = rfRef.current
     if (!rf) return
-    const pt = ('changedTouches' in event && event.changedTouches[0]) || event
-    const position = rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY })
-    const from = state.fromNode
-    const parentId = from && from.type === 'step' ? from.id : null
-    onDropCreate({ position, parentId })
-  }, [onDropCreate])
+    onDropCreate({
+      position: rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY }),
+      parentId: from.id,
+    })
+  }, [steps, onConnectSteps, onDropCreate])
 
   if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
     window.__rfOnConnectEnd = onConnectEnd
@@ -652,14 +723,61 @@ const DesignGraph = forwardRef(function DesignGraph({
     window.__rfOnDelete = onDelete
   }
 
+  // Delete / Backspace — scoped to the CANVAS. React Flow's own deleteKeyCode
+  // listens on the whole DOCUMENT and only spares inputs, so with a card
+  // selected, Backspace on a button in the workflow bar, a drawer, the dock —
+  // or behind the exit confirm — deleted the card, with no undo. This handler
+  // sits on the canvas element: only a key pressed with focus inside the graph
+  // can delete anything (`deleteKeyCode={null}` below turns the global one off).
+  const liveNodesRef = useRef(liveNodes)
+  liveNodesRef.current = liveNodes
+  const liveEdgesRef = useRef(liveEdges)
+  liveEdgesRef.current = liveEdges
+  const onCanvasKeyDown = useCallback((e) => {
+    if (runLens) return
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return
+    const t = e.target
+    if (t && typeof t.closest === 'function'
+      && t.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) return
+    const nodes = liveNodesRef.current.filter((n) => n.selected && n.type === 'step')
+    const edges = liveEdgesRef.current.filter((ed) => ed.selected && ed.type === 'causality')
+    if (!nodes.length && !edges.length) return
+    e.preventDefault()
+    onDelete({ nodes, edges })
+  }, [runLens, onDelete])
+
   // ── Reconnect (re-parent) ──
+  // Edges reconnect at their TAIL only (composerGraph `reconnectable:
+  // 'source'`): dragging it to another step changes THIS child's parent. The
+  // old version took the head too, so dropping an arrowhead on a third step
+  // kept the original edge and silently stole the new step from its parent.
   const onReconnect = useCallback((oldEdge, conn) => {
-    if (conn.source === CGO_ID || conn.target === PROOF_ID) return
+    if (conn.target !== oldEdge.target || conn.source === oldEdge.source) return
+    if (conn.source === CGO_ID || conn.source === PROOF_ID) return
     const verdict = canConnect(steps, conn.source, conn.target)
     if (!verdict.ok) { setRefusal(verdict); return }
     setRefusal(null)
     onReparent(conn.target, conn.source)
   }, [steps, onReparent])
+  const onReconnectStart = useCallback(() => { reconnectingRef.current = true }, [])
+  // A reconnect React Flow refused (isValidConnection said no) never reaches
+  // onReconnect — say why here, as for a refused new connection.
+  const onReconnectEnd = useCallback((_e, edge, _handleType, cs) => {
+    reconnectingRef.current = false
+    if (!cs || cs.isValid || !cs.toNode) return
+    const parent = cs.toNode.id
+    if (parent === edge.source || parent === edge.target) return
+    if (parent === CGO_ID || parent === PROOF_ID) {
+      setRefusal({ reason: 'The trigger and the proof are the fixed ends of the chain — re-attach to a step.' })
+      return
+    }
+    const verdict = canConnect(steps, parent, edge.target)
+    if (!verdict.ok) setRefusal(verdict)
+  }, [steps])
+
+  if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
+    window.__rfOnReconnect = onReconnect
+  }
 
   // ── Palette drag-and-drop ──
   const onDragOver = useCallback((e) => {
@@ -737,7 +855,7 @@ const DesignGraph = forwardRef(function DesignGraph({
   const fitKey = lanesLens ? `lanes:${laneStageW}x${laneStageH}` : lens
 
   const miniColor = useCallback((n) => {
-    if (n.type === 'cgo') return 'var(--ink, #003366)'
+    if (n.type === 'cgo') return 'var(--tx2, #C7C7C7)'
     if (n.type === 'proof') return 'var(--cortex-success, #2f9e44)'
     return n.data?.tint || 'var(--cortex-steel, #6B7E8E)'
   }, [])
@@ -751,12 +869,18 @@ const DesignGraph = forwardRef(function DesignGraph({
         </div>
       )}
 
-      <div className="composer-canvas__flow" ref={paneRef}>
+      {/* Focusable (programmatically) so a selected edge can take Delete: an
+          edge click moves focus here; the key handler is scoped to this box. */}
+      <div className="composer-canvas__flow" ref={paneRef} tabIndex={-1} onKeyDown={onCanvasKeyDown}>
         <ReactFlowProvider>
           <ReactFlow
             nodes={liveNodes}
             edges={liveEdges}
             nodeTypes={nodeTypes}
+            // The card's own <button> is the keyboard control; React Flow's
+            // wrapper was a second, unnamed tab stop whose announced
+            // "press Enter to select" did nothing here.
+            nodesFocusable={false}
             edgeTypes={edgeTypes}
             nodesDraggable={!runLens}
             nodesConnectable={!runLens}
@@ -765,6 +889,7 @@ const DesignGraph = forwardRef(function DesignGraph({
             onEdgesChange={handleEdgesChange}
             onNodeClick={(_e, n) => { if (n.type === 'step') onSelect(n.id) }}
             onPaneClick={() => onSelect(null)}
+            onEdgeClick={() => paneRef.current?.focus({ preventScroll: true })}
             snapToGrid
             snapGrid={[SNAP, SNAP]}
             onConnect={onConnect}
@@ -772,7 +897,9 @@ const DesignGraph = forwardRef(function DesignGraph({
             isValidConnection={isValidConnection}
             onDelete={onDelete}
             onReconnect={runLens ? undefined : onReconnect}
-            deleteKeyCode={runLens ? null : ['Backspace', 'Delete']}
+            onReconnectStart={onReconnectStart}
+            onReconnectEnd={onReconnectEnd}
+            deleteKeyCode={null}
             onDragOver={onDragOver}
             onDrop={onDrop}
             fitView={measured}
@@ -786,7 +913,7 @@ const DesignGraph = forwardRef(function DesignGraph({
             proOptions={{ hideAttribution: false }}
           >
             <FitOnReady fitKey={fitKey} onReady={fitForLens} />
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1} />
+            <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--bd2, #4A4A4A)" />
             <Controls showInteractive={false}>
               {!lanesLens && (
                 <ControlButton
@@ -1118,7 +1245,7 @@ export default function ComposerCanvas({
 
       <div className="composer-canvas__meta">
         {validation.counts.steps} steps
-        {draft.cgo && <> · single process_lineage spine · CGO {draft.cgo}</>}
+        {draft.cgo && <> · {spinePhrase(steps, validation)} · CGO {draft.cgo}</>}
         {runLens && activeRun && <> · run {activeRun.run_id || activeRun.id || ''} {activeRun.status || ''}</>}
       </div>
 
