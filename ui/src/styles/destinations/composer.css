@@ -1158,7 +1158,16 @@
   overflow-y: hidden;
 }
 .theme-console .composer--mode .composer-mode__bar > * { flex: none; }
-.theme-console .composer--mode .composer-mode__bar .composer__title-block { flex: 0 1 auto; min-width: 0; }
+.theme-console .composer--mode .composer-mode__bar .composer__title-block {
+  flex: 0 1 auto;
+  min-width: 120px;
+  overflow: hidden; /* clip, never paint over the action buttons */
+}
+.theme-console .composer--mode .composer-mode__bar .composer__title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .theme-console .composer--mode .composer-mode__bar .composer__spacer { flex: 1 1 auto; }
 .theme-console .composer--mode .composer__title { font-size: 15px; }
 .theme-console .composer--mode .composer-mode__exit { font-weight: 600; }
@@ -1596,4 +1605,43 @@
 @media (max-width: 1100px) {
   .theme-console .composer--mode .composer-mode__drawer--left { width: 248px; }
   .theme-console .composer--mode .composer-mode__drawer--right { width: 300px; }
+}
+
+/* ─── Narrow and short stages ───
+   The chrome above the stage must cost one line per bar, never two: the
+   proves strip and the workflow bar scroll sideways rather than wrap (at 845px
+   the scenario id used to break into a three-line pill and the proves strip
+   into two rows, which, with the per-session consent banner still open, left
+   the graph ~80px tall). */
+.theme-console .composer--mode .composer__proves { flex-wrap: nowrap; }
+.theme-console .composer--mode .composer__proves > * { flex: none; }
+.theme-console .composer--mode .composer-mode__bar .composer__provenance {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-console .composer--mode .composer-mode__bar .composer__provenance .linklike { white-space: nowrap; }
+
+/* The overview map's pin, in the controls column. */
+.theme-console .composer--mode .composer-minimap-toggle--on { color: var(--tx); background: var(--s3); }
+
+/* A SHORT stage (small window, or the consent banner still open) keeps the
+   graph legible by dropping the floating caption and tightening the overlays.
+   A container query, because what matters is the stage's own height, not the
+   window's: the same 768px window has a very different stage with and without
+   the banner. */
+.theme-console .composer--mode .composer-mode__stage { container: cmstage / size; }
+@container cmstage (max-height: 380px) {
+  .theme-console .composer--mode .composer-canvas__meta { display: none; }
+  .theme-console .composer--mode .composer-mode__drawer,
+  .theme-console .composer--mode .composer-mode__reopen { top: 50px; }
+  .theme-console .composer--mode .composer-mode__drawer { bottom: 46px; }
+  /* Off the centre line, where a one-row chain runs: bottom-right is free now
+     the overview map only appears while panning. */
+  .theme-console .composer--mode .composer-add-step {
+    bottom: 50px; height: 28px; left: auto; right: 12px; transform: none;
+  }
+  /* Horizontal zoom controls, so they don't cover the trigger node. */
+  .theme-console .composer--mode .react-flow__controls { flex-direction: row; }
+  .theme-console .composer--mode .react-flow__panel.bottom { margin-bottom: 46px; }
 }

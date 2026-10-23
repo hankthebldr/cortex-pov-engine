@@ -43,7 +43,7 @@ import React, {
   useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef,
 } from 'react'
 import {
-  ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, MiniMap,
+  ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, ControlButton, MiniMap,
   Handle, Position, ViewportPortal, BaseEdge, EdgeLabelRenderer,
   getBezierPath, MarkerType, applyNodeChanges, applyEdgeChanges,
   useNodesInitialized, useReactFlow,
@@ -382,10 +382,19 @@ const DesignGraph = forwardRef(function DesignGraph({
   const fitPadding = () => {
     const i = insetsRef.current
     if (!i) return 0.2
+    // Drawer insets are real occlusion and stay exact. The VERTICAL margins
+    // (caption pill, dock, breathing room) are capped at 18% of the pane each:
+    // on a short stage fixed margins ate nearly all of it and the chain fitted
+    // at 20%.
+    // Before the pane is measured (React Flow's own prop-driven fit reads this
+    // during render), fall back to a small fixed margin, never the uncapped
+    // one — the uncapped margins clamped the initial fit to minZoom.
+    const h = paneRef.current?.clientHeight || 0
+    const capV = (v) => (h ? Math.max(8, Math.min(v, h * 0.18)) : Math.min(v, 24))
     return {
-      top: `${(i.top || 0) + 32}px`,
+      top: `${Math.round(capV((i.top || 0) + 32))}px`,
       right: `${(i.right || 0) + 32}px`,
-      bottom: `${(i.bottom || 0) + 32}px`,
+      bottom: `${Math.round(capV((i.bottom || 0) + 32))}px`,
       left: `${(i.left || 0) + 32}px`,
     }
   }
@@ -688,6 +697,23 @@ const DesignGraph = forwardRef(function DesignGraph({
   }, [onZoomChange])
   const handleMove = useCallback((_e, viewport) => onZoomChange(viewport.zoom), [onZoomChange])
 
+  // The overview map appears while the DC pans or zooms (when it answers
+  // "where am I?") and fades shortly after, unless pinned from the controls.
+  // A permanent map sat on top of the chain's right end on short stages —
+  // the Proof node was hidden under it at 1024x768.
+  const [miniPinned, setMiniPinned] = useState(false)
+  const [moving, setMoving] = useState(false)
+  const moveTimer = useRef(null)
+  const handleMoveStart = useCallback(() => {
+    clearTimeout(moveTimer.current)
+    setMoving(true)
+  }, [])
+  const handleMoveEnd = useCallback(() => {
+    clearTimeout(moveTimer.current)
+    moveTimer.current = setTimeout(() => setMoving(false), 1400)
+  }, [])
+  useEffect(() => () => clearTimeout(moveTimer.current), [])
+
   useImperativeHandle(ref, () => ({
     zoomIn: () => rfRef.current?.zoomIn(),
     zoomOut: () => rfRef.current?.zoomOut(),
@@ -755,12 +781,26 @@ const DesignGraph = forwardRef(function DesignGraph({
             maxZoom={2}
             onInit={handleInit}
             onMove={handleMove}
+            onMoveStart={handleMoveStart}
+            onMoveEnd={handleMoveEnd}
             proOptions={{ hideAttribution: false }}
           >
             <FitOnReady fitKey={fitKey} onReady={fitForLens} />
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} />
-            <Controls showInteractive={false} />
-            {!lanesLens && (
+            <Controls showInteractive={false}>
+              {!lanesLens && (
+                <ControlButton
+                  onClick={() => setMiniPinned((v) => !v)}
+                  title={miniPinned ? 'Unpin the overview map' : 'Pin the overview map'}
+                  aria-label={miniPinned ? 'Unpin the overview map' : 'Pin the overview map'}
+                  aria-pressed={miniPinned}
+                  className={'composer-minimap-toggle' + (miniPinned ? ' composer-minimap-toggle--on' : '')}
+                >
+                  ▣
+                </ControlButton>
+              )}
+            </Controls>
+            {!lanesLens && (miniPinned || moving) && (
               <MiniMap
                 pannable
                 zoomable
