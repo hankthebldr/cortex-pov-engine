@@ -1121,3 +1121,479 @@
   /* Clear of the step index the card's header row keeps at its far right. */
   right: 30px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPOSER MODE (2026-10-21) — the full-screen node-graph editor.
+
+   The shell (`.pov-workspace--immersive`, povengine-shell.css) removes the nav
+   rail, the Library tab strip and the view padding while the Composer is open,
+   so `.composer` owns everything below the console header. These rules turn
+   the old stacked "window within a window" (title row · Proves · palette|
+   canvas|inspector grid · workstream · timeline) into an editor whose STAGE is
+   the graph, edge to edge, with the palette, inspector and workstream as
+   floating overlays on top of it rather than grid tracks beside it.
+
+   Every rule is scoped under `.composer--mode` (0,3,0+), so it out-specifies
+   the windowed rules above regardless of source order. Colours are tokens only.
+   The `--xy-*` declarations below are React Flow's own theme hooks (the
+   library reads them), mapped onto console tokens — not new design tokens.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.theme-console .composer--mode {
+  position: relative;
+  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--s0);
+}
+
+/* ─── Workflow bar: the one row of chrome above the stage ─── */
+.theme-console .composer--mode .composer-mode__bar {
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 14px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.theme-console .composer--mode .composer-mode__bar > * { flex: none; }
+.theme-console .composer--mode .composer-mode__bar .composer__title-block { flex: 0 1 auto; min-width: 0; }
+.theme-console .composer--mode .composer-mode__bar .composer__spacer { flex: 1 1 auto; }
+.theme-console .composer--mode .composer__title { font-size: 15px; }
+.theme-console .composer--mode .composer-mode__exit { font-weight: 600; }
+
+/* Proves + validation: one slim strip under the bar. */
+.theme-console .composer--mode .composer__proves {
+  flex: none;
+  padding: 5px 14px;
+  min-height: 0;
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd);
+  overflow-x: auto;
+}
+
+/* The polite live region stays in the accessibility tree at all times (it
+   only announces if it exists before its text arrives) — visually hidden when
+   empty, a floating toast over the stage when it speaks. */
+.theme-console .composer--mode .composer__notice {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  z-index: 30;
+  max-width: min(640px, 80%);
+  margin: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--s2);
+  color: var(--tx);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  pointer-events: none;
+}
+.theme-console .composer--mode .composer__notice--empty {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  box-shadow: none;
+}
+
+/* ─── Stage: the graph, edge to edge ─── */
+.theme-console .composer--mode .composer-mode__stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.theme-console .composer--mode .composer-canvas {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: var(--s0);
+  background-image: none;
+}
+
+/* Canvas chrome — lens · stitch · view · zoom — as a slim row on the stage. */
+.theme-console .composer--mode .composer-canvas__head {
+  flex: none;
+  height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  gap: 8px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.theme-console .composer--mode .composer-canvas__head > * { flex: none; }
+.theme-console .composer--mode .composer-canvas__head .composer__spacer { flex: 1 1 auto; }
+.theme-console .composer--mode .composer-canvas__name { flex: 0 1 auto; max-width: 320px; }
+.theme-console .composer--mode .composer-canvas__zoom { margin-left: 4px; }
+
+/* Meta caption floats as a pill at the top of the graph, never stealing a row. */
+.theme-console .composer--mode .composer-canvas__meta {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  margin: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 999px;
+  background: var(--s1);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.theme-console .composer--mode .composer-canvas__error,
+.theme-console .composer--mode .composer-firstrun,
+.theme-console .composer--mode .destination-loading {
+  position: relative;
+  z-index: 2;
+  margin: 72px auto 0;
+  width: min(640px, calc(100% - 48px));
+}
+.theme-console .composer--mode .composer-yaml {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  border-radius: 0;
+  overflow: auto;
+}
+
+.theme-console .composer--mode .composer-canvas__graph {
+  display: block;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 0;
+}
+.theme-console .composer--mode .composer-canvas__flow {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: var(--s0);
+}
+
+/* Run lens stacks the REAL causality graph over the read-only spine; give the
+   real graph a scrollable band and let the spine take the rest. */
+.theme-console .composer--mode .composer-canvas__rungraph,
+.theme-console .composer--mode .composer-canvas__runempty {
+  flex: none;
+  max-height: 42%;
+  margin: 0;
+  padding: 12px 16px;
+  overflow: auto;
+  background: var(--s1);
+  border-bottom: 1px solid var(--bd);
+  color: var(--tx2);
+  font-size: 12px;
+}
+.theme-console .composer--mode .composer-canvas__runbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+  margin-bottom: 10px;
+}
+.theme-console .composer--mode .composer-canvas__runpct { font-weight: 700; color: var(--tx); }
+.theme-console .composer--mode .composer-canvas__runbroken { font-weight: 600; color: var(--crit); }
+.theme-console .composer--mode .composer-canvas__runok { color: var(--pos-ink); }
+.theme-console .composer--mode .composer-canvas__binding {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: 11px;
+}
+.theme-console .composer--mode .composer-canvas__bindlabel { font-weight: 700; color: var(--tx); }
+.theme-console .composer--mode .chain-node--run {
+  background: var(--s2);
+  border: 1px solid var(--bd2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.theme-console .composer--mode .chain-node--run__kind {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.theme-console .composer--mode .chain-node--run__label { font-size: 11px; word-break: break-all; color: var(--tx); }
+
+/* A refused connect floats over the graph, with its reason. */
+.theme-console .composer--mode .canvas-refusal {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  margin: 0;
+  background: var(--s2);
+  color: var(--tx);
+  box-shadow: var(--shadow);
+}
+
+/* "+ Add step" floats over the graph, bottom-centre, above the dock. */
+.theme-console .composer--mode .composer-add-step {
+  position: absolute;
+  left: 50%;
+  bottom: 60px;
+  transform: translateX(-50%);
+  z-index: 8;
+  height: 34px;
+  padding: 0 18px;
+  border: 1px dashed var(--bd2);
+  border-radius: 999px;
+  background: var(--s1);
+  color: var(--tx2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.theme-console .composer--mode .composer-add-step:hover {
+  border-style: solid;
+  border-color: var(--ac-line);
+  color: var(--tx);
+}
+
+/* ─── Overlay drawers (palette · inspector) ─── */
+.theme-console .composer--mode .composer-mode__drawer {
+  position: absolute;
+  top: 56px;
+  bottom: 56px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.theme-console .composer--mode .composer-mode__drawer--left { left: 12px; width: 300px; }
+.theme-console .composer--mode .composer-mode__drawer--right { right: 12px; width: 360px; }
+.theme-console .composer--mode .composer-mode__drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 6px 6px 6px 12px;
+  border-bottom: 1px solid var(--bd);
+}
+.theme-console .composer--mode .composer-mode__drawer-title {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tx2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-console .composer--mode .composer-mode__drawer .composer-bench,
+.theme-console .composer--mode .composer-mode__drawer .composer-inspector {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border: 0;
+  background: transparent;
+}
+.theme-console .composer--mode .composer-mode__drawer .ws-ctl { min-width: 28px; min-height: 28px; }
+
+/* A collapsed drawer leaves a small tab to bring it back. */
+.theme-console .composer--mode .composer-mode__reopen {
+  position: absolute;
+  top: 56px;
+  z-index: 20;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--bd2);
+  border-radius: 8px;
+  background: var(--s1);
+  color: var(--tx);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.theme-console .composer--mode .composer-mode__reopen:hover { border-color: var(--ac-line); }
+.theme-console .composer--mode .composer-mode__reopen--left { left: 12px; }
+.theme-console .composer--mode .composer-mode__reopen--right { right: 12px; }
+
+/* Palette items are draggable onto the canvas in this mode. */
+.theme-console .composer--mode .bench-item--draggable { cursor: grab; }
+.theme-console .composer--mode .bench-item--draggable:active { cursor: grabbing; }
+
+/* ─── Workstream: docked over the bottom of the stage ─── */
+.theme-console .composer--mode .composer-mode__dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 22;
+  border-top: 1px solid var(--bd);
+  background: var(--s1);
+}
+.theme-console .composer--mode .composer-mode__dock .composer-ws__tabs { border-bottom: 0; }
+.theme-console .composer--mode .composer-ws--open .composer-ws__tabs { border-bottom: 1px solid var(--bd); }
+.theme-console .composer--mode .composer-mode__dock .composer-ws__body { max-height: 220px; }
+
+/* ─── React Flow, themed onto console tokens ─── */
+.theme-console .composer--mode .react-flow {
+  --xy-background-color: var(--s0);
+  --xy-background-pattern-dots-color: var(--bd2);
+  --xy-edge-stroke: var(--tx3);
+  --xy-edge-stroke-selected: var(--ac-str);
+  --xy-edge-stroke-width: 1.5;
+  --xy-connectionline-stroke: var(--ac-str);
+  --xy-connectionline-stroke-width: 1.5;
+  --xy-handle-background-color: var(--s3);
+  --xy-handle-border-color: var(--tx3);
+  --xy-selection-background-color: var(--ac-soft);
+  --xy-selection-border: 1px dashed var(--ac-line);
+  --xy-minimap-background-color: var(--s1);
+  --xy-minimap-mask-background-color: var(--s0);
+  --xy-minimap-mask-stroke-color: var(--ac-line);
+  --xy-minimap-node-stroke-color: var(--s0);
+  --xy-controls-button-background-color: var(--s1);
+  --xy-controls-button-background-color-hover: var(--s3);
+  --xy-controls-button-color: var(--tx2);
+  --xy-controls-button-color-hover: var(--tx);
+  --xy-controls-button-border-color: var(--bd);
+  --xy-controls-box-shadow: var(--shadow);
+  --xy-attribution-background-color: transparent;
+  --xy-edge-label-background-color: var(--s2);
+  --xy-edge-label-color: var(--tx2);
+}
+.theme-console .composer--mode .react-flow__node { background: transparent; border: 0; padding: 0; }
+
+/* Keep the built-in Controls / MiniMap clear of the docked workstream and of
+   whichever drawer is open, so nothing on the pane hides behind a panel. */
+.theme-console .composer--mode .react-flow__panel.bottom { margin-bottom: 56px; }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left) .react-flow__panel.left { margin-left: 324px; }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--right) .react-flow__panel.right { margin-right: 384px; }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--right) .composer-canvas__meta { margin-left: -186px; }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left) .composer-canvas__meta { margin-left: 156px; }
+.theme-console .composer--mode .composer-mode__stage:has(> .composer-mode__drawer--left):has(> .composer-mode__drawer--right) .composer-canvas__meta { margin-left: -30px; }
+.theme-console .composer--mode .composer-minimap {
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* ─── Node cards ─── */
+.theme-console .composer--mode .chain-node {
+  border-radius: 10px;
+  box-shadow: 0 1px 0 var(--s0);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.theme-console .composer--mode .chain-node--step {
+  width: 220px;
+  background: var(--s2);
+  border: 1px solid var(--bd2);
+  border-top-width: 1px;
+  padding: 0 12px 8px;
+}
+.theme-console .composer--mode .chain-node--step:hover { border-color: var(--tx3); }
+.theme-console .composer--mode .chain-node--selected {
+  border-color: var(--ac-str);
+  box-shadow: 0 0 0 1px var(--ac-str), var(--shadow);
+}
+/* The gap marker: a step that will run and prove nothing. */
+.theme-console .composer--mode .chain-node--nodetect { border-top: 2px solid var(--warn-str); }
+.theme-console .composer--mode .chain-node__grip {
+  height: 16px;
+  margin: 0 -12px 0;
+  border-radius: 9px 9px 0 0;
+  background: var(--s3);
+}
+.theme-console .composer--mode .chain-node__body {
+  width: 100%;
+  padding: 0;
+  margin-top: 6px;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Tool row reads as a quiet footer and lights up on hover / selection. */
+.theme-console .composer--mode .chain-node__tools { opacity: 0.55; transition: opacity var(--dur-fast) var(--ease-out); }
+.theme-console .composer--mode .chain-node--step:hover .chain-node__tools,
+.theme-console .composer--mode .chain-node--selected .chain-node__tools { opacity: 1; }
+
+/* Trigger (CGO) and terminal (Proof) anchors. */
+.theme-console .composer--mode .chain-node--cgo,
+.theme-console .composer--mode .chain-node--proof {
+  width: 180px;
+  padding: 10px 12px 11px;
+  background: var(--s1);
+  border: 1px solid var(--bd2);
+}
+.theme-console .composer--mode .chain-node--cgo {
+  border-left: 3px solid var(--ac-brand);
+  border-radius: 22px 10px 10px 22px;
+  padding-left: 16px;
+}
+.theme-console .composer--mode .chain-node--cgo .chain-node__kicker { color: var(--tx2); }
+.theme-console .composer--mode .chain-node--cgo .chain-node__title { word-break: break-all; }
+.theme-console .composer--mode .chain-node--proof {
+  border-right: 3px solid var(--pos);
+  border-radius: 10px 22px 22px 10px;
+  padding-right: 16px;
+}
+
+/* Ports: larger hit targets, the source/target side readable at a glance. */
+.theme-console .composer--mode .react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+  border-radius: 50%;
+}
+.theme-console .composer--mode .react-flow__handle.connectingto.valid { background: var(--pos); border-color: var(--pos-ink); }
+.theme-console .composer--mode .react-flow__handle.connectingto:not(.valid) { background: var(--crit); border-color: var(--crit); }
+.theme-console .composer--mode .react-flow__handle-right:hover,
+.theme-console .composer--mode .react-flow__handle-left:hover { background: var(--ac-str); }
+
+/* ─── Edge label: the pivot chip + delete ─── */
+.theme-console .composer-edge-label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: all;
+}
+.theme-console .composer-edge-pivot,
+.theme-console .composer-edge-del {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--bd2);
+  border-radius: 999px;
+  background: var(--s2);
+  color: var(--tx2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.theme-console .composer-edge-pivot:hover { border-color: var(--ac-line); color: var(--tx); }
+.theme-console .composer-edge-label--on .composer-edge-pivot { border-color: var(--ac-str); color: var(--tx); }
+.theme-console .composer-edge-del { width: 22px; padding: 0; font-family: var(--font-ui); font-size: 13px; }
+.theme-console .composer-edge-del:hover { border-color: var(--crit); color: var(--crit); }
+
+/* Lanes lens in mode: bands still ride the pane transform; nothing else changes. */
+.theme-console .composer--mode .composer-lane { position: absolute; left: 0; }
+
+/* Narrow stages: drawers shrink before they cover the graph entirely. */
+@media (max-width: 1100px) {
+  .theme-console .composer--mode .composer-mode__drawer--left { width: 248px; }
+  .theme-console .composer--mode .composer-mode__drawer--right { width: 300px; }
+}
