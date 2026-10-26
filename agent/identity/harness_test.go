@@ -184,6 +184,9 @@ func TestExecuteCtxStream_CarriesTermination(t *testing.T) {
 // switch to that account is unavailable, and asserts ExitCode == 137 whichever
 // Termination the wrapper surfaces (a wrapper that forwards the child's death
 // as an exit code reports "exited"; one that re-raises reports "signaled").
+// wrapperTimeout bounds both the probe and the kill run of a wrapper test.
+const wrapperTimeout = 5 * time.Second
+
 // killScript writes an executable that SIGKILLs itself and returns its path (no
 // whitespace, so it survives sudo_u's naive argument split).
 func killScript(t *testing.T) string {
@@ -207,12 +210,18 @@ func wrapperSurfacesChildSignal(t *testing.T, mode, bin, killCmd string) {
 	if err != nil {
 		t.Skipf("cannot resolve current user: %v", err)
 	}
-	probe, perr := ExecuteCtxStream(context.Background(),
+	// A wrapper that prompts for a password would otherwise block until the
+	// package timeout; the deadline turns that into a skip.
+	pctx, pcancel := context.WithTimeout(context.Background(), wrapperTimeout)
+	defer pcancel()
+	probe, perr := ExecuteCtxStream(pctx,
 		ExecutionIdentity{Mode: mode, Username: u.Username, Command: "true"}, nil)
 	if perr != nil || probe.ExitCode != 0 {
-		t.Skipf("%s -> %s not usable non-interactively here (exit=%d err=%v)", bin, u.Username, probe.ExitCode, perr)
+		t.Skipf("%s -> %s not usable non-interactively here (may be awaiting a password; exit=%d err=%v)", bin, u.Username, probe.ExitCode, perr)
 	}
-	r, err := ExecuteCtxStream(context.Background(),
+	kctx, kcancel := context.WithTimeout(context.Background(), wrapperTimeout)
+	defer kcancel()
+	r, err := ExecuteCtxStream(kctx,
 		ExecutionIdentity{Mode: mode, Username: u.Username, Command: killCmd}, nil)
 	if err != nil {
 		t.Fatalf("err=%v", err)
