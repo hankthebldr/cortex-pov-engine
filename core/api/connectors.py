@@ -127,11 +127,21 @@ async def ingest_observations(
     body: ObservationsBody,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Ingest a batch of observed alerts and auto-validate matching results."""
-    from connectors.service import apply_verdicts, window_by_type
+    """Ingest a batch of observed alerts and auto-validate matching results.
 
-    _run, results = await _load_run_results(db, run_id)
-    alerts, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
+    Scoped exactly like a connector pull (``matcher.scope_to_host`` against the
+    run's resolved host): a hand-pasted alert from another endpoint is not
+    evidence for this run. The batch is ``unscoped`` -- every pass withheld
+    (``PASS_WITHHELD_UNSCOPED``) -- when the run has no resolvable target or any
+    submitted alert names no host, because then nothing ties it to this run.
+    """
+    from connectors.matcher import scope_to_host
+    from connectors.service import apply_verdicts, resolve_run_host, window_by_type
+
+    run, results = await _load_run_results(db, run_id)
+    submitted, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
+    alerts, host_scope = scope_to_host(submitted, await resolve_run_host(db, run))
+    unscoped = host_scope["host"] is None or host_scope["without_host"] > 0
     verdicts = reconcile(results, alerts, window_seconds=body.window_seconds,
                          only_unobserved=not body.reevaluate,
                          window_seconds_by_type=window_by_type())
@@ -139,13 +149,16 @@ async def ingest_observations(
     by_ext = {a.external_id: a for a in alerts if a.external_id}
     summary, _ = await apply_verdicts(
         db, run_id, results, verdicts, source="manual-import",
-        # The DC chose these alerts by hand: scoped and complete by construction,
-        # so the honesty guard withholds nothing — and the basis says `manual`.
-        pull_context={"basis": "manual", "unscoped": False, "truncated": False,
+        # The DC chose these alerts by hand, so silence is never a miss
+        # (basis `manual`); a pass stands only when every alert was host-scoped.
+        pull_context={"basis": "manual", "unscoped": unscoped, "truncated": False,
                       "alert_incidents": {e: by_ext[e].incident_id for e in matched_ext
                                           if e in by_ext}},
         observations=alerts, window_seconds=body.window_seconds)
-    summary["ingested"] = len(alerts)
+    summary["host_scope"] = host_scope
+    if unscoped:
+        summary["unscoped"] = True
+    summary["ingested"] = len(submitted)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
     if dropped:
         # These alerts were submitted and NOT counted. Silently shortening the

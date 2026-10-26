@@ -373,3 +373,74 @@ def test_report_mode_incomplete_clamp_leaves_kpi_none(session_factory):
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason) == ("pending", "EVIDENCE_INCOMPLETE")
     assert r.kpi_verdict is None
+
+
+# ── final review I4 — a manual import is scoped exactly like a pull ────────
+
+def _manual_prevented(ext="mp1", *, host=None):
+    d = {"alert_id": ext, "name": f"manual {ext}", "technique": "T1003.001",
+         "source": "XDR BIOC", "action": "BLOCKED", "action_pretty": "Prevented (Blocked)",
+         "timestamp": (datetime.utcnow() - timedelta(minutes=9)).isoformat() + "Z"}
+    if host is not None:
+        d["host"] = host
+    return d
+
+
+def _manual_ingest(SessionLocal, observations):
+    from api.connectors import ObservationsBody, ingest_observations
+
+    async def _go():
+        async with SessionLocal() as db:
+            return await ingest_observations("run-1", ObservationsBody(
+                observations=observations, window_seconds=3600), db=db)
+    return asyncio.run(_go())
+
+
+def _manual_prevention_run(SessionLocal, *, target=True):
+    """Block mode, step-02 `prevent` with a host witness (`signaled`)."""
+    from models import Run
+    from sqlalchemy import select
+
+    _seed(SessionLocal, results=2)
+    asyncio.run(_prepare_prevention(SessionLocal, termination="signaled"))
+    if not target:
+        async def _untarget():
+            async with SessionLocal() as db:
+                (await db.execute(select(Run))).scalars().first().target = None
+                await db.commit()
+        asyncio.run(_untarget())
+
+
+def test_manual_prevented_alert_on_unscoped_run_is_withheld(session_factory):
+    # Another host's alert, pasted by hand, on a run whose target cannot be
+    # resolved: nothing can exclude it, so a pass is withheld, never prevented.
+    _manual_prevention_run(session_factory, target=False)
+    summary = _manual_ingest(session_factory, [_manual_prevented(host="other-host")])
+    r = asyncio.run(_results_by_step(session_factory))["step-02"]
+    assert (r.outcome, r.outcome_reason, r.kpi_verdict) == (
+        "pending", "PASS_WITHHELD_UNSCOPED", "pending")
+    assert summary["host_scope"]["host"] is None
+
+
+def test_manual_prevented_alert_from_another_host_is_excluded(session_factory):
+    _manual_prevention_run(session_factory)
+    summary = _manual_ingest(session_factory, [_manual_prevented(host="other-host")])
+    r = asyncio.run(_results_by_step(session_factory))["step-02"]
+    assert r.outcome != "prevented" and r.observed is False
+    assert summary["host_scope"]["excluded_other_host"] == 1
+
+
+def test_manual_prevented_alert_without_a_host_is_withheld(session_factory):
+    _manual_prevention_run(session_factory)
+    _manual_ingest(session_factory, [_manual_prevented(host=None)])
+    r = asyncio.run(_results_by_step(session_factory))["step-02"]
+    assert (r.outcome, r.outcome_reason, r.kpi_verdict) == (
+        "pending", "PASS_WITHHELD_UNSCOPED", "pending")
+
+
+def test_manual_prevented_alert_from_the_run_host_still_scores(session_factory):
+    # Positive control: scoping withholds what it cannot attribute, nothing more.
+    _manual_prevention_run(session_factory)
+    _manual_ingest(session_factory, [_manual_prevented(host="web-01")])
+    r = asyncio.run(_results_by_step(session_factory))["step-02"]
+    assert (r.outcome, r.kpi_verdict) == ("prevented", "pass")
