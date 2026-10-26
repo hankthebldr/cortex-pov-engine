@@ -481,3 +481,33 @@ def test_timeout_block_mode_prevent_row_is_still_missed(session_factory):
     asyncio.run(_apply_silent(session_factory, COMPLETE))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.kpi_verdict) == ("missed", "fail")
+
+
+# ── Residual R6 — a host-scoping drop is never silent ──────────────────────
+
+def test_manual_alert_from_another_host_is_counted_and_warned(session_factory):
+    _manual_prevention_run(session_factory)
+    summary = _manual_ingest(session_factory, [_manual_prevented("a1", host="other-host"),
+                                               _manual_prevented("a2", host="web-01")])
+    # Same shape as the unparseable-timestamp drop: a count and a warning.
+    assert summary["excluded_other_host"] == 1
+    assert "1 of 2 observations" in summary["warning"]
+    assert "web-01" in summary["warning"]
+
+
+def test_manual_drop_warnings_combine(session_factory):
+    _manual_prevention_run(session_factory)
+    bad = _manual_prevented("a3", host="web-01")
+    bad["timestamp"] = "not a time"
+    summary = _manual_ingest(session_factory, [_manual_prevented("a1", host="other-host"), bad])
+    assert summary["excluded_other_host"] == 1
+    assert summary["dropped_unparseable_timestamps"] == 1
+    assert "unreadable timestamp" in summary["warning"]
+    assert "another host" in summary["warning"]
+
+
+def test_manual_import_without_exclusions_carries_no_host_warning(session_factory):
+    _manual_prevention_run(session_factory)
+    summary = _manual_ingest(session_factory, [_manual_prevented(host="web-01")])
+    assert "excluded_other_host" not in summary
+    assert "warning" not in summary

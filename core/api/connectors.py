@@ -160,17 +160,33 @@ async def ingest_observations(
         summary["unscoped"] = True
     summary["ingested"] = len(submitted)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
+    warnings: list[str] = []
     if dropped:
         # These alerts were submitted and NOT counted. Silently shortening the
         # list would understate coverage with no explanation; the old code was
         # worse still — it dated them to `now`, which inflated MTTD and produced
         # threshold FAILs out of a formatting problem.
         summary["dropped_unparseable_timestamps"] = dropped
-        summary["warning"] = (
+        warnings.append(
             f"{dropped} of {len(body.observations)} observations had an unreadable "
             f"timestamp and were not counted. Coverage below is a floor, not a "
             f"measurement. Use ISO-8601 (2026-06-10T12:00:30Z) or epoch ms."
         )
+    excluded = host_scope.get("excluded_other_host") or 0
+    if excluded:
+        # Same shape as the drop above (R6): a pasted alert that names another
+        # host is not evidence for this run, but vanishing without a word reads
+        # as "Cortex never alerted". Say how many and which host was expected,
+        # so a short-name vs FQDN mismatch is visible.
+        summary["excluded_other_host"] = excluded
+        warnings.append(
+            f"{excluded} of {len(body.observations)} observations named another host "
+            f"than this run's target ({host_scope['host']}) and were not counted. If "
+            f"they are this run's endpoint under another name, re-submit them with "
+            f"the run's host name."
+        )
+    if warnings:
+        summary["warning"] = " ".join(warnings)
     return summary
 
 
