@@ -32,7 +32,7 @@ def _scenario(sid):
 
 
 def _seed(session_factory, *, canary_target="agent-1", canary_scenario="SIM-CAN-001",
-          completed=True, outcome=None):
+          completed=True, outcome=None, status=None):
     from models import Result, Run
 
     async def go():
@@ -42,7 +42,7 @@ def _seed(session_factory, *, canary_target="agent-1", canary_scenario="SIM-CAN-
             db.add(Run(
                 run_id="can", scenario_id=canary_scenario, mode="pull",
                 target=canary_target,
-                status="complete" if completed else "running",
+                status=status or ("complete" if completed else "running"),
                 agent_profile_mode="block",
                 started_at=datetime.utcnow() - timedelta(minutes=5),
                 completed_at=datetime.utcnow() if completed else None,
@@ -134,9 +134,36 @@ def test_launch_with_unconfirmed_canary_and_invalid_variants(
     assert _run_row(session_factory, r.json()["run_id"]).block_mode_status == "block_mode_unconfirmed"
 
 
-def test_launch_rejects_wrong_scenario_and_nonterminal_canary(
-    client, session_factory, canary_cfg
+def _refusal(client, **kw):
+    r = _launch(client, canary_run_id="can", **kw)
+    assert r.status_code == 409, r.text
+    d = r.json()["detail"]
+    assert d["code"] == "CANARY_INVALID"
+    return d["detail"]
+
+
+def test_launch_rejects_wrong_scenario_canary(client, session_factory, canary_cfg):
+    # terminal, right target, but a different scenario than the configured canary
+    _seed(session_factory, canary_scenario="SIM-T-001", completed=True)
+    assert "not the configured canary scenario" in _refusal(client)
+
+
+def test_launch_rejects_canary_when_config_changed_after_it_ran(
+    client, session_factory, canary_cfg, monkeypatch
 ):
-    _seed(session_factory, canary_scenario="SIM-T-001", completed=False)
-    r = _launch(client, canary_run_id="can")
-    assert r.status_code == 409 and r.json()["detail"]["code"] == "CANARY_INVALID"
+    from config import settings
+    _seed(session_factory)
+    monkeypatch.setattr(settings, "CORTEXSIM_CANARY_SCENARIO_LINUX", "SIM-OTHER")
+    assert "not the configured canary scenario" in _refusal(client)
+
+
+def test_launch_rejects_nonterminal_canary(client, session_factory, canary_cfg):
+    _seed(session_factory, completed=False)
+    assert "has not finished" in _refusal(client)
+
+
+def test_launch_rejects_aborted_canary(client, session_factory, canary_cfg):
+    _seed(session_factory, completed=False, status="aborted")
+    d = _refusal(client)
+    assert "was aborted and proves nothing" in d
+    assert "has not finished" not in d

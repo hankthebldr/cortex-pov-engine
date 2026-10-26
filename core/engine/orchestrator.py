@@ -336,6 +336,8 @@ class Orchestrator:
                     f"canary run {canary_run_id} targeted '{canary_run.target}', "
                     f"not this launch's target '{target_agent_id}'"
                 )
+            elif canary_run.status == "aborted":
+                canary_error = f"canary run {canary_run_id} was aborted and proves nothing"
             elif not canary.is_terminal(canary_run):
                 canary_error = f"canary run {canary_run_id} has not finished"
             if canary_error is not None:
