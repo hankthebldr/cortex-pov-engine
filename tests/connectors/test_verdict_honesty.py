@@ -63,8 +63,11 @@ async def _record_exited(SessionLocal, step_id="step-01"):
     from models import StepOutcome
 
     async with SessionLocal() as db:
+        # The step reported when it ran, 10 min ago (``_seed``'s executed_at):
+        # the silent-row window runs from the host record (round 4 C-1).
+        ran = datetime.utcnow() - timedelta(minutes=10)
         db.add(StepOutcome(run_id="run-1", step_id=step_id, exit_code=0,
-                           termination="exited"))
+                           termination="exited", started_at=ran, recorded_at=ran))
         await db.commit()
 
 
@@ -454,8 +457,9 @@ async def _record_termination(SessionLocal, termination, step_id="step-01"):
     from models import StepOutcome
 
     async with SessionLocal() as db:
+        ran = datetime.utcnow() - timedelta(minutes=10)
         db.add(StepOutcome(run_id="run-1", step_id=step_id, exit_code=None,
-                           termination=termination))
+                           termination=termination, started_at=ran, recorded_at=ran))
         await db.commit()
 
 
@@ -704,3 +708,51 @@ def test_push_staged_run_never_reads_missed_from_reconcile(session_factory):
     asyncio.run(_apply_silent(session_factory, COMPLETE))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason) == ("pending", "HOST_EVIDENCE_ABSENT")
+
+
+# ── Round 4 C-1 rule 3 — the silent-row window starts when the step reported ─
+
+def test_queued_step_window_runs_from_its_host_record_not_the_launch(session_factory):
+    """A run queued for a stale beacon: seeded at launch 2 h ago, the step
+    reported 5 min ago. Its 1 h window has NOT closed, so it is not a miss yet."""
+    from models import StepOutcome
+
+    _silent_detect_row(session_factory)
+
+    def fn(run, rows):
+        rows["step-01"].executed_at = datetime.utcnow() - timedelta(hours=2)
+    asyncio.run(_mutate(session_factory, fn))
+
+    async def _reported():
+        async with session_factory() as db:
+            db.add(StepOutcome(run_id="run-1", step_id="step-01", exit_code=0,
+                               termination="exited",
+                               started_at=datetime.utcnow() - timedelta(minutes=5)))
+            await db.commit()
+    asyncio.run(_reported())
+    asyncio.run(_apply_silent(session_factory, COMPLETE, window_seconds=3600))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == (None, None)
+
+
+def test_the_window_closes_an_hour_after_the_host_record(session_factory):
+    from models import StepOutcome
+
+    _silent_detect_row(session_factory)
+
+    def fn(run, rows):
+        rows["step-01"].executed_at = datetime.utcnow() - timedelta(hours=3)
+    asyncio.run(_mutate(session_factory, fn))
+
+    async def _reported():
+        async with session_factory() as db:
+            db.add(StepOutcome(run_id="run-1", step_id="step-01", exit_code=0,
+                               termination="exited",
+                               started_at=datetime.utcnow() - timedelta(minutes=61)))
+            await db.commit()
+    asyncio.run(_reported())
+    asyncio.run(_apply_silent(session_factory, COMPLETE, window_seconds=3600))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert r.outcome == "missed"
+    # The match lower bound and MTTD start stay the seeded value (see report).
+    assert r.executed_at < datetime.utcnow() - timedelta(hours=2)

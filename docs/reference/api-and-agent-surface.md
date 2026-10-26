@@ -273,6 +273,12 @@ scenario no longer lists go last), an empty list when there are none, projected
 read-only from the `step_outcomes` rows (`core/api/runs.py::_step_outcomes_view`). A row
 with `termination: null` means the step's output arrived but its end was never reported
 (the beacon died before `/complete`); consumers must not read it as `exited`.
+The silent-row judgement measures each step's window from its host record
+(`started_at`, else `recorded_at`) when that is later than the seeded `executed_at`,
+so a queued or slow step is never judged before it ran. `Result.executed_at` itself is
+NOT re-stamped: it is the matcher's lower bound and the MTTD start, and the host record
+lands after the step ended, so an alert raised during the step would fall before a
+re-stamped bound and never match.
 
 **Required-binary preflight (`required_binaries`).** For each step whose command
 substitutes an adapter placeholder, the orchestrator writes the pack's `install.binary`
@@ -1082,6 +1088,9 @@ POST /api/run {mode:"push"}
 ```
 
 - Push bundles are **stateless artifacts**; the offline host never phones home.
+- A push / `staged` run has no beacon and so no host record: reconcile never writes
+  `missed` on it — a silent row reads `pending` / `HOST_EVIDENCE_ABSENT` — and its hits
+  come from matched alerts or attestation (a bundle-completion callback is Phase 2).
   Consequently push-mode runs cannot show progress and never reach a terminal
   status server-side (GAP-API-004).
 - The bundle re-renders on each `download` call from the live scenario dict — it is

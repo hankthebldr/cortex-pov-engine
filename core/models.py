@@ -418,7 +418,12 @@ class StepOutcome(Base):
     first ``/output`` reaches SimCore, and the beacon posts a step's output
     after the step ends (``agent/beacon/client.go``). Read it as "the host had
     finished this step by then". ``engine.beacon_lost.pick_severed`` relies on
-    exactly that. The name is kept to avoid a column migration.
+    exactly that. It is also the conservative start of the silent-row judgement
+    window (``connectors.service._judge_silent_results``): a step is never
+    judged silent until ``window`` after it reported. It is NOT the match lower
+    bound or the MTTD start -- those stay ``Result.executed_at``, because an
+    alert raised during the step precedes this timestamp. The name is kept to
+    avoid a column migration.
     """
 
     __tablename__ = "step_outcomes"

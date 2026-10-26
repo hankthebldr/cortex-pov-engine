@@ -272,11 +272,12 @@ async def apply_verdicts(
     # Loaded BEFORE the loop: the run's profile mode and block-mode status are
     # inputs to every prevent verdict.
     run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
-    terminations = {
-        so.step_id: so.termination
-        for so in (await db.execute(
-            select(StepOutcome).where(StepOutcome.run_id == run_id))).scalars().all()
-    }
+    host_rows = (await db.execute(
+        select(StepOutcome).where(StepOutcome.run_id == run_id))).scalars().all()
+    terminations = {so.step_id: so.termination for so in host_rows}
+    # When each step's host record says it had finished (``/output`` arrival,
+    # else the ``/complete`` record): the silent-row window starts there.
+    reported_at = {so.step_id: so.started_at or so.recorded_at for so in host_rows}
     alerts = list(observations or [])
     by_ext = {a.external_id: a for a in alerts if getattr(a, "external_id", None)}
     unscoped = bool(pull_context and pull_context.get("unscoped"))
@@ -340,7 +341,8 @@ async def apply_verdicts(
     if run is not None:
         await _judge_silent_results(db, run, results, terminations,
                                     window_seconds=window_seconds,
-                                    evidence_complete=_evidence_complete(pull_context))
+                                    evidence_complete=_evidence_complete(pull_context),
+                                    reported_at=reported_at)
 
     await db.commit()
 
@@ -426,6 +428,7 @@ def _write_prevent(result: Any, pv: Any) -> None:
 async def _judge_silent_results(
     db: AsyncSession, run: Run, results: list[Result], terminations: dict[str, Any],
     *, window_seconds: int, evidence_complete: bool,
+    reported_at: Optional[dict[str, Any]] = None,
 ) -> None:
     """Judge every still-unobserved Result.
 
@@ -463,7 +466,17 @@ async def _judge_silent_results(
                 r.outcome = None
                 r.outcome_reason = None
         window = by_type.get(r.signal_type, window_seconds)
-        if now < r.executed_at + timedelta(seconds=window):
+        # Round 4 C-1 rule 3: the window closes ``window`` after the step
+        # REPORTED (its host record), not after the launch the row was seeded
+        # with -- a queued or slow step is not judged before it ran. The seeded
+        # ``executed_at`` stays the match lower bound and the MTTD start: the
+        # host record lands after the step ended, so an alert raised during the
+        # step would fall before a re-stamped lower bound and never match.
+        start = r.executed_at
+        reported = (reported_at or {}).get(r.step_id)
+        if reported is not None and reported > start:
+            start = reported
+        if now < start + timedelta(seconds=window):
             continue
         if r.expected_outcome == "prevent":
             pv = evaluate_prevent(
