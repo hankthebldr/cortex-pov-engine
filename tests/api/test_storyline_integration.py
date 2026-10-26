@@ -86,6 +86,9 @@ def seeded_run(session_factory):
                     expected_detection=det,
                     observed=(i == 1),
                     observed_at=datetime.utcnow() - timedelta(minutes=1) if i == 1 else None,
+                    # The engine judged step-02 a miss: only ``outcome`` makes
+                    # a miss (R4) -- an unjudged row reads pending.
+                    outcome="missed" if i == 2 else None,
                     executed_at=datetime.utcnow() - timedelta(minutes=3),
                 ))
             await db.commit()

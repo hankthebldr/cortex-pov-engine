@@ -35,7 +35,7 @@ from types import SimpleNamespace
 from typing import Any, Iterable, Optional
 
 from connectors.measures import denominator_exclusion, empty_exclusions
-from engine.outcome import DETECTED_NOT_PREVENTED, OUTCOMES
+from engine.outcome import DETECTED_NOT_PREVENTED, row_status
 
 
 logger = logging.getLogger("cortexsim.engine.efficacy_scorecard")
@@ -266,22 +266,14 @@ STATUS_DETECTED_NOT_PREVENTED = "detected_not_prevented"
 def _status(result: dict[str, Any]) -> str:
     """The row's status, from ``outcome`` when the engine decided one.
 
-    A legacy row (``outcome`` None) keeps the ``observed`` / ``observed_at``
-    derivation shared with ``report_generator._status_from_result``. An
-    unrecognised outcome raises: an unknown value must never read as benign.
+    The one rule, ``engine.outcome.row_status``: an outcome-less row is
+    ``detected`` when validated, else ``pending`` (awaiting reconcile) -- never
+    ``missed``. An unrecognised outcome raises: it must never read as benign.
     """
-    outcome = result.get("outcome")
-    if outcome is not None:
-        if outcome not in OUTCOMES:
-            raise ValueError(f"unrecognised result outcome {outcome!r}")
-        if outcome == "detected" and result.get("outcome_reason") == DETECTED_NOT_PREVENTED:
-            return STATUS_DETECTED_NOT_PREVENTED
-        return outcome
-    if result.get("observed"):
-        return "detected"
-    if result.get("observed_at"):
-        return "missed"
-    return "pending"
+    status = row_status(result.get("outcome"), bool(result.get("observed")))
+    if status == "detected" and result.get("outcome_reason") == DETECTED_NOT_PREVENTED:
+        return STATUS_DETECTED_NOT_PREVENTED
+    return status
 
 
 def _exclusion(result: dict[str, Any]) -> Optional[str]:

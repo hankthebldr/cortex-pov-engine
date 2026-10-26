@@ -83,6 +83,23 @@ def is_in_denominator(outcome: Optional[str], outcome_reason: Optional[str]) -> 
     return True
 
 
+def row_status(outcome: Optional[str], observed: Optional[bool]) -> str:
+    """The one status rule for a Result row (residual R4).
+
+    The engine's ``outcome`` wins whenever it exists; an unrecognised one
+    raises. A row with NO outcome has never been judged: ``observed=False`` is
+    the value ``_seed_results`` writes on every row, not a verdict, so it is
+    ``pending`` (awaiting reconcile, no reason token) -- never ``missed``.
+    ``observed=True`` with no outcome is a manual validation (incl. pre-branch
+    runs) and stays ``detected``. ``missed`` exists only as an outcome.
+    """
+    if outcome is not None:
+        if outcome not in OUTCOMES:
+            raise ValueError(f"unrecognised result outcome {outcome!r}")
+        return outcome
+    return OUTCOME_DETECTED if observed else OUTCOME_PENDING
+
+
 # --- agent profile / block-mode status ------------------------------------
 PROFILE_MODES = frozenset({"report", "block", "unknown"})
 BLOCK_MODE_CONFIRMED = "block_mode_confirmed"

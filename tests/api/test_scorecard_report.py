@@ -74,13 +74,14 @@ def seeded_run(session_factory):
             base = datetime.utcnow() - timedelta(minutes=3)
             # ``mttd_seconds`` is a computed property (observed_at - executed_at),
             # not a settable column — the detected row derives ~90s on its own.
-            # (signal_type, expected, observed, observed_at)
+            # (signal_type, expected, observed, observed_at, outcome) -- the
+            # miss is engine-decided: only ``outcome`` makes a miss (R4).
             rows = [
-                ("ABIOC", "passwd read", True, base + timedelta(seconds=90)),
-                ("BIOC", "shadow read", False, base + timedelta(seconds=120)),
-                ("XQL", "creds dumped", False, None),
+                ("ABIOC", "passwd read", True, base + timedelta(seconds=90), None),
+                ("BIOC", "shadow read", False, None, "missed"),
+                ("XQL", "creds dumped", False, None, None),
             ]
-            for i, (sig, det, obs, obs_at) in enumerate(rows, start=1):
+            for i, (sig, det, obs, obs_at, outcome) in enumerate(rows, start=1):
                 db.add(Result(
                     run_id="r-sc",
                     step_id=f"step-0{i}",
@@ -90,6 +91,7 @@ def seeded_run(session_factory):
                     expected_detection=det,
                     observed=obs,
                     observed_at=obs_at,
+                    outcome=outcome,
                     executed_at=base,
                 ))
             await db.commit()

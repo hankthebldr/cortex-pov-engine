@@ -12,10 +12,16 @@ truth projected three ways — but each was only unit-tested in isolation, so a
 fix to one (e.g. handling ``observed_at`` set *without* ``observed`` =
 reviewed-but-unfired) could silently diverge one face from the others.
 
-This module feeds ONE shared row-set — a detected row, a reviewed-unfired row
-(``observed_at`` present, ``observed`` false → a real ``missed`` gap), and a
-pending row (neither) — through all three real classifiers and asserts every
-one yields the SAME ``{detected, missed, pending}`` tally.
+This module feeds ONE shared row-set — a detected row, a row with
+``observed_at`` but not ``observed``, a pending row (neither) and an
+engine-decided miss (``outcome == "missed"``) — through all three real
+classifiers and asserts every one yields the SAME ``{detected, missed,
+pending}`` tally.
+
+Residual R4 retired the "reviewed-but-unfired" inference: an outcome-less row
+is awaiting judgement whatever its ``observed_at`` says (``PUT /validate`` with
+``observed=false`` clears ``observed_at``, so that shape was never a recorded
+verdict). All three faces now route through ``engine.outcome.row_status``.
 
 The classifiers are the actual subjects (imported, never re-implemented); the
 only local logic is a vocabulary map from ``report_generator``'s
@@ -44,9 +50,9 @@ DETECTED_ROW = {
     "observed_at": "2026-07-11T12:00:05+00:00",
     "mttd_seconds": 5.0,
 }
-# Reviewed-but-unfired: the DC checked and the detection did NOT fire. An
-# ``observed_at`` WITHOUT ``observed`` is the divergence trap TC-06 guards — it
-# must read as ``missed`` in all three faces, never a catch.
+# ``observed_at`` WITHOUT ``observed`` and no outcome: the divergence trap TC-06
+# guards. Since R4 it reads ``pending`` (awaiting reconcile) in all three
+# faces — never a catch, and never a miss the engine did not assert.
 REVIEWED_UNFIRED_ROW = {
     "id": 2,
     "step_id": "step-02",
@@ -62,10 +68,20 @@ PENDING_ROW = {
     "mttd_seconds": None,
 }
 
-SHARED_ROWS = [DETECTED_ROW, REVIEWED_UNFIRED_ROW, PENDING_ROW]
+# The only shape that is a miss: the engine decided it.
+ENGINE_MISSED_ROW = {
+    "id": 4,
+    "step_id": "step-04",
+    "observed": False,
+    "observed_at": None,
+    "mttd_seconds": None,
+    "outcome": "missed",
+}
+
+SHARED_ROWS = [DETECTED_ROW, REVIEWED_UNFIRED_ROW, PENDING_ROW, ENGINE_MISSED_ROW]
 
 # The expected projection of the shared row-set — the golden every face must hit.
-EXPECTED_COUNTS = {"detected": 1, "missed": 1, "pending": 1}
+EXPECTED_COUNTS = {"detected": 1, "missed": 1, "pending": 2}
 
 # ``detection_storyline._entry_status`` is the only run-status-aware classifier:
 # an un-reviewed detection is ``pending`` until the run reaches a terminal state.
@@ -78,7 +94,8 @@ _REPORT_LABELS = {"ENABLED": "detected", "DISABLED": "missed", "PENDING": "pendi
 
 
 def _report_status(row: dict) -> str:
-    label = _status_from_result(bool(row.get("observed")), bool(row.get("observed_at")))
+    label = _status_from_result(bool(row.get("observed")), bool(row.get("observed_at")),
+                                outcome=row.get("outcome"))
     return _REPORT_LABELS[label]
 
 
@@ -124,10 +141,11 @@ def test_all_three_projections_are_mutually_equal():
     "row,expected",
     [
         (DETECTED_ROW, "detected"),
-        (REVIEWED_UNFIRED_ROW, "missed"),
+        (REVIEWED_UNFIRED_ROW, "pending"),
         (PENDING_ROW, "pending"),
+        (ENGINE_MISSED_ROW, "missed"),
     ],
-    ids=["detected", "reviewed-unfired", "pending"],
+    ids=["detected", "observed_at-without-observed", "pending", "engine-missed"],
 )
 def test_every_classifier_agrees_per_row(row, expected):
     """Row-wise parity: for each row, all three classifiers return the same

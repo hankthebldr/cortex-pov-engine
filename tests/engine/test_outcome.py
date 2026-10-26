@@ -177,3 +177,21 @@ def test_soakless_attested_lifts_the_dedup_window_too():
                                   first_run_observed=True) is None
     assert oc.soak_pending_reason(signal_type="ABIOC", soakless_attested=None,
                                   first_run_observed=True) == oc.DEDUP_WINDOW
+
+
+# --- residual R4: one status rule for a Result row ----------------------------
+
+def test_row_status_outcome_wins_and_an_unjudged_row_is_pending_not_missed():
+    assert oc.row_status("missed", False) == "missed"
+    assert oc.row_status("prevented", True) == "prevented"
+    assert oc.row_status("pending", True) == "pending"
+    # Seed value, never reconciled: awaiting judgement, not a miss.
+    assert oc.row_status(None, False) == "pending"
+    assert oc.row_status(None, None) == "pending"
+    # A manual validation (incl. pre-branch runs) with no outcome.
+    assert oc.row_status(None, True) == "detected"
+
+
+def test_row_status_raises_on_an_unknown_outcome():
+    with pytest.raises(ValueError):
+        oc.row_status("blocked", True)

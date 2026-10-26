@@ -28,7 +28,7 @@ import tarfile
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
-from engine.outcome import OUTCOMES
+from engine.outcome import row_status
 
 
 logger = logging.getLogger("cortexsim.engine.report_generator")
@@ -79,20 +79,27 @@ def _severity_from_detection_type(detection_type: str | None,
     return "Medium"
 
 
+def _row_status(r: dict[str, Any]) -> str:
+    """``engine.outcome.row_status`` over a ``Result.to_dict()`` mapping."""
+    return row_status(r.get("outcome"), bool(r.get("observed")))
+
+
+_MATRIX_STATUS = {
+    "prevented": "PREVENTED", "not_reached": "NOT_RUN", "not_executed": "NOT_RUN",
+    "detected": "ENABLED", "missed": "DISABLED", "pending": "PENDING",
+}
+
+
 def _status_from_result(observed: bool, has_observed_at: bool, outcome: Optional[str] = None) -> str:
-    if outcome is not None and outcome not in OUTCOMES:
-        raise ValueError(f"unrecognised result outcome {outcome!r}")
-    if outcome == "prevented":
-        return "PREVENTED"
-    if outcome in ("not_reached", "not_executed"):
-        return "NOT_RUN"
-    if observed:
-        return "ENABLED"
-    if has_observed_at:
-        # observed_at was set but observed flag is false → DC marked
-        # explicitly missed.
-        return "DISABLED"
-    return "PENDING"
+    """Matrix label via the one rule, ``engine.outcome.row_status``.
+
+    ``has_observed_at`` no longer decides anything: an outcome-less row is
+    awaiting judgement (PENDING), and only ``outcome == "missed"`` is DISABLED.
+    The ``validate`` endpoint clears ``observed_at`` with ``observed=False``,
+    so "observed_at without observed" was an inference, not a recorded verdict.
+    """
+    del has_observed_at  # kept for call-site compatibility
+    return _MATRIX_STATUS[row_status(outcome, observed)]
 
 
 def build_detection_matrix(
@@ -171,7 +178,9 @@ def render_attack_navigator_layer(
         # lab's "DETECTED - Agent Analytics" style).
         plane = r.get("plane") or "—"
         signal = r.get("signal_type") or "Analytics"
-        marker = "DETECTED" if observed else "MISSED"
+        status = _row_status(r)
+        marker = ("DETECTED" if observed else "MISSED" if status == "missed"
+                  else "PENDING")
         slot["comments"].add(f"{marker} - {plane} {signal}")
 
     # Also include the scenario's primary + additional techniques even
@@ -210,10 +219,10 @@ def render_exec_summary_markdown(
     s = scenario_dict or {}
     total = len(results)
     observed = sum(1 for r in results if r.get("observed"))
-    # A result is ADJUDICATED once a DC has marked it observed or explicitly
-    # missed (observed_at set). A still-pending result is "not measured yet",
+    # A result is ADJUDICATED once the one rule (``row_status``) gives it any
+    # status but ``pending``. A still-pending result is "not measured yet",
     # never "missed" — folding pending into a miss manufactures a false negative.
-    validated = sum(1 for r in results if r.get("observed") or r.get("observed_at"))
+    validated = sum(1 for r in results if _row_status(r) != "pending")
     coverage_pct = round(observed / total * 100, 1) if total else 0.0
     mttds = [r["mttd_seconds"] for r in results if r.get("mttd_seconds") is not None]
     avg_mttd = round(sum(mttds) / len(mttds), 1) if mttds else None
@@ -421,14 +430,14 @@ def _findings_paragraph(results: list[dict[str, Any]]) -> str:
     if not results:
         return "No expected detections were defined for this run."
     n_observed = sum(1 for r in results if r.get("observed"))
-    n_missed = sum(1 for r in results if not r.get("observed") and r.get("observed_at"))
+    n_missed = sum(1 for r in results if _row_status(r) == "missed")
     n_pending = len(results) - n_observed - n_missed
 
     parts = []
     if n_observed:
         parts.append(f"{n_observed} alert(s) fired as expected")
     if n_missed:
-        parts.append(f"{n_missed} alert(s) explicitly marked missed")
+        parts.append(f"{n_missed} alert(s) missed")
     if n_pending:
         parts.append(f"{n_pending} pending DC validation")
     return "; ".join(parts) + "."

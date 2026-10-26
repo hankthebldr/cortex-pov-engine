@@ -16,10 +16,10 @@ Design rules (mirrors ``engine.ttp_catalog`` / ``connectors.matcher``):
   unit-testable and directly API-servable.
 * **Deterministic order.** Entries follow scenario step order, then the order
   detections were seeded within each step (= ``expected_detections`` order).
-* **Explainable status.** ``detected`` when the Result was observed;
-  ``pending`` while the run is still in-flight; ``missed`` only once the run
-  reaches a terminal state without the detection firing. This is what turns the
-  seeded denominator into true per-engine false-NEGATIVE accounting.
+* **Explainable status.** One rule, ``engine.outcome.row_status``: the engine's
+  ``outcome`` when it decided one; otherwise ``detected`` when the Result was
+  validated, else ``pending`` (awaiting reconcile). ``missed`` exists only as an
+  engine outcome -- a terminal run no longer turns an unjudged row into a gap.
 
 The observed alert record (name / id / technique / firing time) is read from the
 Result row when present, or from an optional ``observations`` map keyed by
@@ -32,14 +32,7 @@ from __future__ import annotations
 import math
 from typing import Any, Optional
 
-from engine.outcome import is_in_denominator
-
-# Run statuses that mean "the attack is over" — an un-observed detection is now
-# a genuine gap (missed), not merely awaiting ingest (pending). ``staged`` is a
-# push-mode terminal state where reconciliation has not yet happened, so it is
-# deliberately NOT terminal here: its detections read as ``pending`` (proof
-# pending) rather than a misleading 0%-missed.
-TERMINAL_RUN_STATUSES = frozenset({"complete", "failed", "aborted"})
+from engine.outcome import is_in_denominator, row_status
 
 STATUS_DETECTED = "detected"
 STATUS_PENDING = "pending"
@@ -48,7 +41,6 @@ STATUS_MISSED = "missed"
 STATUS_PREVENTED = "prevented"
 STATUS_NOT_REACHED = "not_reached"
 STATUS_NOT_EXECUTED = "not_executed"
-_OUTCOME_STATUSES = frozenset({STATUS_PREVENTED, STATUS_NOT_REACHED, STATUS_NOT_EXECUTED})
 
 
 # ---------------------------------------------------------------------------
@@ -140,27 +132,16 @@ def _build_observed(
 
 
 def _entry_status(result: dict[str, Any], run_status: str) -> str:
-    """Classify one detection: detected / pending / missed.
+    """Classify one detection through the one rule, ``engine.outcome.row_status``.
 
-    Mirrors ``efficacy_scorecard._status`` (detected → observed; a set
-    ``observed_at`` without ``observed`` → reviewed-but-unfired = missed) but
-    keeps the run-status nuance: an un-reviewed detection is only ``missed``
-    once the run has actually reached a terminal state, otherwise ``pending``.
+    The engine's ``outcome`` wins; an outcome-less row is ``detected`` when
+    validated, else ``pending`` (awaiting reconcile) -- on any run status. A
+    terminal run used to turn every un-reviewed row into ``missed``: the engine
+    never asserted that miss, the storyline inferred it from a checkbox (R4).
+    ``run_status`` is kept for call-site compatibility.
     """
-    outcome = result.get("outcome")
-    if outcome in _OUTCOME_STATUSES:
-        return outcome
-    # A reasoned pending (soak, ingest lag) stays pending even on a terminal run.
-    if outcome == "pending" and result.get("outcome_reason"):
-        return STATUS_PENDING
-    if _is_detected(result):
-        return STATUS_DETECTED
-    # DC reviewed this detection and it did not fire → a real gap.
-    if result.get("observed_at"):
-        return STATUS_MISSED
-    if run_status in TERMINAL_RUN_STATUSES:
-        return STATUS_MISSED
-    return STATUS_PENDING
+    del run_status
+    return row_status(result.get("outcome"), _is_detected(result))
 
 
 def _evidence_refs(result: dict[str, Any]) -> list[Any]:

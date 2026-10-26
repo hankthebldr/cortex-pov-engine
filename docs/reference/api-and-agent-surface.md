@@ -235,6 +235,13 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `steps[]`, a staging failure, a reconcile before `/complete`) reads `pending` /
   `HOST_EVIDENCE_ABSENT`, never `missed`: nothing says the step ran. With `exited` on
   record it is `missed` / fail. `detect` rows keep their rules.
+- **An outcome-less row is awaiting judgement, never `missed`.** One rule,
+  `outcome.py::row_status`, names every row's status on every surface (report matrix
+  and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;
+  otherwise `detected` when `observed` is true (a manual validation, incl. pre-branch
+  runs), else `pending` — rendered "awaiting reconcile", with no reason token. `missed`
+  exists only as an engine outcome: neither a terminal run status nor an `observed_at`
+  without `observed` makes one.
 - **A host exclusion replaces a Tier-1 silent miss.** A later `not_run` for a step moves
   a `missed` row (any expectation) to `not_reached` / `not_executed` and clears its
   `fail`; a decided `detected` / `prevented` row is never replaced.

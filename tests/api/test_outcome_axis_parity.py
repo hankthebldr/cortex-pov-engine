@@ -27,13 +27,22 @@ ROWS = [
     ("step-05", "not_reached", "UPSTREAM_SEVERED", False, "detect", "BIOC"),
     ("step-06", "not_executed", "TOOL_ABSENT", False, "detect", "BIOC"),
     ("step-07", "pending", "ANALYTICS_ACTIVATION_PERIOD", False, "detect", "Analytics"),
+    # Residuals R4/R1: the three rows the outcome axis alone cannot settle.
+    # Seeded, never reconciled, never validated: awaiting judgement, NOT a miss.
+    ("step-08", None, None, False, "detect", "BIOC"),
+    # A legacy / manual validation with no outcome: a hit everywhere.
+    ("step-10", None, None, True, "detect", "BIOC"),
 ]
 
-# In the denominator: prevented, detected, detected-not-prevented, missed.
-# Hits: the three Cortex saw. Excluded: one of each exclusion reason.
-DENOMINATOR = 4
-HITS = 3
-PCT = 75.0
+# In the denominator: prevented, detected, detected-not-prevented, missed,
+# the unjudged row, the legacy hit.
+# Hits: prevented, detected, detected-not-prevented, legacy manual.
+DENOMINATOR = 6
+HITS = 4
+PCT = 66.7
+
+# Per-row status on every surface that names one (R4 / R1).
+UNJUDGED, LEGACY_HIT = "step-08", "step-10"
 EXCLUDED = {"not_reached": 1, "not_executed": 1, "soak_pending": 1}
 
 
@@ -109,11 +118,53 @@ def test_every_coverage_surface_agrees_on_one_run(client, seeded):
     acc = detection_accuracy(results)
     acc_view = (acc[1], acc[2], acc[0], acc.excluded)
 
+    from api.runs import _coverage_stats
+    from connectors.service import efficacy_summary
+    rep = _coverage_stats(results)
+    rep_view = (rep["observed_in_denominator"], rep["denominator"], rep["pct"],
+                rep["total"] - rep["denominator"])
+    es = efficacy_summary(results, 0, "parity")
+    es_view = (es["observed"], es["denominator"], es["coverage_pct"], es["excluded"])
+
     expected = (HITS, DENOMINATOR, PCT, EXCLUDED)
+    n_excluded = sum(EXCLUDED.values())
     assert {"results.py": api_view, "efficacy_scorecard": sc_view,
-            "detection_storyline": story_view, "measures.detection_accuracy": acc_view} == {
+            "detection_storyline": story_view, "measures.detection_accuracy": acc_view,
+            "runs._coverage_stats (report headline)": rep_view,
+            "service.efficacy_summary": es_view} == {
         "results.py": expected, "efficacy_scorecard": expected,
-        "detection_storyline": expected, "measures.detection_accuracy": expected}
+        "detection_storyline": expected, "measures.detection_accuracy": expected,
+        "runs._coverage_stats (report headline)": (HITS, DENOMINATOR, PCT, n_excluded),
+        "service.efficacy_summary": expected}
+
+
+def test_every_surface_names_the_same_status_for_the_unsettled_rows(seeded):
+    """R4: an outcome-less unvalidated row is awaiting judgement, never missed.
+    A legacy outcome-less observed row stays a hit. Same answer on every
+    surface."""
+    from api.runs import _result_icon
+    from engine.detection_storyline import build_storyline
+    from engine.efficacy_scorecard import _status as scorecard_status
+    from engine.report_generator import build_detection_matrix
+
+    run, results = seeded
+    by_step = {r.step_id: r for r in results}
+    story = {e["step_id"]: e["status"] for e in build_storyline(
+        run, results, [{"id": sid} for sid, *_ in ROWS])["entries"]}
+    matrix = build_detection_matrix(run.to_dict(), None, [r.to_dict() for r in results])
+    matrix_by_step = {r.step_id: m.status for r, m in zip(results, matrix)}
+
+    def view(step):
+        r = by_step[step]
+        return {"scorecard": scorecard_status(r.to_dict()), "storyline": story[step],
+                "report_matrix": matrix_by_step[step], "report_icon": _result_icon(r)[0]}
+
+    assert {s: view(s) for s in (UNJUDGED, LEGACY_HIT)} == {
+        UNJUDGED: {"scorecard": "pending", "storyline": "pending",
+                   "report_matrix": "PENDING", "report_icon": "⏳"},
+        LEGACY_HIT: {"scorecard": "detected", "storyline": "detected",
+                     "report_matrix": "ENABLED", "report_icon": "✅"},
+    }
 
 
 def test_scorecard_never_reads_detected_not_prevented_as_detected(seeded):
@@ -121,4 +172,5 @@ def test_scorecard_never_reads_detected_not_prevented_as_detected(seeded):
 
     _, results = seeded
     c = build_efficacy_scorecard([r.to_dict() for r in results]).coverage
-    assert (c.detected, c.prevented, c.detected_not_prevented, c.missed) == (1, 1, 1, 1)
+    # step-02 and the legacy manual step-10 are detected.
+    assert (c.detected, c.prevented, c.detected_not_prevented, c.missed) == (2, 1, 1, 1)

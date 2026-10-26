@@ -213,9 +213,10 @@ _OUTCOME_ICON = {
 
 
 def _result_icon(r: Result) -> str:
-    """Icon mirroring the stored outcome. A legacy row (outcome None) keeps ✅/❌."""
+    """Icon mirroring the stored outcome. An outcome-less row is ✅ when
+    validated, else awaiting reconcile -- never ❌ (residual R4)."""
     if r.outcome is None:
-        return "✅" if r.observed else "❌"
+        return "✅" if r.observed else "⏳ (awaiting reconcile)"
     if r.outcome not in OUTCOMES:
         raise ValueError(f"unrecognised result outcome {r.outcome!r}")
     icon = _OUTCOME_ICON[r.outcome]

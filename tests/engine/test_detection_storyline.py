@@ -131,20 +131,24 @@ def test_pending_while_run_inflight(steps, running_run):
     assert story["summary"]["missed"] == 0
 
 
-def test_missed_only_when_run_terminal(steps, complete_run):
+def test_unjudged_row_on_a_complete_run_is_pending_not_missed(steps, complete_run):
+    """R4: a terminal run no longer turns an outcome-less row into a gap; only
+    the engine's ``outcome == "missed"`` is a miss."""
     results = [
         _result(10, "step-01", observed=True, observed_at="2026-06-17T14:00:05", mttd_seconds=5.0),
-        _result(20, "step-02"),  # never fired, run is complete → missed
+        _result(20, "step-02"),  # never reconciled, run complete → awaiting
+        _result(30, "step-02", outcome="missed"),  # the engine judged a miss
     ]
     story = build_storyline(complete_run, results, steps)
     statuses = {e["expected_detection"]["detection_id"]: e["status"] for e in story["entries"]}
     assert statuses["det-10"] == STATUS_DETECTED
-    assert statuses["det-20"] == STATUS_MISSED
+    assert statuses["det-20"] == STATUS_PENDING
+    assert statuses["det-30"] == STATUS_MISSED
     summ = story["summary"]
     assert summ["detected"] == 1
     assert summ["missed"] == 1
-    assert summ["pending"] == 0
-    assert summ["coverage_pct"] == 50.0
+    assert summ["pending"] == 1
+    assert summ["coverage_pct"] == 33.3
 
 
 def test_staged_run_keeps_unobserved_pending(steps):
@@ -313,7 +317,7 @@ def test_mttd_distribution_over_detected_only(steps, complete_run):
             _result(i, step, observed=True, observed_at="t", mttd_seconds=float(i))
         )
     # Add a missed one — must NOT enter the MTTD distribution.
-    results.append(_result(99, "step-02"))
+    results.append(_result(99, "step-02", outcome="missed"))
     story = build_storyline(complete_run, results, steps)
     mttd = story["summary"]["mttd"]
     assert mttd["count"] == 10
@@ -362,9 +366,14 @@ def test_entry_status_prefers_outcome_states():
     # Reasoned pending stays pending on a terminal run (not a manufactured miss).
     pend = _result(4, "s", outcome="pending", outcome_reason="ANALYTICS_ACTIVATION_PERIOD")
     assert _entry_status(pend, "complete") == STATUS_PENDING
-    # Un-reasoned pending / legacy rows keep today's rules.
-    assert _entry_status(_result(5, "s", outcome="pending"), "complete") == STATUS_MISSED
-    assert _entry_status(_result(6, "s"), "complete") == STATUS_MISSED
+    # R4: an un-reasoned pending stays pending; an outcome-less unvalidated
+    # row is awaiting reconcile, not a miss, even on a terminal run.
+    assert _entry_status(_result(5, "s", outcome="pending"), "complete") == STATUS_PENDING
+    assert _entry_status(_result(6, "s"), "complete") == STATUS_PENDING
+    assert _entry_status(_result(7, "s", observed=True, outcome="pending",
+                                 outcome_reason="PREVENTION_ALERT_WITHOUT_TERMINATION"),
+                         "complete") == STATUS_PENDING
+    assert _entry_status(_result(8, "s", outcome="missed"), "complete") == STATUS_MISSED
 
 
 def test_storyline_entries_and_summary_carry_outcome_fields():
