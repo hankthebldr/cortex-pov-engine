@@ -326,6 +326,7 @@ def reconcile(
     window_seconds: int = DEFAULT_WINDOW_SECONDS,
     only_unobserved: bool = True,
     window_seconds_by_type: Optional[dict[str, int]] = None,
+    window_end_by_result: Optional[dict[Any, Any]] = None,
 ) -> list[MatchVerdict]:
     """Match observations to results and return a verdict per *candidate* result.
 
@@ -336,13 +337,21 @@ def reconcile(
 
     ``window_seconds_by_type`` overrides the window per ``Result.signal_type``
     (e.g. a longer one for Analytics); types it omits use ``window_seconds``.
+
+    ``window_end_by_result`` (``{result_id: datetime}``) is the caller's upper
+    bound per result -- ``connectors.service.result_window_end``, the later of
+    ``executed_at`` and the step's host record plus the window, the same end the
+    silent-row judgement uses (round 5). The matcher does not re-derive it; a
+    result it omits falls back to ``executed_at + window``. The lower bound and
+    the MTTD start are always ``executed_at``.
     """
     window = timedelta(seconds=window_seconds)
     by_type = window_seconds_by_type or {}
 
     # Candidates first, so a caller with nothing to reconcile does no alert
     # work at all (and cannot trip over a malformed observation list).
-    candidates: list[tuple[int, Any, _ResultSide, timedelta]] = []
+    ends = window_end_by_result or {}
+    candidates: list[tuple[int, Any, _ResultSide, Any]] = []
     for result in results:
         executed_at = getattr(result, "executed_at", None)
         rid = getattr(result, "id", None)
@@ -353,7 +362,10 @@ def reconcile(
         sig = getattr(result, "signal_type", None)
         result_window = (timedelta(seconds=by_type[sig])
                          if sig in by_type else window)
-        candidates.append((rid, executed_at, _prepare_result(result), result_window))
+        upper = ends.get(rid)
+        if upper is None:
+            upper = executed_at + result_window
+        candidates.append((rid, executed_at, _prepare_result(result), upper))
 
     if not candidates:
         return []
@@ -377,10 +389,9 @@ def reconcile(
     consumed: set[int] = set()
 
     verdicts: list[MatchVerdict] = []
-    for rid, executed_at, rs, result_window in candidates:
-        # Window is [executed_at, executed_at + window]; anything earlier can't
-        # be evidence and anything later is out of scope.
-        upper = executed_at + result_window
+    for rid, executed_at, rs, upper in candidates:
+        # Window is [executed_at, upper]; anything earlier can't be evidence
+        # and anything later is out of scope.
         idx = bisect_left(alert_times, executed_at)
 
         verdict = MatchVerdict(result_id=rid, matched=False)

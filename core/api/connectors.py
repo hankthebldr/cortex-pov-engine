@@ -136,7 +136,8 @@ async def ingest_observations(
     submitted alert names no host, because then nothing ties it to this run.
     """
     from connectors.matcher import scope_to_host
-    from connectors.service import apply_verdicts, resolve_run_host, window_by_type
+    from connectors.service import (apply_verdicts, match_window_ends, resolve_run_host,
+                                    window_by_type)
 
     run, results = await _load_run_results(db, run_id)
     submitted, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
@@ -144,7 +145,9 @@ async def ingest_observations(
     unscoped = host_scope["host"] is None or host_scope["without_host"] > 0
     verdicts = reconcile(results, alerts, window_seconds=body.window_seconds,
                          only_unobserved=not body.reevaluate,
-                         window_seconds_by_type=window_by_type())
+                         window_seconds_by_type=window_by_type(),
+                         window_end_by_result=await match_window_ends(
+                             db, run_id, results, window_seconds=body.window_seconds))
     matched_ext = [v.alert_external_id for v in verdicts if v.matched and v.alert_external_id]
     by_ext = {a.external_id: a for a in alerts if a.external_id}
     summary, _ = await apply_verdicts(

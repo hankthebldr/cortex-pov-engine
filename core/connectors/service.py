@@ -151,7 +151,9 @@ async def reconcile_run(
     scope_host = host if host is not None else await resolve_run_host(db, run)
     eligible, host_scope = scope_to_host(pull.observations, scope_host)
     verdicts = reconcile(results, eligible, window_seconds=window_seconds,
-                         window_seconds_by_type=window_by_type())
+                         window_seconds_by_type=window_by_type(),
+                         window_end_by_result=await match_window_ends(
+                             db, run.run_id, results, window_seconds=window_seconds))
 
     # ── what the scorer cannot know on its own: the pull context ──────────
     truncation = (pull.detail or {}).get("truncation")
@@ -242,6 +244,48 @@ async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
     return agent.hostname
 
 
+def _reported_at_map(host_rows: list) -> dict[str, Any]:
+    """When each step's host record says it had finished: ``/output`` arrival,
+    else the ``/complete`` record."""
+    return {so.step_id: so.started_at or so.recorded_at for so in host_rows}
+
+
+def result_window_end(result: Any, *, window_seconds: int,
+                      by_type: dict[str, int],
+                      reported_at: Optional[dict[str, Any]]) -> Optional[datetime]:
+    """THE window end for one Result -- the one value both the matcher's upper
+    bound and the silent-row judgement use (round 4 C-1 rule 3, round 5 C-1R).
+
+    ``max(executed_at, the step's host record) + window``. The lower bound and
+    the MTTD start stay ``executed_at``. None when the row has no executed_at.
+    """
+    executed_at = getattr(result, "executed_at", None)
+    if executed_at is None:
+        return None
+    start = executed_at
+    reported = (reported_at or {}).get(getattr(result, "step_id", None))
+    if reported is not None and reported > start:
+        start = reported
+    window = by_type.get(getattr(result, "signal_type", None), window_seconds)
+    return start + timedelta(seconds=window)
+
+
+async def match_window_ends(db: AsyncSession, run_id: str, results: list, *,
+                            window_seconds: int) -> dict[Any, datetime]:
+    """``{result_id: window_end}`` for the matcher, from the run's host records."""
+    host_rows = (await db.execute(
+        select(StepOutcome).where(StepOutcome.run_id == run_id))).scalars().all()
+    reported = _reported_at_map(host_rows)
+    by_type = window_by_type()
+    out: dict[Any, datetime] = {}
+    for r in results:
+        end = result_window_end(r, window_seconds=window_seconds, by_type=by_type,
+                                reported_at=reported)
+        if end is not None and getattr(r, "id", None) is not None:
+            out[r.id] = end
+    return out
+
+
 async def apply_verdicts(
     db: AsyncSession, run_id: str, results: list[Result], verdicts: list, source: str,
     *, pull_context: Optional[dict[str, Any]] = None,
@@ -277,7 +321,7 @@ async def apply_verdicts(
     terminations = {so.step_id: so.termination for so in host_rows}
     # When each step's host record says it had finished (``/output`` arrival,
     # else the ``/complete`` record): the silent-row window starts there.
-    reported_at = {so.step_id: so.started_at or so.recorded_at for so in host_rows}
+    reported_at = _reported_at_map(host_rows)
     alerts = list(observations or [])
     by_ext = {a.external_id: a for a in alerts if getattr(a, "external_id", None)}
     unscoped = bool(pull_context and pull_context.get("unscoped"))
@@ -435,10 +479,14 @@ async def _judge_silent_results(
     * Analytics/ABIOC with a soak reason (activation period, or the dedup
       window of a paired second run) → ``pending`` with that reason, from the
       first sweep and whatever the window — it leaves the denominator at once.
-    * Otherwise only once the window has closed: a ``prevent`` row goes through
-      ``evaluate_prevent`` with no alert, and a ``detect`` row is ``missed``; an
-      affirmative ``missed`` stands only on complete evidence — else
-      ``pending`` / ``EVIDENCE_INCOMPLETE``.
+    * Otherwise only once the window has closed (``result_window_end``: the
+      later of ``executed_at`` and the step's host record, plus the window): a
+      ``prevent`` row goes through ``evaluate_prevent`` with no alert; a
+      ``detect`` row is ``missed`` only with a host record of ``exited`` /
+      ``timeout`` / ``signaled`` / ``anchor_terminated`` (no record or
+      ``beacon_lost`` -> ``pending`` / ``HOST_EVIDENCE_ABSENT``, ``aborted`` ->
+      ``pending`` / ``RUN_ABORTED``). An affirmative ``missed`` stands only on
+      complete evidence — else ``pending`` / ``EVIDENCE_INCOMPLETE``.
 
     Rows already ``not_reached`` / ``not_executed`` are never touched, nor is
     any row already judged beyond ``pending``.
@@ -465,18 +513,13 @@ async def _judge_silent_results(
                 # The soak no longer applies (e.g. soakless since attested).
                 r.outcome = None
                 r.outcome_reason = None
-        window = by_type.get(r.signal_type, window_seconds)
-        # Round 4 C-1 rule 3: the window closes ``window`` after the step
-        # REPORTED (its host record), not after the launch the row was seeded
-        # with -- a queued or slow step is not judged before it ran. The seeded
-        # ``executed_at`` stays the match lower bound and the MTTD start: the
-        # host record lands after the step ended, so an alert raised during the
-        # step would fall before a re-stamped lower bound and never match.
-        start = r.executed_at
-        reported = (reported_at or {}).get(r.step_id)
-        if reported is not None and reported > start:
-            start = reported
-        if now < start + timedelta(seconds=window):
+        # Round 4 C-1 rule 3 / round 5: the window closes ``window`` after the
+        # step REPORTED (its host record), not after the launch the row was
+        # seeded with -- the same end the matcher accepts alerts until. The
+        # seeded ``executed_at`` stays the lower bound and the MTTD start.
+        end = result_window_end(r, window_seconds=window_seconds, by_type=by_type,
+                                reported_at=reported_at)
+        if now < end:
             continue
         if r.expected_outcome == "prevent":
             pv = evaluate_prevent(

@@ -235,7 +235,9 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   host record** for its step (push mode, an old beacon with no
   `steps[]`, a staging failure, a reconcile before `/complete`) reads `pending` /
   `HOST_EVIDENCE_ABSENT`, never `missed`: nothing says the step ran. With `exited` on
-  record it is `missed` / fail. An `aborted` termination reads `pending` /
+  record a block-mode `prevent` row is `missed` / fail; a `detect` row (or a
+  report-mode `prevent` row) is `missed` with no `kpi_verdict` from reconcile — that is
+  the Tier-2 verifier's. An `aborted` termination reads `pending` /
   `RUN_ABORTED` — for `detect` and `prevent` rows alike, in every profile mode (the run
   was cut short; its verdict is undefined); a `timeout` stays
   `missed` / fail (the step ran its whole budget unprevented).
@@ -274,12 +276,16 @@ scenario no longer lists go last), an empty list when there are none, projected
 read-only from the `step_outcomes` rows (`core/api/runs.py::_step_outcomes_view`). A row
 with `termination: null` means the step's output arrived but its end was never reported
 (the beacon died before `/complete`); consumers must not read it as `exited`.
-The silent-row judgement measures each step's window from its host record
-(`started_at`, else `recorded_at`) when that is later than the seeded `executed_at`,
-so a queued or slow step is never judged before it ran. `Result.executed_at` itself is
-NOT re-stamped: it is the matcher's lower bound and the MTTD start, and the host record
-lands after the step ended, so an alert raised during the step would fall before a
-re-stamped bound and never match.
+**The match window.** For each Result it is `[executed_at, window_end]`, where
+`window_end = max(executed_at, the step's host record) + window` (host record =
+`started_at`, else `recorded_at`; window = the per-type window, else the request's).
+One helper, `connectors/service.py::result_window_end`, computes it; the matcher's upper
+bound (passed per result as `window_end_by_result`) and the silent-row judgement both
+use it, so a queued or slow step's alert is accepted until the step's own window closes
+and the step is never judged silent before then. The lower bound and the MTTD start are
+the seeded `executed_at` (launch): `Result.executed_at` is NOT re-stamped, because the
+host record lands after the step ended and an alert raised during the step would fall
+before a re-stamped bound.
 
 **Required-binary preflight (`required_binaries`).** For each step whose command
 substitutes an adapter placeholder, the orchestrator writes the pack's `install.binary`
@@ -1091,11 +1097,11 @@ POST /api/run {mode:"push"}
 ```
 
 - Push bundles are **stateless artifacts**; the offline host never phones home.
+  Consequently push-mode runs cannot show progress and never reach a terminal
+  status server-side (GAP-API-004).
 - A push / `staged` run has no beacon and so no host record: reconcile never writes
   `missed` on it — a silent row reads `pending` / `HOST_EVIDENCE_ABSENT` — and its hits
   come from matched alerts or attestation (a bundle-completion callback is Phase 2).
-  Consequently push-mode runs cannot show progress and never reach a terminal
-  status server-side (GAP-API-004).
 - The bundle re-renders on each `download` call from the live scenario dict — it is
   not snapshotted at launch time.
 

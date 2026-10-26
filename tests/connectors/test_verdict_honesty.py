@@ -712,27 +712,85 @@ def test_push_staged_run_never_reads_missed_from_reconcile(session_factory):
 
 # ── Round 4 C-1 rule 3 — the silent-row window starts when the step reported ─
 
-def test_queued_step_window_runs_from_its_host_record_not_the_launch(session_factory):
-    """A run queued for a stale beacon: seeded at launch 2 h ago, the step
-    reported 5 min ago. Its 1 h window has NOT closed, so it is not a miss yet."""
+def _late_step(SessionLocal, *, launch_ago, reported_ago):
+    """A detect step seeded at launch ``launch_ago`` and reported (``exited``)
+    ``reported_ago`` -- a queued beacon or a long multi-step run. Returns the
+    seeded executed_at."""
     from models import StepOutcome
 
-    _silent_detect_row(session_factory)
+    _silent_detect_row(SessionLocal)
+    asyncio.run(_setup(SessionLocal))
+    launch = datetime.utcnow() - launch_ago
 
     def fn(run, rows):
-        rows["step-01"].executed_at = datetime.utcnow() - timedelta(hours=2)
-    asyncio.run(_mutate(session_factory, fn))
+        rows["step-01"].executed_at = launch
+    asyncio.run(_mutate(SessionLocal, fn))
 
     async def _reported():
-        async with session_factory() as db:
+        async with SessionLocal() as db:
+            ran = datetime.utcnow() - reported_ago
             db.add(StepOutcome(run_id="run-1", step_id="step-01", exit_code=0,
-                               termination="exited",
-                               started_at=datetime.utcnow() - timedelta(minutes=5)))
+                               termination="exited", started_at=ran, recorded_at=ran))
             await db.commit()
     asyncio.run(_reported())
-    asyncio.run(_apply_silent(session_factory, COMPLETE, window_seconds=3600))
+    return launch
+
+
+def _alert_at(when, ext="late-1"):
+    from tests.connectors.test_measurement_service import _epoch_ms
+    return {"alert_id": ext, "name": f"alert {ext}", "host_name": "web-01",
+            "source": "XDR BIOC", "mitre_technique_ids": ["T1003.001"],
+            "detection_timestamp": _epoch_ms(when)}
+
+
+def test_queued_step_window_runs_from_its_host_record_not_the_launch(session_factory):
+    """A run queued for a stale beacon: seeded at launch 2 h ago, the step
+    reported 5 min ago, its in-step alert fired 8 min ago -- past seed + 1 h,
+    inside the step's own window. It is a detection, never a miss (round 5)."""
+    launch = _late_step(session_factory, launch_ago=timedelta(hours=2),
+                        reported_ago=timedelta(minutes=5))
+    alert_at = datetime.utcnow() - timedelta(minutes=8)
+    fetcher, _ = _tenant([_alert_at(alert_at)])
+    asyncio.run(_reconcile(session_factory, fetcher))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.observed) == ("detected", True)
+    assert r.mttd_seconds == pytest.approx((alert_at - launch).total_seconds(), abs=1.0)
+
+
+W = timedelta(seconds=3600)  # reconcile_run's default window
+
+
+def test_round5_alert_after_seed_window_but_inside_step_window_matches(session_factory):
+    """Round 5 C-1R: executed_at = launch, host record at launch + 3W, alert at
+    launch + 2W (inside the step, outside the old [seed, seed + W])."""
+    launch = _late_step(session_factory, launch_ago=4 * W + timedelta(minutes=6),
+                        reported_ago=W + timedelta(minutes=6))
+    alert_at = launch + 2 * W
+    fetcher, _ = _tenant([_alert_at(alert_at)])
+    asyncio.run(_reconcile(session_factory, fetcher))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.observed) == ("detected", True)
+    assert r.mttd_seconds == pytest.approx((2 * W).total_seconds(), abs=1.0)
+
+
+def test_round5_same_shape_without_an_alert_is_missed_only_after_host_record_plus_w(
+        session_factory):
+    # Host record 30 min ago: its window is still open -> unjudged.
+    _late_step(session_factory, launch_ago=3 * W + timedelta(minutes=30),
+               reported_ago=timedelta(minutes=30))
+    fetcher, _ = _tenant([])
+    asyncio.run(_reconcile(session_factory, fetcher))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason) == (None, None)
+
+
+def test_round5_without_an_alert_after_host_record_plus_w_is_missed(session_factory):
+    _late_step(session_factory, launch_ago=4 * W + timedelta(minutes=6),
+               reported_ago=W + timedelta(minutes=6))
+    fetcher, _ = _tenant([])
+    asyncio.run(_reconcile(session_factory, fetcher))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("missed", None)
 
 
 def test_the_window_closes_an_hour_after_the_host_record(session_factory):
@@ -756,3 +814,26 @@ def test_the_window_closes_an_hour_after_the_host_record(session_factory):
     assert r.outcome == "missed"
     # The match lower bound and MTTD start stay the seeded value (see report).
     assert r.executed_at < datetime.utcnow() - timedelta(hours=2)
+
+
+def test_every_production_reconcile_call_passes_the_shared_window_end():
+    """Round 5 drift guard: the matcher's upper bound comes from the one helper
+    (``service.result_window_end`` via ``match_window_ends``); a production
+    caller that omits it silently falls back to [seed, seed + window]."""
+    import ast
+    import pathlib
+
+    core = pathlib.Path(__file__).resolve().parents[2] / "core"
+    calls = []
+    for path in core.rglob("*.py"):
+        if "__pycache__" in str(path):
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "reconcile"):
+                calls.append((str(path.relative_to(core)),
+                              {k.arg for k in node.keywords}))
+    assert calls, "no reconcile() call found"
+    assert all("window_end_by_result" in kws for _, kws in calls), calls
+    defs = [str(p) for p in core.rglob("*.py") if "def result_window_end" in p.read_text()]
+    assert len(defs) == 1 and defs[0].endswith("connectors/service.py"), defs
