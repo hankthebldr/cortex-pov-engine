@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import threading
@@ -20,6 +21,15 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INJECT = REPO_ROOT / "deploy" / "tier-d" / "inject-kill.sh"
+
+# The injector and this file's tree helpers both shell out to ps and pgrep
+# (procps). The prod image does not ship procps, and `make test-backend-non-utc`
+# runs the whole tests/ tree inside it: without the tools every test here dies
+# with FileNotFoundError, which reads as a regression rather than "cannot run".
+pytestmark = pytest.mark.skipif(
+    shutil.which("ps") is None or shutil.which("pgrep") is None,
+    reason="needs ps and pgrep (procps), absent from the prod image",
+)
 
 STEP = "=== STEP {n}/3 · {sid} · T1059.004 · identity=www-data ===\nx\n--- exit_code=0 ---"
 
