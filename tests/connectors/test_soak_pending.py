@@ -89,7 +89,8 @@ def test_second_run_silence_is_dedup_window(session_factory):
     # First run saw the detector fire; the paired second run is silent because
     # the tenant deduplicates the same alert inside its window.
     _seed_analytics(session_factory, run_id="run-1", observed=True, soakless=True)
-    _seed_analytics(session_factory, run_id="run-2", observed=False, soakless=True,
+    # Spec §5.5: the dedup hold applies with soakless NOT attested on the run.
+    _seed_analytics(session_factory, run_id="run-2", observed=False, soakless=False,
                     paired_with="run-1", with_scenario=False)
     asyncio.run(_setup(session_factory))
     fetcher, _ = _tenant([])
@@ -106,7 +107,7 @@ def test_dedup_key_matches_on_either_spelling(session_factory):
     _seed_analytics(session_factory, run_id="run-1", detection_id=None, observed=True,
                     soakless=True)
     _seed_analytics(session_factory, run_id="run-2", detection_id="anl-1", observed=False,
-                    soakless=True, paired_with="run-1", with_scenario=False)
+                    soakless=False, paired_with="run-1", with_scenario=False)
     asyncio.run(_setup(session_factory))
     fetcher, _ = _tenant([])
     _summary, results = asyncio.run(_reconcile_run_id(session_factory, "run-2", fetcher))

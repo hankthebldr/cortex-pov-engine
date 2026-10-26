@@ -166,3 +166,14 @@ def test_block_prevent_with_exited_on_record_is_still_missed():
     v = oc.evaluate_prevent(agent_profile_mode="block", alert_outcome=None,
                             termination="exited", window_closed=True, block_mode_status=None)
     assert (v.outcome, v.kpi_verdict, v.reason) == ("missed", "fail", None)
+
+
+# ── final review M2 — attested soakless means no dedup hold either ─────────
+
+def test_soakless_attested_lifts_the_dedup_window_too():
+    """Spec §5.5: DEDUP_WINDOW applies on a pair's second run with
+    `soakless_attested != true`; with soakless attested there is no hold."""
+    assert oc.soak_pending_reason(signal_type="Analytics", soakless_attested=True,
+                                  first_run_observed=True) is None
+    assert oc.soak_pending_reason(signal_type="ABIOC", soakless_attested=None,
+                                  first_run_observed=True) == oc.DEDUP_WINDOW

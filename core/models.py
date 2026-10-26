@@ -412,7 +412,14 @@ class Result(Base):
 
 
 class StepOutcome(Base):
-    """Host evidence for one step of one run (how the step's process ended)."""
+    """Host evidence for one step of one run (how the step's process ended).
+
+    ``started_at`` is NOT when the step started: it is stamped when the step's
+    first ``/output`` reaches SimCore, and the beacon posts a step's output
+    after the step ends (``agent/beacon/client.go``). Read it as "the host had
+    finished this step by then". ``engine.beacon_lost.pick_severed`` relies on
+    exactly that. The name is kept to avoid a column migration.
+    """
 
     __tablename__ = "step_outcomes"
     __table_args__ = (UniqueConstraint("run_id", "step_id", name="uq_step_outcomes_run_step"),)

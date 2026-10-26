@@ -196,7 +196,11 @@ launch attestation, the pair and the canary. The vocabularies live in
   `anchor_terminated`, `beacon_lost`, `timeout`, `aborted`, `not_run`. The beacon emits
   every value except `beacon_lost`, which is synthesised server-side (below).
 - **Host witness** (`HOST_WITNESS`): `signaled` and `anchor_terminated` only. Only
-  these can satisfy the host half of the two-witness rule.
+  these can satisfy the host half of the two-witness rule. `signaled` means *a signal
+  ended the process*, not *the agent killed it*: the beacon classifies a chained
+  step's rc in 129..159 as `signaled` (`step_outcome.go::classifyChainedRC`), so a voluntary
+  `exit 137` or a SIGSEGV crash (139) also reads `signaled`. The two-witness rule bounds
+  this — without a `Prevented` alert it can never be more than `pending`.
 - **`reason` vocabulary on a step record**: `UPSTREAM_SEVERED`, `UPSTREAM_NOT_EXECUTED`,
   `UPSTREAM_FAILED`, `TOOL_ABSENT`. An out-of-vocabulary `termination` or `reason`, or a
   `not_run` without a `reason`, is rejected 422 — never tolerated.
@@ -204,7 +208,10 @@ launch attestation, the pair and the canary. The vocabularies live in
   `signaled` / `anchor_terminated` / `beacon_lost` row already on file is never replaced
   by a non-witness termination reported by another endpoint of a fan-out; a witness may
   replace anything. `started_at` is set by the first `/output` for a step
-  (`OutputRequest.step_id`) and is not touched by `/complete`.
+  (`OutputRequest.step_id`) and is not touched by `/complete`. Despite its name it is
+  **not** the step's start: the beacon posts a step's output after the step ends, so
+  `started_at` means "the host had finished this step by then" (kept for migration
+  reasons; `pick_severed` relies on these after-end semantics).
 - **Status rule.** A non-zero `exit_code` fails the run — except when the host witnessed a
   sever on a step carrying a `prevent` expectation in a `block`-mode run: then the kill is
   the expected result and the run is not `failed`. The severed step is stored on
@@ -233,7 +240,8 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `fail`; a decided `detected` / `prevented` row is never replaced.
 
 **`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
-rc, reason, started_at, recorded_at}]` in scenario step order (rows for steps the
+rc, reason, started_at, recorded_at}]` (`started_at` = first `/output` arrival, i.e.
+after the step ended — see above) in scenario step order (rows for steps the
 scenario no longer lists go last), an empty list when there are none, projected
 read-only from the `step_outcomes` rows (`core/api/runs.py::_step_outcomes_view`). A row
 with `termination: null` means the step's output arrived but its end was never reported

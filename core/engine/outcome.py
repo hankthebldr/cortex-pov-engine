@@ -189,11 +189,16 @@ def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
 
 def soak_pending_reason(*, signal_type: str, soakless_attested: Optional[bool],
                         first_run_observed: bool) -> Optional[str]:
-    """Why an Analytics/ABIOC expectation must stay pending, or None."""
+    """Why an Analytics/ABIOC expectation must stay pending, or None.
+
+    Both holds are conditioned on ``soakless_attested != True`` (spec §5.5):
+    a tenant attested soakless has neither an activation period nor a dedup
+    window to wait out.
+    """
     if signal_type not in ("Analytics", "ABIOC"):
+        return None
+    if soakless_attested is True:
         return None
     if first_run_observed:
         return DEDUP_WINDOW
-    if soakless_attested is not True:
-        return ANALYTICS_ACTIVATION_PERIOD
-    return None
+    return ANALYTICS_ACTIVATION_PERIOD
