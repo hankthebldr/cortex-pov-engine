@@ -151,8 +151,6 @@ UPSTREAM_SEVERED = "UPSTREAM_SEVERED"
 NOT_RUN_REASONS = frozenset({
     "UPSTREAM_SEVERED", "UPSTREAM_NOT_EXECUTED", "UPSTREAM_FAILED", "TOOL_ABSENT",
 })
-BEACON_LOST_RE = re.compile(r"--- BEACON LOST")
-SEVERED_RE = re.compile(r"SEVERED at (?P<sid>\S+) \((?P<term>[a-z_]+)\)")
 
 
 def scan(patterns: list[tuple[str, str]], text: str) -> str | None:
@@ -188,8 +186,9 @@ def classify_step(body: str, code: int | None,
         return "TTP", (f"step was terminated from the host ({termination}); the "
                        "technique ran and was stopped -- not a CortexSim fault")
     if termination == "beacon_lost":
-        return "TTP", ("beacon lost mid-step; the outcome is unwitnessed (a lost "
-                       "beacon is evidence of nothing)")
+        return "UNWITNESSED", ("beacon lost mid-step; the outcome is unwitnessed (a "
+                               "lost beacon is evidence of nothing and never counts "
+                               "as a TTP result)")
     if termination == "not_run":
         return "ENVIRONMENT", "step never ran (an upstream step or a tool stopped it)"
     if code == 0:
@@ -203,62 +202,43 @@ def classify_step(body: str, code: int | None,
     return "TTP", "step executed and returned a non-zero exit"
 
 
-def derive_step_outcomes(run: dict, results: dict | None) -> list[dict]:
-    """Rebuild /complete-shaped step records from what the public API shows.
+class MissingStepOutcomes(ValueError):
+    """The run record has no ``step_outcomes`` key: it came from a SimCore that
+    does not publish host evidence, so no termination claim can be made."""
 
-    No endpoint exposes the ``step_outcomes`` rows, so the harness reconstructs
-    them from three surfaces the engine does publish: ``run.severed_at_step``,
-    the beacon's completion summary (``SEVERED at <step> (<termination>)``) or
-    the sweep's ``BEACON LOST`` marker in ``run.output``, and the ``not_reached``
-    / ``not_executed`` Results the engine projects for steps that never ran.
-    An unrecognised shape raises: it is never read as "nothing happened".
+
+def require_step_outcomes(run: dict) -> list[dict]:
+    """The host evidence of a run record fetched from ``GET /api/runs/{id}``.
+
+    Absent key -> :class:`MissingStepOutcomes`. There is deliberately no
+    reconstruction from output text: a guess at a termination is worse than none.
     """
-    output = run.get("output") or ""
-    if not isinstance(output, str):
-        output = json.dumps(output)
-    records: list[dict] = []
-    severed = run.get("severed_at_step")
-    if severed:
-        m = SEVERED_RE.search(output)
-        if m and m.group("sid") == severed:
-            term = m.group("term")
-            if term not in HOST_WITNESS:
-                raise ValueError(
-                    f"severed step {severed!r} reports termination {term!r}, which "
-                    "is not a host witness")
-        elif BEACON_LOST_RE.search(output):
-            term = "beacon_lost"
-        else:
-            raise ValueError(
-                f"run severed at {severed!r} but the output carries neither a "
-                "'SEVERED at' summary nor a BEACON LOST marker")
-        records.append({"step_id": severed, "termination": term})
-    seen = {r["step_id"] for r in records}
-    for row in (results or {}).get("results", []):
-        if row.get("outcome") not in ("not_reached", "not_executed"):
-            continue
-        sid, reason = row.get("step_id"), row.get("outcome_reason")
-        if reason not in NOT_RUN_REASONS:
-            raise ValueError(
-                f"step {sid!r} is {row.get('outcome')} with unrecognised reason {reason!r}")
-        if sid in seen:
-            continue
-        seen.add(sid)
-        records.append({"step_id": sid, "termination": "not_run", "reason": reason})
-    return records
+    if "step_outcomes" not in run:
+        raise MissingStepOutcomes(
+            "run record has no 'step_outcomes' key -- SimCore predates "
+            "GET /api/runs/{id} publishing host evidence, so terminations "
+            "cannot be classified (rebuild SimCore from this branch)")
+    return run["step_outcomes"]
 
 
 def build_verdict(run: dict, scenario: str,
                   step_outcomes: list[dict] | None = None) -> dict:
     """Pure function: run record + scenario id -> verdict dict. No I/O.
 
-    ``step_outcomes`` is the /complete-shaped ``steps[]`` evidence (see
-    :func:`derive_step_outcomes`). Steps it accounts for count as reported:
-    a severed run is not "stopped early for an unknown reason".
+    ``step_outcomes`` defaults to the run record's own ``step_outcomes`` list
+    (``GET /api/runs/{id}``; ``rc`` = exit code). Steps they account for count
+    as reported: a severed run is not "stopped early for an unknown reason".
     """
+    if step_outcomes is None:
+        step_outcomes = run.get("step_outcomes") or []
     by_step: dict[str, dict] = {}
     for rec in step_outcomes or []:
         term = rec.get("termination")
+        if term is None:
+            # Output seen (a started_at row) but no termination recorded: the
+            # step's end was never reported. That is absence of evidence, not
+            # a vocabulary violation.
+            continue
         if term not in TERMINATIONS:
             raise ValueError(f"unrecognised termination: {term!r}")
         by_step[rec["step_id"]] = rec
@@ -289,6 +269,9 @@ def build_verdict(run: dict, scenario: str,
 
     counts = {k: sum(1 for s in steps if s["class"] == k)
               for k in ("OK", "ENGINE", "ENVIRONMENT", "TTP")}
+    # UNWITNESSED (a lost beacon) is its own outcome: it never feeds the TTP
+    # count, and is kept out of `counts` so that dict's shape is unchanged.
+    unwitnessed = sum(1 for s in steps if s["class"] == "UNWITNESSED")
 
     # A step the beacon never reported at all is its own problem: the run
     # stopped early. Fail-fast is by design, so this is not automatically an
@@ -342,6 +325,7 @@ def build_verdict(run: dict, scenario: str,
         "steps_reported": observed,
         "steps_unreported": unreported,
         "counts": counts,
+        "unwitnessed": unwitnessed,
         "steps": steps,
         "terminations": terminations,
         "severed_at_step": run.get("severed_at_step"),
@@ -371,7 +355,8 @@ def render_report(verdict: dict) -> str:
     p("")
     for s in verdict["steps"]:
         mark = {"OK": "\033[0;32m✓\033[0m", "ENGINE": "\033[0;31m✗\033[0m",
-                "ENVIRONMENT": "\033[0;33m~\033[0m", "TTP": "\033[0;34m·\033[0m"}[s["class"]]
+                "ENVIRONMENT": "\033[0;33m~\033[0m", "TTP": "\033[0;34m·\033[0m",
+                "UNWITNESSED": "\033[0;33m?\033[0m"}[s["class"]]
         p(f"   {mark} step {s['n']} [{s['identity']}] {s['technique']}"
           f"  exit={s['exit_code']}  {s['class']}")
         if s["class"] != "OK":
@@ -426,18 +411,17 @@ def main() -> int:
     ap.add_argument("--run", required=True, help="path to the saved run.json")
     ap.add_argument("--scenario", required=True)
     ap.add_argument("--out", required=True, help="where to write verdict.json")
-    ap.add_argument("--results", help="saved GET /api/results/{run_id} (enables "
-                    "step-termination reconstruction for severed runs)")
     args = ap.parse_args()
 
     with open(args.run, encoding="utf-8") as fh:
         run = json.load(fh)
-    results = None
-    if args.results:
-        with open(args.results, encoding="utf-8") as fh:
-            results = json.load(fh)
+    try:
+        outcomes = require_step_outcomes(run)
+    except MissingStepOutcomes as exc:
+        print(f"classify: INCONCLUSIVE -- {exc}", file=sys.stderr)
+        return 1
 
-    verdict = build_verdict(run, args.scenario, derive_step_outcomes(run, results))
+    verdict = build_verdict(run, args.scenario, outcomes)
 
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(verdict, fh, indent=2)

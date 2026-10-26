@@ -82,7 +82,7 @@ def test_host_witness_termination_is_a_ttp_outcome_not_engine(term):
 
 def test_beacon_lost_is_named_unwitnessed_not_environment():
     klass, reason = classify.classify_step("", None, termination="beacon_lost")
-    assert klass == "TTP"
+    assert klass == "UNWITNESSED"
     assert "unwitnessed" in reason
 
 
@@ -167,56 +167,52 @@ def test_verdict_without_outcomes_keeps_the_old_shape():
     assert v["steps_unreported"] == 2
 
 
-# --- derive_step_outcomes (public-API reconstruction) ----------------------
+# --- the run record must publish step_outcomes -----------------------------
 
-def _results(*rows):
-    return {"results": [dict(step_id=s, outcome=o, outcome_reason=r) for s, o, r in rows]}
-
-
-def test_derive_signaled_from_completion_summary():
-    out = (STEP1_OK + _block(2, 3, "step-02", "Killed", 137) +
-           "\n--- COMPLETION SUMMARY ---\nExit code: 137\n"
-           "failed | scenario=S steps=3 | SEVERED at step-02 (signaled)\n")
-    recs = classify.derive_step_outcomes(
-        _run(out, severed="step-02"),
-        _results(("step-03", "not_reached", "UPSTREAM_SEVERED")))
-    by = {r["step_id"]: r for r in recs}
-    assert by["step-02"]["termination"] == "signaled"
-    assert by["step-03"] == {"step_id": "step-03", "termination": "not_run",
-                             "reason": "UPSTREAM_SEVERED"}
+def test_missing_step_outcomes_key_fails_with_a_named_reason():
+    with pytest.raises(classify.MissingStepOutcomes, match="step_outcomes"):
+        classify.require_step_outcomes({"status": "complete", "output": ""})
 
 
-def test_derive_anchor_terminated_from_completion_summary():
-    out = (STEP1_OK + "\n--- COMPLETION SUMMARY ---\nExit code: 137\n"
-           "x | SEVERED at step-02 (anchor_terminated)\n")
-    recs = classify.derive_step_outcomes(_run(out, severed="step-02"), _results())
-    assert {r["step_id"]: r["termination"] for r in recs} == {"step-02": "anchor_terminated"}
+def test_cli_fails_loudly_on_a_run_without_step_outcomes(tmp_path):
+    import json, subprocess
+    run = tmp_path / "run.json"
+    run.write_text(json.dumps({"status": "complete", "output": STEP1_OK}))
+    proc = subprocess.run(
+        ["python3", str(CLASSIFY_PATH), "--run", str(run), "--scenario", "S",
+         "--out", str(tmp_path / "v.json")], capture_output=True, text=True)
+    assert proc.returncode == 1
+    assert "step_outcomes" in proc.stderr
+    assert not (tmp_path / "v.json").exists()
 
 
-def test_derive_beacon_lost_from_marker():
-    out = STEP1_OK + "\n--- BEACON LOST — agent went offline mid-run; enable BAS mode ---\n"
-    recs = classify.derive_step_outcomes(
-        _run(out, severed="step-02"),
-        _results(("step-03", "not_reached", "UPSTREAM_SEVERED")))
-    assert {r["step_id"]: r["termination"] for r in recs} == {
-        "step-02": "beacon_lost", "step-03": "not_run"}
+def test_build_verdict_reads_the_run_records_own_step_outcomes():
+    recs = [{"step_id": "step-01", "rc": 0, "termination": "exited", "reason": None},
+            {"step_id": "step-02", "rc": 137, "termination": "signaled", "signal": 9},
+            {"step_id": "step-03", "termination": "not_run", "reason": "UPSTREAM_SEVERED"}]
+    run = _run(STEP1_OK + _block(2, 3, "step-02", "Killed", 137), severed="step-02")
+    run["step_outcomes"] = recs
+    v = classify.build_verdict(run, "S")
+    assert v["terminations"]["step-02"]["termination"] == "signaled"
+    assert v["harness_verdict"] == "PASS"
 
 
-def test_derive_severed_without_any_evidence_raises():
-    # A severed_at_step with neither SEVERED summary nor BEACON LOST marker is
-    # an unrecognised shape: raise, never read it as empty.
-    with pytest.raises(ValueError, match="severed"):
-        classify.derive_step_outcomes(_run(STEP1_OK, severed="step-02"), _results())
+def test_row_with_no_termination_is_absence_of_evidence_not_an_error():
+    recs = [{"step_id": "step-01", "rc": None, "termination": None, "reason": None},
+            {"step_id": "step-02", "termination": "beacon_lost"},
+            {"step_id": "step-03", "termination": "not_run", "reason": "UPSTREAM_SEVERED"}]
+    out = STEP1_OK
+    v = classify.build_verdict(_run(out, severed="step-02"), "S", step_outcomes=recs)
+    assert "step-01" not in v["terminations"]
+    assert v["terminations"]["step-02"]["termination"] == "beacon_lost"
+    assert v["steps_unreported"] == 0
 
 
-def test_derive_unrecognised_not_reached_reason_raises():
-    with pytest.raises(ValueError, match="reason"):
-        classify.derive_step_outcomes(
-            _run(STEP1_OK), _results(("step-03", "not_reached", "WAT")))
-
-
-def test_derive_clean_run_yields_no_records():
-    assert classify.derive_step_outcomes(_run(STEP1_OK), _results()) == []
+def test_beacon_lost_step_is_unwitnessed_and_never_counts_as_ttp():
+    out = STEP1_OK + _block(2, 3, "step-02", "x", None)
+    v = classify.build_verdict(_run(out, severed="step-02"), "S", step_outcomes=BEACON)
+    assert v["steps"][1]["class"] == "UNWITNESSED"
+    assert v["counts"]["TTP"] == 0 and v["unwitnessed"] == 1
 
 
 # --- vocabulary cannot drift from the engine --------------------------------
