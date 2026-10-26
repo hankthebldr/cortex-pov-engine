@@ -111,6 +111,19 @@ export function isAttestable(row) {
   return row.outcome == null || ATTESTABLE_OUTCOMES.has(row.outcome)
 }
 
+/**
+ * May a BULK path (Validate-all, the wizard's "Mark all observed") attest this
+ * row? `isAttestable`, minus engine-decided misses (round 4 I-2): a `missed`
+ * is evidence-backed (silent window on complete evidence, host said the step
+ * ran) and is overruled only one row at a time, consciously.
+ */
+export function isBulkAttestable(row) {
+  return isAttestable(row) && row.outcome !== 'missed'
+}
+
+/** The skipped-count label next to a bulk attestation control. */
+export const BULK_SKIPPED_REASONS = 'never ran, prevention, or evidence-backed miss'
+
 /** Outcomes on which `PUT /validate` refuses any attestation (409). */
 const REFUSED_OUTCOMES = new Set(['prevented', 'not_reached', 'not_executed'])
 

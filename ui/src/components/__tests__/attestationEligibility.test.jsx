@@ -14,7 +14,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import EvidenceView from '../console/EvidenceView.jsx'
 import ResultsValidationWizard from '../ResultsValidationWizard.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
-import { isAttestable, isAttestationRefused } from '../../outcomes.js'
+import { isAttestable, isAttestationRefused, isBulkAttestable } from '../../outcomes.js'
 
 void React
 
@@ -130,5 +130,58 @@ describe('per-row attestation controls', () => {
     expect(screen.queryByText(/Mark detected/)).toBeNull()
     expect(screen.queryByText(/Mark missed/)).toBeNull()
     expect(screen.getByTestId('drawer-attestation-refused')).toBeInTheDocument()
+  })
+})
+
+// ─── Round 4 I-2: bulk attestation never overwrites an engine miss ─────────
+describe('bulk attestation excludes evidence-backed misses', () => {
+  const MISS_PAYLOAD = {
+    ...PAYLOAD,
+    results: [
+      ROW(1, 'pending', 'EVIDENCE_INCOMPLETE'),
+      ROW(2, 'not_reached', 'UPSTREAM_SEVERED'),
+      ROW(3, 'missed', null),
+    ],
+    total: 3,
+  }
+
+  it('isBulkAttestable: a missed row is per-row only', () => {
+    expect(isBulkAttestable({ outcome: 'missed', observed: false })).toBe(false)
+    expect(isAttestable({ outcome: 'missed', observed: false })).toBe(true)
+    expect(isBulkAttestable({ outcome: 'pending', observed: false })).toBe(true)
+  })
+
+  it('Validate-all marks the pending row only and names the miss among the skipped', async () => {
+    const validated = []
+    installRoutes({
+      'GET /api/results/run-a': MISS_PAYLOAD,
+      'PUT /api/results/1/validate': () => { validated.push(1); return { id: 1 } },
+      'PUT /api/results/3/validate': () => { validated.push(3); return { id: 3 } },
+    })
+    const { container } = render(
+      <EvidenceView lastRun={{ runId: 'run-a', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
+    await waitFor(() => expect(screen.getByText('det-3')).toBeInTheDocument())
+    expect(screen.getByTestId('validate-all-skipped').textContent).toMatch(/2 skipped/)
+    expect(screen.getByTestId('validate-all-skipped').textContent).toMatch(/evidence-backed miss/)
+    fireEvent.click(screen.getByRole('button', { name: /Validate all/ }))
+    await waitFor(() => expect(validated).toEqual([1]))
+    // The per-row control on the missed row stays: a DC may overrule one row.
+    const missRow = Array.from(container.querySelectorAll('.scorecard__row'))
+      .find((r) => r.textContent.includes('det-3'))
+    expect(missRow.querySelector('.scorecard__row-actions')).not.toBeNull()
+  })
+
+  it('the wizard bulk path skips the missed row too', async () => {
+    const validated = []
+    installRoutes({
+      'GET /api/results/run-a': MISS_PAYLOAD,
+      'PUT /api/results/1/validate': () => { validated.push(1); return { id: 1 } },
+      'PUT /api/results/3/validate': () => { validated.push(3); return { id: 3 } },
+    })
+    render(<ResultsValidationWizard runId="run-a" onClose={vi.fn()} onMessage={vi.fn()} />)
+    await waitFor(() => expect(screen.getByText(/det-3/)).toBeInTheDocument())
+    expect(screen.getByTestId('wizard-bulk-skipped').textContent).toMatch(/2 skipped/)
+    fireEvent.click(screen.getByRole('button', { name: /Mark all observed/ }))
+    await waitFor(() => expect(validated).toEqual([1]))
   })
 })

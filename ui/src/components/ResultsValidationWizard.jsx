@@ -7,7 +7,7 @@ import {
   downloadReportNavigator,
   downloadReportBundle,
 } from '../api/client.js'
-import { isAttestable } from '../outcomes.js'
+import { isBulkAttestable, BULK_SKIPPED_REASONS } from '../outcomes.js'
 
 /**
  * ResultsValidationWizard — guided walk-through for marking each expected
@@ -77,7 +77,7 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
     if (!data?.results) return
     // Exactly the rows `PUT /validate` accepts as an attestation: a step that
     // never ran, or a two-witness prevented row, is skipped (and counted).
-    const pending = data.results.filter(isAttestable)
+    const pending = data.results.filter(isBulkAttestable)
     if (pending.length === 0) return
     onMessage?.(`Marking ${pending.length} detection(s) observed…`, 'info')
     for (const r of pending) {
@@ -136,8 +136,8 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
   const mttd = data?.mttd
   const total = data?.results?.length || 0
   const observedCount = data?.results?.filter(r => r.observed).length || 0
-  const attestableCount = data?.results?.filter(isAttestable).length || 0
-  const bulkSkipped = data?.results?.filter(r => !r.observed && !isAttestable(r)).length || 0
+  const attestableCount = data?.results?.filter(isBulkAttestable).length || 0
+  const bulkSkipped = data?.results?.filter(r => !r.observed && !isBulkAttestable(r)).length || 0
 
   return (
     <section className="results-wizard">
@@ -198,7 +198,7 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
           </button>
           {bulkSkipped > 0 && (
             <span className="mono results-wizard__skipped" data-testid="wizard-bulk-skipped">
-              {bulkSkipped} skipped (never ran or prevented)
+              {bulkSkipped} skipped ({BULK_SKIPPED_REASONS})
             </span>
           )}
         </div>

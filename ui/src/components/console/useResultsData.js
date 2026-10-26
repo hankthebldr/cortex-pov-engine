@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { getResultsForRun, validateResult } from '../../api/client.js'
-import { resultStatus, isHitStatus, isInDenominator, isAttestable } from '../../outcomes.js'
+import { resultStatus, isHitStatus, isInDenominator, isBulkAttestable } from '../../outcomes.js'
 
 /**
  * useResultsData — fetches and folds /api/results/:runId into:
@@ -100,8 +100,8 @@ export default function useResultsData(runId) {
     // new attestation (outcome none / pending / missed, not yet observed).
     // `skipped` = unobserved rows it will not touch (never ran / prevented),
     // shown next to the button so the skip is never silent.
-    const unvalidated = rows.filter((r) => isAttestable(r)).length
-    const skipped = rows.filter((r) => r.observed !== true && !isAttestable(r)).length
+    const unvalidated = rows.filter((r) => isBulkAttestable(r)).length
+    const skipped = rows.filter((r) => r.observed !== true && !isBulkAttestable(r)).length
     const mttdList  = rows.filter((r) => isHitStatus(r.status) && typeof r.mttd === 'number')
                           .map((r) => r.mttd)
                           .sort((a, b) => a - b)

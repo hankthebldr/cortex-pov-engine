@@ -7,7 +7,7 @@ import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
-import { statusLabel as labelFor, outcomeClass, isAttestable, isAttestationRefused } from '../../outcomes.js'
+import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
 
 /**
  * EvidenceView — the Evidence tab.
@@ -70,10 +70,10 @@ export default function EvidenceView({
 
   const handleValidateAll = useCallback(async () => {
     // Attest every eligible row as detected (DC sweeps after a successful run):
-    // exactly the rows `PUT /validate` accepts (outcomes.js::isAttestable). A
+    // the rows `PUT /validate` accepts, minus engine misses (outcomes.js::isBulkAttestable). A
     // step that never ran or a two-witness prevented row is skipped, and the
     // skip is counted next to the button.
-    const pending = rows.filter((r) => isAttestable(r) && r.id != null)
+    const pending = rows.filter((r) => isBulkAttestable(r) && r.id != null)
     for (const r of pending) {
       await validate(r.id, true, null)
     }
@@ -155,9 +155,9 @@ export default function EvidenceView({
                 <span
                   className="mono evidence-header__skipped"
                   data-testid="validate-all-skipped"
-                  title="Rows Validate all will not attest: the step never ran, or two witnesses already prevented it"
+                  title="Rows Validate all will not attest: the step never ran, it is a prevention, or the engine judged it a miss (overrule one row at a time)"
                 >
-                  {kpis.skipped} skipped (never ran or prevented)
+                  {kpis.skipped} skipped ({BULK_SKIPPED_REASONS})
                 </span>
               )}
               <ExportMenu runId={targetRunId} onError={onError} />
