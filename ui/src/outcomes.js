@@ -99,12 +99,15 @@ const ATTESTABLE_OUTCOMES = new Set(['pending', 'missed'])
 
 /**
  * Would `PUT /api/results/{id}/validate {observed:true}` accept this row as a
- * new attestation? Outcome none / pending / missed, and not yet observed. A
- * step that never ran (409 RESULT_STEP_NOT_RUN) and a two-witness `prevented`
- * row (409 RESULT_PREVENTED) are never eligible.
+ * new attestation? Outcome none / pending / missed, not yet observed, and not
+ * a `prevent` expectation. A step that never ran (409 RESULT_STEP_NOT_RUN), a
+ * two-witness `prevented` row (409 RESULT_PREVENTED) and any prevent
+ * expectation (409 ATTESTATION_NOT_A_WITNESS) are never eligible. Accepts the
+ * raw row (`expected_outcome`) or the scorecard row (`expectedOutcome`).
  */
 export function isAttestable(row) {
   if (!row || row.observed === true) return false
+  if ((row.expected_outcome ?? row.expectedOutcome) === 'prevent') return false
   return row.outcome == null || ATTESTABLE_OUTCOMES.has(row.outcome)
 }
 

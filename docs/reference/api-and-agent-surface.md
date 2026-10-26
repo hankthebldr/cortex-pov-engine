@@ -352,7 +352,7 @@ get it.
 |--------|-----------|---------|--------------|----------|
 | GET | `/api/results` | All results across all runs (newest first) | — | `{"results":[...],"total":N}` |
 | GET | `/api/results/{run_id}` | Results for a run + coverage + MTTD stats | — | `{run_id, results[], total, coverage:{observed,total,pct,by_type}, mttd}`; 404 if run missing |
-| PUT | `/api/results/{result_id}/validate` | DC marks detection observed/not | `ValidateRequest`: `{observed:bool, notes?}` | `<result.to_dict()>`; 404 `RESULT_NOT_FOUND`; 409 `RESULT_STEP_NOT_RUN` / `RESULT_PREVENTED` |
+| PUT | `/api/results/{result_id}/validate` | DC marks detection observed/not | `ValidateRequest`: `{observed:bool, notes?}` | `<result.to_dict()>`; 404 `RESULT_NOT_FOUND`; 409 `RESULT_STEP_NOT_RUN` / `RESULT_PREVENTED` / `ATTESTATION_NOT_A_WITNESS` |
 | PUT | `/api/results/{result_id}/notes` | Update notes only | `NotesRequest`: `{notes}` | `<result.to_dict()>`; 404 |
 
 - `validate` with `observed=true` stamps `observed_at = utcnow()` (enables MTTD =
@@ -363,8 +363,10 @@ get it.
   `detected` the attestation wrote (no matched-alert `Observation`) to none, leaves an
   engine-written outcome alone, and never writes `missed`. It is refused with **409
   `RESULT_STEP_NOT_RUN`** on `not_reached` / `not_executed` (no attestation for a step
-  that never ran) and **409 `RESULT_PREVENTED`** on `prevented` (an attestation never
-  downgrades a two-witness verdict); re-asserting `observed=true` on an observed
+  that never ran) **409 `RESULT_PREVENTED`** on `prevented` (an attestation never
+  downgrades a two-witness verdict), and **409 `ATTESTATION_NOT_A_WITNESS`** for
+  `observed=true` on any `expected_outcome: prevent` row, in any mode (a hand mark cannot
+  stand in for the alert witness; reconcile against the tenant); re-asserting `observed=true` on an observed
   `prevented` row only updates the note. Provenance stays readable: an attested row has
   `observed_at` but no matched alert.
 - Note the path-param type asymmetry: `/results/{run_id}` takes a **string** run id;

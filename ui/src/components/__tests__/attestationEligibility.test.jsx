@@ -49,6 +49,12 @@ describe('isAttestable', () => {
     expect(isAttestable({ outcome: 'prevented', observed: true })).toBe(false)
     expect(isAttestable({ outcome: 'detected', observed: true })).toBe(false)
   })
+
+  it('round 3 R5c: a prevent-expectation row is never hand-attestable', () => {
+    expect(isAttestable({ outcome: null, observed: false, expected_outcome: 'prevent' })).toBe(false)
+    expect(isAttestable({ outcome: 'pending', observed: false, expectedOutcome: 'prevent' })).toBe(false)
+    expect(isAttestable({ outcome: 'pending', observed: false, expected_outcome: 'detect' })).toBe(true)
+  })
 })
 
 describe('EvidenceView Validate-all', () => {

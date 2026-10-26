@@ -178,6 +178,10 @@ async def validate_result(
       ``observed_at``; a ``detected`` the attestation wrote (no matched-alert
       ``Observation``) reverts to None; an engine-written outcome stands. A
       retraction never writes ``missed``.
+    * ``observed=true`` on an ``expected_outcome: prevent`` row (any mode):
+      409 ``ATTESTATION_NOT_A_WITNESS`` -- a hand mark cannot stand in for the
+      alert witness. Re-asserting on an already-observed prevent row updates
+      the note only (round 3 R5c).
     * ``not_reached`` / ``not_executed``: 409 ``RESULT_STEP_NOT_RUN`` -- no
       attestation for a step that never ran.
     * ``prevented``: 409 ``RESULT_PREVENTED`` -- an attestation never
@@ -212,6 +216,21 @@ async def validate_result(
             result.notes = body.notes
             await db.commit()
         return result.to_dict()
+
+    if body.observed and result.expected_outcome == "prevent":
+        if result.observed:
+            # Re-asserting on an already-observed prevent row (the console's
+            # "save notes") attests nothing: the note, and only the note.
+            if body.notes is not None:
+                result.notes = body.notes
+                await db.commit()
+            return result.to_dict()
+        raise HTTPException(status_code=409, detail={
+            "error": ("A manual attestation cannot stand in for the alert witness; "
+                      "reconcile against the tenant"),
+            "code": "ATTESTATION_NOT_A_WITNESS",
+            "detail": f"id={result_id} expected_outcome=prevent outcome={result.outcome}",
+        })
 
     # Re-asserting `observed: true` on an already-observed row is idempotent:
     # it must NOT move observed_at. The console's "save notes" sends exactly
