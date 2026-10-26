@@ -291,6 +291,16 @@ class Orchestrator:
                     target_agent_id=target_agent_id,
                     agent_profile_mode=agent_profile_mode,
                 )
+                if pair_error is None:
+                    other = (await db.execute(
+                        select(Run.run_id).where(
+                            Run.paired_with_run_id == paired_with_run_id
+                        ).limit(1)
+                    )).scalar_one_or_none()
+                    if other is not None:
+                        pair_error = (
+                            f"first run {paired_with_run_id} is already paired with {other}"
+                        )
             if pair_error is not None:
                 logger.warning(
                     "Launch refused scenario=%s code=PAIR_INVALID reason=%s",

@@ -124,3 +124,85 @@ def test_seed_results_copies_expected_outcome(client, session_factory):
     got = asyncio.run(rows())
     assert [x.expected_outcome for x in got] == ["prevent", "detect"]
     assert all(x.prevention_module is None for x in got)
+
+
+def _launch_block(client, **kw):
+    body = _body(mode="pull", target_agent_id="agent-1", agent_profile_mode="block",
+                 paired_with_run_id="first")
+    body.update(kw)
+    return client.post("/api/runs", json=body)
+
+
+def test_launch_valid_pair_persists_link_and_pair_endpoint_resolves(client, session_factory):
+    _seed(session_factory)
+    r = _launch_block(client)
+    assert r.status_code == 200, r.text
+    block_id = r.json()["run_id"]
+    run = next(x for x in _runs(session_factory) if x.run_id == block_id)
+    assert run.paired_with_run_id == "first"
+    p = client.get(f"/api/runs/{block_id}/pair")
+    assert p.status_code == 200, p.text
+    assert {x["run_id"] for x in p.json()["runs"]} == {"first", block_id}
+
+
+def test_launch_refuses_pair_on_different_target(client, session_factory):
+    _seed(session_factory)
+    r = _launch_block(client, target_agent_id="agent-2")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "PAIR_INVALID"
+    assert "same target" in r.json()["detail"]["detail"]
+    assert len(_runs(session_factory)) == 1
+
+
+def test_launch_refuses_pair_with_same_profile_mode(client, session_factory):
+    _seed(session_factory)
+    r = _launch_block(client, agent_profile_mode="report")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "PAIR_INVALID"
+    assert "different" in r.json()["detail"]["detail"]
+    assert len(_runs(session_factory)) == 1
+
+
+def test_launch_refuses_second_pairing_of_same_first_run(client, session_factory):
+    _seed(session_factory)
+    r1 = _launch_block(client)
+    assert r1.status_code == 200, r1.text
+    r2 = _launch_block(client)
+    assert r2.status_code == 409 and r2.json()["detail"]["code"] == "PAIR_INVALID"
+    assert f"first run first is already paired with {r1.json()['run_id']}" in r2.json()["detail"]["detail"]
+    assert len(_runs(session_factory)) == 2
+
+
+def test_seed_results_sets_prevention_module_from_card(client, session_factory):
+    import os
+    from pathlib import Path
+    from engine.ttp_catalog import catalog, default_corpus_dir
+    from models import Result, Scenario
+
+    _seed(session_factory)
+    fixtures = Path(__file__).resolve().parent.parent / "fixtures" / "cards"
+
+    async def seed():
+        async with session_factory() as db:
+            sc = (await db.execute(select(Scenario))).scalar_one()
+            sc.steps = [{"id": "step-01", "name": "s", "expected_detections": [{
+                "plane": "EDR", "type": "Prevention", "description": "d",
+                "outcome": "prevent", "ttp_ref": "TTP-2026-9901",
+                "detection_id": "prevention-btp-reverse-shell-from-web-server"}]}]
+            await db.commit()
+    asyncio.run(seed())
+
+    catalog.load(str(fixtures))
+    try:
+        r = client.post("/api/runs", json=_body())
+    finally:
+        catalog.load(default_corpus_dir(os.environ["CORTEXSIM_BASE_DIR"]))
+    assert r.status_code == 200, r.text
+
+    async def rows():
+        async with session_factory() as db:
+            return (await db.execute(
+                select(Result).where(Result.run_id == r.json()["run_id"])
+            )).scalars().all()
+    got = asyncio.run(rows())
+    assert len(got) == 1
+    assert got[0].expected_outcome == "prevent"
+    assert got[0].prevention_module == "btp"

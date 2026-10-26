@@ -530,7 +530,8 @@ async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
         )).scalar_one_or_none()
     if partner is None:
         partner = (await db.execute(
-            select(Run).where(Run.paired_with_run_id == run_id).limit(1)
+            select(Run).where(Run.paired_with_run_id == run_id)
+            .order_by(Run.started_at.desc()).limit(1)
         )).scalar_one_or_none()
     if partner is None:
         raise HTTPException(
