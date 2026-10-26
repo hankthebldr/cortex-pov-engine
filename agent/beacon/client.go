@@ -616,7 +616,8 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		if state, _ := c.Control(task.RunID); state.Abort {
 			log.Printf("[beacon] abort detected before artifact staging (run_id=%s)", task.RunID)
 			_ = c.SendOutput(task.RunID, "", "--- ABORTED (operator) before artifact staging ---")
-			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", []StepOutcome{})
+			led.markRemaining(0, ReasonUpstreamFailed)
+			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", led.steps)
 			return
 		}
 	}
@@ -652,6 +653,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		if state, _ := c.Control(task.RunID); state.Abort {
 			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
 			_ = c.SendOutput(task.RunID, step.ID, "--- ABORTED (operator) ---")
+			led.markRemaining(i, ReasonUpstreamFailed)
 			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", led.steps)
 			return
 		}
@@ -690,7 +692,6 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 
 		notes := depOutcome.note
 		if timedOut {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(timeoutExitCode), Termination: TermTimeout})
 			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
 			if notes != "" {
 				notes += "\n" + tn
@@ -706,7 +707,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		}
 
 		if aborted {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(abortExitCode), Termination: TermAborted})
+			led.recordAborted(i)
 			log.Printf("[beacon] step %s terminated by operator abort (run_id=%s)", step.ID, task.RunID)
 			_ = c.Complete(task.RunID, abortExitCode,
 				fmt.Sprintf("aborted by operator — step %s terminated", step.ID), led.steps)
@@ -714,7 +715,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		}
 
 		if timedOut {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(timeoutExitCode), Termination: TermTimeout})
+			led.recordTimeout(i)
 			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
 			_ = c.Complete(task.RunID, timeoutExitCode,
 				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout), led.steps)
@@ -723,21 +724,21 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 
 		// Honour agent shutdown (parent ctx cancel that is NOT an operator abort).
 		if ctx.Err() != nil {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(abortExitCode), Termination: TermAborted})
+			led.recordAborted(i)
 			log.Printf("[beacon] context cancelled during task run_id=%s", task.RunID)
 			_ = c.Complete(task.RunID, abortExitCode, "agent shutdown — task interrupted", led.steps)
 			return
 		}
 
 		if execErr != nil {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(res.ExitCode), Termination: TermExited})
+			led.recordExecError(i, res.ExitCode)
 			// A real execution error (e.g. /bin/sh missing) — fail the run.
 			log.Printf("[beacon] execution error step %s run_id=%s: %v", step.ID, task.RunID, execErr)
 			_ = c.Complete(task.RunID, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
 			return
 		}
 
-		if led.recordFinished(i, res, depOutcome.blocked) {
+		if c.afterStep(task, i, led, res, depOutcome.blocked) {
 			finalExitCode = 128 + res.Signal
 			log.Printf("[beacon] step %s killed by signal %d — severing remaining steps", step.ID, res.Signal)
 			break
@@ -760,6 +761,10 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 	}
 }
 
+// newChainSession starts the anchor shell. A package var only so a test can force
+// the start failure that makes executeTaskChained degrade to executeTaskPerStep.
+var newChainSession = executor.NewChainSession
+
 // executeTaskChained runs the task through a single persistent anchor shell so
 // every step is a child of the same Causality Group Owner — a connected process
 // chain, not a star of independent `sh -c` invocations. It preserves the exact
@@ -780,7 +785,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 	sessCtx, sessCancel := context.WithCancel(ctx)
 	defer sessCancel()
 
-	session, err := executor.NewChainSession(sessCtx, cgoImage)
+	session, err := newChainSession(sessCtx, cgoImage)
 	if err != nil {
 		log.Printf("[beacon] chain-session start failed (run_id=%s): %v — falling back to per-step execution",
 			task.RunID, err)
@@ -798,6 +803,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		if state, _ := c.Control(task.RunID); state.Abort {
 			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
 			_ = c.SendOutput(task.RunID, step.ID, "--- ABORTED (operator) ---")
+			led.markRemaining(i, ReasonUpstreamFailed)
 			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", led.steps)
 			return
 		}
@@ -830,6 +836,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			if wrapErr != nil {
 				depOutcome.cleanup()
 				log.Printf("[beacon] wrap error step %s run_id=%s: %v", step.ID, task.RunID, wrapErr)
+				led.markRemaining(i, ReasonUpstreamFailed)
 				_ = c.Complete(task.RunID, 1, fmt.Sprintf("wrap error in step %s: %v", step.ID, wrapErr), led.steps)
 				return
 			}
@@ -843,7 +850,6 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 
 		notes := depOutcome.note
 		if timedOut {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(timeoutExitCode), Termination: TermTimeout})
 			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
 			if notes != "" {
 				notes += "\n" + tn
@@ -858,21 +864,21 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		}
 
 		if aborted {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(abortExitCode), Termination: TermAborted})
+			led.recordAborted(i)
 			log.Printf("[beacon] step %s terminated by operator abort (run_id=%s)", step.ID, task.RunID)
 			_ = c.Complete(task.RunID, abortExitCode,
 				fmt.Sprintf("aborted by operator — step %s terminated", step.ID), led.steps)
 			return
 		}
 		if timedOut {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(timeoutExitCode), Termination: TermTimeout})
+			led.recordTimeout(i)
 			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
 			_ = c.Complete(task.RunID, timeoutExitCode,
 				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout), led.steps)
 			return
 		}
 		if ctx.Err() != nil {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(abortExitCode), Termination: TermAborted})
+			led.recordAborted(i)
 			log.Printf("[beacon] context cancelled during task run_id=%s", task.RunID)
 			_ = c.Complete(task.RunID, abortExitCode, "agent shutdown — task interrupted", led.steps)
 			return
@@ -887,7 +893,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			return
 		}
 		if execErr != nil {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(res.ExitCode), Termination: TermExited})
+			led.recordExecError(i, res.ExitCode)
 			log.Printf("[beacon] execution error step %s run_id=%s: %v", step.ID, task.RunID, execErr)
 			_ = c.Complete(task.RunID, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
 			return
@@ -896,7 +902,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		if !depOutcome.blocked {
 			classifyChainedRC(&res)
 		}
-		if led.recordFinished(i, res, depOutcome.blocked) {
+		if c.afterStep(task, i, led, res, depOutcome.blocked) {
 			finalExitCode = 128 + res.Signal
 			log.Printf("[beacon] step %s killed by signal %d — severing remaining steps (chained)", step.ID, res.Signal)
 			break
@@ -983,6 +989,7 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 		if state, _ := c.Control(task.RunID); state.Abort {
 			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
 			_ = c.SendOutput(task.RunID, step.ID, "--- ABORTED (operator) ---")
+			led.markRemaining(i, ReasonUpstreamFailed)
 			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", led.steps)
 			return
 		}
@@ -1013,7 +1020,6 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 
 		notes := depOutcome.note
 		if timedOut {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(timeoutExitCode), Termination: TermTimeout})
 			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
 			if notes != "" {
 				notes += "\n" + tn
@@ -1027,29 +1033,29 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
 		if aborted {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(abortExitCode), Termination: TermAborted})
+			led.recordAborted(i)
 			_ = c.Complete(task.RunID, abortExitCode,
 				fmt.Sprintf("aborted by operator — step %s terminated", step.ID), led.steps)
 			return
 		}
 		if timedOut {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(timeoutExitCode), Termination: TermTimeout})
+			led.recordTimeout(i)
 			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
 			_ = c.Complete(task.RunID, timeoutExitCode,
 				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout), led.steps)
 			return
 		}
 		if ctx.Err() != nil {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(abortExitCode), Termination: TermAborted})
+			led.recordShutdown(i)
 			_ = c.Complete(task.RunID, abortExitCode, "agent shutdown — task interrupted", led.steps)
 			return
 		}
 		if execErr != nil {
-			led.record(StepOutcome{StepID: step.ID, ExitCode: intPtr(res.ExitCode), Termination: TermExited})
+			led.recordExecError(i, res.ExitCode)
 			_ = c.Complete(task.RunID, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
 			return
 		}
-		if led.recordFinished(i, res, depOutcome.blocked) {
+		if c.afterStep(task, i, led, res, depOutcome.blocked) {
 			finalExitCode = 128 + res.Signal
 			break
 		}
@@ -1420,6 +1426,11 @@ func buildSummary(task *Task, exitCode, degradedSteps int, steps []StepOutcome) 
 	}
 	if id, term, ok := severedAt(steps); ok {
 		summary += fmt.Sprintf(" | SEVERED at %s (%s)", id, term)
+	}
+	for _, st := range steps {
+		if st.terminationUnknown {
+			summary += " | TERMINATION_UNKNOWN: " + st.StepID
+		}
 	}
 	return summary
 }

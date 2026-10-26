@@ -25,11 +25,16 @@ const (
 	ReasonUpstreamSevered     = "UPSTREAM_SEVERED"
 	ReasonUpstreamNotExecuted = "UPSTREAM_NOT_EXECUTED"
 	ReasonToolAbsent          = "TOOL_ABSENT"
+	ReasonUpstreamFailed      = "UPSTREAM_FAILED"
 )
 
 // toolAbsentMarker prefixes the /output line written for a step whose declared
 // required binary is not on this host's PATH.
 const toolAbsentMarker = "!! TOOL_ABSENT:"
+
+// terminationUnknownMarker is written to /output (and summarised) when the
+// executor reports a termination the beacon does not recognise.
+const terminationUnknownMarker = "!! TERMINATION_UNKNOWN:"
 
 // StepOutcome is the beacon's account of how one step ended. ExitCode is a
 // pointer so a step that never produced one (anchor death, not_run) encodes
@@ -40,6 +45,11 @@ type StepOutcome struct {
 	Termination string `json:"termination"`
 	Signal      int    `json:"signal,omitempty"`
 	Reason      string `json:"reason,omitempty"`
+
+	// terminationUnknown is local only (never on the wire): the executor reported
+	// a termination this beacon does not recognise, so the step was recorded as
+	// exited but must not read as executed-as-authored.
+	terminationUnknown bool
 }
 
 func intPtr(v int) *int { return &v }
@@ -68,23 +78,68 @@ func (l *outcomeLedger) markRemaining(from int, reason string) {
 }
 
 // recordFinished classifies a step that ran (or was blocked by a runtime
-// dependency) and returns severed=true when the step was killed by a signal, in
-// which case the remaining steps are marked UPSTREAM_SEVERED and the caller must
-// stop and complete with 128+signal.
-func (l *outcomeLedger) recordFinished(i int, res identity.ExecResult, depBlocked bool) (severed bool) {
+// dependency). severed=true means the step was killed by a signal: the remaining
+// steps are marked UPSTREAM_SEVERED and the caller must stop and complete with
+// 128+signal. unknown is non-empty when the termination was not recognised; the
+// step is then recorded as exited and flagged (default-deny: an unrecognised
+// value never reads as a clean exit).
+func (l *outcomeLedger) recordFinished(i int, res identity.ExecResult, depBlocked bool) (severed bool, unknown string) {
 	id := l.task.Steps[i].ID
 	if depBlocked {
 		l.record(StepOutcome{StepID: id, Termination: TermNotRun, Reason: ReasonToolAbsent})
 		l.markRemaining(i+1, ReasonUpstreamNotExecuted)
-		return false
+		return false, ""
 	}
-	if res.Termination == TermSignaled {
+	switch {
+	case res.Termination == TermSignaled && res.Signal != 0:
 		l.record(StepOutcome{StepID: id, ExitCode: intPtr(res.ExitCode), Termination: TermSignaled, Signal: res.Signal})
 		l.markRemaining(i+1, ReasonUpstreamSevered)
-		return true
+		return true, ""
+	case res.Termination == TermExited:
+		l.record(StepOutcome{StepID: id, ExitCode: intPtr(res.ExitCode), Termination: TermExited})
+	default:
+		// "", unknown, "aborted" without an abort having been observed, or
+		// "signaled" with no signal number.
+		l.record(StepOutcome{StepID: id, ExitCode: intPtr(res.ExitCode), Termination: TermExited, terminationUnknown: true})
+		unknown = fmt.Sprintf("%s %s signal=%d", terminationUnknownMarker, res.Termination, res.Signal)
 	}
-	l.record(StepOutcome{StepID: id, ExitCode: intPtr(res.ExitCode), Termination: TermExited})
-	return false
+	if res.ExitCode != 0 {
+		l.markRemaining(i+1, ReasonUpstreamFailed)
+	}
+	return false, unknown
+}
+
+// Early-exit bookkeeping. Each helper records the current step i and marks every
+// later step not_run / UPSTREAM_FAILED, so the behaviour lives here once.
+
+func (l *outcomeLedger) recordAborted(i int) {
+	l.record(StepOutcome{StepID: l.task.Steps[i].ID, ExitCode: intPtr(abortExitCode), Termination: TermAborted})
+	l.markRemaining(i+1, ReasonUpstreamFailed)
+}
+
+func (l *outcomeLedger) recordTimeout(i int) {
+	l.record(StepOutcome{StepID: l.task.Steps[i].ID, ExitCode: intPtr(timeoutExitCode), Termination: TermTimeout})
+	l.markRemaining(i+1, ReasonUpstreamFailed)
+}
+
+// recordShutdown: agent shutdown (parent ctx cancelled), reported as aborted.
+func (l *outcomeLedger) recordShutdown(i int) { l.recordAborted(i) }
+
+func (l *outcomeLedger) recordExecError(i, exit int) {
+	l.record(StepOutcome{StepID: l.task.Steps[i].ID, ExitCode: intPtr(exit), Termination: TermExited})
+	l.markRemaining(i+1, ReasonUpstreamFailed)
+}
+
+// afterStep records step i's result; when the termination was unrecognised it
+// also writes the marker to /output for that step. Returns severed.
+func (c *BeaconClient) afterStep(task *Task, i int, led *outcomeLedger, res identity.ExecResult, depBlocked bool) bool {
+	severed, unknown := led.recordFinished(i, res, depBlocked)
+	if unknown != "" {
+		if err := c.SendOutput(task.RunID, task.Steps[i].ID, unknown); err != nil {
+			log.Printf("[beacon] sendOutput (step %s) error: %v", task.Steps[i].ID, err)
+		}
+	}
+	return severed
 }
 
 // classifyChainedRC marks a chained step's result as signaled when its integer
@@ -93,7 +148,9 @@ func classifyChainedRC(res *identity.ExecResult) {
 	if res.ExitCode >= 129 && res.ExitCode <= 159 {
 		res.Termination = TermSignaled
 		res.Signal = res.ExitCode - 128
+		return
 	}
+	res.Termination = TermExited
 }
 
 // severedAt returns the step id and termination of the step that severed the
