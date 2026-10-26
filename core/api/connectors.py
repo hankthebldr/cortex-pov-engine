@@ -128,12 +128,13 @@ async def ingest_observations(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Ingest a batch of observed alerts and auto-validate matching results."""
-    from connectors.service import apply_verdicts
+    from connectors.service import apply_verdicts, window_by_type
 
     _run, results = await _load_run_results(db, run_id)
     alerts, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
     verdicts = reconcile(results, alerts, window_seconds=body.window_seconds,
-                         only_unobserved=not body.reevaluate)
+                         only_unobserved=not body.reevaluate,
+                         window_seconds_by_type=window_by_type())
     matched_ext = [v.alert_external_id for v in verdicts if v.matched and v.alert_external_id]
     by_ext = {a.external_id: a for a in alerts if a.external_id}
     summary, _ = await apply_verdicts(
@@ -142,7 +143,8 @@ async def ingest_observations(
         # so the honesty guard withholds nothing — and the basis says `manual`.
         pull_context={"basis": "manual", "unscoped": False, "truncated": False,
                       "alert_incidents": {e: by_ext[e].incident_id for e in matched_ext
-                                          if e in by_ext}})
+                                          if e in by_ext}},
+        observations=alerts, window_seconds=body.window_seconds)
     summary["ingested"] = len(alerts)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
     if dropped:

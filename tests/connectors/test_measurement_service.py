@@ -171,3 +171,130 @@ def test_a_completion_rescore_keeps_the_last_measurement(session_factory):
     # and the verdict does not flip back to pending because this caller held no pull
     assert verdict == "pass"
     assert detail["primary"]["actual"] == 50.0
+
+
+# ---------------------------------------------------------------------------
+# Task 10 — two-witness prevention verdicts and honest denominators
+# ---------------------------------------------------------------------------
+
+def _prevented_alert(ext="p1", *, technique="T1003.001"):
+    a = _alert(ext, technique=technique)
+    a["action"] = "BLOCKED"
+    a["action_pretty"] = "Prevented (Blocked)"
+    return a
+
+
+async def _prepare_prevention(SessionLocal, *, mode="block", termination="anchor_terminated"):
+    """2 Results: step-01 detect (T1059, never alerted), step-02 prevent (T1003.001)."""
+    from models import Result, Run, StepOutcome
+    from sqlalchemy import select
+
+    await _setup(SessionLocal, techniques=("T1059", "T1003.001"))
+    async with SessionLocal() as db:
+        run = (await db.execute(select(Run))).scalars().first()
+        run.agent_profile_mode = mode
+        for r in (await db.execute(select(Result))).scalars().all():
+            if r.step_id == "step-02":
+                r.expected_outcome = "prevent"
+        if termination is not None:
+            db.add(StepOutcome(run_id=run.run_id, step_id="step-02", termination=termination))
+        await db.commit()
+
+
+async def _results_by_step(SessionLocal):
+    from models import Result
+    from sqlalchemy import select
+
+    async with SessionLocal() as db:
+        return {r.step_id: r for r in (await db.execute(select(Result))).scalars().all()}
+
+
+async def _observations(SessionLocal):
+    from models import Observation
+    from sqlalchemy import select
+
+    async with SessionLocal() as db:
+        return list((await db.execute(select(Observation))).scalars().all())
+
+
+def test_prevented_alert_plus_anchor_death_scores_pass(session_factory):
+    _seed(session_factory, results=2)
+    asyncio.run(_prepare_prevention(session_factory, termination="anchor_terminated"))
+    fetcher, _ = _tenant([_prevented_alert("p1")])
+    asyncio.run(_reconcile(session_factory, fetcher))
+
+    rows = asyncio.run(_results_by_step(session_factory))
+    r = rows["step-02"]
+    assert r.outcome == "prevented"
+    assert r.kpi_verdict == "pass"
+    assert r.outcome_reason is None
+    assert r.alert_outcome == "prevented"
+    assert r.alert_action == "Prevented (Blocked)"
+
+    obs = asyncio.run(_observations(session_factory))
+    assert len(obs) == 1
+    o = obs[0]
+    assert o.result_id == r.id and o.run_id == "run-1"
+    assert o.external_id == "p1" and o.alert_outcome == "prevented"
+    assert o.action == "BLOCKED" and o.action_pretty == "Prevented (Blocked)"
+    assert o.source.startswith("xsiam:")
+    assert o.raw and o.raw["alert_id"] == "p1"
+
+
+def test_prevented_alert_on_exited_step_is_pending_with_reason(session_factory):
+    _seed(session_factory, results=2)
+    asyncio.run(_prepare_prevention(session_factory, termination="exited"))
+    fetcher, _ = _tenant([_prevented_alert("p1")])
+    asyncio.run(_reconcile(session_factory, fetcher))
+
+    r = asyncio.run(_results_by_step(session_factory))["step-02"]
+    assert r.outcome == "pending"
+    assert r.outcome_reason == "PREVENTION_ALERT_WITHOUT_TERMINATION"
+    assert r.kpi_verdict == "pending"
+    assert r.alert_outcome == "prevented"
+
+
+def test_report_mode_prevented_alert_is_detected_and_contradicted(session_factory):
+    _seed(session_factory, results=2)
+    asyncio.run(_prepare_prevention(session_factory, mode="report",
+                                    termination="anchor_terminated"))
+    fetcher, _ = _tenant([_prevented_alert("p1")])
+    asyncio.run(_reconcile(session_factory, fetcher))
+
+    r = asyncio.run(_results_by_step(session_factory))["step-02"]
+    assert r.outcome == "detected"
+    assert r.outcome_reason == "ATTESTATION_CONTRADICTED"
+    assert r.outcome != "prevented"
+
+
+def test_not_reached_rows_leave_the_denominator(session_factory):
+    from models import Result
+    from sqlalchemy import select
+
+    _seed(session_factory, results=4)
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059", "T1021", "T1078")))
+
+    async def _mark():
+        async with session_factory() as db:
+            for r in (await db.execute(select(Result))).scalars().all():
+                if r.step_id == "step-03":
+                    r.outcome = "not_reached"
+                    r.outcome_reason = "UPSTREAM_SEVERED"
+                elif r.step_id == "step-04":
+                    r.outcome = "not_executed"
+                    r.outcome_reason = "TOOL_ABSENT"
+            await db.commit()
+    asyncio.run(_mark())
+
+    fetcher, _ = _tenant([_alert("a")])            # matches step-01 only
+    summary, _run = asyncio.run(_reconcile(session_factory, fetcher))
+
+    # 1 observed of the 2 rows that could have been — not 1 of 4.
+    assert summary["coverage_pct"] == 50.0
+    assert summary["observed"] == 1
+    assert summary["excluded"] == {"not_reached": 1, "not_executed": 1, "soak_pending": 0}
+
+    rows = asyncio.run(_results_by_step(session_factory))
+    assert rows["step-03"].outcome == "not_reached"   # never downgraded by the tenant side
+    assert rows["step-04"].outcome == "not_executed"
+    assert rows["step-01"].outcome == "detected"

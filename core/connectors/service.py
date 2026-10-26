@@ -28,11 +28,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from connectors import ConnectorConfig, get_connector, reconcile
 from connectors.base import HttpFetcher
-from connectors.matcher import scope_to_host
-from connectors.measures import CORRELATION, build_measurement, kpi_family
+from connectors.matcher import DEFAULT_WINDOW_SECONDS, scope_to_host
+from connectors.measures import (
+    CORRELATION,
+    build_measurement,
+    denominator_exclusion,
+    empty_exclusions,
+    kpi_family,
+)
+from engine.outcome import (
+    EXCLUDED_FROM_DENOMINATOR,
+    OUTCOME_DETECTED,
+    OUTCOME_PENDING,
+    evaluate_prevent,
+    soak_pending_reason,
+)
 from events import event_bus
 from integrations.xsiam.codes import remediation_for
-from models import Agent, Result, Run, Scenario
+from models import Agent, Observation, Result, Run, Scenario, StepOutcome
 from security.credentials import CredentialStore
 
 logger = logging.getLogger("cortexsim.connectors.service")
@@ -46,6 +59,17 @@ class ReconcileError(Exception):
         super().__init__(message)
         self.code = code
         self.detail = detail
+
+
+def window_by_type() -> dict[str, int]:
+    """Per-``Result.signal_type`` match windows, passed to every ``reconcile``.
+
+    Analytics/ABIOC detectors fire on a timescale the default window does not
+    cover (activation and test periods per the *Cortex XDR Analytics Alert
+    Reference Guide*); every other type uses the caller's ``window_seconds``.
+    """
+    w = int(settings.CORTEXSIM_RECONCILE_WINDOW_ANALYTICS)
+    return {"Analytics": w, "ABIOC": w}
 
 
 @dataclass
@@ -118,7 +142,8 @@ async def reconcile_run(
 
     scope_host = host if host is not None else await resolve_run_host(db, run)
     eligible, host_scope = scope_to_host(pull.observations, scope_host)
-    verdicts = reconcile(results, eligible, window_seconds=window_seconds)
+    verdicts = reconcile(results, eligible, window_seconds=window_seconds,
+                         window_seconds_by_type=window_by_type())
 
     # ── what the scorer cannot know on its own: the pull context ──────────
     truncation = (pull.detail or {}).get("truncation")
@@ -152,7 +177,8 @@ async def reconcile_run(
 
     summary, newly = await apply_verdicts(db, run.run_id, results, verdicts,
                                           source=f"{connector_kind}:{integ.name}",
-                                          pull_context=ctx)
+                                          pull_context=ctx, observations=eligible,
+                                          window_seconds=window_seconds)
     summary["pulled"] = len(pull.observations)
     summary["host_scope"] = host_scope
     if "incidents" in ctx:
@@ -210,6 +236,8 @@ async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
 async def apply_verdicts(
     db: AsyncSession, run_id: str, results: list[Result], verdicts: list, source: str,
     *, pull_context: Optional[dict[str, Any]] = None,
+    observations: Optional[list] = None,
+    window_seconds: int = DEFAULT_WINDOW_SECONDS,
 ) -> tuple[dict[str, Any], int]:
     """Persist matched verdicts (observed/observed_at), emit SSE, summarise.
 
@@ -219,9 +247,30 @@ async def apply_verdicts(
     membership into a correlation rate. Omitted by the completion-time score,
     where nothing has been measured yet.
 
+    ``observations`` is the alert list the verdicts were matched against; the
+    matched alert's untouched record is persisted as an ``Observation`` row.
+    ``window_seconds`` is the match window for every type ``window_by_type``
+    does not override; it decides when a silent row's window has closed.
+
+    Outcomes: a ``prevent`` expectation is judged by
+    :func:`engine.outcome.evaluate_prevent` (two witnesses: the alert and the
+    host); a ``detect`` expectation that matched is ``detected``. A row the host
+    already marked ``not_reached`` / ``not_executed`` is never re-judged here.
+
     Returns ``(summary, newly_matched)``.
     """
     by_id = {r.id: r for r in results}
+    # Loaded BEFORE the loop: the run's profile mode and block-mode status are
+    # inputs to every prevent verdict.
+    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
+    terminations = {
+        so.step_id: so.termination
+        for so in (await db.execute(
+            select(StepOutcome).where(StepOutcome.run_id == run_id))).scalars().all()
+    }
+    alerts = list(observations or [])
+    by_ext = {a.external_id: a for a in alerts if getattr(a, "external_id", None)}
+
     matched = 0
     for v in verdicts:
         if not v.matched:
@@ -235,7 +284,36 @@ async def apply_verdicts(
                 f"(matched on {', '.join(v.matched_on)}; "
                 f"alert={v.alert_external_id or v.alert_name or 'n/a'})")
         result.notes = ((result.notes + " | ") if result.notes else "") + note
+        result.alert_action = v.alert_action
+        result.alert_outcome = v.alert_outcome
+        alert = _matched_alert(v, alerts, by_ext)
+        db.add(Observation(
+            run_id=run_id, result_id=result.id, source=source,
+            external_id=v.alert_external_id, observed_at=v.observed_at,
+            name=v.alert_name, alert_source=v.alert_source,
+            action=getattr(alert, "action", None),
+            action_pretty=getattr(alert, "action_pretty", None),
+            alert_outcome=v.alert_outcome,
+            raw=getattr(alert, "raw", None),
+        ))
+        if result.outcome in EXCLUDED_FROM_DENOMINATOR:
+            pass  # host evidence says the step never ran; never re-judged here
+        elif result.expected_outcome == "prevent":
+            if run is not None:  # no run row ⇒ no profile mode ⇒ leave unjudged
+                _write_prevent(result, evaluate_prevent(
+                    agent_profile_mode=run.agent_profile_mode,
+                    alert_outcome=v.alert_outcome,
+                    termination=terminations.get(result.step_id),
+                    window_closed=False,
+                    block_mode_status=run.block_mode_status))
+        else:
+            # Whatever the alert's own action: a `detect` expectation is met.
+            result.outcome = OUTCOME_DETECTED
         matched += 1
+
+    if run is not None:
+        await _judge_silent_results(db, run, results, terminations,
+                                    window_seconds=window_seconds)
 
     await db.commit()
 
@@ -262,7 +340,6 @@ async def apply_verdicts(
     # hook here scores every one of them, with no new scheduling and no
     # outbound call: Tier 1 reads only rows CortexSim already owns.
     summary = efficacy_summary(results, matched, source)
-    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
     if run is not None:
         summary["tc_verdict"] = await score_run_safely(
             db, run, source=f"reconcile:{source}", results=results,
@@ -273,16 +350,97 @@ async def apply_verdicts(
     return summary, matched
 
 
+def _matched_alert(v: Any, alerts: list, by_ext: dict[str, Any]) -> Any:
+    """The alert a verdict matched, from the list it was matched against."""
+    if v.alert_external_id and v.alert_external_id in by_ext:
+        return by_ext[v.alert_external_id]
+    for a in alerts:
+        if a.observed_at == v.observed_at and a.name == v.alert_name:
+            return a
+    return None
+
+
+def _write_prevent(result: Result, pv: Any) -> None:
+    result.outcome = pv.outcome
+    result.outcome_reason = pv.reason
+    result.kpi_verdict = pv.kpi_verdict
+
+
+async def _judge_silent_results(
+    db: AsyncSession, run: Run, results: list[Result], terminations: dict[str, Any],
+    *, window_seconds: int,
+) -> None:
+    """Judge every still-unobserved Result whose match window has closed.
+
+    A ``prevent`` row goes through ``evaluate_prevent`` with no alert; a silent
+    Analytics/ABIOC row stays ``pending`` with its soak reason (activation
+    period, or the dedup window of a paired second run) instead of reading as a
+    miss. Rows already ``not_reached`` / ``not_executed`` are never touched, nor
+    is any row already judged beyond ``pending``.
+    """
+    now = datetime.utcnow()  # naive UTC, exactly as executed_at is stored
+    by_type = window_by_type()
+    first_run_seen: Optional[set] = None
+    for r in results:
+        if r.observed or r.executed_at is None:
+            continue
+        if r.outcome not in (None, OUTCOME_PENDING):
+            continue
+        window = by_type.get(r.signal_type, window_seconds)
+        if now < r.executed_at + timedelta(seconds=window):
+            continue
+        if r.expected_outcome == "prevent":
+            _write_prevent(r, evaluate_prevent(
+                agent_profile_mode=run.agent_profile_mode, alert_outcome=None,
+                termination=terminations.get(r.step_id), window_closed=True,
+                block_mode_status=run.block_mode_status))
+            continue
+        if first_run_seen is None:
+            first_run_seen = await _first_run_observed_keys(db, run)
+        reason = soak_pending_reason(
+            signal_type=r.signal_type, soakless_attested=run.soakless_attested,
+            first_run_observed=(r.step_id, r.detection_id or r.expected_detection)
+            in first_run_seen)
+        if reason is not None:
+            r.outcome = OUTCOME_PENDING
+            r.outcome_reason = reason
+
+
+async def _first_run_observed_keys(db: AsyncSession, run: Run) -> set:
+    """``(step_id, detection_id or expected_detection)`` the paired first run observed."""
+    if not run.paired_with_run_id:
+        return set()
+    rows = (await db.execute(select(Result).where(
+        Result.run_id == run.paired_with_run_id, Result.observed.is_(True)))).scalars().all()
+    return {(r.step_id, r.detection_id or r.expected_detection) for r in rows}
+
+
 def efficacy_summary(results: list[Result], newly_matched: int, source: str) -> dict[str, Any]:
+    """Coverage over the rows that could have produced evidence.
+
+    Rows ``not_reached`` / ``not_executed`` and soak-pending Analytics rows
+    leave numerator and denominator; ``excluded`` counts them by reason.
+    """
     total = len(results)
-    observed = sum(1 for r in results if r.observed)
-    mttds = [r.mttd_seconds for r in results if r.mttd_seconds is not None]
+    excluded = empty_exclusions()
+    counted = []
+    for r in results:
+        why = denominator_exclusion(r)
+        if why is None:
+            counted.append(r)
+        else:
+            excluded[why] += 1
+    denom = len(counted)
+    observed = sum(1 for r in counted if r.observed)
+    mttds = [r.mttd_seconds for r in counted if r.mttd_seconds is not None]
     return {
         "source": source,
         "total_expected": total,
+        "denominator": denom,
+        "excluded": excluded,
         "observed": observed,
         "newly_matched": newly_matched,
-        "coverage_pct": round(observed / total * 100, 1) if total else 0.0,
+        "coverage_pct": round(observed / denom * 100, 1) if denom else 0.0,
         "mttd": {
             "count": len(mttds),
             "avg_seconds": round(sum(mttds) / len(mttds), 1) if mttds else None,

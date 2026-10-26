@@ -113,3 +113,20 @@ def test_correlation_rate_from_incident_rows_uses_alert_counts():
     rows = [SimpleNamespace(incident_id="1", alert_count=5), SimpleNamespace(incident_id="2", alert_count=1)]
     v, a, k = correlation_rate_from_incidents(rows)
     assert (a, k) == (6, 2) and round(v, 1) == 80.0
+
+
+def test_detection_accuracy_excludes_not_reached_and_soak_pending_rows():
+    def _o(observed, outcome=None, reason=None):
+        return SimpleNamespace(observed=observed, executed_at=object(),
+                               outcome=outcome, outcome_reason=reason)
+
+    acc = detection_accuracy([
+        _o(True, "detected"), _o(False),
+        _o(False, "not_reached", "UPSTREAM_SEVERED"),
+        _o(False, "not_executed", "TOOL_ABSENT"),
+        _o(False, "pending", "ANALYTICS_ACTIVATION_PERIOD"),
+        _o(False, "pending", "DEDUP_WINDOW"),
+    ])
+    value, num, den = acc
+    assert (value, num, den) == (50.0, 1, 2)
+    assert acc.excluded == {"not_reached": 1, "not_executed": 1, "soak_pending": 2}

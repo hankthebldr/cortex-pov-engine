@@ -21,6 +21,11 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Optional
 
+from engine.outcome import (
+    ANALYTICS_ACTIVATION_PERIOD,
+    DEDUP_WINDOW,
+    EXCLUDED_FROM_DENOMINATOR,
+)
 from engine.verifier import FAIL, PASS, evaluate_threshold
 
 MTTD = "mttd"
@@ -60,16 +65,68 @@ def kpi_family(primary_kpi: Optional[str], threshold: Any) -> Optional[str]:
     return None
 
 
-def detection_accuracy(results: Iterable[Any]) -> "tuple[Optional[float], int, int]":
+#: Soak reasons: an Analytics/ABIOC row that is silent for a reason that says
+#: nothing about the detector (activation period, dedup of a repeat alert).
+SOAK_REASONS = frozenset({ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW})
+
+
+def denominator_exclusion(result: Any) -> Optional[str]:
+    """Why ``result`` leaves the efficacy denominator, or None when it counts.
+
+    ``not_reached`` / ``not_executed`` — the step never ran, so neither a hit
+    nor a miss is evidence; ``soak_pending`` — an Analytics/ABIOC row that
+    stays pending for a soak reason. The key is the one ``excluded`` reports.
+    """
+    outcome = getattr(result, "outcome", None)
+    if outcome in EXCLUDED_FROM_DENOMINATOR:
+        return outcome
+    if getattr(result, "outcome_reason", None) in SOAK_REASONS:
+        return "soak_pending"
+    return None
+
+
+def empty_exclusions() -> dict[str, int]:
+    return {"not_reached": 0, "not_executed": 0, "soak_pending": 0}
+
+
+class AccuracyMeasure(tuple):
+    """``(percent, observed, seeded)`` that also carries ``.excluded``.
+
+    A 3-tuple so every caller that unpacks it keeps working; ``excluded`` is
+    the count of rows taken out of BOTH numerator and denominator, by reason.
+    """
+
+    excluded: dict[str, int]
+
+    def __new__(cls, value: Optional[float], observed: int, seeded: int,
+                excluded: dict[str, int]) -> "AccuracyMeasure":
+        t = super().__new__(cls, (value, observed, seeded))
+        t.excluded = excluded
+        return t
+
+
+def detection_accuracy(results: Iterable[Any]) -> AccuracyMeasure:
     """``(percent, observed, seeded)`` over the results that actually executed.
 
-    None (not 0.0) when nothing was seeded: an empty run has no accuracy.
+    Rows whose outcome is ``not_reached``/``not_executed``, or which are
+    soak-pending, leave numerator and denominator; ``.excluded`` counts them.
+    None (not 0.0) when nothing remains: an empty run has no accuracy.
     """
-    seeded = [r for r in results if getattr(r, "executed_at", None) is not None]
+    excluded = empty_exclusions()
+    seeded = []
+    for r in results:
+        if getattr(r, "executed_at", None) is None:
+            continue
+        why = denominator_exclusion(r)
+        if why is not None:
+            excluded[why] += 1
+            continue
+        seeded.append(r)
     if not seeded:
-        return None, 0, 0
+        return AccuracyMeasure(None, 0, 0, excluded)
     observed = sum(1 for r in seeded if getattr(r, "observed", False))
-    return round(observed / len(seeded) * 100.0, 1), observed, len(seeded)
+    return AccuracyMeasure(round(observed / len(seeded) * 100.0, 1), observed,
+                           len(seeded), excluded)
 
 
 def correlation_rate(alert_incidents: dict[str, Optional[str]]) -> "tuple[Optional[float], int, int]":
@@ -155,9 +212,11 @@ def build_measurement(
                               "unscoped": unscoped, "truncated": truncated}
 
     if family == ACCURACY:
-        value, observed, seeded = detection_accuracy(results)
+        acc = detection_accuracy(results)
+        value, observed, seeded = acc
         record.update({"kpi": "Detection Accuracy", "value": value,
-                       "observed": observed, "seeded": seeded, "unit": "%"})
+                       "observed": observed, "seeded": seeded, "unit": "%",
+                       "excluded": dict(acc.excluded)})
         scored, reason = guard_measurement(threshold, value, unscoped=unscoped,
                                            truncated=truncated, matched=observed)
         record["scored"] = scored
