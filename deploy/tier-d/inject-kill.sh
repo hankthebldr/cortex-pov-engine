@@ -23,7 +23,12 @@
 #             still sees a shell. Needs a scenario that declares cgo_anchor or a
 #             step `causality` -- without one the beacon runs each step as its
 #             own `sh -c` and there is NO anchor; this then times out, loudly.
-#   subshell  the NEWEST direct child of the anchor
+#   subshell  the single direct child of the anchor
+#   Exactly one candidate is required for anchor and for subshell: with more
+#   than one the injector refuses (exit 3, "ambiguous") rather than guess by pid.
+#   In BOTH anchor and subshell modes the injector waits until the anchor has a
+#   child (the target step's subshell has forked) before firing, so a kill can
+#   never land on a step that has not started.
 #
 # WHEN IT FIRES
 #   A step's /output is only POSTed AFTER the step ends, so "when /output for
@@ -39,6 +44,9 @@
 #   MISSED <mode>                      the target step finished first
 # Exit: 0 KILLED, 3 TIMEOUT, 4 MISSED, 2 usage.
 # ===========================================================================
+# `set -u` only (no -e/-pipefail): this is a polling loop whose probes (kill -0,
+# pgrep, ps, grep -q) are EXPECTED to fail until the victim appears; -e would turn
+# every miss into an exit.
 set -u
 
 SIMCORE="" RUN_ID="" MODE="" AT_STEP="" AFTER_STEP="" AGENT_ID="" BEACON_PID=""
@@ -71,15 +79,16 @@ finish() { printf '%s\n' "$1" > "$STATUS_FILE"; echo "[inject-kill] $1"; exit "$
 # The separator is a multibyte dot (or its \u escape), hence the loose gap.
 step_in_output() {
   curl -fsS --max-time 5 "${SIMCORE}/api/runs/${RUN_ID}" 2>/dev/null \
-    | grep -Eq "=== STEP [0-9]+/[0-9]+ .{1,8}$1 "
+    | grep -Eq "=== STEP [0-9]+/[0-9]+ .{1,24}$1 "
 }
 
 find_beacon() {
   if [ -n "$BEACON_PID" ]; then
-    kill -0 "$BEACON_PID" 2>/dev/null && echo "$BEACON_PID"
-    return
+    if kill -0 "$BEACON_PID" 2>/dev/null; then echo "$BEACON_PID"; fi
+    return 0
   fi
   pgrep -f -- "cortexsim-agent.* --id ${AGENT_ID}( |\$)" | head -n1
+  return 0
 }
 
 # children_of <pid>: "pid comm" lines, oldest first.
@@ -89,23 +98,29 @@ children_of() {
 
 is_shell() { case "${1##*/}" in sh|bash|dash|ash) return 0 ;; *) return 1 ;; esac; }
 
-pick_victim() { # echoes "pid comm" or nothing
-  local beacon anchor line pid comm
+# pick_victim: sets VICTIM="pid comm" and returns 0; returns 1 when nothing is
+# killable yet; returns 2 (AMBIGUOUS set) when more than one candidate exists.
+pick_victim() {
+  local beacon pid comm anchors=() kids
+  VICTIM="" AMBIGUOUS=""
   beacon="$(find_beacon)"
   [ -n "$beacon" ] || return 1
   if [ "$MODE" = beacon ]; then
-    echo "$beacon $(ps -o comm= -p "$beacon" | tr -d ' ')"; return 0
+    VICTIM="$beacon $(ps -o comm= -p "$beacon" | tr -d ' ')"; return 0
   fi
-  anchor=""
   while read -r pid comm; do
     [ -n "$pid" ] || continue
-    if is_shell "$comm"; then anchor="$pid $comm"; break; fi
+    if is_shell "$comm"; then anchors+=("$pid $comm"); fi
   done < <(children_of "$beacon")
-  [ -n "$anchor" ] || return 1
-  if [ "$MODE" = anchor ]; then echo "$anchor"; return 0; fi
-  line="$(children_of "${anchor%% *}" | tail -n1)"
-  [ -n "$line" ] || return 1
-  echo "$line"
+  [ "${#anchors[@]}" -gt 0 ] || return 1
+  if [ "${#anchors[@]}" -gt 1 ]; then AMBIGUOUS="${#anchors[@]} shell children of the beacon"; return 2; fi
+  kids="$(children_of "${anchors[0]%% *}")"
+  [ -n "$kids" ] || return 1   # the step's subshell has not forked yet
+  if [ "$MODE" = anchor ]; then VICTIM="${anchors[0]}"; return 0; fi
+  if [ "$(printf '%s\n' "$kids" | wc -l)" -gt 1 ]; then
+    AMBIGUOUS="more than one child of the anchor"; return 2
+  fi
+  VICTIM="$kids"; return 0
 }
 
 echo "[inject-kill] mode=$MODE at=$AT_STEP after=${AFTER_STEP:-<none>} run=$RUN_ID timeout=${TIMEOUT}s"
@@ -122,8 +137,11 @@ fi
 # Spin on the process tree: the victim can live only milliseconds.
 i=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  if victim="$(pick_victim)" && [ -n "$victim" ]; then
-    pid="${victim%% *}"; comm="${victim#* }"
+  pick_victim; rc=$?
+  if [ "$rc" -eq 2 ]; then
+    finish "TIMEOUT $MODE (ambiguous: ${AMBIGUOUS}; refusing to guess)" 3
+  elif [ "$rc" -eq 0 ]; then
+    pid="${VICTIM%% *}"; comm="${VICTIM#* }"
     if kill -KILL "$pid" 2>/dev/null; then
       finish "KILLED $MODE pid=$pid comm=$comm" 0
     fi

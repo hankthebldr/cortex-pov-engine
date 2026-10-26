@@ -35,10 +35,10 @@
 #     subshell  SIGKILL the step's subshell      -> step reports signaled
 #     anchor    SIGKILL the anchor shell         -> step reports anchor_terminated
 #               (needs a scenario with cgo_anchor / step causality)
-#     beacon    SIGKILL the beacon               -> run is called beacon_lost by the
-#               heartbeat sweep. The agent must first go OFFLINE (a fixed 5 min of
-#               silence in api/agents.py) and CORTEXSIM_BEACON_LOST_AFTER_SECONDS
-#               must have elapsed, so the poll budget is doubled (~12 min).
+#     beacon    SIGKILL the beacon               -> the heartbeat sweep calls the run
+#               beacon_lost once the agent has been silent for
+#               CORTEXSIM_BEACON_LOST_AFTER_SECONDS (default 180; lower it on the
+#               SimCore under test) plus up to one 30 s sweep interval.
 #   The launch declares agent_profile_mode=block (without it a prevent Result is
 #   never held pending on a host witness). Without --inject-kill nothing in this
 #   script changes.
@@ -50,12 +50,18 @@
 #      (a real defect), or the run does not carry enough honest evidence to
 #      call PASS (zero steps executed, some declared steps never reported)
 #   2  harness could not set up (docker, SimCore unreachable, enrol failed)
-#   3  the run never reached a terminal state within the poll budget (a hung
-#      run, or SimCore not updating status) — classify.py was never even
-#      invoked, because there is nothing terminal yet to classify
-#   4  --inject-kill was requested but the kill was NOT delivered (the injector
-#      timed out, or the step finished before it could be hit). The run proves
-#      nothing about that witness; verdict.json is still written
+#   3  the run never reached a terminal state within the harness poll budget
+#      (120 x 3s = 360s) — a hung run, or
+#      SimCore not updating status. classify.py was never even invoked.
+#      (The injector has its own TIMEOUT, below; it is surfaced as exit 4.)
+#   4  --inject-kill was requested but the kill was NOT delivered: the injector
+#      reported TIMEOUT (no killable process within its 120 s budget) or MISSED
+#      (the target step finished before it could be hit). The run proves nothing
+#      about that witness; verdict.json is still written.
+#
+# ENVIRONMENT (tests/e2e_isolated/test_tier_d_prevention_witnesses.py)
+#   TIER_D_BEACON_LOST_AFTER_SECONDS  must equal the value SimCore was STARTED
+#      with for CORTEXSIM_BEACON_LOST_AFTER_SECONDS (the test cannot read it).
 # ===========================================================================
 set -euo pipefail
 
@@ -89,7 +95,7 @@ while [ $# -gt 0 ]; do
     --keep)     KEEP=1; shift ;;
     --inject-kill) INJECT_MODE="$2"; shift 2 ;;
     --at-step)  AT_STEP="$2"; shift 2 ;;
-    -h|--help)  sed -n '1,40p' "$0"; exit 0 ;;
+    -h|--help)  sed -n '1,70p' "$0"; exit 0 ;;
     *) err "unknown argument: $1"; exit 2 ;;
   esac
 done
@@ -105,9 +111,6 @@ fi
 if [ -z "$INJECT_MODE" ] && [ -n "$AT_STEP" ]; then
   err "--at-step only means something with --inject-kill"; exit 2
 fi
-# The beacon witness is only reached after the agent has been silent for the
-# 5-minute offline window PLUS a 30 s sweep: double the poll budget for it.
-[ "$INJECT_MODE" = beacon ] && POLL_TRIES=240
 RESULTS_DIR="${RESULTS_DIR:-${SCRIPT_DIR}/results/${SCENARIO}}"
 mkdir -p "$RESULTS_DIR"
 
@@ -299,8 +302,8 @@ if is_non_terminal_status "$STATUS"; then
   exit 3
 fi
 ok "terminal status: ${STATUS}  (run.json saved)"
-# The Results carry the per-step outcome the engine projected; classify.py uses
-# them to account for steps a severed run never reached.
+# Saved for the operator and the witness tests (Result outcome / reason per step).
+# classify.py reads the host evidence from run.json's own step_outcomes.
 curl -fsS "${SIMCORE}/api/results/${RUN_ID}" > "${RESULTS_DIR}/results.json"
 
 INJECT_RESULT=""
@@ -324,7 +327,6 @@ fi
 RC=0
 python3 "${SCRIPT_DIR}/classify.py" \
   --run "${RESULTS_DIR}/run.json" \
-  --results "${RESULTS_DIR}/results.json" \
   --scenario "$SCENARIO" \
   --out "${RESULTS_DIR}/verdict.json" || RC=$?
 

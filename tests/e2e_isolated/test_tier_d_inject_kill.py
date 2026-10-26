@@ -201,3 +201,50 @@ def test_usage_errors_exit_2():
     for args in (["--mode", "bogus"], ["--mode", "beacon"]):
         proc = subprocess.run([str(INJECT), *args], capture_output=True, text=True)
         assert proc.returncode == 2
+
+
+def _spawn(procs, cmd, want_kids):
+    p = subprocess.Popen(["bash", "-c", cmd], start_new_session=True)
+    procs.append(p)
+    deadline = time.time() + 5
+    while time.time() < deadline and len(_kids(p.pid)) < want_kids:
+        time.sleep(0.05)
+    return p
+
+
+def test_anchor_mode_waits_until_the_step_has_forked(simcore, tmp_path):
+    """I1: an anchor with no child means no step subshell yet -- never fire."""
+    fifo = tmp_path / "f"
+    os.mkfifo(fifo)
+    procs = []
+    try:
+        # the anchor blocks on a builtin read: it has NO children
+        p = _spawn(procs, f"bash -c 'read x < {fifo}; :' & sleep 120; :", 1)
+        simcore.output = STEP.format(n=1, sid="step-01")
+        proc, status = _run(simcore, tmp_path, p.pid, "anchor", timeout=3)
+        assert proc.returncode == 3 and status.startswith("TIMEOUT anchor")
+        assert all(_alive(k) for k in _kids(p.pid))
+    finally:
+        for q in procs:
+            try:
+                os.killpg(q.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            q.wait()
+
+
+def test_two_shell_children_is_ambiguous_and_kills_nothing(simcore, tmp_path):
+    procs = []
+    try:
+        p = _spawn(procs, "bash -c 'sleep 100; :' & bash -c 'sleep 100; :' & sleep 120; :", 3)
+        simcore.output = STEP.format(n=1, sid="step-01")
+        proc, status = _run(simcore, tmp_path, p.pid, "anchor", timeout=5)
+        assert proc.returncode == 3 and "ambiguous" in status
+        assert all(_alive(k) for k in _kids(p.pid))
+    finally:
+        for q in procs:
+            try:
+                os.killpg(q.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            q.wait()
