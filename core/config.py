@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_RECONCILE_INTERVAL: int = 300          # seconds between sweeps
     CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
     CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
+    # A delivered run whose agent is offline and silent this long is terminalised
+    # as beacon_lost by the heartbeat sweep (the XDR agent may kill the beacon).
+    CORTEXSIM_BEACON_LOST_AFTER_SECONDS: int = 180
 
     # Match window for Analytics / ABIOC expectations, used by every reconcile
     # path (manual /observations, /reconcile, the auto sweep) via

@@ -145,3 +145,61 @@ def test_list_agents_read_time_overrides_stored_status(client, session_factory):
     agents = client.get("/api/agents").json()["agents"]
     zombie = next(a for a in agents if a["agent_id"] == "zombie")
     assert zombie["status"] == "offline"
+
+
+# ---------------------------------------------------------------------------
+# Sweep: an offline agent's delivered running run is terminalised
+# ---------------------------------------------------------------------------
+
+
+def _seed_running_run(session_factory, agent_id: str, started_ago: float):
+    from models import Result, Run, StepOutcome
+
+    async def _seed():
+        async with session_factory() as db:
+            t0 = datetime.utcnow() - timedelta(seconds=started_ago)
+            db.add(Run(run_id="rl", scenario_id="SIM-X", mode="pull", target=agent_id,
+                       status="running", open_tasks=1, started_at=t0, delivered_at=t0))
+            db.add(Result(run_id="rl", step_id="step-01", plane="EDR", signal_type="BIOC",
+                          expected_detection="d"))
+            db.add(StepOutcome(run_id="rl", step_id="step-01", started_at=t0))
+            await db.commit()
+
+    asyncio.run(_seed())
+
+
+def _run_status(session_factory):
+    from models import Run
+    from sqlalchemy import select
+
+    async def _go():
+        async with session_factory() as db:
+            r = (await db.execute(select(Run).where(Run.run_id == "rl"))).scalar_one()
+            return r.status, r.severed_at_step
+
+    return asyncio.run(_go())
+
+
+def test_sweep_invokes_terminalisation_for_offline_agents(session_factory, monkeypatch):
+    import database
+    from api.agents import sweep_agents_once
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    _seed_agent(session_factory, "gone", age_seconds=900, stored_status="offline")
+    _seed_agent(session_factory, "back", age_seconds=5, stored_status="online")
+    _seed_running_run(session_factory, "gone", started_ago=800)
+
+    asyncio.run(sweep_agents_once())
+    assert _run_status(session_factory) == ("complete", "step-01")
+
+
+def test_sweep_leaves_a_reconnected_agents_run_running(session_factory, monkeypatch):
+    import database
+    from api.agents import sweep_agents_once
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    _seed_agent(session_factory, "back", age_seconds=5, stored_status="offline")
+    _seed_running_run(session_factory, "back", started_ago=800)
+
+    asyncio.run(sweep_agents_once())
+    assert _run_status(session_factory) == ("running", None)
