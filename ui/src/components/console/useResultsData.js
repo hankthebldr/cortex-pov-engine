@@ -122,10 +122,12 @@ export default function useResultsData(runId) {
     const stitched = rows.filter((r) =>
       r.plane === 'ANALYTICS' && isHitStatus(r.status)
     ).length
-    // The tile's denominator follows the one rule (R1): a row that never ran
-    // or is still soaking is not something XSIAM could have stitched.
+    // The tile's denominator: ANALYTICS-plane rows (the numerator's own
+    // population) that pass the one denominator rule -- a row that never ran
+    // or is still soaking is not something XSIAM could have stitched. Zero is
+    // degraded, rendered "—", never "0 / 0".
     const stitchDenominator = rows.filter((r) =>
-      isInDenominator(r.outcome, r.outcome_reason)
+      r.plane === 'ANALYTICS' && isInDenominator(r.outcome, r.outcome_reason)
     ).length
 
     return {

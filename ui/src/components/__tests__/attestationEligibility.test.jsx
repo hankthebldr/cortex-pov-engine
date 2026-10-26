@@ -14,7 +14,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import EvidenceView from '../console/EvidenceView.jsx'
 import ResultsValidationWizard from '../ResultsValidationWizard.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
-import { isAttestable } from '../../outcomes.js'
+import { isAttestable, isAttestationRefused } from '../../outcomes.js'
 
 void React
 
@@ -89,5 +89,46 @@ describe('ResultsValidationWizard bulk path', () => {
     expect(screen.getByTestId('wizard-bulk-skipped').textContent).toMatch(/1 skipped/)
     fireEvent.click(screen.getByRole('button', { name: /Mark all observed/ }))
     await waitFor(() => expect(validated).toEqual([1]))
+  })
+})
+
+// ─── Round 3: per-row controls are hidden where the server refuses ─────────
+import DetectionDrawer from '../console/DetectionDrawer.jsx'
+
+describe('per-row attestation controls', () => {
+  it('isAttestationRefused names the rows the server 409s', () => {
+    expect(isAttestationRefused({ outcome: 'prevented' })).toBe(true)
+    expect(isAttestationRefused({ outcome: 'not_reached' })).toBe(true)
+    expect(isAttestationRefused({ outcome: 'not_executed' })).toBe(true)
+    expect(isAttestationRefused({ outcome: 'pending', expected_outcome: 'prevent' })).toBe(true)
+    expect(isAttestationRefused({ outcome: null, expectedOutcome: 'prevent' })).toBe(true)
+    expect(isAttestationRefused({ outcome: 'missed', expected_outcome: 'detect' })).toBe(false)
+    expect(isAttestationRefused({ outcome: null })).toBe(false)
+  })
+
+  it('Evidence hides ✓/✗ on a not_reached row and a prevent row, keeps them on a detect row', async () => {
+    const results = [
+      ROW(1, 'pending', 'EVIDENCE_INCOMPLETE'),
+      ROW(2, 'not_reached', 'UPSTREAM_SEVERED'),
+      { ...ROW(3, 'pending', 'PREVENTION_UNCONFIRMED_NO_ALERT'), expected_outcome: 'prevent' },
+    ]
+    installRoutes({ 'GET /api/results/run-a': { ...PAYLOAD, results, total: 3 } })
+    const { container } = render(
+      <EvidenceView lastRun={{ runId: 'run-a', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
+    await waitFor(() => expect(screen.getByText('det-1')).toBeInTheDocument())
+    const actions = (text) => Array.from(container.querySelectorAll('.scorecard__row'))
+      .find((r) => r.textContent.includes(text)).querySelector('.scorecard__row-actions')
+    expect(actions('det-1')).not.toBeNull()
+    expect(actions('det-2')).toBeNull()
+    expect(actions('det-3')).toBeNull()
+  })
+
+  it('the drawer hides Mark detected / Mark missed on a refused row', () => {
+    const row = { id: 5, tid: 'T1005', plane: 'EDR', detectionType: 'BIOC', alert: 'x',
+      observed: true, outcome: 'prevented', outcome_reason: null, expectedOutcome: 'prevent', notes: '' }
+    render(<DetectionDrawer row={row} open onClose={() => {}} />)
+    expect(screen.queryByText(/Mark detected/)).toBeNull()
+    expect(screen.queryByText(/Mark missed/)).toBeNull()
+    expect(screen.getByTestId('drawer-attestation-refused')).toBeInTheDocument()
   })
 })

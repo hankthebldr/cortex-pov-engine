@@ -28,7 +28,7 @@ import tarfile
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
-from engine.outcome import is_hit, row_status
+from engine.outcome import is_hit, is_in_denominator, row_status
 
 
 logger = logging.getLogger("cortexsim.engine.report_generator")
@@ -223,12 +223,17 @@ def render_exec_summary_markdown(
     """Render the exec-level markdown summary (matches the lab template)."""
     s = scenario_dict or {}
     total = len(results)
-    observed = sum(1 for r in results if _is_hit(r))
+    # The one denominator rule and the one numerator predicate: a row whose
+    # step never ran (or that is soaking) leaves both; pending is never a hit.
+    in_den = [r for r in results
+              if is_in_denominator(r.get("outcome"), r.get("outcome_reason"))]
+    denominator = len(in_den)
+    observed = sum(1 for r in in_den if _is_hit(r))
     # A result is ADJUDICATED once the one rule (``row_status``) gives it any
     # status but ``pending``. A still-pending result is "not measured yet",
     # never "missed" — folding pending into a miss manufactures a false negative.
-    validated = sum(1 for r in results if _row_status(r) != "pending")
-    coverage_pct = round(observed / total * 100, 1) if total else 0.0
+    validated = sum(1 for r in in_den if _row_status(r) != "pending")
+    coverage_pct = round(observed / denominator * 100, 1) if denominator else 0.0
     mttds = [r["mttd_seconds"] for r in results if r.get("mttd_seconds") is not None]
     avg_mttd = round(sum(mttds) / len(mttds), 1) if mttds else None
 
@@ -259,7 +264,13 @@ def render_exec_summary_markdown(
     lines.append("")
     lines.append("## Key Findings")
     lines.append("")
-    lines.append(f"- **Coverage:** {observed} / {total} expected detections observed ({coverage_pct}%).")
+    if denominator:
+        lines.append(f"- **Coverage:** {observed} / {denominator} expected detections observed ({coverage_pct}%)"
+                     + (f"; {total - denominator} excluded (never ran or soaking)." if total > denominator else "."))
+    else:
+        lines.append(f"- **Coverage:** not measurable — {total} expected detection(s), "
+                     f"none in the denominator (never ran or soaking)."
+                     if total else "- **Coverage:** no expected detections defined.")
     if avg_mttd is not None:
         lines.append(f"- **MTTD (average across observed):** {avg_mttd}s.")
     lines.extend(_measurement_lines(run_dict, s))
@@ -282,9 +293,15 @@ def render_exec_summary_markdown(
                 "nothing to detect. Bind the scenario's expected detections "
                 "before using this run for a POV readout."
             )
+        elif denominator == 0:
+            verdict = (
+                f"None of the {total} expected detections can be scored yet — "
+                f"their steps never ran or their detectors are still soaking — so "
+                f"coverage cannot be concluded from this run."
+            )
         else:
             verdict = (
-                f"No detections have been validated yet ({total} pending DC "
+                f"No detections have been validated yet ({denominator} pending DC "
                 f"validation), so coverage cannot be concluded — the seeded "
                 f"results have simply not been adjudicated against the Cortex "
                 f"console yet. Validate them before customer hand-off."

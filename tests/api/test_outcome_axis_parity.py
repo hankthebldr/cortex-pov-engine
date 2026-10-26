@@ -202,3 +202,13 @@ def test_the_fixture_miss_is_engine_written(seeded):
     outcomes = {r.step_id: r.outcome for r in results}
     assert outcomes["step-04"] == "missed"
     assert outcomes[UNJUDGED] is None
+
+
+def test_exec_summary_coverage_uses_the_one_denominator_and_numerator(seeded):
+    """The exec summary's coverage line: numerator through ``is_hit``,
+    denominator through ``is_in_denominator`` -- same answer as every surface."""
+    from engine.report_generator import render_exec_summary_markdown
+
+    run, results = seeded
+    md = render_exec_summary_markdown(run.to_dict(), None, [r.to_dict() for r in results])
+    assert f"{HITS} / {DENOMINATOR} expected detections observed ({PCT}%)" in md

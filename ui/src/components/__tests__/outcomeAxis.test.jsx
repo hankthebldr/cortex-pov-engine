@@ -253,13 +253,30 @@ describe('R4: an outcome-less unvalidated row is awaiting reconcile, never misse
 // The live run a04023ce… read "0 / 3": its denominator counted the
 // not_reached row. Rows that never ran (and soak-pending rows) leave it.
 describe('R1: the XSIAM STITCH denominator excludes rows that never ran or are soaking', () => {
-  it('reads n / 4 on the six-outcome run, not n / 6', async () => {
+  const stitchTile = () => Array.from(document.querySelectorAll('.kpi'))
+    .find((k) => k.querySelector('.kpi__label').textContent === 'XSIAM Stitch')
+
+  it('round 3: no analytics-plane row in the denominator renders "—", never "0 / 0"', async () => {
     installRoutes({ 'GET /api/results/run-ax': PAYLOAD })
     render(<EvidenceView lastRun={{ runId: 'run-ax', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
     await waitFor(() => expect(screen.getByText('det-missed')).toBeInTheDocument())
-    const tile = Array.from(document.querySelectorAll('.kpi'))
-      .find((k) => k.querySelector('.kpi__label').textContent === 'XSIAM Stitch')
-    expect(tile.querySelector('.kpi__suffix').textContent).toBe(' / 4')
+    expect(stitchTile().querySelector('.kpi__value').textContent).toBe('—')
+    expect(stitchTile().querySelector('.kpi__suffix')).toBeNull()
+  })
+
+  it('round 3: the denominator is ANALYTICS-plane rows in the denominator', async () => {
+    const A = (id, outcome, reason, observed) => ({ ...ROW(id, `step-a${id}`, outcome, reason, observed), plane: 'ANALYTICS' })
+    const results = [
+      ...RESULTS,
+      A(11, 'detected', null, true),
+      A(12, null, null, false),
+      A(13, 'not_reached', 'UPSTREAM_SEVERED', false),
+      A(14, 'pending', 'DEDUP_WINDOW', false),
+    ]
+    installRoutes({ 'GET /api/results/run-ax': { ...PAYLOAD, results, total: results.length } })
+    render(<EvidenceView lastRun={{ runId: 'run-ax', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
+    await waitFor(() => expect(screen.getByText('det-missed')).toBeInTheDocument())
+    expect(stitchTile().querySelector('.kpi__value').textContent).toBe('1 / 2')
   })
 
   it('isInDenominator mirrors engine.outcome.is_in_denominator', () => {

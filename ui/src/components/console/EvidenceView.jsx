@@ -7,7 +7,7 @@ import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
-import { statusLabel as labelFor, outcomeClass, isAttestable } from '../../outcomes.js'
+import { statusLabel as labelFor, outcomeClass, isAttestable, isAttestationRefused } from '../../outcomes.js'
 
 /**
  * EvidenceView — the Evidence tab.
@@ -253,13 +253,22 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         meta={kpis.median != null ? 'across confirmed detections' : 'no detections yet'}
         tone={kpis.median != null ? 'ac' : 'tx'}
       />
-      <Kpi
-        label="XSIAM Stitch"
-        value={kpis.stitched}
-        suffix={` / ${kpis.stitchDenominator}`}
-        meta="analytics-plane detections observed"
-        tone="info"
-      />
+      {kpis.stitchDenominator > 0 ? (
+        <Kpi
+          label="XSIAM Stitch"
+          value={kpis.stitched}
+          suffix={` / ${kpis.stitchDenominator}`}
+          meta="analytics-plane detections observed"
+          tone="info"
+        />
+      ) : (
+        <Kpi
+          label="XSIAM Stitch"
+          value="—"
+          meta="no analytics-plane detection to score on this run"
+          tone="tx"
+        />
+      )}
       <Kpi
         label="Pending"
         value={kpis.pending}
@@ -367,7 +376,7 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
         <span className={`scorecard__status scorecard__status--${status}`}>
           {statusLabel}
         </span>
-        {row.id != null && (
+        {row.id != null && !isAttestationRefused(row) && (
           <div className="scorecard__row-actions">
             {row.observed !== true && (
               <button

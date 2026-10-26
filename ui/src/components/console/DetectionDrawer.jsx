@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
-import { resultStatus, statusLabel as labelFor, outcomeClass } from '../../outcomes.js'
+import { resultStatus, statusLabel as labelFor, outcomeClass, isAttestationRefused } from '../../outcomes.js'
 
 /**
  * DetectionDrawer — operator drill-down for a single scorecard row.
@@ -159,6 +159,12 @@ export default function DetectionDrawer({
         </div>
       </div>
 
+      {isAttestationRefused(row) ? (
+        <div className="detection-drawer__hint mono" data-testid="drawer-attestation-refused">
+          No manual attestation here: this step never ran, or it is a prevention — a hand
+          mark cannot stand in for the alert and host witnesses. Reconcile against the tenant.
+        </div>
+      ) : (
       <div className="detection-drawer__actions">
         <button
           type="button"
@@ -188,6 +194,7 @@ export default function DetectionDrawer({
           </button>
         )}
       </div>
+      )}
     </aside>
   )
 }

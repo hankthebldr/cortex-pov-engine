@@ -111,6 +111,21 @@ export function isAttestable(row) {
   return row.outcome == null || ATTESTABLE_OUTCOMES.has(row.outcome)
 }
 
+/** Outcomes on which `PUT /validate` refuses any attestation (409). */
+const REFUSED_OUTCOMES = new Set(['prevented', 'not_reached', 'not_executed'])
+
+/**
+ * Would the server refuse a per-row attestation on this row? A step that never
+ * ran, a two-witness prevented row, and any `prevent` expectation (a hand mark
+ * is not a witness). The console hides the ✓/✗ controls there; the 409 path
+ * still guards anything that slips through.
+ */
+export function isAttestationRefused(row) {
+  if (!row) return true
+  if (REFUSED_OUTCOMES.has(row.outcome)) return true
+  return (row.expected_outcome ?? row.expectedOutcome) === 'prevent'
+}
+
 /** Every status Cortex saw (a coverage hit) — the prevention verdict aside. */
 export function isHitStatus(status) {
   const key = outcomeKey(status)
