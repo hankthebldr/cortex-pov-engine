@@ -19,7 +19,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from connectors.measures import denominator_exclusion, empty_exclusions
 from database import get_db
+from engine.outcome import OUTCOME_PREVENTED
 from events import event_bus
 from models import Result
 
@@ -74,14 +76,30 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
             )
 
-    # Compute coverage stats
+    # Coverage over the rows that could have produced evidence. Rows whose step
+    # never ran (``not_reached`` / ``not_executed``) and soak-pending
+    # Analytics/ABIOC rows leave numerator AND denominator — the one rule,
+    # ``engine.outcome.is_in_denominator``, via ``measures.denominator_exclusion``
+    # (the same split ``detection_accuracy`` and the run report use). A
+    # prevented row is a hit: the agent saw it and stopped it.
     total = len(results)
-    observed_count = sum(1 for r in results if r.observed)
-    coverage_pct = round((observed_count / total * 100), 1) if total > 0 else 0.0
-
-    # Per signal-type breakdown
-    by_type: dict[str, dict[str, int]] = {}
+    excluded = empty_exclusions()
+    in_den = []
     for r in results:
+        why = denominator_exclusion(r)
+        if why is None:
+            in_den.append(r)
+        else:
+            excluded[why] += 1
+    denominator = len(in_den)
+    observed_count = sum(1 for r in results if r.observed)
+    observed_in_den = sum(1 for r in in_den if r.observed)
+    prevented = sum(1 for r in in_den if r.outcome == OUTCOME_PREVENTED)
+    coverage_pct = round((observed_in_den / denominator * 100), 1) if denominator > 0 else 0.0
+
+    # Per signal-type breakdown, over the same denominator.
+    by_type: dict[str, dict[str, int]] = {}
+    for r in in_den:
         st = r.signal_type
         if st not in by_type:
             by_type[st] = {"total": 0, "observed": 0}
@@ -113,6 +131,10 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
         "coverage": {
             "observed": observed_count,
             "total": total,
+            "denominator": denominator,
+            "observed_in_denominator": observed_in_den,
+            "prevented": prevented,
+            "excluded": excluded,
             "pct": coverage_pct,
             "by_type": coverage_by_type,
         },
