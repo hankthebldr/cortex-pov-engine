@@ -440,8 +440,10 @@ def _migrate_prevention_columns(connection) -> None:
             connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
     if "runs" in tables:
         # Idempotent, so no dependence on inspector caching.
+        connection.execute(text("DROP INDEX IF EXISTS ix_runs_paired_with_run_id"))
         connection.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_runs_paired_with_run_id ON runs (paired_with_run_id)"))
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_paired_with_run_id "
+            "ON runs (paired_with_run_id) WHERE paired_with_run_id IS NOT NULL"))
 
 
 async def get_db():

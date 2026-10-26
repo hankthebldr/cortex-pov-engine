@@ -15,25 +15,27 @@ def client(make_client):
 
 
 def _seed(session_factory, first_status="complete", completed=True):
+    asyncio.run(_seed_async(session_factory, first_status, completed))
+
+
+async def _seed_async(session_factory, first_status="complete", completed=True):
     from models import Run, Scenario
 
-    async def go():
-        async with session_factory() as db:
-            db.add(Scenario(
-                scenario_id="SIM-T-001", name="t", plane="EDR", version="1.0",
-                status="active", uc_ref="UCS-EDR-01", uc_name="u", tc_ref="TC-EDR-01",
-                tc_name="t", mitre_tactic="TA0006", mitre_tactic_name="c",
-                mitre_technique="T1003", mitre_technique_name="d",
-                steps=[{"id": "step-01", "name": "s", "expected_detections": []}],
-            ))
-            db.add(Run(
-                run_id="first", scenario_id="SIM-T-001", mode="pull", target="agent-1",
-                status=first_status, agent_profile_mode="report",
-                started_at=datetime.utcnow() - timedelta(minutes=5),
-                completed_at=datetime.utcnow() if completed else None,
-            ))
-            await db.commit()
-    asyncio.run(go())
+    async with session_factory() as db:
+        db.add(Scenario(
+            scenario_id="SIM-T-001", name="t", plane="EDR", version="1.0",
+            status="active", uc_ref="UCS-EDR-01", uc_name="u", tc_ref="TC-EDR-01",
+            tc_name="t", mitre_tactic="TA0006", mitre_tactic_name="c",
+            mitre_technique="T1003", mitre_technique_name="d",
+            steps=[{"id": "step-01", "name": "s", "expected_detections": []}],
+        ))
+        db.add(Run(
+            run_id="first", scenario_id="SIM-T-001", mode="pull", target="agent-1",
+            status=first_status, agent_profile_mode="report",
+            started_at=datetime.utcnow() - timedelta(minutes=5),
+            completed_at=datetime.utcnow() if completed else None,
+        ))
+        await db.commit()
 
 
 def _runs(session_factory):
@@ -206,3 +208,104 @@ def test_seed_results_sets_prevention_module_from_card(client, session_factory):
     assert len(got) == 1
     assert got[0].expected_outcome == "prevent"
     assert got[0].prevention_module == "btp"
+
+
+def _launch_direct(session_factory, **kw):
+    from engine.orchestrator import orchestrator
+
+    async def one():
+        async with session_factory() as db:
+            return await orchestrator.launch(
+                scenario_id="SIM-T-001", mode="push", db=db,
+                agent_profile_mode="block", paired_with_run_id="first",
+                target_agent_id="agent-1", **kw)
+    return one()
+
+
+def test_concurrent_launches_pair_a_first_run_at_most_once(tmp_path):
+    """Two sessions on a file-backed SQLite (separate connections) race one first run.
+
+    The shared-connection in-memory fixture cannot host this: with StaticPool both
+    sessions ride ONE connection, so the loser's rollback also discards the
+    winner's pending insert (an artifact of the fixture, not of the guard).
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from database import Base
+    import models  # noqa: F401
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}",
+                                 connect_args={"timeout": 15})
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False)
+
+    async def go():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        await _seed_async(factory)
+        res = await asyncio.gather(_launch_direct(factory), _launch_direct(factory),
+                                   return_exceptions=True)
+        async with factory() as db:
+            from models import Run
+            rows = (await db.execute(select(Run))).scalars().all()
+        await engine.dispose()
+        return res, rows
+
+    results, rows = asyncio.run(go())
+    assert not [r for r in results if isinstance(r, BaseException)], results
+    assert sorted(r.success for r in results) == [False, True]
+    assert next(r for r in results if not r.success).error_code == "PAIR_INVALID"
+    assert sum(1 for x in rows if x.paired_with_run_id == "first") == 1
+
+
+def test_db_rejects_second_run_with_same_paired_with_run_id(session_factory):
+    from sqlalchemy.exc import IntegrityError
+    from models import Run
+
+    _seed(session_factory)
+
+    async def go():
+        for rid in ("b1", "b2"):
+            async with session_factory() as db:
+                db.add(Run(run_id=rid, scenario_id="SIM-T-001", mode="push",
+                           status="pending", started_at=datetime.utcnow(),
+                           paired_with_run_id="first"))
+                if rid == "b1":
+                    await db.commit()
+                else:
+                    with pytest.raises(IntegrityError):
+                        await db.commit()
+    asyncio.run(go())
+
+
+def test_launch_maps_integrity_error_to_pair_invalid(session_factory, monkeypatch):
+    """Skip the friendly pre-insert read so the DB constraint is the only guard."""
+    from engine import pairing
+
+    _seed(session_factory)
+    first = asyncio.run(_launch_direct(session_factory))
+    assert first.success
+    monkeypatch.setattr(pairing, "validate_pair", lambda *a, **k: None)
+
+    async def second():
+        from engine.orchestrator import orchestrator
+        async with session_factory() as db:
+            # Hide the existing partner from the pre-insert read.
+            orig = db.execute
+            calls = {"n": 0}
+
+            async def execute(stmt, *a, **k):
+                s = " ".join(str(stmt).split())
+                if "runs.run_id FROM runs" in s and "paired_with_run_id" in s:
+                    class _Empty:
+                        def scalar_one_or_none(self):
+                            return None
+                    return _Empty()
+                return await orig(stmt, *a, **k)
+            db.execute = execute
+            return await orchestrator.launch(
+                scenario_id="SIM-T-001", mode="push", db=db,
+                agent_profile_mode="block", paired_with_run_id="first",
+                target_agent_id="agent-1")
+    res = asyncio.run(second())
+    assert not res.success and res.error_code == "PAIR_INVALID"
+    assert "already paired" in res.error_detail
+    assert len([x for x in _runs(session_factory) if x.paired_with_run_id == "first"]) == 1

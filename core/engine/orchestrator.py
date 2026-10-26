@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("cortexsim.orchestrator")
@@ -369,7 +370,20 @@ class Orchestrator:
             canary_run_id=canary_run_id,
         )
         db.add(run)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            # The unique partial index on runs.paired_with_run_id is the
+            # authority when two launches race past the pre-insert read.
+            await db.rollback()
+            if paired_with_run_id:
+                return LaunchResult(
+                    success=False,
+                    error="Run pairing refused",
+                    error_code="PAIR_INVALID",
+                    error_detail=f"first run {paired_with_run_id} is already paired",
+                )
+            raise
 
         # Auto-populate Result records from scenario expected_detections
         await self._seed_results(run_id, scenario, now, db)

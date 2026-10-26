@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from database import Base
@@ -179,6 +179,12 @@ class Scenario(Base):
 
 class Run(Base):
     __tablename__ = "runs"
+    # A report run has at most one block partner: the database, not a
+    # check-then-insert read, is the authority on "already paired".
+    __table_args__ = (
+        Index("uq_runs_paired_with_run_id", "paired_with_run_id", unique=True,
+              sqlite_where=text("paired_with_run_id IS NOT NULL")),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
@@ -262,7 +268,7 @@ class Run(Base):
     soakless_attested: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     attested_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     attested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    paired_with_run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    paired_with_run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     canary_run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     severed_at_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     block_mode_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)

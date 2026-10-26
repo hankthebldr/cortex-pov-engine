@@ -109,5 +109,8 @@ def test_migrated_legacy_db_gets_index_and_new_tables():
         for _ in range(2):
             _migrate_prevention_columns(c)
             insp = inspect(c)
-            assert "ix_runs_paired_with_run_id" in {i["name"] for i in insp.get_indexes("runs")}
+            idx = {i["name"]: i for i in insp.get_indexes("runs")}
+            assert "ix_runs_paired_with_run_id" not in idx
+            assert "uq_runs_paired_with_run_id" in idx
+            assert idx["uq_runs_paired_with_run_id"]["unique"]
         assert {"step_outcomes", "observations"} <= set(inspect(c).get_table_names())
