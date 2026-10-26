@@ -232,3 +232,26 @@ def test_reason_on_non_not_run_termination_is_stored(client, session_factory):
         {"step_id": "step-01", "termination": "timeout", "reason": "UPSTREAM_FAILED"}]}
     assert client.post("/api/runs/r1/complete", json=body).status_code == 200
     assert _rows(session_factory, StepOutcome)[0].reason == "UPSTREAM_FAILED"
+
+
+def test_second_endpoint_not_run_cannot_erase_witnessed_pending(client, session_factory):
+    from models import Result
+    _fanout(session_factory)
+    _step(client, "fo", "anchor_terminated", 137, signal=9)
+    _step(client, "fo", "not_run", 0, reason="UPSTREAM_SEVERED")
+    assert _term(session_factory, "fo") == [("anchor_terminated", 9)]
+    r = [x for x in _rows(session_factory, Result, "fo") if x.step_id == "step-02"][0]
+    assert (r.outcome, r.outcome_reason) == ("pending", "PREVENTION_UNCONFIRMED_NO_ALERT")
+
+
+def test_partial_branch_projects_within_the_request(client, session_factory):
+    from models import Result
+    _fanout(session_factory)
+    body = {"exit_code": 0, "summary": "e", "steps": [
+        {"step_id": "step-01", "exit_code": 0, "termination": "exited"},
+        {"step_id": "step-02", "termination": "not_run", "reason": "TOOL_ABSENT"},
+        {"step_id": "step-03", "termination": "not_run", "reason": "UPSTREAM_SEVERED"}]}
+    r = client.post("/api/runs/fo/complete", json=body)
+    assert r.json().get("pending_endpoints") == 1
+    res = {x.step_id: x.outcome for x in _rows(session_factory, Result, "fo")}
+    assert res == {"step-01": None, "step-02": "not_executed", "step-03": "not_reached"}

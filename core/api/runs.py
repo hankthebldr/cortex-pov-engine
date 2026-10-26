@@ -1059,14 +1059,20 @@ async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[s
 
 async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
                                agent_profile_mode: str) -> None:
-    """Project reported step outcomes onto the run's Results (caller commits)."""
+    """Project reported step outcomes onto the run's Results from the stored StepOutcome rows (caller commits)."""
     if not steps:
         return
+    # Project from the STORED rows, not the request: they already honour the
+    # witness guard, so a later endpoint cannot erase an earlier host witness.
+    stored = (await db.execute(
+        select(StepOutcome).where(StepOutcome.run_id == run_id,
+                                  StepOutcome.termination.is_not(None))
+    )).scalars().all()
     rows = (await db.execute(
         select(Result).where(Result.run_id == run_id,
-                             Result.step_id.in_([s.step_id for s in steps]))
+                             Result.step_id.in_([s.step_id for s in stored]))
     )).scalars().all()
-    host_evidence.apply_host_outcomes(rows, steps, agent_profile_mode=agent_profile_mode)
+    host_evidence.apply_host_outcomes(rows, stored, agent_profile_mode=agent_profile_mode)
     await db.flush()
 
 
