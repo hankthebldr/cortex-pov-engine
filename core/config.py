@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     # against the guide for the detectors a POV actually exercises.
     CORTEXSIM_RECONCILE_WINDOW_ANALYTICS: int = 86400
 
+    # Scenario id of the built-in canary (a benign trigger the agent is expected
+    # to terminate) used by POST /api/runs/canary to prove a block-mode profile.
+    # Empty = no canary shipped: block mode is attested-only, the honest default.
+    CORTEXSIM_CANARY_SCENARIO_LINUX: str = ""
+
     # Auto-verify phase of the reconcile sweep. OFF by default and, unlike
     # reconcile, it runs XQL against the customer's tenant — a metered resource
     # their own analysts share. Requires an integration of kind 'xsiam_tenant'

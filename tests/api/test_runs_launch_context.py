@@ -57,13 +57,13 @@ def test_launch_persists_attestations(client, session_factory):
     _seed(session_factory)
     r = client.post("/api/runs", json=_body(
         agent_profile_mode="block", bas_mode_attested=True, soakless_attested=True,
-        attested_by="henry", canary_run_id="canary-9"))
+        attested_by="henry"))
     assert r.status_code == 200, r.text
     run = next(x for x in _runs(session_factory) if x.run_id == r.json()["run_id"])
     assert run.agent_profile_mode == "block"
     assert run.bas_mode_attested is True and run.soakless_attested is True
     assert run.attested_by == "henry" and run.attested_at is not None
-    assert run.canary_run_id == "canary-9"
+    assert run.canary_run_id is None
     assert run.block_mode_status is None
 
 

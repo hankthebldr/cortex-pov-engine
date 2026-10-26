@@ -314,6 +314,46 @@ class Orchestrator:
                     error_detail=pair_error,
                 )
 
+        # Canary validation: same position and refusal shape as the pair check.
+        block_mode_status: Optional[str] = None
+        if canary_run_id:
+            from engine import canary  # noqa: PLC0415
+            from models import Result  # noqa: PLC0415
+
+            canary_run = (await db.execute(
+                select(Run).where(Run.run_id == canary_run_id)
+            )).scalar_one_or_none()
+            canary_error: Optional[str] = None
+            if canary_run is None:
+                canary_error = f"canary_run_id '{canary_run_id}' does not match any run"
+            elif canary_run.scenario_id != canary.canary_scenario_id("linux"):
+                canary_error = (
+                    f"run {canary_run_id} is scenario '{canary_run.scenario_id}', "
+                    "not the configured canary scenario"
+                )
+            elif canary_run.target != target_agent_id:
+                canary_error = (
+                    f"canary run {canary_run_id} targeted '{canary_run.target}', "
+                    f"not this launch's target '{target_agent_id}'"
+                )
+            elif not canary.is_terminal(canary_run):
+                canary_error = f"canary run {canary_run_id} has not finished"
+            if canary_error is not None:
+                logger.warning(
+                    "Launch refused scenario=%s code=CANARY_INVALID reason=%s",
+                    scenario_id, canary_error,
+                )
+                return LaunchResult(
+                    success=False,
+                    error="Canary run refused",
+                    error_code="CANARY_INVALID",
+                    error_detail=canary_error,
+                )
+            canary_results = (await db.execute(
+                select(Result).where(Result.run_id == canary_run_id)
+            )).scalars().all()
+            block_mode_status = canary.block_mode_status_from(canary_run, canary_results)
+
         # Two-key gate — same posture as CORTEXSIM_XSIAM_ALLOW_WRITE. A single
         # mis-set request body can never authorize a target mutation on its own.
         runtime_install_authorized = bool(
@@ -368,6 +408,7 @@ class Orchestrator:
             attested_at=now if attested else None,
             paired_with_run_id=paired_with_run_id,
             canary_run_id=canary_run_id,
+            block_mode_status=block_mode_status,
         )
         db.add(run)
         try:

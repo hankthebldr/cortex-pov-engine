@@ -362,6 +362,9 @@ _LAUNCH_PRECONDITION_CODES = frozenset({
     # paired_with_run_id names a run that cannot be this launch's partner
     # (different scenario/target, same mode, not terminal, or unknown).
     "PAIR_INVALID",
+    # canary_run_id names a run that cannot prove this launch's profile
+    # (unknown, wrong scenario/target, or not terminal).
+    "CANARY_INVALID",
 })
 
 
@@ -552,6 +555,54 @@ async def launch_run_compat(
     Kept for backward compatibility with older UI builds / clients that POST
     to the singular ``/api/run`` path (GAP-API-008)."""
     return await _launch_run_impl(body, db)
+
+
+class CanaryRequest(BaseModel):
+    target_agent_id: str
+
+
+@router.post("/canary")
+async def launch_canary(
+    body: CanaryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Launch the block-mode canary against an agent. (POST /api/runs/canary)
+
+    Defined before the ``/{run_id}`` routes so "canary" is never read as a run id.
+    """
+    from engine import canary  # noqa: PLC0415
+
+    scenario_id = canary.canary_scenario_id("linux")
+    if scenario_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Canary not available",
+                "code": "CANARY_NOT_AVAILABLE",
+                "detail": "CORTEXSIM_CANARY_SCENARIO_LINUX is not set; "
+                          "block mode will be attested-only",
+            },
+        )
+    result = await orchestrator.launch(
+        scenario_id=scenario_id,
+        mode="pull",
+        db=db,
+        target_agent_id=body.target_agent_id,
+        agent_profile_mode="block",
+    )
+    if not result.success:
+        status = result.http_status or (
+            409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
+        )
+        raise HTTPException(
+            status_code=status,
+            detail={
+                "error": result.error,
+                "code": result.error_code,
+                "detail": result.error_detail or "",
+            },
+        )
+    return {"run_id": result.run_id, "scenario_id": scenario_id}
 
 
 @router.get("")
