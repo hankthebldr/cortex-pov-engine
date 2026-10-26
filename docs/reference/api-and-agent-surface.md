@@ -116,16 +116,16 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   in `ubuntu:22.04`). `X-CortexSim-Bundle-Target` is always set;
   `X-CortexSim-Bundle-Alternates` appears when both targets are emittable.
 
-### 1.3 Runs (`core/api/runs.py`, **no router prefix** — routes are absolute)
+### 1.3 Runs (`core/api/runs.py`, prefix `/runs`)
 
-> Note: this router declares `APIRouter(tags=["runs"])` with **no prefix**, so its
-> routes mount directly under `/api`. The launch route is `/api/run` (singular);
-> everything else is `/api/runs/...` (plural). This singular/plural split is a
-> historical wart (GAP-API-008).
+> Note: the router carries the `/runs` prefix (GAP-API-008), so every route lives under
+> `/api/runs/...`, and the launch route is `POST /api/runs`. `POST /api/run` (singular,
+> the historical path) survives as a deprecated alias on the unprefixed `compat_router`
+> (`core/api/runs.py:62-63`) so older clients keep working.
 
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
-| POST | `/api/run` | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?}`; 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
+| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?}`; 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List all runs (newest first) | — | `{"runs":[<run.to_dict()>],"total":N}` |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
@@ -200,7 +200,7 @@ launch attestation, the pair and the canary. The vocabularies live in
 - **`reason` vocabulary on a step record**: `UPSTREAM_SEVERED`, `UPSTREAM_NOT_EXECUTED`,
   `UPSTREAM_FAILED`, `TOOL_ABSENT`. An out-of-vocabulary `termination` or `reason`, or a
   `not_run` without a `reason`, is rejected 422 — never tolerated.
-- **Idempotent and non-downgrading.** A duplicate `/complete` upserts the same rows. A
+- **Idempotent and non-downgrading.** While the run is in flight a duplicate `/complete` upserts the same rows; once the run is terminal it is ignored (`already_terminal: true`) and writes nothing. A
   `signaled` / `anchor_terminated` / `beacon_lost` row already on file is never replaced
   by a non-witness termination reported by another endpoint of a fan-out; a witness may
   replace anything. `started_at` is set by the first `/output` for a step
@@ -276,7 +276,7 @@ Run; the engine never touches the agent profile.
 **The pair — `GET /api/runs/{run_id}/pair`.** A POV runs one scenario twice on one
 endpoint, first in `report` mode, then in `block` mode, and the second launch names the
 first via `paired_with_run_id`. `engine.pairing.validate_pair` refuses the launch with
-**409 `PAIR_INVALID`** (nothing is seeded) when the scenarios differ, the targets differ,
+**409 `PAIR_INVALID`** (nothing is seeded) when `paired_with_run_id` matches no run, the scenarios differ, the targets differ,
 either mode is not `report` / `block`, the two modes are equal, the first run is not
 terminal (`complete` or `failed`, with `completed_at`), or the first run is already paired.
 `/pair` works from either run (forward via `paired_with_run_id`, else the newest run
@@ -291,9 +291,17 @@ launch that passes `canary_run_id` is validated (**409 `CANARY_INVALID`**: unkno
 the configured canary scenario, a different target, aborted, or not finished) and stamps
 `Run.block_mode_status`: `block_mode_confirmed` only when the canary has a `prevented`
 Result, else `block_mode_unconfirmed`. A host witness alone never confirms the profile, so
-reconcile the canary before launching the block run. While the profile is unconfirmed, a
-`fail` verdict on a `prevent` expectation is held at `pending` / `BLOCK_MODE_UNCONFIRMED`
-rather than charged to the product.
+reconcile the canary before launching the block run. The `BLOCK_MODE_UNCONFIRMED` hold
+applies only when `block_mode_status` is `block_mode_unconfirmed`, i.e. a launch passed
+`canary_run_id` and that canary produced no `prevented` Result: there is then evidence the
+profile does not block, so a `fail` verdict on a `prevent` expectation is held at
+`pending` / `BLOCK_MODE_UNCONFIRMED` rather than charged to the product. With no canary
+(`CANARY_NOT_AVAILABLE`, `block_mode_status` is `null`;
+`tests/api/test_runs_canary.py:117`) there is no evidence either way: the operator's
+`agent_profile_mode: "block"` attestation stands and a silent `prevent` row resolves
+`missed` / `fail`. The guard protects against a profile the canary proved misconfigured,
+never against an unverified attestation; configure `CORTEXSIM_CANARY_SCENARIO_LINUX` to
+get it.
 
 > **`tenant-verified` for prevention is 0.** Nothing above has been executed against a
 > live tenant: the three host witnesses are proven against a branch SimCore (§5.6) and the
@@ -711,10 +719,13 @@ alert objects?" — the question a POV used to answer with zero matches. It
 reuses the scope probe's alert or issues one more 1-row call over a 7-day
 lookback (so an empty tenant costs `queries_issued: 2`), then reports under
 `keys` which of the field names the reconcile connector reads are present by
-role (`timestamp · technique · name · host · source · rule_id`), the alert
-`source` value, the tenant `total_count`, and `keys_seen`. Codes:
-`PF_ALERT_SHAPE_PARTIAL` (degraded: no rule-id key, matching rests on
-technique/name), `PF_ALERT_SHAPE_UNMATCHABLE` (blocked: neither technique nor
+role (`timestamp · technique · name · host · source · rule_id · action`), the alert
+`source` value, the tenant `total_count`, and `keys_seen`. The `action` role
+(`action_pretty` / `action`, `core/connectors/preflight.py`) is what a prevention outcome
+is read from. Codes:
+`PF_ALERT_SHAPE_PARTIAL` (degraded: no `action` key — detection matching is unaffected but
+a `prevent` expectation can never be credited as prevented — or no rule-id key, in which
+case matching rests on technique/name), `PF_ALERT_SHAPE_UNMATCHABLE` (blocked: neither technique nor
 name — reconcile could only ever read 0 %, and that 0 % would be wrong),
 `PF_ALERT_SHAPE_UNKNOWN` (degraded: no alert in 7 days, shape unverified). A
 tenant with no alert to inspect is therefore **degraded, not ready**.
@@ -1155,8 +1166,10 @@ exercised for real. The launch declares `agent_profile_mode=block`.
 - **Harness exits:** `0` genuine PASS, `1` FAIL or INCONCLUSIVE, `2` could not set up,
   `3` the run did not reach a terminal state inside the poll budget, `4` an injection was
   requested but not delivered (TIMEOUT or MISSED). `verdict.json` is still written on 4.
-- **Environment:** `TIER_D_BEACON_LOST_AFTER_SECONDS` must equal the value SimCore was
-  started with for `CORTEXSIM_BEACON_LOST_AFTER_SECONDS`.
+- **Environment:** `TIER_D_BEACON_LOST_AFTER_SECONDS` is read by
+  `tests/e2e_isolated/test_tier_d_prevention_witnesses.py` (not by `run-tier-d.sh`); it
+  must equal the value SimCore was started with for `CORTEXSIM_BEACON_LOST_AFTER_SECONDS`
+  (the test skips the beacon witness unless it is set and no greater than 120).
 - **Classification** (`deploy/tier-d/classify.py`) fails closed when `step_outcomes` is
   absent from the run. A `beacon_lost` step is classed `UNWITNESSED` and never feeds the
   TTP count.
@@ -1164,7 +1177,10 @@ exercised for real. The launch declares `agent_profile_mode=block`.
   outside the corpus loader.
 
 Measured live against a branch SimCore on the authoring host: subshell 12.5 s, anchor
-12.2 s, beacon 54.6 s. This proves the **host witness only**. Tier-D has no Cortex agent
+12.2 s, beacon 54.6 s (the beacon figure was taken with
+`CORTEXSIM_BEACON_LOST_AFTER_SECONDS=30`; the heartbeat sweep runs every 30 s,
+`heartbeat_sweep_loop(interval_seconds=30)` in `core/api/agents.py`, so the loss is
+called between 30 s and about 60 s after the last contact). This proves the **host witness only**. Tier-D has no Cortex agent
 and no tenant alert, so **no run reads `prevented`**, and `tenant-verified` for prevention
 stays 0.
 

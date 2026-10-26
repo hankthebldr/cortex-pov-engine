@@ -61,7 +61,7 @@
     archive-shaped and `kind: archive` is rejected because no consumer can unpack
     one. See [`adapter-catalog.md` §9.2–9.3](adapter-catalog.md).
   * **Gates:** backend **4651 passed / 241 skipped / 0 failed** · UI **619 passed**,
-    `vite build` ✓ · `validate.py` **346 pass / 0 warn / 0 fail** ·
+    `vite build` ✓ · `validate.py` **356 pass / 0 warn / 0 fail** ·
     `make check-refs` **6 passed** · `make coverage-strict` **exit 0** ·
     shelf drift **OK (8 derived, 0 unbound)** ·
     `test_push_generator_invariant` **5 passed** (byte-frozen bundles unmoved) ·
@@ -88,7 +88,7 @@
   licence read from the project's own LICENSE file. `payloads/sources.json` is
   fully **derived** from those packs and its `unbound[]` migration bucket has
   reached **zero**. `PAYLOAD_ALLOW_UNPINNED=0 ./scripts/build-payloads.sh`
-  stages 8 artifacts, **0 unpinned**. `make validate` **346 pass / 0 warn /
+  stages 8 artifacts, **0 unpinned**. `make validate` **356 pass / 0 warn /
   0 fail**; exports byte-identical across two regenerations; `make check-refs`
   **6 passed**; `coverage_report.py --strict` exits 0.
   This pass adds **1 scenario + 1 card** — `SIM-EDR-022` / `TTP-2026-0176`,
