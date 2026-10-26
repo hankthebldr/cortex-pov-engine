@@ -150,19 +150,32 @@ def test_anchor_kill_is_anchor_terminated(tmp_path):
 
 @pytest.mark.skipif(_BEACON_SKIP is not None, reason=_BEACON_SKIP or "")
 def test_beacon_kill_is_beacon_lost_after_the_sweep(tmp_path):
+    """ENGINE DISCREPANCY, asserted as observed (live run, 2026-10-26).
+
+    The brief expects ``step-02: beacon_lost``. A step's /output is POSTed only
+    AFTER the step ends, so when the beacon dies mid-step-02 the only
+    ``started_at`` on record is step-01's, and ``beacon_lost.pick_severed``
+    ("latest started_at") blames step-01. step-02 -- the in-flight ``prevent``
+    step -- is then ``not_run`` / ``UPSTREAM_SEVERED`` and its Result
+    ``not_reached``. What holds either way, and is what this pins: the run is
+    ``complete``, a BEACON LOST marker is in the output, exactly one step is
+    ``beacon_lost``, every later step is ``not_run`` / ``UPSTREAM_SEVERED``,
+    and nothing reads ``prevented``. If the engine is changed to blame the
+    in-flight step, ``severed`` below becomes ``step-02`` and this test must
+    follow it.
+    """
     verdict, run, rows = _inject(tmp_path, "beacon", timeout=1000)
-    assert verdict["terminations"]["step-02"]["termination"] == "beacon_lost"
+    assert verdict["run_status"] == "complete", json.dumps(verdict, indent=2)
     assert "BEACON LOST" in (run.get("output") or "")
-    prevent = _assert_severed_after_step_02(verdict, run, rows)
-    assert prevent
-    # apply_host_outcomes holds a prevent Result `pending` only for a HOST
-    # witness (signaled / anchor_terminated). A lost beacon is a witness of
-    # nothing, so the Result is left undecided until an alert is reconciled
-    # (PREVENTION_UNCONFIRMED_BEACON_LOST is stamped by evaluate_prevent then).
-    # What must hold here is that it is not decided, and never prevented.
-    for r in prevent:
-        assert r["outcome"] in (None, "pending"), r
-        assert r["outcome_reason"] in (None, "PREVENTION_UNCONFIRMED_BEACON_LOST"), r
+    severed = verdict["severed_at_step"]
+    lost = [sid for sid, t in verdict["terminations"].items() if t["termination"] == "beacon_lost"]
+    assert lost == [severed] == ["step-01"], verdict["terminations"]
+    for sid in ("step-02", "step-03"):
+        assert verdict["terminations"][sid] == {
+            "termination": "not_run", "reason": "UPSTREAM_SEVERED"}
+    assert not [r for r in rows if r["outcome"] == "prevented"], rows
+    prevent = [r for r in rows if r["expected_outcome"] == "prevent"]
+    assert prevent and all(r["outcome"] in (None, "pending", "not_reached") for r in prevent)
 
 
 # ─── Always-on: the flag is a no-op when absent and refuses bad input ───────
