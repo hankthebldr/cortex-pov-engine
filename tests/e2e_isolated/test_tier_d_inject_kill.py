@@ -24,9 +24,10 @@ INJECT = REPO_ROOT / "deploy" / "tier-d" / "inject-kill.sh"
 
 # The injector and this file's tree helpers both shell out to ps and pgrep
 # (procps). The prod image does not ship procps, and `make test-backend-non-utc`
-# runs the whole tests/ tree inside it: without the tools every test here dies
+# runs the whole tests/ tree inside it: without the tools the tests marked with
+# needs_procps die
 # with FileNotFoundError, which reads as a regression rather than "cannot run".
-pytestmark = pytest.mark.skipif(
+needs_procps = pytest.mark.skipif(
     shutil.which("ps") is None or shutil.which("pgrep") is None,
     reason="needs ps and pgrep (procps), absent from the prod image",
 )
@@ -124,6 +125,7 @@ def _run(simcore, tmp_path, beacon, mode, *, after="step-01", at="step-02", time
     return proc, status.read_text().strip()
 
 
+@needs_procps
 def test_subshell_kills_only_the_step(simcore, tree, tmp_path):
     beacon, anchor, step = tree()
     simcore.output = STEP.format(n=1, sid="step-01")
@@ -135,6 +137,7 @@ def test_subshell_kills_only_the_step(simcore, tree, tmp_path):
     assert _alive(anchor) and _alive(beacon)
 
 
+@needs_procps
 def test_anchor_kills_the_beacons_shell_child(simcore, tree, tmp_path):
     beacon, anchor, step = tree()
     simcore.output = STEP.format(n=1, sid="step-01")
@@ -145,6 +148,7 @@ def test_anchor_kills_the_beacons_shell_child(simcore, tree, tmp_path):
     assert not _alive(anchor) and _alive(beacon)
 
 
+@needs_procps
 def test_beacon_kills_the_beacon(simcore, tree, tmp_path):
     beacon, anchor, step = tree()
     simcore.output = STEP.format(n=1, sid="step-01")
@@ -155,6 +159,7 @@ def test_beacon_kills_the_beacon(simcore, tree, tmp_path):
     assert not _alive(beacon)
 
 
+@needs_procps
 def test_waits_for_the_previous_step_before_firing(simcore, tree, tmp_path):
     beacon, anchor, step = tree()
     simcore.output = ""  # step-01 not done yet
@@ -172,6 +177,7 @@ def test_waits_for_the_previous_step_before_firing(simcore, tree, tmp_path):
     assert status.read_text().startswith("KILLED subshell")
 
 
+@needs_procps
 def test_times_out_and_fails_when_the_previous_step_never_arrives(simcore, tree, tmp_path):
     beacon, anchor, step = tree()
     simcore.output = ""
@@ -183,6 +189,7 @@ def test_times_out_and_fails_when_the_previous_step_never_arrives(simcore, tree,
     assert _alive(step) and _alive(anchor) and _alive(beacon), "a timeout kills nothing"
 
 
+@needs_procps
 def test_no_anchor_times_out_loudly(simcore, tree, tmp_path):
     """Without cgo_anchor/causality the beacon runs each step as its own `sh -c`
     child and there is no anchor: anchor mode must fail, not pick a bystander."""
@@ -222,6 +229,7 @@ def _spawn(procs, cmd, want_kids):
     return p
 
 
+@needs_procps
 def test_anchor_mode_waits_until_the_step_has_forked(simcore, tmp_path):
     """I1: an anchor with no child means no step subshell yet -- never fire."""
     fifo = tmp_path / "f"
@@ -243,6 +251,7 @@ def test_anchor_mode_waits_until_the_step_has_forked(simcore, tmp_path):
             q.wait()
 
 
+@needs_procps
 def test_two_shell_children_is_ambiguous_and_kills_nothing(simcore, tmp_path):
     procs = []
     try:
