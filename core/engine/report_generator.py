@@ -451,15 +451,23 @@ def _findings_paragraph(results: list[dict[str, Any]]) -> str:
     """Compose a 1-2 line readable findings string."""
     if not results:
         return "No expected detections were defined for this run."
+    statuses = [_row_status(r) for r in results]
     n_observed = sum(1 for r in results if _is_hit(r))
-    n_missed = sum(1 for r in results if _row_status(r) == "missed")
-    n_pending = len(results) - n_observed - n_missed
+    n_missed = statuses.count("missed")
+    # A step that never ran is not awaiting a DC: say what happened to it.
+    n_not_reached = statuses.count("not_reached")
+    n_not_executed = statuses.count("not_executed")
+    n_pending = len(results) - n_observed - n_missed - n_not_reached - n_not_executed
 
     parts = []
     if n_observed:
         parts.append(f"{n_observed} alert(s) fired as expected")
     if n_missed:
         parts.append(f"{n_missed} alert(s) missed")
+    if n_not_reached:
+        parts.append(f"{n_not_reached} not reached (chain severed)")
+    if n_not_executed:
+        parts.append(f"{n_not_executed} not executed")
     if n_pending:
         parts.append(f"{n_pending} pending DC validation")
     return "; ".join(parts) + "."

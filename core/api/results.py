@@ -177,7 +177,9 @@ async def validate_result(
     * ``observed=false`` RETRACTS the attestation: clears ``observed`` and
       ``observed_at``; a ``detected`` the attestation wrote (no matched-alert
       ``Observation``) reverts to None; an engine-written outcome stands. A
-      retraction never writes ``missed``.
+      retraction never writes ``missed``. On an engine-matched row (an
+      ``Observation`` exists) there is nothing to retract: 409
+      ``NOT_AN_ATTESTATION``, nothing changes.
     * ``observed=true`` on an ``expected_outcome: prevent`` row (any mode):
       409 ``ATTESTATION_NOT_A_WITNESS`` -- a hand mark cannot stand in for the
       alert witness. Re-asserting on an already-observed prevent row updates
@@ -232,6 +234,16 @@ async def validate_result(
             "detail": f"id={result_id} expected_outcome=prevent outcome={result.outcome}",
         })
 
+    if not body.observed and await _has_engine_evidence(db, result):
+        # Round 4: an engine-matched row carries no attestation to retract.
+        # Refuse and change nothing -- clearing observed/observed_at here left a
+        # "detected, not observed" row and erased the matched alert's MTTD.
+        raise HTTPException(status_code=409, detail={
+            "error": "Nothing to retract: an alert matched this row; it is not an attestation",
+            "code": "NOT_AN_ATTESTATION",
+            "detail": f"id={result_id} outcome={result.outcome}",
+        })
+
     # Re-asserting `observed: true` on an already-observed row is idempotent:
     # it must NOT move observed_at. The console's "save notes" sends exactly
     # that call, and re-stamping replaced a reconcile-matched alert time (real
@@ -247,11 +259,11 @@ async def validate_result(
             result.outcome_reason = None
     else:
         # A retraction (round 3 R5b): it withdraws the operator's attestation
-        # and nothing else. A `detected` with no matched-alert Observation was
-        # written BY an attestation -> back to unjudged (the next reconcile
-        # re-judges). An engine-written outcome (an alert matched, or R7's miss)
-        # stands. A retraction never writes `missed`.
-        if result.outcome == OUTCOME_DETECTED and not await _has_engine_evidence(db, result):
+        # and nothing else. A `detected` here has no matched-alert Observation
+        # (that case is refused above), so the attestation wrote it -> back to
+        # unjudged (the next reconcile re-judges). Any other outcome stands. A
+        # retraction never writes `missed`.
+        if result.outcome == OUTCOME_DETECTED:
             result.outcome = None
             result.outcome_reason = None
         result.observed_at = None

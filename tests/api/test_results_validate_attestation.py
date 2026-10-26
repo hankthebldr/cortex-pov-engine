@@ -122,13 +122,18 @@ def _add_observation(session_factory, rid):
     asyncio.run(_go())
 
 
-def test_retracting_an_engine_detection_keeps_the_engine_outcome(client, session_factory):
+def test_retracting_an_engine_detection_is_refused_and_changes_nothing(client, session_factory):
+    """Round 4 minor: an engine-matched row carries no attestation to retract.
+    409 NOT_AN_ATTESTATION, and the matched alert's MTTD survives."""
     rid = _seed(session_factory, outcome="detected", observed=True)
     _add_observation(session_factory, rid)
+    before = _row(session_factory, rid)
     r = client.put(f"/api/results/{rid}/validate", json={"observed": False})
-    assert r.status_code == 200, r.text
-    assert (r.json()["outcome"], r.json()["observed"], r.json()["observed_at"]) == (
-        "detected", False, None)
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "NOT_AN_ATTESTATION"
+    after = _row(session_factory, rid)
+    assert (after.outcome, after.observed, after.observed_at) == (
+        "detected", True, before.observed_at)
 
 
 def test_retracting_an_attestation_reverts_it_to_unjudged(client, session_factory):
@@ -155,3 +160,17 @@ def test_attested_row_counts_once_and_renders_detected(client, session_factory):
     client.put(f"/api/results/{rid}/validate", json={"observed": True})
     cov = client.get("/api/results/att-run").json()["coverage"]
     assert (cov["observed_in_denominator"], cov["denominator"]) == (1, 1)
+
+
+def test_findings_name_not_reached_rows_as_severed_not_pending():
+    """Round 4 minor: a not_reached row is never "pending DC validation"."""
+    from engine.report_generator import _findings_paragraph
+
+    text = _findings_paragraph([
+        {"outcome": "detected", "observed": True},
+        {"outcome": "not_reached", "outcome_reason": "UPSTREAM_SEVERED", "observed": False},
+        {"outcome": "not_executed", "outcome_reason": "TOOL_ABSENT", "observed": False},
+        {"outcome": None, "observed": False},
+    ])
+    assert text == ("1 alert(s) fired as expected; 1 not reached (chain severed); "
+                    "1 not executed; 1 pending DC validation.")

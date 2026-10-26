@@ -185,3 +185,19 @@ describe('bulk attestation excludes evidence-backed misses', () => {
     await waitFor(() => expect(validated).toEqual([1]))
   })
 })
+
+// ─── Round 4 minor: the drawer saves a note on any row ─────────────────────
+describe('drawer notes', () => {
+  it('saves a note on a refused row through PUT /notes', async () => {
+    const saved = []
+    installRoutes({
+      'PUT /api/results/5/notes': (_u, init) => { saved.push(JSON.parse(init.body)); return { id: 5 } },
+    })
+    const row = { id: 5, tid: 'T1005', plane: 'EDR', detectionType: 'BIOC', alert: 'x',
+      observed: true, outcome: 'prevented', outcome_reason: null, expectedOutcome: 'prevent', notes: '' }
+    render(<DetectionDrawer row={row} open onClose={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Operator notes'), { target: { value: 'BTP blocked it' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save note/ }))
+    await waitFor(() => expect(saved).toEqual([{ notes: 'BTP blocked it' }]))
+  })
+})

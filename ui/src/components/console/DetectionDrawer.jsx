@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
+import { updateResultNotes } from '../../api/client.js'
 import { resultStatus, statusLabel as labelFor, outcomeClass, isAttestationRefused } from '../../outcomes.js'
 
 /**
@@ -28,11 +29,13 @@ export default function DetectionDrawer({
 }) {
   const [notes, setNotes] = useState('')
   const [copied, setCopied] = useState(false)
+  const [noteState, setNoteState] = useState(null) // null | 'saving' | 'saved' | error text
 
   // Reset notes when the row changes — no leaking state across rows.
   useEffect(() => {
     setNotes(row?.notes || '')
     setCopied(false)
+    setNoteState(null)
   }, [row?.id])
 
   if (!row) return <aside className="detection-drawer" />
@@ -50,6 +53,19 @@ export default function DetectionDrawer({
       setTimeout(() => setCopied(false), 1800)
     } catch {
       /* clipboard blocked — silently skip */
+    }
+  }
+
+  // A note is saved on its own (PUT /notes), so it works on every row --
+  // including the ones whose attestation controls are hidden (round 4).
+  const handleSaveNote = async () => {
+    if (row.id == null) return
+    setNoteState('saving')
+    try {
+      await updateResultNotes(row.id, notes)
+      setNoteState('saved')
+    } catch (err) {
+      setNoteState(err?.message || String(err))
     }
   }
 
@@ -153,9 +169,23 @@ export default function DetectionDrawer({
           onChange={(e) => setNotes(e.target.value)}
           rows={6}
         />
+        <div className="detection-drawer__notes-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={handleSaveNote}
+            disabled={row.id == null || noteState === 'saving'}
+          >
+            Save note
+          </button>
+          {noteState && noteState !== 'saving' && (
+            <span className="mono detection-drawer__note-state" role="status">
+              {noteState === 'saved' ? 'saved' : `not saved — ${noteState}`}
+            </span>
+          )}
+        </div>
         <div className="detection-drawer__hint mono">
-          Notes are saved with the validation status and appear in the POV
-          report under the matching scorecard row.
+          Notes appear in the POV report under the matching scorecard row.
         </div>
       </div>
 
