@@ -325,7 +325,7 @@
 .cg-node--alert.cg-node--detected { border-left: 4px solid var(--cortex-success, #1c9e6a); }
 .cg-node--alert.cg-node--pending  { border-left: 4px solid var(--cortex-warning, #f0a020); }
 .cg-node--alert.cg-node--missed   { border-left: 4px solid var(--cortex-danger); }
-.cg-node--alert.cg-node--prevented { border-left: 4px solid var(--cortex-teal); }
+.cg-node--alert.cg-node--prevented { border-left: 4px solid var(--pos); }
 /* Never ran: our chain stopped upstream. Dimmed, not red. */
 .node--not-reached { opacity: 0.55; }
 .cg-node__outcome { font-size: 10px; font-weight: 700; color: var(--cortex-steel); }
