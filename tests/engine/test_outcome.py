@@ -63,3 +63,31 @@ def test_host_outcomes_and_soak_reasons():
     assert oc.soak_pending_reason(signal_type="Analytics", soakless_attested=False, first_run_observed=True) == oc.DEDUP_WINDOW
     assert oc.soak_pending_reason(signal_type="Analytics", soakless_attested=True, first_run_observed=False) is None
     assert oc.soak_pending_reason(signal_type="BIOC", soakless_attested=None, first_run_observed=False) is None
+
+
+import pytest
+
+_OK = dict(agent_profile_mode="block", alert_outcome=None, termination="exited",
+           window_closed=False, block_mode_status=None)
+
+@pytest.mark.parametrize("field,bad", [("agent_profile_mode", "bogus"),
+                                       ("alert_outcome", "Prevented"),
+                                       ("termination", "killed")])
+def test_evaluate_prevent_raises_on_out_of_vocabulary(field, bad):
+    with pytest.raises(ValueError):
+        oc.evaluate_prevent(**{**_OK, field: bad})
+
+def test_host_outcome_raises_on_unrecognised_inputs():
+    with pytest.raises(ValueError):
+        oc.host_outcome_for_step("killed", None)
+    with pytest.raises(ValueError):
+        oc.host_outcome_for_step("not_run", "SOMETHING_ELSE")
+
+def test_termination_none_is_no_host_witness():
+    v = oc.evaluate_prevent(**{**_OK, "alert_outcome": "prevented", "termination": None})
+    assert (v.outcome, v.kpi_verdict, v.reason) == ("pending", "pending", oc.PREVENTION_ALERT_WITHOUT_TERMINATION)
+
+@pytest.mark.parametrize("closed", [True, False])
+def test_unknown_alert_without_host_witness_is_never_a_miss(closed):
+    v = oc.evaluate_prevent(**{**_OK, "alert_outcome": "unknown", "window_closed": closed})
+    assert (v.outcome, v.kpi_verdict, v.reason) == ("pending", "pending", oc.PREVENTION_ALERT_ACTION_UNKNOWN)

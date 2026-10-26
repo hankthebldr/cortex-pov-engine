@@ -63,6 +63,7 @@ BLOCK_MODE_CONFIRMED = "block_mode_confirmed"
 BLOCK_MODE_UNCONFIRMED_STATUS = "block_mode_unconfirmed"
 CANARY_NOT_AVAILABLE = "canary_not_available"
 
+_ALERT_OUTCOMES = frozenset({ALERT_PREVENTED, ALERT_DETECTED, ALERT_UNKNOWN})
 _RAW_PREVENTED = ("BLOCKED", "PROMPT_BLOCK")
 _RAW_DETECTED = ("REPORTED", "DETECTED", "POST_DETECTED", "SCANNED", "DOWNLOAD", "PROMPT_ALLOW")
 
@@ -84,13 +85,15 @@ def classify_alert_outcome(action_pretty: Optional[str], action: Optional[str]) 
 
 def host_outcome_for_step(termination: Optional[str], reason: Optional[str]) -> Optional[str]:
     """Host-side override of a step's Results, or None when the host has no say."""
+    if termination is not None and termination not in TERMINATIONS:
+        raise ValueError(f"unrecognised termination: {termination!r}")
     if termination != TERMINATION_NOT_RUN:
         return None
     if reason == UPSTREAM_SEVERED:
         return OUTCOME_NOT_REACHED
     if reason in (TOOL_ABSENT, UPSTREAM_NOT_EXECUTED):
         return OUTCOME_NOT_EXECUTED
-    return None
+    raise ValueError(f"not_run with unrecognised reason: {reason!r}")
 
 
 @dataclass(frozen=True)
@@ -108,33 +111,42 @@ def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
                      termination: Optional[str], window_closed: bool,
                      block_mode_status: Optional[str]) -> PreventVerdict:
     """Evaluate a ``prevent`` expectation (spec section 5.3)."""
+    if agent_profile_mode not in PROFILE_MODES:
+        raise ValueError(f"unrecognised agent_profile_mode: {agent_profile_mode!r}")
+    if alert_outcome is not None and alert_outcome not in _ALERT_OUTCOMES:
+        raise ValueError(f"unrecognised alert_outcome: {alert_outcome!r}")
+    if termination is not None and termination not in TERMINATIONS:
+        raise ValueError(f"unrecognised termination: {termination!r}")
+
     if agent_profile_mode != "block":
         # Report/unknown mode: scored as a detect; never graded as prevention.
-        if alert_outcome in (ALERT_PREVENTED, ALERT_DETECTED, ALERT_UNKNOWN):
+        if alert_outcome is not None:
             reason = ATTESTATION_CONTRADICTED if alert_outcome == ALERT_PREVENTED else None
             return PreventVerdict(OUTCOME_DETECTED, None, reason)
         return PreventVerdict(OUTCOME_MISSED if window_closed else OUTCOME_PENDING, None, None)
 
-    term = termination or TERMINATION_EXITED
-    host_witness = term in HOST_WITNESS
+    # termination None = no host record yet: no host witness.
+    host_witness = termination in HOST_WITNESS
 
     if alert_outcome == ALERT_PREVENTED:
-        if term == TERMINATION_BEACON_LOST:
+        if termination == TERMINATION_BEACON_LOST:
             v = _pending(PREVENTION_UNCONFIRMED_BEACON_LOST)
         elif host_witness:
             v = PreventVerdict(OUTCOME_PREVENTED, "pass", None)
         else:
             v = _pending(PREVENTION_ALERT_WITHOUT_TERMINATION)
     elif alert_outcome == ALERT_DETECTED:
-        if term == TERMINATION_BEACON_LOST:
+        if termination == TERMINATION_BEACON_LOST:
             v = _pending(PREVENTION_UNCONFIRMED_BEACON_LOST)
         else:
             v = PreventVerdict(OUTCOME_DETECTED, "fail", DETECTED_NOT_PREVENTED)
-    else:  # no alert, or an alert whose action cannot be classified
+    elif alert_outcome == ALERT_UNKNOWN:
+        # An alert fired; "missed" would be false.
+        v = _pending(PREVENTION_ALERT_ACTION_UNKNOWN)
+    else:  # no alert
         if host_witness:
-            v = _pending(PREVENTION_ALERT_ACTION_UNKNOWN if alert_outcome == ALERT_UNKNOWN
-                         else PREVENTION_UNCONFIRMED_NO_ALERT)
-        elif term == TERMINATION_BEACON_LOST:
+            v = _pending(PREVENTION_UNCONFIRMED_NO_ALERT)
+        elif termination == TERMINATION_BEACON_LOST:
             v = _pending(PREVENTION_UNCONFIRMED_BEACON_LOST)
         elif window_closed:
             v = PreventVerdict(OUTCOME_MISSED, "fail", None)
