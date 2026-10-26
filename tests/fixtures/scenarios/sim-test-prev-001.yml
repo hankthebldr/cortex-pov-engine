@@ -24,6 +24,14 @@ execution_identity:
   options:
     - www-data
 
+# Chained execution: the beacon runs the steps as children of ONE anchor shell.
+# Tier-D's `--inject-kill anchor|subshell` needs that anchor to exist -- without
+# a causality contract each step is its own `sh -c` and there is nothing to kill
+# between the beacon and the step.
+cgo_anchor:
+  image_name: apache2
+  primary_username: www-data
+
 push_supported: true
 pull_supported: true
 
