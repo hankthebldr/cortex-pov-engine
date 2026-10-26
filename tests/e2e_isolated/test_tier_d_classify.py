@@ -7,8 +7,8 @@ parts that need no docker live here and always run:
   * ``classify_step`` reads the host ``termination`` of a step.
   * ``build_verdict`` carries ``terminations`` / ``severed_at_step`` and does
     not call a severed run INCONCLUSIVE for steps the severance accounts for.
-  * ``derive_step_outcomes`` rebuilds /complete-shaped records from the public
-    API surfaces (no endpoint exposes ``step_outcomes`` rows today).
+  * ``require_step_outcomes`` refuses a run record that does not publish
+    ``step_outcomes`` (``GET /api/runs/{id}``); there is no reconstruction.
   * the harness vocabulary cannot drift from ``core/engine/outcome.py``.
 
 The /complete-shaped records below are hand-built for each of the three

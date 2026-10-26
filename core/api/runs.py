@@ -783,10 +783,10 @@ async def _step_outcomes_view(db: AsyncSession, run: Run) -> list[dict]:
     rows = (await db.execute(
         select(StepOutcome).where(StepOutcome.run_id == run.run_id)
         .order_by(StepOutcome.id))).scalars().all()
-    scenario = (await db.execute(
-        select(Scenario).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
-    order = [st.get("id") for st in (scenario.steps or []) if isinstance(st, dict)] \
-        if scenario is not None else []
+    # Only the `steps` column: this runs on every GET (the harness polls every 3 s).
+    steps = (await db.execute(
+        select(Scenario.steps).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
+    order = [st.get("id") for st in (steps or []) if isinstance(st, dict)]
     rank = {sid: i for i, sid in enumerate(order)}
     rows = sorted(rows, key=lambda r: rank.get(r.step_id, len(rank)))
     return [{
