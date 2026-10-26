@@ -33,6 +33,7 @@ from engine import host_evidence
 from engine import report_generator
 from engine.outcome import (
     HOST_WITNESS,
+    is_in_denominator,
     PROFILE_MODES,
     TERMINATIONS,
     TERMINATION_BEACON_LOST,
@@ -196,6 +197,154 @@ def _verdict_section(run: Run) -> list[str]:
             + (" …" if len(unscoreable) > 8 else "")
         )
         out.append("")
+    return out
+
+
+_OUTCOME_ICON = {
+    "prevented": "🛡",
+    "detected": "✅",
+    "missed": "❌",
+    "pending": "⏳",
+    "not_reached": "⏭",
+    "not_executed": "⚠",
+}
+
+
+def _result_icon(r: Result) -> str:
+    """Icon mirroring the stored outcome. A legacy row (outcome None) keeps ✅/❌."""
+    if r.outcome is None:
+        return "✅" if r.observed else "❌"
+    icon = _OUTCOME_ICON.get(r.outcome, "❌" if not r.observed else "✅")
+    if r.outcome == "pending" and r.outcome_reason:
+        icon += f" ({r.outcome_reason})"
+    return icon
+
+
+def _coverage_stats(results: list[Result]) -> dict:
+    """The one coverage computation: the headline and the by_type table share it."""
+    total = len(results)
+    in_den = [r for r in results if is_in_denominator(r.outcome, r.outcome_reason)]
+    denominator = len(in_den)
+    observed = sum(1 for r in results if r.observed)
+    prevented = sum(1 for r in results if r.outcome == "prevented")
+    pct = round(observed / denominator * 100, 1) if denominator > 0 else 0.0
+    by_type: dict = {}
+    for r in in_den:
+        t = by_type.setdefault(r.signal_type, {"total": 0, "observed": 0, "prevented": 0})
+        t["total"] += 1
+        if r.observed:
+            t["observed"] += 1
+        if r.outcome == "prevented":
+            t["prevented"] += 1
+    return {
+        "total": total, "denominator": denominator, "observed": observed,
+        "prevented": prevented, "excluded": total - denominator, "pct": pct,
+        "by_type": by_type,
+    }
+
+
+def _fmt_secs(secs) -> str:
+    return f"{secs}s" if secs is not None else ""
+
+
+def _chain_integrity_section(run: Run, scenario: Optional[Scenario], results: list[Result]) -> list[str]:
+    not_reached = [r for r in results if r.outcome == "not_reached"]
+    not_executed = [r for r in results if r.outcome == "not_executed"]
+    if not (run.severed_at_step or not_reached or not_executed):
+        return []
+
+    def _uniq(seq):
+        return list(dict.fromkeys(seq))
+
+    out = ["## Chain Integrity", ""]
+    if run.severed_at_step:
+        n = len(scenario.steps) if scenario is not None and scenario.steps else None
+        of_n = f" of {n}" if n else ""
+        out.append(f"- severed at {run.severed_at_step}{of_n}")
+    if not_reached:
+        out.append(f"- not_reached: [{', '.join(_uniq(r.step_id for r in not_reached))}]")
+    if not_executed:
+        ne = _uniq(f"{r.step_id} ({r.outcome_reason})" if r.outcome_reason else r.step_id
+                   for r in not_executed)
+        out.append(f"- not_executed: [{', '.join(ne)}]")
+    out.append("")
+    return out
+
+
+async def _resolve_pair_partner(db: AsyncSession, run: Run) -> Optional[Run]:
+    """Forward via ``paired_with_run_id``, else the newest run pointing at this one."""
+    partner: Optional[Run] = None
+    if run.paired_with_run_id:
+        partner = (await db.execute(
+            select(Run).where(Run.run_id == run.paired_with_run_id)
+        )).scalar_one_or_none()
+    if partner is None:
+        partner = (await db.execute(
+            select(Run).where(Run.paired_with_run_id == run.run_id)
+            .order_by(Run.started_at.desc()).limit(1)
+        )).scalar_one_or_none()
+    return partner
+
+
+async def _run_result_dicts(db: AsyncSession, rid: str) -> list[dict]:
+    rows = (await db.execute(
+        select(Result).where(Result.run_id == rid).order_by(Result.id)
+    )).scalars().all()
+    return [r.to_dict() for r in rows]
+
+
+def _prevention_delta_section(run: Run, run_results: list[Result], partner: Optional[Run],
+                              partner_results: list[dict]) -> list[str]:
+    if partner is None:
+        return []
+    delta = build_pair_delta(run.to_dict(), [r.to_dict() for r in run_results],
+                             partner.to_dict(), partner_results)
+
+    def _cell(side, with_reason):
+        if side is None:
+            return "—"
+        text = str(side.get("outcome") or "—")
+        if with_reason and side.get("outcome_reason"):
+            text += f" ({side['outcome_reason']})"
+        if side.get("mttd_seconds") is not None:
+            text += f" {_fmt_secs(side['mttd_seconds'])}"
+        return text
+
+    out = ["## Prevention Delta (report → block)", "",
+           "| Step | Detection | Type | Module | Report-mode | Block-mode |",
+           "|------|-----------|------|--------|-------------|------------|"]
+    for step in delta["steps"]:
+        for d in step["detections"]:
+            out.append(
+                f"| {step['step_id']} | {d['detection_id'] or '—'} | {d['signal_type'] or '—'} | "
+                f"{d['prevention_module'] or '—'} | {_cell(d['report'], False)} | "
+                f"{_cell(d['block'], True)} |"
+            )
+    out.append("")
+    return out
+
+
+def _attestations_section(run: Run) -> list[str]:
+    if not (run.agent_profile_mode != "unknown" or run.bas_mode_attested is not None
+            or run.soakless_attested is not None or run.attested_by):
+        return []
+
+    def _flag(v):
+        return "not attested" if v is None else ("enabled" if v else "disabled")
+
+    at = run.attested_at.isoformat() if run.attested_at else "unknown"
+    out = [
+        "## Attestations", "",
+        f"- agent profile mode: {run.agent_profile_mode} — attested by "
+        f"{run.attested_by or 'unknown'} at {at}, not verified",
+        f"- BAS mode: {_flag(run.bas_mode_attested)} — attested",
+        f"- soakless: {_flag(run.soakless_attested)} — attested",
+    ]
+    if run.block_mode_status or run.canary_run_id:
+        out.append(f"- canary: {run.block_mode_status} (run {run.canary_run_id})")
+    else:
+        out.append("- canary: not run")
+    out.append("")
     return out
 
 
@@ -636,16 +785,7 @@ async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
     if run is None:
         raise _run_not_found(run_id)
 
-    partner: Optional[Run] = None
-    if run.paired_with_run_id:
-        partner = (await db.execute(
-            select(Run).where(Run.run_id == run.paired_with_run_id)
-        )).scalar_one_or_none()
-    if partner is None:
-        partner = (await db.execute(
-            select(Run).where(Run.paired_with_run_id == run_id)
-            .order_by(Run.started_at.desc()).limit(1)
-        )).scalar_one_or_none()
+    partner = await _resolve_pair_partner(db, run)
     if partner is None:
         raise HTTPException(
             status_code=409,
@@ -653,16 +793,11 @@ async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
                     "detail": f"run_id='{run_id}' has no paired_with_run_id and no run points at it"},
         )
 
-    async def _results(rid: str) -> list[dict]:
-        rows = (await db.execute(
-            select(Result).where(Result.run_id == rid).order_by(Result.id)
-        )).scalars().all()
-        return [r.to_dict() for r in rows]
-
     a, b = run.to_dict(), partner.to_dict()
     return {
         "runs": [a, b],
-        "delta": build_pair_delta(a, await _results(run.run_id), b, await _results(partner.run_id)),
+        "delta": build_pair_delta(a, await _run_result_dicts(db, run.run_id), b,
+                                  await _run_result_dicts(db, partner.run_id)),
     }
 
 
@@ -718,18 +853,9 @@ async def get_report(
         return PlainTextResponse(efficacy_scorecard.render_markdown(scorecard))
 
     # Compute stats
-    total = len(results)
-    observed = sum(1 for r in results if r.observed)
-    coverage_pct = round((observed / total * 100), 1) if total > 0 else 0.0
-
-    by_type = {}
-    for r in results:
-        st = r.signal_type
-        if st not in by_type:
-            by_type[st] = {"total": 0, "observed": 0}
-        by_type[st]["total"] += 1
-        if r.observed:
-            by_type[st]["observed"] += 1
+    cov = _coverage_stats(results)
+    total, observed, coverage_pct = cov["total"], cov["observed"], cov["pct"]
+    by_type = cov["by_type"]
 
     mttd_values = [r.mttd_seconds for r in results if r.mttd_seconds is not None]
     mttd_avg = round(sum(mttd_values) / len(mttd_values), 1) if mttd_values else None
@@ -747,6 +873,7 @@ async def get_report(
             "execution_integrity": integrity,
             "coverage": {
                 "observed": observed, "total": total, "pct": coverage_pct,
+                "denominator": cov["denominator"], "prevented": cov["prevented"], "excluded": cov["excluded"],
                 "by_type": {k: {**v, "pct": round(v["observed"] / v["total"] * 100, 1) if v["total"] > 0 else 0} for k, v in by_type.items()},
             },
             "mttd": {"avg_seconds": mttd_avg, "min_seconds": mttd_min, "max_seconds": mttd_max, "count": len(mttd_values)} if mttd_values else None,
@@ -840,14 +967,27 @@ async def get_report(
     # Coverage summary
     lines.append("## Detection Coverage Summary")
     lines.append("")
-    lines.append(f"**Overall: {observed}/{total} detections confirmed ({coverage_pct}%)**")
+    lines.append(
+        f"**Overall: {observed}/{cov['denominator']} detections confirmed ({coverage_pct}%) — "
+        f"{cov['prevented']} prevented · {cov['excluded']} excluded "
+        f"(not reached / not executed / soak-pending)**"
+    )
     lines.append("")
-    lines.append("| Detection Type | Observed | Total | Coverage |")
-    lines.append("|----------------|----------|-------|----------|")
+    if cov["denominator"] == 0:
+        lines.append("> Denominator is 0 — nothing in this run can be scored (see Chain Integrity).")
+        lines.append("")
+    lines.append("| Detection Type | Observed | Prevented | Total | Coverage |")
+    lines.append("|----------------|----------|-----------|-------|----------|")
     for dt, stats in by_type.items():
         pct = round(stats["observed"] / stats["total"] * 100, 1) if stats["total"] > 0 else 0
-        lines.append(f"| {dt} | {stats['observed']} | {stats['total']} | {pct}% |")
+        lines.append(f"| {dt} | {stats['observed']} | {stats['prevented']} | {stats['total']} | {pct}% |")
     lines.append("")
+
+    lines.extend(_chain_integrity_section(run, scenario, results))
+    partner = await _resolve_pair_partner(db, run)
+    if partner is not None:
+        lines.extend(_prevention_delta_section(
+            run, results, partner, await _run_result_dicts(db, partner.run_id)))
 
     # Test-case verdict — the answer coverage % cannot give. A coverage
     # percentage with no verdict is exactly the inflation the verifier exists
@@ -874,6 +1014,8 @@ async def get_report(
         lines.append(f"| Detections Measured | {len(mttd_values)} |")
         lines.append("")
 
+    lines.extend(_attestations_section(run))
+
     # Per-step results
     lines.append("## Detailed Detection Results")
     lines.append("")
@@ -885,7 +1027,7 @@ async def get_report(
             lines.append(f"### {r.step_id}: {r.step_name or '—'}")
             lines.append("")
 
-        status_icon = "✅" if r.observed else "❌"
+        status_icon = _result_icon(r)
         mttd_str = f" (MTTD: {_fmt_mttd(r.mttd_seconds)})" if r.mttd_seconds is not None else "" if mttd_values else ""
         lines.append(f"- {status_icon} **[{r.signal_type}]** {r.expected_detection}{mttd_str}")
         if r.notes:

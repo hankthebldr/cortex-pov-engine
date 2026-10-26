@@ -77,7 +77,11 @@ def _severity_from_detection_type(detection_type: str | None,
     return "Medium"
 
 
-def _status_from_result(observed: bool, has_observed_at: bool) -> str:
+def _status_from_result(observed: bool, has_observed_at: bool, outcome: Optional[str] = None) -> str:
+    if outcome == "prevented":
+        return "PREVENTED"
+    if outcome in ("not_reached", "not_executed"):
+        return "NOT_RUN"
     if observed:
         return "ENABLED"
     if has_observed_at:
@@ -115,7 +119,7 @@ def build_detection_matrix(
         out.append(DetectionMatrixRow(
             alert_name=r.get("expected_detection") or "—",
             sources=plane,
-            status=_status_from_result(observed, has_obs_at),
+            status=_status_from_result(observed, has_obs_at, outcome=r.get("outcome")),
             alert_type=r.get("signal_type") or "Analytics",
             attack_tid=tid or "—",
             severity=_severity_from_detection_type(r.get("signal_type"), observed),
