@@ -777,6 +777,26 @@ async def list_runs(db: AsyncSession = Depends(get_db)):
     return {"runs": [r.to_dict() for r in runs], "total": len(runs)}
 
 
+async def _step_outcomes_view(db: AsyncSession, run: Run) -> list[dict]:
+    """The one place host evidence is projected for reads: StepOutcome rows in
+    scenario order (rows for steps the scenario no longer lists go last, by id)."""
+    rows = (await db.execute(
+        select(StepOutcome).where(StepOutcome.run_id == run.run_id)
+        .order_by(StepOutcome.id))).scalars().all()
+    scenario = (await db.execute(
+        select(Scenario).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
+    order = [st.get("id") for st in (scenario.steps or []) if isinstance(st, dict)] \
+        if scenario is not None else []
+    rank = {sid: i for i, sid in enumerate(order)}
+    rows = sorted(rows, key=lambda r: rank.get(r.step_id, len(rank)))
+    return [{
+        "step_id": r.step_id, "termination": r.termination, "signal": r.signal,
+        "rc": r.exit_code, "reason": r.reason,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+        "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
+    } for r in rows]
+
+
 @router.get("/{run_id}")
 async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
     """Return detail and current status for a single run."""
@@ -788,7 +808,7 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
             detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
         )
     logger.info("get_run run_id=%s status=%s", run_id, run.status)
-    return run.to_dict()
+    return {**run.to_dict(), "step_outcomes": await _step_outcomes_view(db, run)}
 
 
 @router.get("/{run_id}/pair")
