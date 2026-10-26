@@ -54,6 +54,7 @@ ANALYTICS_ACTIVATION_PERIOD = "ANALYTICS_ACTIVATION_PERIOD"
 DEDUP_WINDOW = "DEDUP_WINDOW"
 UPSTREAM_SEVERED = "UPSTREAM_SEVERED"
 UPSTREAM_NOT_EXECUTED = "UPSTREAM_NOT_EXECUTED"
+UPSTREAM_FAILED = "UPSTREAM_FAILED"
 TOOL_ABSENT = "TOOL_ABSENT"
 TOOL_PRESENCE_UNCHECKED = "TOOL_PRESENCE_UNCHECKED"
 
@@ -89,7 +90,7 @@ def host_outcome_for_step(termination: Optional[str], reason: Optional[str]) -> 
         raise ValueError(f"unrecognised termination: {termination!r}")
     if termination != TERMINATION_NOT_RUN:
         return None
-    if reason == UPSTREAM_SEVERED:
+    if reason in (UPSTREAM_SEVERED, UPSTREAM_FAILED):
         return OUTCOME_NOT_REACHED
     if reason in (TOOL_ABSENT, UPSTREAM_NOT_EXECUTED):
         return OUTCOME_NOT_EXECUTED

@@ -91,3 +91,8 @@ def test_termination_none_is_no_host_witness():
 def test_unknown_alert_without_host_witness_is_never_a_miss(closed):
     v = oc.evaluate_prevent(**{**_OK, "alert_outcome": "unknown", "window_closed": closed})
     assert (v.outcome, v.kpi_verdict, v.reason) == ("pending", "pending", oc.PREVENTION_ALERT_ACTION_UNKNOWN)
+
+
+def test_upstream_failed_reason_exists_and_maps_to_not_reached():
+    assert oc.UPSTREAM_FAILED == "UPSTREAM_FAILED"
+    assert oc.host_outcome_for_step("not_run", oc.UPSTREAM_FAILED) == "not_reached"
