@@ -58,10 +58,21 @@ def _silent_prevent_row(SessionLocal):
     asyncio.run(_mutate(SessionLocal, fn))
 
 
+async def _record_exited(SessionLocal, step_id="step-01"):
+    """What a /complete with `steps[]` leaves behind: the host says it exited."""
+    from models import StepOutcome
+
+    async with SessionLocal() as db:
+        db.add(StepOutcome(run_id="run-1", step_id=step_id, exit_code=0,
+                           termination="exited"))
+        await db.commit()
+
+
 # ── Critical 1 — a silent prevent row fails only on complete evidence ──────
 
 def test_truncated_pull_leaves_silent_prevent_row_pending(session_factory):
     _silent_prevent_row(session_factory)
+    asyncio.run(_record_exited(session_factory))
     asyncio.run(_apply_silent(session_factory, {**COMPLETE, "truncated": True}))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason, r.kpi_verdict) == ("pending", "EVIDENCE_INCOMPLETE", "pending")
@@ -69,22 +80,36 @@ def test_truncated_pull_leaves_silent_prevent_row_pending(session_factory):
 
 def test_unscoped_pull_leaves_silent_prevent_row_pending(session_factory):
     _silent_prevent_row(session_factory)
+    asyncio.run(_record_exited(session_factory))
     asyncio.run(_apply_silent(session_factory, {**COMPLETE, "unscoped": True}))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason) == ("pending", "EVIDENCE_INCOMPLETE")
 
 
 def test_complete_pull_makes_silent_prevent_row_missed(session_factory):
+    # Missed only because the host recorded `exited` for the step (spec §5.3).
     _silent_prevent_row(session_factory)
+    asyncio.run(_record_exited(session_factory))
     asyncio.run(_apply_silent(session_factory, COMPLETE))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.kpi_verdict) == ("missed", "fail")
+
+
+def test_complete_pull_without_host_record_holds_prevent_row_pending(session_factory):
+    # Same run, but /complete carried no `steps[]` (old beacon, staging
+    # failure, push mode): nothing says the step ran, so silence is no miss.
+    _silent_prevent_row(session_factory)
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason, r.kpi_verdict) == (
+        "pending", "HOST_EVIDENCE_ABSENT", "pending")
 
 
 def test_manual_import_never_makes_unsubmitted_prevent_row_missed(session_factory):
     from api.connectors import ObservationsBody, ingest_observations
 
     _silent_prevent_row(session_factory)
+    asyncio.run(_record_exited(session_factory))
 
     async def _ingest():
         async with session_factory() as db:
@@ -315,14 +340,18 @@ def test_late_prevented_alert_after_complete_miss_scores_pass(session_factory):
         run.agent_profile_mode = "block"
         rows["step-01"].expected_outcome = "prevent"
     asyncio.run(_mutate(session_factory, fn))
+    asyncio.run(_record_exited(session_factory))
     asyncio.run(_apply_silent(session_factory, COMPLETE))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.kpi_verdict) == ("missed", "fail")
 
     async def _witness():
+        # The /complete upsert lets a host witness replace `exited`.
+        from sqlalchemy import select
         async with session_factory() as db:
-            db.add(StepOutcome(run_id="run-1", step_id="step-01",
-                               termination="anchor_terminated"))
+            so = (await db.execute(select(StepOutcome).where(
+                StepOutcome.step_id == "step-01"))).scalar_one()
+            so.termination = "anchor_terminated"
             await db.commit()
     asyncio.run(_witness())
     fetcher, _ = _tenant([_prevented_alert("late")])

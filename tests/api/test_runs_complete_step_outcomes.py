@@ -255,3 +255,39 @@ def test_partial_branch_projects_within_the_request(client, session_factory):
     assert r.json().get("pending_endpoints") == 1
     res = {x.step_id: x.outcome for x in _rows(session_factory, Result, "fo")}
     assert res == {"step-01": None, "step-02": "not_executed", "step-03": "not_reached"}
+
+
+# ── final review I1 — a later host exclusion replaces a Tier-1 silent miss ──
+
+def test_complete_not_run_turns_a_tier1_missed_prevent_row_not_reached(client, session_factory):
+    from models import Result, Run
+
+    _seed(session_factory, mode="block")
+
+    async def _tier1_missed():
+        async with session_factory() as db:
+            r = (await db.execute(select(Result).where(
+                Result.run_id == "r1", Result.step_id == "step-02"))).scalar_one()
+            r.outcome, r.kpi_verdict = "missed", "fail"
+            await db.commit()
+    asyncio.run(_tier1_missed())
+
+    body = {"exit_code": 137, "summary": "severed at step-01", "steps": [
+        {"step_id": "step-01", "exit_code": 137, "termination": "anchor_terminated",
+         "signal": 9},
+        {"step_id": "step-02", "exit_code": None, "termination": "not_run",
+         "reason": "UPSTREAM_SEVERED"},
+    ]}
+    assert client.post("/api/runs/r1/complete", json=body).status_code == 200
+
+    res = {x.step_id: x for x in _rows(session_factory, Result)}
+    assert (res["step-02"].outcome, res["step-02"].outcome_reason,
+            res["step-02"].kpi_verdict) == ("not_reached", "UPSTREAM_SEVERED", None)
+
+    async def _verdict():
+        async with session_factory() as db:
+            run = (await db.execute(select(Run).where(Run.run_id == "r1"))).scalar_one()
+            return run.tc_verdict, run.tc_verdict_detail
+    verdict, detail = asyncio.run(_verdict())
+    assert verdict != "fail"
+    assert "det step-02" in (detail or {}).get("excluded", [])

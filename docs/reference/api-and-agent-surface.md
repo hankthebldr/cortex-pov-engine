@@ -220,7 +220,17 @@ launch attestation, the pair and the canary. The vocabularies live in
 detect and is never graded as prevention. Reason codes live in `outcome.py` (for example
 `PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
 `PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
-`ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`).
+`ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
+`PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`).
+
+- **`missed` needs the host's `exited`.** A block-mode `prevent` row whose window closed
+  with no alert and **no host record** for its step (push mode, an old beacon with no
+  `steps[]`, a staging failure, a reconcile before `/complete`) reads `pending` /
+  `HOST_EVIDENCE_ABSENT`, never `missed`: nothing says the step ran. With `exited` on
+  record it is `missed` / fail. `detect` rows keep their rules.
+- **A host exclusion replaces a Tier-1 silent miss.** A later `not_run` for a step moves
+  a `missed` row (any expectation) to `not_reached` / `not_executed` and clears its
+  `fail`; a decided `detected` / `prevented` row is never replaced.
 
 **`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
 rc, reason, started_at, recorded_at}]` in scenario step order (rows for steps the

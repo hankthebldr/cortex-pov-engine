@@ -145,3 +145,24 @@ def test_single_definition_of_soak_reasons_and_denominator_rule():
                         defs[t.id].append(str(path))
     for name, where in defs.items():
         assert len(where) == 1 and where[0].endswith("engine/outcome.py"), (name, where)
+
+
+# ── final review I1 — a miss needs the host's `exited`, not its silence ────
+
+def test_host_evidence_absent_reason_exists():
+    assert oc.HOST_EVIDENCE_ABSENT == "HOST_EVIDENCE_ABSENT"
+
+
+def test_block_prevent_without_host_record_is_pending_never_missed():
+    """Spec §5.3: `missed` is `none, window closed | exited (0)`. With no host
+    record (push mode, an old beacon, a staging failure, a reconcile before
+    /complete) we do not know the step ran, so silence is not a miss."""
+    v = oc.evaluate_prevent(agent_profile_mode="block", alert_outcome=None,
+                            termination=None, window_closed=True, block_mode_status=None)
+    assert (v.outcome, v.kpi_verdict, v.reason) == ("pending", "pending", oc.HOST_EVIDENCE_ABSENT)
+
+
+def test_block_prevent_with_exited_on_record_is_still_missed():
+    v = oc.evaluate_prevent(agent_profile_mode="block", alert_outcome=None,
+                            termination="exited", window_closed=True, block_mode_status=None)
+    assert (v.outcome, v.kpi_verdict, v.reason) == ("missed", "fail", None)

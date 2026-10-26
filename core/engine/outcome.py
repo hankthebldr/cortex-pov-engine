@@ -63,6 +63,11 @@ EVIDENCE_INCOMPLETE = "EVIDENCE_INCOMPLETE"
 #: The two witnesses agreed, but the pull was unscoped: the alert could have
 #: come from any endpoint, so a row-level PASS is withheld.
 PASS_WITHHELD_UNSCOPED = "PASS_WITHHELD_UNSCOPED"
+#: A block-mode ``prevent`` row whose window closed with no alert, but the host
+#: never reported the step (push mode, an old beacon with no ``steps[]``, a
+#: staging failure, a reconcile before ``/complete``): we do not know it ran, so
+#: silence is not a miss. ``missed`` needs the host's ``exited`` (spec §5.3).
+HOST_EVIDENCE_ABSENT = "HOST_EVIDENCE_ABSENT"
 
 #: Soak reasons: a row silent for a reason that says nothing about the detector.
 SOAK_REASONS = frozenset({ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW})
@@ -169,6 +174,9 @@ def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
             v = _pending(PREVENTION_UNCONFIRMED_NO_ALERT)
         elif termination == TERMINATION_BEACON_LOST:
             v = _pending(PREVENTION_UNCONFIRMED_BEACON_LOST)
+        elif termination is None:
+            # No host record: absence of evidence that the step ran.
+            v = _pending(HOST_EVIDENCE_ABSENT if window_closed else None)
         elif window_closed:
             v = PreventVerdict(OUTCOME_MISSED, "fail", None)
         else:

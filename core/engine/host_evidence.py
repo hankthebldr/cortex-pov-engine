@@ -11,6 +11,7 @@ from typing import Any, Iterable, Optional, Sequence
 
 from engine.outcome import (
     HOST_WITNESS,
+    OUTCOME_MISSED,
     OUTCOME_PENDING,
     PREVENTION_UNCONFIRMED_BEACON_LOST,
     PREVENTION_UNCONFIRMED_NO_ALERT,
@@ -31,9 +32,13 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
                         agent_profile_mode: str) -> int:
     """Set host-derived ``outcome`` on Results; return the number touched.
 
-    * Only Results whose ``outcome`` is None/pending are touched.
+    * Only Results whose ``outcome`` is None/pending are touched -- except that
+      a host exclusion also replaces a Tier-1 silent ``missed``.
     * A step that never ran (``not_run``) marks all its Results ``not_reached``
-      / ``not_executed`` with the reason carried through.
+      / ``not_executed`` with the reason carried through, for any expectation.
+      A ``missed`` row is replaceable (silence on a step that never ran is not
+      a miss; its ``fail`` is cleared so it leaves every verdict); a decided
+      ``detected`` / ``prevented`` row is not.
     * A ``prevent`` Result on a step the host witnessed being killed, in block
       mode, is seeded ``pending`` -- the host saw a kill but the alert (the
       second witness) may still arrive.
@@ -44,11 +49,19 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
         s = by_step.get(r.step_id)
         if s is None:
             continue
-        # A tenant-decided outcome (prevented/detected/missed, written by a
-        # reconcile) stands; host evidence only fills an undecided Result.
+        host_outcome = host_outcome_for_step(s.termination, s.reason)
+        if host_outcome is not None and r.outcome == OUTCOME_MISSED:
+            # Tier 1 judged silence a miss; the host now says the step never
+            # ran, which is better evidence than silence.
+            r.outcome = host_outcome
+            r.outcome_reason = s.reason
+            r.kpi_verdict = None
+            touched += 1
+            continue
+        # A tenant-decided hit (prevented/detected) stands; host evidence only
+        # fills an undecided Result.
         if r.outcome not in (None, OUTCOME_PENDING):
             continue
-        host_outcome = host_outcome_for_step(s.termination, s.reason)
         if host_outcome is not None:
             r.outcome = host_outcome
             r.outcome_reason = s.reason

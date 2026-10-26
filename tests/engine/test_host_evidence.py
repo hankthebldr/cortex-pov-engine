@@ -65,3 +65,27 @@ def test_tenant_decided_outcome_is_not_clobbered():
     assert he.apply_host_outcomes([r], [_s("step-03", "not_run", oc.UPSTREAM_SEVERED)],
                                   agent_profile_mode="block") == 0
     assert (r.outcome, r.outcome_reason) == ("prevented", None)
+
+
+# ── final review I1 — a host exclusion overrides a Tier-1 silent miss ──────
+
+def test_host_not_run_overrides_tier1_missed_for_any_expectation():
+    prevent, detect = _r("step-03", "prevent"), _r("step-03", "detect")
+    for r in (prevent, detect):
+        r.outcome, r.kpi_verdict = "missed", "fail"
+    touched = he.apply_host_outcomes(
+        [prevent, detect], [_s("step-03", "not_run", oc.UPSTREAM_SEVERED)],
+        agent_profile_mode="block")
+    assert touched == 2
+    for r in (prevent, detect):
+        assert (r.outcome, r.outcome_reason, r.kpi_verdict) == (
+            "not_reached", oc.UPSTREAM_SEVERED, None)
+        assert oc.is_in_denominator(r.outcome, r.outcome_reason) is False
+
+
+def test_host_not_run_never_overrides_a_decided_hit():
+    detected = _r("step-03")
+    detected.outcome, detected.kpi_verdict = "detected", "pass"
+    assert he.apply_host_outcomes([detected], [_s("step-03", "not_run", oc.TOOL_ABSENT)],
+                                  agent_profile_mode="block") == 0
+    assert (detected.outcome, detected.kpi_verdict) == ("detected", "pass")
