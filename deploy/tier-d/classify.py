@@ -137,6 +137,24 @@ EXIT_RE = re.compile(r"exit_code=(-?\d+)")
 CLEAN_TERMINAL_STATUSES = {"complete", "failed", "staged"}
 
 
+# --- host termination vocabulary ---------------------------------------------
+# Mirrors core/engine/outcome.py. This file ships to a jumpbox with no SimCore
+# import path, so the values are restated here and pinned by
+# tests/e2e_isolated/test_tier_d_classify.py::test_harness_vocabulary_matches_engine.
+# Anything outside the vocabulary RAISES: a tolerant reader keeps the bug.
+TERMINATIONS = frozenset({
+    "exited", "signaled", "anchor_terminated", "beacon_lost", "timeout",
+    "aborted", "not_run",
+})
+HOST_WITNESS = frozenset({"signaled", "anchor_terminated"})
+UPSTREAM_SEVERED = "UPSTREAM_SEVERED"
+NOT_RUN_REASONS = frozenset({
+    "UPSTREAM_SEVERED", "UPSTREAM_NOT_EXECUTED", "UPSTREAM_FAILED", "TOOL_ABSENT",
+})
+BEACON_LOST_RE = re.compile(r"--- BEACON LOST")
+SEVERED_RE = re.compile(r"SEVERED at (?P<sid>\S+) \((?P<term>[a-z_]+)\)")
+
+
 def scan(patterns: list[tuple[str, str]], text: str) -> str | None:
     for pat, reason in patterns:
         if re.search(pat, text):
@@ -144,8 +162,16 @@ def scan(patterns: list[tuple[str, str]], text: str) -> str | None:
     return None
 
 
-def classify_step(body: str, code: int | None) -> tuple[str, str]:
+def classify_step(body: str, code: int | None,
+                  termination: str | None = None) -> tuple[str, str]:
     """Return (class, reason) for one step's output body.
+
+    ``termination`` is the step's host-side record (the /complete ``steps[]``
+    vocabulary). A host-witnessed kill (signaled / anchor_terminated) is the
+    TTP having run and been stopped: real signal, not a CortexSim fault. A
+    lost beacon is a witness of nothing and says so. A ``not_run`` step never
+    executed -- ENVIRONMENT, so its absent detection is never read as a miss.
+    ``None`` keeps the exit-code-driven behaviour unchanged.
 
     I1: ENGINE signatures are checked FIRST and UNCONDITIONALLY — a step that
     exits 0 while its own output contains "!! IDENTITY NOT HONOURED" or
@@ -156,6 +182,16 @@ def classify_step(body: str, code: int | None) -> tuple[str, str]:
     engine_reason = scan(ENGINE_PATTERNS, body)
     if engine_reason:
         return "ENGINE", engine_reason
+    if termination is not None and termination not in TERMINATIONS:
+        raise ValueError(f"unrecognised termination: {termination!r}")
+    if termination in HOST_WITNESS:
+        return "TTP", (f"step was terminated from the host ({termination}); the "
+                       "technique ran and was stopped -- not a CortexSim fault")
+    if termination == "beacon_lost":
+        return "TTP", ("beacon lost mid-step; the outcome is unwitnessed (a lost "
+                       "beacon is evidence of nothing)")
+    if termination == "not_run":
+        return "ENVIRONMENT", "step never ran (an upstream step or a tool stopped it)"
     if code == 0:
         return "OK", "step exited 0"
     perm_reason = _permission_denied_environment_reason(body)
@@ -167,8 +203,66 @@ def classify_step(body: str, code: int | None) -> tuple[str, str]:
     return "TTP", "step executed and returned a non-zero exit"
 
 
-def build_verdict(run: dict, scenario: str) -> dict:
-    """Pure function: run record + scenario id -> verdict dict. No I/O."""
+def derive_step_outcomes(run: dict, results: dict | None) -> list[dict]:
+    """Rebuild /complete-shaped step records from what the public API shows.
+
+    No endpoint exposes the ``step_outcomes`` rows, so the harness reconstructs
+    them from three surfaces the engine does publish: ``run.severed_at_step``,
+    the beacon's completion summary (``SEVERED at <step> (<termination>)``) or
+    the sweep's ``BEACON LOST`` marker in ``run.output``, and the ``not_reached``
+    / ``not_executed`` Results the engine projects for steps that never ran.
+    An unrecognised shape raises: it is never read as "nothing happened".
+    """
+    output = run.get("output") or ""
+    if not isinstance(output, str):
+        output = json.dumps(output)
+    records: list[dict] = []
+    severed = run.get("severed_at_step")
+    if severed:
+        m = SEVERED_RE.search(output)
+        if m and m.group("sid") == severed:
+            term = m.group("term")
+            if term not in HOST_WITNESS:
+                raise ValueError(
+                    f"severed step {severed!r} reports termination {term!r}, which "
+                    "is not a host witness")
+        elif BEACON_LOST_RE.search(output):
+            term = "beacon_lost"
+        else:
+            raise ValueError(
+                f"run severed at {severed!r} but the output carries neither a "
+                "'SEVERED at' summary nor a BEACON LOST marker")
+        records.append({"step_id": severed, "termination": term})
+    seen = {r["step_id"] for r in records}
+    for row in (results or {}).get("results", []):
+        if row.get("outcome") not in ("not_reached", "not_executed"):
+            continue
+        sid, reason = row.get("step_id"), row.get("outcome_reason")
+        if reason not in NOT_RUN_REASONS:
+            raise ValueError(
+                f"step {sid!r} is {row.get('outcome')} with unrecognised reason {reason!r}")
+        if sid in seen:
+            continue
+        seen.add(sid)
+        records.append({"step_id": sid, "termination": "not_run", "reason": reason})
+    return records
+
+
+def build_verdict(run: dict, scenario: str,
+                  step_outcomes: list[dict] | None = None) -> dict:
+    """Pure function: run record + scenario id -> verdict dict. No I/O.
+
+    ``step_outcomes`` is the /complete-shaped ``steps[]`` evidence (see
+    :func:`derive_step_outcomes`). Steps it accounts for count as reported:
+    a severed run is not "stopped early for an unknown reason".
+    """
+    by_step: dict[str, dict] = {}
+    for rec in step_outcomes or []:
+        term = rec.get("termination")
+        if term not in TERMINATIONS:
+            raise ValueError(f"unrecognised termination: {term!r}")
+        by_step[rec["step_id"]] = rec
+
     output = run.get("output") or ""
     if not isinstance(output, str):
         output = json.dumps(output)
@@ -178,7 +272,8 @@ def build_verdict(run: dict, scenario: str) -> dict:
         body = m.group("body")
         exit_m = EXIT_RE.search(body)
         code = int(exit_m.group(1)) if exit_m else None
-        klass, reason = classify_step(body, code)
+        rec = by_step.get(m.group("sid"))
+        klass, reason = classify_step(body, code, rec["termination"] if rec else None)
         steps.append({
             "n": int(m.group("n")),
             "step_id": m.group("sid"),
@@ -199,7 +294,24 @@ def build_verdict(run: dict, scenario: str) -> dict:
     # stopped early. Fail-fast is by design, so this is not automatically an
     # engine fault — but it must be visible, not silently absent, AND (C1) it
     # must actually gate the verdict rather than only being printed.
-    unreported = max(0, declared_total - observed)
+    terminations = {
+        sid: {"termination": rec["termination"], "reason": rec.get("reason")}
+        for sid, rec in by_step.items()
+    }
+    # A step with no output block is accounted for only when a SEVERANCE
+    # explains it: the host killed it (signaled / anchor_terminated), the
+    # beacon was lost on it, or it never ran because an upstream step was
+    # severed. UPSTREAM_FAILED / UPSTREAM_NOT_EXECUTED / TOOL_ABSENT stay
+    # unreported on purpose (C1): fail-fast stopping is a fact about the engine,
+    # not proof that every later step would have met the same environment gap.
+    reported_ids = {s["step_id"] for s in steps}
+    accounted = sum(
+        1 for sid, rec in by_step.items()
+        if sid not in reported_ids and (
+            rec["termination"] in HOST_WITNESS
+            or rec["termination"] == "beacon_lost"
+            or (rec["termination"] == "not_run" and rec.get("reason") == UPSTREAM_SEVERED)))
+    unreported = max(0, declared_total - observed - accounted)
 
     # C1 — scan the WHOLE run output for ENGINE signatures, not only the
     # bodies captured inside recognized `=== STEP ... ===` blocks. A run that
@@ -231,6 +343,8 @@ def build_verdict(run: dict, scenario: str) -> dict:
         "steps_unreported": unreported,
         "counts": counts,
         "steps": steps,
+        "terminations": terminations,
+        "severed_at_step": run.get("severed_at_step"),
         "global_engine_signatures": global_engine_hits,
         "harness_verdict": harness_verdict,
         "interpretation": (
@@ -264,6 +378,10 @@ def render_report(verdict: dict) -> str:
             p(f"       └─ {s['reason']}")
     if not verdict["steps"]:
         p("   (no === STEP ... === blocks found in run output — nothing was classifiable)")
+    for sid, t in verdict.get("terminations", {}).items():
+        p(f"   host record  {sid}: {t['termination']}" + (f" / {t['reason']}" if t["reason"] else ""))
+    if verdict.get("severed_at_step"):
+        p(f"   severed at   {verdict['severed_at_step']}")
     p("")
     counts = verdict["counts"]
     p(f"  OK {counts['OK']} · ENVIRONMENT {counts['ENVIRONMENT']} "
@@ -308,12 +426,18 @@ def main() -> int:
     ap.add_argument("--run", required=True, help="path to the saved run.json")
     ap.add_argument("--scenario", required=True)
     ap.add_argument("--out", required=True, help="where to write verdict.json")
+    ap.add_argument("--results", help="saved GET /api/results/{run_id} (enables "
+                    "step-termination reconstruction for severed runs)")
     args = ap.parse_args()
 
     with open(args.run, encoding="utf-8") as fh:
         run = json.load(fh)
+    results = None
+    if args.results:
+        with open(args.results, encoding="utf-8") as fh:
+            results = json.load(fh)
 
-    verdict = build_verdict(run, args.scenario)
+    verdict = build_verdict(run, args.scenario, derive_step_outcomes(run, results))
 
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(verdict, fh, indent=2)
