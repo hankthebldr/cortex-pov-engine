@@ -33,6 +33,8 @@ from engine import host_evidence
 from engine import report_generator
 from engine.outcome import (
     HOST_WITNESS,
+    EXCLUDED_FROM_DENOMINATOR,
+    OUTCOMES,
     is_in_denominator,
     PROFILE_MODES,
     TERMINATIONS,
@@ -214,7 +216,9 @@ def _result_icon(r: Result) -> str:
     """Icon mirroring the stored outcome. A legacy row (outcome None) keeps ✅/❌."""
     if r.outcome is None:
         return "✅" if r.observed else "❌"
-    icon = _OUTCOME_ICON.get(r.outcome, "❌" if not r.observed else "✅")
+    if r.outcome not in OUTCOMES:
+        raise ValueError(f"unrecognised result outcome {r.outcome!r}")
+    icon = _OUTCOME_ICON[r.outcome]
     if r.outcome == "pending" and r.outcome_reason:
         icon += f" ({r.outcome_reason})"
     return icon
@@ -226,8 +230,9 @@ def _coverage_stats(results: list[Result]) -> dict:
     in_den = [r for r in results if is_in_denominator(r.outcome, r.outcome_reason)]
     denominator = len(in_den)
     observed = sum(1 for r in results if r.observed)
+    observed_in_den = sum(1 for r in in_den if r.observed)
     prevented = sum(1 for r in results if r.outcome == "prevented")
-    pct = round(observed / denominator * 100, 1) if denominator > 0 else 0.0
+    pct = round(observed_in_den / denominator * 100, 1) if denominator > 0 else 0.0
     by_type: dict = {}
     for r in in_den:
         t = by_type.setdefault(r.signal_type, {"total": 0, "observed": 0, "prevented": 0})
@@ -238,6 +243,7 @@ def _coverage_stats(results: list[Result]) -> dict:
             t["prevented"] += 1
     return {
         "total": total, "denominator": denominator, "observed": observed,
+        "observed_in_denominator": observed_in_den,
         "prevented": prevented, "excluded": total - denominator, "pct": pct,
         "by_type": by_type,
     }
@@ -324,6 +330,9 @@ def _prevention_delta_section(run: Run, run_results: list[Result], partner: Opti
     return out
 
 
+_ATT = " — attested"
+
+
 def _attestations_section(run: Run) -> list[str]:
     if not (run.agent_profile_mode != "unknown" or run.bas_mode_attested is not None
             or run.soakless_attested is not None or run.attested_by):
@@ -332,16 +341,20 @@ def _attestations_section(run: Run) -> list[str]:
     def _flag(v):
         return "not attested" if v is None else ("enabled" if v else "disabled")
 
-    at = run.attested_at.isoformat() if run.attested_at else "unknown"
+    at = run.attested_at.isoformat() + "Z" if run.attested_at else "unknown"  # naive UTC by convention
     out = [
         "## Attestations", "",
         f"- agent profile mode: {run.agent_profile_mode} — attested by "
         f"{run.attested_by or 'unknown'} at {at}, not verified",
-        f"- BAS mode: {_flag(run.bas_mode_attested)} — attested",
-        f"- soakless: {_flag(run.soakless_attested)} — attested",
+        f"- BAS mode: {_flag(run.bas_mode_attested)}{_ATT if run.bas_mode_attested is not None else ''}",
+        f"- soakless: {_flag(run.soakless_attested)}{_ATT if run.soakless_attested is not None else ''}",
     ]
-    if run.block_mode_status or run.canary_run_id:
+    if run.block_mode_status and run.canary_run_id:
         out.append(f"- canary: {run.block_mode_status} (run {run.canary_run_id})")
+    elif run.block_mode_status:
+        out.append(f"- canary: {run.block_mode_status}")
+    elif run.canary_run_id:
+        out.append(f"- canary: run {run.canary_run_id} (status unknown)")
     else:
         out.append("- canary: not run")
     out.append("")
@@ -857,7 +870,9 @@ async def get_report(
     total, observed, coverage_pct = cov["total"], cov["observed"], cov["pct"]
     by_type = cov["by_type"]
 
-    mttd_values = [r.mttd_seconds for r in results if r.mttd_seconds is not None]
+    # Same exclusion as scoring: a row whose step never ran contributes no MTTD.
+    mttd_values = [r.mttd_seconds for r in results
+                   if r.mttd_seconds is not None and r.outcome not in EXCLUDED_FROM_DENOMINATOR]
     mttd_avg = round(sum(mttd_values) / len(mttd_values), 1) if mttd_values else None
     mttd_min = round(min(mttd_values), 1) if mttd_values else None
     mttd_max = round(max(mttd_values), 1) if mttd_values else None
@@ -872,7 +887,12 @@ async def get_report(
             "results": [r.to_dict() for r in results],
             "execution_integrity": integrity,
             "coverage": {
+                # observed: raw count of observed rows; total: raw row count;
+                # denominator: rows that can be scored; observed_in_denominator: observed
+                # rows among those; pct: observed_in_denominator / denominator;
+                # prevented: outcome == "prevented"; excluded: total - denominator.
                 "observed": observed, "total": total, "pct": coverage_pct,
+                "observed_in_denominator": cov["observed_in_denominator"],
                 "denominator": cov["denominator"], "prevented": cov["prevented"], "excluded": cov["excluded"],
                 "by_type": {k: {**v, "pct": round(v["observed"] / v["total"] * 100, 1) if v["total"] > 0 else 0} for k, v in by_type.items()},
             },
@@ -968,7 +988,7 @@ async def get_report(
     lines.append("## Detection Coverage Summary")
     lines.append("")
     lines.append(
-        f"**Overall: {observed}/{cov['denominator']} detections confirmed ({coverage_pct}%) — "
+        f"**Overall: {cov['observed_in_denominator']}/{cov['denominator']} detections confirmed ({coverage_pct}%) — "
         f"{cov['prevented']} prevented · {cov['excluded']} excluded "
         f"(not reached / not executed / soak-pending)**"
     )

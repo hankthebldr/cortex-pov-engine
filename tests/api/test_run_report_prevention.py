@@ -95,7 +95,7 @@ def test_report_attestations_section(client, session_factory):
     body = _report(client, "blk")
     assert "## Attestations" in body
     assert ("agent profile mode: block — attested by henry at "
-            "2026-10-26T15:02:00, not verified") in body
+            "2026-10-26T15:02:00Z, not verified") in body
     assert "BAS mode: enabled — attested" in body
     assert "soakless: enabled — attested" in body
     assert "canary: block_mode_confirmed (run canary-1)" in body
@@ -121,3 +121,120 @@ def test_unpaired_unattested_run_report_is_byte_identical(client, seeded_run):
     assert "**Overall: 2/2 detections confirmed (100.0%)**" in legacy
     assert "| Analytics | 1 | 1 | 100.0% |" in legacy and "Prevented" not in legacy
     assert "- ✅ **[Analytics]** passwd read" in legacy
+
+
+# --- fix round 1 -----------------------------------------------------------
+
+def _seed_simple(session_factory, run_kw=None, rows=()):
+    """One run 'x' (+ scenario) with Result rows: (step, det, sig, outcome, observed, mttd)."""
+    from models import Result, Run, Scenario
+
+    async def go():
+        async with session_factory() as db:
+            db.add(Scenario(
+                scenario_id="SIM-T-015", name="n", plane="EDR", version="1.0", status="active",
+                uc_ref="UCS-EDR-01", uc_name="u", tc_ref="TC-EDR-01", tc_name="t",
+                mitre_tactic="TA0006", mitre_tactic_name="c", mitre_technique="T1003",
+                mitre_technique_name="d", steps=[{"id": "step-01"}, {"id": "step-02"}]))
+            now = datetime.utcnow()
+            db.add(Run(run_id="x", scenario_id="SIM-T-015", mode="pull", status="complete",
+                       started_at=now, completed_at=now, **(run_kw or {})))
+            for step, det, sig, outcome, obs, mttd in rows:
+                db.add(Result(run_id="x", step_id=step, step_name=step, plane="EDR",
+                              signal_type=sig, expected_detection=det, detection_id=det,
+                              observed=obs, executed_at=now, outcome=outcome,
+                              observed_at=None if mttd is None else now + timedelta(seconds=mttd)))
+            await db.commit()
+    asyncio.run(go())
+
+
+def test_attestation_unset_flags_have_no_attested_suffix(client, session_factory):
+    _seed_simple(session_factory, {"agent_profile_mode": "block"})
+    body = _report(client, "x")
+    lines = body.splitlines()
+    assert "- BAS mode: not attested" in lines
+    assert "- soakless: not attested" in lines
+
+
+def test_attested_at_renders_with_z(client, session_factory):
+    _seed_simple(session_factory, {"agent_profile_mode": "block", "attested_by": "henry",
+                                   "attested_at": datetime(2026, 10, 26, 15, 2)})
+    assert "attested by henry at 2026-10-26T15:02:00Z, not verified" in _report(client, "x")
+
+
+@pytest.mark.parametrize("kw,expected", [
+    ({"block_mode_status": "block_mode_confirmed", "canary_run_id": "c1"},
+     "- canary: block_mode_confirmed (run c1)"),
+    ({"block_mode_status": "canary_not_available"}, "- canary: canary_not_available"),
+    ({"canary_run_id": "c1"}, "- canary: run c1 (status unknown)"),
+    ({}, "- canary: not run"),
+])
+def test_canary_line_shapes(client, session_factory, kw, expected):
+    _seed_simple(session_factory, {"agent_profile_mode": "block", **kw})
+    body = _report(client, "x")
+    assert expected in body.splitlines()
+    assert "None" not in body
+
+
+def test_mttd_section_excludes_excluded_rows(client, session_factory):
+    _seed_simple(session_factory, None, [
+        ("step-01", "d1", "BIOC", "detected", True, 10.0),
+        ("step-02", "d2", "BIOC", "not_reached", False, 999.0),
+    ])
+    body = _report(client, "x")
+    assert "| Detections Measured | 1 |" in body
+    assert "999" not in body
+
+
+def test_headline_observed_counts_in_denominator_only(client, session_factory):
+    _seed_simple(session_factory, None, [
+        ("step-01", "d1", "BIOC", "detected", True, None),
+        ("step-02", "d2", "BIOC", "not_reached", True, None),
+    ])
+    body = _report(client, "x")
+    assert "**Overall: 1/1 detections confirmed (100.0%)" in body
+    assert "| BIOC | 1 | 0 | 1 | 100.0% |" in body
+
+
+def test_json_coverage_semantics(client, session_factory):
+    _seed_simple(session_factory, None, [
+        ("step-01", "d1", "BIOC", "prevented", True, None),
+        ("step-01", "d2", "BIOC", "missed", False, None),
+        ("step-02", "d3", "BIOC", "not_reached", True, None),
+    ])
+    cov = client.get("/api/runs/x/report", params={"format": "json"}).json()["coverage"]
+    assert cov["total"] == 3 and cov["denominator"] == 2
+    assert cov["observed"] == 2 and cov["observed_in_denominator"] == 1
+    assert cov["pct"] == round(cov["observed_in_denominator"] / cov["denominator"] * 100, 1) == 50.0
+    assert cov["prevented"] == 1 and cov["excluded"] == 1
+
+
+def test_unrecognised_outcome_raises():
+    from api.runs import _result_icon
+    from engine.report_generator import _status_from_result
+
+    class R:
+        outcome, outcome_reason, observed = "bogus", None, True
+    with pytest.raises(ValueError, match="bogus"):
+        _result_icon(R())
+    with pytest.raises(ValueError, match="bogus"):
+        _status_from_result(True, True, outcome="bogus")
+
+
+def test_prevention_delta_exact_row_and_detected_both_modes(client, session_factory):
+    _seed_pair(session_factory)
+    from models import Result
+    from datetime import datetime as dt
+
+    async def go():
+        async with session_factory() as db:
+            for rid in ("rep", "blk"):
+                db.add(Result(run_id=rid, step_id="step-01", step_name="s", plane="EDR",
+                              signal_type="Prevention", expected_detection="d9",
+                              detection_id="d9", observed=True, executed_at=dt.utcnow(),
+                              outcome="detected"))
+            await db.commit()
+    asyncio.run(go())
+    body = _report(client, "rep")
+    assert "| step-02 | d2 | BIOC | Behavioral Threat Protection | detected | prevented |" in body
+    assert "| step-01 | d9 | Prevention | — | detected | detected |" in body

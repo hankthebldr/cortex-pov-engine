@@ -28,6 +28,8 @@ import tarfile
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
+from engine.outcome import OUTCOMES
+
 
 logger = logging.getLogger("cortexsim.engine.report_generator")
 
@@ -78,6 +80,8 @@ def _severity_from_detection_type(detection_type: str | None,
 
 
 def _status_from_result(observed: bool, has_observed_at: bool, outcome: Optional[str] = None) -> str:
+    if outcome is not None and outcome not in OUTCOMES:
+        raise ValueError(f"unrecognised result outcome {outcome!r}")
     if outcome == "prevented":
         return "PREVENTED"
     if outcome in ("not_reached", "not_executed"):
