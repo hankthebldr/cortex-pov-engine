@@ -1,7 +1,18 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { postRun, getAgents, downloadScenario } from '../../api/client.js'
+import { postRun, getAgents, getRuns, postCanary, downloadScenario } from '../../api/client.js'
 import { getLaunchCapability } from '../../api/payloads.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
+import { triStateFromValue } from '../../outcomes.js'
+
+/** "message [CODE]: detail" from a thrown API error, code and detail never dropped. */
+export function describeError(err) {
+  let text = err?.message || 'Request failed'
+  if (err?.code && !text.includes(err.code)) text += ` [${err.code}]`
+  if (typeof err?.detail === 'string' && err.detail && !text.includes(err.detail)) {
+    text += `: ${err.detail}`
+  }
+  return text
+}
 
 /**
  * useLaunchScenario — encapsulates pull/push launch state for a scenario.
@@ -41,6 +52,19 @@ export default function useLaunchScenario(scenario, {
   // report, produced by the back-compat mechanism itself.
   const [payloadPlanAccepted, setPayloadPlanAccepted] = useState(null)
 
+  // Prevention-efficacy launch context. Operator DECLARATIONS: sent only when
+  // set, so the default body stays byte-identical. 'unknown' / '' (= not
+  // attested) are the unset values and are never sent.
+  const [profileMode, setProfileMode]     = useState('unknown')   // report | block | unknown
+  const [basMode, setBasMode]             = useState('')          // '' | enabled | disabled
+  const [soaklessMode, setSoaklessMode]   = useState('')          // '' | enabled | disabled
+  const [attestedBy, setAttestedBy]       = useState('')
+  const [pairedWith, setPairedWith]       = useState('')
+  const [canaryRunId, setCanaryRunId]     = useState('')
+  const [canaryBusy, setCanaryBusy]       = useState(false)
+  const [canaryError, setCanaryError]     = useState(null)        // { message, code }
+  const [runHistory, setRunHistory]       = useState([])
+
   const identityOptions  = scenario?.execution_identity?.options || []
   const defaultIdentity  = scenario?.execution_identity?.default || ''
   const supportsPull     = scenario?.pull_supported ?? true
@@ -50,7 +74,48 @@ export default function useLaunchScenario(scenario, {
   useEffect(() => {
     setIdentity(defaultIdentity || identityOptions[0] || '')
     setLastRun(null)
+    setPairedWith('')
+    setCanaryRunId('')
+    setCanaryError(null)
   }, [scenario?.scenario_id, defaultIdentity])
+
+  // Terminal runs of this scenario on the chosen target: the only valid pair
+  // partners (the server enforces it; the picker just does not offer the rest).
+  useEffect(() => {
+    if (mode !== 'pull') return undefined
+    let cancelled = false
+    getRuns()
+      .then((list) => { if (!cancelled) setRunHistory(Array.isArray(list) ? list : []) })
+      .catch(() => { if (!cancelled) setRunHistory([]) })
+    return () => { cancelled = true }
+  }, [mode, scenario?.scenario_id, lastRun?.status])
+  const pairOptions = useMemo(() => {
+    const sid = scenario?.scenario_id || scenario?.id
+    return runHistory.filter((r) =>
+      r.scenario_id === sid
+      && selectedAgent && String(r.target) === String(selectedAgent)
+      && (r.status === 'complete' || r.status === 'failed'))
+  }, [runHistory, scenario, selectedAgent])
+
+  const runCanary = useCallback(async () => {
+    if (!selectedAgent) {
+      setCanaryError({ message: 'Pick the beacon to run the canary on', code: null })
+      return null
+    }
+    setCanaryBusy(true)
+    setCanaryError(null)
+    try {
+      const res = await postCanary(selectedAgent)
+      setCanaryRunId(res?.run_id || '')
+      return res
+    } catch (err) {
+      setCanaryRunId('')
+      setCanaryError({ message: describeError(err), code: err.code || null })
+      return null
+    } finally {
+      setCanaryBusy(false)
+    }
+  }, [selectedAgent])
 
   // Fetch agents whenever pull mode is active.
   useEffect(() => {
@@ -102,6 +167,16 @@ export default function useLaunchScenario(scenario, {
       }
       if (mode === 'pull' && selectedAgent) body.target_agent_id = selectedAgent
       if (consent && Object.keys(consent).length) body.consent = consent
+      if (mode === 'pull') {
+        if (profileMode && profileMode !== 'unknown') body.agent_profile_mode = profileMode
+        const bas = triStateFromValue(basMode)
+        if (bas !== null) body.bas_mode_attested = bas
+        const soak = triStateFromValue(soaklessMode)
+        if (soak !== null) body.soakless_attested = soak
+        if (attestedBy.trim()) body.attested_by = attestedBy.trim()
+        if (pairedWith) body.paired_with_run_id = pairedWith
+        if (canaryRunId) body.canary_run_id = canaryRunId
+      }
       // Only sent when the server's own schema says it will be read.
       if (payloadPlanAccepted === true && payloadPlan?.artifacts?.length) {
         body.payload_plan = payloadPlan.artifacts
@@ -114,14 +189,18 @@ export default function useLaunchScenario(scenario, {
       const msg = err.message || 'Launch failed'
       // Keep the structured contract intact — the panel renders the code as a
       // secondary line so a 422 reads as a named field, not a status number.
-      setLastRun({ status: 'error', message: msg, code: err.code || null })
+      setLastRun({
+        status: 'error', message: msg, code: err.code || null,
+        detail: typeof err.detail === 'string' ? err.detail : null,
+      })
       if (onError) onError(msg)
       return null
     } finally {
       setLaunching(false)
     }
   }, [scenario, mode, identity, selectedAgent, consent, payloadPlan, payloadPlanAccepted,
-      payloadPlanResolving, onRunComplete, onError])
+      payloadPlanResolving, onRunComplete, onError,
+      profileMode, basMode, soaklessMode, attestedBy, pairedWith, canaryRunId])
 
   const downloadPushBundle = useCallback(async () => {
     if (!scenario) return
@@ -177,6 +256,13 @@ export default function useLaunchScenario(scenario, {
     launching, downloading,
     lastRun,
     payloadPlanAccepted,
+    profileMode, setProfileMode,
+    basMode, setBasMode,
+    soaklessMode, setSoaklessMode,
+    attestedBy, setAttestedBy,
+    pairedWith, setPairedWith,
+    canaryRunId, canaryBusy, canaryError, runCanary,
+    pairOptions,
     // derived
     identityOptions,
     supportsPull, supportsPush,

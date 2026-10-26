@@ -235,3 +235,48 @@ describe('ReadinessBanner', () => {
     expect(screen.getByTestId('readiness-banner')).toBeInTheDocument()
   })
 })
+
+describe('ReadinessView — attested-only facts', () => {
+  const RUN_OLD = {
+    run_id: 'r-old', started_at: '2026-10-25T09:00:00', agent_profile_mode: 'report',
+    bas_mode_attested: false, soakless_attested: false,
+  }
+  const RUN_NEW = {
+    run_id: 'r-new', started_at: '2026-10-26T09:00:00', agent_profile_mode: 'block',
+    bas_mode_attested: true, soakless_attested: null,
+  }
+
+  it('lists profile mode, BAS mode and soakless beside the ladder, each as not verified', async () => {
+    renderView({ runs: [RUN_OLD, RUN_NEW] })
+    const group = await screen.findByTestId('attested-only-facts')
+    expect(screen.getByTestId('attested-profile-mode')).toBeInTheDocument()
+    expect(screen.getByTestId('attested-bas-mode')).toBeInTheDocument()
+    expect(screen.getByTestId('attested-soakless')).toBeInTheDocument()
+    expect(group).toHaveTextContent(/not verified/i)
+    // never a fifth rung of the ladder
+    expect(screen.getAllByTestId(/^rung-(authored|configured|reachable|verified)$/)).toHaveLength(4)
+    expect(screen.getByTestId('connector-ladder')).not.toContainElement(group)
+  })
+
+  it('states what would verify each fact', async () => {
+    renderView({ runs: [RUN_NEW] })
+    await screen.findByTestId('attested-only-facts')
+    expect(screen.getByTestId('attested-profile-mode')).toHaveTextContent('a canary run with a tenant-confirmed prevention')
+    expect(screen.getByTestId('attested-bas-mode')).toHaveTextContent('nothing — attested only')
+    expect(screen.getByTestId('attested-soakless')).toHaveTextContent('nothing — no public dataset exposes it')
+  })
+
+  it('takes values from the newest run by started_at', async () => {
+    renderView({ runs: [RUN_NEW, RUN_OLD] })
+    await screen.findByTestId('attested-only-facts')
+    expect(screen.getByTestId('attested-profile-mode')).toHaveTextContent(/block/)
+    expect(screen.getByTestId('attested-bas-mode')).toHaveTextContent(/enabled/)
+    expect(screen.getByTestId('attested-soakless')).toHaveTextContent(/not attested/)
+  })
+
+  it('says "no runs yet" when there are none', async () => {
+    renderView({ runs: [] })
+    const group = await screen.findByTestId('attested-only-facts')
+    expect(group).toHaveTextContent(/no runs yet/i)
+  })
+})

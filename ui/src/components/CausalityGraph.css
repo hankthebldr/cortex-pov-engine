@@ -145,6 +145,7 @@
 }
 .cg-legend__swatch--confirmed { border-top-color: var(--cortex-teal); }
 .cg-legend__swatch--expected  { border-top-color: var(--cortex-steel); border-top-style: dashed; }
+.cg-legend__swatch--severed   { border-top-color: var(--cortex-steel); border-top-style: dashed; }
 .cg-legend__swatch--broken    { border-top-color: var(--cortex-danger); border-top-style: dashed; }
 .cg-legend__swatch--hero      { border-top-color: var(--cortex-navy); border-top-width: 4px; }
 
@@ -209,6 +210,9 @@
 .cg-edge--expected  { stroke: var(--cortex-steel); stroke-dasharray: 5 5; opacity: 0.6; }
 .cg-edge--broken    { stroke: var(--cortex-danger); stroke-dasharray: 4 4; stroke-width: 2.5; }
 .cg-edge--hero      { stroke-width: 3.5; opacity: 1; }
+/* A runtime control cut the chain here: dashed steel, not a failure red. */
+.cg-edge--severed, .edge--severed { stroke: var(--cortex-steel); stroke-dasharray: 3 5; stroke-width: 2.5; opacity: 0.9; }
+.cg-edge__label--severed { fill: var(--cortex-steel); }
 /* exposure→exploit reads as the code-to-cloud dotted link even when confirmed */
 .cg-edge--kind-exposure_exploit { stroke-dasharray: 2 4; }
 .cg-edge--kind-exposure_exploit.cg-edge--confirmed { stroke: var(--cortex-navy); }
@@ -230,6 +234,7 @@
 .cg-arrow--confirmed path { fill: var(--cortex-teal); }
 .cg-arrow--expected path  { fill: var(--cortex-steel); }
 .cg-arrow--broken path    { fill: var(--cortex-danger); }
+.cg-arrow--severed path   { fill: var(--cortex-steel); }
 .cg-arrow--hero path      { fill: var(--cortex-navy); }
 
 /* ── Nodes ───────────────────────────────────────────────────────────────── */
@@ -320,6 +325,11 @@
 .cg-node--alert.cg-node--detected { border-left: 4px solid var(--cortex-success, #1c9e6a); }
 .cg-node--alert.cg-node--pending  { border-left: 4px solid var(--cortex-warning, #f0a020); }
 .cg-node--alert.cg-node--missed   { border-left: 4px solid var(--cortex-danger); }
+.cg-node--alert.cg-node--prevented { border-left: 4px solid var(--cortex-teal); }
+/* Never ran: our chain stopped upstream. Dimmed, not red. */
+.node--not-reached { opacity: 0.55; }
+.cg-node__outcome { font-size: 10px; font-weight: 700; color: var(--cortex-steel); }
+.cg-node__severed { font-size: 10px; font-weight: 700; color: var(--cortex-steel); text-transform: uppercase; letter-spacing: 0.04em; }
 
 .cg-node--flash {
   animation: cg-flash 1.6s ease-out;

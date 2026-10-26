@@ -163,7 +163,7 @@ describe('<DetectionStoryline />', () => {
     render(<DetectionStoryline runId="run-abc" />)
 
     expect(await screen.findByText(/awaiting detection/i)).toBeInTheDocument()
-    expect(screen.getByText('Awaiting')).toBeInTheDocument()
+    expect(screen.getByText('Pending')).toBeInTheDocument()
     // Correlation engine (strongest XSIAM differentiator) is badged.
     expect(screen.getByText('Correlation')).toBeInTheDocument()
   })

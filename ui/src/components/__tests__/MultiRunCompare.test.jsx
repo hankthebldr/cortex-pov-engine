@@ -149,3 +149,69 @@ describe('<MultiRunCompare />', () => {
     })
   })
 })
+
+describe('<MultiRunCompare /> prevention delta', () => {
+  const pairRuns = [
+    { run_id: 'r-report', scenario_id: 'SIM-EDR-001', status: 'complete', agent_profile_mode: 'report', paired_with_run_id: null },
+    { run_id: 'r-block', scenario_id: 'SIM-EDR-001', status: 'complete', agent_profile_mode: 'block', paired_with_run_id: 'r-report' },
+    { run_id: 'r-solo', scenario_id: 'SIM-EDR-001', status: 'complete' },
+  ]
+  const PAIR = {
+    runs: [pairRuns[0], pairRuns[1]],
+    delta: {
+      report_run_id: 'r-report', block_run_id: 'r-block', severed_at_step: 'step-02',
+      steps: [
+        { step_id: 'step-01', step_name: 'dump', detections: [
+          { detection_id: 'bioc-1', signal_type: 'BIOC', prevention_module: 'BTP',
+            report: { outcome: 'detected', mttd_seconds: 38 },
+            block: { outcome: 'prevented', outcome_reason: 'blocked', mttd_seconds: 4 } },
+        ] },
+        { step_id: 'step-02', step_name: 'exfil', detections: [
+          { detection_id: 'bioc-2', signal_type: 'XQL', prevention_module: null,
+            report: { outcome: 'detected', mttd_seconds: 50 }, block: null },
+        ] },
+      ],
+    },
+  }
+
+  it('renders the delta table for two runs that are a pair', async () => {
+    const seen = []
+    installRoutes({
+      'GET /api/runs': pairRuns,
+      'GET /api/runs/:id/pair': (url) => { seen.push(url); return PAIR },
+      'GET /api/results/r-report': { results: [] },
+      'GET /api/results/r-block': { results: [] },
+    })
+    const { container } = render(<MultiRunCompare />)
+    await waitFor(() => expect(container.querySelectorAll('.multirun__run-pill').length).toBe(3))
+    const pills = container.querySelectorAll('.multirun__run-pill')
+    fireEvent.click(pills[0])
+    fireEvent.click(pills[1])
+    const table = await screen.findByTestId('pair-delta-table')
+    const heads = Array.from(table.querySelectorAll('th')).map((h) => h.textContent)
+    expect(heads).toEqual(['Step', 'Detection', 'Type', 'Module', 'Report-mode', 'Block-mode'])
+    const rows = table.querySelectorAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('prevented')
+    expect(rows[0].textContent).toContain('blocked')
+    // missing side and missing module render as an em dash, never "null"
+    expect(rows[1].textContent).toContain('—')
+    expect(rows[1].textContent).not.toMatch(/null/)
+    expect(seen.length).toBeGreaterThan(0)
+  })
+
+  it('leaves the plain comparison alone when the two runs are not a pair', async () => {
+    installRoutes({
+      'GET /api/runs': pairRuns,
+      'GET /api/results/r-report': { results: [] },
+      'GET /api/results/r-solo': { results: [] },
+    })
+    const { container } = render(<MultiRunCompare />)
+    await waitFor(() => expect(container.querySelectorAll('.multirun__run-pill').length).toBe(3))
+    const pills = container.querySelectorAll('.multirun__run-pill')
+    fireEvent.click(pills[0])
+    fireEvent.click(pills[2])
+    await waitFor(() => expect(container.querySelector('.multirun__matrix')).toBeTruthy())
+    expect(screen.queryByTestId('pair-delta-table')).toBeNull()
+  })
+})

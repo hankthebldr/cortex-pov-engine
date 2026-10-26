@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { getRuns, getResultsForRun } from '../../api/client.js'
+import { getRuns, getResultsForRun, getRunPair } from '../../api/client.js'
 import { runIdOf } from '../../api/ids.js'
+import { arePaired } from '../../outcomes.js'
 
 /**
  * MultiRunCompare — side-by-side scorecard for 2-N runs.
@@ -57,6 +58,27 @@ export default function MultiRunCompare() {
       setLoadingResults(false)
     })
   }, [selectedIds]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Exactly two picked runs that point at each other are a report/block pair:
+  // the server builds the delta; the console only lays it out.
+  const pairedRuns = useMemo(() => {
+    if (selectedIds.length !== 2) return null
+    const [a, b] = selectedIds.map((id) => availableRuns.find((r) => runIdOf(r) === id))
+    return arePaired(a, b) ? [a, b] : null
+  }, [selectedIds, availableRuns])
+  const pairKey = pairedRuns ? pairedRuns.map(runIdOf).join('+') : null
+  const [pair, setPair] = useState(null)   // { key, delta } | { key, error }
+  useEffect(() => {
+    if (!pairKey) { setPair(null); return undefined }
+    let cancelled = false
+    const anchor = runIdOf(pairedRuns.find((r) => r.paired_with_run_id) || pairedRuns[0])
+    getRunPair(anchor)
+      .then((body) => { if (!cancelled) setPair({ key: pairKey, delta: body?.delta || null }) })
+      .catch((err) => {
+        if (!cancelled) setPair({ key: pairKey, error: err?.detail && typeof err.detail === 'string' ? err.detail : (err?.message || 'pair delta unavailable'), code: err?.code || null })
+      })
+    return () => { cancelled = true }
+  }, [pairKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const togglePick = (id) => {
     setSelectedIds((prev) => {
@@ -123,6 +145,10 @@ export default function MultiRunCompare() {
           </div>
         )}
       </div>
+
+      {pairKey && pair && pair.key === pairKey && (
+        <PairDelta pair={pair} />
+      )}
 
       {selectedIds.length >= 2 ? (
         <div className="multirun__matrix-wrap">
@@ -244,6 +270,63 @@ export default function MultiRunCompare() {
           {loadingResults && ' · loading results'}
         </div>
       )}
+    </div>
+  )
+}
+
+/* ─── Prevention delta (report → block) ──────────────────────────── */
+
+const DASH = '—'
+
+function sideText(side, withReason) {
+  if (!side) return DASH
+  let text = String(side.outcome || DASH)
+  if (withReason && side.outcome_reason) text += ` (${side.outcome_reason})`
+  if (side.mttd_seconds != null) text += ` ${side.mttd_seconds}s`
+  return text
+}
+
+function PairDelta({ pair }) {
+  if (pair.error) {
+    return (
+      <div className="coverage__empty mono" role="alert" data-testid="pair-delta-error">
+        {pair.error}{pair.code ? ` [${pair.code}]` : ''}
+      </div>
+    )
+  }
+  const steps = pair.delta?.steps || []
+  return (
+    <div className="multirun__pair" data-testid="pair-delta">
+      <div className="competitive__filter-label mono compare-runs__avail-label">
+        prevention delta · report mode → block mode
+        {pair.delta?.severed_at_step ? ` · chain severed at ${pair.delta.severed_at_step}` : ''}
+      </div>
+      <div className="multirun__matrix-scroll">
+        <table className="multirun__matrix" data-testid="pair-delta-table">
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th>Detection</th>
+              <th>Type</th>
+              <th>Module</th>
+              <th>Report-mode</th>
+              <th>Block-mode</th>
+            </tr>
+          </thead>
+          <tbody>
+            {steps.flatMap((step) => (step.detections || []).map((d, i) => (
+              <tr key={`${step.step_id}:${d.detection_id || i}:${i}`}>
+                <td className="mono">{step.step_id}</td>
+                <td className="mono">{d.detection_id || DASH}</td>
+                <td>{d.signal_type || DASH}</td>
+                <td>{d.prevention_module || DASH}</td>
+                <td className="mono">{sideText(d.report, false)}</td>
+                <td className="mono">{sideText(d.block, true)}</td>
+              </tr>
+            )))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

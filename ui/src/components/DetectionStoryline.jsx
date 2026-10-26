@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
 import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
+import { outcomeMeta, outcomeKey, outcomeClass } from '../outcomes.js'
 import './DetectionStoryline.css'
 
 /**
@@ -86,18 +87,12 @@ function EngineBadge({ type }) {
   )
 }
 
-const STATUS_META = {
-  detected:      { cls: 'detected',      label: 'Detected' },
-  pending:       { cls: 'pending',       label: 'Awaiting' },
-  missed:        { cls: 'missed',        label: 'Missed' },
-  'not-executed': { cls: 'not-executed', label: 'Not executed' },
-}
-
 function StatusPill({ status }) {
-  const meta = STATUS_META[status] || { cls: 'idle', label: status || 'Idle' }
+  const meta = outcomeMeta(status)
   return (
-    <span className={`storyline-pill storyline-pill--${meta.cls}`}>
+    <span className={`storyline-pill storyline-pill--${outcomeClass(status)}`}>
       <span className="storyline-pill__dot" aria-hidden="true" />
+      {meta.glyph && <span className="storyline-pill__glyph" aria-hidden="true">{meta.glyph}</span>}
       {meta.label}
     </span>
   )
@@ -124,7 +119,8 @@ export function isRunUnproven(runStatus) {
  */
 export function reconcileStatus(status, runStatus) {
   const s = status || 'pending'
-  if (s === 'detected') return s
+  // Alert-backed outcomes survive a dead run: the signal demonstrably fired.
+  if (s === 'detected' || s === 'prevented') return s
   return isRunUnproven(runStatus) ? 'not-executed' : s
 }
 
@@ -138,7 +134,10 @@ function detectionKey(det, stepId, di) {
 function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
   const status = reconcileStatus(det.status, runStatus)
   const mttd = formatMttd(det.mttd_seconds)
-  const detected = status === 'detected'
+  const key = outcomeKey(status)
+  const detected = key === 'detected'
+  const prevented = key === 'prevented'
+  const alerted = detected || prevented
   const evidenceCount = det.evidence_count || 0
   const observedClock = formatClock(det.observed_at)
 
@@ -146,7 +145,7 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
     <div
       className={
         'storyline-detection' +
-        ` storyline-detection--${status}` +
+        ` storyline-detection--${outcomeClass(status)}` +
         (flashing ? ' storyline-detection--flash' : '')
       }
       data-testid="storyline-detection"
@@ -157,7 +156,7 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
           <EngineBadge type={det.detection_type} />
         </div>
         <div className="storyline-detection__status">
-          {mttd && detected && (
+          {mttd && alerted && (
             <span className="storyline-mttd" title="Time to detect">
               MTTD {mttd}
             </span>
@@ -198,12 +197,37 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
             </a>
           )}
         </div>
-      ) : status === 'not-executed' ? (
+      ) : prevented ? (
+        <div className="storyline-detection__observed">
+          <span className="storyline-detection__caption">Observed</span>
+          <span className="storyline-observed__engine">
+            Prevented{det.prevention_module ? ` by ${det.prevention_module}` : ''}
+            {det.alert_action ? ` (${det.alert_action})` : ''}
+          </span>
+          {det.alert_external_id && (
+            <span className="storyline-observed__alert text-mono">
+              {det.alert_external_id}
+            </span>
+          )}
+          {observedClock && (
+            <span className="storyline-observed__clock text-mono">{observedClock}</span>
+          )}
+          {det.outcome_reason && (
+            <span className="storyline-observed__reason">{det.outcome_reason}</span>
+          )}
+        </div>
+      ) : key === 'not_executed' ? (
         <div className="storyline-detection__awaiting storyline-detection__awaiting--unproven">
           Signal never generated — the run did not complete, so this detection was
           never put to the test.
+          {det.outcome_reason && <> {det.outcome_reason}</>}
         </div>
-      ) : status === 'missed' ? (
+      ) : key === 'not_reached' ? (
+        <div className="storyline-detection__awaiting storyline-detection__awaiting--not-reached">
+          Not reached — an earlier step was stopped, so this step never ran.
+          {det.outcome_reason && <> {det.outcome_reason}</>}
+        </div>
+      ) : key === 'missed' ? (
         <div className="storyline-detection__awaiting storyline-detection__awaiting--missed">
           No alert reconciled — detection gap
         </div>
@@ -211,11 +235,12 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
         <div className="storyline-detection__awaiting">
           <span className="storyline-scan" aria-hidden="true" />
           Cortex analyzing — awaiting detection…
+          {det.outcome_reason && <> {det.outcome_reason}</>}
         </div>
       )}
 
       {/* Evidence affordance — chain of custody */}
-      {(evidenceCount > 0 || detected) && (
+      {(evidenceCount > 0 || alerted) && (
         <button
           type="button"
           className="storyline-detection__evidence"
@@ -234,7 +259,7 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
 
 function StepNode({ step, index, flashing, runStatus, onOpenEvidence }) {
   const detections = step.detections || []
-  const anyDetected = detections.some((d) => d.status === 'detected')
+  const anyDetected = detections.some((d) => d.status === 'detected' || d.status === 'prevented')
   const anyPending = detections.some(
     (d) => reconcileStatus(d.status, runStatus) === 'pending',
   )
@@ -333,11 +358,23 @@ function StorylineHeader({ storyline, live, lastUpdated }) {
             <span className="storyline-kpi__value">
               {pct}%
               <span className="storyline-kpi__sub">
-                {coverage.detected || 0}/{coverage.expected || 0}
+                {(coverage.detected || 0) + (coverage.prevented || 0)}/
+                {coverage.denominator != null ? coverage.denominator : (coverage.expected || 0)}
               </span>
             </span>
           )}
         </div>
+        {((coverage.prevented || 0) + (coverage.not_reached || 0) + (coverage.not_executed || 0)) > 0 && (
+          <div className="storyline-kpi" data-testid="storyline-outcome-counts">
+            <span className="storyline-kpi__label">Outcomes</span>
+            <span className="storyline-kpi__value storyline-kpi__value--prov">
+              <span>{coverage.prevented || 0} prevented</span>
+              <span className="storyline-kpi__sub">
+                {coverage.not_reached || 0} not reached · {coverage.not_executed || 0} not executed
+              </span>
+            </span>
+          </div>
+        )}
         <div className="storyline-kpi">
           <span className="storyline-kpi__label"><Term k="mttd">MTTD</Term> p50</span>
           <span className="storyline-kpi__value">
@@ -404,7 +441,8 @@ export default function DetectionStoryline({
         const status = det.status || 'pending'
         nextStatuses.set(key, status)
         const before = prevStatuses.current.get(key)
-        if (status === 'detected' && before && before !== 'detected') {
+        const alerted = (x) => x === 'detected' || x === 'prevented'
+        if (alerted(status) && before && !alerted(before)) {
           fresh.push(key)
         }
       })

@@ -220,6 +220,43 @@
   color: var(--tx3);
 }
 
+/* severed-chain banner + attestations panel (prevention efficacy) */
+.theme-console .run-detail .run-severed {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--bd);
+  border-left: 4px solid var(--tx3);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--tx2);
+}
+.theme-console .run-detail .run-attest {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+}
+.theme-console .run-detail .run-attest__h {
+  margin: 0 0 4px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tx2);
+}
+.theme-console .run-detail .run-attest__lede {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--tx3);
+}
+.theme-console .run-detail .run-attest__list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--tx);
+}
+
 /* sub-tabs (Live / Evidence / Storyline / Causality) */
 .theme-console .run-detail .run-detail__subtabs {
   display: flex;
