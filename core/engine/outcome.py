@@ -156,6 +156,35 @@ def host_outcome_for_step(termination: Optional[str], reason: Optional[str]) -> 
     raise ValueError(f"not_run with unrecognised reason: {reason!r}")
 
 
+#: Host terminations that say a step RAN (to its end, its budget, or until the
+#: host stopped it). Only these let a silent ``detect`` row read ``missed``.
+DETECT_MISS_TERMINATIONS = frozenset({
+    TERMINATION_EXITED, TERMINATION_TIMEOUT, TERMINATION_SIGNALED,
+    TERMINATION_ANCHOR_TERMINATED,
+})
+
+
+def silent_detect_verdict(termination: Optional[str],
+                          window_closed: bool) -> Optional[tuple[str, Optional[str]]]:
+    """``(outcome, reason)`` for a silent row scored as a detect, or None.
+
+    Round 4 C-1: no host record, no miss. ``missed`` only when the host says
+    the step ran (``DETECT_MISS_TERMINATIONS``); ``aborted`` is undetermined
+    (``RUN_ABORTED``); no record, or a ``beacon_lost`` that witnesses nothing,
+    is ``HOST_EVIDENCE_ABSENT``. None while the window is open, and for
+    ``not_run`` (the host exclusions own that row). Unknown terminations raise.
+    """
+    if termination is not None and termination not in TERMINATIONS:
+        raise ValueError(f"unrecognised termination: {termination!r}")
+    if not window_closed or termination == TERMINATION_NOT_RUN:
+        return None
+    if termination in DETECT_MISS_TERMINATIONS:
+        return OUTCOME_MISSED, None
+    if termination == TERMINATION_ABORTED:
+        return OUTCOME_PENDING, RUN_ABORTED
+    return OUTCOME_PENDING, HOST_EVIDENCE_ABSENT
+
+
 @dataclass(frozen=True)
 class PreventVerdict:
     outcome: str
@@ -183,10 +212,11 @@ def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
         if alert_outcome is not None:
             reason = ATTESTATION_CONTRADICTED if alert_outcome == ALERT_PREVENTED else None
             return PreventVerdict(OUTCOME_DETECTED, None, reason)
-        if termination == TERMINATION_ABORTED:
-            # An operator-cut step is undetermined whatever the profile (R3b).
-            return PreventVerdict(OUTCOME_PENDING, None, RUN_ABORTED if window_closed else None)
-        return PreventVerdict(OUTCOME_MISSED if window_closed else OUTCOME_PENDING, None, None)
+        # No alert: the detect rule, host record required (round 4 C-1).
+        judged = silent_detect_verdict(termination, window_closed)
+        if judged is None:
+            return PreventVerdict(OUTCOME_PENDING, None, None)
+        return PreventVerdict(judged[0], None, judged[1])
 
     # termination None = no host record yet: no host witness.
     host_witness = termination in HOST_WITNESS

@@ -37,17 +37,22 @@ ROWS = [
     ("step-09", "pending", "PREVENTION_ALERT_WITHOUT_TERMINATION", True, "prevent", "BIOC"),
     # A legacy / manual validation with no outcome: a hit everywhere.
     ("step-10", None, None, True, "detect", "BIOC"),
+    # Round 4 C-1: window closed, nothing matched, but NO host record for the
+    # step (in flight, queued, aborted with a rejected /complete, push): the
+    # judgement writes pending / HOST_EVIDENCE_ABSENT, never missed.
+    ("step-11", None, None, False, "detect", "BIOC"),
 ]
 
 # In the denominator: prevented, detected, detected-not-prevented, missed,
-# the unjudged row, the alert-without-witness pending row, the legacy hit.
-# Hits: prevented, detected, detected-not-prevented, legacy manual.
-DENOMINATOR = 7
+# the unjudged row, the alert-without-witness pending row, the legacy hit, the
+# no-host-record pending row. Hits: prevented, detected, DNP, legacy manual.
+DENOMINATOR = 8
 HITS = 4
-PCT = 57.1
+PCT = 50.0
 
 # Per-row status on every surface that names one (R4 / R1).
 UNJUDGED, ALERT_NO_WITNESS, LEGACY_HIT = "step-08", "step-09", "step-10"
+NO_HOST_RECORD = "step-11"
 EXCLUDED = {"not_reached": 1, "not_executed": 1, "soak_pending": 1}
 
 
@@ -84,10 +89,18 @@ def seeded(session_factory):
             # A complete, scoped reconcile that matched nothing: the engine's own
             # silent-row judgement decides step-04.
             from connectors.service import _judge_silent_results
+            from models import StepOutcome
+            # The host's word that step-04 ran (round 4 C-1): only a row with a
+            # record can read missed. step-11 has none.
+            db.add(StepOutcome(run_id=RUN_ID, step_id="step-04", exit_code=0,
+                               termination="exited", started_at=now - timedelta(minutes=24)))
+            await db.flush()
             run = (await db.execute(select(Run).where(Run.run_id == RUN_ID))).scalar_one()
             rows = list((await db.execute(
                 select(Result).where(Result.run_id == RUN_ID))).scalars().all())
-            await _judge_silent_results(db, run, rows, {}, window_seconds=600,
+            terminations = {so.step_id: so.termination for so in (await db.execute(
+                select(StepOutcome).where(StepOutcome.run_id == RUN_ID))).scalars().all()}
+            await _judge_silent_results(db, run, rows, terminations, window_seconds=600,
                                         evidence_complete=True)
             await db.commit()
         async with session_factory() as db:
@@ -177,13 +190,15 @@ def test_every_surface_names_the_same_status_for_the_unsettled_rows(seeded):
         return {"scorecard": scorecard_status(r.to_dict()), "storyline": story[step],
                 "report_matrix": matrix_by_step[step], "report_icon": _result_icon(r)[0]}
 
-    assert {s: view(s) for s in (UNJUDGED, ALERT_NO_WITNESS, LEGACY_HIT)} == {
+    assert {s: view(s) for s in (UNJUDGED, ALERT_NO_WITNESS, LEGACY_HIT, NO_HOST_RECORD)} == {
         UNJUDGED: {"scorecard": "pending", "storyline": "pending",
                    "report_matrix": "PENDING", "report_icon": "⏳"},
         ALERT_NO_WITNESS: {"scorecard": "pending", "storyline": "pending",
                            "report_matrix": "PENDING", "report_icon": "⏳"},
         LEGACY_HIT: {"scorecard": "detected", "storyline": "detected",
                      "report_matrix": "ENABLED", "report_icon": "✅"},
+        NO_HOST_RECORD: {"scorecard": "pending", "storyline": "pending",
+                         "report_matrix": "PENDING", "report_icon": "⏳"},
     }
 
 
@@ -199,9 +214,10 @@ def test_scorecard_never_reads_detected_not_prevented_as_detected(seeded):
 def test_the_fixture_miss_is_engine_written(seeded):
     """R7: the only `missed` row is the one the silent-row judgement wrote."""
     _, results = seeded
-    outcomes = {r.step_id: r.outcome for r in results}
-    assert outcomes["step-04"] == "missed"
-    assert outcomes[UNJUDGED] is None
+    outcomes = {r.step_id: (r.outcome, r.outcome_reason) for r in results}
+    assert outcomes["step-04"] == ("missed", None)
+    assert outcomes[UNJUDGED] == (None, None)
+    assert outcomes[NO_HOST_RECORD] == ("pending", "HOST_EVIDENCE_ABSENT")
 
 
 def test_exec_summary_coverage_uses_the_one_denominator_and_numerator(seeded):

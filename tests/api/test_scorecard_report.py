@@ -103,8 +103,9 @@ def seeded_run(session_factory):
             run = (await db.execute(_select(Run).where(Run.run_id == "r-sc"))).scalar_one()
             rows = list((await db.execute(
                 _select(Result).where(Result.run_id == "r-sc"))).scalars().all())
-            await _judge_silent_results(db, run, rows, {}, window_seconds=60,
-                                        evidence_complete=True)
+            # step-02's host record says it ran: only then is silence a miss.
+            await _judge_silent_results(db, run, rows, {"step-02": "exited"},
+                                        window_seconds=60, evidence_complete=True)
             await db.commit()
 
     asyncio.run(_seed())

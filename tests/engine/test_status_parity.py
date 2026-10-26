@@ -88,8 +88,9 @@ def _engine_judged_silent_detect_row() -> dict:
         executed_at=datetime.utcnow() - timedelta(minutes=10))
     run = SimpleNamespace(agent_profile_mode="block", block_mode_status=None,
                           soakless_attested=None, paired_with_run_id=None)
-    asyncio.run(_judge_silent_results(None, run, [row], {}, window_seconds=60,
-                                      evidence_complete=True))
+    # The host's record that the step ran: no record, no miss (round 4 C-1).
+    asyncio.run(_judge_silent_results(None, run, [row], {"step-04": "exited"},
+                                      window_seconds=60, evidence_complete=True))
     return {k: getattr(row, k) for k in (
         "id", "step_id", "observed", "observed_at", "mttd_seconds", "outcome")}
 

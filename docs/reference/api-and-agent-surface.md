@@ -230,18 +230,23 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
 `ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`,
 `PASS_WITHHELD_UNSCOPED`, `HOST_EVIDENCE_ABSENT`, `RUN_ABORTED`).
 
-- **`missed` needs the host's `exited`.** A block-mode `prevent` row whose window closed
-  with no alert and **no host record** for its step (push mode, an old beacon with no
+- **`missed` needs the host's word that the step ran — for every expectation.** A row
+  (`detect` or `prevent`, any profile mode) whose window closed with no alert and **no
+  host record** for its step (push mode, an old beacon with no
   `steps[]`, a staging failure, a reconcile before `/complete`) reads `pending` /
   `HOST_EVIDENCE_ABSENT`, never `missed`: nothing says the step ran. With `exited` on
   record it is `missed` / fail. An `aborted` termination reads `pending` /
   `RUN_ABORTED` — for `detect` and `prevent` rows alike, in every profile mode (the run
   was cut short; its verdict is undefined); a `timeout` stays
   `missed` / fail (the step ran its whole budget unprevented).
-- **A silent `detect` row is written `missed`.** Once its window closes with no
-  matched alert, the silent-row judgement writes `outcome = missed` on complete
-  evidence (a host-scoped, untruncated, lossless credential pull), else `pending` /
-  `EVIDENCE_INCOMPLETE`. `kpi_verdict` is left to the Tier-2 verifier. A later matched
+- **A silent `detect` row is written `missed` — when the host says it ran.** Once its
+  window closes with no matched alert, the silent-row judgement
+  (`outcome.py::silent_detect_verdict`) writes `outcome = missed` only when the step's
+  host record is `exited`, `timeout`, `signaled` or `anchor_terminated`, and only on
+  complete evidence (a host-scoped, untruncated, lossless credential pull; else
+  `pending` / `EVIDENCE_INCOMPLETE`). No record or `beacon_lost` → `pending` /
+  `HOST_EVIDENCE_ABSENT`; `aborted` → `pending` / `RUN_ABORTED`. Report/unknown-mode
+  `prevent` rows follow the same rule. `kpi_verdict` is left to the Tier-2 verifier. A later matched
   alert replaces `missed` with `detected`.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
@@ -258,7 +263,8 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `PREVENTION_ALERT_WITHOUT_TERMINATION`, `observed` true) is a hit nowhere.
 - **A host exclusion replaces a Tier-1 silent miss.** A later `not_run` for a step moves
   a `missed` row (any expectation) to `not_reached` / `not_executed` and clears its
-  `fail`; a decided `detected` / `prevented` row is never replaced.
+  `fail`; a later `aborted` moves it to `pending` / `RUN_ABORTED` (a Tier-1 `fail`
+  becomes `pending`); a decided `detected` / `prevented` row is never replaced.
 
 **`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
 rc, reason, started_at, recorded_at}]` (`started_at` = first `/output` arrival, i.e.

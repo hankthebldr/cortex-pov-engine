@@ -15,6 +15,8 @@ from engine.outcome import (
     OUTCOME_PENDING,
     PREVENTION_UNCONFIRMED_BEACON_LOST,
     PREVENTION_UNCONFIRMED_NO_ALERT,
+    RUN_ABORTED,
+    TERMINATION_ABORTED,
     TERMINATION_BEACON_LOST,
     host_outcome_for_step,
 )
@@ -33,7 +35,8 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
     """Set host-derived ``outcome`` on Results; return the number touched.
 
     * Only Results whose ``outcome`` is None/pending are touched -- except that
-      a host exclusion also replaces a Tier-1 silent ``missed``.
+      a host exclusion, or an ``aborted`` termination (-> ``pending`` /
+      ``RUN_ABORTED``), also replaces a Tier-1 silent ``missed``.
     * A step that never ran (``not_run``) marks all its Results ``not_reached``
       / ``not_executed`` with the reason carried through, for any expectation.
       A ``missed`` row is replaceable (silence on a step that never ran is not
@@ -50,6 +53,15 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
         if s is None:
             continue
         host_outcome = host_outcome_for_step(s.termination, s.reason)
+        if s.termination == TERMINATION_ABORTED and r.outcome == OUTCOME_MISSED:
+            # Round 4 C-1: the operator cut the step short, so a Tier-1 miss
+            # is undetermined. Its Tier-1 fail goes with it; never a decided hit.
+            r.outcome = OUTCOME_PENDING
+            r.outcome_reason = RUN_ABORTED
+            if r.kpi_verdict == "fail":
+                r.kpi_verdict = "pending"
+            touched += 1
+            continue
         if host_outcome is not None and r.outcome == OUTCOME_MISSED:
             # Tier 1 judged silence a miss; the host now says the step never
             # ran, which is better evidence than silence.

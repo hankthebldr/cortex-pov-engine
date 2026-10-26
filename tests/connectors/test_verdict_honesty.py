@@ -369,6 +369,8 @@ def test_report_mode_incomplete_clamp_leaves_kpi_none(session_factory):
         run.agent_profile_mode = "report"
         rows["step-01"].expected_outcome = "prevent"
     asyncio.run(_mutate(session_factory, fn))
+    # The host says the step ran (round 4 C-1: without it there is no miss to clamp).
+    asyncio.run(_record_exited(session_factory))
     asyncio.run(_apply_silent(session_factory, {**COMPLETE, "truncated": True}))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason) == ("pending", "EVIDENCE_INCOMPLETE")
@@ -515,15 +517,20 @@ def test_manual_import_without_exclusions_carries_no_host_warning(session_factor
 
 # ── Round 3 R7 — the engine writes `missed` for a silent detect row ────────
 
-def _silent_detect_row(SessionLocal, *, mode=None):
-    """One `detect` Result (BIOC), executed 10 min ago, nothing matched."""
+def _silent_detect_row(SessionLocal, *, mode=None, termination=None, status=None):
+    """One `detect` Result (BIOC), executed 10 min ago, nothing matched.
+    ``termination`` records the host's word for the step (None = no record)."""
     _seed(SessionLocal, results=1)
 
     def fn(run, rows):
         if mode is not None:
             run.agent_profile_mode = mode
+        if status is not None:
+            run.status = status
         rows["step-01"].expected_outcome = "detect"
     asyncio.run(_mutate(SessionLocal, fn))
+    if termination is not None:
+        asyncio.run(_record_termination(SessionLocal, termination))
 
 
 def _matched_verdict(SessionLocal, step_id="step-01"):
@@ -536,7 +543,7 @@ def _matched_verdict(SessionLocal, step_id="step-01"):
 
 
 def test_silent_detect_row_on_complete_evidence_is_missed(session_factory):
-    _silent_detect_row(session_factory)
+    _silent_detect_row(session_factory, termination="exited")
     asyncio.run(_apply_silent(session_factory, COMPLETE))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     # kpi_verdict is the Tier-2 verifier's: the miss does not invent a verdict.
@@ -545,14 +552,14 @@ def test_silent_detect_row_on_complete_evidence_is_missed(session_factory):
 
 
 def test_silent_detect_row_on_truncated_pull_is_evidence_incomplete(session_factory):
-    _silent_detect_row(session_factory)
+    _silent_detect_row(session_factory, termination="exited")
     asyncio.run(_apply_silent(session_factory, {**COMPLETE, "truncated": True}))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason) == ("pending", "EVIDENCE_INCOMPLETE")
 
 
 def test_silent_detect_row_inside_its_window_stays_unjudged(session_factory):
-    _silent_detect_row(session_factory)
+    _silent_detect_row(session_factory, termination="exited")
     asyncio.run(_apply_silent(session_factory, COMPLETE, window_seconds=3600))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason) == (None, None)
@@ -563,7 +570,7 @@ def test_a_later_alert_replaces_a_silent_miss_with_detected(session_factory):
     from models import Result
     from sqlalchemy import select
 
-    _silent_detect_row(session_factory)
+    _silent_detect_row(session_factory, termination="exited")
     asyncio.run(_apply_silent(session_factory, COMPLETE))
     v = _matched_verdict(session_factory)
 
@@ -598,3 +605,102 @@ def test_aborted_report_mode_prevent_row_is_pending_run_aborted(session_factory)
     asyncio.run(_apply_silent(session_factory, COMPLETE))
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.outcome_reason) == ("pending", "RUN_ABORTED")
+
+
+
+# ── Round 4 C-1 — a miss needs the host's word that the step ran ───────────
+
+def _host_terminate(SessionLocal, termination, step_id="step-01"):
+    """What a later /complete does: update the step's record, then project it."""
+    from engine.host_evidence import apply_host_outcomes
+    from models import Result, Run, StepOutcome
+    from sqlalchemy import select
+
+    async def _go():
+        async with SessionLocal() as db:
+            so = (await db.execute(select(StepOutcome).where(
+                StepOutcome.step_id == step_id))).scalar_one()
+            so.termination = termination
+            run = (await db.execute(select(Run))).scalars().first()
+            rows = list((await db.execute(select(Result))).scalars().all())
+            apply_host_outcomes(rows, [so], agent_profile_mode=run.agent_profile_mode)
+            await db.commit()
+    asyncio.run(_go())
+
+
+def test_in_flight_run_without_a_host_record_never_reads_missed(session_factory):
+    """The reviewer's repro: a run still `running` (or queued, or aborted with
+    its late /complete rejected) has no StepOutcome. A complete pull must not
+    turn its steps into misses."""
+    _silent_detect_row(session_factory, status="running")
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("pending", "HOST_EVIDENCE_ABSENT")
+
+
+def test_then_exited_on_record_makes_the_silent_row_missed(session_factory):
+    _silent_detect_row(session_factory, status="running")
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    asyncio.run(_record_termination(session_factory, "exited"))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("missed", None)
+
+
+def test_then_aborted_on_record_replaces_the_tier1_miss(session_factory):
+    _silent_detect_row(session_factory, termination="exited")
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    assert asyncio.run(_results_by_step(session_factory))["step-01"].outcome == "missed"
+    _host_terminate(session_factory, "aborted")
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("pending", "RUN_ABORTED")
+
+
+def test_aborted_never_replaces_a_decided_hit(session_factory):
+    _silent_detect_row(session_factory, termination="exited")
+
+    def fn(run, rows):
+        rows["step-01"].outcome = "detected"
+        rows["step-01"].observed = True
+    asyncio.run(_mutate(session_factory, fn))
+    _host_terminate(session_factory, "aborted")
+    assert asyncio.run(_results_by_step(session_factory))["step-01"].outcome == "detected"
+
+
+@pytest.mark.parametrize("termination", ["timeout", "signaled", "anchor_terminated"])
+def test_a_detect_step_the_host_ran_or_stopped_is_a_miss(session_factory, termination):
+    _silent_detect_row(session_factory, termination=termination)
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("missed", None)
+
+
+def test_beacon_lost_detect_step_is_not_a_miss(session_factory):
+    _silent_detect_row(session_factory, termination="beacon_lost")
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert r.outcome == "pending"
+
+
+@pytest.mark.parametrize("mode", ["report", "unknown"])
+def test_report_mode_prevent_row_without_host_record_is_not_a_miss(session_factory, mode):
+    _silent_prevent_row(session_factory)
+
+    def fn(run, rows):
+        run.agent_profile_mode = mode
+    asyncio.run(_mutate(session_factory, fn))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("pending", "HOST_EVIDENCE_ABSENT")
+
+
+def test_push_staged_run_never_reads_missed_from_reconcile(session_factory):
+    """Rule 4: a push run has no beacon and so no host record."""
+    _silent_detect_row(session_factory, status="staged")
+
+    def fn(run, rows):
+        run.mode = "push"
+    asyncio.run(_mutate(session_factory, fn))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("pending", "HOST_EVIDENCE_ABSENT")

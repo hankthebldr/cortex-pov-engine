@@ -46,9 +46,8 @@ from engine.outcome import (
     SOAK_REASONS,
     PASS_WITHHELD_UNSCOPED,
     PreventVerdict,
-    RUN_ABORTED,
-    TERMINATION_ABORTED,
     evaluate_prevent,
+    silent_detect_verdict,
     is_hit,
     soak_pending_reason,
 )
@@ -480,22 +479,23 @@ async def _judge_silent_results(
                     EVIDENCE_INCOMPLETE)
             _write_prevent(r, pv)
         else:
-            # A `detect` expectation keeps today's rule (spec §5.3): silent after
-            # its window closed is a miss -- now WRITTEN, so no surface has to
-            # infer it from `observed=False` (R4/R7). Only on complete evidence;
-            # otherwise the same softening as the prevent branch. kpi_verdict is
+            # A `detect` expectation: silent after its window closed is a miss
+            # -- WRITTEN, so no surface infers it from `observed=False` (R4/R7)
+            # -- but only when the host says the step ran (round 4 C-1), and
+            # only on complete evidence; otherwise the same softening as the
+            # prevent branch. kpi_verdict is
             # the Tier-2 verifier's and is not touched. A later matched alert
             # replaces `missed` with `detected` (apply_verdicts).
-            if terminations.get(r.step_id) == TERMINATION_ABORTED:
-                # An operator-cut step is undetermined, not missed (R3b).
-                r.outcome = OUTCOME_PENDING
-                r.outcome_reason = RUN_ABORTED
-            elif evidence_complete:
-                r.outcome = OUTCOME_MISSED
-                r.outcome_reason = None
-            else:
-                r.outcome = OUTCOME_PENDING
-                r.outcome_reason = EVIDENCE_INCOMPLETE
+            # Round 4 C-1: a miss needs the host's word that the step ran --
+            # an in-flight, queued, aborted or push run has no record.
+            judged = silent_detect_verdict(terminations.get(r.step_id), window_closed=True)
+            if judged is None:
+                continue
+            outcome, reason = judged
+            if outcome == OUTCOME_MISSED and not evidence_complete:
+                outcome, reason = OUTCOME_PENDING, EVIDENCE_INCOMPLETE
+            r.outcome = outcome
+            r.outcome_reason = reason
 
 
 def _result_keys(r: Any) -> set:
