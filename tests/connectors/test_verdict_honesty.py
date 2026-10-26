@@ -444,3 +444,40 @@ def test_manual_prevented_alert_from_the_run_host_still_scores(session_factory):
     _manual_ingest(session_factory, [_manual_prevented(host="web-01")])
     r = asyncio.run(_results_by_step(session_factory))["step-02"]
     assert (r.outcome, r.kpi_verdict) == ("prevented", "pass")
+
+
+# ── Residual R3 — an operator abort is not a miss ──────────────────────────
+
+async def _record_termination(SessionLocal, termination, step_id="step-01"):
+    from models import StepOutcome
+
+    async with SessionLocal() as db:
+        db.add(StepOutcome(run_id="run-1", step_id=step_id, exit_code=None,
+                           termination=termination))
+        await db.commit()
+
+
+def test_aborted_block_mode_prevent_row_is_pending_run_aborted(session_factory):
+    """An `aborted` termination on a still-open run (a fan-out endpoint, an
+    agent-side cancel) used to be judged `missed / fail`: the run's verdict is
+    undefined, so the row is pending with RUN_ABORTED and the report never
+    renders it as a miss."""
+    from api.runs import _result_icon
+    from engine.report_generator import _status_from_result
+
+    _silent_prevent_row(session_factory)
+    asyncio.run(_record_termination(session_factory, "aborted"))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason, r.kpi_verdict) == ("pending", "RUN_ABORTED", "pending")
+    assert _result_icon(r) == "⏳ (RUN_ABORTED)"
+    assert _status_from_result(r.observed, r.observed_at is not None, outcome=r.outcome) == "PENDING"
+
+
+def test_timeout_block_mode_prevent_row_is_still_missed(session_factory):
+    # Ruled: a timeout ran its whole budget unprevented -- missed is honest.
+    _silent_prevent_row(session_factory)
+    asyncio.run(_record_termination(session_factory, "timeout"))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.kpi_verdict) == ("missed", "fail")

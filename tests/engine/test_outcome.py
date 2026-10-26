@@ -210,3 +210,18 @@ def test_is_hit_pending_is_never_a_hit_even_when_observed():
     assert oc.is_hit(None, False) is False
     with pytest.raises(ValueError):
         oc.is_hit("blocked", True)
+
+
+# --- residual R3: an aborted step is not a miss -------------------------------
+
+def test_aborted_termination_is_pending_run_aborted_not_missed():
+    assert oc.RUN_ABORTED == "RUN_ABORTED"
+    v = oc.evaluate_prevent(agent_profile_mode="block", alert_outcome=None,
+                            termination="aborted", window_closed=True, block_mode_status=None)
+    assert (v.outcome, v.kpi_verdict, v.reason) == ("pending", "pending", oc.RUN_ABORTED)
+    open_ = oc.evaluate_prevent(agent_profile_mode="block", alert_outcome=None,
+                                termination="aborted", window_closed=False, block_mode_status=None)
+    assert (open_.outcome, open_.reason) == ("pending", None)
+    t = oc.evaluate_prevent(agent_profile_mode="block", alert_outcome=None,
+                            termination="timeout", window_closed=True, block_mode_status=None)
+    assert (t.outcome, t.kpi_verdict) == ("missed", "fail")
