@@ -31,7 +31,11 @@ import dataclasses
 import html
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Iterable, Optional
+
+from connectors.measures import denominator_exclusion, empty_exclusions
+from engine.outcome import DETECTED_NOT_PREVENTED, OUTCOMES
 
 
 logger = logging.getLogger("cortexsim.engine.efficacy_scorecard")
@@ -87,11 +91,27 @@ _PENDING_AMBER = "#c98a00"
 
 @dataclasses.dataclass(frozen=True)
 class CoverageStats:
+    """Coverage over the rows that could have produced evidence.
+
+    ``expected`` is the honest denominator (``engine.outcome.is_in_denominator``):
+    rows whose step never ran and soak-pending rows are counted in ``excluded``
+    instead. ``pct`` is ``(detected + prevented + detected_not_prevented) /
+    expected`` -- every row Cortex saw -- while the three stay separate lines so
+    a block-mode "detected, not prevented" never reads as a plain detection.
+    """
+
     detected: int
     missed: int
     pending: int
     expected: int
     pct: float
+    prevented: int = 0
+    detected_not_prevented: int = 0
+    excluded: dict[str, int] = dataclasses.field(default_factory=empty_exclusions)
+
+    @property
+    def hits(self) -> int:
+        return self.detected + self.prevented + self.detected_not_prevented
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -119,6 +139,8 @@ class BreakdownRow:
     pending: int
     expected: int
     pct: float
+    prevented: int = 0
+    detected_not_prevented: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -235,13 +257,37 @@ def product_for_plane(plane: Optional[str]) -> str:
     return PLANE_TO_PRODUCT.get((plane or "").strip().lower(), _DEFAULT_PRODUCT)
 
 
+#: Statuses a scorecard row can take. ``detected_not_prevented`` is a block-mode
+#: ``prevent`` expectation the agent only detected: Cortex saw it (a coverage
+#: hit) but it is a prevention FAIL, so it never reads as plain "detected".
+STATUS_DETECTED_NOT_PREVENTED = "detected_not_prevented"
+
+
 def _status(result: dict[str, Any]) -> str:
-    """detected | missed | pending — matches report_generator._status_from_result."""
+    """The row's status, from ``outcome`` when the engine decided one.
+
+    A legacy row (``outcome`` None) keeps the ``observed`` / ``observed_at``
+    derivation shared with ``report_generator._status_from_result``. An
+    unrecognised outcome raises: an unknown value must never read as benign.
+    """
+    outcome = result.get("outcome")
+    if outcome is not None:
+        if outcome not in OUTCOMES:
+            raise ValueError(f"unrecognised result outcome {outcome!r}")
+        if outcome == "detected" and result.get("outcome_reason") == DETECTED_NOT_PREVENTED:
+            return STATUS_DETECTED_NOT_PREVENTED
+        return outcome
     if result.get("observed"):
         return "detected"
     if result.get("observed_at"):
         return "missed"
     return "pending"
+
+
+def _exclusion(result: dict[str, Any]) -> Optional[str]:
+    """Why a row leaves the denominator (the one rule), or None when it counts."""
+    return denominator_exclusion(SimpleNamespace(
+        outcome=result.get("outcome"), outcome_reason=result.get("outcome_reason")))
 
 
 def _percentile(values: list[float], pct: float) -> Optional[float]:
@@ -258,24 +304,47 @@ def _percentile(values: list[float], pct: float) -> Optional[float]:
     return round(ordered[low] + (ordered[high] - ordered[low]) * frac, 1)
 
 
-def _coverage_from_counts(detected: int, missed: int, pending: int) -> CoverageStats:
-    expected = detected + missed + pending
-    pct = round(detected / expected * 100, 1) if expected else 0.0
-    return CoverageStats(detected=detected, missed=missed, pending=pending,
-                         expected=expected, pct=pct)
+_COUNTED = ("detected", "prevented", STATUS_DETECTED_NOT_PREVENTED, "missed", "pending")
+
+
+def _tally(rows: Iterable[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int]]:
+    """``(counts by status over the denominator, excluded counts by reason)``."""
+    counts = {k: 0 for k in _COUNTED}
+    excluded = empty_exclusions()
+    for r in rows:
+        why = _exclusion(r)
+        if why is not None:
+            excluded[why] += 1
+            continue
+        counts[_status(r)] += 1
+    return counts, excluded
+
+
+def _coverage_from_tally(counts: dict[str, int],
+                         excluded: Optional[dict[str, int]] = None) -> CoverageStats:
+    expected = sum(counts.values())
+    hits = counts["detected"] + counts["prevented"] + counts[STATUS_DETECTED_NOT_PREVENTED]
+    pct = round(hits / expected * 100, 1) if expected else 0.0
+    return CoverageStats(
+        detected=counts["detected"], missed=counts["missed"], pending=counts["pending"],
+        expected=expected, pct=pct, prevented=counts["prevented"],
+        detected_not_prevented=counts[STATUS_DETECTED_NOT_PREVENTED],
+        excluded=dict(excluded) if excluded is not None else empty_exclusions())
 
 
 def _breakdown(results: list[dict[str, Any]], key_fn) -> list[BreakdownRow]:
-    buckets: dict[str, dict[str, int]] = {}
+    buckets: dict[str, list[dict[str, Any]]] = {}
     for r in results:
-        label = key_fn(r)
-        slot = buckets.setdefault(label, {"detected": 0, "missed": 0, "pending": 0})
-        slot[_status(r)] += 1
+        if _exclusion(r) is not None:
+            continue  # counted once, at the top, under ``excluded``
+        buckets.setdefault(key_fn(r), []).append(r)
     rows: list[BreakdownRow] = []
-    for label, slot in buckets.items():
-        cov = _coverage_from_counts(slot["detected"], slot["missed"], slot["pending"])
+    for label, members in buckets.items():
+        cov = _coverage_from_tally(_tally(members)[0])
         rows.append(BreakdownRow(label=label, detected=cov.detected, missed=cov.missed,
-                                 pending=cov.pending, expected=cov.expected, pct=cov.pct))
+                                 pending=cov.pending, expected=cov.expected, pct=cov.pct,
+                                 prevented=cov.prevented,
+                                 detected_not_prevented=cov.detected_not_prevented))
     # Highest coverage-gap first (most missed), then by expected volume — the
     # rows a CISO cares about float to the top.
     rows.sort(key=lambda x: (-(x.missed + x.pending), -x.expected, x.label))
@@ -299,12 +368,11 @@ def build_efficacy_scorecard(
     """
     rows = list(results)
 
-    detected = sum(1 for r in rows if _status(r) == "detected")
-    missed = sum(1 for r in rows if _status(r) == "missed")
-    pending = sum(1 for r in rows if _status(r) == "pending")
-    coverage = _coverage_from_counts(detected, missed, pending)
+    coverage = _coverage_from_tally(*_tally(rows))
 
-    mttds = [float(r["mttd_seconds"]) for r in rows if r.get("mttd_seconds") is not None]
+    # A step that never ran cannot contribute a detection time.
+    mttds = [float(r["mttd_seconds"]) for r in rows
+             if r.get("mttd_seconds") is not None and _exclusion(r) is None]
     mttd = MttdDistribution(
         count=len(mttds),
         min_seconds=round(min(mttds), 1) if mttds else None,
@@ -375,7 +443,7 @@ def _verdict(coverage: CoverageStats) -> str:
     not ok: "none defined" and "none validated yet" get their own verdict, never
     the authored-content recommendation that only an actual miss warrants.
     """
-    adjudicated = coverage.detected + coverage.missed
+    adjudicated = coverage.hits + coverage.missed
     if coverage.expected == 0:
         return ("No expected detections were defined for this scope, so Cortex "
                 "detection coverage cannot be assessed — there was nothing to "
@@ -395,9 +463,17 @@ def _verdict(coverage: CoverageStats) -> str:
             "content to close the missed-detection delta before hand-off.")
 
 
+def _excluded_line(excluded: dict[str, int]) -> str:
+    """The exclusions, listed the way the run report lists them."""
+    parts = ", ".join(f"{k} {v}" for k, v in excluded.items() if v)
+    return (f"_Excluded from the denominator: {parts} — a step that never ran, or "
+            f"an Analytics/ABIOC detector still in its soak period, is neither a "
+            f"hit nor a miss._")
+
+
 def _is_degraded(coverage: CoverageStats) -> bool:
     """True when nothing in scope was measured (no expected, or all pending)."""
-    return coverage.expected == 0 or (coverage.detected + coverage.missed) == 0
+    return coverage.expected == 0 or (coverage.hits + coverage.missed) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +530,7 @@ def render_markdown(scorecard: EfficacyScorecard) -> str:
     lines.append("## Executive Summary")
     lines.append("")
     lines.append(
-        f"Cortex detected **{cov.detected} of {cov.expected}** expected "
+        f"Cortex detected **{cov.hits} of {cov.expected}** expected "
         f"detections (**{cov.pct}% coverage**) across {scope}. "
         f"{_verdict(cov)}"
     )
@@ -496,11 +572,16 @@ def render_markdown(scorecard: EfficacyScorecard) -> str:
     lines.append("| Metric | Value |")
     lines.append("|--------|-------|")
     lines.append(f"| Coverage | **{cov.pct}%** |")
+    lines.append(f"| Prevented | {cov.prevented} |")
     lines.append(f"| Detected | {cov.detected} |")
+    lines.append(f"| Detected, not prevented | {cov.detected_not_prevented} |")
     lines.append(f"| Missed | {cov.missed} |")
     lines.append(f"| Pending | {cov.pending} |")
     lines.append(f"| Expected (denominator) | {cov.expected} |")
     lines.append("")
+    if any(cov.excluded.values()):
+        lines.append(_excluded_line(cov.excluded))
+        lines.append("")
 
     # MTTD
     lines.append("## Mean Time to Detect (MTTD)")
@@ -523,12 +604,13 @@ def render_markdown(scorecard: EfficacyScorecard) -> str:
             return
         lines.append(f"## Coverage by {header}")
         lines.append("")
-        lines.append(f"| {header} | Coverage | Detected | Missed | Pending | Expected |")
-        lines.append("|" + "---|" * 6)
+        lines.append(f"| {header} | Coverage | Prevented | Detected | "
+                     f"Detected, not prevented | Missed | Pending | Expected |")
+        lines.append("|" + "---|" * 8)
         for r in rows:
             lines.append(
-                f"| {r.label} | {r.pct}% | {r.detected} | {r.missed} | "
-                f"{r.pending} | {r.expected} |"
+                f"| {r.label} | {r.pct}% | {r.prevented} | {r.detected} | "
+                f"{r.detected_not_prevented} | {r.missed} | {r.pending} | {r.expected} |"
             )
         lines.append("")
 
@@ -566,7 +648,9 @@ def _bd_html(header: str, rows: Iterable[BreakdownRow]) -> str:
             "<tr>"
             f"<td class=\"cs-label\">{html.escape(r.label)}</td>"
             f"<td class=\"cs-pct\">{r.pct}% {_pct_bar(r.pct)}</td>"
+            f"<td class=\"cs-num cs-det\">{r.prevented}</td>"
             f"<td class=\"cs-num cs-det\">{r.detected}</td>"
+            f"<td class=\"cs-num cs-miss\">{r.detected_not_prevented}</td>"
             f"<td class=\"cs-num cs-miss\">{r.missed}</td>"
             f"<td class=\"cs-num cs-pend\">{r.pending}</td>"
             f"<td class=\"cs-num\">{r.expected}</td>"
@@ -575,7 +659,8 @@ def _bd_html(header: str, rows: Iterable[BreakdownRow]) -> str:
     return (
         f'<section class="cs-section"><h2>Coverage by {html.escape(header)}</h2>'
         '<table class="cs-table"><thead><tr>'
-        f"<th>{html.escape(header)}</th><th>Coverage</th><th>Detected</th>"
+        f"<th>{html.escape(header)}</th><th>Coverage</th><th>Prevented</th>"
+        "<th>Detected</th><th>Detected, not prevented</th>"
         "<th>Missed</th><th>Pending</th><th>Expected</th>"
         "</tr></thead><tbody>" + "".join(body) + "</tbody></table></section>"
     )
@@ -672,16 +757,20 @@ def render_html(scorecard: EfficacyScorecard) -> str:
         f"Generated {html.escape(sc.generated_at)}</div>"
         f"{run_ids_html}"
         f'<div class="cs-summary">Cortex detected '
-        f"<strong>{cov.detected} of {cov.expected}</strong> expected detections "
+        f"<strong>{cov.hits} of {cov.expected}</strong> expected detections "
         f"(<strong>{cov.pct}% coverage</strong>) across {html.escape(scope)}. "
         f"{html.escape(_verdict(cov))}</div>"
         '<div class="cs-kpis">'
         + _kpi(f"{cov.pct}%", "Coverage", accent)
+        + _kpi(str(cov.prevented), "Prevented", _DETECTED_GREEN)
         + _kpi(str(cov.detected), "Detected", _DETECTED_GREEN)
+        + _kpi(str(cov.detected_not_prevented), "Detected, not prevented", _MISSED_RED)
         + _kpi(str(cov.missed), "Missed", _MISSED_RED)
         + _kpi(str(cov.pending), "Pending", _PENDING_AMBER)
         + mttd_kpis
         + "</div>"
+        + (f'<p class="cs-meta">{html.escape(_excluded_line(cov.excluded).strip("_"))}</p>'
+           if any(cov.excluded.values()) else "")
         + _bd_html("Cortex Product", sc.by_product)
         + _bd_html("Detection Plane", sc.by_plane)
         + _bd_html("Detection Type", sc.by_detection_type)
