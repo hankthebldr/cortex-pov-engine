@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -684,10 +684,18 @@ class Orchestrator:
                 error=f"STITCH_CONTEXT_INVALID: {exc}",
             )
 
-        steps = _resolve_stitch_placeholders(
-            _resolve_adapter_placeholders(scenario.steps or []),
-            binding,
+        egress_warnings = _egress_warnings(scenario)
+        adapter_steps, required_binaries = _resolve_adapter_placeholders_with_binaries(
+            scenario.steps or []
         )
+        steps = _resolve_stitch_placeholders(adapter_steps, binding)
+        # The beacon refuses a step whose binary is not on PATH (not_run /
+        # TOOL_ABSENT); this is the server half that fills the list. Written
+        # only when non-empty, like `platforms` (the beacon field is omitempty).
+        for s_ in steps:
+            req = required_binaries.get(s_.get("id"))
+            if req:
+                s_["required_binaries"] = list(req)
 
         # ── Channel dispatch (Phase 3a skeleton) ────────────────────────────
         # A run is "multichannel" the moment ANY step carries a non-agent
@@ -857,6 +865,20 @@ class Orchestrator:
             # NULL for a single-channel run (byte-identical); the routing ledger
             # for a multichannel one.
             run.channel_dispatch = channel_dispatch
+            await db.commit()
+
+        # Surface the egress warning on the run itself, before any beacon can
+        # write: the console shows Run.output, a log line is not seen by a DC.
+        if egress_warnings:
+            lines = "".join(
+                f"!! TARGET_EGRESS_REQUIRED: {aid} — {text}\n"
+                for aid, text in egress_warnings
+            )
+            await db.execute(
+                update(Run)
+                .where(Run.run_id == run_id)
+                .values(output=func.coalesce(Run.output, "") + lines)
+            )
             await db.commit()
 
         # Only now is the run's state durable enough for a beacon to act on.
@@ -1257,11 +1279,38 @@ def _compose_artifacts(scenario: Any) -> list[dict[str, Any]]:
         consumer="beacon",
     )
     for warning in plan.warnings:
-        logger.info(
+        # WARNING, not INFO: TARGET_EGRESS_REQUIRED means a step may run on a
+        # target that lacks its tool, which reads as "Cortex missed it".
+        logger.warning(
             "payload plan %s (%s): %s",
             plan.composition_id, warning.get("code"), warning.get("detail"),
         )
     return plan.to_beacon_artifacts()
+
+
+def _egress_warnings(scenario: Any) -> list[tuple[str, str]]:
+    """``(adapter_id, text)`` for every referenced adapter the target must
+    already carry (the shelf has nothing staged for it).
+
+    A separate call from :func:`_compose_artifacts` so that function keeps its
+    one-argument contract. Only reached after ``_compose_artifacts`` succeeded,
+    so ``compose`` cannot raise a resolution error here.
+    """
+    from engine.payload_shelf import compose  # noqa: PLC0415 — import cycle
+
+    plan = compose(
+        scenario={
+            "scenario_id": getattr(scenario, "scenario_id", None),
+            "external_tools": getattr(scenario, "external_tools", None) or [],
+            "cluster_posture": getattr(scenario, "cluster_posture", None) or {},
+        },
+        consumer="beacon",
+    )
+    return [
+        (str(w.get("adapter_id") or ""), str(w.get("detail") or ""))
+        for w in plan.warnings
+        if w.get("code") == "TARGET_EGRESS_REQUIRED"
+    ]
 
 
 def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
@@ -1546,19 +1595,49 @@ def _resolve_adapter_placeholders(steps: list[dict[str, Any]]) -> list[dict[str,
     Returns a NEW list of step dicts; the input is never mutated (scenarios
     are loaded once at boot and shared across runs).
     """
+    return _resolve_adapter_placeholders_with_binaries(steps)[0]
+
+
+def _resolve_adapter_placeholders_with_binaries(
+    steps: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:
+    """:func:`_resolve_adapter_placeholders` plus, per step id, the
+    ``install.binary`` of every pack whose placeholder was substituted into
+    that step (deduplicated, in substitution order).
+
+    A resolved pack with no ``install.binary`` contributes nothing and logs
+    ``TOOL_PRESENCE_UNCHECKED`` -- the step runs unchecked, never silently
+    treated as verified.
+    """
     from tools.adapter_catalog import catalog  # noqa: PLC0415
 
     rendered_steps: list[dict[str, Any]] = []
+    binaries: dict[str, list[str]] = {}
     for step in steps:
         new_step = dict(step)  # shallow copy is sufficient — we only edit ``command``
         cmd = new_step.get("command")
         if isinstance(cmd, str) and "{adapter:" in cmd:
-            new_step["command"] = _ADAPTER_PLACEHOLDER_RE.sub(
-                lambda m: _render_adapter(catalog.find(m.group(1)), m.group(0)),
-                cmd,
-            )
+            step_id = new_step.get("id")
+
+            def _sub(m: Any, _sid: Any = step_id) -> str:
+                adapter = catalog.find(m.group(1))
+                rendered = _render_adapter(adapter, m.group(0))
+                if adapter is not None and rendered != m.group(0):
+                    binary = getattr(adapter.install, "binary", None)
+                    if binary:
+                        bucket = binaries.setdefault(_sid, [])
+                        if binary not in bucket:
+                            bucket.append(binary)
+                    else:
+                        logger.warning(
+                            "TOOL_PRESENCE_UNCHECKED adapter=%s step=%s",
+                            adapter.adapter_id, _sid,
+                        )
+                return rendered
+
+            new_step["command"] = _ADAPTER_PLACEHOLDER_RE.sub(_sub, cmd)
         rendered_steps.append(new_step)
-    return rendered_steps
+    return rendered_steps, binaries
 
 
 def _render_adapter(adapter: Optional[Any], original_placeholder: str) -> str:

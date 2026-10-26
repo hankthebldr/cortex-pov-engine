@@ -838,15 +838,19 @@ def compose(
                     f"install.artifact.sha256."
                 ),
             })
-    if unstaged:
+    for u in unstaged:
+        # One warning per adapter so the launch can name each missing binary.
+        # Pull mode never installs a tier-4 tool (the beacon only stages shelf
+        # artifacts), so the honest statement is about what the TARGET must
+        # already carry, not about a fetch that will not happen.
+        found = _catalog().find(u.adapter_id)
+        binary = (found.install.binary if found is not None else None) or u.adapter_id
         warnings.append({
             "code": "TARGET_EGRESS_REQUIRED",
+            "adapter_id": u.adapter_id,
             "detail": (
-                f"{len(unstaged)} referenced adapter(s) have no staged artifact "
-                f"({', '.join(u.adapter_id for u in unstaged)}). The TARGET host "
-                f"will fetch those tools from the public internet at dispatch. A "
-                f"default-deny egress policy — which is what the customers who buy "
-                f"Cortex run — blocks that."
+                f"pull mode does not install tier-4 tools; the target must "
+                f"already carry {binary} on PATH"
             ),
         })
 
