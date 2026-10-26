@@ -282,3 +282,65 @@ def test_reevaluate_twice_without_external_id_records_one_observation(session_fa
     assert first["verdicts"], "the manual alert must match"
     asyncio.run(_ingest())
     assert len(asyncio.run(_observations(session_factory))) == 1
+
+
+# ── Round 2 / Important A — a Tier-1 missed/fail yields to two real witnesses ─
+
+def test_missed_fail_is_replaced_by_a_late_two_witness_prevention():
+    from connectors.service import _write_prevent
+    from engine.outcome import PreventVerdict
+
+    r = SimpleNamespace(outcome="missed", outcome_reason=None, kpi_verdict="fail")
+    _write_prevent(r, PreventVerdict("prevented", "pass", None))
+    assert (r.outcome, r.kpi_verdict) == ("prevented", "pass")
+
+
+def test_detected_not_prevented_fail_stays_sticky():
+    from connectors.service import _write_prevent
+    from engine.outcome import PreventVerdict
+
+    r = SimpleNamespace(outcome="detected", outcome_reason="DETECTED_NOT_PREVENTED",
+                        kpi_verdict="fail")
+    _write_prevent(r, PreventVerdict("prevented", "pass", None))
+    assert r.kpi_verdict == "fail"
+
+
+def test_late_prevented_alert_after_complete_miss_scores_pass(session_factory):
+    from models import StepOutcome
+
+    _seed(session_factory, results=1)
+    asyncio.run(_setup(session_factory))
+
+    def fn(run, rows):
+        run.agent_profile_mode = "block"
+        rows["step-01"].expected_outcome = "prevent"
+    asyncio.run(_mutate(session_factory, fn))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.kpi_verdict) == ("missed", "fail")
+
+    async def _witness():
+        async with session_factory() as db:
+            db.add(StepOutcome(run_id="run-1", step_id="step-01",
+                               termination="anchor_terminated"))
+            await db.commit()
+    asyncio.run(_witness())
+    fetcher, _ = _tenant([_prevented_alert("late")])
+    asyncio.run(_reconcile(session_factory, fetcher))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.kpi_verdict) == ("prevented", "pass")
+
+
+# ── Round 2 / Important B.1 — the clamp never invents a kpi for report mode ──
+
+def test_report_mode_incomplete_clamp_leaves_kpi_none(session_factory):
+    _seed(session_factory, results=1)
+
+    def fn(run, rows):
+        run.agent_profile_mode = "report"
+        rows["step-01"].expected_outcome = "prevent"
+    asyncio.run(_mutate(session_factory, fn))
+    asyncio.run(_apply_silent(session_factory, {**COMPLETE, "truncated": True}))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("pending", "EVIDENCE_INCOMPLETE")
+    assert r.kpi_verdict is None

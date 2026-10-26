@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Optional
 
+from engine.outcome import EXCLUDED_FROM_DENOMINATOR
+
 logger = logging.getLogger("cortexsim.verifier")
 
 # Verdict vocabulary. Shared by Result.kpi_verdict and Run.tc_verdict.
@@ -293,8 +295,13 @@ async def verify_results(
     runner: QueryRunner,
     *,
     expected_rows_min: Callable[[Any], int] | None = None,
+    agent_profile_mode: str = "unknown",
 ) -> dict[str, int]:
     """Run each result's ``verification_xql`` and record its verdict.
+
+    In block mode a ``prevent`` row is skipped: a row count proves an alert
+    exists, never that the agent blocked anything. In report/unknown mode a
+    prevent expectation is scored as a detect, so the count is valid evidence.
 
     Results without a ``verification_xql`` are left untouched — they are not
     this harness's to score, and stamping them would misrepresent coverage.
@@ -310,9 +317,10 @@ async def verify_results(
         if not xql:
             counts["skipped"] += 1
             continue
-        if getattr(r, "expected_outcome", None) == "prevent":
+        if (getattr(r, "expected_outcome", None) == "prevent"
+                and agent_profile_mode == "block"):
             # A row count proves an alert exists, never that the agent blocked
-            # anything; a prevent row is judged only by the two-witness rule.
+            # anything; a block-mode prevent row is judged only by two witnesses.
             counts["skipped"] += 1
             continue
 
@@ -422,10 +430,14 @@ async def verify_run(
     that has it; the default of True preserves the historical behaviour for
     callers that do not.
     """
-    counts = await verify_results(results, runner, expected_rows_min=expected_rows_min)
+    counts = await verify_results(
+        results, runner, expected_rows_min=expected_rows_min,
+        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown")
 
+    # A step the host says never ran cannot contribute a detection time.
     mttd = [r.mttd_seconds for r in results
-            if getattr(r, "mttd_seconds", None) is not None]
+            if getattr(r, "mttd_seconds", None) is not None
+            and getattr(r, "outcome", None) not in EXCLUDED_FROM_DENOMINATOR]
     score = score_run(
         results,
         threshold=getattr(scenario, "threshold", None),

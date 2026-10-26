@@ -407,11 +407,17 @@ def _matched_alert(v: Any, alerts: list, by_ext: dict[str, Any]) -> Any:
 
 
 def _write_prevent(result: Any, pv: Any) -> None:
-    """Write a prevent verdict. ``kpi_verdict`` is never erased by a None and a
-    ``fail`` (Tier 2's or an earlier one) is sticky."""
+    """Write a prevent verdict. ``kpi_verdict`` is never erased by a None.
+
+    A ``fail`` is sticky unless it came from Tier 1's own silent-row path
+    (current outcome ``missed``): two real witnesses arriving later are strictly
+    better evidence than silence. Any other fail (DETECTED_NOT_PREVENTED, a
+    Tier-2 fail) stays.
+    """
+    replaceable = result.kpi_verdict != "fail" or result.outcome == OUTCOME_MISSED
     result.outcome = pv.outcome
     result.outcome_reason = pv.reason
-    if pv.kpi_verdict is not None and result.kpi_verdict != "fail":
+    if pv.kpi_verdict is not None and replaceable:
         result.kpi_verdict = pv.kpi_verdict
 
 
@@ -462,7 +468,12 @@ async def _judge_silent_results(
                 termination=terminations.get(r.step_id), window_closed=True,
                 block_mode_status=run.block_mode_status)
             if pv.outcome == OUTCOME_MISSED and not evidence_complete:
-                pv = PreventVerdict(OUTCOME_PENDING, "pending", EVIDENCE_INCOMPLETE)
+                # Only a would-be fail softens to pending; a report-mode None
+                # stays None (and so is not written).
+                pv = PreventVerdict(
+                    OUTCOME_PENDING,
+                    "pending" if pv.kpi_verdict == "fail" else pv.kpi_verdict,
+                    EVIDENCE_INCOMPLETE)
             _write_prevent(r, pv)
 
 
@@ -1070,7 +1081,9 @@ async def verify_run_now(
     budget.setdefault("tenant", tenant)
 
     before = budget["issued"]
-    counts = await verifier.verify_results(results, _budgeted(runner, budget))
+    counts = await verifier.verify_results(
+        results, _budgeted(runner, budget),
+        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown")
     issued = budget["issued"] - before
 
     book = _bookkeeping(run)

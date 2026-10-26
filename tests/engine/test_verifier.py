@@ -368,3 +368,18 @@ async def test_xsiam_runner_falls_back_to_row_count():
             return {"results": [{"a": 1}, {"a": 2}]}
 
     assert await xsiam_query_runner(C(), {})("q") == 2
+
+
+@pytest.mark.asyncio
+async def test_verify_run_mttd_excludes_not_reached_rows():
+    from engine.verifier import PASS, verify_run  # noqa: PLC0415
+
+    run = FakeRun()
+    scen = FakeScenario(threshold={"kpi": "MTTD", "op": "<=", "value": 60, "unit": "s"},
+                        primary_kpi="MTTD")
+    ok = FakeResult(verification_xql="q", mttd_seconds=30.0, rid=1)
+    severed = FakeResult(verification_xql="q", mttd_seconds=600.0, rid=2)
+    ok.outcome, severed.outcome = "detected", "not_reached"
+    score = await verify_run(None, run, scen, [ok, severed], runner_returning(1))
+    assert run.tc_verdict_detail["primary"]["actual"] == 30.0
+    assert score.verdict == PASS
