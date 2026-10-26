@@ -193,6 +193,12 @@ class Orchestrator:
         identity: Optional[str] = None,
         consent: Optional[dict[str, bool]] = None,
         allow_runtime_install: bool = False,
+        agent_profile_mode: str = "unknown",
+        bas_mode_attested: Optional[bool] = None,
+        soakless_attested: Optional[bool] = None,
+        attested_by: Optional[str] = None,
+        paired_with_run_id: Optional[str] = None,
+        canary_run_id: Optional[str] = None,
     ) -> LaunchResult:
         """
         Create a Run record and route to pull or push path.
@@ -224,6 +230,13 @@ class Orchestrator:
         on the Run and threaded onto the Task; a request that asked for it on a
         deployment that has not enabled it is recorded honestly as False, not
         silently upgraded or silently dropped without a trace.
+
+        Prevention-efficacy launch context (``agent_profile_mode`` and the
+        attestation fields) is operator-declared and persisted verbatim on the
+        Run. ``paired_with_run_id`` links a block-mode launch to its completed
+        report-mode run and is validated by ``pairing.validate_pair`` after the
+        consent gate and before the Run row exists, so a refused pair
+        (``PAIR_INVALID``) seeds nothing.
 
         Missing consent aborts the launch with a structured error and creates
         no Run record.
@@ -259,6 +272,37 @@ class Orchestrator:
                 error_detail=_refusal_detail(gate_error),
             )
 
+        # Pair validation: after consent, before any Run row, so a refused pair
+        # leaves the database untouched.
+        if paired_with_run_id:
+            from engine.pairing import validate_pair  # noqa: PLC0415
+
+            first = (await db.execute(
+                select(Run).where(Run.run_id == paired_with_run_id)
+            )).scalar_one_or_none()
+            if first is None:
+                pair_error: Optional[str] = (
+                    f"paired_with_run_id '{paired_with_run_id}' does not match any run"
+                )
+            else:
+                pair_error = validate_pair(
+                    first,
+                    scenario_id=scenario_id,
+                    target_agent_id=target_agent_id,
+                    agent_profile_mode=agent_profile_mode,
+                )
+            if pair_error is not None:
+                logger.warning(
+                    "Launch refused scenario=%s code=PAIR_INVALID reason=%s",
+                    scenario_id, pair_error,
+                )
+                return LaunchResult(
+                    success=False,
+                    error="Run pairing refused",
+                    error_code="PAIR_INVALID",
+                    error_detail=pair_error,
+                )
+
         # Two-key gate — same posture as CORTEXSIM_XSIAM_ALLOW_WRITE. A single
         # mis-set request body can never authorize a target mutation on its own.
         runtime_install_authorized = bool(
@@ -288,6 +332,14 @@ class Orchestrator:
         run_id = str(uuid.uuid4())
         now = datetime.utcnow()
 
+        # The profile mode is itself an attestation, as is any attestation field.
+        attested = (
+            agent_profile_mode != "unknown"
+            or bas_mode_attested is not None
+            or soakless_attested is not None
+            or attested_by is not None
+        )
+
         run = Run(
             run_id=run_id,
             scenario_id=scenario_id,
@@ -298,6 +350,13 @@ class Orchestrator:
             started_at=now,
             runtime_install_authorized=runtime_install_authorized,
             runtime_dependency_gaps=runtime_dependency_gaps,
+            agent_profile_mode=agent_profile_mode,
+            bas_mode_attested=bas_mode_attested,
+            soakless_attested=soakless_attested,
+            attested_by=attested_by,
+            attested_at=now if attested else None,
+            paired_with_run_id=paired_with_run_id,
+            canary_run_id=canary_run_id,
         )
         db.add(run)
         await db.commit()
@@ -893,8 +952,11 @@ class Orchestrator:
                     verification_xql=detection.get("verification_xql"),
                     kpi_contribution=detection.get("kpi_contribution"),
                     kpi_verdict="pending" if detection.get("verification_xql") else None,
+                    expected_outcome=detection.get("outcome", "detect"),
                 )
                 if card is not None:
+                    if card.kind == "prevention":
+                        result.prevention_module = card.module
                     result.detection_kind = card.kind
                     result.detection_logic = card.logic
                     result.detection_severity = card.severity

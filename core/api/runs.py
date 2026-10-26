@@ -22,13 +22,15 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import and_, case, func, not_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from engine import efficacy_scorecard
 from engine import report_generator
+from engine.outcome import PROFILE_MODES
+from engine.pairing import build_pair_delta
 from engine.orchestrator import orchestrator
 from events import event_bus
 from models import Result, Run, Scenario
@@ -206,6 +208,22 @@ class LaunchRequest(BaseModel):
     # the deployment. Default False — nothing is ever installed on a target
     # implicitly.
     allow_runtime_install: bool = False
+    # Prevention-efficacy launch context. Operator-declared: the engine never
+    # touches the agent profile, it records what the operator says it is.
+    agent_profile_mode: str = "unknown"
+    bas_mode_attested: Optional[bool] = None
+    soakless_attested: Optional[bool] = None
+    attested_by: Optional[str] = None
+    # Links this launch (the block-mode run) to its completed report-mode run.
+    paired_with_run_id: Optional[str] = None
+    canary_run_id: Optional[str] = None
+
+    @field_validator("agent_profile_mode")
+    @classmethod
+    def _profile_mode_in_vocabulary(cls, v: str) -> str:
+        if v not in PROFILE_MODES:
+            raise ValueError(f"agent_profile_mode must be one of {sorted(PROFILE_MODES)}")
+        return v
 
 
 class OutputRequest(BaseModel):
@@ -279,6 +297,9 @@ _LAUNCH_PRECONDITION_CODES = frozenset({
     # endpoint exists) is not met — 409, not a 422 that sends the operator
     # hunting a JSON typo. Refused all-or-nothing before any task is enqueued.
     "TARGET_AGENT_NOT_ENROLLED",
+    # paired_with_run_id names a run that cannot be this launch's partner
+    # (different scenario/target, same mode, not terminal, or unknown).
+    "PAIR_INVALID",
 })
 
 
@@ -402,6 +423,12 @@ async def _launch_run_impl(
         identity=body.identity,
         consent=body.consent,
         allow_runtime_install=body.allow_runtime_install,
+        agent_profile_mode=body.agent_profile_mode,
+        bas_mode_attested=body.bas_mode_attested,
+        soakless_attested=body.soakless_attested,
+        attested_by=body.attested_by,
+        paired_with_run_id=body.paired_with_run_id,
+        canary_run_id=body.canary_run_id,
     )
 
     if not result.success:
@@ -487,6 +514,42 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
         )
     logger.info("get_run run_id=%s status=%s", run_id, run.status)
     return run.to_dict()
+
+
+@router.get("/{run_id}/pair")
+async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Return this run, its report/block partner, and the per-detection delta."""
+    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
+    if run is None:
+        raise _run_not_found(run_id)
+
+    partner: Optional[Run] = None
+    if run.paired_with_run_id:
+        partner = (await db.execute(
+            select(Run).where(Run.run_id == run.paired_with_run_id)
+        )).scalar_one_or_none()
+    if partner is None:
+        partner = (await db.execute(
+            select(Run).where(Run.paired_with_run_id == run_id).limit(1)
+        )).scalar_one_or_none()
+    if partner is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "Run is not paired", "code": "RUN_NOT_PAIRED",
+                    "detail": f"run_id='{run_id}' has no paired_with_run_id and no run points at it"},
+        )
+
+    async def _results(rid: str) -> list[dict]:
+        rows = (await db.execute(
+            select(Result).where(Result.run_id == rid).order_by(Result.id)
+        )).scalars().all()
+        return [r.to_dict() for r in rows]
+
+    a, b = run.to_dict(), partner.to_dict()
+    return {
+        "runs": [a, b],
+        "delta": build_pair_delta(a, await _results(run.run_id), b, await _results(partner.run_id)),
+    }
 
 
 @router.get("/{run_id}/report")
