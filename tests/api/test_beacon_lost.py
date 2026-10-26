@@ -128,3 +128,139 @@ def test_no_started_step_severs_at_first_step(session_factory):
 def test_other_agents_and_undelivered_runs_untouched(session_factory):
     _seed(session_factory, started_ago=600, agent="other")
     assert _terminalise(session_factory, agent="agent-1") == []
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1
+# ---------------------------------------------------------------------------
+
+
+async def _aset_run(SessionLocal, **vals):
+    from models import Run
+    from sqlalchemy import update
+
+    async with SessionLocal() as db:
+        await db.execute(update(Run).where(Run.run_id == "r1").values(**vals))
+        await db.commit()
+
+
+def _set_run(SessionLocal, **vals):
+    asyncio.run(_aset_run(SessionLocal, **vals))
+
+
+def test_already_complete_run_is_untouched(session_factory):
+    from models import Run, StepOutcome
+
+    _seed(session_factory, started_ago=600)
+    _set_run(session_factory, status="complete", completed_at=NOW - timedelta(seconds=5),
+             output="done")
+    assert _terminalise(session_factory) == []
+    run = _load(session_factory, Run)[0]
+    assert run.output == "done" and run.severed_at_step is None
+    assert [o.termination for o in _load(session_factory, StepOutcome)] == [None]
+
+
+def test_run_completed_by_another_session_after_candidate_read_is_skipped(
+        session_factory, monkeypatch):
+    from engine import beacon_lost
+    from models import Run, StepOutcome
+
+    _seed(session_factory, started_ago=600)
+    real = beacon_lost._candidates
+
+    async def _stale(db, agent_id):
+        runs = await real(db, agent_id)
+        await _aset_run(session_factory, status="complete", completed_at=NOW, output="x")
+        return runs
+
+    monkeypatch.setattr(beacon_lost, "_candidates", _stale)
+
+    async def _go():
+        async with session_factory() as db:
+            return await beacon_lost.terminalise_lost_runs(db, "agent-1", NOW, after_seconds=180)
+
+    published = []
+    import api.runs as runs_mod
+
+    async def _pub(run_id, ev):
+        published.append(ev)
+
+    monkeypatch.setattr(runs_mod, "_safe_publish", _pub)
+    assert asyncio.run(_go()) == []
+    assert published == []
+    run = _load(session_factory, Run)[0]
+    assert run.output == "x" and run.severed_at_step is None
+    assert [o.termination for o in _load(session_factory, StepOutcome)] == [None]
+
+
+def _set_agent(SessionLocal, last_seen):
+    from models import Agent
+
+    async def _go():
+        async with SessionLocal() as db:
+            db.add(Agent(agent_id="agent-1", hostname="h", os="linux", capabilities=[],
+                         status="offline", last_seen=last_seen))
+            await db.commit()
+
+    asyncio.run(_go())
+
+
+def test_agent_that_polled_control_recently_is_not_lost(session_factory):
+    from models import Run
+
+    _seed(session_factory, started_ago=600)
+    _set_agent(session_factory, NOW - timedelta(seconds=10))
+    assert _terminalise(session_factory) == []
+    assert _load(session_factory, Run)[0].status == "running"
+
+
+def test_control_poll_refreshes_agent_last_seen(session_factory, make_client):
+    from api.runs import router
+    from models import Agent
+
+    _seed(session_factory, started_ago=600)
+    old = datetime.utcnow() - timedelta(hours=1)
+    _set_agent(session_factory, old)
+    client = make_client(router)
+    r = client.get("/api/runs/r1/control")
+    assert r.status_code == 200 and set(r.json()) == {"abort", "run_id", "status"}
+
+    async def _go():
+        async with session_factory() as db:
+            return (await db.execute(select(Agent))).scalar_one()
+
+    a = asyncio.run(_go())
+    assert a.last_seen > old + timedelta(minutes=30) and a.status == "online"
+
+
+def test_unclassifiable_run_is_failed_not_left_running(session_factory, caplog):
+    from models import Run
+
+    _seed(session_factory, started_ago=None, steps=(), with_scenario=False)
+    with caplog.at_level("WARNING"):
+        assert _terminalise(session_factory) == ["r1"]
+    run = _load(session_factory, Run)[0]
+    assert run.status == "failed" and run.completed_at == NOW
+    assert run.output.endswith(
+        "\n--- BEACON LOST — run could not be classified (no scenario steps, no results); "
+        "agent went offline mid-run ---\n")
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_witnessed_severed_step_keeps_its_witness(session_factory):
+    from models import Run, StepOutcome
+
+    _seed(session_factory, started_ago=600)
+
+    async def _go():
+        async with session_factory() as db:
+            so = (await db.execute(select(StepOutcome))).scalar_one()
+            so.termination = "anchor_terminated"
+            await db.commit()
+
+    asyncio.run(_go())
+    assert _terminalise(session_factory) == ["r1"]
+    assert _load(session_factory, Run)[0].severed_at_step == "step-02"
+    so = {o.step_id: o for o in _load(session_factory, StepOutcome)}
+    assert so["step-02"].termination == "anchor_terminated"
+    assert so["step-03"].termination == "not_run"

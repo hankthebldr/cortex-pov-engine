@@ -203,3 +203,28 @@ def test_sweep_leaves_a_reconnected_agents_run_running(session_factory, monkeypa
 
     asyncio.run(sweep_agents_once())
     assert _run_status(session_factory) == ("running", None)
+
+
+def test_one_agents_terminalisation_failure_does_not_abort_the_pass(
+        session_factory, monkeypatch, caplog):
+    import database
+    from api import agents as agents_mod
+    from engine import beacon_lost
+    from models import Result, Run, StepOutcome
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    _seed_agent(session_factory, "a1", age_seconds=900, stored_status="offline")
+    _seed_agent(session_factory, "a2", age_seconds=900, stored_status="offline")
+    _seed_running_run(session_factory, "a2", started_ago=800)
+    real = beacon_lost.terminalise_lost_runs
+
+    async def _boom(db, agent_id, now, **kw):
+        if agent_id == "a1":
+            raise RuntimeError("boom")
+        return await real(db, agent_id, now, **kw)
+
+    monkeypatch.setattr(beacon_lost, "terminalise_lost_runs", _boom)
+    with caplog.at_level("ERROR"):
+        asyncio.run(agents_mod.sweep_agents_once())
+    assert _run_status(session_factory) == ("complete", "step-01")
+    assert any("terminalisation failed agent=a1" in r.getMessage() for r in caplog.records)

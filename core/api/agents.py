@@ -1563,21 +1563,24 @@ async def sweep_agents_once() -> int:
                     logger.exception("event_bus publish failed agent=%s", a.agent_id)
         if changed:
             await db.commit()
+        # Snapshot BEFORE any terminalisation: a rollback for one agent expires
+        # every loaded ORM object, so iterating them afterwards would raise
+        # MissingGreenlet on the next agent.
+        offline_ids = [a.agent_id for a in agents
+                       if _derive_status(a.last_seen, now)[0] == "offline"]
         # Every offline agent, not only on transition: a restart must not skip
         # a run whose agent went offline before it.
         from config import settings  # noqa: PLC0415
         from engine.beacon_lost import terminalise_lost_runs  # noqa: PLC0415
 
-        for a in agents:
-            if _derive_status(a.last_seen, now)[0] != "offline":
-                continue
+        for agent_id in offline_ids:
             try:
                 await terminalise_lost_runs(
-                    db, a.agent_id, now,
+                    db, agent_id, now,
                     after_seconds=settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS)
-            except Exception:  # pragma: no cover - defensive
+            except Exception:
                 await db.rollback()
-                logger.exception("beacon_lost terminalisation failed agent=%s", a.agent_id)
+                logger.exception("beacon_lost terminalisation failed agent=%s", agent_id)
     return changed
 
 

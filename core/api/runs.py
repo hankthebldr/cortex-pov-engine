@@ -45,7 +45,7 @@ from engine.outcome import (
 from engine.pairing import build_pair_delta
 from engine.orchestrator import orchestrator
 from events import event_bus
-from models import Result, Run, Scenario, StepOutcome
+from models import Agent, Result, Run, Scenario, StepOutcome
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.runs")
@@ -1392,5 +1392,16 @@ async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
 
     if _is_terminal(run):
         abort = True
+
+    # A beacon polling here is alive: refresh its liveness so the heartbeat
+    # sweep never mistakes a long-running silent step for a lost beacon. One
+    # atomic UPDATE; the response is unchanged.
+    if run.target:
+        now = datetime.utcnow()
+        await db.execute(
+            update(Agent).where(Agent.agent_id == run.target)
+            .values(last_seen=now, status="online")
+            .execution_options(synchronize_session=False))
+        await db.commit()
 
     return {"abort": abort, "run_id": run_id, "status": run.status}

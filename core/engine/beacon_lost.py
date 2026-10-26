@@ -28,7 +28,7 @@ from engine.outcome import (
     TERMINATION_NOT_RUN,
     UPSTREAM_SEVERED,
 )
-from models import Result, Run, Scenario, StepOutcome
+from models import Agent, Result, Run, Scenario, StepOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +37,29 @@ BEACON_LOST_MARKER = (
     "enable BAS mode so only the simulation is terminated ---\n"
 )
 
+UNCLASSIFIED_MARKER = (
+    "\n--- BEACON LOST — run could not be classified (no scenario steps, "
+    "no results); agent went offline mid-run ---\n"
+)
+
 
 # -- pure policy -------------------------------------------------------------
 
 
 def age_reference(delivered_at: datetime,
-                  started_ats: Sequence[Optional[datetime]]) -> datetime:
-    """Latest step start, else the delivery time."""
-    starts = [s for s in started_ats if s is not None]
-    return max(starts) if starts else delivered_at
+                  started_ats: Sequence[Optional[datetime]],
+                  agent_last_seen: Optional[datetime] = None) -> datetime:
+    """Latest of step starts, delivery time and the agent's last contact.
+
+    ``last_seen`` is refreshed by ``/tasks`` and by the ``/control`` poll the
+    beacon makes every 2 s while a step runs, so a live-but-silent beacon is
+    never "lost".
+    """
+    cands = [s for s in started_ats if s is not None]
+    cands.append(delivered_at)
+    if agent_last_seen is not None:
+        cands.append(agent_last_seen)
+    return max(cands)
 
 
 def is_lost(reference: datetime, now: datetime, after_seconds: int) -> bool:
@@ -96,60 +110,85 @@ def _upsert(existing: dict[str, StepOutcome], db: AsyncSession, run_id: str, ste
     return row
 
 
+async def _candidates(db: AsyncSession, agent_id: str) -> list[Run]:
+    return list((await db.execute(
+        select(Run).where(Run.status == "running", Run.target == agent_id,
+                          Run.delivered_at.is_not(None)))).scalars().all())
+
+
 async def terminalise_lost_runs(db: AsyncSession, agent_id: str, now: datetime,
                                 *, after_seconds: int) -> list[str]:
     """Terminalise ``agent_id``'s delivered ``running`` runs that went silent."""
-    from api.runs import _safe_publish  # noqa: PLC0415
+    from api.runs import _in_flight_clause, _safe_publish  # noqa: PLC0415
     from connectors.service import score_run_safely  # noqa: PLC0415
 
-    runs = (await db.execute(
-        select(Run).where(Run.status == "running", Run.target == agent_id,
-                          Run.delivered_at.is_not(None)))).scalars().all()
+    runs = await _candidates(db, agent_id)
+    last_seen = (await db.execute(
+        select(Agent.last_seen).where(Agent.agent_id == agent_id))).scalar_one_or_none()
 
     done: list[str] = []
     for run in runs:
+        run_id = run.run_id
         outcomes = (await db.execute(
-            select(StepOutcome).where(StepOutcome.run_id == run.run_id)
+            select(StepOutcome).where(StepOutcome.run_id == run_id)
             .order_by(StepOutcome.id))).scalars().all()
-        ref = age_reference(run.delivered_at, [o.started_at for o in outcomes])
+        ref = age_reference(run.delivered_at, [o.started_at for o in outcomes], last_seen)
         if not is_lost(ref, now, after_seconds):
             continue
         results = (await db.execute(
-            select(Result).where(Result.run_id == run.run_id))).scalars().all()
+            select(Result).where(Result.run_id == run_id))).scalars().all()
         step_ids = await _scenario_step_ids(db, run, results)
         severed = pick_severed(outcomes, step_ids)
-        if severed is None:
+
+        # FIRST: the guarded atomic flip. A racing /complete or abort that got
+        # there first leaves rowcount 0 and we touch nothing.
+        values: dict[str, Any] = {
+            "completed_at": now,
+            "output": func.coalesce(Run.output, "") + (
+                BEACON_LOST_MARKER if severed is not None else UNCLASSIFIED_MARKER),
+        }
+        if severed is not None:
+            values.update(status="complete", severed_at_step=severed)
+        else:
+            values.update(status="failed")
+        res = await db.execute(
+            update(Run).where(Run.run_id == run_id, _in_flight_clause())
+            .values(**values).execution_options(synchronize_session=False))
+        if res.rowcount == 0:
+            await db.rollback()
             continue
 
-        existing = {o.step_id: o for o in outcomes}
-        _upsert(existing, db, run.run_id, severed, now, termination=TERMINATION_BEACON_LOST)
-        for sid in steps_after(step_ids, severed):
-            row = existing.get(sid)
-            if row is not None and row.termination is not None:
-                continue  # a decided termination stands
-            _upsert(existing, db, run.run_id, sid, now,
-                    termination=TERMINATION_NOT_RUN, reason=UPSTREAM_SEVERED)
+        if severed is None:
+            await db.commit()
+            logger.warning("beacon_lost run_id=%s agent=%s could not be classified; failed",
+                           run_id, agent_id)
+            final = "failed"
+        else:
+            existing = {o.step_id: o for o in outcomes}
+            sev_row = existing.get(severed)
+            if sev_row is None or sev_row.termination is None:
+                _upsert(existing, db, run_id, severed, now, termination=TERMINATION_BEACON_LOST)
+            # else: a witnessed termination keeps its witness
+            for sid in steps_after(step_ids, severed):
+                row = existing.get(sid)
+                if row is not None and row.termination is not None:
+                    continue  # a decided termination stands
+                _upsert(existing, db, run_id, sid, now,
+                        termination=TERMINATION_NOT_RUN, reason=UPSTREAM_SEVERED)
+            apply_host_outcomes(
+                results, [o for o in existing.values() if o.termination is not None],
+                agent_profile_mode=run.agent_profile_mode)
+            await db.commit()
+            logger.warning("beacon_lost run_id=%s agent=%s severed_at=%s",
+                           run_id, agent_id, severed)
+            final = "complete"
 
-        apply_host_outcomes(
-            results, [o for o in existing.values() if o.termination is not None],
-            agent_profile_mode=run.agent_profile_mode)
-
-        run.status = "complete"
-        run.completed_at = now
-        run.severed_at_step = severed
-        await db.execute(
-            update(Run).where(Run.run_id == run.run_id)
-            .values(output=func.coalesce(Run.output, "") + BEACON_LOST_MARKER)
-            .execution_options(synchronize_session=False))
-        await db.commit()
         await db.refresh(run)
-
         await _safe_publish(
-            run.run_id,
-            {"type": "run.status", "run_id": run.run_id,
-             "data": {"status": "complete", "step_id": None}})
-        await score_run_safely(db, run, source="beacon_lost")
-        logger.warning("beacon_lost run_id=%s agent=%s severed_at=%s",
-                       run.run_id, agent_id, severed)
-        done.append(run.run_id)
+            run_id,
+            {"type": "run.status", "run_id": run_id,
+             "data": {"status": final, "step_id": None}})
+        if final == "complete":
+            await score_run_safely(db, run, source="beacon_lost")
+        done.append(run_id)
     return done
