@@ -89,6 +89,13 @@ export default function useLaunchScenario(scenario, {
       .catch(() => { if (!cancelled) setRunHistory([]) })
     return () => { cancelled = true }
   }, [mode, scenario?.scenario_id, lastRun?.status])
+  // Pair options are filtered by agent: a choice made for another beacon (or a
+  // canary run on it) no longer applies.
+  useEffect(() => {
+    setPairedWith('')
+    setCanaryRunId('')
+    setCanaryError(null)
+  }, [selectedAgent])
   const pairOptions = useMemo(() => {
     const sid = scenario?.scenario_id || scenario?.id
     return runHistory.filter((r) =>

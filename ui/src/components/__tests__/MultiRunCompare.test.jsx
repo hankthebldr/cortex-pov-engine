@@ -214,4 +214,40 @@ describe('<MultiRunCompare /> prevention delta', () => {
     await waitFor(() => expect(container.querySelector('.multirun__matrix')).toBeTruthy())
     expect(screen.queryByTestId('pair-delta-table')).toBeNull()
   })
+
+  async function pickPair(container) {
+    await waitFor(() => expect(container.querySelectorAll('.multirun__run-pill').length).toBe(3))
+    const pills = container.querySelectorAll('.multirun__run-pill')
+    fireEvent.click(pills[0])
+    fireEvent.click(pills[1])
+  }
+
+  it('says so when the delta has no rows', async () => {
+    installRoutes({
+      'GET /api/runs': pairRuns,
+      'GET /api/runs/:id/pair': { runs: [], delta: { steps: [] } },
+      'GET /api/results/r-report': { results: [] },
+      'GET /api/results/r-block': { results: [] },
+    })
+    const { container } = render(<MultiRunCompare />)
+    await pickPair(container)
+    expect(await screen.findByText('No delta rows — the pair has no comparable detections.')).toBeInTheDocument()
+    expect(screen.queryByTestId('pair-delta-table')).toBeNull()
+  })
+
+  it('shows the structured detail of a pair 409', async () => {
+    installRoutes({
+      'GET /api/runs': pairRuns,
+      'GET /api/runs/:id/pair': new Response(JSON.stringify({
+        detail: { error: 'Run not paired', code: 'RUN_NOT_PAIRED', detail: 'partner run was deleted' },
+      }), { status: 409, headers: { 'content-type': 'application/json' } }),
+      'GET /api/results/r-report': { results: [] },
+      'GET /api/results/r-block': { results: [] },
+    })
+    const { container } = render(<MultiRunCompare />)
+    await pickPair(container)
+    const err = await screen.findByTestId('pair-delta-error')
+    expect(err.textContent).toMatch(/partner run was deleted/)
+    expect(err.textContent).toMatch(/RUN_NOT_PAIRED/)
+  })
 })

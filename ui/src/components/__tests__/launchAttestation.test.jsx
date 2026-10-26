@@ -27,6 +27,7 @@ function Harness() {
     <div>
       <AttestationFields launch={launch} />
       <button type="button" onClick={() => launch.launch()}>fire</button>
+      <button type="button" onClick={() => launch.setSelectedAgent('agent-2')}>switch</button>
       <output data-testid="last">{launch.lastRun ? `${launch.lastRun.status}|${launch.lastRun.message}` : ''}</output>
     </div>
   )
@@ -132,5 +133,26 @@ describe('launch form — prevention context', () => {
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toMatch(/partner run is on a different target/)
     expect(alert.textContent).toMatch(/PAIR_INVALID/)
+  })
+
+  it('changing the beacon drops a chosen pair partner and canary id', async () => {
+    const posted = routes({
+      'GET /api/agents': { agents: [
+        { agent_id: 'agent-1', hostname: 'h1', os: 'linux' },
+        { agent_id: 'agent-2', hostname: 'h2', os: 'linux' },
+      ] },
+      'POST /api/runs/canary': { run_id: 'canary-9', scenario_id: 'SIM-CANARY' },
+    })
+    render(<Harness />)
+    await waitFor(() => expect(screen.getByLabelText(/Pair with run/i).options.length).toBeGreaterThan(1))
+    await userEvent.selectOptions(screen.getByLabelText(/Pair with run/i), 'r-done')
+    await userEvent.click(screen.getByRole('button', { name: /Run canary first/i }))
+    await screen.findByText(/canary-9/)
+    await userEvent.click(screen.getByRole('button', { name: 'switch' }))
+    await userEvent.click(screen.getByRole('button', { name: 'fire' }))
+    await waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0].target_agent_id).toBe('agent-2')
+    expect(posted[0]).not.toHaveProperty('paired_with_run_id')
+    expect(posted[0]).not.toHaveProperty('canary_run_id')
   })
 })

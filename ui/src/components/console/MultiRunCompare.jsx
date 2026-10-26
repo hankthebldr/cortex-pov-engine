@@ -295,6 +295,14 @@ function PairDelta({ pair }) {
     )
   }
   const steps = pair.delta?.steps || []
+  const rows = steps.reduce((n, st) => n + (st.detections || []).length, 0)
+  if (rows === 0) {
+    return (
+      <div className="coverage__empty mono" data-testid="pair-delta-empty">
+        No delta rows — the pair has no comparable detections.
+      </div>
+    )
+  }
   return (
     <div className="multirun__pair" data-testid="pair-delta">
       <div className="competitive__filter-label mono compare-runs__avail-label">

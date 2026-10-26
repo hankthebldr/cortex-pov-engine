@@ -435,7 +435,10 @@
 
 .storyline-pill__glyph { margin-right: 2px; }
 /* Prevented is a PASS for the control, drawn in the detected family. */
-.storyline-pill--prevented { background: rgba(0, 184, 148, 0.16); color: #00825b; }
+.storyline-pill--prevented {
+  background: color-mix(in srgb, var(--cortex-teal) 16%, transparent);
+  color: var(--cortex-teal);
+}
 /* Not reached: our chain stopped early (the control did its job upstream) —
    neutral, never red. */
 .storyline-pill--not-reached {

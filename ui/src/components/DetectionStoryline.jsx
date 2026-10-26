@@ -117,10 +117,13 @@ export function isRunUnproven(runStatus) {
  * evidence surface. A `detected` row survives (the signal demonstrably fired
  * before the run died); an unfired one is downgraded to `not-executed`.
  */
-export function reconcileStatus(status, runStatus) {
+export function reconcileStatus(status, runStatus, outcome = null) {
   const s = status || 'pending'
   // Alert-backed outcomes survive a dead run: the signal demonstrably fired.
   if (s === 'detected' || s === 'prevented') return s
+  // A server-sent outcome stands: the legacy override only covers entries
+  // from a server that did not say what happened.
+  if (outcome) return s
   return isRunUnproven(runStatus) ? 'not-executed' : s
 }
 
@@ -132,7 +135,7 @@ function detectionKey(det, stepId, di) {
 // ── Detection row ───────────────────────────────────────────────────────────
 
 function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
-  const status = reconcileStatus(det.status, runStatus)
+  const status = reconcileStatus(det.status, runStatus, det.outcome)
   const mttd = formatMttd(det.mttd_seconds)
   const key = outcomeKey(status)
   const detected = key === 'detected'
@@ -261,7 +264,7 @@ function StepNode({ step, index, flashing, runStatus, onOpenEvidence }) {
   const detections = step.detections || []
   const anyDetected = detections.some((d) => d.status === 'detected' || d.status === 'prevented')
   const anyPending = detections.some(
-    (d) => reconcileStatus(d.status, runStatus) === 'pending',
+    (d) => reconcileStatus(d.status, runStatus, d.outcome) === 'pending',
   )
   const nodeState = anyDetected ? 'detected' : anyPending ? 'pending' : 'idle'
   const stepId = step.step_id || step.id

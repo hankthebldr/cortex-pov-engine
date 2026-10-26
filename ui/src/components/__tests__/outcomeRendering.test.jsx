@@ -158,3 +158,24 @@ describe('<CausalityGraph /> severed chain', () => {
     expect(prevented.textContent).toMatch(/Prevented/)
   })
 })
+
+describe('fix round 1', () => {
+  it('graph header counts prevented in the numerator over the denominator', async () => {
+    const g = JSON.parse(JSON.stringify(SEVERED_GRAPH))
+    g.causality_graph.summary = { total: 1, detected: 0, prevented: 1, denominator: 1, pending: 0, missed: 0, coverage_pct: 100, mttd: {} }
+    vi.stubGlobal('fetch', mockFetchOk(g))
+    render(<CausalityGraph runId="run-p" />)
+    await screen.findByText('Causality Graph')
+    expect(screen.getByText('1/1')).toBeInTheDocument()
+  })
+
+  it('a server-sent not_reached stands on a failed run', async () => {
+    const raw = JSON.parse(JSON.stringify(RAW))
+    raw.detection_storyline.run_status = 'failed'
+    vi.stubGlobal('fetch', mockFetchOk(raw))
+    render(<DetectionStoryline runId="run-p" />)
+    await screen.findByText('Detection Storyline')
+    const pills = Array.from(document.querySelectorAll('.storyline-pill')).map((p) => p.textContent)
+    expect(pills.some((t) => t.includes('Not reached'))).toBe(true)
+  })
+})

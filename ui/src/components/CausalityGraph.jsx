@@ -294,7 +294,7 @@ function GraphHeader({ graph, live, lastUpdated }) {
             <span className="cg-kpi__value">
               {pct}%
               <span className="cg-kpi__sub">
-                {summary.detected || 0}/{summary.total || 0}
+                {(summary.detected || 0) + (summary.prevented || 0)}/{summary.denominator != null ? summary.denominator : (summary.total || 0)}
               </span>
             </span>
           )}

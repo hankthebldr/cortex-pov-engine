@@ -175,6 +175,7 @@ export function normalizeCausality(g) {
       total: summary.total || 0,
       detected: summary.detected || 0,
       prevented: summary.prevented || 0,
+      denominator: summary.denominator != null ? summary.denominator : null,
       pending: summary.pending || 0,
       missed: summary.missed || 0,
       coverage_pct: summary.coverage_pct != null ? summary.coverage_pct : 0,
