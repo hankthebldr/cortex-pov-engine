@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Optional
 
-from engine.outcome import EXCLUDED_FROM_DENOMINATOR
+from engine.outcome import is_in_denominator
 
 logger = logging.getLogger("cortexsim.verifier")
 
@@ -161,6 +161,11 @@ class RunScore:
         }
 
 
+def _in_denominator(r: Any) -> bool:
+    """Attribute adapter over the one rule, ``engine.outcome.is_in_denominator``."""
+    return is_in_denominator(getattr(r, "outcome", None), getattr(r, "outcome_reason", None))
+
+
 def score_run(
     results: list[Any],
     *,
@@ -203,8 +208,9 @@ def score_run(
     excluded: list[str] = []
 
     for r in results:
-        if getattr(r, "outcome", None) in EXCLUDED_FROM_DENOMINATOR:
-            # A step that never ran is neither a pass nor a fail.
+        if not _in_denominator(r):
+            # A step that never ran, or a detector still soaking (spec §5.5),
+            # is neither a pass nor a fail.
             excluded.append(str(getattr(r, "detection_id", None)
                                 or getattr(r, "expected_detection", None)
                                 or getattr(r, "id", "")))
@@ -328,8 +334,10 @@ async def verify_results(
         if not xql:
             counts["skipped"] += 1
             continue
-        if getattr(r, "outcome", None) in EXCLUDED_FROM_DENOMINATOR:
-            # The host says this step never ran: a row count cannot certify it.
+        if not _in_denominator(r):
+            # The host says this step never ran, or the detector is still in its
+            # activation/dedup soak (spec §5.5): a row count cannot certify it,
+            # and zero rows from a soaking detector is not a failure.
             counts["skipped"] += 1
             continue
         if (getattr(r, "expected_outcome", None) == "prevent"
@@ -452,7 +460,7 @@ async def verify_run(
     # A step the host says never ran cannot contribute a detection time.
     mttd = [r.mttd_seconds for r in results
             if getattr(r, "mttd_seconds", None) is not None
-            and getattr(r, "outcome", None) not in EXCLUDED_FROM_DENOMINATOR]
+            and _in_denominator(r)]
     score = score_run(
         results,
         threshold=getattr(scenario, "threshold", None),
