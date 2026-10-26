@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Any, Optional
 
@@ -43,12 +44,25 @@ _YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 #   ABIOC       — Analytics Behavioral IOC: PANW-authored, auto-tuned
 #                 behavioral-ML detection with an identified causality chain
 #                 (distinct from hand-authored BIOC)
+#   Prevention  — the XDR agent's own prevention module acting on the host
+#                 (BTP, exploit protection, ...). Not a rule: carried on cards
+#                 as detections.prevention_modules[]; may carry outcome: prevent.
 # NOTE: XDM modeling rules (Plan 02) are a normalization *substrate*, NOT a
 # detection_type — they are carried on cards as detections.modeling_rules[],
-# never as an expected_detections[].type value. This frozenset stays at six.
+# never as an expected_detections[].type value.
 DETECTION_TYPES: frozenset[str] = frozenset(
-    {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC"}
+    {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC", "Prevention"}
 )
+
+# The agent prevention modules a detections.prevention_modules[] card object
+# may name (validate.py rejects any other value).
+PREVENTION_MODULES: frozenset[str] = frozenset({
+    "btp", "exploit_protection", "local_analysis", "wildfire",
+    "anti_ransomware", "credential_protection", "device_control", "host_firewall",
+})
+
+_OUTCOMES: frozenset[str] = frozenset({"detect", "prevent"})
+_PREVENT_MASK_RE = re.compile(r"\|\|\s*(true|echo\b)|;\s*true\s*$|2>/dev/null\s*\|\|")
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +174,39 @@ class StepExpectedDetection(BaseModel):
     # v2.0 — per-detection KPI contribution (e.g. this detection contributes to
     # the scenario-level MTTD measurement with its own threshold).
     kpi_contribution: Optional[KpiThreshold] = None
+    # Efficacy outcome the step is expected to produce: "detect" (an alert) or
+    # "prevent" (the agent's prevention module stops the action). "prevent" is
+    # only meaningful for type Prevention on a runtime plane (EDR / CDR).
+    outcome: str = "detect"
+
+    @field_validator("outcome")
+    @classmethod
+    def validate_outcome(cls, v: str) -> str:
+        if v not in _OUTCOMES:
+            raise ValueError(
+                f"expected_detection outcome must be one of {sorted(_OUTCOMES)}, got '{v}'"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _validate_outcome_contract(self) -> "StepExpectedDetection":
+        if self.outcome == "prevent":
+            if self.type != "Prevention":
+                raise ValueError("outcome: prevent requires type: Prevention")
+            if self.plane not in ("EDR", "CDR"):
+                raise ValueError(
+                    f"outcome: prevent is only valid on the EDR or CDR plane, got '{self.plane}'"
+                )
+        if (
+            self.type == "Prevention"
+            and self.detection_id
+            and not self.detection_id.startswith("prevention-")
+        ):
+            raise ValueError(
+                f"a Prevention expectation's detection_id must start with "
+                f"'prevention-', got '{self.detection_id}'"
+            )
+        return self
 
 
 class EalStepSchema(BaseModel):
@@ -266,6 +313,16 @@ class StepSchema(BaseModel):
                 raise ValueError(
                     "target is only permitted on an agent-channel step"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_prevent_step(self) -> "StepSchema":
+        # S-21: a prevented step is expected to be killed mid-command. A masked
+        # exit (`|| true`, `; true`) would make a blocked step and an unblocked
+        # one indistinguishable to the harness, so it is refused at load.
+        if any(d.outcome == "prevent" for d in self.expected_detections) and \
+                _PREVENT_MASK_RE.search(self.command or ""):
+            raise ValueError("S-21: a step carrying a prevent expectation may not mask its exit")
         return self
 
 

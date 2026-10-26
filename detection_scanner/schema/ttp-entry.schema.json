@@ -675,6 +675,35 @@
               }
             }
           }
+        },
+        "prevention_modules": {
+          "type": "array",
+          "description": "Agent prevention modules — the XDR agent's own prevention acting on the host (BTP, exploit protection, ...). Not rules: nothing here is deployed to a tenant. Each names the module, the platforms it applies to, and the alert-name pattern its prevention alert is matched on. Scenarios reference them with expected_detections[].type: Prevention and a detection_id starting with `prevention-`.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "module", "platforms"],
+            "properties": {
+              "name": { "type": "string" },
+              "detection_id": { "type": "string" },
+              "module": {
+                "type": "string",
+                "enum": ["btp", "exploit_protection", "local_analysis", "wildfire", "anti_ransomware", "credential_protection", "device_control", "host_firewall"]
+              },
+              "platforms": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "enum": ["linux", "windows", "macos", "container", "k8s"] }
+              },
+              "alert_name_pattern": { "type": "string", "description": "Glob the prevention alert's name is matched against (e.g. Behavioral Threat*)." },
+              "description": { "type": "string" },
+              "severity": { "type": "string", "enum": ["informational", "low", "medium", "high", "critical"] },
+              "mitre_techniques": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }
+              }
+            }
+          }
         }
       }
     },

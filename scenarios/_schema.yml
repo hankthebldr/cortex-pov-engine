@@ -193,7 +193,14 @@ steps:
       - plane: CDR
         # (required) Detection plane expected to produce signal.
         type: Analytics
-        # (required) Detection type. One of: BIOC | XQL | Analytics | Correlation | IOC | ABIOC
+        # (required) Detection type. One of: BIOC | XQL | Analytics | Correlation | IOC | ABIOC | Prevention
+        # Prevention = the XDR agent's own prevention module (BTP, exploit protection, ...),
+        # carried on cards as detections.prevention_modules[]; its detection_id must start
+        # with "prevention-".
+        outcome: detect
+        # (optional, default detect) detect | prevent. "prevent" requires type: Prevention and
+        # plane EDR or CDR, and the step's command may not mask its exit (S-21: no "|| true",
+        # "|| echo", "; true", "2>/dev/null ||").
         description: "Package manager execution in container — unusual install pattern"
         # (required) Human-readable description of the expected alert/detection.
         # Used in ResultsViewer to show expected vs observed.

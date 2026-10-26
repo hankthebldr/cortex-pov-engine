@@ -56,12 +56,15 @@ REPO_ROOT = ROOT.parent                                # repo root
 # Directories the scenario loader prunes (mirror scenario_loader._find_yaml_files).
 _SKIP_SCENARIO_DIRS = {"probes", "packages", "campaigns"}
 
-# The six canonical scenario-side detection types (expected_detections[].type).
-_STEP_TYPES = ("BIOC", "XQL", "Correlation", "IOC", "ABIOC", "Analytics")
+# The seven canonical scenario-side detection types (expected_detections[].type).
+# "Prevention" is the agent's own prevention module, not a rule family: it gets
+# its own bucket but is EXCLUDED from the denominator of the ABIOC+Analytics
+# share (a prevention step-detection is not an opportunity for an ML-anchored one).
+_STEP_TYPES = ("BIOC", "XQL", "Correlation", "IOC", "ABIOC", "Analytics", "Prevention")
 _STEP_TYPE_BY_LOWER = {t.lower(): t for t in _STEP_TYPES}
 
 # Catalog-side detection kinds (mirror ttp_catalog.card_detection_kind_counts).
-_CATALOG_KINDS = ("bioc", "xql", "correlation", "ioc", "analytics", "abioc", "modeling")
+_CATALOG_KINDS = ("bioc", "xql", "correlation", "ioc", "analytics", "abioc", "modeling", "prevention")
 
 # Fixed methodology families F1..F10, labels lifted verbatim from
 # scenarios/_schema.yml (the methodology_family enum documentation).
@@ -469,15 +472,18 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
         catalog_by_kind["analytics"] += len(det.get("analytics_modules") or [])
         catalog_by_kind["abioc"] += len(det.get("abiocs") or [])
         catalog_by_kind["modeling"] += len(det.get("modeling_rules") or [])
+        catalog_by_kind["prevention"] += len(det.get("prevention_modules") or [])
     catalog_total = sum(catalog_by_kind.values())
     catalog_shares = {
         k: _r4(catalog_by_kind[k] / catalog_total) if catalog_total else 0.0
         for k in _CATALOG_KINDS
     }
 
+    # Rule-family denominator: step-detections whose type is not Prevention.
+    rule_step_total = step_total - step_by_type["Prevention"]
     abioc_analytics_share = _r4(
-        (step_by_type["ABIOC"] + step_by_type["Analytics"]) / step_total
-    ) if step_total else 0.0
+        (step_by_type["ABIOC"] + step_by_type["Analytics"]) / rule_step_total
+    ) if rule_step_total else 0.0
     correlation_share = _r4(step_by_type["Correlation"] / step_total) if step_total else 0.0
     modeling_rule_share = _r4(catalog_by_kind["modeling"] / catalog_total) if catalog_total else 0.0
     abioc_analytics_below = abioc_analytics_share < abioc_analytics_target
@@ -542,7 +548,7 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
                             f"{tactic_floor} scenarios — backfill {deficit} more"),
             })
     if abioc_analytics_below:
-        deficit = round((abioc_analytics_target - abioc_analytics_share) * step_total)
+        deficit = round((abioc_analytics_target - abioc_analytics_share) * rule_step_total)
         recs.append({
             "kind": "detection-type", "target": "abioc_analytics",
             "current": abioc_analytics_share, "target_value": _r4(abioc_analytics_target),

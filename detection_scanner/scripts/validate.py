@@ -40,6 +40,12 @@ ROOT = Path(__file__).resolve().parent.parent
 ID_PATTERN          = re.compile(r"^TTP-\d{4}-\d{4}$")
 TECHNIQUE_PATTERN   = re.compile(r"^T\d{4}(\.\d{3})?$")
 TS_PATTERN          = re.compile(r"^TS-[A-Z0-9]+-\d{3}$")
+# Mirror of core/engine/scenario_loader.py::PREVENTION_MODULES (this script is stdlib-only).
+PREVENTION_MODULES  = frozenset({
+    "btp", "exploit_protection", "local_analysis", "wildfire",
+    "anti_ransomware", "credential_protection", "device_control", "host_firewall",
+})
+PREVENTION_PLACEHOLDER_RE = re.compile(r"(?i)\b(tbd|todo|placeholder)\b")
 TS_STEP_PATTERN     = re.compile(r"^TS-[A-Z0-9]+-\d{3}[A-Z]?$")
 # A card-local id written with the master-index prefix, anywhere in prose.
 _STALE_NS_TOKEN     = re.compile(r"\b(?:UCS?|TC)-[A-Z0-9]+-\d{3}[A-Z]?\b")
@@ -508,6 +514,17 @@ def main():
         for i, a in enumerate(detections.get("abiocs", [])):
             lint_detection_body(report, rel, f"detections.abiocs[{i}].logic",
                                 a.get("logic"), require_dataset=True)
+        # Prevention modules are agent behaviour, not rule bodies: nothing to lint,
+        # but the three load-bearing fields are REJECTED (not warned) when wrong.
+        for i, pm in enumerate(detections.get("prevention_modules", [])):
+            loc = f"detections.prevention_modules[{i}]"
+            if pm.get("module") not in PREVENTION_MODULES:
+                report.err(rel, f"{loc}.module {pm.get('module')!r} not in {sorted(PREVENTION_MODULES)}")
+            pm_name = (pm.get("name") or "").strip()
+            if not pm_name or PREVENTION_PLACEHOLDER_RE.search(pm_name):
+                report.err(rel, f"{loc}.name is empty or a placeholder: {pm.get('name')!r}")
+            if not pm.get("platforms"):
+                report.err(rel, f"{loc}.platforms must be non-empty")
         # Plan 02 — modeling-rule bodies open with `[MODEL: dataset=…]`; the
         # `dataset=` substring satisfies the anchor + dataset-registry checks.
         for i, m in enumerate(detections.get("modeling_rules", [])):
