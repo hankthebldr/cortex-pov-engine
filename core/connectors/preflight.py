@@ -81,6 +81,9 @@ ALERT_SHAPE_KEYS: dict[str, tuple[str, ...]] = {
     "host": ("host_name", "endpoint_name", "hosts"),
     "source": ("source", "alert_source"),
     "rule_id": ("matching_service_rule_id", "detector_id", "bioc_id", "rule_id"),
+    # what the agent did about the alert: the prevention outcome cannot be
+    # read without it. Not a matching key — but its absence is surfaced.
+    "action": ("action_pretty", "action"),
     # informational — decides the correlation-rate basis, never the grade
     "incident": ("incident_id", "case_id"),
 }
@@ -600,6 +603,18 @@ def _alert_shape_stage(sample: Any, total_count: Any, path: Optional[str] = None
                          "that number would be wrong. Compare `keys_seen` with "
                          "ALERT_SHAPE_KEYS and add the tenant's field names before "
                          "running a POV against it."),
+            extra=extra,
+        )
+    if keys["action"] is None:
+        return Stage(
+            "alert_shape", DEGRADED, PF_ALERT_SHAPE_PARTIAL,
+            f"the sampled alert carries no action key (action_pretty / action); "
+            f"detection matching is unaffected but a prevention outcome cannot be "
+            f"read (found: {found})",
+            remediation=("Without the alert's action, a prevent expectation can never "
+                         "be credited as prevented. Confirm the tenant's alert objects "
+                         "expose `action_pretty` or `action` before running a "
+                         "prevention POV."),
             extra=extra,
         )
     if keys["rule_id"] is None:
