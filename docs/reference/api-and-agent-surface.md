@@ -257,7 +257,8 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   without `observed` makes one.
 - **`pending` is never a coverage hit.** Every coverage numerator (`/api/results`,
   the run report headline and by-type table, `detection_accuracy`, the reconcile
-  summary, the exec summary and Navigator layer) counts through `outcome.py::is_hit`:
+  summary, the exec summary and Navigator layer, the MITRE heatmap tally and the TTP
+  runs badge) counts through `outcome.py::is_hit` over the one denominator rule:
   `detected` / `prevented` when an outcome exists, `observed` only for an outcome-less
   row. A prevent row with an alert but no host witness (`pending` /
   `PREVENTION_ALERT_WITHOUT_TERMINATION`, `observed` true) is a hit nowhere.

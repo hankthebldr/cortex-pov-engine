@@ -53,6 +53,7 @@ PCT = 50.0
 # Per-row status on every surface that names one (R4 / R1).
 UNJUDGED, ALERT_NO_WITNESS, LEGACY_HIT = "step-08", "step-09", "step-10"
 NO_HOST_RECORD = "step-11"
+PARITY_TECHNIQUE, PARITY_TTP = "T1003.001", "TTP-2026-0032"
 EXCLUDED = {"not_reached": 1, "not_executed": 1, "soak_pending": 1}
 
 
@@ -69,6 +70,14 @@ def seeded(session_factory):
     async def _go():
         now = datetime.utcnow()
         async with session_factory() as db:
+            from models import Scenario
+            # The scenario + card the heatmap and the TTP badge key on (I-1).
+            db.add(Scenario(
+                scenario_id="SIM-EDR-001", name="Credential Dumping", plane="EDR",
+                version="1.0", status="active", uc_ref="UCS-EDR-01", uc_name="X",
+                tc_ref="TC-EDR-01", tc_name="Y", mitre_tactic="TA0006",
+                mitre_tactic_name="Credential Access", mitre_technique=PARITY_TECHNIQUE,
+                mitre_technique_name="LSASS Memory", steps=[]))
             db.add(Run(run_id=RUN_ID, scenario_id="SIM-EDR-001", mode="pull",
                        status="complete", agent_profile_mode="block",
                        started_at=now - timedelta(minutes=30)))
@@ -76,6 +85,7 @@ def seeded(session_factory):
                 db.add(Result(
                     run_id=RUN_ID, step_id=sid, step_name=sid, plane="EDR",
                     signal_type=sig, expected_detection=f"det {sid}",
+                    mitre_technique=PARITY_TECHNIQUE, ttp_ref=PARITY_TTP,
                     expected_outcome=expected, outcome=outcome, outcome_reason=reason,
                     observed=observed,
                     observed_at=(now - timedelta(minutes=20)) if observed else None,
@@ -228,3 +238,25 @@ def test_exec_summary_coverage_uses_the_one_denominator_and_numerator(seeded):
     run, results = seeded
     md = render_exec_summary_markdown(run.to_dict(), None, [r.to_dict() for r in results])
     assert f"{HITS} / {DENOMINATOR} expected detections observed ({PCT}%)" in md
+
+
+def test_heatmap_and_ttp_badge_agree_with_every_surface(make_client, seeded):
+    """Round 4 I-1: the MITRE heatmap tally and the TTP runs badge count hits
+    through ``is_hit`` over the one denominator rule -- the same 4 / 8."""
+    import pathlib
+
+    from api.mitre import router as mitre_router
+    from api.ttps import router as ttps_router
+    from engine.ttp_catalog import catalog as ttp_catalog
+
+    ttp_catalog.load(str(pathlib.Path(__file__).resolve().parents[2]
+                         / "detection_scanner" / "ttps"))
+
+    c = make_client(mitre_router, ttps_router)
+    cov = c.get("/api/mitre/coverage").json()
+    techs = cov["techniques"] if isinstance(cov, dict) else cov
+    t = next(x for x in techs if x["technique_id"] == PARITY_TECHNIQUE)
+    badge = c.get(f"/api/ttps/{PARITY_TTP}/runs").json()["runs"][0]
+    assert {"mitre": (t["observed_detections"], t["total_detections"]),
+            "ttps": (badge["observed"], badge["expected"])} == {
+        "mitre": (HITS, DENOMINATOR), "ttps": (HITS, DENOMINATOR)}
