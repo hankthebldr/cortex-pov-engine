@@ -7,6 +7,7 @@ import {
   downloadReportNavigator,
   downloadReportBundle,
 } from '../api/client.js'
+import { isAttestable } from '../outcomes.js'
 
 /**
  * ResultsValidationWizard — guided walk-through for marking each expected
@@ -74,7 +75,9 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
 
   const handleBulkObserved = useCallback(async () => {
     if (!data?.results) return
-    const pending = data.results.filter(r => !r.observed)
+    // Exactly the rows `PUT /validate` accepts as an attestation: a step that
+    // never ran, or a two-witness prevented row, is skipped (and counted).
+    const pending = data.results.filter(isAttestable)
     if (pending.length === 0) return
     onMessage?.(`Marking ${pending.length} detection(s) observed…`, 'info')
     for (const r of pending) {
@@ -133,6 +136,8 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
   const mttd = data?.mttd
   const total = data?.results?.length || 0
   const observedCount = data?.results?.filter(r => r.observed).length || 0
+  const attestableCount = data?.results?.filter(isAttestable).length || 0
+  const bulkSkipped = data?.results?.filter(r => !r.observed && !isAttestable(r)).length || 0
 
   return (
     <section className="results-wizard">
@@ -186,11 +191,16 @@ export default function ResultsValidationWizard({ runId, onClose, onMessage }) {
           <button
             className="btn btn-sm btn-navy"
             onClick={handleBulkObserved}
-            disabled={total === 0 || observedCount === total}
-            title="Mark every pending detection observed"
+            disabled={attestableCount === 0}
+            title="Mark every attestable detection observed (never-ran and prevented rows are skipped)"
           >
             ✓ Mark all observed
           </button>
+          {bulkSkipped > 0 && (
+            <span className="mono results-wizard__skipped" data-testid="wizard-bulk-skipped">
+              {bulkSkipped} skipped (never ran or prevented)
+            </span>
+          )}
         </div>
       </div>
 

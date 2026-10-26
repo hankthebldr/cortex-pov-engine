@@ -94,6 +94,20 @@ export function isInDenominator(outcome, outcomeReason) {
   return true
 }
 
+/** Outcomes a manual validation may attest over (core/api/results.py::validate). */
+const ATTESTABLE_OUTCOMES = new Set(['pending', 'missed'])
+
+/**
+ * Would `PUT /api/results/{id}/validate {observed:true}` accept this row as a
+ * new attestation? Outcome none / pending / missed, and not yet observed. A
+ * step that never ran (409 RESULT_STEP_NOT_RUN) and a two-witness `prevented`
+ * row (409 RESULT_PREVENTED) are never eligible.
+ */
+export function isAttestable(row) {
+  if (!row || row.observed === true) return false
+  return row.outcome == null || ATTESTABLE_OUTCOMES.has(row.outcome)
+}
+
 /** Every status Cortex saw (a coverage hit) — the prevention verdict aside. */
 export function isHitStatus(status) {
   const key = outcomeKey(status)

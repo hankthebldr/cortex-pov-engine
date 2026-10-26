@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { getResultsForRun, validateResult } from '../../api/client.js'
-import { resultStatus, isHitStatus, isInDenominator } from '../../outcomes.js'
+import { resultStatus, isHitStatus, isInDenominator, isAttestable } from '../../outcomes.js'
 
 /**
  * useResultsData — fetches and folds /api/results/:runId into:
@@ -96,8 +96,12 @@ export default function useResultsData(runId) {
     const seeded    = rows.length
     const missed    = rows.filter((r) => r.status === 'missed').length
     const pending   = rows.filter((r) => r.status === 'pending').length
-    // What "Validate all" may act on: rows nobody has adjudicated yet.
-    const unvalidated = rows.filter((r) => r.observed == null && r.outcome == null).length
+    // What "Validate all" may act on: exactly the rows the server accepts as a
+    // new attestation (outcome none / pending / missed, not yet observed).
+    // `skipped` = unobserved rows it will not touch (never ran / prevented),
+    // shown next to the button so the skip is never silent.
+    const unvalidated = rows.filter((r) => isAttestable(r)).length
+    const skipped = rows.filter((r) => r.observed !== true && !isAttestable(r)).length
     const mttdList  = rows.filter((r) => isHitStatus(r.status) && typeof r.mttd === 'number')
                           .map((r) => r.mttd)
                           .sort((a, b) => a - b)
@@ -125,7 +129,7 @@ export default function useResultsData(runId) {
     ).length
 
     return {
-      total: denominator, seeded, detected, missed, pending, unvalidated, excluded,
+      total: denominator, seeded, detected, missed, pending, unvalidated, skipped, excluded,
       coverage, coverageUnknown: seeded > 0 && denominator == null, median, stitched,
       stitchDenominator,
     }
