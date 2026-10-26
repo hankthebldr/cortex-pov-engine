@@ -348,11 +348,19 @@ get it.
 |--------|-----------|---------|--------------|----------|
 | GET | `/api/results` | All results across all runs (newest first) | — | `{"results":[...],"total":N}` |
 | GET | `/api/results/{run_id}` | Results for a run + coverage + MTTD stats | — | `{run_id, results[], total, coverage:{observed,total,pct,by_type}, mttd}`; 404 if run missing |
-| PUT | `/api/results/{result_id}/validate` | DC marks detection observed/not | `ValidateRequest`: `{observed:bool, notes?}` | `<result.to_dict()>`; 404 `RESULT_NOT_FOUND` |
+| PUT | `/api/results/{result_id}/validate` | DC marks detection observed/not | `ValidateRequest`: `{observed:bool, notes?}` | `<result.to_dict()>`; 404 `RESULT_NOT_FOUND`; 409 `RESULT_STEP_NOT_RUN` / `RESULT_PREVENTED` |
 | PUT | `/api/results/{result_id}/notes` | Update notes only | `NotesRequest`: `{notes}` | `<result.to_dict()>`; 404 |
 
 - `validate` with `observed=true` stamps `observed_at = utcnow()` (enables MTTD =
   `observed_at - executed_at`); `observed=false` clears `observed_at`.
+- `validate` is an operator **attestation** and writes `outcome`: `observed=true` on a
+  row whose outcome is none / `pending` / `missed` sets `detected`; `observed=false` on
+  none / `pending` / `missed` / `detected` sets `missed`. It is refused with **409
+  `RESULT_STEP_NOT_RUN`** on `not_reached` / `not_executed` (no attestation for a step
+  that never ran) and **409 `RESULT_PREVENTED`** on `prevented` (an attestation never
+  downgrades a two-witness verdict); re-asserting `observed=true` on an observed
+  `prevented` row only updates the note. Provenance stays readable: an attested row has
+  `observed_at` but no matched alert.
 - Note the path-param type asymmetry: `/results/{run_id}` takes a **string** run id;
   `/results/{result_id}/validate` takes an **int** PK. Both live under the same
   prefix; FastAPI disambiguates by the trailing segment.

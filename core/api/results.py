@@ -21,7 +21,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from connectors.measures import denominator_exclusion, empty_exclusions
 from database import get_db
-from engine.outcome import OUTCOME_PREVENTED, is_hit
+from engine.outcome import (
+    EXCLUDED_FROM_DENOMINATOR,
+    OUTCOME_DETECTED,
+    OUTCOME_MISSED,
+    OUTCOME_PREVENTED,
+    is_hit,
+)
 from events import event_bus
 from models import Result
 
@@ -151,10 +157,22 @@ async def validate_result(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    DC marks a detection as observed or not observed.
-    When observed=true on a not-yet-observed row, sets observed_at to now
-    (enabling MTTD calculation); an already-observed row keeps its observed_at.
-    When observed=false, clears observed_at.
+    DC marks a detection as observed or not observed -- an operator
+    ATTESTATION (residual R5), so it writes the outcome every surface renders.
+
+    * ``observed=true`` on a row whose outcome is None / ``pending`` /
+      ``missed`` sets ``outcome = detected`` (reason cleared). The provenance
+      stays what the storyline already reads: ``observed_at`` with no matched
+      alert. A not-yet-observed row gets ``observed_at = now`` (MTTD); an
+      already-observed row keeps its ``observed_at``.
+    * ``observed=false`` on None / ``pending`` / ``missed`` / ``detected``
+      sets ``outcome = missed`` and clears ``observed_at`` -- an attested miss.
+    * ``not_reached`` / ``not_executed``: 409 ``RESULT_STEP_NOT_RUN`` -- no
+      attestation for a step that never ran.
+    * ``prevented``: 409 ``RESULT_PREVENTED`` -- an attestation never
+      downgrades a two-witness verdict. Re-asserting ``observed=true`` on an
+      already-observed prevented row (the console's "save notes") is not an
+      attestation: it updates the note and nothing else.
     """
     stmt = select(Result).where(Result.id == result_id)
     row = await db.execute(stmt)
@@ -166,6 +184,24 @@ async def validate_result(
             detail={"error": "Result not found", "code": "RESULT_NOT_FOUND", "detail": f"id={result_id}"},
         )
 
+    if result.outcome in EXCLUDED_FROM_DENOMINATOR:
+        raise HTTPException(status_code=409, detail={
+            "error": "Cannot attest a step that never ran",
+            "code": "RESULT_STEP_NOT_RUN",
+            "detail": f"id={result_id} outcome={result.outcome} reason={result.outcome_reason}",
+        })
+    if result.outcome == OUTCOME_PREVENTED:
+        if not (body.observed and result.observed):
+            raise HTTPException(status_code=409, detail={
+                "error": "An attestation never downgrades a two-witness prevented verdict",
+                "code": "RESULT_PREVENTED",
+                "detail": f"id={result_id} outcome=prevented",
+            })
+        if body.notes is not None:
+            result.notes = body.notes
+            await db.commit()
+        return result.to_dict()
+
     # Re-asserting `observed: true` on an already-observed row is idempotent:
     # it must NOT move observed_at. The console's "save notes" sends exactly
     # that call, and re-stamping replaced a reconcile-matched alert time (real
@@ -176,8 +212,13 @@ async def validate_result(
     if body.observed:
         if not already_observed:
             result.observed_at = datetime.utcnow()
+        if result.outcome != OUTCOME_DETECTED:
+            result.outcome = OUTCOME_DETECTED
+            result.outcome_reason = None
     else:
         result.observed_at = None
+        result.outcome = OUTCOME_MISSED
+        result.outcome_reason = None
 
     if body.notes is not None:
         result.notes = body.notes
@@ -195,6 +236,7 @@ async def validate_result(
                 "data": {
                     "result_id": result.id,
                     "observed": result.observed,
+                    "outcome": result.outcome,
                     "plane": result.plane,
                     "mttd_seconds": result.mttd_seconds,
                 },
