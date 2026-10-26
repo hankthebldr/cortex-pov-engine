@@ -62,7 +62,10 @@ PREVENTION_MODULES: frozenset[str] = frozenset({
 })
 
 _OUTCOMES: frozenset[str] = frozenset({"detect", "prevent"})
-_PREVENT_MASK_RE = re.compile(r"\|\|\s*(true|echo\b)|;\s*true\s*$|2>/dev/null\s*\|\|")
+_PREVENT_MASK_RE = re.compile(
+    r"\|\|\s*(true|echo\b|:(?=\s|$|;)|exit\s+0\b|/bin/true\b|printf\b)"
+    r"|;\s*true\s*$|2>/dev/null\s*\|\|"
+)
 
 
 # ---------------------------------------------------------------------------

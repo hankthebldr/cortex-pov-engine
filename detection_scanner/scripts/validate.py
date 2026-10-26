@@ -333,6 +333,20 @@ def _lint_xql_grammar(report, rel, where, body):
                              f"(stage: '| {seg[:40]}...')")
 
 
+def check_prevention_modules(report, rel, detections):
+    """Reject (not warn) a prevention_modules[] entry with an unknown module,
+    an empty/placeholder name, or no platforms."""
+    for i, pm in enumerate(detections.get("prevention_modules", [])):
+        loc = f"detections.prevention_modules[{i}]"
+        if pm.get("module") not in PREVENTION_MODULES:
+            report.err(rel, f"{loc}.module {pm.get('module')!r} not in {sorted(PREVENTION_MODULES)}")
+        pm_name = (pm.get("name") or "").strip()
+        if not pm_name or PREVENTION_PLACEHOLDER_RE.search(pm_name):
+            report.err(rel, f"{loc}.name is empty or a placeholder: {pm.get('name')!r}")
+        if not pm.get("platforms"):
+            report.err(rel, f"{loc}.platforms must be non-empty")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--strict", action="store_true", help="weights must sum to exactly 1.0 per use case")
@@ -516,15 +530,7 @@ def main():
                                 a.get("logic"), require_dataset=True)
         # Prevention modules are agent behaviour, not rule bodies: nothing to lint,
         # but the three load-bearing fields are REJECTED (not warned) when wrong.
-        for i, pm in enumerate(detections.get("prevention_modules", [])):
-            loc = f"detections.prevention_modules[{i}]"
-            if pm.get("module") not in PREVENTION_MODULES:
-                report.err(rel, f"{loc}.module {pm.get('module')!r} not in {sorted(PREVENTION_MODULES)}")
-            pm_name = (pm.get("name") or "").strip()
-            if not pm_name or PREVENTION_PLACEHOLDER_RE.search(pm_name):
-                report.err(rel, f"{loc}.name is empty or a placeholder: {pm.get('name')!r}")
-            if not pm.get("platforms"):
-                report.err(rel, f"{loc}.platforms must be non-empty")
+        check_prevention_modules(report, rel, detections)
         # Plan 02 — modeling-rule bodies open with `[MODEL: dataset=…]`; the
         # `dataset=` substring satisfies the anchor + dataset-registry checks.
         for i, m in enumerate(detections.get("modeling_rules", [])):

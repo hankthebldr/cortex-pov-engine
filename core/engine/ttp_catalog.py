@@ -292,7 +292,7 @@ class TtpCatalog:
         """Per-card tally of deployable detection objects by kind.
 
         Returns a dict keyed by
-        ``bioc | xql | correlation | ioc | analytics | abioc | modeling``
+        ``bioc | xql | correlation | ioc | analytics | abioc | modeling | prevention``
         with the count of each family on the card. Reads the raw
         ``detections`` block so the coverage heatmap can surface *which*
         Cortex detection kinds back a technique (notably ``correlation`` —
@@ -313,7 +313,7 @@ class TtpCatalog:
         raw = self._raw_by_ttp.get(ttp_ref)
         counts = {
             "bioc": 0, "xql": 0, "correlation": 0, "ioc": 0, "analytics": 0,
-            "abioc": 0, "modeling": 0,
+            "abioc": 0, "modeling": 0, "prevention": 0,
         }
         if not raw:
             return counts
@@ -325,6 +325,7 @@ class TtpCatalog:
         counts["analytics"] = len(det.get("analytics_modules") or [])
         counts["abioc"] = len(det.get("abiocs") or [])
         counts["modeling"] = len(det.get("modeling_rules") or [])
+        counts["prevention"] = len(det.get("prevention_modules") or [])
         return counts
 
     def count(self) -> int:

@@ -1,7 +1,7 @@
 from engine.ttp_catalog import _parse_prevention_list, _slug
 
 def test_prevention_objects_parse_with_module_and_slug():
-    cards = _parse_prevention_list("TTP-TEST-PREV-001", [{
+    cards = _parse_prevention_list("TTP-2026-9901", [{
         "name": "BTP reverse shell from web server", "module": "btp",
         "platforms": ["linux"], "alert_name_pattern": "Behavioral Threat*"}])
     c = cards[0]

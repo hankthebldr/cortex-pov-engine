@@ -37,7 +37,7 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Host enumeration from a web service account"
-        ttp_ref: "TTP-TEST-PREV-001"
+        ttp_ref: "TTP-2026-9901"
         detection_id: "bioc-test-host-enumeration"
 
   - id: step-02
@@ -50,7 +50,7 @@ steps:
         type: Prevention
         outcome: prevent
         description: "Behavioral Threat Protection blocks the reverse shell"
-        ttp_ref: "TTP-TEST-PREV-001"
+        ttp_ref: "TTP-2026-9901"
         detection_id: "prevention-btp-reverse-shell-from-web-server"
 
   - id: step-03
@@ -62,5 +62,5 @@ steps:
       - plane: EDR
         type: BIOC
         description: "Process discovery from a web service account"
-        ttp_ref: "TTP-TEST-PREV-001"
+        ttp_ref: "TTP-2026-9901"
         detection_id: "bioc-test-process-discovery"
