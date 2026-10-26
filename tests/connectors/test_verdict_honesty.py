@@ -511,3 +511,67 @@ def test_manual_import_without_exclusions_carries_no_host_warning(session_factor
     summary = _manual_ingest(session_factory, [_manual_prevented(host="web-01")])
     assert "excluded_other_host" not in summary
     assert "warning" not in summary
+
+
+# ── Round 3 R7 — the engine writes `missed` for a silent detect row ────────
+
+def _silent_detect_row(SessionLocal, *, mode=None):
+    """One `detect` Result (BIOC), executed 10 min ago, nothing matched."""
+    _seed(SessionLocal, results=1)
+
+    def fn(run, rows):
+        if mode is not None:
+            run.agent_profile_mode = mode
+        rows["step-01"].expected_outcome = "detect"
+    asyncio.run(_mutate(SessionLocal, fn))
+
+
+def _matched_verdict(SessionLocal, step_id="step-01"):
+    from connectors.matcher import MatchVerdict
+    r = asyncio.run(_results_by_step(SessionLocal))[step_id]
+    return MatchVerdict(result_id=r.id, matched=True,
+                        observed_at=datetime.utcnow() - timedelta(minutes=9),
+                        matched_on=["technique"], alert_external_id="late-1",
+                        alert_name="late alert", alert_outcome="detected")
+
+
+def test_silent_detect_row_on_complete_evidence_is_missed(session_factory):
+    _silent_detect_row(session_factory)
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    # kpi_verdict is the Tier-2 verifier's: the miss does not invent a verdict.
+    assert (r.outcome, r.outcome_reason, r.kpi_verdict, r.observed) == (
+        "missed", None, None, False)
+
+
+def test_silent_detect_row_on_truncated_pull_is_evidence_incomplete(session_factory):
+    _silent_detect_row(session_factory)
+    asyncio.run(_apply_silent(session_factory, {**COMPLETE, "truncated": True}))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("pending", "EVIDENCE_INCOMPLETE")
+
+
+def test_silent_detect_row_inside_its_window_stays_unjudged(session_factory):
+    _silent_detect_row(session_factory)
+    asyncio.run(_apply_silent(session_factory, COMPLETE, window_seconds=3600))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == (None, None)
+
+
+def test_a_later_alert_replaces_a_silent_miss_with_detected(session_factory):
+    from connectors.service import apply_verdicts
+    from models import Result
+    from sqlalchemy import select
+
+    _silent_detect_row(session_factory)
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    v = _matched_verdict(session_factory)
+
+    async def _late():
+        async with session_factory() as db:
+            results = list((await db.execute(select(Result))).scalars().all())
+            await apply_verdicts(db, "run-1", results, [v], source="t",
+                                 pull_context=COMPLETE, window_seconds=60)
+    asyncio.run(_late())
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.observed) == ("detected", True)

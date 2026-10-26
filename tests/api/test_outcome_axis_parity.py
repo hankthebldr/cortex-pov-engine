@@ -23,7 +23,9 @@ ROWS = [
     ("step-01", "prevented", None, True, "prevent", "BIOC"),
     ("step-02", "detected", None, True, "detect", "BIOC"),
     ("step-03", "detected", "DETECTED_NOT_PREVENTED", True, "prevent", "BIOC"),
-    ("step-04", "missed", None, False, "detect", "BIOC"),
+    # Seeded unjudged; the ENGINE writes `missed` below (round 3 R7): the
+    # fixture's miss comes from `_judge_silent_results`, never a hand-set value.
+    ("step-04", None, None, False, "detect", "BIOC"),
     ("step-05", "not_reached", "UPSTREAM_SEVERED", False, "detect", "BIOC"),
     ("step-06", "not_executed", "TOOL_ABSENT", False, "detect", "BIOC"),
     ("step-07", "pending", "ANALYTICS_ACTIVATION_PERIOD", False, "detect", "Analytics"),
@@ -72,8 +74,21 @@ def seeded(session_factory):
                     expected_outcome=expected, outcome=outcome, outcome_reason=reason,
                     observed=observed,
                     observed_at=(now - timedelta(minutes=20)) if observed else None,
-                    executed_at=now - timedelta(minutes=25),
+                    # step-08 ran a moment ago: its window is still open, so the
+                    # judgement leaves it unjudged (awaiting reconcile).
+                    executed_at=now - (timedelta(seconds=5) if sid == UNJUDGED
+                                       else timedelta(minutes=25)),
                 ))
+            await db.commit()
+        async with session_factory() as db:
+            # A complete, scoped reconcile that matched nothing: the engine's own
+            # silent-row judgement decides step-04.
+            from connectors.service import _judge_silent_results
+            run = (await db.execute(select(Run).where(Run.run_id == RUN_ID))).scalar_one()
+            rows = list((await db.execute(
+                select(Result).where(Result.run_id == RUN_ID))).scalars().all())
+            await _judge_silent_results(db, run, rows, {}, window_seconds=600,
+                                        evidence_complete=True)
             await db.commit()
         async with session_factory() as db:
             run = (await db.execute(select(Run).where(Run.run_id == RUN_ID))).scalar_one()
@@ -179,3 +194,11 @@ def test_scorecard_never_reads_detected_not_prevented_as_detected(seeded):
     c = build_efficacy_scorecard([r.to_dict() for r in results]).coverage
     # step-02 and the legacy manual step-10 are detected.
     assert (c.detected, c.prevented, c.detected_not_prevented, c.missed) == (2, 1, 1, 1)
+
+
+def test_the_fixture_miss_is_engine_written(seeded):
+    """R7: the only `missed` row is the one the silent-row judgement wrote."""
+    _, results = seeded
+    outcomes = {r.step_id: r.outcome for r in results}
+    assert outcomes["step-04"] == "missed"
+    assert outcomes[UNJUDGED] is None

@@ -432,8 +432,9 @@ async def _judge_silent_results(
       window of a paired second run) → ``pending`` with that reason, from the
       first sweep and whatever the window — it leaves the denominator at once.
     * Otherwise only once the window has closed: a ``prevent`` row goes through
-      ``evaluate_prevent`` with no alert, and an affirmative ``missed`` stands
-      only on complete evidence — else ``pending`` / ``EVIDENCE_INCOMPLETE``.
+      ``evaluate_prevent`` with no alert, and a ``detect`` row is ``missed``; an
+      affirmative ``missed`` stands only on complete evidence — else
+      ``pending`` / ``EVIDENCE_INCOMPLETE``.
 
     Rows already ``not_reached`` / ``not_executed`` are never touched, nor is
     any row already judged beyond ``pending``.
@@ -476,6 +477,19 @@ async def _judge_silent_results(
                     "pending" if pv.kpi_verdict == "fail" else pv.kpi_verdict,
                     EVIDENCE_INCOMPLETE)
             _write_prevent(r, pv)
+        else:
+            # A `detect` expectation keeps today's rule (spec §5.3): silent after
+            # its window closed is a miss -- now WRITTEN, so no surface has to
+            # infer it from `observed=False` (R4/R7). Only on complete evidence;
+            # otherwise the same softening as the prevent branch. kpi_verdict is
+            # the Tier-2 verifier's and is not touched. A later matched alert
+            # replaces `missed` with `detected` (apply_verdicts).
+            if evidence_complete:
+                r.outcome = OUTCOME_MISSED
+                r.outcome_reason = None
+            else:
+                r.outcome = OUTCOME_PENDING
+                r.outcome_reason = EVIDENCE_INCOMPLETE
 
 
 def _result_keys(r: Any) -> set:

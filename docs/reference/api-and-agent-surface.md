@@ -236,8 +236,12 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `HOST_EVIDENCE_ABSENT`, never `missed`: nothing says the step ran. With `exited` on
   record it is `missed` / fail. An `aborted` termination reads `pending` /
   `RUN_ABORTED` (the run was cut short; its verdict is undefined); a `timeout` stays
-  `missed` / fail (the step ran its whole budget unprevented). `detect` rows keep
-  their rules.
+  `missed` / fail (the step ran its whole budget unprevented).
+- **A silent `detect` row is written `missed`.** Once its window closes with no
+  matched alert, the silent-row judgement writes `outcome = missed` on complete
+  evidence (a host-scoped, untruncated, lossless credential pull), else `pending` /
+  `EVIDENCE_INCOMPLETE`. `kpi_verdict` is left to the Tier-2 verifier. A later matched
+  alert replaces `missed` with `detected`.
 - **An outcome-less row is awaiting judgement, never `missed`.** One rule,
   `outcome.py::row_status`, names every row's status on every surface (report matrix
   and icons, scorecard, storyline, console): the engine's `outcome` when it decided one;

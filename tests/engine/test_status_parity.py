@@ -68,15 +68,33 @@ PENDING_ROW = {
     "mttd_seconds": None,
 }
 
-# The only shape that is a miss: the engine decided it.
-ENGINE_MISSED_ROW = {
-    "id": 4,
-    "step_id": "step-04",
-    "observed": False,
-    "observed_at": None,
-    "mttd_seconds": None,
-    "outcome": "missed",
-}
+def _engine_judged_silent_detect_row() -> dict:
+    """The only shape that is a miss: the engine decided it (round 3 R7).
+
+    A silent BIOC ``detect`` row, executed 10 min ago, put through the real
+    ``connectors.service._judge_silent_results`` on complete evidence -- the
+    outcome is never hand-set here.
+    """
+    import asyncio
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    from connectors.service import _judge_silent_results
+
+    row = SimpleNamespace(
+        id=4, step_id="step-04", observed=False, observed_at=None, mttd_seconds=None,
+        outcome=None, outcome_reason=None, kpi_verdict=None, expected_outcome="detect",
+        signal_type="BIOC", detection_id="bioc-4", expected_detection="d4",
+        executed_at=datetime.utcnow() - timedelta(minutes=10))
+    run = SimpleNamespace(agent_profile_mode="block", block_mode_status=None,
+                          soakless_attested=None, paired_with_run_id=None)
+    asyncio.run(_judge_silent_results(None, run, [row], {}, window_seconds=60,
+                                      evidence_complete=True))
+    return {k: getattr(row, k) for k in (
+        "id", "step_id", "observed", "observed_at", "mttd_seconds", "outcome")}
+
+
+ENGINE_MISSED_ROW = _engine_judged_silent_detect_row()
 
 SHARED_ROWS = [DETECTED_ROW, REVIEWED_UNFIRED_ROW, PENDING_ROW, ENGINE_MISSED_ROW]
 

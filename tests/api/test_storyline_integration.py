@@ -86,11 +86,19 @@ def seeded_run(session_factory):
                     expected_detection=det,
                     observed=(i == 1),
                     observed_at=datetime.utcnow() - timedelta(minutes=1) if i == 1 else None,
-                    # The engine judged step-02 a miss: only ``outcome`` makes
-                    # a miss (R4) -- an unjudged row reads pending.
-                    outcome="missed" if i == 2 else None,
                     executed_at=datetime.utcnow() - timedelta(minutes=3),
                 ))
+            await db.commit()
+        async with session_factory() as db:
+            # A complete reconcile that matched nothing: the engine's own
+            # silent-row judgement writes the miss (round 3 R7).
+            from connectors.service import _judge_silent_results
+            from sqlalchemy import select as _select
+            run = (await db.execute(_select(Run).where(Run.run_id == "r-1"))).scalar_one()
+            rows = list((await db.execute(
+                _select(Result).where(Result.run_id == "r-1"))).scalars().all())
+            await _judge_silent_results(db, run, rows, {}, window_seconds=60,
+                                        evidence_complete=True)
             await db.commit()
 
     asyncio.run(_seed())

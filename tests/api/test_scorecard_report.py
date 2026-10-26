@@ -74,14 +74,15 @@ def seeded_run(session_factory):
             base = datetime.utcnow() - timedelta(minutes=3)
             # ``mttd_seconds`` is a computed property (observed_at - executed_at),
             # not a settable column — the detected row derives ~90s on its own.
-            # (signal_type, expected, observed, observed_at, outcome) -- the
-            # miss is engine-decided: only ``outcome`` makes a miss (R4).
+            # (signal_type, expected, observed, observed_at, executed_at) -- the
+            # miss is engine-written below (R7); step-03 ran a moment ago, so
+            # its window is still open and it stays pending.
             rows = [
-                ("ABIOC", "passwd read", True, base + timedelta(seconds=90), None),
-                ("BIOC", "shadow read", False, None, "missed"),
-                ("XQL", "creds dumped", False, None, None),
+                ("ABIOC", "passwd read", True, base + timedelta(seconds=90), base),
+                ("BIOC", "shadow read", False, None, base),
+                ("XQL", "creds dumped", False, None, datetime.utcnow()),
             ]
-            for i, (sig, det, obs, obs_at, outcome) in enumerate(rows, start=1):
+            for i, (sig, det, obs, obs_at, executed) in enumerate(rows, start=1):
                 db.add(Result(
                     run_id="r-sc",
                     step_id=f"step-0{i}",
@@ -91,9 +92,19 @@ def seeded_run(session_factory):
                     expected_detection=det,
                     observed=obs,
                     observed_at=obs_at,
-                    outcome=outcome,
-                    executed_at=base,
+                    executed_at=executed,
                 ))
+            await db.commit()
+        async with session_factory() as db:
+            # A complete reconcile that matched nothing: the engine's own
+            # silent-row judgement writes the miss (round 3 R7).
+            from connectors.service import _judge_silent_results
+            from sqlalchemy import select as _select
+            run = (await db.execute(_select(Run).where(Run.run_id == "r-sc"))).scalar_one()
+            rows = list((await db.execute(
+                _select(Result).where(Result.run_id == "r-sc"))).scalars().all())
+            await _judge_silent_results(db, run, rows, {}, window_seconds=60,
+                                        evidence_complete=True)
             await db.commit()
 
     asyncio.run(_seed())
