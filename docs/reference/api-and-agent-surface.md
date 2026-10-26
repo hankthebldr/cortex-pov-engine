@@ -125,15 +125,17 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
-| POST | `/api/run` | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?}` | `{run_id, mode, message, download_url?}`; 400 `INVALID_MODE`; 422 `LAUNCH_FAILED` |
+| POST | `/api/run` | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?}`; 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
+| POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List all runs (newest first) | — | `{"runs":[<run.to_dict()>],"total":N}` |
-| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>`; 404 `RUN_NOT_FOUND` |
+| GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
+| GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}}`; 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
 | GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used}`; 404 |
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
 | POST | `/api/runs/{run_id}/output` | Agent streams output (append) | `OutputRequest`: `{output}` | `{"status":"ok","run_id"}`; 404 |
-| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary}` | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: `{"status":<terminal>,"run_id","already_terminal":true}`; 404 `RUN_NOT_FOUND` |
+| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: `{"status":<terminal>,"run_id","already_terminal":true}`; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification against a registered XSIAM tenant (outbound XQL) | query: `force=0\|1` | `{run_id, tc_verdict, reverified, tenant, queries_issued, reason?}`; 200 + `pending` + `reason:"no_tenant_integration"` when no credential; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/abort` | Operator-initiated abort | — | `{"status":"aborted"\|<terminal>,"run_id","was_terminal"}`; 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
@@ -169,6 +171,134 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   returns `abort=true` when the run is in the orchestrator's aborted set, has
   reached any terminal status, or has vanished (DB reset) — so the agent halts
   rather than spinning.
+
+#### 1.3.1 Prevention-efficacy wire contract
+
+A `prevent` expectation is credited only when **two independent witnesses agree**:
+the tenant alert says *Prevented* and the host says the step's process was killed.
+Neither alone is enough. This section is the wire contract for the host witness, the
+launch attestation, the pair and the canary. The vocabularies live in
+`core/engine/outcome.py` and are copied here from its constants.
+
+**Host evidence — `POST /api/runs/{run_id}/complete` `steps[]`.** One record per step
+(`agent/beacon/step_outcome.go::StepOutcome`; server model `StepOutcomeIn` in
+`core/api/runs.py`):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `step_id` | string | Scenario step id (e.g. `step-02`) |
+| `exit_code` | int or null | `null` when the step never produced one (anchor death, `not_run`) — never a misleading `0` |
+| `termination` | string | One of the termination vocabulary below |
+| `signal` | int, optional | Signal number when `termination` is `signaled` |
+| `reason` | string, optional | Required on `not_run`; otherwise omitted |
+
+- **Termination vocabulary** (`TERMINATIONS`): `exited`, `signaled`,
+  `anchor_terminated`, `beacon_lost`, `timeout`, `aborted`, `not_run`. The beacon emits
+  every value except `beacon_lost`, which is synthesised server-side (below).
+- **Host witness** (`HOST_WITNESS`): `signaled` and `anchor_terminated` only. Only
+  these can satisfy the host half of the two-witness rule.
+- **`reason` vocabulary on a step record**: `UPSTREAM_SEVERED`, `UPSTREAM_NOT_EXECUTED`,
+  `UPSTREAM_FAILED`, `TOOL_ABSENT`. An out-of-vocabulary `termination` or `reason`, or a
+  `not_run` without a `reason`, is rejected 422 — never tolerated.
+- **Idempotent and non-downgrading.** A duplicate `/complete` upserts the same rows. A
+  `signaled` / `anchor_terminated` / `beacon_lost` row already on file is never replaced
+  by a non-witness termination reported by another endpoint of a fan-out; a witness may
+  replace anything. `started_at` is set by the first `/output` for a step
+  (`OutputRequest.step_id`) and is not touched by `/complete`.
+- **Status rule.** A non-zero `exit_code` fails the run — except when the host witnessed a
+  sever on a step carrying a `prevent` expectation in a `block`-mode run: then the kill is
+  the expected result and the run is not `failed`. The severed step is stored on
+  `Run.severed_at_step` (first writer wins).
+- **Old beacons.** An absent `steps[]` writes no `step_outcomes` rows and leaves the
+  status rule unchanged.
+
+**Result outcomes** (`OUTCOMES`): `prevented`, `detected`, `missed`, `pending`,
+`not_reached`, `not_executed`. `not_reached` (an upstream step was severed or failed) and
+`not_executed` (the step never ran) are excluded from the efficacy denominator
+(`EXCLUDED_FROM_DENOMINATOR`), as are soak-pending rows (`ANALYTICS_ACTIVATION_PERIOD`,
+`DEDUP_WINDOW`). In `report` or `unknown` mode a `prevent` expectation is scored as a
+detect and is never graded as prevention. Reason codes live in `outcome.py` (for example
+`PREVENTION_ALERT_WITHOUT_TERMINATION`, `PREVENTION_UNCONFIRMED_NO_ALERT`,
+`PREVENTION_UNCONFIRMED_BEACON_LOST`, `DETECTED_NOT_PREVENTED`, `BLOCK_MODE_UNCONFIRMED`,
+`ATTESTATION_CONTRADICTED`, `UPSTREAM_SEVERED`, `TOOL_ABSENT`, `EVIDENCE_INCOMPLETE`).
+
+**`GET /api/runs/{run_id}` carries `step_outcomes[]`** — `[{step_id, termination, signal,
+rc, reason, started_at, recorded_at}]` in scenario step order (rows for steps the
+scenario no longer lists go last), an empty list when there are none, projected
+read-only from the `step_outcomes` rows (`core/api/runs.py::_step_outcomes_view`). A row
+with `termination: null` means the step's output arrived but its end was never reported
+(the beacon died before `/complete`); consumers must not read it as `exited`.
+
+**Required-binary preflight (`required_binaries`).** For each step whose command
+substitutes an adapter placeholder, the orchestrator writes the pack's `install.binary`
+into that step's `required_binaries` (`engine.orchestrator._resolve_adapter_placeholders_with_binaries`;
+written only when non-empty). Before running step *i* the beacon checks every listed
+binary with `exec.LookPath` (skipped on Windows). On a miss it:
+
+1. POSTs an `/output` line prefixed `!! TOOL_ABSENT: <binary>`;
+2. records the step `not_run` / `TOOL_ABSENT` and every later step `not_run` /
+   `UPSTREAM_NOT_EXECUTED`;
+3. completes the run with **exit code `127`** and a summary ending
+   `| TOOL_ABSENT: <binary> at <step_id> — step not run`.
+
+The Results for those steps read `not_executed`, not `missed`. A resolved pack with no
+`install.binary` is not checked and logs `TOOL_PRESENCE_UNCHECKED` server-side. A related
+marker: when the executor reports a termination the beacon does not recognise it records
+the step `exited`, writes `!! TERMINATION_UNKNOWN: <termination> signal=<n>` to `/output`
+and appends `| TERMINATION_UNKNOWN: <step_id>` to the `/complete` summary — an
+unrecognised value never reads as a clean exit.
+
+**Beacon-lost terminalisation** (`core/engine/beacon_lost.py`). A Cortex XDR agent that is
+not in BAS mode may kill the beacon, so `/complete` never arrives. The heartbeat sweep
+(`core/api/agents.py::sweep_agents_once`) calls `terminalise_lost_runs` for every agent
+with `last_seen is None` or `now - last_seen >= CORTEXSIM_BEACON_LOST_AFTER_SECONDS`
+(default 180). The console's online / stale / offline label (30 s / 300 s) is display only
+and does not gate the sweep. `pick_severed` attributes the loss: a step the host already
+terminated (`signaled` / `anchor_terminated`) if one is on record; otherwise the **first**
+scenario step with no `step_outcomes` row (`/output` writes a row only after a step ends);
+if every step has a row, the last step, its witnessed termination standing. The severed
+step reads `beacon_lost`, later steps `not_run` / `UPSTREAM_SEVERED`, and a `prevent`
+expectation on the severed step is `pending` / `PREVENTION_UNCONFIRMED_BEACON_LOST` — it
+can never read `prevented`.
+
+**Launch attestation (`LaunchRequest`).** Operator-declared and persisted verbatim on the
+Run; the engine never touches the agent profile.
+
+| Field | Meaning |
+|---|---|
+| `agent_profile_mode` | `report`, `block` or `unknown` (default `unknown`); anything else is a 422 |
+| `bas_mode_attested` | Operator attests the Cortex agent is in BAS mode (only the simulation is terminated) |
+| `soakless_attested` | Operator attests the Analytics activation period has elapsed; without it Analytics / ABIOC rows stay `pending` / `ANALYTICS_ACTIVATION_PERIOD` |
+| `attested_by` | Who made the attestation. `attested_at` is stamped server-side (naive UTC) when `agent_profile_mode` is not `unknown` or any attestation field is sent |
+| `paired_with_run_id` | Links this launch (the block-mode run) to its completed report-mode run |
+| `canary_run_id` | The canary run offered as evidence the profile really blocks |
+
+**The pair — `GET /api/runs/{run_id}/pair`.** A POV runs one scenario twice on one
+endpoint, first in `report` mode, then in `block` mode, and the second launch names the
+first via `paired_with_run_id`. `engine.pairing.validate_pair` refuses the launch with
+**409 `PAIR_INVALID`** (nothing is seeded) when the scenarios differ, the targets differ,
+either mode is not `report` / `block`, the two modes are equal, the first run is not
+terminal (`complete` or `failed`, with `completed_at`), or the first run is already paired.
+`/pair` works from either run (forward via `paired_with_run_id`, else the newest run
+pointing at it) and returns the two runs plus a delta joined per
+`(step_id, detection_id)`; a detection present on one side only appears with the other side
+`null`. 409 `RUN_NOT_PAIRED` when no partner exists.
+
+**The canary — `POST /api/runs/canary`.** Launches the benign built-in trigger named by
+`CORTEXSIM_CANARY_SCENARIO_LINUX` as a pull run with `agent_profile_mode: "block"`. Empty
+(the default) returns 409 `CANARY_NOT_AVAILABLE` and block mode stays attested-only. A
+launch that passes `canary_run_id` is validated (**409 `CANARY_INVALID`**: unknown run, not
+the configured canary scenario, a different target, aborted, or not finished) and stamps
+`Run.block_mode_status`: `block_mode_confirmed` only when the canary has a `prevented`
+Result, else `block_mode_unconfirmed`. A host witness alone never confirms the profile, so
+reconcile the canary before launching the block run. While the profile is unconfirmed, a
+`fail` verdict on a `prevent` expectation is held at `pending` / `BLOCK_MODE_UNCONFIRMED`
+rather than charged to the product.
+
+> **`tenant-verified` for prevention is 0.** Nothing above has been executed against a
+> live tenant: the three host witnesses are proven against a branch SimCore (§5.6) and the
+> rest by injected transports. Tier-D has no Cortex agent, so no run there reads
+> `prevented`.
 
 ### 1.4 Results (`core/api/results.py`, prefix `/results`)
 
@@ -968,8 +1098,11 @@ ctx cancelled → return (clean exit)
   - `su` → `su -s /bin/bash <user> -c '<cmd>'`
   - unknown mode → error
 - `executor.RunCommand` runs `sh -c <wrapped>`, captures stdout/stderr separately.
-  Non-zero exit is **not** a Go error (returned as exitCode); only exec-launch
-  failures (binary missing) return `err` with exitCode `-1`.
+  Non-zero exit is **not** a Go error (returned as exitCode). A missing binary inside
+  the command is the shell's `127`, not `-1`: `-1` is returned (with `err`) only when
+  `sh` itself cannot be started or the wait fails with a non-exit error. A step that declares `required_binaries` is
+  preflighted before it runs — a missing binary yields the `!! TOOL_ABSENT:` marker, a
+  `not_run` / `TOOL_ABSENT` step record and a run completed with `127` (§1.3.1).
 - **Output streaming is real, per-step** (GAP-AGENT-004, closed 2026-06-08). The
   beacon now iterates `task.Steps[]` sequentially and POSTs each step's output to
   `/output` as it completes (one `/output` POST per step), so the SSE stream and the
@@ -981,10 +1114,11 @@ ctx cancelled → return (clean exit)
 
 ### 5.4 Report
 - `POST /api/runs/{run_id}/output` with combined `=== STDOUT === / === STDERR ===`.
-- `POST /api/runs/{run_id}/complete` with `{exit_code, summary}` where summary is
-  `SUCCESS|FAILED (exit N) | scenario=... mode=... duration=...`.
-- On ctx-cancel mid-execution: `Complete(runID, -1, "agent shutdown — task
-  interrupted")` then return.
+- `POST /api/runs/{run_id}/complete` with `{exit_code, summary, steps[]}` where summary is
+  `SUCCESS|FAILED (exit N) | scenario=... mode=... duration=...` and `steps[]` is the
+  per-step host evidence (§1.3.1).
+- On ctx-cancel mid-execution: `Complete(runID, abortExitCode, "agent shutdown — task
+  interrupted", steps)` (exit 130) then return.
 - **Server-driven abort** (GAP-API-001, closed 2026-06-08): the beacon polls
   `GET /api/runs/{run_id}/control` (a) once before each step and (b) every
   `controlPollInterval` (2s) while a step runs. On `abort=true` it terminates the
@@ -996,6 +1130,43 @@ ctx cancelled → return (clean exit)
 - `DELETE /api/agents/{agent_id}` removes the registry row (Targets UI prune).
   Does not affect run history. The running beacon process is unaffected — it will
   keep polling and 404, re-creating nothing (it never re-registers in-loop).
+
+### 5.6 Tier-D host-termination witnesses
+
+`deploy/tier-d/run-tier-d.sh` drives the pull path end to end against a container target.
+With `--inject-kill subshell|anchor|beacon --at-step <id>` it plays the Cortex agent and
+kills one process of the beacon's tree during that step, so each host witness in §1.3.1 is
+exercised for real. The launch declares `agent_profile_mode=block`.
+
+| Mode | What is killed | Expected record |
+|---|---|---|
+| `subshell` | the step's subshell | step `signaled` |
+| `anchor` | the anchor shell (scenario needs `cgo_anchor` or step `causality`) | step `anchor_terminated` |
+| `beacon` | the beacon itself | no `/complete`; the heartbeat sweep terminalises the run `beacon_lost` once the agent has been silent for `CORTEXSIM_BEACON_LOST_AFTER_SECONDS` plus up to one 30 s sweep |
+
+- **Anchor exit is noticed directly** (`agent/executor/chained.go`): the chain session
+  waits on the anchor pid and, on exit, reaps the orphaned step's process group, so
+  `anchor_terminated` is reported within seconds rather than on pipe EOF. The beacon's own
+  cleanup is never recorded as `signaled`. Otherwise the latency ceiling is the 180 s step
+  timeout.
+- **Injector** (`deploy/tier-d/inject-kill.sh`): waits for the target step to fork, refuses
+  an ambiguous victim (exit 3), and times out at 120 s. Status words: `KILLED`, `TIMEOUT`,
+  `MISSED` (the step finished before it could be hit).
+- **Harness exits:** `0` genuine PASS, `1` FAIL or INCONCLUSIVE, `2` could not set up,
+  `3` the run did not reach a terminal state inside the poll budget, `4` an injection was
+  requested but not delivered (TIMEOUT or MISSED). `verdict.json` is still written on 4.
+- **Environment:** `TIER_D_BEACON_LOST_AFTER_SECONDS` must equal the value SimCore was
+  started with for `CORTEXSIM_BEACON_LOST_AFTER_SECONDS`.
+- **Classification** (`deploy/tier-d/classify.py`) fails closed when `step_outcomes` is
+  absent from the run. A `beacon_lost` step is classed `UNWITNESSED` and never feeds the
+  TTP count.
+- **Fixture:** `tests/fixtures/scenarios/sim-test-prev-001.yml` (card `TTP-2026-9901`),
+  outside the corpus loader.
+
+Measured live against a branch SimCore on the authoring host: subshell 12.5 s, anchor
+12.2 s, beacon 54.6 s. This proves the **host witness only**. Tier-D has no Cortex agent
+and no tenant alert, so **no run reads `prevented`**, and `tenant-verified` for prevention
+stays 0.
 
 ---
 
