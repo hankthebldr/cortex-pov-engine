@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -178,5 +179,11 @@ func TestChainSession_AnchorDiesMidStep(t *testing.T) {
 	}
 	if rc == 0 {
 		t.Fatalf("anchor died mid-step: rc=%d, want non-zero", rc)
+	}
+	if rc != -1 {
+		t.Fatalf("anchor died mid-step: rc=%d, want -1", rc)
+	}
+	if !errors.Is(err, ErrAnchorTerminated) {
+		t.Fatalf("want ErrAnchorTerminated, got %v", err)
 	}
 }

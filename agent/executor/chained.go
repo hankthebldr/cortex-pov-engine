@@ -18,6 +18,7 @@ package executor
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,11 @@ import (
 	"sync"
 	"sync/atomic"
 )
+
+// ErrAnchorTerminated is returned (wrapped) by RunStep, with rc == -1, when the
+// chain's anchor shell died before emitting a step's exit-code sentinel: the
+// step's outcome is unknown. Callers match it with errors.Is.
+var ErrAnchorTerminated = errors.New("chain anchor shell terminated")
 
 // ChainSession is a persistent anchor shell that runs steps as its children.
 // Not safe for concurrent RunStep calls — steps are sequential by design.
@@ -216,7 +222,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 		// eliminate. Surface it as an execution error with a non-zero exit so
 		// executeTaskChained fails the run instead of recording a passing step.
 		return outB.String(), errB.String(), -1,
-			fmt.Errorf("chain anchor shell terminated before step completed — step result unknown")
+			fmt.Errorf("%w before step completed — step result unknown", ErrAnchorTerminated)
 	}
 	return outB.String(), errB.String(), rc, nil
 }
