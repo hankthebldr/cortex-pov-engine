@@ -358,8 +358,10 @@ get it.
 - `validate` with `observed=true` stamps `observed_at = utcnow()` (enables MTTD =
   `observed_at - executed_at`); `observed=false` clears `observed_at`.
 - `validate` is an operator **attestation** and writes `outcome`: `observed=true` on a
-  row whose outcome is none / `pending` / `missed` sets `detected`; `observed=false` on
-  none / `pending` / `missed` / `detected` sets `missed`. It is refused with **409
+  row whose outcome is none / `pending` / `missed` sets `detected`; `observed=false`
+  **retracts** the attestation only — it clears `observed` / `observed_at`, reverts a
+  `detected` the attestation wrote (no matched-alert `Observation`) to none, leaves an
+  engine-written outcome alone, and never writes `missed`. It is refused with **409
   `RESULT_STEP_NOT_RUN`** on `not_reached` / `not_executed` (no attestation for a step
   that never ran) and **409 `RESULT_PREVENTED`** on `prevented` (an attestation never
   downgrades a two-witness verdict); re-asserting `observed=true` on an observed

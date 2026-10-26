@@ -108,13 +108,46 @@ def test_saving_a_note_on_a_prevented_row_is_not_an_attestation(client, session_
     assert (row.outcome, row.observed, row.notes) == ("prevented", True, "BTP")
 
 
-@pytest.mark.parametrize("outcome", [None, "pending", "detected"])
-def test_mark_missed_is_a_visible_attested_miss(client, session_factory, outcome):
-    rid = _seed(session_factory, outcome=outcome, observed=outcome == "detected")
+# ── Round 3 R5b — observed=false only retracts an operator attestation ────
+
+def _add_observation(session_factory, rid):
+    """The provenance an engine match leaves: an Observation row for the result."""
+    from models import Observation
+
+    async def _go():
+        async with session_factory() as db:
+            db.add(Observation(run_id="att-run", result_id=rid, source="xsiam",
+                               external_id="alert-1", name="matched alert"))
+            await db.commit()
+    asyncio.run(_go())
+
+
+def test_retracting_an_engine_detection_keeps_the_engine_outcome(client, session_factory):
+    rid = _seed(session_factory, outcome="detected", observed=True)
+    _add_observation(session_factory, rid)
     r = client.put(f"/api/results/{rid}/validate", json={"observed": False})
     assert r.status_code == 200, r.text
     assert (r.json()["outcome"], r.json()["observed"], r.json()["observed_at"]) == (
-        "missed", False, None)
+        "detected", False, None)
+
+
+def test_retracting_an_attestation_reverts_it_to_unjudged(client, session_factory):
+    rid = _seed(session_factory, outcome="pending", reason="EVIDENCE_INCOMPLETE")
+    client.put(f"/api/results/{rid}/validate", json={"observed": True})
+    r = client.put(f"/api/results/{rid}/validate", json={"observed": False})
+    assert r.status_code == 200, r.text
+    assert (r.json()["outcome"], r.json()["outcome_reason"], r.json()["observed"],
+            r.json()["observed_at"]) == (None, None, False, None)
+
+
+@pytest.mark.parametrize("outcome,reason", [
+    ("missed", None), ("pending", "EVIDENCE_INCOMPLETE"), (None, None)])
+def test_a_retraction_never_writes_missed_or_moves_an_engine_outcome(
+        client, session_factory, outcome, reason):
+    rid = _seed(session_factory, outcome=outcome, reason=reason)
+    r = client.put(f"/api/results/{rid}/validate", json={"observed": False})
+    assert r.status_code == 200, r.text
+    assert (r.json()["outcome"], r.json()["outcome_reason"]) == (outcome, reason)
 
 
 def test_attested_row_counts_once_and_renders_detected(client, session_factory):

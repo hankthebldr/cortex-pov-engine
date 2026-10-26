@@ -24,7 +24,6 @@ from database import get_db
 from engine.outcome import (
     EXCLUDED_FROM_DENOMINATOR,
     OUTCOME_DETECTED,
-    OUTCOME_MISSED,
     OUTCOME_PREVENTED,
     is_hit,
 )
@@ -150,6 +149,16 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
+async def _has_engine_evidence(db: AsyncSession, result: Result) -> bool:
+    """Did a reconcile match an alert to this row? ``apply_verdicts`` records
+    one ``Observation`` per (result, alert); an attestation records none."""
+    from models import Observation  # noqa: PLC0415
+
+    hit = await db.execute(select(Observation.id).where(
+        Observation.result_id == result.id).limit(1))
+    return hit.first() is not None
+
+
 @router.put("/{result_id}/validate")
 async def validate_result(
     result_id: int,
@@ -165,8 +174,10 @@ async def validate_result(
       stays what the storyline already reads: ``observed_at`` with no matched
       alert. A not-yet-observed row gets ``observed_at = now`` (MTTD); an
       already-observed row keeps its ``observed_at``.
-    * ``observed=false`` on None / ``pending`` / ``missed`` / ``detected``
-      sets ``outcome = missed`` and clears ``observed_at`` -- an attested miss.
+    * ``observed=false`` RETRACTS the attestation: clears ``observed`` and
+      ``observed_at``; a ``detected`` the attestation wrote (no matched-alert
+      ``Observation``) reverts to None; an engine-written outcome stands. A
+      retraction never writes ``missed``.
     * ``not_reached`` / ``not_executed``: 409 ``RESULT_STEP_NOT_RUN`` -- no
       attestation for a step that never ran.
     * ``prevented``: 409 ``RESULT_PREVENTED`` -- an attestation never
@@ -216,9 +227,15 @@ async def validate_result(
             result.outcome = OUTCOME_DETECTED
             result.outcome_reason = None
     else:
+        # A retraction (round 3 R5b): it withdraws the operator's attestation
+        # and nothing else. A `detected` with no matched-alert Observation was
+        # written BY an attestation -> back to unjudged (the next reconcile
+        # re-judges). An engine-written outcome (an alert matched, or R7's miss)
+        # stands. A retraction never writes `missed`.
+        if result.outcome == OUTCOME_DETECTED and not await _has_engine_evidence(db, result):
+            result.outcome = None
+            result.outcome_reason = None
         result.observed_at = None
-        result.outcome = OUTCOME_MISSED
-        result.outcome_reason = None
 
     if body.notes is not None:
         result.notes = body.notes
