@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import DetectionTypeChip, { detectionTypeToken } from './DetectionTypeChip.jsx'
-import { resultStatus, outcomeMeta, outcomeClass } from '../../outcomes.js'
+import { resultStatus, statusLabel as labelFor, outcomeClass } from '../../outcomes.js'
 
 /**
  * DetectionDrawer — operator drill-down for a single scorecard row.
@@ -40,7 +40,7 @@ export default function DetectionDrawer({
   // Outcome first (outcomes.js::resultStatus): a not_reached row is never Missed.
   const statusKey = row.status ?? resultStatus(row)
   const status = outcomeClass(statusKey)
-  const statusLabel = outcomeMeta(statusKey).label
+  const statusLabel = labelFor(statusKey, row)
 
   const handleCopyAlertId = () => {
     if (!row.alertId) return

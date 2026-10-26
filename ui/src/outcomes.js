@@ -34,10 +34,15 @@ export const DETECTED_NOT_PREVENTED = 'DETECTED_NOT_PREVENTED'
  * The server's `outcome` wins whenever it is present: `_seed_results` writes
  * `observed=false` on every row, so reading `observed` alone renders a step
  * that never ran (`not_reached`) or a detector still soaking as ❌ Missed.
- * Only when `outcome` is null/undefined does the legacy mapping apply —
- * `legacyStatus` when the caller already holds a server-decided one (the
- * storyline's `status`), else `observed` true/false/null → detected/missed/
- * pending. An unrecognised outcome raises: it must never read as benign.
+ *
+ * A row with NO outcome is awaiting judgement (residual R4): `observed=false`
+ * is the seed value, not a verdict, so it is `pending` ("Awaiting reconcile",
+ * see `statusLabel`) — never `missed`. `observed === true` with no outcome is
+ * a manual validation (incl. pre-branch runs) → `detected`. `legacyStatus` is
+ * a server-decided status the caller already holds (the storyline's
+ * `status`); it is honoured except that an outcome-less `missed` is the same
+ * checkbox inference and reads `pending`. Only `outcome === 'missed'` is a
+ * miss. An unrecognised outcome raises: it must never read as benign.
  */
 export function resultStatus(result, legacyStatus) {
   const r = result || {}
@@ -51,10 +56,26 @@ export function resultStatus(result, legacyStatus) {
     }
     return outcome
   }
-  if (legacyStatus !== undefined) return legacyStatus
+  if (legacyStatus !== undefined) {
+    return outcomeKey(legacyStatus) === 'missed' ? 'pending' : legacyStatus
+  }
   if (r.observed === true) return 'detected'
-  if (r.observed === false) return 'missed'
   return 'pending'
+}
+
+/** The label for a row with no outcome yet: unjudged, not a gap. */
+export const AWAITING_RECONCILE = 'Awaiting reconcile'
+
+/** True when nothing has judged this row: no outcome and no validation. */
+export function isAwaitingReconcile(status, row) {
+  return outcomeKey(status) === 'pending' && !!row && row.outcome == null
+}
+
+/** The rendered label for a status on a row: `outcomeMeta`, except an
+ *  outcome-less pending row reads "Awaiting reconcile" (no reason token). */
+export function statusLabel(status, row) {
+  if (isAwaitingReconcile(status, row)) return AWAITING_RECONCILE
+  return outcomeMeta(status).label
 }
 
 /** Every status Cortex saw (a coverage hit) — the prevention verdict aside. */

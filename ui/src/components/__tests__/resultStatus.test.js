@@ -1,6 +1,6 @@
 /** resultStatus — the one place a Result row becomes a rendered status (C1). */
 import { describe, it, expect } from 'vitest'
-import { resultStatus, isHitStatus, OUTCOME_META } from '../../outcomes.js'
+import { resultStatus, isHitStatus, OUTCOME_META, statusLabel } from '../../outcomes.js'
 
 describe('resultStatus', () => {
   it('prefers the server outcome over the legacy observed flag', () => {
@@ -20,9 +20,22 @@ describe('resultStatus', () => {
 
   it('falls back to the legacy observed mapping only when outcome is absent', () => {
     expect(resultStatus({ outcome: null, observed: true })).toBe('detected')
-    expect(resultStatus({ outcome: null, observed: false })).toBe('missed')
     expect(resultStatus({ observed: null })).toBe('pending')
     expect(resultStatus({ outcome: null }, 'pending')).toBe('pending')
+  })
+
+  it('R4: an outcome-less unvalidated row is awaiting judgement, never missed', () => {
+    // `observed=false` is what _seed_results writes on every row: it says
+    // nobody has judged this row, not that Cortex missed it.
+    expect(resultStatus({ outcome: null, observed: false })).toBe('pending')
+    expect(resultStatus({ observed: false })).toBe('pending')
+    // A legacy server status of `missed` without an outcome is the same
+    // inference made server-side; only `outcome === 'missed'` is a miss.
+    expect(resultStatus({ outcome: null }, 'missed')).toBe('pending')
+    expect(resultStatus({ outcome: 'missed', observed: false })).toBe('missed')
+    expect(statusLabel('pending', { outcome: null, observed: false })).toBe('Awaiting reconcile')
+    expect(statusLabel('pending', { outcome: 'pending', outcome_reason: 'DEDUP_WINDOW' })).toBe('Pending')
+    expect(statusLabel('missed', { outcome: 'missed' })).toBe('Missed')
   })
 
   it('raises on an unrecognised outcome rather than reading it as benign', () => {

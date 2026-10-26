@@ -45,7 +45,8 @@ const RAW = {
         entry('s2', 1, 'not_reached', { outcome: 'not_reached', outcome_reason: 'chain severed at s1' }),
         entry('s2', 1, 'not_executed', { outcome: 'not_executed' }),
         entry('s2', 1, 'pending', { outcome: 'pending', outcome_reason: 'no alert window elapsed' }),
-        entry('s2', 1, 'missed', {}),
+        // An engine-decided miss: only `outcome === 'missed'` is a gap (R4).
+        entry('s2', 1, 'missed', { outcome: 'missed' }),
       ] },
     ],
     summary: {

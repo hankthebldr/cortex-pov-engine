@@ -21,7 +21,7 @@ import RunDetailView from '../console/RunDetailView.jsx'
 void React
 
 /** Builder output for a 2-detection run, parameterised by run outcome. */
-function storylineFor(runStatus) {
+function storylineFor(runStatus, outcome = null) {
   return {
     detection_storyline: {
       run_id: '4ee09860-140d-4078-bd20-5179f5dbf7af',
@@ -34,7 +34,7 @@ function storylineFor(runStatus) {
         mitre_technique: 'T1003.007',
         detections: [
           {
-            step_id: 's1', step_index: 0, status: 'missed', mttd_seconds: null,
+            step_id: 's1', step_index: 0, status: 'missed', outcome, mttd_seconds: null,
             expected_detection: {
               type: 'BIOC', plane: 'EDR',
               description: 'Credential extraction tool downloaded and executed',
@@ -43,7 +43,7 @@ function storylineFor(runStatus) {
             observed: null, evidence_refs: [],
           },
           {
-            step_id: 's1', step_index: 0, status: 'missed', mttd_seconds: null,
+            step_id: 's1', step_index: 0, status: 'missed', outcome, mttd_seconds: null,
             expected_detection: {
               type: 'XQL', plane: 'EDR',
               description: 'curl-to-bash pattern with /proc memory access',
@@ -58,9 +58,9 @@ function storylineFor(runStatus) {
   }
 }
 
-function mockStoryline(runStatus) {
+function mockStoryline(runStatus, outcome = null) {
   globalThis.fetch = vi.fn(async () => new Response(
-    JSON.stringify(storylineFor(runStatus)),
+    JSON.stringify(storylineFor(runStatus, outcome)),
     { status: 200, headers: { 'content-type': 'application/json' } },
   ))
 }
@@ -131,7 +131,9 @@ describe('<DetectionStoryline /> on a completed run', () => {
   afterEach(() => { vi.restoreAllMocks() })
 
   it('still reports a real detection gap as a gap', async () => {
-    mockStoryline('complete')
+    // An engine-decided miss (`outcome: 'missed'`). An outcome-less row on a
+    // complete run is awaiting reconcile, never a gap (residual R4).
+    mockStoryline('complete', 'missed')
     render(<DetectionStoryline runId="4ee09860" pollIntervalMs={100000} />)
     await screen.findByText(/Credential extraction tool/)
 

@@ -7,7 +7,7 @@ import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
-import { outcomeMeta, outcomeClass } from '../../outcomes.js'
+import { statusLabel as labelFor, outcomeClass } from '../../outcomes.js'
 
 /**
  * EvidenceView — the Evidence tab.
@@ -323,7 +323,7 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
 function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
   // The status the server's outcome axis says (outcomes.js::resultStatus).
   const status = outcomeClass(row.status)
-  const statusLabel = outcomeMeta(row.status).label
+  const statusLabel = labelFor(row.status, row)
 
   // Inline-button clicks shouldn't propagate to the row click (avoid
   // double-firing validate + selecting the row at the same time).

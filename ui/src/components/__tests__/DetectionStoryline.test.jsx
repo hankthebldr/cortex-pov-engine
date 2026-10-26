@@ -77,6 +77,9 @@ const STORYLINE_RAW = {
             },
             observed: null,
             status: 'pending',
+            // An engine-held pending: the live "awaiting detection" state. An
+            // outcome-less row reads "Awaiting reconcile" instead (R4).
+            outcome: 'pending',
             mttd_seconds: null,
             evidence_refs: [],
             result_id: 2,

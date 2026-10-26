@@ -158,3 +158,92 @@ describe('DetectionStoryline renders a block-mode detected-not-prevented as a fa
     expect(pill).toMatch(/Detected, not prevented/)
   })
 })
+
+// ─── Residual R4: an unjudged row renders as awaiting reconcile ─────────────
+// The live run a04023ce…: step-01's detect row was seeded at launch and never
+// reconciled (`outcome` null, `observed` false). Chromium showed ❌ MISSED on
+// the Evidence tab and "No alert reconciled — detection gap" on the Storyline.
+describe('R4: an outcome-less unvalidated row is awaiting reconcile, never missed', () => {
+  const UNJUDGED = ROW(7, 'step-07', null, null, false)
+  const R4_PAYLOAD = {
+    run_id: 'run-r4', results: [UNJUDGED], total: 1,
+    coverage: { observed: 0, total: 1, denominator: 1, observed_in_denominator: 0, prevented: 0,
+      excluded: { not_reached: 0, not_executed: 0, soak_pending: 0 }, pct: 0.0, by_type: {} },
+  }
+
+  it('Evidence: the row reads "Awaiting reconcile", not "Missed"', async () => {
+    installRoutes({ 'GET /api/results/run-r4': R4_PAYLOAD })
+    const { container } = render(
+      <EvidenceView lastRun={{ runId: 'run-r4', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
+    await waitFor(() => expect(screen.getByText('det-null')).toBeInTheDocument())
+    expect(statusOf(container, 'det-null')).not.toMatch(/Missed/)
+    expect(statusOf(container, 'det-null')).toMatch(/Awaiting reconcile/)
+    expect(container.querySelector('.scorecard__row').getAttribute('data-status')).toBe('pending')
+  })
+
+  it('DetectionDrawer: "Awaiting reconcile", not "Missed"', () => {
+    const row = { id: 7, tid: 'T1007', plane: 'EDR', detectionType: 'BIOC', alert: 'x',
+      observed: false, outcome: null, outcome_reason: null, notes: '' }
+    render(<DetectionDrawer row={row} open onClose={() => {}} />)
+    const status = document.querySelector('.detection-drawer__status-row .scorecard__status')
+    expect(status.textContent).not.toMatch(/Missed/)
+    expect(status.textContent).toMatch(/Awaiting reconcile/)
+  })
+
+  it('timeline: the detection is a pending frame, not a missed one', async () => {
+    installRoutes({
+      'GET /api/scenarios/SIM-R4': {
+        scenario_id: 'SIM-R4',
+        steps: [{ id: 'step-07', name: 'step-07',
+          expected_detections: [{ plane: 'EDR', type: 'BIOC', description: 'det-null' }] }],
+      },
+      'GET /api/runs/run-r4': { run_id: 'run-r4', status: 'complete' },
+      'GET /api/results/run-r4': R4_PAYLOAD,
+    })
+    const { result } = renderHook(() => useTimelineData('SIM-R4', 'run-r4'))
+    await waitFor(() => expect(result.current.frames.length).toBe(1))
+    expect(result.current.frames[0].detections[0].status).toBe('pending')
+    const { container } = render(<NarrativeTimeline frames={result.current.frames} stitches={NO_STITCHES} />)
+    expect(container.querySelectorAll('.tl-det--missed')).toHaveLength(0)
+    expect(container.querySelectorAll('.tl-det--pending')).toHaveLength(1)
+  })
+
+  it('Storyline: no "detection gap" copy and no ❌ for an outcome-less entry', async () => {
+    // The status a pre-fix server sends for that row on a complete run.
+    const raw = { detection_storyline: {
+      run_id: 'run-r4', scenario_id: 'SIM-R4', run_status: 'complete',
+      steps: [{ step_id: 's1', step_index: 0, step_name: 'one', detections: [{
+        step_id: 's1', step_index: 0, status: 'missed', outcome: null,
+        outcome_reason: null, mttd_seconds: null, evidence_refs: [],
+        expected_detection: { type: 'BIOC', plane: 'EDR', description: 'unjudged' },
+        observed: null,
+      }] }],
+      summary: { total: 1, detected: 0, prevented: 0, denominator: 1, coverage_pct: 0, mttd: { count: 0 } },
+    } }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => raw })))
+    render(<DetectionStoryline runId="run-r4" />)
+    await screen.findByText('Detection Storyline')
+    const det = document.querySelector('[data-testid="storyline-detection"]')
+    expect(det.textContent).not.toMatch(/detection gap/)
+    expect(det.textContent).toMatch(/Awaiting reconcile/)
+    const pill = document.querySelector('.storyline-pill').textContent
+    expect(pill).not.toMatch(/❌|Missed/)
+  })
+
+  it('Storyline: an engine-decided miss keeps its gap copy', async () => {
+    const raw = { detection_storyline: {
+      run_id: 'run-r4', scenario_id: 'SIM-R4', run_status: 'complete',
+      steps: [{ step_id: 's1', step_index: 0, step_name: 'one', detections: [{
+        step_id: 's1', step_index: 0, status: 'missed', outcome: 'missed',
+        outcome_reason: null, mttd_seconds: null, evidence_refs: [],
+        expected_detection: { type: 'BIOC', plane: 'EDR', description: 'gap' },
+        observed: null,
+      }] }],
+      summary: { total: 1, detected: 0, prevented: 0, denominator: 1, coverage_pct: 0, mttd: { count: 0 } },
+    } }
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, statusText: 'OK', json: async () => raw })))
+    render(<DetectionStoryline runId="run-r4" />)
+    await screen.findByText('Detection Storyline')
+    expect(document.querySelector('[data-testid="storyline-detection"]').textContent).toMatch(/detection gap/)
+  })
+})

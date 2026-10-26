@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
 import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
-import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus } from '../outcomes.js'
+import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus, statusLabel, isAwaitingReconcile } from '../outcomes.js'
 import './DetectionStoryline.css'
 
 /**
@@ -87,8 +87,8 @@ function EngineBadge({ type }) {
   )
 }
 
-function StatusPill({ status }) {
-  const meta = outcomeMeta(status)
+function StatusPill({ status, det }) {
+  const meta = { ...outcomeMeta(status), label: statusLabel(status, det) }
   return (
     <span className={`storyline-pill storyline-pill--${outcomeClass(status)}`}>
       <span className="storyline-pill__dot" aria-hidden="true" />
@@ -168,7 +168,7 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
               MTTD {mttd}
             </span>
           )}
-          <StatusPill status={status} />
+          <StatusPill status={status} det={det} />
         </div>
       </div>
 
@@ -238,6 +238,11 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
       ) : key === 'missed' ? (
         <div className="storyline-detection__awaiting storyline-detection__awaiting--missed">
           No alert reconciled — detection gap
+        </div>
+      ) : isAwaitingReconcile(status, det) ? (
+        <div className="storyline-detection__awaiting">
+          <span className="storyline-scan" aria-hidden="true" />
+          Awaiting reconcile — no alert has been judged for this detection yet.
         </div>
       ) : (
         <div className="storyline-detection__awaiting">
