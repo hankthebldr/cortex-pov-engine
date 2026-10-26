@@ -439,10 +439,9 @@ def _migrate_prevention_columns(connection) -> None:
                 continue
             connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
     if "runs" in tables:
-        run_cols = {col["name"] for col in inspector.get_columns("runs")}
-        if "paired_with_run_id" not in run_cols:  # index only when we just added it
-            connection.execute(text(
-                "CREATE INDEX IF NOT EXISTS ix_runs_paired_with_run_id ON runs (paired_with_run_id)"))
+        # Idempotent, so no dependence on inspector caching.
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_runs_paired_with_run_id ON runs (paired_with_run_id)"))
 
 
 async def get_db():

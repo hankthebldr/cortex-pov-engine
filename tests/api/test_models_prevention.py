@@ -94,3 +94,20 @@ def test_migration_adds_columns_and_is_idempotent():
                 "alert_action", "alert_outcome"} <= res_cols
         assert c.execute(text("SELECT agent_profile_mode FROM runs")).scalar() == "unknown"
         assert c.execute(text("SELECT expected_outcome FROM results")).scalar() == "detect"
+
+
+def test_migrated_legacy_db_gets_index_and_new_tables():
+    from sqlalchemy import create_engine, inspect, text
+    from database import Base, _migrate_prevention_columns
+    import models  # noqa: F401
+
+    eng = create_engine("sqlite://")
+    with eng.begin() as c:
+        c.execute(text("CREATE TABLE runs (id INTEGER PRIMARY KEY, run_id VARCHAR)"))
+        c.execute(text("CREATE TABLE results (id INTEGER PRIMARY KEY, run_id VARCHAR)"))
+        Base.metadata.create_all(c)  # creates only the missing tables
+        for _ in range(2):
+            _migrate_prevention_columns(c)
+            insp = inspect(c)
+            assert "ix_runs_paired_with_run_id" in {i["name"] for i in insp.get_indexes("runs")}
+        assert {"step_outcomes", "observations"} <= set(inspect(c).get_table_names())
