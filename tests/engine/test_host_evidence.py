@@ -57,3 +57,11 @@ def test_prevent_result_in_report_mode_is_left_alone():
     assert he.apply_host_outcomes([prevent], [_s("step-02", "signaled")],
                                   agent_profile_mode="report") == 0
     assert prevent.outcome is None
+
+
+def test_tenant_decided_outcome_is_not_clobbered():
+    r = _r("step-03")
+    r.outcome, r.outcome_reason = "prevented", None
+    assert he.apply_host_outcomes([r], [_s("step-03", "not_run", oc.UPSTREAM_SEVERED)],
+                                  agent_profile_mode="block") == 0
+    assert (r.outcome, r.outcome_reason) == ("prevented", None)

@@ -32,8 +32,10 @@ from engine import efficacy_scorecard
 from engine import host_evidence
 from engine import report_generator
 from engine.outcome import (
+    HOST_WITNESS,
     PROFILE_MODES,
     TERMINATIONS,
+    TERMINATION_BEACON_LOST,
     TERMINATION_NOT_RUN,
     TOOL_ABSENT,
     UPSTREAM_FAILED,
@@ -258,6 +260,7 @@ class OutputRequest(BaseModel):
     step_id: Optional[str] = None
 
 
+_PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
 _STEP_REASONS = frozenset({UPSTREAM_SEVERED, UPSTREAM_NOT_EXECUTED, UPSTREAM_FAILED, TOOL_ABSENT})
 
 
@@ -1056,15 +1059,15 @@ async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[s
 
 async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
                                agent_profile_mode: str) -> None:
-    """Project reported step outcomes onto the run's Results and commit."""
+    """Project reported step outcomes onto the run's Results (caller commits)."""
     if not steps:
         return
     rows = (await db.execute(
         select(Result).where(Result.run_id == run_id,
                              Result.step_id.in_([s.step_id for s in steps]))
     )).scalars().all()
-    if host_evidence.apply_host_outcomes(rows, steps, agent_profile_mode=agent_profile_mode):
-        await db.commit()
+    host_evidence.apply_host_outcomes(rows, steps, agent_profile_mode=agent_profile_mode)
+    await db.flush()
 
 
 @router.post("/{run_id}/complete")
@@ -1140,11 +1143,16 @@ async def complete_run(
         vals = dict(exit_code=st.exit_code, termination=st.termination,
                     signal=st.signal or None, reason=st.reason,
                     recorded_at=datetime.utcnow())
-        await db.execute(
-            sqlite_insert(StepOutcome)
-            .values(run_id=run_id, step_id=st.step_id, **vals)
-            .on_conflict_do_update(index_elements=["run_id", "step_id"], set_=vals)
-        )
+        stmt = sqlite_insert(StepOutcome).values(run_id=run_id, step_id=st.step_id, **vals)
+        # Another endpoint may report the same step. A host witness (or a lost
+        # beacon) already on the row is never downgraded by a non-witness
+        # termination; a witness may replace anything.
+        guard = None
+        if st.termination not in HOST_WITNESS:
+            col = StepOutcome.__table__.c.termination
+            guard = or_(col.is_(None), col.notin_(_PROTECTED_TERMINATIONS))
+        await db.execute(stmt.on_conflict_do_update(
+            index_elements=["run_id", "step_id"], set_=vals, where=guard))
 
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes
@@ -1152,13 +1160,16 @@ async def complete_run(
     run = await _reload_run(db, run_id)
     remaining, status = run.open_tasks, run.status
     profile_mode = run.agent_profile_mode
+    # Project the host evidence onto the Results INSIDE this write transaction,
+    # before any terminalising commit: a crash must not leave a terminal run
+    # with unprojected Results that a duplicate /complete cannot repair.
+    await _apply_host_evidence(db, run_id, body.steps, profile_mode)
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal
         # frame, or score yet. The run stays 'running' (or 'failed' if an
         # endpoint has already failed) until the final callback.
         await db.commit()
-        await _apply_host_evidence(db, run_id, body.steps, profile_mode)
         logger.info(
             "run_complete partial run_id=%s exit_code=%d remaining_endpoints=%d",
             run_id, body.exit_code, remaining,
@@ -1180,9 +1191,6 @@ async def complete_run(
         .execution_options(synchronize_session=False)
     )
     await db.commit()
-    # Project the host evidence onto the seeded Results and commit BEFORE the
-    # completion-time score below, so that score sees the outcomes.
-    await _apply_host_evidence(db, run_id, body.steps, profile_mode)
     run = await _reload_run(db, run_id)
 
     # Run reached a terminal state — drop it from the orchestrator's aborted

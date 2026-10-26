@@ -29,6 +29,7 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
                         agent_profile_mode: str) -> int:
     """Set host-derived ``outcome`` on Results; return the number touched.
 
+    * Only Results whose ``outcome`` is None/pending are touched.
     * A step that never ran (``not_run``) marks all its Results ``not_reached``
       / ``not_executed`` with the reason carried through.
     * A ``prevent`` Result on a step the host witnessed being killed, in block
@@ -40,6 +41,10 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
     for r in results:
         s = by_step.get(r.step_id)
         if s is None:
+            continue
+        # A tenant-decided outcome (prevented/detected/missed, written by a
+        # reconcile) stands; host evidence only fills an undecided Result.
+        if r.outcome not in (None, OUTCOME_PENDING):
             continue
         host_outcome = host_outcome_for_step(s.termination, s.reason)
         if host_outcome is not None:

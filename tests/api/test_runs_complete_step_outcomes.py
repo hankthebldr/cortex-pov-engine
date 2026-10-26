@@ -167,3 +167,68 @@ def test_complete_keeps_started_at_from_output(client, session_factory):
     client.post("/api/runs/r1/complete", json=_SEVER_BODY)
     s1 = [s for s in _rows(session_factory, StepOutcome) if s.step_id == "step-01"][0]
     assert s1.started_at == started and s1.termination == "exited"
+
+
+def _fanout(session_factory, run_id="fo"):
+    _seed(session_factory, run_id, mode="block")
+
+    async def _go():
+        from models import Run
+        async with session_factory() as db:
+            r = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
+            r.open_tasks = 2
+            await db.commit()
+
+    asyncio.run(_go())
+
+
+def _step(client, run_id, termination, exit_code, **kw):
+    body = {"exit_code": exit_code, "summary": "e", "steps": [
+        {"step_id": "step-02", "exit_code": exit_code, "termination": termination, **kw}]}
+    assert client.post(f"/api/runs/{run_id}/complete", json=body).status_code == 200
+
+
+def _term(session_factory, run_id):
+    from models import StepOutcome
+    return [(s.termination, s.signal) for s in _rows(session_factory, StepOutcome, run_id)]
+
+
+def test_witness_is_not_downgraded_by_a_later_exited(client, session_factory):
+    _fanout(session_factory)
+    _step(client, "fo", "anchor_terminated", 137, signal=9)
+    _step(client, "fo", "exited", 0)
+    assert _term(session_factory, "fo") == [("anchor_terminated", 9)]
+    assert _run(session_factory, "fo")[1] == "step-02"
+
+
+def test_witness_upgrades_an_earlier_exited(client, session_factory):
+    _fanout(session_factory)
+    _step(client, "fo", "exited", 0)
+    _step(client, "fo", "anchor_terminated", 137, signal=9)
+    assert _term(session_factory, "fo") == [("anchor_terminated", 9)]
+    assert _run(session_factory, "fo")[1] == "step-02"
+
+
+def test_results_are_projected_by_the_time_complete_returns(client, session_factory):
+    from models import Result
+    _seed(session_factory, mode="block")
+    assert client.post("/api/runs/r1/complete", json=_SEVER_BODY).status_code == 200
+    res = {x.step_id: x.outcome for x in _rows(session_factory, Result)}
+    assert res["step-03"] == "not_reached" and res["step-02"] == "pending"
+
+
+def test_unknown_reason_and_reasonless_not_run_are_422(client, session_factory):
+    _seed(session_factory)
+    for st in ({"step_id": "step-01", "termination": "exited", "reason": "BOGUS"},
+               {"step_id": "step-01", "termination": "not_run"}):
+        r = client.post("/api/runs/r1/complete", json={"exit_code": 0, "summary": "x", "steps": [st]})
+        assert r.status_code == 422
+
+
+def test_reason_on_non_not_run_termination_is_stored(client, session_factory):
+    from models import StepOutcome
+    _seed(session_factory)
+    body = {"exit_code": 0, "summary": "x", "steps": [
+        {"step_id": "step-01", "termination": "timeout", "reason": "UPSTREAM_FAILED"}]}
+    assert client.post("/api/runs/r1/complete", json=body).status_code == 200
+    assert _rows(session_factory, StepOutcome)[0].reason == "UPSTREAM_FAILED"
