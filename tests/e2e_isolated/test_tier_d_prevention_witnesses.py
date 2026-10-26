@@ -22,10 +22,9 @@ must carry the fixture scenario. Start it with, e.g.::
     CORTEXSIM_BEACON_LOST_AFTER_SECONDS=30 <your usual dev-up / uvicorn>
 
 and point the tests at it with ``CORTEXSIM_SERVER``. The beacon test also needs
-``TIER_D_BEACON_LOST_AFTER_SECONDS`` set to the threshold SimCore was started
-with (the test cannot read it from the server). Note the agent must still go
-OFFLINE first -- a fixed 5 minutes of silence in ``api/agents.py`` -- so the
-beacon test takes about 6-7 minutes whatever the threshold.
+``TIER_D_BEACON_LOST_AFTER_SECONDS`` set to the value SimCore was started with
+(the test cannot read it from the server). The
+beacon test takes roughly the threshold plus a 30 s sweep interval.
 
 The always-on half (the classifier, the injector's pid selection and timeout)
 lives in ``test_tier_d_classify.py`` and ``test_tier_d_inject_kill.py``.
@@ -150,32 +149,16 @@ def test_anchor_kill_is_anchor_terminated(tmp_path):
 
 @pytest.mark.skipif(_BEACON_SKIP is not None, reason=_BEACON_SKIP or "")
 def test_beacon_kill_is_beacon_lost_after_the_sweep(tmp_path):
-    """ENGINE DISCREPANCY, asserted as observed (live run, 2026-10-26).
-
-    The brief expects ``step-02: beacon_lost``. A step's /output is POSTed only
-    AFTER the step ends, so when the beacon dies mid-step-02 the only
-    ``started_at`` on record is step-01's, and ``beacon_lost.pick_severed``
-    ("latest started_at") blames step-01. step-02 -- the in-flight ``prevent``
-    step -- is then ``not_run`` / ``UPSTREAM_SEVERED`` and its Result
-    ``not_reached``. What holds either way, and is what this pins: the run is
-    ``complete``, a BEACON LOST marker is in the output, exactly one step is
-    ``beacon_lost``, every later step is ``not_run`` / ``UPSTREAM_SEVERED``,
-    and nothing reads ``prevented``. If the engine is changed to blame the
-    in-flight step, ``severed`` below becomes ``step-02`` and this test must
-    follow it.
-    """
     verdict, run, rows = _inject(tmp_path, "beacon", timeout=1000)
-    assert verdict["run_status"] == "complete", json.dumps(verdict, indent=2)
+    assert verdict["terminations"]["step-02"]["termination"] == "beacon_lost"
     assert "BEACON LOST" in (run.get("output") or "")
-    severed = verdict["severed_at_step"]
-    lost = [sid for sid, t in verdict["terminations"].items() if t["termination"] == "beacon_lost"]
-    assert lost == [severed] == ["step-01"], verdict["terminations"]
-    for sid in ("step-02", "step-03"):
-        assert verdict["terminations"][sid] == {
-            "termination": "not_run", "reason": "UPSTREAM_SEVERED"}
-    assert not [r for r in rows if r["outcome"] == "prevented"], rows
-    prevent = [r for r in rows if r["expected_outcome"] == "prevent"]
-    assert prevent and all(r["outcome"] in (None, "pending", "not_reached") for r in prevent)
+    prevent = _assert_severed_after_step_02(verdict, run, rows)
+    assert prevent
+    # A lost beacon is a witness of nothing: the prevent Result is held pending,
+    # never prevented, with the beacon-lost reason.
+    for r in prevent:
+        assert (r["outcome"], r["outcome_reason"]) == (
+            "pending", "PREVENTION_UNCONFIRMED_BEACON_LOST")
 
 
 # ─── Always-on: the flag is a no-op when absent and refuses bad input ───────

