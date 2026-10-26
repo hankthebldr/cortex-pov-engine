@@ -45,11 +45,12 @@ logger = logging.getLogger("cortexsim.engine.efficacy_scorecard")
 # Cortex vocabulary + product mapping
 # ---------------------------------------------------------------------------
 
-# The full six-value detection_type vocabulary. Anything that does not
-# normalize into one of these buckets is surfaced under ``Other`` so the
-# scorecard never silently drops a signal type.
+# The full seven-value detection_type vocabulary (``Prevention`` is the
+# expected_outcome=prevent signal type). Anything that does not normalize into
+# one of these buckets is surfaced under ``Other`` so the scorecard never
+# silently drops a signal type.
 DETECTION_TYPES: tuple[str, ...] = (
-    "BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC",
+    "BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC", "Prevention",
 )
 
 # Plane → customer-facing Cortex product. Lower-cased plane keys (planes ship
@@ -243,6 +244,7 @@ def normalize_detection_type(result: dict[str, Any]) -> str:
         "analytics": "Analytics",
         "correlation": "Correlation",
         "ioc": "IOC",
+        "prevention": "Prevention",
     }
     if raw in mapping:
         return mapping[raw]

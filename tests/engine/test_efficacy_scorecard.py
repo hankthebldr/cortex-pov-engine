@@ -307,3 +307,17 @@ def test_pass_pct_is_none_when_nothing_was_scoreable():
                                   run_ids=["r1"], tc_verdicts=["not_applicable"])
     assert sc.verdicts.pass_pct is None
     assert sc.verdicts.not_applicable == 1
+
+
+# --- residual R2: prevention rows have their own detection-type bucket --------
+
+def test_prevention_row_lands_in_its_own_bucket_not_other():
+    from engine.efficacy_scorecard import DETECTION_TYPES, normalize_detection_type
+
+    assert "Prevention" in DETECTION_TYPES
+    row = _result(signal_type="Prevention", detection_kind=None,
+                  expected_outcome="prevent", outcome="prevented", observed=True)
+    assert normalize_detection_type(row) == "Prevention"
+    sc = es.build_efficacy_scorecard([row])
+    labels = [b.label for b in sc.by_detection_type]
+    assert "Prevention" in labels and "Other" not in labels
