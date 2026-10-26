@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState, useCallback } from 'react'
 import NarrativeTimeline from './NarrativeTimeline.jsx'
 import EventStream from './EventStream.jsx'
 import useTimelineData from './useTimelineData.js'
+import { isHitStatus } from '../../outcomes.js'
 import { toPng } from 'html-to-image'
 import { downloadReport } from '../../api/client.js'
 
@@ -29,7 +30,7 @@ export default function InflightView({ activeRun, lastRun, onError }) {
   const [capturing, setCapturing] = useState(false)
   const [exporting, setExporting] = useState(false)
 
-  const { frames, scenario, run, stitches, loading } = useTimelineData(
+  const { frames, scenario, run, stitches, loading, coverage } = useTimelineData(
     targetScenarioId,
     targetRunId
   )
@@ -121,13 +122,17 @@ export default function InflightView({ activeRun, lastRun, onError }) {
   }, [targetScenarioId, isLive, activeRun, lastRun])
 
   const stats = useMemo(() => {
-    const totalDetections = frames.reduce((n, f) => n + f.detections.length, 0)
+    // "of M" is the server's denominator: a step that never ran, or a detector
+    // still soaking, is not an expected signal Cortex failed to see.
+    const totalDetections = coverage && typeof coverage.denominator === 'number'
+      ? coverage.denominator
+      : frames.reduce((n, f) => n + f.detections.length, 0)
     const detected = frames.reduce(
-      (n, f) => n + f.detections.filter((d) => d.status === 'detected').length, 0
+      (n, f) => n + f.detections.filter((d) => isHitStatus(d.status)).length, 0
     )
     const stitchCount = stitches.length
     return { totalDetections, detected, stitchCount }
-  }, [frames, stitches])
+  }, [frames, stitches, coverage])
 
   if (!targetScenarioId) {
     return (

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import '../../styles/destinations/run-detail.css'
 import { serverDate } from '../../api/time.js'
+import { outcomeClass, isHitStatus } from '../../outcomes.js'
 
 /**
  * NarrativeTimeline — the hero artifact.
@@ -133,7 +134,7 @@ export default function NarrativeTimeline({ frames = [], stitches = [], nowLabel
                   title={`${d.plane} · ${d.type}\n${d.description || ''}`}
                 >
                   <span className="tl-det__plane">{d.plane}</span>
-                  {d.type || (d.status === 'detected' ? 'OK' : '—')}
+                  {d.type || (isHitStatus(d.status) ? 'OK' : '—')}
                 </div>
               ))}
             </div>
@@ -145,12 +146,10 @@ export default function NarrativeTimeline({ frames = [], stitches = [], nowLabel
 }
 
 function detClass(status) {
-  switch (status) {
-    case 'detected': return 'tl-det--detected'
-    case 'missed':   return 'tl-det--missed'
-    case 'pending':  return 'tl-det--pending'
-    default:         return ''
-  }
+  // `idle` (step not started) has no outcome class; every other status is a
+  // resultStatus key and gets its own modifier (`tl-det--not-reached`, …).
+  if (!status || status === 'idle') return ''
+  return `tl-det--${outcomeClass(status)}`
 }
 
 function formatTime(ts) {

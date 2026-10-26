@@ -16,6 +16,51 @@ export const OUTCOME_META = {
   pending:      { glyph: '⏳', label: 'Pending' },
   not_reached:  { glyph: '⏭', label: 'Not reached' },
   not_executed: { glyph: '⚠', label: 'Not executed' },
+  // A block-mode `prevent` expectation the agent only detected: Cortex saw it,
+  // but the prevention FAILED — a fail glyph, never ✅.
+  detected_not_prevented: { glyph: '❌', label: 'Detected, not prevented' },
+}
+
+/** `Result.outcome` vocabulary (core/engine/outcome.py::OUTCOMES). */
+const RESULT_OUTCOMES = new Set([
+  'prevented', 'detected', 'missed', 'pending', 'not_reached', 'not_executed',
+])
+export const DETECTED_NOT_PREVENTED = 'DETECTED_NOT_PREVENTED'
+
+/**
+ * The ONE mapping from a Result row (or a storyline entry) to the status key
+ * `OUTCOME_META` renders.
+ *
+ * The server's `outcome` wins whenever it is present: `_seed_results` writes
+ * `observed=false` on every row, so reading `observed` alone renders a step
+ * that never ran (`not_reached`) or a detector still soaking as ❌ Missed.
+ * Only when `outcome` is null/undefined does the legacy mapping apply —
+ * `legacyStatus` when the caller already holds a server-decided one (the
+ * storyline's `status`), else `observed` true/false/null → detected/missed/
+ * pending. An unrecognised outcome raises: it must never read as benign.
+ */
+export function resultStatus(result, legacyStatus) {
+  const r = result || {}
+  const outcome = r.outcome
+  if (outcome != null) {
+    if (!RESULT_OUTCOMES.has(outcome)) {
+      throw new Error(`unrecognised result outcome: ${JSON.stringify(outcome)}`)
+    }
+    if (outcome === 'detected' && r.outcome_reason === DETECTED_NOT_PREVENTED) {
+      return 'detected_not_prevented'
+    }
+    return outcome
+  }
+  if (legacyStatus !== undefined) return legacyStatus
+  if (r.observed === true) return 'detected'
+  if (r.observed === false) return 'missed'
+  return 'pending'
+}
+
+/** Every status Cortex saw (a coverage hit) — the prevention verdict aside. */
+export function isHitStatus(status) {
+  const key = outcomeKey(status)
+  return key === 'detected' || key === 'prevented' || key === 'detected_not_prevented'
 }
 
 /** `not-executed` (legacy CSS spelling) and `not_executed` (server) are one key. */

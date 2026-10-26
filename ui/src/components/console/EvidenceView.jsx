@@ -7,6 +7,7 @@ import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
+import { outcomeMeta, outcomeClass } from '../../outcomes.js'
 
 /**
  * EvidenceView — the Evidence tab.
@@ -69,7 +70,9 @@ export default function EvidenceView({
 
   const handleValidateAll = useCallback(async () => {
     // Mark every pending row as detected (DC sweeps after a successful run).
-    const pending = rows.filter((r) => r.observed == null && r.id != null)
+    // Only rows nobody has adjudicated: an engine-decided outcome (not_reached,
+    // a reasoned pending, …) is never overwritten by a bulk attestation.
+    const pending = rows.filter((r) => r.observed == null && r.outcome == null && r.id != null)
     for (const r of pending) {
       await validate(r.id, true, null)
     }
@@ -137,14 +140,14 @@ export default function EvidenceView({
               <button
                 className="btn"
                 onClick={handleValidateAll}
-                disabled={kpis.pending === 0 || unproven}
+                disabled={kpis.unvalidated === 0 || unproven}
                 title={unproven
                   ? `Run ${runStatus} — attesting detections on a run that never executed would fabricate evidence`
                   : 'Mark all pending detections as observed'}
               >
                 Validate all
-                {kpis.pending > 0 && (
-                  <span className="kbd">{kpis.pending}</span>
+                {kpis.unvalidated > 0 && (
+                  <span className="kbd">{kpis.unvalidated}</span>
                 )}
               </button>
               <ExportMenu runId={targetRunId} onError={onError} />
@@ -214,7 +217,11 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         <Kpi
           label="Coverage"
           value="—"
-          meta="no detections seeded for this run"
+          meta={kpis.coverageUnknown
+            ? 'server sent no coverage denominator'
+            : kpis.seeded > 0
+              ? `nothing to score — ${kpis.excluded} excluded (never ran or soaking)`
+              : 'no detections seeded for this run'}
           tone="tx"
         />
       ) : (
@@ -223,7 +230,8 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           value={kpis.coverage}
           suffix="%"
           valueClass="kpi__value--detected"
-          meta={`${kpis.detected} / ${kpis.total} detections confirmed`}
+          meta={`${kpis.detected} / ${kpis.total} detections confirmed`
+            + (kpis.excluded > 0 ? ` · ${kpis.excluded} excluded (never ran or soaking)` : '')}
           tone="ac"
         />
       )}
@@ -238,7 +246,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
       <Kpi
         label="XSIAM Stitch"
         value={kpis.stitched}
-        suffix={` / ${kpis.total > 0 ? kpis.total : 0}`}
+        suffix={` / ${kpis.seeded}`}
         meta="analytics-plane detections observed"
         tone="info"
       />
@@ -313,12 +321,9 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
 }
 
 function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
-  const status = row.observed === true
-    ? 'detected'
-    : row.observed === false
-    ? 'missed'
-    : 'pending'
-  const statusLabel = status === 'detected' ? 'Detected' : status === 'missed' ? 'Missed' : 'Pending'
+  // The status the server's outcome axis says (outcomes.js::resultStatus).
+  const status = outcomeClass(row.status)
+  const statusLabel = outcomeMeta(row.status).label
 
   // Inline-button clicks shouldn't propagate to the row click (avoid
   // double-firing validate + selecting the row at the same time).

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { getStoryline, storylineEventsUrl } from '../api/storyline.js'
 import { serverDate } from '../api/time.js'
 import Term from './onboarding/Term.jsx'
-import { outcomeMeta, outcomeKey, outcomeClass } from '../outcomes.js'
+import { outcomeMeta, outcomeKey, outcomeClass, resultStatus, isHitStatus } from '../outcomes.js'
 import './DetectionStoryline.css'
 
 /**
@@ -135,12 +135,16 @@ function detectionKey(det, stepId, di) {
 // ── Detection row ───────────────────────────────────────────────────────────
 
 function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
-  const status = reconcileStatus(det.status, runStatus, det.outcome)
+  // Outcome first (outcomes.js::resultStatus); the server's `status`, run-status
+  // reconciled, only when the entry carries no outcome. A block-mode
+  // DETECTED_NOT_PREVENTED renders as its own fail status, never ✅ (M8).
+  const status = resultStatus(det, reconcileStatus(det.status, runStatus, det.outcome))
   const mttd = formatMttd(det.mttd_seconds)
   const key = outcomeKey(status)
-  const detected = key === 'detected'
+  // An alert fired for a detected-not-prevented row too: show what fired.
+  const detected = key === 'detected' || key === 'detected_not_prevented'
   const prevented = key === 'prevented'
-  const alerted = detected || prevented
+  const alerted = isHitStatus(key)
   const evidenceCount = det.evidence_count || 0
   const observedClock = formatClock(det.observed_at)
 
@@ -180,6 +184,7 @@ function DetectionRow({ det, dkey, flashing, runStatus, onOpenEvidence }) {
           <span className="storyline-detection__caption">Observed</span>
           <span className="storyline-observed__engine">
             {engineLabel(det.detection_type)} fired
+            {key === 'detected_not_prevented' && ' — the agent did not prevent it'}
           </span>
           {det.alert_external_id && (
             <span className="storyline-observed__alert text-mono">

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getRuns, getResultsForRun, getRunPair } from '../../api/client.js'
 import { runIdOf } from '../../api/ids.js'
-import { arePaired } from '../../outcomes.js'
+import { arePaired, resultStatus, isHitStatus, outcomeMeta, outcomeClass } from '../../outcomes.js'
 
 /**
  * MultiRunCompare — side-by-side scorecard for 2-N runs.
@@ -46,8 +46,11 @@ export default function MultiRunCompare() {
     setLoadingResults(true)
     Promise.all(
       missing.map((id) => getResultsForRun(id).then(
-        (d) => [id, (d && d.results) || d || []],
-        ()  => [id, []],
+        (d) => [id, {
+          rows: (d && d.results) || (Array.isArray(d) ? d : []),
+          coverage: (d && !Array.isArray(d) && d.coverage) || null,
+        }],
+        ()  => [id, { rows: [], coverage: null }],
       )),
     ).then((pairs) => {
       setResultsByRun((prev) => {
@@ -157,11 +160,11 @@ export default function MultiRunCompare() {
               <div key={c.id} className="multirun__kpi">
                 <div className="multirun__kpi-runid mono">{c.label}</div>
                 <div className="multirun__kpi-coverage">
-                  <span className="multirun__kpi-pct">{c.coveragePct}</span>
+                  <span className="multirun__kpi-pct">{c.coveragePct ?? '—'}</span>
                   <span className="multirun__kpi-unit">%</span>
                 </div>
                 <div className="multirun__kpi-meta mono">
-                  {c.detected} / {c.total} detected
+                  {c.total != null ? `${c.detected} / ${c.total} detected` : 'no coverage denominator'}
                 </div>
                 {c.delta != null && (
                   <div className={
@@ -200,32 +203,34 @@ export default function MultiRunCompare() {
                     </th>
                     {columns.map((c) => {
                       const cell = row.byRun[c.id] || { state: 'absent' }
-                      const isNew = cell.state === 'detected'
+                      const prev = c.order > 1 ? row.byRun[columns[c.order - 2].id] : null
+                      const isNew = isHitStatus(cell.state)
                         && c.order > 1
-                        && (row.byRun[columns[c.order - 2].id]?.state !== 'detected')
-                      const isRegression = cell.state !== 'detected'
-                        && c.order > 1
-                        && (row.byRun[columns[c.order - 2].id]?.state === 'detected')
+                        && !isHitStatus(prev?.state)
+                      // Only a real miss regresses: a step that never ran, or a
+                      // detector still soaking, is not Cortex losing a detection.
+                      const isRegression = cell.state === 'missed'
+                        && isHitStatus(prev?.state)
                       return (
                         <td
                           key={c.id}
                           className={
-                            'multirun__cell multirun__cell--' + cell.state +
+                            'multirun__cell multirun__cell--' + outcomeClass(cell.state) +
                             (isNew        ? ' multirun__cell--new'        : '') +
                             (isRegression ? ' multirun__cell--regression' : '')
                           }
                           title={
-                            cell.state === 'detected' ? 'Detected' + (cell.mttd != null ? ` · ${cell.mttd}s` : '')
-                            : cell.state === 'missed'  ? 'Missed'
-                            : cell.state === 'pending' ? 'Pending'
-                            : 'Not in this run'
+                            cell.state === 'absent' ? 'Not in this run'
+                            : outcomeMeta(cell.state).label
+                              + (isHitStatus(cell.state) && cell.mttd != null ? ` · ${cell.mttd}s` : '')
                           }
                         >
                           <span className="multirun__cell-glyph">
                             {cell.state === 'detected' ? '✓'
                              : cell.state === 'missed'  ? '✗'
                              : cell.state === 'pending' ? '○'
-                             :                            '—'}
+                             : cell.state === 'absent'  ? '—'
+                             :                            outcomeMeta(cell.state).glyph}
                           </span>
                           {cell.state === 'detected' && cell.mttd != null && (
                             <span className="multirun__cell-mttd mono">{cell.mttd}s</span>
@@ -349,10 +354,14 @@ function buildComparison(selectedIds, availableRuns, resultsByRun) {
   // Build per-run columns with summary stats.
   const columns = selectedIds.map((id, idx) => {
     const run = runById.get(id) || {}
-    const results = resultsByRun[id] || []
-    const total = results.length
-    const detected = results.filter((r) => r.observed === true).length
-    const coveragePct = total > 0 ? Math.round((detected / total) * 100) : 0
+    const entry = resultsByRun[id] || { rows: [], coverage: null }
+    const results = entry.rows
+    // The server's honest denominator (is_in_denominator): rows whose step
+    // never ran, and soak-pending rows, are neither hits nor misses.
+    const cov = entry.coverage
+    const total = cov && typeof cov.denominator === 'number' ? cov.denominator : null
+    const detected = total != null ? cov.observed_in_denominator : null
+    const coveragePct = total ? Math.round(cov.pct) : null
     return {
       id,
       order: idx + 1,
@@ -367,7 +376,8 @@ function buildComparison(selectedIds, availableRuns, resultsByRun) {
 
   // Coverage delta vs previous column.
   for (let i = 1; i < columns.length; i++) {
-    columns[i].delta = columns[i].coveragePct - columns[i - 1].coveragePct
+    const [a, b] = [columns[i - 1].coveragePct, columns[i].coveragePct]
+    columns[i].delta = a != null && b != null ? b - a : null
   }
 
   // Merge all detection rows across runs — keyed by tid + plane +
@@ -394,9 +404,8 @@ function buildComparison(selectedIds, availableRuns, resultsByRun) {
         }
         rowMap.set(key, row)
       }
-      let state = 'pending'
-      if (r.observed === true)  state = 'detected'
-      if (r.observed === false) state = 'missed'
+      // The server's outcome first (outcomes.js::resultStatus).
+      const state = resultStatus(r)
       row.byRun[col.id] = { state, mttd: r.mttd_seconds ?? null, alertId: r.alert_id }
     }
   }

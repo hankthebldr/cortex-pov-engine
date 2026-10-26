@@ -22,6 +22,8 @@ const resultsBefore = {
     { id: 2, mitre_technique: 'T1078.004', plane: 'CDR', detection_type: 'Analytics',
       expected_description: 'sts:GetCallerIdentity', observed: false, mttd_seconds: null },
   ],
+  // The server's coverage (core/api/results.py) — the column KPI renders it.
+  coverage: { denominator: 2, observed_in_denominator: 1, pct: 50.0 },
 }
 
 const resultsAfter = {
@@ -31,6 +33,7 @@ const resultsAfter = {
     { id: 12, mitre_technique: 'T1078.004', plane: 'CDR', detection_type: 'Analytics',
       expected_description: 'sts:GetCallerIdentity', observed: true, mttd_seconds: 55 },
   ],
+  coverage: { denominator: 2, observed_in_denominator: 2, pct: 100.0 },
 }
 
 describe('<MultiRunCompare />', () => {
