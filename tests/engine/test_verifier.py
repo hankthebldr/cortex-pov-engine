@@ -383,3 +383,40 @@ async def test_verify_run_mttd_excludes_not_reached_rows():
     score = await verify_run(None, run, scen, [ok, severed], runner_returning(1))
     assert run.tc_verdict_detail["primary"]["actual"] == 30.0
     assert score.verdict == PASS
+
+
+# ── a step that never ran cannot be certified by a row count ───────────────
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["not_reached", "not_executed"])
+async def test_verifier_skips_rows_the_host_says_never_ran(outcome):
+    from engine.verifier import verify_results  # noqa: PLC0415
+
+    r = FakeResult(verification_xql="dataset = xdr_data", kpi_verdict="pending")
+    r.outcome = outcome
+    calls: list = []
+
+    async def runner(q):
+        calls.append(q)
+        return 5
+    counts = await verify_results([r], runner, expected_rows_min=lambda _r: 1)
+    assert calls == []
+    assert r.kpi_verdict == "pending"
+    assert r.verified_at is None
+    assert counts["skipped"] == 1
+
+
+def test_score_run_ignores_and_lists_excluded_rows():
+    from engine.verifier import PASS, score_run  # noqa: PLC0415
+
+    ok = FakeResult(kpi_verdict="pass", detection_id="ok", rid=1)
+    ex_pass = FakeResult(kpi_verdict="pass", detection_id="severed-pass", rid=2)
+    ex_fail = FakeResult(kpi_verdict="fail", detection_id="severed-fail", rid=3)
+    ok.outcome, ex_pass.outcome, ex_fail.outcome = "detected", "not_reached", "not_executed"
+    s = score_run([ok, ex_pass, ex_fail])
+    assert s.verdict == PASS
+    assert s.counts["pass"] == 1 and s.counts["fail"] == 0
+    assert s.weighted_total == 1.0
+    d = s.to_dict()
+    assert len(d["excluded"]) == 2
+    assert set(d["excluded"]) == {"severed-pass", "severed-fail"}

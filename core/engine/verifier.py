@@ -144,6 +144,9 @@ class RunScore:
     counts: dict[str, int] = field(default_factory=dict)
     primary: Optional[dict[str, Any]] = None
     unscoreable: list[str] = field(default_factory=list)
+    #: Results the host says never ran (``not_reached`` / ``not_executed``):
+    #: their kpi_verdict is ignored, and they are listed so a report can say so.
+    excluded: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -154,6 +157,7 @@ class RunScore:
             "counts": dict(self.counts),
             "primary": self.primary,
             "unscoreable": list(self.unscoreable),
+            "excluded": list(self.excluded),
         }
 
 
@@ -196,8 +200,15 @@ def score_run(
     weighted_pass = 0.0
     weighted_total = 0.0
     unscoreable: list[str] = []
+    excluded: list[str] = []
 
     for r in results:
+        if getattr(r, "outcome", None) in EXCLUDED_FROM_DENOMINATOR:
+            # A step that never ran is neither a pass nor a fail.
+            excluded.append(str(getattr(r, "detection_id", None)
+                                or getattr(r, "expected_detection", None)
+                                or getattr(r, "id", "")))
+            continue
         verdict = getattr(r, "kpi_verdict", None)
         if verdict is None:
             continue
@@ -227,7 +238,7 @@ def score_run(
         primary = tv.to_dict()
         if tv.verdict == FAIL:
             return RunScore(FAIL, f"primary KPI failed: {tv.detail}",
-                            weighted_pass, weighted_total, counts, primary, unscoreable)
+                            weighted_pass, weighted_total, counts, primary, unscoreable, excluded)
         if tv.verdict == PENDING:
             # A declared threshold whose KPI never got measured is an OPEN
             # question, not a pass. Falling through here is how a run reported
@@ -236,7 +247,7 @@ def score_run(
             return _clamp(RunScore(
                 PENDING,
                 f"primary KPI declared but not measured: {tv.detail}",
-                weighted_pass, weighted_total, counts, primary, unscoreable,
+                weighted_pass, weighted_total, counts, primary, unscoreable, excluded,
             ), tc_scoreable)
 
     if counts.get(FAIL):
@@ -248,18 +259,18 @@ def score_run(
     elif primary and primary["verdict"] == PASS:
         return _clamp(RunScore(PASS, f"primary KPI passed: {primary['detail']}",
                                weighted_pass, weighted_total, counts, primary,
-                               unscoreable), tc_scoreable)
+                               unscoreable, excluded), tc_scoreable)
     else:
         detail = (
             f"nothing scoreable: {counts.get(NOT_APPLICABLE, 0)} detection(s) "
             f"carry no measurable threshold"
         )
         return RunScore(NOT_APPLICABLE, detail, weighted_pass, weighted_total,
-                        counts, primary, unscoreable)
+                        counts, primary, unscoreable, excluded)
 
     verdict = FAIL if counts.get(FAIL) else (PENDING if counts.get(PENDING) else PASS)
     return _clamp(RunScore(verdict, detail, weighted_pass, weighted_total,
-                           counts, primary, unscoreable), tc_scoreable)
+                           counts, primary, unscoreable, excluded), tc_scoreable)
 
 
 def _clamp(score: RunScore, tc_scoreable: bool) -> RunScore:
@@ -315,6 +326,10 @@ async def verify_results(
     for r in results:
         xql = getattr(r, "verification_xql", None)
         if not xql:
+            counts["skipped"] += 1
+            continue
+        if getattr(r, "outcome", None) in EXCLUDED_FROM_DENOMINATOR:
+            # The host says this step never ran: a row count cannot certify it.
             counts["skipped"] += 1
             continue
         if (getattr(r, "expected_outcome", None) == "prevent"
