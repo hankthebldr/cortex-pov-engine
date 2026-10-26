@@ -100,6 +100,18 @@ def row_status(outcome: Optional[str], observed: Optional[bool]) -> str:
     return OUTCOME_DETECTED if observed else OUTCOME_PENDING
 
 
+def is_hit(outcome: Optional[str], observed: Optional[bool]) -> bool:
+    """The one coverage-numerator predicate (residual R1).
+
+    When the engine decided an outcome, only ``detected`` / ``prevented`` is a
+    hit -- a ``pending`` row is never one, even though the reconcile already
+    set ``observed=True`` (``PREVENTION_ALERT_WITHOUT_TERMINATION``: an alert,
+    no host witness). ``observed`` decides only for an outcome-less row (legacy
+    / manual validation). An unrecognised outcome raises.
+    """
+    return row_status(outcome, observed) in (OUTCOME_DETECTED, OUTCOME_PREVENTED)
+
+
 # --- agent profile / block-mode status ------------------------------------
 PROFILE_MODES = frozenset({"report", "block", "unknown"})
 BLOCK_MODE_CONFIRMED = "block_mode_confirmed"

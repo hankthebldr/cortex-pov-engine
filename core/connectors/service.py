@@ -47,6 +47,7 @@ from engine.outcome import (
     PASS_WITHHELD_UNSCOPED,
     PreventVerdict,
     evaluate_prevent,
+    is_hit,
     soak_pending_reason,
 )
 from events import event_bus
@@ -511,7 +512,7 @@ def efficacy_summary(results: list[Result], newly_matched: int, source: str) -> 
         else:
             excluded[why] += 1
     denom = len(counted)
-    observed = sum(1 for r in counted if r.observed)
+    observed = sum(1 for r in counted if is_hit(r.outcome, r.observed))
     mttds = [r.mttd_seconds for r in counted if r.mttd_seconds is not None]
     return {
         "source": source,

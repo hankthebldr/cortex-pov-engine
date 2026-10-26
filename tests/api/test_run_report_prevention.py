@@ -204,7 +204,9 @@ def test_json_coverage_semantics(client, session_factory):
     ])
     cov = client.get("/api/runs/x/report", params={"format": "json"}).json()["coverage"]
     assert cov["total"] == 3 and cov["denominator"] == 2
-    assert cov["observed"] == 2 and cov["observed_in_denominator"] == 1
+    # R1: ``observed`` counts hits through ``outcome.is_hit`` -- a not_reached
+    # row is not one, whatever its ``observed`` flag says.
+    assert cov["observed"] == 1 and cov["observed_in_denominator"] == 1
     assert cov["pct"] == round(cov["observed_in_denominator"] / cov["denominator"] * 100, 1) == 50.0
     assert cov["prevented"] == 1 and cov["excluded"] == 1
 

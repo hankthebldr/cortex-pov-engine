@@ -127,7 +127,7 @@ def test_single_definition_of_soak_reasons_and_denominator_rule():
     import pathlib
 
     core = pathlib.Path(__file__).resolve().parents[2] / "core"
-    defs = {"SOAK_REASONS": [], "is_in_denominator": []}
+    defs = {"SOAK_REASONS": [], "is_in_denominator": [], "row_status": [], "is_hit": []}
     for path in core.rglob("*.py"):
         if "__pycache__" in str(path):
             continue
@@ -195,3 +195,18 @@ def test_row_status_outcome_wins_and_an_unjudged_row_is_pending_not_missed():
 def test_row_status_raises_on_an_unknown_outcome():
     with pytest.raises(ValueError):
         oc.row_status("blocked", True)
+
+
+# --- residual R1: one coverage-numerator predicate ----------------------------
+
+def test_is_hit_pending_is_never_a_hit_even_when_observed():
+    assert oc.is_hit("pending", True) is False  # PREVENTION_ALERT_WITHOUT_TERMINATION
+    assert oc.is_hit("missed", False) is False
+    assert oc.is_hit("not_reached", True) is False
+    assert oc.is_hit("detected", True) is True
+    assert oc.is_hit("prevented", True) is True
+    # observed decides only for an outcome-less (legacy / manual) row.
+    assert oc.is_hit(None, True) is True
+    assert oc.is_hit(None, False) is False
+    with pytest.raises(ValueError):
+        oc.is_hit("blocked", True)

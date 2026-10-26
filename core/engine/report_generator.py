@@ -28,7 +28,7 @@ import tarfile
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
-from engine.outcome import row_status
+from engine.outcome import is_hit, row_status
 
 
 logger = logging.getLogger("cortexsim.engine.report_generator")
@@ -84,6 +84,11 @@ def _row_status(r: dict[str, Any]) -> str:
     return row_status(r.get("outcome"), bool(r.get("observed")))
 
 
+def _is_hit(r: dict[str, Any]) -> bool:
+    """``engine.outcome.is_hit`` over a ``Result.to_dict()`` mapping (R1)."""
+    return is_hit(r.get("outcome"), bool(r.get("observed")))
+
+
 _MATRIX_STATUS = {
     "prevented": "PREVENTED", "not_reached": "NOT_RUN", "not_executed": "NOT_RUN",
     "detected": "ENABLED", "missed": "DISABLED", "pending": "PENDING",
@@ -117,7 +122,7 @@ def build_detection_matrix(
     scenario_techniques = _scenario_technique_set(scenario_dict)
 
     for r in results:
-        observed = bool(r.get("observed"))
+        observed = _is_hit(r)
         has_obs_at = bool(r.get("observed_at"))
         # The "Source(s)" column maps roughly to plane (the customer
         # cares which Cortex engine fires). EAL plugins and AIRS land in
@@ -170,7 +175,7 @@ def render_attack_navigator_layer(
         tid = r.get("mitre_technique")
         if not tid:
             continue
-        observed = bool(r.get("observed"))
+        observed = _is_hit(r)
         slot = by_tid.setdefault(tid, {"observed": False, "comments": set()})
         slot["observed"] = slot["observed"] or observed
         # Surface the plane / signal-type as the Navigator comment so
@@ -218,7 +223,7 @@ def render_exec_summary_markdown(
     """Render the exec-level markdown summary (matches the lab template)."""
     s = scenario_dict or {}
     total = len(results)
-    observed = sum(1 for r in results if r.get("observed"))
+    observed = sum(1 for r in results if _is_hit(r))
     # A result is ADJUDICATED once the one rule (``row_status``) gives it any
     # status but ``pending``. A still-pending result is "not measured yet",
     # never "missed" — folding pending into a miss manufactures a false negative.
@@ -429,7 +434,7 @@ def _findings_paragraph(results: list[dict[str, Any]]) -> str:
     """Compose a 1-2 line readable findings string."""
     if not results:
         return "No expected detections were defined for this run."
-    n_observed = sum(1 for r in results if r.get("observed"))
+    n_observed = sum(1 for r in results if _is_hit(r))
     n_missed = sum(1 for r in results if _row_status(r) == "missed")
     n_pending = len(results) - n_observed - n_missed
 

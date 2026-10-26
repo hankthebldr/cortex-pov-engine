@@ -246,7 +246,7 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
       <Kpi
         label="XSIAM Stitch"
         value={kpis.stitched}
-        suffix={` / ${kpis.seeded}`}
+        suffix={` / ${kpis.stitchDenominator}`}
         meta="analytics-plane detections observed"
         tone="info"
       />

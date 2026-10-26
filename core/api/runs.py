@@ -35,6 +35,7 @@ from engine.outcome import (
     HOST_WITNESS,
     EXCLUDED_FROM_DENOMINATOR,
     OUTCOMES,
+    is_hit,
     is_in_denominator,
     PROFILE_MODES,
     TERMINATIONS,
@@ -230,15 +231,16 @@ def _coverage_stats(results: list[Result]) -> dict:
     total = len(results)
     in_den = [r for r in results if is_in_denominator(r.outcome, r.outcome_reason)]
     denominator = len(in_den)
-    observed = sum(1 for r in results if r.observed)
-    observed_in_den = sum(1 for r in in_den if r.observed)
+    # Hits through the one predicate (R1): pending is never a hit.
+    observed = sum(1 for r in results if is_hit(r.outcome, r.observed))
+    observed_in_den = sum(1 for r in in_den if is_hit(r.outcome, r.observed))
     prevented = sum(1 for r in results if r.outcome == "prevented")
     pct = round(observed_in_den / denominator * 100, 1) if denominator > 0 else 0.0
     by_type: dict = {}
     for r in in_den:
         t = by_type.setdefault(r.signal_type, {"total": 0, "observed": 0, "prevented": 0})
         t["total"] += 1
-        if r.observed:
+        if is_hit(r.outcome, r.observed):
             t["observed"] += 1
         if r.outcome == "prevented":
             t["prevented"] += 1

@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Optional
 
-from engine.outcome import EXCLUDED_FROM_DENOMINATOR, is_in_denominator
+from engine.outcome import EXCLUDED_FROM_DENOMINATOR, is_hit, is_in_denominator
 from engine.verifier import FAIL, PASS, evaluate_threshold
 
 MTTD = "mttd"
@@ -113,7 +113,10 @@ def detection_accuracy(results: Iterable[Any]) -> AccuracyMeasure:
         seeded.append(r)
     if not seeded:
         return AccuracyMeasure(None, 0, 0, excluded)
-    observed = sum(1 for r in seeded if getattr(r, "observed", False))
+    # The one predicate (R1): a ``pending`` row is not a hit even when the
+    # reconcile set ``observed`` (an alert with no host witness).
+    observed = sum(1 for r in seeded
+                   if is_hit(getattr(r, "outcome", None), getattr(r, "observed", False)))
     return AccuracyMeasure(round(observed / len(seeded) * 100.0, 1), observed,
                            len(seeded), excluded)
 

@@ -18,6 +18,7 @@ import useTimelineData from '../console/useTimelineData.js'
 import MultiRunCompare from '../console/MultiRunCompare.jsx'
 import DetectionStoryline from '../DetectionStoryline.jsx'
 import { installRoutes } from '../../test/mockFetch.js'
+import { isInDenominator } from '../../outcomes.js'
 
 void React
 
@@ -245,5 +246,29 @@ describe('R4: an outcome-less unvalidated row is awaiting reconcile, never misse
     render(<DetectionStoryline runId="run-r4" />)
     await screen.findByText('Detection Storyline')
     expect(document.querySelector('[data-testid="storyline-detection"]').textContent).toMatch(/detection gap/)
+  })
+})
+
+// ─── Residual R1: the XSIAM STITCH tile uses the one denominator rule ───────
+// The live run a04023ce… read "0 / 3": its denominator counted the
+// not_reached row. Rows that never ran (and soak-pending rows) leave it.
+describe('R1: the XSIAM STITCH denominator excludes rows that never ran or are soaking', () => {
+  it('reads n / 4 on the six-outcome run, not n / 6', async () => {
+    installRoutes({ 'GET /api/results/run-ax': PAYLOAD })
+    render(<EvidenceView lastRun={{ runId: 'run-ax', scenarioId: 'SIM-EDR-001', status: 'complete' }} />)
+    await waitFor(() => expect(screen.getByText('det-missed')).toBeInTheDocument())
+    const tile = Array.from(document.querySelectorAll('.kpi'))
+      .find((k) => k.querySelector('.kpi__label').textContent === 'XSIAM Stitch')
+    expect(tile.querySelector('.kpi__suffix').textContent).toBe(' / 4')
+  })
+
+  it('isInDenominator mirrors engine.outcome.is_in_denominator', () => {
+    expect(isInDenominator('not_reached', 'UPSTREAM_SEVERED')).toBe(false)
+    expect(isInDenominator('not_executed', 'TOOL_ABSENT')).toBe(false)
+    expect(isInDenominator('pending', 'ANALYTICS_ACTIVATION_PERIOD')).toBe(false)
+    expect(isInDenominator('pending', 'DEDUP_WINDOW')).toBe(false)
+    expect(isInDenominator('pending', 'PREVENTION_ALERT_WITHOUT_TERMINATION')).toBe(true)
+    expect(isInDenominator(null, null)).toBe(true)
+    expect(isInDenominator('missed', null)).toBe(true)
   })
 })

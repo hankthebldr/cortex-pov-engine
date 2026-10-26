@@ -30,19 +30,22 @@ ROWS = [
     # Residuals R4/R1: the three rows the outcome axis alone cannot settle.
     # Seeded, never reconciled, never validated: awaiting judgement, NOT a miss.
     ("step-08", None, None, False, "detect", "BIOC"),
+    # An alert but no host witness: the reconcile sets observed=True, the
+    # verdict is pending. A hit nowhere.
+    ("step-09", "pending", "PREVENTION_ALERT_WITHOUT_TERMINATION", True, "prevent", "BIOC"),
     # A legacy / manual validation with no outcome: a hit everywhere.
     ("step-10", None, None, True, "detect", "BIOC"),
 ]
 
 # In the denominator: prevented, detected, detected-not-prevented, missed,
-# the unjudged row, the legacy hit.
+# the unjudged row, the alert-without-witness pending row, the legacy hit.
 # Hits: prevented, detected, detected-not-prevented, legacy manual.
-DENOMINATOR = 6
+DENOMINATOR = 7
 HITS = 4
-PCT = 66.7
+PCT = 57.1
 
 # Per-row status on every surface that names one (R4 / R1).
-UNJUDGED, LEGACY_HIT = "step-08", "step-10"
+UNJUDGED, ALERT_NO_WITNESS, LEGACY_HIT = "step-08", "step-09", "step-10"
 EXCLUDED = {"not_reached": 1, "not_executed": 1, "soak_pending": 1}
 
 
@@ -140,8 +143,8 @@ def test_every_coverage_surface_agrees_on_one_run(client, seeded):
 
 def test_every_surface_names_the_same_status_for_the_unsettled_rows(seeded):
     """R4: an outcome-less unvalidated row is awaiting judgement, never missed.
-    A legacy outcome-less observed row stays a hit. Same answer on every
-    surface."""
+    R1: an observed row whose outcome is pending is never a hit. A legacy
+    outcome-less observed row stays a hit. Same answer on every surface."""
     from api.runs import _result_icon
     from engine.detection_storyline import build_storyline
     from engine.efficacy_scorecard import _status as scorecard_status
@@ -159,9 +162,11 @@ def test_every_surface_names_the_same_status_for_the_unsettled_rows(seeded):
         return {"scorecard": scorecard_status(r.to_dict()), "storyline": story[step],
                 "report_matrix": matrix_by_step[step], "report_icon": _result_icon(r)[0]}
 
-    assert {s: view(s) for s in (UNJUDGED, LEGACY_HIT)} == {
+    assert {s: view(s) for s in (UNJUDGED, ALERT_NO_WITNESS, LEGACY_HIT)} == {
         UNJUDGED: {"scorecard": "pending", "storyline": "pending",
                    "report_matrix": "PENDING", "report_icon": "⏳"},
+        ALERT_NO_WITNESS: {"scorecard": "pending", "storyline": "pending",
+                           "report_matrix": "PENDING", "report_icon": "⏳"},
         LEGACY_HIT: {"scorecard": "detected", "storyline": "detected",
                      "report_matrix": "ENABLED", "report_icon": "✅"},
     }

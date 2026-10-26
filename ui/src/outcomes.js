@@ -78,6 +78,22 @@ export function statusLabel(status, row) {
   return outcomeMeta(status).label
 }
 
+/** Outcomes whose step never ran (core/engine/outcome.py::EXCLUDED_FROM_DENOMINATOR). */
+const EXCLUDED_FROM_DENOMINATOR = new Set(['not_reached', 'not_executed'])
+/** Soak reasons (core/engine/outcome.py::SOAK_REASONS). */
+const SOAK_REASONS = new Set(['ANALYTICS_ACTIVATION_PERIOD', 'DEDUP_WINDOW'])
+
+/**
+ * Mirror of `engine.outcome.is_in_denominator`, for the few tiles the server
+ * sends no denominator for (the XSIAM STITCH count). A row whose step never
+ * ran, or a soak-pending row, leaves the denominator.
+ */
+export function isInDenominator(outcome, outcomeReason) {
+  if (EXCLUDED_FROM_DENOMINATOR.has(outcome)) return false
+  if (outcome === 'pending' && SOAK_REASONS.has(outcomeReason)) return false
+  return true
+}
+
 /** Every status Cortex saw (a coverage hit) — the prevention verdict aside. */
 export function isHitStatus(status) {
   const key = outcomeKey(status)

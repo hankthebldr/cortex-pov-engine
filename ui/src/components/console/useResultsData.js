@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { getResultsForRun, validateResult } from '../../api/client.js'
-import { resultStatus, isHitStatus } from '../../outcomes.js'
+import { resultStatus, isHitStatus, isInDenominator } from '../../outcomes.js'
 
 /**
  * useResultsData — fetches and folds /api/results/:runId into:
@@ -118,10 +118,16 @@ export default function useResultsData(runId) {
     const stitched = rows.filter((r) =>
       r.plane === 'ANALYTICS' && isHitStatus(r.status)
     ).length
+    // The tile's denominator follows the one rule (R1): a row that never ran
+    // or is still soaking is not something XSIAM could have stitched.
+    const stitchDenominator = rows.filter((r) =>
+      isInDenominator(r.outcome, r.outcome_reason)
+    ).length
 
     return {
       total: denominator, seeded, detected, missed, pending, unvalidated, excluded,
       coverage, coverageUnknown: seeded > 0 && denominator == null, median, stitched,
+      stitchDenominator,
     }
   }, [rows, payload])
 

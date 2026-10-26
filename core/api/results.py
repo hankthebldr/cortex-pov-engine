@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from connectors.measures import denominator_exclusion, empty_exclusions
 from database import get_db
-from engine.outcome import OUTCOME_PREVENTED
+from engine.outcome import OUTCOME_PREVENTED, is_hit
 from events import event_bus
 from models import Result
 
@@ -92,8 +92,10 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
         else:
             excluded[why] += 1
     denominator = len(in_den)
-    observed_count = sum(1 for r in results if r.observed)
-    observed_in_den = sum(1 for r in in_den if r.observed)
+    # Hits through the one predicate (R1): a ``pending`` row is never a hit,
+    # whatever ``observed`` says; ``observed`` decides only without an outcome.
+    observed_count = sum(1 for r in results if is_hit(r.outcome, r.observed))
+    observed_in_den = sum(1 for r in in_den if is_hit(r.outcome, r.observed))
     prevented = sum(1 for r in in_den if r.outcome == OUTCOME_PREVENTED)
     coverage_pct = round((observed_in_den / denominator * 100), 1) if denominator > 0 else 0.0
 
@@ -104,7 +106,7 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
         if st not in by_type:
             by_type[st] = {"total": 0, "observed": 0}
         by_type[st]["total"] += 1
-        if r.observed:
+        if is_hit(r.outcome, r.observed):
             by_type[st]["observed"] += 1
 
     coverage_by_type = {
