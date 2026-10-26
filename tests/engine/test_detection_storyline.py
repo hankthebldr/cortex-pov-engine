@@ -52,9 +52,11 @@ def _result(
     detection_kind=None,
     detection_severity=None,
     evidence=None,
+    **extra,
 ):
     """Build a ``Result.to_dict``-shaped mapping."""
     return {
+        **extra,
         "id": rid,
         "run_id": "run-1",
         "step_id": step_id,
@@ -293,6 +295,10 @@ def test_empty_summary_is_zeroed():
         "detected": 0,
         "pending": 0,
         "missed": 0,
+        "prevented": 0,
+        "not_reached": 0,
+        "not_executed": 0,
+        "denominator": 0,
         "coverage_pct": 0.0,
         "mttd": {"count": 0, "min": None, "median": None, "p90": None, "max": None},
     }
@@ -343,3 +349,38 @@ def test_none_run_defaults_to_pending(steps):
     story = build_storyline(None, results, steps)
     assert story["run_status"] == STATUS_PENDING
     assert story["entries"][0]["status"] == STATUS_PENDING
+
+
+def test_entry_status_prefers_outcome_states():
+    from engine.detection_storyline import (
+        STATUS_NOT_EXECUTED, STATUS_NOT_REACHED, STATUS_PREVENTED, _entry_status,
+    )
+    # Outcome wins even when the legacy flags say otherwise.
+    assert _entry_status(_result(1, "s", observed=True, outcome="prevented"), "complete") == STATUS_PREVENTED
+    assert _entry_status(_result(2, "s", outcome="not_reached"), "complete") == STATUS_NOT_REACHED
+    assert _entry_status(_result(3, "s", outcome="not_executed"), "complete") == STATUS_NOT_EXECUTED
+    # Reasoned pending stays pending on a terminal run (not a manufactured miss).
+    pend = _result(4, "s", outcome="pending", outcome_reason="ANALYTICS_ACTIVATION_PERIOD")
+    assert _entry_status(pend, "complete") == STATUS_PENDING
+    # Un-reasoned pending / legacy rows keep today's rules.
+    assert _entry_status(_result(5, "s", outcome="pending"), "complete") == STATUS_MISSED
+    assert _entry_status(_result(6, "s"), "complete") == STATUS_MISSED
+
+
+def test_storyline_entries_and_summary_carry_outcome_fields():
+    res = [
+        _result(1, "step-01", outcome="prevented", prevention_module="btp",
+                alert_action="BLOCKED", alert_outcome="prevented"),
+        _result(2, "step-02", outcome="not_reached"),
+        _result(3, "step-03", outcome="not_executed"),
+        _result(4, "step-04", outcome="pending", outcome_reason="DEDUP_WINDOW"),
+        _result(5, "step-05", observed=True, observed_at="2026-01-01T00:00:00"),
+    ]
+    sl = build_storyline({"run_id": "r", "scenario_id": "S", "status": "complete"}, res, [])
+    e0 = sl["entries"][0]
+    assert (e0["outcome"], e0["prevention_module"], e0["alert_action"], e0["alert_outcome"]) == (
+        "prevented", "btp", "BLOCKED", "prevented")
+    s = sl["summary"]
+    assert (s["prevented"], s["not_reached"], s["not_executed"]) == (1, 1, 1)
+    assert s["total"] == 5
+    assert s["denominator"] == 2  # prevented + detected; not_*/soak-pending leave

@@ -32,6 +32,10 @@ from __future__ import annotations
 import math
 from typing import Any, Optional
 
+from engine.outcome import ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW
+
+SOAK_REASONS = frozenset({ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW})
+
 # Run statuses that mean "the attack is over" — an un-observed detection is now
 # a genuine gap (missed), not merely awaiting ingest (pending). ``staged`` is a
 # push-mode terminal state where reconciliation has not yet happened, so it is
@@ -42,6 +46,11 @@ TERMINAL_RUN_STATUSES = frozenset({"complete", "failed", "aborted"})
 STATUS_DETECTED = "detected"
 STATUS_PENDING = "pending"
 STATUS_MISSED = "missed"
+# Outcome-derived states: mirrored from ``Result.outcome``, never decided here.
+STATUS_PREVENTED = "prevented"
+STATUS_NOT_REACHED = "not_reached"
+STATUS_NOT_EXECUTED = "not_executed"
+_OUTCOME_STATUSES = frozenset({STATUS_PREVENTED, STATUS_NOT_REACHED, STATUS_NOT_EXECUTED})
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +149,12 @@ def _entry_status(result: dict[str, Any], run_status: str) -> str:
     keeps the run-status nuance: an un-reviewed detection is only ``missed``
     once the run has actually reached a terminal state, otherwise ``pending``.
     """
+    outcome = result.get("outcome")
+    if outcome in _OUTCOME_STATUSES:
+        return outcome
+    # A reasoned pending (soak, ingest lag) stays pending even on a terminal run.
+    if outcome == "pending" and result.get("outcome_reason"):
+        return STATUS_PENDING
     if _is_detected(result):
         return STATUS_DETECTED
     # DC reviewed this detection and it did not fire → a real gap.
@@ -193,6 +208,11 @@ def _build_entry(
         # Convenience carry-throughs the two faces use directly.
         "result_id": result.get("id"),
         "detection_kind": result.get("detection_kind"),
+        "outcome": result.get("outcome"),
+        "outcome_reason": result.get("outcome_reason"),
+        "prevention_module": result.get("prevention_module"),
+        "alert_action": result.get("alert_action"),
+        "alert_outcome": result.get("alert_outcome"),
     }
 
 
@@ -222,6 +242,18 @@ def _percentile(values: list[float], pct: float) -> Optional[float]:
     return round(float(interp), 1)
 
 
+def _in_denominator(entry: dict[str, Any]) -> bool:
+    """Same rule as ``connectors.measures.denominator_exclusion`` (which reads
+    attributes off a Result, not an entry dict, and lives behind the connectors
+    package): not_reached / not_executed and soak-pending rows leave."""
+    if entry["status"] in (STATUS_NOT_REACHED, STATUS_NOT_EXECUTED):
+        return False
+    if entry["status"] == STATUS_PENDING and entry.get("outcome") == "pending" \
+            and entry.get("outcome_reason") in SOAK_REASONS:
+        return False
+    return True
+
+
 def build_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
     """Run-level rollup over already-built storyline entries.
 
@@ -232,6 +264,10 @@ def build_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
     detected = sum(1 for e in entries if e["status"] == STATUS_DETECTED)
     pending = sum(1 for e in entries if e["status"] == STATUS_PENDING)
     missed = sum(1 for e in entries if e["status"] == STATUS_MISSED)
+    prevented = sum(1 for e in entries if e["status"] == STATUS_PREVENTED)
+    not_reached = sum(1 for e in entries if e["status"] == STATUS_NOT_REACHED)
+    not_executed = sum(1 for e in entries if e["status"] == STATUS_NOT_EXECUTED)
+    denominator = sum(1 for e in entries if _in_denominator(e))
 
     mttds = [
         float(e["mttd_seconds"])
@@ -244,6 +280,10 @@ def build_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "detected": detected,
         "pending": pending,
         "missed": missed,
+        "prevented": prevented,
+        "not_reached": not_reached,
+        "not_executed": not_executed,
+        "denominator": denominator,
         "coverage_pct": round(detected / total * 100, 1) if total else 0.0,
         "mttd": {
             "count": len(mttds),
