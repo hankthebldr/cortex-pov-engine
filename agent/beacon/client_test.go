@@ -356,7 +356,7 @@ func TestComplete_PostsExitCodeAndSummary(t *testing.T) {
 	defer rs.Close()
 
 	c := New(rs.URL, "a-1", 0)
-	if err := c.Complete("r-42", 0, "done"); err != nil {
+	if err := c.Complete("r-42", 0, "done", []StepOutcome{}); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 
@@ -746,3 +746,210 @@ func TestStreamOutput_LiveChunksSent(t *testing.T) {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// Per-step outcomes on /complete
+// -----------------------------------------------------------------------------
+
+type completeBody struct {
+	ExitCode *int          `json:"exit_code"`
+	Summary  string        `json:"summary"`
+	Steps    []StepOutcome `json:"steps"`
+}
+
+func decodeComplete(t *testing.T, rs *recordingServer) completeBody {
+	t.Helper()
+	completes := rs.find("POST", "/complete")
+	if len(completes) != 1 {
+		t.Fatalf("expected exactly 1 /complete, got %d", len(completes))
+	}
+	var b completeBody
+	if err := json.Unmarshal([]byte(completes[0].Body), &b); err != nil {
+		t.Fatalf("decode /complete body %q: %v", completes[0].Body, err)
+	}
+	return b
+}
+
+func TestComplete_PostsStepOutcomes(t *testing.T) {
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+	c := New(rs.URL, "a-1", 0)
+
+	code := 3
+	in := []StepOutcome{
+		{StepID: "s1", ExitCode: &code, Termination: TermExited},
+		{StepID: "s2", Termination: TermNotRun, Reason: ReasonUpstreamSevered},
+	}
+	if err := c.Complete("r-1", 3, "x", in); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if err := c.Complete("r-2", 0, "y", []StepOutcome{}); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	recs := rs.find("POST", "/complete")
+	if len(recs) != 2 {
+		t.Fatalf("expected 2 /complete, got %d", len(recs))
+	}
+	var b completeBody
+	if err := json.Unmarshal([]byte(recs[0].Body), &b); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Steps) != 2 || b.Steps[0].ExitCode == nil || *b.Steps[0].ExitCode != 3 ||
+		b.Steps[1].Termination != TermNotRun || b.Steps[1].Reason != ReasonUpstreamSevered ||
+		b.Steps[1].ExitCode != nil {
+		t.Errorf("steps did not round-trip: %+v", b.Steps)
+	}
+	if !strings.Contains(recs[0].Body, `"exit_code":null`) {
+		t.Errorf("never-ran step must encode exit_code null: %s", recs[0].Body)
+	}
+	if !strings.Contains(recs[1].Body, `"steps":[]`) {
+		t.Errorf("empty steps must encode as [] not null: %s", recs[1].Body)
+	}
+	// nil must also encode as [] — never null.
+	rs2 := newRecordingServer(t, nil)
+	defer rs2.Close()
+	if err := New(rs2.URL, "a-1", 0).Complete("r-3", 0, "z", nil); err != nil {
+		t.Fatal(err)
+	}
+	if body := rs2.find("POST", "/complete")[0].Body; !strings.Contains(body, `"steps":[]`) {
+		t.Errorf("nil steps must encode as []: %s", body)
+	}
+}
+
+func TestExecuteTask_SignaledStepIsRecordedAndSeversChain(t *testing.T) {
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+	task := &Task{
+		TaskID: "t-1", RunID: "r-1", ScenarioID: "SIM-EDR-001",
+		Steps: []Step{
+			{ID: "step-01", Command: "kill -9 $$", Identity: "root"},
+			{ID: "step-02", Command: "echo never", Identity: "root"},
+		},
+	}
+	New(rs.URL, "a-1", 0).executeTask(context.Background(), task)
+
+	b := decodeComplete(t, rs)
+	if b.ExitCode == nil || *b.ExitCode != 137 {
+		t.Fatalf("expected exit 137, got %v", b.ExitCode)
+	}
+	if len(b.Steps) != 2 {
+		t.Fatalf("expected 2 step outcomes, got %+v", b.Steps)
+	}
+	if b.Steps[0].Termination != TermSignaled || b.Steps[0].Signal != 9 {
+		t.Errorf("step 0 should be signaled/9: %+v", b.Steps[0])
+	}
+	if b.Steps[1].Termination != TermNotRun || b.Steps[1].Reason != ReasonUpstreamSevered || b.Steps[1].ExitCode != nil {
+		t.Errorf("step 1 should be not_run/UPSTREAM_SEVERED: %+v", b.Steps[1])
+	}
+	if !strings.Contains(b.Summary, "SEVERED at step-01 (signaled)") {
+		t.Errorf("summary missing SEVERED suffix: %s", b.Summary)
+	}
+	for _, o := range rs.find("POST", "/output") {
+		if strings.Contains(o.Body, "echo never") && strings.Contains(o.Body, "STEP 2/2") {
+			t.Errorf("step-02 must not run")
+		}
+	}
+}
+
+func TestExecuteTaskChained_AnchorDeathIsAnchorTerminatedNotExecutionError(t *testing.T) {
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+	task := &Task{
+		TaskID: "t-1", RunID: "r-1", ScenarioID: "SIM-EDR-001",
+		CgoAnchor: &CgoAnchor{ImageName: "apache2"},
+		Steps: []Step{
+			{ID: "step-01", Command: "kill -9 $$", Identity: "root"},
+			{ID: "step-02", Command: "echo never", Identity: "root"},
+		},
+	}
+	New(rs.URL, "a-1", 0).executeTask(context.Background(), task)
+
+	b := decodeComplete(t, rs)
+	if b.ExitCode == nil || *b.ExitCode != 137 {
+		t.Fatalf("expected exit 137, got %v", b.ExitCode)
+	}
+	if len(b.Steps) != 2 {
+		t.Fatalf("expected 2 step outcomes, got %+v", b.Steps)
+	}
+	if b.Steps[0].Termination != TermAnchorTerminated || b.Steps[0].ExitCode != nil {
+		t.Errorf("step 0 should be anchor_terminated with nil exit: %+v", b.Steps[0])
+	}
+	if b.Steps[1].Termination != TermNotRun || b.Steps[1].Reason != ReasonUpstreamSevered {
+		t.Errorf("step 1 should be not_run/UPSTREAM_SEVERED: %+v", b.Steps[1])
+	}
+	if !strings.Contains(b.Summary, "SEVERED at") {
+		t.Errorf("summary missing SEVERED: %s", b.Summary)
+	}
+	if strings.Contains(b.Summary, "execution error") {
+		t.Errorf("anchor death must not be reported as an execution error: %s", b.Summary)
+	}
+}
+
+func TestExecuteTask_MissingRequiredBinaryIsNotRunToolAbsent(t *testing.T) {
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+	task := &Task{
+		TaskID: "t-1", RunID: "r-1", ScenarioID: "SIM-EDR-001",
+		Steps: []Step{
+			{ID: "step-01", Command: "echo should-not-run", Identity: "root",
+				RequiredBinaries: []string{"sh", "cortexsim-no-such-tool"}},
+			{ID: "step-02", Command: "echo also-not", Identity: "root"},
+		},
+	}
+	New(rs.URL, "a-1", 0).executeTask(context.Background(), task)
+
+	b := decodeComplete(t, rs)
+	if b.ExitCode == nil || *b.ExitCode != 127 {
+		t.Fatalf("expected exit 127, got %v", b.ExitCode)
+	}
+	if len(b.Steps) != 2 {
+		t.Fatalf("expected 2 outcomes, got %+v", b.Steps)
+	}
+	if b.Steps[0].Termination != TermNotRun || b.Steps[0].Reason != ReasonToolAbsent {
+		t.Errorf("step 0 should be not_run/TOOL_ABSENT: %+v", b.Steps[0])
+	}
+	if b.Steps[1].Termination != TermNotRun || b.Steps[1].Reason != ReasonUpstreamNotExecuted {
+		t.Errorf("step 1 should be not_run/UPSTREAM_NOT_EXECUTED: %+v", b.Steps[1])
+	}
+	found := false
+	for _, o := range rs.find("POST", "/output") {
+		if strings.Contains(o.Body, "!! TOOL_ABSENT: cortexsim-no-such-tool") {
+			found = true
+		}
+		if strings.Contains(o.Body, "should-not-run") {
+			t.Errorf("step command must not have run: %s", o.Body)
+		}
+	}
+	if !found {
+		t.Errorf("missing !! TOOL_ABSENT output")
+	}
+}
+
+func TestExecuteTask_OldShapeTaskStillCompletes(t *testing.T) {
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+	// Decode from raw JSON with no required_binaries key: the old wire shape.
+	var task Task
+	raw := `{"task_id":"t-1","run_id":"r-1","scenario_id":"SIM-EDR-001","steps":[
+	  {"id":"step-01","name":"one","command":"echo step-one","identity":"root","mitre_technique":"T1001"},
+	  {"id":"step-02","name":"two","command":"echo step-two","identity":"root","mitre_technique":"T1002"}]}`
+	if err := json.Unmarshal([]byte(raw), &task); err != nil {
+		t.Fatal(err)
+	}
+	New(rs.URL, "a-1", 0).executeTask(context.Background(), &task)
+
+	b := decodeComplete(t, rs)
+	if b.ExitCode == nil || *b.ExitCode != 0 {
+		t.Fatalf("expected exit 0, got %v", b.ExitCode)
+	}
+	if !strings.HasPrefix(b.Summary, "SUCCESS | scenario=SIM-EDR-001 steps=2") {
+		t.Errorf("summary prefix changed: %s", b.Summary)
+	}
+	if len(b.Steps) != 2 {
+		t.Fatalf("expected 2 outcomes, got %+v", b.Steps)
+	}
+	for _, s := range b.Steps {
+		if s.Termination != TermExited || s.ExitCode == nil || *s.ExitCode != 0 || s.Reason != "" {
+			t.Errorf("expected clean exited/0: %+v", s)
+		}
+	}
+}
