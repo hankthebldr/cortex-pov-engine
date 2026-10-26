@@ -228,3 +228,34 @@ def test_one_agents_terminalisation_failure_does_not_abort_the_pass(
         asyncio.run(agents_mod.sweep_agents_once())
     assert _run_status(session_factory) == ("complete", "step-01")
     assert any("terminalisation failed agent=a1" in r.getMessage() for r in caplog.records)
+
+
+def test_sweep_honours_the_configured_threshold_not_the_offline_label(session_factory, monkeypatch):
+    """R2: with CORTEXSIM_BEACON_LOST_AFTER_SECONDS=30 an agent silent for 60 s is
+    `stale` (display label, <5 min) yet its run must be terminalised."""
+    import database
+    from api.agents import _derive_status, sweep_agents_once
+    from config import settings
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    monkeypatch.setattr(settings, "CORTEXSIM_BEACON_LOST_AFTER_SECONDS", 30)
+    _seed_agent(session_factory, "quiet", age_seconds=60, stored_status="stale")
+    assert _derive_status(datetime.utcnow() - timedelta(seconds=60), datetime.utcnow())[0] == "stale"
+    _seed_running_run(session_factory, "quiet", started_ago=800)
+
+    asyncio.run(sweep_agents_once())
+    assert _run_status(session_factory) == ("complete", "step-01")
+
+
+def test_sweep_leaves_an_agent_silent_for_less_than_the_threshold(session_factory, monkeypatch):
+    import database
+    from api.agents import sweep_agents_once
+    from config import settings
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    monkeypatch.setattr(settings, "CORTEXSIM_BEACON_LOST_AFTER_SECONDS", 30)
+    _seed_agent(session_factory, "brief", age_seconds=10, stored_status="online")
+    _seed_running_run(session_factory, "brief", started_ago=800)
+
+    asyncio.run(sweep_agents_once())
+    assert _run_status(session_factory) == ("running", None)

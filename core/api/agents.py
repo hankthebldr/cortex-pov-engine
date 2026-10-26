@@ -1566,12 +1566,17 @@ async def sweep_agents_once() -> int:
         # Snapshot BEFORE any terminalisation: a rollback for one agent expires
         # every loaded ORM object, so iterating them afterwards would raise
         # MissingGreenlet on the next agent.
-        offline_ids = [a.agent_id for a in agents
-                       if _derive_status(a.last_seen, now)[0] == "offline"]
-        # Every offline agent, not only on transition: a restart must not skip
-        # a run whose agent went offline before it.
+        #
+        # Gate on the configured beacon-lost threshold, NOT on the `offline`
+        # display label (a fixed 5 min): the label is a derivation for the UI;
+        # terminalise_lost_runs re-checks the same threshold per run.
         from config import settings  # noqa: PLC0415
         from engine.beacon_lost import terminalise_lost_runs  # noqa: PLC0415
+
+        threshold = settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS
+        offline_ids = [a.agent_id for a in agents
+                       if a.last_seen is None
+                       or (now - a.last_seen).total_seconds() >= threshold]
 
         for agent_id in offline_ids:
             try:
