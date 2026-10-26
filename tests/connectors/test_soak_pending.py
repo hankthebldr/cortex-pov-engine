@@ -98,3 +98,16 @@ def test_second_run_silence_is_dedup_window(session_factory):
     r = results[0]
     assert r.outcome == "pending"
     assert r.outcome_reason == "DEDUP_WINDOW"
+
+
+def test_dedup_key_matches_on_either_spelling(session_factory):
+    # First run's row carries only expected_detection; the second run's row has
+    # a detection_id AND the same expected_detection.
+    _seed_analytics(session_factory, run_id="run-1", detection_id=None, observed=True,
+                    soakless=True)
+    _seed_analytics(session_factory, run_id="run-2", detection_id="anl-1", observed=False,
+                    soakless=True, paired_with="run-1", with_scenario=False)
+    asyncio.run(_setup(session_factory))
+    fetcher, _ = _tenant([])
+    _summary, results = asyncio.run(_reconcile_run_id(session_factory, "run-2", fetcher))
+    assert results[0].outcome_reason == "DEDUP_WINDOW"

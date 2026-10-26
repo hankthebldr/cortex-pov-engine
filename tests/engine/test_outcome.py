@@ -96,3 +96,11 @@ def test_unknown_alert_without_host_witness_is_never_a_miss(closed):
 def test_upstream_failed_reason_exists_and_maps_to_not_reached():
     assert oc.UPSTREAM_FAILED == "UPSTREAM_FAILED"
     assert oc.host_outcome_for_step("not_run", oc.UPSTREAM_FAILED) == "not_reached"
+
+
+def test_evidence_incomplete_reason_exists():
+    assert isinstance(oc.EVIDENCE_INCOMPLETE, str) and oc.EVIDENCE_INCOMPLETE == "EVIDENCE_INCOMPLETE"
+
+
+def test_pass_withheld_unscoped_reason_exists():
+    assert isinstance(oc.PASS_WITHHELD_UNSCOPED, str) and oc.PASS_WITHHELD_UNSCOPED == "PASS_WITHHELD_UNSCOPED"

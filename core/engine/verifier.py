@@ -310,6 +310,11 @@ async def verify_results(
         if not xql:
             counts["skipped"] += 1
             continue
+        if getattr(r, "expected_outcome", None) == "prevent":
+            # A row count proves an alert exists, never that the agent blocked
+            # anything; a prevent row is judged only by the two-witness rule.
+            counts["skipped"] += 1
+            continue
 
         want = expected_rows_min(r) if expected_rows_min else _expected_rows_min(r)
         try:

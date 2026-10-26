@@ -80,7 +80,7 @@ def denominator_exclusion(result: Any) -> Optional[str]:
     outcome = getattr(result, "outcome", None)
     if outcome in EXCLUDED_FROM_DENOMINATOR:
         return outcome
-    if getattr(result, "outcome_reason", None) in SOAK_REASONS:
+    if outcome == "pending" and getattr(result, "outcome_reason", None) in SOAK_REASONS:
         return "soak_pending"
     return None
 

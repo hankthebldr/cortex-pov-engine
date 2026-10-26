@@ -57,6 +57,12 @@ UPSTREAM_NOT_EXECUTED = "UPSTREAM_NOT_EXECUTED"
 UPSTREAM_FAILED = "UPSTREAM_FAILED"
 TOOL_ABSENT = "TOOL_ABSENT"
 TOOL_PRESENCE_UNCHECKED = "TOOL_PRESENCE_UNCHECKED"
+#: A silent row's window closed, but the pull was unscoped, truncated, lossy or
+#: a hand-picked manual import: silence there is not evidence of a miss.
+EVIDENCE_INCOMPLETE = "EVIDENCE_INCOMPLETE"
+#: The two witnesses agreed, but the pull was unscoped: the alert could have
+#: come from any endpoint, so a row-level PASS is withheld.
+PASS_WITHHELD_UNSCOPED = "PASS_WITHHELD_UNSCOPED"
 
 # --- agent profile / block-mode status ------------------------------------
 PROFILE_MODES = frozenset({"report", "block", "unknown"})

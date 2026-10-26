@@ -282,3 +282,18 @@ def test_only_finished_runs_are_verified(status, expected):
     run.status = status
     assert _verify_eligible(run, max_attempts=3, backoff_seconds=600,
                             now=datetime.utcnow()) == expected
+
+
+def test_tier2_never_certifies_a_prevent_row():
+    """A row count cannot prove the agent blocked anything."""
+    from types import SimpleNamespace
+
+    from engine.verifier import verify_results
+
+    r = SimpleNamespace(id=1, detection_id="d", verification_xql="dataset = xdr_data",
+                        expected_outcome="prevent", kpi_verdict="pending", verified_at=None)
+    calls: list = []
+    counts = asyncio.run(verify_results([r], _runner(5, calls), expected_rows_min=lambda _r: 1))
+    assert r.kpi_verdict == "pending"
+    assert calls == []
+    assert counts["skipped"] == 1
