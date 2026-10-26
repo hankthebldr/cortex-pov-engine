@@ -35,7 +35,9 @@ def _seed(SessionLocal, *, started_ago, delivered_ago=900, run_id="r1", agent="a
                               expected_outcome="prevent" if sid in prevent_steps else "detect",
                               executed_at=NOW - timedelta(seconds=delivered_ago)))
             if started_ago is not None:
-                db.add(StepOutcome(run_id=run_id, step_id="step-02",
+                # step-01 ended (its /output landed); step-02 is in flight and,
+                # having produced no /output yet, has no row.
+                db.add(StepOutcome(run_id=run_id, step_id="step-01",
                                    started_at=NOW - timedelta(seconds=started_ago)))
             await db.commit()
 
@@ -72,10 +74,9 @@ def test_offline_agent_terminalises_running_run_as_beacon_lost(session_factory):
     assert run.severed_at_step == "step-02"
     assert run.output.endswith(MARKER)
     so = {o.step_id: o for o in _load(session_factory, StepOutcome)}
-    assert so["step-02"].termination == "beacon_lost"
-    assert so["step-02"].started_at == NOW - timedelta(seconds=600)
+    assert so["step-02"].termination == "beacon_lost"  # the in-flight step: no row until it ends
+    assert so["step-01"].termination is None  # step-01 ended; its row is untouched
     assert so["step-03"].termination == "not_run" and so["step-03"].reason == "UPSTREAM_SEVERED"
-    assert "step-01" not in so
     res = {r.step_id: r for r in _load(session_factory, Result)}
     assert res["step-03"].outcome == "not_reached"
     assert res["step-02"].outcome != "prevented"
@@ -254,8 +255,8 @@ def test_witnessed_severed_step_keeps_its_witness(session_factory):
 
     async def _go():
         async with session_factory() as db:
-            so = (await db.execute(select(StepOutcome))).scalar_one()
-            so.termination = "anchor_terminated"
+            db.add(StepOutcome(run_id="r1", step_id="step-02",
+                               termination="anchor_terminated", recorded_at=NOW))
             await db.commit()
 
     asyncio.run(_go())

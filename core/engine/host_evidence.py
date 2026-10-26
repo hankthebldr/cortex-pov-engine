@@ -12,7 +12,9 @@ from typing import Any, Iterable, Optional, Sequence
 from engine.outcome import (
     HOST_WITNESS,
     OUTCOME_PENDING,
+    PREVENTION_UNCONFIRMED_BEACON_LOST,
     PREVENTION_UNCONFIRMED_NO_ALERT,
+    TERMINATION_BEACON_LOST,
     host_outcome_for_step,
 )
 
@@ -55,6 +57,13 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
               and s.termination in HOST_WITNESS):
             r.outcome = OUTCOME_PENDING
             r.outcome_reason = PREVENTION_UNCONFIRMED_NO_ALERT
+            r.kpi_verdict = "pending"
+            touched += 1
+        elif (r.expected_outcome == "prevent" and agent_profile_mode == "block"
+              and s.termination == TERMINATION_BEACON_LOST):
+            # A lost beacon is a witness of nothing: hold the prevention open.
+            r.outcome = OUTCOME_PENDING
+            r.outcome_reason = PREVENTION_UNCONFIRMED_BEACON_LOST
             r.kpi_verdict = "pending"
             touched += 1
     return touched

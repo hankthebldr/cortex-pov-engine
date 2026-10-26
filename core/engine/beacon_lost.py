@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from engine.host_evidence import apply_host_outcomes
 from engine.outcome import (
+    HOST_WITNESS,
     TERMINATION_BEACON_LOST,
     TERMINATION_NOT_RUN,
     UPSTREAM_SEVERED,
@@ -67,11 +68,20 @@ def is_lost(reference: datetime, now: datetime, after_seconds: int) -> bool:
 
 
 def pick_severed(outcomes: Sequence[Any], step_ids: Sequence[str]) -> Optional[str]:
-    """Step with the latest ``started_at``, else the first step."""
-    started = [o for o in outcomes if o.started_at is not None]
-    if started:
-        return max(started, key=lambda o: o.started_at).step_id
-    return step_ids[0] if step_ids else None
+    """The step the beacon died in: the FIRST scenario step with no row.
+
+    ``/output`` writes a StepOutcome row only after a step ends, so the
+    in-flight step has none. If every step already has a row, the last step is
+    the severed one (its witnessed termination, if any, stands).
+    """
+    for o in outcomes:  # a host witness already on record stands
+        if o.termination in HOST_WITNESS and o.step_id in step_ids:
+            return o.step_id
+    have = {o.step_id for o in outcomes}
+    for sid in step_ids:
+        if sid not in have:
+            return sid
+    return step_ids[-1] if step_ids else None
 
 
 def steps_after(step_ids: Sequence[str], severed: str) -> list[str]:
