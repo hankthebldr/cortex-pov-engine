@@ -64,6 +64,20 @@ EVIDENCE_INCOMPLETE = "EVIDENCE_INCOMPLETE"
 #: come from any endpoint, so a row-level PASS is withheld.
 PASS_WITHHELD_UNSCOPED = "PASS_WITHHELD_UNSCOPED"
 
+#: Soak reasons: a row silent for a reason that says nothing about the detector.
+SOAK_REASONS = frozenset({ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW})
+
+
+def is_in_denominator(outcome: Optional[str], outcome_reason: Optional[str]) -> bool:
+    """The one efficacy-denominator rule: False for rows whose step never ran
+    (``EXCLUDED_FROM_DENOMINATOR``) and for soak-pending rows; True otherwise."""
+    if outcome in EXCLUDED_FROM_DENOMINATOR:
+        return False
+    if outcome == "pending" and outcome_reason in SOAK_REASONS:
+        return False
+    return True
+
+
 # --- agent profile / block-mode status ------------------------------------
 PROFILE_MODES = frozenset({"report", "block", "unknown"})
 BLOCK_MODE_CONFIRMED = "block_mode_confirmed"

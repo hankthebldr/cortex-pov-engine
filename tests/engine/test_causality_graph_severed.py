@@ -63,3 +63,21 @@ def test_control_layer_renamed_runtime_control():
     g = build_causality_graph(run, [_res(1, "step-01")], STEPS[:1])
     assert "runtime_control" in g["causality_summary"]["by_control_layer"]
     assert "prevention" not in g["causality_summary"]["by_control_layer"]
+
+
+def test_dual_control_counts_prevention_and_ignores_unreached():
+    run = {"run_id": "r", "scenario_id": "S", "status": "complete"}
+    results = [
+        _res(1, "step-01", plane="ASM", control_layer="exposure",
+             observed=True, observed_at="2026-01-01T00:00:00", asset_ref="a"),
+        _res(2, "step-02", outcome="prevented"),
+    ]
+    g = build_causality_graph(run, results, STEPS[:2])
+    cs = g["causality_summary"]
+    assert cs["by_control_layer"]["runtime_control"] == {"detected": 1, "expected": 1}
+    assert cs["dual_control_verdict"].startswith("Dual-control CONFIRMED")
+
+    only_unreached = build_causality_graph(run, [_res(1, "step-01", outcome="not_reached")], STEPS[:1])
+    layer = only_unreached["causality_summary"]["by_control_layer"]["runtime_control"]
+    assert layer == {"detected": 0, "expected": 0}
+    assert "Both controls missed" not in only_unreached["causality_summary"]["dual_control_verdict"]

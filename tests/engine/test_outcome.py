@@ -104,3 +104,44 @@ def test_evidence_incomplete_reason_exists():
 
 def test_pass_withheld_unscoped_reason_exists():
     assert isinstance(oc.PASS_WITHHELD_UNSCOPED, str) and oc.PASS_WITHHELD_UNSCOPED == "PASS_WITHHELD_UNSCOPED"
+
+
+import pytest
+
+
+@pytest.mark.parametrize("outcome", [None, "prevented", "detected", "missed", "pending",
+                                     "not_reached", "not_executed"])
+@pytest.mark.parametrize("reason", [None, "OTHER", oc.ANALYTICS_ACTIVATION_PERIOD, oc.DEDUP_WINDOW])
+def test_is_in_denominator_matrix(outcome, reason):
+    expected = True
+    if outcome in ("not_reached", "not_executed"):
+        expected = False
+    elif outcome == "pending" and reason in (oc.ANALYTICS_ACTIVATION_PERIOD, oc.DEDUP_WINDOW):
+        expected = False
+    assert oc.is_in_denominator(outcome, reason) is expected
+
+
+def test_single_definition_of_soak_reasons_and_denominator_rule():
+    """AST drift guard: the rule lives once, in engine/outcome.py."""
+    import ast
+    import pathlib
+
+    core = pathlib.Path(__file__).resolve().parents[2] / "core"
+    defs = {"SOAK_REASONS": [], "is_in_denominator": []}
+    for path in core.rglob("*.py"):
+        if "__pycache__" in str(path):
+            continue
+        try:
+            tree = ast.parse(path.read_text())
+        except SyntaxError:  # pragma: no cover
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name in defs:
+                defs[node.name].append(str(path))
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for t in targets:
+                    if isinstance(t, ast.Name) and t.id in defs:
+                        defs[t.id].append(str(path))
+    for name, where in defs.items():
+        assert len(where) == 1 and where[0].endswith("engine/outcome.py"), (name, where)

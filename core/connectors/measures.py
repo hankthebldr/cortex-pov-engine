@@ -21,11 +21,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Optional
 
-from engine.outcome import (
-    ANALYTICS_ACTIVATION_PERIOD,
-    DEDUP_WINDOW,
-    EXCLUDED_FROM_DENOMINATOR,
-)
+from engine.outcome import EXCLUDED_FROM_DENOMINATOR, is_in_denominator
 from engine.verifier import FAIL, PASS, evaluate_threshold
 
 MTTD = "mttd"
@@ -65,11 +61,6 @@ def kpi_family(primary_kpi: Optional[str], threshold: Any) -> Optional[str]:
     return None
 
 
-#: Soak reasons: an Analytics/ABIOC row that is silent for a reason that says
-#: nothing about the detector (activation period, dedup of a repeat alert).
-SOAK_REASONS = frozenset({ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW})
-
-
 def denominator_exclusion(result: Any) -> Optional[str]:
     """Why ``result`` leaves the efficacy denominator, or None when it counts.
 
@@ -78,11 +69,9 @@ def denominator_exclusion(result: Any) -> Optional[str]:
     stays pending for a soak reason. The key is the one ``excluded`` reports.
     """
     outcome = getattr(result, "outcome", None)
-    if outcome in EXCLUDED_FROM_DENOMINATOR:
-        return outcome
-    if outcome == "pending" and getattr(result, "outcome_reason", None) in SOAK_REASONS:
-        return "soak_pending"
-    return None
+    if is_in_denominator(outcome, getattr(result, "outcome_reason", None)):
+        return None
+    return outcome if outcome in EXCLUDED_FROM_DENOMINATOR else "soak_pending"
 
 
 def empty_exclusions() -> dict[str, int]:

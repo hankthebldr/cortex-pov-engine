@@ -32,9 +32,7 @@ from __future__ import annotations
 import math
 from typing import Any, Optional
 
-from engine.outcome import ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW
-
-SOAK_REASONS = frozenset({ANALYTICS_ACTIVATION_PERIOD, DEDUP_WINDOW})
+from engine.outcome import is_in_denominator
 
 # Run statuses that mean "the attack is over" — an un-observed detection is now
 # a genuine gap (missed), not merely awaiting ingest (pending). ``staged`` is a
@@ -243,15 +241,8 @@ def _percentile(values: list[float], pct: float) -> Optional[float]:
 
 
 def _in_denominator(entry: dict[str, Any]) -> bool:
-    """Same rule as ``connectors.measures.denominator_exclusion`` (which reads
-    attributes off a Result, not an entry dict, and lives behind the connectors
-    package): not_reached / not_executed and soak-pending rows leave."""
-    if entry["status"] in (STATUS_NOT_REACHED, STATUS_NOT_EXECUTED):
-        return False
-    if entry["status"] == STATUS_PENDING and entry.get("outcome") == "pending" \
-            and entry.get("outcome_reason") in SOAK_REASONS:
-        return False
-    return True
+    """Entry-dict adapter over the single rule, ``engine.outcome.is_in_denominator``."""
+    return is_in_denominator(entry.get("outcome"), entry.get("outcome_reason"))
 
 
 def build_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -284,7 +275,11 @@ def build_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "not_reached": not_reached,
         "not_executed": not_executed,
         "denominator": denominator,
-        "coverage_pct": round(detected / total * 100, 1) if total else 0.0,
+        # Honest denominator: rows whose step never ran (or that are soak-pending)
+        # leave it; a prevention is a hit. ``denominator: 0`` reads degraded.
+        "coverage_pct": (
+            round((detected + prevented) / denominator * 100, 1) if denominator else 0.0
+        ),
         "mttd": {
             "count": len(mttds),
             "min": _percentile(mttds, 0),

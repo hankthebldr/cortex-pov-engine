@@ -51,7 +51,9 @@ from typing import Any, Optional
 
 from engine.detection_storyline import (
     STATUS_DETECTED,
+    STATUS_NOT_EXECUTED,
     STATUS_NOT_REACHED,
+    STATUS_PREVENTED,
     _as_dict,
     build_storyline,
     build_summary,
@@ -992,9 +994,11 @@ def _causality_summary(nodes, edges, entries, results_by_id, obs_map, meta):
     for e in entries:
         rd = results_by_id.get(e.get("result_id"), {})
         cl = _control_layer(rd)
+        if e["status"] in (STATUS_NOT_REACHED, STATUS_NOT_EXECUTED):
+            continue  # the step never ran: neither a hit nor a gap
         bucket = dual.setdefault(cl, {"detected": 0, "expected": 0})
         bucket["expected"] += 1
-        if e["status"] == STATUS_DETECTED:
+        if e["status"] in (STATUS_DETECTED, STATUS_PREVENTED):
             bucket["detected"] += 1
 
     dual_control_verdict = _dual_control_verdict(dual)

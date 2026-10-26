@@ -384,3 +384,17 @@ def test_storyline_entries_and_summary_carry_outcome_fields():
     assert (s["prevented"], s["not_reached"], s["not_executed"]) == (1, 1, 1)
     assert s["total"] == 5
     assert s["denominator"] == 2  # prevented + detected; not_*/soak-pending leave
+
+
+def test_coverage_pct_uses_honest_denominator():
+    res = [
+        _result(1, "step-01", observed=True, observed_at="2026-01-01T00:00:00"),
+        _result(2, "step-02", outcome="prevented"),
+        _result(3, "step-03", outcome="not_reached"),
+        _result(4, "step-04", outcome="pending", outcome_reason="ANALYTICS_ACTIVATION_PERIOD"),
+    ]
+    s = build_storyline({"run_id": "r", "scenario_id": "S", "status": "complete"}, res, [])["summary"]
+    assert (s["total"], s["denominator"], s["coverage_pct"]) == (4, 2, 100.0)
+    only_unreached = build_storyline({"run_id": "r", "scenario_id": "S", "status": "complete"},
+                                     [_result(1, "s", outcome="not_reached")], [])["summary"]
+    assert (only_unreached["denominator"], only_unreached["coverage_pct"]) == (0, 0.0)

@@ -31,7 +31,6 @@ from connectors.base import HttpFetcher
 from connectors.matcher import DEFAULT_WINDOW_SECONDS, scope_to_host
 from connectors.measures import (
     CORRELATION,
-    SOAK_REASONS,
     build_measurement,
     denominator_exclusion,
     empty_exclusions,
@@ -44,6 +43,7 @@ from engine.outcome import (
     OUTCOME_MISSED,
     OUTCOME_PENDING,
     OUTCOME_PREVENTED,
+    SOAK_REASONS,
     PASS_WITHHELD_UNSCOPED,
     PreventVerdict,
     evaluate_prevent,
