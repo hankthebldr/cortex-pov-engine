@@ -176,3 +176,26 @@ def test_scorecard_unknown_run_404(client):
     r = client.get("/api/runs/no-such-run/report", params={"format": "scorecard"})
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "RUN_NOT_FOUND"
+
+
+def test_scorecard_leads_with_integrity_banner_on_tool_absent(client, seeded_run, session_factory):
+    from sqlalchemy import update
+    from models import Run
+
+    async def _mark():
+        async with session_factory() as db:
+            await db.execute(update(Run).where(Run.run_id == seeded_run)
+                             .values(output="!! TOOL_ABSENT: hydra\n"))
+            await db.commit()
+
+    asyncio.run(_mark())
+    md = client.get(f"/api/runs/{seeded_run}/report", params={"format": "scorecard"}).text
+    assert md.lstrip().startswith("## ") and "READ THIS FIRST" in md.splitlines()[0]
+    assert "TOOL_ABSENT" in md.split("# Cortex POV")[0]
+    html_ = client.get(f"/api/runs/{seeded_run}/report", params={"format": "scorecard-html"}).text
+    assert html_.index("READ THIS FIRST") < html_.index("Cortex POV Efficacy Scorecard")
+
+
+def test_scorecard_without_integrity_problem_has_no_banner(client, seeded_run):
+    md = client.get(f"/api/runs/{seeded_run}/report", params={"format": "scorecard"}).text
+    assert "READ THIS FIRST" not in md

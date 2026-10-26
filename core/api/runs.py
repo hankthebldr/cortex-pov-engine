@@ -22,18 +22,28 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import and_, case, func, not_, or_, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from engine import efficacy_scorecard
+from engine import host_evidence
 from engine import report_generator
-from engine.outcome import PROFILE_MODES
+from engine.outcome import (
+    PROFILE_MODES,
+    TERMINATIONS,
+    TERMINATION_NOT_RUN,
+    TOOL_ABSENT,
+    UPSTREAM_FAILED,
+    UPSTREAM_NOT_EXECUTED,
+    UPSTREAM_SEVERED,
+)
 from engine.pairing import build_pair_delta
 from engine.orchestrator import orchestrator
 from events import event_bus
-from models import Result, Run, Scenario
+from models import Result, Run, Scenario, StepOutcome
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.runs")
@@ -64,6 +74,21 @@ _INTEGRITY_MARKERS: tuple[tuple[str, str], ...] = (
     ("RUN FAILED ON RESTART",
      "SimCore restarted before the agent collected this task; the run never "
      "reached the target."),
+    ("!! TOOL_ABSENT",
+     "A step's tool was not present on the target, so the step did not run "
+     "and its absent detections say nothing about Cortex."),
+    ("!! RUNTIME_DEPENDENCY_MISSING",
+     "A runtime dependency the step needs was missing on the target, so the "
+     "step could not execute as authored."),
+    ("command not found",
+     "A step invoked a command the target does not have, so the TTP did not "
+     "run as authored."),
+    ("BEACON LOST",
+     "The beacon stopped reporting mid-run, so later steps may not have run "
+     "and the host evidence is incomplete."),
+    ("!! TERMINATION_UNKNOWN",
+     "The beacon reported a step ending in a way it could not classify, so "
+     "whether the agent severed the step is unknown."),
 )
 
 
@@ -233,9 +258,43 @@ class OutputRequest(BaseModel):
     step_id: Optional[str] = None
 
 
+_STEP_REASONS = frozenset({UPSTREAM_SEVERED, UPSTREAM_NOT_EXECUTED, UPSTREAM_FAILED, TOOL_ABSENT})
+
+
+class StepOutcomeIn(BaseModel):
+    """One step's host evidence, as the beacon reports it on /complete."""
+
+    step_id: str
+    exit_code: Optional[int] = None
+    termination: str
+    signal: Optional[int] = None
+    reason: Optional[str] = None
+
+    @field_validator("termination")
+    @classmethod
+    def _termination_in_vocabulary(cls, v: str) -> str:
+        if v not in TERMINATIONS:
+            raise ValueError(f"termination must be one of {sorted(TERMINATIONS)}")
+        return v
+
+    @model_validator(mode="after")
+    def _reason_in_vocabulary(self) -> "StepOutcomeIn":
+        # Out-of-vocabulary input is rejected here (422), never tolerated: a
+        # `not_run` step with a reason nobody recognises would otherwise reach
+        # host_outcome_for_step and surface as a 500 mid-/complete.
+        if self.reason is not None and self.reason not in _STEP_REASONS:
+            raise ValueError(f"reason must be one of {sorted(_STEP_REASONS)}")
+        if self.termination == TERMINATION_NOT_RUN and self.reason is None:
+            raise ValueError("a not_run step must carry a reason")
+        return self
+
+
 class CompleteRequest(BaseModel):
     exit_code: int
     summary: str
+    # Per-step host evidence. Absent from an old beacon, which must behave
+    # exactly as before: no step_outcomes rows, status rule unchanged.
+    steps: list[StepOutcomeIn] = []
 
 
 # Terminal Run states — reaching any of these stops the agent and makes
@@ -595,6 +654,7 @@ async def get_report(
             # reports only the first invites "94% covered" to be read as "94%
             # passed", which the two numbers do not support.
             tc_verdicts=[run.tc_verdict],
+            integrity=_execution_integrity(run),
         )
         if format == "scorecard-html":
             return Response(
@@ -948,6 +1008,17 @@ async def append_output(
     if res.rowcount == 0:
         await db.rollback()
         raise _run_not_found(run_id)
+    if body.step_id:
+        # First output for a step marks when it started. One INSERT .. ON
+        # CONFLICT DO NOTHING in the same transaction as the append: concurrent
+        # stdout/stderr writers race here, and a read-then-insert would either
+        # violate the unique key or overwrite the earliest started_at.
+        await db.execute(
+            sqlite_insert(StepOutcome)
+            .values(run_id=run_id, step_id=body.step_id,
+                    started_at=datetime.utcnow(), recorded_at=datetime.utcnow())
+            .on_conflict_do_nothing(index_elements=["run_id", "step_id"])
+        )
     await db.commit()
 
     await _safe_publish(
@@ -958,6 +1029,42 @@ async def append_output(
 
     logger.info("output appended run_id=%s bytes=%d step=%s", run_id, len(body.output), body.step_id)
     return {"status": "ok", "run_id": run_id}
+
+
+async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[str]) -> bool:
+    """Was the non-zero exit the agent doing its job, not a failure?
+
+    True only when the host witnessed a sever on ``severed``, the run was
+    launched in block mode, and that step carries a ``prevent`` expectation:
+    then the kill is the expected result and the run is not ``failed``.
+    """
+    if severed is None:
+        return False
+    mode = (await db.execute(
+        select(Run.agent_profile_mode).where(Run.run_id == run_id)
+    )).scalar_one_or_none()
+    if mode != "block":
+        return False
+    hit = (await db.execute(
+        select(Result.id).where(
+            Result.run_id == run_id, Result.step_id == severed,
+            Result.expected_outcome == "prevent",
+        ).limit(1)
+    )).first()
+    return hit is not None
+
+
+async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
+                               agent_profile_mode: str) -> None:
+    """Project reported step outcomes onto the run's Results and commit."""
+    if not steps:
+        return
+    rows = (await db.execute(
+        select(Result).where(Result.run_id == run_id,
+                             Result.step_id.in_([s.step_id for s in steps]))
+    )).scalars().all()
+    if host_evidence.apply_host_outcomes(rows, steps, agent_profile_mode=agent_profile_mode):
+        await db.commit()
 
 
 @router.post("/{run_id}/complete")
@@ -998,7 +1105,11 @@ async def complete_run(
         "open_tasks": func.max(func.coalesce(Run.open_tasks, 1) - 1, 0),
         "output": func.coalesce(Run.output, "") + summary_text,
     }
-    if body.exit_code != 0:
+    severed = host_evidence.severed_step(body.steps)
+    if severed is not None:
+        # Never clear a severance an earlier endpoint already recorded.
+        values["severed_at_step"] = func.coalesce(Run.severed_at_step, severed)
+    if body.exit_code != 0 and not await _severed_prevent_ok(db, run_id, severed):
         values["status"] = "failed"
     res = await db.execute(
         update(Run)
@@ -1022,17 +1133,32 @@ async def complete_run(
         orchestrator.clear_aborted(run_id)
         return {"status": run.status, "run_id": run_id, "already_terminal": True}
 
+    # Host evidence for each step, in the same write transaction. A duplicate
+    # /complete upserts the same rows (idempotent); started_at, set by /output,
+    # is deliberately not in the update set.
+    for st in body.steps:
+        vals = dict(exit_code=st.exit_code, termination=st.termination,
+                    signal=st.signal or None, reason=st.reason,
+                    recorded_at=datetime.utcnow())
+        await db.execute(
+            sqlite_insert(StepOutcome)
+            .values(run_id=run_id, step_id=st.step_id, **vals)
+            .on_conflict_do_update(index_elements=["run_id", "step_id"], set_=vals)
+        )
+
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes
     # with it.
     run = await _reload_run(db, run_id)
     remaining, status = run.open_tasks, run.status
+    profile_mode = run.agent_profile_mode
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal
         # frame, or score yet. The run stays 'running' (or 'failed' if an
         # endpoint has already failed) until the final callback.
         await db.commit()
+        await _apply_host_evidence(db, run_id, body.steps, profile_mode)
         logger.info(
             "run_complete partial run_id=%s exit_code=%d remaining_endpoints=%d",
             run_id, body.exit_code, remaining,
@@ -1054,6 +1180,9 @@ async def complete_run(
         .execution_options(synchronize_session=False)
     )
     await db.commit()
+    # Project the host evidence onto the seeded Results and commit BEFORE the
+    # completion-time score below, so that score sees the outcomes.
+    await _apply_host_evidence(db, run_id, body.steps, profile_mode)
     run = await _reload_run(db, run_id)
 
     # Run reached a terminal state — drop it from the orchestrator's aborted

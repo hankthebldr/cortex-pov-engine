@@ -173,8 +173,17 @@ class EfficacyScorecard:
     by_product: tuple[BreakdownRow, ...]
     generated_at: str
     verdicts: VerdictTally = dataclasses.field(default_factory=VerdictTally)
+    # Execution-integrity verdict ({"ok": bool, "problems": [str]}). None for a
+    # scope that was never checked (a portfolio); only ``ok is False`` renders.
+    integrity: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
+        d = self._base_dict()
+        if self.integrity is not None:
+            d["integrity"] = self.integrity
+        return d
+
+    def _base_dict(self) -> dict[str, Any]:
         return {
             "title": self.title,
             "run_count": self.run_count,
@@ -280,6 +289,7 @@ def build_efficacy_scorecard(
     title: Optional[str] = None,
     generated_at: Optional[str] = None,
     tc_verdicts: Optional[Iterable[Optional[str]]] = None,
+    integrity: Optional[dict[str, Any]] = None,
 ) -> EfficacyScorecard:
     """Build the efficacy scorecard from ``Result.to_dict()``-shaped dicts.
 
@@ -335,6 +345,7 @@ def build_efficacy_scorecard(
         by_product=tuple(by_product),
         generated_at=generated_at or datetime.now(timezone.utc).isoformat(),
         verdicts=tally,
+        integrity=integrity,
     )
 
 
@@ -394,11 +405,39 @@ def _is_degraded(coverage: CoverageStats) -> bool:
 # ---------------------------------------------------------------------------
 
 
+_INTEGRITY_LEAD = (
+    "The detection results below are NOT evidence about this environment's "
+    "coverage. This run did not execute as authored:"
+)
+_INTEGRITY_TAIL = (
+    "A step that did not run says nothing about whether Cortex would have "
+    "caught the behaviour. Treat the coverage numbers below as void and "
+    "re-run once the cause is fixed."
+)
+
+
+def _integrity_failed(sc: EfficacyScorecard) -> bool:
+    return sc.integrity is not None and sc.integrity.get("ok") is False
+
+
 def render_markdown(scorecard: EfficacyScorecard) -> str:
     """Render the scorecard as Cortex-branded markdown for report export."""
     sc = scorecard
     cov = sc.coverage
     lines: list[str] = []
+
+    # Integrity first: a CISO one-pager that opens on coverage numbers from a
+    # run that never executed reads as a gap in THEIR coverage.
+    if _integrity_failed(sc):
+        lines.append("## ⚠ Execution Integrity — READ THIS FIRST")
+        lines.append("")
+        lines.append(f"**{_INTEGRITY_LEAD}**")
+        lines.append("")
+        for problem in sc.integrity.get("problems", []):
+            lines.append(f"- {problem}")
+        lines.append("")
+        lines.append(_INTEGRITY_TAIL)
+        lines.append("")
 
     lines.append(f"# {sc.title}")
     lines.append("")
@@ -612,9 +651,22 @@ def render_html(scorecard: EfficacyScorecard) -> str:
         accent = (_DETECTED_GREEN if cov.pct >= 80
                   else _CORTEX_TEAL if cov.pct >= 50 else _MISSED_RED)
 
+    integrity_html = ""
+    if _integrity_failed(sc):
+        items = "".join(f"<li>{html.escape(p)}</li>" for p in sc.integrity.get("problems", []))
+        integrity_html = (
+            '<div class="cs-integrity" style="border:2px solid '
+            f'{_MISSED_RED};border-radius:8px;padding:16px 20px;margin-bottom:20px">'
+            f'<strong style="color:{_MISSED_RED}">&#9888; Execution Integrity '
+            "&mdash; READ THIS FIRST</strong>"
+            f"<p><strong>{html.escape(_INTEGRITY_LEAD)}</strong></p>"
+            f"<ul>{items}</ul><p>{html.escape(_INTEGRITY_TAIL)}</p></div>"
+        )
+
     doc = (
         f"<style>{style}</style>"
         '<div class="cs-root">'
+        f"{integrity_html}"
         f"<h1>{html.escape(sc.title)}</h1>"
         f'<div class="cs-meta">Scope: {html.escape(scope)} · '
         f"Generated {html.escape(sc.generated_at)}</div>"
