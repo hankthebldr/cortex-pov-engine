@@ -46,6 +46,8 @@ from engine.outcome import (
     SOAK_REASONS,
     PASS_WITHHELD_UNSCOPED,
     PreventVerdict,
+    RUN_ABORTED,
+    TERMINATION_ABORTED,
     evaluate_prevent,
     is_hit,
     soak_pending_reason,
@@ -484,7 +486,11 @@ async def _judge_silent_results(
             # otherwise the same softening as the prevent branch. kpi_verdict is
             # the Tier-2 verifier's and is not touched. A later matched alert
             # replaces `missed` with `detected` (apply_verdicts).
-            if evidence_complete:
+            if terminations.get(r.step_id) == TERMINATION_ABORTED:
+                # An operator-cut step is undetermined, not missed (R3b).
+                r.outcome = OUTCOME_PENDING
+                r.outcome_reason = RUN_ABORTED
+            elif evidence_complete:
                 r.outcome = OUTCOME_MISSED
                 r.outcome_reason = None
             else:

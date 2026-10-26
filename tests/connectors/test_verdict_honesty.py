@@ -575,3 +575,26 @@ def test_a_later_alert_replaces_a_silent_miss_with_detected(session_factory):
     asyncio.run(_late())
     r = asyncio.run(_results_by_step(session_factory))["step-01"]
     assert (r.outcome, r.observed) == ("detected", True)
+
+
+# ── Round 3 R3b — `aborted` is pending in every mode, for every expectation ─
+
+@pytest.mark.parametrize("mode", ["report", "unknown", "block"])
+def test_aborted_detect_row_is_pending_run_aborted_in_every_mode(session_factory, mode):
+    _silent_detect_row(session_factory, mode=mode)
+    asyncio.run(_record_termination(session_factory, "aborted"))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("pending", "RUN_ABORTED")
+
+
+def test_aborted_report_mode_prevent_row_is_pending_run_aborted(session_factory):
+    _silent_prevent_row(session_factory)
+
+    def fn(run, rows):
+        run.agent_profile_mode = "report"
+    asyncio.run(_mutate(session_factory, fn))
+    asyncio.run(_record_termination(session_factory, "aborted"))
+    asyncio.run(_apply_silent(session_factory, COMPLETE))
+    r = asyncio.run(_results_by_step(session_factory))["step-01"]
+    assert (r.outcome, r.outcome_reason) == ("pending", "RUN_ABORTED")

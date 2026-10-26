@@ -225,3 +225,10 @@ def test_aborted_termination_is_pending_run_aborted_not_missed():
     t = oc.evaluate_prevent(agent_profile_mode="block", alert_outcome=None,
                             termination="timeout", window_closed=True, block_mode_status=None)
     assert (t.outcome, t.kpi_verdict) == ("missed", "fail")
+
+
+def test_aborted_is_pending_run_aborted_in_report_and_unknown_mode():
+    for mode in ("report", "unknown"):
+        v = oc.evaluate_prevent(agent_profile_mode=mode, alert_outcome=None,
+                                termination="aborted", window_closed=True, block_mode_status=None)
+        assert (v.outcome, v.reason) == ("pending", oc.RUN_ABORTED), mode

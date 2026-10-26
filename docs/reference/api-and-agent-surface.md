@@ -235,7 +235,8 @@ detect and is never graded as prevention. Reason codes live in `outcome.py` (for
   `steps[]`, a staging failure, a reconcile before `/complete`) reads `pending` /
   `HOST_EVIDENCE_ABSENT`, never `missed`: nothing says the step ran. With `exited` on
   record it is `missed` / fail. An `aborted` termination reads `pending` /
-  `RUN_ABORTED` (the run was cut short; its verdict is undefined); a `timeout` stays
+  `RUN_ABORTED` — for `detect` and `prevent` rows alike, in every profile mode (the run
+  was cut short; its verdict is undefined); a `timeout` stays
   `missed` / fail (the step ran its whole budget unprevented).
 - **A silent `detect` row is written `missed`.** Once its window closes with no
   matched alert, the silent-row judgement writes `outcome = missed` on complete

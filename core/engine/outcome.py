@@ -68,10 +68,10 @@ PASS_WITHHELD_UNSCOPED = "PASS_WITHHELD_UNSCOPED"
 #: staging failure, a reconcile before ``/complete``): we do not know it ran, so
 #: silence is not a miss. ``missed`` needs the host's ``exited`` (spec §5.3).
 HOST_EVIDENCE_ABSENT = "HOST_EVIDENCE_ABSENT"
-#: A block-mode ``prevent`` row whose step the host reports ``aborted`` (an
-#: agent-side cancel, one endpoint of a fan-out, an operator stop): the run was
-#: cut short and its verdict is undefined, so silence is not a miss. A
-#: ``timeout`` is different -- the step ran its whole budget unprevented.
+#: A row whose step the host reports ``aborted`` (an agent-side cancel, one
+#: endpoint of a fan-out, an operator stop) -- any expectation, any profile mode:
+#: the run was cut short and its verdict is undefined, so silence is not a miss.
+#: A ``timeout`` is different -- the step ran its whole budget unprevented.
 RUN_ABORTED = "RUN_ABORTED"
 
 #: Soak reasons: a row silent for a reason that says nothing about the detector.
@@ -183,6 +183,9 @@ def evaluate_prevent(*, agent_profile_mode: str, alert_outcome: Optional[str],
         if alert_outcome is not None:
             reason = ATTESTATION_CONTRADICTED if alert_outcome == ALERT_PREVENTED else None
             return PreventVerdict(OUTCOME_DETECTED, None, reason)
+        if termination == TERMINATION_ABORTED:
+            # An operator-cut step is undetermined whatever the profile (R3b).
+            return PreventVerdict(OUTCOME_PENDING, None, RUN_ABORTED if window_closed else None)
         return PreventVerdict(OUTCOME_MISSED if window_closed else OUTCOME_PENDING, None, None)
 
     # termination None = no host record yet: no host witness.
