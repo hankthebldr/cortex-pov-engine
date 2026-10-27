@@ -267,6 +267,12 @@ def is_marker_only_step(step: dict[str, Any]) -> bool:
     return True
 
 
+def _in_band(ind: Any) -> bool:
+    """An indicator this scenario puts on the wire (``in_band`` absent → True).
+    ``in_band: false`` marks published context the chain does not emit."""
+    return isinstance(ind, dict) and ind.get("in_band", True) is not False
+
+
 def is_stitched_chain(scn: dict[str, Any]) -> bool:
     url = scn.get("threat_report_url")
     host = urlparse(url).hostname if isinstance(url, str) else None
@@ -277,20 +283,22 @@ def is_stitched_chain(scn: dict[str, Any]) -> bool:
         and scn.get("stitching_key")
         and len(req) >= 2
         and host == _UNIT42_HOST
-        and len(inds) >= 1
+        and any(_in_band(i) for i in inds)
     )
 
 
 def signal_quality(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
     """HQS = a step-detection in a stitched chain on a step that is not marker-only."""
     chain_ids: list[str] = []
-    hq = step_dets = steps_total = marker_steps = with_ind = ind_total = 0
+    hq = step_dets = steps_total = marker_steps = with_ind = ind_total = ind_oob = 0
     for scn in scenarios:
         stitched = is_stitched_chain(scn)
         inds = scn.get("indicators") or []
         if inds:
             with_ind += 1
-            ind_total += len(inds)
+            in_band = sum(1 for i in inds if _in_band(i))
+            ind_total += in_band
+            ind_oob += len(inds) - in_band
         if stitched:
             chain_ids.append(str(scn.get("scenario_id")))
         for step in scn.get("steps") or []:
@@ -315,7 +323,8 @@ def signal_quality(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
         "steps": steps_total,
         "marker_only_share": _r4(marker_steps / steps_total) if steps_total else 0.0,
         "scenarios_with_indicators": with_ind,
-        "indicators": ind_total,
+        "indicators": ind_total,  # in-band only
+        "indicators_not_in_band": ind_oob,
     }
 
 
@@ -927,7 +936,8 @@ def render_human(result: dict[str, Any], quiet: bool) -> None:
     print(f"Stitched chains: {sq['stitched_chains']} · HQ signals: {sq['hq_signals']}/"
           f"{sq['step_detections']} ({sq['hq_share']:.1%}) · marker-only steps: "
           f"{sq['marker_only_steps']}/{sq['steps']} ({sq['marker_only_share']:.1%}) · "
-          f"indicators: {sq['indicators']} in {sq['scenarios_with_indicators']} scenario(s)")
+          f"indicators: {sq['indicators']} in-band (+{sq['indicators_not_in_band']} not in-band) "
+          f"in {sq['scenarios_with_indicators']} scenario(s)")
 
     # SUMMARY
     n_breach = len(result["strict_breaches"])
@@ -963,7 +973,7 @@ def main() -> int:
     ap.add_argument("--hq-signal-floor", type=int, default=None,
                     help="min high-quality signals (stitched-chain, non-marker step-detections)")
     ap.add_argument("--stitched-chain-floor", type=int, default=None,
-                    help="min stitched chains (Unit 42-sourced, >=2 legs, with indicators)")
+                    help="min stitched chains (Unit 42-sourced, >=2 legs, >=1 in-band indicator)")
     ap.add_argument("--marker-only-ceiling", type=float, default=None,
                     help="max share of steps whose command is marker-only")
     ap.add_argument("--scenarios-dir", default=str(REPO_ROOT / "scenarios"),

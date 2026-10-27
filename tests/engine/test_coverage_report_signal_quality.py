@@ -187,3 +187,37 @@ def test_cli_flags_still_override_floors(tmp_path):
     r = _run_cli(tmp_path, "--hq-signal-floor", "0", "--stitched-chain-floor", "0",
                  "--marker-only-ceiling", "1.0")
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+# ── Final review: in_band indicators ─────────────────────────────────────────
+def test_stitched_chain_requires_an_in_band_indicator(module):
+    a = _chain_a()
+    a["indicators"] = [{"type": "domain", "value": "evil.example", "source_url": UNIT42,
+                        "in_band": False}]
+    assert not module.is_stitched_chain(a)
+    a["indicators"].append({"type": "domain", "value": "x.example", "source_url": UNIT42})
+    assert module.is_stitched_chain(a)  # absent in_band defaults to True
+    a["indicators"][1]["in_band"] = True
+    assert module.is_stitched_chain(a)
+
+
+def test_signal_quality_counts_in_band_and_not_in_band(module):
+    a = _chain_a()
+    a["indicators"] = [
+        {"type": "domain", "value": "evil.example", "source_url": UNIT42},
+        {"type": "domain", "value": "y.example", "source_url": UNIT42, "in_band": False},
+        {"type": "domain", "value": "z.example", "source_url": UNIT42, "in_band": False},
+    ]
+    sq = module.signal_quality([a, _chain_b(), _chain_c()])
+    assert sq["indicators"] == 2            # in-band only: a=1, b=1
+    assert sq["indicators_not_in_band"] == 2
+    assert sq["scenarios_with_indicators"] == 2
+
+
+def test_only_out_of_band_indicators_is_not_a_chain(module):
+    a = _chain_a()
+    a["indicators"] = [{"type": "domain", "value": "evil.example", "source_url": UNIT42,
+                        "in_band": False}]
+    sq = module.signal_quality([a])
+    assert sq["stitched_chains"] == 0 and sq["hq_signals"] == 0
+    assert sq["indicators"] == 0 and sq["indicators_not_in_band"] == 1

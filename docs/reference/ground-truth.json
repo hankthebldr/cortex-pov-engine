@@ -116,6 +116,7 @@
     "hq_share": 0.1477,
     "hq_signals": 195,
     "indicators": 84,
+    "indicators_not_in_band": 0,
     "leg_map": {
       "AIRS": "cloud-identity",
       "AI_ACCESS": "cloud-identity",
