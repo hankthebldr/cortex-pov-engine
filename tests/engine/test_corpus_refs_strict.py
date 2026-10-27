@@ -59,8 +59,9 @@ def test_the_corpus_is_the_expected_size(parsed):
 
     169 -> 170 on 2026-08-05: SIM-EDR-022, the payload-shelf EDR scenario.
     170 -> 177 on 2026-08-28: Cortex Data Security bundle (DDR & DLP scenarios).
+    177 -> 189 on 2026-10-27: library signal expansion (SIM-MP-023..034, Unit 42 stitched chains).
     """
-    assert len(parsed) == 177
+    assert len(parsed) == 189
 
 
 def test_every_scenario_passes_strict_ref_validation(parsed, monkeypatch):
