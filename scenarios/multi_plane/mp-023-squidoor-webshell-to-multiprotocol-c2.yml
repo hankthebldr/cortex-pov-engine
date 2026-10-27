@@ -2,10 +2,10 @@
 # are certutil-decoded onto an exposed web server, one is disguised as a certificate and pushed
 # to a peer with curl; a renamed debugger (cdb.exe -> C:\ProgramData\fontdrvhost.exe) loads
 # Squidoor from config.ini, a scheduled task (Microsoft\Windows\AppID\EPolicyManager) persists it,
-# and the backdoor talks over Outlook-drafts (p_/r_ subjects), DNS and ICMP. DC points at:
-# EDR leg (steps 01-06) the webroot .aspx writes, the renamed-binary loader, the persistence
-# entry, the report-domain DNS lookups and the padded ICMP; NDR leg (07-08) the NGFW EAL beacon to
-# the published domains/IPs and the WildFire threat log for config.ini's SHA-256. Both legs carry
+# and the backdoor talks over Outlook-drafts (p_/r_ subjects), DNS and ICMP. DC points at: EDR leg
+# (01-06; Linux 03/04 = cp /bin/sh + cron @reboot ANALOGUES, Windows variants report-exact) the
+# .aspx writes, renamed loader, persistence, report-domain DNS lookups, padded ICMP; NDR leg (07-08)
+# the NGFW EAL beacon to published domains/IPs and the WildFire log for config.ini's SHA-256. Both legs carry
 # the run host (src_host) and CR-MP-0023 fuses them. DNS lookups of the 5 report domains go only
 # through @${LAB_RESOLVER:-127.0.0.53} (no session opened). The Outlook/Graph leg is NOT emitted as
 # M365 audit: the report suggests an actor-held mailbox and no M365 emitter can carry src_host.
@@ -268,7 +268,8 @@ steps:
     platforms: ["linux", "windows"]
     platform_variants:
       windows: |
-        $p = 'C:\ProgramData'
+        $p = 'C:\ProgramData\cortexsim-mp023'
+        New-Item -ItemType Directory -Force -Path $p | Out-Null
         $cdb = @("${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe", "$env:ProgramFiles\Windows Kits\10\Debuggers\x64\cdb.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
         Set-Content -Path "$p\config.ini" -Value '.echo cortexsim-mp023-config-ini; q'
         if ($cdb) { Copy-Item $cdb "$p\fontdrvhost.exe" -Force; & "$p\fontdrvhost.exe" -cf "$p\config.ini" "$env:SystemRoot\System32\whoami.exe" }
@@ -276,7 +277,7 @@ steps:
     expected_detections:
       - plane: EDR
         type: BIOC
-        description: "A process whose image name is fontdrvhost runs from a ProgramData-style path rather than System32, its binary hash/original name being a different system binary (cdb.exe on Windows, sh on the Linux path), with config.ini as its argument — the report's renamed-cdb Squidoor loader."
+        description: "A process whose image name is fontdrvhost runs from a ProgramData-style path rather than System32, its binary hash/original name being a different system binary (cdb.exe on Windows, sh on the Linux path), with config.ini as its argument — the report's renamed-cdb Squidoor loader. The Windows variant stages fontdrvhost.exe and config.ini under C:\\ProgramData\\cortexsim-mp023\\, a near-analogue of the report's C:\\ProgramData\\fontdrvhost.exe, so no pre-existing ProgramData file is touched."
         ttp_ref: "TTP-2026-0182"
         detection_id: "bioc-mp-023-renamed-system-binary-fontdrvhost-executes-config-ini-from-programdata"
       - plane: EDR
@@ -301,7 +302,8 @@ steps:
     platforms: ["linux", "windows"]
     platform_variants:
       windows: |
-        schtasks.exe /create /f /tn "Microsoft\Windows\AppID\EPolicyManager" /sc onstart /ru SYSTEM /tr "C:\ProgramData\fontdrvhost.exe -cf C:\ProgramData\config.ini C:\Windows\System32\whoami.exe"
+        # Creating a task under \Microsoft\Windows\AppID needs an elevated beacon; /ru is omitted so the task runs as the beacon's own account.
+        schtasks.exe /create /f /tn "Microsoft\Windows\AppID\EPolicyManager" /sc onstart /tr "C:\ProgramData\cortexsim-mp023\fontdrvhost.exe -cf C:\ProgramData\cortexsim-mp023\config.ini C:\Windows\System32\whoami.exe"
         schtasks.exe /query /tn "Microsoft\Windows\AppID\EPolicyManager" /v /fo list
     expected_detections:
       - plane: EDR
@@ -334,6 +336,7 @@ steps:
       parent_step: step-03
       pivot: process_lineage
     platforms: ["linux", "windows"]
+    # The five IOC (report-domain DNS) rows below are Linux-only: this Windows variant omits the lookups (nslookup takes no @resolver).
     platform_variants:
       windows: |
         $k = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\UUID\7d3c2a10-cortexsim-mp023'
@@ -557,7 +560,7 @@ cleanup:
     - "crontab -u www-data -l 2>/dev/null | grep -v cortexsim-mp023 | crontab -u www-data - || true"
     - "rm -rf /tmp/cortexsim-mp023 /tmp/mp-023-ngfw-eal.yml /tmp/mp-023-ngfw-threat.yml"
     - "schtasks.exe /delete /f /tn \"Microsoft\\Windows\\AppID\\EPolicyManager\""
-    - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\\ProgramData\\cortexsim-mp023, C:\\ProgramData\\fontdrvhost.exe, C:\\ProgramData\\config.ini, HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\UUID\\7d3c2a10-cortexsim-mp023"
+    - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue C:\\ProgramData\\cortexsim-mp023, HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\UUID\\7d3c2a10-cortexsim-mp023"
     - "echo cortexsim-mp023-cleanup-complete"
 
 author: "Henry Reed"
