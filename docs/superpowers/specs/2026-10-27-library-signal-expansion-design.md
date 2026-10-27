@@ -142,11 +142,16 @@ on the two allowed hosts; WARN when a card whose primary reference is Unit 42 ha
   `NgfwEalEmitterParams` gains `dst_domain: Optional[str]` and `dst_ip: Optional[str]`
   (both or neither; validator). When set they replace the preset `.invalid`
   destination on every session the pattern builds. `action` stays `allow`.
+  **It also gains `src_ip`, `src_host`, `src_user` (each independently optional)**,
+  because the record's source is a hardcoded constant today (`_SRC_HOST =
+  "10.0.12.34"`): a synthetic network alert that names a host the real endpoint
+  alert does not is three alerts, not one case. Unset keeps the constants.
 - **New plugin `ngfw_threat_emitter`** (`_DATASET = "panw_ngfw_threat_raw"`, already in
   `validate.py` `KNOWN_DATASETS`): a PAN-OS threat/WildFire log record carrying
   `filedigest` (sha256), `filename`, `filetype`, `verdict` (`malicious | grayware |
   benign`, default `malicious`), `app`, `src`, `dst`, `dst_domain`, `category`,
-  `action`. **`action` is restricted to `alert` and `allow`**: `block`, `deny`,
+  `action`, with the same `src_ip` / `src_host` / `src_user` overrides as the traffic
+  emitter so the threat log lands on the run host. **`action` is restricted to `alert` and `allow`**: `block`, `deny`,
   `drop`, `reset-*`, `sinkhole` raise `ValueError` at param validation, because a
   synthetic log may show detection and enrichment but never prevention. Registered
   exactly like the other analytics streamers (so `check-streamer-fidelity.py` maps
@@ -208,6 +213,15 @@ Per-chain requirements (the content reviewer checks every line):
    `ngfw_threat_emitter` with a report `sha256`; the cloud leg uses
    `cloud_audit_emitter` / `k8s_audit_emitter` / `m365_activity_emitter` /
    `idp_signin_emulator` as the story demands.
+3a. **Every leg carries the stitching entity, in-band.** The step that launches a
+   synthetic leg first reads the run host's identity (`SRC_IP=$(hostname -I | awk
+   '{print $1}')`, `SRC_HOST=$(hostname -s)`, `SRC_USER=$(id -un)`) and passes it in
+   the campaign `params:` (`src_ip`, `src_host`, `src_user` on the NGFW emitters;
+   `source_ip` on `cloud_audit_emitter`, with `${EGRESS_IP:-$SRC_IP}` because the
+   cloud control plane sees the egress address). `stitching_key` names an entity
+   that every leg of the chain carries (`src_host` for endpoint+network,
+   `user_principal` for identity-led chains). A chain whose legs cannot share an
+   entity is not authored.
 4. Agent steps perform the real, safe behaviour the detection keys on: the process
    lineage, file paths, persistence mechanism, HTTP shape (URI, user-agent) against
    `$STAGE_HOST`, DNS lookups of report domains. **Zero marker-only steps.** A marker
@@ -215,8 +229,16 @@ Per-chain requirements (the content reviewer checks every line):
 5. `cgo_anchor`, per-step `causality` on every non-root step, `platforms` on every
    step, `platform_variants` where the table says "variant".
 6. `stitching_key`, `required_planes_in_incident` (≥2), `correlation_window_seconds`.
-7. `indicators[]`: ≥3 entries, ≥1 per synthetic leg, every one with `source_url` =
-   the report (or its linked PaloAltoNetworks GitHub IOC file), clean values.
+7. `indicators[]`: ≥3 entries, every one with `source_url` = the report (or its
+   linked PaloAltoNetworks GitHub IOC file), clean values **copied from the live
+   page at authoring time**, never from the harvest counts. ≥1 indicator per
+   synthetic leg *where the report publishes an indicator that leg can carry*: a
+   network leg may be threat-log-only (a report sha256 through `ngfw_threat_emitter`)
+   when the report lists no domain or IP (SIM-MP-026, SIM-MP-033); a leg the report
+   gives no indicator for keeps the preset destination, carries the stitching entity
+   only, and the header says that leg is un-enrichable. If the report URL cannot be
+   fetched the chain task stops as BLOCKED and the controller swaps in a §9
+   candidate; the count of chains is whatever that leaves, reported as measured.
 8. `threat_report` / `threat_report_url` = the report; `tags` include `unit42`,
    `stitched-chain`, `actor:<constellation-or-name>`; a header comment (≤12 lines)
    tells the story and says what the DC points at in each leg.
@@ -257,8 +279,22 @@ Per-chain requirements (the content reviewer checks every line):
   because `check-streamer-fidelity.py` maps one `_DATASET` per emitter.
 - Synthetic `action` can never be a block. Not configurable.
 - The crosswalk row is written once for all chains in the closing task.
-- Numbering: SIM-MP-023..034, TTP-2026-0182..0193, contiguous, in table order.
-- Floors are set to measured values at the end, not guessed at the start.
+- Numbering: SIM-MP-023..034, TTP-2026-0182..0193, contiguous, in table order
+  (checked 2026-10-27: no branch in the repository has ever added a file in either
+  range).
+- Floors are set to measured values at the end, not guessed at the start — the §6
+  expectations are targets, not gates; if the measured count is below them the gate
+  is still set to the measured value and the shortfall is reported, not hidden.
+- **DNS lookup of a real published domain — provisional ruling, flagged to the
+  operator.** `safe_form: dns_lookup` sends one query through the resolver the
+  operator names (`@${LAB_RESOLVER}`; the lookup line must carry the `@` argument and
+  the scenario header must state it); no session is ever opened. The query may still
+  reach the actor's authoritative nameserver when the domain is live, which exposes
+  the resolver's address and nothing else. Chains that do this carry the tag
+  `real-ioc-dns-lookup` so they can be found and switched to `log_field`-only in one
+  pass if the operator rules the other way. The alternative — PANW's own DNS
+  Security test domains — exercises the control but is not Unit 42-enrichable as the
+  actor, which is the point of this pass.
 
 ## 8. Left to the builder
 
@@ -267,8 +303,12 @@ Per-chain requirements (the content reviewer checks every line):
 - Exact step commands and identities, within §5 rule 4 and the safety codes.
 - Which report indicators to carry (prefer domains and IPs for network, sha256 for
   the threat log, IPs for cloud `sourceIPAddress`).
-- Per-chain `tc_refs` choice from the FY27 index (valid ids only; see the brief's
-  id list).
+- Per-chain `tc_refs` choice from the FY27 index (valid ids only; the chain brief
+  carries a generated list of every `tc_id, ucs_id, uc_id, validation_class, title`
+  and every `pov_scenario_id` from `docs/uc_tc_mapping/_v2.2-source/`).
+- Fetching the report: the chain author fetches the live Unit 42 page (and the
+  linked GitHub IOC file where the table says so) and copies indicator values from
+  it; the harvest records under the session scratchpad are leads, not sources.
 
 ## 9. Backlog (not this pass)
 
