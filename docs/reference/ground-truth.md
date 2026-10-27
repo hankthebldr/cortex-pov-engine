@@ -48,8 +48,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | High-quality signals (stitched, non-marker step-detections) | 195/1320 (14.8%) |
 | Marker-only steps | 100/765 (13.1%) |
 | Scenarios with indicators | 12 |
-| Indicators (in-band) | 84 |
-| Indicators (not in-band) | 0 |
+| Indicators (in-band) | 79 |
+| Indicators (not in-band) | 5 |
 
 ### Step-detections by type
 
