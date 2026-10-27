@@ -185,7 +185,7 @@ class NgfwThreatEmitter(AnalyticsLogEmitter):
         domain = params.dst_domain or _DEFAULT_DST_DOMAIN
         malicious = params.verdict == "malicious"
         return [{
-            "_dataset": _DATASET,
+            "dataset": _DATASET,
             "type": "THREAT",
             "subtype": "wildfire",
             "time_generated": now,

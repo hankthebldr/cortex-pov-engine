@@ -130,7 +130,7 @@ class TestParamValidation:
 class TestRecordShape:
     def test_record_fields(self):
         (evt,) = _events()
-        assert evt["_dataset"] == "panw_ngfw_threat_raw"
+        assert evt["dataset"] == "panw_ngfw_threat_raw"
         assert evt["subtype"] == "wildfire"
         assert evt["filedigest"] == _SHA.lower()
         assert evt["filename"] == "invoice.exe"
@@ -205,4 +205,4 @@ class TestPluginRun:
             assert body["filedigest"] == _SHA.lower()
             assert body["verdict"] == "malicious"
             assert body["dst_domain"] == "evil.example"
-            assert body["_dataset"] == "panw_ngfw_threat_raw"
+            assert body["dataset"] == "panw_ngfw_threat_raw"
