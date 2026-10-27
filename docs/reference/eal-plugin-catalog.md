@@ -783,6 +783,7 @@ block`, so the plugin can never fabricate proof of prevention.
 | `app` | str = `web-browsing` | |
 | `dst_domain` / `dst_ip` | str? | set together; override `dst_domain`/`url_domain` and `dst` |
 | `src_ip` / `src_host` / `src_user` | str? | independent; override `src`, `endpoint_device_name`, `user` |
+| `threat_name` | str? | non-empty when set; overrides `threat_name` (default `Virus/Win32.WGeneric.canary` for malicious, else `wildfire-<verdict>`) |
 | `action` | str = `alert` | `alert` / `allow` only |
 | `event_pattern` | str = `wildfire_malicious_file` | only value |
 

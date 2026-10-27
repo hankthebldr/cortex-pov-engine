@@ -94,6 +94,12 @@ class NgfwThreatEmitterParams(AnalyticsEmitterParams):
     src_user: Optional[str] = Field(
         default=None, description="Override the source user (user).",
     )
+    threat_name: Optional[str] = Field(
+        default=None,
+        description="Override the threat_name field (default "
+                    "'Virus/Win32.WGeneric.canary' for a malicious verdict, "
+                    "'wildfire-<verdict>' otherwise). Non-empty when set.",
+    )
     action: str = Field(
         default="alert",
         description="alert | allow. Block-class actions are refused: a "
@@ -128,7 +134,7 @@ class NgfwThreatEmitterParams(AnalyticsEmitterParams):
             raise ValueError("synthetic threat log may not claim a block")
         return v
 
-    @field_validator("dst_domain", "dst_ip", "src_host", "src_user")
+    @field_validator("dst_domain", "dst_ip", "src_host", "src_user", "threat_name")
     @classmethod
     def _non_empty_when_set(cls, v: Optional[str], info) -> Optional[str]:
         if v is not None and not v.strip():
@@ -232,7 +238,7 @@ class NgfwThreatEmitter(AnalyticsLogEmitter):
             "filetype": params.file_type,
             "verdict": params.verdict,
             "category": "wildfire-virus",
-            "threat_name": (
+            "threat_name": params.threat_name if params.threat_name is not None else (
                 "Virus/Win32.WGeneric.canary" if malicious else "wildfire-" + params.verdict
             ),
             "dst_domain": domain,

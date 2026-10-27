@@ -235,3 +235,22 @@ class TestManifestAndWhitelist:
 
     def test_unknown_kwarg_never_changes_action(self):
         assert _params(bogus_field="block").action == "alert"
+
+
+class TestThreatNameOverride:
+    """Final review M6: threat_name replaces the hard-coded canary name."""
+
+    def test_default_threat_name_unchanged(self):
+        assert _events()[0]["threat_name"] == "Virus/Win32.WGeneric.canary"
+
+    def test_threat_name_override(self):
+        ev = _events(threat_name="Trojan/Win64.RustyStealer.a")[0]
+        assert ev["threat_name"] == "Trojan/Win64.RustyStealer.a"
+
+    def test_threat_name_override_applies_to_any_verdict(self):
+        assert _events(verdict="grayware", threat_name="Grayware/Win32.X")[0]["threat_name"] == "Grayware/Win32.X"
+
+    @pytest.mark.parametrize("empty", ["", "   "])
+    def test_threat_name_non_empty_when_set(self, empty):
+        with pytest.raises(ValueError, match="non-empty"):
+            _params(threat_name=empty)
