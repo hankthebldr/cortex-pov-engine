@@ -36,24 +36,24 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1604,
-    "catalog_detections": 1797,
+    "abioc_analytics_share": 0.1579,
+    "catalog_detections": 2049,
     "catalog_detections_by_kind": {
-      "abioc": 134,
-      "analytics": 329,
-      "bioc": 272,
-      "correlation": 188,
-      "ioc": 301,
+      "abioc": 157,
+      "analytics": 340,
+      "bioc": 341,
+      "correlation": 200,
+      "ioc": 394,
       "modeling": 5,
       "prevention": 0,
-      "xql": 568
+      "xql": 612
     },
-    "correlation_share": 0.1057,
+    "correlation_share": 0.0987,
     "detection_planes": 16,
     "methodology_family_counts": {
-      "F1": 118,
+      "F1": 126,
       "F10": 2,
-      "F2": 24,
+      "F2": 28,
       "F3": 9,
       "F4": 9,
       "F5": 5,
@@ -62,14 +62,14 @@
       "F8": 1,
       "F9": 3
     },
-    "mitre_distinct_base_techniques": 119,
-    "mitre_distinct_techniques": 207,
-    "scenarios_loadable": 177,
+    "mitre_distinct_base_techniques": 127,
+    "mitre_distinct_techniques": 230,
+    "scenarios_loadable": 189,
     "scenarios_per_plane": {
       "AIRS": 5,
       "AI_ACCESS": 6,
       "AI_SPM": 7,
-      "ANALYTICS": 23,
+      "ANALYTICS": 35,
       "ASM": 6,
       "BROWSER": 6,
       "CDR": 28,
@@ -84,19 +84,19 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1116,
+    "step_detections": 1317,
     "step_detections_by_type": {
-      "ABIOC": 129,
-      "Analytics": 50,
-      "BIOC": 272,
-      "Correlation": 118,
-      "IOC": 57,
+      "ABIOC": 152,
+      "Analytics": 56,
+      "BIOC": 341,
+      "Correlation": 130,
+      "IOC": 110,
       "Prevention": 0,
-      "XQL": 490
+      "XQL": 528
     },
-    "ttp_cards": 175
+    "ttp_cards": 187
   },
-  "eal_plugins": 26,
+  "eal_plugins": 27,
   "generated_by": "scripts/generate_ground_truth.py",
   "http_routes": {
     "apirouter_instances": 25,
@@ -112,6 +112,43 @@
   },
   "iac_modules_aws": 11,
   "schema_version": 1,
+  "signal_quality": {
+    "hq_share": 0.1458,
+    "hq_signals": 192,
+    "indicators": 84,
+    "leg_map": {
+      "AIRS": "cloud-identity",
+      "AI_ACCESS": "cloud-identity",
+      "AI_SPM": "cloud-identity",
+      "BROWSER": "endpoint",
+      "CDR": "cloud-identity",
+      "CLOUD_APP": "cloud-identity",
+      "CSPM": "cloud-identity",
+      "EDR": "endpoint",
+      "ITDR": "cloud-identity",
+      "KOI": "endpoint",
+      "NDR": "network"
+    },
+    "marker_only_share": 0.1307,
+    "marker_only_steps": 100,
+    "scenarios_with_indicators": 12,
+    "step_detections": 1317,
+    "steps": 765,
+    "stitched_chain_ids": [
+      "SIM-MP-023",
+      "SIM-MP-024",
+      "SIM-MP-025",
+      "SIM-MP-026",
+      "SIM-MP-027",
+      "SIM-MP-028",
+      "SIM-MP-029",
+      "SIM-MP-030",
+      "SIM-MP-031",
+      "SIM-MP-032",
+      "SIM-MP-033"
+    ],
+    "stitched_chains": 11
+  },
   "strict_refs_check": {
     "passed": 6,
     "status": "green"
@@ -120,7 +157,7 @@
   "uctc_index": {
     "det_hnt_evidenced": 70,
     "det_hnt_total": 107,
-    "payload_resolved": 177,
+    "payload_resolved": 189,
     "payload_unresolved": 0,
     "plt_assertions": {
       "artifacts": 4,
@@ -139,6 +176,6 @@
     "posture_class_primary_s14": 14,
     "tc_evidenced": 90,
     "tc_total": 266,
-    "tier_drift_s13": 110
+    "tier_drift_s13": 120
   }
 }

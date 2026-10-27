@@ -113,8 +113,12 @@ def _corpus(tmp_path):
 
 
 def test_floors_default_zero_pass(module, tmp_path):
+    # 2026-10-27: the shipped defaults now carry the measured floors (Task 20),
+    # so "floors at zero pass" is asserted with the gates set to zero explicitly.
     sdir, tdir = _corpus(tmp_path)
-    r = module.compute_report(sdir, tdir, {"strict": True})
+    r = module.compute_report(sdir, tdir, {"strict": True, "hq_signal_floor": 0,
+                                           "stitched_chain_floor": 0,
+                                           "marker_only_ceiling": 1.0})
     assert r["signal_quality"]["hq_signals"] == 3
     assert not [b for b in r["strict_breaches"] if "floor" in b["kind"] or "ceiling" in b["kind"]]
 

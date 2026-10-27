@@ -108,10 +108,10 @@ def default_config() -> dict[str, Any]:
         "name_similarity": 0.60,
         "top": 15,
         "strict": False,
-        # signal_quality gates; the defaults gate nothing.
-        "hq_signal_floor": 0,
-        "stitched_chain_floor": 0,
-        "marker_only_ceiling": 1.0,
+        # signal_quality gates: set to the values measured 2026-10-27 (library signal expansion).
+        "hq_signal_floor": 192,
+        "stitched_chain_floor": 11,
+        "marker_only_ceiling": 0.1308,
     }
 
 

@@ -7,16 +7,16 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Loadable scenarios | 177 |
+| Loadable scenarios | 189 |
 | Scenarios rejected at load | 0 |
-| TTP cards | 175 |
+| TTP cards | 187 |
 | Detection planes | 16 |
-| Step-detections | 1116 |
-| Catalog detection objects | 1797 |
-| ABIOC+Analytics share (step-detections) | 16.0% |
-| Correlation share (step-detections) | 10.6% |
-| Distinct MITRE techniques (base) | 207 (119) |
-| EAL plugins | 26 |
+| Step-detections | 1317 |
+| Catalog detection objects | 2049 |
+| ABIOC+Analytics share (step-detections) | 15.8% |
+| Correlation share (step-detections) | 9.9% |
+| Distinct MITRE techniques (base) | 230 (127) |
+| EAL plugins | 27 |
 | AWS IaC modules | 11 |
 
 ### Scenarios per plane
@@ -26,7 +26,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | AIRS | 5 |
 | AI_ACCESS | 6 |
 | AI_SPM | 7 |
-| ANALYTICS | 23 |
+| ANALYTICS | 35 |
 | ASM | 6 |
 | BROWSER | 6 |
 | CDR | 28 |
@@ -40,17 +40,27 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | NDR | 12 |
 | TIM | 9 |
 
+### Signal quality
+
+| Metric | Value |
+|---|---:|
+| Stitched chains | 11 |
+| High-quality signals (stitched, non-marker step-detections) | 192/1317 (14.6%) |
+| Marker-only steps | 100/765 (13.1%) |
+| Scenarios with indicators | 12 |
+| Indicators | 84 |
+
 ### Step-detections by type
 
 | Type | Count |
 |---|---:|
-| ABIOC | 129 |
-| Analytics | 50 |
-| BIOC | 272 |
-| Correlation | 118 |
-| IOC | 57 |
+| ABIOC | 152 |
+| Analytics | 56 |
+| BIOC | 341 |
+| Correlation | 130 |
+| IOC | 110 |
 | Prevention | 0 |
-| XQL | 490 |
+| XQL | 528 |
 
 ## Tool adapters
 
@@ -79,7 +89,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 |---|---:|
 | Index TCs evidenced by a scenario | 90/266 |
 | DET/HNT TCs evidenced | 70/107 |
-| S-13 tier disagreements | 110 |
+| S-13 tier disagreements | 120 |
 | S-14 posture-class-primary bindings | 14 |
 | PLT assertions authored | 4/43 rows (4 artifact(s), 0 tenant-proven) |
 | POS assertions authored | 2/110 rows (2 artifact(s), 0 tenant-proven) |
