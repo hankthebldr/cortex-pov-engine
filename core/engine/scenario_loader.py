@@ -136,6 +136,127 @@ class CgoAnchorSchema(BaseModel):
     primary_username: Optional[str] = None
 
 
+# ---------------------------------------------------------------------------
+# Indicators (S-22..S-27) — a published Unit 42 IOC carried as structured data
+# ---------------------------------------------------------------------------
+
+INDICATOR_TYPES = frozenset({
+    "sha256", "sha1", "md5", "domain", "url", "ipv4", "ipv6", "user_agent", "ja3", "ja4",
+})
+INDICATOR_SAFE_FORMS = frozenset({
+    "log_field", "dns_lookup", "hash_only", "wildfire_test_file", "eicar",
+})
+# Attribution prefixes (compared lowercase): the Unit 42 blog and the PANW
+# timely-threat-intel GitHub org. An indicator with no such source is not ours
+# to ship.
+SOURCE_URL_HOSTS: tuple[str, ...] = (
+    "https://unit42.paloaltonetworks.com/",
+    "https://github.com/paloaltonetworks/",
+)
+_HASH_TYPES = frozenset({"sha256", "sha1", "md5"})
+_HASH_LEN = {"sha256": 64, "sha1": 40, "md5": 32}
+_HASH_SAFE_FORMS = frozenset({"hash_only", "wildfire_test_file", "eicar", "log_field"})
+# Which safe_form is physically meaningful for which type (S-27).
+_SAFE_FORMS_BY_TYPE: dict[str, frozenset[str]] = {
+    **{t: _HASH_SAFE_FORMS for t in _HASH_TYPES},
+    "domain": frozenset({"dns_lookup", "log_field"}),
+    "url": frozenset({"log_field"}),
+    "ipv4": frozenset({"log_field"}),
+    "ipv6": frozenset({"log_field"}),
+    "user_agent": frozenset({"log_field"}),
+    "ja3": frozenset({"log_field"}),
+    "ja4": frozenset({"log_field"}),
+}
+_INDICATOR_ID_RE = re.compile(r"^ind-\d{2,}$")
+_DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
+_IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
+DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
+FETCH_VERB_RE = re.compile(r"\b(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr)\b")
+_HEREDOC_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
+
+
+def _ipv4_is_routable(value: str) -> bool:
+    m = _IPV4_RE.match(value)
+    if not m:
+        return False
+    a, b, c, d = (int(g) for g in m.groups())
+    if max(a, b, c, d) > 255:
+        return False
+    if a in (0, 10, 127) or (a == 169 and b == 254) or (a == 192 and b == 168):
+        return False
+    if a == 172 and 16 <= b <= 31:
+        return False
+    return True
+
+
+def _ipv6_is_routable(value: str) -> bool:
+    import ipaddress
+    try:
+        ip = ipaddress.IPv6Address(value)
+    except ValueError:
+        return False
+    return not (ip.is_loopback or ip.is_link_local or ip.is_unspecified
+                or ip.is_multicast or (ip.packed[0] & 0xFE) == 0xFC)
+
+
+class IndicatorSchema(BaseModel):
+    """A single published IOC (hash/domain/IP/...) carried as structured data.
+
+    S-22 type/value well-formed · S-23 attributed to Unit 42 / PANW GitHub ·
+    S-24 names the step(s) it surfaces in (existence checked at scenario level)
+    · S-27 safe_form fits the type. S-25/S-26 (unsafe surfacing in a step
+    command) are cross-field and live in ``unsafe_indicator_lines``.
+    """
+    id: str
+    type: str
+    value: str
+    source_url: str
+    safe_form: str
+    surfaces_in: list[str]
+    description: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate_indicator(self) -> "IndicatorSchema":
+        if not _INDICATOR_ID_RE.match(self.id):
+            raise ValueError(f"S-22: indicator id {self.id!r} must match ind-NN")
+        if self.type not in INDICATOR_TYPES:
+            raise ValueError(f"S-22: indicator {self.id} type {self.type!r} not in {sorted(INDICATOR_TYPES)}")
+        v = self.value
+        if not v or not v.strip():
+            raise ValueError(f"S-22: indicator {self.id} value is empty")
+        bad = None
+        if self.type in _HASH_TYPES:
+            if not re.fullmatch(r"[A-Fa-f0-9]{%d}" % _HASH_LEN[self.type], v):
+                bad = f"is not a {_HASH_LEN[self.type]}-hex {self.type}"
+        elif self.type == "ipv4":
+            if not _ipv4_is_routable(v):
+                bad = "is not a routable dotted-quad (private/loopback/link-local/0.* refused)"
+        elif self.type == "ipv6":
+            if not _ipv6_is_routable(v):
+                bad = "is not a routable IPv6 address"
+        elif self.type == "domain":
+            if "[" in v or "]" in v or not _DOMAIN_RE.match(v.lower()):
+                bad = "is not a plain, un-defanged FQDN"
+        elif self.type == "url":
+            if not v.startswith(("http://", "https://")) or "hxxp" in v.lower():
+                bad = "must start http:// or https:// and be un-defanged"
+        if bad:
+            raise ValueError(f"S-22: indicator {self.id} value {v!r} {bad}")
+        if not self.source_url.lower().startswith(SOURCE_URL_HOSTS):
+            raise ValueError(
+                f"S-23: indicator {self.id} source_url must start with one of {list(SOURCE_URL_HOSTS)}")
+        if not self.surfaces_in:
+            raise ValueError(f"S-24: indicator {self.id} surfaces_in must name at least one step")
+        if self.safe_form not in INDICATOR_SAFE_FORMS:
+            raise ValueError(f"S-27: indicator {self.id} safe_form {self.safe_form!r} not in {sorted(INDICATOR_SAFE_FORMS)}")
+        if self.safe_form not in _SAFE_FORMS_BY_TYPE[self.type]:
+            raise ValueError(
+                f"S-27: indicator {self.id} safe_form {self.safe_form!r} is not valid for type "
+                f"{self.type!r} (allowed: {sorted(_SAFE_FORMS_BY_TYPE[self.type])})")
+        return self
+
+
+
 class StepCausalitySchema(BaseModel):
     """Step-level causality contract: this step's process descends from
     ``parent_step`` via the declared ``pivot`` edge kind. The root step omits
@@ -465,6 +586,55 @@ def validate_causality_spine(steps: list[Any]) -> None:
         )
 
 
+def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSchema]) -> list[str]:
+    """S-25 / S-26: where an indicator may and may not appear in a step command.
+
+    S-25 — a domain/url/ipv4/ipv6 value may appear only on a DNS-lookup line
+    (``DNS_LOOKUP_RE`` and no fetch verb) or inside a heredoc *under a
+    ``params:`` key* (data handed to an emitter, never executed). Anywhere else
+    it could become a live connection to attacker infrastructure.
+    S-26 — a hash value may not share a line with a fetch verb (``curl <hash>``
+    is a download of the sample, ``sha256sum -c`` is not).
+    Pure; one human line per violation.
+    """
+    out: list[str] = []
+    for step in steps:
+        heredoc: Optional[str] = None
+        params_indent: Optional[int] = None
+        for n, line in enumerate((step.command or "").split("\n"), start=1):
+            exempt = False
+            if heredoc is not None:
+                if line.strip() == heredoc:
+                    heredoc, params_indent = None, None
+                    continue
+                stripped = line.strip()
+                indent = len(line) - len(line.lstrip())
+                if params_indent is not None and stripped and indent <= params_indent:
+                    params_indent = None
+                if params_indent is None and re.fullmatch(r"params:\s*", stripped):
+                    params_indent = indent
+                elif params_indent is not None:
+                    exempt = True
+            else:
+                m = _HEREDOC_RE.search(line)
+                if m:
+                    heredoc = m.group(1)
+                exempt = bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
+            for ind in indicators:
+                if ind.type in _HASH_TYPES:
+                    if re.search(re.escape(ind.value), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
+                        out.append(
+                            f"S-26: step {step.id} line {n}: hash {ind.id} on a fetch line: {line.strip()[:120]}")
+                elif ind.type in ("domain", "url", "ipv4", "ipv6") and not exempt:
+                    pat = (r"(?<![A-Za-z0-9_.-])" + re.escape(ind.value) +
+                           r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])")
+                    if re.search(pat, line, re.IGNORECASE if ind.type == "domain" else 0):
+                        out.append(
+                            f"S-25: step {step.id} line {n}: {ind.type} {ind.id} outside a DNS-lookup "
+                            f"line or params: block: {line.strip()[:120]}")
+    return out
+
+
 class ScenarioSchema(BaseModel):
     scenario_id: str
     name: str
@@ -513,6 +683,8 @@ class ScenarioSchema(BaseModel):
     # The Causality Group Owner anchor drives the CGO node label/username in the
     # causality graph. Absent → the graph falls back to 'cortexsim-agent'/'root'.
     cgo_anchor: Optional[CgoAnchorSchema] = None
+    # ── Published indicators (S-22..S-27), optional/back-compat ─────────────
+    indicators: list[IndicatorSchema] = Field(default_factory=list)
     # ── K8s delivery contract (optional, back-compat) ───────────────────────
     # Declares the cluster posture the generated manifest must PLANT. The
     # workload is simultaneously the KSPM finding a posture engine should
@@ -656,6 +828,20 @@ class ScenarioSchema(BaseModel):
         scenarios and composer drafts share one implementation.
         """
         validate_causality_spine(self.steps)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_indicators(self) -> "ScenarioSchema":
+        if not self.indicators:
+            return self
+        step_ids = {s.id for s in self.steps}
+        for ind in self.indicators:
+            missing = [x for x in ind.surfaces_in if x not in step_ids]
+            if missing:
+                raise ValueError(f"S-24: indicator {ind.id} surfaces_in names unknown step(s) {missing}")
+        lines = unsafe_indicator_lines(self.indicators, self.steps)
+        if lines:
+            raise ValueError("\n".join(lines))
         return self
 
     @model_validator(mode="after")
@@ -1182,6 +1368,7 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "tags": schema.tags,
         "author": schema.author,
         "cgo_anchor": schema.cgo_anchor.model_dump() if schema.cgo_anchor else None,
+        "indicators": [i.model_dump() for i in schema.indicators],
         # Measurement contract — validated since the v2.0 pass, persisted since
         # Phase 2. Without these a run can report observed/MTTD but cannot say
         # whether the test case PASSED.

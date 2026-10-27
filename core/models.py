@@ -99,6 +99,12 @@ class Scenario(Base):
     #   ALTER TABLE scenarios ADD COLUMN composer_layout JSON
     composer_layout: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # Published Unit 42 indicators (scenario `indicators[]`, loader codes
+    # S-22..S-27). Nullable JSON list; NULL/[] for every scenario without one.
+    # NOTE: prod needs `ALTER TABLE scenarios ADD COLUMN indicators JSON`
+    # (database._migrate_scenarios_columns does it on boot).
+    indicators: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
+
     # ── Measurement contract (v2.0 KPI block) ──────────────────────────────
     # The scenario loader validated these for several releases and then dropped
     # them, so a run could report observed/not-observed and MTTD but never
@@ -160,6 +166,7 @@ class Scenario(Base):
             "tags": self.tags,
             "author": self.author,
             "cgo_anchor": self.cgo_anchor,
+            "indicators": self.indicators or [],
             "stitch_context": self.stitch_context,
             "composer_layout": self.composer_layout,
             "validation_methodology": self.validation_methodology,
