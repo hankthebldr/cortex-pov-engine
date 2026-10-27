@@ -128,6 +128,13 @@ class NgfwThreatEmitterParams(AnalyticsEmitterParams):
             raise ValueError("synthetic threat log may not claim a block")
         return v
 
+    @field_validator("dst_domain", "dst_ip", "src_host", "src_user")
+    @classmethod
+    def _non_empty_when_set(cls, v: Optional[str], info) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError(f"{info.field_name} must be non-empty when set")
+        return v
+
     @field_validator("src_ip")
     @classmethod
     def _src_ip_quad(cls, v: Optional[str]) -> Optional[str]:
@@ -231,8 +238,8 @@ class NgfwThreatEmitter(AnalyticsLogEmitter):
             "dst_domain": domain,
             "url_domain": domain,
             "severity": "critical" if malicious else "medium",
-            "user": params.src_user or _SRC_USER,
-            "endpoint_device_name": params.src_host or _ENDPOINT_DEVICE,
+            "user": params.src_user if params.src_user is not None else _SRC_USER,
+            "endpoint_device_name": params.src_host if params.src_host is not None else _ENDPOINT_DEVICE,
             "wildfire_verdict_marker": True,
             "cortexsim_run_id": sim_run_id,
         }]

@@ -161,9 +161,9 @@ def _ngfw_eal_event(
         "session_end_reason": session.session_end_reason,
         "url_domain": session.dst_domain,
         "dst_hostname": session.dst_domain,
-        "user": src_user or _SRC_USER,
+        "user": src_user if src_user is not None else _SRC_USER,
         # -- EAL enhanced endpoint-process context --
-        "endpoint_device_name": src_host or _ENDPOINT_DEVICE,
+        "endpoint_device_name": src_host if src_host is not None else _ENDPOINT_DEVICE,
         "process_name": session.process_name,
         "process_hash": secrets.token_hex(32),
         marker: True,
@@ -307,6 +307,13 @@ class NgfwEalEmitterParams(AnalyticsEmitterParams):
         default=None,
         description="Override the source user (user), e.g. domain\\name.",
     )
+
+    @field_validator("dst_domain", "dst_ip", "src_host", "src_user")
+    @classmethod
+    def _non_empty_when_set(cls, v: Optional[str], info) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError(f"{info.field_name} must be non-empty when set")
+        return v
 
     @field_validator("src_ip")
     @classmethod

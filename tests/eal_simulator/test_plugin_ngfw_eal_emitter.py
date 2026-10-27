@@ -550,3 +550,18 @@ class TestSourceOverride:
     def test_src_ip_must_be_dotted_quad(self, bad):
         with pytest.raises(ValueError):
             _ovr_params(src_ip=bad)
+
+    @pytest.mark.parametrize("field", ["src_host", "src_user"])
+    @pytest.mark.parametrize("empty", ["", "   "])
+    def test_empty_source_strings_rejected(self, field, empty):
+        with pytest.raises(ValueError, match="non-empty"):
+            _ovr_params(**{field: empty})
+
+    @pytest.mark.parametrize("kw", [
+        {"dst_domain": "", "dst_ip": _OVR_IP},
+        {"dst_domain": _OVR_DOMAIN, "dst_ip": ""},
+        {"dst_domain": "  ", "dst_ip": _OVR_IP},
+    ])
+    def test_empty_destination_strings_rejected(self, kw):
+        with pytest.raises(ValueError, match="non-empty"):
+            _ovr_params(**kw)

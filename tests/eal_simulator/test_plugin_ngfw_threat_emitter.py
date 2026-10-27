@@ -118,6 +118,21 @@ class TestParamValidation:
         with pytest.raises(ValueError):
             _params(src_ip=bad)
 
+    @pytest.mark.parametrize("field", ["src_host", "src_user"])
+    @pytest.mark.parametrize("empty", ["", "   "])
+    def test_empty_source_strings_rejected(self, field, empty):
+        with pytest.raises(ValueError, match="non-empty"):
+            _params(**{field: empty})
+
+    @pytest.mark.parametrize("kw", [
+        {"dst_domain": "", "dst_ip": "198.51.100.9"},
+        {"dst_domain": "evil.example", "dst_ip": ""},
+        {"dst_domain": "  ", "dst_ip": "198.51.100.9"},
+    ])
+    def test_empty_destination_strings_rejected(self, kw):
+        with pytest.raises(ValueError, match="non-empty"):
+            _params(**kw)
+
     def test_unknown_event_pattern_rejected(self):
         with pytest.raises(ValueError, match="event_pattern must be one of"):
             _params(event_pattern="nope")

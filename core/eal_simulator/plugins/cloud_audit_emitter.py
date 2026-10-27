@@ -530,6 +530,18 @@ class CloudAuditEmitterParams(AnalyticsEmitterParams):
         """The XSIAM dataset both providers normalise to."""
         return _DATASET
 
+    @field_validator("source_ip")
+    @classmethod
+    def _source_ip_quad(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        parts = v.split(".")
+        if len(parts) != 4 or not all(
+            p.isascii() and p.isdigit() and 0 <= int(p) <= 255 for p in parts
+        ):
+            raise ValueError(f"source_ip must be a dotted-quad IPv4 address, got '{v}'")
+        return v
+
     @field_validator("provider")
     @classmethod
     def _provider_known(cls, v: str) -> str:
@@ -629,7 +641,7 @@ class CloudAuditEmitter(AnalyticsLogEmitter):
 
         events: list[dict[str, Any]] = []
         ip_kw: dict[str, Any] = (
-            {"source_ip": params.source_ip} if params.source_ip else {}
+            {"source_ip": params.source_ip} if params.source_ip is not None else {}
         )
 
         if params.event_pattern == "console_login_anomaly":
