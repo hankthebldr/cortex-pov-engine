@@ -118,7 +118,8 @@
   **189 loadable scenarios · 187 TTP cards · 27 EAL plugins** across 16 planes · 1320 step-detections ·
   2049 catalog detection objects (`ground-truth.md` is the source). New `signal_quality` block in
   `coverage_report.py --json`: **11 stitched chains** (strict), **195 high-quality signals / 1320
-  step-detections (14.8%)**, **100 marker-only steps / 765 (13.1%)**, 84 indicators in 12 scenarios; floors
+  step-detections (14.8%)**, **100 marker-only steps / 765 (13.1%)**, 79 in-band indicators in 12 scenarios (+5 not in-band,
+  `SIM-MP-034`); floors
   set to those measured values. `SIM-MP-023..034` / `TTP-2026-0182..0193` are the Unit 42 stitched chains.
   ***tenant-verified: 0.*** `make coverage-strict` exits 0 (Correlation 10.1%).
 - **Counted ground truth (verified 2026-08-02 — library-breadth authoring pass):**
