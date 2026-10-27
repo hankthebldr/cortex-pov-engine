@@ -212,10 +212,11 @@ def test_fix_id_is_exactly_two_digits_and_unique(tmp_path):
     assert r.returncode != 0 and "S-22" in r.stdout and "duplicate" in r.stdout
 
 
-def test_fix_url_scheme_and_host_case_insensitive():
-    ind = _ind(type="url", value="https://Rn-Stage.example/Path", safe_form="log_field")
-    assert _violations([ind], "curl HTTPS://rn-stage.EXAMPLE/Path")
-    assert not _violations([ind], "curl https://rn-stage.example/path")
+def test_fix_all_types_match_case_insensitively():
+    ind = _ind(type="url", value="https://Bad.example/Path/Evil", safe_form="log_field")
+    assert _violations([ind], "curl https://bad.example/path/evil")
+    v6 = _ind(type="ipv6", value="2001:DB8::1", safe_form="log_field")
+    assert _violations([v6], "curl 2001:db8::1")
 
 
 @pytest.mark.parametrize("cmd,expected", [
@@ -230,3 +231,71 @@ def test_fix_url_scheme_and_host_case_insensitive():
 ])
 def test_fix_canonical_marker_rule(cmd, expected):
     assert _load_hook().is_marker_only(cmd) is expected
+
+
+# ── Fix round 2: loader parity + malformed-field robustness ──────────────────
+def _pairs(lines):
+    import re as _re  # noqa: PLC0415
+    return {(m.group(1), m.group(2)) for ln in lines
+            for m in [_re.match(r"^(S-\d+): (.*?) line \d+", ln)] if m}
+
+
+_PARITY_VECTORS = [
+    ("curl on domain", [_ind()], "curl https://rn-stage.example/", None, None),
+    ("dig allowed", [_ind()], "dig +short rn-stage.example @${R:-1.1.1.1}", None, None),
+    ("dig chained", [_ind()], "dig rn-stage.example; nc rn-stage.example 443", None, None),
+    ("dig piped", [_ind()], "dig rn-stage.example | xargs curl", None, None),
+    ("params block", [_ind()],
+     "cat <<EOF\nparams:\n  host: rn-stage.example\nEOF\ncurl rn-stage.example", None, None),
+    ("variants", [_ind()], "echo ok", {"linux": "wget rn-stage.example"}, None),
+    ("cleanup", [_ind()], "echo ok", None, ["curl rn-stage.example"]),
+    ("subdomain", [_ind()], "curl https://www.rn-stage.example/", None, None),
+    ("prefixed label", [_ind()], "curl https://x-rn-stage.example/", None, None),
+    ("url case", [_ind(type="url", value="https://Bad.example/Path/Evil", safe_form="log_field")],
+     "curl https://bad.example/path/evil", None, None),
+    ("ipv6 case", [_ind(type="ipv6", value="2001:DB8::1", safe_form="log_field")],
+     "curl 2001:db8::1", None, None),
+    ("ipv4", [_ind(type="ipv4", value="8.8.4.4", safe_form="log_field")], "nc 8.8.4.4 53", None, None),
+    ("hash on fetch", [_ind(type="sha256", value="c" * 64, safe_form="hash_only")],
+     "wget https://x/" + "c" * 64, None, None),
+    ("hash off fetch", [_ind(type="sha256", value="c" * 64, safe_form="hash_only")],
+     "echo " + "c" * 64 + " | sha256sum -c", None, None),
+]
+
+
+@pytest.mark.parametrize("name,inds,cmd,variants,cleanup", _PARITY_VECTORS,
+                         ids=[v[0] for v in _PARITY_VECTORS])
+def test_hook_unsafe_lines_match_loader(name, inds, cmd, variants, cleanup):
+    from engine import scenario_loader as sl  # noqa: PLC0415
+    hook = _load_hook()
+    l_inds = [sl.IndicatorSchema.model_construct(**i) for i in inds]
+    l_step = sl.StepSchema.model_construct(id="S", command=cmd, platform_variants=variants or {})
+    l_clean = sl.CleanupSchema(commands=cleanup) if cleanup else None
+    expected = _pairs(sl.unsafe_indicator_lines(l_inds, [l_step], l_clean))
+    h_step = {"id": "S", "command": cmd}
+    if variants:
+        h_step["platform_variants"] = variants
+    got = _pairs(hook.unsafe_indicator_lines(inds, [h_step], cleanup))
+    assert got == expected
+
+
+def test_hook_pins_loader_tables():
+    from engine import scenario_loader as sl  # noqa: PLC0415
+    hook = _load_hook()
+    assert hook._SAFE_FORMS_BY_TYPE == sl._SAFE_FORMS_BY_TYPE
+    assert hook.SOURCE_URL_HOSTS == sl.SOURCE_URL_HOSTS
+
+
+@pytest.mark.parametrize("mutate,code", [
+    (lambda d: d["indicators"][0].update(surfaces_in=[{"a": 1}]), "S-24"),
+    (lambda d: d["indicators"][0].update(id=["x"]), "S-22"),
+    (lambda d: d["indicators"][0].update(type=["x"]), "S-22"),
+    (lambda d: d["indicators"][0].update(safe_form=["x"]), "S-27"),
+    (lambda d: d["indicators"][0].update(value=["x"]), "S-22"),
+    (lambda d: d["indicators"][0].update(source_url=["x"]), "S-23"),
+    (lambda d: d["indicators"][0].update(surfaces_in="step-1"), "S-24"),
+])
+def test_hook_malformed_indicator_fields_report_not_crash(tmp_path, mutate, code):
+    r = _hook_out(tmp_path, mutate)
+    assert r.returncode != 0 and code in r.stdout
+    assert "Traceback" not in r.stdout + r.stderr

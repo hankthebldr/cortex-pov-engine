@@ -202,13 +202,14 @@ def indicator_errors(indicators: list, step_ids: set) -> list:
             out.append(f"S-22: indicators[{k}] is not a mapping")
             continue
         iid = ind.get("id")
-        if iid in seen:
-            out.append(f"S-22: duplicate indicator id {iid!r}")
-        seen.add(iid)
+        if isinstance(iid, str):
+            if iid in seen:
+                out.append(f"S-22: duplicate indicator id {iid!r}")
+            seen.add(iid)
         typ, v = ind.get("type"), ind.get("value")
         if not isinstance(iid, str) or not _INDICATOR_ID_RE.match(iid):
             out.append(f"S-22: indicator id {iid!r} must match ind-NN")
-        if typ not in INDICATOR_TYPES:
+        if not isinstance(typ, str) or typ not in INDICATOR_TYPES:
             out.append(f"S-22: indicator {iid} type {typ!r} not in {sorted(INDICATOR_TYPES)}")
             continue
         if not isinstance(v, str) or not v.strip():
@@ -239,11 +240,11 @@ def indicator_errors(indicators: list, step_ids: set) -> list:
         if not isinstance(surf, list) or not surf:
             out.append(f"S-24: indicator {iid} surfaces_in must name at least one step")
         else:
-            missing = [s for s in surf if s not in step_ids]
+            missing = [x for x in surf if not isinstance(x, str) or x not in step_ids]
             if missing:
                 out.append(f"S-24: indicator {iid} surfaces_in names unknown step(s) {missing}")
         sf = ind.get("safe_form")
-        if sf not in INDICATOR_SAFE_FORMS:
+        if not isinstance(sf, str) or sf not in INDICATOR_SAFE_FORMS:
             out.append(f"S-27: indicator {iid} safe_form {sf!r} not in {sorted(INDICATOR_SAFE_FORMS)}")
         elif sf not in _SAFE_FORMS_BY_TYPE[typ]:
             out.append(
@@ -273,23 +274,18 @@ def _indicator_units(steps: list, cleanup_commands) -> list:
 
 
 def _indicator_pattern(typ: str, val: str) -> str:
-    tail = r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
-    if typ == "domain":
-        # whole token, but any subdomain of the indicator counts
-        return r"(?<![A-Za-z0-9_-])(?:[A-Za-z0-9-]+\.)*" + re.escape(val) + tail
-    if typ == "url":
-        m = re.match(r"^(https?://[^/?#]*)(.*)$", val, re.IGNORECASE | re.DOTALL)
-        if m:
-            return (r"(?<![A-Za-z0-9_.-])(?i:" + re.escape(m.group(1)) + ")"
-                    + re.escape(m.group(2)) + tail)
-    return r"(?<![A-Za-z0-9_.-])" + re.escape(val) + tail
+    # Mirrors scenario_loader._scan_command exactly (drift guard: the parity test
+    # in tests/engine/test_lint_scenario_hook.py). A domain may follow a '.'
+    # (subdomain); nothing else may be glued to the front of any value.
+    behind = r"(?<![A-Za-z0-9_-])" if typ == "domain" else r"(?<![A-Za-z0-9_.-])"
+    return behind + re.escape(val) + r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 
 
 def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None) -> list:
     """S-25 / S-26 on dict-shaped input; same contract as the loader's function."""
     out = []
-    inds = [i for i in indicators if isinstance(i, dict) and i.get("type") in INDICATOR_TYPES
-            and isinstance(i.get("value"), str) and i.get("value")]
+    inds = [i for i in indicators if isinstance(i, dict) and isinstance(i.get("type"), str)
+            and i["type"] in INDICATOR_TYPES and isinstance(i.get("value"), str) and i["value"]]
     for label, command in _indicator_units(steps, cleanup_commands):
         heredoc = None
         params_indent = None
@@ -319,8 +315,7 @@ def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None)
                     if re.search(re.escape(val), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
                         out.append(f"S-26: {label} line {n}: hash {iid} on a fetch line: {line.strip()[:120]}")
                 elif typ in ("domain", "url", "ipv4", "ipv6") and not exempt:
-                    flags = re.IGNORECASE if typ == "domain" else 0
-                    if re.search(_indicator_pattern(typ, val), line, flags):
+                    if re.search(_indicator_pattern(typ, val), line, re.IGNORECASE):
                         out.append(
                             f"S-25: {label} line {n}: {typ} {iid} outside a DNS-lookup "
                             f"line or params: block: {line.strip()[:120]}")
@@ -522,7 +517,7 @@ def main() -> int:
         if not isinstance(indicators, list):
             errors.append("S-22: indicators must be a list")
         else:
-            errors.extend(indicator_errors(indicators, {st.get("id") for st in step_dicts}))
+            errors.extend(indicator_errors(indicators, {st["id"] for st in step_dicts if isinstance(st.get("id"), str)}))
             cl = raw.get("cleanup")
             cl_cmds = cl.get("commands") if isinstance(cl, dict) and isinstance(cl.get("commands"), list) else []
             errors.extend(unsafe_indicator_lines(indicators, step_dicts, cl_cmds))
