@@ -143,3 +143,90 @@ def test_hook_marker_only_step_is_a_warning_not_an_error(tmp_path):
 ])
 def test_is_marker_only(cmd, expected):
     assert _load_hook().is_marker_only(cmd) is expected
+
+
+# ── Fix round 1: loader-parity tightening + canonical marker rule ────────────
+def _ind(**kw):
+    base = dict(id="ind-01", type="domain", value="rn-stage.example", safe_form="dns_lookup",
+                source_url="https://unit42.paloaltonetworks.com/x/", surfaces_in=["S"])
+    base.update(kw)
+    return base
+
+
+def _violations(indicators, command="echo ok", variants=None, cleanup=None):
+    hook = _load_hook()
+    step = {"id": "S", "command": command}
+    if variants:
+        step["platform_variants"] = variants
+    return hook.unsafe_indicator_lines(indicators, [step], cleanup)
+
+
+def _hook_out(tmp_path, mutate):
+    d = yaml.safe_load(SAMPLE.read_text())
+    d["indicators"] = [_ind(surfaces_in=[d["steps"][0]["id"]])]
+    d["steps"][0]["command"] = "dig +short rn-stage.example"
+    mutate(d)
+    p = tmp_path / "s.yml"
+    p.write_text(yaml.safe_dump(d, sort_keys=False))
+    return subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
+
+
+def test_fix_scans_platform_variants():
+    v = _violations([_ind()], variants={"linux": "curl https://rn-stage.example/"})
+    assert any("S-25" in x and "platform_variants[linux]" in x for x in v)
+
+
+def test_fix_scans_cleanup_commands():
+    v = _violations([_ind()], cleanup=["curl https://rn-stage.example/"])
+    assert any("S-25" in x and "cleanup" in x for x in v)
+
+
+def test_fix_cleanup_via_subprocess(tmp_path):
+    r = _hook_out(tmp_path, lambda d: d.update(cleanup={"commands": ["wget rn-stage.example"]}))
+    assert r.returncode != 0 and "S-25" in r.stdout and "cleanup" in r.stdout
+
+
+def test_fix_subdomain_counts_but_prefixed_label_does_not():
+    assert _violations([_ind()], "curl https://www.rn-stage.example/")
+    assert not _violations([_ind()], "curl https://x-rn-stage.example/")
+
+
+@pytest.mark.parametrize("cmd,fires", [
+    ("dig +short rn-stage.example @${LAB_RESOLVER:-1.1.1.1}", False),
+    ("dig +short rn-stage.example", False),
+    ("dig +short rn-stage.example | xargs curl", True),
+    ("dig rn-stage.example; nc rn-stage.example 443", True),
+    ("dig rn-stage.example && nc rn-stage.example 443", True),
+    ("dig rn-stage.example || nc rn-stage.example 443", True),
+    ("dig $(curl rn-stage.example)", True),
+    ("dig `echo rn-stage.example`", True),
+])
+def test_fix_dns_exemption_forbids_chaining(cmd, fires):
+    assert bool(_violations([_ind()], cmd)) is fires
+
+
+def test_fix_id_is_exactly_two_digits_and_unique(tmp_path):
+    r = _hook_out(tmp_path, lambda d: d["indicators"][0].update(id="ind-001"))
+    assert r.returncode != 0 and "S-22" in r.stdout
+    r = _hook_out(tmp_path, lambda d: d["indicators"].append(dict(d["indicators"][0])))
+    assert r.returncode != 0 and "S-22" in r.stdout and "duplicate" in r.stdout
+
+
+def test_fix_url_scheme_and_host_case_insensitive():
+    ind = _ind(type="url", value="https://Rn-Stage.example/Path", safe_form="log_field")
+    assert _violations([ind], "curl HTTPS://rn-stage.EXAMPLE/Path")
+    assert not _violations([ind], "curl https://rn-stage.example/path")
+
+
+@pytest.mark.parametrize("cmd,expected", [
+    (None, True), ("", True),
+    ("echo a | cat", False),
+    ("echo a | true", True),
+    ("echo a && echo b; : x", True),
+    ("# comment\ntrue", True),
+    ("echo m; dig +short d", False),
+    ("echo m; curl -s http://localhost/ || true", True),
+    ("cortexsim-eal run", False),
+])
+def test_fix_canonical_marker_rule(cmd, expected):
+    assert _load_hook().is_marker_only(cmd) is expected

@@ -143,7 +143,7 @@ _SAFE_FORMS_BY_TYPE = {
     "ja3": frozenset({"log_field"}),
     "ja4": frozenset({"log_field"}),
 }
-_INDICATOR_ID_RE = re.compile(r"^ind-\d{2,}$")
+_INDICATOR_ID_RE = re.compile(r"^ind-\d{2}$")
 _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
 _IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
@@ -151,22 +151,22 @@ FETCH_VERB_RE = re.compile(r"\b(curl|wget|pip3?|npm|git\s+clone|Invoke-WebReques
 _HEREDOC_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
 
 # Marker-only steps: a command that only echoes / no-ops proves nothing.
-# (`:` and `#` are not word chars, so a trailing \b would never match "# x" / ": x".)
+# Canonical rule (shared with the coverage script): split on \n ; && || | ;
+# every fragment must be a marker or a localhost curl.
 _MARKER_LINE_RE = re.compile(
-    r"^\s*((echo|printf|Write-Host|Write-Output|true)\b|(:|#)(?=\s|$))|^\s*$")
-_SEGMENT_SPLIT_RE = re.compile(r"\|\||&&|;|\n")
+    r"^\s*(echo|printf|Write-Host|Write-Output|true)\b|^\s*[:#](?=\s|$)|^\s*$")
 _LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
+_SEGMENT_SPLIT_RE = re.compile(r"\n|;|&&|\|\||\|")
+_CHAIN_RE = re.compile(r";|&&|\|\||\||\$\(|`")
 
 
-def is_marker_only(command: str) -> bool:
-    """True when every line/`||` segment is a marker or a localhost curl."""
+def is_marker_only(command) -> bool:
+    """True when every fragment is a marker or a localhost curl (None/empty: True)."""
     command = command or ""
     if "scripts.eal_simulator.cli" in command or "cortexsim-eal" in command:
         return False
-    for seg in _SEGMENT_SPLIT_RE.split(command):
-        if not (_MARKER_LINE_RE.match(seg) or _LOCAL_CURL_RE.search(seg)):
-            return False
-    return True
+    return all(_MARKER_LINE_RE.match(seg) or _LOCAL_CURL_RE.search(seg)
+               for seg in _SEGMENT_SPLIT_RE.split(command))
 
 
 def _ipv4_is_routable(value: str) -> bool:
@@ -196,11 +196,15 @@ def _ipv6_is_routable(value: str) -> bool:
 def indicator_errors(indicators: list, step_ids: set) -> list:
     """S-22 / S-23 / S-24 / S-27 per indicator (dict-shaped)."""
     out = []
+    seen = set()
     for k, ind in enumerate(indicators, 1):
         if not isinstance(ind, dict):
             out.append(f"S-22: indicators[{k}] is not a mapping")
             continue
         iid = ind.get("id")
+        if iid in seen:
+            out.append(f"S-22: duplicate indicator id {iid!r}")
+        seen.add(iid)
         typ, v = ind.get("type"), ind.get("value")
         if not isinstance(iid, str) or not _INDICATOR_ID_RE.match(iid):
             out.append(f"S-22: indicator id {iid!r} must match ind-NN")
@@ -224,7 +228,7 @@ def indicator_errors(indicators: list, step_ids: set) -> list:
             if "[" in v or "]" in v or not _DOMAIN_RE.match(v.lower()):
                 bad = "is not a plain, un-defanged FQDN"
         elif typ == "url":
-            if not v.startswith(("http://", "https://")) or "hxxp" in v.lower():
+            if not v.lower().startswith(("http://", "https://")) or "hxxp" in v.lower():
                 bad = "must start http:// or https:// and be un-defanged"
         if bad:
             out.append(f"S-22: indicator {iid} value {v!r} {bad}")
@@ -248,18 +252,48 @@ def indicator_errors(indicators: list, step_ids: set) -> list:
     return out
 
 
-def unsafe_indicator_lines(indicators: list, steps: list) -> list:
-    """S-25 / S-26 on dict-shaped input; same contract as the loader's function."""
-    out = []
-    inds = [i for i in indicators if isinstance(i, dict) and i.get("type") in INDICATOR_TYPES
-            and isinstance(i.get("value"), str) and i.get("value")]
+def _indicator_units(steps: list, cleanup_commands) -> list:
+    """(label, command) for every executable string: step command, each
+    platform_variants value, each cleanup command."""
+    units = []
     for step in steps:
         if not isinstance(step, dict):
             continue
         sid = step.get("id")
+        units.append((f"step {sid}", step.get("command") or ""))
+        pv = step.get("platform_variants")
+        if isinstance(pv, dict):
+            for os_name, cmd in pv.items():
+                if isinstance(cmd, str):
+                    units.append((f"step {sid} platform_variants[{os_name}]", cmd))
+    for cmd in cleanup_commands or []:
+        if isinstance(cmd, str):
+            units.append(("cleanup", cmd))
+    return units
+
+
+def _indicator_pattern(typ: str, val: str) -> str:
+    tail = r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
+    if typ == "domain":
+        # whole token, but any subdomain of the indicator counts
+        return r"(?<![A-Za-z0-9_-])(?:[A-Za-z0-9-]+\.)*" + re.escape(val) + tail
+    if typ == "url":
+        m = re.match(r"^(https?://[^/?#]*)(.*)$", val, re.IGNORECASE | re.DOTALL)
+        if m:
+            return (r"(?<![A-Za-z0-9_.-])(?i:" + re.escape(m.group(1)) + ")"
+                    + re.escape(m.group(2)) + tail)
+    return r"(?<![A-Za-z0-9_.-])" + re.escape(val) + tail
+
+
+def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None) -> list:
+    """S-25 / S-26 on dict-shaped input; same contract as the loader's function."""
+    out = []
+    inds = [i for i in indicators if isinstance(i, dict) and i.get("type") in INDICATOR_TYPES
+            and isinstance(i.get("value"), str) and i.get("value")]
+    for label, command in _indicator_units(steps, cleanup_commands):
         heredoc = None
         params_indent = None
-        for n, line in enumerate((step.get("command") or "").split("\n"), start=1):
+        for n, line in enumerate(command.split("\n"), start=1):
             exempt = False
             if heredoc is not None:
                 if line.strip() == heredoc:
@@ -277,18 +311,18 @@ def unsafe_indicator_lines(indicators: list, steps: list) -> list:
                 m = _HEREDOC_RE.search(line)
                 if m:
                     heredoc = m.group(1)
-                exempt = bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
+                exempt = (bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
+                          and not _CHAIN_RE.search(line))
             for ind in inds:
                 typ, val, iid = ind["type"], ind["value"], ind.get("id")
                 if typ in _HASH_TYPES:
                     if re.search(re.escape(val), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
-                        out.append(f"S-26: step {sid} line {n}: hash {iid} on a fetch line: {line.strip()[:120]}")
+                        out.append(f"S-26: {label} line {n}: hash {iid} on a fetch line: {line.strip()[:120]}")
                 elif typ in ("domain", "url", "ipv4", "ipv6") and not exempt:
-                    pat = (r"(?<![A-Za-z0-9_.-])" + re.escape(val) +
-                           r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])")
-                    if re.search(pat, line, re.IGNORECASE if typ == "domain" else 0):
+                    flags = re.IGNORECASE if typ == "domain" else 0
+                    if re.search(_indicator_pattern(typ, val), line, flags):
                         out.append(
-                            f"S-25: step {sid} line {n}: {typ} {iid} outside a DNS-lookup "
+                            f"S-25: {label} line {n}: {typ} {iid} outside a DNS-lookup "
                             f"line or params: block: {line.strip()[:120]}")
     return out
 
@@ -489,9 +523,11 @@ def main() -> int:
             errors.append("S-22: indicators must be a list")
         else:
             errors.extend(indicator_errors(indicators, {st.get("id") for st in step_dicts}))
-            errors.extend(unsafe_indicator_lines(indicators, step_dicts))
+            cl = raw.get("cleanup")
+            cl_cmds = cl.get("commands") if isinstance(cl, dict) and isinstance(cl.get("commands"), list) else []
+            errors.extend(unsafe_indicator_lines(indicators, step_dicts, cl_cmds))
     for st in step_dicts:
-        if isinstance(st.get("command"), str) and is_marker_only(st["command"]):
+        if is_marker_only(st.get("command")):
             warnings.append(
                 f"marker-only step {st.get('id', '?')}: command only echoes/no-ops "
                 f"and emits no signal a detection could key on")
