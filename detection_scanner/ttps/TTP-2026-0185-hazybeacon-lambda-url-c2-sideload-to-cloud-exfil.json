@@ -320,8 +320,8 @@
       },
       {
         "name": "MP-026 Service msdnetsvc Created for a Relocated mscorsvw.exe",
-        "description": "A service named msdnetsvc (or any service whose image is an mscorsvw.exe outside the .NET Framework directory) is created — the report's persistence for the side-loaded DLL.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter lowercase(action_process_image_name) = \"sc.exe\" and lowercase(action_process_image_command_line) contains \" create \"\n| filter lowercase(action_process_image_command_line) contains \"msdnetsvc\" or (lowercase(action_process_image_command_line) contains \"mscorsvw.exe\" and lowercase(action_process_image_command_line) not contains \"\\\\microsoft.net\\\\framework\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_instance_id",
+        "description": "A service named msdnetsvc (or any service whose image is an mscorsvw.exe outside the .NET Framework directory) is created; on Linux the equivalent is a write of /etc/systemd/system/msdnetsvc.service — the report's persistence for the side-loaded DLL.",
+        "logic": "dataset = xdr_data\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and lowercase(action_process_image_name) = \"sc.exe\" and lowercase(action_process_image_command_line) contains \" create \" and (lowercase(action_process_image_command_line) contains \"msdnetsvc\" or (lowercase(action_process_image_command_line) contains \"mscorsvw.exe\" and lowercase(action_process_image_command_line) not contains \"\\\\microsoft.net\\\\framework\"))) or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path = \"/etc/systemd/system/msdnetsvc.service\")\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_command_line, action_file_path, causality_actor_process_instance_id",
         "severity": "high",
         "mitre_technique_ids": [
           "T1543.003"
@@ -339,7 +339,7 @@
       {
         "name": "MP-026 Host-Named Archive of Keyword-Matched Documents Split into Volumes",
         "description": "A causality creates an archive named after the host and then writes numbered volume files (.001/.002 or 7z -v) of it in the same directory — the igfx.exe + 7z.exe collection pattern.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter lowercase(action_file_name) ~= \"\\.(zip|tgz|7z)(\\.[0-9]{3})?$\"\n| filter lowercase(action_file_name) contains lowercase(agent_hostname)\n| alter is_volume = if(action_file_name ~= \"\\.[0-9]{3}$\", 1, 0)\n| comp sum(is_volume) as volumes, count() as writes by agent_hostname, causality_actor_process_instance_id\n| filter volumes >= 2",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter lowercase(action_file_name) ~= \"\\.(zip|tgz|7z)(\\.[0-9]{3})?$\"\n| alter short_host = lowercase(arrayindex(split(agent_hostname, \".\"), 0))\n| filter lowercase(action_file_name) contains short_host\n| alter is_volume = if(action_file_name ~= \"\\.[0-9]{3}$\", 1, 0)\n| comp sum(is_volume) as volumes, count() as writes by agent_hostname, causality_actor_process_instance_id\n| filter volumes >= 2",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1119",
@@ -360,7 +360,7 @@
       {
         "name": "MP-026 Recurring Web Egress from the mscorsvw.exe Side-Load Causality",
         "description": "A process whose causality chain is rooted in mscorsvw.exe (never an HTTP client in its learned baseline) opens a tight recurring series of outbound web sessions to one destination. Keys on behaviour, not the redacted Lambda URL.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT\n| filter lowercase(causality_actor_process_image_name) in (\"mscorsvw.exe\", \"mscorsvw\") or causality_actor_process_image_path contains \"cortexsim-mp026\"\n| filter action_remote_port in (80, 443, 8080)\n| comp count() as sessions, count_distinct(action_remote_ip) as dests by agent_hostname, causality_actor_process_instance_id\n| filter sessions >= 3 and dests = 1",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT\n| filter lowercase(causality_actor_process_image_name) in (\"mscorsvw.exe\", \"mscorsvw\") or causality_actor_process_image_path contains \"cortexsim-mp026\" or lowercase(actor_process_image_name) in (\"powershell.exe\", \"pwsh.exe\", \"curl\", \"curl.exe\")\n| filter action_remote_port in (80, 443, 8080)\n| comp count() as sessions, count_distinct(action_remote_ip) as dests, values(actor_process_image_name) as egress_procs by agent_hostname, causality_actor_process_instance_id\n| filter sessions >= 3 and dests = 1",
         "severity": "high",
         "mitre_technique_ids": [
           "T1102",
@@ -372,7 +372,7 @@
       {
         "name": "MP-026 NGFW Recurring HTTPS Beacon from the Side-Load Host",
         "description": "NGFW EAL behavioural alert: the side-load host (src_host) makes a tight recurring burst of small HTTPS sessions to one fleet-rare destination. The destination is a preset because the report redacts the Lambda URL; the record stitches on src_host.",
-        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"ssl\", \"web-browsing\") and dest_port = 443\n| comp count() as sessions, avg(bytes_sent) as avg_bytes, count_distinct(dst) as dests by src, endpoint_device_name, url_domain\n| filter sessions >= 6 and dests = 1 and avg_bytes < 4096",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"ssl\", \"web-browsing\") and dst_port = 443\n| comp count() as sessions, avg(bytes_sent) as avg_bytes, count_distinct(dst) as dests by src, endpoint_device_name, url_domain\n| filter sessions >= 6 and dests = 1 and avg_bytes < 4096",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1071.001"
@@ -383,7 +383,7 @@
       {
         "name": "MP-026 Staged Archive Volumes Uploaded to Cloud-Storage API Paths",
         "description": "A process descended from the side-load causality reads split archive volumes and POSTs them to Google Drive / Dropbox upload API paths.",
-        "logic": "dataset = xdr_data\n| filter causality_actor_process_image_path contains \"cortexsim-mp026\" or lowercase(causality_actor_process_image_name) in (\"mscorsvw.exe\", \"mscorsvw\")\n| filter (event_type = ENUM.FILE and lowercase(action_file_name) ~= \"\\.(zip|tgz|7z)\\.[0-9]{3}$\") or (event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT)\n| alter is_read = if(event_type = ENUM.FILE, 1, 0), is_conn = if(event_type = ENUM.NETWORK, 1, 0)\n| comp sum(is_read) as volume_reads, sum(is_conn) as uploads by agent_hostname, causality_actor_process_instance_id\n| filter volume_reads >= 1 and uploads >= 2",
+        "logic": "dataset = xdr_data\n| filter causality_actor_process_image_path contains \"cortexsim-mp026\" or lowercase(causality_actor_process_image_name) in (\"mscorsvw.exe\", \"mscorsvw\") or lowercase(actor_process_image_name) in (\"powershell.exe\", \"pwsh.exe\", \"curl\", \"curl.exe\")\n| filter (event_type = ENUM.FILE and lowercase(action_file_name) ~= \"\\.(zip|tgz|7z)\\.[0-9]{3}$\") or (event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT)\n| alter is_read = if(event_type = ENUM.FILE, 1, 0), is_conn = if(event_type = ENUM.NETWORK, 1, 0)\n| comp sum(is_read) as volume_reads, sum(is_conn) as uploads by agent_hostname, causality_actor_process_instance_id\n| filter volume_reads >= 1 and uploads >= 2",
         "severity": "high",
         "mitre_technique_ids": [
           "T1567.002"

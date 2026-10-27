@@ -6,10 +6,10 @@
 # ${STAGE_HOST:-127.0.0.1}, a real per-host zip + split of lab decoys and the real deletion. NETWORK (NDR): a WildFire
 # threat log per downloaded tool carrying the report sha256 (enrichable) plus an EAL recurring-comms beacon on the preset
 # destination: the report redacts the Lambda URL, so that record is UN-ENRICHABLE and stitches on src_host only.
-# EAL legs run from a Linux jumpbox: set TARGET_IP / TARGET_HOST / TARGET_USER to the Windows endpoint so every leg
-# carries its identity (defaults read the run host). No report domain or IP exists; no real adversary host is contacted.
-# DC points at: the msdnetsvc / sideload BIOCs and the beacon ABIOC on the endpoint, the WildFire hash hits in
-# panw_ngfw_threat_raw, and CR-MP-0026 joining both on src_host.
+# EAL legs run from a Linux jumpbox: set TARGET_IP / TARGET_USER and TARGET_HOST = the endpoint's exact agent_hostname
+# (case included) so the src_host join holds (defaults read the run host). No cloud leg: the Lambda URL and Drive/Dropbox
+# accounts are actor-side, outside the victim's cloud audit. DC points at: side-load/msdnetsvc BIOCs + beacon ABIOC on the
+# endpoint, WildFire hash hits in panw_ngfw_threat_raw, CR-MP-0026 joining both on src_host. No adversary host contacted.
 scenario_id: SIM-MP-026
 name: "CL-STA-1020 HazyBeacon — mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Tariff-Document Cloud-Storage Exfil"
 version: "1.0"
@@ -225,7 +225,7 @@ steps:
     expected_detections:
       - plane: EDR
         type: BIOC
-        description: "sc.exe creates service msdnetsvc whose binPath is an mscorsvw.exe outside %WINDIR%\\Microsoft.NET — the report's persistence for the side-loaded HazyBeacon DLL."
+        description: "sc.exe creates service msdnetsvc whose binPath is an mscorsvw.exe outside %WINDIR%\\Microsoft.NET — the report's persistence for the side-loaded HazyBeacon DLL. On the linux variant the same BIOC fires on the write of /etc/systemd/system/msdnetsvc.service by the side-load causality."
         ttp_ref: "TTP-2026-0185"
         detection_id: "bioc-mp-026-service-msdnetsvc-created-for-a-relocated-mscorsvw-exe"
 
@@ -454,8 +454,9 @@ steps:
       $docs = Join-Path $lab 'docs'
       $stg = Join-Path $lab 'stage'
       New-Item -ItemType Directory -Force -Path $docs, $stg | Out-Null
-      Set-Content -Path (Join-Path $docs 'draft-letter-on-tariff-measures.txt') -Value ('CORTEXSIM DECOY draft letter on tariff measures ' * 400)
-      Set-Content -Path (Join-Path $docs 'trade-dispute-briefing.txt') -Value ('CORTEXSIM DECOY trade dispute tariff briefing ' * 400)
+      foreach ($d in @{ 'draft-letter-on-tariff-measures.txt' = 'CORTEXSIM DECOY draft letter on tariff measures'; 'trade-dispute-briefing.txt' = 'CORTEXSIM DECOY trade dispute tariff briefing' }.GetEnumerator()) {
+        Set-Content -Path (Join-Path $docs $d.Key) -Value ($d.Value + ' ' + (-join ((1..6000) | ForEach-Object { [char](Get-Random -Minimum 33 -Maximum 127) })))
+      }
       Set-Content -Path (Join-Path $docs 'canteen-menu.txt') -Value 'CORTEXSIM DECOY unrelated document'
       $since = (Get-Date).AddDays(-30)
       $hits = Get-ChildItem -Path $docs -Recurse -File -Include *.txt, *.docx, *.pdf | Where-Object { $_.LastWriteTime -ge $since } | Select-String -Pattern 'tariff' -List
@@ -477,8 +478,10 @@ steps:
       linux: |
         LAB=/var/tmp/.cortexsim-mp026; DOCS=$LAB/docs; STG=$LAB/stage
         mkdir -p "$DOCS" "$STG"
-        yes 'CORTEXSIM DECOY draft letter on tariff measures' | head -n 400 > "$DOCS/draft-letter-on-tariff-measures.txt"
-        yes 'CORTEXSIM DECOY trade dispute tariff briefing' | head -n 400 > "$DOCS/trade-dispute-briefing.txt"
+        printf 'CORTEXSIM DECOY draft letter on tariff measures\n' > "$DOCS/draft-letter-on-tariff-measures.txt"
+        head -c 4096 /dev/urandom | base64 >> "$DOCS/draft-letter-on-tariff-measures.txt"
+        printf 'CORTEXSIM DECOY trade dispute tariff briefing\n' > "$DOCS/trade-dispute-briefing.txt"
+        head -c 4096 /dev/urandom | base64 >> "$DOCS/trade-dispute-briefing.txt"
         printf 'CORTEXSIM DECOY unrelated document\n' > "$DOCS/canteen-menu.txt"
         find "$DOCS" -type f \( -name '*.txt' -o -name '*.docx' -o -name '*.pdf' \) -mtime -30 -exec grep -l tariff {} + > "$STG/hits.lst"
         tar -czf "$STG/$(hostname -s).tgz" -T "$STG/hits.lst"
