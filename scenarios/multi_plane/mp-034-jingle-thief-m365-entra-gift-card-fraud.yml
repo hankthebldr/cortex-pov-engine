@@ -275,6 +275,7 @@ steps:
           plugin: m365_activity_emitter
           params:
             collector_url: "$COLLECTOR_URL"
+            burst_count: 30
             event_pattern: onedrive_enumeration
             target_user: "$CORTEXSIM_USER"
             iterations: 1
@@ -313,6 +314,7 @@ steps:
           plugin: m365_activity_emitter
           params:
             collector_url: "$COLLECTOR_URL"
+            burst_count: 20
             event_pattern: storage_exfiltration
             target_user: "$CORTEXSIM_USER"
             iterations: 1

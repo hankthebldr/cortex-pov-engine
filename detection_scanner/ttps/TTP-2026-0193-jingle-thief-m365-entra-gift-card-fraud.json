@@ -262,7 +262,7 @@
       {
         "purpose": "hunt",
         "name": "MP-034 Impossible Traveler SSO for the Shared Principal",
-        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 3600)\n| filter status.errorCode = 0\n| alter country = location.countryOrRegion\n| comp count_distinct(country) as countries, count_distinct(ipAddress) as ips, earliest(_time) as first_seen, latest(_time) as last_seen by userPrincipalName\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter countries >= 2 and window_minutes <= 60\n| fields userPrincipalName, countries, ips, window_minutes",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 3600)\n| filter status.errorCode = 0\n| alter country = location.countryOrRegion\n| comp count_distinct(country) as countries, count_distinct(ipAddress) as ips, earliest(_time) as first_seen, latest(_time) as last_seen by userPrincipalName\n| alter window_minutes = timestamp_diff(last_seen, first_seen, \"MINUTE\")\n| filter countries >= 2 and window_minutes <= 60\n| fields userPrincipalName, countries, ips, window_minutes",
         "expected_rows_min": 1,
         "dataset": "msft_azure_ad_signin"
       },
@@ -297,7 +297,7 @@
       {
         "purpose": "hunt",
         "name": "MP-034 Exchange Inbox Forwarding Rule Configured",
-        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 3600)\n| filter Workload = \"Exchange\" and Operation in (\"New-InboxRule\", \"Set-InboxRule\")\n| filter Parameters contains \"ForwardTo\" or Parameters contains \"RedirectTo\" or Parameters contains \"MoveToFolder\"\n| fields _time, UserId, MailboxOwnerUPN, RuleName, ClientIP, Parameters",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 3600)\n| filter Workload = \"Exchange\" and Operation in (\"New-InboxRule\", \"Set-InboxRule\")\n| alter rule_params = to_string(Parameters)\n| filter rule_params contains \"ForwardTo\" or rule_params contains \"RedirectTo\" or rule_params contains \"MoveToFolder\"\n| fields _time, UserId, MailboxOwnerUPN, RuleName, ClientIP, rule_params",
         "expected_rows_min": 1,
         "dataset": "msft_o365_audit"
       }
