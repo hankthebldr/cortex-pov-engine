@@ -36,7 +36,7 @@
     "pov_engine": {
       "engine_version_min": "0.1.0",
       "auto_load": true,
-      "simulation_class": "identity",
+      "simulation_class": "endpoint",
       "destructive": false,
       "requires_network_egress": true,
       "requires_internet": false,
@@ -445,14 +445,14 @@
     "abiocs": [
       {
         "name": "MP-025 Recurring Fixed-Cadence GitHub API Sessions from a Non-Developer-Pattern Host",
-        "description": "A host whose GitHub usage is normally interactive (browser, git) starts a fixed-cadence (~63 s) series of small HTTPS sessions to api.github.com — the Blinder Tunnel GitHub contents-API C2 relay as the NGFW (App-ID) records it at the network boundary; no SaaS-audit leg exists (backlog). GitHub is legitimate, so no IOC matches; the ABIOC fires on the cadence deviation for the host, anchored to endpoint_device_name so it stitches to the endpoint lineage.",
+        "description": "A host whose GitHub usage is normally interactive (browser, git) starts a burst of small HTTPS sessions to api.github.com (an 8-session burst; the 63 s interval is the report's, not the record's) — the Blinder Tunnel GitHub contents-API C2 relay as the NGFW (App-ID) records it at the network boundary; no SaaS-audit leg exists (backlog). GitHub is legitimate, so no IOC matches; the ABIOC fires on the burst deviation for the host, anchored to endpoint_device_name so it stitches to the endpoint lineage.",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter log_source_type = \"eal\" and url_domain = \"api.github.com\" and action = \"allow\"\n| comp count() as sessions, avg(bytes_sent) as avg_bytes by endpoint_device_name, src\n| filter sessions >= 6 and avg_bytes < 8192\n| sort desc sessions\n| fields endpoint_device_name, src, sessions, avg_bytes",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1102.002"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "Learned per-host network-boundary usage baseline for GitHub (interactive, bursty) -> fixed-interval small API sessions to api.github.com from the same endpoint_device_name that runs the RuntimeBrokers lineage."
+        "causality_anchor": "Learned per-host network-boundary usage baseline for GitHub (interactive, bursty) -> a burst of small API sessions to api.github.com from the same endpoint_device_name that runs the RuntimeBrokers lineage."
       },
       {
         "name": "MP-025 Recurring Tunnel Sessions to a Rare IP-Literal Destination",

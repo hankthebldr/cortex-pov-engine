@@ -5,10 +5,10 @@
 # Endpoint leg (EDR): point at the design-time build -> RuntimeBrokers copy -> renamed-host -> Run key
 #   lineage and the GitHub URI shape (sent to ${STAGE_HOST}, never api.github.com).
 # Network leg (NDR): the GitHub SaaS relay is observed at the network boundary (no SaaS-audit
-#   emitter exists, backlog): synthetic 63-s api.github.com sessions, un-enrichable (GitHub is
-#   legitimate); Chisel tunnel to 91.107.156.29 + WildFire verdicts on the Blackwood hashes; DNS
+#   emitter exists, backlog): a synthetic 8-session api.github.com burst (the 63 s interval is the
+#   report's, not the record's), un-enrichable (GitHub is legitimate); Chisel tunnel to 91.107.156.29 + WildFire verdicts on the Blackwood hashes; DNS
 #   lookups of the report's Drive/Meet look-alikes via @${LAB_RESOLVER} (one query, no session).
-# Every leg carries the run host (src_host); CR-MP-0025 stitches them. EAL legs are POSIX-only.
+# Every leg carries the run host (src_host); CR-MP-0025 stitches them. Steps 05–09 are Linux-only (Windows variants cover lineage steps 01–04).
 scenario_id: SIM-MP-025
 name: "Blinder Tunnel (CL-STA-1178) — Developer-Lure MSBuild Execution, GitHub-as-C2 and Chisel Tunnel"
 version: "1.0"
@@ -245,6 +245,7 @@ steps:
       printf 'CORTEXSIM SAFE-MODE placeholder for RuntimeBroker.dll (ShelbyLoader V2); no code\n' > "$STAGE/FlightManager/Resources/RuntimeBroker.dll"
       (cd /tmp/cortexsim-mp025/lure && python3 -m zipfile -c "$LURE" DubaiAirport_Carrers_IT_Test)
       python3 -m zipfile -e "$LURE" "$HOME/source/repos/"
+      chmod +x "$PROJ/FlightManager/Resources/RuntimeBroker.exe"
       sha256sum "$LURE" "$PROJ/FlightManager/FlightManager.csproj"
       echo "report sha256 DubaiAirport_Carrers_IT_Test.zip 6e7d9b33f1e72ea1ede71373a604ecdb060dab7d42055179c1eede9ecd1fd239"
       echo "report sha256 FlightManager.csproj f5b12772db6817f7a765a6fe7565fd3d4f87edc28e42fe3ec0244a372a410fc9"
@@ -287,13 +288,13 @@ steps:
     name: "Opening the project runs the GetFrameworkPaths design-time target (MSBuild proxy execution)"
     command: |
       export LOCALAPPDATA="$HOME/.local/share"
-      cd "$HOME/source/repos/DubaiAirport_Carrers_IT_Test/FlightManager"
+      cd "$HOME/source/repos/DubaiAirport_Carrers_IT_Test/FlightManager" || exit 1
+      ls -la Resources
       if command -v dotnet >/dev/null 2>&1; then
-        dotnet msbuild FlightManager.csproj -t:GetFrameworkPaths -nologo -v:m
+        dotnet msbuild FlightManager.csproj -t:GetFrameworkPaths -nologo -v:m || exit 1
       else
-        sh -c 'mkdir -p "$LOCALAPPDATA/Microsoft/RuntimeBrokers" && cp Resources/* "$LOCALAPPDATA/Microsoft/RuntimeBrokers/" && "$LOCALAPPDATA/Microsoft/RuntimeBrokers/RuntimeBroker.exe" 3'
+        sh -c 'mkdir -p "$LOCALAPPDATA/Microsoft/RuntimeBrokers" && cp Resources/* "$LOCALAPPDATA/Microsoft/RuntimeBrokers/" && "$LOCALAPPDATA/Microsoft/RuntimeBrokers/RuntimeBroker.exe" 3' || exit 1
       fi
-      ls -la "$LOCALAPPDATA/Microsoft/RuntimeBrokers"
     platform_variants:
       windows: |
         $proj = Join-Path $env:USERPROFILE 'source\repos\DubaiAirport_Carrers_IT_Test\FlightManager'
@@ -337,7 +338,7 @@ steps:
       RBPID=$!
       sleep 1
       tr '\0' ' ' < "/proc/$RBPID/cmdline"
-      wait "$RBPID"
+      wait "$RBPID" || exit 1
     platform_variants:
       windows: |
         $rb = Join-Path $env:LOCALAPPDATA 'Microsoft\RuntimeBrokers'
@@ -424,7 +425,7 @@ steps:
         detection_id: "bioc-mp-025-lic-inf-c2-files-written-under-runtimebrokers"
 
   - id: step-06
-    name: "GitHub SaaS relay seen at the network boundary: recurring 63-s api.github.com sessions (synthetic NGFW App-ID records)"
+    name: "GitHub SaaS relay seen at the network boundary: 8-session api.github.com burst (synthetic NGFW App-ID records)"
     command: |
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
@@ -465,7 +466,7 @@ steps:
     expected_detections:
       - plane: NDR
         type: ABIOC
-        description: "Network-boundary view of the SaaS relay: a host whose GitHub usage is normally browser/git-driven starts a fixed-cadence (~63 s) burst of small HTTPS sessions to api.github.com — the report's GitHub-as-C2 relay as the NGFW (App-ID) records it, attributed to the run host's src_host. Raised by the network sensor; no SaaS-audit emitter exists (backlog)."
+        description: "Network-boundary view of the SaaS relay: a host whose GitHub usage is normally browser/git-driven starts a burst of small HTTPS sessions to api.github.com (8-session burst; the 63 s interval is the report's, not the record's) — the report's GitHub-as-C2 relay as the NGFW (App-ID) records it, attributed to the run host's src_host. Raised by the network sensor; no SaaS-audit emitter exists (backlog)."
         ttp_ref: "TTP-2026-0184"
         detection_id: "abioc-mp-025-recurring-fixed-cadence-github-api-sessions-from-a-non-developer-pattern-host"
       - plane: NDR
