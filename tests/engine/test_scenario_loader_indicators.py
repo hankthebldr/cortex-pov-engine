@@ -212,6 +212,9 @@ def test_fetch_verb_inside_hostname_does_not_block_lookup(cmd, value):
     ("pip3 download {h}", True),
     ("mycurl {h}", False),
     ("Invoke-WebRequest -Uri https://x/{h}", True),
+    ("IWR -Uri https://x/{h}", True),
+    ("Invoke-webrequest -Uri https://x/{h}", True),
+    ("CURL -O https://x/{h}.bin", True),
 ])
 def test_fetch_verb_tokens_still_fire_s26(cmd, fires):
     h = "d" * 64

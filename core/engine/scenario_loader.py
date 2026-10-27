@@ -172,7 +172,7 @@ _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
 _IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
 FETCH_VERB_RE = re.compile(
-    r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr)(?![A-Za-z0-9_.-])")
+    r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr)(?![A-Za-z0-9_.-])", re.IGNORECASE)
 _HEREDOC_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
 
 

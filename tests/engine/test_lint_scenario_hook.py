@@ -257,6 +257,12 @@ _PARITY_VECTORS = [
      "pip3 download " + "d" * 64, None, None),
     ("hash mycurl", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
      "mycurl " + "d" * 64, None, None),
+    ("hash IWR upper", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "IWR -Uri https://x/" + "d" * 64, None, None),
+    ("hash CURL upper", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "CURL -O https://x/" + "d" * 64 + ".bin", None, None),
+    ("hash Invoke-webrequest", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "Invoke-webrequest -Uri https://x/" + "d" * 64, None, None),
     ("hash iwr", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
      "Invoke-WebRequest -Uri https://x/" + "d" * 64, None, None),
     ("dig chained", [_ind()], "dig rn-stage.example; nc rn-stage.example 443", None, None),
@@ -331,6 +337,8 @@ def test_hook_fetch_verb_in_hostname_does_not_block_lookup(cmd, value):
     ("npm install evil-pkg {h}", True), ("/usr/bin/curl -O https://x/{h}.bin", True),
     ("sudo wget https://x/{h}", True), ("pip3 download {h}", True),
     ("mycurl {h}", False), ("Invoke-WebRequest -Uri https://x/{h}", True),
+    ("IWR -Uri https://x/{h}", True), ("Invoke-webrequest -Uri https://x/{h}", True),
+    ("CURL -O https://x/{h}.bin", True),
 ])
 def test_hook_fetch_verb_tokens_s26(cmd, fires):
     hook = _load_hook()
