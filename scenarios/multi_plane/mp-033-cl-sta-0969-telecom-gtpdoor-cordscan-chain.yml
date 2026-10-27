@@ -455,6 +455,11 @@ steps:
         description: "Validation query: all five CL-STA-0969 toolkit sha256s landed in panw_ngfw_threat_raw for one src_host inside the run window, with action alert (never a block)."
         ttp_ref: "TTP-2026-0192"
         detection_id: "xql-mp-033-cl-sta-0969-toolkit-sha256s-landed-in-panw-ngfw-threat-raw"
+      - plane: NDR
+        type: Correlation
+        description: "CR-MP-NET-0033 fuses the network leg on its own: the panw_ngfw_threat_raw CL-STA-0969 toolkit sha256 WildFire verdicts and the panw_ngfw_traffic_raw rare SSH session share endpoint_device_name / src for the run host within 3600 s, so the NGFW threat verdict and its session are one network-plane finding before the endpoint stitch."
+        ttp_ref: "TTP-2026-0192"
+        detection_id: "CR-MP-NET-0033"
 
   - id: step-09
     name: "NGFW leg — rare SSH session record for the run host (preset destination, un-enrichable)"

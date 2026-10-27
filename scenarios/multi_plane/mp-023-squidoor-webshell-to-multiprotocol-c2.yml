@@ -549,6 +549,11 @@ steps:
         description: "Validation query: the WildFire malicious verdict for config.ini landed in panw_ngfw_threat_raw with the run host's src / endpoint hostname within the run window."
         ttp_ref: "TTP-2026-0182"
         detection_id: "xql-mp-023-squidoor-config-ini-wildfire-verdict-landed-for-run-host"
+      - plane: NDR
+        type: Correlation
+        description: "CR-MP-NET-0023 fuses the network leg on its own: the panw_ngfw_threat_raw Squidoor config.ini WildFire verdict and the panw_ngfw_traffic_raw CL-STA-0049 beacon sessions to the rare report domains share endpoint_device_name / src for the run host within 1800 s, so the NGFW threat verdict and its session are one network-plane finding before the endpoint stitch."
+        ttp_ref: "TTP-2026-0182"
+        detection_id: "CR-MP-NET-0023"
       - plane: ANALYTICS
         type: Correlation
         description: "CR-MP-0023 fuses the endpoint web-shell/loader/persistence/C2-shape alerts and the NGFW beacon + WildFire alerts on the shared src_host within 1800 s into one CL-STA-0049 incident."

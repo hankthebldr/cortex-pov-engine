@@ -426,6 +426,11 @@
         "name": "ChainDrop npm worm — endpoint, NGFW and CloudTrail legs on one CI runner",
         "rule_id": "CR-MP-0028",
         "logic": "(BIOC(MP-028 npm preinstall node setup.mjs spawns detached runtime with NODE_RUNTIME_INIT) OR BIOC(MP-028 proc pid mem read of Runner.Worker process) OR BIOC(MP-028 npm lineage queries instance metadata token and IAM credentials endpoints)) AND (IOC(file-sha256 ChainDrop) OR ABIOC(MP-028 CI runner large HTTPS upload to a rare domain) OR IOC(domain awqhnjewqjkl.icu) OR IOC(domain npm-cache.com)) AND ABIOC(MP-028 STS AssumeRole from a CI runner address after metadata harvest) within 1800s on the same src_host (endpoint alerts project agent_hostname; NGFW records carry endpoint_device_name and src; CloudTrail carries sourceIPAddress, resolved to the host by XSIAM asset IP->host mapping) -> one ChainDrop supply-chain incident."
+      },
+      {
+        "name": "MP-028 network-leg fusion — NGFW threat verdict + traffic session on one host",
+        "rule_id": "CR-MP-NET-0028",
+        "logic": "panw_ngfw_threat_raw (WildFire verdict malicious, action alert; ChainDrop sha256 WildFire verdicts) JOIN panw_ngfw_traffic_raw (large HTTPS upload sessions to awqhnjewqjkl.icu / npm-cache.com) ON endpoint_device_name (with src as the tie-break when the hostname is absent) WHERE |traffic._time - threat._time| <= 1800s -> one network-plane finding for the run host; feeds CR-MP-0028 as its network leg. Joins only NGFW records; no endpoint or cloud dataset."
       }
     ],
     "analytics_modules": [

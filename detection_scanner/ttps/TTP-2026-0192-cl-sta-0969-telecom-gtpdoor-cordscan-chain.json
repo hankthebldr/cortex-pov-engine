@@ -476,6 +476,11 @@
         "name": "CL-STA-0969 Telecom Intrusion — Endpoint + NGFW on src_host",
         "rule_id": "CR-MP-0033",
         "logic": "BIOC(MP-033 DirtyCoW firefart Account Created and Removed) AND BIOC(MP-033 pam_unix.so Written Outside the Package Manager) AND (BIOC(MP-033 Kernel-Thread-Named Process Restarted by a Watchdog Script) OR ABIOC(MP-033 GTP-C Port 2123 Listener Opened by a Non-Core Process)) AND (IOC(file-sha256 dnsd_el5) OR XQL(MP-033 CL-STA-0969 Toolkit sha256s Landed in panw_ngfw_threat_raw)) AND (BIOC(MP-033 Reverse SSH Tunnel to Remote Port 53) OR ABIOC(MP-033 NGFW Rare SSH Session from the Telecom Host)) joined on agent_hostname = endpoint_device_name (src_host) within 3600 seconds -> ONE incident"
+      },
+      {
+        "name": "MP-033 network-leg fusion — NGFW threat verdict + traffic session on one host",
+        "rule_id": "CR-MP-NET-0033",
+        "logic": "panw_ngfw_threat_raw (WildFire verdict malicious, action alert; CL-STA-0969 toolkit sha256 WildFire verdicts) JOIN panw_ngfw_traffic_raw (rare SSH session) ON endpoint_device_name (with src as the tie-break when the hostname is absent) WHERE |traffic._time - threat._time| <= 3600s -> one network-plane finding for the run host; feeds CR-MP-0033 as its network leg. Joins only NGFW records; no endpoint or cloud dataset."
       }
     ],
     "analytics_modules": [

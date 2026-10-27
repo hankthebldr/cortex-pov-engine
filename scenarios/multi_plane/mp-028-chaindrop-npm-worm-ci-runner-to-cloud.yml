@@ -426,6 +426,11 @@ steps:
         description: "Validation query confirms all four ChainDrop sha256 verdicts landed in panw_ngfw_threat_raw on the runner's host within the run window."
         ttp_ref: "TTP-2026-0187"
         detection_id: "xql-mp-028-chaindrop-wildfire-verdicts-landed-in-panw-ngfw-threat-raw"
+      - plane: NDR
+        type: Correlation
+        description: "CR-MP-NET-0028 fuses the network leg on its own: the panw_ngfw_threat_raw ChainDrop sha256 WildFire verdicts and the panw_ngfw_traffic_raw large HTTPS upload sessions to awqhnjewqjkl.icu / npm-cache.com share endpoint_device_name / src for the run host within 1800 s, so the NGFW threat verdict and its session are one network-plane finding before the endpoint stitch."
+        ttp_ref: "TTP-2026-0187"
+        detection_id: "CR-MP-NET-0028"
 
   - id: step-07
     name: "NGFW traffic log: C2 sessions and a large HTTPS upload to awqhnjewqjkl.icu on its report IPs, plus one npm-cache.com session (same src_host)"
