@@ -933,6 +933,8 @@ def render_human(result: dict[str, Any], quiet: bool) -> None:
     n_breach = len(result["strict_breaches"])
     n_warn = len(warns) + n_breach
     print()
+    for b in result["strict_breaches"]:
+        print(f"BREACH  {b['kind']}: {b.get('detail', '')}")
     print(f"--- coverage: {n_warn} warn(s), {n_breach} strict-breach(es) "
           f"(WARN-only; use --strict to gate) ---")
 
@@ -956,11 +958,13 @@ def main() -> int:
     ap.add_argument("--name-similarity", type=float, default=0.60,
                     help="Jaccard threshold on name tokens for the overlap finder")
     ap.add_argument("--top", type=int, default=15, help="max rows in the author-next list")
-    ap.add_argument("--hq-signal-floor", type=int, default=0,
+    # default=None: an absent flag keeps default_config()'s measured floor; a
+    # 0/0/1.0 argparse default overwrote it and --strict could never breach.
+    ap.add_argument("--hq-signal-floor", type=int, default=None,
                     help="min high-quality signals (stitched-chain, non-marker step-detections)")
-    ap.add_argument("--stitched-chain-floor", type=int, default=0,
+    ap.add_argument("--stitched-chain-floor", type=int, default=None,
                     help="min stitched chains (Unit 42-sourced, >=2 legs, with indicators)")
-    ap.add_argument("--marker-only-ceiling", type=float, default=1.0,
+    ap.add_argument("--marker-only-ceiling", type=float, default=None,
                     help="max share of steps whose command is marker-only")
     ap.add_argument("--scenarios-dir", default=str(REPO_ROOT / "scenarios"),
                     help="override the scenarios directory")
@@ -986,10 +990,11 @@ def main() -> int:
         "name_similarity": args.name_similarity,
         "top": args.top,
         "strict": args.strict,
-        "hq_signal_floor": args.hq_signal_floor,
-        "stitched_chain_floor": args.stitched_chain_floor,
-        "marker_only_ceiling": args.marker_only_ceiling,
     }
+    for key in ("hq_signal_floor", "stitched_chain_floor", "marker_only_ceiling"):
+        val = getattr(args, key)
+        if val is not None:
+            cfg[key] = val
 
     result = compute_report(args.scenarios_dir, args.ttps_dir, cfg)
 

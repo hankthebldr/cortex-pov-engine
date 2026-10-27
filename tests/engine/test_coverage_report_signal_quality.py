@@ -161,3 +161,29 @@ def test_marker_ceiling_compares_before_rounding(module, tmp_path, monkeypatch):
     r = module.compute_report(sdir, tdir, {"strict": True, "marker_only_ceiling": 0.15})
     assert [b for b in r["strict_breaches"] if b["kind"] == "marker_only_ceiling"]
     assert r["signal_quality"]["marker_only_share"] == 0.15  # JSON keeps the rounded value
+
+
+# ── Final review C1: the CLI must not zero the signal-quality floors ──────────
+_NEUTRAL = ["--plane-floor", "0", "--tactic-floor", "0", "--abioc-analytics-target", "0",
+            "--correlation-target", "0", "--family-floor", "0"]
+
+
+def _run_cli(tmp_path, *extra):
+    import subprocess  # noqa: PLC0415
+    sdir, tdir = _corpus(tmp_path)
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--strict", "--scenarios-dir", sdir, "--ttps-dir", tdir,
+         *_NEUTRAL, *extra], capture_output=True, text=True)
+
+
+def test_cli_strict_uses_default_config_floors(tmp_path):
+    r = _run_cli(tmp_path)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "hq_signals 3 < floor 195" in r.stdout
+    assert "stitched_chains 1 < floor 11" in r.stdout
+
+
+def test_cli_flags_still_override_floors(tmp_path):
+    r = _run_cli(tmp_path, "--hq-signal-floor", "0", "--stitched-chain-floor", "0",
+                 "--marker-only-ceiling", "1.0")
+    assert r.returncode == 0, r.stdout + r.stderr
