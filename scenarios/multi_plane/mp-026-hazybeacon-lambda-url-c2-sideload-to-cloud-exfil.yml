@@ -561,7 +561,7 @@ steps:
 
 cleanup:
   commands:
-    - "if (Get-Service -Name msdnetsvc -ErrorAction SilentlyContinue) { sc.exe delete msdnetsvc }; Remove-Item -Recurse -Force -Path 'C:\\ProgramData\\cortexsim-mp026' -ErrorAction SilentlyContinue"
+    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'if (Get-Service -Name msdnetsvc -ErrorAction SilentlyContinue) { sc.exe delete msdnetsvc }; Remove-Item -Recurse -Force -Path '\\''C:\\ProgramData\\cortexsim-mp026'\\'' -ErrorAction SilentlyContinue' || true"
     - "rm -f /etc/systemd/system/msdnetsvc.service /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
 
 author: "Henry Reed"

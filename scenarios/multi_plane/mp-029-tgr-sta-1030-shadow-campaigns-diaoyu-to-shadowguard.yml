@@ -572,7 +572,7 @@ steps:
 
 cleanup:
   commands:
-    - "Remove-Item -Recurse -Force -Path (Join-Path $env:TEMP 'cortexsim-mp-029') -ErrorAction SilentlyContinue"
+    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'Remove-Item -Recurse -Force -Path (Join-Path $env:TEMP '\\''cortexsim-mp-029'\\'') -ErrorAction SilentlyContinue' || true"
     - "rm -rf /tmp/cortexsim-mp-029 /tmp/mp-029-delivery.yml /tmp/mp-029-c2.yml"
 
 author: "Henry Reed"
