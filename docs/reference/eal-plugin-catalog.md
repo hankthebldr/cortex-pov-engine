@@ -1,5 +1,8 @@
 # EAL (Emulated Attack Layer) Simulator — Plugin Catalog & Reference
 
+> **Count update (2026-10-27):** the tree ships **27 EAL plugins** (ground truth), including `ngfw_threat_emitter`;
+> the tables below predate that and are not regenerated here.
+>
 > **Status:** canonical reference, generated 2026-06-07 from a full read of
 > `core/eal_simulator/`, `core/eal_simulator/plugins/`, `core/api/eal.py`,
 > `tests/eal_simulator/`, and `docs/eal-simulator/`.

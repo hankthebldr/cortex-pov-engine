@@ -8,6 +8,18 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — library signal expansion: 12 stitched, Unit 42-enrichable chains
+
+Spec `docs/superpowers/specs/2026-10-27-library-signal-expansion-design.md`.
+
+- **`indicators[]`** on scenarios (published hashes, IPs, domains as structured data) with lint/loader codes **S-22..S-27**; marker-only steps now warn.
+- **`ngfw_threat_emitter`** EAL plugin (27 plugins total) and source/destination overrides on the analytics emitters.
+- **Campaign-id lint** rejects `campaign_id` values the EAL campaign validator would refuse.
+- **Coverage `signal_quality`** in `coverage_report.py` with gates `hq_signal_floor`, `stitched_chain_floor`, `marker_only_ceiling`, set to the measured values: 11 stitched chains, 192 high-quality signals (192/1317, 14.6%), marker-only 100/765 (13.1%, was 137/667).
+- **12 Unit 42 stitched chains** `SIM-MP-023..034` with cards `TTP-2026-0182..0193`; UC/TC crosswalk bound. `SIM-MP-034` is identity-led and is not counted as a stitched chain.
+- Corpus: 177 -> 189 scenarios, 175 -> 187 cards, 26 -> 27 EAL plugins; exports and ground truth regenerated. `tenant-verified` remains 0.
+- Known: `make coverage-strict` exits 1 (Correlation 9.9% vs the 10% target) until correlation step-detections are added.
+
 ### Changed — the console says what to do next, in fewer colours, on real state only
 
 From DC feedback on a live install: overwhelming, no clear next task, colour

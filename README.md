@@ -5,9 +5,9 @@
 **A detection quality-assurance engine for Palo Alto Networks Cortex.**
 
 [![CI](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml)
-[![scenarios](https://img.shields.io/badge/scenarios-177-00994d)](docs/reference/ground-truth.md)
+[![scenarios](https://img.shields.io/badge/scenarios-189-00994d)](docs/reference/ground-truth.md)
 [![planes](https://img.shields.io/badge/detection%20planes-16-00994d)](docs/reference/ground-truth.md)
-[![step-detections](https://img.shields.io/badge/step--detections-1116-00994d)](docs/reference/ground-truth.md)
+[![step-detections](https://img.shields.io/badge/step--detections-1317-00994d)](docs/reference/ground-truth.md)
 [![tenant-verified](https://img.shields.io/badge/tenant--verified-0-c62828)](#read-this-before-anything-else)
 
 [![python](https://img.shields.io/badge/python-3.11-3776ab?logo=python&logoColor=white)](core/requirements.txt)
@@ -23,7 +23,7 @@ environment (XSIAM/XDR) so a Domain Consultant can validate detection logic —
 SOC has to. Think *"MITRE Caldera's opinionated nephew"*: not a red-team C2, a
 **detection quality-assurance engine**.
 
-It runs **177 scenarios across 16 detection planes** through either a pull-model
+It runs **189 scenarios across 16 detection planes** through either a pull-model
 Go beacon or a self-contained push bundle, under a per-step **identity harness**
 so XDR sees real process-causality chains instead of everything running as one
 account. Every scenario reference — use case, test case, TTP card, detection id,
@@ -193,8 +193,8 @@ has no toolchain and no internet.
 ```mermaid
 flowchart LR
     subgraph AUTHOR["Authored content — source of truth, on disk"]
-        SC["scenarios/<br/>177 scenario YAML"]
-        TTP["detection_scanner/ttps/<br/>175 TTP cards"]
+        SC["scenarios/<br/>189 scenario YAML"]
+        TTP["detection_scanner/ttps/<br/>187 TTP cards"]
         ASRT["assertions/<br/>POS · PLT · AUT"]
         PACK["tools/packs/<br/>91 adapter packs"]
         IDX["UC/TC index v2.2<br/>266 test cases"]
@@ -212,7 +212,7 @@ flowchart LR
     subgraph EXEC["Delivery surfaces"]
         AGENT["cortexsim-agent<br/>Go beacon, pull"]
         BUNDLE["push bundle<br/>no runtime dep"]
-        EAL["EAL simulator<br/>26 plugins"]
+        EAL["EAL simulator<br/>27 plugins"]
     end
 
     TENANT["Customer Cortex tenant<br/>XSIAM · XDR · Cortex Cloud"]
@@ -605,7 +605,7 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 `pending`, never `fail`.**
 
 > [!NOTE]
-> **Quantified limit:** **134 of 177** scenarios declare a primary KPI the
+> **Quantified limit:** **134 of 177** scenarios (counted 2026-10-19, before the 12 stitched chains) declare a primary KPI the
 > scorer can be given a measured value for — **66** MTTD-shaped, **47** Detection
 > Accuracy and **21** correlation rate, the last two derived from the alert
 > read-back since sprint 2. The other **43** declare thresholds nothing produces
@@ -628,7 +628,7 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | Plane | Cortex engine | Scenarios | Primary driver |
 |---|---|---:|---|
 | CDR | Cortex Cloud / Prisma Cloud Compute | 28 | container-runtime exec · K8s manifests |
-| Analytics | XSIAM Correlation Engine | 23 | multi-plane stitching |
+| Analytics | XSIAM Correlation Engine | 35 | multi-plane stitching |
 | EDR | Cortex XDR Agent | 22 | identity harness · signalbench |
 | ITDR | Cortex ITDR | 20 | AD toolchain · `idp_signin_emulator` |
 | NDR | Network Security / Firewall Analytics | 12 | EAL network plugins |
@@ -643,11 +643,11 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | CSPM | Cortex Cloud Posture Management | 5 | `cspm` IaC misconfigs |
 | Email | XSIAM / NG-SIEM (3rd-party ingestion) | 5 | `email_emitter` |
 | DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 | endpoint + cloud data movement |
-| **Total** | | **177** | |
+| **Total** | | **189** | |
 
-**1,116 step-level expected detections** resolve against **1,797 catalog
+**1,317 step-level expected detections** resolve against **2,049 catalog
 detection objects** across the six-value `detection_type` vocabulary, covering
-**207 MITRE techniques (119 base)**. XDM modeling rules are a normalization
+**230 MITRE techniques (127 base)**. XDM modeling rules are a normalization
 *substrate* — surfaced and exported, counted informationally, not a seventh type.
 
 <details>
@@ -820,7 +820,7 @@ deploy/tier-d/run-tier-d.sh --scenario SIM-EDR-001
 
 A plugin-based subsystem under `core/eal_simulator/` that emits controlled
 network/log telemetry to validate NGFW Enhanced Application Logs and
-Cortex analytics without hand-rolling raw traffic. 26 plugins today, split
+Cortex analytics without hand-rolling raw traffic. 27 plugins today, split
 into two families: **signal-injection** (C2 beacon, DNS tunnel, OAuth grant
 abuse, LLM-provider egress, browser attacks, agentic supply-chain fetches)
 and the **analytics log-streamer** family, which POSTs shape-true
@@ -877,14 +877,14 @@ cortex-pov-engine/
 │   │                           push_generator · uctc_registry · storyline
 │   ├── connectors/             opt-in read-back measurement loop
 │   ├── integrations/xsiam/     ~116 read-only operation packs + Tier-2 XQL
-│   ├── eal_simulator/          26 plugins, two families
+│   ├── eal_simulator/          27 plugins, two families
 │   ├── planes/                 declarative PlaneDescriptor registry (16)
 │   └── models.py               14 ORM models
 ├── agent/                    ← Go beacon, stdlib only, 5-target matrix
 ├── ui/                       ← React 18 + Vite console
-├── scenarios/                ← 177 scenario YAML, per plane
+├── scenarios/                ← 189 scenario YAML, per plane
 ├── assertions/{pos,plt,aut}/ ← POS · PLT · AUT artifacts
-├── detection_scanner/ttps/   ← 175 TTP cards → 1,797 detection objects
+├── detection_scanner/ttps/   ← 187 TTP cards → 2,049 detection objects
 ├── tools/packs/              ← 91 adapter packs across 5 tiers
 ├── payloads/                 ← digest-pinned shelf (manifest is generated)
 ├── infra/modules/aws/        ← 11 Terraform modules

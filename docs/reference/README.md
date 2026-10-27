@@ -114,6 +114,13 @@
     `CORTEXSIM_K8S_PAYLOAD_AUTH=token` (the init container's bare `wget` carries
     no Authorization header, so the manifest would apply cleanly and 403 in the
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
+- **Counted ground truth (verified 2026-10-27 — library signal expansion):**
+  **189 loadable scenarios · 187 TTP cards · 27 EAL plugins** across 16 planes · 1317 step-detections ·
+  2049 catalog detection objects (`ground-truth.md` is the source). New `signal_quality` block in
+  `coverage_report.py --json`: **11 stitched chains** (strict), **192 high-quality signals / 1317
+  step-detections (14.6%)**, **100 marker-only steps / 765 (13.1%)**, 84 indicators in 12 scenarios; floors
+  set to those measured values. `SIM-MP-023..034` / `TTP-2026-0182..0193` are the Unit 42 stitched chains.
+  ***tenant-verified: 0.*** Known red: `make coverage-strict` exits 1 on Correlation 9.9% vs 10%.
 - **Counted ground truth (verified 2026-08-02 — library-breadth authoring pass):**
   **169 loadable scenarios · 169 TTP cards** across **15 detection planes** (all
   `status: active`, 0 rejected / 0 dangling refs; **1073/1073 scenario
