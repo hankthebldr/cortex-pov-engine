@@ -1,7 +1,7 @@
 # Repellent Scorpius / Cicada3301 (Unit 42, 2024-09-10): stolen-credential RDP access, share enumeration to
 # ProgramData\found_shares.txt, a Rust encryptor pushed over C$ by embedded PsExec (--no_impl --key), Rclone
 # exfil to 91.238.181.238, then VM stop, shadow-copy and event-log wipe, and ChaCha20 encryption (.kcr5umw,
-# RECOVER-<ext>-DATA.txt). Transposed onto a Linux host with ESXi-shaped paths under /tmp/cortexsim-mp031.
+# RECOVER-<ext>-DATA.txt). Report is Windows/Hyper-V only (Stop-VM); transposed onto a Linux host with ESXi-shaped paths.
 # ENDPOINT (01, 02, 04, 06, 07; root under an interactive bash CGO): point at the causality view - the
 #   found_shares.txt write, the share-path locker run with --no_impl --key, the renamed rclone + rclone.conf,
 #   the mass vmx-process kill / snapshot + log wipe, and the .kcr5umw rename with the ransom note.
@@ -59,6 +59,8 @@ additional_techniques:
     name: "Inhibit System Recovery"
   - technique: "T1070.001"
     name: "Indicator Removal: Clear Windows Event Logs"
+  - technique: "T1070.002"
+    name: "Indicator Removal: Clear Linux or Mac System Logs"
 
 threat_report: "Unit 42 — Threat Assessment: Repellent Scorpius, Distributors of Cicada3301 Ransomware"
 threat_report_url: "https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/"
@@ -402,11 +404,11 @@ steps:
       LAB=/tmp/cortexsim-mp031
       DS="$LAB/vmfs/volumes/datastore1"
       for vmx in "$DS"/*/*.vmx; do
-        ( exec -a "vmx-cortexsim-mp031 $vmx" sleep 600 ) &
+        bash -c 'exec -a "vmx-cortexsim-mp031 $1" sleep 600' _ "$vmx" &
       done
       sleep 2
-      pgrep -af 'vmx-cortexsim-mp031' | wc -l
-      pkill -KILL -f 'vmx-cortexsim-mp031'
+      pgrep -f '^vmx-cortexsim-mp031 ' | wc -l
+      pkill -KILL -f '^vmx-cortexsim-mp031 '
       find "$DS" -type f -name '*.vmsn' -print -delete
       for f in "$LAB"/var/log/*.log; do : > "$f"; done
       ls -l "$LAB/var/log"
@@ -424,7 +426,7 @@ steps:
         detection_id: "bioc-mp-031-mass-kill-of-vmx-named-virtual-machine-processes"
       - plane: EDR
         type: BIOC
-        description: "The same chain deletes VM snapshot files (*.vmsn) under a vmfs/volumes path and truncates hostd/vmkernel/vpxa logs — the report's shadow-copy deletion and event-log clearing, scoped to the lab datastore."
+        description: "The same chain deletes VM snapshot files (*.vmsn) under a vmfs/volumes path and truncates hostd/vmkernel/vpxa logs — the report's shadow-copy deletion and event-log clearing (T1070.001), transposed to Linux log truncation (T1070.002), scoped to the lab datastore."
         ttp_ref: "TTP-2026-0190"
         detection_id: "bioc-mp-031-vm-snapshot-deletion-and-hypervisor-log-truncation"
 
@@ -455,7 +457,7 @@ steps:
 
 cleanup:
   commands:
-    - "pkill -KILL -f 'vmx-cortexsim-mp031' || true"
+    - "pkill -KILL -f '^vmx-cortexsim-mp031 ' || true"
     - "rm -rf /tmp/cortexsim-mp031"
     - "rm -f /tmp/mp-031-threat.yml /tmp/mp-031-exfil.yml"
 

