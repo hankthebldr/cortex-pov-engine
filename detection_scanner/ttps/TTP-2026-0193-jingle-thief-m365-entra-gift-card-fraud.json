@@ -1,0 +1,413 @@
+{
+  "id": "TTP-2026-0193",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-10-27T00:00:00+00:00",
+    "updated_at": "2026-10-27T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "plane-itdr",
+      "plane-cloud-app",
+      "actor-cl-cri-1032",
+      "actor-jingle-thief",
+      "m365",
+      "entra-id",
+      "mailbox-forwarding-rule",
+      "gift-card-fraud",
+      "identity-led",
+      "unit42",
+      "stitched-chain",
+      "correlation",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "identity",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Jingle Thief (CL-CRI-1032) — M365/Entra Takeover, SharePoint Recon, Mailbox Forwarding (T1078.004 / T1213.002 / T1114.003)",
+    "summary": "CL-CRI-1032 (Jingle Thief) phished Microsoft 365 credentials, signed in from Moroccan and US proxy infrastructure, searched SharePoint and OneDrive for gift-card workflows and planted Exchange forwarding rules to keep watching victim mailboxes, all to issue fraudulent gift cards. The card stitches the identity sign-in and cloud-application signals on one user principal into one incident.",
+    "description": "Unit 42 (2025-10-22) describes a financially motivated, Morocco-based cluster that stayed inside a retailer's Microsoft 365 for about ten months without malware: credential phishing and smishing, direct M365 sign-ins, SharePoint/OneDrive reconnaissance for gift-card issuance processes, internal ServiceNow-themed phishing, inbox forwarding rules and mail hiding, rogue authenticator / SSPR / Entra device registration for persistence, and repeated gift-card issuance attempts. SIM-MP-034 emits the sign-in, recon, download and forwarding-rule stages as shape-true Entra and O365 audit records for one canary principal. Mail hiding, MFA/device registration and gift-card application abuse are not emitted (no emitter preset). The report's IPs are carried as indicators for tenant search but are not yet placed in the emitted records (the identity emitters have no client-address parameter).",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "CL-CRI-1032",
+        "aliases": [
+          "Jingle Thief",
+          "Atlas Lion",
+          "STORM-0539"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Jingle Thief cloud-based gift card fraud campaign (about 10 months, 60+ compromised accounts)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "retail-hospitality"
+    ],
+    "first_observed": "2025-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "subtechnique_id": "T1078.004",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0001",
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Initial Access",
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1213",
+        "subtechnique_id": "T1213.002",
+        "name": "Data from Information Repositories: Sharepoint",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1530",
+        "name": "Data from Cloud Storage",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1114",
+        "subtechnique_id": "T1114.003",
+        "name": "Email Collection: Email Forwarding Rule",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1564",
+        "subtechnique_id": "T1564.008",
+        "name": "Hide Artifacts: Email Hiding Rules",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Logon Session: Logon Session Creation",
+      "User Account: User Account Authentication",
+      "Cloud Storage: Cloud Storage Access",
+      "Application Log: Application Log Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-034 — Jingle Thief identity-led M365/Entra chain",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "A Linux runner with the CortexSim repo and an operator collector (COLLECTOR_URL) feeding msft_azure_ad_signin and msft_o365_audit.",
+        "check_command": "python3 -m scripts.eal_simulator.cli --help"
+      },
+      {
+        "description": "CORTEXSIM_USER (or LAB_TENANT) names the canary user principal every leg carries; it defaults to cortexsim.canary@cortexsim-canary.invalid.",
+        "check_command": "test -n \"${CORTEXSIM_USER:-${LAB_TENANT:-default}}\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SIM-MP-034 (lab only). The scenario YAML is the source of truth; this is a summary.\nCORTEXSIM_USER=\"${CORTEXSIM_USER:-cortexsim.canary@${LAB_TENANT:-cortexsim-canary.invalid}}\"\n# step-01 idp_signin_emulator provider=microsoft event_pattern=azure_risky_login target_user=$CORTEXSIM_USER\n# step-02 idp_signin_emulator provider=microsoft event_pattern=impossible_travel\n# step-03..06 m365_activity_emitter sharepoint_enumeration | onedrive_enumeration | storage_exfiltration | mailbox_rule_creation\npython3 -m scripts.eal_simulator.cli run /tmp/mp-034-risky.yml --live",
+      "input_variables": [
+        {
+          "name": "CORTEXSIM_USER",
+          "type": "string",
+          "default": "cortexsim.canary@cortexsim-canary.invalid",
+          "description": "Canary user principal shared by every leg (stitching_key user_principal)."
+        },
+        {
+          "name": "COLLECTOR_URL",
+          "type": "string",
+          "default": "https://collector.cortexsim-canary.invalid/o365/audit/events",
+          "description": "Operator HTTP log collector."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "auth-event",
+        "description": "Entra sign-in flagged atRisk for the canary principal.",
+        "expected_value": "riskState = \"atRisk\""
+      },
+      {
+        "artifact_type": "mailbox-rule",
+        "description": "Exchange New-InboxRule with a ForwardTo parameter for the same principal.",
+        "expected_value": "Operation = \"New-InboxRule\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/mp-034-principal /tmp/mp-034-*.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "105.156.109.227",
+        "context": "Moroccan infrastructure listed in the report's IOC section (sign-in source of the campaign). SIM-MP-034 names it for step-01/02 but does not yet emit it: the identity emitters carry no client-address field (backlog). The DC searches the tenant's sign-in logs for it.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/",
+        "published": "2025-10-22",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "196.65.139.51",
+        "context": "Moroccan infrastructure listed in the report's IOC section (sign-in source of the campaign). SIM-MP-034 names it for step-01/02 but does not yet emit it: the identity emitters carry no client-address field (backlog). The DC searches the tenant's sign-in logs for it.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/",
+        "published": "2025-10-22",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "41.141.201.19",
+        "context": "Moroccan infrastructure listed in the report's IOC section (sign-in source of the campaign). SIM-MP-034 names it for step-01/02 but does not yet emit it: the identity emitters carry no client-address field (backlog). The DC searches the tenant's sign-in logs for it.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/",
+        "published": "2025-10-22",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "70.187.192.236",
+        "context": "US infrastructure, potential proxy or compromised host listed in the report's IOC section (sign-in source of the campaign). SIM-MP-034 names it for step-01/02 but does not yet emit it: the identity emitters carry no client-address field (backlog). The DC searches the tenant's sign-in logs for it.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/",
+        "published": "2025-10-22",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "72.49.91.23",
+        "context": "US infrastructure, potential proxy or compromised host listed in the report's IOC section (sign-in source of the campaign). SIM-MP-034 names it for step-01/02 but does not yet emit it: the identity emitters carry no client-address field (backlog). The DC searches the tenant's sign-in logs for it.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/",
+        "published": "2025-10-22",
+        "safe_form": "log_field"
+      }
+    ],
+    "biocs": [],
+    "abiocs": [],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "MP-034 A Possible Risky Login to Azure",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 3600)\n| filter riskState = \"atRisk\" and riskLevelDuringSignIn in (\"high\", \"medium\")\n| comp count() as risky_signins, values(ipAddress) as source_ips, values(riskEventTypes) as risk_events by userPrincipalName\n| filter risky_signins >= 1\n| fields userPrincipalName, risky_signins, source_ips, risk_events",
+        "expected_rows_min": 1,
+        "dataset": "msft_azure_ad_signin"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-034 Risky Entra Sign-In for the Shared Principal Landed in msft_azure_ad_signin",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 3600)\n| filter risky_login_marker = true\n| comp count() as records, values(ipAddress) as source_ips by userPrincipalName\n| fields userPrincipalName, records, source_ips",
+        "expected_rows_min": 1,
+        "dataset": "msft_azure_ad_signin"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-034 Impossible Traveler SSO for the Shared Principal",
+        "query": "dataset = msft_azure_ad_signin\n| filter _time > to_timestamp(current_time() - 3600)\n| filter status.errorCode = 0\n| alter country = location.countryOrRegion\n| comp count_distinct(country) as countries, count_distinct(ipAddress) as ips, earliest(_time) as first_seen, latest(_time) as last_seen by userPrincipalName\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter countries >= 2 and window_minutes <= 60\n| fields userPrincipalName, countries, ips, window_minutes",
+        "expected_rows_min": 1,
+        "dataset": "msft_azure_ad_signin"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-034 SharePoint Enumeration by the Compromised Principal",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 3600)\n| filter Workload = \"SharePoint\" and Operation in (\"SearchQueryPerformed\", \"PageViewed\")\n| comp count() as sweep_ops, count_distinct(SiteUrl) as sites, count_distinct(ObjectId) as objects by UserId, ClientIP\n| filter sweep_ops >= 10\n| fields UserId, ClientIP, sweep_ops, sites, objects",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-034 OneDrive Enumeration by the Compromised Principal",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 3600)\n| filter Workload = \"OneDrive\" and Operation = \"FileAccessed\"\n| comp count() as access_ops, count_distinct(ObjectId) as files by UserId, ClientIP\n| filter access_ops >= 10\n| fields UserId, ClientIP, access_ops, files",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-034 Massive File Downloads from SaaS Service",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 3600)\n| filter Workload in (\"OneDrive\", \"SharePoint\") and Operation in (\"FileDownloaded\", \"FileSyncDownloadedFull\")\n| comp count() as download_ops, count_distinct(ObjectId) as files_pulled by UserId, ClientIP\n| filter download_ops >= 15 and files_pulled >= 5\n| fields UserId, ClientIP, download_ops, files_pulled",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-034 SharePoint OneDrive Activity for the Shared Principal Landed in msft_o365_audit",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 3600)\n| filter sharepoint_enumeration_marker = true or onedrive_enumeration_marker = true or storage_exfiltration_marker = true\n| comp count() as records, count_distinct(Operation) as operations by UserId, Workload\n| fields UserId, Workload, records, operations",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-034 Exchange Inbox Forwarding Rule Configured",
+        "query": "dataset = msft_o365_audit\n| filter _time > to_timestamp(current_time() - 3600)\n| filter Workload = \"Exchange\" and Operation in (\"New-InboxRule\", \"Set-InboxRule\")\n| filter Parameters contains \"ForwardTo\" or Parameters contains \"RedirectTo\" or Parameters contains \"MoveToFolder\"\n| fields _time, UserId, MailboxOwnerUPN, RuleName, ClientIP, Parameters",
+        "expected_rows_min": 1,
+        "dataset": "msft_o365_audit"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Jingle Thief — Identity and Cloud-Application Stitch on One User Principal",
+        "rule_id": "CR-MP-0034",
+        "logic": "Analytics(MP-034 A Possible Risky Login to Azure) OR Analytics(MP-034 Impossible Traveler SSO for the Shared Principal) on msft_azure_ad_signin AND at least two of Analytics(MP-034 SharePoint Enumeration by the Compromised Principal), Analytics(MP-034 OneDrive Enumeration by the Compromised Principal), Analytics(MP-034 Massive File Downloads from SaaS Service) AND Analytics(MP-034 Exchange Inbox Forwarding Rule Configured) on msft_o365_audit within 3600s on the same user principal (userPrincipalName on msft_azure_ad_signin; UserId / MailboxOwnerUPN on msft_o365_audit) -> one incident naming the principal, the sign-in sources and the forwarding rule."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM correlation — identity + SaaS audit incident stitching on user principal",
+        "validated": false,
+        "note": "CR-MP-0034 is authored, not tenant-verified (tenant-verified = 0)."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XSIAM-MP034-001"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "dataset = msft_o365_audit | filter Operation = \"New-InboxRule\" | comp count() by UserId"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0034"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "dataset = msft_azure_ad_signin | filter riskState = \"atRisk\" | comp count() by userPrincipalName"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-034",
+        "name": "Jingle Thief account takeover to mailbox persistence on one principal",
+        "description": "Risky sign-in, impossible travel, SharePoint/OneDrive recon, mass download and a forwarding rule for one user principal stitch into a single incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-034A",
+            "objective": "Identity sign-in legs fire for the shared principal.",
+            "preconditions": [
+              "Collector feeding msft_azure_ad_signin"
+            ],
+            "steps": [
+              "Run step-01..02",
+              "Query the risky sign-in validation XQL"
+            ],
+            "success_criteria": [
+              "Risky-login and impossible-traveler analytics fire on the principal"
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-034B",
+            "objective": "Cloud-application legs fire and CR-MP-0034 raises one incident.",
+            "preconditions": [
+              "TS-MP-034A executed",
+              "Collector feeding msft_o365_audit"
+            ],
+            "steps": [
+              "Run step-03..06",
+              "Inspect the incident"
+            ],
+            "success_criteria": [
+              "SharePoint/OneDrive enumeration, mass download and forwarding-rule analytics fire on the same principal",
+              "Exactly one incident spans ITDR and CLOUD_APP alerts for the principal"
+            ],
+            "expected_score_weight": 0.6
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Require phishing-resistant MFA and conditional access on Microsoft 365; block sign-ins from countries the business does not operate in.",
+      "Restrict who can register authenticator methods, use SSPR and enroll devices in Entra ID; alert on new method/device registration.",
+      "Disable automatic external mail forwarding at the tenant level."
+    ],
+    "detection_engineering": [
+      "Alert on New-InboxRule / Set-InboxRule with ForwardTo, RedirectTo or MoveToFolder for any user.",
+      "Correlate risky or impossible-travel sign-ins with SharePoint/OneDrive enumeration by the same principal.",
+      "Enrich sign-in logs against the report's IPs and the MT-MPLS / ASMedi / MAROCCONNECT ASNs."
+    ],
+    "response_playbook": "XSOAR-PB-JingleThiefM365Takeover-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Jingle Thief: Inside a Cloud-Based Gift Card Fraud Campaign",
+      "url": "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1114.003 Email Forwarding Rule",
+      "url": "https://attack.mitre.org/techniques/T1114/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}
