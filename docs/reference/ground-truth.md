@@ -49,6 +49,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | BIOC | 272 |
 | Correlation | 118 |
 | IOC | 57 |
+| Prevention | 0 |
 | XQL | 490 |
 
 ## Tool adapters
@@ -89,8 +90,8 @@ Boot-free static count: every `@<router>.<verb>(` decorator across `core/api/*.p
 
 | Metric | Value |
 |---|---:|
-| Route decorators | 135 |
-| By HTTP method | `{"api_route": 1, "delete": 5, "get": 87, "post": 36, "put": 6}` |
+| Route decorators | 137 |
+| By HTTP method | `{"api_route": 1, "delete": 5, "get": 88, "post": 37, "put": 6}` |
 | `APIRouter()` instances | 25 |
 | Router files (`core/api/*.py`) | 23 |
 

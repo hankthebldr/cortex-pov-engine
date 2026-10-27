@@ -45,6 +45,7 @@
       "correlation": 188,
       "ioc": 301,
       "modeling": 5,
+      "prevention": 0,
       "xql": 568
     },
     "correlation_share": 0.1057,
@@ -90,6 +91,7 @@
       "BIOC": 272,
       "Correlation": 118,
       "IOC": 57,
+      "Prevention": 0,
       "XQL": 490
     },
     "ttp_cards": 175
@@ -101,11 +103,11 @@
     "by_method": {
       "api_route": 1,
       "delete": 5,
-      "get": 87,
-      "post": 36,
+      "get": 88,
+      "post": 37,
       "put": 6
     },
-    "decorator_count": 135,
+    "decorator_count": 137,
     "router_files": 23
   },
   "iac_modules_aws": 11,
