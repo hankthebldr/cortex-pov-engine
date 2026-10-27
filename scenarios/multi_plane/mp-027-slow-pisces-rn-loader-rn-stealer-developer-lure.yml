@@ -8,8 +8,9 @@
 # @${LAB_RESOLVER:-127.0.0.53}); NDR leg (06) NGFW EAL records to the report's domain/IP pairs
 # carrying src_host. CR-MP-0027 fuses both. No cloud leg (configs stolen, never used in the report);
 # published SHA-256s not carried (no file crossed a sensor). Needs a `developer` account and `dig`
-# (dnsutils/bind-utils). All C2 is plain HTTP to $STAGE_HOST (report: HTTPS), poll 2 s (report: 20 s);
-# the fetched body is never executed, and absent credential paths get 0600 marker stand-ins.
+# (dnsutils/bind-utils). All C2 is plain HTTP to $STAGE_HOST (report: HTTPS), poll 2 s (report: 20 s); the
+# fetched body is never executed; home and applications directory-name listings go to $STAGE_HOST; absent
+# credential paths get 0600 marker stand-ins.
 scenario_id: SIM-MP-027
 name: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer — Developer Workstation EDR + NGFW Stitch"
 version: "1.0"

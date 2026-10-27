@@ -4,11 +4,12 @@
 # describes no endpoint or malware leg, so none is invented. Every leg names ONE user principal (stitching_key
 # user_principal) as target_user, set by step-01 and read back by every later step. DC points at: Entra sign-in
 # analytics in msft_azure_ad_signin (step-01/02, ITDR); SharePoint/OneDrive/Exchange analytics in msft_o365_audit
-# (step-03..06, CLOUD_APP); CR-MP-0034 for the stitched incident. The report's IPs are indicators for the tenant
-# search but are NOT yet carried in-band: neither identity emitter has a client-address param (records carry RFC
-# 5737 addresses) — backlog. Not emitted (no emitter preset, backlog): Sent->Deleted Items hiding, rogue
-# Authenticator / SSPR / Entra device registration, gift-card app abuse. The report's phishing URLs are wildcard
-# patterns, not domains, so there is no DNS lookup and no real IdP or mail platform is ever called.
+# (step-03..06, CLOUD_APP); CR-MP-0034 for the stitched incident. The report's five IPs are declared but
+# `in_band: false`: neither identity emitter has a client-address param (records carry RFC 5737 addresses), so
+# they stay out-of-band until the emitters gain one — backlog. Not emitted (no emitter preset, backlog):
+# Sent->Deleted Items hiding, rogue Authenticator / SSPR / Entra device registration, gift-card app abuse. The
+# report's phishing URLs are wildcard patterns, not domains, so there is no DNS lookup and no real IdP or mail
+# platform is ever called.
 scenario_id: SIM-MP-034
 name: "Jingle Thief (CL-CRI-1032) — M365/Entra Account Takeover to SharePoint Recon and Mailbox Forwarding (Unit 42)"
 version: "1.0"
@@ -90,6 +91,7 @@ indicators:
     source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
     safe_form: log_field
     surfaces_in: [step-01, step-02]
+    in_band: false
     description: "Moroccan infrastructure (report IOC list, first entry). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
   - id: ind-02
     type: ipv4
@@ -97,6 +99,7 @@ indicators:
     source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
     safe_form: log_field
     surfaces_in: [step-01, step-02]
+    in_band: false
     description: "Moroccan infrastructure (report IOC list). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
   - id: ind-03
     type: ipv4
@@ -104,6 +107,7 @@ indicators:
     source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
     safe_form: log_field
     surfaces_in: [step-01, step-02]
+    in_band: false
     description: "Moroccan infrastructure (report IOC list). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
   - id: ind-04
     type: ipv4
@@ -111,6 +115,7 @@ indicators:
     source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
     safe_form: log_field
     surfaces_in: [step-01, step-02]
+    in_band: false
     description: "US infrastructure, potential proxy or compromised host (report IOC list). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
   - id: ind-05
     type: ipv4
@@ -118,6 +123,7 @@ indicators:
     source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
     safe_form: log_field
     surfaces_in: [step-01, step-02]
+    in_band: false
     description: "US infrastructure, potential proxy or compromised host (report IOC list). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
 
 external_tools:
