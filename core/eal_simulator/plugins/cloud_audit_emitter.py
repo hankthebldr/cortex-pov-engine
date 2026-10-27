@@ -517,6 +517,13 @@ class CloudAuditEmitterParams(AnalyticsEmitterParams):
                     "iam_privilege_escalation | s3_public_exposure | "
                     "console_login_anomaly.",
     )
+    source_ip: Optional[str] = Field(
+        default=None,
+        description="Override the caller IP written on every record "
+                    "(sourceIPAddress for aws, requestMetadata.callerIp for gcp), "
+                    "e.g. a published threat-intel indicator the tenant can "
+                    "enrich. Unset keeps the built-in anomalous documentation IP.",
+    )
 
     @property
     def dataset(self) -> str:
@@ -621,6 +628,9 @@ class CloudAuditEmitter(AnalyticsLogEmitter):
         marker, activities = _PATTERN_ACTIVITY[params.event_pattern]
 
         events: list[dict[str, Any]] = []
+        ip_kw: dict[str, Any] = (
+            {"source_ip": params.source_ip} if params.source_ip else {}
+        )
 
         if params.event_pattern == "console_login_anomaly":
             # A burst of failed console logins from the anomalous IP, then the
@@ -631,12 +641,14 @@ class CloudAuditEmitter(AnalyticsLogEmitter):
                     marker=marker,
                     sim_run_id=sim_run_id,
                     extra={"mfa_used": False, "login_result": "Failure"},
+                    **ip_kw,
                 ))
             events.append(builder(
                 activity=activities[0],
                 marker=marker,
                 sim_run_id=sim_run_id,
                 extra={"mfa_used": False, "login_result": "Success"},
+                **ip_kw,
             ))
             return events
 
@@ -655,5 +667,6 @@ class CloudAuditEmitter(AnalyticsLogEmitter):
                     sim_run_id=sim_run_id,
                     non_user=non_user,
                     extra=dict(static_extra) if static_extra else None,
+                    **ip_kw,
                 ))
         return events

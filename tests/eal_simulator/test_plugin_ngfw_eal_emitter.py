@@ -26,7 +26,10 @@ from eal_simulator.plugins.ngfw_eal_emitter import (
     _LARGE_UPLOAD_BYTES,
     _MASSIVE_UPLOAD_BYTES,
     _RARE_DOMAIN,
+    _ENDPOINT_DEVICE,
     _RARE_STORAGE_DOMAIN,
+    _SRC_HOST,
+    _SRC_USER,
     _UNCOMMON_SSH_HOST,
     _list_event_patterns,
     _ngfw_eal_event,
@@ -451,3 +454,99 @@ class TestRegistration:
         assert is_c2_plugin(
             "ngfw_eal_emitter", NgfwEalEmitter.Meta.mitre_techniques,
         ) is True
+
+
+# --------------------------------------------------------------------------
+# Report-indicator destination override (dst_domain + dst_ip)
+# --------------------------------------------------------------------------
+
+_OVR_DOMAIN = "indicator.example.net"
+_OVR_IP = "203.0.113.55"
+
+
+def _ovr_params(**kw):
+    return NgfwEalEmitterParams(collector_url=_DEFAULT_COLLECTOR, **kw)
+
+
+class TestDestinationOverride:
+    @pytest.mark.parametrize("only", [{"dst_domain": _OVR_DOMAIN}, {"dst_ip": _OVR_IP}])
+    def test_pair_required(self, only):
+        with pytest.raises(ValueError, match="dst_domain and dst_ip must be set together"):
+            _ovr_params(**only)
+
+    def test_unset_by_default(self):
+        p = _ovr_params()
+        assert p.dst_domain is None and p.dst_ip is None
+
+    def test_burst_pattern_overrides_every_record(self):
+        p = _ovr_params(
+            event_pattern="abnormal_recurring_comms", burst_count=5,
+            dst_domain=_OVR_DOMAIN, dst_ip=_OVR_IP,
+        )
+        events = NgfwEalEmitter().build_events(p, sim_run_id="cortexsim-x-i1-aa", iteration=1)
+        assert len(events) == 5
+        for evt in events:
+            assert evt["dst"] == _OVR_IP
+            assert evt["url_domain"] == _OVR_DOMAIN
+            assert evt["dst_hostname"] == _OVR_DOMAIN
+            assert evt["action"] == "allow"
+
+    def test_single_pattern_overrides_and_keeps_marker(self):
+        base = NgfwEalEmitter().build_events(
+            _ovr_params(event_pattern="large_upload_https"),
+            sim_run_id="cortexsim-x-i1-aa", iteration=1,
+        )
+        p = _ovr_params(
+            event_pattern="large_upload_https", dst_domain=_OVR_DOMAIN, dst_ip=_OVR_IP,
+        )
+        events = NgfwEalEmitter().build_events(p, sim_run_id="cortexsim-x-i1-aa", iteration=1)
+        assert len(events) == 1
+        evt = events[0]
+        assert (evt["dst"], evt["url_domain"], evt["dst_hostname"]) == (
+            _OVR_IP, _OVR_DOMAIN, _OVR_DOMAIN,
+        )
+        assert evt["action"] == "allow"
+        marker_keys = [k for k in base[0] if "marker" in k.lower()]
+        assert marker_keys
+        for k in marker_keys:
+            assert evt[k] == base[0][k]
+
+    def test_unset_keeps_preset_destination(self):
+        events = NgfwEalEmitter().build_events(
+            _ovr_params(event_pattern="abnormal_comms"),
+            sim_run_id="cortexsim-x-i1-aa", iteration=1,
+        )
+        assert events[0]["url_domain"] == _RARE_DOMAIN
+
+
+class TestSourceOverride:
+    def _events(self, **kw):
+        p = _ovr_params(event_pattern="abnormal_recurring_comms", burst_count=4, **kw)
+        return NgfwEalEmitter().build_events(p, sim_run_id="cortexsim-x-i1-aa", iteration=1)
+
+    def test_each_override_on_every_burst_record(self):
+        events = self._events(
+            src_ip="192.168.1.50", src_host="WS-VICTIM-01", src_user="corp\\victim",
+        )
+        assert len(events) == 4
+        for e in events:
+            assert e["src"] == "192.168.1.50"
+            assert e["endpoint_device_name"] == "WS-VICTIM-01"
+            assert e["user"] == "corp\\victim"
+
+    def test_independent_no_pair_rule(self):
+        for e in self._events(src_ip="10.9.9.9"):
+            assert e["src"] == "10.9.9.9"
+            assert e["user"] == _SRC_USER
+            assert e["endpoint_device_name"] == _ENDPOINT_DEVICE
+
+    def test_unset_keeps_constants(self):
+        for e in self._events():
+            assert (e["src"], e["user"], e["endpoint_device_name"]) == (
+                _SRC_HOST, _SRC_USER, _ENDPOINT_DEVICE,
+            )
+
+    @pytest.mark.parametrize("bad", ["10.0.0", "300.1.1.1", "a.b.c.d", "10.0.0.1.2", "::1", ""])
+    def test_src_ip_must_be_dotted_quad(self, bad):
+        with pytest.raises(ValueError):
+            _ovr_params(src_ip=bad)
