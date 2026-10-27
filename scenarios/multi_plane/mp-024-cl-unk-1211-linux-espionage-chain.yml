@@ -1,7 +1,7 @@
 # CL-UNK-1211 (Unit 42, 2026-10-15) used AI-written PHP/shell payloads against government Linux web
 # servers: auto_prepend_file web-shell persistence, a sudo-alias .bashrc credential trap, the Go RAT
 # SysGoRAT, in-memory reverse shells, GSocket relays, qmail Maildir theft, then log wiping.
-# Two legs, not three: the report describes no cloud-API activity, so no cloud leg is authored.
+# Two legs, not three: the report describes no cloud-API activity. Shells reach only $STAGE_HOST.
 # ENDPOINT (steps 01-05, 08, 10, 11; www-data under a php-fpm CGO): point at the causality view -
 #   php.ini rewrites, .bashrc sudo alias, sys-update.service, /dev/tcp + mkfifo + python shells, [kcached].
 # NETWORK (steps 06, 07, 09; synthetic NGFW records carrying this host's src_ip/src_host/src_user):
@@ -9,7 +9,8 @@
 #   Step 09's mailbox upload keeps the preset destination (the report names only legitimate file
 #   hosts) and is un-enrichable; it stitches on the host alone. Report domains are looked up once
 #   via the operator's resolver, `dig ... @${LAB_RESOLVER:-127.0.0.53}`; no session is ever opened.
-# Lab-only: writes stay under /tmp/cortexsim-mp-024 and /dev/shm; shells reach only $STAGE_HOST.
+# Lab-only: writes stay under /tmp/cortexsim-mp-024, /dev/shm and the three /tmp/mp-024-*.yml campaign
+#   files.
 scenario_id: SIM-MP-024
 name: "CL-UNK-1211 AI-Driven Linux Espionage - Web Shell to Mailbox Theft (Endpoint + NGFW Stitch)"
 version: "1.0"
@@ -223,7 +224,7 @@ steps:
         detection_id: "bioc-mp-024-shell-profile-hijack-aliasing-sudo-to-a-credential-log"
       - plane: EDR
         type: BIOC
-        description: "grep run by www-data recursively over /etc/php, /var/www and shell history for smtp_pass / db_password / mail_password (read-only; matching file names only, written to the lab dir)."
+        description: "grep run by www-data recursively over the host's real /etc/php and /var/www (read-only) plus the lab shell history for smtp_pass / db_password / mail_password; only matching file names are written, to the lab dir."
         ttp_ref: "TTP-2026-0183"
         detection_id: "bioc-mp-024-cleartext-password-sweep-of-php-web-and-shell-history-files"
 
@@ -406,27 +407,27 @@ steps:
         description: "The beacon's destination matches the published SysGoRAT C2 IP; Unit 42 enrichment names CL-UNK-1211."
         ttp_ref: "TTP-2026-0183"
         detection_id: "ioc-ipv4-104-194-158-65"
-      - plane: NDR
+      - plane: EDR
         type: IOC
         description: "DNS query from this host for the published domain magento.ink (sent to LAB_RESOLVER; no session opened)."
         ttp_ref: "TTP-2026-0183"
         detection_id: "ioc-domain-magento-ink"
-      - plane: NDR
+      - plane: EDR
         type: IOC
         description: "DNS query from this host for the published domain solidmonpe.com (sent to LAB_RESOLVER; no session opened)."
         ttp_ref: "TTP-2026-0183"
         detection_id: "ioc-domain-solidmonpe-com"
-      - plane: NDR
+      - plane: EDR
         type: IOC
         description: "DNS query from this host for the published domain wibu-bau-bawang.online (sent to LAB_RESOLVER; no session opened)."
         ttp_ref: "TTP-2026-0183"
         detection_id: "ioc-domain-wibu-bau-bawang-online"
-      - plane: NDR
+      - plane: EDR
         type: IOC
         description: "DNS query from this host for the published domain beraskencur.site (sent to LAB_RESOLVER; no session opened)."
         ttp_ref: "TTP-2026-0183"
         detection_id: "ioc-domain-beraskencur-site"
-      - plane: NDR
+      - plane: EDR
         type: XQL
         description: "Hunt query lists the four report-domain lookups from the run host in xdr_data DNS telemetry."
         ttp_ref: "TTP-2026-0183"

@@ -4,12 +4,12 @@
 # KB0722.log (05), escalates via PsExec-shaped service + new local admin (06), removes "EDR" (07: a
 # cortexsim-edr-sensor dummy service + a fake msiexec product code, never a real product; detected only, no
 # prevent outcome) and a Play-shaped canary rename (08; the .PLAY extension and ReadMe.txt note come from the linked
-# CISA AA23-352A, not the U42 text). DC points at: EDR BIOCs; NDR in panw_ngfw_traffic_raw/_threat_raw; ITDR share-access ABIOC (inferred: the report names the share mapping, not an identity alert); CR-MP-0030.
-# Windows legs run on the lab endpoint; the two EAL legs run on a Linux runner and carry the endpoint's identity
-# in-band (set VICTIM_SRC_IP/HOST/USER to it) so every leg shares src_host. step-04 sends ONE DNS query for the
-# report domain through @${LAB_RESOLVER} (tag real-ioc-dns-lookup); no session to the C2 is ever opened.
-# The report's IP/domain appear only in EAL params / that lookup line; hashes only as log fields.
-# The report names no URI/user-agent and no cloud leg, so none is invented.
+# CISA AA23-352A, not the U42 text). DC points at: EDR BIOCs; NDR in panw_ngfw_traffic_raw/_threat_raw;
+# ITDR share-access ABIOC (inferred: the report names the share mapping, not an identity alert); CR-MP-0030.
+# Windows legs run on the lab endpoint; the two EAL legs run on a Linux runner carrying the endpoint's identity
+# in-band (VICTIM_SRC_IP/HOST/USER) so every leg shares src_host. step-04 sends ONE DNS query for the report
+# domain via @${LAB_RESOLVER} (tag real-ioc-dns-lookup); no C2 session is ever opened. Report IP/domain only in
+# EAL params / that lookup line; hashes only as log fields. No URI/user-agent or cloud leg in the report: none invented.
 scenario_id: SIM-MP-030
 name: "Jumpy Pisces to Play Ransomware Hand-off — SMB Tool Transfer, Sliver C2, EDR Removal, Impact (Unit 42)"
 version: "1.0"

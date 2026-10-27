@@ -327,8 +327,8 @@
     "biocs": [
       {
         "name": "MP-029 Archive-extracted executable runs beside a zero-byte pic1.png decoy",
-        "description": "An executable that was just written by an archive-expansion process (Expand-Archive / python zipfile) starts from a user-writable temp directory that also contains a zero-byte pic1.png. Diaoyu exits unless pic1.png sits beside it, so the decoy layout is the behavioural fingerprint of the TGR-STA-1030 lure, independent of the loader hash.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_path contains \"cortexsim-mp-029\" or action_process_image_path contains \"\\\\Temp\\\\\" or action_process_image_path contains \"/tmp/\"\n| filter action_process_image_path contains \"organisatsiooni\" or actor_process_image_name in (\"powershell.exe\", \"pwsh.exe\", \"bash\")\n| join type = inner (dataset = xdr_data | filter event_type = ENUM.FILE and action_file_name = \"pic1.png\" and action_file_size = 0 | fields agent_hostname as decoy_host, action_file_path as decoy_path) as decoy agent_hostname = decoy.decoy_host\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_path, decoy_path, causality_actor_process_image_name",
+        "description": "A process whose image path carries the lure name (organisatsiooni) starts from a user-writable temp directory, launched by the shell that just expanded the archive (Expand-Archive / python zipfile). Single-event: the zero-byte pic1.png that Diaoyu requires beside it is checked by the step-01 validation query, not by this BIOC. Keys on the lure layout, independent of the loader hash.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_path contains \"organisatsiooni\"\n| filter action_process_image_path contains \"cortexsim-mp-029\" or action_process_image_path contains \"\\\\Temp\\\\\" or action_process_image_path contains \"/tmp/\"\n| filter actor_process_image_name in (\"powershell.exe\", \"pwsh.exe\", \"bash\", \"sh\", \"python3\")\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_path, action_process_image_command_line, causality_actor_process_image_name",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1204.002",
@@ -380,7 +380,7 @@
         "name": "MP-029 Lure execution lineage validation in xdr_data",
         "dataset": "xdr_data",
         "expected_rows_min": 1,
-        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter action_file_name = \"pic1.png\" or action_process_image_path contains \"organisatsiooni\"\n| comp count() as lure_events by agent_hostname\n| filter lure_events >= 1\n| fields agent_hostname, lure_events"
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_path contains \"organisatsiooni\"\n| join type = inner (dataset = xdr_data | filter _time > to_timestamp(current_time() - 3600) | filter event_type = ENUM.FILE and action_file_name = \"pic1.png\" and action_file_size = 0 | fields agent_hostname as decoy_host, action_file_path as decoy_path) as decoy agent_hostname = decoy.decoy_host\n| comp count() as lure_events, values(decoy_path) as decoy_paths by agent_hostname\n| filter lure_events >= 1\n| fields agent_hostname, lure_events, decoy_paths"
       },
       {
         "purpose": "validation",

@@ -3,12 +3,13 @@
 # names, pulls image-named stages from a GitHub repo, then runs Cobalt Strike / VShell to the actor's VPS fleet over
 # HTTPS and SSH relays; Linux servers get the ShadowGuard eBPF rootkit (kill -900/-901, hides "swsecret*").
 # DC points at: EDR — the lure lineage (step-01..03), EDR-name discovery (02), report-domain lookups via the lab
-# resolver ${LAB_RESOLVER} (04, real-ioc-dns-lookup: one query, no session); NDR — WildFire threat logs carrying the
-# report lure/CS sha256 (05, 07) and the C2 beacon + SSH relay sessions to report domains/IPs (07); EDR (Linux) —
-# ShadowGuard signal and swsecret artifacts (06). Every NGFW record carries the run host's src_ip/src_host/src_user
-# (stitching_key src_host); Windows-primary runs set VICTIM_SRC_* on the EAL host. The report lists domains and IPs
-# unpaired — step-07 pairs them for record shape only; enrich each independently. No cloud-identity leg: the report
-# describes none (mega.nz/GitHub are payload hosting only). Nothing contacts actor infrastructure; payloads are stand-ins.
+# resolver ${LAB_RESOLVER} (04, one query, no session); NDR — WildFire threat logs carrying the report lure/CS
+# sha256 (05, 07) and the C2 beacon + SSH relay sessions to report domains/IPs (07); EDR (Linux) — ShadowGuard
+# (06). Every NGFW record carries the run host's src_ip/src_host/src_user (stitching_key src_host). The engine
+# emits this chain POSIX-only (linux variants); the Windows bodies are a hand-run two-host path (set VICTIM_SRC_*
+# on the EAL host). The report lists domains and IPs unpaired — step-07 pairs them for record shape only; enrich
+# each independently. No cloud-identity leg (mega.nz/GitHub are payload hosting only). Payloads are stand-ins;
+# nothing contacts actor infrastructure.
 scenario_id: SIM-MP-029
 name: "TGR-STA-1030 Shadow Campaigns — Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42)"
 version: "1.0"
@@ -109,7 +110,7 @@ external_tools:
 # the src_host entity when the Linux variant runs the whole chain on one host.
 cgo_anchor:
   image_name: "explorer.exe"
-  primary_username: "direct"
+  primary_username: "user"
 
 indicators:
   - id: ind-01
@@ -223,12 +224,12 @@ steps:
     expected_detections:
       - plane: EDR
         type: BIOC
-        description: "An executable extracted from a ZIP into a user temp directory runs from a directory that also holds a zero-byte pic1.png — the Diaoyu lure layout (the loader exits if pic1.png is missing). The BIOC keys on the archive-extraction parent, the user-writable execution path and the decoy sibling file, not on a hash."
+        description: "An executable extracted from a ZIP into a user temp directory runs from a directory that also holds a zero-byte pic1.png — the Diaoyu lure layout (the loader exits if pic1.png is missing). The BIOC is single-event: it keys on the lure-named (organisatsiooni) execution path and the archive-expansion parent, not on a hash; the pic1.png sibling is confirmed by the step-01 validation query."
         ttp_ref: "TTP-2026-0188"
         detection_id: "bioc-mp-029-archive-extracted-executable-runs-beside-a-zero-byte-pic1-png-decoy"
       - plane: EDR
         type: XQL
-        description: "Validation query confirms the lure lineage (archive expansion, decoy write, extracted executable start) landed in xdr_data on the run host within the window."
+        description: "Validation query joins the extracted lure executable start to a zero-byte pic1.png written on the same run host in xdr_data within the window (the decoy-sibling check the BIOC leaves out)."
         ttp_ref: "TTP-2026-0188"
         detection_id: "xql-mp-029-lure-execution-lineage-validation-in-xdr-data"
 
