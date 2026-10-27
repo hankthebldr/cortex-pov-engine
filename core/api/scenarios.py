@@ -40,10 +40,12 @@ from database import get_db
 from engine import k8s_manifest as km
 from engine.push_generator import (
     BundleTargetUnsatisfiable,
+    PushNotSupported,
     emittable_targets,
     generate_bash,
     generate_k8s,
     generate_powershell,
+    push_not_supported,
     resolve_target,
 )
 from models import Scenario
@@ -777,6 +779,11 @@ def _resolve_format(scenario_id: str, scenario_dict: dict, format: str) -> tuple
                 "code": "INVALID_FORMAT",
                 "detail": "format must be one of 'auto', 'bash', 'powershell', 'k8s'",
             },
+        )
+
+    if push_not_supported(scenario_dict):
+        raise HTTPException(
+            status_code=409, detail=PushNotSupported(scenario_id).to_error()
         )
 
     targets = emittable_targets(scenario_dict)
