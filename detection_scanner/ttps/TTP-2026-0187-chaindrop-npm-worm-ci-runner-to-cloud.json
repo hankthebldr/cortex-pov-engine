@@ -53,7 +53,7 @@
   "identity": {
     "name": "ChainDrop npm Worm — CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005)",
     "summary": "ChainDrop's npm preinstall launches setup.mjs and a detached runtime on math_init.js, scrapes Runner.Worker memory, harvests metadata, k8s and Terraform credentials, persists in .vscode/.claude and exfiltrates to /router. The card validates that endpoint, NGFW and CloudTrail signals stitch into one incident on the runner.",
-    "description": "Unit 42 (2026-08-06) analysed ChainDrop, a self-propagating npm worm in the Shai-Hulud lineage. An infected package adds a preinstall entry that runs the setup.mjs dropper; the dropper finds or fetches Bun and feeds it the obfuscated math_init.js payload, which relaunches itself detached with _NODE_RUNTIME_INIT=1 (inline inside CI). The payload uses an embedded Python helper to read /proc/<pid>/maps and /proc/<pid>/mem of the Runner.Worker process for OIDC tokens and runner secrets, queries metadata and token endpoints for temporary IAM role credentials, takes Kubernetes service-account tokens, kubeconfigs and Terraform state, persists through .vscode/tasks.json (folderOpen) and .claude/settings.json (SessionStart hook), and ships a gzip + AES-256-GCM bundle with an RSA-OAEP-wrapped key to /router on an Ethereum-contract-resolved C2 (npm-cache.com, rotated to awqhnjewqjkl.icu on Aug. 4). SIM-MP-028 reproduces the lineage with a local inert package, a decoy Runner.Worker, staged credential files and lab-only network targets, and pairs it with NGFW threat/traffic records carrying the published hashes, domain and IPs and a CloudTrail STS record from the runner's address. CR-MP-0028 fuses the three legs on src_host.",
+    "description": "Unit 42 (2026-08-06) analysed ChainDrop, a self-propagating npm worm in the Shai-Hulud lineage. An infected package adds a preinstall entry that runs the setup.mjs dropper; the dropper finds or fetches Bun and feeds it the obfuscated math_init.js payload, which relaunches itself detached with _NODE_RUNTIME_INIT=1 (inline inside CI). The payload uses an embedded Python helper to read /proc/<pid>/maps and /proc/<pid>/mem of the Runner.Worker process for OIDC tokens and runner secrets, queries metadata and token endpoints for temporary IAM role credentials, takes Kubernetes service-account tokens, kubeconfigs and Terraform state, persists through .vscode/tasks.json (folderOpen) and .claude/settings.json (SessionStart hook), and ships a gzip + AES-256-GCM bundle with an RSA-OAEP-wrapped key to /router on an Ethereum-contract-resolved C2 (npm-cache.com, rotated to awqhnjewqjkl.icu on Aug. 4). SIM-MP-028 reproduces the lineage with a local inert package, a decoy Runner.Worker, staged credential files and lab-only network targets (AES-256-CBC stands in for GCM, which openssl enc lacks), and pairs it with NGFW threat/traffic records carrying the published hashes, both C2 domains and the rotated domain's two IPs and a CloudTrail STS record from the runner's address. CR-MP-0028 fuses the three legs on src_host.",
     "severity": "critical",
     "confidence": "high"
   },
@@ -217,7 +217,7 @@
       {
         "artifact_type": "process",
         "description": "npm -> sh -> node setup.mjs -> detached node/bun math_init.js with _NODE_RUNTIME_INIT=1.",
-        "expected_value": "causality_actor_process_image_name = \"npm\" and action_process_image_command_line contains \"math_init.js\""
+        "expected_value": "causality_actor_process_image_name in (\"npm\", \"node\") and action_process_image_command_line contains \"math_init.js\""
       },
       {
         "artifact_type": "file",
@@ -305,7 +305,7 @@
       {
         "ioc_type": "ipv4",
         "value": "104.21.91.101",
-        "context": "ChainDrop C2 edge address; Cloudflare-shared per the report, so read with the domain.",
+        "context": "Destination IP for awqhnjewqjkl.icu (report body text, Aug. 4 rotation section); Cloudflare-shared, so read with the domain.",
         "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
         "published": "2026-08-06",
         "safe_form": "log_field"
@@ -313,7 +313,7 @@
       {
         "ioc_type": "ipv4",
         "value": "172.67.215.154",
-        "context": "ChainDrop C2 edge address; Cloudflare-shared per the report, so read with the domain.",
+        "context": "Destination IP for awqhnjewqjkl.icu (report body text, Aug. 4 rotation section); Cloudflare-shared, so read with the domain.",
         "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
         "published": "2026-08-06",
         "safe_form": "log_field"
@@ -323,7 +323,7 @@
       {
         "name": "MP-028 npm preinstall node setup.mjs spawns detached runtime with NODE_RUNTIME_INIT",
         "description": "npm runs a preinstall script whose node child executes setup.mjs and spawns a second JavaScript runtime (node or bun) on math_init.js with _NODE_RUNTIME_INIT=1 in its environment.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"npm\", \"npm-cli.js\", \"node\")\n| filter action_process_image_name in (\"node\", \"bun\")\n| filter action_process_image_command_line contains \"math_init.js\" or action_process_image_command_line contains \"Math_Symbol.js\" or action_process_image_command_line contains \"setup.mjs\"\n| fields agent_hostname, causality_actor_process_image_name, actor_process_image_command_line, action_process_image_command_line, action_process_image_env_variables",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"npm\", \"npm-cli.js\", \"node\")\n| filter action_process_image_name in (\"node\", \"bun\")\n| filter action_process_image_command_line contains \"math_init.js\" or action_process_image_command_line contains \"Math_Symbol.js\" or action_process_image_command_line contains \"setup.mjs\"\n| fields agent_hostname, causality_actor_process_image_name, actor_process_image_command_line, action_process_image_command_line",
         "severity": "high",
         "mitre_technique_ids": [
           "T1195.002",
@@ -334,7 +334,7 @@
       {
         "name": "MP-028 proc pid mem read of Runner.Worker process",
         "description": "A process that is not a debugger opens /proc/<pid>/maps and /proc/<pid>/mem where <pid> belongs to Runner.Worker — the CI memory scrape for OIDC tokens and masked secrets.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and action_file_path ~= \"^/proc/[0-9]+/(mem|maps)$\"\n| filter actor_process_image_name not in (\"gdb\", \"lldb\", \"strace\")\n| join type = inner (dataset = xdr_data | filter event_type = ENUM.PROCESS and action_process_image_name = \"Runner.Worker\" | alter target_pid = to_string(action_process_os_pid) | fields agent_hostname, target_pid) as rw rw.agent_hostname = agent_hostname\n| filter action_file_path contains rw.target_pid\n| fields agent_hostname, actor_process_image_name, actor_process_image_command_line, action_file_path",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and action_file_path ~= \"^/proc/[0-9]+/(mem|maps)$\"\n| filter actor_process_image_name not in (\"gdb\", \"lldb\", \"strace\")\n| join type = inner (dataset = xdr_data | filter event_type = ENUM.PROCESS and action_process_image_name = \"Runner.Worker\" | alter target_pid = to_string(action_process_os_pid) | fields agent_hostname, target_pid) as rw rw.agent_hostname = agent_hostname\n| filter action_file_path in (concat(\"/proc/\", rw.target_pid, \"/mem\"), concat(\"/proc/\", rw.target_pid, \"/maps\"))\n| fields agent_hostname, actor_process_image_name, actor_process_image_command_line, action_file_path",
         "severity": "critical",
         "mitre_technique_ids": [
           "T1003.007",
@@ -344,8 +344,8 @@
       },
       {
         "name": "MP-028 npm lineage queries instance metadata token and IAM credentials endpoints",
-        "description": "A process whose causality actor is npm issues a metadata token PUT (/latest/api/token) and an iam/security-credentials GET. Keyed on the URI and lineage so it fires whether the target is the real metadata address or a lab stand-in.",
-        "logic": "dataset = xdr_data\n| filter causality_actor_process_image_name in (\"npm\", \"node\", \"bun\")\n| filter actor_process_image_command_line contains \"/latest/api/token\" or actor_process_image_command_line contains \"/latest/meta-data/iam/security-credentials\" or action_remote_ip = \"169.254.169.254\"\n| fields agent_hostname, causality_actor_process_image_name, actor_process_image_command_line, action_remote_ip",
+        "description": "A child process started under an npm or node causality actor carries a metadata token PUT (/latest/api/token) or an iam/security-credentials GET in its command line. Keyed on the child's command-line URI and the lineage, so it fires whether the target is the real metadata address or a lab stand-in.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"npm\", \"node\", \"bun\")\n| filter action_process_image_command_line contains \"/latest/api/token\" or action_process_image_command_line contains \"/latest/meta-data/iam/security-credentials\"\n| fields agent_hostname, causality_actor_process_image_name, actor_process_image_command_line, action_process_image_command_line",
         "severity": "high",
         "mitre_technique_ids": [
           "T1552.005"
@@ -376,7 +376,7 @@
     "abiocs": [
       {
         "name": "MP-028 CI runner large HTTPS upload to a rare domain",
-        "description": "NGFW EAL behavioural alert: a CI runner opens a first-seen HTTPS session and then a large outbound upload to a fleet-rare domain (npm-cache.com in this chain).",
+        "description": "NGFW EAL behavioural alert: a CI runner opens a first-seen HTTPS session and then a large outbound upload to a fleet-rare domain (awqhnjewqjkl.icu in this chain).",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"ssl\", \"web-browsing\") and dst_hostname != null\n| comp sum(bytes_sent) as sent, count() as sessions by src, endpoint_device_name, dst_hostname\n| filter sent >= 104857600",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -388,7 +388,7 @@
       {
         "name": "MP-028 STS AssumeRole from a CI runner address after metadata harvest",
         "description": "An AssumedRole session calls sts:AssumeRole from an address that belongs to a CI runner which, minutes earlier, read the metadata token endpoint.",
-        "logic": "dataset = cloud_audit_logs\n| filter eventName = \"AssumeRole\" and eventSource = \"sts.amazonaws.com\"\n| comp count() as calls, values(userIdentity.arn) as principals by sourceIPAddress\n| filter calls >= 1",
+        "logic": "dataset = cloud_audit_logs\n| filter eventName = \"AssumeRole\" and eventSource = \"sts.amazonaws.com\" and userIdentity.type = \"AssumedRole\"\n| alter caller_ip = sourceIPAddress, role_arn = userIdentity.arn\n| join type = left (dataset = cloud_audit_logs | filter _time < to_timestamp(current_time() - 3600) and eventSource = \"sts.amazonaws.com\" and userIdentity.type = \"AssumedRole\" | comp count() as prior_calls by userIdentity.arn, sourceIPAddress | alter hist_arn = userIdentity.arn, hist_ip = sourceIPAddress | fields hist_arn, hist_ip, prior_calls) as hist hist.hist_arn = role_arn and hist.hist_ip = caller_ip\n| filter prior_calls = null\n| comp count() as calls by role_arn, caller_ip",
         "severity": "high",
         "mitre_technique_ids": [
           "T1078.004",
@@ -425,7 +425,7 @@
       {
         "name": "ChainDrop npm worm — endpoint, NGFW and CloudTrail legs on one CI runner",
         "rule_id": "CR-MP-0028",
-        "logic": "(BIOC(MP-028 npm preinstall node setup.mjs spawns detached runtime with NODE_RUNTIME_INIT) OR BIOC(MP-028 proc pid mem read of Runner.Worker process) OR BIOC(MP-028 npm lineage queries instance metadata token and IAM credentials endpoints)) AND (IOC(file-sha256 ChainDrop) OR ABIOC(MP-028 CI runner large HTTPS upload to a rare domain) OR IOC(domain npm-cache.com)) AND ABIOC(MP-028 STS AssumeRole from a CI runner address after metadata harvest) within 1800s on the same src_host (endpoint alerts project agent_hostname; NGFW records carry endpoint_device_name and src; CloudTrail carries sourceIPAddress, resolved to the host by XSIAM asset IP->host mapping) -> one ChainDrop supply-chain incident."
+        "logic": "(BIOC(MP-028 npm preinstall node setup.mjs spawns detached runtime with NODE_RUNTIME_INIT) OR BIOC(MP-028 proc pid mem read of Runner.Worker process) OR BIOC(MP-028 npm lineage queries instance metadata token and IAM credentials endpoints)) AND (IOC(file-sha256 ChainDrop) OR ABIOC(MP-028 CI runner large HTTPS upload to a rare domain) OR IOC(domain awqhnjewqjkl.icu) OR IOC(domain npm-cache.com)) AND ABIOC(MP-028 STS AssumeRole from a CI runner address after metadata harvest) within 1800s on the same src_host (endpoint alerts project agent_hostname; NGFW records carry endpoint_device_name and src; CloudTrail carries sourceIPAddress, resolved to the host by XSIAM asset IP->host mapping) -> one ChainDrop supply-chain incident."
       }
     ],
     "analytics_modules": [
@@ -443,7 +443,7 @@
         "submodule": "analytics",
         "coverage_tier": "detection",
         "license_required": "advanced",
-        "evidence_query": "dataset = xdr_data | filter causality_actor_process_image_name = \"npm\" and action_process_image_command_line contains \"math_init.js\" | comp count() by agent_hostname"
+        "evidence_query": "dataset = xdr_data | filter causality_actor_process_image_name in (\"npm\", \"node\") and action_process_image_command_line contains \"math_init.js\" | comp count() by agent_hostname"
       },
       {
         "module": "advanced-wildfire",
