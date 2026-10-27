@@ -345,7 +345,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/cortexsim-mp-028-threat.yml <<YML
-      campaign_id: CMP-MP-028-THREAT
+      campaign_id: CMP-MP-THREAT-028
       name: "ChainDrop — WildFire verdicts on published sha256s"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -436,7 +436,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/cortexsim-mp-028-traffic.yml <<YML
-      campaign_id: CMP-MP-028-TRAFFIC
+      campaign_id: CMP-MP-TRAFFIC-028
       name: "ChainDrop — C2 sessions and /router upload to published infrastructure"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -511,7 +511,7 @@ steps:
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
       SRC_IP=$(hostname -I | awk '{print $1}')
       cat > /tmp/cortexsim-mp-028-cloud.yml <<YML
-      campaign_id: CMP-MP-028-CLOUD
+      campaign_id: CMP-MP-CLOUD-028
       name: "ChainDrop — harvested role exchanged at STS from the runner's address"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true

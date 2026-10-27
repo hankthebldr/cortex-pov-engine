@@ -242,7 +242,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/mp-031-threat.yml <<YML
-      campaign_id: CMP-MP-031-THREAT
+      campaign_id: CMP-MP-THREAT-031
       name: "MP-031 — WildFire verdicts on the Cicada3301 SMB transfer"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -353,7 +353,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/mp-031-exfil.yml <<YML
-      campaign_id: CMP-MP-031-EXFIL
+      campaign_id: CMP-MP-EXFIL-031
       name: "MP-031 — Rclone bulk upload to the report exfil IP"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true

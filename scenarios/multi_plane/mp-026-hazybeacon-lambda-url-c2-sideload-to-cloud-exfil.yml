@@ -271,7 +271,7 @@ steps:
       SRC_HOST=${TARGET_HOST:-$(hostname -s)}
       SRC_USER=${TARGET_USER:-$(id -un)}
       cat > /tmp/mp-026-beacon.yml <<YML
-      campaign_id: CMP-MP-026-BEACON
+      campaign_id: CMP-MP-BEACON-026
       name: "CL-STA-1020 HazyBeacon — recurring Lambda-URL-shaped beacon (NGFW EAL)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -315,7 +315,7 @@ steps:
       SRC_HOST=${TARGET_HOST:-$(hostname -s)}
       SRC_USER=${TARGET_USER:-$(id -un)}
       cat > /tmp/mp-026-threat.yml <<YML
-      campaign_id: CMP-MP-026-THREAT
+      campaign_id: CMP-MP-THREAT-026
       name: "CL-STA-1020 HazyBeacon — WildFire verdicts on the C2-delivered toolkit"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true

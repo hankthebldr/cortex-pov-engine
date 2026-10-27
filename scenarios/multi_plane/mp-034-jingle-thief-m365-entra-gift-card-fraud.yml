@@ -144,7 +144,7 @@ steps:
       CORTEXSIM_USER="${CORTEXSIM_USER:-cortexsim.canary@${LAB_TENANT:-cortexsim-canary.invalid}}"
       printf '%s\n' "$CORTEXSIM_USER" > /tmp/mp-034-principal
       cat > /tmp/mp-034-risky.yml <<YML
-      campaign_id: CMP-MP-034-RISKY
+      campaign_id: CMP-MP-RISKY-034
       name: "MP-034 — Jingle Thief azure_risky_login"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -185,7 +185,7 @@ steps:
       test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
       CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
       cat > /tmp/mp-034-travel.yml <<YML
-      campaign_id: CMP-MP-034-TRAVEL
+      campaign_id: CMP-MP-TRAVEL-034
       name: "MP-034 — Jingle Thief impossible_travel"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -224,7 +224,7 @@ steps:
       test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
       CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
       cat > /tmp/mp-034-sharepoint.yml <<YML
-      campaign_id: CMP-MP-034-SHAREPOINT
+      campaign_id: CMP-MP-SHAREPOINT-034
       name: "MP-034 — Jingle Thief sharepoint_enumeration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -262,7 +262,7 @@ steps:
       test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
       CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
       cat > /tmp/mp-034-onedrive.yml <<YML
-      campaign_id: CMP-MP-034-ONEDRIVE
+      campaign_id: CMP-MP-ONEDRIVE-034
       name: "MP-034 — Jingle Thief onedrive_enumeration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -301,7 +301,7 @@ steps:
       test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
       CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
       cat > /tmp/mp-034-download.yml <<YML
-      campaign_id: CMP-MP-034-DOWNLOAD
+      campaign_id: CMP-MP-DOWNLOAD-034
       name: "MP-034 — Jingle Thief storage_exfiltration"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -345,7 +345,7 @@ steps:
       test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
       CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
       cat > /tmp/mp-034-rule.yml <<YML
-      campaign_id: CMP-MP-034-RULE
+      campaign_id: CMP-MP-RULE-034
       name: "MP-034 — Jingle Thief mailbox_rule_creation"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true

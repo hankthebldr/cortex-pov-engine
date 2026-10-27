@@ -214,7 +214,7 @@ steps:
       SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
       SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
       cat > /tmp/mp-030-threat.yml <<YML
-      campaign_id: CMP-MP-030-THREAT
+      campaign_id: CMP-MP-THREAT-030
       name: "MP-030 — WildFire verdict on SMB-transferred files"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -287,7 +287,7 @@ steps:
       SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
       SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
       cat > /tmp/mp-030-beacon.yml <<YML
-      campaign_id: CMP-MP-030-BEACON
+      campaign_id: CMP-MP-BEACON-030
       name: "MP-030 — Sliver recurring beacon to report C2"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
