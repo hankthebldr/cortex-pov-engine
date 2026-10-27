@@ -347,6 +347,45 @@ def check_prevention_modules(report, rel, detections):
             report.err(rel, f"{loc}.platforms must be non-empty")
 
 
+IOC_PROVENANCE_TYPED = {"ipv4", "ipv6", "domain", "url", "file-sha256", "file-sha1", "file-md5"}
+IOC_SAFE_FORMS = {"log_field", "dns_lookup", "hash_only", "wildfire_test_file", "eicar"}
+IOC_PUBLISHED_RE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
+IOC_WARN_FROM_SEQ = 182
+IOC_SOURCE_HOST = "unit42.paloaltonetworks.com"
+IOC_SOURCE_GH_PREFIX = "https://github.com/PaloAltoNetworks/"
+
+
+def check_ioc_provenance(report, rel, detections, references, ttp_id=None):
+    """IOC provenance. FAIL on a source_url outside Unit 42 / the PaloAltoNetworks
+    GitHub org, an unknown safe_form, or a malformed published date. WARN when a
+    Unit 42-sourced card (id >= TTP-2026-0182) carries a typed network/hash indicator with no source_url."""
+    from urllib.parse import urlparse
+    iocs = detections.get("iocs", [])
+    for i, ioc in enumerate(iocs):
+        loc = f"detections.iocs[{i}]"
+        url = ioc.get("source_url")
+        if url is not None:
+            host = urlparse(url).hostname or ""
+            if host != IOC_SOURCE_HOST and not url.startswith(IOC_SOURCE_GH_PREFIX):
+                report.err(rel, f"{loc}.source_url {url!r} must be on {IOC_SOURCE_HOST} "
+                                f"or start with {IOC_SOURCE_GH_PREFIX}")
+        if "safe_form" in ioc and ioc["safe_form"] not in IOC_SAFE_FORMS:
+            report.err(rel, f"{loc}.safe_form {ioc['safe_form']!r} not in {sorted(IOC_SAFE_FORMS)}")
+        if "published" in ioc and not (isinstance(ioc["published"], str)
+                                       and IOC_PUBLISHED_RE.match(ioc["published"])):
+            report.err(rel, f"{loc}.published {ioc['published']!r} must be YYYY-MM or YYYY-MM-DD")
+    if not any(r.get("publisher_id") == "SRC-UNIT42" for r in references):
+        return
+    # Ruling (SDD ledger, 2026-10-27): the 147 pre-existing Unit 42 cards carry typed
+    # indicators with no provenance; the WARN applies to cards authored from 0182 on.
+    m = re.match(r"TTP-\d{4}-(\d{4})", ttp_id or "")
+    if not m or int(m.group(1)) < IOC_WARN_FROM_SEQ:
+        return
+    for i, ioc in enumerate(iocs):
+        if ioc.get("ioc_type") in IOC_PROVENANCE_TYPED and not ioc.get("source_url"):
+            report.warn(rel, f"detections.iocs[{i}] ({ioc.get('ioc_type')}) on a Unit 42 card has no source_url")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--strict", action="store_true", help="weights must sum to exactly 1.0 per use case")
@@ -531,6 +570,7 @@ def main():
         # Prevention modules are agent behaviour, not rule bodies: nothing to lint,
         # but the three load-bearing fields are REJECTED (not warned) when wrong.
         check_prevention_modules(report, rel, detections)
+        check_ioc_provenance(report, rel, detections, d.get("references", []), ttp_id=d.get("id"))
         # Plan 02 — modeling-rule bodies open with `[MODEL: dataset=…]`; the
         # `dataset=` substring satisfies the anchor + dataset-registry checks.
         for i, m in enumerate(detections.get("modeling_rules", [])):
