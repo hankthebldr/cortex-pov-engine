@@ -33,6 +33,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -359,15 +360,15 @@ def check_ioc_provenance(report, rel, detections, references, ttp_id=None):
     """IOC provenance. FAIL on a source_url outside Unit 42 / the PaloAltoNetworks
     GitHub org, an unknown safe_form, or a malformed published date. WARN when a
     Unit 42-sourced card (id >= TTP-2026-0182) carries a typed network/hash indicator with no source_url."""
-    from urllib.parse import urlparse
     iocs = detections.get("iocs", [])
     for i, ioc in enumerate(iocs):
         loc = f"detections.iocs[{i}]"
         url = ioc.get("source_url")
         if url is not None:
-            host = urlparse(url).hostname or ""
-            if host != IOC_SOURCE_HOST and not url.startswith(IOC_SOURCE_GH_PREFIX):
-                report.err(rel, f"{loc}.source_url {url!r} must be on {IOC_SOURCE_HOST} "
+            parsed = urlparse(url)
+            unit42_ok = parsed.scheme == "https" and parsed.hostname == IOC_SOURCE_HOST
+            if not unit42_ok and not url.startswith(IOC_SOURCE_GH_PREFIX):
+                report.err(rel, f"{loc}.source_url {url!r} must be https on {IOC_SOURCE_HOST} "
                                 f"or start with {IOC_SOURCE_GH_PREFIX}")
         if "safe_form" in ioc and ioc["safe_form"] not in IOC_SAFE_FORMS:
             report.err(rel, f"{loc}.safe_form {ioc['safe_form']!r} not in {sorted(IOC_SAFE_FORMS)}")

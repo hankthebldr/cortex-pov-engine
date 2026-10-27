@@ -48,6 +48,18 @@ def test_bad_source_url_host_is_an_error():
     assert len(r.errs) == 1 and not r.warns
 
 
+def test_unit42_host_requires_https():
+    r = _run([{"ioc_type": "domain", "value": "evil.example",
+               "source_url": "http://unit42.paloaltonetworks.com/post"}], UNIT42_REFS)
+    assert len(r.errs) == 1 and not r.warns
+
+
+def test_unit42_host_https_passes():
+    r = _run([{"ioc_type": "domain", "value": "evil.example",
+               "source_url": "https://unit42.paloaltonetworks.com/post"}], UNIT42_REFS)
+    assert not r.errs
+
+
 def test_unit42_card_with_bare_ipv4_warns():
     r = _run([{"ioc_type": "ipv4", "value": "203.0.113.7"}], UNIT42_REFS)
     assert len(r.warns) == 1 and not r.errs

@@ -116,7 +116,7 @@ def test_floors_default_zero_pass(module, tmp_path):
     sdir, tdir = _corpus(tmp_path)
     r = module.compute_report(sdir, tdir, {"strict": True})
     assert r["signal_quality"]["hq_signals"] == 3
-    assert not [b for b in r["strict_breaches"] if "floor" in str(b) or "ceiling" in str(b)]
+    assert not [b for b in r["strict_breaches"] if "floor" in b["kind"] or "ceiling" in b["kind"]]
 
 
 def test_floor_breach_exits_1(module, tmp_path):
@@ -142,3 +142,18 @@ def test_floor_breach_exits_1(module, tmp_path):
 ])
 def test_marker_only_canonical_vectors(module, cmd, expected):
     assert module.is_marker_only_step({"command": cmd}) is expected
+
+
+def test_marker_ceiling_compares_before_rounding(module, tmp_path, monkeypatch):
+    sdir, tdir = _corpus(tmp_path)
+    real = module.signal_quality
+
+    def crafted(scenarios):
+        sq = real(scenarios)
+        sq.update(marker_only_steps=15004, steps=100000, marker_only_share=0.15)  # 0.15004 -> 0.15
+        return sq
+
+    monkeypatch.setattr(module, "signal_quality", crafted)
+    r = module.compute_report(sdir, tdir, {"strict": True, "marker_only_ceiling": 0.15})
+    assert [b for b in r["strict_breaches"] if b["kind"] == "marker_only_ceiling"]
+    assert r["signal_quality"]["marker_only_share"] == 0.15  # JSON keeps the rounded value

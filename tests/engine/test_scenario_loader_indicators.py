@@ -215,6 +215,10 @@ def test_fetch_verb_inside_hostname_does_not_block_lookup(cmd, value):
     ("IWR -Uri https://x/{h}", True),
     ("Invoke-webrequest -Uri https://x/{h}", True),
     ("CURL -O https://x/{h}.bin", True),
+    ("curl.exe -O https://x/{h}.bin", True),
+    ("C:\\Windows\\System32\\curl.exe -O https://x/{h}", True),
+    ("curl.example {h}", False),
+    ("curl.exe.example {h}", False),
 ])
 def test_fetch_verb_tokens_still_fire_s26(cmd, fires):
     h = "d" * 64

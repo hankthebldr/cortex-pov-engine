@@ -43,6 +43,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 try:
     import yaml
@@ -167,6 +168,52 @@ def _r4(x: float) -> float:
 # File discovery (fail-soft; mirrors the live loaders)
 # ---------------------------------------------------------------------------
 
+def _load_scenarios(scenarios_dir: str, warnings: list[str]) -> list[dict[str, Any]]:
+    """os.walk the scenario tree, pruning non-scenario sub-trees, parse each
+    *.yml (except _schema.yml), keep status == 'active'. WARN + skip anything
+    that fails to parse or is not a dict — never raise."""
+    out: list[dict[str, Any]] = []
+    for root, dirs, files in os.walk(scenarios_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_SCENARIO_DIRS]
+        for fname in sorted(files):
+            if not fname.endswith(".yml") or fname == "_schema.yml":
+                continue
+            path = os.path.join(root, fname)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    raw = yaml.safe_load(fh)
+            except Exception as exc:  # noqa: BLE001 - fail soft like the loader
+                warnings.append(f"scenario skip {path}: {exc}")
+                continue
+            if not isinstance(raw, dict):
+                warnings.append(f"scenario skip {path}: not a mapping")
+                continue
+            if (raw.get("status") or "") != "active":
+                continue
+            out.append(raw)
+    return out
+
+
+def _load_cards(ttps_dir: str, warnings: list[str]) -> list[dict[str, Any]]:
+    """Sorted glob of ttps_dir/*.json (non-recursive — skips _drafts/), keep
+    status == 'active'. WARN + skip malformed cards (fail-soft like the catalog)."""
+    out: list[dict[str, Any]] = []
+    for path in sorted(glob.glob(os.path.join(ttps_dir, "*.json"))):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except (OSError, json.JSONDecodeError) as exc:
+            warnings.append(f"card skip {os.path.basename(path)}: {exc}")
+            continue
+        if not isinstance(raw, dict):
+            warnings.append(f"card skip {os.path.basename(path)}: not a mapping")
+            continue
+        if (raw.get("status") or "") != "active":
+            continue
+        out.append(raw)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Signal quality: stitched chains and high-quality signals (HQS)
 # ---------------------------------------------------------------------------
@@ -221,7 +268,6 @@ def is_marker_only_step(step: dict[str, Any]) -> bool:
 
 
 def is_stitched_chain(scn: dict[str, Any]) -> bool:
-    from urllib.parse import urlparse
     url = scn.get("threat_report_url")
     host = urlparse(url).hostname if isinstance(url, str) else None
     req = scn.get("required_planes_in_incident") or []
@@ -271,52 +317,6 @@ def signal_quality(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
         "scenarios_with_indicators": with_ind,
         "indicators": ind_total,
     }
-
-
-def _load_scenarios(scenarios_dir: str, warnings: list[str]) -> list[dict[str, Any]]:
-    """os.walk the scenario tree, pruning non-scenario sub-trees, parse each
-    *.yml (except _schema.yml), keep status == 'active'. WARN + skip anything
-    that fails to parse or is not a dict — never raise."""
-    out: list[dict[str, Any]] = []
-    for root, dirs, files in os.walk(scenarios_dir):
-        dirs[:] = [d for d in dirs if d not in _SKIP_SCENARIO_DIRS]
-        for fname in sorted(files):
-            if not fname.endswith(".yml") or fname == "_schema.yml":
-                continue
-            path = os.path.join(root, fname)
-            try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    raw = yaml.safe_load(fh)
-            except Exception as exc:  # noqa: BLE001 - fail soft like the loader
-                warnings.append(f"scenario skip {path}: {exc}")
-                continue
-            if not isinstance(raw, dict):
-                warnings.append(f"scenario skip {path}: not a mapping")
-                continue
-            if (raw.get("status") or "") != "active":
-                continue
-            out.append(raw)
-    return out
-
-
-def _load_cards(ttps_dir: str, warnings: list[str]) -> list[dict[str, Any]]:
-    """Sorted glob of ttps_dir/*.json (non-recursive — skips _drafts/), keep
-    status == 'active'. WARN + skip malformed cards (fail-soft like the catalog)."""
-    out: list[dict[str, Any]] = []
-    for path in sorted(glob.glob(os.path.join(ttps_dir, "*.json"))):
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                raw = json.load(fh)
-        except (OSError, json.JSONDecodeError) as exc:
-            warnings.append(f"card skip {os.path.basename(path)}: {exc}")
-            continue
-        if not isinstance(raw, dict):
-            warnings.append(f"card skip {os.path.basename(path)}: not a mapping")
-            continue
-        if (raw.get("status") or "") != "active":
-            continue
-        out.append(raw)
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -737,7 +737,7 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
          f"hq_signals {sq['hq_signals']} < floor {hq_floor}"),
         ("stitched_chain_floor", "stitched_chains", sq["stitched_chains"] < chain_floor,
          f"stitched_chains {sq['stitched_chains']} < floor {chain_floor}"),
-        ("marker_only_ceiling", "marker_only_share", sq["marker_only_share"] > marker_ceiling,
+        ("marker_only_ceiling", "marker_only_share", (sq["marker_only_steps"] / sq["steps"] if sq["steps"] else 0.0) > marker_ceiling,
          f"marker_only_share {sq['marker_only_share']} > ceiling {marker_ceiling}"),
     ):
         if bad:

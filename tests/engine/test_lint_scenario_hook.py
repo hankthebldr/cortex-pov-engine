@@ -278,6 +278,10 @@ _PARITY_VECTORS = [
     ("ipv6 case", [_ind(type="ipv6", value="2001:DB8::1", safe_form="log_field")],
      "curl 2001:db8::1", None, None),
     ("ipv4", [_ind(type="ipv4", value="8.8.4.4", safe_form="log_field")], "nc 8.8.4.4 53", None, None),
+    ("hash curl.exe", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "curl.exe -O https://x/" + "d" * 64 + ".bin", None, None),
+    ("hash curl.example", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "curl.example " + "d" * 64, None, None),
     ("hash on fetch", [_ind(type="sha256", value="c" * 64, safe_form="hash_only")],
      "wget https://x/" + "c" * 64, None, None),
     ("hash off fetch", [_ind(type="sha256", value="c" * 64, safe_form="hash_only")],
@@ -339,6 +343,10 @@ def test_hook_fetch_verb_in_hostname_does_not_block_lookup(cmd, value):
     ("mycurl {h}", False), ("Invoke-WebRequest -Uri https://x/{h}", True),
     ("IWR -Uri https://x/{h}", True), ("Invoke-webrequest -Uri https://x/{h}", True),
     ("CURL -O https://x/{h}.bin", True),
+    ("curl.exe -O https://x/{h}.bin", True),
+    ("C:\\Windows\\System32\\curl.exe -O https://x/{h}", True),
+    ("curl.example {h}", False),
+    ("curl.exe.example {h}", False),
 ])
 def test_hook_fetch_verb_tokens_s26(cmd, fires):
     hook = _load_hook()
