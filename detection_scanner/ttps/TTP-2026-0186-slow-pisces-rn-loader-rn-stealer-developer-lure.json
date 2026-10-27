@@ -1,0 +1,565 @@
+{
+  "id": "TTP-2026-0186",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-10-27T00:00:00+00:00",
+    "updated_at": "2026-10-27T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "plane-edr",
+      "plane-ndr",
+      "actor-slow-pisces",
+      "actor-jade-sleet",
+      "actor-tradertraitor",
+      "malware-rn-loader",
+      "malware-rn-stealer",
+      "vector-developer-lure",
+      "vector-yaml-deserialization",
+      "unit42",
+      "stitched-chain",
+      "abioc",
+      "bioc",
+      "correlation",
+      "ngfw-eal",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "supply-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "macos",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer — Developer Workstation EDR + NGFW Stitch (T1204.002 / T1555.001)",
+    "summary": "Slow Pisces sends developers a GitHub coding challenge whose Python fetches a YAML reply from actor infrastructure; yaml.load() drops a self-deleting RN Loader in ~/Public, which polls the C2 and runs RN Stealer against the keychain, SSH keys and cloud CLI configs. Endpoint and NGFW signals stitch on the workstation.",
+    "description": "Unit 42 (2025-04-14) documents Slow Pisces (Jade Sleet, TraderTraitor, DPRK) approaching cryptocurrency developers on LinkedIn with a PDF job description and a coding challenge hosted on GitHub. The Python variant (Stocks Pattern Analyzer) pulls three data sources, two Wikipedia pages and en.stockslab.org/symbols/sp500. The C2 answers JSON to most requests and application/yaml only to validated targets; the project hands YAML to yaml.load(), so a !!python/object/apply:builtins payload runs. It creates ~/Public/__init__.py holding Base64 RN Loader, which deletes itself, sends host and OS information over HTTPS and polls for commands 0 (sleep), 1 (save init and ctypes-load it), 2 (exec: RN Stealer), 3 (save dockerd and docker-init, run dockerd with docker-init) and 9 (exit). RN Stealer, recovered from macOS, sends a random victim id as a cookie, asks for an XOR key (R0) and exfiltrates (R64, R128, R256) the user, host, architecture, installed applications, home listing, login.keychain-db, SSH keys and AWS, Kubernetes and Google Cloud configuration files. The chain is mostly in memory and the infrastructure rotates per repository, so no single atomic rule carries it. This card stitches the endpoint lineage (lure python3, ~/Public drop, self-deleting script, masqueraded dockerd, credential-file burst, DNS lookups of published domains) with NGFW EAL C2 records to the report's domain/IP pairs on the shared workstation (src_host) via CR-MP-0027. The report describes collection of cloud configuration files but no later cloud use, so no cloud leg is modelled.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Slow Pisces",
+        "aliases": [
+          "Jade Sleet",
+          "TraderTraitor",
+          "PUKCHONG",
+          "UNC4899"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Slow Pisces coding-challenge developer lures with RN Loader / RN Stealer (2024-2025)"
+    ],
+    "malware_families": [
+      {
+        "name": "RN Loader"
+      },
+      {
+        "name": "RN Stealer"
+      }
+    ],
+    "industries_targeted": [
+      "financial-services",
+      "technology"
+    ],
+    "first_observed": "2024-02-21"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "name": "Phishing: Spearphishing via Service",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1566.003"
+      },
+      {
+        "technique_id": "T1204",
+        "name": "User Execution: Malicious File",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1204.002"
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter: Python",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1059.006"
+      },
+      {
+        "technique_id": "T1140",
+        "name": "Deobfuscate/Decode Files or Information",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "name": "Indicator Removal: File Deletion",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1070.004"
+      },
+      {
+        "technique_id": "T1036",
+        "name": "Masquerading: Match Legitimate Name or Location",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1036.005"
+      },
+      {
+        "technique_id": "T1082",
+        "name": "System Information Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1555",
+        "name": "Credentials from Password Stores: Keychain",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1555.001"
+      },
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials: Private Keys",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1552.004"
+      },
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1552.001"
+      },
+      {
+        "technique_id": "T1071",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ],
+        "subtechnique_id": "T1071.001"
+      },
+      {
+        "technique_id": "T1041",
+        "name": "Exfiltration Over C2 Channel",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "File: File Creation",
+      "File: File Deletion",
+      "File: File Access",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Flow"
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-027 — Slow Pisces coding-challenge lure to RN Loader / RN Stealer, EDR + NGFW stitch",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux or macOS developer workstation, and an XSIAM HTTP log collector (or Broker VM) the NGFW EAL records can be POSTed to.",
+        "check_command": "test -d /opt/traps || test -d '/Library/Application Support/PaloAltoNetworks/Traps'"
+      },
+      {
+        "description": "A lab resolver for the published-domain DNS lookups (LAB_RESOLVER) and a lab stage host for the /symbols/sp500 and C2 HTTP shape (STAGE_HOST, STAGE_PORT); no traffic goes to actor infrastructure.",
+        "check_command": "echo \"resolver=${LAB_RESOLVER:-127.0.0.53} stage=${STAGE_HOST:-127.0.0.1}:${STAGE_PORT:-8080}\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Safe chain: every HTTP request goes to the lab stage host; published domains are only resolved\n# through the lab resolver; credential files are opened and one byte read, never copied.\n# See scenarios/multi_plane/mp-027-slow-pisces-rn-loader-rn-stealer-developer-lure.yml steps 01-06.\nmkdir -p /tmp/cortexsim-mp-027/stocks-pattern-analyzer/.cache\ncd /tmp/cortexsim-mp-027/stocks-pattern-analyzer\npython3 -c 'import urllib.request,os; urllib.request.urlopen(\"http://%s:%s/symbols/sp500\" % (os.environ.get(\"STAGE_HOST\",\"127.0.0.1\"), os.environ.get(\"STAGE_PORT\",\"8080\")), timeout=5)' || true",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Lab host that answers /symbols/sp500 and the RN Loader / RN Stealer C2 shape."
+        },
+        {
+          "name": "LAB_RESOLVER",
+          "type": "string",
+          "default": "127.0.0.53",
+          "description": "Resolver the published-domain DNS lookups are sent through."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "dns-query",
+        "description": "DNS lookups of published Slow Pisces domains from the workstation.",
+        "expected_value": "dns_query_name in (\"en.stockslab.org\", \"getstockprice.com\", \"cdn.clubinfo.io\")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "RN Loader drop path written by the YAML-deserialised stage and deleted by the script itself.",
+        "expected_value": "action_file_path contains \"/Public/__init__.py\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "dockerd started from a temp path by python3 with docker-init as its argument.",
+        "expected_value": "action_process_image_name = \"dockerd\" and actor_process_image_name contains \"python\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Credential paths opened by the RN Stealer stand-in.",
+        "expected_value": "action_file_path contains \"login.keychain-db\" or action_file_path contains \"/.ssh/id_\" or action_file_path contains \"/.aws/credentials\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "NGFW EAL traffic records from the run host to the published domain/IP pairs.",
+        "expected_value": "dst in (\"91.103.140.191\", \"70.34.245.118\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "for f in /home/*/Public/__init__.py /Users/*/Public/__init__.py /root/Public/__init__.py; do grep -qs cortexsim-mp-027 \"$f\" && rm -f \"$f\"; done; rm -rf /tmp/cortexsim-mp-027 /tmp/mp-027-ngfw-eal.yml; echo '[CortexSim] SIM-MP-027 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "en.stockslab.org",
+        "context": "Slow Pisces C2 serving /symbols/sp500 and RN Loader tasking for the Stocks Pattern Analyzer lure (IoC table, 2024-08-19 to 2024-09-12).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/",
+        "published": "2025-04-14",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "getstockprice.com",
+        "context": "Slow Pisces Python-repository C2 domain (IoC table, 2025-02-03 to 2025-02-20).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/",
+        "published": "2025-04-14",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "cdn.clubinfo.io",
+        "context": "Slow Pisces Python-repository C2 domain (IoC table, 2025-01-21 to 2025-02-19).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/",
+        "published": "2025-04-14",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "91.103.140.191",
+        "context": "IP the report pairs with en.stockslab.org (IoC table). Carried only as the dst field of synthetic NGFW records.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/",
+        "published": "2025-04-14",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "70.34.245.118",
+        "context": "IP the report pairs with getstockprice.com (IoC table). Carried only as the dst field of synthetic NGFW records.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/",
+        "published": "2025-04-14",
+        "safe_form": "log_field"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-027 Python Writes init py Into the Home Public Folder",
+        "description": "A Python interpreter creates __init__.py inside the user's home Public folder: the drop path of the Slow Pisces YAML deserialisation payload that stages RN Loader.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter actor_process_image_name contains \"python\"\n| filter action_file_path ~= \"/(home|Users)/[^/]+/Public/__init__\\.py$\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, actor_process_command_line, action_file_path, causality_actor_process_image_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.006",
+          "T1140"
+        ]
+      },
+      {
+        "name": "MP-027 dockerd Launched From a Temp Path by a Python Interpreter",
+        "description": "A process image named dockerd starts outside its install path with a Python interpreter as its parent and docker-init as its argument: RN Loader command 3 masquerading as the Docker daemon.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"dockerd\"\n| filter actor_process_image_name contains \"python\"\n| filter action_process_image_path not in (\"/usr/bin/dockerd\", \"/usr/local/bin/dockerd\", \"/Applications/Docker.app/Contents/Resources/bin/dockerd\")\n| filter action_process_image_command_line contains \"docker-init\"\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_path, action_process_image_command_line, causality_actor_process_image_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1036.005"
+        ]
+      },
+      {
+        "name": "MP-027 Python Opens Keychain SSH Key and Cloud CLI Credential Files",
+        "description": "One Python process opens the login keychain, SSH private keys and AWS, Kubernetes or gcloud credential files within a short window: the RN Stealer collection set.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN\n| filter actor_process_image_name contains \"python\"\n| filter action_file_path contains \"login.keychain-db\" or action_file_path contains \"login.keyring\" or action_file_path contains \"/.ssh/id_\" or action_file_path contains \"/.aws/credentials\" or action_file_path contains \"/.kube/config\" or action_file_path contains \"/gcloud/\"\n| comp count_distinct(action_file_path) as cred_paths by agent_hostname, actor_process_instance_id, causality_actor_process_image_name\n| filter cred_paths >= 3",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1555.001",
+          "T1552.004",
+          "T1552.001"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-027 Self-Deleting Python Script Executed From the Home Public Folder",
+        "description": "A Python child process runs ~/Public/__init__.py and deletes that file seconds after starting: RN Loader moving to memory. Anchored on the coding-challenge python3 causality chain.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_REMOVE\n| filter actor_process_image_name contains \"python\"\n| filter action_file_path ~= \"/Public/__init__\\.py$\"\n| filter actor_process_command_line contains \"/Public/__init__.py\"\n| fields _time, agent_hostname, actor_process_instance_id, causality_actor_process_image_name, causality_actor_process_command_line, action_file_path",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1070.004",
+          "T1059.006"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Learned developer workstation baseline -> python3 descendant of a cloned project executes then deletes a script in ~/Public, anchored to causality_actor_process_instance_id."
+      },
+      {
+        "name": "MP-027 Developer Project Python Polls One External Host at a Fixed Interval",
+        "description": "A Python process descended from a cloned project posts to the same external host at a fixed interval, a destination that interpreter has never contacted before: RN Loader polling for commands.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT\n| filter actor_process_image_name contains \"python\"\n| comp count() as connects, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, actor_process_instance_id, action_remote_ip, action_remote_port\n| filter connects >= 3",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1071.001",
+          "T1082"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Per-host interpreter egress baseline -> first-seen fixed-interval polling from the coding-challenge python3 lineage, anchored to actor_process_instance_id."
+      },
+      {
+        "name": "MP-027 NGFW Recurring Rare-Domain Communications From a Developer Workstation",
+        "description": "NGFW EAL shows recurring small HTTPS sessions from one workstation to a domain rare across the fleet: the RN Loader command channel seen from the network.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssl\" and dst_port = 443\n| comp count() as sessions, avg(bytes_sent) as avg_sent, count_distinct(src) as hosts by endpoint_device_name, dst_hostname, dst\n| filter sessions >= 5 and avg_sent < 8192\n| fields endpoint_device_name, dst_hostname, dst, sessions, avg_sent",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned NGFW EAL egress baseline per source host -> recurring cadence to a fleet-rare destination, anchored to endpoint_device_name (src_host)."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-027 Lure Project Python Fetches symbols sp500 and Caches the Reply",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter actor_process_image_name contains \"python\"\n| filter (event_type = ENUM.FILE and action_file_path contains \"stocks-pattern-analyzer/.cache/sp500.yaml\") or event_type = ENUM.NETWORK\n| comp count() as events by agent_hostname, actor_process_instance_id, event_type\n| filter events >= 1",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-027 Slow Pisces Lure Domain DNS Lookups From the Workstation",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter dns_query_name in (\"en.stockslab.org\", \"getstockprice.com\", \"cdn.clubinfo.io\")\n| comp count() as lookups by agent_hostname, dns_query_name\n| filter lookups >= 1",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-027 RN Stealer Credential File Access on the Run Host",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.FILE and actor_process_image_name contains \"python\"\n| filter action_file_path contains \"login.keychain-db\" or action_file_path contains \"login.keyring\" or action_file_path contains \"/.ssh/id_\" or action_file_path contains \"/.aws/\" or action_file_path contains \"/.kube/config\" or action_file_path contains \"/gcloud/\" or action_file_path contains \"rn-stealer-manifest.xor\"\n| comp count_distinct(action_file_path) as paths by agent_hostname, causality_actor_process_image_name\n| filter paths >= 3",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-027 NGFW Traffic to Published Slow Pisces Infrastructure From the Run Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 3600)\n| filter dst in (\"91.103.140.191\", \"70.34.245.118\") or dst_hostname in (\"en.stockslab.org\", \"getstockprice.com\")\n| comp count() as sessions by endpoint_device_name, src, user, dst_hostname, dst\n| filter sessions >= 1",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Slow Pisces Developer Lure — Endpoint Loader/Stealer and NGFW C2 on One Workstation",
+        "rule_id": "CR-MP-0027",
+        "logic": "(BIOC(MP-027 Python Writes init py Into the Home Public Folder) OR ABIOC(MP-027 Self-Deleting Python Script Executed From the Home Public Folder) OR BIOC(MP-027 dockerd Launched From a Temp Path by a Python Interpreter) OR BIOC(MP-027 Python Opens Keychain SSH Key and Cloud CLI Credential Files)) AND (ABIOC(MP-027 NGFW Recurring Rare-Domain Communications From a Developer Workstation) OR IOC(91.103.140.191) OR IOC(70.34.245.118)) within 1800s on the same endpoint entity (xdr_data agent_hostname = panw_ngfw_traffic_raw endpoint_device_name, the src_host every leg carries) -> one Slow Pisces developer-compromise incident whose summary names the lure project, the ~/Public RN Loader drop, the credential collection and the C2 destination."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM NGFW EAL network analytics — recurring communications to a rare domain",
+        "validated": true,
+        "note": "Backed by the MP-027 NGFW ABIOC and validation XQL on panw_ngfw_traffic_raw."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0027"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_file_path contains \"/Public/__init__.py\" or action_process_image_name = \"dockerd\" | comp count() by agent_hostname"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0027"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Endpoint and NGFW alerts for the same src_host fuse via CR-MP-0027 into one incident; Unit 42 enrichment names Slow Pisces on the published domains and IPs."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-027",
+        "name": "Slow Pisces Developer Lure — Endpoint Lineage and NGFW C2 in One Incident",
+        "description": "The coding-challenge lure's endpoint lineage and its C2 egress raise alerts on two sensors that XSIAM fuses on the workstation.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-027A",
+            "objective": "Endpoint alerts fire on the lure python3 lineage: ~/Public drop, self-deleting script, masqueraded dockerd and credential-file burst.",
+            "preconditions": [
+              "XDR agent on the Linux or macOS workstation."
+            ],
+            "steps": [
+              "Run steps 01-05 as the developer account.",
+              "Open the causality view of the project python3."
+            ],
+            "success_criteria": [
+              "The BIOCs and ABIOC for steps 02, 04 and 05 fire under one causality chain.",
+              "IOC enrichment names Slow Pisces on the DNS lookups."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-MP-027B",
+            "objective": "The NGFW leg lands on the same workstation and CR-MP-0027 fuses both legs into one incident.",
+            "preconditions": [
+              "TS-MP-027A completed.",
+              "NGFW EAL records POSTed to the tenant collector."
+            ],
+            "steps": [
+              "Run step 06.",
+              "Search the incident for endpoint_device_name = the run host."
+            ],
+            "success_criteria": [
+              "panw_ngfw_traffic_raw shows the run host to 91.103.140.191 and 70.34.245.118.",
+              "Exactly one incident holds both the endpoint and NGFW alerts."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Run take-home coding challenges and unfamiliar repositories in a disposable VM or container with no keychain, SSH keys or cloud credentials mounted.",
+      "Ban yaml.load() without SafeLoader in internal code review and dependency scanning; Slow Pisces relies on it to turn a data reply into code execution.",
+      "Block the published Slow Pisces domains and IPs with an EDL and DNS Security, and enforce egress allow-listing from developer workstations."
+    ],
+    "detection_engineering": [
+      "Alert on interpreters writing source files into ~/Public or other non-project home folders, and on scripts that delete themselves after start.",
+      "Alert on daemon names (dockerd, containerd) started from temp or home paths by an interpreter.",
+      "Stitch endpoint and NGFW alerts on the workstation entity so the lure, loader and C2 read as one case."
+    ],
+    "response_playbook": "XSOAR-PB-SlowPiscesDeveloperLure-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Slow Pisces Targets Developers With Coding Challenges and Introduces New Customized Python Malware",
+      "url": "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "published_date": "2025-04-14",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1555.001 Credentials from Password Stores: Keychain",
+      "url": "https://attack.mitre.org/techniques/T1555/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics Alert Reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}
