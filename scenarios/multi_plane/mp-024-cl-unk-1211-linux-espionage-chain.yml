@@ -9,8 +9,7 @@
 #   Step 09's mailbox upload keeps the preset destination (the report names only legitimate file
 #   hosts) and is un-enrichable; it stitches on the host alone. Report domains are looked up once
 #   via the operator's resolver, `dig ... @${LAB_RESOLVER:-127.0.0.53}`; no session is ever opened.
-# Lab-only: writes stay under /tmp/cortexsim-mp-024, /dev/shm and the three /tmp/mp-024-*.yml campaign
-#   files.
+# Lab-only: writes stay under /tmp/cortexsim-mp-024, /dev/shm and the three /tmp/mp-024-*.yml campaign files.
 scenario_id: SIM-MP-024
 name: "CL-UNK-1211 AI-Driven Linux Espionage - Web Shell to Mailbox Theft (Endpoint + NGFW Stitch)"
 version: "1.0"
@@ -310,7 +309,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/mp-024-gsocket-threat.yml <<YML
-      campaign_id: CMP-MP-024
+      campaign_id: CMP-MP-GSOCKET-024
       name: "CL-UNK-1211 - gs-netcat WildFire threat record"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -366,7 +365,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/mp-024-sysgorat-c2.yml <<YML
-      campaign_id: CMP-MP-024
+      campaign_id: CMP-MP-SYSGORAT-024
       name: "CL-UNK-1211 - SysGoRAT WebSocket C2 beacon"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -467,7 +466,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un)
       cat > /tmp/mp-024-mail-upload.yml <<YML
-      campaign_id: CMP-MP-024
+      campaign_id: CMP-MP-MAIL-024
       name: "CL-UNK-1211 - mailbox archive upload"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true

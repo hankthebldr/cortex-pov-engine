@@ -359,7 +359,7 @@ steps:
       SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
       SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
       cat > /tmp/mp-029-delivery.yml <<YML
-      campaign_id: CMP-MP-029
+      campaign_id: CMP-MP-DELIVERY-029
       name: "TGR-STA-1030 — lure ZIP and Diaoyu executable WildFire verdicts"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -475,7 +475,7 @@ steps:
       SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
       SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
       cat > /tmp/mp-029-c2.yml <<YML
-      campaign_id: CMP-MP-029
+      campaign_id: CMP-MP-C2-029
       name: "TGR-STA-1030 — Cobalt Strike verdict, C2 beacon and SSH relay"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true

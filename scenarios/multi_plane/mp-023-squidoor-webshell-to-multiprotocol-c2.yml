@@ -417,7 +417,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un www-data 2>/dev/null || id -un)
       cat > /tmp/mp-023-ngfw-eal.yml <<YML
-      campaign_id: CMP-MP-023
+      campaign_id: CMP-MP-EAL-023
       name: "Squidoor C2 egress from the run host to published CL-STA-0049 infrastructure"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -505,7 +505,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un www-data 2>/dev/null || id -un)
       cat > /tmp/mp-023-ngfw-threat.yml <<YML
-      campaign_id: CMP-MP-023
+      campaign_id: CMP-MP-THREAT-023
       name: "Squidoor config.ini WildFire verdict on the run host"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true

@@ -433,7 +433,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un developer 2>/dev/null || id -un)
       cat > /tmp/cortexsim-mp025-github.yml <<YML
-      campaign_id: CMP-MP-025
+      campaign_id: CMP-MP-GITHUB-025
       name: "Blinder Tunnel — GitHub contents-API C2 cadence (SaaS relay at the network boundary)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
@@ -538,7 +538,7 @@ steps:
       SRC_HOST=$(hostname -s)
       SRC_USER=$(id -un developer 2>/dev/null || id -un)
       cat > /tmp/cortexsim-mp025-tunnel.yml <<YML
-      campaign_id: CMP-MP-025
+      campaign_id: CMP-MP-TUNNEL-025
       name: "Blinder Tunnel — Blackwood/Chisel tunnel + WildFire verdicts"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
