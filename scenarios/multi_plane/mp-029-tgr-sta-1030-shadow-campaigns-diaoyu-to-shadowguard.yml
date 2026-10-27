@@ -4,12 +4,12 @@
 # HTTPS and SSH relays; Linux servers get the ShadowGuard eBPF rootkit (kill -900/-901, hides "swsecret*").
 # DC points at: EDR — the lure lineage (step-01..03), EDR-name discovery (02), report-domain lookups via the lab
 # resolver ${LAB_RESOLVER} (04, one query, no session); NDR — WildFire threat logs carrying the report lure/CS
-# sha256 (05, 07) and the C2 beacon + SSH relay sessions to report domains/IPs (07); EDR (Linux) — ShadowGuard
-# (06). Every NGFW record carries the run host's src_ip/src_host/src_user (stitching_key src_host). The engine
-# emits this chain POSIX-only (linux variants); the Windows bodies are a hand-run two-host path (set VICTIM_SRC_*
-# on the EAL host). The report lists domains and IPs unpaired — step-07 pairs them for record shape only; enrich
-# each independently. No cloud-identity leg (mega.nz/GitHub are payload hosting only). Payloads are stand-ins;
-# nothing contacts actor infrastructure.
+# sha256 (05, 07) and the C2 beacon + SSH relay sessions to report domains/IPs (07); EDR (Linux) — ShadowGuard signal
+# and swsecret artifacts (06). Every NGFW record carries the run host's src_ip/src_host/src_user (stitching_key
+# src_host). The engine emits this chain POSIX-only (linux variants); the Windows bodies are a hand-run two-host path
+# (set VICTIM_SRC_* on the EAL host). The report lists domains and IPs unpaired — step-07 pairs them for record shape
+# only; enrich each independently. No cloud-identity leg: the report describes none (mega.nz/GitHub are payload hosting
+# only). Payloads are stand-ins; nothing contacts actor infrastructure.
 scenario_id: SIM-MP-029
 name: "TGR-STA-1030 Shadow Campaigns — Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42)"
 version: "1.0"
