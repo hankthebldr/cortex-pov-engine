@@ -198,7 +198,7 @@ def test_url_indicator_is_case_insensitive():
 # ── Task 6b: fetch verb is a command token, not a hostname substring ─────────
 @pytest.mark.parametrize("cmd,value", [
     ("dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", "npm-cache.example"),
-    ("host curl.example ${LAB_RESOLVER}", "curl.example"),
+    ("dig +short curl.example @${LAB_RESOLVER:-127.0.0.53}", "curl.example"),
 ])
 def test_fetch_verb_inside_hostname_does_not_block_lookup(cmd, value):
     ind = IndicatorSchema(**_ind(value=value))
@@ -272,7 +272,10 @@ def test_final_s25_lookup_exemption_tightened(ind_kw, cmd):
 @pytest.mark.parametrize("cmd", [
     f"dig +short evil.example {_RES}",
     "nslookup evil.example $env:LAB_RESOLVER",
-    "host evil.example ${LAB_RESOLVER}",
+    "nslookup evil.example ${LAB_RESOLVER:-127.0.0.53}",
+    "nslookup evil.example $LAB_RESOLVER",
+    "drill evil.example @${LAB_RESOLVER:-127.0.0.53}",
+    "host evil.example @${LAB_RESOLVER:-127.0.0.53}",
 ])
 def test_final_s25_lookup_with_resolver_allowed(cmd):
     assert _lines(_EVIL, cmd) == []
@@ -373,3 +376,54 @@ def test_final_in_band_defaults_true_and_must_be_bool():
     for bad in ("no", 0, 1, None, "false"):
         with pytest.raises(ValueError, match="S-22"):
             IndicatorSchema(**_ind(in_band=bad))
+
+
+# ── Final re-review R1 / I2 ───────────────────────────────────────────────────
+@pytest.mark.parametrize("cmd", [
+    "dig +short evil.example LAB_RESOLVER",
+    "getent hosts evil.example LAB_RESOLVER",
+    "getent hosts evil.example @${LAB_RESOLVER:-127.0.0.53}",
+    "resolvectl query evil.example --LAB_RESOLVER",
+    "resolvectl query evil.example @${LAB_RESOLVER:-127.0.0.53}",
+    "host evil.example ${LAB_RESOLVER}",
+    "nslookup evil.example LAB_RESOLVER",
+    "nslookup evil.example 8.8.8.8 # $LAB_RESOLVER",
+    "nslookup evil.example @${LAB_RESOLVER:-127.0.0.53}",
+    "dig +short evil.example user@${LAB_RESOLVER}",
+])
+def test_rereview_r1_resolver_rule(cmd):
+    assert _s25(_lines(_EVIL, cmd)), cmd
+
+
+_REPORT_IP = "203.0.113.9"
+
+
+def _mixed(spelling):
+    return ("cat > /tmp/c.yml <<YML\nsteps:\n"
+            "  - plugin: ngfw_eal_emitter\n    params:\n      dst_ip: 198.51.100.1\n"
+            f"  - {spelling} c2_http_beacon\n    params:\n      target_url: http://{_REPORT_IP}/\nYML")
+
+
+@pytest.mark.parametrize("cmd", [
+    _mixed("plugin :"), _mixed('"plugin":'), _mixed("'plugin':"),
+    # a body that fails to parse
+    "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+    f"      dst_ip: {_REPORT_IP}\n   bad: [unclosed\nYML",
+    # steps[] missing / a step without plugin
+    f"cat > /tmp/c.yml <<YML\nplugin: ngfw_eal_emitter\nparams:\n  dst_ip: {_REPORT_IP}\nYML",
+    "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+    f"      dst_ip: {_REPORT_IP}\n  - step_id: step-02\n    params:\n      x: 1\nYML",
+    # a plugin key nested outside steps[] with a non-collector value
+    "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+    f"      dst_ip: {_REPORT_IP}\n      plugin: ssh_egress\nYML",
+])
+def test_rereview_i2_params_exemption_fails_closed(cmd):
+    assert _s25(_lines(_IP4, cmd)), cmd
+
+
+def test_rereview_i2_collector_campaign_still_allowed():
+    cmd = ("cat > /tmp/c.yml <<YML\ncampaign_id: CMP-X-001\nsteps:\n  - step_id: step-01\n"
+           f"    plugin: ngfw_eal_emitter\n    params:\n      dst_ip: \"{_REPORT_IP}\"\nYML")
+    assert _lines(_IP4, cmd) == []
+    indented = "\n".join("      " + l if i else l for i, l in enumerate(cmd.split("\n")))
+    assert _lines(_IP4, indented) == []

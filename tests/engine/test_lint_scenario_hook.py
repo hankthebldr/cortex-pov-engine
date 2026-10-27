@@ -245,7 +245,7 @@ _PARITY_VECTORS = [
     ("dig allowed", [_ind()], "dig +short rn-stage.example @${R:-1.1.1.1}", None, None),
     ("dig npm hostname", [_ind(value="npm-cache.example")],
      "dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", None, None),
-    ("host curl hostname", [_ind(value="curl.example")], "host curl.example ${LAB_RESOLVER}", None, None),
+    ("host curl hostname", [_ind(value="curl.example")], "dig +short curl.example @${LAB_RESOLVER:-127.0.0.53}", None, None),
     ("dig piped xargs curl", [_ind()], "dig +short rn-stage.example | xargs curl -s", None, None),
     ("hash npm", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
      "npm install evil-pkg " + "d" * 64, None, None),
@@ -335,6 +335,30 @@ _PARITY_VECTORS = [
      f"{v} https://x/" + "e" * 64, None, None)
     for v in ("certutil -urlcache -f", "bitsadmin /transfer j", "Start-BitsTransfer -Source",
               "aria2c", "scp", "tftp -g -r", "ftp -n", "ftp.example", "sftp-helper")
+] + [
+    # ── final re-review: R1 resolver rule ──
+    (f"R1 {i}", [_ind(value="evil.example")], cmd, None, None) for i, cmd in enumerate([
+        "dig +short evil.example LAB_RESOLVER",
+        "getent hosts evil.example LAB_RESOLVER",
+        "resolvectl query evil.example --LAB_RESOLVER",
+        "dig +short evil.example @${LAB_RESOLVER:-127.0.0.53}",
+        "nslookup evil.example $env:LAB_RESOLVER",
+        "nslookup evil.example LAB_RESOLVER",
+        "host evil.example ${LAB_RESOLVER}",
+    ])
+] + [
+    # ── final re-review: I2 plugin spellings fail closed ──
+    (f"I2b {i}", [_ind(type="ipv4", value="203.0.113.9", safe_form="log_field")], cmd, None, None)
+    for i, cmd in enumerate([
+        "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n      a: 1\n"
+        f"  - {sp} c2_http_beacon\n    params:\n      target_url: http://203.0.113.9/\nYML"
+        for sp in ("plugin :", '"plugin":', "'plugin':")
+    ] + [
+        "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+        "      dst_ip: 203.0.113.9\nYML",
+        "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+        "      dst_ip: 203.0.113.9\n   bad: [unclosed\nYML",
+    ])
 ]
 
 
@@ -378,7 +402,7 @@ def test_hook_malformed_indicator_fields_report_not_crash(tmp_path, mutate, code
 
 @pytest.mark.parametrize("cmd,value", [
     ("dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", "npm-cache.example"),
-    ("host curl.example ${LAB_RESOLVER}", "curl.example"),
+    ("dig +short curl.example @${LAB_RESOLVER:-127.0.0.53}", "curl.example"),
 ])
 def test_hook_fetch_verb_in_hostname_does_not_block_lookup(cmd, value):
     hook = _load_hook()
@@ -511,9 +535,11 @@ def test_final_hook_regexes_and_plugin_set_byte_identical():
     for h_name, l_name in [("FETCH_VERB_RE", "FETCH_VERB_RE"), ("DNS_LOOKUP_RE", "DNS_LOOKUP_RE"),
                            ("_HEREDOC_RE", "_HEREDOC_RE"), ("_CHAIN_RE", "_SHELL_CHAIN_RE"),
                            ("_SH_COMMENT_RE", "_SH_COMMENT_RE"), ("_SH_ARITH_RE", "_SH_ARITH_RE"),
-                           ("_RESOLVER_RE", "_RESOLVER_RE"), ("_RESOLVER_AT_RE", "_RESOLVER_AT_RE"),
+                           ("_NSLOOKUP_RESOLVER_RE", "_NSLOOKUP_RESOLVER_RE"),
+                           ("_AT_LOOKUP_RE", "_AT_LOOKUP_RE"), ("_RESOLVER_AT_RE", "_RESOLVER_AT_RE"),
+                           ("_PLUGIN_KEY_RE", "_PLUGIN_KEY_RE"),
                            ("_CAMPAIGN_FILE_WRITE_RE", "_CAMPAIGN_FILE_WRITE_RE"),
-                           ("_PLUGIN_LINE_RE", "_PLUGIN_LINE_RE"), ("_URL_HOST_RE", "_URL_HOST_RE")]:
+                           ("_URL_HOST_RE", "_URL_HOST_RE")]:
         h, l = getattr(hook, h_name), getattr(sl, l_name)
         assert (h.pattern, h.flags) == (l.pattern, l.flags), h_name
 
@@ -528,3 +554,24 @@ def test_final_hook_in_band_must_be_bool(tmp_path, val):
 def test_final_hook_in_band_bool_accepted(tmp_path, val):
     r = _hook_out(tmp_path, lambda d: d["indicators"][0].update(in_band=val))
     assert "in_band" not in r.stdout
+
+
+# ── final re-review: the hook passes every real (loadable) scenario ───────────
+def _loadable_scenarios():
+    out = []
+    for p in sorted((REPO_ROOT / "scenarios").rglob("*.yml")):
+        rel = p.relative_to(REPO_ROOT / "scenarios")
+        if p.name == "_schema.yml" or {"probes", "packages", "campaigns"} & set(rel.parts[:-1]):
+            continue
+        out.append(p)
+    return out
+
+
+@pytest.mark.parametrize("path", _loadable_scenarios(),
+                         ids=lambda p: str(p.relative_to(REPO_ROOT / "scenarios")))
+def test_hook_passes_every_real_scenario(path):
+    import re as _re  # noqa: PLC0415
+    r = subprocess.run([sys.executable, str(HOOK), str(path), str(REPO_ROOT)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not _re.search(r"S-2[2-7]", r.stdout), r.stdout

@@ -22,6 +22,7 @@ import glob
 import json
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 try:
@@ -146,7 +147,8 @@ _SAFE_FORMS_BY_TYPE = {
 _INDICATOR_ID_RE = re.compile(r"^ind-\d{2}$")
 _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
 _IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
-DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
+# getent hosts / resolvectl query cannot name a resolver, so they are never exempt.
+DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill)\b")
 FETCH_VERB_RE = re.compile(
     r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr|certutil|bitsadmin|Start-BitsTransfer|aria2c|scp|tftp|ftp)(?:\.exe)?(?![A-Za-z0-9_.-])", re.IGNORECASE)
 # Mirrors core/eal_simulator/campaign.py::_CAMPAIGN_ID_RE (parity test in
@@ -163,12 +165,17 @@ _SH_ARITH_RE = re.compile(r"\(\((?:[^()]|\([^()]*\))*\)\)")
 # Chaining that can add a connection to a lookup line: ; && || | $( ` and
 # redirection / background / process substitution < > & <( >(.
 _CHAIN_RE = re.compile(r";|&&|\|\||\||\$\(|`|<\(|>\(|<|>|&")
-# A lookup line must name its resolver: '@<token>' or the LAB_RESOLVER token.
-_RESOLVER_RE = re.compile(r"@\S+|(?<![A-Za-z0-9_])LAB_RESOLVER(?![A-Za-z0-9_])")
-_RESOLVER_AT_RE = re.compile(r"@(\S+)")
+# A lookup line must name its resolver: dig/drill/host by a whitespace-led
+# '@<token>' (which may not be the indicator); nslookup by $LAB_RESOLVER,
+# $env:LAB_RESOLVER or ${LAB_RESOLVER...} as the token after the queried name.
+_AT_LOOKUP_RE = re.compile(r"^\s*(?:dig|drill|host)\b.*?(?:^|\s)@\S+")
+_NSLOOKUP_RESOLVER_RE = re.compile(
+    r"^\s*nslookup\s+(?:-\S+\s+)*[^\s-]\S*\s+[\"']?(?:\$LAB_RESOLVER|\$env:LAB_RESOLVER|\$\{LAB_RESOLVER[^}\s]*\})[\"']?(?:\s|$)")
+_RESOLVER_AT_RE = re.compile(r"(?:^|\s)@(\S+)")
 # A params: block is data only inside a campaign-file write ...
 _CAMPAIGN_FILE_WRITE_RE = re.compile(r"(?<![\w./-])cat\s+>\s*['\"]?[^\s'\"<>]+\.ya?ml['\"]?\s+<<(?!<)")
-_PLUGIN_LINE_RE = re.compile(r"^\s*(?:-\s+)?plugin:\s*['\"]?([A-Za-z0-9_.-]+)")
+# Any spelling of a 'plugin' key (plugin:, plugin :, "plugin":, 'plugin':).
+_PLUGIN_KEY_RE = re.compile(r"^\s*(?:-\s+)?[\"']?plugin[\"']?\s*:(.*)$")
 _URL_HOST_RE = re.compile(r"^https?://(?:[^/@\s]*@)?(\[[^\]\s]+\]|[^/:?#\s]+)", re.IGNORECASE)
 # ... whose every plugin is a collector-POST log streamer (records POSTed to an
 # operator-supplied collector, so an indicator is a field value, not a peer).
@@ -321,12 +328,35 @@ def _heredoc_body(lines: list, delim: str) -> list:
     return body
 
 
+def _resolver_named(line: str) -> bool:
+    """dig/drill/host: a whitespace-led @<token>; nslookup: a LAB_RESOLVER variable."""
+    return bool(_NSLOOKUP_RESOLVER_RE.match(line) or _AT_LOOKUP_RE.match(line))
+
+
+def _plugin_value(raw: str) -> str:
+    return re.sub(r"\s+#.*$", "", raw).strip().strip("'\"")
+
+
 def _params_are_data(opener: str, body: list) -> bool:
-    """Mirrors scenario_loader._params_are_data."""
+    """A heredoc's params: blocks are data only when it writes a campaign file
+    (cat > <path>.yml <<), the body parses as YAML with a non-empty steps[], and
+    EVERY step's plugin is a collector-POST streamer. Any other shape, any parse
+    failure, or any 'plugin' key (in any spelling) with another value fails closed."""
     if not _CAMPAIGN_FILE_WRITE_RE.search(_SH_COMMENT_RE.sub("", opener)):
         return False
-    plugins = [m.group(1) for m in map(_PLUGIN_LINE_RE.match, body) if m]
-    return bool(plugins) and all(p in COLLECTOR_POST_PLUGINS for p in plugins)
+    for line in body:
+        m = _PLUGIN_KEY_RE.match(line)
+        if m and _plugin_value(m.group(1)) not in COLLECTOR_POST_PLUGINS:
+            return False
+    try:
+        doc = yaml.safe_load(textwrap.dedent("\n".join(body)))
+    except Exception:  # noqa: BLE001 — any parse failure fails closed
+        return False
+    steps = doc.get("steps") if isinstance(doc, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return False
+    return all(isinstance(st, dict) and isinstance(st.get("plugin"), str)
+               and st["plugin"] in COLLECTOR_POST_PLUGINS for st in steps)
 
 
 def _indicator_probes(inds: list) -> list:
@@ -388,7 +418,7 @@ def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None)
                     heredoc = delim
                     params_data = _params_are_data(line, _heredoc_body(lines[n:], delim))
                 lookup_ok = (bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
-                             and not _CHAIN_RE.search(line) and bool(_RESOLVER_RE.search(line)))
+                             and not _CHAIN_RE.search(line) and _resolver_named(line))
             hit = set()
             for k, (typ, val, iid, note) in enumerate(probes):
                 if typ in _HASH_TYPES:
