@@ -11,10 +11,10 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Scenarios rejected at load | 0 |
 | TTP cards | 187 |
 | Detection planes | 16 |
-| Step-detections | 1317 |
-| Catalog detection objects | 2049 |
+| Step-detections | 1320 |
+| Catalog detection objects | 2052 |
 | ABIOC+Analytics share (step-detections) | 15.8% |
-| Correlation share (step-detections) | 9.9% |
+| Correlation share (step-detections) | 10.1% |
 | Distinct MITRE techniques (base) | 230 (127) |
 | EAL plugins | 27 |
 | AWS IaC modules | 11 |
@@ -45,7 +45,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 11 |
-| High-quality signals (stitched, non-marker step-detections) | 192/1317 (14.6%) |
+| High-quality signals (stitched, non-marker step-detections) | 195/1320 (14.8%) |
 | Marker-only steps | 100/765 (13.1%) |
 | Scenarios with indicators | 12 |
 | Indicators | 84 |
@@ -57,7 +57,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | ABIOC | 152 |
 | Analytics | 56 |
 | BIOC | 341 |
-| Correlation | 130 |
+| Correlation | 133 |
 | IOC | 110 |
 | Prevention | 0 |
 | XQL | 528 |
