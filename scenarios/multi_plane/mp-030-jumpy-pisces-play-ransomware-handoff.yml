@@ -3,8 +3,8 @@
 # beacons to americajobmail.site / 172.96.137.224 (step-04, NGFW EAL), then the same account dumps creds to
 # KB0722.log (05), escalates via PsExec-shaped service + new local admin (06), removes "EDR" (07: a
 # cortexsim-edr-sensor dummy service + a fake msiexec product code, never a real product; detected only, no
-# prevent outcome) and runs a Play-shaped .PLAY rename on a canary dir (08). DC points at: EDR BIOCs on the
-# Windows host; NDR records in panw_ngfw_traffic_raw/_threat_raw; ITDR share-access ABIOC; CR-MP-0030 incident.
+# prevent outcome) and a Play-shaped canary rename (08; the .PLAY extension and ReadMe.txt note come from the linked
+# CISA AA23-352A, not the U42 text). DC points at: EDR BIOCs; NDR in panw_ngfw_traffic_raw/_threat_raw; ITDR share-access ABIOC (inferred: the report names the share mapping, not an identity alert); CR-MP-0030.
 # Windows legs run on the lab endpoint; the two EAL legs run on a Linux runner and carry the endpoint's identity
 # in-band (set VICTIM_SRC_IP/HOST/USER to it) so every leg shares src_host. step-04 sends ONE DNS query for the
 # report domain through @${LAB_RESOLVER} (tag real-ioc-dns-lookup); no session to the C2 is ever opened.
@@ -75,6 +75,7 @@ execution_identity:
 push_supported: false
 pull_supported: true
 
+# The lab Windows endpoint (and any second SMB host) is DC-supplied, not provisioned by a module.
 infra_modules_needed:
   - base
   - ndr
@@ -158,19 +159,15 @@ steps:
     command: |
       $music = 'C:\Users\Public\Music'
       New-Item -ItemType Directory -Force -Path $music | Out-Null
-      $out = Join-Path $music 'cortexsim-mp030-recon.txt'
-      whoami.exe /all > $out
-      net.exe localgroup administrators >> $out
-      quser.exe >> $out 2>&1
-      nltest.exe /dclist: >> $out 2>&1
-      Get-Item $out | Select-Object FullName, Length
+      cmd.exe /c "whoami /all > C:\Users\Public\Music\cortexsim-mp030-recon.txt & net localgroup administrators >> C:\Users\Public\Music\cortexsim-mp030-recon.txt & quser >> C:\Users\Public\Music\cortexsim-mp030-recon.txt 2>&1 & nltest /dclist: >> C:\Users\Public\Music\cortexsim-mp030-recon.txt 2>&1"
+      Get-Item (Join-Path $music 'cortexsim-mp030-recon.txt') | Select-Object FullName, Length
     identity: user
     mitre_technique: "T1033"
     platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: BIOC
-        description: "whoami /all, net localgroup, quser and nltest run from the compromised account's shell with output redirected into C:\\Users\\Public\\Music — the staging folder the report ties to the Play-era tooling."
+        description: "whoami /all, net localgroup, quser and nltest run as children of one cmd.exe /c whose command line redirects into C:\\Users\\Public\\Music (so the children's actor command line carries the path) — the staging folder the report ties to the Play-era tooling."
         ttp_ref: "TTP-2026-0189"
         detection_id: "bioc-mp-030-discovery-burst-staged-into-public-music-folder"
 
@@ -201,7 +198,7 @@ steps:
         detection_id: "bioc-mp-030-renamed-system-binary-executed-from-public-music"
       - plane: ITDR
         type: ABIOC
-        description: "The account authenticates to the target's C$ administrative share and writes executables — first-seen user-to-host admin-share access, anchored to the source host and the user principal the later stages reuse."
+        description: "Inferred (the report names the share mapping, not an identity alert): the account accesses the target's C$ share and writes executables. Share events 5140/5145 land on the target, so the ABIOC keys on source_address = the victim's IP plus the user; with the default STAGE_HOST=127.0.0.1 the target is the victim itself. Needs msft_windows_security ingestion from the target."
         ttp_ref: "TTP-2026-0189"
         detection_id: "abioc-mp-030-compromised-account-uncommon-administrative-share-access"
 
@@ -454,6 +451,7 @@ steps:
 cleanup:
   commands:
     - "Remove-Item -Force -Recurse -ErrorAction SilentlyContinue 'C:\\Users\\Public\\Music\\cortexsim-mp030*', \"$env:SystemRoot\\Temp\\KB0722.log\", \"$env:TEMP\\cortexsim-mp030*\""
+    - "$t = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }; Remove-Item -Force -ErrorAction SilentlyContinue \"\\\\$t\\C$\\Users\\Public\\Music\\cortexsim-mp030-*\""
     - "sc.exe delete cortexsim-edr-sensor; sc.exe delete cortexsim-mp030-psexesvc; net.exe user cortexsim-mp030-adm /delete; Write-Output cortexsim-mp030-windows-cleanup-complete"
     - "rm -f /tmp/mp-030-threat.yml /tmp/mp-030-beacon.yml"
 

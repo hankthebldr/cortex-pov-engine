@@ -263,8 +263,12 @@
         "check_command": "Get-Service cyserver"
       },
       {
-        "description": "A Linux runner with the CortexSim repo for the two EAL legs, an operator collector (COLLECTOR_URL) feeding panw_ngfw_traffic_raw / panw_ngfw_threat_raw, and VICTIM_IP / VICTIM_HOST / VICTIM_USER set to the Windows endpoint's identity.",
+        "description": "A Linux runner with the CortexSim repo for the two EAL legs, an operator collector (COLLECTOR_URL) feeding panw_ngfw_traffic_raw / panw_ngfw_threat_raw, and VICTIM_SRC_IP / VICTIM_SRC_HOST / VICTIM_SRC_USER set to the Windows endpoint's identity (unset, the NGFW records name the runner and the src_host stitch breaks).",
         "check_command": "python3 -m scripts.eal_simulator.cli --help"
+      },
+      {
+        "description": "Windows Security event logs (5140/5145 share access) from the SMB target host are ingested into msft_windows_security; without them the ITDR share-access leg cannot fire.",
+        "check_command": "Get-WinEvent -ListLog Security"
       },
       {
         "description": "LAB_RESOLVER names the lab DNS resolver the single report-domain lookup goes through.",
@@ -412,7 +416,7 @@
       },
       {
         "name": "MP-030 Admin Share C$ Mapped Then Executable Copied into Public Music",
-        "description": "cmd.exe runs 'net use \\\\<host>\\C$' followed by 'copy' of an executable to \\\\<host>\\C$\\Users\\Public\\Music — the exact SMB lateral tool transfer pattern the report documents for the Sliver and DTrack files.",
+        "description": "cmd.exe runs 'net use \\\\<host>\\C$' followed by 'copy' of an executable to \\\\<host>\\C$\\Users\\Public\\Music — the SMB transfer pattern the report describes for the Sliver and DTrack files.",
         "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"cmd.exe\", \"net.exe\", \"net1.exe\")\n| filter action_process_image_command_line contains \"C$\"\n| filter action_process_image_command_line contains \"net use\" or action_process_image_command_line contains \"copy\"\n| comp count() as share_ops, values(action_process_image_command_line) as cmdlines by agent_hostname, actor_effective_username, causality_id\n| filter share_ops >= 1\n| fields agent_hostname, actor_effective_username, causality_id, share_ops, cmdlines",
         "severity": "high",
         "mitre_technique_ids": [
@@ -509,15 +513,15 @@
     "abiocs": [
       {
         "name": "MP-030 Compromised Account Uncommon Administrative Share Access",
-        "description": "A user account that has never authenticated to the target host's C$ administrative share does so (network logon + share access) and writes executables — the identity analytics view of the report's lateral movement with the compromised account.",
-        "logic": "dataset = msft_windows_security\n| filter event_id in (4624, 5140, 5145)\n| filter share_name contains \"C$\"\n| comp count() as share_events, count_distinct(event_id) as event_kinds by user_name, source_address, host_name\n| filter event_kinds >= 2\n| fields user_name, source_address, host_name, share_events, event_kinds",
+        "description": "Inferred identity view (the report names the C$ share mapping by the compromised account, not an identity alert): a user account accesses a host's C$ administrative share for the first time and writes executables. Share events 5140/5145 land on the TARGET host, so the alert is keyed on source_address (the victim's IP) and user_name; with the default STAGE_HOST=127.0.0.1 the target is the victim itself and source_address is loopback.",
+        "logic": "dataset = msft_windows_security\n| filter event_id in (5140, 5145)\n| filter share_name contains \"C$\"\n| comp count() as share_events, count_distinct(event_id) as event_kinds, values(host_name) as target_hosts by user_name, source_address\n| filter event_kinds >= 2\n| fields user_name, source_address, target_hosts, share_events, event_kinds",
         "severity": "high",
         "mitre_technique_ids": [
           "T1021.002",
           "T1078"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "Learned per-user administrative-share baseline -> first-seen user-to-host C$ access with executable write, anchored to the source host (src_host) and user principal."
+        "causality_anchor": "Learned per-user administrative-share baseline -> first-seen user-to-host C$ access with executable write, anchored to source_address (the victim src_host's IP) and the user principal."
       },
       {
         "name": "MP-030 Sliver Recurring Beacon to Rare Domain",
