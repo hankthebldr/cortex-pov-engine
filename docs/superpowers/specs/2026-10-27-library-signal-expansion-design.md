@@ -82,10 +82,13 @@ step-detection carries the plane whose *sensor* raises the alert (`EDR`, `NDR`,
 `unit42.paloaltonetworks.com`, and (d) ≥1 entry in `indicators[]` (§4.1).
 
 **Marker-only step.** An agent-channel step whose `command`, after splitting on
-newlines and `||`, has no line other than `echo`, `printf`, `:`, `true`, a comment
-or blank; or whose only non-marker lines are `curl` to `127.0.0.1`, `localhost` or
-`${STAGE_HOST…}`. An EAL step (command invokes `scripts.eal_simulator.cli` or
-`cortexsim-eal`) is never marker-only.
+newlines, `;`, `&&`, `||` and `|`, has no fragment other than `echo`, `printf`,
+`Write-Host`, `Write-Output`, `true`, a bare `:` or comment, or blank; or whose only
+non-marker fragments are `curl` to `127.0.0.1`, `localhost` or `${STAGE_HOST…}`. A
+missing command is marker-only. An EAL step (command invokes
+`scripts.eal_simulator.cli` or `cortexsim-eal`) is never marker-only. (The 137 in
+§1 was measured with a looser pre-rule approximation; the canonical rule's count is
+the one the coverage report prints and the ground truth records.)
 
 **High-quality signal (HQS).** A step-detection whose scenario is a stitched chain
 and whose step is not marker-only. The count the operator asked to raise is the
@@ -114,8 +117,8 @@ Loader (`core/engine/scenario_loader.py`, `IndicatorSchema` + a model validator 
 | S-22 | `type` outside the vocabulary, or `value` malformed for its type (sha256 = 64 hex, sha1 = 40, md5 = 32, ipv4 = dotted quad and not RFC1918/loopback/link-local, domain contains a dot and no scheme, url has a scheme) |
 | S-23 | `source_url` not on `unit42.paloaltonetworks.com` or `github.com/PaloAltoNetworks/` |
 | S-24 | `surfaces_in` empty, or names a step id the scenario does not have |
-| S-25 | **unsafe surfacing**: an `ipv4`, `domain` or `url` value appears in any step `command` on a line that is neither a DNS-lookup line (`dig`, `nslookup`, `host`, `getent hosts`, `resolvectl query`, `drill`) nor inside an EAL campaign heredoc `params:` block |
-| S-26 | **artifact fetch**: a `sha256`/`sha1`/`md5` value appears on a command line that also contains a fetch verb (`curl`, `wget`, `pip`, `npm`, `git clone`, `Invoke-WebRequest`, `iwr`) |
+| S-25 | **unsafe surfacing**: an `ipv4`, `domain` or `url` value (for `domain`, any subdomain of it too) appears in any executed text — every step `command`, every `platform_variants` value, every `cleanup.commands` entry — on a line that is neither a DNS-lookup line (`dig`, `nslookup`, `host`, `getent hosts`, `resolvectl query`, `drill`, containing **no** fetch verb and **no** shell chaining or substitution operator `; && \|\| \| $( \``) nor inside an EAL campaign heredoc `params:` block |
+| S-26 | **artifact fetch**: a `sha256`/`sha1`/`md5` value appears on a line of that same executed text that also contains a fetch verb (`curl`, `wget`, `pip`, `npm`, `git clone`, `Invoke-WebRequest`, `iwr`) |
 | S-27 | `safe_form` incompatible with `type`: `dns_lookup` only for `domain`; `hash_only`, `wildfire_test_file`, `eicar` only for hash types; `log_field` for any |
 
 Persisted as `Scenario.indicators` (nullable JSON column, same additive pattern as
