@@ -107,6 +107,10 @@ def default_config() -> dict[str, Any]:
         "name_similarity": 0.60,
         "top": 15,
         "strict": False,
+        # signal_quality gates; the defaults gate nothing.
+        "hq_signal_floor": 0,
+        "stitched_chain_floor": 0,
+        "marker_only_ceiling": 1.0,
     }
 
 
@@ -162,6 +166,110 @@ def _r4(x: float) -> float:
 # ---------------------------------------------------------------------------
 # File discovery (fail-soft; mirrors the live loaders)
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Signal quality: stitched chains and high-quality signals (HQS)
+# ---------------------------------------------------------------------------
+
+# plane -> evidence leg. ANALYTICS / EMAIL / TIM / ASM / DLP map to nothing.
+LEG_MAP: dict[str, str] = {
+    "EDR": "endpoint", "KOI": "endpoint", "BROWSER": "endpoint",
+    "NDR": "network",
+    "CDR": "cloud-identity", "CSPM": "cloud-identity", "CLOUD_APP": "cloud-identity",
+    "ITDR": "cloud-identity", "AI_SPM": "cloud-identity", "AI_ACCESS": "cloud-identity",
+    "AIRS": "cloud-identity",
+}
+
+_MARKER_LINE_RE = re.compile(r"^\s*(echo|printf|Write-Host|Write-Output|:|true|#)\b|^\s*$")
+_LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
+_UNIT42_HOST = "unit42.paloaltonetworks.com"
+
+
+def _planes_of(scn: dict[str, Any]) -> set[str]:
+    planes: set[str] = set()
+    for p in scn.get("required_planes_in_incident") or []:
+        if isinstance(p, str):
+            planes.add(p)
+    for step in scn.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        for ed in step.get("expected_detections") or []:
+            if isinstance(ed, dict) and isinstance(ed.get("plane"), str):
+                planes.add(ed["plane"])
+    return planes
+
+
+def scenario_legs(scn: dict[str, Any]) -> set[str]:
+    """Evidence legs touched by the union of required planes and detection planes."""
+    return {LEG_MAP[p] for p in _planes_of(scn) if p in LEG_MAP}
+
+
+def is_marker_only_step(step: dict[str, Any]) -> bool:
+    """True when the step's command emits nothing a sensor could observe."""
+    cmd = step.get("command") if isinstance(step, dict) else None
+    if not isinstance(cmd, str) or not cmd.strip():
+        return True
+    if "scripts.eal_simulator.cli" in cmd or "cortexsim-eal" in cmd:
+        return False
+    for line in re.split(r"\n|\|\|", cmd):
+        if _MARKER_LINE_RE.match(line) or _LOCAL_CURL_RE.search(line):
+            continue
+        return False
+    return True
+
+
+def is_stitched_chain(scn: dict[str, Any]) -> bool:
+    from urllib.parse import urlparse
+    url = scn.get("threat_report_url")
+    host = urlparse(url).hostname if isinstance(url, str) else None
+    req = scn.get("required_planes_in_incident") or []
+    inds = scn.get("indicators") or []
+    return bool(
+        len(scenario_legs(scn)) >= 2
+        and scn.get("stitching_key")
+        and len(req) >= 2
+        and host == _UNIT42_HOST
+        and len(inds) >= 1
+    )
+
+
+def signal_quality(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
+    """HQS = a step-detection in a stitched chain on a step that is not marker-only."""
+    chain_ids: list[str] = []
+    hq = step_dets = steps_total = marker_steps = with_ind = ind_total = 0
+    for scn in scenarios:
+        stitched = is_stitched_chain(scn)
+        inds = scn.get("indicators") or []
+        if inds:
+            with_ind += 1
+            ind_total += len(inds)
+        if stitched:
+            chain_ids.append(str(scn.get("scenario_id")))
+        for step in scn.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            steps_total += 1
+            marker = is_marker_only_step(step)
+            if marker:
+                marker_steps += 1
+            n = sum(1 for ed in step.get("expected_detections") or [] if isinstance(ed, dict))
+            step_dets += n
+            if stitched and not marker:
+                hq += n
+    return {
+        "leg_map": dict(LEG_MAP),
+        "stitched_chains": len(chain_ids),
+        "stitched_chain_ids": sorted(chain_ids),
+        "hq_signals": hq,
+        "step_detections": step_dets,
+        "hq_share": _r4(hq / step_dets) if step_dets else 0.0,
+        "marker_only_steps": marker_steps,
+        "steps": steps_total,
+        "marker_only_share": _r4(marker_steps / steps_total) if steps_total else 0.0,
+        "scenarios_with_indicators": with_ind,
+        "indicators": ind_total,
+    }
+
 
 def _load_scenarios(scenarios_dir: str, warnings: list[str]) -> list[dict[str, Any]]:
     """os.walk the scenario tree, pruning non-scenario sub-trees, parse each
@@ -618,6 +726,21 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
             ),
         })
 
+    sq = signal_quality(scenarios)
+    hq_floor = int(c["hq_signal_floor"])
+    chain_floor = int(c["stitched_chain_floor"])
+    marker_ceiling = float(c["marker_only_ceiling"])
+    for kind, target, bad, detail in (
+        ("hq_signal_floor", "hq_signals", sq["hq_signals"] < hq_floor,
+         f"hq_signals {sq['hq_signals']} < floor {hq_floor}"),
+        ("stitched_chain_floor", "stitched_chains", sq["stitched_chains"] < chain_floor,
+         f"stitched_chains {sq['stitched_chains']} < floor {chain_floor}"),
+        ("marker_only_ceiling", "marker_only_share", sq["marker_only_share"] > marker_ceiling,
+         f"marker_only_share {sq['marker_only_share']} > ceiling {marker_ceiling}"),
+    ):
+        if bad:
+            strict_breaches.append({"kind": kind, "target": target, "detail": detail})
+
     exit_code = _exit_code(strict, strict_breaches)
 
     return {
@@ -672,6 +795,7 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
             "pairs": pairs,
         },
         "recommendations": recs,
+        "signal_quality": sq,
         "strict_breaches": strict_breaches,
         "exit_code": exit_code,
         "_warnings": warnings,
@@ -794,6 +918,15 @@ def render_human(result: dict[str, Any], quiet: bool) -> None:
         print(f"  consolidate: {len(ov['pairs'])} near-duplicate detection pair(s) — "
               f"review/merge rather than authoring net-new (see Section 5)")
 
+    # SIGNAL QUALITY
+    sq = result["signal_quality"]
+    print()
+    print("── SIGNAL QUALITY ──")
+    print(f"Stitched chains: {sq['stitched_chains']} · HQ signals: {sq['hq_signals']}/"
+          f"{sq['step_detections']} ({sq['hq_share']:.1%}) · marker-only steps: "
+          f"{sq['marker_only_steps']}/{sq['steps']} ({sq['marker_only_share']:.1%}) · "
+          f"indicators: {sq['indicators']} in {sq['scenarios_with_indicators']} scenario(s)")
+
     # SUMMARY
     n_breach = len(result["strict_breaches"])
     n_warn = len(warns) + n_breach
@@ -821,6 +954,12 @@ def main() -> int:
     ap.add_argument("--name-similarity", type=float, default=0.60,
                     help="Jaccard threshold on name tokens for the overlap finder")
     ap.add_argument("--top", type=int, default=15, help="max rows in the author-next list")
+    ap.add_argument("--hq-signal-floor", type=int, default=0,
+                    help="min high-quality signals (stitched-chain, non-marker step-detections)")
+    ap.add_argument("--stitched-chain-floor", type=int, default=0,
+                    help="min stitched chains (Unit 42-sourced, >=2 legs, with indicators)")
+    ap.add_argument("--marker-only-ceiling", type=float, default=1.0,
+                    help="max share of steps whose command is marker-only")
     ap.add_argument("--scenarios-dir", default=str(REPO_ROOT / "scenarios"),
                     help="override the scenarios directory")
     ap.add_argument("--ttps-dir", default=str(ROOT / "ttps"),
@@ -845,6 +984,9 @@ def main() -> int:
         "name_similarity": args.name_similarity,
         "top": args.top,
         "strict": args.strict,
+        "hq_signal_floor": args.hq_signal_floor,
+        "stitched_chain_floor": args.stitched_chain_floor,
+        "marker_only_ceiling": args.marker_only_ceiling,
     }
 
     result = compute_report(args.scenarios_dir, args.ttps_dir, cfg)

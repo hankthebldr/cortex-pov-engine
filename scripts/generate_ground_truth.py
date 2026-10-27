@@ -500,6 +500,7 @@ def build() -> dict[str, Any]:
             "mitre_distinct_base_techniques": coverage["mitre"]["distinct_base_techniques"],
             "methodology_family_counts": coverage["methodology"]["counts"],
         },
+        "signal_quality": coverage["signal_quality"],
         "adapters": adapters,
         "assertions": {
             "artifacts_total": (boot_assertions["loaded"] if boot_assertions
@@ -591,6 +592,17 @@ def render_markdown(doc: dict[str, Any]) -> str:
         for plane, n in sorted(c["scenarios_per_plane"].items()):
             lines.append(f"| {plane} | {n} |")
         lines.append("")
+    sq = doc["signal_quality"]
+    lines.append("### Signal quality")
+    lines.append("")
+    lines.append("| Metric | Value |")
+    lines.append("|---|---:|")
+    lines.append(f"| Stitched chains | {sq['stitched_chains']} |")
+    lines.append(f"| High-quality signals (stitched, non-marker step-detections) | {sq['hq_signals']}/{sq['step_detections']} ({sq['hq_share']:.1%}) |")
+    lines.append(f"| Marker-only steps | {sq['marker_only_steps']}/{sq['steps']} ({sq['marker_only_share']:.1%}) |")
+    lines.append(f"| Scenarios with indicators | {sq['scenarios_with_indicators']} |")
+    lines.append(f"| Indicators | {sq['indicators']} |")
+    lines.append("")
     lines.append("### Step-detections by type")
     lines.append("")
     lines.append("| Type | Count |")
