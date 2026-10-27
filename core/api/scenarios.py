@@ -926,7 +926,8 @@ async def generate_bundle(
     Refusals: **409 CLUSTER_CONSENT_REQUIRED** (send the key),
     **403 CLUSTER_PRIVILEGE_DISABLED** (the deployment owner must set
     ``CORTEXSIM_ALLOW_PRIVILEGED_K8S``), **422 CLUSTER_CAPABILITY_FORBIDDEN** /
-    **CLUSTER_NAMESPACE_FORBIDDEN** (nothing unlocks these).
+    **CLUSTER_NAMESPACE_FORBIDDEN** (nothing unlocks these),
+    **409 PUSH_NOT_SUPPORTED** (the scenario declares ``push_supported: false``).
 
     ``bash`` and ``powershell`` are accepted for surface symmetry and are
     ungated — they are self-contained scripts a DC runs on a host they already

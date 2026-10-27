@@ -214,6 +214,15 @@ class TestPushSupportedFalse:
         assert body["code"] == "PUSH_NOT_SUPPORTED"
         assert "SIM-TEST-NOPUSH" in body["detail"]
 
+    def test_post_bundle_is_409_push_not_supported(self, env):
+        client, seed = env
+        seed("SIM-TEST-NOPUSH", [BOTH_STEP], push_supported=False)
+        r = client.post("/api/scenarios/SIM-TEST-NOPUSH/bundle", json={"format": "k8s"})
+        assert r.status_code == 409
+        body = r.json()["detail"]
+        assert set(body) == {"error", "code", "detail"}
+        assert body["code"] == "PUSH_NOT_SUPPORTED"
+
     def test_push_supported_true_is_unaffected(self, env):
         client, seed = env
         seed("SIM-TEST-PUSH", [BOTH_STEP], push_supported=True)

@@ -104,10 +104,10 @@ def _push_unsupported(doc: dict[str, Any]) -> bool:
     return doc.get("push_supported") is False
 
 
-def _skip_if_push_unsupported(doc: dict[str, Any]) -> None:
+def _skip_if_push_unsupported(doc: dict[str, Any], label: str = "scenario") -> None:
     """Skip (never pass) a scenario that offers no push bundle by declaration."""
     if _push_unsupported(doc):
-        pytest.skip("push_supported: false")
+        pytest.skip(f"{label}: push_supported: false")
 
 
 def _orphans(docs: dict[str, dict[str, Any]]) -> list[str]:
@@ -143,7 +143,7 @@ def _honour_push_supported(request):
     callspec = getattr(request.node, "callspec", None)
     path = callspec.params.get("path") if callspec else None
     if isinstance(path, pathlib.Path):
-        _skip_if_push_unsupported(_load_scenario(path))
+        _skip_if_push_unsupported(_load_scenario(path), _label(path))
     yield
 
 
@@ -196,8 +196,8 @@ def test_push_supported_true_without_an_emittable_target_still_fails():
 
 def test_push_supported_false_is_skipped_not_passed():
     """Declared-unsupported scenarios must register as SKIPPED, never as a pass."""
-    with pytest.raises(pytest.skip.Exception, match="push_supported: false"):
-        _skip_if_push_unsupported({"push_supported": False})
+    with pytest.raises(pytest.skip.Exception, match="SIM-X-1: push_supported: false"):
+        _skip_if_push_unsupported({"push_supported": False}, "SIM-X-1")
     _skip_if_push_unsupported({"push_supported": True})  # no raise
     _skip_if_push_unsupported({})  # silent: not exempt
 
