@@ -102,3 +102,18 @@ def test_schema_accepts_source_url_rejects_sauce_url():
     base = {"ioc_type": "domain", "value": "evil.example"}
     assert not list(v.iter_errors({**base, "source_url": "https://unit42.paloaltonetworks.com/x/"}))
     assert list(v.iter_errors({**base, "sauce_url": "https://unit42.paloaltonetworks.com/x/"}))
+
+
+# ── Final review M5: the GitHub org prefix compares case-insensitively ──────────
+def test_github_prefix_is_case_insensitive():
+    for url in ("https://github.com/paloaltonetworks/Unit42-timely-threat-intel/x.txt",
+                "https://GitHub.com/PALOALTONETWORKS/Unit42-timely-threat-intel/x.txt",
+                "https://github.com/PaloAltoNetworks/Unit42-timely-threat-intel/x.txt"):
+        r = _run([{"ioc_type": "domain", "value": "evil.example", "source_url": url}], UNIT42_REFS)
+        assert not r.errs, url
+
+
+def test_github_prefix_still_rejects_other_orgs():
+    r = _run([{"ioc_type": "domain", "value": "evil.example",
+               "source_url": "https://github.com/paloaltonetworks-fake/x.txt"}], UNIT42_REFS)
+    assert len(r.errs) == 1

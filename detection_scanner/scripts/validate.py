@@ -367,7 +367,8 @@ def check_ioc_provenance(report, rel, detections, references, ttp_id=None):
         if url is not None:
             parsed = urlparse(url)
             unit42_ok = parsed.scheme == "https" and parsed.hostname == IOC_SOURCE_HOST
-            if not unit42_ok and not url.startswith(IOC_SOURCE_GH_PREFIX):
+            # Case-insensitive, like scenario_loader.SOURCE_URL_HOSTS and the lint hook.
+            if not unit42_ok and not url.lower().startswith(IOC_SOURCE_GH_PREFIX.lower()):
                 report.err(rel, f"{loc}.source_url {url!r} must be https on {IOC_SOURCE_HOST} "
                                 f"or start with {IOC_SOURCE_GH_PREFIX}")
         if "safe_form" in ioc and ioc["safe_form"] not in IOC_SAFE_FORMS:
