@@ -129,3 +129,67 @@ def test_migration_adds_indicators_column():
         _migrate_scenarios_columns(c)
         cols = {col["name"] for col in inspect(c).get_columns("scenarios")}
     assert "indicators" in cols
+
+
+# ── Fix round 1 ────────────────────────────────────────────────────────────
+from engine.scenario_loader import CleanupSchema
+
+
+def _s25(lines):
+    return any(l.startswith("S-25") for l in lines)
+
+
+def test_platform_variants_are_scanned():
+    st = _step("id")
+    st["platform_variants"] = {"windows": "iwr https://rn-stage.example/"}
+    lines = unsafe_indicator_lines([IndicatorSchema(**_ind())], [StepSchema(**st)])
+    assert _s25(lines) and any("platform_variants[windows]" in l for l in lines)
+
+
+def test_cleanup_commands_are_scanned():
+    ind = IndicatorSchema(**_ind())
+    lines = unsafe_indicator_lines([ind], [StepSchema(**_step("id"))],
+                                   CleanupSchema(commands=["curl https://rn-stage.example/x"]))
+    assert _s25(lines) and any("cleanup" in l for l in lines)
+    h = "c" * 64
+    hind = IndicatorSchema(**_ind(type="sha256", value=h, safe_form="hash_only"))
+    lines = unsafe_indicator_lines([hind], [StepSchema(**_step("id"))],
+                                   CleanupSchema(commands=[f"wget https://x/{h}"]))
+    assert any(l.startswith("S-26") and "cleanup" in l for l in lines)
+
+
+def test_scenario_validator_scans_cleanup():
+    with pytest.raises(ValueError, match="S-25"):
+        _scenario(indicators=[_ind()], steps=[_step("dig +short rn-stage.example")],
+                  cleanup={"commands": ["curl https://rn-stage.example/x"]})
+
+
+def test_subdomains_fire_but_hyphen_prefixed_lookalikes_do_not():
+    ind = [IndicatorSchema(**_ind())]
+    assert _s25(unsafe_indicator_lines(ind, [StepSchema(**_step("curl https://www.rn-stage.example/"))]))
+    assert unsafe_indicator_lines(ind, [StepSchema(**_step("curl https://x-rn-stage.example/"))]) == []
+
+
+@pytest.mark.parametrize("cmd", [
+    "dig +short rn-stage.example; nc rn-stage.example 443",
+    "host rn-stage.example && ssh rn-stage.example",
+    "dig +short rn-stage.example; ping rn-stage.example",
+    "dig +short rn-stage.example || ping rn-stage.example",
+    "dig +short rn-stage.example | nc rn-stage.example 443",
+    "dig +short $(nc rn-stage.example 1) rn-stage.example",
+    "dig +short `nc rn-stage.example 1` rn-stage.example",
+])
+def test_lookup_line_with_chaining_is_not_exempt(cmd):
+    assert _s25(unsafe_indicator_lines([IndicatorSchema(**_ind())], [StepSchema(**_step(cmd))]))
+
+
+def test_id_must_be_exactly_two_digits_and_unique():
+    with pytest.raises(ValueError, match="S-22"):
+        IndicatorSchema(**_ind(id="ind-001"))
+    with pytest.raises(ValueError, match="S-22"):
+        _scenario(indicators=[_ind(), _ind()], steps=[_step("dig +short rn-stage.example")])
+
+
+def test_url_indicator_is_case_insensitive():
+    ind = IndicatorSchema(**_ind(type="url", value="https://rn-stage.example/s2", safe_form="log_field"))
+    assert _s25(unsafe_indicator_lines([ind], [StepSchema(**_step("curl HTTPS://RN-STAGE.EXAMPLE/s2"))]))

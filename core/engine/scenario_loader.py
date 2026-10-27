@@ -167,7 +167,7 @@ _SAFE_FORMS_BY_TYPE: dict[str, frozenset[str]] = {
     "ja3": frozenset({"log_field"}),
     "ja4": frozenset({"log_field"}),
 }
-_INDICATOR_ID_RE = re.compile(r"^ind-\d{2,}$")
+_INDICATOR_ID_RE = re.compile(r"^ind-\d{2}$")
 _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
 _IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
@@ -238,7 +238,7 @@ class IndicatorSchema(BaseModel):
             if "[" in v or "]" in v or not _DOMAIN_RE.match(v.lower()):
                 bad = "is not a plain, un-defanged FQDN"
         elif self.type == "url":
-            if not v.startswith(("http://", "https://")) or "hxxp" in v.lower():
+            if not v.lower().startswith(("http://", "https://")) or "hxxp" in v.lower():
                 bad = "must start http:// or https:// and be un-defanged"
         if bad:
             raise ValueError(f"S-22: indicator {self.id} value {v!r} {bad}")
@@ -254,7 +254,6 @@ class IndicatorSchema(BaseModel):
                 f"S-27: indicator {self.id} safe_form {self.safe_form!r} is not valid for type "
                 f"{self.type!r} (allowed: {sorted(_SAFE_FORMS_BY_TYPE[self.type])})")
         return self
-
 
 
 class StepCausalitySchema(BaseModel):
@@ -586,52 +585,71 @@ def validate_causality_spine(steps: list[Any]) -> None:
         )
 
 
-def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSchema]) -> list[str]:
-    """S-25 / S-26: where an indicator may and may not appear in a step command.
+_SHELL_CHAIN_RE = re.compile(r";|&&|\|\||\||\$\(|`")
 
-    S-25 — a domain/url/ipv4/ipv6 value may appear only on a DNS-lookup line
-    (``DNS_LOOKUP_RE`` and no fetch verb) or inside a heredoc *under a
-    ``params:`` key* (data handed to an emitter, never executed). Anywhere else
-    it could become a live connection to attacker infrastructure.
-    S-26 — a hash value may not share a line with a fetch verb (``curl <hash>``
-    is a download of the sample, ``sha256sum -c`` is not).
+
+def _scan_command(label: str, command: str, indicators: list[IndicatorSchema]) -> list[str]:
+    out: list[str] = []
+    heredoc: Optional[str] = None
+    params_indent: Optional[int] = None
+    for n, line in enumerate((command or "").split("\n"), start=1):
+        exempt = False
+        if heredoc is not None:
+            if line.strip() == heredoc:
+                heredoc, params_indent = None, None
+                continue
+            stripped = line.strip()
+            indent = len(line) - len(line.lstrip())
+            if params_indent is not None and stripped and indent <= params_indent:
+                params_indent = None
+            if params_indent is None and re.fullmatch(r"params:\s*", stripped):
+                params_indent = indent
+            elif params_indent is not None:
+                exempt = True
+        else:
+            m = _HEREDOC_RE.search(line)
+            if m:
+                heredoc = m.group(1)
+            # A lookup line is exempt only when it is a bare lookup: no fetch
+            # verb and no chaining/substitution that could add a connection.
+            exempt = (bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
+                      and not _SHELL_CHAIN_RE.search(line))
+        for ind in indicators:
+            if ind.type in _HASH_TYPES:
+                if re.search(re.escape(ind.value), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
+                    out.append(f"S-26: {label} line {n}: hash {ind.id} on a fetch line: {line.strip()[:120]}")
+            elif ind.type in ("domain", "url", "ipv4", "ipv6") and not exempt:
+                # A domain may follow a '.' (subdomain of the indicator); nothing
+                # else may be glued to the front of any value.
+                behind = r"(?<![A-Za-z0-9_-])" if ind.type == "domain" else r"(?<![A-Za-z0-9_.-])"
+                pat = behind + re.escape(ind.value) + r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
+                if re.search(pat, line, re.IGNORECASE):
+                    out.append(
+                        f"S-25: {label} line {n}: {ind.type} {ind.id} outside a DNS-lookup "
+                        f"line or params: block: {line.strip()[:120]}")
+    return out
+
+
+def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSchema],
+                           cleanup: Optional["CleanupSchema"] = None) -> list[str]:
+    """S-25 / S-26: where an indicator may and may not appear in an executed command.
+
+    Scans every step ``command``, every ``platform_variants`` command and
+    ``cleanup.commands``.
+    S-25 — a domain/url/ipv4/ipv6 value may appear only on a bare DNS-lookup
+    line (``DNS_LOOKUP_RE``, no fetch verb, no ``; && || | $( ```) or inside a
+    heredoc under a ``params:`` key (data handed to an emitter, never executed).
+    S-26 — a hash value may not share a line with a fetch verb.
     Pure; one human line per violation.
     """
     out: list[str] = []
     for step in steps:
-        heredoc: Optional[str] = None
-        params_indent: Optional[int] = None
-        for n, line in enumerate((step.command or "").split("\n"), start=1):
-            exempt = False
-            if heredoc is not None:
-                if line.strip() == heredoc:
-                    heredoc, params_indent = None, None
-                    continue
-                stripped = line.strip()
-                indent = len(line) - len(line.lstrip())
-                if params_indent is not None and stripped and indent <= params_indent:
-                    params_indent = None
-                if params_indent is None and re.fullmatch(r"params:\s*", stripped):
-                    params_indent = indent
-                elif params_indent is not None:
-                    exempt = True
-            else:
-                m = _HEREDOC_RE.search(line)
-                if m:
-                    heredoc = m.group(1)
-                exempt = bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
-            for ind in indicators:
-                if ind.type in _HASH_TYPES:
-                    if re.search(re.escape(ind.value), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
-                        out.append(
-                            f"S-26: step {step.id} line {n}: hash {ind.id} on a fetch line: {line.strip()[:120]}")
-                elif ind.type in ("domain", "url", "ipv4", "ipv6") and not exempt:
-                    pat = (r"(?<![A-Za-z0-9_.-])" + re.escape(ind.value) +
-                           r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])")
-                    if re.search(pat, line, re.IGNORECASE if ind.type == "domain" else 0):
-                        out.append(
-                            f"S-25: step {step.id} line {n}: {ind.type} {ind.id} outside a DNS-lookup "
-                            f"line or params: block: {line.strip()[:120]}")
+        out += _scan_command(f"step {step.id}", step.command, indicators)
+        for os_name, cmd in (step.platform_variants or {}).items():
+            out += _scan_command(f"step {step.id} platform_variants[{os_name}]", cmd, indicators)
+    if cleanup is not None:
+        for cmd in cleanup.commands or []:
+            out += _scan_command("cleanup", cmd, indicators)
     return out
 
 
@@ -839,7 +857,11 @@ class ScenarioSchema(BaseModel):
             missing = [x for x in ind.surfaces_in if x not in step_ids]
             if missing:
                 raise ValueError(f"S-24: indicator {ind.id} surfaces_in names unknown step(s) {missing}")
-        lines = unsafe_indicator_lines(self.indicators, self.steps)
+        ids = [i.id for i in self.indicators]
+        dupes = sorted({x for x in ids if ids.count(x) > 1})
+        if dupes:
+            raise ValueError(f"S-22: duplicate indicator id(s) {dupes}")
+        lines = unsafe_indicator_lines(self.indicators, self.steps, self.cleanup)
         if lines:
             raise ValueError("\n".join(lines))
         return self
