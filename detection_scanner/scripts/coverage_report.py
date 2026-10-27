@@ -180,7 +180,9 @@ LEG_MAP: dict[str, str] = {
     "AIRS": "cloud-identity",
 }
 
-_MARKER_LINE_RE = re.compile(r"^\s*(echo|printf|Write-Host|Write-Output|:|true|#)\b|^\s*$")
+_MARKER_LINE_RE = re.compile(
+    r"^\s*(echo|printf|Write-Host|Write-Output|true)\b|^\s*[:#](?=\s|$)|^\s*$"
+)
 _LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
 _UNIT42_HOST = "unit42.paloaltonetworks.com"
 
@@ -211,7 +213,7 @@ def is_marker_only_step(step: dict[str, Any]) -> bool:
         return True
     if "scripts.eal_simulator.cli" in cmd or "cortexsim-eal" in cmd:
         return False
-    for line in re.split(r"\n|\|\|", cmd):
+    for line in re.split(r"\n|;|&&|\|\||\|", cmd):
         if _MARKER_LINE_RE.match(line) or _LOCAL_CURL_RE.search(line):
             continue
         return False

@@ -131,3 +131,14 @@ def test_floor_breach_exits_1(module, tmp_path):
     assert r["exit_code"] == 1
     warn = module.compute_report(sdir, tdir, {"hq_signal_floor": 4})
     assert warn["exit_code"] == 0
+
+
+@pytest.mark.parametrize("cmd,expected", [
+    ("echo m; dig +short x.example", False),
+    (": nothing", True),
+    ("echo m && echo n", True),
+    ("echo p | bash", False),
+    ("echo m; curl -s http://127.0.0.1:8080/ || true", True),
+])
+def test_marker_only_canonical_vectors(module, cmd, expected):
+    assert module.is_marker_only_step({"command": cmd}) is expected
