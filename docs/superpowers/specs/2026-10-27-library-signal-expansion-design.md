@@ -290,8 +290,9 @@ Per-chain requirements (the content reviewer checks every line):
   is still set to the measured value and the shortfall is reported, not hidden.
 - **DNS lookup of a real published domain — provisional ruling, flagged to the
   operator.** `safe_form: dns_lookup` sends one query through the resolver the
-  operator names (`@${LAB_RESOLVER}`; the lookup line must carry the `@` argument and
-  the scenario header must state it); no session is ever opened. The query may still
+  operator names (`@${LAB_RESOLVER}` for `dig`, or the positional resolver argument
+  for `nslookup` on Windows; the lookup line must name the resolver and the scenario
+  header must state it); no session is ever opened. The query may still
   reach the actor's authoritative nameserver when the domain is live, which exposes
   the resolver's address and nothing else. Chains that do this carry the tag
   `real-ioc-dns-lookup` so they can be found and switched to `log_field`-only in one
