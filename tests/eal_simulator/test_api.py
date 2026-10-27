@@ -583,7 +583,7 @@ class TestDataStreamsDetectorRows:
     def test_data_streams_surfaces_detector_bindings(self, api_client: TestClient):
         data = api_client.get("/api/eal/data-streams").json()
         assert data["detector_counts"]["documented"] == 11
-        assert data["detector_counts"]["undocumented"] == 4
+        assert data["detector_counts"]["undocumented"] == 5  # 2026-10-27: +ngfw_threat_emitter
         assert data["detector_counts"]["alerts_transcribed"] == 8
         refs = {d["alert_ref"] for d in data["detectors"] if d["documented"]}
         assert "port-scan" in refs
@@ -593,6 +593,7 @@ class TestDataStreamsDetectorRows:
         und = [d for d in data["detectors"] if not d["documented"]]
         assert {d["emitter"] for d in und} == {
             "duo_auth_emitter", "third_party_alert_emitter",
+            "ngfw_threat_emitter",  # 2026-10-27
         }
         for row in und:
             assert row["undocumented_reason"]

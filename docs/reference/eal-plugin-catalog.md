@@ -247,7 +247,7 @@ emitted by the executor itself: `campaign_started`, `campaign_refused`,
 
 ---
 
-## 2. Plugin catalog (all 14 plugins in the table below; `ngfw_threat_emitter` brings the registry to 27)
+## 2. Plugin catalog (partial: the table below lists 14 and `ngfw_threat_emitter`; the registry holds 27)
 
 Plugins fall into three implementation families:
 - **In-process HTTP emitters** (httpx): c2_http_beacon, bulk_https_exfil,
@@ -759,8 +759,6 @@ Events `agentic_egress_index_probe` (pypi only) + `agentic_egress_artifact_fetch
 > Minor bug: `_send_one` computes `sep = "&" if "?" in params.target_url else "?"`
 > but for non-pypi components `sep` is computed and unused (the index-probe is
 > the only consumer). Cosmetic (gap EAL-G13, low).
-
----
 
 ---
 

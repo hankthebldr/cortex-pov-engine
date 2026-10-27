@@ -206,3 +206,17 @@ class TestPluginRun:
             assert body["verdict"] == "malicious"
             assert body["dst_domain"] == "evil.example"
             assert body["dataset"] == "panw_ngfw_threat_raw"
+
+
+class TestManifestAndWhitelist:
+    def test_manifest_declares_one_detector(self):
+        dets = NgfwThreatEmitter.analytics_manifest()["detectors"]
+        assert len(dets) == 1
+        assert dets[0]["alert"] == "WildFire malicious verdict on downloaded file"
+
+    def test_block_with_unknown_kwarg_still_refused(self):
+        with pytest.raises(ValueError, match=_BLOCK_MSG):
+            _params(action="block", bogus_field="x")
+
+    def test_unknown_kwarg_never_changes_action(self):
+        assert _params(bogus_field="block").action == "alert"

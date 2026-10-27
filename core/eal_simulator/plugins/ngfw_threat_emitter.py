@@ -16,7 +16,8 @@ firewall stopped something.
 
 The plugin implements only ``build_events``; the shared driver
 (``AnalyticsLogEmitter``) owns transport, authorisation, dry-run, budget and
-result aggregation. It ships no negative control.
+result aggregation. It ships no negative control and declares no
+``CANARY_FIELDS``: only the top-level canary field is planted.
 """
 
 from __future__ import annotations
@@ -161,6 +162,21 @@ class NgfwThreatEmitter(AnalyticsLogEmitter):
         name = "ngfw_threat_emitter"
         data_sources = ["pan_firewall_threat_logs"]
         datasets = [_DATASET]
+        detectors = [
+            {
+                "alert": "WildFire malicious verdict on downloaded file",
+                "undocumented_reason": (
+                    "The vendor analytics catalogue lists the PAN-OS threat-log "
+                    "source but no WildFire-verdict alert; this emits the record "
+                    "a custom BIOC / correlation rule on subtype=wildfire would "
+                    "key on, not a documented Analytics detector."
+                ),
+                "dataset": _DATASET,
+                "key_fields": ["filedigest", "verdict", "subtype"],
+                "predicate": "subtype=wildfire AND verdict=malicious",
+                "mitre": "T1204.002",
+            },
+        ]
         version = "1.0.0"
         description = (
             "Emits a shape-true PAN-OS NGFW THREAT (WildFire verdict) log "
