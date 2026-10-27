@@ -1,0 +1,182 @@
+title: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer \u2014 Developer Workstation EDR + NGFW Stitch (T1204.002 / T1555.001) \u2014 MP-027 Python Writes init py Into the Home Public Folder"
+id: ttp-2026-0186-bioc-01
+status: experimental
+description: |
+  A Python interpreter creates __init__.py inside the user's home Public folder: the drop path of the Slow Pisces YAML deserialisation payload that stages RN Loader.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter actor_process_image_name contains "python"
+    | filter action_file_path ~= "/(home|Users)/[^/]+/Public/__init__\.py$"
+    | fields _time, agent_hostname, actor_effective_username, actor_process_image_name, actor_process_command_line, action_file_path, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.006
+    - attack.t1140
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer \u2014 Developer Workstation EDR + NGFW Stitch (T1204.002 / T1555.001) \u2014 MP-027 dockerd Launched From a Temp Path by a Python Interpreter"
+id: ttp-2026-0186-bioc-02
+status: experimental
+description: |
+  A process image named dockerd starts outside its install path with a Python interpreter as its parent and docker-init as its argument: RN Loader command 3 masquerading as the Docker daemon.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "dockerd"
+    | filter actor_process_image_name contains "python"
+    | filter action_process_image_path not in ("/usr/bin/dockerd", "/usr/local/bin/dockerd", "/Applications/Docker.app/Contents/Resources/bin/dockerd")
+    | filter action_process_image_command_line contains "docker-init"
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_path, action_process_image_command_line, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.005
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer \u2014 Developer Workstation EDR + NGFW Stitch (T1204.002 / T1555.001) \u2014 MP-027 Python Opens Keychain SSH Key and Cloud CLI Credential Files"
+id: ttp-2026-0186-bioc-03
+status: experimental
+description: |
+  One Python process opens the login keychain, SSH private keys and AWS, Kubernetes or gcloud credential files within a short window: the RN Stealer collection set.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN
+    | filter actor_process_image_name contains "python"
+    | filter action_file_path contains "login.keychain-db" or action_file_path contains "login.keyring" or action_file_path contains "/.ssh/id_" or action_file_path contains "/.aws/credentials" or action_file_path contains "/.kube/config" or action_file_path contains "/gcloud/"
+    | comp count_distinct(action_file_path) as cred_paths by agent_hostname, actor_process_instance_id, causality_actor_process_image_name
+    | filter cred_paths >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1555/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1555.001
+    - attack.t1552.004
+    - attack.t1552.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer \u2014 Developer Workstation EDR + NGFW Stitch (T1204.002 / T1555.001) \u2014 MP-027 Self-Deleting Python Script Executed From the Home Public Folder"
+id: ttp-2026-0186-abioc-04
+status: experimental
+description: |
+  A Python child process runs ~/Public/__init__.py and deletes that file seconds after starting: RN Loader moving to memory. Anchored on the coding-challenge python3 causality chain.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_REMOVE
+    | filter actor_process_image_name contains "python"
+    | filter action_file_path ~= "/Public/__init__\.py$"
+    | filter actor_process_command_line contains "/Public/__init__.py"
+    | fields _time, agent_hostname, actor_process_instance_id, causality_actor_process_image_name, causality_actor_process_command_line, action_file_path
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.004
+    - attack.t1059.006
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer \u2014 Developer Workstation EDR + NGFW Stitch (T1204.002 / T1555.001) \u2014 MP-027 Developer Project Python Polls One External Host at a Fixed Interval"
+id: ttp-2026-0186-abioc-05
+status: experimental
+description: |
+  A Python process descended from a cloned project posts to the same external host at a fixed interval, a destination that interpreter has never contacted before: RN Loader polling for commands.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT
+    | filter actor_process_image_name contains "python"
+    | comp count() as connects, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, actor_process_instance_id, action_remote_ip, action_remote_port
+    | filter connects >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+    - attack.t1082
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer \u2014 Developer Workstation EDR + NGFW Stitch (T1204.002 / T1555.001) \u2014 MP-027 NGFW Recurring Rare-Domain Communications From a Developer Workstation"
+id: ttp-2026-0186-abioc-06
+status: experimental
+description: |
+  NGFW EAL shows recurring small HTTPS sessions from one workstation to a domain rare across the fleet: the RN Loader command channel seen from the network.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "ssl" and dst_port = 443
+    | comp count() as sessions, avg(bytes_sent) as avg_sent, count_distinct(src) as hosts by endpoint_device_name, dst_hostname, dst
+    | filter sessions >= 5 and avg_sent < 8192
+    | fields endpoint_device_name, dst_hostname, dst, sessions, avg_sent
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

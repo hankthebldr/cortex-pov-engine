@@ -1,0 +1,207 @@
+title: "ChainDrop npm Worm \u2014 CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005) \u2014 MP-028 npm preinstall node setup.mjs spawns detached runtime with NODE_RUNTIME_INIT"
+id: ttp-2026-0187-bioc-01
+status: experimental
+description: |
+  npm runs a preinstall script whose node child executes setup.mjs and spawns a second JavaScript runtime (node or bun) on math_init.js with _NODE_RUNTIME_INIT=1 in its environment.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("npm", "npm-cli.js", "node")
+    | filter action_process_image_name in ("node", "bun")
+    | filter action_process_image_command_line contains "math_init.js" or action_process_image_command_line contains "Math_Symbol.js" or action_process_image_command_line contains "setup.mjs"
+    | fields agent_hostname, causality_actor_process_image_name, actor_process_image_command_line, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1195/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1195.002
+    - attack.t1059.007
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ChainDrop npm Worm \u2014 CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005) \u2014 MP-028 proc pid mem read of Runner.Worker process"
+id: ttp-2026-0187-bioc-02
+status: experimental
+description: |
+  A process that is not a debugger opens /proc/<pid>/maps and /proc/<pid>/mem where <pid> belongs to Runner.Worker — the CI memory scrape for OIDC tokens and masked secrets.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and action_file_path ~= "^/proc/[0-9]+/(mem|maps)$"
+    | filter actor_process_image_name not in ("gdb", "lldb", "strace")
+    | join type = inner (dataset = xdr_data | filter event_type = ENUM.PROCESS and action_process_image_name = "Runner.Worker" | alter target_pid = to_string(action_process_os_pid) | fields agent_hostname, target_pid) as rw rw.agent_hostname = agent_hostname
+    | filter action_file_path in (concat("/proc/", rw.target_pid, "/mem"), concat("/proc/", rw.target_pid, "/maps"))
+    | fields agent_hostname, actor_process_image_name, actor_process_image_command_line, action_file_path
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.007
+    - attack.t1528
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "ChainDrop npm Worm \u2014 CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005) \u2014 MP-028 npm lineage queries instance metadata token and IAM credentials endpoints"
+id: ttp-2026-0187-bioc-03
+status: experimental
+description: |
+  A child process started under an npm or node causality actor carries a metadata token PUT (/latest/api/token) or an iam/security-credentials GET in its command line. Keyed on the child's command-line URI and the lineage, so it fires whether the target is the real metadata address or a lab stand-in.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("npm", "node", "bun")
+    | filter action_process_image_command_line contains "/latest/api/token" or action_process_image_command_line contains "/latest/meta-data/iam/security-credentials"
+    | fields agent_hostname, causality_actor_process_image_name, actor_process_image_command_line, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ChainDrop npm Worm \u2014 CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005) \u2014 MP-028 vscode tasks folderOpen and claude SessionStart hook persistence written"
+id: ttp-2026-0187-bioc-04
+status: experimental
+description: |
+  A node-lineage process writes .vscode/tasks.json and .claude/settings.json whose commands launch node setup.mjs — the ChainDrop developer-tooling persistence pair.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_CREATE_NEW)
+    | filter action_file_path contains "/.vscode/tasks.json" or action_file_path contains "/.claude/settings.json" or action_file_path contains "/.vscode/setup.mjs" or action_file_path contains "/.claude/setup.mjs"
+    | comp count_distinct(action_file_path) as files by agent_hostname, causality_actor_process_image_name
+    | filter files >= 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1546/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1546
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ChainDrop npm Worm \u2014 CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005) \u2014 MP-028 encrypted bundle POST to router URI from CI lineage"
+id: ttp-2026-0187-bioc-05
+status: experimental
+description: |
+  openssl pkeyutl with RSA-OAEP-SHA256 wraps a key, then a CI-lineage process POSTs an octet-stream body to a /router URI.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS
+    | filter (action_process_image_name = "openssl" and action_process_image_command_line contains "rsa_padding_mode:oaep") or (action_process_image_command_line contains "/router" and action_process_image_command_line contains "--data-binary")
+    | comp count_distinct(action_process_image_name) as stages by agent_hostname, causality_actor_process_image_name
+    | filter stages >= 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1041/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1041
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "ChainDrop npm Worm \u2014 CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005) \u2014 MP-028 CI runner large HTTPS upload to a rare domain"
+id: ttp-2026-0187-abioc-06
+status: experimental
+description: |
+  NGFW EAL behavioural alert: a CI runner opens a first-seen HTTPS session and then a large outbound upload to a fleet-rare domain (awqhnjewqjkl.icu in this chain).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("ssl", "web-browsing") and dst_hostname != null
+    | comp sum(bytes_sent) as sent, count() as sessions by src, endpoint_device_name, dst_hostname
+    | filter sent >= 104857600
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1041/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1041
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "ChainDrop npm Worm \u2014 CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005) \u2014 MP-028 STS AssumeRole from a CI runner address after metadata harvest"
+id: ttp-2026-0187-abioc-07
+status: experimental
+description: |
+  A caller identity calls sts:AssumeRole from a first-seen runner address (no prior STS call by that identity from that address in the history window) — a CI runner which, minutes earlier, read the metadata token endpoint.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = cloud_audit_logs
+    | filter eventName = "AssumeRole" and eventSource = "sts.amazonaws.com"
+    | alter caller_ip = sourceIPAddress, role_arn = userIdentity.arn
+    | join type = left (dataset = cloud_audit_logs | filter _time < to_timestamp(current_time() - 3600) and eventSource = "sts.amazonaws.com" | comp count() as prior_calls by userIdentity.arn, sourceIPAddress | alter hist_arn = userIdentity.arn, hist_ip = sourceIPAddress | fields hist_arn, hist_ip, prior_calls) as hist hist.hist_arn = role_arn and hist.hist_ip = caller_ip
+    | filter prior_calls = null
+    | comp count() as calls by role_arn, caller_ip
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1078/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1078.004
+    - attack.t1552.005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

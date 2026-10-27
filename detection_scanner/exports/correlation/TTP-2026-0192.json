@@ -1,0 +1,27 @@
+{
+  "mitre_techniques": [
+    "T1110.001",
+    "T1068",
+    "T1556.003",
+    "T1036.005",
+    "T1205",
+    "T1095",
+    "T1071.004",
+    "T1572",
+    "T1021.004",
+    "T1105",
+    "T1070.002",
+    "T1070.003",
+    "T1070.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-033 DirtyCoW firefart Account Created and Removed) AND BIOC(MP-033 pam_unix.so Written Outside the Package Manager) AND (BIOC(MP-033 Kernel-Thread-Named Process Restarted by a Watchdog Script) OR ABIOC(MP-033 GTP-C Port 2123 Listener Opened by a Non-Core Process)) AND (IOC(file-sha256 dnsd_el5) OR XQL(MP-033 CL-STA-0969 Toolkit sha256s Landed in panw_ngfw_threat_raw)) AND (BIOC(MP-033 Reverse SSH Tunnel to Remote Port 53) OR ABIOC(MP-033 NGFW Rare SSH Session from the Telecom Host)) joined on agent_hostname = endpoint_device_name (src_host) within 3600 seconds -> ONE incident",
+      "name": "CL-STA-0969 Telecom Intrusion \u2014 Endpoint + NGFW on src_host",
+      "rule_id": "CR-MP-0033",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0192"
+}

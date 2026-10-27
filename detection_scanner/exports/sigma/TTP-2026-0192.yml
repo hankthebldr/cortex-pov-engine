@@ -1,0 +1,268 @@
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 SSH Client Fan-Out Across Default Accounts to One Host"
+id: ttp-2026-0192-bioc-01
+status: experimental
+description: |
+  One causality starts the ssh client against one destination with four or more distinct account names in a short window — dictionary attempts with built-in account names.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter lowercase(action_process_image_name) = "ssh"
+    | alter target = arrayindex(regextract(action_process_image_command_line, "([A-Za-z0-9._-]+)@([A-Za-z0-9._:-]+)"), 0)
+    | alter acct = arrayindex(split(target, "@"), 0), dest = arrayindex(split(target, "@"), 1)
+    | filter acct != null
+    | comp count_distinct(acct) as accounts, count() as attempts by agent_hostname, causality_actor_process_instance_id, dest
+    | filter accounts >= 4
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 DirtyCoW firefart Account Created and Removed"
+id: ttp-2026-0192-bioc-02
+status: experimental
+description: |
+  An account named firefart — the fixed username the public DirtyCoW exploit writes — is created or removed, or appears in an /etc/passwd write.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and lowercase(action_process_image_name) in ("useradd", "userdel", "adduser", "deluser", "usermod") and lowercase(action_process_image_command_line) contains "firefart") or (event_type = ENUM.FILE and action_file_path = "/etc/passwd" and lowercase(causality_actor_process_command_line) contains "firefart")
+    | fields _time, agent_hostname, actor_effective_username, action_process_image_name, action_process_image_command_line, causality_actor_process_instance_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1068/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1068
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 pam_unix.so Written Outside the Package Manager"
+id: ttp-2026-0192-bioc-03
+status: experimental
+description: |
+  A file named pam_unix.so (or pam_unix2.so) is written by a process that is not dpkg/rpm/apt/yum/dnf, optionally with /usr/bin/.dbus.log created in the same causality — AuthDoor PAM replacement and its credential log.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE, ENUM.FILE_RENAME)
+    | filter lowercase(action_file_name) in ("pam_unix.so", "pam_unix2.so", ".dbus.log")
+    | filter lowercase(actor_process_image_name) not in ("dpkg", "rpm", "apt", "apt-get", "yum", "dnf", "zypper", "unattended-upgr")
+    | comp count_distinct(action_file_name) as names, values(action_file_path) as paths by agent_hostname, causality_actor_process_instance_id
+    | filter names >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1556/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1556.003
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 Kernel-Thread-Named Process Restarted by a Watchdog Script"
+id: ttp-2026-0192-bioc-04
+status: experimental
+description: |
+  A user-space process whose command line begins with a bracketed kernel-thread name is started by a shell rather than kthreadd — the [kpqd] / [watchdog/1] masquerade kept alive by watchdogdd.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line ~= "^\[[a-z0-9_/:-]+\]"
+    | filter lowercase(actor_process_image_name) in ("bash", "sh", "dash", "zsh", "python3", "perl")
+    | fields _time, agent_hostname, action_process_image_path, action_process_image_command_line, actor_process_command_line, causality_actor_process_instance_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 Fixed-Pattern ICMP Echo and GTP-Node DNS Trigger from One Causality"
+id: ttp-2026-0192-bioc-05
+status: experimental
+description: |
+  ping is run with a small payload size and a fill pattern (-s/-p), and the same causality queries a .node GTP-node name (pgw-s5s8.mpgw001.node) — EchoBackdoor-sized ICMP chunks plus the NoDepDNS trigger question.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | alter is_ping = if(lowercase(action_process_image_name) = "ping" and action_process_image_command_line contains " -p " and action_process_image_command_line contains " -s ", 1, 0)
+    | alter is_trigger = if(lowercase(action_process_image_command_line) contains ".mpgw" or lowercase(action_process_image_command_line) ~= "pgw-[a-z0-9-]+\.[a-z0-9.-]+\.node", 1, 0)
+    | comp sum(is_ping) as pings, sum(is_trigger) as triggers by agent_hostname, causality_actor_process_instance_id
+    | filter pings >= 1 and triggers >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1095/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1095
+    - attack.t1071.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 Reverse SSH Tunnel to Remote Port 53"
+id: ttp-2026-0192-bioc-06
+status: experimental
+description: |
+  ssh is started with -R remote forwarding and -p 53 — a reverse tunnel carried in an SSH session to a DNS port (sshtun / autoreverse / dnsd).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter lowercase(action_process_image_name) = "ssh"
+    | filter action_process_image_command_line ~= "\s-R\s*[0-9]" and action_process_image_command_line ~= "\s-p\s*53(\s|$)"
+    | fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_instance_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1572/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1572
+    - attack.t1021.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 wtmp Rewritten via utmpdump With History Disabled and Timestomp"
+id: ttp-2026-0192-bioc-07
+status: experimental
+description: |
+  utmpdump -r runs in a causality that also runs touch -r (timestomp) — the login-record scrub and timestamp reset from the report.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | alter is_scrub = if(lowercase(action_process_image_name) = "utmpdump" and action_process_image_command_line contains "-r", 1, 0)
+    | alter is_stomp = if(lowercase(action_process_image_name) = "touch" and action_process_image_command_line ~= "\s-r\s", 1, 0)
+    | comp sum(is_scrub) as scrubs, sum(is_stomp) as stomps by agent_hostname, causality_actor_process_instance_id
+    | filter scrubs >= 1 and stomps >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.002
+    - attack.t1070.003
+    - attack.t1070.006
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 GTP-C Port 2123 Listener Opened by a Non-Core Process"
+id: ttp-2026-0192-abioc-08
+status: experimental
+description: |
+  A process outside the host's learned telecom-core baseline binds UDP 2123 (GTP-C) and receives traffic — the GTPDoor listener shape.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK
+    | filter action_local_port = 2123 and action_network_protocol = ENUM.UDP
+    | comp count() as events, values(actor_process_command_line) as cmd by agent_hostname, actor_process_image_name, causality_actor_process_instance_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1205/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1205
+    - attack.t1095
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels (T1556.003 / T1205 / T1572) \u2014 MP-033 NGFW Rare SSH Session from the Telecom Host"
+id: ttp-2026-0192-abioc-09
+status: experimental
+description: |
+  NGFW EAL behavioural alert: the endpoint (src_host) opens an SSH session to an uncommon external host. Preset destination — the report publishes no domain or IP; the record stitches on src_host.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "ssh" and dst_port = 22
+    | comp count() as sessions, count_distinct(dst) as dests by src, endpoint_device_name
+    | filter sessions >= 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.004
+    - attack.t1572
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

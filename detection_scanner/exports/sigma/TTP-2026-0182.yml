@@ -1,0 +1,181 @@
+title: "Squidoor (CL-STA-0049) Web Shell to Renamed-Debugger Backdoor with Multi-Protocol C2 \u2014 EDR + NGFW Stitch (T1505.003 / T1127 / T1071) \u2014 MP-023 Web Service Account Decodes ASPX Web Shell Into Webroot"
+id: ttp-2026-0182-bioc-01
+status: experimental
+description: |
+  A web-service account (www-data, or an IIS app-pool identity) writes .aspx files named like the CL-STA-0049 web shells after a base64 decode (base64 -d on Linux, certutil -decode on Windows).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter action_file_name in ("OutlookDC.aspx", "Error.aspx", "TimeoutAPI.aspx")
+    | filter actor_effective_username in ("www-data", "apache", "nginx") or actor_effective_username contains "IIS APPPOOL" or actor_process_image_name in ("base64", "certutil.exe", "cp", "powershell.exe")
+    | fields agent_hostname, actor_effective_username, actor_process_image_name, action_file_path, _time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1505/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1505.003
+    - attack.t1140
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Squidoor (CL-STA-0049) Web Shell to Renamed-Debugger Backdoor with Multi-Protocol C2 \u2014 EDR + NGFW Stitch (T1505.003 / T1127 / T1071) \u2014 MP-023 ASPX Web Shell Copied To Certificate Extension And Uploaded"
+id: ttp-2026-0182-bioc-02
+status: experimental
+description: |
+  A web-service account copies an .aspx script to a .crt/.cer file and uploads it with curl -T — the report's web-shell-as-certificate spread.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("cp", "curl")
+    | filter action_process_image_command_line contains ".aspx" or (action_process_image_command_line contains "-T" and action_process_image_command_line ~= "\.(crt|cer)")
+    | filter actor_effective_username in ("www-data", "apache", "nginx")
+    | fields agent_hostname, actor_effective_username, action_process_image_command_line, _time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.008
+    - attack.t1570
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Squidoor (CL-STA-0049) Web Shell to Renamed-Debugger Backdoor with Multi-Protocol C2 \u2014 EDR + NGFW Stitch (T1505.003 / T1127 / T1071) \u2014 MP-023 Renamed System Binary Fontdrvhost Executes Config Ini From ProgramData"
+id: ttp-2026-0182-bioc-03
+status: experimental
+description: |
+  A process named fontdrvhost runs from outside System32 (ProgramData-style path) with config.ini as its argument — the renamed-cdb Squidoor loader (renamed /bin/sh on the Linux path).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter lowercase(action_process_image_name) in ("fontdrvhost", "fontdrvhost.exe")
+    | filter lowercase(action_process_image_path) not contains "system32"
+    | filter action_process_image_command_line contains "config.ini"
+    | fields agent_hostname, actor_effective_username, action_process_image_path, action_process_image_command_line, action_process_image_sha256, _time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1127/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1127
+    - attack.t1036.005
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Squidoor (CL-STA-0049) Web Shell to Renamed-Debugger Backdoor with Multi-Protocol C2 \u2014 EDR + NGFW Stitch (T1505.003 / T1127 / T1071) \u2014 MP-023 EPolicyManager Persistence Launching Renamed Fontdrvhost"
+id: ttp-2026-0182-bioc-04
+status: experimental
+description: |
+  A persistence entry named EPolicyManager whose action launches fontdrvhost from a ProgramData-style path: schtasks /create under Microsoft\Windows\AppID, or a crontab @reboot entry written by a service account.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line contains "EPolicyManager" or (action_process_image_name = "crontab" and actor_effective_username in ("www-data", "apache", "nginx"))
+    | filter action_process_image_command_line contains "fontdrvhost" or action_process_image_name in ("crontab", "schtasks.exe")
+    | fields agent_hostname, actor_effective_username, action_process_image_name, action_process_image_command_line, _time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1053/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1053.005
+    - attack.t1053.003
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Squidoor (CL-STA-0049) Web Shell to Renamed-Debugger Backdoor with Multi-Protocol C2 \u2014 EDR + NGFW Stitch (T1505.003 / T1127 / T1071) \u2014 MP-023 Service Account Ping With Oversized Patterned ICMP Payload"
+id: ttp-2026-0182-bioc-05
+status: experimental
+description: |
+  A non-interactive service account runs ping with a large payload size and a custom fill pattern — the CIcmpTransChannel tunnel shape.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("ping", "ping.exe")
+    | filter action_process_image_command_line ~= "(-s|-l)\s+([5-9][0-9]{2}|[1-9][0-9]{3,})" or action_process_image_command_line contains " -p "
+    | filter actor_effective_username in ("www-data", "apache", "nginx") or actor_effective_username contains "IIS APPPOOL"
+    | fields agent_hostname, actor_effective_username, action_process_image_command_line, _time
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1095/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1095
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Squidoor (CL-STA-0049) Web Shell to Renamed-Debugger Backdoor with Multi-Protocol C2 \u2014 EDR + NGFW Stitch (T1505.003 / T1127 / T1071) \u2014 MP-023 Recurring Communications From Run Host To Rare CL-STA-0049 Domains"
+id: ttp-2026-0182-abioc-06
+status: experimental
+description: |
+  NGFW EAL abnormal recurring communications to a rare domain: a tight recurring ssl/443 burst from the run host to destinations the fleet has not contacted, here the published CL-STA-0049 domains/IPs. Behavioural deviation on the source host, enriched by the indicator match.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter log_source_type = "eal"
+    | filter dst_hostname in ("support.vmphere.com", "update.hobiter.com", "microsoft-beta.com") or dst in ("209.141.40.254", "104.244.72.123", "47.76.224.93")
+    | comp count() as sessions, avg(bytes_sent) as avg_bytes by src, endpoint_device_name, dst_hostname
+    | filter sessions >= 5
+    | fields src, endpoint_device_name, dst_hostname, sessions, avg_bytes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

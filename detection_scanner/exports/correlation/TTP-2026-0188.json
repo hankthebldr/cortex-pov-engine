@@ -1,0 +1,24 @@
+{
+  "mitre_techniques": [
+    "T1566.002",
+    "T1204.002",
+    "T1497.001",
+    "T1518.001",
+    "T1105",
+    "T1071.001",
+    "T1090",
+    "T1021.004",
+    "T1014",
+    "T1564.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-029 Archive-extracted executable runs beside a zero-byte pic1.png decoy) AND BIOC(MP-029 Diaoyu security-product process-name discovery) AND (BIOC(MP-029 Image-named payload staged into a lure execution directory) OR IOC(domain in abwxjp5.me, msonline.help, servgate.me, zamstats.me)) AND (IOC(file-sha256 in the report lure/Cobalt Strike hashes on panw_ngfw_threat_raw) OR ABIOC(MP-029 Recurring beacon to a rare TGR-STA-1030 C2 domain) OR ABIOC(MP-029 Rare process SSH session to a leased relay VPS)) within 3600s on the same endpoint entity (xdr_data agent_hostname = panw_ngfw_*_raw endpoint_device_name, src_ip reconciled by XDM endpoint resolution) -> ONE TGR-STA-1030 incident enriched with the Unit 42 indicators; ShadowGuard BIOCs join when they fire on the same host.",
+      "name": "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu lure to C2 and relay, stitched on src_host",
+      "rule_id": "CR-MP-0029",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0188"
+}
