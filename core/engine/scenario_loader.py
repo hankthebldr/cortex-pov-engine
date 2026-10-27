@@ -172,8 +172,35 @@ _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
 _IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
 FETCH_VERB_RE = re.compile(
-    r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr)(?:\.exe)?(?![A-Za-z0-9_.-])", re.IGNORECASE)
-_HEREDOC_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
+    r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr|certutil|bitsadmin|Start-BitsTransfer|aria2c|scp|tftp|ftp)(?:\.exe)?(?![A-Za-z0-9_.-])", re.IGNORECASE)
+# S-25 shared regexes. The stdlib hook (.claude/hooks/lint-scenario.py) carries
+# byte-identical copies; tests/engine/test_lint_scenario_hook.py pins them.
+# Heredoc opener: '<<' / '<<-' that is not a here-string ('<<<'), with a
+# word-like delimiter. Applied (by _heredoc_delim) to the line with comments and
+# $(( )) / (( )) arithmetic removed, so '<<' there opens nothing.
+_HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)-?[ \t]*(['\"]?)([A-Za-z_][\w.-]*)\1")
+_SH_COMMENT_RE = re.compile(r"(?:^|[ \t])#.*$")
+_SH_ARITH_RE = re.compile(r"\(\((?:[^()]|\([^()]*\))*\)\)")
+# Chaining that can add a connection to a lookup line: ; && || | $( ` and
+# redirection / background / process substitution < > & <( >(.
+_SHELL_CHAIN_RE = re.compile(r";|&&|\|\||\||\$\(|`|<\(|>\(|<|>|&")
+# A lookup line must name its resolver: '@<token>' or the LAB_RESOLVER token.
+_RESOLVER_RE = re.compile(r"@\S+|(?<![A-Za-z0-9_])LAB_RESOLVER(?![A-Za-z0-9_])")
+_RESOLVER_AT_RE = re.compile(r"@(\S+)")
+# A params: block is data only inside a campaign-file write ...
+_CAMPAIGN_FILE_WRITE_RE = re.compile(r"(?<![\w./-])cat\s+>\s*['\"]?[^\s'\"<>]+\.ya?ml['\"]?\s+<<(?!<)")
+_PLUGIN_LINE_RE = re.compile(r"^\s*(?:-\s+)?plugin:\s*['\"]?([A-Za-z0-9_.-]+)")
+_URL_HOST_RE = re.compile(r"^https?://(?:[^/@\s]*@)?(\[[^\]\s]+\]|[^/:?#\s]+)", re.IGNORECASE)
+# ... whose every plugin is a collector-POST log streamer (records POSTed to an
+# operator-supplied collector, so an indicator is a field value, not a peer).
+# Mirrored in the hook; parity asserted in tests/engine/test_lint_scenario_hook.py.
+COLLECTOR_POST_PLUGINS = frozenset({
+    "ngfw_eal_emitter", "ngfw_threat_emitter", "cloud_audit_emitter",
+    "cloud_storage_compute_emitter", "azure_audit_emitter", "k8s_audit_emitter",
+    "m365_activity_emitter", "ad_windows_emitter", "idp_signin_emulator", "email_emitter",
+    "duo_auth_emitter", "globalprotect_emitter", "third_party_alert_emitter",
+    "third_party_firewall_emitter", "third_party_vpn_emitter",
+})
 
 
 def _ipv4_is_routable(value: str) -> bool:
@@ -215,6 +242,16 @@ class IndicatorSchema(BaseModel):
     safe_form: str
     surfaces_in: list[str]
     description: Optional[str] = None
+    # False: the value is published context that this scenario does not put on
+    # the wire (coverage_report counts only in-band indicators toward a chain).
+    in_band: bool = True
+
+    @field_validator("in_band", mode="before")
+    @classmethod
+    def _in_band_is_bool(cls, v: Any, info: Any) -> bool:
+        if not isinstance(v, bool):
+            raise ValueError(f"S-22: indicator {info.data.get('id')} in_band must be a bool, got {v!r}")
+        return v
 
     @model_validator(mode="after")
     def _validate_indicator(self) -> "IndicatorSchema":
@@ -586,15 +623,68 @@ def validate_causality_spine(steps: list[Any]) -> None:
         )
 
 
-_SHELL_CHAIN_RE = re.compile(r";|&&|\|\||\||\$\(|`")
+def _heredoc_delim(line: str) -> Optional[str]:
+    """The delimiter a line opens a heredoc with, or None (comments, here-strings
+    and arithmetic shifts open nothing)."""
+    code = _SH_ARITH_RE.sub(" ", _SH_COMMENT_RE.sub("", line))
+    m = _HEREDOC_RE.search(code)
+    return m.group(2) if m else None
+
+
+def _heredoc_body(lines: list[str], delim: str) -> list[str]:
+    body: list[str] = []
+    for line in lines:
+        if line.strip() == delim:
+            break
+        body.append(line)
+    return body
+
+
+def _params_are_data(opener: str, body: list[str]) -> bool:
+    """A heredoc's params: blocks are data only when it writes a campaign file
+    (cat > <path>.yml <<) whose every plugin: is a collector-POST streamer."""
+    if not _CAMPAIGN_FILE_WRITE_RE.search(_SH_COMMENT_RE.sub("", opener)):
+        return False
+    plugins = [m.group(1) for m in map(_PLUGIN_LINE_RE.match, body) if m]
+    return bool(plugins) and all(p in COLLECTOR_POST_PLUGINS for p in plugins)
+
+
+def _indicator_probes(indicators: list[IndicatorSchema]) -> list[tuple[str, str, str, str]]:
+    """(scan_type, value, id, note) per scannable value. A url also yields its host,
+    scanned as a domain (or ipv4/ipv6 for an IP literal)."""
+    probes: list[tuple[str, str, str, str]] = []
+    for ind in indicators:
+        probes.append((ind.type, ind.value, ind.id, ""))
+        if ind.type == "url":
+            m = _URL_HOST_RE.match(ind.value)
+            if m:
+                host = m.group(1)
+                if host.startswith("["):
+                    probes.append(("ipv6", host[1:-1], ind.id, f" (host {host})"))
+                else:
+                    kind = "ipv4" if _IPV4_RE.match(host) else "domain"
+                    probes.append((kind, host, ind.id, f" (host {host})"))
+    return probes
+
+
+def _probe_pattern(typ: str, val: str) -> str:
+    # A domain may follow a '.' (subdomain of the indicator); nothing else may be
+    # glued to the front of any value.
+    behind = r"(?<![A-Za-z0-9_-])" if typ == "domain" else r"(?<![A-Za-z0-9_.-])"
+    return behind + re.escape(val) + r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
 
 
 def _scan_command(label: str, command: str, indicators: list[IndicatorSchema]) -> list[str]:
     out: list[str] = []
+    probes = _indicator_probes(indicators)
+    probe_key = [repr(p[2]) for p in probes]  # one S-25 per indicator per line (ids may be malformed)
+    lines = (command or "").split("\n")
     heredoc: Optional[str] = None
+    params_data = False
     params_indent: Optional[int] = None
-    for n, line in enumerate((command or "").split("\n"), start=1):
-        exempt = False
+    for n, line in enumerate(lines, start=1):
+        in_params = False
+        lookup_ok = False
         if heredoc is not None:
             if line.strip() == heredoc:
                 heredoc, params_indent = None, None
@@ -606,28 +696,34 @@ def _scan_command(label: str, command: str, indicators: list[IndicatorSchema]) -
             if params_indent is None and re.fullmatch(r"params:\s*", stripped):
                 params_indent = indent
             elif params_indent is not None:
-                exempt = True
+                in_params = params_data
         else:
-            m = _HEREDOC_RE.search(line)
-            if m:
-                heredoc = m.group(1)
-            # A lookup line is exempt only when it is a bare lookup: no fetch
-            # verb and no chaining/substitution that could add a connection.
-            exempt = (bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
-                      and not _SHELL_CHAIN_RE.search(line))
-        for ind in indicators:
-            if ind.type in _HASH_TYPES:
-                if re.search(re.escape(ind.value), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
-                    out.append(f"S-26: {label} line {n}: hash {ind.id} on a fetch line: {line.strip()[:120]}")
-            elif ind.type in ("domain", "url", "ipv4", "ipv6") and not exempt:
-                # A domain may follow a '.' (subdomain of the indicator); nothing
-                # else may be glued to the front of any value.
-                behind = r"(?<![A-Za-z0-9_-])" if ind.type == "domain" else r"(?<![A-Za-z0-9_.-])"
-                pat = behind + re.escape(ind.value) + r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
-                if re.search(pat, line, re.IGNORECASE):
-                    out.append(
-                        f"S-25: {label} line {n}: {ind.type} {ind.id} outside a DNS-lookup "
-                        f"line or params: block: {line.strip()[:120]}")
+            delim = _heredoc_delim(line)
+            if delim:
+                heredoc = delim
+                params_data = _params_are_data(line, _heredoc_body(lines[n:], delim))
+            # A lookup line is exempt (for a domain) only when it is a bare lookup
+            # that names its resolver: no fetch verb, no chaining/redirection.
+            lookup_ok = (bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
+                         and not _SHELL_CHAIN_RE.search(line) and bool(_RESOLVER_RE.search(line)))
+        hit: set[str] = set()
+        for k, (typ, val, iid, note) in enumerate(probes):
+            if typ in _HASH_TYPES:
+                if re.search(re.escape(val), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
+                    out.append(f"S-26: {label} line {n}: hash {iid} on a fetch line: {line.strip()[:120]}")
+                continue
+            if typ not in ("domain", "url", "ipv4", "ipv6") or probe_key[k] in hit or in_params:
+                continue
+            pat = _probe_pattern(typ, val)
+            if not re.search(pat, line, re.IGNORECASE):
+                continue
+            if (typ == "domain" and lookup_ok and not any(
+                    re.search(pat, tok, re.IGNORECASE) for tok in _RESOLVER_AT_RE.findall(line))):
+                continue
+            hit.add(probe_key[k])
+            out.append(
+                f"S-25: {label} line {n}: {typ} {iid}{note} outside a resolver-named DNS-lookup "
+                f"line or a collector campaign params: block: {line.strip()[:120]}")
     return out
 
 
@@ -637,9 +733,13 @@ def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSc
 
     Scans every step ``command``, every ``platform_variants`` command and
     ``cleanup.commands``.
-    S-25 — a domain/url/ipv4/ipv6 value may appear only on a bare DNS-lookup
-    line (``DNS_LOOKUP_RE``, no fetch verb, no ``; && || | $( ```) or inside a
-    heredoc under a ``params:`` key (data handed to an emitter, never executed).
+    S-25 — a domain/url/ipv4/ipv6 value (and a url's host) may appear only
+    (a) for a ``domain`` value, on a bare DNS-lookup line (``DNS_LOOKUP_RE``)
+    that names its resolver (``@<token>`` or ``LAB_RESOLVER``, the resolver not
+    being the indicator) with no fetch verb and no ``; && || | $( ``` ``< > &
+    <( >(``; or (b) under a ``params:`` key inside a campaign-file heredoc
+    (``cat > <path>.yml <<``) whose every ``plugin:`` is in
+    ``COLLECTOR_POST_PLUGINS`` (data POSTed to a collector, never executed).
     S-26 — a hash value may not share a line with a fetch verb.
     Pure; one human line per violation.
     """

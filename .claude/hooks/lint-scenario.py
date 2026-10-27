@@ -148,12 +148,38 @@ _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
 _IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
 FETCH_VERB_RE = re.compile(
-    r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr)(?:\.exe)?(?![A-Za-z0-9_.-])", re.IGNORECASE)
+    r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr|certutil|bitsadmin|Start-BitsTransfer|aria2c|scp|tftp|ftp)(?:\.exe)?(?![A-Za-z0-9_.-])", re.IGNORECASE)
 # Mirrors core/eal_simulator/campaign.py::_CAMPAIGN_ID_RE (parity test in
 # tests/engine/test_lint_scenario_hook.py). A rejected id makes the step emit nothing.
 CAMPAIGN_ID_RE = re.compile(r"^CMP(?:-[A-Z0-9]+)+-\d{3,5}$")
 _CAMPAIGN_ID_LINE_RE = re.compile(r"^\s*campaign_id:\s*(['\"]?)([^'\"\s#]*)\1\s*(?:#.*)?$")
-_HEREDOC_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
+# S-25 shared regexes: byte-identical copies of core/engine/scenario_loader.py; tests/engine/test_lint_scenario_hook.py pins them.
+# Heredoc opener: '<<' / '<<-' that is not a here-string ('<<<'), with a
+# word-like delimiter. Applied (by _heredoc_delim) to the line with comments and
+# $(( )) / (( )) arithmetic removed, so '<<' there opens nothing.
+_HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)-?[ \t]*(['\"]?)([A-Za-z_][\w.-]*)\1")
+_SH_COMMENT_RE = re.compile(r"(?:^|[ \t])#.*$")
+_SH_ARITH_RE = re.compile(r"\(\((?:[^()]|\([^()]*\))*\)\)")
+# Chaining that can add a connection to a lookup line: ; && || | $( ` and
+# redirection / background / process substitution < > & <( >(.
+_CHAIN_RE = re.compile(r";|&&|\|\||\||\$\(|`|<\(|>\(|<|>|&")
+# A lookup line must name its resolver: '@<token>' or the LAB_RESOLVER token.
+_RESOLVER_RE = re.compile(r"@\S+|(?<![A-Za-z0-9_])LAB_RESOLVER(?![A-Za-z0-9_])")
+_RESOLVER_AT_RE = re.compile(r"@(\S+)")
+# A params: block is data only inside a campaign-file write ...
+_CAMPAIGN_FILE_WRITE_RE = re.compile(r"(?<![\w./-])cat\s+>\s*['\"]?[^\s'\"<>]+\.ya?ml['\"]?\s+<<(?!<)")
+_PLUGIN_LINE_RE = re.compile(r"^\s*(?:-\s+)?plugin:\s*['\"]?([A-Za-z0-9_.-]+)")
+_URL_HOST_RE = re.compile(r"^https?://(?:[^/@\s]*@)?(\[[^\]\s]+\]|[^/:?#\s]+)", re.IGNORECASE)
+# ... whose every plugin is a collector-POST log streamer (records POSTed to an
+# operator-supplied collector, so an indicator is a field value, not a peer).
+# Mirrored in the hook; parity asserted in tests/engine/test_lint_scenario_hook.py.
+COLLECTOR_POST_PLUGINS = frozenset({
+    "ngfw_eal_emitter", "ngfw_threat_emitter", "cloud_audit_emitter",
+    "cloud_storage_compute_emitter", "azure_audit_emitter", "k8s_audit_emitter",
+    "m365_activity_emitter", "ad_windows_emitter", "idp_signin_emulator", "email_emitter",
+    "duo_auth_emitter", "globalprotect_emitter", "third_party_alert_emitter",
+    "third_party_firewall_emitter", "third_party_vpn_emitter",
+})
 
 # Marker-only steps: a command that only echoes / no-ops proves nothing.
 # Canonical rule (shared with the coverage script): split on \n ; && || | ;
@@ -162,7 +188,6 @@ _MARKER_LINE_RE = re.compile(
     r"^\s*(echo|printf|Write-Host|Write-Output|true)\b|^\s*[:#](?=\s|$)|^\s*$")
 _LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
 _SEGMENT_SPLIT_RE = re.compile(r"\n|;|&&|\|\||\|")
-_CHAIN_RE = re.compile(r";|&&|\|\||\||\$\(|`")
 
 
 def is_marker_only(command) -> bool:
@@ -248,6 +273,8 @@ def indicator_errors(indicators: list, step_ids: set) -> list:
             missing = [x for x in surf if not isinstance(x, str) or x not in step_ids]
             if missing:
                 out.append(f"S-24: indicator {iid} surfaces_in names unknown step(s) {missing}")
+        if "in_band" in ind and not isinstance(ind["in_band"], bool):
+            out.append(f"S-22: indicator {iid} in_band must be a bool, got {ind['in_band']!r}")
         sf = ind.get("safe_form")
         if not isinstance(sf, str) or sf not in INDICATOR_SAFE_FORMS:
             out.append(f"S-27: indicator {iid} safe_form {sf!r} not in {sorted(INDICATOR_SAFE_FORMS)}")
@@ -278,8 +305,50 @@ def _indicator_units(steps: list, cleanup_commands) -> list:
     return units
 
 
+def _heredoc_delim(line: str):
+    """Mirrors scenario_loader._heredoc_delim."""
+    code = _SH_ARITH_RE.sub(" ", _SH_COMMENT_RE.sub("", line))
+    m = _HEREDOC_RE.search(code)
+    return m.group(2) if m else None
+
+
+def _heredoc_body(lines: list, delim: str) -> list:
+    body = []
+    for line in lines:
+        if line.strip() == delim:
+            break
+        body.append(line)
+    return body
+
+
+def _params_are_data(opener: str, body: list) -> bool:
+    """Mirrors scenario_loader._params_are_data."""
+    if not _CAMPAIGN_FILE_WRITE_RE.search(_SH_COMMENT_RE.sub("", opener)):
+        return False
+    plugins = [m.group(1) for m in map(_PLUGIN_LINE_RE.match, body) if m]
+    return bool(plugins) and all(p in COLLECTOR_POST_PLUGINS for p in plugins)
+
+
+def _indicator_probes(inds: list) -> list:
+    """Mirrors scenario_loader._indicator_probes on dict-shaped input."""
+    probes = []
+    for ind in inds:
+        typ, val, iid = ind["type"], ind["value"], ind.get("id")
+        probes.append((typ, val, iid, ""))
+        if typ == "url":
+            m = _URL_HOST_RE.match(val)
+            if m:
+                host = m.group(1)
+                if host.startswith("["):
+                    probes.append(("ipv6", host[1:-1], iid, f" (host {host})"))
+                else:
+                    kind = "ipv4" if _IPV4_RE.match(host) else "domain"
+                    probes.append((kind, host, iid, f" (host {host})"))
+    return probes
+
+
 def _indicator_pattern(typ: str, val: str) -> str:
-    # Mirrors scenario_loader._scan_command exactly (drift guard: the parity test
+    # Mirrors scenario_loader._probe_pattern exactly (drift guard: the parity test
     # in tests/engine/test_lint_scenario_hook.py). A domain may follow a '.'
     # (subdomain); nothing else may be glued to the front of any value.
     behind = r"(?<![A-Za-z0-9_-])" if typ == "domain" else r"(?<![A-Za-z0-9_.-])"
@@ -291,11 +360,16 @@ def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None)
     out = []
     inds = [i for i in indicators if isinstance(i, dict) and isinstance(i.get("type"), str)
             and i["type"] in INDICATOR_TYPES and isinstance(i.get("value"), str) and i["value"]]
+    probes = _indicator_probes(inds)
+    probe_key = [repr(p[2]) for p in probes]  # one S-25 per indicator per line (ids may be malformed)
     for label, command in _indicator_units(steps, cleanup_commands):
+        lines = command.split("\n")
         heredoc = None
+        params_data = False
         params_indent = None
-        for n, line in enumerate(command.split("\n"), start=1):
-            exempt = False
+        for n, line in enumerate(lines, start=1):
+            in_params = False
+            lookup_ok = False
             if heredoc is not None:
                 if line.strip() == heredoc:
                     heredoc, params_indent = None, None
@@ -307,23 +381,32 @@ def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None)
                 if params_indent is None and re.fullmatch(r"params:\s*", stripped):
                     params_indent = indent
                 elif params_indent is not None:
-                    exempt = True
+                    in_params = params_data
             else:
-                m = _HEREDOC_RE.search(line)
-                if m:
-                    heredoc = m.group(1)
-                exempt = (bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
-                          and not _CHAIN_RE.search(line))
-            for ind in inds:
-                typ, val, iid = ind["type"], ind["value"], ind.get("id")
+                delim = _heredoc_delim(line)
+                if delim:
+                    heredoc = delim
+                    params_data = _params_are_data(line, _heredoc_body(lines[n:], delim))
+                lookup_ok = (bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
+                             and not _CHAIN_RE.search(line) and bool(_RESOLVER_RE.search(line)))
+            hit = set()
+            for k, (typ, val, iid, note) in enumerate(probes):
                 if typ in _HASH_TYPES:
                     if re.search(re.escape(val), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
                         out.append(f"S-26: {label} line {n}: hash {iid} on a fetch line: {line.strip()[:120]}")
-                elif typ in ("domain", "url", "ipv4", "ipv6") and not exempt:
-                    if re.search(_indicator_pattern(typ, val), line, re.IGNORECASE):
-                        out.append(
-                            f"S-25: {label} line {n}: {typ} {iid} outside a DNS-lookup "
-                            f"line or params: block: {line.strip()[:120]}")
+                    continue
+                if typ not in ("domain", "url", "ipv4", "ipv6") or probe_key[k] in hit or in_params:
+                    continue
+                pat = _indicator_pattern(typ, val)
+                if not re.search(pat, line, re.IGNORECASE):
+                    continue
+                if (typ == "domain" and lookup_ok and not any(
+                        re.search(pat, tok, re.IGNORECASE) for tok in _RESOLVER_AT_RE.findall(line))):
+                    continue
+                hit.add(probe_key[k])
+                out.append(
+                    f"S-25: {label} line {n}: {typ} {iid}{note} outside a resolver-named DNS-lookup "
+                    f"line or a collector campaign params: block: {line.strip()[:120]}")
     return out
 
 
@@ -352,9 +435,9 @@ def campaign_id_errors(steps: list) -> list:
                         out.append(f"campaign_id '{m.group(2)}' in step {sid} does not match "
                                    f"{CAMPAIGN_ID_RE.pattern}")
                 else:
-                    hm = _HEREDOC_RE.search(line)
-                    if hm:
-                        heredoc = hm.group(1)
+                    delim = _heredoc_delim(line)
+                    if delim:
+                        heredoc = delim
     return out
 
 

