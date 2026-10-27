@@ -232,6 +232,10 @@ jobs:
           pip install 'jsonschema>=4.18' pyyaml
       - name: Validate TTP corpus (0 fail)
         run: python3 detection_scanner/scripts/validate.py --quiet
+      - name: Coverage floors (signal quality, planes, tactics, families)
+        # The default_config() floors are advisory until CI runs them: exit 1 on
+        # any floor/target breach (hq_signals, stitched_chains, marker-only share).
+        run: make coverage-strict
       - name: Regenerate detection exports
         # --clean removes previously-generated files first, so a STALE export (a
         # card that lost a detection kind) does not survive the regeneration.

@@ -79,7 +79,8 @@ step-detection carries the plane whose *sensor* raises the alert (`EDR`, `NDR`,
 
 **Stitched chain.** A scenario with (a) ≥2 core legs, (b) `stitching_key` set and
 ≥2 entries in `required_planes_in_incident`, (c) `threat_report_url` on
-`unit42.paloaltonetworks.com`, and (d) ≥1 entry in `indicators[]` (§4.1).
+`unit42.paloaltonetworks.com`, and (d) ≥1 **in-band** entry in `indicators[]` (§4.1;
+an entry with `in_band: false` does not count).
 
 **Marker-only step.** An agent-channel step whose `command`, after splitting on
 newlines, `;`, `&&`, `||` and `|`, has no fragment other than `echo`, `printf`,
@@ -107,18 +108,24 @@ indicators:
     safe_form: dns_lookup           # log_field | dns_lookup | hash_only | wildfire_test_file | eicar
     surfaces_in: [step-03]          # steps whose telemetry carries the value
     description: "RN Loader second-stage host (report, Table 2)"
+    in_band: true                   # optional bool, default true; false = published context this chain does not emit
 ```
+
+`in_band` (amended 2026-10-27, final review): `false` marks an indicator the report
+names but the chain never puts on the wire. The coverage report's
+`signal_quality.indicators` counts in-band entries only, `indicators_not_in_band`
+the rest, and a stitched chain needs ≥1 in-band entry. A non-bool is S-22.
 
 Loader (`core/engine/scenario_loader.py`, `IndicatorSchema` + a model validator on
 `ScenarioSchema`) raises **structural** codes, not gated by `CORTEXSIM_STRICT_REFS`:
 
 | code | rule |
 |---|---|
-| S-22 | `type` outside the vocabulary, or `value` malformed for its type (sha256 = 64 hex, sha1 = 40, md5 = 32, ipv4 = dotted quad and not RFC1918/loopback/link-local, domain contains a dot and no scheme, url has a scheme) |
+| S-22 | `type` outside the vocabulary, `in_band` present and not a bool, or `value` malformed for its type (sha256 = 64 hex, sha1 = 40, md5 = 32, ipv4 = dotted quad and not RFC1918/loopback/link-local, domain contains a dot and no scheme, url has a scheme) |
 | S-23 | `source_url` not on `unit42.paloaltonetworks.com` or `github.com/PaloAltoNetworks/` |
 | S-24 | `surfaces_in` empty, or names a step id the scenario does not have |
-| S-25 | **unsafe surfacing**: an `ipv4`, `domain` or `url` value (for `domain`, any subdomain of it too) appears in any executed text — every step `command`, every `platform_variants` value, every `cleanup.commands` entry — on a line that is neither a DNS-lookup line (`dig`, `nslookup`, `host`, `getent hosts`, `resolvectl query`, `drill`, containing **no** fetch verb and **no** shell chaining or substitution operator `; && \|\| \| $( \``) nor inside an EAL campaign heredoc `params:` block |
-| S-26 | **artifact fetch**: a `sha256`/`sha1`/`md5` value appears on a line of that same executed text that also contains a fetch verb (`curl`, `wget`, `pip`, `npm`, `git clone`, `Invoke-WebRequest`, `iwr`) |
+| S-25 | **unsafe surfacing** (tightened 2026-10-27, final review): an `ipv4`, `ipv6`, `domain` or `url` value — and a `url`'s host, scanned as a `domain` (or as an IP when it is a literal); for a domain, any subdomain too — appears in any executed text (every step `command`, every `platform_variants` value, every `cleanup.commands` entry) outside the two exemptions. **(a) Lookup line** — `domain` values only (an `ipv4`/`ipv6`/`url` value on a lookup line always fires): a DNS-lookup line (`dig`, `nslookup`, `host`, `getent hosts`, `resolvectl query`, `drill`) that **names its resolver** (`@<non-space token>` or the token `LAB_RESOLVER`; the `@` resolver may not itself be the indicator), with **no** fetch verb and **no** chaining, redirection, background or substitution (`;` `&&` `\|\|` `\|` `$(` `` ` `` `<` `>` `&` `<(` `>(`). **(b) `params:` block** — only inside a heredoc whose opener writes a campaign file (`cat > <path>.yml <<` or `.yaml`) and whose every `plugin:` is a collector-POST log streamer (`COLLECTOR_POST_PLUGINS`: `ngfw_eal_emitter`, `ngfw_threat_emitter`, `cloud_audit_emitter`, `cloud_storage_compute_emitter`, `azure_audit_emitter`, `k8s_audit_emitter`, `m365_activity_emitter`, `ad_windows_emitter`, `idp_signin_emulator`, `email_emitter`, `duo_auth_emitter`, `globalprotect_emitter`, `third_party_alert_emitter`, `third_party_firewall_emitter`, `third_party_vpn_emitter`); any other or unknown plugin (`c2_http_beacon`, `dns_tunnel_exfil`, `ssh_egress`, …) exempts nothing. A heredoc opener is `<<`/`<<-` with a word delimiter, never a `<<<` here-string, a comment or an arithmetic shift. The loader and the stdlib hook carry byte-identical regexes, pinned by `test_hook_unsafe_lines_match_loader` |
+| S-26 | **artifact fetch**: a `sha256`/`sha1`/`md5` value appears on a line of that same executed text that also contains a fetch verb (`curl`, `wget`, `pip`, `npm`, `git clone`, `Invoke-WebRequest`, `iwr`, `certutil`, `bitsadmin`, `Start-BitsTransfer`, `aria2c`, `scp`, `tftp`, `ftp`) |
 | S-27 | `safe_form` incompatible with `type`: `dns_lookup` only for `domain`; `hash_only`, `wildfire_test_file`, `eicar` only for hash types; `log_field` for any |
 
 Persisted as `Scenario.indicators` (nullable JSON column, same additive pattern as
