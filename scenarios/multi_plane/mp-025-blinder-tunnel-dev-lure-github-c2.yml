@@ -4,10 +4,10 @@
 # MicrosoftRuntime Run key, GitHub contents-API C2, then Blackwood/Chisel reverse SOCKS.
 # Endpoint leg (EDR): point at the design-time build -> RuntimeBrokers copy -> renamed-host -> Run key
 #   lineage and the GitHub URI shape (sent to ${STAGE_HOST}, never api.github.com).
-# Cloud-app leg (CLOUD_APP): synthetic 63-s recurring api.github.com sessions from the same host;
-#   un-enrichable by design (GitHub is legitimate, the report's repos are not an IOC the leg carries).
-# Network leg (NDR): Chisel tunnel to 91.107.156.29 + WildFire verdicts on the Blackwood hashes, and
-#   DNS lookups of the report's Drive/Meet look-alikes via @${LAB_RESOLVER} (one query, no session).
+# Network leg (NDR): the GitHub SaaS relay is observed at the network boundary (no SaaS-audit
+#   emitter exists, backlog): synthetic 63-s api.github.com sessions, un-enrichable (GitHub is
+#   legitimate); Chisel tunnel to 91.107.156.29 + WildFire verdicts on the Blackwood hashes; DNS
+#   lookups of the report's Drive/Meet look-alikes via @${LAB_RESOLVER} (one query, no session).
 # Every leg carries the run host (src_host); CR-MP-0025 stitches them. EAL legs are POSIX-only.
 scenario_id: SIM-MP-025
 name: "Blinder Tunnel (CL-STA-1178) — Developer-Lure MSBuild Execution, GitHub-as-C2 and Chisel Tunnel"
@@ -87,9 +87,9 @@ success_criteria: |
   The endpoint lineage (design-time MSBuild target -> RuntimeBrokers drop -> renamed
   RuntimeBroker.exe with an ETW-disabling .exe.config -> MicrosoftRuntime autostart -> GitHub
   contents-API URI shape) raises its BIOCs on the run host; the synthetic recurring api.github.com
-  sessions raise the cloud-app ABIOC for the same src_host; the Chisel tunnel to 91.107.156.29 and
+  sessions raise the network-boundary GitHub-cadence ABIOC for the same src_host; the Chisel tunnel to 91.107.156.29 and
   the WildFire verdicts on the Blackwood hashes raise NGFW alerts that Unit 42 enrichment names as
-  CL-STA-1178; and CR-MP-0025 stitches all three legs into ONE incident on the shared src_host
+  CL-STA-1178; and CR-MP-0025 stitches the endpoint and network legs into ONE incident on the shared src_host
   inside the correlation window. Mean time from the design-time build to the stitched incident is
   within the MTTD budget.
 moat_tier: "LEAD"
@@ -97,7 +97,6 @@ moat_tier: "LEAD"
 required_planes_in_incident:
   - EDR
   - NDR
-  - CLOUD_APP
 stitching_key: src_host
 correlation_window_seconds: 900
 
@@ -197,7 +196,7 @@ external_tools:
 # The CGO is the IDE that opens the lure project (devenv.exe on Windows; on the Linux run host the
 # shell that unpacks and builds it). step-01 is the root. step-02..05 and step-07 descend from it by
 # process_lineage (design-time build -> copied host -> autostart -> C2 requests -> tunnel config).
-# step-06 (synthetic GitHub sessions) and step-09 (synthetic NGFW tunnel + WildFire logs) are
+# step-06 (synthetic GitHub sessions at the network boundary) and step-09 (synthetic NGFW tunnel + WildFire logs) are
 # endpoint_network_stitch edges on the same src_host; step-08 (DNS lookups of the lure
 # infrastructure) is a shared_entity edge on that host.
 cgo_anchor:
@@ -425,7 +424,7 @@ steps:
         detection_id: "bioc-mp-025-lic-inf-c2-files-written-under-runtimebrokers"
 
   - id: step-06
-    name: "SaaS leg: recurring 63-s api.github.com sessions from the same host (synthetic NGFW App-ID records)"
+    name: "GitHub SaaS relay seen at the network boundary: recurring 63-s api.github.com sessions (synthetic NGFW App-ID records)"
     command: |
       : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
       : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
@@ -434,7 +433,7 @@ steps:
       SRC_USER=$(id -un developer 2>/dev/null || id -un)
       cat > /tmp/cortexsim-mp025-github.yml <<YML
       campaign_id: CMP-MP-025
-      name: "Blinder Tunnel — GitHub contents-API C2 cadence (SaaS relay)"
+      name: "Blinder Tunnel — GitHub contents-API C2 cadence (SaaS relay at the network boundary)"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       c2_authorized: true
@@ -464,12 +463,12 @@ steps:
       pivot: endpoint_network_stitch
     platforms: ["linux", "container"]
     expected_detections:
-      - plane: CLOUD_APP
+      - plane: NDR
         type: ABIOC
-        description: "SaaS app-usage anomaly: a host whose GitHub usage is normally browser/git-driven starts a fixed-cadence (~63 s) burst of small HTTPS sessions to api.github.com — the report's GitHub-as-C2 relay as seen by App-ID / SaaS inline on the firewall, attributed to the run host's src_host."
+        description: "Network-boundary view of the SaaS relay: a host whose GitHub usage is normally browser/git-driven starts a fixed-cadence (~63 s) burst of small HTTPS sessions to api.github.com — the report's GitHub-as-C2 relay as the NGFW (App-ID) records it, attributed to the run host's src_host. Raised by the network sensor; no SaaS-audit emitter exists (backlog)."
         ttp_ref: "TTP-2026-0184"
         detection_id: "abioc-mp-025-recurring-fixed-cadence-github-api-sessions-from-a-non-developer-pattern-host"
-      - plane: CLOUD_APP
+      - plane: NDR
         type: XQL
         description: "Validation query: the recurring api.github.com session records landed in panw_ngfw_traffic_raw carrying the run host's endpoint_device_name."
         ttp_ref: "TTP-2026-0184"

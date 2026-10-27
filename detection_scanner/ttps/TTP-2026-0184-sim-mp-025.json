@@ -51,8 +51,8 @@
   },
   "identity": {
     "name": "Blinder Tunnel (CL-STA-1178) — Developer-Lure MSBuild Execution, GitHub-as-C2 and Chisel Tunnel (T1127 / T1574.014 / T1102.002 / T1572)",
-    "summary": "A fake Dubai Airports recruiter's C# coding test runs a GetFrameworkPaths design-time MSBuild target when opened, drops a renamed vshost (RuntimeBroker.exe) with an AppDomainManager .exe.config that disables ETW, persists as MicrosoftRuntime, uses a GitHub repository's contents API as C2 and tunnels out through Blackwood/Chisel. The card stitches endpoint, SaaS and network alerts on one host.",
-    "description": "Unit 42 attributes Blinder Tunnel to CL-STA-1178, an Iran-nexus cluster targeting Iraqi critical infrastructure. The victim is approached as a job candidate, completes a fake Dubai Airports HR questionnaire, then receives DubaiAirport_Carrers_IT_Test.zip: a Visual Studio project with a deliberate loop bug. FlightManager.csproj defines a GetFrameworkPaths target that Visual Studio runs during its design-time build, so opening the project — not compiling it — creates %LOCALAPPDATA%\\Microsoft\\RuntimeBrokers, copies binaries there and launches a signed vshost.exe renamed RuntimeBroker.exe. RuntimeBroker.exe.config hijacks the AppDomainManager to load ShelbyLoader V2 (RuntimeBroker.dll) and sets etwEnable to false; PsProxy.dll runs PowerShell in-process without powershell.exe. Persistence is an HKCU Run value named MicrosoftRuntime. C2 is a GitHub repository (peakyblinders-tm/myLic) driven through the contents API with a hard-coded token: the implant uploads a Base64 fingerprint to <machineId>/Lic.txt and polls <machineId>/Inf.txt every 63 seconds, falling back to the Issues search API when the token is revoked. Blackwood wraps Chisel to build a reverse SOCKS tunnel (R:0.0.0.0:10999:socks) to 91.107.156.29. SIM-MP-025 reproduces the endpoint lineage for real (renamed benign binaries, real config files, real autostart entry, the GitHub URI shape sent to a lab stage host), emits the GitHub cadence and the tunnel / WildFire records as shape-true NGFW logs carrying the run host's identity, and resolves the report's phishing domains through a named lab resolver. CR-MP-0025 stitches the three legs on src_host.",
+    "summary": "A fake Dubai Airports coding test runs a GetFrameworkPaths MSBuild target when opened, drops a renamed RuntimeBroker.exe with an ETW-disabling AppDomainManager config, persists as MicrosoftRuntime, uses GitHub as C2 and tunnels via Blackwood/Chisel. Endpoint and network alerts stitch on one host; the GitHub relay is seen at the network boundary (no SaaS-audit emitter yet).",
+    "description": "Unit 42 attributes Blinder Tunnel to CL-STA-1178, an Iran-nexus cluster targeting Iraqi critical infrastructure. The victim is approached as a job candidate, completes a fake Dubai Airports HR questionnaire, then receives DubaiAirport_Carrers_IT_Test.zip: a Visual Studio project with a deliberate loop bug. FlightManager.csproj defines a GetFrameworkPaths target that Visual Studio runs during its design-time build, so opening the project — not compiling it — creates %LOCALAPPDATA%\\Microsoft\\RuntimeBrokers, copies binaries there and launches a signed vshost.exe renamed RuntimeBroker.exe. RuntimeBroker.exe.config hijacks the AppDomainManager to load ShelbyLoader V2 (RuntimeBroker.dll) and sets etwEnable to false; PsProxy.dll runs PowerShell in-process without powershell.exe. Persistence is an HKCU Run value named MicrosoftRuntime. C2 is a GitHub repository (peakyblinders-tm/myLic) driven through the contents API with a hard-coded token: the implant uploads a Base64 fingerprint to <machineId>/Lic.txt and polls <machineId>/Inf.txt every 63 seconds, falling back to the Issues search API when the token is revoked. Blackwood wraps Chisel to build a reverse SOCKS tunnel (R:0.0.0.0:10999:socks) to 91.107.156.29. SIM-MP-025 reproduces the endpoint lineage for real (renamed benign binaries, real config files, real autostart entry, the GitHub URI shape sent to a lab stage host), emits the GitHub cadence and the tunnel / WildFire records as shape-true NGFW logs carrying the run host's identity, and resolves the report's phishing domains through a named lab resolver. The GitHub SaaS relay is observed at the network boundary (NGFW App-ID), not through a SaaS audit log, because no SaaS-audit emitter exists (backlog). CR-MP-0025 stitches the endpoint and network legs on src_host.",
     "severity": "critical",
     "confidence": "high"
   },
@@ -215,7 +215,7 @@
   "execution": {
     "target_platform": "cross-platform",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-MP-025 — Blinder Tunnel developer-lure lineage, GitHub contents-API C2 shape and Chisel tunnel, stitched across EDR / CLOUD_APP / NDR on src_host",
+    "framework_reference_id": "SIM-MP-025 — Blinder Tunnel developer-lure lineage, GitHub contents-API C2 shape and Chisel tunnel, stitched across EDR / NDR on src_host",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -445,14 +445,14 @@
     "abiocs": [
       {
         "name": "MP-025 Recurring Fixed-Cadence GitHub API Sessions from a Non-Developer-Pattern Host",
-        "description": "A host whose GitHub usage is normally interactive (browser, git) starts a fixed-cadence (~63 s) series of small HTTPS sessions to api.github.com — the Blinder Tunnel GitHub contents-API C2 relay as App-ID / SaaS inline sees it. GitHub is legitimate, so no IOC matches; the ABIOC fires on the cadence deviation for the host, anchored to endpoint_device_name so it stitches to the endpoint lineage.",
+        "description": "A host whose GitHub usage is normally interactive (browser, git) starts a fixed-cadence (~63 s) series of small HTTPS sessions to api.github.com — the Blinder Tunnel GitHub contents-API C2 relay as the NGFW (App-ID) records it at the network boundary; no SaaS-audit leg exists (backlog). GitHub is legitimate, so no IOC matches; the ABIOC fires on the cadence deviation for the host, anchored to endpoint_device_name so it stitches to the endpoint lineage.",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter log_source_type = \"eal\" and url_domain = \"api.github.com\" and action = \"allow\"\n| comp count() as sessions, avg(bytes_sent) as avg_bytes by endpoint_device_name, src\n| filter sessions >= 6 and avg_bytes < 8192\n| sort desc sessions\n| fields endpoint_device_name, src, sessions, avg_bytes",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1102.002"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "Learned per-host SaaS usage baseline for GitHub (interactive, bursty) -> fixed-interval small API sessions to api.github.com from the same endpoint_device_name that runs the RuntimeBrokers lineage."
+        "causality_anchor": "Learned per-host network-boundary usage baseline for GitHub (interactive, bursty) -> fixed-interval small API sessions to api.github.com from the same endpoint_device_name that runs the RuntimeBrokers lineage."
       },
       {
         "name": "MP-025 Recurring Tunnel Sessions to a Rare IP-Literal Destination",
@@ -583,7 +583,7 @@
           },
           {
             "threat_step_id": "TS-MP-025C",
-            "objective": "CR-MP-0025 stitches the three legs into one incident on src_host.",
+            "objective": "CR-MP-0025 stitches the endpoint and network legs into one incident on src_host.",
             "preconditions": [
               "TS-MP-025A and TS-MP-025B produced alerts within 900 s."
             ],
@@ -591,7 +591,7 @@
               "Open the incident for the run host."
             ],
             "success_criteria": [
-              "Exactly one incident holds EDR, CLOUD_APP and NDR alerts for the run host."
+              "Exactly one incident holds EDR and NDR alerts for the run host."
             ],
             "expected_score_weight": 0.3
           }
@@ -609,7 +609,7 @@
     "detection_engineering": [
       "Alert on build engines (MSBuild, dotnet) creating and executing binaries outside the build output tree.",
       "Alert on .exe.config files declaring appDomainManagerAssembly or etwEnable=false next to user-writable executables.",
-      "Correlate fixed-cadence SaaS API sessions with the endpoint process lineage on the same host rather than treating GitHub traffic as benign."
+      "Correlate fixed-cadence GitHub API sessions seen at the firewall with the endpoint process lineage on the same host rather than treating GitHub traffic as benign."
     ],
     "response_playbook": "XSOAR-PB-BlinderTunnelDeveloperLure-v1"
   },
