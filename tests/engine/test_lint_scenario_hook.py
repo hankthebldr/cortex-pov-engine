@@ -354,3 +354,65 @@ def test_hook_fetch_verb_tokens_s26(cmd, fires):
     got = hook.unsafe_indicator_lines([_ind(type="sha256", value=h, safe_form="hash_only")],
                                       [{"id": "S", "command": cmd.format(h=h)}], None)
     assert any(l.startswith("S-26") for l in got) is fires
+
+
+# --- campaign_id shape (Task 6d) -------------------------------------------
+
+def _heredoc_cmd(cid: str) -> str:
+    return ("cat > /tmp/c.yml <<'EOF'\n"
+            f"campaign_id: {cid}\n"
+            "steps: []\n"
+            "EOF\n"
+            "python3 -m eal run /tmp/c.yml\n")
+
+
+def test_campaign_id_regex_parity_with_campaign_module():
+    from eal_simulator import campaign  # noqa: PLC0415
+
+    hook = _load_hook()
+    assert hook.CAMPAIGN_ID_RE.pattern == campaign._CAMPAIGN_ID_RE.pattern
+
+
+def test_campaign_id_bad_shape_is_error():
+    hook = _load_hook()
+    got = hook.campaign_id_errors([{"id": "step-01", "command": _heredoc_cmd("CMP-MP-033-THREAT")}])
+    assert len(got) == 1
+    assert "campaign_id 'CMP-MP-033-THREAT' in step step-01 does not match" in got[0]
+
+
+def test_campaign_id_quoted_and_indented_is_checked():
+    hook = _load_hook()
+    cmd = "cat <<EOF\n  campaign_id: \"CMP-MP-033-THREAT\"\nEOF\n"
+    assert hook.campaign_id_errors([{"id": "s", "command": cmd}])
+
+
+def test_campaign_id_bad_shape_in_platform_variants_is_error():
+    hook = _load_hook()
+    got = hook.campaign_id_errors([{"id": "s", "command": "true",
+                                    "platform_variants": {"linux": _heredoc_cmd("CMP-X-ABC")}}])
+    assert len(got) == 1 and "CMP-X-ABC" in got[0]
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("cid", ["CMP-MP-THREAT-033", "CMP-MP-033", "CMP-NDR-012"])
+def test_campaign_id_valid_shapes_pass(cid):
+    hook = _load_hook()
+    assert hook.campaign_id_errors([{"id": "s", "command": _heredoc_cmd(cid)}]) == []
+
+
+def test_campaign_id_outside_heredoc_is_ignored():
+    hook = _load_hook()
+    cmd = "echo 'campaign_id: CMP-MP-033-THREAT'\ncampaign_id: CMP-BAD\n"
+    assert hook.campaign_id_errors([{"id": "s", "command": cmd}]) == []
+
+
+def test_campaign_id_error_reaches_cli_exit_code(tmp_path):
+    data = yaml.safe_load(SAMPLE.read_text(encoding="utf-8"))
+    data["steps"][0]["command"] = _heredoc_cmd("CMP-MP-033-THREAT")
+    p = tmp_path / "bad.yml"
+    p.write_text(yaml.safe_dump(data), encoding="utf-8")
+    r = subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
+    assert "does not match" in r.stdout + r.stderr and "CMP-MP-033-THREAT" in r.stdout + r.stderr
+    assert r.returncode != 0

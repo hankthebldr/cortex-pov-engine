@@ -149,6 +149,10 @@ _IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
 DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
 FETCH_VERB_RE = re.compile(
     r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr)(?:\.exe)?(?![A-Za-z0-9_.-])", re.IGNORECASE)
+# Mirrors core/eal_simulator/campaign.py::_CAMPAIGN_ID_RE (parity test in
+# tests/engine/test_lint_scenario_hook.py). A rejected id makes the step emit nothing.
+CAMPAIGN_ID_RE = re.compile(r"^CMP(?:-[A-Z0-9]+)+-\d{3,5}$")
+_CAMPAIGN_ID_LINE_RE = re.compile(r"^\s*campaign_id:\s*(['\"]?)([^'\"\s#]*)\1\s*(?:#.*)?$")
 _HEREDOC_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
 
 # Marker-only steps: a command that only echoes / no-ops proves nothing.
@@ -320,6 +324,37 @@ def unsafe_indicator_lines(indicators: list, steps: list, cleanup_commands=None)
                         out.append(
                             f"S-25: {label} line {n}: {typ} {iid} outside a DNS-lookup "
                             f"line or params: block: {line.strip()[:120]}")
+    return out
+
+
+def campaign_id_errors(steps: list) -> list:
+    """ERROR for every heredoc `campaign_id:` line the EAL validator would refuse."""
+    out = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        sid = step.get("id")
+        cmds = [step.get("command") or ""]
+        pv = step.get("platform_variants")
+        if isinstance(pv, dict):
+            cmds.extend(v for v in pv.values() if isinstance(v, str))
+        for command in cmds:
+            if not isinstance(command, str):
+                continue
+            heredoc = None
+            for line in command.split("\n"):
+                if heredoc is not None:
+                    if line.strip() == heredoc:
+                        heredoc = None
+                        continue
+                    m = _CAMPAIGN_ID_LINE_RE.match(line)
+                    if m and not CAMPAIGN_ID_RE.match(m.group(2)):
+                        out.append(f"campaign_id '{m.group(2)}' in step {sid} does not match "
+                                   f"{CAMPAIGN_ID_RE.pattern}")
+                else:
+                    hm = _HEREDOC_RE.search(line)
+                    if hm:
+                        heredoc = hm.group(1)
     return out
 
 
@@ -522,6 +557,7 @@ def main() -> int:
             cl = raw.get("cleanup")
             cl_cmds = cl.get("commands") if isinstance(cl, dict) and isinstance(cl.get("commands"), list) else []
             errors.extend(unsafe_indicator_lines(indicators, step_dicts, cl_cmds))
+    errors.extend(campaign_id_errors(step_dicts))
     for st in step_dicts:
         if is_marker_only(st.get("command")):
             warnings.append(
