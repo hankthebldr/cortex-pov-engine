@@ -80,3 +80,66 @@ def test_hook_accepts_cgo_anchor_without_step_causality(tmp_path):
     assert "more than one root step" not in result.stdout
     # the previously-dead warning branch should now fire
     assert "no step wires a causality" in result.stdout
+
+
+# ── Indicators S-22..S-27 + marker-only warning ──────────────────────────────
+import pytest  # noqa: E402
+
+
+def test_hook_indicator_vocab_mirrors_loader():
+    from engine.scenario_loader import INDICATOR_TYPES, INDICATOR_SAFE_FORMS  # noqa: PLC0415
+    hook = _load_hook()
+    assert hook.INDICATOR_TYPES == INDICATOR_TYPES and hook.INDICATOR_SAFE_FORMS == INDICATOR_SAFE_FORMS
+
+
+@pytest.mark.parametrize("mutate,code", [
+    (lambda d: d["indicators"][0].update(type="hash"), "S-22"),
+    (lambda d: d["indicators"][0].update(source_url="https://example.com/"), "S-23"),
+    (lambda d: d["indicators"][0].update(surfaces_in=["step-99"]), "S-24"),
+    (lambda d: d["steps"][0].update(command="curl https://rn-stage.example/"), "S-25"),
+    (lambda d: d["indicators"][0].update(type="sha256", value="c" * 64, safe_form="hash_only")
+        or d["steps"][0].update(command="wget https://x/" + "c" * 64), "S-26"),
+    (lambda d: d["indicators"][0].update(type="sha256", value="c" * 64), "S-27"),
+])
+def test_hook_rejects_each_indicator_code(tmp_path, mutate, code):
+    d = yaml.safe_load(SAMPLE.read_text())
+    d["indicators"] = [dict(id="ind-01", type="domain", value="rn-stage.example", safe_form="dns_lookup",
+                            source_url="https://unit42.paloaltonetworks.com/x/",
+                            surfaces_in=[d["steps"][0]["id"]])]
+    d["steps"][0]["command"] = "dig +short rn-stage.example"
+    mutate(d)
+    p = tmp_path / "s.yml"
+    p.write_text(yaml.safe_dump(d, sort_keys=False))
+    r = subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
+    assert r.returncode != 0 and code in r.stdout
+
+
+def test_hook_accepts_clean_indicator(tmp_path):
+    d = yaml.safe_load(SAMPLE.read_text())
+    d["indicators"] = [dict(id="ind-01", type="domain", value="rn-stage.example", safe_form="dns_lookup",
+                            source_url="https://unit42.paloaltonetworks.com/x/",
+                            surfaces_in=[d["steps"][0]["id"]])]
+    d["steps"][0]["command"] = "dig +short rn-stage.example"
+    p = tmp_path / "s.yml"
+    p.write_text(yaml.safe_dump(d, sort_keys=False))
+    r = subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout
+
+
+def test_hook_marker_only_step_is_a_warning_not_an_error(tmp_path):
+    d = yaml.safe_load(SAMPLE.read_text())
+    d["steps"][0]["command"] = "echo marker || true"
+    p = tmp_path / "s.yml"
+    p.write_text(yaml.safe_dump(d, sort_keys=False))
+    r = subprocess.run([sys.executable, str(HOOK), str(p), str(REPO_ROOT)], capture_output=True, text=True)
+    assert r.returncode == 0 and "marker-only" in r.stdout and d["steps"][0]["id"] in r.stdout
+
+
+@pytest.mark.parametrize("cmd,expected", [
+    ("echo hi", True), ("printf 'x'\n: nothing", True), ("Write-Host 'x'", True),
+    ("echo m; curl -s http://127.0.0.1:8080/ || true", True),
+    ("echo m; dig +short rn-stage.example", False),
+    ("python3 -m scripts.eal_simulator.cli run /tmp/c.yml --live", False),
+])
+def test_is_marker_only(cmd, expected):
+    assert _load_hook().is_marker_only(cmd) is expected

@@ -119,6 +119,180 @@ def _load_cards_by_id(root: Path) -> dict:
     return out
 
 
+# ---- Indicators (S-22..S-27) — must mirror core/engine/scenario_loader.py ----
+INDICATOR_TYPES = frozenset({
+    "sha256", "sha1", "md5", "domain", "url", "ipv4", "ipv6", "user_agent", "ja3", "ja4",
+})
+INDICATOR_SAFE_FORMS = frozenset({
+    "log_field", "dns_lookup", "hash_only", "wildfire_test_file", "eicar",
+})
+SOURCE_URL_HOSTS = (
+    "https://unit42.paloaltonetworks.com/",
+    "https://github.com/paloaltonetworks/",
+)
+_HASH_TYPES = frozenset({"sha256", "sha1", "md5"})
+_HASH_LEN = {"sha256": 64, "sha1": 40, "md5": 32}
+_HASH_SAFE_FORMS = frozenset({"hash_only", "wildfire_test_file", "eicar", "log_field"})
+_SAFE_FORMS_BY_TYPE = {
+    **{t: _HASH_SAFE_FORMS for t in _HASH_TYPES},
+    "domain": frozenset({"dns_lookup", "log_field"}),
+    "url": frozenset({"log_field"}),
+    "ipv4": frozenset({"log_field"}),
+    "ipv6": frozenset({"log_field"}),
+    "user_agent": frozenset({"log_field"}),
+    "ja3": frozenset({"log_field"}),
+    "ja4": frozenset({"log_field"}),
+}
+_INDICATOR_ID_RE = re.compile(r"^ind-\d{2,}$")
+_DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
+_IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
+DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill|getent\s+hosts|resolvectl\s+query)\b")
+FETCH_VERB_RE = re.compile(r"\b(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr)\b")
+_HEREDOC_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
+
+# Marker-only steps: a command that only echoes / no-ops proves nothing.
+# (`:` and `#` are not word chars, so a trailing \b would never match "# x" / ": x".)
+_MARKER_LINE_RE = re.compile(
+    r"^\s*((echo|printf|Write-Host|Write-Output|true)\b|(:|#)(?=\s|$))|^\s*$")
+_SEGMENT_SPLIT_RE = re.compile(r"\|\||&&|;|\n")
+_LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
+
+
+def is_marker_only(command: str) -> bool:
+    """True when every line/`||` segment is a marker or a localhost curl."""
+    command = command or ""
+    if "scripts.eal_simulator.cli" in command or "cortexsim-eal" in command:
+        return False
+    for seg in _SEGMENT_SPLIT_RE.split(command):
+        if not (_MARKER_LINE_RE.match(seg) or _LOCAL_CURL_RE.search(seg)):
+            return False
+    return True
+
+
+def _ipv4_is_routable(value: str) -> bool:
+    m = _IPV4_RE.match(value)
+    if not m:
+        return False
+    a, b, c, d = (int(g) for g in m.groups())
+    if max(a, b, c, d) > 255:
+        return False
+    if a in (0, 10, 127) or (a == 169 and b == 254) or (a == 192 and b == 168):
+        return False
+    if a == 172 and 16 <= b <= 31:
+        return False
+    return True
+
+
+def _ipv6_is_routable(value: str) -> bool:
+    import ipaddress
+    try:
+        ip = ipaddress.IPv6Address(value)
+    except ValueError:
+        return False
+    return not (ip.is_loopback or ip.is_link_local or ip.is_unspecified
+                or ip.is_multicast or (ip.packed[0] & 0xFE) == 0xFC)
+
+
+def indicator_errors(indicators: list, step_ids: set) -> list:
+    """S-22 / S-23 / S-24 / S-27 per indicator (dict-shaped)."""
+    out = []
+    for k, ind in enumerate(indicators, 1):
+        if not isinstance(ind, dict):
+            out.append(f"S-22: indicators[{k}] is not a mapping")
+            continue
+        iid = ind.get("id")
+        typ, v = ind.get("type"), ind.get("value")
+        if not isinstance(iid, str) or not _INDICATOR_ID_RE.match(iid):
+            out.append(f"S-22: indicator id {iid!r} must match ind-NN")
+        if typ not in INDICATOR_TYPES:
+            out.append(f"S-22: indicator {iid} type {typ!r} not in {sorted(INDICATOR_TYPES)}")
+            continue
+        if not isinstance(v, str) or not v.strip():
+            out.append(f"S-22: indicator {iid} value is empty")
+            continue
+        bad = None
+        if typ in _HASH_TYPES:
+            if not re.fullmatch(r"[A-Fa-f0-9]{%d}" % _HASH_LEN[typ], v):
+                bad = f"is not a {_HASH_LEN[typ]}-hex {typ}"
+        elif typ == "ipv4":
+            if not _ipv4_is_routable(v):
+                bad = "is not a routable dotted-quad (private/loopback/link-local/0.* refused)"
+        elif typ == "ipv6":
+            if not _ipv6_is_routable(v):
+                bad = "is not a routable IPv6 address"
+        elif typ == "domain":
+            if "[" in v or "]" in v or not _DOMAIN_RE.match(v.lower()):
+                bad = "is not a plain, un-defanged FQDN"
+        elif typ == "url":
+            if not v.startswith(("http://", "https://")) or "hxxp" in v.lower():
+                bad = "must start http:// or https:// and be un-defanged"
+        if bad:
+            out.append(f"S-22: indicator {iid} value {v!r} {bad}")
+        src = ind.get("source_url")
+        if not isinstance(src, str) or not src.lower().startswith(SOURCE_URL_HOSTS):
+            out.append(f"S-23: indicator {iid} source_url must start with one of {list(SOURCE_URL_HOSTS)}")
+        surf = ind.get("surfaces_in")
+        if not isinstance(surf, list) or not surf:
+            out.append(f"S-24: indicator {iid} surfaces_in must name at least one step")
+        else:
+            missing = [s for s in surf if s not in step_ids]
+            if missing:
+                out.append(f"S-24: indicator {iid} surfaces_in names unknown step(s) {missing}")
+        sf = ind.get("safe_form")
+        if sf not in INDICATOR_SAFE_FORMS:
+            out.append(f"S-27: indicator {iid} safe_form {sf!r} not in {sorted(INDICATOR_SAFE_FORMS)}")
+        elif sf not in _SAFE_FORMS_BY_TYPE[typ]:
+            out.append(
+                f"S-27: indicator {iid} safe_form {sf!r} is not valid for type {typ!r} "
+                f"(allowed: {sorted(_SAFE_FORMS_BY_TYPE[typ])})")
+    return out
+
+
+def unsafe_indicator_lines(indicators: list, steps: list) -> list:
+    """S-25 / S-26 on dict-shaped input; same contract as the loader's function."""
+    out = []
+    inds = [i for i in indicators if isinstance(i, dict) and i.get("type") in INDICATOR_TYPES
+            and isinstance(i.get("value"), str) and i.get("value")]
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        sid = step.get("id")
+        heredoc = None
+        params_indent = None
+        for n, line in enumerate((step.get("command") or "").split("\n"), start=1):
+            exempt = False
+            if heredoc is not None:
+                if line.strip() == heredoc:
+                    heredoc, params_indent = None, None
+                    continue
+                stripped = line.strip()
+                indent = len(line) - len(line.lstrip())
+                if params_indent is not None and stripped and indent <= params_indent:
+                    params_indent = None
+                if params_indent is None and re.fullmatch(r"params:\s*", stripped):
+                    params_indent = indent
+                elif params_indent is not None:
+                    exempt = True
+            else:
+                m = _HEREDOC_RE.search(line)
+                if m:
+                    heredoc = m.group(1)
+                exempt = bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
+            for ind in inds:
+                typ, val, iid = ind["type"], ind["value"], ind.get("id")
+                if typ in _HASH_TYPES:
+                    if re.search(re.escape(val), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
+                        out.append(f"S-26: step {sid} line {n}: hash {iid} on a fetch line: {line.strip()[:120]}")
+                elif typ in ("domain", "url", "ipv4", "ipv6") and not exempt:
+                    pat = (r"(?<![A-Za-z0-9_.-])" + re.escape(val) +
+                           r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])")
+                    if re.search(pat, line, re.IGNORECASE if typ == "domain" else 0):
+                        out.append(
+                            f"S-25: step {sid} line {n}: {typ} {iid} outside a DNS-lookup "
+                            f"line or params: block: {line.strip()[:120]}")
+    return out
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print("lint-scenario: no file given", file=sys.stderr)
@@ -306,6 +480,21 @@ def main() -> int:
             "cgo_anchor is declared but no step wires a causality.parent_step "
             "— the chain is not connected (steps 2..n should declare causality)"
         )
+
+    # ---- indicators S-22..S-27 (mirror the loader) + marker-only warning ----
+    step_dicts = [st for st in steps if isinstance(st, dict)] if isinstance(steps, list) else []
+    indicators = raw.get("indicators")
+    if indicators is not None:
+        if not isinstance(indicators, list):
+            errors.append("S-22: indicators must be a list")
+        else:
+            errors.extend(indicator_errors(indicators, {st.get("id") for st in step_dicts}))
+            errors.extend(unsafe_indicator_lines(indicators, step_dicts))
+    for st in step_dicts:
+        if isinstance(st.get("command"), str) and is_marker_only(st["command"]):
+            warnings.append(
+                f"marker-only step {st.get('id', '?')}: command only echoes/no-ops "
+                f"and emits no signal a detection could key on")
 
     # ---- cleanup shape (ERROR — loader's CleanupSchema rejects a list) ----
     cleanup = raw.get("cleanup")
