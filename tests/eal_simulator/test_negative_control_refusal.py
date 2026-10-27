@@ -28,6 +28,12 @@ from eal_simulator.registry import get_default_registry
 
 _COLLECTOR = "https://collector.cortexsim-canary.invalid/logs/v1/event"
 
+# Emitters whose params carry required fields beyond ``collector_url`` (the
+# 2026-10-27 ngfw_threat_emitter names the file it reports a verdict on).
+_REQUIRED_EXTRA = {
+    "ngfw_threat_emitter": {"file_sha256": "a" * 64, "file_name": "x.exe"},
+}
+
 
 def _undeclared_emitters():
     reg = get_default_registry()
@@ -57,7 +63,7 @@ def test_params_refuse_negative_control_they_cannot_honour(plugin):
 @pytest.mark.parametrize("plugin", _undeclared_emitters())
 def test_omitting_or_disabling_it_is_unchanged(plugin):
     cls = get_default_registry().get(plugin)
-    base = {"collector_url": _COLLECTOR}
+    base = {"collector_url": _COLLECTOR, **_REQUIRED_EXTRA.get(plugin, {})}
     cls.validate_params(base)
     cls.validate_params({**base, "negative_control": False})
 

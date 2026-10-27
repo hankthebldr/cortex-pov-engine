@@ -247,7 +247,7 @@ emitted by the executor itself: `campaign_started`, `campaign_refused`,
 
 ---
 
-## 2. Plugin catalog (all 14 plugins)
+## 2. Plugin catalog (all 14 plugins in the table below; `ngfw_threat_emitter` brings the registry to 27)
 
 Plugins fall into three implementation families:
 - **In-process HTTP emitters** (httpx): c2_http_beacon, bulk_https_exfil,
@@ -275,6 +275,7 @@ Plugins fall into three implementation families:
 | 12 | `browser_attack_runner` | BROWSER (Prisma) | Shells out to `cortex-browser-attacker` (Playwright/Chromium/Prisma); YAML-declared browser actions; JSONL→ECS | `allowlist_host` (browser navigates) | T1552, T1189, T1176, T1567, T1113 | `plugins/browser_attack_runner.py` |
 | 13 | `agentic_egress` | KOI (supply-chain) | Tarballs an in-tree malicious-agentic-pack component and POSTs it (pypi_mirror does GET-probe + POST) | staging `target_url` | T1195, T1195.002, T1176, T1059 | `plugins/agentic_egress.py` |
 | 14 | `email_emitter` | EMAIL | Synthetic email-security events (Proofpoint TAP `proofpoint_tap_raw` + Microsoft 365 `msft_o365` shape) POSTed to a collector; 4 patterns (phishing_link, malicious_attachment, bec_impersonation, thread_hijack); ITDR-emulator pattern | operator `collector_url` | T1566.001, T1566.002, T1656, T1534, T1598 | `plugins/email_emitter.py` |
+| 27 | `ngfw_threat_emitter` | NDR / Analytics | Synthetic PAN-OS THREAT (WildFire verdict) log for an operator-named SHA-256; `action` restricted to `alert`/`allow`, never a block | operator `collector_url` | T1204.002, T1105 | `plugins/ngfw_threat_emitter.py` |
 
 > The summary table now lists **14 plugin classes**: c2, dns, stratum, smb, bulk,
 > ftp, ssh, idp, oauth, llm, airs, browser, agentic, **email_emitter** (added in
@@ -760,6 +761,32 @@ Events `agentic_egress_index_probe` (pypi only) + `agentic_egress_artifact_fetch
 > the only consumer). Cosmetic (gap EAL-G13, low).
 
 ---
+
+---
+
+#### 27. `ngfw_threat_emitter` (NDR / Analytics, added 2026-10-27)
+
+**Attack shape.** One shape-true PAN-OS THREAT log (`subtype: wildfire`) per
+iteration into dataset `panw_ngfw_threat_raw`, naming a file by SHA-256. Lets a
+DC validate WildFire-verdict detections and IOC enrichment on a known-bad
+digest. **Detection only:** `action` accepts `alert` or `allow` (case-insensitive,
+stored lowercase); anything else raises `synthetic threat log may not claim a
+block`, so the plugin can never fabricate proof of prevention.
+
+| Param | Type / default | Notes |
+|-------|----------------|-------|
+| `file_sha256` | str (required) | `^[a-f0-9]{64}$`, case-insensitive, stored lowercase |
+| `file_name` | str (required) | non-empty |
+| `file_type` | str = `PE` | |
+| `verdict` | str = `malicious` | `malicious` / `grayware` / `benign`; severity `critical` for malicious, else `medium` |
+| `app` | str = `web-browsing` | |
+| `dst_domain` / `dst_ip` | str? | set together; override `dst_domain`/`url_domain` and `dst` |
+| `src_ip` / `src_host` / `src_user` | str? | independent; override `src`, `endpoint_device_name`, `user` |
+| `action` | str = `alert` | `alert` / `allow` only |
+| `event_pattern` | str = `wildfire_malicious_file` | only value |
+
+Supports no negative control. The collector-POST transport, authorisation and
+delivery accounting are the shared `analytics_emitter` spine's.
 
 ## 3. Safety model — exhaustive
 
