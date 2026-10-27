@@ -243,6 +243,22 @@ def _pairs(lines):
 _PARITY_VECTORS = [
     ("curl on domain", [_ind()], "curl https://rn-stage.example/", None, None),
     ("dig allowed", [_ind()], "dig +short rn-stage.example @${R:-1.1.1.1}", None, None),
+    ("dig npm hostname", [_ind(value="npm-cache.example")],
+     "dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", None, None),
+    ("host curl hostname", [_ind(value="curl.example")], "host curl.example", None, None),
+    ("dig piped xargs curl", [_ind()], "dig +short rn-stage.example | xargs curl -s", None, None),
+    ("hash npm", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "npm install evil-pkg " + "d" * 64, None, None),
+    ("hash abs curl", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "/usr/bin/curl -O https://x/" + "d" * 64 + ".bin", None, None),
+    ("hash sudo wget", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "sudo wget https://x/" + "d" * 64, None, None),
+    ("hash pip3", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "pip3 download " + "d" * 64, None, None),
+    ("hash mycurl", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "mycurl " + "d" * 64, None, None),
+    ("hash iwr", [_ind(type="sha256", value="d" * 64, safe_form="hash_only")],
+     "Invoke-WebRequest -Uri https://x/" + "d" * 64, None, None),
     ("dig chained", [_ind()], "dig rn-stage.example; nc rn-stage.example 443", None, None),
     ("dig piped", [_ind()], "dig rn-stage.example | xargs curl", None, None),
     ("params block", [_ind()],
@@ -299,3 +315,26 @@ def test_hook_malformed_indicator_fields_report_not_crash(tmp_path, mutate, code
     r = _hook_out(tmp_path, mutate)
     assert r.returncode != 0 and code in r.stdout
     assert "Traceback" not in r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("cmd,value", [
+    ("dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", "npm-cache.example"),
+    ("host curl.example", "curl.example"),
+])
+def test_hook_fetch_verb_in_hostname_does_not_block_lookup(cmd, value):
+    hook = _load_hook()
+    got = hook.unsafe_indicator_lines([_ind(value=value)], [{"id": "S", "command": cmd}], None)
+    assert not any(l.startswith("S-25") for l in got)
+
+
+@pytest.mark.parametrize("cmd,fires", [
+    ("npm install evil-pkg {h}", True), ("/usr/bin/curl -O https://x/{h}.bin", True),
+    ("sudo wget https://x/{h}", True), ("pip3 download {h}", True),
+    ("mycurl {h}", False), ("Invoke-WebRequest -Uri https://x/{h}", True),
+])
+def test_hook_fetch_verb_tokens_s26(cmd, fires):
+    hook = _load_hook()
+    h = "d" * 64
+    got = hook.unsafe_indicator_lines([_ind(type="sha256", value=h, safe_form="hash_only")],
+                                      [{"id": "S", "command": cmd.format(h=h)}], None)
+    assert any(l.startswith("S-26") for l in got) is fires

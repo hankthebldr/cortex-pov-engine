@@ -193,3 +193,33 @@ def test_id_must_be_exactly_two_digits_and_unique():
 def test_url_indicator_is_case_insensitive():
     ind = IndicatorSchema(**_ind(type="url", value="https://rn-stage.example/s2", safe_form="log_field"))
     assert _s25(unsafe_indicator_lines([ind], [StepSchema(**_step("curl HTTPS://RN-STAGE.EXAMPLE/s2"))]))
+
+
+# ── Task 6b: fetch verb is a command token, not a hostname substring ─────────
+@pytest.mark.parametrize("cmd,value", [
+    ("dig +short npm-cache.example @${LAB_RESOLVER:-127.0.0.53}", "npm-cache.example"),
+    ("host curl.example", "curl.example"),
+])
+def test_fetch_verb_inside_hostname_does_not_block_lookup(cmd, value):
+    ind = IndicatorSchema(**_ind(value=value))
+    assert not _s25(unsafe_indicator_lines([ind], [StepSchema(**_step(cmd))]))
+
+
+@pytest.mark.parametrize("cmd,fires", [
+    ("npm install evil-pkg {h}", True),
+    ("/usr/bin/curl -O https://x/{h}.bin", True),
+    ("sudo wget https://x/{h}", True),
+    ("pip3 download {h}", True),
+    ("mycurl {h}", False),
+    ("Invoke-WebRequest -Uri https://x/{h}", True),
+])
+def test_fetch_verb_tokens_still_fire_s26(cmd, fires):
+    h = "d" * 64
+    ind = IndicatorSchema(**_ind(type="sha256", value=h, safe_form="hash_only"))
+    lines = unsafe_indicator_lines([ind], [StepSchema(**_step(cmd.format(h=h)))])
+    assert any(l.startswith("S-26") for l in lines) is fires
+
+
+def test_lookup_piped_into_fetch_verb_still_fires_s25():
+    ind = IndicatorSchema(**_ind())
+    assert _s25(unsafe_indicator_lines([ind], [StepSchema(**_step("dig +short rn-stage.example | xargs curl -s"))]))
