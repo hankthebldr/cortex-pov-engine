@@ -21,6 +21,13 @@
       "name": "CL-STA-0969 Telecom Intrusion \u2014 Endpoint + NGFW on src_host",
       "rule_id": "CR-MP-0033",
       "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "panw_ngfw_threat_raw (WildFire verdict malicious, action alert; CL-STA-0969 toolkit sha256 WildFire verdicts) JOIN panw_ngfw_traffic_raw (rare SSH session) ON endpoint_device_name (with src as the tie-break when the hostname is absent) WHERE |traffic._time - threat._time| <= 3600s -> one network-plane finding for the run host; feeds CR-MP-0033 as its network leg. Joins only NGFW records; no endpoint or cloud dataset.",
+      "name": "MP-033 network-leg fusion \u2014 NGFW threat verdict + traffic session on one host",
+      "rule_id": "CR-MP-NET-0033",
+      "severity": "high"
     }
   ],
   "ttp_ref": "TTP-2026-0192"

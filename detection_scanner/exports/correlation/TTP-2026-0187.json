@@ -16,6 +16,13 @@
       "name": "ChainDrop npm worm \u2014 endpoint, NGFW and CloudTrail legs on one CI runner",
       "rule_id": "CR-MP-0028",
       "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "panw_ngfw_threat_raw (WildFire verdict malicious, action alert; ChainDrop sha256 WildFire verdicts) JOIN panw_ngfw_traffic_raw (large HTTPS upload sessions to awqhnjewqjkl.icu / npm-cache.com) ON endpoint_device_name (with src as the tie-break when the hostname is absent) WHERE |traffic._time - threat._time| <= 1800s -> one network-plane finding for the run host; feeds CR-MP-0028 as its network leg. Joins only NGFW records; no endpoint or cloud dataset.",
+      "name": "MP-028 network-leg fusion \u2014 NGFW threat verdict + traffic session on one host",
+      "rule_id": "CR-MP-NET-0028",
+      "severity": "high"
     }
   ],
   "ttp_ref": "TTP-2026-0187"
