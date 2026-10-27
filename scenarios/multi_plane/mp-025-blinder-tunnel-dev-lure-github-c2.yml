@@ -234,6 +234,7 @@ steps:
       cp /bin/sleep "$STAGE/FlightManager/Resources/RuntimeBroker.exe"
       cat > "$STAGE/FlightManager/Resources/RuntimeBroker.exe.config" <<'XML'
       <?xml version="1.0" encoding="utf-8"?>
+      <!-- cortexsim-mp025 -->
       <configuration>
         <runtime>
           <appDomainManagerAssembly value="RuntimeBroker, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" />
@@ -268,7 +269,7 @@ steps:
         </Project>
         '@
         Copy-Item "$env:WINDIR\System32\PING.EXE" (Join-Path $stage 'FlightManager\Resources\RuntimeBroker.exe') -Force
-        Set-Content -Path (Join-Path $stage 'FlightManager\Resources\RuntimeBroker.exe.config') -Value '<configuration><runtime><appDomainManagerAssembly value="RuntimeBroker" /><appDomainManagerType value="RuntimeBroker.Manager" /><etwEnable enabled="false" /></runtime></configuration>'
+        Set-Content -Path (Join-Path $stage 'FlightManager\Resources\RuntimeBroker.exe.config') -Value '<!-- cortexsim-mp025 --><configuration><runtime><appDomainManagerAssembly value="RuntimeBroker" /><appDomainManagerType value="RuntimeBroker.Manager" /><etwEnable enabled="false" /></runtime></configuration>'
         Compress-Archive -Path $stage -DestinationPath $lure -Force
         Expand-Archive -Path $lure -DestinationPath $repos -Force
         Get-FileHash -Algorithm SHA256 $lure, (Join-Path $repos 'DubaiAirport_Carrers_IT_Test\FlightManager\FlightManager.csproj')
@@ -373,7 +374,7 @@ steps:
       RB="$HOME/.local/share/Microsoft/RuntimeBrokers"
       AUTOSTART="$HOME/.config/autostart/MicrosoftRuntime.desktop"
       mkdir -p "$HOME/.config/autostart"
-      printf '[Desktop Entry]\nType=Application\nName=MicrosoftRuntime\nExec=%s/RuntimeBroker.exe 1\nHidden=true\n' "$RB" > "$AUTOSTART"
+      printf '[Desktop Entry]\n# cortexsim-mp025\nType=Application\nName=MicrosoftRuntime\nExec=%s/RuntimeBroker.exe 1\nHidden=true\n' "$RB" > "$AUTOSTART"
       if [ -f "$AUTOSTART" ] && [ -x "$RB/RuntimeBroker.exe" ]; then echo "persistence state: newly persisted"; fi
       cat "$AUTOSTART"
     platform_variants:
@@ -623,9 +624,9 @@ steps:
 
 cleanup:
   commands:
-    - "pkill -f \"$HOME/.local/share/Microsoft/RuntimeBrokers/RuntimeBroker.exe\" || true"
-    - "rm -rf \"$HOME/.local/share/Microsoft/RuntimeBrokers\" \"$HOME/.config/autostart/MicrosoftRuntime.desktop\""
-    - "rm -rf \"$HOME/source/repos/DubaiAirport_Carrers_IT_Test\" \"$HOME/Downloads/DubaiAirport_Carrers_IT_Test.zip\" /tmp/cortexsim-mp025"
+    - "for h in /home/* \"$HOME\"; do rb=\"$h/.local/share/Microsoft/RuntimeBrokers\"; if grep -qs cortexsim-mp025 \"$rb/RuntimeBroker.exe.config\"; then pkill -f \"$rb/RuntimeBroker.exe\"; rm -rf \"$rb\"; fi; a=\"$h/.config/autostart/MicrosoftRuntime.desktop\"; grep -qs cortexsim-mp025 \"$a\" && rm -f \"$a\"; p=\"$h/source/repos/DubaiAirport_Carrers_IT_Test\"; if grep -qs 'CortexSim SAFE-MODE replica' \"$p/FlightManager/FlightManager.csproj\"; then rm -rf \"$p\" \"$h/Downloads/DubaiAirport_Carrers_IT_Test.zip\"; fi; done; true"
+    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command '$rb = Join-Path $env:LOCALAPPDATA \"Microsoft\\RuntimeBrokers\"; $run = \"HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\"; if (Select-String -Quiet -SimpleMatch -Pattern cortexsim-mp025 -Path (Join-Path $rb \"RuntimeBroker.exe.config\") -ErrorAction SilentlyContinue) { $v = (Get-ItemProperty -Path $run -Name MicrosoftRuntime -ErrorAction SilentlyContinue).MicrosoftRuntime; if ($v -like \"*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe*\") { Remove-ItemProperty -Path $run -Name MicrosoftRuntime -ErrorAction SilentlyContinue }; Get-Process -Name RuntimeBroker -ErrorAction SilentlyContinue | Where-Object { $_.Path -like \"$rb\\*\" } | Stop-Process -Force -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force -Path $rb -ErrorAction SilentlyContinue }' || true"
+    - "rm -rf /tmp/cortexsim-mp025"
     - "rm -f /tmp/cortexsim-mp025-github.yml /tmp/cortexsim-mp025-tunnel.yml"
 
 author: "Henry Reed"

@@ -213,13 +213,19 @@ steps:
     platforms: ["windows", "linux"]
     platform_variants:
       linux: |
-        cat > /etc/systemd/system/msdnetsvc.service <<'UNIT'
+        U=/etc/systemd/system/msdnetsvc.service
+        if [ -e "$U" ]; then
+          echo "msdnetsvc.service pre-exists; left untouched"
+        else
+        cat > "$U" <<'UNIT'
+        # cortexsim-mp026
         [Unit]
         Description=msdnetsvc (cortexsim-mp026 lab persistence, never enabled)
         [Service]
         Type=oneshot
         ExecStart=/var/tmp/.cortexsim-mp026/assembly/mscorsvw
         UNIT
+        fi
         if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload || true; fi
         cat /etc/systemd/system/msdnetsvc.service
     expected_detections:
@@ -561,8 +567,9 @@ steps:
 
 cleanup:
   commands:
-    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'if (Get-Service -Name msdnetsvc -ErrorAction SilentlyContinue) { sc.exe delete msdnetsvc }; Remove-Item -Recurse -Force -Path '\\''C:\\ProgramData\\cortexsim-mp026'\\'' -ErrorAction SilentlyContinue' || true"
-    - "rm -f /etc/systemd/system/msdnetsvc.service /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
+    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'if (sc.exe qc msdnetsvc 2>$null | Select-String -Quiet -SimpleMatch cortexsim-mp026) { sc.exe delete msdnetsvc }; Remove-Item -Recurse -Force -Path '\\''C:\\ProgramData\\cortexsim-mp026'\\'' -ErrorAction SilentlyContinue' || true"
+    - "if grep -qs cortexsim-mp026 /etc/systemd/system/msdnetsvc.service; then rm -f /etc/systemd/system/msdnetsvc.service; command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload; fi; true"
+    - "rm -f /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
 
 author: "Henry Reed"
 created: "2026-10-27"
