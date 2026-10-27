@@ -387,8 +387,8 @@
       },
       {
         "name": "MP-028 STS AssumeRole from a CI runner address after metadata harvest",
-        "description": "An AssumedRole session calls sts:AssumeRole from an address that belongs to a CI runner which, minutes earlier, read the metadata token endpoint.",
-        "logic": "dataset = cloud_audit_logs\n| filter eventName = \"AssumeRole\" and eventSource = \"sts.amazonaws.com\" and userIdentity.type = \"AssumedRole\"\n| alter caller_ip = sourceIPAddress, role_arn = userIdentity.arn\n| join type = left (dataset = cloud_audit_logs | filter _time < to_timestamp(current_time() - 3600) and eventSource = \"sts.amazonaws.com\" and userIdentity.type = \"AssumedRole\" | comp count() as prior_calls by userIdentity.arn, sourceIPAddress | alter hist_arn = userIdentity.arn, hist_ip = sourceIPAddress | fields hist_arn, hist_ip, prior_calls) as hist hist.hist_arn = role_arn and hist.hist_ip = caller_ip\n| filter prior_calls = null\n| comp count() as calls by role_arn, caller_ip",
+        "description": "A caller identity calls sts:AssumeRole from a first-seen runner address (no prior STS call by that identity from that address in the history window) — a CI runner which, minutes earlier, read the metadata token endpoint.",
+        "logic": "dataset = cloud_audit_logs\n| filter eventName = \"AssumeRole\" and eventSource = \"sts.amazonaws.com\"\n| alter caller_ip = sourceIPAddress, role_arn = userIdentity.arn\n| join type = left (dataset = cloud_audit_logs | filter _time < to_timestamp(current_time() - 3600) and eventSource = \"sts.amazonaws.com\" | comp count() as prior_calls by userIdentity.arn, sourceIPAddress | alter hist_arn = userIdentity.arn, hist_ip = sourceIPAddress | fields hist_arn, hist_ip, prior_calls) as hist hist.hist_arn = role_arn and hist.hist_ip = caller_ip\n| filter prior_calls = null\n| comp count() as calls by role_arn, caller_ip",
         "severity": "high",
         "mitre_technique_ids": [
           "T1078.004",

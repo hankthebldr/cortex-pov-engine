@@ -539,7 +539,7 @@ steps:
     expected_detections:
       - plane: CDR
         type: ABIOC
-        description: "An AssumedRole session issues sts:AssumeRole from the CI runner's address minutes after a metadata token-endpoint read on that host — the harvested-credential exchange. The cloud record carries the runner's IP (source_ip), which XSIAM asset resolution maps to the runner's src_host; with EGRESS_IP set it carries the NAT egress instead."
+        description: "A caller identity issues sts:AssumeRole from a first-seen CI-runner address minutes after a metadata token-endpoint read on that host — the harvested-credential exchange. The cloud record carries the runner's IP (source_ip), which XSIAM asset resolution maps to the runner's src_host; with EGRESS_IP set it carries the NAT egress instead."
         ttp_ref: "TTP-2026-0187"
         detection_id: "abioc-mp-028-sts-assumerole-from-a-ci-runner-address-after-metadata-harvest"
       - plane: ANALYTICS
