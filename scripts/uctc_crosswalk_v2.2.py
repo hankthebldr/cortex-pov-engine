@@ -353,6 +353,12 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "CL-STA-0969 telecom intrusion: AuthDoor PAM backdoor, GTPDoor / EchoBackdoor covert C2, reverse SSH tunnels — endpoint plus NGFW legs"),
     "SIM-MP-034": (["TC-ITDR-03", "TC-ITDR-02", "TC-AES-07", "TC-IR-13"], REMAP,
         "Jingle Thief (CL-CRI-1032): M365/Entra account takeover, SharePoint recon, mailbox forwarding — identity and SaaS legs"),
+    "SIM-MP-035": (["TC-IR-05", "TC-NDR-01", "TC-NDR-04", "TC-EDR-05", "TC-AIRS-07", "TC-TH-06"], REMAP,
+        "Bugster AI-assisted WordPress-to-MongoDB exfil (Unit 42): web-shell foothold, live recon, LLM-egress jailbreak — EDR, NGFW and AI-runtime legs"),
+    "SIM-MP-036": (["TC-IR-05", "TC-IR-04", "TC-ITDR-01", "TC-EDR-05", "TC-NDR-01"], REMAP,
+        "PAN-OS CVE-2026-0257 VPN foothold to VMDK credential theft (Unit 42, Spikey / Tarnished Scorpius) — EDR, NGFW and identity legs"),
+    "SIM-MP-037": (["TC-TH-01", "TC-NDR-01", "TC-EDR-05"], REMAP,
+        "PHP2Shell (CVE-2026-109618/-109619) PHP-worker post-exploitation, validated by Unit 42 hunts — endpoint plus NGFW legs"),
     "SIM-APB-001": (["TC-APB-06", "TC-SOAR-02"], REMAP,
         "Governed-autonomy audit reconstruction across three structurally "
         "different action classes. TC-APB-06 is NET-NEW and is the ONLY "

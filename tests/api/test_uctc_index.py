@@ -55,11 +55,14 @@ def seeded(session_factory):
     pass, so it moves deliberately with the corpus and never by default.
     170 -> 189 on 2026-10-27: library signal expansion (SIM-MP-023..034, Unit 42
     stitched chains) plus the 7 rows ccf40d5 bound in the generator but never emitted.
+    189 -> 192 on 2026-10-28: SIM-MP-035..037 (Unit 42 recent chains: Bugster, PAN-OS
+    CVE-2026-0257, PHP2Shell). All three bind already-evidenced TCs, so the evidenced
+    pins (90) do not move; in-use payloads 34 -> 35 (POV-SC-013).
     """
     from models import Scenario  # noqa: PLC0415
 
     rows = list(csv.DictReader(CROSSWALK.open(encoding="utf-8")))
-    assert len(rows) == 189
+    assert len(rows) == 192
 
     async def _seed() -> None:
         async with session_factory() as session:
@@ -450,7 +453,7 @@ def test_payloads_report_engine_usage_and_the_split_flag(client, seeded):
     body = client.get("/api/uctc/payloads").json()
     assert body["total"] == 140
     in_use = client.get("/api/uctc/payloads?in_use=true").json()
-    assert in_use["total"] == 34  # 33 -> 34 on 2026-10-27: same CSV catch-up
+    assert in_use["total"] == 35  # 33 -> 34 on 2026-10-27: same CSV catch-up; 34 -> 35 on 2026-10-28: SIM-MP-037 binds POV-SC-013
     assert all(p["scenario_count"] > 0 for p in in_use["payloads"])
     sc1 = next(p for p in body["payloads"] if p["pov_scenario_id"] == "POV-SC-001")
     assert sc1["needs_split"] is True
