@@ -2,8 +2,9 @@
 
 > A **derived** view of every loadable scenario YAML under `scenarios/`. Source-of-truth
 > is the YAML itself; the data-heavy sections (§2, §3, §5) are **regenerated from disk**.
-> **Current ground truth (2026-10-27): 189 scenarios · 187 TTP cards across 16 planes** (ANALYTICS=35 after the
-> 12 Unit 42 stitched chains `SIM-MP-023..034`, `TTP-2026-0182..0193`; see `ground-truth.md`).
+> **Current ground truth (2026-10-28): 192 scenarios · 190 TTP cards across 16 planes** (ANALYTICS=38 after the
+> 12 Unit 42 stitched chains `SIM-MP-023..034`, `TTP-2026-0182..0193`, and the three recent-posts chains
+> `SIM-MP-035..037`, `TTP-2026-0194..0196`; see `ground-truth.md`).
 > The 2026-08-02 breakdown that follows is the prior snapshot: **169 scenarios · 169 TTP cards across 15 planes**,
 > all `status: active`, 0 rejected / 0 dangling refs, 1073/1073 `detection_id` slugs
 > resolving. Per-plane on disk: CDR=26 · ANALYTICS=23 · EDR=21 · ITDR=20 · NDR=12 ·

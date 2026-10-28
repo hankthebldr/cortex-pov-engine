@@ -5,7 +5,7 @@
 **A detection quality-assurance engine for Palo Alto Networks Cortex.**
 
 [![CI](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml)
-[![scenarios](https://img.shields.io/badge/scenarios-189-00994d)](docs/reference/ground-truth.md)
+[![scenarios](https://img.shields.io/badge/scenarios-192-00994d)](docs/reference/ground-truth.md)
 [![planes](https://img.shields.io/badge/detection%20planes-16-00994d)](docs/reference/ground-truth.md)
 [![step-detections](https://img.shields.io/badge/step--detections-1320-00994d)](docs/reference/ground-truth.md)
 [![tenant-verified](https://img.shields.io/badge/tenant--verified-0-c62828)](#read-this-before-anything-else)
@@ -23,7 +23,7 @@ environment (XSIAM/XDR) so a Domain Consultant can validate detection logic —
 SOC has to. Think *"MITRE Caldera's opinionated nephew"*: not a red-team C2, a
 **detection quality-assurance engine**.
 
-It runs **189 scenarios across 16 detection planes** through either a pull-model
+It runs **192 scenarios across 16 detection planes** through either a pull-model
 Go beacon or a self-contained push bundle, under a per-step **identity harness**
 so XDR sees real process-causality chains instead of everything running as one
 account. Every scenario reference — use case, test case, TTP card, detection id,
@@ -193,8 +193,8 @@ has no toolchain and no internet.
 ```mermaid
 flowchart LR
     subgraph AUTHOR["Authored content — source of truth, on disk"]
-        SC["scenarios/<br/>189 scenario YAML"]
-        TTP["detection_scanner/ttps/<br/>187 TTP cards"]
+        SC["scenarios/<br/>192 scenario YAML"]
+        TTP["detection_scanner/ttps/<br/>190 TTP cards"]
         ASRT["assertions/<br/>POS · PLT · AUT"]
         PACK["tools/packs/<br/>91 adapter packs"]
         IDX["UC/TC index v2.2<br/>266 test cases"]
@@ -628,7 +628,7 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | Plane | Cortex engine | Scenarios | Primary driver |
 |---|---|---:|---|
 | CDR | Cortex Cloud / Prisma Cloud Compute | 28 | container-runtime exec · K8s manifests |
-| Analytics | XSIAM Correlation Engine | 35 | multi-plane stitching |
+| Analytics | XSIAM Correlation Engine | 38 | multi-plane stitching |
 | EDR | Cortex XDR Agent | 22 | identity harness · signalbench |
 | ITDR | Cortex ITDR | 20 | AD toolchain · `idp_signin_emulator` |
 | NDR | Network Security / Firewall Analytics | 12 | EAL network plugins |
@@ -643,11 +643,11 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | CSPM | Cortex Cloud Posture Management | 5 | `cspm` IaC misconfigs |
 | Email | XSIAM / NG-SIEM (3rd-party ingestion) | 5 | `email_emitter` |
 | DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 | endpoint + cloud data movement |
-| **Total** | | **189** | |
+| **Total** | | **192** | |
 
-**1,317 step-level expected detections** resolve against **2,049 catalog
+**1,368 step-level expected detections** resolve against **2,102 catalog
 detection objects** across the six-value `detection_type` vocabulary, covering
-**230 MITRE techniques (127 base)**. XDM modeling rules are a normalization
+**233 MITRE techniques (128 base)**. XDM modeling rules are a normalization
 *substrate* — surfaced and exported, counted informationally, not a seventh type.
 
 <details>
@@ -882,9 +882,9 @@ cortex-pov-engine/
 │   └── models.py               14 ORM models
 ├── agent/                    ← Go beacon, stdlib only, 5-target matrix
 ├── ui/                       ← React 18 + Vite console
-├── scenarios/                ← 189 scenario YAML, per plane
+├── scenarios/                ← 192 scenario YAML, per plane
 ├── assertions/{pos,plt,aut}/ ← POS · PLT · AUT artifacts
-├── detection_scanner/ttps/   ← 187 TTP cards → 2,049 detection objects
+├── detection_scanner/ttps/   ← 190 TTP cards → 2,102 detection objects
 ├── tools/packs/              ← 91 adapter packs across 5 tiers
 ├── payloads/                 ← digest-pinned shelf (manifest is generated)
 ├── infra/modules/aws/        ← 11 Terraform modules

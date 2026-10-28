@@ -1,6 +1,6 @@
 # EAL (Emulated Attack Layer) Simulator — Plugin Catalog & Reference
 
-> **Count update (2026-10-27):** the tree ships **27 EAL plugins** (ground truth), including `ngfw_threat_emitter`;
+> **Count update (2026-10-27):** the tree ships **27 EAL plugins** (ground truth, unchanged on 2026-10-28), including `ngfw_threat_emitter`;
 > the tables below predate that and are not regenerated here.
 >
 > **Status:** canonical reference, generated 2026-06-07 from a full read of

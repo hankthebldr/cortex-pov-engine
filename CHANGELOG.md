@@ -8,6 +8,16 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — Unit 42 recent-posts chains: SIM-MP-035/036/037
+
+Spec `docs/superpowers/specs/2026-10-28-unit42-xsiam-recent-posts-research.md`.
+
+- **Three multi-plane scenarios** with cards `TTP-2026-0194..0196` and UC/TC crosswalk rows: `SIM-MP-035` (BUGSTER AI-assisted WordPress credential attack, database exfiltration, C2), `SIM-MP-036` (CVE-2026-0257 post-exploitation: VPN session, RMM recon, vCenter/ESXi, offline DC credential dump), `SIM-MP-037` (PHP2Shell post-exploitation under a PHP worker; detections are the published Unit 42 hunting queries).
+- **Emitter extensions, no plugin-count change (27):** `ngfw_threat_emitter` event pattern `vulnerability_inbound`; `globalprotect_emitter` event pattern `gateway_connected_without_auth`; `ngfw_eal_emitter` accepts `dst_ip` without `dst_domain` plus `dst_port`, `app`, `process_name` overrides; `llm_provider_egress` providers `deepseek` and `openrouter`.
+- **Signal quality, measured:** 13 stitched chains (was 11), 234 high-quality signals of 1368 step-detections (17.1%, was 195/1320), marker-only 100/790 (12.7%); floors set to `hq_signal_floor` 234, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266. **`SIM-MP-037` is authored but not counted as a high-quality signal** (its report publishes no indicator).
+- Corpus: 189 -> 192 scenarios, 187 -> 190 cards; exports, golden push-bundle digests and ground truth regenerated. `tenant-verified` remains 0.
+- Known: `make coverage-strict` exits 1 (Correlation 9.9%, 136/1368, one step-detection under the 10% target); the signal-quality floors hold.
+
 ### Added — library signal expansion: 12 stitched, Unit 42-enrichable chains
 
 Spec `docs/superpowers/specs/2026-10-27-library-signal-expansion-design.md`.

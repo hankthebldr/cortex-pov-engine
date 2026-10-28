@@ -114,6 +114,18 @@
     `CORTEXSIM_K8S_PAYLOAD_AUTH=token` (the init container's bare `wget` carries
     no Authorization header, so the manifest would apply cleanly and 403 in the
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
+- **Counted ground truth (verified 2026-10-28 — Unit 42 recent-posts pass):**
+  **192 loadable scenarios · 190 TTP cards · 27 EAL plugins** across 16 planes · 1368 step-detections ·
+  2102 catalog detection objects (`ground-truth.md` is the source). `signal_quality` in `coverage_report.py --json`:
+  **13 stitched chains** (was 11), **234 high-quality signals / 1368 step-detections (17.1%)** (was 195/1320),
+  **100 marker-only steps / 790 (12.7%)**, 87 in-band indicators in 14 scenarios (+5 not in-band, `SIM-MP-034`);
+  floors set to those measured values (`hq_signal_floor` 234, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266).
+  `SIM-MP-035..037` / `TTP-2026-0194..0196` are the three new chains; **`SIM-MP-037` is authored but not counted as a
+  high-quality signal** (its report publishes no indicator, ruling R2). New emitter surface, no plugin-count change:
+  `vulnerability_inbound` (`ngfw_threat_emitter`), `gateway_connected_without_auth` (`globalprotect_emitter`),
+  `dst_ip`-alone / `dst_port` / `app` / `process_name` (`ngfw_eal_emitter`), providers `deepseek` / `openrouter`
+  (`llm_provider_egress`). ***tenant-verified: 0.*** `make coverage-strict` exits 1: Correlation 9.9% (136/1368) vs the
+  10% target.
 - **Counted ground truth (verified 2026-10-27 — library signal expansion):**
   **189 loadable scenarios · 187 TTP cards · 27 EAL plugins** across 16 planes · 1320 step-detections ·
   2049 catalog detection objects (`ground-truth.md` is the source). New `signal_quality` block in
