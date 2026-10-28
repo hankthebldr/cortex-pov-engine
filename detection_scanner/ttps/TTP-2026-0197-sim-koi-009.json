@@ -182,7 +182,7 @@
         {
           "name": "VSIX_PATH",
           "type": "path",
-          "default": "sources/cortex-malicious-agentic-pack/vscode/prettier-pro-canary/prettier-pro-canary.vsix",
+          "default": "/tmp/CORTEXSIM-KOI009-VSIX/prettier-pro-canary.vsix",
           "description": "Canary extension package installed through the IDE CLI."
         }
       ],
