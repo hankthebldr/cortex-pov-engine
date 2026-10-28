@@ -1,0 +1,320 @@
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 python3 Enumerates WordPress Authors via the REST API and Author Sitemap"
+id: ttp-2026-0194-bioc-01
+status: experimental
+description: |
+  python3 requests WordPress post author fields (/wp-json/wp/v2/posts?_fields=author,author_name) and the author sitemap (/wp-sitemap-users-1.xml) with a python-requests user agent: author enumeration that sidesteps a WAF block on /wp/v2/users.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and actor_process_image_name in ("python3", "python")
+    | filter action_remote_port in (80, 443)
+    | filter http_url contains "wp-sitemap-users" or http_url contains "_fields=author" or http_url contains "/wp-json/wp/v2/users"
+    | fields _time, agent_hostname, actor_effective_username, actor_process_image_name, http_url, user_agent, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1595/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1595.002
+    - attack.t1589.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 python3 Writes a Candidate Credential File After Repeated wp-login POSTs"
+id: ttp-2026-0194-bioc-02
+status: experimental
+description: |
+  A python3 process that has just sent many POSTs to /wp-login.php writes a text file of candidate credentials (valid_candidates.txt): the generated brute-force tool recording a hit.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter actor_process_image_name in ("python3", "python")
+    | filter action_file_name ~= "(valid|candidate|cred|found).*\.txt$"
+    | fields _time, agent_hostname, actor_effective_username, actor_process_command_line, action_file_path
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110.001
+    - attack.t1078
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 python3 Dumps a MongoDB and Writes an Exfiltration Manifest"
+id: ttp-2026-0194-bioc-03
+status: experimental
+description: |
+  Under a python3 causality chain, mongodump or python3 connects to TCP 27017 and the chain writes collection files plus manifest.json into one dump directory: database exfiltration tooling with a manifest of what it took.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter causality_actor_process_image_name in ("python3", "python")
+    | filter (event_type = ENUM.NETWORK and action_remote_port = 27017) or (event_type = ENUM.FILE and action_file_name = "manifest.json") or (event_type = ENUM.PROCESS and action_process_image_name = "mongodump")
+    | comp count() as events, values(action_file_name) as files, values(action_remote_ip) as dbs by agent_hostname, causality_actor_process_instance_id
+    | filter array_length(files) > 0
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1213/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1213
+    - attack.t1005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 tar Compresses a Database Dump Under a python3 Causality Chain"
+id: ttp-2026-0194-bioc-04
+status: experimental
+description: |
+  tar -czf with a python3 parent archives a directory holding manifest.json and collection dumps into a .tar.gz: staging the dump for exfiltration.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "tar" and actor_process_image_name in ("python3", "python")
+    | filter action_process_image_command_line contains "-czf" and (action_process_image_command_line contains "dump" or action_process_image_command_line contains "records")
+    | fields _time, agent_hostname, actor_effective_username, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1560/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1560.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 Shell Under python3 Opens a Reverse Shell Over dev tcp to Port 4444"
+id: ttp-2026-0194-bioc-05
+status: experimental
+description: |
+  bash with a python3 parent runs a command line that opens /dev/tcp/<host>/4444: a reverse shell to a C2 listener port.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("bash", "sh") and actor_process_image_name in ("python3", "python", "timeout")
+    | filter action_process_image_command_line contains "/dev/tcp/" and action_process_image_command_line contains "/4444"
+    | fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 wscript Launches Hidden PowerShell With an EncodedCommand TCPClient"
+id: ttp-2026-0194-bioc-06
+status: experimental
+description: |
+  wscript.exe running a .vbs starts powershell.exe -nop -w hidden -EncodedCommand whose decoded text creates Net.Sockets.TCPClient: a Base64 PowerShell reverse shell delivered via VBScript.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter actor_process_image_name = "wscript.exe" and action_process_image_name = "powershell.exe"
+    | filter action_process_image_command_line contains "-EncodedCommand" and action_process_image_command_line contains "hidden"
+    | fields _time, agent_hostname, actor_effective_username, actor_process_command_line, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.001
+    - attack.t1059.005
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 Jailbreak System-Prompt Override Sent to an Unsanctioned GenAI Provider"
+id: ttp-2026-0194-bioc-07
+status: experimental
+description: |
+  AI Access Security: requests from a host to unsanctioned GenAI APIs (api.deepseek.com and openrouter.ai) whose prompts carry a jailbreak / safety-override frame; both providers receive the override. The validation logic confirms the sessions to both on the NGFW; the content verdict is AI Access Security's.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter url_domain in ("api.deepseek.com", "openrouter.ai") or dst_hostname in ("api.deepseek.com", "openrouter.ai")
+    | comp count() as sessions, values(dst_hostname) as providers by endpoint_device_name, src
+    | filter array_length(providers) >= 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 Scripted wp-login Credential Burst From a Host Process"
+id: ttp-2026-0194-abioc-08
+status: experimental
+description: |
+  A non-browser process (python3) sends a high-rate burst of HTTP POSTs to one /wp-login.php URI (dozens within seconds, several accounts): scripted password guessing from the host. Linux network events do not reliably carry http_url / http_method, so the fallback counts web-port connections per process instance and destination.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and actor_process_image_name in ("python3", "python")
+    | filter (http_url contains "wp-login.php" and http_method = "POST") or action_remote_port in (80, 443)
+    | bin _time span = 1m
+    | comp count() as posts by agent_hostname, actor_process_instance_id, action_remote_ip, _time
+    | filter posts >= 20
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1110/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1110.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 NGFW Recurring python3 Sessions to an External HTTP Proxy"
+id: ttp-2026-0194-abioc-09
+status: experimental
+description: |
+  NGFW EAL recurring sessions whose endpoint process is python3 to an external HTTP proxy rare across the fleet: tooling tunnelled through a commercial proxy.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter process_name in ("python3", "python") and app = "http-proxy"
+    | comp count() as sessions by endpoint_device_name, dst, dst_port
+    | filter sessions >= 5
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1090/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1090
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 NGFW Large Upload From python3 to a Rare External IP on Port 8080"
+id: ttp-2026-0194-abioc-10
+status: experimental
+description: |
+  One NGFW EAL session whose endpoint process is python3 sends an anomalously large bytes_sent to a rare external IP on a non-standard web port.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter process_name in ("python3", "python") and dst_port = 8080
+    | filter bytes_sent > 50000000
+    | fields _time, endpoint_device_name, src, dst, dst_port, app, bytes_sent, process_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1041/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1041
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch (T1110.001 / T1041) \u2014 MP-035 NGFW Recurring Communications to the Actor Server on Port 4444"
+id: ttp-2026-0194-abioc-11
+status: experimental
+description: |
+  NGFW EAL recurring small sessions whose endpoint process is a shell (bash on Linux; powershell.exe on the Windows variant) to an external IP on port 4444: reverse-shell callback cadence.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter process_name in ("bash", "sh", "powershell.exe") and dst_port = 4444
+    | comp count() as sessions by endpoint_device_name, dst
+    | filter sessions >= 4
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+    - attack.t1059.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

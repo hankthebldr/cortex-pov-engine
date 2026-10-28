@@ -109,9 +109,9 @@ def default_config() -> dict[str, Any]:
         "top": 15,
         "strict": False,
         # signal_quality gates: set to the values measured 2026-10-27 (library signal expansion).
-        "hq_signal_floor": 195,
-        "stitched_chain_floor": 11,
-        "marker_only_ceiling": 0.1308,
+        "hq_signal_floor": 234,
+        "stitched_chain_floor": 13,
+        "marker_only_ceiling": 0.1266,
     }
 
 

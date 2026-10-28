@@ -1,0 +1,22 @@
+{
+  "mitre_techniques": [
+    "T1190",
+    "T1082",
+    "T1087",
+    "T1105",
+    "T1222.002",
+    "T1620",
+    "T1059.004",
+    "T1059.006"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "XQL(MP-037 Unit 42 MTH Inbound PHP Exploitation From Public Sources) on dest host H AND (XQL(MP-037 Unit 42 MTH PHP Web Worker Post-Exploitation Hunt) OR BIOC(MP-037 Recon Burst by Web Service Account) OR BIOC(MP-037 chmod Executable Bit in a tmp-Class Directory by Web Service Account) OR BIOC(MP-037 Execution From dev-shm or a memfd Image by Web Service Account) OR BIOC(MP-037 Payload Download to File by Web Service Account) OR BIOC(MP-037 Remote-Name Payload Transfer by Web Service Account)) on H within 3600s, order-insensitive (src_host: xdr_data agent_hostname = NGFW endpoint_device_name, which the synthetic vulnerability record carries in-band as the victim host) -> one PHP2Shell incident spanning the endpoint and network legs. No Unit 42 indicator exists, so no enrichment is expected.",
+      "name": "PHP2Shell Inbound Exploit plus PHP-Worker Post-Exploitation - Endpoint plus NGFW on One Host",
+      "rule_id": "CR-MP-0037",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0196"
+}
