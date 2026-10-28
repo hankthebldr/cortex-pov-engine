@@ -490,6 +490,11 @@
         "name": "BUGSTER AI-Assisted Intrusion — python3 Tooling, Proxy / Exfil / C2 Traffic and a GenAI Jailbreak on One Host",
         "rule_id": "CR-MP-0035",
         "logic": "(BIOC(MP-035 python3 Enumerates WordPress Authors via the REST API and Author Sitemap) OR ABIOC(MP-035 Scripted wp-login Credential Burst From a Host Process) OR BIOC(MP-035 python3 Dumps a MongoDB and Writes an Exfiltration Manifest) OR BIOC(MP-035 tar Compresses a Database Dump Under a python3 Causality Chain) OR BIOC(MP-035 Shell Under python3 Opens a Reverse Shell Over dev tcp to Port 4444) OR BIOC(MP-035 wscript Launches Hidden PowerShell With an EncodedCommand TCPClient)) AND (ABIOC(MP-035 NGFW Recurring python3 Sessions to an External HTTP Proxy) OR ABIOC(MP-035 NGFW Large Upload From python3 to a Rare External IP on Port 8080) OR ABIOC(MP-035 NGFW Recurring Communications to the Actor Server on Port 4444) OR IOC(162.243.3.92) OR IOC(104.238.38.202)) AND BIOC(MP-035 Jailbreak System-Prompt Override Sent to an Unsanctioned GenAI Provider) within 3600s on the same endpoint entity (xdr_data agent_hostname = panw_ngfw_traffic_raw endpoint_device_name = the AI Access source host, the src_host every leg carries) -> one BUGSTER incident whose summary names the python3 tooling lineage, the proxy and actor-server destinations and the jailbreak attempts to both providers."
+      },
+      {
+        "name": "MP-035 network-leg fusion — NGFW proxy, bulk-upload and beacon sessions on one host",
+        "rule_id": "CR-MP-NET-0035",
+        "logic": "panw_ngfw_traffic_raw (python3 recurring sessions to the external HTTP proxy, step-03) JOIN panw_ngfw_traffic_raw (large python3 upload to the rare external IP on port 8080, step-06) JOIN panw_ngfw_traffic_raw (recurring bash sessions to the actor server 162.243.3.92 on port 4444, step-08) ON endpoint_device_name (with src as the tie-break when the hostname is absent) WHERE all three fall within 3600s of each other -> one network-plane finding for the run host; feeds CR-MP-0035 as its network leg. Joins only NGFW records; no endpoint, AI Access or cloud dataset."
       }
     ],
     "analytics_modules": [

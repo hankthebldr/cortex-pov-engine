@@ -522,6 +522,11 @@ steps:
         description: "The C2 records' destination 162.243.3.92 is the published actor server; the IOC rule matches dst in panw_ngfw_traffic_raw."
         ttp_ref: "TTP-2026-0194"
         detection_id: "ioc-ipv4-162-243-3-92"
+      - plane: NDR
+        type: Correlation
+        description: "CR-MP-NET-0035 fuses the network leg on its own: the panw_ngfw_traffic_raw proxy sessions (step-03), the bulk upload to the rare external IP (step-06) and the recurring beacon sessions to the actor server (step-08) share src / endpoint_device_name for the run host within 3600 s, so the three NGFW findings are one network-plane finding before the endpoint and AI Access stitch."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "CR-MP-NET-0035"
 
   - id: step-09
     name: "AI Access leg: jailbreak system-prompt override to DeepSeek and to a model through OpenRouter"
