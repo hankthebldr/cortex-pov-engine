@@ -115,7 +115,7 @@
     no Authorization header, so the manifest would apply cleanly and 403 in the
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
 - **Counted ground truth (verified 2026-10-28 — Unit 42 recent-posts pass):**
-  **192 loadable scenarios · 190 TTP cards · 27 EAL plugins** across 16 planes · 1370 step-detections ·
+  **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1370 step-detections ·
   2104 catalog detection objects (`ground-truth.md` is the source). `signal_quality` in `coverage_report.py --json`:
   **13 stitched chains** (was 11), **236 high-quality signals / 1370 step-detections (17.2%)** (was 195/1320),
   **100 marker-only steps / 790 (12.7%)**, 87 in-band indicators in 14 scenarios (+5 not in-band, `SIM-MP-034`);

@@ -5,7 +5,7 @@
 **A detection quality-assurance engine for Palo Alto Networks Cortex.**
 
 [![CI](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml)
-[![scenarios](https://img.shields.io/badge/scenarios-192-00994d)](docs/reference/ground-truth.md)
+[![scenarios](https://img.shields.io/badge/scenarios-193-00994d)](docs/reference/ground-truth.md)
 [![planes](https://img.shields.io/badge/detection%20planes-16-00994d)](docs/reference/ground-truth.md)
 [![step-detections](https://img.shields.io/badge/step--detections-1370-00994d)](docs/reference/ground-truth.md)
 [![tenant-verified](https://img.shields.io/badge/tenant--verified-0-c62828)](#read-this-before-anything-else)
@@ -23,7 +23,7 @@ environment (XSIAM/XDR) so a Domain Consultant can validate detection logic —
 SOC has to. Think *"MITRE Caldera's opinionated nephew"*: not a red-team C2, a
 **detection quality-assurance engine**.
 
-It runs **192 scenarios across 16 detection planes** through either a pull-model
+It runs **193 scenarios across 16 detection planes** through either a pull-model
 Go beacon or a self-contained push bundle, under a per-step **identity harness**
 so XDR sees real process-causality chains instead of everything running as one
 account. Every scenario reference — use case, test case, TTP card, detection id,
@@ -193,8 +193,8 @@ has no toolchain and no internet.
 ```mermaid
 flowchart LR
     subgraph AUTHOR["Authored content — source of truth, on disk"]
-        SC["scenarios/<br/>192 scenario YAML"]
-        TTP["detection_scanner/ttps/<br/>190 TTP cards"]
+        SC["scenarios/<br/>193 scenario YAML"]
+        TTP["detection_scanner/ttps/<br/>191 TTP cards"]
         ASRT["assertions/<br/>POS · PLT · AUT"]
         PACK["tools/packs/<br/>91 adapter packs"]
         IDX["UC/TC index v2.2<br/>266 test cases"]
@@ -634,7 +634,7 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | NDR | Network Security / Firewall Analytics | 12 | EAL network plugins |
 | Cloud App | Cortex Cloud App Security | 10 | `oauth_grant_emulator` |
 | TIM | Cortex Threat Intel Management | 9 | mocktaxii · IOC feeds |
-| KOI | Agentic endpoint / supply-chain | 8 | `agentic_egress` + artifact pack |
+| KOI | Agentic endpoint / supply-chain | 9 | `agentic_egress` + artifact pack |
 | AI_SPM | Cortex AI Security Posture Management | 7 | `ai-spm` IaC planted findings |
 | ASM | Cortex Attack Surface Management | 6 | `asm` IaC exposed surface |
 | AI_ACCESS | Cortex AI Access Security | 6 | `llm_provider_egress` |
@@ -643,7 +643,7 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | CSPM | Cortex Cloud Posture Management | 5 | `cspm` IaC misconfigs |
 | Email | XSIAM / NG-SIEM (3rd-party ingestion) | 5 | `email_emitter` |
 | DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 | endpoint + cloud data movement |
-| **Total** | | **192** | |
+| **Total** | | **193** | |
 
 **1,370 step-level expected detections** resolve against **2,104 catalog
 detection objects** across the six-value `detection_type` vocabulary, covering
@@ -882,9 +882,9 @@ cortex-pov-engine/
 │   └── models.py               14 ORM models
 ├── agent/                    ← Go beacon, stdlib only, 5-target matrix
 ├── ui/                       ← React 18 + Vite console
-├── scenarios/                ← 192 scenario YAML, per plane
+├── scenarios/                ← 193 scenario YAML, per plane
 ├── assertions/{pos,plt,aut}/ ← POS · PLT · AUT artifacts
-├── detection_scanner/ttps/   ← 190 TTP cards → 2,104 detection objects
+├── detection_scanner/ttps/   ← 191 TTP cards → 2,104 detection objects
 ├── tools/packs/              ← 91 adapter packs across 5 tiers
 ├── payloads/                 ← digest-pinned shelf (manifest is generated)
 ├── infra/modules/aws/        ← 11 Terraform modules

@@ -276,6 +276,51 @@ for a in json.load(sys.stdin)["agents"]:
 SimCore never dials the target itself (it's pull-model), so this is a
 liveness inference, not a probe.
 
+## Agentic endpoint (macOS)
+
+`SIM-KOI-009` (GlassWorm) is the first scenario that lands and runs on an
+endpoint, so it needs a lab Mac prepared before launch. Prerequisites, in
+order:
+
+1. A macOS endpoint (arm64 or amd64) with a **logged-in developer session**.
+   Enroll the beacon as that session user, **not root**. The launchd job must
+   land in `~/Library/LaunchAgents`; the IDE, the Keychain and the LaunchAgent
+   domain all belong to the session user, and a root daemon cannot reach them.
+2. VS Code installed, with the `code` CLI on PATH.
+3. Cortex XDR agent installed on the Mac (file, process and network telemetry).
+4. Cortex AES sensor installed and enrolled, when the tenant is entitled.
+   Without it the AES leg is simply not observed; the XDR behavioural leg
+   still scores.
+5. The CortexSim repo checked out on the Mac, with the beacon's working
+   directory set to the checkout root. This is an inherited dependency:
+   `SIM-KOI-001..008` already reference `sources/cortex-malicious-agentic-pack/`
+   by relative path, and this scenario does the same.
+6. Enroll with the one-liner using `os=macos` (see "Enrolling a beacon"), then
+   launch the scenario in pull mode. Leave `CORTEXSIM_C2_URL` **unset** unless
+   an authorised canary sink exists.
+
+Three things that look like faults and are not:
+
+- **Quit VS Code before launching the run.** Step-02 hands the decoy-root
+  variable to the IDE with `open --env`, which cannot reach an already-running
+  instance, so the step deliberately exits non-zero if the IDE is up. That is
+  correct fail-loud behaviour, not a bug.
+- **Substitute your own sink host in two queries.** The card's archive-send and
+  NGFW queries are bound to `cortexsim-canary.invalid`, which never resolves.
+  With an authorised sink configured via `CORTEXSIM_C2_URL`, edit that host in
+  both queries in the product UI. Without a sink, step-06's two network
+  detections resolve `not_reached`: never a pass and never a fail.
+- **The NGFW dataset's field names are unconfirmed.** The
+  `panw_ngfw_traffic_raw` field names in that one query still need live-tenant
+  confirmation, which is this repo's convention for raw-source cards.
+
+The AES leg is an observation, not a scored detection (no public dataset name
+for AES findings exists here): record what the AES console shows as a
+DC-observed evidence line. Push mode emits a POSIX bundle that executes on
+macOS only.
+
+Last executed: never
+
 ## Launching a run
 
 ### Pull mode (agent executes)
