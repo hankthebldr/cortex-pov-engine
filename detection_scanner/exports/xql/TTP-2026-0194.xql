@@ -3,13 +3,11 @@
 
 ## BIOC — MP-035 python3 Enumerates WordPress Authors via the REST API and Author Sitemap
 # severity: medium
-# python3 requests WordPress post author fields (/wp-json/wp/v2/posts?_fields=author,author_name) and the author sitemap (/wp-sitemap-users-1.xml) with a python-requests user agent: author enumeration that sidesteps a WAF block on /wp/v2/users.
+# python3 requests WordPress post author fields (/wp-json/wp/v2/posts?_fields=author,author_name) and the author sitemap (/wp-sitemap-users-1.xml) with a python-requests user agent: author enumeration that sidesteps a WAF block on /wp/v2/users. The URL branch depends on http_url being captured, which Linux network events do not reliably carry; the file-write branch (the enumeration_report.json the step writes) lets the BIOC fire on a Linux host without it.
 
 dataset = xdr_data
-| filter event_type = ENUM.NETWORK and actor_process_image_name in ("python3", "python")
-| filter action_remote_port in (80, 443)
-| filter http_url contains "wp-sitemap-users" or http_url contains "_fields=author" or http_url contains "/wp-json/wp/v2/users"
-| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, http_url, user_agent, causality_actor_process_image_name
+| filter (event_type = ENUM.NETWORK and actor_process_image_name in ("python3", "python") and action_remote_port in (80, 443) and (http_url contains "wp-sitemap-users" or http_url contains "_fields=author" or http_url contains "/wp-json/wp/v2/users")) or (event_type = ENUM.FILE and actor_process_image_name in ("python3", "python") and action_file_name = "enumeration_report.json")
+| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, http_url, action_file_name, user_agent, causality_actor_process_image_name
 
 ## BIOC — MP-035 python3 Writes a Candidate Credential File After Repeated wp-login POSTs
 # severity: high
