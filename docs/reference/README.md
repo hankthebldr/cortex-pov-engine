@@ -115,16 +115,16 @@
     no Authorization header, so the manifest would apply cleanly and 403 in the
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
 - **Counted ground truth (verified 2026-10-28 — Unit 42 recent-posts pass):**
-  **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1370 step-detections ·
-  2104 catalog detection objects (`ground-truth.md` is the source; the scenario and card counts include `SIM-KOI-009` and were updated by hand, the step-detection and detection-object figures are from the prior pass, and the regenerated `ground-truth.{json,md}` is the counted authority). `signal_quality` in `coverage_report.py --json`:
-  **13 stitched chains** (was 11), **236 high-quality signals / 1370 step-detections (17.2%)** (was 195/1320),
-  **100 marker-only steps / 790 (12.7%)**, 87 in-band indicators in 14 scenarios (+5 not in-band, `SIM-MP-034`);
+  **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1379 step-detections ·
+  2123 catalog detection objects (`ground-truth.md` is the source; the scenario and card counts include `SIM-KOI-009` and were updated by hand; the regenerated `ground-truth.{json,md}` is the counted authority). `signal_quality` in `coverage_report.py --json`:
+  **13 stitched chains** (was 11), **236 high-quality signals / 1379 step-detections (17.1%)** (was 195/1320),
+  **100 marker-only steps / 796 (12.6%)**, 87 in-band indicators in 14 scenarios (+5 not in-band, `SIM-MP-034`);
   floors set to those measured values (`hq_signal_floor` 236, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266).
   `SIM-MP-035..037` / `TTP-2026-0194..0196` are the three new chains; **`SIM-MP-037` is authored but not counted as a
   high-quality signal** (its report publishes no indicator, ruling R2). New emitter surface, no plugin-count change:
   `vulnerability_inbound` (`ngfw_threat_emitter`), `gateway_connected_without_auth` (`globalprotect_emitter`),
   `dst_ip`-alone / `dst_port` / `app` / `process_name` (`ngfw_eal_emitter`), providers `deepseek` / `openrouter`
-  (`llm_provider_egress`). ***tenant-verified: 0.*** `make coverage-strict` exits 0 (Correlation 10.1%, 138/1370, after the
+  (`llm_provider_egress`). ***tenant-verified: 0.*** `make coverage-strict` exits 0 (Correlation 10.1%, 139/1379, after the
   network-leg rows `CR-MP-NET-0035/0036`).
 - **Counted ground truth (verified 2026-10-27 — library signal expansion):**
   **189 loadable scenarios · 187 TTP cards · 27 EAL plugins** across 16 planes · 1320 step-detections ·

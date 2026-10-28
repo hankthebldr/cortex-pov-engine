@@ -7,7 +7,7 @@
 [![CI](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hankthebldr/cortex-pov-engine/actions/workflows/ci.yml)
 [![scenarios](https://img.shields.io/badge/scenarios-193-00994d)](docs/reference/ground-truth.md)
 [![planes](https://img.shields.io/badge/detection%20planes-16-00994d)](docs/reference/ground-truth.md)
-[![step-detections](https://img.shields.io/badge/step--detections-1370-00994d)](docs/reference/ground-truth.md)
+[![step-detections](https://img.shields.io/badge/step--detections-1379-00994d)](docs/reference/ground-truth.md)
 [![tenant-verified](https://img.shields.io/badge/tenant--verified-0-c62828)](#read-this-before-anything-else)
 
 [![python](https://img.shields.io/badge/python-3.11-3776ab?logo=python&logoColor=white)](core/requirements.txt)
@@ -645,9 +645,9 @@ per-sweep query cap, and a circuit breaker; **a spent budget degrades to
 | DLP | Data Security (DSPM · DDR · Endpoint DLP) | 5 | endpoint + cloud data movement |
 | **Total** | | **193** | |
 
-**1,370 step-level expected detections** resolve against **2,104 catalog
+**1,379 step-level expected detections** resolve against **2,123 catalog
 detection objects** across the six-value `detection_type` vocabulary, covering
-**233 MITRE techniques (128 base)**. XDM modeling rules are a normalization
+**235 MITRE techniques (128 base)**. XDM modeling rules are a normalization
 *substrate* — surfaced and exported, counted informationally, not a seventh type.
 
 <details>
@@ -884,7 +884,7 @@ cortex-pov-engine/
 ├── ui/                       ← React 18 + Vite console
 ├── scenarios/                ← 193 scenario YAML, per plane
 ├── assertions/{pos,plt,aut}/ ← POS · PLT · AUT artifacts
-├── detection_scanner/ttps/   ← 191 TTP cards → 2,104 detection objects
+├── detection_scanner/ttps/   ← 191 TTP cards → 2,123 detection objects
 ├── tools/packs/              ← 91 adapter packs across 5 tiers
 ├── payloads/                 ← digest-pinned shelf (manifest is generated)
 ├── infra/modules/aws/        ← 11 Terraform modules
