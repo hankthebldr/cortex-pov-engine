@@ -88,13 +88,37 @@ def test_no_exit_masking(scenario):
         for bad in ("|| true", "|| echo", "; true", "2>/dev/null ||"):
             assert bad not in s["command"], (s["id"], bad)
 
-def test_nine_step_detections_one_correlation(scenario):
+def test_seven_step_detections_one_correlation(scenario):
+    per_step = [len(s["expected_detections"]) for s in scenario["steps"]]
+    assert per_step == [1, 1, 1, 1, 2, 1]
     dets = [d for s in scenario["steps"] for d in s["expected_detections"]]
-    assert len(dets) == 9
+    assert len(dets) == 7
     assert [d["detection_id"] for d in dets if d["type"] == "Correlation"] == ["CR-KOI-0009"]
     assert scenario["steps"][-1]["expected_detections"][-1]["detection_id"] == "CR-KOI-0009"
     assert all(d["ttp_ref"] == "TTP-2026-0197" for d in dets)
     assert all(d.get("outcome", "detect") == "detect" for d in dets)
+
+
+def test_no_declared_expectation_is_a_hunting_only_query(scenario):
+    """The two egress queries cannot fire in the documented lab (no sink, no
+    firewall in path, and step-06 never sets CORTEXSIM_C2_URL), so they are
+    ``purpose: hunt`` card content and must not be declared as expectations —
+    declaring them scores a tenant whose detections all worked as a miss."""
+    hunting_only = {
+        "xql-koi-009-archive-sent-from-ide-lineage-to-non-marketplace-host",
+        "xql-koi-009-ngfw-session-from-ide-host-to-non-marketplace-destination",
+    }
+    declared = {d["detection_id"] for s in scenario["steps"] for d in s["expected_detections"]}
+    assert declared.isdisjoint(hunting_only), declared & hunting_only
+    assert not any(d["plane"] == "NDR" for s in scenario["steps"] for d in s["expected_detections"])
+
+
+def test_step01_guards_the_platform(scenario):
+    """Linux/root runs must fail loudly: the push bundle's header claims Ubuntu
+    and root, and without the guard every step fails while the bundle exits 0."""
+    cmd = scenario["steps"][0]["command"]
+    assert "uname -s" in cmd and "Darwin" in cmd
+    assert "id -u" in cmd
 
 def test_every_detection_id_resolves_to_the_card(scenario, catalog):
     for s in scenario["steps"]:

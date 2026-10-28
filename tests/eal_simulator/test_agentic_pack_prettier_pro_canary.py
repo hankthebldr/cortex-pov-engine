@@ -15,7 +15,17 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPONENT = REPO_ROOT / "sources" / "cortex-malicious-agentic-pack" / "vscode" / "prettier-pro-canary" / "extension"
 FORBIDDEN = ("require(\"crypto\")", "require('crypto')", "setTimeout", "setInterval", "atob(",
-             "Buffer.from(", ".aws/credentials", ".ssh/id_rsa", "login.keychain", "/Users/")
+             "Buffer.from(", ".aws/credentials", ".ssh/id_rsa", "login.keychain", "/Users/",
+             # Dynamic evaluation: the loader shape the spec forbids reproducing.
+             "eval(", "new Function(",
+             # Raw sockets and name resolution: the component's only network
+             # path is the CORTEXSIM_C2_URL-gated http/https request.
+             "require(\"net\")", "require(\"dns\")",
+             # Synchronous child execution: every spawn must stay non-blocking
+             # and short-lived, as execFile already is.
+             "execSync", "spawnSync",
+             # Undeclared egress and payload encoding.
+             "fetch(", "toString(\"base64\")")
 
 
 def check_source_rules(src: str) -> None:
