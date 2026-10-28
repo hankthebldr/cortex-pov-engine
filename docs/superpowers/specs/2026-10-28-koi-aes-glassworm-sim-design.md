@@ -1,7 +1,7 @@
 # KOI / AES — GlassWorm-shaped agentic endpoint takeover on a lab Mac (SIM-KOI-009)
 
 **Status:** design, builder check done, awaiting approval · **Date:** 2026-10-28 · **Author:** Henry Reed (design conversation with Claude)
-**Plane:** KOI · **Scenario:** `SIM-KOI-009` · **Card:** `TTP-2026-0194` · **Branch:** cut from `dev`
+**Plane:** KOI · **Scenario:** `SIM-KOI-009` · **Card:** `TTP-2026-0197` (the scaffold minted `0194` on a stale base; `dev` has taken `0194..0196` for `SIM-MP-035..037`) · **Branch:** rebased onto `dev` at `e047aaa` (192 scenarios · 190 cards)
 
 > This document is deliberately written at the level of *observable shapes* and
 > *detection expectations*. It does not carry attack-mechanics detail, and it
@@ -96,8 +96,11 @@ XDR have something real to observe.
 Leg A is the reason this scenario exists; leg B is what the engine can score.
 The scenario YAML declares leg B and leg C expectations. Leg A is written into
 `success_criteria` and the step descriptions as "observe in AES", and into the
-card's `panw_mapping` as a `cortex-aes` product row with `coverage_tier:
-visibility` so the readout shows it as an observation, not a verdict.
+card's `panw_mapping` as a product row `module: cortex-xdr`, `submodule:
+agentic-endpoint-security`, `coverage_tier: exposure-mgmt` (AES ships as a
+module of XDR/XSIAM; the card schema's `module` and `coverage_tier` enums
+have no AES-specific values, and `exposure-mgmt` is the tier that reads as
+inventory and risk rather than a detection verdict). No schema change.
 
 `outcome: prevent` is **not** declared anywhere: the schema allows it only on
 EDR/CDR planes and only for the XDR agent's own prevention modules. An AES
@@ -156,7 +159,9 @@ The card's `detections.iocs[]` carries the report's network and host
 indicators with `context` and no `source_url` — permitted by
 `check_ioc_provenance`, which only rejects a *bad* URL and only warns on
 Unit 42 cards. The extension identifiers from the report are listed as
-`ioc_type: file` context, not as values any step uses.
+`ioc_type: filename` (they are the on-disk extension directory names) and the
+staging directory as `ioc_type: filepath`; neither is a value any step uses.
+The blockchain address has no enum type and stays in `references[]` prose.
 
 ## 6. The artifact — a new pack component
 
@@ -237,9 +242,9 @@ every `detection_id` resolving to the card, and the artifact rules.
 | engine coverage sheet | regenerated with `--emit-xlsx` (`check-uctc-sheet` is fail-closed) |
 | `detection_scanner/exports/` | regenerated with `export_artifacts.py --clean` |
 | `tests/engine/_golden/push_bundle_digests.json` | regenerated per that test's own docstring |
-| `tests/api/test_uctc_index.py`, `tests/engine/test_corpus_refs_strict.py` | 189 → 190 with a dated note |
+| `tests/api/test_uctc_index.py`, `tests/engine/test_corpus_refs_strict.py` | 192 → 193 with a dated note |
 | `docs/reference/ground-truth.{json,md}` | `make ground-truth` (runs in the image; needs `make build`) |
-| `docs/reference/README.md`, `scenario-catalog.md`, `ttp-catalog.md`, `CLAUDE.md` | counts 189/187 → 190/188; KOI row 8 → 9 scenarios |
+| `README.md`, `docs/reference/README.md`, `scenario-catalog.md`, `CLAUDE.md` | counts 192/190 → 193/191; KOI row 8 → 9 scenarios (the catalog's KOI section still says 5 and lists 001–005 only; add 009 and fix the heading, note the missing 006–008 rows as a found defect) |
 | `scenarios/koi/README.md`, pack README | new rows; the pack README's "nothing connects out" promise restated for the new component |
 | `core/planes/koi.py` | `key_techniques` + `T1543.001`, `T1555.001` |
 | `docs/reference/lab-runbook.md` | the macOS agentic-endpoint rung (§7) |
@@ -273,9 +278,12 @@ KOI plane convention.
    `is_stitched_chain` is false for this scenario (it requires a Unit 42
    host), so it adds nothing to the HQ-signal or stitched-chain counts and
    breaches neither floor.
-2. **Marker-only ceiling is binding.** The corpus sits at 100 marker-only
-   steps of 765 against a 0.1308 ceiling. One marker-only step in a
-   seven-step scenario breaches it. Zero is the only acceptable number.
+2. **Marker-only ceiling is binding.** On `dev` the corpus sits at 100
+   marker-only steps of 790 against a 0.1266 ceiling. One marker-only step
+   in a six-step scenario breaches it. Zero is the only acceptable number.
+   **Correlation share is just as thin:** 138 of 1370 step-detections
+   (10.07 %) against the 10 % `coverage-strict` floor, so this scenario may
+   declare at most ten step-detections per Correlation row it carries.
 3. **`outcome: prevent` is EDR/CDR-only** in the schema; KOI cannot carry it.
 4. **Push target resolution reads command text, not `platforms`.** macOS
    commands are POSIX-shaped, so a bash bundle is emitted and every bundle
@@ -286,8 +294,9 @@ KOI plane convention.
    KOI-001..008 and documented, not fixed here.
 6. **`make ground-truth` needs the built image** (docker). The builder must
    have `make build` available or hand the regeneration to someone who does.
-7. **Scaffold ids are reserved, not free.** Reuse `SIM-KOI-009` and
-   `TTP-2026-0194`; do not mint new ones.
+7. **Scaffold ids were minted on a stale base.** `SIM-KOI-009` is still
+   free on `dev`; `TTP-2026-0194` is not. The card becomes `TTP-2026-0197`
+   (next free after `0196`), and every `ttp_ref` in the scenario follows.
 
 ## 10. Design calls
 
@@ -339,6 +348,6 @@ KOI plane convention.
 
 The design is done when: the scenario and card load `status: active` with
 zero rejections; every `detection_id` resolves; the lint hook prints `OK`;
-`make validate` and `make coverage-strict` exit 0 with counts 190/188; the
+`make validate` and `make coverage-strict` exit 0 with counts 193/191; the
 artifact-rules test has been observed failing on a broken fixture; the lab
 runbook has the macOS rung; and `tenant-verified` is still reported as 0.
