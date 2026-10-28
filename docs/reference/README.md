@@ -115,16 +115,16 @@
     no Authorization header, so the manifest would apply cleanly and 403 in the
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
 - **Counted ground truth (regenerated 2026-10-28 — SIM-KOI-009 GlassWorm pass; the 13 stitched chains and `SIM-MP-035..037` below were added by the earlier Unit 42 recent-posts pass):**
-  **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1379 step-detections ·
+  **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1377 step-detections ·
   2123 catalog detection objects (`ground-truth.md` is the source; the scenario and card counts include `SIM-KOI-009` and were updated by hand; the regenerated `ground-truth.{json,md}` is the counted authority). `signal_quality` in `coverage_report.py --json`:
-  **13 stitched chains** (was 11), **236 high-quality signals / 1379 step-detections (17.1%)** (was 195/1320),
+  **13 stitched chains** (was 11), **236 high-quality signals / 1377 step-detections (17.1%)** (was 195/1320),
   **100 marker-only steps / 796 (12.6%)**, 87 in-band indicators in 14 scenarios (+5 not in-band, `SIM-MP-034`);
   floors set by the Unit 42 pass (`hq_signal_floor` 236, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266 — the configured ceiling, which corresponds to that pass's 100/790, not to the 12.6% measured now).
   `SIM-MP-035..037` / `TTP-2026-0194..0196` are the three new chains; **`SIM-MP-037` is authored but not counted as a
   high-quality signal** (its report publishes no indicator, ruling R2). New emitter surface, no plugin-count change:
   `vulnerability_inbound` (`ngfw_threat_emitter`), `gateway_connected_without_auth` (`globalprotect_emitter`),
   `dst_ip`-alone / `dst_port` / `app` / `process_name` (`ngfw_eal_emitter`), providers `deepseek` / `openrouter`
-  (`llm_provider_egress`). ***tenant-verified: 0.*** `make coverage-strict` exits 0 (Correlation 10.1%, 139/1379, after the
+  (`llm_provider_egress`). ***tenant-verified: 0.*** `make coverage-strict` exits 0 (Correlation 10.1%, 139/1377, after the
   network-leg rows `CR-MP-NET-0035/0036`).
 - **Counted ground truth (verified 2026-10-27 — library signal expansion):**
   **189 loadable scenarios · 187 TTP cards · 27 EAL plugins** across 16 planes · 1320 step-detections ·
@@ -213,7 +213,7 @@
   (crossing the 15% floor — ABIOC 11.6%, Analytics 3.6% of 1010 step-detections);
   Correlation holds at 10.7%. Two datasets registered in `validate.py` KNOWN_DATASETS
   (`msft_azure_audit`, `kubernetes_audit_logs`). Per-plane on disk now: CDR=26 · EDR=21 ·
-  ANALYTICS=20 · ITDR=20 · NDR=12 · CLOUD_APP=9 · KOI=9 · AI_SPM=7 · ASM=6 · BROWSER=6 ·
+  ANALYTICS=20 · ITDR=20 · NDR=12 · CLOUD_APP=9 · KOI=8 · AI_SPM=7 · ASM=6 · BROWSER=6 ·
   TIM=6 · AIRS=5 · AI_ACCESS=5 · CSPM=5 · EMAIL=5. **Known open item (false-green):** the
   `ngfw_eal_emitter` still emits `dataset=panw_ngfw_eal_raw` + endpoint-process context
   fields, while its card `SIM-NDR-012` queries the normalized `panw_ngfw_traffic_raw`;

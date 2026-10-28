@@ -305,11 +305,18 @@ Three things that look like faults and are not:
   variable to the IDE with `open --env`, which cannot reach an already-running
   instance, so the step deliberately exits non-zero if the IDE is up. That is
   correct fail-loud behaviour, not a bug.
-- **Substitute your own sink host in two queries.** The card's archive-send and
-  NGFW queries are bound to `cortexsim-canary.invalid`, which never resolves.
-  With an authorised sink configured via `CORTEXSIM_C2_URL`, edit that host in
-  both queries in the product UI. Without a sink, step-06's two network
-  detections resolve `not_reached`: never a pass and never a fail.
+- **The two egress queries are hunting content, not expectations.** The card's
+  archive-send and NGFW queries carry `purpose: hunt` and are bound to
+  `cortexsim-canary.invalid`, which never resolves. Step-06 never sets
+  `CORTEXSIM_C2_URL`, so in this lab the archive is built locally and nothing
+  leaves the host; the scenario therefore declares **no** network expectation
+  and a sink-less run is neither passed nor failed against them. The seven
+  declared step-detections are all endpoint-resident and `CR-KOI-0009` closes
+  on the staging-directory create, so the correlation fires without a sink or a
+  firewall in path. If you do have an authorised sink, set `CORTEXSIM_C2_URL`
+  and run those two queries by hand, substituting your sink host for
+  `cortexsim-canary.invalid` in each — and scope the NGFW query's source to the
+  lab endpoint, which the query deliberately leaves open.
 - **The NGFW dataset's field names are unconfirmed.** The
   `panw_ngfw_traffic_raw` field names in that one query still need live-tenant
   confirmation, which is this repo's convention for raw-source cards.
@@ -317,7 +324,26 @@ Three things that look like faults and are not:
 The AES leg is an observation, not a scored detection (no public dataset name
 for AES findings exists here): record what the AES console shows as a
 DC-observed evidence line. Push mode emits a POSIX bundle that executes on
-macOS only.
+macOS only — step-01 refuses to run unless `uname -s` is `Darwin` and the
+session user is not root, so a Linux or root run fails loudly instead of
+producing an empty one.
+
+**Manual teardown.** A completed run cleans up after itself. An **aborted or
+interrupted** run does not, and it leaves an installed extension, a loaded
+LaunchAgent and a decoy keychain behind on the Mac. Run the scenario's own
+`cleanup.commands` by hand, in this order, from the repo checkout:
+
+```bash
+launchctl bootout "gui/$(id -u)/com.cortexsim.CORTEXSIM-CANARY.koi009" || true
+rm -f "$HOME/Library/LaunchAgents/com.cortexsim.CORTEXSIM-CANARY.koi009.plist"
+security delete-keychain "/tmp/CORTEXSIM-KOI009-DECOY/decoy.keychain-db" || true
+code --uninstall-extension cortexsim-canary.prettier-pro-canary || true
+rm -rf /tmp/CORTEXSIM-KOI009-DECOY
+rm -rf /tmp/CORTEXSIM-KOI009-VSIX
+```
+
+Each line is idempotent, so running the block twice is safe. Quit VS Code
+afterwards: the scenario launched it and cleanup does not close it.
 
 Last executed: never
 

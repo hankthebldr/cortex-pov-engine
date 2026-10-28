@@ -110,7 +110,7 @@ not at load.
 | **TIM** | Cortex Threat Intel Management | 2 | 5 | 6 | 18 | `c2_http_beacon` | — | base, ndr, tim |
 | **TOTAL** | — | **75** | — | **258** | **494** | 12 plugins | 34 distinct | 9 modules |
 
-Detection-type legend: **B**=BIOC · **X**=XQL · **A**=Analytics · **C**=Correlation · **I**=IOC. `det` column in per-plane tables is `B/X/A/C/I (total)`.
+Detection-type legend: **B**=BIOC · **X**=XQL · **A**=Analytics/ABIOC · **C**=Correlation · **I**=IOC. `det` column in per-plane tables is `B/X/A/C/I (total)`.
 
 
 ## 3. Per-plane detail
@@ -239,7 +239,7 @@ _Rows for `SIM-KOI-006`, `SIM-KOI-007` and `SIM-KOI-008` are not yet in this tab
 | SIM-KOI-003 | KOI — Backdoored PyPI Package Consumed by Agent | Initial Access (TA0001) | T1195.002 Compromise Software Supply Chain | T1059.006 | `agentic_egress`, CORTEX-AGENTIC-PACK | 3 | 2/4/0/0/0 (6) | base | UCS-KOI-03 / TC-KOI-03 |
 | SIM-KOI-004 | KOI — Malicious VS Code Extension Permission Escalation | Initial Access (TA0001) | T1195 Supply Chain Compromise | T1059, T1552.001 | `agentic_egress`, CORTEX-AGENTIC-PACK | 3 | 2/4/0/0/0 (6) | base | UCS-KOI-04 / TC-KOI-04 |
 | SIM-KOI-005 | KOI — Malicious Claude Skill With Hidden Instructions | Initial Access (TA0001) | T1656 Impersonation | T1195 | `agentic_egress`, CORTEX-AGENTIC-PACK | 3 | 1/5/0/0/0 (6) | base | UCS-KOI-05 / TC-KOI-05 |
-| SIM-KOI-009 | KOI — GlassWorm Poisoned IDE Extension on a macOS Developer Endpoint | Initial Access (TA0001) | T1195 Supply Chain Compromise | T1059.002, T1543.001, T1555.001, T1552.001, T1074.001, T1560, T1041 | CORTEX-AGENTIC-PACK | 6 | 3/4/1/1/0 (9) | base | UCS-SCA-01 / TC-SCA-01 |
+| SIM-KOI-009 | KOI — GlassWorm Poisoned IDE Extension on a macOS Developer Endpoint | Initial Access (TA0001) | T1195 Supply Chain Compromise | T1059.002, T1543.001, T1555.001, T1552.001, T1074.001, T1560, T1041 | CORTEX-AGENTIC-PACK | 6 | 3/2/1/1/0 (7) | base | UCS-SCA-01 / TC-SCA-01 |
 
 ### Plane: ASM (Cortex Attack Surface Management) — 4 scenarios
 

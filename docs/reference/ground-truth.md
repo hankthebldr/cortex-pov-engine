@@ -11,7 +11,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Scenarios rejected at load | 0 |
 | TTP cards | 191 |
 | Detection planes | 16 |
-| Step-detections | 1379 |
+| Step-detections | 1377 |
 | Catalog detection objects | 2123 |
 | ABIOC+Analytics share (step-detections) | 15.6% |
 | Correlation share (step-detections) | 10.1% |
@@ -45,7 +45,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1379 (17.1%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1377 (17.1%) |
 | Marker-only steps | 100/796 (12.6%) |
 | Scenarios with indicators | 14 |
 | Indicators (in-band) | 87 |
@@ -61,7 +61,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Correlation | 139 |
 | IOC | 119 |
 | Prevention | 0 |
-| XQL | 541 |
+| XQL | 539 |
 
 ## Tool adapters
 

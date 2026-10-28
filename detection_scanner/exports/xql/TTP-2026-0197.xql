@@ -29,13 +29,13 @@ dataset = xdr_data
 
 ## BIOC — KOI-009 Multi Credential File Read Under IDE CGO
 # severity: high
-# Three or more distinct credential-named files (npm token file, git credentials, SSH key, editor storage, keychain copy) are read in one window by a process in the IDE's causality chain. An extension that reads this set is stealing, not formatting.
+# Three or more distinct credential-named files (npm token file, git credentials, SSH key, editor storage, keychain copy) are read in one window by a process in the IDE's causality chain. An extension that reads this set is stealing, not formatting. The list deliberately excludes VS Code's own global-storage files storage.json and state.vscdb: the IDE reads them at every launch, and the per-extension copies multiply the distinct-path count, so including them satisfies the >= 3 threshold with no attack present. The decoy run still yields exactly three distinct paths (.npmrc, .git-credentials, id_rsa), so the simulation keeps firing.
 
 dataset = xdr_data
 | filter event_type = ENUM.FILE
 | filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
 | filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
-| filter action_file_path contains_any (".npmrc", ".git-credentials", "id_rsa", "id_ed25519", "storage.json", "state.vscdb", ".keychain-db", "credentials.json")
+| filter action_file_path contains_any (".npmrc", ".git-credentials", "id_rsa", "id_ed25519", ".keychain-db", "credentials.json")
 | comp count_distinct(action_file_path) as secret_files_read by agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name
 | filter secret_files_read >= 3
 | fields agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name, secret_files_read
@@ -62,9 +62,8 @@ dataset = xdr_data
 dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE_NEW
-| filter action_file_path contains "/.vscode/extensions/"
+| filter action_file_path contains "/.vscode/extensions/cortexsim-canary.prettier-pro-canary"
 | filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code") or actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
-| filter action_file_path !~= "/\.vscode/extensions/(ms-|github\.|redhat\.|vscode\.)"
 | fields _time, agent_hostname, causality_id, actor_process_image_name, action_file_path
 
 ## VALIDATION — KOI-009 Staging Directory Created Under IDE Lineage
@@ -75,11 +74,11 @@ dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
 | filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
-| filter action_file_path contains_any ("/staging/", "/ijewf/")
+| filter action_file_path contains_any ("/CORTEXSIM-KOI009-DECOY/staging/", "/ijewf/")
 | fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, action_file_path
 
 ## VALIDATION — KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host
-# purpose: validation
+# purpose: hunt
 # dataset: xdr_data
 
 dataset = xdr_data
@@ -91,7 +90,7 @@ dataset = xdr_data
 | fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, dst_action_external_hostname, action_remote_ip, action_external_port, action_total_upload
 
 ## VALIDATION — KOI-009 NGFW Session From IDE Host To Non Marketplace Destination
-# purpose: validation
+# purpose: hunt
 # dataset: panw_ngfw_traffic_raw
 
 dataset = panw_ngfw_traffic_raw

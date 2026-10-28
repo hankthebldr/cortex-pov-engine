@@ -36,7 +36,7 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1559,
+    "abioc_analytics_share": 0.1561,
     "catalog_detections": 2123,
     "catalog_detections_by_kind": {
       "abioc": 164,
@@ -48,7 +48,7 @@
       "prevention": 0,
       "xql": 626
     },
-    "correlation_share": 0.1008,
+    "correlation_share": 0.1009,
     "detection_planes": 16,
     "methodology_family_counts": {
       "F1": 129,
@@ -84,7 +84,7 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1379,
+    "step_detections": 1377,
     "step_detections_by_type": {
       "ABIOC": 159,
       "Analytics": 56,
@@ -92,7 +92,7 @@
       "Correlation": 139,
       "IOC": 119,
       "Prevention": 0,
-      "XQL": 541
+      "XQL": 539
     },
     "ttp_cards": 191
   },
@@ -113,7 +113,7 @@
   "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.1711,
+    "hq_share": 0.1714,
     "hq_signals": 236,
     "indicators": 87,
     "indicators_not_in_band": 5,
@@ -133,7 +133,7 @@
     "marker_only_share": 0.1256,
     "marker_only_steps": 100,
     "scenarios_with_indicators": 14,
-    "step_detections": 1379,
+    "step_detections": 1377,
     "steps": 796,
     "stitched_chain_ids": [
       "SIM-MP-023",
