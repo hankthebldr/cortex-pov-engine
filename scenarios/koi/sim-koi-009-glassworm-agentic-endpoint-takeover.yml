@@ -70,9 +70,16 @@ success_criteria: |
   staging, and the archive send each raise the expected Cortex detection, and
   CR-KOI-0009 stitches them into ONE incident on the shared IDE causality_id.
   Detection Accuracy is the share of injected signals that raise the expected
-  alert (target ≥ 90%). The two network detections on step-06 are exercised
-  only when the operator configures an authorised canary sink
-  (CORTEXSIM_C2_URL); without one step-06 resolves not_reached.
+  alert (target ≥ 90%). Every one of the seven declared step-detections is
+  reachable in the lab this runbook documents: the chain closes on the endpoint
+  (install → activation → Keychain → LaunchAgent → credential read → staging),
+  and CR-KOI-0009's terminal term is the staging-directory create, so no
+  authorised sink and no firewall in path are needed for the scenario to score.
+  The two egress queries on the card (`KOI-009 Archive Sent From IDE Lineage To
+  Non Marketplace Host`, `KOI-009 NGFW Session From IDE Host To Non Marketplace
+  Destination`) carry `purpose: hunt`: they are hunting content for a lab that
+  has a sink and a firewall in path, and this scenario deliberately declares
+  neither as an expectation, so a sink-less run is never scored against them.
   tenant-verified: 0 — no run of this scenario has executed against a live
   Cortex tenant; authored is not proven.
 moat_tier: "MOAT"
@@ -120,6 +127,20 @@ steps:
       # SAFE-MODE — package the benign in-tree canary extension and install it
       # via `code --install-extension`. Decoy-only; the publisher is a canary name.
       set -eu
+      # Platform guard, first: this scenario is macOS-only and must run as the
+      # logged-in session user. The generated push bundle's header says Ubuntu
+      # and root, which is the opposite of the truth, and on Linux every step
+      # would fail while the bundle still exited 0 — a silently empty run.
+      # Fail loudly here instead.
+      CORTEXSIM_OS="$(uname -s)"
+      if [ "$CORTEXSIM_OS" != "Darwin" ]; then
+        echo "[CortexSim] SIM-KOI-009 is macOS-only: uname -s reported '$CORTEXSIM_OS', not 'Darwin'. Run this on a macOS lab endpoint." >&2
+        exit 2
+      fi
+      if [ "$(id -u)" = "0" ]; then
+        echo "[CortexSim] SIM-KOI-009 must run as the logged-in developer session user, not root: the IDE, the Keychain and the gui/<uid> LaunchAgent domain all belong to that user." >&2
+        exit 2
+      fi
       SRC="sources/cortex-malicious-agentic-pack/vscode/prettier-pro-canary"
       OUT="/tmp/CORTEXSIM-KOI009-VSIX"
       STAGE="$OUT/pkg"
@@ -294,12 +315,17 @@ steps:
 
   - id: step-06
     name: "Archive the staging directory and send to the canary destination"
-    # What the sensor records: the staging directory archived (tar) and sent to a
-    # canary destination by an extension-host child. The two network detections
-    # (NGFW session, archive-sent XQL) are exercised ONLY when the operator
-    # configures an authorised sink via CORTEXSIM_C2_URL; this scenario never
-    # sets it. Without a sink the step archives locally, makes no network call
-    # and those network legs resolve not_reached.
+    # What the sensor records: the staging directory archived (tar) by an
+    # extension-host child. The archive is produced LOCALLY and no network call
+    # is made: this scenario never sets CORTEXSIM_C2_URL, and without it the
+    # component archives, logs the canary destination and sends nothing — not
+    # even a DNS lookup. Because nothing leaves the host in the documented lab,
+    # this step declares NO network expectation. The two egress queries live on
+    # the card as hunting content (`purpose: hunt`) for a DC who has an
+    # authorised sink and a firewall in path; they are not expectations here, so
+    # a sink-less run is neither passed nor failed against them. The step's one
+    # declared detection is CR-KOI-0009, whose chain closes on the endpoint at
+    # the staging-directory create.
     command: |
       # SAFE-MODE — trigger /step-06. CORTEXSIM_C2_URL is deliberately NOT set
       # here: the extension archives and records cortexsim-canary.invalid only.
@@ -321,19 +347,9 @@ steps:
       # The staged data leaves the host.
       pivot: network_session
     expected_detections:
-      - plane: NDR
-        type: XQL
-        description: "Validation — NGFW session from the IDE host to a non-marketplace destination (exercised only when the operator configures a sink; otherwise not_reached)"
-        ttp_ref: "TTP-2026-0197"
-        detection_id: xql-koi-009-ngfw-session-from-ide-host-to-non-marketplace-destination
-      - plane: KOI
-        type: XQL
-        description: "Validation — archive sent from IDE lineage to a non-marketplace host (exercised only when the operator configures a sink; otherwise not_reached)"
-        ttp_ref: "TTP-2026-0197"
-        detection_id: xql-koi-009-archive-sent-from-ide-lineage-to-non-marketplace-host
       - plane: KOI
         type: Correlation
-        description: "Stitches install, activation, Keychain, LaunchAgent, credential staging and send into ONE GlassWorm incident on agent_hostname + causality_id"
+        description: "Stitches activation, Keychain, LaunchAgent, credential read and local staging into ONE GlassWorm incident on agent_hostname + causality_id; the chain closes on the endpoint at the staging-directory create, so no sink and no firewall in path are required"
         ttp_ref: "TTP-2026-0197"
         detection_id: CR-KOI-0009
 

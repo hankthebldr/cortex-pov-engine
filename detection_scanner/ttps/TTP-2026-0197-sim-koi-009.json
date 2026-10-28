@@ -44,7 +44,7 @@
   "identity": {
     "name": "GlassWorm macOS Wave — Poisoned VS Code Extension → Keychain, LaunchAgent, Credential Staging and Archive Send",
     "summary": "Fourth GlassWorm wave, retargeted at macOS developers: a trojanized Open VSX extension runs in the VS Code extension host, spawns a scripting host, reaches for Keychain material, installs a LaunchAgent, stages credential files and archives them to a hard-coded server.",
-    "description": "Built from the Palo Alto Networks Security Operations write-up of the macOS wave of GlassWorm (https://www.paloaltonetworks.com/blog/security-operations/glassworm-goes-mac-fresh-infrastructure-new-tricks/). The public report describes an encrypted loader whose key is held in the extension, a timer-delayed second stage, C2 discovery through a blockchain transaction memo, a macOS-specific payload that targets Keychain and developer credential stores, LaunchAgent persistence, local staging and an HTTP POST of the collected archive to a remote endpoint. CortexSim does not reproduce the loader or the blockchain lookup. It runs a benign canary extension that produces the same endpoint observables, all as children of the VS Code extension host: an install into the user's extensions directory, a scripting-host child at activation, a security-utility call against a decoy keychain file, a no-op LaunchAgent written and loaded with launchctl, a read of several decoy credential-named files copied to a staging directory, and a tar of that directory that is sent only when an authorised sink is configured. Every detection keys on the causality chain (causality_id and the VS Code image-name set), never on a username, because the Causality Group Owner is the IDE itself. The Cortex Agentic Endpoint Security view of the same install (inventory, publisher, permissions, risk score, guardrail verdict) is a product observation the DC records, not a scored detection. The encrypted-loader and timer-delay code-scan detection is described in the card, not exercised. Precondition: the archive-send XQL `KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host` is only exercised when the operator has configured an authorised sink via CORTEXSIM_C2_URL, and the NGFW XQL `KOI-009 NGFW Session From IDE Host To Non Marketplace Destination` additionally needs an NGFW in path; both require at least one row. With no sink the step resolves not_reached, never a pass and never a fail. Sink binding: the archive-send and NGFW queries match the canary sink host cortexsim-canary.invalid, which the component logs as its intended destination and which matches nothing by default; when the DC configures an authorised sink via CORTEXSIM_C2_URL they substitute that sink host in the destination predicate of both queries. The NGFW query carries no source predicate because the lab endpoint's address is unknown at authoring time, so the DC scopes the source to the lab endpoint. The field names in the NGFW dataset (panw_ngfw_traffic_raw) still need live-tenant confirmation, as for any raw-source card.",
+    "description": "Built from the Palo Alto Networks Security Operations write-up of the macOS wave of GlassWorm (https://www.paloaltonetworks.com/blog/security-operations/glassworm-goes-mac-fresh-infrastructure-new-tricks/). The public report describes an encrypted loader whose key is held in the extension, a timer-delayed second stage, C2 discovery through a blockchain transaction memo, a macOS-specific payload that targets Keychain and developer credential stores, LaunchAgent persistence, local staging and an HTTP POST of the collected archive to a remote endpoint. CortexSim does not reproduce the loader or the blockchain lookup. It runs a benign canary extension that produces the same endpoint observables, all as children of the VS Code extension host: an install into the user's extensions directory, a scripting-host child at activation, a security-utility call against a decoy keychain file, a no-op LaunchAgent written and loaded with launchctl, a read of several decoy credential-named files copied to a staging directory, and a tar of that directory that is sent only when an authorised sink is configured. Every detection keys on the causality chain (causality_id and the VS Code image-name set), never on a username, because the Causality Group Owner is the IDE itself. The Cortex Agentic Endpoint Security view of the same install (inventory, publisher, permissions, risk score, guardrail verdict) is a product observation the DC records, not a scored detection. The encrypted-loader and timer-delay code-scan detection is described in the card, not exercised. Hunting content, deliberately not declared as an expectation: the archive-send XQL `KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host` and the NGFW XQL `KOI-009 NGFW Session From IDE Host To Non Marketplace Destination` both carry `purpose: hunt`. They are queries the DC runs by hand when an authorised sink exists (and, for the NGFW one, a firewall in path). The scenario YAML declares neither as an `expected_detection`, so a sink-less run seeds no Result row for them and therefore neither passes nor fails on them — nothing is scored that could not fire. Sink binding for those two hunting queries: both match the canary sink host cortexsim-canary.invalid, which the component logs as its intended destination and which matches nothing by default; a DC who configures an authorised sink via CORTEXSIM_C2_URL substitutes that sink host in the destination predicate of both. The NGFW query carries no source predicate because the lab endpoint's address is unknown at authoring time, so the DC scopes the source to the lab endpoint. The field names in the NGFW dataset (panw_ngfw_traffic_raw) still need live-tenant confirmation, as for any raw-source card. The seven declared step-detections are all endpoint-resident, and correlation CR-KOI-0009 closes on the staging-directory create rather than the egress for exactly that reason.",
     "severity": "high",
     "confidence": "medium"
   },
@@ -177,7 +177,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# SAFE-MODE — SIM-KOI-009 GlassWorm macOS emulation (NON-DESTRUCTIVE, decoy-only).\n# Installs the in-tree canary extension, then drives each step through the\n# extension's vscode:// URI handler so the actions run as children of the\n# extension host. Nothing leaves the host unless CORTEXSIM_C2_URL is set.\nset -euo pipefail\nexport CORTEXSIM_KOI009_DECOY_ROOT=\"$(mktemp -d /tmp/koi009.XXXXXX)\"\ncode --install-extension \"${VSIX_PATH}\" --force\nopen -a \"Visual Studio Code\"\nfor s in step-03 step-04 step-05 step-06; do\n  open \"vscode://cortexsim-canary.prettier-pro-canary/${s}\"\n  sleep 5\ndone\necho \"[CortexSim][SAFE-MODE] SIM-KOI-009 decoy root: ${CORTEXSIM_KOI009_DECOY_ROOT}\"\n",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/koi/sim-koi-009-glassworm-agentic-endpoint-takeover.yml is the only supported delivery path. This payload opens the IDE without passing CORTEXSIM_KOI009_DECOY_ROOT and plants no decoy keychain and no creds/* files, so the extension host ignores every trigger and steps 02-06 produce none of their observables.\n# SAFE-MODE — SIM-KOI-009 GlassWorm macOS emulation (NON-DESTRUCTIVE, decoy-only).\n# Installs the in-tree canary extension, then drives each step through the\n# extension's vscode:// URI handler so the actions run as children of the\n# extension host. Nothing leaves the host unless CORTEXSIM_C2_URL is set.\nset -euo pipefail\nexport CORTEXSIM_KOI009_DECOY_ROOT=\"$(mktemp -d /tmp/koi009.XXXXXX)\"\ncode --install-extension \"${VSIX_PATH}\" --force\nopen -a \"Visual Studio Code\"\nfor s in step-03 step-04 step-05 step-06; do\n  open \"vscode://cortexsim-canary.prettier-pro-canary/${s}\"\n  sleep 5\ndone\necho \"[CortexSim][SAFE-MODE] SIM-KOI-009 decoy root: ${CORTEXSIM_KOI009_DECOY_ROOT}\"\n",
       "input_variables": [
         {
           "name": "VSIX_PATH",
@@ -293,8 +293,8 @@
       },
       {
         "name": "KOI-009 Multi Credential File Read Under IDE CGO",
-        "description": "Three or more distinct credential-named files (npm token file, git credentials, SSH key, editor storage, keychain copy) are read in one window by a process in the IDE's causality chain. An extension that reads this set is stealing, not formatting.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_file_path contains_any (\".npmrc\", \".git-credentials\", \"id_rsa\", \"id_ed25519\", \"storage.json\", \"state.vscdb\", \".keychain-db\", \"credentials.json\")\n| comp count_distinct(action_file_path) as secret_files_read by agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name\n| filter secret_files_read >= 3\n| fields agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name, secret_files_read",
+        "description": "Three or more distinct credential-named files (npm token file, git credentials, SSH key, editor storage, keychain copy) are read in one window by a process in the IDE's causality chain. An extension that reads this set is stealing, not formatting. The list deliberately excludes VS Code's own global-storage files storage.json and state.vscdb: the IDE reads them at every launch, and the per-extension copies multiply the distinct-path count, so including them satisfies the >= 3 threshold with no attack present. The decoy run still yields exactly three distinct paths (.npmrc, .git-credentials, id_rsa), so the simulation keeps firing.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_file_path contains_any (\".npmrc\", \".git-credentials\", \"id_rsa\", \"id_ed25519\", \".keychain-db\", \"credentials.json\")\n| comp count_distinct(action_file_path) as secret_files_read by agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name\n| filter secret_files_read >= 3\n| fields agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name, secret_files_read",
         "severity": "high",
         "mitre_technique_ids": [
           "T1552.001"
@@ -305,26 +305,26 @@
       {
         "purpose": "validation",
         "name": "KOI-009 VS Code Extension Install Creates Unknown Publisher Extension Directory",
-        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE_NEW\n| filter action_file_path contains \"/.vscode/extensions/\"\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\") or actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_file_path !~= \"/\\.vscode/extensions/(ms-|github\\.|redhat\\.|vscode\\.)\"\n| fields _time, agent_hostname, causality_id, actor_process_image_name, action_file_path",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE_NEW\n| filter action_file_path contains \"/.vscode/extensions/cortexsim-canary.prettier-pro-canary\"\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\") or actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| fields _time, agent_hostname, causality_id, actor_process_image_name, action_file_path",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
         "purpose": "validation",
         "name": "KOI-009 Staging Directory Created Under IDE Lineage",
-        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_file_path contains_any (\"/staging/\", \"/ijewf/\")\n| fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, action_file_path",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_file_path contains_any (\"/CORTEXSIM-KOI009-DECOY/staging/\", \"/ijewf/\")\n| fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, action_file_path",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
-        "purpose": "validation",
+        "purpose": "hunt",
         "name": "KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host",
         "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter dst_action_external_hostname = \"cortexsim-canary.invalid\" or action_external_hostname = \"cortexsim-canary.invalid\"\n| filter action_total_upload > 0\n| fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, dst_action_external_hostname, action_remote_ip, action_external_port, action_total_upload",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       },
       {
-        "purpose": "validation",
+        "purpose": "hunt",
         "name": "KOI-009 NGFW Session From IDE Host To Non Marketplace Destination",
         "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"allow\"\n| filter dst_host = \"cortexsim-canary.invalid\"\n| filter action_total_upload > 0\n| comp sum(action_total_upload) as bytes_out, count() as sessions by src_ip, dst_ip, dst_host\n| fields src_ip, dst_ip, dst_host, sessions, bytes_out",
         "expected_rows_min": 1,
@@ -347,9 +347,9 @@
     ],
     "correlation_rules": [
       {
-        "name": "GlassWorm macOS Wave — Extension Host Scripting, Keychain, LaunchAgent, Credential Read and Archive Send",
+        "name": "GlassWorm macOS Wave — Extension Host Scripting, Keychain, LaunchAgent, Credential Read and Local Staging",
         "rule_id": "CR-KOI-0009",
-        "logic": "ABIOC(KOI-009 IDE Extension Host Spawns Scripting Host For First Seen Publisher) FOLLOWED_BY BIOC(KOI-009 Keychain Access By IDE Descendant) FOLLOWED_BY BIOC(KOI-009 LaunchAgent Written And Loaded From IDE Lineage) FOLLOWED_BY BIOC(KOI-009 Multi Credential File Read Under IDE CGO) FOLLOWED_BY XQL(KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host) — all stitched by shared agent_hostname and causality_id (CGO = the VS Code IDE) so the activation-time scripting host, Keychain access, LaunchAgent persistence, credential read and archive send collapse into ONE GlassWorm incident."
+        "logic": "ABIOC(KOI-009 IDE Extension Host Spawns Scripting Host For First Seen Publisher) FOLLOWED_BY BIOC(KOI-009 Keychain Access By IDE Descendant) FOLLOWED_BY BIOC(KOI-009 LaunchAgent Written And Loaded From IDE Lineage) FOLLOWED_BY BIOC(KOI-009 Multi Credential File Read Under IDE CGO) FOLLOWED_BY XQL(KOI-009 Staging Directory Created Under IDE Lineage) — all stitched by shared agent_hostname and causality_id (CGO = the VS Code IDE) so the activation-time scripting host, Keychain access, LaunchAgent persistence, credential read and local staging collapse into ONE GlassWorm incident. The chain closes on the endpoint: its terminal term is the staging-directory create, not the egress, so the rule fires in a lab with no authorised sink and no firewall in path."
       }
     ],
     "analytics_modules": [
@@ -429,23 +429,22 @@
           },
           {
             "threat_step_id": "TS-KOI-009B",
-            "objective": "Keychain, persistence, credential read and archive-send fire and correlate into one incident.",
+            "objective": "Keychain, persistence, credential read and local staging fire and correlate into one incident.",
             "preconditions": [
-              "TS-KOI-009A executed within the correlation window.",
-              "CORTEXSIM_C2_URL names an authorised sink for the archive-send and NGFW queries; without it step 06 resolves not_reached (never a pass, never a fail)."
+              "TS-KOI-009A executed within the correlation window."
             ],
             "steps": [
               "Trigger steps 03 to 06 through the extension's URI handler.",
-              "Observe the Keychain, LaunchAgent and credential-read BIOCs and the archive-send XQL.",
+              "Observe the Keychain, LaunchAgent and credential-read BIOCs and the staging-directory XQL.",
               "Confirm correlation CR-KOI-0009 stitches every stage into one incident."
             ],
             "success_criteria": [
               "BIOC `KOI-009 Keychain Access By IDE Descendant` fires.",
               "BIOC `KOI-009 LaunchAgent Written And Loaded From IDE Lineage` fires.",
               "BIOC `KOI-009 Multi Credential File Read Under IDE CGO` fires.",
-              "When a sink is configured via CORTEXSIM_C2_URL, correlation `CR-KOI-0009` raises exactly one GlassWorm incident; with no sink the chain cannot complete and step 06 resolves not_reached, never a pass and never a fail.",
-              "XQL `KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host` returns at least one row when a sink is configured; with no sink the step is not_reached.",
-              "XQL `KOI-009 NGFW Session From IDE Host To Non Marketplace Destination` returns at least one row when a sink is configured and an NGFW is in path; otherwise not_reached."
+              "XQL `KOI-009 Staging Directory Created Under IDE Lineage` returns the staging directory created under the decoy root.",
+              "Correlation `CR-KOI-0009` raises exactly one GlassWorm incident. Its terminal term is the staging-directory create, so it fires on the endpoint alone: no sink and no firewall in path are required.",
+              "Not a criterion: the two egress queries `KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host` and `KOI-009 NGFW Session From IDE Host To Non Marketplace Destination` carry `purpose: hunt`. They are queries the DC runs by hand once an authorised sink exists (and, for the NGFW one, a firewall in path). The scenario declares neither as an expectation, so a sink-less run seeds nothing for them and scores neither a pass nor a fail against them."
             ],
             "expected_score_weight": 0.5
           }
@@ -464,6 +463,7 @@
       "Anchor on causality_id and the VS Code image-name set (Electron, Code Helper (Plugin), Code Helper, code), never on a username: the IDE is the Causality Group Owner and every later stage is its descendant.",
       "Treat an extension host that spawns osascript, security, launchctl or tar as the signal; none of these is part of normal extension behaviour.",
       "Require three or more distinct credential-named files read in one window by the IDE chain before alerting on credential theft, to keep a single settings read quiet.",
+      "Keep VS Code's own global-storage files (storage.json, state.vscdb) OUT of that credential-name list. The IDE opens them at every launch, and each installed extension carries its own copy, so their distinct paths alone satisfy a >= 3 threshold on an endpoint where nothing happened — a false pass on evidence that the editor started. The campaign's real read of the editor's storage token is worth hunting for, but as its own query keyed on an IDE descendant that is not the IDE, never as a term inside a counting threshold.",
       "Pair the endpoint chain with NGFW egress to a non-marketplace destination when a firewall is in path, and with the Agentic Endpoint Security inventory view for the install itself."
     ]
   },
