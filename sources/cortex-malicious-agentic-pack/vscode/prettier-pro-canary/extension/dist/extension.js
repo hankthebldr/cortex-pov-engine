@@ -150,7 +150,7 @@ function step06(root) {
                 headers: { "x-cortexsim-canary": "vscode-prettier-pro-canary" },
             }, (res) => { note("step-06 sent " + archive + " status=" + res.statusCode); });
             req.on("error", (e) => note("step-06 send FAILED for " + archive + ": " + (e && e.message)));
-            req.write(body);
+            req.write(body, "latin1");
             req.end();
         } catch (e) {
             note("step-06 FAILED for " + archive + ": " + (e && e.message));
