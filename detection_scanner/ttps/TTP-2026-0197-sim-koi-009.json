@@ -177,7 +177,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/koi/sim-koi-009-glassworm-agentic-endpoint-takeover.yml is the only supported delivery path. This payload opens the IDE without passing CORTEXSIM_KOI009_DECOY_ROOT and plants no decoy keychain and no creds/* files, so the extension host ignores every trigger and steps 02-06 produce none of their observables.\n# SAFE-MODE — SIM-KOI-009 GlassWorm macOS emulation (NON-DESTRUCTIVE, decoy-only).\n# Installs the in-tree canary extension, then drives each step through the\n# extension's vscode:// URI handler so the actions run as children of the\n# extension host. Nothing leaves the host unless CORTEXSIM_C2_URL is set.\nset -euo pipefail\nexport CORTEXSIM_KOI009_DECOY_ROOT=\"$(mktemp -d /tmp/koi009.XXXXXX)\"\ncode --install-extension \"${VSIX_PATH}\" --force\nopen -a \"Visual Studio Code\"\nfor s in step-03 step-04 step-05 step-06; do\n  open \"vscode://cortexsim-canary.prettier-pro-canary/${s}\"\n  sleep 5\ndone\necho \"[CortexSim][SAFE-MODE] SIM-KOI-009 decoy root: ${CORTEXSIM_KOI009_DECOY_ROOT}\"\n",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/koi/sim-koi-009-glassworm-agentic-endpoint-takeover.yml is the only supported delivery path. This payload opens the IDE without passing CORTEXSIM_KOI009_DECOY_ROOT and plants no decoy keychain and no creds/* files, so the extension host ignores every trigger and steps 03-06 produce none of their observables.\n# SAFE-MODE — SIM-KOI-009 GlassWorm macOS emulation (NON-DESTRUCTIVE, decoy-only).\n# Installs the in-tree canary extension, then drives each step through the\n# extension's vscode:// URI handler so the actions run as children of the\n# extension host. Nothing leaves the host unless CORTEXSIM_C2_URL is set.\nset -euo pipefail\nexport CORTEXSIM_KOI009_DECOY_ROOT=\"$(mktemp -d /tmp/koi009.XXXXXX)\"\ncode --install-extension \"${VSIX_PATH}\" --force\nopen -a \"Visual Studio Code\"\nfor s in step-03 step-04 step-05 step-06; do\n  open \"vscode://cortexsim-canary.prettier-pro-canary/${s}\"\n  sleep 5\ndone\necho \"[CortexSim][SAFE-MODE] SIM-KOI-009 decoy root: ${CORTEXSIM_KOI009_DECOY_ROOT}\"\n",
       "input_variables": [
         {
           "name": "VSIX_PATH",
@@ -212,7 +212,7 @@
       {
         "artifact_type": "file",
         "description": "Decoy credential-named files read, then copied into a staging directory in the decoy tree.",
-        "expected_value": "action_file_path contains \"/staging/\""
+        "expected_value": "action_file_path contains \"/CORTEXSIM-KOI009-DECOY/staging/\""
       },
       {
         "artifact_type": "process",
@@ -391,7 +391,7 @@
           "XSIAM-CR-KOI-0009"
         ],
         "license_required": "advanced",
-        "evidence_query": "Correlation CR-KOI-0009 fuses the scripting-host, Keychain, LaunchAgent, credential-read and archive-send signals into one GlassWorm incident on shared causality_id."
+        "evidence_query": "Correlation CR-KOI-0009 fuses the scripting-host, Keychain, LaunchAgent, credential-read and credential-staging signals into one GlassWorm incident on shared causality_id."
       },
       {
         "module": "cortex-cloud",
@@ -408,7 +408,7 @@
       {
         "threat_scenario_id": "TS-KOI-009",
         "name": "GlassWorm macOS Wave — Poisoned IDE Extension to Credential Theft",
-        "description": "Detect a trojanized IDE extension end to end on a macOS developer endpoint: install, activation-time scripting host, Keychain access, LaunchAgent persistence, credential staging and archive send, stitched into one causality-aware incident, with the Agentic Endpoint Security inventory view recorded alongside.",
+        "description": "Detect a trojanized IDE extension end to end on a macOS developer endpoint: install, activation-time scripting host, Keychain access, LaunchAgent persistence, credential staging, stitched into one causality-aware incident, with the Agentic Endpoint Security inventory view recorded alongside.",
         "threat_steps": [
           {
             "threat_step_id": "TS-KOI-009A",

@@ -325,8 +325,10 @@ The AES leg is an observation, not a scored detection (no public dataset name
 for AES findings exists here): record what the AES console shows as a
 DC-observed evidence line. Push mode emits a POSIX bundle that executes on
 macOS only — step-01 refuses to run unless `uname -s` is `Darwin` and the
-session user is not root, so a Linux or root run fails loudly instead of
-producing an empty one.
+session user is not root. That step-01 refusal is what stops a Linux or root
+run; the generated bundle wraps every step so later failures only log a
+warning and the bundle still exits 0, so a wrong-platform run would otherwise
+look complete.
 
 **Manual teardown.** A completed run cleans up after itself. An **aborted or
 interrupted** run does not, and it leaves an installed extension, a loaded

@@ -119,6 +119,8 @@ def test_step01_guards_the_platform(scenario):
     cmd = scenario["steps"][0]["command"]
     assert "uname -s" in cmd and "Darwin" in cmd
     assert "id -u" in cmd
+    assert "exit 2" in cmd
+    assert cmd.index("exit 2") < cmd.index("SRC="), "platform guard must precede SRC="
 
 def test_every_detection_id_resolves_to_the_card(scenario, catalog):
     for s in scenario["steps"]:

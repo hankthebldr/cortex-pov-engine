@@ -66,9 +66,10 @@ success_criteria: |
   machine-scored; without an enrolled AES sensor it is simply not observed and
   leg B still scores.
   Leg B (XDR / XSIAM): the install, the extension-host scripting child, the
-  Keychain access, the LaunchAgent write+load, the multi-credential read and
-  staging, and the archive send each raise the expected Cortex detection, and
-  CR-KOI-0009 stitches them into ONE incident on the shared IDE causality_id.
+  Keychain access, the LaunchAgent write+load, and the multi-credential read
+  and staging each raise the expected Cortex detection, and CR-KOI-0009 closes
+  on the staging step and stitches them into ONE incident on the shared IDE
+  causality_id.
   Detection Accuracy is the share of injected signals that raise the expected
   alert (target ≥ 90%). Every one of the seven declared step-detections is
   reachable in the lab this runbook documents: the chain closes on the endpoint
@@ -90,7 +91,7 @@ moat_tier: "MOAT"
 # extension host and every child the extension spawns. NOT the synthetic
 # cortexsim-agent. Step-01 is the single root; step-02 shares the installed
 # extension directory with it; steps 03-05 are literal extension-host children
-# (the URI-handler trigger makes that true); step-06's archive leaves the host.
+# (the URI-handler trigger makes that true); step-06's archive is produced and staged for egress; it leaves the host only when the operator has configured an authorised sink.
 # primary_username is a label only: every step runs identity `direct`.
 cgo_anchor:
   image_name: "Electron"
@@ -344,7 +345,8 @@ steps:
     platforms: ["macos"]
     causality:
       parent_step: step-05
-      # The staged data leaves the host.
+      # The archive is staged for egress; it leaves the host only when the
+      # operator has configured an authorised sink (correct edge type then).
       pivot: network_session
     expected_detections:
       - plane: KOI
