@@ -1,11 +1,11 @@
 {
   "id": "TTP-2026-0197",
   "schema_version": "1.0.0",
-  "entry_version": "0.1.0",
-  "status": "draft",
+  "entry_version": "1.0.0",
+  "status": "active",
   "metadata": {
     "created_at": "2026-10-28T18:30:40+00:00",
-    "updated_at": "2026-10-28T18:30:40+00:00",
+    "updated_at": "2026-10-28T21:00:00+00:00",
     "authors": [
       {
         "name": "Henry Reed",
@@ -15,9 +15,12 @@
     ],
     "tags": [
       "plane-koi",
-      "research-intake",
-      "scaffold",
-      "severity-medium"
+      "supply-chain",
+      "malware-glassworm",
+      "vector-vscode-extension",
+      "vector-open-vsx",
+      "platform-macos",
+      "severity-high"
     ],
     "source_refs": [
       "SRC-MITRE-ATTACK",
@@ -25,13 +28,13 @@
     ],
     "pov_engine": {
       "engine_version_min": "0.1.0",
-      "auto_load": false,
+      "auto_load": true,
       "simulation_class": "supply-chain",
       "destructive": false,
       "requires_network_egress": false,
       "requires_internet": false,
       "platforms": [
-        "linux"
+        "macos"
       ],
       "estimated_runtime_seconds": 300,
       "cleanup_required": true,
@@ -39,142 +42,409 @@
     }
   },
   "identity": {
-    "name": "GlassWorm agentic endpoint takeover — KOI scaffold (SIM-KOI-009)",
-    "summary": "[SCAFFOLD] Poisoned VS Code extension update stages a delayed loader that collects developer credentials, persists via LaunchAgent and exfils to /p2p. Replace this summary and the detection bodies below with the real technique from the source report before promoting.",
-    "description": "Research-intake scaffold generated from 'GlassWorm agentic endpoint takeover' (https://www.paloaltonetworks.com/blog/security-operations/glassworm-goes-mac-fresh-infrastructure-new-tricks/). This card is a schema-valid starting point: fill in the real actors, MITRE techniques, execution payload, and — most importantly — the detection logic (ABIOC / XQL / correlation) from the source research, then flip status to 'active'.",
-    "severity": "medium",
+    "name": "GlassWorm macOS Wave — Poisoned VS Code Extension → Keychain, LaunchAgent, Credential Staging and Archive Send",
+    "summary": "Fourth GlassWorm wave, retargeted at macOS developers: a trojanized Open VSX extension runs in the VS Code extension host, spawns a scripting host, reaches for Keychain material, installs a LaunchAgent, stages credential files and archives them to a hard-coded server.",
+    "description": "Built from the Palo Alto Networks Security Operations write-up of the macOS wave of GlassWorm (https://www.paloaltonetworks.com/blog/security-operations/glassworm-goes-mac-fresh-infrastructure-new-tricks/). The public report describes an encrypted loader whose key is held in the extension, a timer-delayed second stage, C2 discovery through a blockchain transaction memo, a macOS-specific payload that targets Keychain and developer credential stores, LaunchAgent persistence, local staging and an HTTP POST of the collected archive to a remote endpoint. CortexSim does not reproduce the loader or the blockchain lookup. It runs a benign canary extension that produces the same endpoint observables, all as children of the VS Code extension host: an install into the user's extensions directory, a scripting-host child at activation, a security-utility call against a decoy keychain file, a no-op LaunchAgent written and loaded with launchctl, a read of several decoy credential-named files copied to a staging directory, and a tar of that directory that is sent only when an authorised sink is configured. Every detection keys on the causality chain (causality_id and the VS Code image-name set), never on a username, because the Causality Group Owner is the IDE itself. The Cortex Agentic Endpoint Security view of the same install (inventory, publisher, permissions, risk score, guardrail verdict) is a product observation the DC records, not a scored detection. The encrypted-loader and timer-delay code-scan detection is described in the card, not exercised.",
+    "severity": "high",
     "confidence": "medium"
   },
   "threat_context": {
     "actors": [],
-    "campaigns": [],
-    "malware_families": [],
+    "campaigns": [
+      "GlassWorm (fourth wave, macOS)"
+    ],
+    "malware_families": [
+      {
+        "name": "GlassWorm"
+      }
+    ],
     "industries_targeted": [
-      "all"
+      "technology"
     ]
   },
   "mitre_attack": {
     "matrix": "enterprise",
     "techniques": [
       {
+        "technique_id": "T1195",
+        "name": "Supply Chain Compromise",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
         "technique_id": "T1059",
-        "name": "Command and Scripting Interpreter",
+        "subtechnique_id": "T1059.002",
+        "name": "Command and Scripting Interpreter: AppleScript",
         "tactic_ids": [
           "TA0002"
         ],
         "tactic_names": [
           "Execution"
         ]
+      },
+      {
+        "technique_id": "T1543",
+        "subtechnique_id": "T1543.001",
+        "name": "Create or Modify System Process: Launch Agent",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1555",
+        "subtechnique_id": "T1555.001",
+        "name": "Credentials from Password Stores: Keychain",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.001",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1074",
+        "subtechnique_id": "T1074.001",
+        "name": "Data Staged: Local Data Staging",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1560",
+        "name": "Archive Collected Data",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1041",
+        "name": "Exfiltration Over C2 Channel",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
       }
     ],
-    "kill_chain_phase": "exploitation",
+    "kill_chain_phase": "installation",
     "data_sources": [
       "Process: Process Creation",
-      "Command: Command Execution"
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Access",
+      "Network Traffic: Network Connection Creation"
     ]
   },
   "execution": {
-    "target_platform": "linux",
+    "target_platform": "macos",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-KOI-009 — research-intake scaffold; replace with the real technique from the source report.",
+    "framework_reference_id": "SIM-KOI-009 — GlassWorm macOS wave SAFE-MODE emulation via the prettier-pro-canary VS Code extension (decoy-only, URI-triggered).",
     "privilege_required": "user",
     "prerequisites": [
       {
-        "description": "Cortex XDR / XSIAM agent installed on the target so per-process telemetry reaches xdr_data.",
-        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+        "description": "Cortex XDR / XSIAM agent installed on the macOS lab endpoint so per-process causality telemetry reaches xdr_data.",
+        "check_command": "pgrep -il cyserver || pgrep -il traps"
+      },
+      {
+        "description": "VS Code with its `code` CLI on PATH, so the canary .vsix installs through the IDE's own main-process image.",
+        "check_command": "command -v code"
       }
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# SCAFFOLD payload — replace with the real technique from the research report.\nset -euo pipefail\necho '[CortexSim] research-intake scaffold executing SIM-KOI-009'\n",
+      "code": "# SAFE-MODE — SIM-KOI-009 GlassWorm macOS emulation (NON-DESTRUCTIVE, decoy-only).\n# Installs the in-tree canary extension, then drives each step through the\n# extension's vscode:// URI handler so the actions run as children of the\n# extension host. Nothing leaves the host unless CORTEXSIM_C2_URL is set.\nset -euo pipefail\nexport CORTEXSIM_KOI009_DECOY_ROOT=\"$(mktemp -d /tmp/koi009.XXXXXX)\"\ncode --install-extension \"${VSIX_PATH}\" --force\nopen -a \"Visual Studio Code\"\nfor s in step-03 step-04 step-05 step-06; do\n  open \"vscode://cortexsim-canary.prettier-pro-canary/${s}\"\n  sleep 5\ndone\necho \"[CortexSim][SAFE-MODE] SIM-KOI-009 decoy root: ${CORTEXSIM_KOI009_DECOY_ROOT}\"\n",
       "input_variables": [
         {
-          "name": "TARGET_HOST",
-          "type": "string",
-          "default": "127.0.0.1",
-          "description": "Authorised target the scaffolded step acts against."
+          "name": "VSIX_PATH",
+          "type": "path",
+          "default": "sources/cortex-malicious-agentic-pack/vscode/prettier-pro-canary/prettier-pro-canary.vsix",
+          "description": "Canary extension package installed through the IDE CLI."
         }
       ],
       "timeout_seconds": 300
     },
     "expected_artifacts": [
       {
+        "artifact_type": "file",
+        "description": "New directory for the canary extension under the user's VS Code extensions path, created by the IDE main-process image running the code CLI.",
+        "expected_value": "action_file_path contains \"/.vscode/extensions/cortexsim-canary.prettier-pro-canary\""
+      },
+      {
         "artifact_type": "process",
-        "description": "Process telemetry the scaffolded step produces; replace with the real observable from the research."
+        "description": "One osascript child of the extension host at activation, which exits at once.",
+        "expected_value": "action_process_image_name = \"osascript\" and causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")"
+      },
+      {
+        "artifact_type": "process",
+        "description": "security find-generic-password against a decoy *.keychain-db file, as an extension-host child.",
+        "expected_value": "action_process_image_command_line contains_all (\"find-generic-password\", \".keychain-db\")"
+      },
+      {
+        "artifact_type": "scheduled-task",
+        "description": "LaunchAgent plist com.cortexsim.CORTEXSIM-CANARY.koi009.plist written under ~/Library/LaunchAgents and loaded with launchctl bootstrap (program /usr/bin/true).",
+        "expected_value": "action_process_image_command_line contains_all (\"launchctl\", \"bootstrap\", \"LaunchAgents\")"
+      },
+      {
+        "artifact_type": "file",
+        "description": "Decoy credential-named files read, then copied into a staging directory in the decoy tree.",
+        "expected_value": "action_file_path contains \"/staging/\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "tar over the staging directory; sent to CORTEXSIM_C2_URL only when that sink is set.",
+        "expected_value": "action_process_image_name = \"tar\" and action_process_image_command_line contains \"staging\""
       }
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "echo '[CortexSim] SIM-KOI-009 cleanup complete.'"
+      "code": "launchctl bootout \"gui/$(id -u)/com.cortexsim.CORTEXSIM-CANARY.koi009\" 2>/dev/null || true\nrm -f \"$HOME/Library/LaunchAgents/com.cortexsim.CORTEXSIM-CANARY.koi009.plist\"\ncode --uninstall-extension cortexsim-canary.prettier-pro-canary 2>/dev/null || true\nfind /tmp -maxdepth 1 -name 'koi009.*' -exec rm -rf {} + 2>/dev/null || true\necho '[CortexSim] SIM-KOI-009 cleanup complete.'"
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
-    "abiocs": [
+    "iocs": [
       {
-        "name": "SIM-KOI-009 Behavioral Anomaly Scaffold",
-        "description": "Scaffolded ABIOC — replace this behavioral logic with the real auto-tuned deviation from the source research. The body below is a lint-clean placeholder against xdr_data so the card validates unedited.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username in (\"svc-backup\")\n| comp count() as observed_events by agent_hostname, actor_effective_username\n| filter observed_events >= 1\n| fields agent_hostname, actor_effective_username, observed_events",
-        "severity": "medium",
+        "ioc_type": "ipv4",
+        "value": "45.32.151.157",
+        "context": "Primary GlassWorm C2 server in the macOS wave; also seen in the campaign's third wave.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "45.32.150.251",
+        "context": "Server receiving the collected archive.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "url",
+        "value": "http://45.32.150.251/p2p",
+        "context": "Endpoint the collected archive is POSTed to.",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "217.69.11.60",
+        "context": "Earlier GlassWorm C2 endpoint (November 2025).",
+        "reputation_required": "any"
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "/tmp/ijewf/",
+        "context": "Local staging directory for collected data in the public report; CortexSim stages under its own decoy root, not this path."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "studio-velte-distributor.pro-svelte-extension",
+        "context": "Malicious Open VSX extension identifier from the macOS wave; appears as the on-disk extension directory name."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "cudra-production.vsce-prettier-pro",
+        "context": "Malicious Open VSX extension identifier from the macOS wave; appears as the on-disk extension directory name."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "Puccin-development.full-access-catppuccin-pro-extension",
+        "context": "Malicious Open VSX extension identifier from the macOS wave; appears as the on-disk extension directory name."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "KOI-009 Keychain Access By IDE Descendant",
+        "description": "A child of the VS Code extension host runs the security utility against a keychain database file. Legitimate extensions do not read Keychain material; the report's macOS payload targets it directly. CortexSim points the call at a decoy *.keychain-db only.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_process_image_name = \"security\"\n| filter action_process_image_command_line contains_any (\"find-generic-password\", \"find-internet-password\", \"dump-keychain\") and action_process_image_command_line contains \".keychain-db\"\n| comp count() as keychain_calls by agent_hostname, causality_id, causality_actor_process_instance_id, action_process_image_command_line\n| filter keychain_calls >= 1\n| fields agent_hostname, causality_id, causality_actor_process_instance_id, action_process_image_command_line, keychain_calls",
+        "severity": "high",
         "mitre_technique_ids": [
-          "T1059"
-        ],
-        "behavioral_profile": "machine-learning",
-        "causality_anchor": "Replace with the learned user/endpoint/network baseline the real ABIOC anchors its deviation to."
+          "T1555.001"
+        ]
+      },
+      {
+        "name": "KOI-009 LaunchAgent Written And Loaded From IDE Lineage",
+        "description": "A descendant of the IDE bootstraps a user LaunchAgent with launchctl, the persistence step in the macOS wave. The plist is written by the same lineage immediately before; the load command is the single-event anchor that carries the plist path.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_process_image_name = \"launchctl\"\n| filter action_process_image_command_line contains \"bootstrap\" and action_process_image_command_line contains \"/Library/LaunchAgents/\"\n| comp count() as agent_loads by agent_hostname, causality_id, causality_actor_process_instance_id, action_process_image_command_line\n| filter agent_loads >= 1\n| fields agent_hostname, causality_id, causality_actor_process_instance_id, action_process_image_command_line, agent_loads",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1543.001"
+        ]
+      },
+      {
+        "name": "KOI-009 Multi Credential File Read Under IDE CGO",
+        "description": "Three or more distinct credential-named files (npm token file, git credentials, SSH key, editor storage, keychain copy) are read in one window by a process in the IDE's causality chain. An extension that reads this set is stealing, not formatting.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE\n| filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_file_path contains_any (\".npmrc\", \".git-credentials\", \"id_rsa\", \"id_ed25519\", \"storage.json\", \"state.vscdb\", \".keychain-db\", \"credentials.json\")\n| comp count_distinct(action_file_path) as secret_files_read by agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name\n| filter secret_files_read >= 3\n| fields agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name, secret_files_read",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ]
       }
     ],
     "xql_queries": [
       {
         "purpose": "validation",
-        "name": "SIM-KOI-009 Validation Query Scaffold",
-        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter actor_effective_username = \"svc-backup\"\n| comp count() as observed_events by agent_hostname\n| filter observed_events >= 1\n| fields agent_hostname, observed_events",
+        "name": "KOI-009 VS Code Extension Install Creates Unknown Publisher Extension Directory",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE_NEW\n| filter action_file_path contains \"/.vscode/extensions/\"\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_file_path !~= \"/\\.vscode/extensions/(ms-|github\\.|redhat\\.|vscode\\.)\"\n| fields _time, agent_hostname, causality_id, actor_process_image_name, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-009 Staging Directory Created Under IDE Lineage",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_file_path contains_any (\"/staging/\", \"/ijewf/\")\n| fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, action_file_path",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 1800)\n| filter event_type = ENUM.NETWORK\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter dst_action_external_hostname not in (\"open-vsx.org\", \"marketplace.visualstudio.com\", \"vscode.dev\", \"gallerycdn.vsassets.io\", \"update.code.visualstudio.com\") or dst_action_external_hostname = null\n| filter action_external_port in (80, 443, 8080)\n| fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, dst_action_external_hostname, action_remote_ip, action_external_port",
         "expected_rows_min": 0,
         "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-009 NGFW Session From IDE Host To Non Marketplace Destination",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter action = \"allow\"\n| filter app in (\"web-browsing\", \"ssl\", \"unknown-tcp\")\n| filter dst_host not in (\"open-vsx.org\", \"marketplace.visualstudio.com\", \"vscode.dev\", \"gallerycdn.vsassets.io\", \"update.code.visualstudio.com\") or dst_host = null\n| filter action_total_upload > 0\n| comp sum(action_total_upload) as bytes_out, count() as sessions by src_ip, dst_ip, dst_host\n| fields src_ip, dst_ip, dst_host, sessions, bytes_out",
+        "expected_rows_min": 0,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "KOI-009 IDE Extension Host Spawns Scripting Host For First Seen Publisher",
+        "description": "Behavioral-ML deviation: the VS Code extension host, from an extension whose publisher has no prior install on this endpoint, spawns a macOS scripting-interpreter child at activation. Extension hosts rarely spawn osascript; a first-seen publisher doing it in the first minute is the loader's activation shape.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\")\n| filter action_process_image_name in (\"osascript\", \"sh\", \"bash\", \"zsh\")\n| filter action_process_signature_status != ENUM.SIGNED or action_process_image_name = \"osascript\"\n| comp count() as script_spawns, values(action_process_image_command_line) as child_cmdlines by agent_hostname, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id\n| filter script_spawns >= 1\n| fields agent_hostname, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, child_cmdlines, script_spawns",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.002",
+          "T1195"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "The VS Code main/extension-host process (Causality Group Owner) and its causality_actor_process_instance_id; the deviation is a scripting-host child from a publisher first seen on this endpoint, against the baseline of extension hosts that spawn no interpreters."
       }
     ],
     "correlation_rules": [
       {
-        "name": "SIM-KOI-009 Correlation Stitch Scaffold",
+        "name": "GlassWorm macOS Wave — Extension Host Scripting, Keychain, LaunchAgent, Credential Read and Archive Send",
         "rule_id": "CR-KOI-0009",
-        "logic": "Fires when abioc `SIM-KOI-009 Behavioral Anomaly Scaffold` and xql `SIM-KOI-009 Validation Query Scaffold` both observe activity on the same agent_hostname and actor_effective_username within the run window, stitching the scaffolded signals into one incident. Substitute the real correlation from the research before promoting."
+        "logic": "ABIOC(KOI-009 IDE Extension Host Spawns Scripting Host For First Seen Publisher) FOLLOWED_BY BIOC(KOI-009 Keychain Access By IDE Descendant) FOLLOWED_BY BIOC(KOI-009 LaunchAgent Written And Loaded From IDE Lineage) FOLLOWED_BY BIOC(KOI-009 Multi Credential File Read Under IDE CGO) FOLLOWED_BY XQL(KOI-009 Archive Sent From IDE Lineage To Non Marketplace Host) — all stitched by shared agent_hostname and causality_id (CGO = the VS Code IDE) so the activation-time scripting host, Keychain access, LaunchAgent persistence, credential read and archive send collapse into ONE GlassWorm incident."
       }
     ],
-    "analytics_modules": []
+    "analytics_modules": [
+      "Cortex Cloud Code — extension manifest scanner (unknown-publisher extension declaring activationEvents [\"*\"] and broad file, process and network reach)",
+      "Described, not exercised: code-scan detection of the report's encrypted loader and timer-delayed second stage; CortexSim runs a benign canary and does not reproduce that code."
+    ]
   },
   "panw_mapping": {
     "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "agentic-endpoint-security",
+        "coverage_tier": "exposure-mgmt",
+        "rule_ids": [
+          "AES-INVENTORY-IDE-EXTENSION-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Observed in the Cortex Agentic Endpoint Security console (or the XSIAM incident when AES runs as a Cortex module): the canary extension appears in inventory with its publisher, requested reach, risk score and any guardrail verdict. Recorded by the DC; not a scored detection."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-ABIOC-KOI-0197-SCRIPTING-HOST",
+          "XDR-BIOC-KOI-0197-KEYCHAIN",
+          "XDR-BIOC-KOI-0197-LAUNCHAGENT",
+          "XDR-BIOC-KOI-0197-CREDREAD"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "dataset = xdr_data | filter causality_actor_process_image_name in (\"Electron\", \"Code Helper (Plugin)\", \"Code Helper\", \"code\") and action_process_image_name in (\"osascript\", \"security\", \"launchctl\", \"tar\") | fields _time, agent_hostname, causality_id, action_process_image_name"
+      },
       {
         "module": "cortex-xsiam",
         "submodule": "analytics",
         "coverage_tier": "detection",
         "rule_ids": [
-          "CR-KOI-0009"
+          "XSIAM-CR-KOI-0009"
         ],
         "license_required": "advanced",
-        "evidence_query": "Replace with the XQL the DC runs in the product UI to surface evidence for this technique."
+        "evidence_query": "Correlation CR-KOI-0009 fuses the scripting-host, Keychain, LaunchAgent, credential-read and archive-send signals into one GlassWorm incident on shared causality_id."
+      },
+      {
+        "module": "cortex-cloud",
+        "submodule": "code-security",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "CCS-VSCODE-EXT-UNKNOWN-PUBLISHER-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Cortex Cloud Code finding: extension manifest from an unknown publisher declares activationEvents [\"*\"] with file, process and network reach."
       }
     ],
     "threat_scenarios": [
       {
         "threat_scenario_id": "TS-KOI-009",
-        "name": "SIM-KOI-009 — research-intake scaffold use case",
-        "description": "Scaffolded POV use case; replace with the real customer narrative the DC runs for this technique.",
+        "name": "GlassWorm macOS Wave — Poisoned IDE Extension to Credential Theft",
+        "description": "Detect a trojanized IDE extension end to end on a macOS developer endpoint: install, activation-time scripting host, Keychain access, LaunchAgent persistence, credential staging and archive send, stitched into one causality-aware incident, with the Agentic Endpoint Security inventory view recorded alongside.",
         "threat_steps": [
           {
             "threat_step_id": "TS-KOI-009A",
-            "objective": "The scaffolded detection fires when the real technique from the research is executed.",
+            "objective": "The install and activation-time behaviour fire under the IDE causality chain, and the AES inventory shows the extension.",
             "preconditions": [
-              "Target with the Cortex agent installed."
+              "macOS endpoint with the Cortex agent and VS Code installed."
             ],
             "steps": [
-              "Execute the technique from the source research.",
-              "Observe the ABIOC / correlation fire."
+              "Install the canary .vsix through the code CLI and launch the IDE.",
+              "Observe the extension-directory XQL and the scripting-host ABIOC.",
+              "Record the extension's AES inventory entry and risk score."
             ],
             "success_criteria": [
-              "Correlation `CR-KOI-0009` raises one incident."
+              "XQL `KOI-009 VS Code Extension Install Creates Unknown Publisher Extension Directory` returns the canary directory.",
+              "ABIOC `KOI-009 IDE Extension Host Spawns Scripting Host For First Seen Publisher` fires."
             ],
-            "expected_score_weight": 1.0
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-KOI-009B",
+            "objective": "Keychain, persistence, credential read and archive-send fire and correlate into one incident.",
+            "preconditions": [
+              "TS-KOI-009A executed within the correlation window."
+            ],
+            "steps": [
+              "Trigger steps 03 to 06 through the extension's URI handler.",
+              "Observe the Keychain, LaunchAgent and credential-read BIOCs and the archive-send XQL.",
+              "Confirm correlation CR-KOI-0009 stitches every stage into one incident."
+            ],
+            "success_criteria": [
+              "BIOC `KOI-009 Keychain Access By IDE Descendant` fires.",
+              "BIOC `KOI-009 LaunchAgent Written And Loaded From IDE Lineage` fires.",
+              "BIOC `KOI-009 Multi Credential File Read Under IDE CGO` fires.",
+              "Correlation `CR-KOI-0009` raises exactly one GlassWorm incident."
+            ],
+            "expected_score_weight": 0.5
           }
         ]
       }
@@ -182,22 +452,34 @@
   },
   "remediation_guidance": {
     "preventive_controls": [
-      "Replace with the preventive controls from the source research."
+      "Allow only approved IDE extensions: restrict installs to a vetted publisher list or an internal registry gateway, and turn on delayed-access or version-update cooldown guardrails so a freshly published update is not installed the day it ships.",
+      "Remove Open VSX and Marketplace access for developer endpoints that do not need it, and alert on any install from a publisher not previously seen in the fleet.",
+      "Keep long-lived credentials out of developer home directories: use short-lived tokens, a credential helper and hardware-backed SSH keys so a file read yields nothing reusable.",
+      "Alert on user LaunchAgent creation by any process descended from an IDE; developer tooling has no reason to install login persistence."
     ],
     "detection_engineering": [
-      "Replace with the detection-engineering guidance from the research."
+      "Anchor on causality_id and the VS Code image-name set (Electron, Code Helper (Plugin), Code Helper, code), never on a username: the IDE is the Causality Group Owner and every later stage is its descendant.",
+      "Treat an extension host that spawns osascript, security, launchctl or tar as the signal; none of these is part of normal extension behaviour.",
+      "Require three or more distinct credential-named files read in one window by the IDE chain before alerting on credential theft, to keep a single settings read quiet.",
+      "Pair the endpoint chain with NGFW egress to a non-marketplace destination when a firewall is in path, and with the Agentic Endpoint Security inventory view for the install itself."
     ]
   },
   "references": [
     {
-      "title": "GlassWorm agentic endpoint takeover",
+      "title": "GlassWorm goes Mac: fresh infrastructure, new tricks (blockchain C2 discovery address is given in the post)",
       "url": "https://www.paloaltonetworks.com/blog/security-operations/glassworm-goes-mac-fresh-infrastructure-new-tricks/",
-      "publisher": "Threat Research (research-intake)",
+      "publisher": "Palo Alto Networks Security Operations",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK — T1059 Command and Scripting Interpreter",
-      "url": "https://attack.mitre.org/techniques/T1059/",
+      "title": "MITRE ATT&CK — T1195 Supply Chain Compromise",
+      "url": "https://attack.mitre.org/techniques/T1195/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1555.001 Keychain",
+      "url": "https://attack.mitre.org/techniques/T1555/001/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },

@@ -1,0 +1,128 @@
+title: "GlassWorm macOS Wave \u2014 Poisoned VS Code Extension \u2192 Keychain, LaunchAgent, Credential Staging and Archive Send \u2014 KOI-009 Keychain Access By IDE Descendant"
+id: ttp-2026-0197-bioc-01
+status: experimental
+description: |
+  A child of the VS Code extension host runs the security utility against a keychain database file. Legitimate extensions do not read Keychain material; the report's macOS payload targets it directly. CortexSim points the call at a decoy *.keychain-db only.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
+    | filter action_process_image_name = "security"
+    | filter action_process_image_command_line contains_any ("find-generic-password", "find-internet-password", "dump-keychain") and action_process_image_command_line contains ".keychain-db"
+    | comp count() as keychain_calls by agent_hostname, causality_id, causality_actor_process_instance_id, action_process_image_command_line
+    | filter keychain_calls >= 1
+    | fields agent_hostname, causality_id, causality_actor_process_instance_id, action_process_image_command_line, keychain_calls
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1555/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1555.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "GlassWorm macOS Wave \u2014 Poisoned VS Code Extension \u2192 Keychain, LaunchAgent, Credential Staging and Archive Send \u2014 KOI-009 LaunchAgent Written And Loaded From IDE Lineage"
+id: ttp-2026-0197-bioc-02
+status: experimental
+description: |
+  A descendant of the IDE bootstraps a user LaunchAgent with launchctl, the persistence step in the macOS wave. The plist is written by the same lineage immediately before; the load command is the single-event anchor that carries the plist path.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
+    | filter action_process_image_name = "launchctl"
+    | filter action_process_image_command_line contains "bootstrap" and action_process_image_command_line contains "/Library/LaunchAgents/"
+    | comp count() as agent_loads by agent_hostname, causality_id, causality_actor_process_instance_id, action_process_image_command_line
+    | filter agent_loads >= 1
+    | fields agent_hostname, causality_id, causality_actor_process_instance_id, action_process_image_command_line, agent_loads
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1543/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1543.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "GlassWorm macOS Wave \u2014 Poisoned VS Code Extension \u2192 Keychain, LaunchAgent, Credential Staging and Archive Send \u2014 KOI-009 Multi Credential File Read Under IDE CGO"
+id: ttp-2026-0197-bioc-03
+status: experimental
+description: |
+  Three or more distinct credential-named files (npm token file, git credentials, SSH key, editor storage, keychain copy) are read in one window by a process in the IDE's causality chain. An extension that reads this set is stealing, not formatting.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
+    | filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
+    | filter action_file_path contains_any (".npmrc", ".git-credentials", "id_rsa", "id_ed25519", "storage.json", "state.vscdb", ".keychain-db", "credentials.json")
+    | comp count_distinct(action_file_path) as secret_files_read by agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name
+    | filter secret_files_read >= 3
+    | fields agent_hostname, causality_id, causality_actor_process_instance_id, actor_process_image_name, secret_files_read
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.001
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "GlassWorm macOS Wave \u2014 Poisoned VS Code Extension \u2192 Keychain, LaunchAgent, Credential Staging and Archive Send \u2014 KOI-009 IDE Extension Host Spawns Scripting Host For First Seen Publisher"
+id: ttp-2026-0197-abioc-04
+status: experimental
+description: |
+  Behavioral-ML deviation: the VS Code extension host, from an extension whose publisher has no prior install on this endpoint, spawns a macOS scripting-interpreter child at activation. Extension hosts rarely spawn osascript; a first-seen publisher doing it in the first minute is the loader's activation shape.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
+    | filter action_process_image_name in ("osascript", "sh", "bash", "zsh")
+    | filter action_process_signature_status != ENUM.SIGNED or action_process_image_name = "osascript"
+    | comp count() as script_spawns, values(action_process_image_command_line) as child_cmdlines by agent_hostname, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id
+    | filter script_spawns >= 1
+    | fields agent_hostname, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, child_cmdlines, script_spawns
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1059/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1059.002
+    - attack.t1195
+logsource:
+  product: macos
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

@@ -196,4 +196,5 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0194` | BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 — EDR + NGFW + AI Access Stitch (T1110.001 / T1041) | [sigma](sigma/TTP-2026-0194.yml), [xql](xql/TTP-2026-0194.xql), [correlation](correlation/TTP-2026-0194.json) |
 | `TTP-2026-0195` | PAN-OS CVE-2026-0257 Foothold — GlobalProtect Bypass to RMM, RDP/SMB, ESXi and VMDK Credential Theft (T1556 / T1003.003) | [sigma](sigma/TTP-2026-0195.yml), [xql](xql/TTP-2026-0195.xql), [correlation](correlation/TTP-2026-0195.json) |
 | `TTP-2026-0196` | PHP2Shell PHP-Worker Post-Exploitation via Unit 42 MTH Hunting Queries (T1190 / T1105 / T1620) | [sigma](sigma/TTP-2026-0196.yml), [xql](xql/TTP-2026-0196.xql), [correlation](correlation/TTP-2026-0196.json) |
+| `TTP-2026-0197` | GlassWorm macOS Wave — Poisoned VS Code Extension → Keychain, LaunchAgent, Credential Staging and Archive Send | [sigma](sigma/TTP-2026-0197.yml), [xql](xql/TTP-2026-0197.xql), [correlation](correlation/TTP-2026-0197.json) |
 
