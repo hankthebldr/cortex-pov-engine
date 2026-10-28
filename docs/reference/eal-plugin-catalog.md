@@ -273,7 +273,7 @@ Plugins fall into three implementation families:
 | 7 | `ssh_egress` | NDR | Outbound SSH banner (RFC-4253) + synthesised `SSH_MSG_KEXINIT` pseudo-frame; stops before key exchange | `target_host:target_port` (default 22) | T1021.004, T1572 | `plugins/ssh_egress.py` |
 | 8 | `idp_signin_emulator` | ITDR | Synthetic IdP audit events (Okta/Microsoft Entra/Google shape) POSTed to a collector; 5 behavioural presets | operator `collector_url` | T1110.003, T1110.004, T1078.004, T1556.006, T1539 | `plugins/idp_signin_emulator.py` |
 | 9 | `oauth_grant_emulator` | Cloud App / CASB | Outbound OAuth 2.0 authorize GETs with planted risky scopes + bogus client_id | Okta/Microsoft/Google authorize endpoint | T1550.001, T1528, T1078.004, T1098 | `plugins/oauth_grant_emulator.py` |
-| 10 | `llm_provider_egress` | AI Access | Authentic-shape POSTs to OpenAI/Anthropic/Gemini carrying planted DLP markers (PII/secret/source/jailbreak), optional size padding | provider API host | T1567, T1041, T1552 | `plugins/llm_provider_egress.py` |
+| 10 | `llm_provider_egress` | AI Access | Authentic-shape POSTs to OpenAI/Anthropic/Gemini/DeepSeek/OpenRouter carrying planted DLP markers (PII/secret/source/jailbreak), optional size padding | provider API host | T1567, T1041, T1552 | `plugins/llm_provider_egress.py` |
 | 11 | `airs_prompt_attack` | AIRS | Shells out to `cortex-prompt-attacker`; Probe→Mutator→Target→Scorer pipeline against a vulnerable LLM; JSONL→ECS | `target_url` (the AIRS target) | T1656, T1059, T1499 | `plugins/airs_prompt_attack.py` |
 | 12 | `browser_attack_runner` | BROWSER (Prisma) | Shells out to `cortex-browser-attacker` (Playwright/Chromium/Prisma); YAML-declared browser actions; JSONL→ECS | `allowlist_host` (browser navigates) | T1552, T1189, T1176, T1567, T1113 | `plugins/browser_attack_runner.py` |
 | 13 | `agentic_egress` | KOI (supply-chain) | Tarballs an in-tree malicious-agentic-pack component and POSTs it (pypi_mirror does GET-probe + POST) | staging `target_url` | T1195, T1195.002, T1176, T1059 | `plugins/agentic_egress.py` |
@@ -586,8 +586,9 @@ OAuth client secrets are ever used.**
 #### 10. `llm_provider_egress` (AI Access Security)
 
 **Attack shape.** Authentic-shape POSTs to OpenAI (`/v1/chat/completions`),
-Anthropic (`/v1/messages`), or Gemini (`/v1beta/.../generateContent?key=`)
-carrying a planted DLP payload. Provider 401/403's on the fake key; detection is
+Anthropic (`/v1/messages`), Gemini (`/v1beta/.../generateContent?key=`),
+DeepSeek (`api.deepseek.com/chat/completions`), or OpenRouter
+(`openrouter.ai/api/v1/chat/completions`) carrying a planted DLP payload. Provider 401/403's on the fake key; detection is
 at the proxy on the outbound request.
 
 | `payload_type` | Planted marker |
@@ -607,7 +608,7 @@ provider keys are ever used.**
 
 | Param | Type / default | Bounds |
 |-------|----------------|--------|
-| `provider` | str (required) | openai/anthropic/gemini |
+| `provider` | str (required) | openai/anthropic/gemini/deepseek/openrouter |
 | `payload_type` | str = "benign" | the 5 types |
 | `iterations` | int = 1 | 1–200 |
 | `sleep_seconds` | float = 0.0 | 0–600 |

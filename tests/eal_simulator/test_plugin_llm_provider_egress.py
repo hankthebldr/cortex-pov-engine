@@ -159,8 +159,32 @@ class TestParamValidation:
 
 
 class TestProviderShapes:
-    def test_three_providers_registered(self):
-        assert _list_providers() == sorted(["openai", "anthropic", "gemini"])
+    def test_five_providers_registered(self):
+        assert _list_providers() == sorted(
+            ["openai", "anthropic", "gemini", "deepseek", "openrouter"]
+        )
+
+    def test_deepseek_url_headers_body(self):
+        p = _PROVIDERS["deepseek"]
+        url = p.build_url(fake_key=p.fake_key())
+        headers = p.build_headers(fake_key=p.fake_key())
+        body = p.build_body(prompt="hi")
+        assert url == "https://api.deepseek.com/chat/completions"
+        assert "sk-cortexsim-canary-NOT-A-REAL-KEY" not in url
+        assert headers["authorization"] == "Bearer sk-cortexsim-canary-NOT-A-REAL-KEY"
+        assert body["model"] == "deepseek-chat"
+        assert body["messages"][0]["content"] == "hi"
+
+    def test_openrouter_url_headers_body(self):
+        p = _PROVIDERS["openrouter"]
+        url = p.build_url(fake_key=p.fake_key())
+        headers = p.build_headers(fake_key=p.fake_key())
+        body = p.build_body(prompt="hi")
+        assert url == "https://openrouter.ai/api/v1/chat/completions"
+        assert "sk-or-v1-cortexsim-canary-NOT-A-REAL-KEY" not in url
+        assert headers["authorization"] == "Bearer sk-or-v1-cortexsim-canary-NOT-A-REAL-KEY"
+        assert body["model"] == "deepseek/deepseek-chat"
+        assert body["messages"][0]["content"] == "hi"
 
     def test_openai_url_and_headers(self):
         p = _PROVIDERS["openai"]
@@ -197,6 +221,8 @@ class TestProviderShapes:
         assert _PROVIDERS["openai"].host() == "api.openai.com"
         assert _PROVIDERS["anthropic"].host() == "api.anthropic.com"
         assert _PROVIDERS["gemini"].host() == "generativelanguage.googleapis.com"
+        assert _PROVIDERS["deepseek"].host() == "api.deepseek.com"
+        assert _PROVIDERS["openrouter"].host() == "openrouter.ai"
 
 
 # --------------------------------------------------------------------------
@@ -287,6 +313,58 @@ class TestPluginRun:
         body = json.loads(req["content"])
         assert body["model"] == "gpt-4o"
         assert "AKIA0000CORTEXSIMCANARY" in body["messages"][0]["content"]
+
+    def test_deepseek_request_url_and_body(self, monkeypatch):
+        state, stub = self._run_with_stub(
+            monkeypatch, provider="deepseek", payload_type="secret",
+            target_allowlist=["api.deepseek.com"],
+        )
+        assert state.step_results[0].status == "success"
+        assert len(stub.requests) == 1
+        req = stub.requests[0]
+        assert req["url"] == "https://api.deepseek.com/chat/completions"
+        assert req["headers"]["authorization"] == (
+            "Bearer sk-cortexsim-canary-NOT-A-REAL-KEY"
+        )
+        body = json.loads(req["content"])
+        assert body["model"] == "deepseek-chat"
+        assert "AKIA0000CORTEXSIMCANARY" in body["messages"][0]["content"]
+
+    def test_openrouter_request_url_and_body(self, monkeypatch):
+        state, stub = self._run_with_stub(
+            monkeypatch, provider="openrouter", payload_type="secret",
+            target_allowlist=["openrouter.ai"],
+        )
+        assert state.step_results[0].status == "success"
+        assert len(stub.requests) == 1
+        req = stub.requests[0]
+        assert req["url"] == "https://openrouter.ai/api/v1/chat/completions"
+        assert req["headers"]["authorization"] == (
+            "Bearer sk-or-v1-cortexsim-canary-NOT-A-REAL-KEY"
+        )
+        body = json.loads(req["content"])
+        assert body["model"] == "deepseek/deepseek-chat"
+        assert "AKIA0000CORTEXSIMCANARY" in body["messages"][0]["content"]
+
+    @pytest.mark.parametrize("provider,host", [
+        ("deepseek", "api.deepseek.com"),
+        ("openrouter", "openrouter.ai"),
+    ])
+    def test_authorise_receives_provider_host(self, monkeypatch, provider, host):
+        # An allowlist naming only the provider host succeeds; one naming any
+        # other host is refused, so the hook is observably handed this host.
+        state, stub = self._run_with_stub(
+            monkeypatch, provider=provider, target_allowlist=[host],
+        )
+        assert state.step_results[0].status == "success"
+        assert len(stub.requests) == 1
+        state, stub = self._run_with_stub(
+            monkeypatch, provider=provider, target_allowlist=["api.openai.com"],
+        )
+        assert state.step_results[0].status == "error"
+        assert "safety_violation" in (state.step_results[0].error or "")
+        assert host in (state.step_results[0].error or "")
+        assert stub.requests == []
 
     def test_anthropic_request_url_and_body(self, monkeypatch):
         state, stub = self._run_with_stub(

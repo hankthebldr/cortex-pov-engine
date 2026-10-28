@@ -2,7 +2,7 @@
 llm_provider_egress — outbound LLM-provider traffic simulator.
 
 Sends authentic-shape requests to public AI providers (OpenAI, Anthropic,
-Google Gemini) carrying planted DLP markers (PII, secrets, source code,
+Google Gemini, DeepSeek, OpenRouter) carrying planted DLP markers (PII, secrets, source code,
 jailbreak fingerprints) so the customer's **AI Access Security** stack
 (typically NGFW + Cortex AI Access) sees the egress and fires.
 
@@ -25,6 +25,8 @@ Supported providers and the fields they touch:
   openai POST https://api.openai.com/v1/chat/completions          Authorization: Bearer <token>
   anthropic POST https://api.anthropic.com/v1/messages            x-api-key + anthropic-version
   gemini POST https://generativelanguage.googleapis.com/...       ?key=<token> query parameter
+  deepseek POST https://api.deepseek.com/chat/completions         Authorization: Bearer <token>
+  openrouter POST https://openrouter.ai/api/v1/chat/completions   Authorization: Bearer <token>
   ====== ======================================================= =================================
 
 Payload types (planted into the prompt body):
@@ -71,6 +73,8 @@ _DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
     "anthropic": "claude-3-5-sonnet-20241022",
     "gemini": "gemini-1.5-flash",
+    "deepseek": "deepseek-chat",
+    "openrouter": "deepseek/deepseek-chat",
 }
 
 
@@ -80,48 +84,51 @@ class _Provider:
     base_url: str
     path: str
     method: str = "POST"
+    # Request wire format: "openai" | "anthropic" | "gemini". OpenAI-compatible
+    # providers (deepseek, openrouter) share the openai shape.
+    wire: str = "openai"
 
     def default_model(self) -> str:
         return _DEFAULT_MODELS.get(self.name, "")
 
     def build_url(self, *, fake_key: str) -> str:
         url = f"{self.base_url}{self.path}"
-        if self.name == "gemini":
+        if self.wire == "gemini":
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}key={fake_key}"
         return url
 
     def build_headers(self, *, fake_key: str) -> dict[str, str]:
-        if self.name == "openai":
+        if self.wire == "openai":
             return {"authorization": f"Bearer {fake_key}", "content-type": "application/json"}
-        if self.name == "anthropic":
+        if self.wire == "anthropic":
             return {
                 "x-api-key": fake_key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             }
-        if self.name == "gemini":
+        if self.wire == "gemini":
             # Gemini takes the key as a query param; no auth header.
             return {"content-type": "application/json"}
-        raise ValueError(f"unknown provider {self.name!r}")  # pragma: no cover
+        raise ValueError(f"unknown wire {self.wire!r}")  # pragma: no cover
 
     def build_body(self, *, prompt: str, model: Optional[str] = None) -> dict[str, Any]:
         resolved_model = model or self.default_model()
-        if self.name == "openai":
+        if self.wire == "openai":
             return {
                 "model": resolved_model,
                 "messages": [{"role": "user", "content": prompt}],
             }
-        if self.name == "anthropic":
+        if self.wire == "anthropic":
             return {
                 "model": resolved_model,
                 "max_tokens": 256,
                 "messages": [{"role": "user", "content": prompt}],
             }
-        if self.name == "gemini":
+        if self.wire == "gemini":
             # Gemini carries the model in its URL path, not the body.
             return {"contents": [{"parts": [{"text": prompt}]}]}
-        raise ValueError(f"unknown provider {self.name!r}")  # pragma: no cover
+        raise ValueError(f"unknown wire {self.wire!r}")  # pragma: no cover
 
     def host(self) -> str:
         return urlparse(self.base_url).hostname or ""
@@ -133,6 +140,10 @@ class _Provider:
             return "sk-ant-cortexsim-canary-NOT-A-REAL-KEY"
         if self.name == "gemini":
             return "AIzaSy-CORTEXSIM-CANARY-NOT-A-REAL-KEY"
+        if self.name == "deepseek":
+            return "sk-cortexsim-canary-NOT-A-REAL-KEY"
+        if self.name == "openrouter":
+            return "sk-or-v1-cortexsim-canary-NOT-A-REAL-KEY"
         return "cortexsim-canary"  # pragma: no cover
 
 
@@ -146,11 +157,23 @@ _PROVIDERS: dict[str, _Provider] = {
         name="anthropic",
         base_url="https://api.anthropic.com",
         path="/v1/messages",
+        wire="anthropic",
     ),
     "gemini": _Provider(
         name="gemini",
         base_url="https://generativelanguage.googleapis.com",
         path="/v1beta/models/gemini-1.5-flash:generateContent",
+        wire="gemini",
+    ),
+    "deepseek": _Provider(
+        name="deepseek",
+        base_url="https://api.deepseek.com",
+        path="/chat/completions",
+    ),
+    "openrouter": _Provider(
+        name="openrouter",
+        base_url="https://openrouter.ai",
+        path="/api/v1/chat/completions",
     ),
 }
 
@@ -223,7 +246,7 @@ def _render_payload(payload_type: str, *, paste_padding_kb: int = 0) -> str:
 
 
 class LLMProviderEgressParams(BaseModel):
-    provider: str = Field(..., description="One of: openai | anthropic | gemini.")
+    provider: str = Field(..., description="One of: openai | anthropic | gemini | deepseek | openrouter.")
     payload_type: str = Field(
         default="benign",
         description="One of: benign | pii | secret | source | jailbreak.",
