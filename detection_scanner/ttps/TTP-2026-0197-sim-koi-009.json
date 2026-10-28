@@ -1,0 +1,211 @@
+{
+  "id": "TTP-2026-0197",
+  "schema_version": "1.0.0",
+  "entry_version": "0.1.0",
+  "status": "draft",
+  "metadata": {
+    "created_at": "2026-10-28T18:30:40+00:00",
+    "updated_at": "2026-10-28T18:30:40+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-koi",
+      "research-intake",
+      "scaffold",
+      "severity-medium"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "supply-chain",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "GlassWorm agentic endpoint takeover — KOI scaffold (SIM-KOI-009)",
+    "summary": "[SCAFFOLD] Poisoned VS Code extension update stages a delayed loader that collects developer credentials, persists via LaunchAgent and exfils to /p2p. Replace this summary and the detection bodies below with the real technique from the source report before promoting.",
+    "description": "Research-intake scaffold generated from 'GlassWorm agentic endpoint takeover' (https://www.paloaltonetworks.com/blog/security-operations/glassworm-goes-mac-fresh-infrastructure-new-tricks/). This card is a schema-valid starting point: fill in the real actors, MITRE techniques, execution payload, and — most importantly — the detection logic (ABIOC / XQL / correlation) from the source research, then flip status to 'active'.",
+    "severity": "medium",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      }
+    ],
+    "kill_chain_phase": "exploitation",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-KOI-009 — research-intake scaffold; replace with the real technique from the source report.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent installed on the target so per-process telemetry reaches xdr_data.",
+        "check_command": "systemctl status cortex-agent || ls /opt/traps"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# SCAFFOLD payload — replace with the real technique from the research report.\nset -euo pipefail\necho '[CortexSim] research-intake scaffold executing SIM-KOI-009'\n",
+      "input_variables": [
+        {
+          "name": "TARGET_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Authorised target the scaffolded step acts against."
+        }
+      ],
+      "timeout_seconds": 300
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "Process telemetry the scaffolded step produces; replace with the real observable from the research."
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] SIM-KOI-009 cleanup complete.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "abiocs": [
+      {
+        "name": "SIM-KOI-009 Behavioral Anomaly Scaffold",
+        "description": "Scaffolded ABIOC — replace this behavioral logic with the real auto-tuned deviation from the source research. The body below is a lint-clean placeholder against xdr_data so the card validates unedited.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username in (\"svc-backup\")\n| comp count() as observed_events by agent_hostname, actor_effective_username\n| filter observed_events >= 1\n| fields agent_hostname, actor_effective_username, observed_events",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1059"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Replace with the learned user/endpoint/network baseline the real ABIOC anchors its deviation to."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "SIM-KOI-009 Validation Query Scaffold",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter actor_effective_username = \"svc-backup\"\n| comp count() as observed_events by agent_hostname\n| filter observed_events >= 1\n| fields agent_hostname, observed_events",
+        "expected_rows_min": 0,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "SIM-KOI-009 Correlation Stitch Scaffold",
+        "rule_id": "CR-KOI-0009",
+        "logic": "Fires when abioc `SIM-KOI-009 Behavioral Anomaly Scaffold` and xql `SIM-KOI-009 Validation Query Scaffold` both observe activity on the same agent_hostname and actor_effective_username within the run window, stitching the scaffolded signals into one incident. Substitute the real correlation from the research before promoting."
+      }
+    ],
+    "analytics_modules": []
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-KOI-0009"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Replace with the XQL the DC runs in the product UI to surface evidence for this technique."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-KOI-009",
+        "name": "SIM-KOI-009 — research-intake scaffold use case",
+        "description": "Scaffolded POV use case; replace with the real customer narrative the DC runs for this technique.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-KOI-009A",
+            "objective": "The scaffolded detection fires when the real technique from the research is executed.",
+            "preconditions": [
+              "Target with the Cortex agent installed."
+            ],
+            "steps": [
+              "Execute the technique from the source research.",
+              "Observe the ABIOC / correlation fire."
+            ],
+            "success_criteria": [
+              "Correlation `CR-KOI-0009` raises one incident."
+            ],
+            "expected_score_weight": 1.0
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Replace with the preventive controls from the source research."
+    ],
+    "detection_engineering": [
+      "Replace with the detection-engineering guidance from the research."
+    ]
+  },
+  "references": [
+    {
+      "title": "GlassWorm agentic endpoint takeover",
+      "url": "https://www.paloaltonetworks.com/blog/security-operations/glassworm-goes-mac-fresh-infrastructure-new-tricks/",
+      "publisher": "Threat Research (research-intake)",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1059 Command and Scripting Interpreter",
+      "url": "https://attack.mitre.org/techniques/T1059/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics / detection reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}
