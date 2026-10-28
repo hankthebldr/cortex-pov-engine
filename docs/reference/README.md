@@ -116,7 +116,7 @@
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
 - **Counted ground truth (verified 2026-10-28 — Unit 42 recent-posts pass):**
   **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1370 step-detections ·
-  2104 catalog detection objects (`ground-truth.md` is the source). `signal_quality` in `coverage_report.py --json`:
+  2104 catalog detection objects (`ground-truth.md` is the source; the scenario and card counts include `SIM-KOI-009` and were updated by hand, the step-detection and detection-object figures are from the prior pass, and the regenerated `ground-truth.{json,md}` is the counted authority). `signal_quality` in `coverage_report.py --json`:
   **13 stitched chains** (was 11), **236 high-quality signals / 1370 step-detections (17.2%)** (was 195/1320),
   **100 marker-only steps / 790 (12.7%)**, 87 in-band indicators in 14 scenarios (+5 not in-band, `SIM-MP-034`);
   floors set to those measured values (`hq_signal_floor` 236, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266).
@@ -213,7 +213,7 @@
   (crossing the 15% floor — ABIOC 11.6%, Analytics 3.6% of 1010 step-detections);
   Correlation holds at 10.7%. Two datasets registered in `validate.py` KNOWN_DATASETS
   (`msft_azure_audit`, `kubernetes_audit_logs`). Per-plane on disk now: CDR=26 · EDR=21 ·
-  ANALYTICS=20 · ITDR=20 · NDR=12 · CLOUD_APP=9 · KOI=8 · AI_SPM=7 · ASM=6 · BROWSER=6 ·
+  ANALYTICS=20 · ITDR=20 · NDR=12 · CLOUD_APP=9 · KOI=9 · AI_SPM=7 · ASM=6 · BROWSER=6 ·
   TIM=6 · AIRS=5 · AI_ACCESS=5 · CSPM=5 · EMAIL=5. **Known open item (false-green):** the
   `ngfw_eal_emitter` still emits `dataset=panw_ngfw_eal_raw` + endpoint-process context
   fields, while its card `SIM-NDR-012` queries the normalized `panw_ngfw_traffic_raw`;
