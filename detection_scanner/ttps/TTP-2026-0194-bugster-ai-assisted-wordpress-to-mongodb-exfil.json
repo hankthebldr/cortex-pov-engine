@@ -60,7 +60,7 @@
   "identity": {
     "name": "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 — EDR + NGFW + AI Access Stitch (T1110.001 / T1041)",
     "summary": "A financially motivated actor (BUGSTER) drives Hermes Agent on DeepSeek V4 under a system-prompt override to generate its tooling: WordPress author enumeration through the REST API and author sitemaps, a 117x28 wp-login brute force, a MongoDB dump with a manifest, and exfil plus a VBScript-delivered Base64 PowerShell reverse shell to one actor server.",
-    "description": "Unit 42 (2026-10-21) documents BUGSTER, who configured the Hermes Agent framework with DeepSeek V4 (safety controls overridden by a system prompt) and Cursor IDE to plan and execute cybercrime. Against one Indian university the actor enumerated 12 subdomains and 13 WordPress authors via post author fields and author sitemaps (bypassing a WAF block on the user endpoint), then ran a generated brute-force tool of 117 usernames x 28 passwords that recorded one valid login. Against a second university it exfiltrated a MongoDB database with an admin account with a weak password, writing a manifest of records and exposed infrastructure. One US server, 162.243.3.92, hosted Hermes Agent, a Python C2 listener for Windows reverse shells (a Base64 PowerShell shell delivered via VBScript) and a Cursor IDE proxy; 104.238.38.202 is a commercial proxy server. The actor also tested GLM 5.2 and other models through OpenRouter with a safety-override script. SIM-MP-035 reproduces the recon, brute force, dump, staging and reverse-shell lineage on a Linux foothold against a lab stage host, emits NGFW EAL records from the same host to both published IPs, and sends real GenAI egress with fake keys to DeepSeek and OpenRouter; CR-MP-0035 fuses EDR, NDR and AI Access alerts on src_host.",
+    "description": "Unit 42 (2026-10-21) documents BUGSTER, who configured the Hermes Agent framework with DeepSeek V4 (safety controls overridden by a system prompt) and Cursor IDE to plan and execute cybercrime. Against one Indian university the actor enumerated 12 subdomains and 13 WordPress authors via post author fields and author sitemaps (bypassing a WAF block on the user endpoint), then ran a generated brute-force tool of 117 usernames x 28 passwords that recorded one valid login. Against a second university it exfiltrated a MongoDB database with an admin account with a weak password, writing a manifest of records and exposed infrastructure. One US server, 162.243.3.92, hosted Hermes Agent, a Python C2 listener for Windows reverse shells (a Base64 PowerShell shell delivered via VBScript) and a Cursor IDE proxy; 104.238.38.202 is a commercial proxy server. A dedicated script sent the safety override to GLM 5.2; other models were tested through OpenRouter. SIM-MP-035 reproduces the recon, brute force, dump, staging and reverse-shell lineage on a Linux foothold against a lab stage host, emits NGFW EAL records from the same host to both published IPs, and sends real GenAI egress with fake keys carrying the jailbreak override to DeepSeek and OpenRouter; CR-MP-0035 fuses EDR, NDR and AI Access alerts on src_host.",
     "severity": "high",
     "confidence": "high"
   },
@@ -83,8 +83,7 @@
     ],
     "industries_targeted": [
       "education"
-    ],
-    "first_observed": "2026-10-01"
+    ]
   },
   "mitre_attack": {
     "matrix": "enterprise",
@@ -344,7 +343,7 @@
       {
         "name": "MP-035 python3 Enumerates WordPress Authors via the REST API and Author Sitemap",
         "description": "python3 requests WordPress post author fields (/wp-json/wp/v2/posts?_fields=author,author_name) and the author sitemap (/wp-sitemap-users-1.xml) with a python-requests user agent: author enumeration that sidesteps a WAF block on /wp/v2/users.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and actor_process_image_name in (\"python3\", \"python\")\n| filter action_external_hostname != null or dst_action_external_hostname != null\n| filter http_url contains \"wp-sitemap-users\" or http_url contains \"_fields=author\" or http_url contains \"/wp-json/wp/v2/users\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, http_url, user_agent, causality_actor_process_image_name",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and actor_process_image_name in (\"python3\", \"python\")\n| filter action_remote_port in (80, 443)\n| filter http_url contains \"wp-sitemap-users\" or http_url contains \"_fields=author\" or http_url contains \"/wp-json/wp/v2/users\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, http_url, user_agent, causality_actor_process_image_name",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1595.002",
@@ -401,8 +400,8 @@
       },
       {
         "name": "MP-035 Jailbreak System-Prompt Override Sent to an Unsanctioned GenAI Provider",
-        "description": "AI Access Security: a request from a host to an unsanctioned GenAI API (api.deepseek.com) whose prompt carries a jailbreak / safety-override frame. The validation logic confirms the sessions on the NGFW; the content verdict is AI Access Security's.",
-        "logic": "dataset = panw_ngfw_traffic_raw\n| filter url_domain in (\"api.deepseek.com\", \"openrouter.ai\") or dst_hostname in (\"api.deepseek.com\", \"openrouter.ai\")\n| comp count() as sessions, values(dst_hostname) as providers by endpoint_device_name, src\n| filter sessions >= 1",
+        "description": "AI Access Security: requests from a host to unsanctioned GenAI APIs (api.deepseek.com and openrouter.ai) whose prompts carry a jailbreak / safety-override frame; both providers receive the override. The validation logic confirms the sessions to both on the NGFW; the content verdict is AI Access Security's.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter url_domain in (\"api.deepseek.com\", \"openrouter.ai\") or dst_hostname in (\"api.deepseek.com\", \"openrouter.ai\")\n| comp count() as sessions, values(dst_hostname) as providers by endpoint_device_name, src\n| filter array_length(providers) >= 2",
         "severity": "medium",
         "mitre_technique_ids": [
           "T1567"
@@ -412,8 +411,8 @@
     "abiocs": [
       {
         "name": "MP-035 Scripted wp-login Credential Burst From a Host Process",
-        "description": "A non-browser process (python3) sends a high-rate burst of HTTP POSTs to one /wp-login.php URI (dozens within seconds, several accounts): scripted password guessing from the host.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and actor_process_image_name in (\"python3\", \"python\")\n| filter http_url contains \"wp-login.php\" and http_method = \"POST\"\n| bin _time span = 1m\n| comp count() as posts by agent_hostname, actor_process_instance_id, _time\n| filter posts >= 20",
+        "description": "A non-browser process (python3) sends a high-rate burst of HTTP POSTs to one /wp-login.php URI (dozens within seconds, several accounts): scripted password guessing from the host. Linux network events do not reliably carry http_url / http_method, so the fallback counts web-port connections per process instance and destination.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and actor_process_image_name in (\"python3\", \"python\")\n| filter (http_url contains \"wp-login.php\" and http_method = \"POST\") or action_remote_port in (80, 443)\n| bin _time span = 1m\n| comp count() as posts by agent_hostname, actor_process_instance_id, action_remote_ip, _time\n| filter posts >= 20",
         "severity": "high",
         "mitre_technique_ids": [
           "T1110.001"
@@ -445,8 +444,8 @@
       },
       {
         "name": "MP-035 NGFW Recurring Communications to the Actor Server on Port 4444",
-        "description": "NGFW EAL recurring small sessions whose endpoint process is powershell.exe to an external IP on port 4444: reverse-shell callback cadence.",
-        "logic": "dataset = panw_ngfw_traffic_raw\n| filter process_name = \"powershell.exe\" and dst_port = 4444\n| comp count() as sessions by endpoint_device_name, dst\n| filter sessions >= 4",
+        "description": "NGFW EAL recurring small sessions whose endpoint process is a shell (bash on Linux; powershell.exe on the Windows variant) to an external IP on port 4444: reverse-shell callback cadence.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter process_name in (\"bash\", \"sh\", \"powershell.exe\") and dst_port = 4444\n| comp count() as sessions by endpoint_device_name, dst\n| filter sessions >= 4",
         "severity": "high",
         "mitre_technique_ids": [
           "T1071.001",
@@ -490,7 +489,7 @@
       {
         "name": "BUGSTER AI-Assisted Intrusion — python3 Tooling, Proxy / Exfil / C2 Traffic and a GenAI Jailbreak on One Host",
         "rule_id": "CR-MP-0035",
-        "logic": "(BIOC(MP-035 python3 Enumerates WordPress Authors via the REST API and Author Sitemap) OR ABIOC(MP-035 Scripted wp-login Credential Burst From a Host Process) OR BIOC(MP-035 python3 Dumps a MongoDB and Writes an Exfiltration Manifest) OR BIOC(MP-035 tar Compresses a Database Dump Under a python3 Causality Chain) OR BIOC(MP-035 Shell Under python3 Opens a Reverse Shell Over dev tcp to Port 4444) OR BIOC(MP-035 wscript Launches Hidden PowerShell With an EncodedCommand TCPClient)) AND (ABIOC(MP-035 NGFW Recurring python3 Sessions to an External HTTP Proxy) OR ABIOC(MP-035 NGFW Large Upload From python3 to a Rare External IP on Port 8080) OR ABIOC(MP-035 NGFW Recurring Communications to the Actor Server on Port 4444) OR IOC(162.243.3.92) OR IOC(104.238.38.202)) AND BIOC(MP-035 Jailbreak System-Prompt Override Sent to an Unsanctioned GenAI Provider) within 3600s on the same endpoint entity (xdr_data agent_hostname = panw_ngfw_traffic_raw endpoint_device_name = the AI Access source host, the src_host every leg carries) -> one BUGSTER incident whose summary names the python3 tooling lineage, the proxy and actor-server destinations and the jailbreak attempt."
+        "logic": "(BIOC(MP-035 python3 Enumerates WordPress Authors via the REST API and Author Sitemap) OR ABIOC(MP-035 Scripted wp-login Credential Burst From a Host Process) OR BIOC(MP-035 python3 Dumps a MongoDB and Writes an Exfiltration Manifest) OR BIOC(MP-035 tar Compresses a Database Dump Under a python3 Causality Chain) OR BIOC(MP-035 Shell Under python3 Opens a Reverse Shell Over dev tcp to Port 4444) OR BIOC(MP-035 wscript Launches Hidden PowerShell With an EncodedCommand TCPClient)) AND (ABIOC(MP-035 NGFW Recurring python3 Sessions to an External HTTP Proxy) OR ABIOC(MP-035 NGFW Large Upload From python3 to a Rare External IP on Port 8080) OR ABIOC(MP-035 NGFW Recurring Communications to the Actor Server on Port 4444) OR IOC(162.243.3.92) OR IOC(104.238.38.202)) AND BIOC(MP-035 Jailbreak System-Prompt Override Sent to an Unsanctioned GenAI Provider) within 3600s on the same endpoint entity (xdr_data agent_hostname = panw_ngfw_traffic_raw endpoint_device_name = the AI Access source host, the src_host every leg carries) -> one BUGSTER incident whose summary names the python3 tooling lineage, the proxy and actor-server destinations and the jailbreak attempts to both providers."
       }
     ],
     "analytics_modules": [
@@ -563,7 +562,7 @@
           },
           {
             "threat_step_id": "TS-MP-035C",
-            "objective": "AI Access Security flags the jailbreak to DeepSeek and CR-MP-0035 fuses all three legs.",
+            "objective": "AI Access Security flags the jailbreak override sent to both DeepSeek and OpenRouter, and CR-MP-0035 fuses all three legs.",
             "preconditions": [
               "TS-MP-035B completed.",
               "Egress to api.deepseek.com and openrouter.ai is inspected by AI Access Security."
@@ -573,6 +572,7 @@
               "Open the incident for the run host."
             ],
             "success_criteria": [
+              "AI Access Security raises the jailbreak verdict for both api.deepseek.com and openrouter.ai.",
               "Exactly one incident holds the endpoint, NGFW and AI Access alerts."
             ],
             "expected_score_weight": 0.3

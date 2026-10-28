@@ -5,8 +5,9 @@
 # STAGE_HOST stands in for the victim WordPress/MongoDB and the :4444 listener. Three legs: EDR (01,
 # 02, 04, 05, 07) the python3 lineage; NDR (03, 06, 08) NGFW EAL records from src_host to the two
 # published IPs (proxy routing, port 8080/4444/3128, UA and app are inferred: the report gives none);
-# AI_ACCESS (09) real egress to DeepSeek / OpenRouter with fake keys (the report's override was sent
-# to GLM 5.2 via OpenRouter and DeepSeek ran under a system-prompt override). R1: the report
+# AI_ACCESS (09) real egress with fake keys, jailbreak override to DeepSeek and OpenRouter (DeepSeek
+# ran under a system-prompt override; the override went to GLM 5.2; other models were tested
+# through OpenRouter). R1: the report
 # publishes exactly two indicators, both IPv4; both are carried, no more (the >=3 rule does not
 # apply). No cloud, VoIP, Wi-Fi or Go-scanner leg is emitted. CR-MP-0035 fuses the legs on src_host.
 scenario_id: SIM-MP-035
@@ -110,8 +111,8 @@ success_criteria: |
   starting a hidden PowerShell -EncodedCommand TCPClient). The NGFW EAL records from the same
   src_host to the commercial proxy 104.238.38.202 and the actor server 162.243.3.92 land in
   panw_ngfw_traffic_raw and Unit 42 IOC enrichment names BUGSTER on both. AI Access Security
-  flags the jailbreak system-prompt override sent to DeepSeek and the OpenRouter egress from the
-  same host. CR-MP-0035 fuses the endpoint, network and AI Access alerts on src_host into one
+  flags the jailbreak system-prompt override sent to DeepSeek and to OpenRouter from the same
+  host. CR-MP-0035 fuses the endpoint, network and AI Access alerts on src_host into one
   incident within the window, and mean time from the first recon request to the first alert is
   within the MTTD budget.
 moat_tier: "LEAD"
@@ -496,7 +497,7 @@ steps:
             dst_ip: "162.243.3.92"
             dst_port: 4444
             app: unknown-tcp
-            process_name: powershell.exe
+            process_name: bash
             src_ip: "$SRC_IP"
             src_host: "$SRC_HOST"
             src_user: "$SRC_USER"
@@ -504,9 +505,8 @@ steps:
       python3 -m scripts.eal_simulator.cli run /tmp/mp-035-ngfw-c2.yml --live
     identity: container-runtime
     mitre_technique: "T1071.001"
-    # The records name powershell.exe, the process of the step-07 Windows variant (the report's
-    # shell); on the Linux primary path the endpoint leg's /dev/tcp child is bash. The report
-    # gives no listener port; 4444 matches step-07.
+    # The records name bash, the step-07 /dev/tcp child on this Linux path (the report's shell is
+    # the Windows PowerShell variant). The report gives no listener port; 4444 matches step-07.
     causality:
       parent_step: step-07
       pivot: endpoint_network_stitch
@@ -514,7 +514,7 @@ steps:
     expected_detections:
       - plane: NDR
         type: ABIOC
-        description: "NGFW EAL recurring sessions from the foothold whose endpoint process is powershell.exe to 162.243.3.92:4444 (unknown-tcp), a rare external destination: the reverse-shell callback cadence anchored on src_host."
+        description: "NGFW EAL recurring sessions from the foothold whose endpoint process is bash (the step-07 /dev/tcp child) to 162.243.3.92:4444 (unknown-tcp), a rare external destination: the reverse-shell callback cadence anchored on src_host."
         ttp_ref: "TTP-2026-0194"
         detection_id: "abioc-mp-035-ngfw-recurring-communications-to-the-actor-server-on-port-4444"
       - plane: NDR
@@ -524,11 +524,11 @@ steps:
         detection_id: "ioc-ipv4-162-243-3-92"
 
   - id: step-09
-    name: "AI Access leg: jailbreak system-prompt override to DeepSeek, model experiments through OpenRouter"
+    name: "AI Access leg: jailbreak system-prompt override to DeepSeek and to a model through OpenRouter"
     command: |
       cat > /tmp/mp-035-llm.yml <<'YML'
       campaign_id: CMP-MP-LLM-035
-      name: "BUGSTER - DeepSeek safety override and OpenRouter model tests"
+      name: "BUGSTER - safety override to DeepSeek and OpenRouter"
       authorized_by: "domain-consultant@paloaltonetworks.com"
       simulation_authorized: true
       target_allowlist:
@@ -548,7 +548,7 @@ steps:
           plugin: llm_provider_egress
           params:
             provider: openrouter
-            payload_type: benign
+            payload_type: jailbreak
             iterations: 1
       YML
       python3 -m scripts.eal_simulator.cli run /tmp/mp-035-llm.yml --live
@@ -564,7 +564,7 @@ steps:
     expected_detections:
       - plane: AI_ACCESS
         type: BIOC
-        description: "AI Access Security: a prompt carrying a jailbreak system-prompt override (ignore previous instructions / DAN frame) is sent from the foothold to api.deepseek.com, an unsanctioned GenAI provider, three times."
+        description: "AI Access Security: a prompt carrying a jailbreak system-prompt override (ignore previous instructions / DAN frame) is sent from the foothold to two unsanctioned GenAI providers: api.deepseek.com (three times) and openrouter.ai (once, the model-testing override)."
         ttp_ref: "TTP-2026-0194"
         detection_id: "bioc-mp-035-jailbreak-system-prompt-override-sent-to-an-unsanctioned-genai-provider"
       - plane: AI_ACCESS
