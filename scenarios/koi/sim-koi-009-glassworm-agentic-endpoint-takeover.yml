@@ -151,6 +151,8 @@ steps:
     # What the sensor records: the IDE extension host spawning one osascript
     # child at activation (first-seen publisher, unsigned extension), parent→child
     # lineage under the IDE. The child exits at once.
+    # The already-running guard uses the bracket idiom [V]isual deliberately: the step
+    # script is passed to `sh -c`, so a plain pattern would match the shell's own argv.
     command: |
       # SAFE-MODE — launch VS Code with the decoy-root variable in its
       # environment so the extension activates and registers its URI handler.
@@ -158,7 +160,7 @@ steps:
       export CORTEXSIM_KOI009_DECOY_ROOT="/tmp/CORTEXSIM-KOI009-DECOY"
       rm -rf "$CORTEXSIM_KOI009_DECOY_ROOT"
       mkdir -p "$CORTEXSIM_KOI009_DECOY_ROOT"
-      if pgrep -f "Visual Studio Code.app/Contents/MacOS" >/dev/null; then
+      if pgrep -f "[V]isual Studio Code.app/Contents/MacOS" >/dev/null; then
         echo "[CortexSim] VS Code is already running; quit it so the decoy-root variable reaches the IDE" >&2
         exit 1
       fi
