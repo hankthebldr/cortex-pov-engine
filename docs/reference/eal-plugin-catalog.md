@@ -278,7 +278,7 @@ Plugins fall into three implementation families:
 | 12 | `browser_attack_runner` | BROWSER (Prisma) | Shells out to `cortex-browser-attacker` (Playwright/Chromium/Prisma); YAML-declared browser actions; JSONL→ECS | `allowlist_host` (browser navigates) | T1552, T1189, T1176, T1567, T1113 | `plugins/browser_attack_runner.py` |
 | 13 | `agentic_egress` | KOI (supply-chain) | Tarballs an in-tree malicious-agentic-pack component and POSTs it (pypi_mirror does GET-probe + POST) | staging `target_url` | T1195, T1195.002, T1176, T1059 | `plugins/agentic_egress.py` |
 | 14 | `email_emitter` | EMAIL | Synthetic email-security events (Proofpoint TAP `proofpoint_tap_raw` + Microsoft 365 `msft_o365` shape) POSTed to a collector; 4 patterns (phishing_link, malicious_attachment, bec_impersonation, thread_hijack); ITDR-emulator pattern | operator `collector_url` | T1566.001, T1566.002, T1656, T1534, T1598 | `plugins/email_emitter.py` |
-| 27 | `ngfw_threat_emitter` | NDR / Analytics | Synthetic PAN-OS THREAT (WildFire verdict) log for an operator-named SHA-256; `action` restricted to `alert`/`allow`, never a block | operator `collector_url` | T1204.002, T1105 | `plugins/ngfw_threat_emitter.py` |
+| 27 | `ngfw_threat_emitter` | NDR / Analytics | Synthetic PAN-OS THREAT log: WildFire verdict for an operator-named SHA-256 (`wildfire_malicious_file`) or an inbound web-application exploit attempt from a public source (`vulnerability_inbound`); `action` restricted to `alert`/`allow`, never a block | operator `collector_url` | T1204.002, T1105, T1190 | `plugins/ngfw_threat_emitter.py` |
 
 > The summary table now lists **14 plugin classes**: c2, dns, stratum, smb, bulk,
 > ftp, ssh, idp, oauth, llm, airs, browser, agentic, **email_emitter** (added in
@@ -776,19 +776,49 @@ block`, so the plugin can never fabricate proof of prevention.
 
 | Param | Type / default | Notes |
 |-------|----------------|-------|
-| `file_sha256` | str (required) | `^[a-f0-9]{64}$`, case-insensitive, stored lowercase |
-| `file_name` | str (required) | non-empty |
+| `file_sha256` | str? | `^[a-f0-9]{64}$`, case-insensitive, stored lowercase; required for `wildfire_malicious_file` only |
+| `file_name` | str? | non-empty; required for `wildfire_malicious_file` only |
 | `file_type` | str = `PE` | |
 | `verdict` | str = `malicious` | `malicious` / `grayware` / `benign`; severity `critical` for malicious, else `medium` |
 | `app` | str = `web-browsing` | |
-| `dst_domain` / `dst_ip` | str? | set together; override `dst_domain`/`url_domain` and `dst` |
+| `dst_domain` / `dst_ip` | str? | `dst_ip` may stand alone (then `dst_domain`/`url_domain` are `""`); `dst_domain` requires `dst_ip`; override `dst_domain`/`url_domain` and `dst` |
+| `threat_id` | int >= 0 = `0` | `vulnerability_inbound`; 0 marks a synthetic signature |
+| `uri` | str = `/index.php` | `vulnerability_inbound`; carried in `misc` |
+| `victim_ip` / `victim_host` | str? | `vulnerability_inbound`; the record's `dst` (default `10.0.12.34`, dotted quad) and `endpoint_device_name` |
+| `dst_port` | int? 1-65535 | overrides `dst_port` (default 443) |
 | `src_ip` / `src_host` / `src_user` | str? | independent; override `src`, `endpoint_device_name`, `user` |
 | `threat_name` | str? | non-empty when set; overrides `threat_name` (default `Virus/Win32.WGeneric.canary` for malicious, else `wildfire-<verdict>`) |
 | `action` | str = `alert` | `alert` / `allow` only |
-| `event_pattern` | str = `wildfire_malicious_file` | only value |
+| `event_pattern` | str = `wildfire_malicious_file` | `wildfire_malicious_file` or `vulnerability_inbound` |
+
+`vulnerability_inbound` emits `subtype: vulnerability`, `category: code-execution`,
+`severity: critical`, `direction: client-to-server`, `src` a public address
+(default `198.51.100.23`), untrust-to-trust zones, rule `allow-inbound-web`, and
+`vulnerability_inbound_marker: true`; it carries no `filedigest`/`filename`/
+`filetype`/`verdict`. Second detector: "Vulnerability threat from a publicly
+routed source against a web server" (T1190). `action` stays `alert`/`allow` for
+both patterns.
 
 Supports no negative control. The collector-POST transport, authorisation and
 delivery accounting are the shared `analytics_emitter` spine's.
+
+#### Extensions to analytics streamers not otherwise tabulated (2026-10-28)
+
+`ngfw_eal_emitter` and `globalprotect_emitter` have no row in §2.1 (the table is
+partial); their additions are recorded here. No plugin-count change (27).
+
+- **`ngfw_eal_emitter`** — `dst_ip` may now be set without `dst_domain` (then
+  `dst_hostname` and `url_domain` are `""`); `dst_domain` without `dst_ip` raises
+  `dst_domain requires dst_ip`. New optional overrides applied to every record:
+  `process_name` (non-empty), `dst_port` (1-65535), `app` (non-empty).
+- **`globalprotect_emitter`** — new `event_pattern` `gateway_connected_without_auth`
+  (marker `gateway_connected_without_auth_marker`, T1556): one `gateway-connected`
+  success with `auth_method: auth-cookie` and `preceding_auth_event: NONE`. The
+  negative control emits a `portal-auth` success (same user and `public_ip`, 60 s
+  earlier) then the same record with `preceding_auth_event: portal-auth`. New
+  params: `public_ip` (default far documentation IP), `private_ip` (default random
+  `10.20.0.x`), `machine_name` (`DESKTOP-CORTEXSIM`), `endpoint_mac`
+  (`02:00:00:00:00:07`).
 
 ## 3. Safety model — exhaustive
 

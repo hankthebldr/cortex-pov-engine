@@ -30,6 +30,11 @@ Event patterns (parameter ``event_pattern``):
                         from a country the user does not normally connect from.
                         Predicate: status=success with an anomalous public_ip_country.
                         T1078.004. NEGATIVE: success from the usual country.
+  gateway_connected_without_auth
+                        "GlobalProtect gateway session with no preceding auth" — one
+                        gateway-connected success carrying an auth cookie and no
+                        portal-auth event. T1556. NEGATIVE: the same session
+                        preceded by a portal-auth success.
   ===================== ==============================================================
 """
 
@@ -66,6 +71,7 @@ _PATTERN_MARKER = {
     "portal_brute_force": "portal_brute_force_marker",
     "impossible_travel": "impossible_travel_marker",
     "anomalous_geo": "anomalous_geo_marker",
+    "gateway_connected_without_auth": "gateway_connected_without_auth_marker",
 }
 _EVENT_PATTERNS = tuple(_PATTERN_MARKER)
 
@@ -86,6 +92,7 @@ def _gp_event(
     stage: str = "gateway-auth",
     reason: str = "",
     extra: Optional[dict[str, Any]] = None,
+    private_ip: Optional[str] = None,
 ) -> dict[str, Any]:
     """Shape one GlobalProtect auth log record (PAN-OS GLOBALPROTECT subtype)."""
     body: dict[str, Any] = {
@@ -98,7 +105,10 @@ def _gp_event(
         "srcuser": srcuser,
         "public_ip": public_ip,
         "public_ip_country": country,
-        "private_ip": f"10.20.0.{secrets.randbelow(200) + 10}" if status == "success" else "",
+        "private_ip": (
+            private_ip if private_ip is not None
+            else f"10.20.0.{secrets.randbelow(200) + 10}" if status == "success" else ""
+        ),
         "portal": _PORTAL,
         "gateway": _GATEWAY,
         "client_version": "GlobalProtect 6.2.0",
@@ -116,11 +126,31 @@ class GlobalProtectParams(NegativeControlEmitterParams):
     event_pattern: str = Field(
         default="portal_brute_force",
         description="GlobalProtect analytics alert to exercise: "
-                    "portal_brute_force | impossible_travel | anomalous_geo.",
+                    "portal_brute_force | impossible_travel | anomalous_geo | "
+                    "gateway_connected_without_auth.",
     )
     target_user: str = Field(
         default=_USER,
         description="Synthetic GlobalProtect user the events are attributed to.",
+    )
+    public_ip: Optional[str] = Field(
+        default=None,
+        description="Client public IP for gateway_connected_without_auth "
+                    "(dotted quad; default the far documentation IP).",
+    )
+    private_ip: Optional[str] = Field(
+        default=None,
+        description="Tunnel-assigned private IP for gateway_connected_without_auth "
+                    "(dotted quad; default a random 10.20.0.x).",
+    )
+    machine_name: str = Field(
+        default="DESKTOP-CORTEXSIM", min_length=1,
+        description="Endpoint machine name on gateway_connected_without_auth.",
+    )
+    endpoint_mac: str = Field(
+        default="02:00:00:00:00:07", min_length=1,
+        description="Endpoint MAC (locally administered) on "
+                    "gateway_connected_without_auth.",
     )
 
     @property
@@ -134,6 +164,27 @@ class GlobalProtectParams(NegativeControlEmitterParams):
         if v not in _EVENT_PATTERNS:
             raise ValueError(
                 f"event_pattern must be one of {sorted(_EVENT_PATTERNS)}, got '{v}'"
+            )
+        return v
+
+    @field_validator("machine_name", "endpoint_mac")
+    @classmethod
+    def _non_blank(cls, v: str, info) -> str:
+        if not v.strip():
+            raise ValueError(f"{info.field_name} must be non-empty")
+        return v
+
+    @field_validator("public_ip", "private_ip")
+    @classmethod
+    def _ip_quad(cls, v: Optional[str], info) -> Optional[str]:
+        if v is None:
+            return v
+        parts = v.split(".")
+        if len(parts) != 4 or not all(
+            p.isascii() and p.isdigit() and 0 <= int(p) <= 255 for p in parts
+        ):
+            raise ValueError(
+                f"{info.field_name} must be a dotted-quad IPv4 address, got '{v}'"
             )
         return v
 
@@ -187,20 +238,41 @@ class GlobalProtectEmitter(AnalyticsLogEmitter):
                 "mitre": "T1078.004",
                 "negative_control": "success from the user's usual country",
             },
+            {
+                "alert": "GlobalProtect gateway session without a preceding "
+                         "authentication",
+                "undocumented_reason": (
+                    "The vendor analytics catalogue lists no alert for a "
+                    "GlobalProtect gateway session lacking a prior portal-auth; "
+                    "this emits the record a custom BIOC / correlation rule on "
+                    "eventid=gateway-connected would key on, not a documented "
+                    "Analytics detector."
+                ),
+                "dataset": _DATASET,
+                "key_fields": ["srcuser", "eventid", "preceding_auth_event"],
+                "predicate": (
+                    "eventid=gateway-connected with no portal-auth success for "
+                    "the same srcuser and public_ip beforehand"
+                ),
+                "mitre": "T1556",
+                "negative_control": "the same session preceded by a portal-auth success",
+            },
         ]
         description = (
             "Emits shape-true PAN GlobalProtect authentication log records "
             "(panw_ngfw_globalprotect_raw) into an operator-supplied collector so "
             "Cortex XSIAM exercises its remote-access Analytics detections "
-            "(portal brute-force, impossible travel, anomalous-country login) on "
+            "(portal brute-force, impossible travel, anomalous-country login, "
+            "gateway session without authentication) on "
             "the first-party GlobalProtect feed. Ships a negative control per "
             "detector."
         )
-        mitre_techniques = ["T1110", "T1133", "T1078.004"]
+        mitre_techniques = ["T1110", "T1133", "T1078.004", "T1556"]
         eal_targets = [
             "Analytics — GlobalProtect brute-force authentication",
             "Analytics — GlobalProtect impossible travel",
             "Analytics — GlobalProtect login from an anomalous country",
+            "Analytics — GlobalProtect gateway session without a preceding authentication",
             "NGFW EAL — outbound POST to XSIAM log-collector App-ID match",
         ]
         ecs_category = "authentication"
@@ -255,8 +327,31 @@ class GlobalProtectEmitter(AnalyticsLogEmitter):
                 extra={"anomalous_country": True, "usual_country": _HOME_COUNTRY},
             )]
 
+        if params.event_pattern == "gateway_connected_without_auth":
+            return [self._gateway_connected(
+                params, marker, sim_run_id, now, preceding="NONE",
+            )]
+
         raise ValueError(  # pragma: no cover — gated by the pydantic validator
             f"unknown event_pattern {params.event_pattern!r}"
+        )
+
+    @staticmethod
+    def _gateway_connected(
+        params: GlobalProtectParams, marker: str, sim_run_id: str,
+        when: datetime, *, preceding: str, private_ip: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return _gp_event(
+            marker=marker, sim_run_id=sim_run_id, srcuser=params.target_user,
+            public_ip=params.public_ip or _FAR_IP, country=_FAR_COUNTRY,
+            status="success", when=when, stage="gateway-connected",
+            private_ip=private_ip if private_ip is not None else params.private_ip,
+            extra={
+                "machine_name": params.machine_name,
+                "endpoint_mac": params.endpoint_mac,
+                "auth_method": "auth-cookie",
+                "preceding_auth_event": preceding,
+            },
         )
 
     def build_negative_control(
@@ -295,6 +390,19 @@ class GlobalProtectEmitter(AnalyticsLogEmitter):
                 when=now,
                 extra={"negative_control": True, "usual_country": _HOME_COUNTRY},
             )]
+
+        if params.event_pattern == "gateway_connected_without_auth":
+            return [
+                _gp_event(
+                    marker=marker, sim_run_id=sim_run_id, srcuser=user,
+                    public_ip=params.public_ip or _FAR_IP, country=_FAR_COUNTRY,
+                    status="success", when=now - timedelta(seconds=60),
+                    stage="portal-auth", extra={"negative_control": True},
+                ),
+                self._gateway_connected(
+                    params, marker, sim_run_id, now, preceding="portal-auth",
+                ),
+            ]
 
         raise ValueError(  # pragma: no cover — gated by the pydantic validator
             f"unknown event_pattern {params.event_pattern!r}"

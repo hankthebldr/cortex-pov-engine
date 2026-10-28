@@ -469,10 +469,51 @@ def _ovr_params(**kw):
 
 
 class TestDestinationOverride:
-    @pytest.mark.parametrize("only", [{"dst_domain": _OVR_DOMAIN}, {"dst_ip": _OVR_IP}])
-    def test_pair_required(self, only):
-        with pytest.raises(ValueError, match="dst_domain and dst_ip must be set together"):
-            _ovr_params(**only)
+    def test_dst_domain_alone_rejected(self):
+        with pytest.raises(ValueError, match="dst_domain requires dst_ip"):
+            _ovr_params(dst_domain=_OVR_DOMAIN)
+
+    def test_dst_ip_alone_blanks_domain_fields(self):
+        events = NgfwEalEmitter().build_events(
+            _ovr_params(event_pattern="large_upload_https", dst_ip=_OVR_IP),
+            sim_run_id="cortexsim-x-i1-aa", iteration=1,
+        )
+        assert events[0]["dst"] == _OVR_IP
+        assert events[0]["dst_hostname"] == ""
+        assert events[0]["url_domain"] == ""
+
+    def test_process_name_override(self):
+        events = NgfwEalEmitter().build_events(
+            _ovr_params(event_pattern="abnormal_recurring_comms", burst_count=3,
+                        process_name="powershell.exe"),
+            sim_run_id="cortexsim-x-i1-aa", iteration=1,
+        )
+        assert len(events) == 3
+        assert {e["process_name"] for e in events} == {"powershell.exe"}
+
+    @pytest.mark.parametrize("empty", ["", "   "])
+    def test_process_name_non_empty_when_set(self, empty):
+        with pytest.raises(ValueError, match="non-empty"):
+            _ovr_params(process_name=empty)
+
+    @pytest.mark.parametrize("bad", [0, 65536, -1])
+    def test_dst_port_override_and_bounds(self, bad):
+        events = NgfwEalEmitter().build_events(
+            _ovr_params(event_pattern="large_upload_https", dst_port=8443),
+            sim_run_id="cortexsim-x-i1-aa", iteration=1,
+        )
+        assert events[0]["dst_port"] == 8443
+        with pytest.raises(ValueError):
+            _ovr_params(dst_port=bad)
+
+    def test_app_override(self):
+        events = NgfwEalEmitter().build_events(
+            _ovr_params(event_pattern="large_upload_https", app="web-browsing"),
+            sim_run_id="cortexsim-x-i1-aa", iteration=1,
+        )
+        assert events[0]["app"] == "web-browsing"
+        with pytest.raises(ValueError, match="non-empty"):
+            _ovr_params(app=" ")
 
     def test_unset_by_default(self):
         p = _ovr_params()

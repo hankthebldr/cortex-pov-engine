@@ -107,11 +107,18 @@ class TestParamValidation:
     def test_default_action_is_alert(self):
         assert _params().action == "alert"
 
-    def test_dst_pair_must_be_set_together(self):
-        with pytest.raises(ValueError, match="together"):
+    def test_dst_domain_alone_rejected(self):
+        with pytest.raises(ValueError, match="dst_domain requires dst_ip"):
             _params(dst_domain="evil.example")
-        with pytest.raises(ValueError, match="together"):
-            _params(dst_ip="198.51.100.9")
+
+    def test_dst_ip_alone_blanks_domain_fields(self):
+        rec = _events(dst_ip="198.51.100.9")[0]
+        assert rec["dst"] == "198.51.100.9"
+        assert rec["dst_domain"] == "" and rec["url_domain"] == ""
+        # dst_ip alone also validates under vulnerability_inbound; the inbound
+        # record's dst is the victim, not the override.
+        rec = _events(event_pattern="vulnerability_inbound", dst_ip="198.51.100.9")[0]
+        assert rec["dst"] == "10.0.12.34"
 
     @pytest.mark.parametrize("bad", ["10.0.0", "300.1.1.1", "a.b.c.d", "::1", ""])
     def test_src_ip_must_be_dotted_quad(self, bad):
@@ -224,10 +231,17 @@ class TestPluginRun:
 
 
 class TestManifestAndWhitelist:
-    def test_manifest_declares_one_detector(self):
+    def test_manifest_declares_two_detectors(self):
         dets = NgfwThreatEmitter.analytics_manifest()["detectors"]
-        assert len(dets) == 1
+        assert len(dets) == 2
         assert dets[0]["alert"] == "WildFire malicious verdict on downloaded file"
+        assert dets[1]["alert"] == (
+            "Vulnerability threat from a publicly routed source against a web server"
+        )
+        assert dets[1]["mitre"] == "T1190"
+        assert dets[1]["dataset"] == "panw_ngfw_threat_raw"
+        assert dets[1]["key_fields"] == ["subtype", "src", "threat_id"]
+        assert "T1190" in NgfwThreatEmitter.analytics_manifest()["mitre_techniques"]
 
     def test_block_with_unknown_kwarg_still_refused(self):
         with pytest.raises(ValueError, match=_BLOCK_MSG):
@@ -254,3 +268,68 @@ class TestThreatNameOverride:
     def test_threat_name_non_empty_when_set(self, empty):
         with pytest.raises(ValueError, match="non-empty"):
             _params(threat_name=empty)
+
+
+class TestVulnerabilityInbound:
+    def test_vulnerability_inbound_record_fields(self):
+        rec = _events(
+            event_pattern="vulnerability_inbound", file_sha256=None, file_name=None,
+            threat_id=91234, uri="/cgi-bin/x.php", victim_ip="10.0.5.5",
+            victim_host="WEB-01", dst_port=8443, app="web-browsing",
+        )[0]
+        assert rec["subtype"] == "vulnerability"
+        assert rec["category"] == "code-execution"
+        assert rec["severity"] == "critical"
+        assert rec["direction"] == "client-to-server"
+        assert rec["src"] == "198.51.100.23"
+        assert rec["dst"] == "10.0.5.5"
+        assert (rec["src_zone"], rec["dst_zone"]) == ("untrust", "trust")
+        assert rec["rule"] == "allow-inbound-web"
+        assert rec["misc"] == "/cgi-bin/x.php"
+        assert rec["threat_id"] == 91234
+        assert rec["dst_port"] == 8443
+        assert rec["endpoint_device_name"] == "WEB-01"
+        assert rec["threat_name"] == "CortexSim synthetic web-application exploit attempt"
+        assert rec["vulnerability_inbound_marker"] is True
+        assert rec["action"] == "alert"
+        assert "filedigest" not in rec and "verdict" not in rec
+        for k in ("filename", "filetype", "wildfire_verdict_marker"):
+            assert k not in rec
+
+    def test_vulnerability_inbound_defaults(self):
+        rec = _events(event_pattern="vulnerability_inbound", file_sha256=None, file_name=None)[0]
+        assert rec["dst"] == "10.0.12.34"
+        assert rec["dst_port"] == 443
+        assert rec["misc"] == "/index.php"
+        assert rec["threat_id"] == 0
+        assert rec["endpoint_device_name"] == "WKS-CORTEXSIM-0007"
+
+    def test_vulnerability_inbound_needs_no_file_fields(self):
+        p = NgfwThreatEmitterParams.model_validate(
+            {"collector_url": _COLLECTOR, "event_pattern": "vulnerability_inbound"}
+        )
+        assert p.file_sha256 is None and p.file_name is None
+
+    @pytest.mark.parametrize("missing", ["file_sha256", "file_name"])
+    def test_wildfire_still_requires_file_fields(self, missing):
+        base = {"collector_url": _COLLECTOR, "file_sha256": _SHA, "file_name": "a.exe"}
+        del base[missing]
+        with pytest.raises(ValueError, match="required for wildfire_malicious_file"):
+            NgfwThreatEmitterParams.model_validate(base)
+
+    @pytest.mark.parametrize(
+        "bad", ["block", "deny", "drop", "reset-both", "sinkhole", "Block"],
+    )
+    def test_vulnerability_inbound_refuses_block(self, bad):
+        with pytest.raises(ValueError, match=_BLOCK_MSG):
+            _params(event_pattern="vulnerability_inbound", action=bad)
+
+    @pytest.mark.parametrize("bad", ["10.0.0", "300.1.1.1", "a.b.c.d", ""])
+    def test_victim_ip_dotted_quad(self, bad):
+        with pytest.raises(ValueError):
+            _params(victim_ip=bad)
+
+    @pytest.mark.parametrize("bad", [0, 65536])
+    def test_dst_port_bounds(self, bad):
+        with pytest.raises(ValueError):
+            _params(dst_port=bad)

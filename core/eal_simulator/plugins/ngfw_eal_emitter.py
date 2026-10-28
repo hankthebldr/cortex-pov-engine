@@ -283,12 +283,26 @@ class NgfwEalEmitterParams(AnalyticsEmitterParams):
         default=None,
         description="Override the destination domain on every record (dst_hostname "
                     "and url_domain), e.g. a published threat-intel indicator the "
-                    "tenant can enrich. Must be set together with dst_ip.",
+                    "tenant can enrich. Requires dst_ip.",
     )
     dst_ip: Optional[str] = Field(
         default=None,
-        description="Override the destination IP on every record (dst). Must be "
-                    "set together with dst_domain.",
+        description="Override the destination IP on every record (dst). May be "
+                    "set without dst_domain, in which case dst_hostname and "
+                    "url_domain are blank.",
+    )
+    process_name: Optional[str] = Field(
+        default=None,
+        description="Override process_name on every record. Non-empty when set.",
+    )
+    dst_port: Optional[int] = Field(
+        default=None, ge=1, le=65535,
+        description="Override dst_port on every record.",
+    )
+    app: Optional[str] = Field(
+        default=None,
+        description="Override the PAN-OS App-ID (app) on every record. "
+                    "Non-empty when set.",
     )
 
     src_ip: Optional[str] = Field(
@@ -308,7 +322,7 @@ class NgfwEalEmitterParams(AnalyticsEmitterParams):
         description="Override the source user (user), e.g. domain\\name.",
     )
 
-    @field_validator("dst_domain", "dst_ip", "src_host", "src_user")
+    @field_validator("dst_domain", "dst_ip", "src_host", "src_user", "process_name", "app")
     @classmethod
     def _non_empty_when_set(cls, v: Optional[str], info) -> Optional[str]:
         if v is not None and not v.strip():
@@ -329,8 +343,8 @@ class NgfwEalEmitterParams(AnalyticsEmitterParams):
 
     @model_validator(mode="after")
     def _dst_pair(self) -> "NgfwEalEmitterParams":
-        if (self.dst_domain is None) != (self.dst_ip is None):
-            raise ValueError("dst_domain and dst_ip must be set together")
+        if self.dst_domain is not None and self.dst_ip is None:
+            raise ValueError("dst_domain requires dst_ip")
         return self
 
     @property
@@ -400,10 +414,16 @@ class NgfwEalEmitter(AnalyticsLogEmitter):
         self, params: NgfwEalEmitterParams, *, sim_run_id: str, iteration: int,
     ) -> list[dict[str, Any]]:
         marker, _alert, session = _PATTERN_SESSION[params.event_pattern]
-        if params.dst_domain is not None:
+        if params.dst_ip is not None:
             session = dataclasses.replace(
-                session, dst_domain=params.dst_domain, dst_ip=params.dst_ip,
+                session, dst_domain=params.dst_domain or "", dst_ip=params.dst_ip,
             )
+        if params.process_name is not None:
+            session = dataclasses.replace(session, process_name=params.process_name)
+        if params.dst_port is not None:
+            session = dataclasses.replace(session, dst_port=params.dst_port)
+        if params.app is not None:
+            session = dataclasses.replace(session, app=params.app)
 
         events: list[dict[str, Any]] = []
         src_kw = {
