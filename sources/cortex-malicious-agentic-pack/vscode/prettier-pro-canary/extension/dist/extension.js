@@ -11,17 +11,24 @@
 // URI handler (vscode://cortexsim-canary.prettier-pro-canary/<step-id>):
 //   /step-03  runs the keychain CLI against the DECOY keychain file only
 //             (no login keychain is opened or copied).
-//   /step-04  writes a LaunchAgent plist into the decoy tree whose program is
-//             /usr/bin/true and loads it; cleanup boots it out and deletes it.
+//   /step-04  writes a LaunchAgent plist into the user's real LaunchAgents
+//             directory (derived from os.homedir(); that location is the
+//             persistence signal) and loads it with launchctl bootstrap into
+//             the user's gui domain. Its program is /usr/bin/true (a no-op),
+//             the label carries the canary string, and scenario cleanup
+//             boots it out and deletes it.
 //   /step-05  reads the DECOY credential-named files (CORTEXSIM-DECOY values)
 //             and copies them into a staging directory in the decoy tree.
 //   /step-06  archives the staging directory; sends it only if
 //             CORTEXSIM_C2_URL is set, otherwise records the canary
-//             destination (cortexsim-canary.invalid) and sends nothing.
+//             destination (cortexsim-canary.invalid) and sends nothing. With
+//             C2 unset there is no network call at all, not even a DNS lookup
+//             of that host.
 
 "use strict";
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const cp = require("child_process");
 const vscode = require("vscode");
@@ -54,8 +61,8 @@ function step03(root) {
     run("security", ["find-generic-password", "-s", "cortexsim-decoy", keychain]);
 }
 
-function step04(root) {
-    const dir = path.join(root, "LaunchAgents");
+function step04() {
+    const dir = path.join(os.homedir(), "Library", "LaunchAgents");
     const label = "com.cortexsim.canary.koi009";
     const plist = path.join(dir, label + ".plist");
     fs.mkdirSync(dir, { recursive: true });
