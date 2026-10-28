@@ -230,6 +230,8 @@ Detection-type legend: **B**=BIOC · **X**=XQL · **A**=Analytics · **C**=Corre
 
 ### Plane: KOI (Agentic endpoint / supply-chain) — 9 scenarios
 
+_Rows for `SIM-KOI-006`, `SIM-KOI-007` and `SIM-KOI-008` are not yet in this table; the gap predates `SIM-KOI-009`, and `docs/reference/ground-truth.md` carries the counted truth._
+
 | ID | Name | Tactic | Primary technique | Additional | EAL / Adapter | Steps | Det (B/X/A/C/I) | infra | UC / TC |
 |---|---|---|---|---|---|---|---|---|---|
 | SIM-KOI-001 | KOI — Claude Desktop Installs Typosquat MCP Server | Initial Access (TA0001) | T1195 Supply Chain Compromise | T1059 | `agentic_egress`, CORTEX-AGENTIC-PACK | 3 | 2/4/0/0/0 (6) | base | UCS-KOI-01 / TC-KOI-01 |
