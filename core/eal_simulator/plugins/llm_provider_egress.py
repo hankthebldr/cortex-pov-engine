@@ -67,7 +67,7 @@ logger = logging.getLogger("cortexsim.eal.plugins.llm_provider_egress")
 # Default per-provider model strings. These age over time, so a campaign may
 # override them via the ``model`` param (EAL-G12); the defaults preserve the
 # previously-hardcoded behaviour. ``model`` is only meaningful for the
-# providers whose body carries it (openai / anthropic); gemini pins the model
+# providers whose body carries it (openai-wire / anthropic); gemini pins the model
 # in its URL path instead.
 _DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
@@ -141,6 +141,8 @@ class _Provider:
         if self.name == "gemini":
             return "AIzaSy-CORTEXSIM-CANARY-NOT-A-REAL-KEY"
         if self.name == "deepseek":
+            # Deliberately equals openai's: both are OpenAI-wire; the sentinel is
+            # per wire shape, not per provider.
             return "sk-cortexsim-canary-NOT-A-REAL-KEY"
         if self.name == "openrouter":
             return "sk-or-v1-cortexsim-canary-NOT-A-REAL-KEY"

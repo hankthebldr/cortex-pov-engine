@@ -206,6 +206,29 @@ class NgfwThreatEmitterParams(AnalyticsEmitterParams):
         return self
 
     @model_validator(mode="after")
+    def _inbound_rejects_ignored_params(self) -> "NgfwThreatEmitterParams":
+        # Tolerance hides bugs: these are WildFire / outbound-download params the
+        # inbound record never reads, so accepting them silently would let an
+        # operator believe they shaped the record.
+        if self.event_pattern != "vulnerability_inbound":
+            return self
+        ignored = (
+            ("dst_domain", self.dst_domain is not None),
+            ("dst_ip", self.dst_ip is not None),
+            ("file_sha256", self.file_sha256 is not None),
+            ("file_name", self.file_name is not None),
+            ("file_type", self.file_type != "PE"),
+            ("verdict", self.verdict != "malicious"),
+        )
+        for name, is_set in ignored:
+            if is_set:
+                raise ValueError(
+                    f"{name} is not used by vulnerability_inbound; "
+                    "use victim_ip / victim_host"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _wildfire_needs_file(self) -> "NgfwThreatEmitterParams":
         if self.event_pattern == "wildfire_malicious_file" and (
             self.file_sha256 is None or self.file_name is None
@@ -278,6 +301,9 @@ class NgfwThreatEmitter(AnalyticsLogEmitter):
             domain = params.dst_domain or ""
         user = params.src_user if params.src_user is not None else _SRC_USER
         if params.event_pattern == "vulnerability_inbound":
+            src_addr = params.src_ip or _VULN_DEFAULT_SRC
+            dst_addr = params.victim_ip or _SRC_HOST
+            dst_port = params.dst_port or 443
             return [{
                 "dataset": _DATASET,
                 "type": "THREAT",
@@ -288,10 +314,10 @@ class NgfwThreatEmitter(AnalyticsLogEmitter):
                 "device_name": _FIREWALL_HOSTNAME,
                 "vsys": "vsys1",
                 "session_id": secrets.randbelow(9_000_000) + 1_000_000,
-                "src": params.src_ip or _VULN_DEFAULT_SRC,
-                "dst": params.victim_ip or _SRC_HOST,
+                "src": src_addr,
+                "dst": dst_addr,
                 "src_port": secrets.randbelow(16383) + 49152,
-                "dst_port": params.dst_port or 443,
+                "dst_port": dst_port,
                 "proto": "tcp",
                 "app": params.app,
                 "rule": "allow-inbound-web",
@@ -299,6 +325,17 @@ class NgfwThreatEmitter(AnalyticsLogEmitter):
                 "direction": "client-to-server",
                 "src_zone": "untrust",
                 "dst_zone": "trust",
+                # Normalised aliases of the raw PAN-OS names above: the tenant's
+                # XDM-normalised panw_ngfw_threat_raw fields the Unit 42 hunt
+                # (TTP-2026-0196) filters and groups on. No NAT in the synthetic
+                # path, so nat_dest is the session destination.
+                "sub_type": "vulnerability",
+                "from_zone": "untrust",
+                "to_zone": "trust",
+                "source_ip": src_addr,
+                "dest_ip": dst_addr,
+                "dest_port": dst_port,
+                "nat_dest": dst_addr,
                 "category": "code-execution",
                 "threat_id": params.threat_id,
                 "threat_name": params.threat_name or _VULN_DEFAULT_THREAT_NAME,

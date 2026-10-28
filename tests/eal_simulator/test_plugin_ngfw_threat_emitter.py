@@ -52,6 +52,9 @@ class _RecordingClient:
 
 def _params(**kw) -> NgfwThreatEmitterParams:
     base = {"collector_url": _COLLECTOR, "file_sha256": _SHA, "file_name": "invoice.exe"}
+    if kw.get("event_pattern") == "vulnerability_inbound":
+        # the inbound pattern rejects WildFire params, so only pass what is asked
+        base = {"collector_url": _COLLECTOR}
     base.update(kw)
     return NgfwThreatEmitterParams.model_validate(base)
 
@@ -115,10 +118,6 @@ class TestParamValidation:
         rec = _events(dst_ip="198.51.100.9")[0]
         assert rec["dst"] == "198.51.100.9"
         assert rec["dst_domain"] == "" and rec["url_domain"] == ""
-        # dst_ip alone also validates under vulnerability_inbound; the inbound
-        # record's dst is the victim, not the override.
-        rec = _events(event_pattern="vulnerability_inbound", dst_ip="198.51.100.9")[0]
-        assert rec["dst"] == "10.0.12.34"
 
     @pytest.mark.parametrize("bad", ["10.0.0", "300.1.1.1", "a.b.c.d", "::1", ""])
     def test_src_ip_must_be_dotted_quad(self, bad):
@@ -333,3 +332,61 @@ class TestVulnerabilityInbound:
     def test_dst_port_bounds(self, bad):
         with pytest.raises(ValueError):
             _params(dst_port=bad)
+
+
+class TestVulnerabilityInboundContract:
+    @pytest.mark.parametrize("field,value", [
+        ("dst_ip", "198.51.100.9"),
+        ("dst_domain", "evil.example"),
+        ("file_sha256", "a" * 64),
+        ("file_name", "x.exe"),
+        ("file_type", "ELF"),
+        ("verdict", "grayware"),
+    ])
+    def test_vulnerability_inbound_rejects_wildfire_and_dst_params(self, field, value):
+        kw = {"event_pattern": "vulnerability_inbound", field: value}
+        if field == "dst_domain":
+            kw["dst_ip"] = "198.51.100.9"
+            with pytest.raises(ValueError, match="is not used by vulnerability_inbound"):
+                _params(**kw)
+            return
+        with pytest.raises(ValueError, match=f"{field} is not used by vulnerability_inbound"):
+            _params(**kw)
+
+    def test_vulnerability_inbound_defaults_still_validate(self):
+        # file_type / verdict at their defaults, victim_ip / victim_host set.
+        rec = _events(event_pattern="vulnerability_inbound",
+                      victim_ip="10.0.9.9", victim_host="WEB-01")[0]
+        assert rec["dst"] == "10.0.9.9"
+
+    def test_vulnerability_inbound_carries_every_field_the_unit42_hunt_references(self):
+        import json
+        import re
+        from pathlib import Path
+
+        card = json.loads(next(
+            (Path(__file__).resolve().parents[2] / "detection_scanner" / "ttps")
+            .glob("TTP-2026-0196-*.json")).read_text())
+        query = next(
+            o["query"] for o in card["detections"]["xql_queries"]
+            if "panw_ngfw_threat_raw" in (o.get("query") or "")
+        )
+        # Explicit list, cross-checked against the verbatim query text.
+        expected = {"sub_type", "to_zone", "source_ip", "dest_ip", "dest_port",
+                    "nat_dest", "threat_id", "threat_name", "action", "severity"}
+        for name in expected:
+            assert re.search(rf"\b{name}\b", query), f"{name} not in the hunt query"
+        # Regex-derived: filter LHS, by-keys, values()/count_distinct()/incidr() args.
+        derived = set(re.findall(r"filter\s+(?:not\s*\()?\s*([a-z_]+)\s*(?:=|!=|!~=|~=)", query))
+        derived |= set(re.findall(r"(?:values|count_distinct|incidr)\(\s*([a-z_]+)", query))
+        for m in re.finditer(r"\bby\s+([a-z_,\s]+)$", query, re.M):
+            derived |= {t.strip() for t in m.group(1).split(",") if t.strip()}
+        derived.discard("_time")
+        assert derived <= expected | {"threat_name"}, derived - expected
+        rec = _events(event_pattern="vulnerability_inbound")[0]
+        missing = sorted((expected | derived) - set(rec))
+        assert not missing, f"record lacks fields the hunt references: {missing}"
+        assert rec["sub_type"] == rec["subtype"]
+        assert rec["source_ip"] == rec["src"] and rec["dest_ip"] == rec["dst"]
+        assert rec["nat_dest"] == rec["dst"] and rec["dest_port"] == rec["dst_port"]
+        assert rec["to_zone"] == rec["dst_zone"] and rec["from_zone"] == rec["src_zone"]
