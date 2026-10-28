@@ -36,19 +36,19 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1564,
-    "catalog_detections": 2102,
+    "abioc_analytics_share": 0.1562,
+    "catalog_detections": 2104,
     "catalog_detections_by_kind": {
       "abioc": 163,
       "analytics": 342,
       "bioc": 362,
-      "correlation": 206,
+      "correlation": 208,
       "ioc": 402,
       "modeling": 5,
       "prevention": 0,
       "xql": 622
     },
-    "correlation_share": 0.0994,
+    "correlation_share": 0.1007,
     "detection_planes": 16,
     "methodology_family_counts": {
       "F1": 128,
@@ -84,12 +84,12 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1368,
+    "step_detections": 1370,
     "step_detections_by_type": {
       "ABIOC": 158,
       "Analytics": 56,
       "BIOC": 362,
-      "Correlation": 136,
+      "Correlation": 138,
       "IOC": 119,
       "Prevention": 0,
       "XQL": 537
@@ -113,8 +113,8 @@
   "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.1711,
-    "hq_signals": 234,
+    "hq_share": 0.1723,
+    "hq_signals": 236,
     "indicators": 87,
     "indicators_not_in_band": 5,
     "leg_map": {
@@ -133,7 +133,7 @@
     "marker_only_share": 0.1266,
     "marker_only_steps": 100,
     "scenarios_with_indicators": 14,
-    "step_detections": 1368,
+    "step_detections": 1370,
     "steps": 790,
     "stitched_chain_ids": [
       "SIM-MP-023",

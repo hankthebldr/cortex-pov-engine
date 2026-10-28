@@ -179,7 +179,7 @@ def _run_cli(tmp_path, *extra):
 def test_cli_strict_uses_default_config_floors(tmp_path):
     r = _run_cli(tmp_path)
     assert r.returncode == 1, r.stdout + r.stderr
-    assert "hq_signals 3 < floor 234" in r.stdout
+    assert "hq_signals 3 < floor 236" in r.stdout
     assert "stitched_chains 1 < floor 13" in r.stdout
 
 

@@ -21,6 +21,13 @@
       "name": "PAN-OS CVE-2026-0257 Foothold \u2014 GlobalProtect Bypass, Endpoint and NGFW Stitch on One src_ip",
       "rule_id": "CR-MP-0036",
       "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "panw_ngfw_traffic_raw (RDP 3389 and SMB 445 sessions from the VPN-pool host, step-05) JOIN panw_ngfw_traffic_raw (ssl/443 to vCenter and rare ssh/22 to ESXi, step-06) JOIN panw_ngfw_traffic_raw (session to the Veeam Backup Service port 9401, step-08) ON src (the VPN-pool private_ip) WHERE all three fall within 3600s of each other -> one network-plane finding for the run host; feeds CR-MP-0036 as its network leg. Joins only panw_ngfw_traffic_raw; the GlobalProtect dataset belongs to the identity leg, not this rule.",
+      "name": "MP-036 network-leg fusion \u2014 NGFW lateral, vCenter/ESXi and Veeam sessions on one src",
+      "rule_id": "CR-MP-NET-0036",
+      "severity": "high"
     }
   ],
   "ttp_ref": "TTP-2026-0195"

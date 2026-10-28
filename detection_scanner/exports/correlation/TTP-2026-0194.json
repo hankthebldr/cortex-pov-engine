@@ -22,6 +22,13 @@
       "name": "BUGSTER AI-Assisted Intrusion \u2014 python3 Tooling, Proxy / Exfil / C2 Traffic and a GenAI Jailbreak on One Host",
       "rule_id": "CR-MP-0035",
       "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "panw_ngfw_traffic_raw (python3 recurring sessions to the external HTTP proxy, step-03) JOIN panw_ngfw_traffic_raw (large python3 upload to the rare external IP on port 8080, step-06) JOIN panw_ngfw_traffic_raw (recurring bash sessions to the actor server 162.243.3.92 on port 4444, step-08) ON endpoint_device_name (with src as the tie-break when the hostname is absent) WHERE all three fall within 3600s of each other -> one network-plane finding for the run host; feeds CR-MP-0035 as its network leg. Joins only NGFW records; no endpoint, AI Access or cloud dataset.",
+      "name": "MP-035 network-leg fusion \u2014 NGFW proxy, bulk-upload and beacon sessions on one host",
+      "rule_id": "CR-MP-NET-0035",
+      "severity": "high"
     }
   ],
   "ttp_ref": "TTP-2026-0194"
