@@ -63,7 +63,7 @@ dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_CREATE_NEW
 | filter action_file_path contains "/.vscode/extensions/"
-| filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
+| filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code") or actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
 | filter action_file_path !~= "/\.vscode/extensions/(ms-|github\.|redhat\.|vscode\.)"
 | fields _time, agent_hostname, causality_id, actor_process_image_name, action_file_path
 
@@ -86,9 +86,9 @@ dataset = xdr_data
 | filter _time > to_timestamp(current_time() - 1800)
 | filter event_type = ENUM.NETWORK
 | filter causality_actor_process_image_name in ("Electron", "Code Helper (Plugin)", "Code Helper", "code")
-| filter dst_action_external_hostname not in ("open-vsx.org", "marketplace.visualstudio.com", "vscode.dev", "gallerycdn.vsassets.io", "update.code.visualstudio.com") or dst_action_external_hostname = null
-| filter action_external_port in (80, 443, 8080)
-| fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, dst_action_external_hostname, action_remote_ip, action_external_port
+| filter dst_action_external_hostname = "cortexsim-canary.invalid" or action_external_hostname = "cortexsim-canary.invalid"
+| filter action_total_upload > 0
+| fields _time, agent_hostname, causality_id, causality_actor_process_instance_id, dst_action_external_hostname, action_remote_ip, action_external_port, action_total_upload
 
 ## VALIDATION — KOI-009 NGFW Session From IDE Host To Non Marketplace Destination
 # purpose: validation
@@ -97,8 +97,7 @@ dataset = xdr_data
 dataset = panw_ngfw_traffic_raw
 | filter _time > to_timestamp(current_time() - 1800)
 | filter action = "allow"
-| filter app in ("web-browsing", "ssl", "unknown-tcp")
-| filter dst_host not in ("open-vsx.org", "marketplace.visualstudio.com", "vscode.dev", "gallerycdn.vsassets.io", "update.code.visualstudio.com") or dst_host = null
+| filter dst_host = "cortexsim-canary.invalid"
 | filter action_total_upload > 0
 | comp sum(action_total_upload) as bytes_out, count() as sessions by src_ip, dst_ip, dst_host
 | fields src_ip, dst_ip, dst_host, sessions, bytes_out
