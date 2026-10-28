@@ -108,7 +108,7 @@ def default_config() -> dict[str, Any]:
         "name_similarity": 0.60,
         "top": 15,
         "strict": False,
-        # signal_quality gates: set to the values measured 2026-10-27 (library signal expansion).
+        # signal_quality gates: set to the values measured 2026-10-28 (Unit 42 recent-posts chains); first set 2026-10-27 (library signal expansion).
         "hq_signal_floor": 236,
         "stitched_chain_floor": 13,
         "marker_only_ceiling": 0.1266,
