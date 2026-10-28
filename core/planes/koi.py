@@ -17,6 +17,8 @@ KOI_PLANE = PlaneDescriptor(
         "T1176",  # Extensions (VS Code / Chrome)
         "T1656",  # Impersonation (hidden tool-reply injection)
         "T1041",  # Exfiltration Over C2 Channel (artifact egress)
+        "T1543.001",  # Launch Agent (SIM-KOI-009 macOS LaunchAgent persistence)
+        "T1555.001",  # Keychain (SIM-KOI-009 developer credential collection)
     ],
     default_identity="container-runtime",
     summary=(

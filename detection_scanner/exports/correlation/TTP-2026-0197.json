@@ -1,0 +1,22 @@
+{
+  "mitre_techniques": [
+    "T1195",
+    "T1059.002",
+    "T1543.001",
+    "T1555.001",
+    "T1552.001",
+    "T1074.001",
+    "T1560",
+    "T1041"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "ABIOC(KOI-009 IDE Extension Host Spawns Scripting Host For First Seen Publisher) FOLLOWED_BY BIOC(KOI-009 Keychain Access By IDE Descendant) FOLLOWED_BY BIOC(KOI-009 LaunchAgent Written And Loaded From IDE Lineage) FOLLOWED_BY BIOC(KOI-009 Multi Credential File Read Under IDE CGO) FOLLOWED_BY XQL(KOI-009 Staging Directory Created Under IDE Lineage) \u2014 all stitched by shared agent_hostname and causality_id (CGO = the VS Code IDE) so the activation-time scripting host, Keychain access, LaunchAgent persistence, credential read and local staging collapse into ONE GlassWorm incident. The chain closes on the endpoint: its terminal term is the staging-directory create, not the egress, so the rule fires in a lab with no authorised sink and no firewall in path.",
+      "name": "GlassWorm macOS Wave \u2014 Extension Host Scripting, Keychain, LaunchAgent, Credential Read and Local Staging",
+      "rule_id": "CR-KOI-0009",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0197"
+}

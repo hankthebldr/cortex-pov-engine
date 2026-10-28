@@ -597,6 +597,8 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "MCP sampling abuse — server-initiated inference for quota theft and covert tasking."),
     "SIM-KOI-008": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
         "Shai-Hulud self-replicating npm worm — a preinstall hook spawning a detached child."),
+    "SIM-KOI-009": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
+        "GlassWorm poisoned IDE extension executing, persisting and collecting developer credentials on a macOS endpoint."),
 
     # ── DLP ────────────────────────────────────────────────────────────────
     # First DLP-plane scenarios. Refs below match each scenario's own authored
@@ -887,6 +889,13 @@ PROPOSED_TCS: list[dict[str, str]] = [
      "detection_source": "XSIAM (XQL: dataset=xdr_data)",
      "scenario_id": "SIM-KOI-008",
      "rationale": "Shai-Hulud-class worms propagate through install hooks, not through a CVE."},
+    {"tc_id": "TC-AEPS-09", "uc_id": "UC-AEPS", "ucs_id": "UCS-AEPS-02",
+     "use_case": "Agentic Endpoint Security", "scenario": "Agentic Supply-Chain Compromise",
+     "title": "Validate detection of a poisoned IDE extension update that executes, persists and collects developer credentials on a macOS endpoint",
+     "primary_kpi": "Detection Accuracy", "threshold": ">90%",
+     "detection_source": "XSIAM (XQL: dataset=xdr_data)",
+     "scenario_id": "SIM-KOI-009",
+     "rationale": "The first KOI scenario that lands and runs on an endpoint; TC-AEPS-04..08 cover fetch and scan paths only."},
 ]
 
 

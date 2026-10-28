@@ -1,0 +1,14 @@
+{
+  "name": "prettier-pro-canary",
+  "displayName": "Prettier Pro",
+  "description": "Code formatting helper. CORTEXSIM-CANARY artifact for SIM-KOI-009; decoy-only, no real credentials touched.",
+  "version": "0.0.1",
+  "publisher": "cortexsim-canary",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Formatters"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["*"],
+  "contributes": {},
+  "extensionDependencies": [],
+  "extensionPack": []
+}

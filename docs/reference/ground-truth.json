@@ -9,7 +9,7 @@
       "5": 11
     },
     "packs_total": 91,
-    "scenarios_wiring_adapter": 46,
+    "scenarios_wiring_adapter": 47,
     "tier4_exempt": 48,
     "tier4_exempt_reason_codes": {
       "ARCHIVE_MEMBER_NOT_SELF_CONTAINED": 1,
@@ -36,22 +36,22 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1562,
-    "catalog_detections": 2104,
+    "abioc_analytics_share": 0.1561,
+    "catalog_detections": 2123,
     "catalog_detections_by_kind": {
-      "abioc": 163,
-      "analytics": 342,
-      "bioc": 362,
-      "correlation": 208,
-      "ioc": 402,
+      "abioc": 164,
+      "analytics": 344,
+      "bioc": 365,
+      "correlation": 209,
+      "ioc": 410,
       "modeling": 5,
       "prevention": 0,
-      "xql": 622
+      "xql": 626
     },
-    "correlation_share": 0.1007,
+    "correlation_share": 0.1009,
     "detection_planes": 16,
     "methodology_family_counts": {
-      "F1": 128,
+      "F1": 129,
       "F10": 2,
       "F2": 29,
       "F3": 9,
@@ -63,8 +63,8 @@
       "F9": 3
     },
     "mitre_distinct_base_techniques": 128,
-    "mitre_distinct_techniques": 233,
-    "scenarios_loadable": 192,
+    "mitre_distinct_techniques": 235,
+    "scenarios_loadable": 193,
     "scenarios_per_plane": {
       "AIRS": 5,
       "AI_ACCESS": 6,
@@ -79,22 +79,22 @@
       "EDR": 22,
       "EMAIL": 5,
       "ITDR": 20,
-      "KOI": 8,
+      "KOI": 9,
       "NDR": 12,
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1370,
+    "step_detections": 1377,
     "step_detections_by_type": {
-      "ABIOC": 158,
+      "ABIOC": 159,
       "Analytics": 56,
-      "BIOC": 362,
-      "Correlation": 138,
+      "BIOC": 365,
+      "Correlation": 139,
       "IOC": 119,
       "Prevention": 0,
-      "XQL": 537
+      "XQL": 539
     },
-    "ttp_cards": 190
+    "ttp_cards": 191
   },
   "eal_plugins": 27,
   "generated_by": "scripts/generate_ground_truth.py",
@@ -113,7 +113,7 @@
   "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.1723,
+    "hq_share": 0.1714,
     "hq_signals": 236,
     "indicators": 87,
     "indicators_not_in_band": 5,
@@ -130,11 +130,11 @@
       "KOI": "endpoint",
       "NDR": "network"
     },
-    "marker_only_share": 0.1266,
+    "marker_only_share": 0.1256,
     "marker_only_steps": 100,
     "scenarios_with_indicators": 14,
-    "step_detections": 1370,
-    "steps": 790,
+    "step_detections": 1377,
+    "steps": 796,
     "stitched_chain_ids": [
       "SIM-MP-023",
       "SIM-MP-024",
@@ -160,7 +160,7 @@
   "uctc_index": {
     "det_hnt_evidenced": 70,
     "det_hnt_total": 107,
-    "payload_resolved": 192,
+    "payload_resolved": 193,
     "payload_unresolved": 0,
     "plt_assertions": {
       "artifacts": 4,
@@ -179,6 +179,6 @@
     "posture_class_primary_s14": 14,
     "tc_evidenced": 90,
     "tc_total": 266,
-    "tier_drift_s13": 123
+    "tier_drift_s13": 124
   }
 }

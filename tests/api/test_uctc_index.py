@@ -58,11 +58,12 @@ def seeded(session_factory):
     189 -> 192 on 2026-10-28: SIM-MP-035..037 (Unit 42 recent chains: Bugster, PAN-OS
     CVE-2026-0257, PHP2Shell). All three bind already-evidenced TCs, so the evidenced
     pins (90) do not move; in-use payloads 34 -> 35 (POV-SC-013).
+    192 -> 193 on 2026-10-28: SIM-KOI-009 (GlassWorm agentic endpoint, binds already-evidenced TC-SCA-01/TC-SSCAN-01; evidenced pins unchanged).
     """
     from models import Scenario  # noqa: PLC0415
 
     rows = list(csv.DictReader(CROSSWALK.open(encoding="utf-8")))
-    assert len(rows) == 192
+    assert len(rows) == 193
 
     async def _seed() -> None:
         async with session_factory() as session:
