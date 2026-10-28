@@ -7,15 +7,15 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Metric | Value |
 |---|---:|
-| Loadable scenarios | 192 |
+| Loadable scenarios | 193 |
 | Scenarios rejected at load | 0 |
-| TTP cards | 190 |
+| TTP cards | 191 |
 | Detection planes | 16 |
-| Step-detections | 1370 |
-| Catalog detection objects | 2104 |
+| Step-detections | 1379 |
+| Catalog detection objects | 2123 |
 | ABIOC+Analytics share (step-detections) | 15.6% |
 | Correlation share (step-detections) | 10.1% |
-| Distinct MITRE techniques (base) | 233 (128) |
+| Distinct MITRE techniques (base) | 235 (128) |
 | EAL plugins | 27 |
 | AWS IaC modules | 11 |
 
@@ -36,7 +36,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | EDR | 22 |
 | EMAIL | 5 |
 | ITDR | 20 |
-| KOI | 8 |
+| KOI | 9 |
 | NDR | 12 |
 | TIM | 9 |
 
@@ -45,8 +45,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1370 (17.2%) |
-| Marker-only steps | 100/790 (12.7%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1379 (17.1%) |
+| Marker-only steps | 100/796 (12.6%) |
 | Scenarios with indicators | 14 |
 | Indicators (in-band) | 87 |
 | Indicators (not in-band) | 5 |
@@ -55,13 +55,13 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Type | Count |
 |---|---:|
-| ABIOC | 158 |
+| ABIOC | 159 |
 | Analytics | 56 |
-| BIOC | 362 |
-| Correlation | 138 |
+| BIOC | 365 |
+| Correlation | 139 |
 | IOC | 119 |
 | Prevention | 0 |
-| XQL | 537 |
+| XQL | 541 |
 
 ## Tool adapters
 
@@ -73,7 +73,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Tier-4 exempt | 48 |
 | Tier-4 undeclared (should be 0 — `TA-13` rejects it) | 0 |
 | Distinct adapters wired via `adapter_ref` | 49 |
-| Scenarios wiring at least one adapter | 46 |
+| Scenarios wiring at least one adapter | 47 |
 
 ## Assertions (POS/PLT/AUT)
 
@@ -90,7 +90,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 |---|---:|
 | Index TCs evidenced by a scenario | 90/266 |
 | DET/HNT TCs evidenced | 70/107 |
-| S-13 tier disagreements | 123 |
+| S-13 tier disagreements | 124 |
 | S-14 posture-class-primary bindings | 14 |
 | PLT assertions authored | 4/43 rows (4 artifact(s), 0 tenant-proven) |
 | POS assertions authored | 2/110 rows (2 artifact(s), 0 tenant-proven) |
