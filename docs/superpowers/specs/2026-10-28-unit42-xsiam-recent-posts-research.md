@@ -58,7 +58,7 @@ Already SIM-MP-024 / TTP-2026-0183. No action.
 
 ## 4. Proposed simulations — Henry's scope call
 
-> **Status (2026-10-28): A, B and C are authored** as `SIM-MP-035`, `SIM-MP-036` and `SIM-MP-037` (cards `TTP-2026-0194..0196`). Measured: 13 stitched chains, 234 high-quality signals of 1368 step-detections (17.1%), marker-only 100/790; `SIM-MP-037` is authored but not counted as a high-quality signal (no published indicator). Corpus 192 scenarios, 190 cards. `tenant-verified` stays 0.
+> **Status (2026-10-28): A, B and C are authored** as `SIM-MP-035`, `SIM-MP-036` and `SIM-MP-037` (cards `TTP-2026-0194..0196`). Measured: 13 stitched chains, 236 high-quality signals of 1370 step-detections (17.2%), marker-only 100/790; `SIM-MP-037` is authored but not counted as a high-quality signal (no published indicator). Corpus 192 scenarios, 190 cards. `tenant-verified` stays 0.
 
 | id | post | legs | in-band indicators | HQS-countable | notes |
 |---|---|---|---|---|---|
