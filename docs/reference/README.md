@@ -114,12 +114,12 @@
     `CORTEXSIM_K8S_PAYLOAD_AUTH=token` (the init container's bare `wget` carries
     no Authorization header, so the manifest would apply cleanly and 403 in the
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
-- **Counted ground truth (verified 2026-10-28 — Unit 42 recent-posts pass):**
+- **Counted ground truth (regenerated 2026-10-28 — SIM-KOI-009 GlassWorm pass; the 13 stitched chains and `SIM-MP-035..037` below were added by the earlier Unit 42 recent-posts pass):**
   **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1379 step-detections ·
   2123 catalog detection objects (`ground-truth.md` is the source; the scenario and card counts include `SIM-KOI-009` and were updated by hand; the regenerated `ground-truth.{json,md}` is the counted authority). `signal_quality` in `coverage_report.py --json`:
   **13 stitched chains** (was 11), **236 high-quality signals / 1379 step-detections (17.1%)** (was 195/1320),
   **100 marker-only steps / 796 (12.6%)**, 87 in-band indicators in 14 scenarios (+5 not in-band, `SIM-MP-034`);
-  floors set to those measured values (`hq_signal_floor` 236, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266).
+  floors set by the Unit 42 pass (`hq_signal_floor` 236, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266 — the configured ceiling, which corresponds to that pass's 100/790, not to the 12.6% measured now).
   `SIM-MP-035..037` / `TTP-2026-0194..0196` are the three new chains; **`SIM-MP-037` is authored but not counted as a
   high-quality signal** (its report publishes no indicator, ruling R2). New emitter surface, no plugin-count change:
   `vulnerability_inbound` (`ngfw_threat_emitter`), `gateway_connected_without_auth` (`globalprotect_emitter`),
