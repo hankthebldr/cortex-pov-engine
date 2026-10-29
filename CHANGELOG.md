@@ -66,8 +66,14 @@ and five stacked rows of its own around a fixed 620px canvas. See
   contract, k8s teardown, interpreters and verification XQL). The gated tool
   still ran from its `{adapter:…}` command, but without the launch consent
   gate or the payload staging that `external_tools` drives. A fork now carries
-  every field it read; all 176 loaded scenarios' fork bodies validate against
-  the draft schema.
+  every field the draft contract accepts; all 193 loaded scenarios' fork
+  bodies validate against `DraftScenarioSchema` (re-measured 2026-10-28 on the
+  rebased tree; 176 when authored). Outside that contract and still dropped on
+  a fork: `indicators[]` (14 scenarios) and `threat_report` /
+  `threat_report_url`; `push_supported` / `pull_supported` are re-derived from
+  the draft's own content by the drafts API (2 of the 3 rows authored
+  `push_supported: false` (SIM-MP-031, SIM-MP-034) derive `true`, so a draft
+  forked from them is offered a push bundle its origin refuses).
 - **One `+ Add step` could reorder a branching chain.** The spine repair
   level-sorted a valid array, changing the execution order of steps the DC
   never touched. A valid array is now left alone and an invalid one moves only
