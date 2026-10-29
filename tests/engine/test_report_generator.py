@@ -75,7 +75,9 @@ def _results(observed_count=2, missed_count=1, pending_count=1):
             "signal_type": "BIOC",
             "expected_detection": "DNS tunnelling anomaly",
             "observed": False,
-            "observed_at": "2026-05-12T09:04:00+00:00",  # marked missed
+            # An engine-decided miss: only ``outcome`` makes a miss (R4).
+            "observed_at": None,
+            "outcome": "missed",
             "executed_at": "2026-05-12T09:02:30+00:00",
             "mttd_seconds": None,
             "mitre_technique": "T1568",

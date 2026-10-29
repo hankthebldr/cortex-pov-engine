@@ -290,10 +290,12 @@ function RunDetail({ run }) {
           {/* Coverage summary */}
           <div className="rv-run-detail__coverage">
             <p className="section-label">Detection Coverage</p>
+            {/* The server's honest denominator (core/api/results.py): rows whose
+                step never ran, and soak-pending rows, are neither hit nor miss. */}
             <CoverageBar
               label="Overall"
-              observed={coverage.observed || 0}
-              total={coverage.total || 0}
+              observed={coverage.observed_in_denominator || 0}
+              total={coverage.denominator || 0}
             />
             {coverage.by_type && Object.entries(coverage.by_type).map(([type, stats]) => (
               <CoverageBar

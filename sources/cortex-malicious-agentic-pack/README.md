@@ -32,6 +32,7 @@ inspection.
 | `pypi/mcp-server-helpers-typo/` | Backdoored PyPI package | Code scan: typosquat name + post-install `subprocess.run` on import |
 | `claude-skills/code-reviewer.skill/` | Malicious Claude skill bundle | Code scan: hidden `Ignore previous instructions` text in `skill.md`; manifest claims verified-publisher with mismatched signature |
 | `vscode/helpful-ai-assistant/` | Malicious VS Code extension source | Code scan: `package.json` declares `activationEvents:["*"]` + reads `${HOME}/.aws/credentials` in `activate()`; post-install C2 stub |
+| `vscode/prettier-pro-canary/` | Decoy-only VS Code extension for SIM-KOI-009 | Agentic-endpoint sensors: `activationEvents:["*"]` activation spawns a scripting-host child; a `vscode://` URI handler performs one decoy action per step id (`/step-03`..`/step-06`) rooted at `CORTEXSIM_KOI009_DECOY_ROOT`; outbound only behind `CORTEXSIM_C2_URL` |
 | `chrome/ai-page-summarizer/` | Malicious Chrome extension source | Code scan: manifest requests `<all_urls>` + `cookies` + `webRequest` + `webRequestBlocking`; silent tab-content exfil stub |
 
 ## Building artifacts

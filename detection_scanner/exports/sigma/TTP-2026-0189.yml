@@ -1,0 +1,367 @@
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Discovery Burst Staged into Public Music Folder"
+id: ttp-2026-0189-bioc-01
+status: experimental
+description: |
+  Account and host discovery binaries (whoami /all, net localgroup, quser, nltest) whose output is redirected into C:\Users\Public\Music — the staging folder the report and Adlumin tie to Play-affiliated intrusions (TokenPlayer and PsExec were found there).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("whoami.exe", "net.exe", "net1.exe", "quser.exe", "nltest.exe")
+    | filter actor_process_command_line contains "Public\\Music" or action_process_image_command_line contains "Public\\Music"
+    | comp count_distinct(action_process_image_name) as discovery_tools by agent_hostname, causality_actor_process_image_name, causality_id
+    | filter discovery_tools >= 2
+    | fields agent_hostname, causality_actor_process_image_name, causality_id, discovery_tools
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1033/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1033
+    - attack.t1069.001
+    - attack.t1074.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Admin Share C$ Mapped Then Executable Copied into Public Music"
+id: ttp-2026-0189-bioc-02
+status: experimental
+description: |
+  cmd.exe runs 'net use \\<host>\C$' followed by 'copy' of an executable to \\<host>\C$\Users\Public\Music — the SMB transfer pattern the report describes for the Sliver and DTrack files.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("cmd.exe", "net.exe", "net1.exe")
+    | filter action_process_image_command_line contains "C$"
+    | filter action_process_image_command_line contains "net use" or action_process_image_command_line contains "copy"
+    | comp count() as share_ops, values(action_process_image_command_line) as cmdlines by agent_hostname, actor_effective_username, causality_id
+    | filter share_ops >= 1
+    | fields agent_hostname, actor_effective_username, causality_id, share_ops, cmdlines
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.002
+    - attack.t1570
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Renamed System Binary Executed from Public Music"
+id: ttp-2026-0189-bioc-03
+status: experimental
+description: |
+  A process whose image path is under C:\Users\Public\Music runs with an original file name that does not match its on-disk name (a renamed Windows binary) — the implant-execution shape after the SMB copy.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_path contains "\\Users\\Public\\Music\\"
+    | filter action_process_image_name != action_process_file_info->original_name
+    | fields _time, agent_hostname, action_process_image_path, action_process_file_info, causality_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.003
+    - attack.t1204.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Credential Dump Log KB0722.log Written to Windows Temp"
+id: ttp-2026-0189-bioc-04
+status: experimental
+description: |
+  A file named KB0722.log is written to C:\Windows\Temp — the customized Mimikatz credential-dump log path named in the report.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter action_file_name = "KB0722.log"
+    | filter action_file_path contains "\\Windows\\Temp\\"
+    | fields _time, agent_hostname, actor_process_image_name, action_file_path, causality_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 SAM Hive Registry Access by Command-Line Tool"
+id: ttp-2026-0189-bioc-05
+status: experimental
+description: |
+  reg.exe queries or saves the HKLM\SAM hive from an interactive shell — the registry-dump precursor the report attributes to possible Impacket secretsdump use.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "reg.exe"
+    | filter action_process_image_command_line contains "HKLM\\SAM"
+    | fields _time, agent_hostname, action_process_image_command_line, causality_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1003/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1003.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 PsExec-Shaped Service Runs cmd as LocalSystem"
+id: ttp-2026-0189-bioc-06
+status: experimental
+description: |
+  A short-lived service is created whose binPath is cmd.exe /c, started, and deleted within minutes — the PsExec SYSTEM-escalation shape the report describes, with its output dropped into C:\Users\Public\Music.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "sc.exe"
+    | filter action_process_image_command_line contains "binPath" and action_process_image_command_line contains "cmd.exe /c"
+    | fields _time, agent_hostname, action_process_image_command_line, causality_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1569/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1569.002
+    - attack.t1543.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Local Account Created and Added to Administrators"
+id: ttp-2026-0189-bioc-07
+status: experimental
+description: |
+  net user /add followed by net localgroup administrators /add for the same new account — the privileged-account creation tool the report saw on RDP-enabled hosts.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("net.exe", "net1.exe")
+    | filter action_process_image_command_line contains "/add"
+    | comp count() as adds, values(action_process_image_command_line) as cmdlines by agent_hostname, causality_id
+    | filter adds >= 2
+    | fields agent_hostname, causality_id, adds, cmdlines
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1136/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1136.001
+    - attack.t1098
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Security Sensor Service Stopped Disabled and Deleted"
+id: ttp-2026-0189-bioc-08
+status: experimental
+description: |
+  sc.exe stop, config start= disabled and delete against the same service in one causality chain — the EDR-sensor removal sequence the report saw just before Play deployment. Exercised against a cortexsim- prefixed dummy service, never a real security product.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "sc.exe"
+    | filter action_process_image_command_line contains "stop" or action_process_image_command_line contains "disabled" or action_process_image_command_line contains "delete"
+    | comp count_distinct(action_process_image_command_line) as tamper_ops by agent_hostname, causality_id
+    | filter tamper_ops >= 3
+    | fields agent_hostname, causality_id, tamper_ops
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+    - attack.t1489
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Silent msiexec Product Uninstall"
+id: ttp-2026-0189-bioc-09
+status: experimental
+description: |
+  msiexec.exe /x <product code> /qn from an administrative shell in the same chain as the service tampering — the mass-uninstall shape for EDR sensors.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "msiexec.exe"
+    | filter action_process_image_command_line contains "/x" and action_process_image_command_line contains "/qn"
+    | fields _time, agent_hostname, action_process_image_command_line, causality_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1562/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1562.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Mass File Rename to PLAY Extension with Ransom Note Drop"
+id: ttp-2026-0189-bioc-10
+status: experimental
+description: |
+  One process renames many files in a directory to a .PLAY extension and writes a ReadMe.txt alongside — the Play ransomware impact shape (CISA AA23-352A), exercised on a cortexsim- canary directory only.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_RENAME
+    | filter action_file_name contains ".PLAY"
+    | comp count() as renames by agent_hostname, actor_process_image_name, causality_id
+    | filter renames >= 10
+    | fields agent_hostname, actor_process_image_name, causality_id, renames
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Compromised Account Uncommon Administrative Share Access"
+id: ttp-2026-0189-abioc-11
+status: experimental
+description: |
+  Inferred identity view (the report names the C$ share mapping by the compromised account, not an identity alert): a user account accesses a host's C$ administrative share for the first time and writes executables. Share events 5140/5145 land on the TARGET host, so the alert is keyed on source_address (the victim's IP) and user_name; with the default STAGE_HOST=127.0.0.1 the target is the victim itself and source_address is loopback.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = msft_windows_security
+    | filter event_id in (5140, 5145)
+    | filter share_name contains "C$"
+    | comp count() as share_events, count_distinct(event_id) as event_kinds, values(host_name) as target_hosts by user_name, source_address
+    | filter event_kinds >= 2
+    | fields user_name, source_address, target_hosts, share_events, event_kinds
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.002
+    - attack.t1078
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486) \u2014 MP-030 Sliver Recurring Beacon to Rare Domain"
+id: ttp-2026-0189-abioc-12
+status: experimental
+description: |
+  The victim host produces a tight recurring burst of small ssl/443 sessions to a fleet-rare domain — the Sliver beaconing the report observed for months. With the report's C2 domain and IP in dst_hostname/dst, the case also enriches as the actor.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "ssl" and dst_port = 443
+    | comp count() as sessions, avg(bytes_sent) as avg_sent by src, endpoint_device_name, dst_hostname, dst
+    | filter sessions >= 8
+    | fields src, endpoint_device_name, dst_hostname, dst, sessions, avg_sent
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+    - attack.t1573
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

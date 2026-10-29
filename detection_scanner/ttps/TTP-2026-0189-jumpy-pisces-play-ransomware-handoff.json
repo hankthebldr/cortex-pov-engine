@@ -1,0 +1,680 @@
+{
+  "id": "TTP-2026-0189",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-10-27T00:00:00+00:00",
+    "updated_at": "2026-10-27T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "actor-jumpy-pisces",
+      "actor-andariel",
+      "actor-fiddling-scorpius",
+      "play-ransomware",
+      "sliver",
+      "dtrack",
+      "lateral-tool-transfer",
+      "edr-tamper",
+      "unit42",
+      "stitched-chain",
+      "correlation",
+      "severity-critical"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-CISA",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "ransomware-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Jumpy Pisces to Play Ransomware Hand-off — SMB Tool Transfer, Sliver C2, EDR Removal, Impact (T1021.002 / T1071.001 / T1562.001 / T1486)",
+    "summary": "North Korean Jumpy Pisces (Andariel) used a compromised account to copy Sliver and DTrack over SMB C$, beaconed to Sliver C2 for months, and the same account was then used to harvest credentials, escalate via PsExec, uninstall EDR sensors and deploy Play ransomware. The card stitches the endpoint, network and identity signals on the victim host into one incident.",
+    "description": "Unit 42 incident response (2024-10-30) found Jumpy Pisces entering through a compromised user account that reached a host via a firewall device in late May 2024. Partial registry dumps suggested Impacket secretsdump. The actor mapped C$ on internal hosts with 'net use' and copied Sliver and DTrack files with 'copy'; DTrack was blocked by EDR, but Sliver beaconed to 172.96.137.224 / americajobmail.site intermittently until early September. Then an actor using the same account harvested credentials with a customized Mimikatz (dump log C:\\windows\\temp\\KB0722.log), abused tokens with TokenPlayer, escalated to SYSTEM with PsExec (both staged in C:\\Users\\Public\\Music), created a privileged account on RDP hosts, mass-uninstalled EDR sensors and deployed Play ransomware; the C2 IP went offline that day. SIM-MP-030 reproduces each stage safely on a lab Windows host: real SMB admin-share copy of a renamed benign binary, a WildFire-verdict log carrying two report hashes, a Sliver-shaped NGFW EAL beacon carrying the report's C2 domain and IP, a KB0722.log artifact and SAM-hive registry query, a PsExec-shaped LocalSystem service and local-admin creation, an EDR-removal sequence against a cortexsim- dummy service, and a .PLAY rename of a canary directory. Every leg names the same src_host so CR-MP-0030 can stitch one incident. The EDR-removal stage is a detected behaviour only; no prevention outcome is claimed.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Jumpy Pisces",
+        "aliases": [
+          "Andariel",
+          "Onyx Sleet",
+          "APT45",
+          "Stonefly"
+        ],
+        "mitre_group_id": "G0138"
+      },
+      {
+        "name": "Fiddling Scorpius",
+        "aliases": [
+          "Play ransomware operators",
+          "PlayCrypt"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Jumpy Pisces intrusion leading to Play ransomware deployment (May-September 2024)"
+    ],
+    "malware_families": [
+      {
+        "name": "Sliver",
+        "mitre_software_id": "S0633"
+      },
+      {
+        "name": "DTrack",
+        "mitre_software_id": "S0567"
+      },
+      {
+        "name": "Mimikatz (customized)",
+        "mitre_software_id": "S0002"
+      },
+      {
+        "name": "PsExec",
+        "mitre_software_id": "S0029"
+      },
+      {
+        "name": "TokenPlayer"
+      },
+      {
+        "name": "Play ransomware"
+      }
+    ],
+    "industries_targeted": [
+      "all"
+    ],
+    "first_observed": "2024-05-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1033",
+        "name": "System Owner/User Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.002",
+        "name": "Remote Services: SMB/Windows Admin Shares",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1570",
+        "name": "Lateral Tool Transfer",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1036",
+        "subtechnique_id": "T1036.003",
+        "name": "Masquerading: Rename System Utilities",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "name": "OS Credential Dumping",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.002",
+        "name": "OS Credential Dumping: Security Account Manager",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1569",
+        "subtechnique_id": "T1569.002",
+        "name": "System Services: Service Execution",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1136",
+        "subtechnique_id": "T1136.001",
+        "name": "Create Account: Local Account",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1562",
+        "subtechnique_id": "T1562.001",
+        "name": "Impair Defenses: Disable or Modify Tools",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Modification",
+      "Network Share: Network Share Access",
+      "Service: Service Creation",
+      "User Account: User Account Creation",
+      "Network Traffic: Network Connection Creation",
+      "Windows Registry: Windows Registry Key Access"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-030 — Jumpy Pisces to Play ransomware hand-off stitched chain",
+    "privilege_required": "administrator",
+    "prerequisites": [
+      {
+        "description": "Lab Windows endpoint with the Cortex XDR agent; a second lab Windows host reachable over SMB as STAGE_HOST (defaults to the endpoint itself via 127.0.0.1).",
+        "check_command": "Get-Service cyserver"
+      },
+      {
+        "description": "A Linux runner with the CortexSim repo for the two EAL legs, an operator collector (COLLECTOR_URL) feeding panw_ngfw_traffic_raw / panw_ngfw_threat_raw, and VICTIM_SRC_IP / VICTIM_SRC_HOST / VICTIM_SRC_USER set to the Windows endpoint's identity (unset, the NGFW records name the runner and the src_host stitch breaks).",
+        "check_command": "python3 -m scripts.eal_simulator.cli --help"
+      },
+      {
+        "description": "Windows Security event logs (5140/5145 share access) from the SMB target host are ingested into msft_windows_security; without them the ITDR share-access leg cannot fire.",
+        "check_command": "Get-WinEvent -ListLog Security"
+      },
+      {
+        "description": "LAB_RESOLVER names the lab DNS resolver the single report-domain lookup goes through.",
+        "check_command": "test -n \"$LAB_RESOLVER\""
+      }
+    ],
+    "payload": {
+      "interpreter": "powershell",
+      "code": "# Windows legs of SIM-MP-030 (lab only). The scenario YAML is the source of truth; this is a summary.\n$music = 'C:\\Users\\Public\\Music'\nwhoami.exe /all > \"$music\\cortexsim-mp030-recon.txt\"\n$target = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }\ncmd.exe /c \"net use \\\\$target\\C$ && copy /Y %TEMP%\\cortexsim-mp030-sliver-standin.exe \\\\$target\\C$\\Users\\Public\\Music\\\"\nSet-Content -Path \"$env:SystemRoot\\Temp\\KB0722.log\" -Value 'cortexsim-mp030 synthetic dump log (no credentials)'\nsc.exe create cortexsim-mp030-psexesvc binPath= \"cmd.exe /c whoami > $music\\cortexsim-mp030-system.txt\"\nsc.exe create cortexsim-edr-sensor binPath= \"cmd.exe /c exit 0\"; sc.exe stop cortexsim-edr-sensor; sc.exe delete cortexsim-edr-sensor\nGet-ChildItem \"$music\\cortexsim-mp030-canary\" | Rename-Item -NewName { $_.Name + '.PLAY' }",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Lab host whose C$ share receives the stand-in copies."
+        },
+        {
+          "name": "LAB_RESOLVER",
+          "type": "string",
+          "default": "127.0.0.53",
+          "description": "Lab DNS resolver for the one report-domain lookup."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "cmd.exe net use \\\\<host>\\C$ then copy of an executable into C:\\Users\\Public\\Music.",
+        "expected_value": "action_process_image_command_line contains \"C$\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Credential dump log at C:\\Windows\\Temp\\KB0722.log.",
+        "expected_value": "action_file_name = \"KB0722.log\""
+      },
+      {
+        "artifact_type": "service",
+        "description": "cortexsim-edr-sensor dummy service stopped, disabled and deleted; PsExec-shaped cortexsim-mp030-psexesvc created and deleted.",
+        "expected_value": "action_process_image_command_line contains \"cortexsim-edr-sensor\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Synthetic NGFW EAL recurring ssl/443 sessions from the victim src_host to americajobmail.site / 172.96.137.224.",
+        "expected_value": "dst_hostname = \"americajobmail.site\""
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "One A-record lookup of americajobmail.site through the operator's lab resolver.",
+        "expected_value": "dns_query_name = \"americajobmail.site\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "powershell",
+      "code": "Remove-Item -Force -Recurse -ErrorAction SilentlyContinue 'C:\\Users\\Public\\Music\\cortexsim-mp030*', \"$env:SystemRoot\\Temp\\KB0722.log\", \"$env:TEMP\\cortexsim-mp030*\"; sc.exe delete cortexsim-edr-sensor; sc.exe delete cortexsim-mp030-psexesvc; net.exe user cortexsim-mp030-adm /delete"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "243ad5458706e5c836f8eb88a9f67e136f1fa76ed44868217dc995a8c7d07bf7",
+        "context": "SHA256 listed in the report's IOC table (the report does not assign a per-hash role); carried by SIM-MP-030 step-03 as the WildFire-verdict filedigest of the first SMB-transferred file.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+        "published": "2024-10-30",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "2b254ae6690c9e37fa7d249e8578ee27393e47db1913816b4982867584be713a",
+        "context": "SHA256 listed in the report's IOC table (role not assigned by the report); carried by SIM-MP-030 step-03 as the WildFire-verdict filedigest of the second SMB-transferred file.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+        "published": "2024-10-30",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "f64dab23c50e3d131abcc1bdbb35ce9d68a34920dd77677730568c24a84411c5",
+        "context": "SHA256 listed in the report's IOC table and its code-signing section: a file signed with an invalid 'Tableau Software Inc.' certificate (serial 76cb5d1e6c2b6895428115705d9ac765). Card-level enrichment only; not surfaced by a scenario step.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+        "published": "2024-10-30",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "99e2ebf8cec6a0cea57e591ac1ca56dd5d505c2c3fc8f4c3da8fb8ad49f1527e",
+        "context": "SHA256 listed in the report's IOC table (role not assigned by the report). Card-level enrichment only; not surfaced by a scenario step.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+        "published": "2024-10-30",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "b4f5d37732272f18206242ccd00f6cad9fbfc12fae9173bb69f53fffeba5553f",
+        "context": "SHA256 listed in the report's IOC table and its code-signing section: a file signed with an invalid 'LAMERA CORPORATION LIMITED' certificate (serial 879fa942f9f097b74fd6f7dabcf1745a). Card-level enrichment only; not surfaced by a scenario step.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+        "published": "2024-10-30",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "b1ac26dac205973cd1288a38265835eda9b9ff2edc6bd7c6cb9dee4891c9b449",
+        "context": "SHA256 listed in the report's IOC table (role not assigned by the report). Card-level enrichment only; not surfaced by a scenario step.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+        "published": "2024-10-30",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "americajobmail.site",
+        "context": "Sliver C2 server domain (report, 'Sliver C2 Server Information'). SIM-MP-030 step-04 resolves it once through the operator's lab resolver and carries it as dst_domain on the synthetic NGFW EAL beacon records; no session is ever opened to it.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+        "published": "2024-10-30",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "172.96.137.224",
+        "context": "Sliver C2 server IP (report, 'Sliver C2 Server Information'). Carried only as the dst field of the synthetic NGFW EAL beacon records in SIM-MP-030 step-04; never contacted.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+        "published": "2024-10-30",
+        "safe_form": "log_field"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-030 Discovery Burst Staged into Public Music Folder",
+        "description": "Account and host discovery binaries (whoami /all, net localgroup, quser, nltest) whose output is redirected into C:\\Users\\Public\\Music — the staging folder the report and Adlumin tie to Play-affiliated intrusions (TokenPlayer and PsExec were found there).",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"whoami.exe\", \"net.exe\", \"net1.exe\", \"quser.exe\", \"nltest.exe\")\n| filter actor_process_command_line contains \"Public\\\\Music\" or action_process_image_command_line contains \"Public\\\\Music\"\n| comp count_distinct(action_process_image_name) as discovery_tools by agent_hostname, causality_actor_process_image_name, causality_id\n| filter discovery_tools >= 2\n| fields agent_hostname, causality_actor_process_image_name, causality_id, discovery_tools",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1033",
+          "T1069.001",
+          "T1074.001"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 Admin Share C$ Mapped Then Executable Copied into Public Music",
+        "description": "cmd.exe runs 'net use \\\\<host>\\C$' followed by 'copy' of an executable to \\\\<host>\\C$\\Users\\Public\\Music — the SMB transfer pattern the report describes for the Sliver and DTrack files.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"cmd.exe\", \"net.exe\", \"net1.exe\")\n| filter action_process_image_command_line contains \"C$\"\n| filter action_process_image_command_line contains \"net use\" or action_process_image_command_line contains \"copy\"\n| comp count() as share_ops, values(action_process_image_command_line) as cmdlines by agent_hostname, actor_effective_username, causality_id\n| filter share_ops >= 1\n| fields agent_hostname, actor_effective_username, causality_id, share_ops, cmdlines",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.002",
+          "T1570"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 Renamed System Binary Executed from Public Music",
+        "description": "A process whose image path is under C:\\Users\\Public\\Music runs with an original file name that does not match its on-disk name (a renamed Windows binary) — the implant-execution shape after the SMB copy.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_path contains \"\\\\Users\\\\Public\\\\Music\\\\\"\n| filter action_process_image_name != action_process_file_info->original_name\n| fields _time, agent_hostname, action_process_image_path, action_process_file_info, causality_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1036.003",
+          "T1204.002"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 Credential Dump Log KB0722.log Written to Windows Temp",
+        "description": "A file named KB0722.log is written to C:\\Windows\\Temp — the customized Mimikatz credential-dump log path named in the report.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE\n| filter action_file_name = \"KB0722.log\"\n| filter action_file_path contains \"\\\\Windows\\\\Temp\\\\\"\n| fields _time, agent_hostname, actor_process_image_name, action_file_path, causality_id",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1003"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 SAM Hive Registry Access by Command-Line Tool",
+        "description": "reg.exe queries or saves the HKLM\\SAM hive from an interactive shell — the registry-dump precursor the report attributes to possible Impacket secretsdump use.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"reg.exe\"\n| filter action_process_image_command_line contains \"HKLM\\\\SAM\"\n| fields _time, agent_hostname, action_process_image_command_line, causality_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1003.002"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 PsExec-Shaped Service Runs cmd as LocalSystem",
+        "description": "A short-lived service is created whose binPath is cmd.exe /c, started, and deleted within minutes — the PsExec SYSTEM-escalation shape the report describes, with its output dropped into C:\\Users\\Public\\Music.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sc.exe\"\n| filter action_process_image_command_line contains \"binPath\" and action_process_image_command_line contains \"cmd.exe /c\"\n| fields _time, agent_hostname, action_process_image_command_line, causality_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1569.002",
+          "T1543.003"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 Local Account Created and Added to Administrators",
+        "description": "net user /add followed by net localgroup administrators /add for the same new account — the privileged-account creation tool the report saw on RDP-enabled hosts.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"net.exe\", \"net1.exe\")\n| filter action_process_image_command_line contains \"/add\"\n| comp count() as adds, values(action_process_image_command_line) as cmdlines by agent_hostname, causality_id\n| filter adds >= 2\n| fields agent_hostname, causality_id, adds, cmdlines",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1136.001",
+          "T1098"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 Security Sensor Service Stopped Disabled and Deleted",
+        "description": "sc.exe stop, config start= disabled and delete against the same service in one causality chain — the EDR-sensor removal sequence the report saw just before Play deployment. Exercised against a cortexsim- prefixed dummy service, never a real security product.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"sc.exe\"\n| filter action_process_image_command_line contains \"stop\" or action_process_image_command_line contains \"disabled\" or action_process_image_command_line contains \"delete\"\n| comp count_distinct(action_process_image_command_line) as tamper_ops by agent_hostname, causality_id\n| filter tamper_ops >= 3\n| fields agent_hostname, causality_id, tamper_ops",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1562.001",
+          "T1489"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 Silent msiexec Product Uninstall",
+        "description": "msiexec.exe /x <product code> /qn from an administrative shell in the same chain as the service tampering — the mass-uninstall shape for EDR sensors.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"msiexec.exe\"\n| filter action_process_image_command_line contains \"/x\" and action_process_image_command_line contains \"/qn\"\n| fields _time, agent_hostname, action_process_image_command_line, causality_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1562.001"
+        ],
+        "suppression_window_seconds": 300
+      },
+      {
+        "name": "MP-030 Mass File Rename to PLAY Extension with Ransom Note Drop",
+        "description": "One process renames many files in a directory to a .PLAY extension and writes a ReadMe.txt alongside — the Play ransomware impact shape (CISA AA23-352A), exercised on a cortexsim- canary directory only.",
+        "logic": "preset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_RENAME\n| filter action_file_name contains \".PLAY\"\n| comp count() as renames by agent_hostname, actor_process_image_name, causality_id\n| filter renames >= 10\n| fields agent_hostname, actor_process_image_name, causality_id, renames",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1486"
+        ],
+        "suppression_window_seconds": 300
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-030 Compromised Account Uncommon Administrative Share Access",
+        "description": "Inferred identity view (the report names the C$ share mapping by the compromised account, not an identity alert): a user account accesses a host's C$ administrative share for the first time and writes executables. Share events 5140/5145 land on the TARGET host, so the alert is keyed on source_address (the victim's IP) and user_name; with the default STAGE_HOST=127.0.0.1 the target is the victim itself and source_address is loopback.",
+        "logic": "dataset = msft_windows_security\n| filter event_id in (5140, 5145)\n| filter share_name contains \"C$\"\n| comp count() as share_events, count_distinct(event_id) as event_kinds, values(host_name) as target_hosts by user_name, source_address\n| filter event_kinds >= 2\n| fields user_name, source_address, target_hosts, share_events, event_kinds",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1021.002",
+          "T1078"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-user administrative-share baseline -> first-seen user-to-host C$ access with executable write, anchored to source_address (the victim src_host's IP) and the user principal."
+      },
+      {
+        "name": "MP-030 Sliver Recurring Beacon to Rare Domain",
+        "description": "The victim host produces a tight recurring burst of small ssl/443 sessions to a fleet-rare domain — the Sliver beaconing the report observed for months. With the report's C2 domain and IP in dst_hostname/dst, the case also enriches as the actor.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssl\" and dst_port = 443\n| comp count() as sessions, avg(bytes_sent) as avg_sent by src, endpoint_device_name, dst_hostname, dst\n| filter sessions >= 8\n| fields src, endpoint_device_name, dst_hostname, dst, sessions, avg_sent",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001",
+          "T1573"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Learned source-host egress baseline -> recurring cadence to a rare destination, anchored to the source host (src / endpoint_device_name) the endpoint alerts name."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-030 WildFire Verdict Records for Report Hashes Landed in panw_ngfw_threat_raw",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter subtype = \"wildfire\" and verdict = \"malicious\"\n| filter filedigest in (\"243ad5458706e5c836f8eb88a9f67e136f1fa76ed44868217dc995a8c7d07bf7\", \"2b254ae6690c9e37fa7d249e8578ee27393e47db1913816b4982867584be713a\")\n| comp count() as verdicts by endpoint_device_name, src, filedigest\n| fields endpoint_device_name, src, filedigest, verdicts",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-030 Sliver C2 Domain and IP Sessions Stitched to the Victim Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter dst_hostname = \"americajobmail.site\" or dst = \"172.96.137.224\"\n| comp count() as sessions by endpoint_device_name, src, user\n| filter sessions >= 1\n| fields endpoint_device_name, src, user, sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "Jumpy Pisces to Play Hand-off — Endpoint, Network and Identity Stitch on One Host",
+        "rule_id": "CR-MP-0030",
+        "logic": "BIOC(MP-030 Admin Share C$ Mapped Then Executable Copied into Public Music) AND ABIOC(MP-030 Compromised Account Uncommon Administrative Share Access) AND (IOC(file-sha256 from the report on panw_ngfw_threat_raw) OR ABIOC(MP-030 Sliver Recurring Beacon to Rare Domain)) AND BIOC(MP-030 Credential Dump Log KB0722.log Written to Windows Temp) AND BIOC(MP-030 Security Sensor Service Stopped Disabled and Deleted) AND BIOC(MP-030 Mass File Rename to PLAY Extension with Ransom Note Drop) within 3600s on the same src_host (agent_hostname on xdr_data; endpoint_device_name on the NGFW records; on msft_windows_security the share events land on the target host, so the identity leg keys on source_address = the src_host's IP, not host_name) -> one incident naming the compromised account, the Sliver C2 (americajobmail.site / 172.96.137.224) and the EDR-removal-then-impact sequence."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM correlation — endpoint + NGFW + identity incident stitching on src_host",
+        "validated": false,
+        "note": "CR-MP-0030 is authored, not tenant-verified (tenant-verified = 0)."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "bioc",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-MP030-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = xdr_data | filter action_file_name = \"KB0722.log\" | fields agent_hostname, causality_id"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0030"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter dst_hostname = \"americajobmail.site\" | comp count() by endpoint_device_name"
+      },
+      {
+        "module": "advanced-wildfire",
+        "submodule": "verdict-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-WF-MP030-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_threat_raw | filter subtype = \"wildfire\" | comp count() by filedigest"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-030",
+        "name": "Jumpy Pisces to Play hand-off on one host",
+        "description": "Endpoint lateral transfer, Sliver C2, identity share access, credential theft, EDR removal and impact on one src_host stitch into a single incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-030A",
+            "objective": "Lateral tool transfer and C2 legs fire and share src_host.",
+            "preconditions": [
+              "XDR agent on the lab Windows host",
+              "NGFW collector feeding panw_ngfw_traffic_raw and panw_ngfw_threat_raw"
+            ],
+            "steps": [
+              "Run step-01..04",
+              "Query the two validation XQLs"
+            ],
+            "success_criteria": [
+              "Admin-share BIOC and ITDR ABIOC fire on the Windows host",
+              "NGFW records name the same endpoint_device_name and the report C2 domain/IP"
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-030B",
+            "objective": "Pre-ransomware and impact stages fire and CR-MP-0030 raises one incident.",
+            "preconditions": [
+              "TS-MP-030A executed"
+            ],
+            "steps": [
+              "Run step-05..08",
+              "Inspect the incident"
+            ],
+            "success_criteria": [
+              "KB0722.log, PsExec-shaped service, sensor-removal and PLAY-rename BIOCs fire",
+              "Exactly one incident spans EDR, NDR and ITDR alerts for the host"
+            ],
+            "expected_score_weight": 0.6
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enforce MFA and conditional access on firewall/VPN-fronted accounts; the intrusion began with a compromised account through a firewall device.",
+      "Restrict administrative share (C$) access and local admin rights; use LAPS so one account cannot map C$ across hosts.",
+      "Enable agent tamper protection and an uninstall password so a SYSTEM shell cannot remove EDR sensors."
+    ],
+    "detection_engineering": [
+      "Alert on net use to C$ followed by an executable copy into C:\\Users\\Public\\Music.",
+      "Alert on any EDR/security service stop-disable-delete sequence or silent msiexec /x from an interactive chain.",
+      "Enrich NGFW traffic against the report's Sliver C2 domain and IP and join on the endpoint hostname."
+    ],
+    "response_playbook": "XSOAR-PB-JumpyPiscesPlayHandoff-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — Jumpy Pisces Engages in Play Ransomware",
+      "url": "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "CISA — #StopRansomware: Play Ransomware (AA23-352A)",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-352a",
+      "publisher": "CISA",
+      "publisher_id": "SRC-CISA"
+    },
+    {
+      "title": "MITRE ATT&CK — Andariel (G0138)",
+      "url": "https://attack.mitre.org/groups/G0138/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

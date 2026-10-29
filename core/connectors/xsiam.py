@@ -402,6 +402,8 @@ class XsiamConnector(Connector):
             alert_source=_s(a.get("source") or a.get("alert_source")),
             category=_s(a.get("category")),
             incident_id=_s(a.get("incident_id") or a.get("case_id")),
+            action=_s(a.get("action")),
+            action_pretty=_s(a.get("action_pretty")),
             raw=a,
         )
 

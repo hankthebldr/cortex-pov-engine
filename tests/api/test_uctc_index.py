@@ -53,11 +53,17 @@ def seeded(session_factory):
     169 -> 170 on 2026-08-05: SIM-EDR-022, the payload-shelf EDR scenario. The
     count guards against a truncated CSV making every assertion below trivially
     pass, so it moves deliberately with the corpus and never by default.
+    170 -> 189 on 2026-10-27: library signal expansion (SIM-MP-023..034, Unit 42
+    stitched chains) plus the 7 rows ccf40d5 bound in the generator but never emitted.
+    189 -> 192 on 2026-10-28: SIM-MP-035..037 (Unit 42 recent chains: Bugster, PAN-OS
+    CVE-2026-0257, PHP2Shell). All three bind already-evidenced TCs, so the evidenced
+    pins (90) do not move; in-use payloads 34 -> 35 (POV-SC-013).
+    192 -> 193 on 2026-10-28: SIM-KOI-009 (GlassWorm agentic endpoint, binds already-evidenced TC-SCA-01/TC-SSCAN-01; evidenced pins unchanged).
     """
     from models import Scenario  # noqa: PLC0415
 
     rows = list(csv.DictReader(CROSSWALK.open(encoding="utf-8")))
-    assert len(rows) == 170
+    assert len(rows) == 193
 
     async def _seed() -> None:
         async with session_factory() as session:
@@ -110,7 +116,7 @@ def test_summary_reports_the_index_totals(client, seeded):
 
 def test_summary_reports_the_evidence_ground_truth(client, seeded):
     ev = client.get("/api/uctc/summary").json()["evidence"]
-    assert ev["evidenced"] == 89
+    assert ev["evidenced"] == 90  # 89 -> 90 on 2026-10-27: TC-DLP-07 enters via the CSV catch-up (ccf40d5 rows)
     assert ev["detection_backable"] == 107
     assert ev["evidenced_detection_backable"] == 70
     # Over half the detection-backable surface carries no measurable threshold,
@@ -373,7 +379,7 @@ def test_unknown_test_case_is_a_structured_404(client, seeded):
 def test_coverage_totals_match_the_summary(client, seeded):
     cov = client.get("/api/uctc/coverage").json()
     summ = client.get("/api/uctc/summary").json()["evidence"]
-    assert cov["totals"]["evidenced"] == summ["evidenced"] == 89
+    assert cov["totals"]["evidenced"] == summ["evidenced"] == 90
     assert cov["totals"]["evidenced_detection_backable"] == 70
 
 
@@ -448,7 +454,7 @@ def test_payloads_report_engine_usage_and_the_split_flag(client, seeded):
     body = client.get("/api/uctc/payloads").json()
     assert body["total"] == 140
     in_use = client.get("/api/uctc/payloads?in_use=true").json()
-    assert in_use["total"] == 33
+    assert in_use["total"] == 35  # 33 -> 34 on 2026-10-27: same CSV catch-up; 34 -> 35 on 2026-10-28: SIM-MP-037 binds POV-SC-013
     assert all(p["scenario_count"] > 0 for p in in_use["payloads"])
     sc1 = next(p for p in body["payloads"] if p["pov_scenario_id"] == "POV-SC-001")
     assert sc1["needs_split"] is True

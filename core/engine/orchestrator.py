@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("cortexsim.orchestrator")
@@ -193,6 +194,12 @@ class Orchestrator:
         identity: Optional[str] = None,
         consent: Optional[dict[str, bool]] = None,
         allow_runtime_install: bool = False,
+        agent_profile_mode: str = "unknown",
+        bas_mode_attested: Optional[bool] = None,
+        soakless_attested: Optional[bool] = None,
+        attested_by: Optional[str] = None,
+        paired_with_run_id: Optional[str] = None,
+        canary_run_id: Optional[str] = None,
     ) -> LaunchResult:
         """
         Create a Run record and route to pull or push path.
@@ -224,6 +231,13 @@ class Orchestrator:
         on the Run and threaded onto the Task; a request that asked for it on a
         deployment that has not enabled it is recorded honestly as False, not
         silently upgraded or silently dropped without a trace.
+
+        Prevention-efficacy launch context (``agent_profile_mode`` and the
+        attestation fields) is operator-declared and persisted verbatim on the
+        Run. ``paired_with_run_id`` links a block-mode launch to its completed
+        report-mode run and is validated by ``pairing.validate_pair`` after the
+        consent gate and before the Run row exists, so a refused pair
+        (``PAIR_INVALID``) seeds nothing.
 
         Missing consent aborts the launch with a structured error and creates
         no Run record.
@@ -259,6 +273,89 @@ class Orchestrator:
                 error_detail=_refusal_detail(gate_error),
             )
 
+        # Pair validation: after consent, before any Run row, so a refused pair
+        # leaves the database untouched.
+        if paired_with_run_id:
+            from engine.pairing import validate_pair  # noqa: PLC0415
+
+            first = (await db.execute(
+                select(Run).where(Run.run_id == paired_with_run_id)
+            )).scalar_one_or_none()
+            if first is None:
+                pair_error: Optional[str] = (
+                    f"paired_with_run_id '{paired_with_run_id}' does not match any run"
+                )
+            else:
+                pair_error = validate_pair(
+                    first,
+                    scenario_id=scenario_id,
+                    target_agent_id=target_agent_id,
+                    agent_profile_mode=agent_profile_mode,
+                )
+                if pair_error is None:
+                    other = (await db.execute(
+                        select(Run.run_id).where(
+                            Run.paired_with_run_id == paired_with_run_id
+                        ).limit(1)
+                    )).scalar_one_or_none()
+                    if other is not None:
+                        pair_error = (
+                            f"first run {paired_with_run_id} is already paired with {other}"
+                        )
+            if pair_error is not None:
+                logger.warning(
+                    "Launch refused scenario=%s code=PAIR_INVALID reason=%s",
+                    scenario_id, pair_error,
+                )
+                return LaunchResult(
+                    success=False,
+                    error="Run pairing refused",
+                    error_code="PAIR_INVALID",
+                    error_detail=pair_error,
+                )
+
+        # Canary validation: same position and refusal shape as the pair check.
+        block_mode_status: Optional[str] = None
+        if canary_run_id:
+            from engine import canary  # noqa: PLC0415
+            from models import Result  # noqa: PLC0415
+
+            canary_run = (await db.execute(
+                select(Run).where(Run.run_id == canary_run_id)
+            )).scalar_one_or_none()
+            canary_error: Optional[str] = None
+            if canary_run is None:
+                canary_error = f"canary_run_id '{canary_run_id}' does not match any run"
+            elif canary_run.scenario_id != canary.canary_scenario_id("linux"):
+                canary_error = (
+                    f"run {canary_run_id} is scenario '{canary_run.scenario_id}', "
+                    "not the configured canary scenario"
+                )
+            elif canary_run.target != target_agent_id:
+                canary_error = (
+                    f"canary run {canary_run_id} targeted '{canary_run.target}', "
+                    f"not this launch's target '{target_agent_id}'"
+                )
+            elif canary_run.status == "aborted":
+                canary_error = f"canary run {canary_run_id} was aborted and proves nothing"
+            elif not canary.is_terminal(canary_run):
+                canary_error = f"canary run {canary_run_id} has not finished"
+            if canary_error is not None:
+                logger.warning(
+                    "Launch refused scenario=%s code=CANARY_INVALID reason=%s",
+                    scenario_id, canary_error,
+                )
+                return LaunchResult(
+                    success=False,
+                    error="Canary run refused",
+                    error_code="CANARY_INVALID",
+                    error_detail=canary_error,
+                )
+            canary_results = (await db.execute(
+                select(Result).where(Result.run_id == canary_run_id)
+            )).scalars().all()
+            block_mode_status = canary.block_mode_status_from(canary_run, canary_results)
+
         # Two-key gate — same posture as CORTEXSIM_XSIAM_ALLOW_WRITE. A single
         # mis-set request body can never authorize a target mutation on its own.
         runtime_install_authorized = bool(
@@ -288,6 +385,14 @@ class Orchestrator:
         run_id = str(uuid.uuid4())
         now = datetime.utcnow()
 
+        # The profile mode is itself an attestation, as is any attestation field.
+        attested = (
+            agent_profile_mode != "unknown"
+            or bas_mode_attested is not None
+            or soakless_attested is not None
+            or attested_by is not None
+        )
+
         run = Run(
             run_id=run_id,
             scenario_id=scenario_id,
@@ -298,9 +403,30 @@ class Orchestrator:
             started_at=now,
             runtime_install_authorized=runtime_install_authorized,
             runtime_dependency_gaps=runtime_dependency_gaps,
+            agent_profile_mode=agent_profile_mode,
+            bas_mode_attested=bas_mode_attested,
+            soakless_attested=soakless_attested,
+            attested_by=attested_by,
+            attested_at=now if attested else None,
+            paired_with_run_id=paired_with_run_id,
+            canary_run_id=canary_run_id,
+            block_mode_status=block_mode_status,
         )
         db.add(run)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError:
+            # The unique partial index on runs.paired_with_run_id is the
+            # authority when two launches race past the pre-insert read.
+            await db.rollback()
+            if paired_with_run_id:
+                return LaunchResult(
+                    success=False,
+                    error="Run pairing refused",
+                    error_code="PAIR_INVALID",
+                    error_detail=f"first run {paired_with_run_id} is already paired",
+                )
+            raise
 
         # Auto-populate Result records from scenario expected_detections
         await self._seed_results(run_id, scenario, now, db)
@@ -601,10 +727,18 @@ class Orchestrator:
                 error=f"STITCH_CONTEXT_INVALID: {exc}",
             )
 
-        steps = _resolve_stitch_placeholders(
-            _resolve_adapter_placeholders(scenario.steps or []),
-            binding,
+        egress_warnings = _egress_warnings(scenario)
+        adapter_steps, required_binaries = _resolve_adapter_placeholders_with_binaries(
+            scenario.steps or []
         )
+        steps = _resolve_stitch_placeholders(adapter_steps, binding)
+        # The beacon refuses a step whose binary is not on PATH (not_run /
+        # TOOL_ABSENT); this is the server half that fills the list. Written
+        # only when non-empty, like `platforms` (the beacon field is omitempty).
+        for s_ in steps:
+            req = required_binaries.get(s_.get("id"))
+            if req:
+                s_["required_binaries"] = list(req)
 
         # ── Channel dispatch (Phase 3a skeleton) ────────────────────────────
         # A run is "multichannel" the moment ANY step carries a non-agent
@@ -776,6 +910,20 @@ class Orchestrator:
             run.channel_dispatch = channel_dispatch
             await db.commit()
 
+        # Surface the egress warning on the run itself, before any beacon can
+        # write: the console shows Run.output, a log line is not seen by a DC.
+        if egress_warnings:
+            lines = "".join(
+                f"!! TARGET_EGRESS_REQUIRED: {aid} — {text}\n"
+                for aid, text in egress_warnings
+            )
+            await db.execute(
+                update(Run)
+                .where(Run.run_id == run_id)
+                .values(output=func.coalesce(Run.output, "") + lines)
+            )
+            await db.commit()
+
         # Only now is the run's state durable enough for a beacon to act on.
         for agent_id, task in to_enqueue:
             self._enqueue(agent_id, task)
@@ -893,8 +1041,11 @@ class Orchestrator:
                     verification_xql=detection.get("verification_xql"),
                     kpi_contribution=detection.get("kpi_contribution"),
                     kpi_verdict="pending" if detection.get("verification_xql") else None,
+                    expected_outcome=detection.get("outcome", "detect"),
                 )
                 if card is not None:
+                    if card.kind == "prevention":
+                        result.prevention_module = card.module
                     result.detection_kind = card.kind
                     result.detection_logic = card.logic
                     result.detection_severity = card.severity
@@ -1171,11 +1322,38 @@ def _compose_artifacts(scenario: Any) -> list[dict[str, Any]]:
         consumer="beacon",
     )
     for warning in plan.warnings:
-        logger.info(
+        # WARNING, not INFO: TARGET_EGRESS_REQUIRED means a step may run on a
+        # target that lacks its tool, which reads as "Cortex missed it".
+        logger.warning(
             "payload plan %s (%s): %s",
             plan.composition_id, warning.get("code"), warning.get("detail"),
         )
     return plan.to_beacon_artifacts()
+
+
+def _egress_warnings(scenario: Any) -> list[tuple[str, str]]:
+    """``(adapter_id, text)`` for every referenced adapter the target must
+    already carry (the shelf has nothing staged for it).
+
+    A separate call from :func:`_compose_artifacts` so that function keeps its
+    one-argument contract. Only reached after ``_compose_artifacts`` succeeded,
+    so ``compose`` cannot raise a resolution error here.
+    """
+    from engine.payload_shelf import compose  # noqa: PLC0415 — import cycle
+
+    plan = compose(
+        scenario={
+            "scenario_id": getattr(scenario, "scenario_id", None),
+            "external_tools": getattr(scenario, "external_tools", None) or [],
+            "cluster_posture": getattr(scenario, "cluster_posture", None) or {},
+        },
+        consumer="beacon",
+    )
+    return [
+        (str(w.get("adapter_id") or ""), str(w.get("detail") or ""))
+        for w in plan.warnings
+        if w.get("code") == "TARGET_EGRESS_REQUIRED"
+    ]
 
 
 def _task_from_payload(payload: dict[str, Any]) -> Optional[Task]:
@@ -1460,19 +1638,49 @@ def _resolve_adapter_placeholders(steps: list[dict[str, Any]]) -> list[dict[str,
     Returns a NEW list of step dicts; the input is never mutated (scenarios
     are loaded once at boot and shared across runs).
     """
+    return _resolve_adapter_placeholders_with_binaries(steps)[0]
+
+
+def _resolve_adapter_placeholders_with_binaries(
+    steps: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:
+    """:func:`_resolve_adapter_placeholders` plus, per step id, the
+    ``install.binary`` of every pack whose placeholder was substituted into
+    that step (deduplicated, in substitution order).
+
+    A resolved pack with no ``install.binary`` contributes nothing and logs
+    ``TOOL_PRESENCE_UNCHECKED`` -- the step runs unchecked, never silently
+    treated as verified.
+    """
     from tools.adapter_catalog import catalog  # noqa: PLC0415
 
     rendered_steps: list[dict[str, Any]] = []
+    binaries: dict[str, list[str]] = {}
     for step in steps:
         new_step = dict(step)  # shallow copy is sufficient — we only edit ``command``
         cmd = new_step.get("command")
         if isinstance(cmd, str) and "{adapter:" in cmd:
-            new_step["command"] = _ADAPTER_PLACEHOLDER_RE.sub(
-                lambda m: _render_adapter(catalog.find(m.group(1)), m.group(0)),
-                cmd,
-            )
+            step_id = new_step.get("id")
+
+            def _sub(m: Any, _sid: Any = step_id) -> str:
+                adapter = catalog.find(m.group(1))
+                rendered = _render_adapter(adapter, m.group(0))
+                if adapter is not None and rendered != m.group(0):
+                    binary = getattr(adapter.install, "binary", None)
+                    if binary:
+                        bucket = binaries.setdefault(_sid, [])
+                        if binary not in bucket:
+                            bucket.append(binary)
+                    else:
+                        logger.warning(
+                            "TOOL_PRESENCE_UNCHECKED adapter=%s step=%s",
+                            adapter.adapter_id, _sid,
+                        )
+                return rendered
+
+            new_step["command"] = _ADAPTER_PLACEHOLDER_RE.sub(_sub, cmd)
         rendered_steps.append(new_step)
-    return rendered_steps
+    return rendered_steps, binaries
 
 
 def _render_adapter(adapter: Optional[Any], original_placeholder: str) -> str:

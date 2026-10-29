@@ -62,6 +62,25 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_RECONCILE_INTERVAL: int = 300          # seconds between sweeps
     CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
     CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
+    # A delivered run whose agent is offline and silent this long is terminalised
+    # as beacon_lost by the heartbeat sweep (the XDR agent may kill the beacon).
+    CORTEXSIM_BEACON_LOST_AFTER_SECONDS: int = 180
+
+    # Match window for Analytics / ABIOC expectations, used by every reconcile
+    # path (manual /observations, /reconcile, the auto sweep) via
+    # connectors.service.window_by_type(). The per-detector activation and test
+    # periods live in the *Cortex XDR Analytics Alert Reference Guide*
+    # (docs-cortex.paloaltonetworks.com, "Cortex XDR Analytics Alert Reference
+    # Guide" -- each detector page lists its activation period and test period).
+    # This default is the largest window /reconcile already accepts (86400 s); a
+    # longer window can only delay a `missed`, never manufacture one. Tighten
+    # against the guide for the detectors a POV actually exercises.
+    CORTEXSIM_RECONCILE_WINDOW_ANALYTICS: int = 86400
+
+    # Scenario id of the built-in canary (a benign trigger the agent is expected
+    # to terminate) used by POST /api/runs/canary to prove a block-mode profile.
+    # Empty = no canary shipped: block mode is attested-only, the honest default.
+    CORTEXSIM_CANARY_SCENARIO_LINUX: str = ""
 
     # Auto-verify phase of the reconcile sweep. OFF by default and, unlike
     # reconcile, it runs XQL against the customer's tenant — a metered resource

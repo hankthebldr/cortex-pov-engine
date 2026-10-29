@@ -36,6 +36,10 @@ type ExecResult struct {
 	Stdout   string
 	Stderr   string
 	Duration time.Duration
+	// Termination is how the process ended: "exited", "signaled" or "aborted".
+	Termination string
+	// Signal is the terminating signal number when Termination is "signaled", else 0.
+	Signal int
 }
 
 // WrapCommand returns the exact shell string this harness would hand to the
@@ -69,33 +73,40 @@ func ExecuteCtxStream(ctx context.Context, identity ExecutionIdentity, onChunk e
 	}
 
 	start := time.Now()
-	stdout, stderr, exitCode, execErr := executor.RunCommandCtxStream(ctx, wrapped, onChunk)
+	o, execErr := executor.RunCommandCtxStreamOutcome(ctx, wrapped, onChunk)
 	duration := time.Since(start)
+	stdout, stderr, exitCode := o.Stdout, o.Stderr, o.ExitCode
 
 	if execErr != nil {
 		// context.Canceled is propagated verbatim so the caller can distinguish an
 		// operator abort from a genuine execution error; both carry captured output.
 		if execErr == context.Canceled {
 			return ExecResult{
-				ExitCode: exitCode,
-				Stdout:   stdout,
-				Stderr:   stderr,
-				Duration: duration,
+				ExitCode:    exitCode,
+				Stdout:      stdout,
+				Stderr:      stderr,
+				Duration:    duration,
+				Termination: o.Termination,
+				Signal:      o.Signal,
 			}, execErr
 		}
 		return ExecResult{
-			ExitCode: exitCode,
-			Stdout:   stdout,
-			Stderr:   stderr,
-			Duration: duration,
+			ExitCode:    exitCode,
+			Stdout:      stdout,
+			Stderr:      stderr,
+			Duration:    duration,
+			Termination: o.Termination,
+			Signal:      o.Signal,
 		}, fmt.Errorf("identity.Execute [mode=%s user=%s]: %w", identity.Mode, identity.Username, execErr)
 	}
 
 	return ExecResult{
-		ExitCode: exitCode,
-		Stdout:   stdout,
-		Stderr:   stderr,
-		Duration: duration,
+		ExitCode:    exitCode,
+		Stdout:      stdout,
+		Stderr:      stderr,
+		Duration:    duration,
+		Termination: o.Termination,
+		Signal:      o.Signal,
 	}, nil
 }
 

@@ -28,6 +28,8 @@ import tarfile
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
+from engine.outcome import is_hit, is_in_denominator, row_status
+
 
 logger = logging.getLogger("cortexsim.engine.report_generator")
 
@@ -77,14 +79,32 @@ def _severity_from_detection_type(detection_type: str | None,
     return "Medium"
 
 
-def _status_from_result(observed: bool, has_observed_at: bool) -> str:
-    if observed:
-        return "ENABLED"
-    if has_observed_at:
-        # observed_at was set but observed flag is false → DC marked
-        # explicitly missed.
-        return "DISABLED"
-    return "PENDING"
+def _row_status(r: dict[str, Any]) -> str:
+    """``engine.outcome.row_status`` over a ``Result.to_dict()`` mapping."""
+    return row_status(r.get("outcome"), bool(r.get("observed")))
+
+
+def _is_hit(r: dict[str, Any]) -> bool:
+    """``engine.outcome.is_hit`` over a ``Result.to_dict()`` mapping (R1)."""
+    return is_hit(r.get("outcome"), bool(r.get("observed")))
+
+
+_MATRIX_STATUS = {
+    "prevented": "PREVENTED", "not_reached": "NOT_RUN", "not_executed": "NOT_RUN",
+    "detected": "ENABLED", "missed": "DISABLED", "pending": "PENDING",
+}
+
+
+def _status_from_result(observed: bool, has_observed_at: bool, outcome: Optional[str] = None) -> str:
+    """Matrix label via the one rule, ``engine.outcome.row_status``.
+
+    ``has_observed_at`` no longer decides anything: an outcome-less row is
+    awaiting judgement (PENDING), and only ``outcome == "missed"`` is DISABLED.
+    The ``validate`` endpoint clears ``observed_at`` with ``observed=False``,
+    so "observed_at without observed" was an inference, not a recorded verdict.
+    """
+    del has_observed_at  # kept for call-site compatibility
+    return _MATRIX_STATUS[row_status(outcome, observed)]
 
 
 def build_detection_matrix(
@@ -102,7 +122,7 @@ def build_detection_matrix(
     scenario_techniques = _scenario_technique_set(scenario_dict)
 
     for r in results:
-        observed = bool(r.get("observed"))
+        observed = _is_hit(r)
         has_obs_at = bool(r.get("observed_at"))
         # The "Source(s)" column maps roughly to plane (the customer
         # cares which Cortex engine fires). EAL plugins and AIRS land in
@@ -115,7 +135,7 @@ def build_detection_matrix(
         out.append(DetectionMatrixRow(
             alert_name=r.get("expected_detection") or "—",
             sources=plane,
-            status=_status_from_result(observed, has_obs_at),
+            status=_status_from_result(observed, has_obs_at, outcome=r.get("outcome")),
             alert_type=r.get("signal_type") or "Analytics",
             attack_tid=tid or "—",
             severity=_severity_from_detection_type(r.get("signal_type"), observed),
@@ -155,7 +175,7 @@ def render_attack_navigator_layer(
         tid = r.get("mitre_technique")
         if not tid:
             continue
-        observed = bool(r.get("observed"))
+        observed = _is_hit(r)
         slot = by_tid.setdefault(tid, {"observed": False, "comments": set()})
         slot["observed"] = slot["observed"] or observed
         # Surface the plane / signal-type as the Navigator comment so
@@ -163,7 +183,9 @@ def render_attack_navigator_layer(
         # lab's "DETECTED - Agent Analytics" style).
         plane = r.get("plane") or "—"
         signal = r.get("signal_type") or "Analytics"
-        marker = "DETECTED" if observed else "MISSED"
+        status = _row_status(r)
+        marker = ("DETECTED" if observed else "MISSED" if status == "missed"
+                  else "PENDING")
         slot["comments"].add(f"{marker} - {plane} {signal}")
 
     # Also include the scenario's primary + additional techniques even
@@ -201,12 +223,17 @@ def render_exec_summary_markdown(
     """Render the exec-level markdown summary (matches the lab template)."""
     s = scenario_dict or {}
     total = len(results)
-    observed = sum(1 for r in results if r.get("observed"))
-    # A result is ADJUDICATED once a DC has marked it observed or explicitly
-    # missed (observed_at set). A still-pending result is "not measured yet",
+    # The one denominator rule and the one numerator predicate: a row whose
+    # step never ran (or that is soaking) leaves both; pending is never a hit.
+    in_den = [r for r in results
+              if is_in_denominator(r.get("outcome"), r.get("outcome_reason"))]
+    denominator = len(in_den)
+    observed = sum(1 for r in in_den if _is_hit(r))
+    # A result is ADJUDICATED once the one rule (``row_status``) gives it any
+    # status but ``pending``. A still-pending result is "not measured yet",
     # never "missed" — folding pending into a miss manufactures a false negative.
-    validated = sum(1 for r in results if r.get("observed") or r.get("observed_at"))
-    coverage_pct = round(observed / total * 100, 1) if total else 0.0
+    validated = sum(1 for r in in_den if _row_status(r) != "pending")
+    coverage_pct = round(observed / denominator * 100, 1) if denominator else 0.0
     mttds = [r["mttd_seconds"] for r in results if r.get("mttd_seconds") is not None]
     avg_mttd = round(sum(mttds) / len(mttds), 1) if mttds else None
 
@@ -237,7 +264,13 @@ def render_exec_summary_markdown(
     lines.append("")
     lines.append("## Key Findings")
     lines.append("")
-    lines.append(f"- **Coverage:** {observed} / {total} expected detections observed ({coverage_pct}%).")
+    if denominator:
+        lines.append(f"- **Coverage:** {observed} / {denominator} expected detections observed ({coverage_pct}%)"
+                     + (f"; {total - denominator} excluded (never ran or soaking)." if total > denominator else "."))
+    else:
+        lines.append(f"- **Coverage:** not measurable — {total} expected detection(s), "
+                     f"none in the denominator (never ran or soaking)."
+                     if total else "- **Coverage:** no expected detections defined.")
     if avg_mttd is not None:
         lines.append(f"- **MTTD (average across observed):** {avg_mttd}s.")
     lines.extend(_measurement_lines(run_dict, s))
@@ -260,9 +293,15 @@ def render_exec_summary_markdown(
                 "nothing to detect. Bind the scenario's expected detections "
                 "before using this run for a POV readout."
             )
+        elif denominator == 0:
+            verdict = (
+                f"None of the {total} expected detections can be scored yet — "
+                f"their steps never ran or their detectors are still soaking — so "
+                f"coverage cannot be concluded from this run."
+            )
         else:
             verdict = (
-                f"No detections have been validated yet ({total} pending DC "
+                f"No detections have been validated yet ({denominator} pending DC "
                 f"validation), so coverage cannot be concluded — the seeded "
                 f"results have simply not been adjudicated against the Cortex "
                 f"console yet. Validate them before customer hand-off."
@@ -412,15 +451,23 @@ def _findings_paragraph(results: list[dict[str, Any]]) -> str:
     """Compose a 1-2 line readable findings string."""
     if not results:
         return "No expected detections were defined for this run."
-    n_observed = sum(1 for r in results if r.get("observed"))
-    n_missed = sum(1 for r in results if not r.get("observed") and r.get("observed_at"))
-    n_pending = len(results) - n_observed - n_missed
+    statuses = [_row_status(r) for r in results]
+    n_observed = sum(1 for r in results if _is_hit(r))
+    n_missed = statuses.count("missed")
+    # A step that never ran is not awaiting a DC: say what happened to it.
+    n_not_reached = statuses.count("not_reached")
+    n_not_executed = statuses.count("not_executed")
+    n_pending = len(results) - n_observed - n_missed - n_not_reached - n_not_executed
 
     parts = []
     if n_observed:
         parts.append(f"{n_observed} alert(s) fired as expected")
     if n_missed:
-        parts.append(f"{n_missed} alert(s) explicitly marked missed")
+        parts.append(f"{n_missed} alert(s) missed")
+    if n_not_reached:
+        parts.append(f"{n_not_reached} not reached (chain severed)")
+    if n_not_executed:
+        parts.append(f"{n_not_executed} not executed")
     if n_pending:
         parts.append(f"{n_pending} pending DC validation")
     return "; ".join(parts) + "."

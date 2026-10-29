@@ -28,11 +28,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from connectors import ConnectorConfig, get_connector, reconcile
 from connectors.base import HttpFetcher
-from connectors.matcher import scope_to_host
-from connectors.measures import CORRELATION, build_measurement, kpi_family
+from connectors.matcher import DEFAULT_WINDOW_SECONDS, scope_to_host
+from connectors.measures import (
+    CORRELATION,
+    build_measurement,
+    denominator_exclusion,
+    empty_exclusions,
+    kpi_family,
+)
+from engine.outcome import (
+    EVIDENCE_INCOMPLETE,
+    EXCLUDED_FROM_DENOMINATOR,
+    OUTCOME_DETECTED,
+    OUTCOME_MISSED,
+    OUTCOME_PENDING,
+    OUTCOME_PREVENTED,
+    SOAK_REASONS,
+    PASS_WITHHELD_UNSCOPED,
+    PreventVerdict,
+    evaluate_prevent,
+    silent_detect_verdict,
+    is_hit,
+    soak_pending_reason,
+)
 from events import event_bus
 from integrations.xsiam.codes import remediation_for
-from models import Agent, Result, Run, Scenario
+from models import Agent, Observation, Result, Run, Scenario, StepOutcome
 from security.credentials import CredentialStore
 
 logger = logging.getLogger("cortexsim.connectors.service")
@@ -46,6 +67,17 @@ class ReconcileError(Exception):
         super().__init__(message)
         self.code = code
         self.detail = detail
+
+
+def window_by_type() -> dict[str, int]:
+    """Per-``Result.signal_type`` match windows, passed to every ``reconcile``.
+
+    Analytics/ABIOC detectors fire on a timescale the default window does not
+    cover (activation and test periods per the *Cortex XDR Analytics Alert
+    Reference Guide*); every other type uses the caller's ``window_seconds``.
+    """
+    w = int(settings.CORTEXSIM_RECONCILE_WINDOW_ANALYTICS)
+    return {"Analytics": w, "ABIOC": w}
 
 
 @dataclass
@@ -118,7 +150,10 @@ async def reconcile_run(
 
     scope_host = host if host is not None else await resolve_run_host(db, run)
     eligible, host_scope = scope_to_host(pull.observations, scope_host)
-    verdicts = reconcile(results, eligible, window_seconds=window_seconds)
+    verdicts = reconcile(results, eligible, window_seconds=window_seconds,
+                         window_seconds_by_type=window_by_type(),
+                         window_end_by_result=await match_window_ends(
+                             db, run.run_id, results, window_seconds=window_seconds))
 
     # ── what the scorer cannot know on its own: the pull context ──────────
     truncation = (pull.detail or {}).get("truncation")
@@ -128,6 +163,7 @@ async def reconcile_run(
         "basis": "reconcile",
         "unscoped": host_scope["host"] is None,
         "truncated": bool(truncation),
+        "dropped": pull.dropped,
         "alert_incidents": {e: getattr(by_ext.get(e), "incident_id", None) for e in matched_ext},
     }
     scenario = (await db.execute(
@@ -152,7 +188,8 @@ async def reconcile_run(
 
     summary, newly = await apply_verdicts(db, run.run_id, results, verdicts,
                                           source=f"{connector_kind}:{integ.name}",
-                                          pull_context=ctx)
+                                          pull_context=ctx, observations=eligible,
+                                          window_seconds=window_seconds)
     summary["pulled"] = len(pull.observations)
     summary["host_scope"] = host_scope
     if "incidents" in ctx:
@@ -207,9 +244,53 @@ async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
     return agent.hostname
 
 
+def _reported_at_map(host_rows: list) -> dict[str, Any]:
+    """When each step's host record says it had finished: ``/output`` arrival,
+    else the ``/complete`` record."""
+    return {so.step_id: so.started_at or so.recorded_at for so in host_rows}
+
+
+def result_window_end(result: Any, *, window_seconds: int,
+                      by_type: dict[str, int],
+                      reported_at: Optional[dict[str, Any]]) -> Optional[datetime]:
+    """THE window end for one Result -- the one value both the matcher's upper
+    bound and the silent-row judgement use (round 4 C-1 rule 3, round 5 C-1R).
+
+    ``max(executed_at, the step's host record) + window``. The lower bound and
+    the MTTD start stay ``executed_at``. None when the row has no executed_at.
+    """
+    executed_at = getattr(result, "executed_at", None)
+    if executed_at is None:
+        return None
+    start = executed_at
+    reported = (reported_at or {}).get(getattr(result, "step_id", None))
+    if reported is not None and reported > start:
+        start = reported
+    window = by_type.get(getattr(result, "signal_type", None), window_seconds)
+    return start + timedelta(seconds=window)
+
+
+async def match_window_ends(db: AsyncSession, run_id: str, results: list, *,
+                            window_seconds: int) -> dict[Any, datetime]:
+    """``{result_id: window_end}`` for the matcher, from the run's host records."""
+    host_rows = (await db.execute(
+        select(StepOutcome).where(StepOutcome.run_id == run_id))).scalars().all()
+    reported = _reported_at_map(host_rows)
+    by_type = window_by_type()
+    out: dict[Any, datetime] = {}
+    for r in results:
+        end = result_window_end(r, window_seconds=window_seconds, by_type=by_type,
+                                reported_at=reported)
+        if end is not None and getattr(r, "id", None) is not None:
+            out[r.id] = end
+    return out
+
+
 async def apply_verdicts(
     db: AsyncSession, run_id: str, results: list[Result], verdicts: list, source: str,
     *, pull_context: Optional[dict[str, Any]] = None,
+    observations: Optional[list] = None,
+    window_seconds: int = DEFAULT_WINDOW_SECONDS,
 ) -> tuple[dict[str, Any], int]:
     """Persist matched verdicts (observed/observed_at), emit SSE, summarise.
 
@@ -219,15 +300,59 @@ async def apply_verdicts(
     membership into a correlation rate. Omitted by the completion-time score,
     where nothing has been measured yet.
 
+    ``observations`` is the alert list the verdicts were matched against; the
+    matched alert's untouched record is persisted as an ``Observation`` row.
+    ``window_seconds`` is the match window for every type ``window_by_type``
+    does not override; it decides when a silent row's window has closed.
+
+    Outcomes: a ``prevent`` expectation is judged by
+    :func:`engine.outcome.evaluate_prevent` (two witnesses: the alert and the
+    host); a ``detect`` expectation that matched is ``detected``. A row the host
+    already marked ``not_reached`` / ``not_executed`` is never re-judged here.
+
     Returns ``(summary, newly_matched)``.
     """
     by_id = {r.id: r for r in results}
+    # Loaded BEFORE the loop: the run's profile mode and block-mode status are
+    # inputs to every prevent verdict.
+    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
+    host_rows = (await db.execute(
+        select(StepOutcome).where(StepOutcome.run_id == run_id))).scalars().all()
+    terminations = {so.step_id: so.termination for so in host_rows}
+    # When each step's host record says it had finished (``/output`` arrival,
+    # else the ``/complete`` record): the silent-row window starts there.
+    reported_at = _reported_at_map(host_rows)
+    alerts = list(observations or [])
+    by_ext = {a.external_id: a for a in alerts if getattr(a, "external_id", None)}
+    unscoped = bool(pull_context and pull_context.get("unscoped"))
+    seen_obs = await _existing_observation_keys(db, run_id)
+
     matched = 0
+    applied: list[tuple[Any, Result]] = []
     for v in verdicts:
         if not v.matched:
             continue
         result = by_id.get(v.result_id)
         if result is None:
+            continue
+        # The alert is evidence either way, so it is recorded once per
+        # (result, alert) — a re-evaluation must not duplicate it.
+        alert = _matched_alert(v, alerts, by_ext)
+        key = _observation_key(result.id, v.alert_external_id, v.observed_at, v.alert_name)
+        if key not in seen_obs:
+            seen_obs.add(key)
+            db.add(Observation(
+                run_id=run_id, result_id=result.id, source=source,
+                external_id=v.alert_external_id, observed_at=v.observed_at,
+                name=v.alert_name, alert_source=v.alert_source,
+                action=getattr(alert, "action", None),
+                action_pretty=getattr(alert, "action_pretty", None),
+                alert_outcome=v.alert_outcome,
+                raw=getattr(alert, "raw", None),
+            ))
+        if result.outcome in EXCLUDED_FROM_DENOMINATOR:
+            # The host says this step never ran: an alert inside its window came
+            # from something else. Never observed, never MTTD, never re-judged.
             continue
         result.observed = True
         result.observed_at = v.observed_at
@@ -235,16 +360,37 @@ async def apply_verdicts(
                 f"(matched on {', '.join(v.matched_on)}; "
                 f"alert={v.alert_external_id or v.alert_name or 'n/a'})")
         result.notes = ((result.notes + " | ") if result.notes else "") + note
+        result.alert_action = v.alert_action
+        result.alert_outcome = v.alert_outcome
+        if result.expected_outcome == "prevent":
+            if run is not None:  # no run row ⇒ no profile mode ⇒ leave unjudged
+                pv = evaluate_prevent(
+                    agent_profile_mode=run.agent_profile_mode,
+                    alert_outcome=v.alert_outcome,
+                    termination=terminations.get(result.step_id),
+                    window_closed=False,
+                    block_mode_status=run.block_mode_status)
+                if pv.outcome == OUTCOME_PREVENTED and unscoped:
+                    # Any endpoint's alert could have been credited.
+                    pv = PreventVerdict(OUTCOME_PENDING, "pending", PASS_WITHHELD_UNSCOPED)
+                _write_prevent(result, pv)
+        else:
+            # Whatever the alert's own action: a `detect` expectation is met,
+            # and any earlier soak reason is stale.
+            result.outcome = OUTCOME_DETECTED
+            result.outcome_reason = None
         matched += 1
+        applied.append((v, result))
+
+    if run is not None:
+        await _judge_silent_results(db, run, results, terminations,
+                                    window_seconds=window_seconds,
+                                    evidence_complete=_evidence_complete(pull_context),
+                                    reported_at=reported_at)
 
     await db.commit()
 
-    for v in verdicts:
-        if not v.matched:
-            continue
-        result = by_id.get(v.result_id)
-        if result is None:
-            continue
+    for v, result in applied:
         try:
             await event_bus.publish(run_id, {
                 "type": "result.observed", "run_id": run_id,
@@ -262,7 +408,6 @@ async def apply_verdicts(
     # hook here scores every one of them, with no new scheduling and no
     # outbound call: Tier 1 reads only rows CortexSim already owns.
     summary = efficacy_summary(results, matched, source)
-    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
     if run is not None:
         summary["tc_verdict"] = await score_run_safely(
             db, run, source=f"reconcile:{source}", results=results,
@@ -273,16 +418,186 @@ async def apply_verdicts(
     return summary, matched
 
 
+def _observation_key(result_id: Any, external_id: Optional[str], observed_at: Any,
+                     name: Optional[str]) -> tuple:
+    if external_id is not None:
+        return (result_id, "ext", external_id)
+    return (result_id, "at", observed_at, name)
+
+
+async def _existing_observation_keys(db: AsyncSession, run_id: str) -> set:
+    rows = (await db.execute(
+        select(Observation).where(Observation.run_id == run_id))).scalars().all()
+    return {_observation_key(o.result_id, o.external_id, o.observed_at, o.name) for o in rows}
+
+
+def _evidence_complete(pull_context: Optional[dict[str, Any]]) -> bool:
+    """Is silence in this pull evidence of absence?
+
+    Only a credential-backed pull that was host-scoped, not truncated and
+    dropped nothing. A manual import is the alerts a DC chose to submit, so
+    silence there says nothing about the rows they did not submit for.
+    """
+    if not pull_context or pull_context.get("basis") == "manual":
+        return False
+    return not (pull_context.get("unscoped") or pull_context.get("truncated")
+                or pull_context.get("dropped"))
+
+
+def _matched_alert(v: Any, alerts: list, by_ext: dict[str, Any]) -> Any:
+    """The alert a verdict matched, from the list it was matched against."""
+    if v.alert_external_id and v.alert_external_id in by_ext:
+        return by_ext[v.alert_external_id]
+    for a in alerts:
+        if a.observed_at == v.observed_at and a.name == v.alert_name:
+            return a
+    return None
+
+
+def _write_prevent(result: Any, pv: Any) -> None:
+    """Write a prevent verdict. ``kpi_verdict`` is never erased by a None.
+
+    A ``fail`` is sticky unless it came from Tier 1's own silent-row path
+    (current outcome ``missed``): two real witnesses arriving later are strictly
+    better evidence than silence. Any other fail (DETECTED_NOT_PREVENTED, a
+    Tier-2 fail) stays.
+    """
+    replaceable = result.kpi_verdict != "fail" or result.outcome == OUTCOME_MISSED
+    result.outcome = pv.outcome
+    result.outcome_reason = pv.reason
+    if pv.kpi_verdict is not None and replaceable:
+        result.kpi_verdict = pv.kpi_verdict
+
+
+async def _judge_silent_results(
+    db: AsyncSession, run: Run, results: list[Result], terminations: dict[str, Any],
+    *, window_seconds: int, evidence_complete: bool,
+    reported_at: Optional[dict[str, Any]] = None,
+) -> None:
+    """Judge every still-unobserved Result.
+
+    * Analytics/ABIOC with a soak reason (activation period, or the dedup
+      window of a paired second run) → ``pending`` with that reason, from the
+      first sweep and whatever the window — it leaves the denominator at once.
+    * Otherwise only once the window has closed (``result_window_end``: the
+      later of ``executed_at`` and the step's host record, plus the window): a
+      ``prevent`` row goes through ``evaluate_prevent`` with no alert; a
+      ``detect`` row is ``missed`` only with a host record of ``exited`` /
+      ``timeout`` / ``signaled`` / ``anchor_terminated`` (no record or
+      ``beacon_lost`` -> ``pending`` / ``HOST_EVIDENCE_ABSENT``, ``aborted`` ->
+      ``pending`` / ``RUN_ABORTED``). An affirmative ``missed`` stands only on
+      complete evidence — else ``pending`` / ``EVIDENCE_INCOMPLETE``.
+
+    Rows already ``not_reached`` / ``not_executed`` are never touched, nor is
+    any row already judged beyond ``pending``.
+    """
+    now = datetime.utcnow()  # naive UTC, exactly as executed_at is stored
+    by_type = window_by_type()
+    first_run_seen: Optional[set] = None
+    for r in results:
+        if r.observed or r.executed_at is None:
+            continue
+        if r.outcome not in (None, OUTCOME_PENDING):
+            continue
+        if r.signal_type in by_type:
+            if first_run_seen is None:
+                first_run_seen = await _first_run_observed_keys(db, run)
+            reason = soak_pending_reason(
+                signal_type=r.signal_type, soakless_attested=run.soakless_attested,
+                first_run_observed=bool(_result_keys(r) & first_run_seen))
+            if reason is not None:
+                r.outcome = OUTCOME_PENDING
+                r.outcome_reason = reason
+                continue
+            if r.outcome_reason in SOAK_REASONS:
+                # The soak no longer applies (e.g. soakless since attested).
+                r.outcome = None
+                r.outcome_reason = None
+        # Round 4 C-1 rule 3 / round 5: the window closes ``window`` after the
+        # step REPORTED (its host record), not after the launch the row was
+        # seeded with -- the same end the matcher accepts alerts until. The
+        # seeded ``executed_at`` stays the lower bound and the MTTD start.
+        end = result_window_end(r, window_seconds=window_seconds, by_type=by_type,
+                                reported_at=reported_at)
+        if now < end:
+            continue
+        if r.expected_outcome == "prevent":
+            pv = evaluate_prevent(
+                agent_profile_mode=run.agent_profile_mode, alert_outcome=None,
+                termination=terminations.get(r.step_id), window_closed=True,
+                block_mode_status=run.block_mode_status)
+            if pv.outcome == OUTCOME_MISSED and not evidence_complete:
+                # Only a would-be fail softens to pending; a report-mode None
+                # stays None (and so is not written).
+                pv = PreventVerdict(
+                    OUTCOME_PENDING,
+                    "pending" if pv.kpi_verdict == "fail" else pv.kpi_verdict,
+                    EVIDENCE_INCOMPLETE)
+            _write_prevent(r, pv)
+        else:
+            # A `detect` expectation: silent after its window closed is a miss
+            # -- WRITTEN, so no surface infers it from `observed=False` (R4/R7)
+            # -- but only when the host says the step ran (round 4 C-1), and
+            # only on complete evidence; otherwise the same softening as the
+            # prevent branch. kpi_verdict is
+            # the Tier-2 verifier's and is not touched. A later matched alert
+            # replaces `missed` with `detected` (apply_verdicts).
+            # Round 4 C-1: a miss needs the host's word that the step ran --
+            # an in-flight, queued, aborted or push run has no record.
+            judged = silent_detect_verdict(terminations.get(r.step_id), window_closed=True)
+            if judged is None:
+                continue
+            outcome, reason = judged
+            if outcome == OUTCOME_MISSED and not evidence_complete:
+                outcome, reason = OUTCOME_PENDING, EVIDENCE_INCOMPLETE
+            r.outcome = outcome
+            r.outcome_reason = reason
+
+
+def _result_keys(r: Any) -> set:
+    """Both spellings of a Result's identity within its step (None skipped)."""
+    return {(r.step_id, k) for k in (r.detection_id, r.expected_detection) if k is not None}
+
+
+async def _first_run_observed_keys(db: AsyncSession, run: Run) -> set:
+    """Union of ``(step_id, detection_id)`` and ``(step_id, expected_detection)``
+    over the Results the paired first run observed."""
+    if not run.paired_with_run_id:
+        return set()
+    rows = (await db.execute(select(Result).where(
+        Result.run_id == run.paired_with_run_id, Result.observed.is_(True)))).scalars().all()
+    keys: set = set()
+    for r in rows:
+        keys |= _result_keys(r)
+    return keys
+
+
 def efficacy_summary(results: list[Result], newly_matched: int, source: str) -> dict[str, Any]:
+    """Coverage over the rows that could have produced evidence.
+
+    Rows ``not_reached`` / ``not_executed`` and soak-pending Analytics rows
+    leave numerator and denominator; ``excluded`` counts them by reason.
+    """
     total = len(results)
-    observed = sum(1 for r in results if r.observed)
-    mttds = [r.mttd_seconds for r in results if r.mttd_seconds is not None]
+    excluded = empty_exclusions()
+    counted = []
+    for r in results:
+        why = denominator_exclusion(r)
+        if why is None:
+            counted.append(r)
+        else:
+            excluded[why] += 1
+    denom = len(counted)
+    observed = sum(1 for r in counted if is_hit(r.outcome, r.observed))
+    mttds = [r.mttd_seconds for r in counted if r.mttd_seconds is not None]
     return {
         "source": source,
         "total_expected": total,
+        "denominator": denom,
+        "excluded": excluded,
         "observed": observed,
         "newly_matched": newly_matched,
-        "coverage_pct": round(observed / total * 100, 1) if total else 0.0,
+        "coverage_pct": round(observed / denom * 100, 1) if denom else 0.0,
         "mttd": {
             "count": len(mttds),
             "avg_seconds": round(sum(mttds) / len(mttds), 1) if mttds else None,
@@ -349,7 +664,9 @@ async def score_run_for_run(
         select(Scenario).where(Scenario.scenario_id == run.scenario_id)
     )).scalar_one_or_none()
 
-    mttds = [r.mttd_seconds for r in results if r.mttd_seconds is not None]
+    # A step the host says never ran cannot contribute a detection time.
+    mttds = [r.mttd_seconds for r in results
+             if r.mttd_seconds is not None and r.outcome not in EXCLUDED_FROM_DENOMINATOR]
     # Sprint 2: the two non-MTTD values the loop can derive. None when the
     # scenario's KPI is MTTD-shaped, when nothing was pulled (completion-time
     # score), or when the honesty guard withholds it — all of which score
@@ -841,7 +1158,9 @@ async def verify_run_now(
     budget.setdefault("tenant", tenant)
 
     before = budget["issued"]
-    counts = await verifier.verify_results(results, _budgeted(runner, budget))
+    counts = await verifier.verify_results(
+        results, _budgeted(runner, budget),
+        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown")
     issued = budget["issued"] - before
 
     book = _bookkeeping(run)

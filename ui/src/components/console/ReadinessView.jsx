@@ -6,6 +6,7 @@ import { HS, HS_CHIP, HS_LABEL, healthHeadline } from './readiness/healthModel.j
 import { RS, RS_CHIP, RUNG } from './readiness/connectorState.js'
 import { preflightXsiamTenant, preflightConnector } from '../../api/client.js'
 import Term from '../onboarding/Term.jsx'
+import { newestRun, triStateLabel } from '../../outcomes.js'
 
 /**
  * ReadinessView — "am I ready to run this in front of a customer?", answered
@@ -66,6 +67,7 @@ export default function ReadinessView({ onNavigate = () => {} }) {
               agent preflight runs inside the launch flow, against the agent
               you actually pick. */}
           <ConnectorSection ladder={r.ladder} tenants={r.tenants} onNavigate={onNavigate} />
+          <AttestedFactsSection runs={env.runs} />
           <ComponentSection model={r.health} onNavigate={onNavigate} />
           <GapSection model={r.health} ladder={r.ladder} />
         </>
@@ -274,6 +276,65 @@ function PreflightResult({ body }) {
         </div>
       ))}
     </div>
+  )
+}
+
+// ─── 1b · Attested-only facts ────────────────────────────────────────────────
+
+/**
+ * Facts about the target that an operator declared and SimCore cannot check.
+ * Shown BESIDE the four-rung ladder, never as a fifth rung: a rung says
+ * "proven", and nothing here is. Values are the newest run's declarations.
+ */
+function AttestedFactsSection({ runs }) {
+  const run = useMemo(() => newestRun(runs), [runs])
+  const rows = run
+    ? [
+        {
+          id: 'profile-mode',
+          label: 'Agent profile mode',
+          value: run.agent_profile_mode && run.agent_profile_mode !== 'unknown'
+            ? run.agent_profile_mode : 'not attested',
+          verify: 'a canary run with a tenant-confirmed prevention',
+        },
+        {
+          id: 'bas-mode',
+          label: 'BAS mode',
+          value: triStateLabel(run.bas_mode_attested),
+          verify: 'nothing — attested only',
+        },
+        {
+          id: 'soakless',
+          label: 'Soakless',
+          value: triStateLabel(run.soakless_attested),
+          verify: 'nothing — no public dataset exposes it',
+        },
+      ]
+    : []
+  return (
+    <section
+      className="readiness__section"
+      aria-labelledby="rdy-attested-h"
+      data-testid="attested-only-facts"
+    >
+      <h2 id="rdy-attested-h" className="readiness__h">Attested-only facts</h2>
+      <p className="readiness__lede">
+        Declared by the operator at launch, not verified by SimCore. These are not rungs of the
+        ladder above — none of them is proven.
+      </p>
+      {!run ? (
+        <div className="readiness__empty">no runs yet — nothing has been attested.</div>
+      ) : (
+        <ul className="readiness__gaps">
+          {rows.map((row) => (
+            <li key={row.id} data-testid={`attested-${row.id}`}>
+              <strong>{row.label}:</strong> <span className="mono">{row.value}</span>
+              {' '}— attested, not verified. Would be verified by: {row.verify}.
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 

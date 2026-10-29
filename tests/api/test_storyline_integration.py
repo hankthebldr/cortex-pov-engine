@@ -89,6 +89,18 @@ def seeded_run(session_factory):
                     executed_at=datetime.utcnow() - timedelta(minutes=3),
                 ))
             await db.commit()
+        async with session_factory() as db:
+            # A complete reconcile that matched nothing: the engine's own
+            # silent-row judgement writes the miss (round 3 R7).
+            from connectors.service import _judge_silent_results
+            from sqlalchemy import select as _select
+            run = (await db.execute(_select(Run).where(Run.run_id == "r-1"))).scalar_one()
+            rows = list((await db.execute(
+                _select(Result).where(Result.run_id == "r-1"))).scalars().all())
+            # step-02's host record says it ran: only then is silence a miss.
+            await _judge_silent_results(db, run, rows, {"step-02": "exited"},
+                                        window_seconds=60, evidence_complete=True)
+            await db.commit()
 
     asyncio.run(_seed())
     return "r-1"

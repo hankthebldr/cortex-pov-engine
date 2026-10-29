@@ -33,6 +33,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,6 +41,12 @@ ROOT = Path(__file__).resolve().parent.parent
 ID_PATTERN          = re.compile(r"^TTP-\d{4}-\d{4}$")
 TECHNIQUE_PATTERN   = re.compile(r"^T\d{4}(\.\d{3})?$")
 TS_PATTERN          = re.compile(r"^TS-[A-Z0-9]+-\d{3}$")
+# Mirror of core/engine/scenario_loader.py::PREVENTION_MODULES (this script is stdlib-only).
+PREVENTION_MODULES  = frozenset({
+    "btp", "exploit_protection", "local_analysis", "wildfire",
+    "anti_ransomware", "credential_protection", "device_control", "host_firewall",
+})
+PREVENTION_PLACEHOLDER_RE = re.compile(r"(?i)\b(tbd|todo|placeholder)\b")
 TS_STEP_PATTERN     = re.compile(r"^TS-[A-Z0-9]+-\d{3}[A-Z]?$")
 # A card-local id written with the master-index prefix, anywhere in prose.
 _STALE_NS_TOKEN     = re.compile(r"\b(?:UCS?|TC)-[A-Z0-9]+-\d{3}[A-Z]?\b")
@@ -327,6 +334,60 @@ def _lint_xql_grammar(report, rel, where, body):
                              f"(stage: '| {seg[:40]}...')")
 
 
+def check_prevention_modules(report, rel, detections):
+    """Reject (not warn) a prevention_modules[] entry with an unknown module,
+    an empty/placeholder name, or no platforms."""
+    for i, pm in enumerate(detections.get("prevention_modules", [])):
+        loc = f"detections.prevention_modules[{i}]"
+        if pm.get("module") not in PREVENTION_MODULES:
+            report.err(rel, f"{loc}.module {pm.get('module')!r} not in {sorted(PREVENTION_MODULES)}")
+        pm_name = (pm.get("name") or "").strip()
+        if not pm_name or PREVENTION_PLACEHOLDER_RE.search(pm_name):
+            report.err(rel, f"{loc}.name is empty or a placeholder: {pm.get('name')!r}")
+        if not pm.get("platforms"):
+            report.err(rel, f"{loc}.platforms must be non-empty")
+
+
+IOC_PROVENANCE_TYPED = {"ipv4", "ipv6", "domain", "url", "file-sha256", "file-sha1", "file-md5"}
+IOC_SAFE_FORMS = {"log_field", "dns_lookup", "hash_only", "wildfire_test_file", "eicar"}
+IOC_PUBLISHED_RE = re.compile(r"^\d{4}-\d{2}(-\d{2})?$")
+IOC_WARN_FROM_SEQ = 182
+IOC_SOURCE_HOST = "unit42.paloaltonetworks.com"
+IOC_SOURCE_GH_PREFIX = "https://github.com/PaloAltoNetworks/"
+
+
+def check_ioc_provenance(report, rel, detections, references, ttp_id=None):
+    """IOC provenance. FAIL on a source_url outside Unit 42 / the PaloAltoNetworks
+    GitHub org, an unknown safe_form, or a malformed published date. WARN when a
+    Unit 42-sourced card (id >= TTP-2026-0182) carries a typed network/hash indicator with no source_url."""
+    iocs = detections.get("iocs", [])
+    for i, ioc in enumerate(iocs):
+        loc = f"detections.iocs[{i}]"
+        url = ioc.get("source_url")
+        if url is not None:
+            parsed = urlparse(url)
+            unit42_ok = parsed.scheme == "https" and parsed.hostname == IOC_SOURCE_HOST
+            # Case-insensitive, like scenario_loader.SOURCE_URL_HOSTS and the lint hook.
+            if not unit42_ok and not url.lower().startswith(IOC_SOURCE_GH_PREFIX.lower()):
+                report.err(rel, f"{loc}.source_url {url!r} must be https on {IOC_SOURCE_HOST} "
+                                f"or start with {IOC_SOURCE_GH_PREFIX}")
+        if "safe_form" in ioc and ioc["safe_form"] not in IOC_SAFE_FORMS:
+            report.err(rel, f"{loc}.safe_form {ioc['safe_form']!r} not in {sorted(IOC_SAFE_FORMS)}")
+        if "published" in ioc and not (isinstance(ioc["published"], str)
+                                       and IOC_PUBLISHED_RE.match(ioc["published"])):
+            report.err(rel, f"{loc}.published {ioc['published']!r} must be YYYY-MM or YYYY-MM-DD")
+    if not any(r.get("publisher_id") == "SRC-UNIT42" for r in references):
+        return
+    # Ruling (SDD ledger, 2026-10-27): the 147 pre-existing Unit 42 cards carry typed
+    # indicators with no provenance; the WARN applies to cards authored from 0182 on.
+    m = re.match(r"TTP-\d{4}-(\d{4})", ttp_id or "")
+    if not m or int(m.group(1)) < IOC_WARN_FROM_SEQ:
+        return
+    for i, ioc in enumerate(iocs):
+        if ioc.get("ioc_type") in IOC_PROVENANCE_TYPED and not ioc.get("source_url"):
+            report.warn(rel, f"detections.iocs[{i}] ({ioc.get('ioc_type')}) on a Unit 42 card has no source_url")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--strict", action="store_true", help="weights must sum to exactly 1.0 per use case")
@@ -508,6 +569,10 @@ def main():
         for i, a in enumerate(detections.get("abiocs", [])):
             lint_detection_body(report, rel, f"detections.abiocs[{i}].logic",
                                 a.get("logic"), require_dataset=True)
+        # Prevention modules are agent behaviour, not rule bodies: nothing to lint,
+        # but the three load-bearing fields are REJECTED (not warned) when wrong.
+        check_prevention_modules(report, rel, detections)
+        check_ioc_provenance(report, rel, detections, d.get("references", []), ttp_id=d.get("id"))
         # Plan 02 — modeling-rule bodies open with `[MODEL: dataset=…]`; the
         # `dataset=` substring satisfies the anchor + dataset-registry checks.
         for i, m in enumerate(detections.get("modeling_rules", [])):

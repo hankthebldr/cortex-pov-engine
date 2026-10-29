@@ -40,7 +40,8 @@ def test_a_working_reconcile_credential_reads_ready():
             "alert_id": "1", "name": "LSASS Memory Access", "source": "XDR BIOC",
             "detection_timestamp": 1780000000000,
             "mitre_technique_id_and_name": ["T1003.001 - LSASS Memory"],
-            "matching_service_rule_id": "bioc-1"}]}})
+            "matching_service_rule_id": "bioc-1",
+            "action_pretty": "Detected (Reported)"}]}})
 
     r = pf.preflight_reconcile(_CFG, "key", fetcher=fetcher)
     assert r.overall == pf.READY

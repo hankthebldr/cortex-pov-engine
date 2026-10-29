@@ -127,35 +127,69 @@ async def ingest_observations(
     body: ObservationsBody,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Ingest a batch of observed alerts and auto-validate matching results."""
-    from connectors.service import apply_verdicts
+    """Ingest a batch of observed alerts and auto-validate matching results.
 
-    _run, results = await _load_run_results(db, run_id)
-    alerts, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
+    Scoped exactly like a connector pull (``matcher.scope_to_host`` against the
+    run's resolved host): a hand-pasted alert from another endpoint is not
+    evidence for this run. The batch is ``unscoped`` -- every pass withheld
+    (``PASS_WITHHELD_UNSCOPED``) -- when the run has no resolvable target or any
+    submitted alert names no host, because then nothing ties it to this run.
+    """
+    from connectors.matcher import scope_to_host
+    from connectors.service import (apply_verdicts, match_window_ends, resolve_run_host,
+                                    window_by_type)
+
+    run, results = await _load_run_results(db, run_id)
+    submitted, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
+    alerts, host_scope = scope_to_host(submitted, await resolve_run_host(db, run))
+    unscoped = host_scope["host"] is None or host_scope["without_host"] > 0
     verdicts = reconcile(results, alerts, window_seconds=body.window_seconds,
-                         only_unobserved=not body.reevaluate)
+                         only_unobserved=not body.reevaluate,
+                         window_seconds_by_type=window_by_type(),
+                         window_end_by_result=await match_window_ends(
+                             db, run_id, results, window_seconds=body.window_seconds))
     matched_ext = [v.alert_external_id for v in verdicts if v.matched and v.alert_external_id]
     by_ext = {a.external_id: a for a in alerts if a.external_id}
     summary, _ = await apply_verdicts(
         db, run_id, results, verdicts, source="manual-import",
-        # The DC chose these alerts by hand: scoped and complete by construction,
-        # so the honesty guard withholds nothing — and the basis says `manual`.
-        pull_context={"basis": "manual", "unscoped": False, "truncated": False,
+        # The DC chose these alerts by hand, so silence is never a miss
+        # (basis `manual`); a pass stands only when every alert was host-scoped.
+        pull_context={"basis": "manual", "unscoped": unscoped, "truncated": False,
                       "alert_incidents": {e: by_ext[e].incident_id for e in matched_ext
-                                          if e in by_ext}})
-    summary["ingested"] = len(alerts)
+                                          if e in by_ext}},
+        observations=alerts, window_seconds=body.window_seconds)
+    summary["host_scope"] = host_scope
+    if unscoped:
+        summary["unscoped"] = True
+    summary["ingested"] = len(submitted)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
+    warnings: list[str] = []
     if dropped:
         # These alerts were submitted and NOT counted. Silently shortening the
         # list would understate coverage with no explanation; the old code was
         # worse still — it dated them to `now`, which inflated MTTD and produced
         # threshold FAILs out of a formatting problem.
         summary["dropped_unparseable_timestamps"] = dropped
-        summary["warning"] = (
+        warnings.append(
             f"{dropped} of {len(body.observations)} observations had an unreadable "
             f"timestamp and were not counted. Coverage below is a floor, not a "
             f"measurement. Use ISO-8601 (2026-06-10T12:00:30Z) or epoch ms."
         )
+    excluded = host_scope.get("excluded_other_host") or 0
+    if excluded:
+        # Same shape as the drop above (R6): a pasted alert that names another
+        # host is not evidence for this run, but vanishing without a word reads
+        # as "Cortex never alerted". Say how many and which host was expected,
+        # so a short-name vs FQDN mismatch is visible.
+        summary["excluded_other_host"] = excluded
+        warnings.append(
+            f"{excluded} of {len(body.observations)} observations named another host "
+            f"than this run's target ({host_scope['host']}) and were not counted. If "
+            f"they are this run's endpoint under another name, re-submit them with "
+            f"the run's host name."
+        )
+    if warnings:
+        summary["warning"] = " ".join(warnings)
     return summary
 
 

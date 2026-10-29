@@ -213,3 +213,21 @@ def test_a_readable_corpus_raises_no_unreadable_breach(module, corpus):
     assert not any(
         b.get("kind") == "unreadable_corpus_file" for b in result["strict_breaches"]
     )
+
+
+def test_prevention_bucket_excluded_from_abioc_analytics_denominator(module, tmp_path):
+    ttps = tmp_path / "ttps"
+    ttps.mkdir()
+
+    def run(dets, sub):
+        scen = tmp_path / sub
+        _write_scenario(scen / "edr" / "e.yml", sid="SIM-EDR-950", plane="EDR",
+                        tactic="TA0006", tactic_name="Credential Access",
+                        technique="T1003", family="F1", detections=dets)
+        return module.compute_report(str(scen), str(ttps), module.default_config())
+
+    base = run(["BIOC", "ABIOC"], "without")
+    with_prev = run(["BIOC", "ABIOC", "Prevention"], "with")
+    dm_with, dm_base = with_prev["detection_mix"], base["detection_mix"]
+    assert dm_with["abioc_analytics_share"] == dm_base["abioc_analytics_share"] == 0.5
+    assert with_prev["detection_mix"]["step_detections"]["by_type"]["Prevention"] == 1

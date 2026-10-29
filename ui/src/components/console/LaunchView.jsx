@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import useLaunchScenario from './useLaunchScenario.js'
+import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
 import { getToolAdapters, listIntegrations } from '../../api/client.js'
 import useShelf from './useShelf.js'
 import { SUPPLY, supplyOf, shortDigest } from './supplyState.js'
@@ -287,6 +288,7 @@ export default function LaunchView({
               <span className="mono">{selectedTarget.id}</span>
             </div>
           )}
+          {targetMode === 'pull' && <AttestationFields launch={launch} />}
           {targetMode === 'push' && (
             <label className="launch-field">
               <span className="launch-field__label">Bundle format</span>
@@ -391,7 +393,7 @@ export default function LaunchView({
             </ul>
           )}
 
-          {launch.lastRun && (
+          {launch.lastRun && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
             <div className={`launch-result launch-result--${launch.lastRun.status}`} role="status">
               {launch.lastRun.message}
               {launch.lastRun.code && (

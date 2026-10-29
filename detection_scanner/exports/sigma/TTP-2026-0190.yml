@@ -1,0 +1,241 @@
+title: "Repellent Scorpius Cicada3301 \u2014 Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486) \u2014 MP-031 Share Enumeration Output Written to found_shares.txt"
+id: ttp-2026-0190-bioc-01
+status: experimental
+description: |
+  A process chain that enumerates mounts, filesystems or shares writes a file named found_shares.txt — the share-enumeration output file named in the report.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter action_file_name = "found_shares.txt"
+    | fields agent_hostname, actor_process_image_name, actor_process_command_line, action_file_path, causality_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1135/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1135
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Repellent Scorpius Cicada3301 \u2014 Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486) \u2014 MP-031 Encryptor Copied to Admin Share Path and Run Detached with no_impl key"
+id: ttp-2026-0190-bioc-02
+status: experimental
+description: |
+  An executable written under a Users/Public directory on a C$-shaped path is started detached with '--no_impl' and '--key' — the report's embedded-PsExec '-s -d <encryptor> --no_impl --key' spread.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line contains "--no_impl" and action_process_image_command_line contains "--key"
+    | filter action_process_image_path contains "Users/Public" or action_process_image_path contains "Users\\Public"
+    | fields agent_hostname, action_process_image_path, action_process_image_command_line, causality_actor_process_image_name, causality_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1021/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1021.002
+    - attack.t1570
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Repellent Scorpius Cicada3301 \u2014 Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486) \u2014 MP-031 Files Rewritten with kcr5umw Extension and RECOVER DATA Note Dropped"
+id: ttp-2026-0190-bioc-03
+status: experimental
+description: |
+  One process writes many files ending in .kcr5umw, deletes the originals and drops RECOVER-kcr5umw-DATA.txt in the same tree — the Cicada3301 encryption and note shape on a lateral target.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter action_file_name ~= "\.kcr5umw$" or action_file_name ~= "^RECOVER-.*-DATA\.txt$"
+    | comp count() as touched, count_distinct(action_file_name) as names by agent_hostname, actor_process_image_name, causality_id
+    | filter touched >= 5
+    | fields agent_hostname, actor_process_image_name, causality_id, touched, names
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Repellent Scorpius Cicada3301 \u2014 Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486) \u2014 MP-031 Renamed Binary Run as rclone from ProgramData with rclone conf"
+id: ttp-2026-0190-bioc-04
+status: experimental
+description: |
+  A process whose image name is rclone (here a renamed curl, visible by its sha256) runs from a ProgramData-shaped directory that also holds rclone.conf — the report's C:\ProgramData\rclone.exe + rclone.conf staging.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("rclone", "rclone.exe")
+    | filter action_process_image_path contains "ProgramData"
+    | filter action_process_image_command_line contains "rclone.conf" or action_process_image_command_line contains "-T " or action_process_image_command_line contains "rclone/v"
+    | fields agent_hostname, action_process_image_path, action_process_image_command_line, action_process_image_sha256, causality_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1036/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1036.005
+    - attack.t1567.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Repellent Scorpius Cicada3301 \u2014 Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486) \u2014 MP-031 Mass Kill of vmx Named Virtual Machine Processes"
+id: ttp-2026-0190-bioc-05
+status: experimental
+description: |
+  A single command kills several VM-worker-shaped processes (vmx) at once — the hypervisor rendering of the report's 'Get-VM | Stop-VM -Force' stop-every-VM step before encryption.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_STOP
+    | filter action_process_image_command_line contains "vmx"
+    | comp count() as killed by agent_hostname, actor_process_image_name, actor_process_command_line, causality_id
+    | filter killed >= 3
+    | fields agent_hostname, actor_process_image_name, actor_process_command_line, causality_id, killed
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1489/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1489
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Repellent Scorpius Cicada3301 \u2014 Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486) \u2014 MP-031 VM Snapshot Deletion and Hypervisor Log Truncation"
+id: ttp-2026-0190-bioc-06
+status: experimental
+description: |
+  The same chain deletes VM snapshot files (*.vmsn) under a vmfs/volumes path and truncates hostd/vmkernel/vpxa logs — the report's shadow-copy deletion and event-log clearing on a hypervisor-shaped host.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter (event_sub_type = ENUM.FILE_REMOVE and action_file_name ~= "\.vmsn$" and action_file_path contains "vmfs/volumes") or (event_sub_type = ENUM.FILE_WRITE and action_file_name in ("hostd.log", "vmkernel.log", "vpxa.log"))
+    | comp count_distinct(event_sub_type) as kinds, count() as events by agent_hostname, causality_id
+    | filter kinds >= 2
+    | fields agent_hostname, causality_id, kinds, events
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1490/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1490
+    - attack.t1070.001
+    - attack.t1070.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "Repellent Scorpius Cicada3301 \u2014 Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486) \u2014 MP-031 Locker Encrypts vmfs Datastore Files to kcr5umw with Ransom Note"
+id: ttp-2026-0190-bioc-07
+status: experimental
+description: |
+  A script-launched process run with '--no_impl --key -p <vmfs/volumes path>' rewrites .vmdk/.vmx files as .kcr5umw and drops RECOVER-kcr5umw-DATA.txt on the datastore root.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    preset = xdr_data
+    | filter event_type = ENUM.FILE
+    | filter action_file_path contains "vmfs/volumes"
+    | filter action_file_name ~= "\.(vmdk|vmx)\.kcr5umw$" or action_file_name = "RECOVER-kcr5umw-DATA.txt"
+    | comp count() as touched by agent_hostname, causality_actor_process_command_line, causality_id
+    | filter touched >= 3
+    | fields agent_hostname, causality_actor_process_command_line, causality_id, touched
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1486/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1486
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: critical
+---
+title: "Repellent Scorpius Cicada3301 \u2014 Share Enum, PsExec Spread, Rclone Exfil, Encryption (T1570 / T1567.002 / T1486) \u2014 MP-031 Rclone Massive Upload to Rare External Destination"
+id: ttp-2026-0190-abioc-08
+status: experimental
+description: |
+  A single session from an internal host uploads tens of GB to an external destination the fleet has never contacted, with process rclone.exe on the EAL record — the report's Rclone exfiltration as NGFW analytics sees it.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter bytes_sent > 10737418240
+    | filter process_name in ("rclone.exe", "rclone")
+    | comp sum(bytes_sent) as uploaded by endpoint_device_name, src, dst, dst_hostname
+    | fields endpoint_device_name, src, dst, dst_hostname, uploaded
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1048/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1048
+    - attack.t1567.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

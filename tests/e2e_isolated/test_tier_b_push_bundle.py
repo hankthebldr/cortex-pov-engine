@@ -99,12 +99,52 @@ def _load_scenario(path: pathlib.Path) -> dict[str, Any]:
         return yaml.safe_load(f)
 
 
+def _push_unsupported(doc: dict[str, Any]) -> bool:
+    """True when the scenario explicitly declares ``push_supported: false``."""
+    return doc.get("push_supported") is False
+
+
+def _skip_if_push_unsupported(doc: dict[str, Any], label: str = "scenario") -> None:
+    """Skip (never pass) a scenario that offers no push bundle by declaration."""
+    if _push_unsupported(doc):
+        pytest.skip(f"{label}: push_supported: false")
+
+
+def _orphans(docs: dict[str, dict[str, Any]]) -> list[str]:
+    """Labels of scenarios that promise a push bundle but can emit none.
+
+    ``push_supported: false`` scenarios are exempt BY DECLARATION: the author
+    withdrew push delivery, and the download route refuses them with
+    ``PUSH_NOT_SUPPORTED``. A ``push_supported: true`` (or silent) scenario
+    with no emittable target is the defect this guard exists to catch.
+    """
+    return [
+        label for label, doc in docs.items()
+        if not _push_unsupported(doc) and not _push.emittable_targets(doc)
+    ]
+
+
 def _pairs(target: str) -> list[pathlib.Path]:
-    """Scenario paths that can emit a bundle for ``target``."""
+    """Scenario paths for ``target``'s suite.
+
+    Includes ``push_supported: false`` scenarios so they appear as SKIPPED
+    (visible) rather than silently absent; see ``_honour_push_supported``.
+    """
     return [
         p for p in SCENARIOS
-        if target in _push.emittable_targets(_load_scenario(p))
+        if _push_unsupported(_load_scenario(p))
+        or target in _push.emittable_targets(_load_scenario(p))
     ]
+
+
+@pytest.fixture(autouse=True)
+def _honour_push_supported(request):
+    """Skip every per-scenario bundle assertion for ``push_supported: false``."""
+    callspec = getattr(request.node, "callspec", None)
+    path = callspec.params.get("path") if callspec else None
+    if isinstance(path, pathlib.Path):
+        _skip_if_push_unsupported(_load_scenario(path), _label(path))
+    yield
 
 
 POSIX_SCENARIOS = _pairs("posix")
@@ -132,14 +172,34 @@ def test_every_scenario_has_an_emittable_target():
     unemittable everywhere silently stops being tested. That is precisely the
     hole this suite exists to close, so the population is pinned at zero.
     """
-    orphans = [
-        _label(p) for p in SCENARIOS
-        if not _push.emittable_targets(_load_scenario(p))
-    ]
+    orphans = _orphans({_label(p): _load_scenario(p) for p in SCENARIOS})
     assert not orphans, (
         "scenario(s) can emit no bundle at all — every step lacks BOTH a POSIX "
         f"and a Windows command: {orphans}"
     )
+
+
+def test_push_supported_true_without_an_emittable_target_still_fails():
+    """The exemption is by declaration only: an unemittable scenario that did NOT
+    declare ``push_supported: false`` must remain an orphan."""
+    unemittable = {  # PowerShell-only AND bash-only steps: neither target resolves
+        "steps": [
+            {"id": "step-01", "command": "curl -s http://h/ -o /tmp/x"},
+            {"id": "step-02", "platforms": ["windows"], "command": "Get-Process lsass"},
+        ],
+    }
+    assert not _push.emittable_targets(unemittable)  # fixture really is unemittable
+    assert _orphans({"synthetic-true": {**unemittable, "push_supported": True}}) == ["synthetic-true"]
+    assert _orphans({"synthetic-silent": dict(unemittable)}) == ["synthetic-silent"]
+    assert _orphans({"synthetic-false": {**unemittable, "push_supported": False}}) == []
+
+
+def test_push_supported_false_is_skipped_not_passed():
+    """Declared-unsupported scenarios must register as SKIPPED, never as a pass."""
+    with pytest.raises(pytest.skip.Exception, match="SIM-X-1: push_supported: false"):
+        _skip_if_push_unsupported({"push_supported": False}, "SIM-X-1")
+    _skip_if_push_unsupported({"push_supported": True})  # no raise
+    _skip_if_push_unsupported({})  # silent: not exempt
 
 
 def test_both_suites_are_populated():
@@ -257,48 +317,79 @@ def test_bundle_passes_shellcheck(path: pathlib.Path):
         pathlib.Path(tmp).unlink(missing_ok=True)
 
 
-@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
-def test_every_step_command_in_bundle(path: pathlib.Path):
-    """Every scenario step's `command` must appear in the bundle.
+def _assert_every_step_command_in_bash_bundle(scenario: dict[str, Any], label: str) -> None:
+    """Each step's RESOLVED POSIX command text must appear in the bash bundle.
 
-    Verifies the generator didn't drop a step due to a templating bug.
-    Uses a witness substring extracted from the step's first executable
-    line. The generator escapes single quotes when wrapping in
-    ``run_as 'identity' '…command…'`` (single ' → '\\''), so we
-    normalize both witness and bundle by stripping single quotes before
-    comparing — quoting is a generator concern, not a step-fidelity
-    concern.
+    "Resolved" means what the generator itself selected for the POSIX target
+    (``_resolve_step_posix``): the primary when it is POSIX-shaped, else the
+    ``platform_variants.linux``/``macos`` text. Asserting on the raw primary
+    would fail a Windows-primary step whose Linux variant is (correctly) what
+    ships. A step with no POSIX resolution at all still fails.
+
+    The generator escapes single quotes inside ``run_as '…'`` and quoting is a
+    generator concern, so quotes/backslashes are stripped from both sides.
     """
-    scenario = _load_scenario(path)
     bundle = _push.generate_bash(scenario)
     steps = scenario.get("steps", [])
-    assert len(steps) > 0, f"{_label(path)} declares zero steps"
+    assert len(steps) > 0, f"{label} declares zero steps"
 
-    # The generator wraps each step in run_as 'identity' '…' and escapes
-    # any literal single quote as '\''. Normalize by stripping every
-    # quote AND backslash from both sides — only the underlying tokens
-    # need to match for step-fidelity. Quoting is a generator concern.
     def _normalize(s: str) -> str:
         return s.replace("'", "").replace("\\", "").replace('"', "")
     bundle_norm = _normalize(bundle)
 
     for i, step in enumerate(steps):
-        cmd = step.get("command", "")
+        resolved = _push._resolve_step_posix(step)
+        if not isinstance(resolved, _push.StepResolution):
+            pytest.fail(
+                f"{label} step {i+1} has no POSIX resolution "
+                f"(neither a POSIX primary nor a linux/macos variant): {resolved}"
+            )
         witness = None
-        for line in cmd.splitlines():
+        for line in resolved.command.splitlines():
             stripped = line.strip()
             if stripped and not stripped.startswith("#"):
                 witness = stripped[:80]
                 break
         if witness is None:
-            pytest.fail(
-                f"{_label(path)} step {i+1} has no executable line in its command"
-            )
+            pytest.fail(f"{label} step {i+1} has no executable line in its command")
         witness_norm = _normalize(witness)
         assert witness_norm in bundle_norm, (
-            f"{_label(path)} step {i+1} command not found in bundle "
+            f"{label} step {i+1} command not found in bundle "
             f"(witness: {witness!r}, normalized: {witness_norm!r})"
         )
+
+
+@pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)
+def test_every_step_command_in_bundle(path: pathlib.Path):
+    """Every scenario step's resolved command must appear in the bundle.
+
+    Verifies the generator didn't drop a step due to a templating bug.
+    """
+    _assert_every_step_command_in_bash_bundle(_load_scenario(path), _label(path))
+
+
+def test_step_command_check_is_variant_aware():
+    """Windows primary + linux variant: the VARIANT text must be in the bundle."""
+    scenario = {
+        "scenario_id": "SIM-SYN-001", "name": "syn", "steps": [{
+            "id": "step-01", "platforms": ["windows"],
+            "command": "Invoke-AtomicTest T1003.001 -TestNumbers 1",
+            "platform_variants": {"linux": "cat /etc/hostname > /tmp/syn-variant"},
+        }],
+    }
+    assert "cat /etc/hostname > /tmp/syn-variant" in _push.generate_bash(scenario)
+    _assert_every_step_command_in_bash_bundle(scenario, "synthetic")  # must not raise
+
+
+def test_step_command_check_still_fails_without_a_posix_resolution():
+    scenario = {
+        "scenario_id": "SIM-SYN-002", "name": "syn", "steps": [{
+            "id": "step-01", "platforms": ["windows"],
+            "command": "Invoke-AtomicTest T1003.001 -TestNumbers 1",
+        }],
+    }
+    with pytest.raises(pytest.fail.Exception, match="no POSIX resolution"):
+        _assert_every_step_command_in_bash_bundle(scenario, "synthetic")
 
 
 @pytest.mark.parametrize("path", POSIX_SCENARIOS, ids=_label)

@@ -2,7 +2,10 @@
 
 > A **derived** view of every loadable scenario YAML under `scenarios/`. Source-of-truth
 > is the YAML itself; the data-heavy sections (§2, §3, §5) are **regenerated from disk**.
-> **Current ground truth (2026-08-02): 169 scenarios · 169 TTP cards across 15 planes**,
+> **Current ground truth (2026-10-28): 193 scenarios · 191 TTP cards across 16 planes** (ANALYTICS=38 after the
+> 12 Unit 42 stitched chains `SIM-MP-023..034`, `TTP-2026-0182..0193`, and the three recent-posts chains
+> `SIM-MP-035..037`, `TTP-2026-0194..0196`, and `SIM-KOI-009` (GlassWorm, `TTP-2026-0197`, KOI=9); see `ground-truth.md`).
+> The 2026-08-02 breakdown that follows is the prior snapshot: **169 scenarios · 169 TTP cards across 15 planes**,
 > all `status: active`, 0 rejected / 0 dangling refs, 1073/1073 `detection_id` slugs
 > resolving. Per-plane on disk: CDR=26 · ANALYTICS=23 · EDR=21 · ITDR=20 · NDR=12 ·
 > CLOUD_APP=10 · TIM=9 · KOI=8 · AI_SPM=7 · AI_ACCESS=6 · ASM=6 · BROWSER=6 · AIRS=5 ·
@@ -107,7 +110,7 @@ not at load.
 | **TIM** | Cortex Threat Intel Management | 2 | 5 | 6 | 18 | `c2_http_beacon` | — | base, ndr, tim |
 | **TOTAL** | — | **75** | — | **258** | **494** | 12 plugins | 34 distinct | 9 modules |
 
-Detection-type legend: **B**=BIOC · **X**=XQL · **A**=Analytics · **C**=Correlation · **I**=IOC. `det` column in per-plane tables is `B/X/A/C/I (total)`.
+Detection-type legend: **B**=BIOC · **X**=XQL · **A**=Analytics/ABIOC · **C**=Correlation · **I**=IOC. `det` column in per-plane tables is `B/X/A/C/I (total)`.
 
 
 ## 3. Per-plane detail
@@ -225,7 +228,9 @@ Detection-type legend: **B**=BIOC · **X**=XQL · **A**=Analytics · **C**=Corre
 | SIM-BROWSER-004 | Browser — Cross-Origin SaaS Copy-Paste DLP | Exfiltration (TA0010) | T1567 Exfiltration Over Web Service | — | `browser_attack_runner`, CORTEX-BROWSER-ATTACKER | 3 | 1/0/4/0/0 (5) | base | UCS-BROWSER-04 / TC-BROWSER-04 |
 | SIM-BROWSER-005 | Browser — Screen Capture of Sensitive SaaS Page | Collection (TA0009) | T1113 Screen Capture | — | `browser_attack_runner`, CORTEX-BROWSER-ATTACKER | 3 | 1/0/4/0/0 (5) | base | UCS-BROWSER-05 / TC-BROWSER-05 |
 
-### Plane: KOI (Agentic endpoint / supply-chain) — 5 scenarios
+### Plane: KOI (Agentic endpoint / supply-chain) — 9 scenarios
+
+_Rows for `SIM-KOI-006`, `SIM-KOI-007` and `SIM-KOI-008` are not yet in this table; the gap predates `SIM-KOI-009`, and `docs/reference/ground-truth.md` carries the counted truth._
 
 | ID | Name | Tactic | Primary technique | Additional | EAL / Adapter | Steps | Det (B/X/A/C/I) | infra | UC / TC |
 |---|---|---|---|---|---|---|---|---|---|
@@ -234,6 +239,7 @@ Detection-type legend: **B**=BIOC · **X**=XQL · **A**=Analytics · **C**=Corre
 | SIM-KOI-003 | KOI — Backdoored PyPI Package Consumed by Agent | Initial Access (TA0001) | T1195.002 Compromise Software Supply Chain | T1059.006 | `agentic_egress`, CORTEX-AGENTIC-PACK | 3 | 2/4/0/0/0 (6) | base | UCS-KOI-03 / TC-KOI-03 |
 | SIM-KOI-004 | KOI — Malicious VS Code Extension Permission Escalation | Initial Access (TA0001) | T1195 Supply Chain Compromise | T1059, T1552.001 | `agentic_egress`, CORTEX-AGENTIC-PACK | 3 | 2/4/0/0/0 (6) | base | UCS-KOI-04 / TC-KOI-04 |
 | SIM-KOI-005 | KOI — Malicious Claude Skill With Hidden Instructions | Initial Access (TA0001) | T1656 Impersonation | T1195 | `agentic_egress`, CORTEX-AGENTIC-PACK | 3 | 1/5/0/0/0 (6) | base | UCS-KOI-05 / TC-KOI-05 |
+| SIM-KOI-009 | KOI — GlassWorm Poisoned IDE Extension on a macOS Developer Endpoint | Initial Access (TA0001) | T1195 Supply Chain Compromise | T1059.002, T1543.001, T1555.001, T1552.001, T1074.001, T1560, T1041 | CORTEX-AGENTIC-PACK | 6 | 3/2/1/1/0 (7) | base | UCS-SCA-01 / TC-SCA-01 |
 
 ### Plane: ASM (Cortex Attack Surface Management) — 4 scenarios
 

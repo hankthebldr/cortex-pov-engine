@@ -289,7 +289,7 @@ def test_exposure_exploit_impact_edges(run, dual_control_steps):
     cs = graph["causality_summary"]
     assert cs["chain_completeness_pct"] == 100.0
     assert cs["by_control_layer"]["exposure"]["detected"] == 1
-    assert cs["by_control_layer"]["prevention"]["detected"] == 2
+    assert cs["by_control_layer"]["runtime_control"]["detected"] == 2
     assert "Dual-control CONFIRMED" in cs["dual_control_verdict"]
 
 

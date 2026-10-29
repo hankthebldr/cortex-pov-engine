@@ -1,10 +1,16 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { getResultsForRun, validateResult } from '../../api/client.js'
+import { resultStatus, isHitStatus, isInDenominator, isBulkAttestable } from '../../outcomes.js'
 
 /**
  * useResultsData — fetches and folds /api/results/:runId into:
  *   - rows: render-ready rows for the scorecard
  *   - kpis: summary metrics (coverage %, MTTD median, stitch count, pending count)
+ *
+ * Coverage is the SERVER's (`/api/results` → `coverage`, computed with
+ * `engine.outcome.is_in_denominator`): the console never re-derives the
+ * denominator. Row status comes from `resultStatus` (outcomes.js), so a
+ * `not_reached` / soak-pending row is never counted as missed.
  *
  * Provides validate(resultId, observed, notes) which optimistically updates
  * local state and refetches on completion.
@@ -76,6 +82,10 @@ export default function useResultsData(runId) {
       mttd: r.mttd_seconds ?? null,
       alertId: r.alert_id || null,
       observed: r.observed,        // true | false | null  (null = pending)
+      outcome: r.outcome ?? null,
+      outcome_reason: r.outcome_reason ?? null,
+      expectedOutcome: r.expected_outcome || null,
+      status: resultStatus(r),     // the rendered status — outcome first
       notes: r.notes || '',
       executedAt: r.executed_at || null,
       observedAt: r.observed_at || null,
@@ -83,25 +93,49 @@ export default function useResultsData(runId) {
   }, [payload])
 
   const kpis = useMemo(() => {
-    const total     = rows.length
-    const detected  = rows.filter((r) => r.observed === true).length
-    const missed    = rows.filter((r) => r.observed === false).length
-    const pending   = rows.filter((r) => r.observed == null).length
-    const mttdList  = rows.filter((r) => r.observed === true && typeof r.mttd === 'number')
+    const seeded    = rows.length
+    const missed    = rows.filter((r) => r.status === 'missed').length
+    const pending   = rows.filter((r) => r.status === 'pending').length
+    // What "Validate all" may act on: exactly the rows the server accepts as a
+    // new attestation (outcome none / pending / missed, not yet observed).
+    // `skipped` = unobserved rows it will not touch (never ran / prevented),
+    // shown next to the button so the skip is never silent.
+    const unvalidated = rows.filter((r) => isBulkAttestable(r)).length
+    const skipped = rows.filter((r) => r.observed !== true && !isBulkAttestable(r)).length
+    const mttdList  = rows.filter((r) => isHitStatus(r.status) && typeof r.mttd === 'number')
                           .map((r) => r.mttd)
                           .sort((a, b) => a - b)
     const median = mttdList.length
       ? mttdList[Math.floor(mttdList.length / 2)]
       : null
+    // The server's honest denominator. Absent (a server that predates it) is
+    // reported as unknown, never as a measured figure.
+    const cov = (payload && !Array.isArray(payload) && payload.coverage) || null
+    const denominator = cov && typeof cov.denominator === 'number' ? cov.denominator : null
+    const detected = denominator != null ? cov.observed_in_denominator : null
+    const excluded = cov && cov.excluded
+      ? Object.values(cov.excluded).reduce((n, v) => n + (Number(v) || 0), 0)
+      : 0
     // 0 of 0 is not 0 % — it is "nothing to score", and must not render as a
     // measured coverage figure.
-    const coverage = total > 0 ? Math.round((detected / total) * 100) : null
+    const coverage = denominator ? Math.round(cov.pct) : null
     const stitched = rows.filter((r) =>
-      r.plane === 'ANALYTICS' && r.observed === true
+      r.plane === 'ANALYTICS' && isHitStatus(r.status)
+    ).length
+    // The tile's denominator: ANALYTICS-plane rows (the numerator's own
+    // population) that pass the one denominator rule -- a row that never ran
+    // or is still soaking is not something XSIAM could have stitched. Zero is
+    // degraded, rendered "—", never "0 / 0".
+    const stitchDenominator = rows.filter((r) =>
+      r.plane === 'ANALYTICS' && isInDenominator(r.outcome, r.outcome_reason)
     ).length
 
-    return { total, detected, missed, pending, coverage, median, stitched }
-  }, [rows])
+    return {
+      total: denominator, seeded, detected, missed, pending, unvalidated, skipped, excluded,
+      coverage, coverageUnknown: seeded > 0 && denominator == null, median, stitched,
+      stitchDenominator,
+    }
+  }, [rows, payload])
 
   const validate = useCallback(async (resultId, observed, notes) => {
     if (resultId == null) return

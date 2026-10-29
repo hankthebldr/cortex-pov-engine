@@ -16,10 +16,10 @@ Design rules (mirrors ``engine.ttp_catalog`` / ``connectors.matcher``):
   unit-testable and directly API-servable.
 * **Deterministic order.** Entries follow scenario step order, then the order
   detections were seeded within each step (= ``expected_detections`` order).
-* **Explainable status.** ``detected`` when the Result was observed;
-  ``pending`` while the run is still in-flight; ``missed`` only once the run
-  reaches a terminal state without the detection firing. This is what turns the
-  seeded denominator into true per-engine false-NEGATIVE accounting.
+* **Explainable status.** One rule, ``engine.outcome.row_status``: the engine's
+  ``outcome`` when it decided one; otherwise ``detected`` when the Result was
+  validated, else ``pending`` (awaiting reconcile). ``missed`` exists only as an
+  engine outcome -- a terminal run no longer turns an unjudged row into a gap.
 
 The observed alert record (name / id / technique / firing time) is read from the
 Result row when present, or from an optional ``observations`` map keyed by
@@ -32,16 +32,15 @@ from __future__ import annotations
 import math
 from typing import Any, Optional
 
-# Run statuses that mean "the attack is over" — an un-observed detection is now
-# a genuine gap (missed), not merely awaiting ingest (pending). ``staged`` is a
-# push-mode terminal state where reconciliation has not yet happened, so it is
-# deliberately NOT terminal here: its detections read as ``pending`` (proof
-# pending) rather than a misleading 0%-missed.
-TERMINAL_RUN_STATUSES = frozenset({"complete", "failed", "aborted"})
+from engine.outcome import is_in_denominator, row_status
 
 STATUS_DETECTED = "detected"
 STATUS_PENDING = "pending"
 STATUS_MISSED = "missed"
+# Outcome-derived states: mirrored from ``Result.outcome``, never decided here.
+STATUS_PREVENTED = "prevented"
+STATUS_NOT_REACHED = "not_reached"
+STATUS_NOT_EXECUTED = "not_executed"
 
 
 # ---------------------------------------------------------------------------
@@ -133,21 +132,16 @@ def _build_observed(
 
 
 def _entry_status(result: dict[str, Any], run_status: str) -> str:
-    """Classify one detection: detected / pending / missed.
+    """Classify one detection through the one rule, ``engine.outcome.row_status``.
 
-    Mirrors ``efficacy_scorecard._status`` (detected → observed; a set
-    ``observed_at`` without ``observed`` → reviewed-but-unfired = missed) but
-    keeps the run-status nuance: an un-reviewed detection is only ``missed``
-    once the run has actually reached a terminal state, otherwise ``pending``.
+    The engine's ``outcome`` wins; an outcome-less row is ``detected`` when
+    validated, else ``pending`` (awaiting reconcile) -- on any run status. A
+    terminal run used to turn every un-reviewed row into ``missed``: the engine
+    never asserted that miss, the storyline inferred it from a checkbox (R4).
+    ``run_status`` is kept for call-site compatibility.
     """
-    if _is_detected(result):
-        return STATUS_DETECTED
-    # DC reviewed this detection and it did not fire → a real gap.
-    if result.get("observed_at"):
-        return STATUS_MISSED
-    if run_status in TERMINAL_RUN_STATUSES:
-        return STATUS_MISSED
-    return STATUS_PENDING
+    del run_status
+    return row_status(result.get("outcome"), _is_detected(result))
 
 
 def _evidence_refs(result: dict[str, Any]) -> list[Any]:
@@ -193,6 +187,11 @@ def _build_entry(
         # Convenience carry-throughs the two faces use directly.
         "result_id": result.get("id"),
         "detection_kind": result.get("detection_kind"),
+        "outcome": result.get("outcome"),
+        "outcome_reason": result.get("outcome_reason"),
+        "prevention_module": result.get("prevention_module"),
+        "alert_action": result.get("alert_action"),
+        "alert_outcome": result.get("alert_outcome"),
     }
 
 
@@ -222,6 +221,11 @@ def _percentile(values: list[float], pct: float) -> Optional[float]:
     return round(float(interp), 1)
 
 
+def _in_denominator(entry: dict[str, Any]) -> bool:
+    """Entry-dict adapter over the single rule, ``engine.outcome.is_in_denominator``."""
+    return is_in_denominator(entry.get("outcome"), entry.get("outcome_reason"))
+
+
 def build_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
     """Run-level rollup over already-built storyline entries.
 
@@ -232,6 +236,10 @@ def build_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
     detected = sum(1 for e in entries if e["status"] == STATUS_DETECTED)
     pending = sum(1 for e in entries if e["status"] == STATUS_PENDING)
     missed = sum(1 for e in entries if e["status"] == STATUS_MISSED)
+    prevented = sum(1 for e in entries if e["status"] == STATUS_PREVENTED)
+    not_reached = sum(1 for e in entries if e["status"] == STATUS_NOT_REACHED)
+    not_executed = sum(1 for e in entries if e["status"] == STATUS_NOT_EXECUTED)
+    denominator = sum(1 for e in entries if _in_denominator(e))
 
     mttds = [
         float(e["mttd_seconds"])
@@ -244,7 +252,15 @@ def build_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "detected": detected,
         "pending": pending,
         "missed": missed,
-        "coverage_pct": round(detected / total * 100, 1) if total else 0.0,
+        "prevented": prevented,
+        "not_reached": not_reached,
+        "not_executed": not_executed,
+        "denominator": denominator,
+        # Honest denominator: rows whose step never ran (or that are soak-pending)
+        # leave it; a prevention is a hit. ``denominator: 0`` reads degraded.
+        "coverage_pct": (
+            round((detected + prevented) / denominator * 100, 1) if denominator else 0.0
+        ),
         "mttd": {
             "count": len(mttds),
             "min": _percentile(mttds, 0),

@@ -329,6 +329,36 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "shrinking minority of extortion cases. Carries a benign comparison arm "
         "with a matching I/O shape, because an alert on the malicious arm alone "
         "only proves the platform alerts on bulk file activity."),
+    "SIM-MP-023": (["TC-IR-05", "TC-NDR-01", "TC-TH-06"], REMAP,
+        "Squidoor (CL-STA-0049): web shell, renamed-debugger backdoor, multi-protocol C2 — EDR lineage plus NGFW session legs"),
+    "SIM-MP-024": (["TC-NDR-01", "TC-NDR-04", "TC-EDR-05"], REMAP,
+        "CL-UNK-1211 AI-driven Linux espionage: web shell to mailbox theft — endpoint plus NGFW legs"),
+    "SIM-MP-025": (["TC-IR-05", "TC-EDR-05", "TC-NDR-01", "TC-TH-06"], REMAP,
+        "Blinder Tunnel (CL-STA-1178): developer-lure MSBuild execution, GitHub-as-C2, Chisel tunnel — EDR plus NGFW legs"),
+    "SIM-MP-026": (["TC-IR-05", "TC-NDR-01", "TC-EDR-03"], REMAP,
+        "CL-STA-1020 HazyBeacon: mscorsvw.exe DLL side-load, Lambda-URL C2, cloud-storage exfil — EDR plus NGFW legs"),
+    "SIM-MP-027": (["TC-NDR-01", "TC-IR-05", "TC-TH-06", "TC-EDR-05"], REMAP,
+        "Slow Pisces coding-challenge lure to RN Loader / RN Stealer — developer workstation EDR plus NGFW stitch"),
+    "SIM-MP-028": (["TC-CDR-02", "TC-CDR-01", "TC-IR-05", "TC-NDR-01"], REMAP,
+        "ChainDrop npm worm: CI-runner preinstall lineage, Runner.Worker memory scrape, IMDS harvest, C2 exfil, STS reuse — CDR, EDR and NGFW legs"),
+    "SIM-MP-029": (["TC-IR-05", "TC-NDR-01", "TC-EDR-05", "TC-EDR-03"], REMAP,
+        "TGR-STA-1030 Shadow Campaigns (Unit 42): Diaoyu lure, Cobalt Strike C2, ShadowGuard eBPF rootkit — EDR plus NGFW legs"),
+    "SIM-MP-030": (["TC-IR-05", "TC-IR-04", "TC-EDR-05", "TC-NDR-01", "TC-ITDR-01"], REMAP,
+        "Jumpy Pisces to Play ransomware hand-off (Unit 42): SMB tool transfer, Sliver C2, EDR removal, impact — EDR, NGFW and identity legs"),
+    "SIM-MP-031": (["TC-IR-04", "TC-IR-05", "TC-NDR-01", "TC-NDR-04"], REMAP,
+        "Repellent Scorpius Cicada3301 (Unit 42): share enumeration, PsExec spread, Rclone exfil, hypervisor-shaped encryption — EDR plus NGFW legs"),
+    "SIM-MP-032": (["TC-NDR-01", "TC-NDR-04", "TC-EDR-05", "TC-IR-05", "TC-TH-06"], REMAP,
+        "BeyondTrust RS CVE-2026-1731 post-exploitation to SparkRAT / VShell (Unit 42) — appliance EDR plus NGFW legs"),
+    "SIM-MP-033": (["TC-NDR-01", "TC-NDR-04", "TC-EDR-05"], REMAP,
+        "CL-STA-0969 telecom intrusion: AuthDoor PAM backdoor, GTPDoor / EchoBackdoor covert C2, reverse SSH tunnels — endpoint plus NGFW legs"),
+    "SIM-MP-034": (["TC-ITDR-03", "TC-ITDR-02", "TC-AES-07", "TC-IR-13"], REMAP,
+        "Jingle Thief (CL-CRI-1032): M365/Entra account takeover, SharePoint recon, mailbox forwarding — identity and SaaS legs"),
+    "SIM-MP-035": (["TC-IR-05", "TC-NDR-01", "TC-NDR-04", "TC-EDR-05", "TC-AIRS-07", "TC-TH-06"], REMAP,
+        "Bugster AI-assisted WordPress-to-MongoDB exfil (Unit 42): web-shell foothold, live recon, LLM-egress jailbreak — EDR, NGFW and AI-runtime legs"),
+    "SIM-MP-036": (["TC-IR-05", "TC-IR-04", "TC-ITDR-01", "TC-EDR-05", "TC-NDR-01"], REMAP,
+        "PAN-OS CVE-2026-0257 VPN foothold to VMDK credential theft (Unit 42, Spikey / Tarnished Scorpius) — EDR, NGFW and identity legs"),
+    "SIM-MP-037": (["TC-TH-01", "TC-NDR-01", "TC-EDR-05"], REMAP,
+        "PHP2Shell (CVE-2026-109618/-109619) PHP-worker post-exploitation, validated by Unit 42 hunts — endpoint plus NGFW legs"),
     "SIM-APB-001": (["TC-APB-06", "TC-SOAR-02"], REMAP,
         "Governed-autonomy audit reconstruction across three structurally "
         "different action classes. TC-APB-06 is NET-NEW and is the ONLY "
@@ -567,6 +597,8 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "MCP sampling abuse — server-initiated inference for quota theft and covert tasking."),
     "SIM-KOI-008": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
         "Shai-Hulud self-replicating npm worm — a preinstall hook spawning a detached child."),
+    "SIM-KOI-009": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
+        "GlassWorm poisoned IDE extension executing, persisting and collecting developer credentials on a macOS endpoint."),
 
     # ── DLP ────────────────────────────────────────────────────────────────
     # First DLP-plane scenarios. Refs below match each scenario's own authored
@@ -857,6 +889,13 @@ PROPOSED_TCS: list[dict[str, str]] = [
      "detection_source": "XSIAM (XQL: dataset=xdr_data)",
      "scenario_id": "SIM-KOI-008",
      "rationale": "Shai-Hulud-class worms propagate through install hooks, not through a CVE."},
+    {"tc_id": "TC-AEPS-09", "uc_id": "UC-AEPS", "ucs_id": "UCS-AEPS-02",
+     "use_case": "Agentic Endpoint Security", "scenario": "Agentic Supply-Chain Compromise",
+     "title": "Validate detection of a poisoned IDE extension update that executes, persists and collects developer credentials on a macOS endpoint",
+     "primary_kpi": "Detection Accuracy", "threshold": ">90%",
+     "detection_source": "XSIAM (XQL: dataset=xdr_data)",
+     "scenario_id": "SIM-KOI-009",
+     "rationale": "The first KOI scenario that lands and runs on an endpoint; TC-AEPS-04..08 cover fetch and scan paths only."},
 ]
 
 

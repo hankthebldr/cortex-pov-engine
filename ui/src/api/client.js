@@ -415,6 +415,32 @@ export async function getRun(runId) {
 }
 
 /**
+ * POST /api/runs/canary — launch the block-mode canary against an agent.
+ * 409 CANARY_NOT_AVAILABLE when the deployment has no canary scenario; the
+ * thrown Error carries `.code` / `.detail` for the launch form to render.
+ *
+ * @param {string} targetAgentId
+ * @returns {Promise<{run_id:string, scenario_id:string}>}
+ */
+export async function postCanary(targetAgentId) {
+  return request('/api/runs/canary', {
+    method: 'POST',
+    body: JSON.stringify({ target_agent_id: targetAgentId }),
+  })
+}
+
+/**
+ * GET /api/runs/:runId/pair — the report→block prevention delta for a paired
+ * run. 409 RUN_NOT_PAIRED when the run has no partner.
+ *
+ * @param {string} runId
+ * @returns {Promise<{runs:Array, delta:Object}>}
+ */
+export async function getRunPair(runId) {
+  return request(`/api/runs/${encodeURIComponent(runId)}/pair`)
+}
+
+/**
  * GET /api/runs/:runId/causality
  *
  * The REAL causality graph for a run — the Run lens's only data source. Unwraps

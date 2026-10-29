@@ -368,3 +368,90 @@ async def test_xsiam_runner_falls_back_to_row_count():
             return {"results": [{"a": 1}, {"a": 2}]}
 
     assert await xsiam_query_runner(C(), {})("q") == 2
+
+
+@pytest.mark.asyncio
+async def test_verify_run_mttd_excludes_not_reached_rows():
+    from engine.verifier import PASS, verify_run  # noqa: PLC0415
+
+    run = FakeRun()
+    scen = FakeScenario(threshold={"kpi": "MTTD", "op": "<=", "value": 60, "unit": "s"},
+                        primary_kpi="MTTD")
+    ok = FakeResult(verification_xql="q", mttd_seconds=30.0, rid=1)
+    severed = FakeResult(verification_xql="q", mttd_seconds=600.0, rid=2)
+    ok.outcome, severed.outcome = "detected", "not_reached"
+    score = await verify_run(None, run, scen, [ok, severed], runner_returning(1))
+    assert run.tc_verdict_detail["primary"]["actual"] == 30.0
+    assert score.verdict == PASS
+
+
+# ── a step that never ran cannot be certified by a row count ───────────────
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["not_reached", "not_executed"])
+async def test_verifier_skips_rows_the_host_says_never_ran(outcome):
+    from engine.verifier import verify_results  # noqa: PLC0415
+
+    r = FakeResult(verification_xql="dataset = xdr_data", kpi_verdict="pending")
+    r.outcome = outcome
+    calls: list = []
+
+    async def runner(q):
+        calls.append(q)
+        return 5
+    counts = await verify_results([r], runner, expected_rows_min=lambda _r: 1)
+    assert calls == []
+    assert r.kpi_verdict == "pending"
+    assert r.verified_at is None
+    assert counts["skipped"] == 1
+
+
+def test_score_run_ignores_and_lists_excluded_rows():
+    from engine.verifier import PASS, score_run  # noqa: PLC0415
+
+    ok = FakeResult(kpi_verdict="pass", detection_id="ok", rid=1)
+    ex_pass = FakeResult(kpi_verdict="pass", detection_id="severed-pass", rid=2)
+    ex_fail = FakeResult(kpi_verdict="fail", detection_id="severed-fail", rid=3)
+    ok.outcome, ex_pass.outcome, ex_fail.outcome = "detected", "not_reached", "not_executed"
+    s = score_run([ok, ex_pass, ex_fail])
+    assert s.verdict == PASS
+    assert s.counts["pass"] == 1 and s.counts["fail"] == 0
+    assert s.weighted_total == 1.0
+    d = s.to_dict()
+    assert len(d["excluded"]) == 2
+    assert set(d["excluded"]) == {"severed-pass", "severed-fail"}
+
+
+# ── final review I2 — a soak-pending row is withheld from Tier 2 and scoring ─
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reason", ["ANALYTICS_ACTIVATION_PERIOD", "DEDUP_WINDOW"])
+async def test_verifier_issues_no_xql_for_a_soak_pending_row(reason):
+    """Spec §5.5: an Analytics/ABIOC row in its activation (or dedup) period is
+    withheld. Zero rows from a detector still soaking is not a failure."""
+    from engine.verifier import verify_results  # noqa: PLC0415
+
+    r = FakeResult(verification_xql="dataset = xdr_data", kpi_verdict="pending")
+    r.outcome, r.outcome_reason, r.signal_type = "pending", reason, "Analytics"
+    calls: list = []
+
+    async def runner(q):
+        calls.append(q)
+        return 0
+    counts = await verify_results([r], runner, expected_rows_min=lambda _r: 1)
+    assert calls == []
+    assert r.kpi_verdict == "pending"
+    assert counts["skipped"] == 1 and counts["fail"] == 0
+
+
+def test_score_run_withholds_and_lists_soak_pending_rows():
+    from engine.verifier import PASS, score_run  # noqa: PLC0415
+
+    ok = FakeResult(kpi_verdict="pass", detection_id="ok", rid=1)
+    soaking = FakeResult(kpi_verdict="fail", detection_id="soaking", rid=2)
+    ok.outcome = "detected"
+    soaking.outcome, soaking.outcome_reason = "pending", "ANALYTICS_ACTIVATION_PERIOD"
+    s = score_run([ok, soaking])
+    assert s.verdict == PASS
+    assert s.counts["fail"] == 0
+    assert s.to_dict()["excluded"] == ["soaking"]

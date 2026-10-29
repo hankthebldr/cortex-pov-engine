@@ -433,6 +433,28 @@
   color: var(--cortex-steel);
 }
 
+.storyline-pill__glyph { margin-right: 2px; }
+/* Prevented is a PASS for the control, drawn in the detected family. */
+.storyline-pill--prevented {
+  background: color-mix(in srgb, var(--pos) 16%, transparent);
+  color: var(--pos-ink);
+}
+/* Not reached: our chain stopped early (the control did its job upstream) —
+   neutral, never red. */
+.storyline-pill--not-reached {
+  background: rgba(107, 126, 142, 0.16);
+  color: var(--cortex-steel);
+}
+/* Detected, not prevented: the block-mode prevention FAILED — the missed
+   family, never the detected green. */
+.storyline-pill--detected-not-prevented {
+  background: rgba(231, 76, 60, 0.14);
+  color: #b03030;
+}
+.storyline-detection--not-reached { opacity: 0.7; }
+.storyline-detection--prevented { border-left: 3px solid var(--pos); }
+.storyline-observed__reason { color: var(--cortex-steel); font-size: 12px; margin-left: 8px; }
+
 .storyline-pill--pending .storyline-pill__dot {
   animation: storyline-blink 1.2s infinite;
 }

@@ -1,0 +1,471 @@
+# Jumpy Pisces (Andariel) -> Play hand-off (Unit 42, 2024-10-30). A compromised account maps C$ and copies
+# Sliver/DTrack over SMB (step-02, ITDR + EDR), WildFire logs the transfer (step-03, report sha256s), Sliver
+# beacons to americajobmail.site / 172.96.137.224 (step-04, NGFW EAL), then the same account dumps creds to
+# KB0722.log (05), escalates via PsExec-shaped service + new local admin (06), removes "EDR" (07: a
+# cortexsim-edr-sensor dummy service + a fake msiexec product code, never a real product; detected only, no
+# prevent outcome) and a Play-shaped canary rename (08; the .PLAY extension and ReadMe.txt note come from the linked
+# CISA AA23-352A, not the U42 text). DC points at: EDR BIOCs; NDR in panw_ngfw_traffic_raw/_threat_raw;
+# ITDR share-access ABIOC (inferred: the report names the share mapping, not an identity alert); CR-MP-0030.
+# Windows legs run on the lab endpoint; the two EAL legs run on a Linux runner carrying the endpoint's identity
+# in-band (VICTIM_SRC_IP/HOST/USER) so every leg shares src_host. step-04 sends ONE DNS query for the report
+# domain via @${LAB_RESOLVER} (tag real-ioc-dns-lookup); no C2 session is ever opened. Report IP/domain only in
+# EAL params / that lookup line; hashes only as log fields. No URI/user-agent or cloud leg in the report: none invented.
+scenario_id: SIM-MP-030
+name: "Jumpy Pisces to Play Ransomware Hand-off — SMB Tool Transfer, Sliver C2, EDR Removal, Impact (Unit 42)"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - ABIOC
+  - XQL
+  - IOC
+  - Correlation
+
+uc_ref: UCS-IR-02
+tc_ref: TC-IR-05
+tc_refs:
+  - TC-IR-05
+  - TC-IR-04
+  - TC-EDR-05
+  - TC-NDR-01
+  - TC-ITDR-01
+pov_scenario_id: POV-SC-001
+uc_name: "Incident Response"
+tc_name: "Demonstrate correlation-based detections across endpoint + network + identity telemetry"
+
+mitre_tactic: "TA0008"
+mitre_tactic_name: "Lateral Movement"
+mitre_technique: "T1021.002"
+mitre_technique_name: "Remote Services: SMB/Windows Admin Shares"
+additional_techniques:
+  - technique: "T1078"
+    name: "Valid Accounts"
+  - technique: "T1570"
+    name: "Lateral Tool Transfer"
+  - technique: "T1036.003"
+    name: "Masquerading: Rename System Utilities"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1003"
+    name: "OS Credential Dumping"
+  - technique: "T1003.002"
+    name: "OS Credential Dumping: Security Account Manager"
+  - technique: "T1569.002"
+    name: "System Services: Service Execution"
+  - technique: "T1136.001"
+    name: "Create Account: Local Account"
+  - technique: "T1562.001"
+    name: "Impair Defenses: Disable or Modify Tools"
+  - technique: "T1486"
+    name: "Data Encrypted for Impact"
+
+threat_report: "Unit 42 — Jumpy Pisces Engages in Play Ransomware"
+threat_report_url: "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/"
+
+execution_identity:
+  default: user
+  options:
+    - user
+    - administrator
+    - direct
+
+# No single push bundle can carry both the Windows endpoint legs and the Linux EAL legs.
+push_supported: false
+pull_supported: true
+
+# The lab Windows endpoint (and any second SMB host) is DC-supplied, not provisioned by a module.
+infra_modules_needed:
+  - base
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  On one lab Windows host, the endpoint stages (admin-share copy, renamed binary from
+  C:\Users\Public\Music, KB0722.log, PsExec-shaped LocalSystem service, local admin creation,
+  security-sensor service removal, .PLAY canary rename) raise their XDR BIOCs; the ITDR
+  share-access ABIOC fires for the account that mapped C$; the NGFW threat log carries the
+  report's sha256s and the NGFW EAL beacon carries the report's Sliver C2 domain and IP, both
+  naming the same src_host. CR-MP-0030 stitches EDR + NDR + ITDR into one incident within the
+  window. The sensor-removal stage is scored as detected; no prevention is claimed.
+moat_tier: "LEAD"
+
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - EDR
+  - NDR
+  - ITDR
+stitching_key: src_host
+
+indicators:
+  - id: ind-01
+    type: domain
+    value: "americajobmail.site"
+    source_url: "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/"
+    safe_form: dns_lookup
+    surfaces_in: [step-04]
+    description: "Sliver C2 server domain (report, Sliver C2 Server Information)"
+  - id: ind-02
+    type: ipv4
+    value: "172.96.137.224"
+    source_url: "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/"
+    safe_form: log_field
+    surfaces_in: [step-04]
+    description: "Sliver C2 server IP (report, Sliver C2 Server Information)"
+  - id: ind-03
+    type: sha256
+    value: "243ad5458706e5c836f8eb88a9f67e136f1fa76ed44868217dc995a8c7d07bf7"
+    source_url: "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    description: "SHA256 from the report's IOC table (no per-hash role given); WildFire filedigest on the SMB transfer"
+  - id: ind-04
+    type: sha256
+    value: "2b254ae6690c9e37fa7d249e8578ee27393e47db1913816b4982867584be713a"
+    source_url: "https://unit42.paloaltonetworks.com/north-korean-threat-group-play-ransomware/"
+    safe_form: log_field
+    surfaces_in: [step-03]
+    description: "SHA256 from the report's IOC table (no per-hash role given); WildFire filedigest on the SMB transfer"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The report's actor works hands-on-keyboard through the compromised account, so the
+# CGO is that account's interactive powershell.exe. step-01 is the root; the SMB copy and
+# implant run descend from it (process_lineage); the two NGFW legs are the same src_host
+# seen by the firewall (shared_entity / endpoint_network_stitch); the post-hand-off stages
+# reuse the same account on the same host (shared_entity), and the impact step closes the
+# chain (exploit_impact) where CR-MP-0030 fuses every leg on src_host.
+cgo_anchor:
+  image_name: "powershell.exe"
+  primary_username: "user"
+
+steps:
+  - id: step-01
+    name: "Compromised-account foothold — discovery output staged into C:\\Users\\Public\\Music"
+    command: |
+      $music = 'C:\Users\Public\Music'
+      New-Item -ItemType Directory -Force -Path $music | Out-Null
+      cmd.exe /c "whoami /all > C:\Users\Public\Music\cortexsim-mp030-recon.txt & net localgroup administrators >> C:\Users\Public\Music\cortexsim-mp030-recon.txt & quser >> C:\Users\Public\Music\cortexsim-mp030-recon.txt 2>&1 & nltest /dclist: >> C:\Users\Public\Music\cortexsim-mp030-recon.txt 2>&1"
+      Get-Item (Join-Path $music 'cortexsim-mp030-recon.txt') | Select-Object FullName, Length
+    identity: user
+    mitre_technique: "T1033"
+    platforms: ["windows"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "whoami /all, net localgroup, quser and nltest run as children of one cmd.exe /c whose command line redirects into C:\\Users\\Public\\Music (so the children's actor command line carries the path) — the staging folder the report ties to the Play-era tooling."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-discovery-burst-staged-into-public-music-folder"
+
+  - id: step-02
+    name: "Lateral tool transfer — net use C$ and copy Sliver/DTrack stand-ins over SMB, then run one"
+    command: |
+      $target = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
+      Copy-Item "$env:SystemRoot\System32\whoami.exe" "$env:TEMP\cortexsim-mp030-sliver-standin.exe" -Force
+      cmd.exe /c "net use \\$target\C$ && copy /Y %TEMP%\cortexsim-mp030-sliver-standin.exe \\$target\C$\Users\Public\Music\cortexsim-mp030-sliver-standin.exe && copy /Y %TEMP%\cortexsim-mp030-sliver-standin.exe \\$target\C$\Users\Public\Music\cortexsim-mp030-dtrack-standin.exe"
+      & "\\$target\C$\Users\Public\Music\cortexsim-mp030-sliver-standin.exe" /user
+      cmd.exe /c "net use \\$target\C$ /delete /y"
+    identity: administrator
+    mitre_technique: "T1570"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "cmd.exe runs 'net use \\\\<host>\\C$' then 'copy' of an executable into \\\\<host>\\C$\\Users\\Public\\Music — the report's SMB copy commands for the Sliver and DTrack files."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-admin-share-c-mapped-then-executable-copied-into-public-music"
+      - plane: EDR
+        type: BIOC
+        description: "A renamed Windows binary (original name whoami.exe) executes from the Public\\Music staging path — the implant-execution shape after the transfer."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-renamed-system-binary-executed-from-public-music"
+      - plane: ITDR
+        type: ABIOC
+        description: "Inferred (the report names the share mapping, not an identity alert): the account accesses the target's C$ share and writes executables. Share events 5140/5145 land on the target, so the ABIOC keys on source_address = the victim's IP plus the user; with the default STAGE_HOST=127.0.0.1 the target is the victim itself. Needs msft_windows_security ingestion from the target."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "abioc-mp-030-compromised-account-uncommon-administrative-share-access"
+
+  - id: step-03
+    name: "NGFW threat log — WildFire malicious verdict on the SMB-transferred files (report sha256s)"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/threat/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un)
+      SRC_IP="${VICTIM_SRC_IP:-$SRC_IP}"
+      SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
+      SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
+      cat > /tmp/mp-030-threat.yml <<YML
+      campaign_id: CMP-MP-THREAT-030
+      name: "MP-030 — WildFire verdict on SMB-transferred files"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-030, unit42, ngfw-threat]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "243ad5458706e5c836f8eb88a9f67e136f1fa76ed44868217dc995a8c7d07bf7"
+            file_name: "cortexsim-mp030-sliver-standin.exe"
+            file_type: "PE"
+            verdict: malicious
+            app: "ms-ds-smb"
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-02
+          plugin: ngfw_threat_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            file_sha256: "2b254ae6690c9e37fa7d249e8578ee27393e47db1913816b4982867584be713a"
+            file_name: "cortexsim-mp030-dtrack-standin.exe"
+            file_type: "PE"
+            verdict: malicious
+            app: "ms-ds-smb"
+            action: alert
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-030-threat.yml --live
+    identity: direct
+    mitre_technique: "T1570"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: NDR
+        type: IOC
+        description: "WildFire malicious-verdict threat log whose filedigest is a report sha256, on the victim src_host — enriches as Jumpy Pisces."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "ioc-file-sha256-243ad5458706e5c836f8eb88a9f67e136f1fa76ed44868217dc995a8c7d07bf7"
+      - plane: NDR
+        type: IOC
+        description: "Second report sha256 on a WildFire malicious-verdict threat log from the same src_host."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "ioc-file-sha256-2b254ae6690c9e37fa7d249e8578ee27393e47db1913816b4982867584be713a"
+      - plane: NDR
+        type: XQL
+        description: "Validation: both verdict records landed in panw_ngfw_threat_raw with endpoint_device_name = the Windows victim."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "xql-mp-030-wildfire-verdict-records-for-report-hashes-landed-in-panw-ngfw-threat-raw"
+
+  - id: step-04
+    name: "Sliver C2 beacon — recurring ssl/443 to the report's C2 domain/IP, as seen by the NGFW"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      dig +short americajobmail.site @${LAB_RESOLVER:-127.0.0.53}
+      SRC_IP=$(hostname -I | awk '{print $1}')
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un)
+      SRC_IP="${VICTIM_SRC_IP:-$SRC_IP}"
+      SRC_HOST="${VICTIM_SRC_HOST:-$SRC_HOST}"
+      SRC_USER="${VICTIM_SRC_USER:-$SRC_USER}"
+      cat > /tmp/mp-030-beacon.yml <<YML
+      campaign_id: CMP-MP-BEACON-030
+      name: "MP-030 — Sliver recurring beacon to report C2"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-030, unit42, sliver-beacon]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 12
+            iterations: 1
+            dst_domain: "americajobmail.site"
+            dst_ip: "172.96.137.224"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-030-beacon.yml --live
+    identity: direct
+    mitre_technique: "T1071.001"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: endpoint_network_stitch
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "Recurring burst of small ssl/443 sessions from the victim src_host to a fleet-rare domain — the months-long Sliver beaconing in the report."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "abioc-mp-030-sliver-recurring-beacon-to-rare-domain"
+      - plane: NDR
+        type: IOC
+        description: "dst_hostname is the report's Sliver C2 domain (and one lab-resolver DNS query for it) — enriches the case as Jumpy Pisces."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "ioc-domain-americajobmail-site"
+      - plane: NDR
+        type: IOC
+        description: "dst is the report's Sliver C2 IP on the same sessions."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "ioc-ipv4-172-96-137-224"
+      - plane: NDR
+        type: XQL
+        description: "Validation: sessions to the report C2 domain/IP carry the Windows victim's endpoint_device_name, src and user."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "xql-mp-030-sliver-c2-domain-and-ip-sessions-stitched-to-the-victim-host"
+
+  - id: step-05
+    name: "Credential harvesting — Mimikatz dump log C:\\Windows\\Temp\\KB0722.log and SAM hive access"
+    command: |
+      $log = Join-Path $env:SystemRoot 'Temp\KB0722.log'
+      cmd.exe /c "echo cortexsim-mp030 synthetic credential-dump log stand-in - no credentials > $log"
+      reg.exe query 'HKLM\SAM\SAM\Domains\Account\Users' 2>&1 | Out-Null
+      Get-Item $log | Select-Object FullName, Length
+    identity: administrator
+    mitre_technique: "T1003"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "KB0722.log written to C:\\Windows\\Temp — the customized Mimikatz dump-log path named in the report."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-credential-dump-log-kb0722-log-written-to-windows-temp"
+      - plane: EDR
+        type: BIOC
+        description: "reg.exe touches HKLM\\SAM from the same chain — the registry-dump precursor the report links to secretsdump."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-sam-hive-registry-access-by-command-line-tool"
+
+  - id: step-06
+    name: "Privilege escalation — PsExec-shaped LocalSystem service and a new local administrator"
+    command: |
+      $svc = 'cortexsim-mp030-psexesvc'
+      sc.exe create $svc binPath= "cmd.exe /c whoami > C:\Users\Public\Music\cortexsim-mp030-system.txt" type= own start= demand
+      sc.exe start $svc
+      Start-Sleep -Seconds 3
+      sc.exe delete $svc
+      $pw = 'Cx!' + [guid]::NewGuid().ToString('N').Substring(0,16)
+      net.exe user cortexsim-mp030-adm $pw /add
+      net.exe localgroup administrators cortexsim-mp030-adm /add
+      Get-Content 'C:\Users\Public\Music\cortexsim-mp030-system.txt' -ErrorAction SilentlyContinue
+    identity: administrator
+    mitre_technique: "T1569.002"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "sc.exe creates, starts and deletes a service whose binPath is 'cmd.exe /c' writing into Public\\Music — the PsExec SYSTEM-escalation shape."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-psexec-shaped-service-runs-cmd-as-localsystem"
+      - plane: EDR
+        type: BIOC
+        description: "net user /add then net localgroup administrators /add for the same new account — the report's privileged-account creation."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-local-account-created-and-added-to-administrators"
+
+  - id: step-07
+    name: "EDR sensor removal (detected, not prevented) — against the cortexsim-edr-sensor lab stand-in"
+    command: |
+      $sensor = 'cortexsim-edr-sensor'
+      sc.exe create $sensor binPath= "$env:SystemRoot\System32\cmd.exe /c exit 0" start= demand DisplayName= "CortexSim EDR Sensor (lab stand-in)"
+      sc.exe stop $sensor
+      sc.exe config $sensor start= disabled
+      sc.exe delete $sensor
+      Start-Process -FilePath msiexec.exe -ArgumentList '/x', '{C0DE5115-0030-4000-8000-000000000030}', '/qn', '/norestart' -Wait
+    identity: administrator
+    mitre_technique: "T1562.001"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-06
+      pivot: shared_entity
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "sc.exe stop, config start= disabled and delete against one sensor-named service in a single chain — the report's mass EDR uninstall, exercised on a dummy service only."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-security-sensor-service-stopped-disabled-and-deleted"
+      - plane: EDR
+        type: BIOC
+        description: "msiexec.exe /x <product code> /qn from the same administrative chain (the product code is a cortexsim placeholder that matches no installed product)."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-silent-msiexec-product-uninstall"
+
+  - id: step-08
+    name: "Play-shaped impact on a canary directory, and the stitched incident"
+    command: |
+      $canary = 'C:\Users\Public\Music\cortexsim-mp030-canary'
+      New-Item -ItemType Directory -Force -Path $canary | Out-Null
+      1..20 | ForEach-Object { Set-Content -Path (Join-Path $canary ("doc-{0:D2}.txt" -f $_)) -Value "cortexsim canary $_" }
+      Get-ChildItem $canary -Filter *.txt | Rename-Item -NewName { $_.Name + '.PLAY' }
+      Set-Content -Path (Join-Path $canary 'ReadMe.txt') -Value 'cortexsim-mp030 canary ransom-note stand-in'
+      Get-ChildItem $canary | Measure-Object | Select-Object Count
+    identity: administrator
+    mitre_technique: "T1486"
+    platforms: ["windows"]
+    causality:
+      parent_step: step-07
+      pivot: exploit_impact
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "One process renames 20 files to .PLAY and drops ReadMe.txt in the same directory — the Play impact shape on a canary directory."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "bioc-mp-030-mass-file-rename-to-play-extension-with-ransom-note-drop"
+      - plane: ANALYTICS
+        type: Correlation
+        description: "CR-MP-0030 fuses the admin-share BIOC, the ITDR share-access ABIOC, the NGFW report-hash/C2 signals, KB0722.log, the sensor removal and the .PLAY impact into one incident on src_host within the window."
+        ttp_ref: "TTP-2026-0189"
+        detection_id: "CR-MP-0030"
+
+cleanup:
+  commands:
+    - "Remove-Item -Force -Recurse -ErrorAction SilentlyContinue 'C:\\Users\\Public\\Music\\cortexsim-mp030*', \"$env:SystemRoot\\Temp\\KB0722.log\", \"$env:TEMP\\cortexsim-mp030*\""
+    - "$t = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }; Remove-Item -Force -ErrorAction SilentlyContinue \"\\\\$t\\C$\\Users\\Public\\Music\\cortexsim-mp030-*\""
+    - "sc.exe delete cortexsim-edr-sensor; sc.exe delete cortexsim-mp030-psexesvc; net.exe user cortexsim-mp030-adm /delete; Write-Output cortexsim-mp030-windows-cleanup-complete"
+    - "rm -f /tmp/mp-030-threat.yml /tmp/mp-030-beacon.yml"
+
+author: "Henry Reed"
+created: "2026-10-27"
+last_updated: "2026-10-27"
+tags:
+  - unit42
+  - stitched-chain
+  - actor:jumpy-pisces
+  - actor:fiddling-scorpius
+  - real-ioc-dns-lookup
+  - play-ransomware
+  - sliver
+  - lateral-tool-transfer
+  - edr-tamper
+  - windows

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getCausality, causalityEventsUrl } from '../api/causality.js'
 import { isRunUnproven } from './DetectionStoryline.jsx'
+import { outcomeMeta, outcomeClass } from '../outcomes.js'
 import './CausalityGraph.css'
 
 /**
@@ -181,7 +182,7 @@ function edgePath(a, b) {
 }
 
 // ── Node chip (HTML inside <foreignObject>) ─────────────────────────────────
-function NodeChip({ node, onOpenEvidence, flashing }) {
+function NodeChip({ node, onOpenEvidence, flashing, severedStep = null }) {
   const clickable = node.kind === 'alert' && !!onOpenEvidence
   const engine = engineLabel(node.detection_type)
   const mttd = formatMttd(node.mttd_seconds)
@@ -190,13 +191,18 @@ function NodeChip({ node, onOpenEvidence, flashing }) {
   const cls =
     'cg-node' +
     ` cg-node--${node.kind}` +
-    (status ? ` cg-node--${status}` : '') +
+    (status ? ` cg-node--${outcomeClass(status)}` : '') +
+    (status === 'not_reached' ? ' node--not-reached' : '') +
     (clickable ? ' cg-node--clickable' : '') +
     (flashing ? ' cg-node--flash' : '')
 
   const activate = () => {
     if (clickable) onOpenEvidence(node)
   }
+  // The step label of the step a runtime control cut the chain at. Alert
+  // nodes carry the step_id too, but the marker belongs on the step itself.
+  const severedHere = !!severedStep && node.kind !== 'alert' && node.step_id === severedStep
+  const outcome = node.kind === 'alert' ? outcomeMeta(status) : null
 
   return (
     <div
@@ -227,9 +233,19 @@ function NodeChip({ node, onOpenEvidence, flashing }) {
         {node.kind === 'exposure' && <span className="cg-node__engine cg-node__engine--exp">exposure</span>}
       </div>
       <div className="cg-node__label">{node.label}</div>
+      {outcome && (
+        <div
+          className="cg-node__outcome"
+          title={[node.prevention_module, node.alert_action, node.outcome_reason].filter(Boolean).join(' · ') || undefined}
+        >
+          <span aria-hidden="true">{outcome.glyph}</span> {outcome.label}
+          {node.prevention_module && status === 'prevented' && <> · {node.prevention_module}</>}
+        </div>
+      )}
+      {severedHere && <div className="cg-node__severed">chain severed here</div>}
       <div className="cg-node__foot">
         {node.sublabel && <span className="cg-node__sub text-mono">{node.sublabel}</span>}
-        {mttd && status === 'detected' && (
+        {mttd && (status === 'detected' || status === 'prevented') && (
           <span className="cg-node__mttd">MTTD {mttd}</span>
         )}
       </div>
@@ -278,7 +294,7 @@ function GraphHeader({ graph, live, lastUpdated }) {
             <span className="cg-kpi__value">
               {pct}%
               <span className="cg-kpi__sub">
-                {summary.detected || 0}/{summary.total || 0}
+                {(summary.detected || 0) + (summary.prevented || 0)}/{summary.denominator != null ? summary.denominator : (summary.total || 0)}
               </span>
             </span>
           )}
@@ -309,6 +325,7 @@ function Legend() {
       <span className="cg-legend__item"><i className="cg-legend__swatch cg-legend__swatch--confirmed" />Confirmed</span>
       <span className="cg-legend__item"><i className="cg-legend__swatch cg-legend__swatch--expected" />Expected</span>
       <span className="cg-legend__item"><i className="cg-legend__swatch cg-legend__swatch--broken" />Broken stitch</span>
+      <span className="cg-legend__item"><i className="cg-legend__swatch cg-legend__swatch--severed" />Severed by a control</span>
       <span className="cg-legend__item cg-legend__item--hero"><i className="cg-legend__swatch cg-legend__swatch--hero" />Critical path</span>
     </div>
   )
@@ -342,7 +359,8 @@ export default function CausalityGraph({
       const status = n.status || 'pending'
       nextStatuses.set(n.id, status)
       const before = prevStatuses.current.get(n.id)
-      if (status === 'detected' && before && before !== 'detected') fresh.push(n.id)
+      const alerted = (x) => x === 'detected' || x === 'prevented'
+      if (alerted(status) && before && !alerted(before)) fresh.push(n.id)
     }
     prevStatuses.current = nextStatuses
     if (fresh.length) {
@@ -472,7 +490,7 @@ export default function CausalityGraph({
             data-testid="cg-svg"
           >
             <defs>
-              {['confirmed', 'expected', 'broken', 'hero'].map((state) => (
+              {['confirmed', 'expected', 'broken', 'severed', 'hero'].map((state) => (
                 <marker
                   key={state}
                   id={`cg-arrow-${state}`}
@@ -542,10 +560,11 @@ export default function CausalityGraph({
                   'cg-edge' +
                   ` cg-edge--${e.state}` +
                   ` cg-edge--kind-${e.kind}` +
+                  (e.state === 'severed' ? ' edge--severed' : '') +
                   (hero ? ' cg-edge--hero' : '')
                 const midX = (a.cx + b.cx) / 2
                 const midY = (a.cy + b.cy) / 2 - 6
-                const label = e.label || EDGE_LABEL[e.kind] || e.kind
+                const label = e.state === 'severed' ? 'severed' : (e.label || EDGE_LABEL[e.kind] || e.kind)
                 return (
                   <g key={e.id} data-testid="cg-edge" data-kind={e.kind} data-state={e.state}>
                     <path
@@ -553,7 +572,7 @@ export default function CausalityGraph({
                       d={edgePath(a, b)}
                       markerEnd={`url(#cg-arrow-${markerState})`}
                     />
-                    {(hero || e.state === 'broken') && (
+                    {(hero || e.state === 'broken' || e.state === 'severed') && (
                       <text className={`cg-edge__label cg-edge__label--${e.state}`} x={midX} y={midY}>
                         {label}
                       </text>
@@ -578,6 +597,7 @@ export default function CausalityGraph({
                     node={n}
                     onOpenEvidence={onOpenEvidence}
                     flashing={flashing.has(n.id)}
+                    severedStep={graph.summary?.severed_at_step || null}
                   />
                 </foreignObject>
               ))}

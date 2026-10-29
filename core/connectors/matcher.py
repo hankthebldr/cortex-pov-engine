@@ -38,20 +38,24 @@ DEFAULT_WINDOW_SECONDS = 3600
 #: whose families are BOTH known and DIFFERENT is not a match: one BIOC firing
 #: used to mark a step's BIOC, XQL and Correlation expectations all observed,
 #: because every Result in a step shares the step's technique.
-_FAMILIES = ("bioc", "abioc", "analytics", "correlation", "ioc")
+_FAMILIES = ("bioc", "abioc", "analytics", "correlation", "ioc", "prevention")
 
 
 def signal_family(value: Optional[str]) -> Optional[str]:
     """Map a ``Result.signal_type`` or an alert ``source`` onto a family.
 
-    Returns None for a value that names no rule family ("XDR Agent" is the
-    agent's own prevention modules, not a rule) — None is *unconstrained*, so
-    an unknown source can still match on technique/name and the verdict
-    records what it matched. It is never read as a disagreement.
+    The XDR agent's own prevention modules (source "XDR Agent", or a
+    ``Prevention`` expectation) are the ``prevention`` family — checked before
+    the rule substrings so they can never be read as a BIOC. Returns None for a
+    value that names no family — None is *unconstrained*, so an unknown source
+    can still match on technique/name and the verdict records what it matched.
+    It is never read as a disagreement.
     """
     s = (value or "").strip().lower()
     if not s:
         return None
+    if "xdr agent" in s or s == "prevention":
+        return "prevention"
     if "analytics bioc" in s or s == "abioc":
         return "abioc"
     if "correlation" in s or s == "xql":
@@ -156,6 +160,8 @@ class MatchVerdict:
     alert_external_id: Optional[str] = None
     alert_name: Optional[str] = None
     alert_source: Optional[str] = None      # what the tenant said raised it
+    alert_action: Optional[str] = None      # action_pretty, else raw action
+    alert_outcome: Optional[str] = None     # prevented | detected | unknown
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -167,6 +173,8 @@ class MatchVerdict:
             "alert_external_id": self.alert_external_id,
             "alert_name": self.alert_name,
             "alert_source": self.alert_source,
+            "alert_action": self.alert_action,
+            "alert_outcome": self.alert_outcome,
         }
 
 
@@ -317,6 +325,8 @@ def reconcile(
     *,
     window_seconds: int = DEFAULT_WINDOW_SECONDS,
     only_unobserved: bool = True,
+    window_seconds_by_type: Optional[dict[str, int]] = None,
+    window_end_by_result: Optional[dict[Any, Any]] = None,
 ) -> list[MatchVerdict]:
     """Match observations to results and return a verdict per *candidate* result.
 
@@ -324,12 +334,24 @@ def reconcile(
     default already-observed results are skipped (``only_unobserved``); pass
     False to re-evaluate every result. Each verdict names the earliest matching
     alert and the keys it matched on.
+
+    ``window_seconds_by_type`` overrides the window per ``Result.signal_type``
+    (e.g. a longer one for Analytics); types it omits use ``window_seconds``.
+
+    ``window_end_by_result`` (``{result_id: datetime}``) is the caller's upper
+    bound per result -- ``connectors.service.result_window_end``, the later of
+    ``executed_at`` and the step's host record plus the window, the same end the
+    silent-row judgement uses (round 5). The matcher does not re-derive it; a
+    result it omits falls back to ``executed_at + window``. The lower bound and
+    the MTTD start are always ``executed_at``.
     """
     window = timedelta(seconds=window_seconds)
+    by_type = window_seconds_by_type or {}
 
     # Candidates first, so a caller with nothing to reconcile does no alert
     # work at all (and cannot trip over a malformed observation list).
-    candidates: list[tuple[int, Any, _ResultSide]] = []
+    ends = window_end_by_result or {}
+    candidates: list[tuple[int, Any, _ResultSide, Any]] = []
     for result in results:
         executed_at = getattr(result, "executed_at", None)
         rid = getattr(result, "id", None)
@@ -337,7 +359,13 @@ def reconcile(
             continue
         if only_unobserved and getattr(result, "observed", False):
             continue
-        candidates.append((rid, executed_at, _prepare_result(result)))
+        sig = getattr(result, "signal_type", None)
+        result_window = (timedelta(seconds=by_type[sig])
+                         if sig in by_type else window)
+        upper = ends.get(rid)
+        if upper is None:
+            upper = executed_at + result_window
+        candidates.append((rid, executed_at, _prepare_result(result), upper))
 
     if not candidates:
         return []
@@ -361,10 +389,9 @@ def reconcile(
     consumed: set[int] = set()
 
     verdicts: list[MatchVerdict] = []
-    for rid, executed_at, rs in candidates:
-        # Window is [executed_at, executed_at + window]; anything earlier can't
-        # be evidence and anything later is out of scope.
-        upper = executed_at + window
+    for rid, executed_at, rs, upper in candidates:
+        # Window is [executed_at, upper]; anything earlier can't be evidence
+        # and anything later is out of scope.
         idx = bisect_left(alert_times, executed_at)
 
         verdict = MatchVerdict(result_id=rid, matched=False)
@@ -389,6 +416,9 @@ def reconcile(
                     alert_external_id=alert.external_id,
                     alert_name=alert.name,
                     alert_source=getattr(alert, "alert_source", None),
+                    alert_action=(getattr(alert, "action_pretty", None)
+                                  or getattr(alert, "action", None)),
+                    alert_outcome=getattr(alert, "outcome", None),
                 )
                 break  # ascending order ⇒ first hit is the earliest (lowest MTTD)
             idx += 1

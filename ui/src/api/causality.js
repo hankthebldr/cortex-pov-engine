@@ -32,7 +32,7 @@
  *   node.kind  ∈ cgo | process | wrapper | alert | exposure | event
  *   edge.kind  ∈ process_lineage | network_session | endpoint_network_stitch |
  *                temporal | shared_entity | sequence | exposure_exploit
- *   edge.state ∈ expected | confirmed | broken
+ *   edge.state ∈ expected | confirmed | broken | severed
  *
  * Error shape mirrors storyline.js / client.js: FastAPI returns {detail} where
  * detail may be a plain string OR a structured {error, code, detail} object.
@@ -143,6 +143,13 @@ export function normalizeCausality(g) {
       result_id: n.result_id != null ? n.result_id : null,
       mitre_technique: n.mitre_technique || null,
       entity: n.entity || null,
+      step_id: n.step_id != null ? n.step_id : null,
+      // Outcome detail on alert nodes — rendered verbatim, never inferred.
+      outcome: n.outcome != null ? n.outcome : null,
+      outcome_reason: n.outcome_reason != null ? n.outcome_reason : null,
+      prevention_module: n.prevention_module != null ? n.prevention_module : null,
+      alert_action: n.alert_action != null ? n.alert_action : null,
+      alert_id: n.alert_id != null ? n.alert_id : null,
       // explicit layout override from the builder, if any
       column: n.column != null ? n.column : null,
     }
@@ -167,10 +174,13 @@ export function normalizeCausality(g) {
     summary: {
       total: summary.total || 0,
       detected: summary.detected || 0,
+      prevented: summary.prevented || 0,
+      denominator: summary.denominator != null ? summary.denominator : null,
       pending: summary.pending || 0,
       missed: summary.missed || 0,
       coverage_pct: summary.coverage_pct != null ? summary.coverage_pct : 0,
       mttd: summary.mttd || {},
+      severed_at_step: summary.severed_at_step != null ? summary.severed_at_step : null,
     },
     causality: {
       nodes: cs.nodes != null ? cs.nodes : nodes.length,

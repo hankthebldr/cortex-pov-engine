@@ -61,7 +61,7 @@
     archive-shaped and `kind: archive` is rejected because no consumer can unpack
     one. See [`adapter-catalog.md` §9.2–9.3](adapter-catalog.md).
   * **Gates:** backend **4651 passed / 241 skipped / 0 failed** · UI **619 passed**,
-    `vite build` ✓ · `validate.py` **346 pass / 0 warn / 0 fail** ·
+    `vite build` ✓ · `validate.py` **356 pass / 0 warn / 0 fail** ·
     `make check-refs` **6 passed** · `make coverage-strict` **exit 0** ·
     shelf drift **OK (8 derived, 0 unbound)** ·
     `test_push_generator_invariant` **5 passed** (byte-frozen bundles unmoved) ·
@@ -88,7 +88,7 @@
   licence read from the project's own LICENSE file. `payloads/sources.json` is
   fully **derived** from those packs and its `unbound[]` migration bucket has
   reached **zero**. `PAYLOAD_ALLOW_UNPINNED=0 ./scripts/build-payloads.sh`
-  stages 8 artifacts, **0 unpinned**. `make validate` **346 pass / 0 warn /
+  stages 8 artifacts, **0 unpinned**. `make validate` **356 pass / 0 warn /
   0 fail**; exports byte-identical across two regenerations; `make check-refs`
   **6 passed**; `coverage_report.py --strict` exits 0.
   This pass adds **1 scenario + 1 card** — `SIM-EDR-022` / `TTP-2026-0176`,
@@ -114,6 +114,26 @@
     `CORTEXSIM_K8S_PAYLOAD_AUTH=token` (the init container's bare `wget` carries
     no Authorization header, so the manifest would apply cleanly and 403 in the
     pod). Guarded by `tests/engine/test_k8s_manifest_shelf.py`.
+- **Counted ground truth (regenerated 2026-10-28 — SIM-KOI-009 GlassWorm pass; the 13 stitched chains and `SIM-MP-035..037` below were added by the earlier Unit 42 recent-posts pass):**
+  **193 loadable scenarios · 191 TTP cards · 27 EAL plugins** across 16 planes · 1377 step-detections ·
+  2123 catalog detection objects (`ground-truth.md` is the source; the scenario and card counts include `SIM-KOI-009` and were updated by hand; the regenerated `ground-truth.{json,md}` is the counted authority). `signal_quality` in `coverage_report.py --json`:
+  **13 stitched chains** (was 11), **236 high-quality signals / 1377 step-detections (17.1%)** (was 195/1320),
+  **100 marker-only steps / 796 (12.6%)**, 87 in-band indicators in 14 scenarios (+5 not in-band, `SIM-MP-034`);
+  floors set by the Unit 42 pass (`hq_signal_floor` 236, `stitched_chain_floor` 13, `marker_only_ceiling` 0.1266 — the configured ceiling, which corresponds to that pass's 100/790, not to the 12.6% measured now).
+  `SIM-MP-035..037` / `TTP-2026-0194..0196` are the three new chains; **`SIM-MP-037` is authored but not counted as a
+  high-quality signal** (its report publishes no indicator, ruling R2). New emitter surface, no plugin-count change:
+  `vulnerability_inbound` (`ngfw_threat_emitter`), `gateway_connected_without_auth` (`globalprotect_emitter`),
+  `dst_ip`-alone / `dst_port` / `app` / `process_name` (`ngfw_eal_emitter`), providers `deepseek` / `openrouter`
+  (`llm_provider_egress`). ***tenant-verified: 0.*** `make coverage-strict` exits 0 (Correlation 10.1%, 139/1377, after the
+  network-leg rows `CR-MP-NET-0035/0036`).
+- **Counted ground truth (verified 2026-10-27 — library signal expansion):**
+  **189 loadable scenarios · 187 TTP cards · 27 EAL plugins** across 16 planes · 1320 step-detections ·
+  2049 catalog detection objects (`ground-truth.md` is the source). New `signal_quality` block in
+  `coverage_report.py --json`: **11 stitched chains** (strict), **195 high-quality signals / 1320
+  step-detections (14.8%)**, **100 marker-only steps / 765 (13.1%)**, 79 in-band indicators in 12 scenarios (+5 not in-band,
+  `SIM-MP-034`); floors
+  set to those measured values. `SIM-MP-023..034` / `TTP-2026-0182..0193` are the Unit 42 stitched chains.
+  ***tenant-verified: 0.*** `make coverage-strict` exits 0 (Correlation 10.1%).
 - **Counted ground truth (verified 2026-08-02 — library-breadth authoring pass):**
   **169 loadable scenarios · 169 TTP cards** across **15 detection planes** (all
   `status: active`, 0 rejected / 0 dangling refs; **1073/1073 scenario

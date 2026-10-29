@@ -282,3 +282,62 @@ def test_only_finished_runs_are_verified(status, expected):
     run.status = status
     assert _verify_eligible(run, max_attempts=3, backoff_seconds=600,
                             now=datetime.utcnow()) == expected
+
+
+def test_tier2_never_certifies_a_prevent_row():
+    """A row count cannot prove the agent blocked anything."""
+    from types import SimpleNamespace
+
+    from engine.verifier import verify_results
+
+    r = SimpleNamespace(id=1, detection_id="d", verification_xql="dataset = xdr_data",
+                        expected_outcome="prevent", kpi_verdict="pending", verified_at=None)
+    calls: list = []
+    counts = asyncio.run(verify_results([r], _runner(5, calls), expected_rows_min=lambda _r: 1,
+                                        agent_profile_mode="block"))
+    assert r.kpi_verdict == "pending"
+    assert calls == []
+    assert counts["skipped"] == 1
+
+
+@pytest.mark.parametrize("mode", ["report", "unknown"])
+def test_tier2_verifies_a_prevent_row_scored_as_detect(mode):
+    """Report/unknown mode scores a prevent expectation as a detect, so a row
+    count is valid evidence there."""
+    from types import SimpleNamespace
+
+    from engine.verifier import verify_results
+
+    r = SimpleNamespace(id=1, detection_id="d", verification_xql="dataset = xdr_data",
+                        expected_outcome="prevent", kpi_verdict="pending", verified_at=None)
+    calls: list = []
+    asyncio.run(verify_results([r], _runner(5, calls), expected_rows_min=lambda _r: 1,
+                               agent_profile_mode=mode))
+    assert r.kpi_verdict == "pass"
+    assert len(calls) == 1
+
+
+def test_auto_verify_passes_the_runs_mode_to_tier2(session_factory, monkeypatch):
+    """The service caller hands verify_results the run's agent_profile_mode."""
+    from engine import verifier
+
+    seen: list = []
+    real = verifier.verify_results
+
+    async def spy(results, runner, **kw):
+        seen.append(kw.get("agent_profile_mode"))
+        return await real(results, runner, **kw)
+    monkeypatch.setattr(verifier, "verify_results", spy)
+    _seed_run(session_factory, run_id="run-1")
+
+    async def _mode():
+        from models import Run
+        from sqlalchemy import select
+        async with session_factory() as db:
+            run = (await db.execute(select(Run))).scalars().first()
+            run.agent_profile_mode = "block"
+            await db.commit()
+    asyncio.run(_mode())
+    calls: list = []
+    _sweep(session_factory, calls=calls)
+    assert seen == ["block"]

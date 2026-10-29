@@ -145,3 +145,117 @@ def test_list_agents_read_time_overrides_stored_status(client, session_factory):
     agents = client.get("/api/agents").json()["agents"]
     zombie = next(a for a in agents if a["agent_id"] == "zombie")
     assert zombie["status"] == "offline"
+
+
+# ---------------------------------------------------------------------------
+# Sweep: an offline agent's delivered running run is terminalised
+# ---------------------------------------------------------------------------
+
+
+def _seed_running_run(session_factory, agent_id: str, started_ago: float):
+    from models import Result, Run, StepOutcome
+
+    async def _seed():
+        async with session_factory() as db:
+            t0 = datetime.utcnow() - timedelta(seconds=started_ago)
+            db.add(Run(run_id="rl", scenario_id="SIM-X", mode="pull", target=agent_id,
+                       status="running", open_tasks=1, started_at=t0, delivered_at=t0))
+            db.add(Result(run_id="rl", step_id="step-01", plane="EDR", signal_type="BIOC",
+                          expected_detection="d"))
+            db.add(StepOutcome(run_id="rl", step_id="step-01", started_at=t0))
+            await db.commit()
+
+    asyncio.run(_seed())
+
+
+def _run_status(session_factory):
+    from models import Run
+    from sqlalchemy import select
+
+    async def _go():
+        async with session_factory() as db:
+            r = (await db.execute(select(Run).where(Run.run_id == "rl"))).scalar_one()
+            return r.status, r.severed_at_step
+
+    return asyncio.run(_go())
+
+
+def test_sweep_invokes_terminalisation_for_offline_agents(session_factory, monkeypatch):
+    import database
+    from api.agents import sweep_agents_once
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    _seed_agent(session_factory, "gone", age_seconds=900, stored_status="offline")
+    _seed_agent(session_factory, "back", age_seconds=5, stored_status="online")
+    _seed_running_run(session_factory, "gone", started_ago=800)
+
+    asyncio.run(sweep_agents_once())
+    assert _run_status(session_factory) == ("complete", "step-01")
+
+
+def test_sweep_leaves_a_reconnected_agents_run_running(session_factory, monkeypatch):
+    import database
+    from api.agents import sweep_agents_once
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    _seed_agent(session_factory, "back", age_seconds=5, stored_status="offline")
+    _seed_running_run(session_factory, "back", started_ago=800)
+
+    asyncio.run(sweep_agents_once())
+    assert _run_status(session_factory) == ("running", None)
+
+
+def test_one_agents_terminalisation_failure_does_not_abort_the_pass(
+        session_factory, monkeypatch, caplog):
+    import database
+    from api import agents as agents_mod
+    from engine import beacon_lost
+    from models import Result, Run, StepOutcome
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    _seed_agent(session_factory, "a1", age_seconds=900, stored_status="offline")
+    _seed_agent(session_factory, "a2", age_seconds=900, stored_status="offline")
+    _seed_running_run(session_factory, "a2", started_ago=800)
+    real = beacon_lost.terminalise_lost_runs
+
+    async def _boom(db, agent_id, now, **kw):
+        if agent_id == "a1":
+            raise RuntimeError("boom")
+        return await real(db, agent_id, now, **kw)
+
+    monkeypatch.setattr(beacon_lost, "terminalise_lost_runs", _boom)
+    with caplog.at_level("ERROR"):
+        asyncio.run(agents_mod.sweep_agents_once())
+    assert _run_status(session_factory) == ("complete", "step-01")
+    assert any("terminalisation failed agent=a1" in r.getMessage() for r in caplog.records)
+
+
+def test_sweep_honours_the_configured_threshold_not_the_offline_label(session_factory, monkeypatch):
+    """R2: with CORTEXSIM_BEACON_LOST_AFTER_SECONDS=30 an agent silent for 60 s is
+    `stale` (display label, <5 min) yet its run must be terminalised."""
+    import database
+    from api.agents import _derive_status, sweep_agents_once
+    from config import settings
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    monkeypatch.setattr(settings, "CORTEXSIM_BEACON_LOST_AFTER_SECONDS", 30)
+    _seed_agent(session_factory, "quiet", age_seconds=60, stored_status="stale")
+    assert _derive_status(datetime.utcnow() - timedelta(seconds=60), datetime.utcnow())[0] == "stale"
+    _seed_running_run(session_factory, "quiet", started_ago=800)
+
+    asyncio.run(sweep_agents_once())
+    assert _run_status(session_factory) == ("complete", "step-01")
+
+
+def test_sweep_leaves_an_agent_silent_for_less_than_the_threshold(session_factory, monkeypatch):
+    import database
+    from api.agents import sweep_agents_once
+    from config import settings
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", session_factory)
+    monkeypatch.setattr(settings, "CORTEXSIM_BEACON_LOST_AFTER_SECONDS", 30)
+    _seed_agent(session_factory, "brief", age_seconds=10, stored_status="online")
+    _seed_running_run(session_factory, "brief", started_ago=800)
+
+    asyncio.run(sweep_agents_once())
+    assert _run_status(session_factory) == ("running", None)

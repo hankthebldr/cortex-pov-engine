@@ -132,6 +132,7 @@ def stub_causality_engine(monkeypatch):
         captured["results"] = results
         captured["scenario_steps"] = scenario_steps
         captured["scenario_meta"] = scenario_meta
+        captured["observations"] = observations
         return _FakeGraph(run_dict, results, scenario_steps, scenario_meta or {})
 
     fake_mod = types.ModuleType("engine.causality_graph")
@@ -208,3 +209,33 @@ def test_causality_build_failure_500(client, seeded_run, monkeypatch):
     body = r.json()
     assert body["detail"]["code"] == "CAUSALITY_BUILD_FAILED"
     assert "kaboom" in body["detail"]["detail"]
+
+
+def test_causality_api_passes_observations_so_reconcile_is_machine_verified(
+    client, seeded_run, session_factory
+):
+    """Real builder, no stub: a reconcile-matched detection must carry the
+    tenant alert id, not read as a bare human checkbox."""
+    from models import Observation
+
+    async def _seed():
+        from sqlalchemy import select
+        from models import Result
+        async with session_factory() as db:
+            rid = (await db.execute(
+                select(Result.id).where(Result.run_id == seeded_run,
+                                        Result.step_id == "step-01")
+            )).scalar_one()
+            db.add(Observation(
+                run_id=seeded_run, result_id=rid, source="xsiam",
+                external_id="XSIAM-ALERT-77", name="Passwd read",
+                observed_at=datetime.utcnow(),
+            ))
+            await db.commit()
+
+    asyncio.run(_seed())
+    graph = client.get(f"/api/runs/{seeded_run}/causality").json()["causality_graph"]
+    alerts = [n for n in graph["nodes"] if n["kind"] == "alert" and n["observed"]]
+    assert len(alerts) == 1
+    assert alerts[0]["alert_id"] == "XSIAM-ALERT-77"
+    assert alerts[0]["observed_at"]

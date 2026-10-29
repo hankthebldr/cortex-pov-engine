@@ -175,6 +175,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_runtime_dependency_columns)
         await conn.run_sync(_migrate_composer_channel_columns)
         await conn.run_sync(_migrate_run_delivery_columns)
+        await conn.run_sync(_migrate_prevention_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -229,6 +230,7 @@ def _migrate_scenarios_columns(connection) -> None:
         ("cgo_anchor", "JSON"),          # causality contract
         ("stitch_context", "JSON"),      # Phase 2 — composer stitch context (authored intent)
         ("composer_layout", "JSON"),     # Composer canvas node positions
+        ("indicators", "JSON"),          # published Unit 42 indicators (S-22..S-27)
         ("pov_scenario_id", "VARCHAR"),  # UC/TC payload join
         ("tc_refs", "JSON"),             # full TC evidence set
         # Phase 2 — measurement contract
@@ -395,6 +397,54 @@ def _migrate_run_delivery_columns(connection) -> None:
     existing = {col["name"] for col in inspector.get_columns("runs")}
     if "delivered_at" not in existing:
         connection.execute(text("ALTER TABLE runs ADD COLUMN delivered_at DATETIME"))
+
+
+def _migrate_prevention_columns(connection) -> None:
+    """Add the prevention-efficacy columns to ``runs`` and ``results`` if absent
+    (same ``create_all``-never-adds-a-COLUMN rationale as the helpers above).
+    The two non-null columns carry a SQL DEFAULT so SQLite accepts the ADD
+    COLUMN and legacy rows read as ``unknown`` / ``detect``. ``step_outcomes``
+    and ``observations`` are whole new tables, created by ``create_all``."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    tables = set(inspector.get_table_names())
+
+    additions = {
+        "runs": [
+            ("agent_profile_mode", "VARCHAR NOT NULL DEFAULT 'unknown'"),
+            ("bas_mode_attested", "BOOLEAN"),
+            ("soakless_attested", "BOOLEAN"),
+            ("attested_by", "VARCHAR"),
+            ("attested_at", "DATETIME"),
+            ("paired_with_run_id", "VARCHAR"),
+            ("canary_run_id", "VARCHAR"),
+            ("severed_at_step", "VARCHAR"),
+            ("block_mode_status", "VARCHAR"),
+        ],
+        "results": [
+            ("expected_outcome", "VARCHAR NOT NULL DEFAULT 'detect'"),
+            ("prevention_module", "VARCHAR"),
+            ("outcome", "VARCHAR"),
+            ("outcome_reason", "VARCHAR"),
+            ("alert_action", "VARCHAR"),
+            ("alert_outcome", "VARCHAR"),
+        ],
+    }
+    for table, cols in additions.items():
+        if table not in tables:
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table)}
+        for col_name, col_type in cols:
+            if col_name in existing:
+                continue
+            connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
+    if "runs" in tables:
+        # Idempotent, so no dependence on inspector caching.
+        connection.execute(text("DROP INDEX IF EXISTS ix_runs_paired_with_run_id"))
+        connection.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_paired_with_run_id "
+            "ON runs (paired_with_run_id) WHERE paired_with_run_id IS NOT NULL"))
 
 
 async def get_db():
