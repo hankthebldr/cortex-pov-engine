@@ -140,9 +140,9 @@ PORT="$(sed -n 's/^CORTEXSIM_PORT=\([0-9][0-9]*\).*/\1/p' "${ENV_FILE}" | head -
 PORT="${PORT:-8888}"
 
 # CORTEXSIM_VERSION drives the versioned image tag + container name
-# (cortex-pov-engine-simcore-v<version>). Compose defaults it to 1.0.2.
+# (cortex-pov-engine-simcore-v<version>). Compose defaults it to 1.1.0.
 VERSION="$(sed -n 's/^CORTEXSIM_VERSION=//p' "${ENV_FILE}" | head -n1)"
-VERSION="${VERSION:-1.0.2}"
+VERSION="${VERSION:-1.1.0}"
 
 # ---------------------------------------------------------------------------
 # 2b. Adapter-source preflight (non-fatal).
