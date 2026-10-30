@@ -374,3 +374,105 @@ def test_draft_layout_is_scenario_level_not_step_level():
 
     assert "composer_layout" in DraftScenarioSchema.model_fields
     assert "composer_layout" not in DraftStepSchema.model_fields
+
+
+# ---------------------------------------------------------------------------
+# Push support on a FORKED draft — an authored refusal is a floor (2026-10-30)
+# ---------------------------------------------------------------------------
+#
+# `_derive_push_supported` reads the draft's own command text. A draft forked
+# from a corpus scenario that declares `push_supported: false` has, step for
+# step, the same commands as its origin — and for SIM-MP-031 / SIM-MP-034 those
+# commands are POSIX-shaped, so the derivation alone says `true` and the draft
+# is offered the bundle its origin refuses (measured 2026-10-28 against dev
+# d1954aa: 2 of the 3 refusing scenarios). The fork must carry the refusal and
+# the converter must treat it as a FLOOR: derivation may narrow true to false,
+# never widen an explicit false to true.
+
+
+def test_fork_of_push_refusing_origin_stays_push_refused():
+    from engine.composer_draft_schema import _derive_push_supported  # noqa: PLC0415
+    from tests._composer_fork import fork_body_like_the_ui, load_corpus_doc  # noqa: PLC0415
+
+    doc = load_corpus_doc("SIM-MP-031")
+    assert doc["push_supported"] is False, (
+        "SIM-MP-031 no longer declares push_supported: false — pick another origin"
+    )
+    body = fork_body_like_the_ui(doc)
+
+    kwargs = draft_to_orm_kwargs(DraftScenarioSchema(**body))
+
+    # Vacuity guard: the derivation ALONE must say True for these steps —
+    # otherwise this test would pass with the floor absent and prove nothing.
+    assert _derive_push_supported(kwargs["steps"], kwargs["cleanup"]) is True
+
+    assert kwargs["push_supported"] is False, (
+        "a fork of SIM-MP-031 was stored push-capable although its origin "
+        "declares push_supported: false — GET /download would emit a bundle "
+        "the origin refuses with 409 PUSH_NOT_SUPPORTED"
+    )
+    assert kwargs["push_supported_declared"] is False
+
+
+def test_explicit_true_never_widens_the_derivation():
+    # A strong Windows marker, no `platforms`, no variant: not POSIX-shaped and
+    # not Windows-resolvable either → no target is emittable.
+    win = _step("step-01", command="Get-Process | Out-File C:\\temp\\procs.txt")
+    kwargs = draft_to_orm_kwargs(DraftScenarioSchema(**_draft(steps=[win], push_supported=True)))
+    assert kwargs["push_supported"] is False
+    # `true` is recorded as what was declared, but it is not a floor.
+    assert kwargs["push_supported_declared"] is True
+
+
+def test_hand_authored_draft_keeps_the_derivation():
+    schema = DraftScenarioSchema(**_draft())
+    assert schema.push_supported is None
+    kwargs = draft_to_orm_kwargs(schema)
+    assert kwargs["push_supported"] is True          # 'whoami' is POSIX-shaped
+    assert kwargs["push_supported_declared"] is None
+
+
+def test_effective_push_support_floor_is_monotone():
+    """The ONE place the floor rule lives — used by the converter on POST and,
+    with the row's prior declaration, by the drafts router on PUT."""
+    from engine.composer_draft_schema import effective_push_support  # noqa: PLC0415
+
+    # (derived, declared, prior_declared) -> (push_supported, push_supported_declared)
+    assert effective_push_support(True, None, None) == (True, None)
+    assert effective_push_support(True, True, None) == (True, True)
+    assert effective_push_support(True, False, None) == (False, False)
+    assert effective_push_support(False, None, None) == (False, None)
+    assert effective_push_support(False, True, None) == (False, True)
+    # A PUT cannot widen a refusal the row already carries …
+    assert effective_push_support(True, None, False) == (False, False)
+    assert effective_push_support(True, True, False) == (False, False)
+    # … and a prior `true` / nothing-declared is no floor at all.
+    assert effective_push_support(True, None, True) == (True, None)
+    assert effective_push_support(False, None, True) == (False, None)
+
+
+# ---------------------------------------------------------------------------
+# Threat-report provenance survives the fork (2026-10-30)
+# ---------------------------------------------------------------------------
+#
+# `threat_report` / `threat_report_url` are read at run time — the POV report
+# (api/runs.py), the markdown report generator and the bundle header all cite
+# them — so a fork that drops them produces a report with no Unit 42
+# attribution. Carried as plain optional strings; the corpus schema has no
+# validator for them either.
+
+
+def test_fork_carries_threat_report_provenance():
+    from tests._composer_fork import fork_body_like_the_ui, load_corpus_doc  # noqa: PLC0415
+
+    doc = load_corpus_doc("SIM-MP-031")
+    assert doc["threat_report_url"], "SIM-MP-031 lost its Unit 42 citation"
+    kwargs = draft_to_orm_kwargs(DraftScenarioSchema(**fork_body_like_the_ui(doc)))
+    assert kwargs["threat_report"] == doc["threat_report"]
+    assert kwargs["threat_report_url"] == doc["threat_report_url"]
+
+
+def test_hand_authored_draft_has_no_threat_report():
+    kwargs = draft_to_orm_kwargs(DraftScenarioSchema(**_draft()))
+    assert kwargs["threat_report"] is None
+    assert kwargs["threat_report_url"] is None

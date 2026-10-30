@@ -69,6 +69,19 @@ class Scenario(Base):
     push_supported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     pull_supported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # What the author DECLARED for push, kept apart from what `push_supported`
+    # answers. For a corpus row the loader copies the YAML value here, so the
+    # two agree. For a Composer draft `push_supported` is DERIVED from the
+    # draft's command text and narrowed by this floor: a draft forked from an
+    # origin that declares `push_supported: false` carries that refusal here,
+    # and the drafts router never widens it on a later PUT — while a draft
+    # whose derivation merely said false once (NULL here) recovers when its
+    # steps are fixed. Without this column the row's `false` cannot say which
+    # of the two it was. NULL = nothing declared. NOTE: prod needs
+    #   ALTER TABLE scenarios ADD COLUMN push_supported_declared BOOLEAN
+    # (database._migrate_scenarios_columns does it on boot).
+    push_supported_declared: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
     external_tools: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     steps: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     cleanup: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
@@ -159,6 +172,7 @@ class Scenario(Base):
             "threat_report_url": self.threat_report_url,
             "execution_identity": self.execution_identity,
             "push_supported": self.push_supported,
+            "push_supported_declared": self.push_supported_declared,
             "pull_supported": self.pull_supported,
             "external_tools": self.external_tools,
             "steps": self.steps,
