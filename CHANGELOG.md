@@ -252,6 +252,46 @@ the same copy, logging one warning.
   the call that needs it and the health probe can still import the module to
   report it.
 
+### Added — the Composer canvas is direct manipulation, with a Lanes lens
+
+Spec `docs/superpowers/specs/2026-09-08-composer-direct-manipulation-design.md`.
+
+- **The design lens renders through React Flow.** Step nodes drag by a grip
+  handle and their positions persist in `composer_layout`; a stored position
+  overrides the computed layout and **Re-layout** clears it. Causality edges
+  are drawn, and an illegal one (a forward or self reference, a second root
+  once any parent is declared) is refused visibly through one spine-legality
+  predicate shared with the parent picker. Zoom toolbar, stitch overlay and
+  pivot typing on the edge; the Run lens is scoped to the open draft's own
+  scenario; a saved draft keeps its `origin.steps`.
+- **Lanes lens:** swimlanes by ingestion door (agent telemetry, EAL emitter,
+  collector) with drag-to-retarget (`ui/src/components/console/composerLanes.js`).
+  A step's channel wins over a stale lane override.
+
+### Changed — the console moved to the PANW Executive design system
+
+`docs/design/DESIGN-SYNC.md`. The Executive design-system tokens are vendored
+under `ui/src/styles/ds/` and the accent contract inverted; the shell chrome
+was rebuilt and the destination information architecture rewritten, with an
+object sheet and five new surfaces; Coverage, the Launch Gate and the Tenant
+page were brought to the design; the generated run topology is wired and the
+seed catalogs guarded; every destination is guarded by a test, which caught
+one; the 1200 px floor moved off the document and onto the bars. The minimal
+pass below (2026-10-04) then reduced that architecture to five tasks.
+
+### Added — a detector-readiness gate before the POV runs
+
+`POST /api/eal/campaigns/{campaign_id}/detector-readiness`: the vendor alert
+profiles are transcribed, every EAL detector is bound to the vendor alert it
+should raise or the gap is stated, and a campaign can be gated on that
+readiness before the customer is watching rather than after.
+
+### Added — a high-density Library table
+
+`ScenarioTable` (`ui/src/components/console/ScenarioTable.jsx`): the
+simulation library as a dense table alongside the card grid, with the plane
+and technique collectors exported for both.
+
 ### Added — sprint 2: the loop can now measure two more KPIs (still `tenant-verified: 0`)
 
 - **Detection Accuracy is measured** (`core/connectors/measures.py`). The
