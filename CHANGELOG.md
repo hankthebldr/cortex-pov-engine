@@ -28,6 +28,36 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 - The XDR agent doors read `configured` only when the beacon is online and an XQL
   tenant credential exists: an online CortexSim beacon is not the Cortex XDR agent.
 
+### Fixed — a Composer fork keeps its origin's push refusal
+
+Follow-up to the composer-mode branch (PR #161). A draft forked from a corpus
+scenario that declares `push_supported: false` (`SIM-MP-030/031/034`) was
+stored push-capable, because the drafts API re-derived push support from the
+draft's own POSIX-shaped commands — measured 2 of 3 on 2026-10-28 — and
+`GET /api/scenarios/{id}/download` then emitted a bundle the origin refuses
+with 409 `PUSH_NOT_SUPPORTED`.
+
+- **`push_supported: false` on the draft body is a floor, never widened:** the
+  derivation may narrow true to false, an explicit false wins, and a PUT that
+  omits it or sends true keeps the refusal (`effective_push_support`, the one
+  rule for POST and PUT).
+- **New column `scenarios.push_supported_declared`** (nullable; the loader
+  copies the YAML value for corpus rows; `_migrate_scenarios_columns` adds it
+  on boot). It keeps a carried refusal apart from a merely derived `false`, so
+  a hand-authored draft whose first save had nothing emittable still recovers
+  once its steps are fixed. Prod: `ALTER TABLE scenarios ADD COLUMN
+  push_supported_declared BOOLEAN`.
+- **The Composer fork carries it:** `draftFromScenario` reads
+  `push_supported_declared` (never the derived `push_supported`), and
+  `draftToApi` sends `push_supported: false` only for a carried refusal. The
+  fork now also carries `threat_report` / `threat_report_url`, which the POV
+  report and the bundle header cite and the fork used to drop.
+- `indicators[]` is deliberately **not** carried: the Composer has no
+  indicator editor, so `S-24` would wedge a draft the moment a referenced step
+  is removed; nothing in the run path reads the column; and
+  `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
+  stitched chain either way.
+
 ### Added — two Linux persistence chains built to group into one case
 
 - **SIM-EDR-023 and SIM-EDR-024**, with cards TTP-2026-0198/0199. SIM-EDR-023
