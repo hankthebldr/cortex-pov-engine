@@ -1100,3 +1100,82 @@ describe('spineProblems / validateDraft — off-chain roots and dangling parents
     expect(self.problems.join(' ')).toMatch(/names itself as its parent \(s1\)/)
   })
 })
+
+// ─── Fork fidelity: the origin's push refusal and its threat report ───────────
+//
+// SIM-MP-030/031/034 declare `push_supported: false`. The drafts API derives a
+// draft's push support from its own command text, so a fork of SIM-MP-031
+// (POSIX-shaped steps) was stored push-capable and offered the bundle its
+// origin refuses with 409 PUSH_NOT_SUPPORTED. Only an AUTHORED refusal is a
+// floor, so the draft reads `push_supported_declared` — never the derived
+// `push_supported`, which on a reloaded draft row cannot say whether its false
+// was authored or derived — and emits it only when it is false. The backend
+// mirror of this fork lives in tests/_composer_fork.py; keep the two in step.
+
+describe('fork carries the origin push refusal', () => {
+  const REFUSING = {
+    ...SCENARIO, scenario_id: 'SIM-MP-031', push_supported: false, push_supported_declared: false,
+  }
+
+  it('draftFromScenario reads the DECLARED refusal, not the derived flag', () => {
+    expect(draftFromScenario(REFUSING).pushSupported).toBe(false)
+    // A corpus origin that declares true is not a floor — nothing to carry.
+    expect(draftFromScenario({
+      ...SCENARIO, push_supported: true, push_supported_declared: true,
+    }).pushSupported).toBeNull()
+    // A reloaded DRAFT row whose false was merely derived must not harden.
+    expect(draftFromScenario({
+      ...SCENARIO, status: 'draft', push_supported: false, push_supported_declared: null,
+    }).pushSupported).toBeNull()
+    expect(emptyDraft().pushSupported).toBeNull()
+  })
+
+  it('draftToApi emits push_supported:false only for a carried refusal', () => {
+    expect(draftToApi(draftFromScenario(REFUSING)).push_supported).toBe(false)
+    expect(draftToApi(draftFromScenario(SCENARIO))).not.toHaveProperty('push_supported')
+    expect(draftToApi(emptyDraft())).not.toHaveProperty('push_supported')
+  })
+
+  it('survives save → reload → save: draftFromApi re-reads the declaration', () => {
+    const body = draftToApi(draftFromScenario(REFUSING))
+    const echoed = {
+      scenario_id: 'SIM-DRAFT-x', status: 'draft', name: body.name, plane: body.plane,
+      steps: body.steps, push_supported: false, push_supported_declared: false,
+    }
+    expect(draftFromApi(echoed).pushSupported).toBe(false)
+    expect(draftToApi(draftFromApi(echoed)).push_supported).toBe(false)
+  })
+
+  it('is not launch-relevant: pushSupported is outside the snapshot, so it never dirties', () => {
+    const d = draftFromScenario(REFUSING)
+    const saved = draftSnapshot(d)
+    expect(isDraftDirty(draftSnapshot({ ...d, pushSupported: null }), saved)).toBe(false)
+  })
+})
+
+describe('fork carries the threat report citation', () => {
+  const URL = 'https://unit42.paloaltonetworks.com/repellent-scorpius-cicada3301-ransomware/'
+  const CITED = {
+    ...SCENARIO,
+    threat_report: 'Unit 42 — Threat Assessment: Repellent Scorpius',
+    threat_report_url: URL,
+  }
+
+  it('draftFromScenario carries threatReport / threatReportUrl, null when absent', () => {
+    const d = draftFromScenario(CITED)
+    expect(d.threatReport).toBe('Unit 42 — Threat Assessment: Repellent Scorpius')
+    expect(d.threatReportUrl).toBe(URL)
+    expect(draftFromScenario(SCENARIO).threatReport).toBeNull()
+    expect(draftFromScenario(SCENARIO).threatReportUrl).toBeNull()
+    expect(emptyDraft().threatReport).toBeNull()
+  })
+
+  it('draftToApi emits them when present and omits them when absent', () => {
+    const body = draftToApi(draftFromScenario(CITED))
+    expect(body.threat_report).toBe('Unit 42 — Threat Assessment: Repellent Scorpius')
+    expect(body.threat_report_url).toBe(URL)
+    const bare = draftToApi(draftFromScenario(SCENARIO))
+    expect(bare).not.toHaveProperty('threat_report')
+    expect(bare).not.toHaveProperty('threat_report_url')
+  })
+})
