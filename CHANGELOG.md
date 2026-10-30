@@ -67,61 +67,60 @@ Spec `docs/superpowers/specs/2026-10-27-library-signal-expansion-design.md`.
 - `make coverage-strict` exits 0 (Correlation 10.1%, 133/1320).
 - `push_supported: false` is now honoured by the bundle suite and the download/bundle routes (409 `PUSH_NOT_SUPPORTED`).
 
-### Changed — the Composer is a full-screen node graph ("composer mode")
+### Added — prevention efficacy, phase 1: the engine can tell "the agent stopped it" from "it failed"
 
-The Composer was a window inside a window: the nav rail, the Library tab strip
-and five stacked rows of its own around a fixed 620px canvas. See
-`docs/superpowers/specs/2026-10-21-composer-mode-design.md`.
+Spec `docs/superpowers/specs/2026-10-26-prevention-detection-efficacy-design.md`,
+plan `docs/superpowers/plans/2026-10-26-prevention-efficacy-phase1-engine-contract.md`,
+wire contract `docs/reference/api-and-agent-surface.md` §1.3.1. **No live
+paired run has executed yet (plan Task 18), so `tenant-verified` for
+prevention is 0;** the agent version and the modules a profile can set to
+Block are still owed, and the spec's §6 is provisional until they land.
 
-- **Composer mode.** Opening the Composer keeps only the console header and its
-  banners; everything below is the graph. The palette, inspector and
-  workstream float over the canvas as drawers (both start closed). Leave with
-  `← Exit` or Esc twice; unsaved edits ask first. Destinations can opt in with
-  `immersive: true`; nothing about it is persisted.
-- **Node graph.** The CGO trigger, every step and the Proof terminal are nodes,
-  flowing left to right without overlap. Edges carry their relationship: select
-  one to change its pivot or delete it. Drags preview live, the MiniMap works,
-  palette items drag onto the canvas, and releasing a connection on empty
-  canvas creates a step there. Delete re-attaches a removed step's children.
-- **Off-chain steps are named.** A second root (which the loader rejects once
-  any step declares a parent) now reads as a named validation problem, an
-  off-chain chip and a warning edge, instead of "Chain valid" and a 422 at save.
-  `+ Add step` extends the chain from the selected step or last leaf.
-
-### Fixed
-
-- **Launch could run something other than the canvas.** Editing a step in place
-  (a pivot, a command, a re-parent) left the draft "unedited", so Launch ran the
-  original corpus scenario. Any change to what executes now requires saving the
-  draft first; moving a card does not.
-- **Deleting a step left dangling causality references** its children pointed
-  at; they now re-attach to the deleted step's parent. The card's `×`, the
-  Delete key and a multi-select now share one delete, and the Delete key only
-  acts with focus inside the graph.
-- **A forked scenario lost its `external_tools`** (and its measurement
-  contract, k8s teardown, interpreters and verification XQL). The gated tool
-  still ran from its `{adapter:…}` command, but without the launch consent
-  gate or the payload staging that `external_tools` drives. A fork now carries
-  every field the draft contract accepts; all 193 loaded scenarios' fork
-  bodies validate against `DraftScenarioSchema` (re-measured 2026-10-28 on the
-  rebased tree; 176 when authored). Outside that contract and still dropped on
-  a fork: `indicators[]` (14 scenarios) and `threat_report` /
-  `threat_report_url`; `push_supported` / `pull_supported` are re-derived from
-  the draft's own content by the drafts API (2 of the 3 rows authored
-  `push_supported: false` (SIM-MP-031, SIM-MP-034) derive `true`, so a draft
-  forked from them is offered a push bundle its origin refuses).
-- **One `+ Add step` could reorder a branching chain.** The spine repair
-  level-sorted a valid array, changing the execution order of steps the DC
-  never touched. A valid array is now left alone and an invalid one moves only
-  the steps it must.
-- **Launch accepted a placeholder command.** A saved draft whose step still
-  read `# configure the command for this step` passed the server's chain check and would have
-  run a shell comment, reporting that step's detection as missed. Launch stays
-  off until validation passes.
-- **The Run lens could lend a verdict to an edited step.** A step that changed
-  since the run now reads "not in run" instead of the old run's state.
-- **A step placed before its parent** (which the loader rejects) is named in
-  validation, and the card `↑`/`↓` refuses the move with the reason.
+- **An outcome axis on every Result** (`core/engine/outcome.py`): `prevented ·
+  detected · missed · pending · not_reached · not_executed`. A block-mode run
+  used to be one `failed` run whose Results read as detection misses. Now the
+  step the agent killed reads `prevented`, the steps after it `not_reached`,
+  and a tool that never arrived `not_executed`.
+- **`Prevention` is the seventh `detection_type`**, the only one an expectation
+  may carry `outcome: prevent` on; cards gain the matching object kind and the
+  scorecard's type breakdown a Prevention bucket.
+- **Two witnesses, or `pending`.** A prevention is confirmed only when the host
+  records that the step's process was terminated (`step_outcomes`, from the
+  beacon's `/complete` `steps[]`) **and** the tenant alert's action reads
+  Prevented (the connector now reads `action`; the matcher gains a `prevention`
+  family and per-type windows). One witness lands on `pending` with its
+  reason, a lost beacon can only ever read `pending`, and a prevention is never
+  hand-marked.
+- **Beacon:** per-step termination cause (`exited · signaled · anchor_terminated
+  · beacon_lost · timeout · aborted · not_run`), direct detection of the
+  anchor's death with the orphaned step reaped, and tool presence on
+  `/complete`. The orchestrator projects each task's required binaries and
+  surfaces the egress warning on the run.
+- **Paired runs and the canary.** `POST /api/runs` takes the launch context
+  (`agent_profile_mode`, `bas_mode_attested`, `soakless_attested`,
+  `attested_by`, `paired_with_run_id`, `canary_run_id`); `GET
+  /api/runs/{id}/pair` returns the report and block runs with the
+  per-detection delta and `severed_at_step`; `POST /api/runs/canary` links a
+  block-mode launch to proof that the profile is real (409
+  `CANARY_NOT_AVAILABLE` without `CORTEXSIM_CANARY_SCENARIO_LINUX`). New
+  `runs`/`results` columns arrive through the boot-time `ADD COLUMN` helper;
+  new tables `step_outcomes` and `observations`.
+- **A run whose beacon dies terminalises** (gated on the configured liveness
+  threshold), blaming the in-flight step and holding its prevent expectations
+  `pending`.
+- **Surfaces:** the causality graph and storyline draw the severed chain,
+  `not_reached` and `prevented`; the report carries outcome icons, chain
+  integrity, the prevention delta and attestation lines, and excludes
+  prevented rows from MTTD; every console surface renders the outcome axis,
+  the launch form the attested context, Readiness the new rungs. A manual
+  validation is a visible, bounded attestation that never overwrites an
+  engine miss.
+- **One denominator rule** for `/api/results` coverage, the MITRE heatmap and
+  the TTP badge: `pending` is never a coverage hit, excluded rows leave the
+  denominator, a row whose step never ran is never certified or scored, and a
+  silent detect row is written `missed` only once its own window closes.
+- **Tier-D end to end:** a kill injector produces the three host witnesses and
+  the classifier carries them into the verdict.
 
 ### Changed — the console says what to do next, in fewer colours, on real state only
 
