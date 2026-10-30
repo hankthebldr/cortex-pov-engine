@@ -8,6 +8,21 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-30
+
+**The library grows from 177 to 193 scenarios, fifteen of them Unit 42
+chains (thirteen counted as stitched) plus a macOS agentic-endpoint
+takeover, and the engine learns to say what a run proved: an outcome axis
+that tells a prevention from a failure, Detection Accuracy and correlation
+rate measured from the reconcile pull, and a console that shows real state
+only.** Counted on this tree: 193 scenarios · 191 TTP cards · 27 EAL
+plugins · 1377 step-detections · 2123 catalog detection objects;
+lab-readiness GREEN 161 · YELLOW 27 · RED 5.
+
+**`tenant-verified` is still 0.** Nothing in this release has executed
+against a live Cortex tenant; the paired block-mode run (plan Task 18) and
+the macOS lab run are both still owed. Authored is not proven.
+
 ### Added — SIM-KOI-009: GlassWorm poisoned IDE extension on a macOS developer endpoint
 
 Spec `docs/superpowers/specs/2026-10-28-koi-aes-glassworm-sim-design.md`, plan
@@ -317,7 +332,8 @@ pass below (2026-10-04) then reduced that architecture to five tasks.
 `POST /api/eal/campaigns/{campaign_id}/detector-readiness`: the vendor alert
 profiles are transcribed, every EAL detector is bound to the vendor alert it
 should raise or the gap is stated, and a campaign can be gated on that
-readiness before the customer is watching rather than after.
+readiness before the customer is watching rather than after. Documented in
+`docs/reference/eal-plugin-catalog.md`.
 
 ### Added — a high-density Library table
 
@@ -386,7 +402,8 @@ and technique collectors exported for both.
   `docs/superpowers/specs/2026-09-29-third-party-content-import-spec.yaml`),
   the homelab detection-validation ladder
   (`docs/superpowers/specs/2026-10-04-homelab-detection-validation-ladder.md`),
-  and the late-breaking-scenario authoring spec. The README's release claims
+  and the late-breaking-scenario authoring spec
+  (`docs/authoring/late-breaking-scenarios.md`). The README's release claims
   were replaced with measured ones and the Pages site re-measured against the
   corpus and the v1.0.2 release.
 
@@ -740,7 +757,8 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v0.1.0...v1.0.0
