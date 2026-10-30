@@ -1572,6 +1572,34 @@
       "delivery": "agent",
       "detection_steps_without_signal": 0,
       "detection_types": [
+        "ABIOC",
+        "BIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "KOI \u2014 GlassWorm Poisoned IDE Extension on a macOS Developer Endpoint (install \u2192 activation \u2192 Keychain \u2192 LaunchAgent \u2192 credential staging \u2192 send)",
+      "needs_target_egress": false,
+      "plane": "KOI",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-KOI-009",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 6,
+      "steps_total": 6,
+      "steps_with_detections": 6,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
         "Analytics",
         "BIOC",
         "ABIOC",
@@ -1595,6 +1623,440 @@
       "steps_real_signal": 5,
       "steps_total": 5,
       "steps_with_detections": 5,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "XQL",
+        "IOC",
+        "ABIOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Squidoor (CL-STA-0049) Web Shell to Renamed-Debugger Backdoor with Multi-Protocol C2 \u2014 EDR + NGFW Stitch",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-023",
+      "service_identities": [
+        "container-runtime",
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 8,
+      "steps_total": 8,
+      "steps_with_detections": 8,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "XQL",
+        "ABIOC",
+        "IOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "CL-UNK-1211 AI-Driven Linux Espionage - Web Shell to Mailbox Theft (Endpoint + NGFW Stitch)",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-024",
+      "service_identities": [
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 11,
+      "steps_total": 11,
+      "steps_with_detections": 11,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "XQL",
+        "ABIOC",
+        "IOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Blinder Tunnel (CL-STA-1178) \u2014 Developer-Lure MSBuild Execution, GitHub-as-C2 and Chisel Tunnel",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-025",
+      "service_identities": [
+        "container-runtime",
+        "developer"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 9,
+      "steps_total": 9,
+      "steps_with_detections": 9,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "IOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Tariff-Document Cloud-Storage Exfil",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-026",
+      "service_identities": [
+        "svc-backup"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 9,
+      "steps_total": 9,
+      "steps_with_detections": 9,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "XQL",
+        "IOC",
+        "ABIOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer \u2014 Developer Workstation EDR + NGFW Stitch",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "python"
+      ],
+      "scenario_id": "SIM-MP-027",
+      "service_identities": [
+        "container-runtime",
+        "developer"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 6,
+      "steps_total": 6,
+      "steps_with_detections": 6,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "XQL",
+        "IOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "ChainDrop npm Worm \u2014 CI-Runner Preinstall Lineage to Runner.Worker Memory Scrape, IMDS Harvest, C2 Exfil and STS Reuse",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-028",
+      "service_identities": [
+        "runner"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 8,
+      "steps_total": 8,
+      "steps_with_detections": 8,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "XQL",
+        "IOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42)",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-029",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 7,
+      "steps_total": 7,
+      "steps_with_detections": 7,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "XQL",
+        "IOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Jumpy Pisces to Play Ransomware Hand-off \u2014 SMB Tool Transfer, Sliver C2, EDR Removal, Impact (Unit 42)",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-030",
+      "service_identities": [
+        "administrator",
+        "user"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 8,
+      "steps_total": 8,
+      "steps_with_detections": 8,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "XQL",
+        "IOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Repellent Scorpius Cicada3301 - Share Enum, PsExec Spread, Rclone Exfil, Hypervisor-Shaped Encryption (Unit 42)",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-031",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 7,
+      "steps_total": 7,
+      "steps_with_detections": 7,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "XQL",
+        "IOC",
+        "ABIOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "BeyondTrust RS CVE-2026-1731 Post-Exploitation to SparkRAT / VShell \u2014 Appliance EDR + NGFW Stitch",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "python"
+      ],
+      "scenario_id": "SIM-MP-032",
+      "service_identities": [
+        "container-runtime",
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 9,
+      "steps_total": 9,
+      "steps_with_detections": 9,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "ABIOC",
+        "IOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "CL-STA-0969 Telecom Intrusion \u2014 AuthDoor PAM Backdoor, GTPDoor / EchoBackdoor Covert C2 and Reverse SSH Tunnels",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-033",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 10,
+      "steps_total": 10,
+      "steps_with_detections": 10,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "Analytics",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Jingle Thief (CL-CRI-1032) \u2014 M365/Entra Account Takeover to SharePoint Recon and Mailbox Forwarding (Unit 42)",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-034",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 6,
+      "steps_total": 6,
+      "steps_with_detections": 6,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "XQL",
+        "IOC",
+        "ABIOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "BUGSTER AI-Assisted WordPress Brute Force to MongoDB Exfil and PowerShell C2 \u2014 EDR + NGFW + AI Access Stitch",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [
+        "python"
+      ],
+      "scenario_id": "SIM-MP-035",
+      "service_identities": [
+        "container-runtime",
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 9,
+      "steps_total": 9,
+      "steps_with_detections": 9,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "PHP2Shell PHP-Worker Post-Exploitation - Unit 42 MTH Hunting Queries (Endpoint + NGFW Stitch)",
+      "needs_target_egress": false,
+      "plane": "ANALYTICS",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-037",
+      "service_identities": [
+        "www-data"
+      ],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 7,
+      "steps_total": 7,
+      "steps_with_detections": 7,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -4938,6 +5400,37 @@
       "detection_steps_without_signal": 0,
       "detection_types": [
         "BIOC",
+        "ABIOC",
+        "XQL",
+        "IOC",
+        "Correlation"
+      ],
+      "egress_tools": [
+        "TOOL-IMPACKET"
+      ],
+      "name": "PAN-OS CVE-2026-0257 Post-Exploitation \u2014 GlobalProtect Bypass Foothold to RMM Recon, RDP/SMB, vCenter/ESXi and VMDK Credential Theft (Unit 42)",
+      "needs_target_egress": true,
+      "plane": "ANALYTICS",
+      "reason": "needs target egress for a tool (pre-stage or allow egress)",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-MP-036",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 9,
+      "steps_total": 9,
+      "steps_with_detections": 9,
+      "tier": "YELLOW",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "eal",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "BIOC",
         "XQL"
       ],
       "egress_tools": [
@@ -5266,15 +5759,15 @@
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 146,
+      "GREEN": 161,
       "RED": 5,
-      "YELLOW": 26
+      "YELLOW": 27
     },
     "detection_steps_without_signal": 142,
-    "eal_delivered": 55,
+    "eal_delivered": 70,
     "scenarios_consent_gated": 4,
-    "scenarios_needing_target_egress": 26,
-    "scenarios_total": 177,
+    "scenarios_needing_target_egress": 27,
+    "scenarios_total": 193,
     "signal_free_scenarios": [
       "SIM-ASM-005",
       "SIM-ASM-006",
@@ -5282,6 +5775,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 667
+    "total_steps": 796
   }
 }
