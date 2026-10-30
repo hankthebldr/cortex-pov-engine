@@ -67,6 +67,61 @@ Spec `docs/superpowers/specs/2026-10-27-library-signal-expansion-design.md`.
 - `make coverage-strict` exits 0 (Correlation 10.1%, 133/1320).
 - `push_supported: false` is now honoured by the bundle suite and the download/bundle routes (409 `PUSH_NOT_SUPPORTED`).
 
+### Added — prevention efficacy, phase 1: the engine can tell "the agent stopped it" from "it failed"
+
+Spec `docs/superpowers/specs/2026-10-26-prevention-detection-efficacy-design.md`,
+plan `docs/superpowers/plans/2026-10-26-prevention-efficacy-phase1-engine-contract.md`,
+wire contract `docs/reference/api-and-agent-surface.md` §1.3.1. **No live
+paired run has executed yet (plan Task 18), so `tenant-verified` for
+prevention is 0;** the agent version and the modules a profile can set to
+Block are still owed, and the spec's §6 is provisional until they land.
+
+- **An outcome axis on every Result** (`core/engine/outcome.py`): `prevented ·
+  detected · missed · pending · not_reached · not_executed`. A block-mode run
+  used to be one `failed` run whose Results read as detection misses. Now the
+  step the agent killed reads `prevented`, the steps after it `not_reached`,
+  and a tool that never arrived `not_executed`.
+- **`Prevention` is the seventh `detection_type`**, the only one an expectation
+  may carry `outcome: prevent` on; cards gain the matching object kind and the
+  scorecard's type breakdown a Prevention bucket.
+- **Two witnesses, or `pending`.** A prevention is confirmed only when the host
+  records that the step's process was terminated (`step_outcomes`, from the
+  beacon's `/complete` `steps[]`) **and** the tenant alert's action reads
+  Prevented (the connector now reads `action`; the matcher gains a `prevention`
+  family and per-type windows). One witness lands on `pending` with its
+  reason, a lost beacon can only ever read `pending`, and a prevention is never
+  hand-marked.
+- **Beacon:** per-step termination cause (`exited · signaled · anchor_terminated
+  · beacon_lost · timeout · aborted · not_run`), direct detection of the
+  anchor's death with the orphaned step reaped, and tool presence on
+  `/complete`. The orchestrator projects each task's required binaries and
+  surfaces the egress warning on the run.
+- **Paired runs and the canary.** `POST /api/runs` takes the launch context
+  (`agent_profile_mode`, `bas_mode_attested`, `soakless_attested`,
+  `attested_by`, `paired_with_run_id`, `canary_run_id`); `GET
+  /api/runs/{id}/pair` returns the report and block runs with the
+  per-detection delta and `severed_at_step`; `POST /api/runs/canary` links a
+  block-mode launch to proof that the profile is real (409
+  `CANARY_NOT_AVAILABLE` without `CORTEXSIM_CANARY_SCENARIO_LINUX`). New
+  `runs`/`results` columns arrive through the boot-time `ADD COLUMN` helper;
+  new tables `step_outcomes` and `observations`.
+- **A run whose beacon dies terminalises** (gated on the configured liveness
+  threshold), blaming the in-flight step and holding its prevent expectations
+  `pending`.
+- **Surfaces:** the causality graph and storyline draw the severed chain,
+  `not_reached` and `prevented`; the report carries outcome icons, chain
+  integrity, the prevention delta and attestation lines, and excludes
+  prevented rows from MTTD; every console surface renders the outcome axis,
+  the launch form the attested context, Readiness the new rungs. A manual
+  validation is a visible, bounded attestation that never overwrites an
+  engine miss.
+- **One denominator rule** for `/api/results` coverage, the MITRE heatmap and
+  the TTP badge: `pending` is never a coverage hit, excluded rows leave the
+  denominator, a row whose step never ran is never certified or scored, and a
+  silent detect row is written `missed` only once its own window closes.
+- **Tier-D end to end:** a kill injector produces the three host witnesses and
+  the classifier carries them into the verdict.
+
 ### Changed — the console says what to do next, in fewer colours, on real state only
 
 From DC feedback on a live install: overwhelming, no clear next task, colour
