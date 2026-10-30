@@ -168,6 +168,39 @@ without purpose, and numbers that were not this instance's. See
   `tests/installer/test_install_sh_checkout_guard.py` runs the real script
   with every host-changing command stubbed.
 
+### Fixed — the clock preflight measured event age, not clock skew
+
+- `_probe_clock` read one sampled `xdr_data` event's `_time` and reported
+  `|event_time - now|` as skew. A perfectly NTP-synced tenant read **836 s**
+  because its newest event was about 14 minutes old, and a tenant with no
+  events read unmeasured. True skew now comes from the tenant's own clock in
+  the HTTP `Date` header (`XsiamClient.server_time`, present on every response
+  including a 403, no XQL, no dependence on ingested data), with SimCore's
+  local time captured around the read and compared at the round-trip
+  midpoint rather than at preflight start, which had added the XQL-scope poll
+  (~17 s) to the reading. Live: 17.2 s -> 0.3 s. A malformed `Date` is
+  unmeasured; a failed probe is counted. Green under `TZ=UTC` and
+  `America/Los_Angeles`.
+
+### Fixed — gates that could pass on an empty or unreadable input now fail closed
+
+From the infra-reliability pass (2026-10-04):
+
+- The adapter-wiring lint fails on an empty or unreadable corpus and its lost
+  fail-closed guard is restored; `coverage_report.py --strict` fails on an
+  unreadable corpus file; the export-determinism gate fails on a stale or
+  untracked export; the tier-2 adapter preflight fails on an empty submodule
+  directory; Tier-D classifies a dash "not found" as ENVIRONMENT, not TTP.
+- The rust-builder stage is pinned to linux/amd64 so arm64 build hosts
+  produce the same static binaries; the payload-shelf CLI defaults its base
+  to the repo root; the scenario lint hook agrees with the loader on planes
+  and the CGO spine.
+- Console: a failed agent or tenant list fetch keeps the operator's choice;
+  the Tenant seed is never presented as the bound tenant's results; a failed
+  scenario-list fetch reads as a failure in the Library; Launch runs the
+  scenario the operator picked last, not the slowest response; SimCore's
+  top-level 422 envelope is shown instead of "HTTP 422".
+
 ### Fixed — a finished run's verdict could change after the fact
 
 - **A late or duplicate `/complete` reopened a finished run.** The only guard
@@ -346,6 +379,23 @@ and technique collectors exported for both.
   `make test-backend-non-utc`). It refuses to start pytest if the zone resolves
   to UTC, because an unknown zone name or an image without tzdata does that
   silently.
+
+### Docs
+
+- Design specs: third-party content import (Sigma + ATT&CK Navigator,
+  `docs/superpowers/specs/2026-09-29-third-party-content-import-spec.yaml`),
+  the homelab detection-validation ladder
+  (`docs/superpowers/specs/2026-10-04-homelab-detection-validation-ladder.md`),
+  and the late-breaking-scenario authoring spec. The README's release claims
+  were replaced with measured ones and the Pages site re-measured against the
+  corpus and the v1.0.2 release.
+
+### Dependencies
+
+- `ui`: `@vitest/ui` 5.0.0 -> 5.0.5, `vite` 7.3.6 -> 7.3.7, `source-map-js`
+  1.2.1 -> 1.2.2, and the vitest family bump of 2026-09-10 (`vitest`,
+  `@vitest/mocker`, `@vitest/coverage-v8`). Dev-only; nothing ships in the
+  image.
 
 ## [1.0.2] - 2026-09-08
 
