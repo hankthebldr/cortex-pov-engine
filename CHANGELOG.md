@@ -8,6 +8,42 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — SIM-KOI-009: GlassWorm poisoned IDE extension on a macOS developer endpoint
+
+Spec `docs/superpowers/specs/2026-10-28-koi-aes-glassworm-sim-design.md`, plan
+`docs/superpowers/plans/2026-10-28-koi-009-glassworm-aes.md`; source report:
+Unit 42, "GlassWorm Goes Mac: Fresh Infrastructure, New Tricks".
+
+- **`SIM-KOI-009`** (plane KOI, `UCS-SCA-01` / `TC-SCA-01`, `POV-SC-012`;
+  T1195 Supply Chain Compromise plus seven follow-on techniques), six steps on
+  a macOS developer endpoint: install a poisoned "Prettier Pro" extension
+  through the IDE's own CLI, activation spawns a scripting-host child, decoy
+  Keychain access, a LaunchAgent written and loaded from the extension host,
+  multi-credential read and local staging, archive and send to a canary
+  destination. Runbook rung `## Agentic endpoint (macOS)` in
+  `docs/reference/lab-runbook.md` lists the prerequisites and the teardown.
+- **Card `TTP-2026-0197`**: 3 BIOCs, 4 XQL queries, 1 ABIOC, 1 correlation
+  rule (terminating on the staging query), 2 analytics-module references,
+  8 IOCs; exported at `detection_scanner/exports/xql/TTP-2026-0197.xql`.
+- **Seven step-detections, all endpoint-reachable, by design.** The scenario
+  first declared nine. The two network-side queries (the archive send from
+  IDE lineage, and the NGFW session to a non-marketplace host) need a sink the
+  documented lab does not have, and a declared detection that cannot fire
+  scores `missed`, never `not_reached`, so six of nine would have printed
+  "detection accuracy 67 %, below target" for a tenant whose detections all
+  worked. Both stay on the card as `purpose: hunt`;
+  `tests/engine/test_sim_koi_009_shape.py` guards the count of seven.
+- **Decoy pack component**
+  `sources/cortex-malicious-agentic-pack/vscode/prettier-pro-canary/`:
+  URI-triggered, decoy-only; `tests/eal_simulator/test_agentic_pack_prettier_pro_canary.py`
+  keeps it benign with a negative control through the real check.
+- **UC/TC:** crosswalk row for `SIM-KOI-009`; `TC-AEPS-09` is proposed for the
+  v2.3 index (`docs/uc_tc_mapping/proposed-tc-v2.3.csv`), not a v2.2 binding.
+- Corpus: 192 -> 193 scenarios, 190 -> 191 cards; golden push-bundle digests
+  and ground truth regenerated (1377 step-detections, 2123 catalog detection
+  objects). Never executed on a Mac: `Last executed: never`,
+  **`tenant-verified` remains 0**.
+
 ### Added — Unit 42 recent-posts chains: SIM-MP-035/036/037
 
 Spec `docs/superpowers/specs/2026-10-28-unit42-xsiam-recent-posts-research.md`.
