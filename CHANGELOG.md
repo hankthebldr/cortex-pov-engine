@@ -8,6 +8,57 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-30
+
+**The library grows from 177 to 193 scenarios, fifteen of them Unit 42
+chains (thirteen counted as stitched) plus a macOS agentic-endpoint
+takeover; the engine learns to say what a run proved: an outcome axis that
+tells a prevention from a failure, Detection Accuracy and correlation rate
+measured from the reconcile pull; and the console shows real state only,
+with the Composer as a full-screen node graph.** Counted on this tree: 193
+scenarios · 191 TTP cards · 27 EAL plugins · 1377 step-detections · 2123
+catalog detection objects; lab-readiness GREEN 161 · YELLOW 27 · RED 5.
+
+**`tenant-verified` is still 0.** Nothing in this release has executed
+against a live Cortex tenant; the paired block-mode run (plan Task 18) and
+the macOS lab run are both still owed. Authored is not proven.
+
+### Added — SIM-KOI-009: GlassWorm poisoned IDE extension on a macOS developer endpoint
+
+Spec `docs/superpowers/specs/2026-10-28-koi-aes-glassworm-sim-design.md`, plan
+`docs/superpowers/plans/2026-10-28-koi-009-glassworm-aes.md`; source report:
+Unit 42, "GlassWorm Goes Mac: Fresh Infrastructure, New Tricks".
+
+- **`SIM-KOI-009`** (plane KOI, `UCS-SCA-01` / `TC-SCA-01`, `POV-SC-012`;
+  T1195 Supply Chain Compromise plus seven follow-on techniques), six steps on
+  a macOS developer endpoint: install a poisoned "Prettier Pro" extension
+  through the IDE's own CLI, activation spawns a scripting-host child, decoy
+  Keychain access, a LaunchAgent written and loaded from the extension host,
+  multi-credential read and local staging, archive and send to a canary
+  destination. Runbook rung `## Agentic endpoint (macOS)` in
+  `docs/reference/lab-runbook.md` lists the prerequisites and the teardown.
+- **Card `TTP-2026-0197`**: 3 BIOCs, 4 XQL queries, 1 ABIOC, 1 correlation
+  rule (terminating on the staging query), 2 analytics-module references,
+  8 IOCs; exported at `detection_scanner/exports/xql/TTP-2026-0197.xql`.
+- **Seven step-detections, all endpoint-reachable, by design.** The scenario
+  first declared nine. The two network-side queries (the archive send from
+  IDE lineage, and the NGFW session to a non-marketplace host) need a sink the
+  documented lab does not have, and a declared detection that cannot fire
+  scores `missed`, never `not_reached`, so six of nine would have printed
+  "detection accuracy 67 %, below target" for a tenant whose detections all
+  worked. Both stay on the card as `purpose: hunt`;
+  `tests/engine/test_sim_koi_009_shape.py` guards the count of seven.
+- **Decoy pack component**
+  `sources/cortex-malicious-agentic-pack/vscode/prettier-pro-canary/`:
+  URI-triggered, decoy-only; `tests/eal_simulator/test_agentic_pack_prettier_pro_canary.py`
+  keeps it benign with a negative control through the real check.
+- **UC/TC:** crosswalk row for `SIM-KOI-009`; `TC-AEPS-09` is proposed for the
+  v2.3 index (`docs/uc_tc_mapping/proposed-tc-v2.3.csv`), not a v2.2 binding.
+- Corpus: 192 -> 193 scenarios, 190 -> 191 cards; golden push-bundle digests
+  and ground truth regenerated (1377 step-detections, 2123 catalog detection
+  objects). Never executed on a Mac: `Last executed: never`,
+  **`tenant-verified` remains 0**.
+
 ### Added — Unit 42 recent-posts chains: SIM-MP-035/036/037
 
 Spec `docs/superpowers/specs/2026-10-28-unit42-xsiam-recent-posts-research.md`.
@@ -30,6 +81,117 @@ Spec `docs/superpowers/specs/2026-10-27-library-signal-expansion-design.md`.
 - Corpus: 177 -> 189 scenarios, 175 -> 187 cards, 26 -> 27 EAL plugins; exports and ground truth regenerated. `tenant-verified` remains 0.
 - `make coverage-strict` exits 0 (Correlation 10.1%, 133/1320).
 - `push_supported: false` is now honoured by the bundle suite and the download/bundle routes (409 `PUSH_NOT_SUPPORTED`).
+
+### Changed — the Composer is a full-screen node graph ("composer mode")
+
+The Composer was a window inside a window: the nav rail, the Library tab strip
+and five stacked rows of its own around a fixed 620px canvas. See
+`docs/superpowers/specs/2026-10-21-composer-mode-design.md`.
+
+- **Composer mode.** Opening the Composer keeps only the console header and its
+  banners; everything below is the graph. The palette, inspector and
+  workstream float over the canvas as drawers (both start closed). Leave with
+  `← Exit` or Esc twice; unsaved edits ask first. Destinations can opt in with
+  `immersive: true`; nothing about it is persisted.
+- **Node graph.** The CGO trigger, every step and the Proof terminal are nodes,
+  flowing left to right without overlap. Edges carry their relationship: select
+  one to change its pivot or delete it. Drags preview live, the MiniMap works,
+  palette items drag onto the canvas, and releasing a connection on empty
+  canvas creates a step there. Delete re-attaches a removed step's children.
+- **Off-chain steps are named.** A second root (which the loader rejects once
+  any step declares a parent) now reads as a named validation problem, an
+  off-chain chip and a warning edge, instead of "Chain valid" and a 422 at save.
+  `+ Add step` extends the chain from the selected step or last leaf.
+
+### Fixed — Composer: what Launch runs, what a delete or a fork keeps, what validation names
+
+- **Launch could run something other than the canvas.** Editing a step in place
+  (a pivot, a command, a re-parent) left the draft "unedited", so Launch ran the
+  original corpus scenario. Any change to what executes now requires saving the
+  draft first; moving a card does not.
+- **Deleting a step left dangling causality references** its children pointed
+  at; they now re-attach to the deleted step's parent. The card's `×`, the
+  Delete key and a multi-select now share one delete, and the Delete key only
+  acts with focus inside the graph.
+- **A forked scenario lost its `external_tools`** (and its measurement
+  contract, k8s teardown, interpreters and verification XQL). The gated tool
+  still ran from its `{adapter:…}` command, but without the launch consent
+  gate or the payload staging that `external_tools` drives. A fork now carries
+  every field the draft contract accepts; all 193 loaded scenarios' fork
+  bodies validate against `DraftScenarioSchema` (re-measured 2026-10-28 on the
+  rebased tree; 176 when authored). Outside that contract and still dropped on
+  a fork: `indicators[]` (14 scenarios) and `threat_report` /
+  `threat_report_url`; `push_supported` / `pull_supported` are re-derived from
+  the draft's own content by the drafts API (2 of the 3 rows authored
+  `push_supported: false` (SIM-MP-031, SIM-MP-034) derive `true`, so a draft
+  forked from them is offered a push bundle its origin refuses).
+- **One `+ Add step` could reorder a branching chain.** The spine repair
+  level-sorted a valid array, changing the execution order of steps the DC
+  never touched. A valid array is now left alone and an invalid one moves only
+  the steps it must.
+- **Launch accepted a placeholder command.** A saved draft whose step still
+  read `# configure the command for this step` passed the server's chain check and would have
+  run a shell comment, reporting that step's detection as missed. Launch stays
+  off until validation passes.
+- **The Run lens could lend a verdict to an edited step.** A step that changed
+  since the run now reads "not in run" instead of the old run's state.
+- **A step placed before its parent** (which the loader rejects) is named in
+  validation, and the card `↑`/`↓` refuses the move with the reason.
+
+### Added — prevention efficacy, phase 1: the engine can tell "the agent stopped it" from "it failed"
+
+Spec `docs/superpowers/specs/2026-10-26-prevention-detection-efficacy-design.md`,
+plan `docs/superpowers/plans/2026-10-26-prevention-efficacy-phase1-engine-contract.md`,
+wire contract `docs/reference/api-and-agent-surface.md` §1.3.1. **No live
+paired run has executed yet (plan Task 18), so `tenant-verified` for
+prevention is 0;** the agent version and the modules a profile can set to
+Block are still owed, and the spec's §6 is provisional until they land.
+
+- **An outcome axis on every Result** (`core/engine/outcome.py`): `prevented ·
+  detected · missed · pending · not_reached · not_executed`. A block-mode run
+  used to be one `failed` run whose Results read as detection misses. Now the
+  step the agent killed reads `prevented`, the steps after it `not_reached`,
+  and a tool that never arrived `not_executed`.
+- **`Prevention` is the seventh `detection_type`**, the only one an expectation
+  may carry `outcome: prevent` on; cards gain the matching object kind and the
+  scorecard's type breakdown a Prevention bucket.
+- **Two witnesses, or `pending`.** A prevention is confirmed only when the host
+  records that the step's process was terminated (`step_outcomes`, from the
+  beacon's `/complete` `steps[]`) **and** the tenant alert's action reads
+  Prevented (the connector now reads `action`; the matcher gains a `prevention`
+  family and per-type windows). One witness lands on `pending` with its
+  reason, a lost beacon can only ever read `pending`, and a prevention is never
+  hand-marked.
+- **Beacon:** per-step termination cause (`exited · signaled · anchor_terminated
+  · beacon_lost · timeout · aborted · not_run`), direct detection of the
+  anchor's death with the orphaned step reaped, and tool presence on
+  `/complete`. The orchestrator projects each task's required binaries and
+  surfaces the egress warning on the run.
+- **Paired runs and the canary.** `POST /api/runs` takes the launch context
+  (`agent_profile_mode`, `bas_mode_attested`, `soakless_attested`,
+  `attested_by`, `paired_with_run_id`, `canary_run_id`); `GET
+  /api/runs/{id}/pair` returns the report and block runs with the
+  per-detection delta and `severed_at_step`; `POST /api/runs/canary` links a
+  block-mode launch to proof that the profile is real (409
+  `CANARY_NOT_AVAILABLE` without `CORTEXSIM_CANARY_SCENARIO_LINUX`). New
+  `runs`/`results` columns arrive through the boot-time `ADD COLUMN` helper;
+  new tables `step_outcomes` and `observations`.
+- **A run whose beacon dies terminalises** (gated on the configured liveness
+  threshold), blaming the in-flight step and holding its prevent expectations
+  `pending`.
+- **Surfaces:** the causality graph and storyline draw the severed chain,
+  `not_reached` and `prevented`; the report carries outcome icons, chain
+  integrity, the prevention delta and attestation lines, and excludes
+  prevented rows from MTTD; every console surface renders the outcome axis,
+  the launch form the attested context, Readiness the new rungs. A manual
+  validation is a visible, bounded attestation that never overwrites an
+  engine miss.
+- **One denominator rule** for `/api/results` coverage, the MITRE heatmap and
+  the TTP badge: `pending` is never a coverage hit, excluded rows leave the
+  denominator, a row whose step never ran is never certified or scored, and a
+  silent detect row is written `missed` only once its own window closes.
+- **Tier-D end to end:** a kill injector produces the three host witnesses and
+  the classifier carries them into the verdict.
 
 ### Changed — the console says what to do next, in fewer colours, on real state only
 
@@ -76,6 +238,39 @@ without purpose, and numbers that were not this instance's. See
   warn. The published v1.0.0–v1.0.2 `install.sh` assets predate this guard.
   `tests/installer/test_install_sh_checkout_guard.py` runs the real script
   with every host-changing command stubbed.
+
+### Fixed — the clock preflight measured event age, not clock skew
+
+- `_probe_clock` read one sampled `xdr_data` event's `_time` and reported
+  `|event_time - now|` as skew. A perfectly NTP-synced tenant read **836 s**
+  because its newest event was about 14 minutes old, and a tenant with no
+  events read unmeasured. True skew now comes from the tenant's own clock in
+  the HTTP `Date` header (`XsiamClient.server_time`, present on every response
+  including a 403, no XQL, no dependence on ingested data), with SimCore's
+  local time captured around the read and compared at the round-trip
+  midpoint rather than at preflight start, which had added the XQL-scope poll
+  (~17 s) to the reading. Live: 17.2 s -> 0.3 s. A malformed `Date` is
+  unmeasured; a failed probe is counted. Green under `TZ=UTC` and
+  `America/Los_Angeles`.
+
+### Fixed — gates that could pass on an empty or unreadable input now fail closed
+
+From the infra-reliability pass (2026-10-04):
+
+- The adapter-wiring lint fails on an empty or unreadable corpus and its lost
+  fail-closed guard is restored; `coverage_report.py --strict` fails on an
+  unreadable corpus file; the export-determinism gate fails on a stale or
+  untracked export; the tier-2 adapter preflight fails on an empty submodule
+  directory; Tier-D classifies a dash "not found" as ENVIRONMENT, not TTP.
+- The rust-builder stage is pinned to linux/amd64 so arm64 build hosts
+  produce the same static binaries; the payload-shelf CLI defaults its base
+  to the repo root; the scenario lint hook agrees with the loader on planes
+  and the CGO spine.
+- Console: a failed agent or tenant list fetch keeps the operator's choice;
+  the Tenant seed is never presented as the bound tenant's results; a failed
+  scenario-list fetch reads as a failure in the Library; Launch runs the
+  scenario the operator picked last, not the slowest response; SimCore's
+  top-level 422 envelope is shown instead of "HTTP 422".
 
 ### Fixed — a finished run's verdict could change after the fact
 
@@ -161,6 +356,47 @@ the same copy, logging one warning.
   the call that needs it and the health probe can still import the module to
   report it.
 
+### Added — the Composer canvas is direct manipulation, with a Lanes lens
+
+Spec `docs/superpowers/specs/2026-09-08-composer-direct-manipulation-design.md`.
+
+- **The design lens renders through React Flow.** Step nodes drag by a grip
+  handle and their positions persist in `composer_layout`; a stored position
+  overrides the computed layout and **Re-layout** clears it. Causality edges
+  are drawn, and an illegal one (a forward or self reference, a second root
+  once any parent is declared) is refused visibly through one spine-legality
+  predicate shared with the parent picker. Zoom toolbar, stitch overlay and
+  pivot typing on the edge; the Run lens is scoped to the open draft's own
+  scenario; a saved draft keeps its `origin.steps`.
+- **Lanes lens:** swimlanes by ingestion door (agent telemetry, EAL emitter,
+  collector) with drag-to-retarget (`ui/src/components/console/composerLanes.js`).
+  A step's channel wins over a stale lane override.
+
+### Changed — the console moved to the PANW Executive design system
+
+`docs/design/DESIGN-SYNC.md`. The Executive design-system tokens are vendored
+under `ui/src/styles/ds/` and the accent contract inverted; the shell chrome
+was rebuilt and the destination information architecture rewritten, with an
+object sheet and five new surfaces; Coverage, the Launch Gate and the Tenant
+page were brought to the design; the generated run topology is wired and the
+seed catalogs guarded; every destination is guarded by a test, which caught
+one; the 1200 px floor moved off the document and onto the bars. The minimal
+pass below (2026-10-04) then reduced that architecture to five tasks.
+
+### Added — a detector-readiness gate before the POV runs
+
+`POST /api/eal/campaigns/{campaign_id}/detector-readiness`: the vendor alert
+profiles are transcribed, every EAL detector is bound to the vendor alert it
+should raise or the gap is stated, and a campaign can be gated on that
+readiness before the customer is watching rather than after. Documented in
+`docs/reference/eal-plugin-catalog.md`.
+
+### Added — a high-density Library table
+
+`ScenarioTable` (`ui/src/components/console/ScenarioTable.jsx`): the
+simulation library as a dense table alongside the card grid, with the plane
+and technique collectors exported for both.
+
 ### Added — sprint 2: the loop can now measure two more KPIs (still `tenant-verified: 0`)
 
 - **Detection Accuracy is measured** (`core/connectors/measures.py`). The
@@ -215,6 +451,24 @@ the same copy, logging one warning.
   `make test-backend-non-utc`). It refuses to start pytest if the zone resolves
   to UTC, because an unknown zone name or an image without tzdata does that
   silently.
+
+### Docs
+
+- Design specs: third-party content import (Sigma + ATT&CK Navigator,
+  `docs/superpowers/specs/2026-09-29-third-party-content-import-spec.yaml`),
+  the homelab detection-validation ladder
+  (`docs/superpowers/specs/2026-10-04-homelab-detection-validation-ladder.md`),
+  and the late-breaking-scenario authoring spec
+  (`docs/authoring/late-breaking-scenarios.md`). The README's release claims
+  were replaced with measured ones and the Pages site re-measured against the
+  corpus and the v1.0.2 release.
+
+### Dependencies
+
+- `ui`: `@vitest/ui` 5.0.0 -> 5.0.5, `vite` 7.3.6 -> 7.3.7, `source-map-js`
+  1.2.1 -> 1.2.2, and the vitest family bump of 2026-09-10 (`vitest`,
+  `@vitest/mocker`, `@vitest/coverage-v8`). Dev-only; nothing ships in the
+  image.
 
 ## [1.0.2] - 2026-09-08
 
@@ -559,7 +813,8 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v0.1.0...v1.0.0

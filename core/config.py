@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     CORTEXSIM_ENV: str = "production"
     CORTEXSIM_SECRET: str = "changeme"
     # Declared because `.env.example` tells operators to set it and
-    # docker-compose.yml consumes it (`${CORTEXSIM_VERSION:-1.0.0}` drives both
+    # docker-compose.yml consumes it (`${CORTEXSIM_VERSION:-1.1.0}` drives both
     # the image tag and container_name). Nothing in the app branches on the
     # value — it is deployment metadata — but pydantic-settings defaults
     # BaseSettings to `extra='forbid'` and this class reads `.env`, so leaving
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     #
     # Defaults to "unknown" rather than a pinned version: no workflow reads this
     # variable (release.yml derives the image tag from the git tag),
-    # docker-compose.yml carries its own `:-1.0.0` fallback, and core/main.py
+    # docker-compose.yml carries its own `:-1.1.0` fallback, and core/main.py
     # already hardcodes FastAPI's own `version`. A plausible-looking default here
     # would let a deploy that was never told its version report a specific one
     # anyway — degraded should read as degraded.
