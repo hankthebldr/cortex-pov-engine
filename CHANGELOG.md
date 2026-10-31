@@ -12,12 +12,12 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 **The library grows from 177 to 193 scenarios, fifteen of them Unit 42
 chains (thirteen counted as stitched) plus a macOS agentic-endpoint
-takeover, and the engine learns to say what a run proved: an outcome axis
-that tells a prevention from a failure, Detection Accuracy and correlation
-rate measured from the reconcile pull, and a console that shows real state
-only.** Counted on this tree: 193 scenarios · 191 TTP cards · 27 EAL
-plugins · 1377 step-detections · 2123 catalog detection objects;
-lab-readiness GREEN 161 · YELLOW 27 · RED 5.
+takeover; the engine learns to say what a run proved: an outcome axis that
+tells a prevention from a failure, Detection Accuracy and correlation rate
+measured from the reconcile pull; and the console shows real state only,
+with the Composer as a full-screen node graph.** Counted on this tree: 193
+scenarios · 191 TTP cards · 27 EAL plugins · 1377 step-detections · 2123
+catalog detection objects; lab-readiness GREEN 161 · YELLOW 27 · RED 5.
 
 **`tenant-verified` is still 0.** Nothing in this release has executed
 against a live Cortex tenant; the paired block-mode run (plan Task 18) and
@@ -81,6 +81,62 @@ Spec `docs/superpowers/specs/2026-10-27-library-signal-expansion-design.md`.
 - Corpus: 177 -> 189 scenarios, 175 -> 187 cards, 26 -> 27 EAL plugins; exports and ground truth regenerated. `tenant-verified` remains 0.
 - `make coverage-strict` exits 0 (Correlation 10.1%, 133/1320).
 - `push_supported: false` is now honoured by the bundle suite and the download/bundle routes (409 `PUSH_NOT_SUPPORTED`).
+
+### Changed — the Composer is a full-screen node graph ("composer mode")
+
+The Composer was a window inside a window: the nav rail, the Library tab strip
+and five stacked rows of its own around a fixed 620px canvas. See
+`docs/superpowers/specs/2026-10-21-composer-mode-design.md`.
+
+- **Composer mode.** Opening the Composer keeps only the console header and its
+  banners; everything below is the graph. The palette, inspector and
+  workstream float over the canvas as drawers (both start closed). Leave with
+  `← Exit` or Esc twice; unsaved edits ask first. Destinations can opt in with
+  `immersive: true`; nothing about it is persisted.
+- **Node graph.** The CGO trigger, every step and the Proof terminal are nodes,
+  flowing left to right without overlap. Edges carry their relationship: select
+  one to change its pivot or delete it. Drags preview live, the MiniMap works,
+  palette items drag onto the canvas, and releasing a connection on empty
+  canvas creates a step there. Delete re-attaches a removed step's children.
+- **Off-chain steps are named.** A second root (which the loader rejects once
+  any step declares a parent) now reads as a named validation problem, an
+  off-chain chip and a warning edge, instead of "Chain valid" and a 422 at save.
+  `+ Add step` extends the chain from the selected step or last leaf.
+
+### Fixed — Composer: what Launch runs, what a delete or a fork keeps, what validation names
+
+- **Launch could run something other than the canvas.** Editing a step in place
+  (a pivot, a command, a re-parent) left the draft "unedited", so Launch ran the
+  original corpus scenario. Any change to what executes now requires saving the
+  draft first; moving a card does not.
+- **Deleting a step left dangling causality references** its children pointed
+  at; they now re-attach to the deleted step's parent. The card's `×`, the
+  Delete key and a multi-select now share one delete, and the Delete key only
+  acts with focus inside the graph.
+- **A forked scenario lost its `external_tools`** (and its measurement
+  contract, k8s teardown, interpreters and verification XQL). The gated tool
+  still ran from its `{adapter:…}` command, but without the launch consent
+  gate or the payload staging that `external_tools` drives. A fork now carries
+  every field the draft contract accepts; all 193 loaded scenarios' fork
+  bodies validate against `DraftScenarioSchema` (re-measured 2026-10-28 on the
+  rebased tree; 176 when authored). Outside that contract and still dropped on
+  a fork: `indicators[]` (14 scenarios) and `threat_report` /
+  `threat_report_url`; `push_supported` / `pull_supported` are re-derived from
+  the draft's own content by the drafts API (2 of the 3 rows authored
+  `push_supported: false` (SIM-MP-031, SIM-MP-034) derive `true`, so a draft
+  forked from them is offered a push bundle its origin refuses).
+- **One `+ Add step` could reorder a branching chain.** The spine repair
+  level-sorted a valid array, changing the execution order of steps the DC
+  never touched. A valid array is now left alone and an invalid one moves only
+  the steps it must.
+- **Launch accepted a placeholder command.** A saved draft whose step still
+  read `# configure the command for this step` passed the server's chain check and would have
+  run a shell comment, reporting that step's detection as missed. Launch stays
+  off until validation passes.
+- **The Run lens could lend a verdict to an edited step.** A step that changed
+  since the run now reads "not in run" instead of the old run's state.
+- **A step placed before its parent** (which the loader rejects) is named in
+  validation, and the card `↑`/`↓` refuses the move with the reason.
 
 ### Added — prevention efficacy, phase 1: the engine can tell "the agent stopped it" from "it failed"
 
