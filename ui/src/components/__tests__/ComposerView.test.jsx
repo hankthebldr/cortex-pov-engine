@@ -11,7 +11,7 @@
  *     original chain while the canvas showed the edited one
  */
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest'
-import { render, screen, waitFor, within, act } from '@testing-library/react'
+import { render, screen, waitFor, within, act, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
@@ -220,7 +220,10 @@ describe('ComposerView — editing the chain', () => {
     expect(screen.getByTestId('composer-validation')).toHaveTextContent(/step-03/)
   })
 
-  it('reorders steps with the node controls', async () => {
+  it('refuses a card move that would put a step before its own parent, and says why', async () => {
+    // step-02 descends from step-01. Moving step-01 after it gives an array
+    // the loader rejects ("must be an EARLIER step") while the pill used to
+    // read "Chain valid" — so the card refuses it, visibly.
     const user = userEvent.setup()
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
@@ -229,7 +232,34 @@ describe('ComposerView — editing the chain', () => {
       .map((el) => el.getAttribute('data-testid'))
     expect(order()).toEqual(['chain-step-step-01', 'chain-step-step-02'])
     await user.click(screen.getByLabelText('Move step-01 later'))
-    expect(order()).toEqual(['chain-step-step-02', 'chain-step-step-01'])
+    expect(order()).toEqual(['chain-step-step-01', 'chain-step-step-02'])
+    expect(screen.getByTestId('composer-notice').textContent)
+      .toMatch(/step-02 can't run before its parent step-01/)
+  })
+
+  it('reorders sibling steps with the node controls', async () => {
+    // Positive control for the refusal above: two children of one parent can
+    // swap freely — the guard refuses only a move that breaks parent order.
+    const user = userEvent.setup()
+    const SIBLINGS = {
+      ...SCENARIO,
+      scenario_id: 'SIM-EDR-SIB',
+      steps: [
+        { id: 'step-01', name: 'Root', command: 'true', identity: 'www-data', expected_detections: [] },
+        { id: 'step-02', name: 'A', command: 'true', identity: 'www-data', causality: { parent_step: 'step-01', pivot: 'process_lineage' }, expected_detections: [] },
+        { id: 'step-03', name: 'B', command: 'true', identity: 'www-data', causality: { parent_step: 'step-01', pivot: 'process_lineage' }, expected_detections: [] },
+      ],
+    }
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [SIBLINGS] },
+      'GET /api/scenarios/SIM-EDR-SIB': SIBLINGS,
+    })
+    mount({ from: 'SIM-EDR-SIB' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-03')).toBeInTheDocument())
+    const order = () => Array.from(document.querySelectorAll('[data-testid^="chain-step-"]'))
+      .map((el) => el.getAttribute('data-testid'))
+    await user.click(screen.getByLabelText('Move step-02 later'))
+    expect(order()).toEqual(['chain-step-step-01', 'chain-step-step-03', 'chain-step-step-02'])
   })
 
   it('removes a step', async () => {
@@ -288,6 +318,38 @@ describe('ComposerView — editing the chain', () => {
     })
   })
 
+  it('an IN-PLACE edit (a pivot change) forces a save before launch — never runs the origin', async () => {
+    // Regression: `edited` used to compare only step ids, so changing a
+    // relationship left the draft "unedited" and Launch would have run the
+    // ORIGIN corpus row instead of what the canvas shows.
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('chain-step-step-02'))
+    await user.selectOptions(screen.getByLabelText('Causality pivot for step-02'), 'network_session')
+    expect(screen.getByText(/unsaved edits/i)).toBeInTheDocument()
+    await user.click(screen.getByTestId('composer-preflight'))
+    const launch = screen.getByTestId('composer-launch')
+    expect(launch).toBeDisabled()
+    expect(launch.getAttribute('title')).toMatch(/save the draft/i)
+  })
+
+  it('a pure layout drag does NOT count as an edit (presentation never forces a save)', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    act(() => {
+      window.__rfOnNodesChange([{ id: 'step-02', type: 'position', position: { x: 640, y: 320 }, dragging: false }])
+    })
+    // Positive control: the drag WAS recorded (else "no edit" proves nothing).
+    expect(screen.getByTestId('composer-canvas').dataset.storedLayout).toBe('set')
+    expect(screen.queryByText(/unsaved edits/i)).toBeNull()
+    await user.click(screen.getByTestId('composer-preflight'))
+    expect(screen.getByTestId('composer-launch').getAttribute('title')).not.toMatch(/save the draft/i)
+  })
+
   it('keeps Launch disabled until preflight has actually run', async () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
@@ -321,11 +383,72 @@ describe('ComposerView — inspector', () => {
   })
 
   it('shows scenario-level teardown, labelled as scenario-level', async () => {
+    const user = userEvent.setup()
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    // Composer mode: the inspector is an overlay drawer, closed until asked for.
+    await user.click(screen.getByRole('button', { name: 'Inspector' }))
     expect(screen.getByText(/the schema has no per-step cleanup/i)).toBeInTheDocument()
     expect(screen.getByText(/rm -f \/tmp\/mimipenguin\.sh/)).toBeInTheDocument()
+  })
+})
+
+describe('ComposerView — composer mode drawers', () => {
+  it('gives the stage to the graph: palette and inspector start closed', async () => {
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(screen.queryByTestId('composer-palette')).toBeNull()
+    expect(screen.queryByTestId('composer-inspector-empty')).toBeNull()
+    expect(screen.getByRole('button', { name: /＋ Add/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Inspector' })).toBeInTheDocument()
+  })
+
+  it('opens the palette on demand and the inspector when a step is selected', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    expect(screen.getByTestId('composer-palette')).toBeInTheDocument()
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    expect(screen.getByTestId('composer-inspector')).toBeInTheDocument()
+  })
+
+  it('+ Add step extends a declared chain from its last leaf — never an off-chain root', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-add-step'))
+    expect(screen.getByTestId('composer-validation').textContent).not.toMatch(/not connected to the chain/i)
+    await user.click(screen.getByRole('button', { name: 'YAML' }))
+    expect(screen.getByTestId('composer-yaml').textContent).toMatch(/- id: step-03[\s\S]*?parent_step: step-02/)
+  })
+
+  it('+ Add step appends after the SELECTED step when one is selected', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    await user.click(screen.getByTestId('composer-add-step'))
+    await user.click(screen.getByRole('button', { name: 'YAML' }))
+    expect(screen.getByTestId('composer-yaml').textContent).toMatch(/- id: step-03[\s\S]*?parent_step: step-01/)
+  })
+
+  it('renders palette items as drag sources carrying their key', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    const item = screen.getByRole('button', { name: /Command/ })
+    expect(item).toHaveAttribute('draggable', 'true')
+    const setData = vi.fn()
+    fireEvent.dragStart(item, { dataTransfer: { setData, effectAllowed: '' } })
+    expect(setData).toHaveBeenCalledWith('application/cortexsim-node', 'k-command')
   })
 })
 
@@ -335,7 +458,9 @@ describe('ComposerView — Stitch Context wiring', () => {
     baseRoutes()
     mount({ from: 'SIM-EDR-001' })
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
-    // NoSelectionAside → open the editable workflow meta, which hosts the panel.
+    // Open the inspector drawer (closed by default in composer mode), then
+    // NoSelectionAside → the editable workflow meta, which hosts the panel.
+    await user.click(screen.getByRole('button', { name: 'Inspector' }))
     await user.click(screen.getByRole('button', { name: /edit the workflow meta/i }))
     await waitFor(() => expect(screen.getByTestId('composer-stitch-panel')).toBeInTheDocument())
     // Author a canary principal on account; the panel is a pure view, the model
@@ -821,5 +946,262 @@ describe('ComposerView — Load a saved draft (Task 12 crash)', () => {
     await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
     expect(screen.getByTestId('chain-start')).toBeInTheDocument()
     expect(screen.queryByTestId('surface-error')).not.toBeInTheDocument()
+  })
+})
+
+describe('ComposerView — canvas delete re-parents (Composer mode)', () => {
+  // React Flow reports the edges attached to a deleted node in the SAME
+  // deletion; handling them as edge deletions first used to clear the
+  // children's parents, so the child fell off the chain instead of
+  // re-attaching to the deleted step's parent (caught live, not by jsdom).
+  const LINEAR = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-LINE',
+    steps: [
+      { id: 'step-01', name: 'One', command: 'true', identity: 'www-data', expected_detections: [] },
+      {
+        id: 'step-02', name: 'Two', command: 'true', identity: 'www-data',
+        causality: { parent_step: 'step-01', pivot: 'process_lineage' }, expected_detections: [],
+      },
+      {
+        id: 'step-03', name: 'Three', command: 'true', identity: 'www-data',
+        causality: { parent_step: 'step-02', pivot: 'network_session' }, expected_detections: [],
+      },
+    ],
+  }
+
+  it('deleting a middle step re-attaches its child to the deleted step’s parent, keeping the pivot', async () => {
+    const user = userEvent.setup()
+    baseRoutes({
+      'GET /api/scenarios': { scenarios: [LINEAR] },
+      'GET /api/scenarios/SIM-EDR-LINE': LINEAR,
+    })
+    mount({ from: 'SIM-EDR-LINE' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-03')).toBeInTheDocument())
+    act(() => {
+      window.__rfOnDelete({
+        nodes: [{ id: 'step-02', type: 'step' }],
+        edges: [
+          { id: 'step-01->step-02', source: 'step-01', target: 'step-02', type: 'causality' },
+          { id: 'step-02->step-03', source: 'step-02', target: 'step-03', type: 'causality' },
+        ],
+      })
+    })
+    await waitFor(() => expect(screen.queryByTestId('chain-step-step-02')).not.toBeInTheDocument())
+    expect(screen.getByTestId('composer-validation').textContent).not.toMatch(/not connected to the chain/i)
+    await user.click(screen.getByRole('button', { name: 'YAML' }))
+    expect(screen.getByTestId('composer-yaml').textContent)
+      .toMatch(/- id: step-03[\s\S]*?parent_step: step-01[\s\S]*?pivot: network_session/)
+  })
+})
+
+// ─── Composer mode — review fix pass ──────────────────────────────────────────
+
+describe('ComposerView — leaving the mode says only what is true', () => {
+  it('an untouched scenario leaves at once — no false "unsaved edits" confirm', async () => {
+    const user = userEvent.setup()
+    const onExit = vi.fn()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' }, { onExit })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-exit'))
+    expect(onExit).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('with unsaved edits it asks first, focuses Stay, and only Discard leaves', async () => {
+    const user = userEvent.setup()
+    const onExit = vi.fn()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' }, { onExit })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-add-step'))
+    await user.click(screen.getByTestId('composer-exit'))
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.textContent).toMatch(/unsaved edits/i)
+    expect(onExit).not.toHaveBeenCalled()
+    // The SAFE choice holds focus, so a reflexive Enter cannot discard work.
+    await waitFor(() => expect(document.activeElement?.textContent).toMatch(/^Stay/))
+    await user.click(within(dialog).getByRole('button', { name: /Discard and leave/i }))
+    expect(onExit).toHaveBeenCalledTimes(1)
+  })
+
+  it('Esc peels one layer per press — inspector, selection, palette — and one Esc never exits', async () => {
+    const user = userEvent.setup()
+    const onExit = vi.fn()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' }, { onExit })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    expect(screen.getByTestId('composer-inspector')).toBeInTheDocument()
+    const esc = () => fireEvent.keyDown(document.body, { key: 'Escape' })
+
+    act(esc) // 1: the inspector
+    expect(screen.queryByTestId('composer-inspector')).toBeNull()
+    expect(screen.getByTestId('chain-step-step-01')).toHaveAttribute('aria-pressed', 'true')
+    act(esc) // 2: the selection
+    expect(screen.getByTestId('chain-step-step-01')).toHaveAttribute('aria-pressed', 'false')
+    act(esc) // 3: the palette
+    expect(screen.queryByTestId('composer-palette')).toBeNull()
+    act(esc) // 4: arms, says so, does NOT exit
+    expect(onExit).not.toHaveBeenCalled()
+    expect(screen.getByTestId('composer-notice').textContent).toMatch(/Esc again/)
+    act(esc) // 5: exits (an untouched scenario needs no confirm)
+    expect(onExit).toHaveBeenCalledTimes(1)
+  })
+
+  it('Esc inside a field only leaves the field', async () => {
+    const user = userEvent.setup()
+    const onExit = vi.fn()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' }, { onExit })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    const field = screen.getByLabelText('Identity for step-01')
+    field.focus()
+    act(() => { fireEvent.keyDown(field, { key: 'Escape' }) })
+    expect(screen.getByTestId('composer-inspector')).toBeInTheDocument()
+    expect(onExit).not.toHaveBeenCalled()
+  })
+})
+
+describe('ComposerView — opening a library scenario over the chain', () => {
+  it('replaces an untouched chain at once', async () => {
+    const user = userEvent.setup()
+    const setParams = vi.fn()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' }, { setParams })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(within(screen.getByTestId('composer-palette')).getByRole('button', { name: /^SIM-EDR-001/ }))
+    expect(setParams).toHaveBeenCalledWith({ from: 'SIM-EDR-001' }, { replace: true })
+  })
+
+  it('asks before discarding unsaved edits, and replaces only on Discard', async () => {
+    const user = userEvent.setup()
+    const setParams = vi.fn()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' }, { setParams })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-add-step'))
+    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await user.click(within(screen.getByTestId('composer-palette')).getByRole('button', { name: /^SIM-EDR-001/ }))
+    expect(setParams).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.textContent).toMatch(/Replace this chain/)
+    await user.click(within(dialog).getByRole('button', { name: /Discard and open/i }))
+    expect(setParams).toHaveBeenCalledWith({ from: 'SIM-EDR-001' }, { replace: true })
+  })
+})
+
+describe('ComposerView — every delete gesture gives the same chain', () => {
+  const LINE = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-LINE2',
+    steps: [
+      { id: 'step-01', name: 'One', command: 'true', identity: 'www-data', expected_detections: [] },
+      { id: 'step-02', name: 'Two', command: 'true', identity: 'www-data', causality: { parent_step: 'step-01', pivot: 'process_lineage' }, expected_detections: [] },
+      { id: 'step-03', name: 'Three', command: 'true', identity: 'www-data', causality: { parent_step: 'step-02', pivot: 'network_session' }, expected_detections: [] },
+    ],
+  }
+
+  it('the card’s × on a middle step re-attaches its child, exactly like the Delete key', async () => {
+    const user = userEvent.setup()
+    baseRoutes({ 'GET /api/scenarios': { scenarios: [LINE] }, 'GET /api/scenarios/SIM-EDR-LINE2': LINE })
+    mount({ from: 'SIM-EDR-LINE2' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-03')).toBeInTheDocument())
+    await user.click(screen.getByLabelText('Remove step-02'))
+    await waitFor(() => expect(screen.queryByTestId('chain-step-step-02')).not.toBeInTheDocument())
+    expect(screen.getByTestId('composer-validation').textContent).not.toMatch(/no longer exists/)
+    // The × did not select the card it just removed.
+    expect(screen.queryByTestId('composer-inspector')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'YAML' }))
+    expect(screen.getByTestId('composer-yaml').textContent)
+      .toMatch(/- id: step-03[\s\S]*?parent_step: step-01[\s\S]*?pivot: network_session/)
+  })
+})
+
+describe('ComposerView — Launch runs only what the canvas shows', () => {
+  it('stays off while a step still carries the placeholder command, even after a launchable save', async () => {
+    // The server's chain check accepts the placeholder (it is a non-blank
+    // string), so the save reads "launchable" — but it would run a shell
+    // comment and report the step's detection as missed.
+    const user = userEvent.setup()
+    baseRoutes({
+      'POST /api/scenarios/drafts': () => new Response(
+        JSON.stringify({
+          scenario_id: 'SIM-DRAFT-x', status: 'draft',
+          launchable: { launchable: true, chain_valid: true, tc_bound: true, reasons: [] },
+        }),
+        { status: 201, headers: { 'content-type': 'application/json' } },
+      ),
+    })
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-02')).toBeInTheDocument())
+    await user.click(screen.getByTestId('composer-add-step'))
+    await user.click(screen.getByTestId('composer-save-draft'))
+    await waitFor(() => expect(screen.getByTestId('composer-notice').textContent).toMatch(/Saved SIM-DRAFT-x/))
+    await user.click(screen.getByTestId('composer-preflight'))
+    const launch = screen.getByTestId('composer-launch')
+    expect(launch).toBeDisabled()
+    expect(launch.getAttribute('title')).toMatch(/Not launchable: .*no command configured/)
+  })
+})
+
+describe('ComposerView — the Run lens never lends a verdict to a step that did not run', () => {
+  const GRAPH = {
+    nodes: [
+      { id: 'cgo:r1', kind: 'cgo' },
+      { id: 'proc:r1:step-01', kind: 'process' },
+      { id: 'proc:r1:step-02', kind: 'process' },
+    ],
+    edges: [
+      { source: 'cgo:r1', target: 'proc:r1:step-01', kind: 'process_lineage', state: 'CONFIRMED' },
+      { source: 'proc:r1:step-01', target: 'proc:r1:step-02', kind: 'process_lineage', state: 'CONFIRMED' },
+    ],
+    causality_summary: { chain_completeness_pct: 100, broken_stitches: [] },
+  }
+
+  it('an edited step reads "not in run"; an untouched one keeps its real verdict', async () => {
+    const user = userEvent.setup()
+    baseRoutes({ 'GET /api/runs': [{ run_id: 'r1', scenario_id: 'SIM-EDR-001', status: 'complete', started_at: '2026-10-20T10:00:00Z' }] })
+    mockGetRunCausality.mockReset()
+    mockGetRunCausality.mockResolvedValue(GRAPH)
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(mockGetRunCausality).toHaveBeenCalledWith('r1'))
+    await user.click(screen.getByTestId('chain-step-step-02'))
+    const cmd = screen.getByLabelText('Command for step-02')
+    cmd.textContent = 'cat /etc/group'
+    fireEvent.input(cmd)
+    await user.click(screen.getByTestId('composer-lens-run'))
+    await waitFor(() => expect(within(screen.getByTestId('chain-step-step-01')).getByText('CONFIRMED')).toBeInTheDocument())
+    expect(within(screen.getByTestId('chain-step-step-02')).getByText('not in run')).toBeInTheDocument()
+    expect(within(screen.getByTestId('chain-step-step-02')).queryByText('CONFIRMED')).toBeNull()
+  })
+})
+
+describe('ComposerView — drawers', () => {
+  it('re-clicking the selected step reopens a closed inspector', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('chain-step-step-01')).toBeInTheDocument())
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    await user.click(screen.getByRole('button', { name: 'Close inspector' }))
+    expect(screen.queryByTestId('composer-inspector')).toBeNull()
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    expect(screen.getByTestId('composer-inspector')).toBeInTheDocument()
+  })
+
+  it('opening the palette moves focus into it; collapsing returns focus to its tab', async () => {
+    const user = userEvent.setup()
+    baseRoutes()
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /＋ Add/ }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Filter the palette')))
+    await user.click(screen.getByRole('button', { name: 'Collapse palette' }))
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /＋ Add/ })))
   })
 })

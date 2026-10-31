@@ -1,91 +1,65 @@
 /**
- * ComposerCanvas — the centre column of the Simulation Composer.
+ * ComposerCanvas — the full-screen node graph at the heart of Composer MODE.
  *
- * It owns everything between the palette and the inspector: the canvas head
- * (scenario id/name + a Chain/YAML view toggle + a Design/Run LENS toggle), the
+ * It owns the canvas: the chrome bar (lens + stitch + view + zoom), the
  * spine-constrained graph, the YAML projection, the first-run empty state and
- * the origin-error banner.
+ * the origin-error banner. It is a VIEW — it never fetches and never mutates the
+ * draft; structure edits, selection and view changes all arrive as callbacks.
  *
- * It is a VIEW: it never fetches and never mutates the draft. Structure edits
- * arrive as callbacks (`onAddStep`, `onMoveStep`, …); selection and view/lens
- * changes arrive as callbacks too. The one piece of state it owns is the zoom
- * level, which is presentation, not data.
+ * THE NODE GRAPH (rewritten for Composer mode)
+ * --------------------------------------------
+ * Unlike the windowed Composer (START/END were DOM cards outside React Flow and
+ * only steps were nodes, laid out top-to-bottom in a 620px box), every piece is
+ * now a real React Flow node, laid out LEFT-TO-RIGHT like the node-automation
+ * tools this is modelled on:
+ *   - a `cgo` TRIGGER node (the Causality Group Owner) that owns the chain,
+ *   - one `step` node per draft step,
+ *   - a `proof` TERMINAL node (teardown + the POV readout).
+ * Edges are typed: a solid `process_lineage` spine, dashed labelled edges for
+ * the six non-lineage pivots, and muted derived edges from the CGO to each root
+ * and from each leaf to Proof. The graph builder (`composerGraph.buildGraph`) is
+ * pure and tested; this file renders it and wires the gestures.
  *
- * TWO LENSES, ONE HONESTY RULE
- * ----------------------------
- *  - **Design** lays the DRAFT out with `layoutChain` — a spine-constrained
- *    tree (one root, no forward refs; the loader and `setCausalityParent`
- *    guarantee it), node cards tinted by PLANE, START/END anchors, curved SVG
- *    spine edges with IO ports.
- *  - **Run** renders the REAL `build_causality_graph` via `layoutCausalityGraph`
- *    — nodes and typed edges carrying their real `EXPECTED | CONFIRMED | BROKEN`
- *    state, the `chain_completeness_pct`, and the `broken_stitches` list. It
- *    NEVER invents a state and NEVER upgrades a BROKEN stitch to CONFIRMED; with
- *    no run yet it says so ("EXPECTED only"), rather than drawing a green chain
- *    the tenant never actually correlated.
+ * GESTURES
+ *   - drag a card by its grip → `onNodeMoved` on drop (8px grid, persisted),
+ *   - drag from a card's right port to another card → `onConnectSteps` (a new
+ *     `process_lineage` edge), refused with a visible reason by `canConnect`,
+ *   - drop that connection on empty canvas → `onDropCreate` (n8n create-on-drop),
+ *   - drag a palette item onto the canvas → `onCanvasDrop(key, position)`,
+ *   - Delete/Backspace a selected step → `onDeleteStepId` (children re-parent
+ *     onto its parent — the reparent-on-delete rule that fixes the old
+ *     dangling-ref bug), a causality edge → `onEdgeDelete` (child becomes a root),
+ *   - reconnect a causality edge's target end → `onReparent`,
+ *   - the pivot chip on an edge → `onSetPivot`.
  *
- * Geometry is imported from `composerLayout.js` so the on-screen spine and the
- * layout tests read from ONE source of truth.
- *
- * DESIGN LENS RENDERING (2026-09-08 direct-manipulation Task 8) — the step
- * cards render through React Flow (`@xyflow/react`) instead of a hand-rolled
- * absolutely-positioned SVG canvas. That pass was RENDER ONLY (nodes were not
- * draggable). Task 9 (below) turns dragging on in the Design lens and
- * persists the dropped position through `onNodeMoved`. Task 10 (further
- * below) turns the `Handle`s on `StepNode` into a working connect
- * affordance, Design lens only. START and END stay plain, non-draggable,
- * non-connectable anchors OUTSIDE the React Flow graph — they are not
- * steps, so "one node per step" holds through React Flow's own node count.
- *
- * DRAGGING (Task 9) — `DesignGraph.onNodesChange` commits a node's position
- * to `onNodeMoved(stepId, x, y)` only on drag END (`dragging === false`),
- * snapped to an 8px grid. React Flow already divides the screen-pixel delta
- * by the current zoom before it reaches `onNodesChange` — the position it
- * hands us is already in flow coordinates, so the handler must NOT re-apply
- * zoom on top of it (that would double-scale every drag). Dragging is
- * disabled in the Run lens (`nodesDraggable={!runLens}`) — that lens shows
- * the authored spine for context, not a surface to redesign the chain on.
- *
- * CONNECTING (Task 10) — `nodesConnectable={!runLens}` and `isValidConnection`
- * (delegating to `canConnect`, `composerSpine.js`) gate a drag BEFORE React
- * Flow accepts the drop — an illegal target simply never highlights as a
- * valid drop zone, so the edge is refused before it ever exists rather than
- * created and reverted. `onConnect` re-checks the same predicate (the drop
- * can land on a target `isValidConnection` never got to evaluate, e.g. a
- * click-to-connect flow) and, on refusal, surfaces the reason in a banner
- * (`.canvas-refusal`) rather than silently dropping the gesture — a refusal
- * with no visible cause reads as a broken canvas, not a respected rule. Like
- * dragging, this is Design-lens only: the Run lens renders the REAL observed
- * spine, and drawing on it would imply authorship over a record. Per-node
- * `isConnectable` (forwarded from React Flow's own node wrapper into
- * `StepNode`, driven by the pane-level `nodesConnectable` above — no
- * per-node override) also decides whether `StepNode` renders its `Handle`s
- * at all: the library always renders a `Handle`'s DOM node regardless of its
- * `isConnectable` value (it only toggles a CSS class), so hiding the
- * affordance in the Run lens requires not rendering the JSX in the first
- * place, not just disabling it.
+ * TWO OTHER LENSES, ONE HONESTY RULE
+ *   - Lanes: swimlanes by ingestion door (`composerLanes.layoutLanes`), drag to
+ *     retarget. Steps only; the LAUNCH/PROOF bands stand in for the anchors.
+ *   - Run: the REAL `build_causality_graph` (`RunGraph`) — EXPECTED | CONFIRMED |
+ *     BROKEN straight through, never synthesized — over a read-only spine whose
+ *     cards carry each step's real run state. With no run it says so.
  */
 import React, {
   useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef,
 } from 'react'
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position, ViewportPortal,
+  ReactFlow, ReactFlowProvider, Background, BackgroundVariant, Controls, ControlButton, MiniMap,
+  Handle, Position, ViewportPortal, BaseEdge, EdgeLabelRenderer,
+  getBezierPath, MarkerType, applyNodeChanges, applyEdgeChanges,
+  useNodesInitialized, useReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import {
-  layoutChain,
-  layoutCausalityGraph,
-  stitchOverlayEdges,
-  mergeStoredPositions,
-} from './composerLayout.js'
-import { effectiveChannel } from './composerDraft.js'
+import { layoutCausalityGraph } from './composerLayout.js'
+import { effectiveChannel, PIVOTS } from './composerDraft.js'
+import { plantedKeys, stitchPlaceholdersIn } from './stitchContext.js'
 import { canConnect } from './composerSpine.js'
-import { layoutLanes, laneAtY, STEP_LANES } from './composerLanes.js'
+import { laneOf, layoutLanes, laneAtY, STEP_LANES } from './composerLanes.js'
 import { COMPOSER_LANES } from './povdata/corpus.js'
+import {
+  buildGraph, SNAP, PLANE_TINT, STATE_TINT, CGO_ID, PROOF_ID, GRAPH_LAYOUT,
+} from './composerGraph.js'
 
-// Detection-type → chip tone. Identical mapping to the inspector's `detTone`
-// (they are two new files; the mapping is duplicated deliberately rather than
-// creating a shared import surface for one three-line function).
+// Detection-type → chip tone. Identical mapping to the inspector's `detTone`.
 function detTone(type) {
   const t = String(type || '').toUpperCase()
   if (t === 'BIOC') return 'detected'
@@ -93,32 +67,28 @@ function detTone(type) {
   return 'pending'
 }
 
-// NICE-organized plane tint. The reference colours nodes by role; here a node's
-// colour is its detection plane (the NICE analogue). This is a CATEGORICAL
-// (qualitative) palette on purpose — 16 planes need 16 distinguishable hues, and
-// there is no semantic token for "NDR blue vs ITDR amber". Neutral steel is the
-// fallback so an unplaned draft still reads. (Semantic colours — run state and
-// node kind, below — are theme tokens, not fixed hex, so they track the theme.)
-const PLANE_TINT = {
-  EDR: '#00C0E8', CDR: '#12b886', NDR: '#4c6ef5', ITDR: '#f59f00',
-  CLOUD_APP: '#7048e8', ANALYTICS: '#e64980', AI_ACCESS: '#ae3ec9',
-  AIRS: '#9c36b5', AI_SPM: '#845ef7', BROWSER: '#0ca678', KOI: '#e8590c',
-  ASM: '#1098ad', CSPM: '#2f9e44', TIM: '#f76707', EMAIL: '#495057',
-  DLP: '#c2255c',
+/**
+ * What the spine actually is, said in the caption. It used to read "single
+ * process_lineage spine" for every draft with a CGO — untrue with a typed
+ * pivot on screen, a legacy star, or a card flagged off-chain.
+ */
+function spinePhrase(steps, validation) {
+  const parented = steps.filter((s) => s.causalityParent)
+  if (!parented.length) return steps.length > 1 ? 'no declared spine' : 'single step'
+  const pivots = [...new Set(parented.map((s) => s.causalityPivot || 'process_lineage'))]
+  const kind = pivots.length === 1 && pivots[0] === 'process_lineage'
+    ? 'process_lineage spine'
+    : `spine (${pivots.join(', ')})`
+  const broken = (validation?.offChain?.length || 0)
+    + (validation?.danglingParents?.length || 0)
+    + (validation?.forwardRefs?.length || 0)
+  return `${broken ? 'broken' : 'single'} ${kind}`
 }
 
-// Run-lens edge state → colour, driven by the theme's semantic tokens so it
-// tracks light/dark and the console's teal→green remap (a hardcoded #00C0E8
-// would render cyan where the console now shows green). BROKEN is danger on
-// purpose; it is the state a POV readout must not hide.
-const STATE_TINT = {
-  CONFIRMED: 'var(--cortex-success, #2f9e44)',
-  BROKEN: 'var(--cortex-danger, #e03131)',
-  EXPECTED: 'var(--cortex-steel, #6B7E8E)',
-}
+/** Wrap a card tool's handler so its click does not also select the card. */
+const stop = (fn) => (e) => { e.stopPropagation(); if (fn) fn() }
 
-// Run-lens node kind → colour, mirroring the builder's column semantics, also
-// token-driven for the same reason.
+// Run-lens node kind → colour (real causality graph; token-driven).
 const KIND_TINT = {
   cgo: 'var(--ink, #003366)', process: 'var(--ac, #00C0E8)',
   wrapper: 'var(--cortex-steel, #6B7E8E)',
@@ -126,90 +96,50 @@ const KIND_TINT = {
   alert: 'var(--cortex-success, #2f9e44)',
 }
 
-/** Tint a design step by its first detection's plane, else the draft's plane. */
-function stepPlane(step, draft) {
-  return step?.detections?.[0]?.plane || draft?.plane || null
-}
+/** Lane key → the band label the canvas prints ('AGT' → 'ENDPOINT'). */
+const LANE_LABEL = Object.fromEntries(COMPOSER_LANES.map(([key, label]) => [key, label]))
 
-/** Curved connector between two resolved ports. Vertical spine or horizontal. */
-function edgePath(from, to, orientation) {
+/** Curved connector between two resolved ports (Run-lens SVG only). */
+function edgePath(from, to) {
   if (!from || !to) return ''
-  if (orientation === 'horizontal') {
-    const dx = Math.max(30, Math.abs(to.x - from.x) / 2)
-    return `M ${from.x} ${from.y} C ${from.x + dx} ${from.y} ${to.x - dx} ${to.y} ${to.x} ${to.y}`
-  }
-  const dy = Math.max(20, Math.abs(to.y - from.y) / 2)
-  return `M ${from.x} ${from.y} C ${from.x} ${from.y + dy} ${to.x} ${to.y - dy} ${to.x} ${to.y}`
+  const dx = Math.max(30, Math.abs(to.x - from.x) / 2)
+  return `M ${from.x} ${from.y} C ${from.x + dx} ${from.y} ${to.x - dx} ${to.y} ${to.x} ${to.y}`
 }
 
-// ─── Design lens ──────────────────────────────────────────────────────────────
+// ─── Node components ────────────────────────────────────────────────────────
 
 /**
- * One STEP, as a React Flow node. START and END are NOT React Flow nodes (see
- * the file-header note) — this component only ever receives `data.kind ===
- * 'step'`. Reuses the existing `.chain-node` / `.chain-node__*` classes and
- * every existing testid/aria-label byte-for-byte, so the DOM the ComposerView
- * and ComposerCanvas tests already pin is unchanged apart from the React Flow
- * wrapper around it. `Handle`s are the connect affordance (Task 10) — React
- * Flow forwards this node's resolved `isConnectable` (per-node `connectable`
- * combined with the pane's `nodesConnectable`, see `DesignGraph`'s CONNECTING
- * note) as a component prop, and it is ONLY rendered when true: the library's
- * own `Handle` always renders its DOM node regardless of `isConnectable` (the
- * prop just toggles a CSS class), so the Run lens's "no connect affordance at
- * all" contract has to be enforced by not mounting the JSX, not by disabling
- * it.
- *
- * `nodrag nopan` SCOPING (Task 8 introduced the classes on the node root;
- * Task 9 re-scopes them, does not remove them). React Flow's defaults for
- * `noDragClassName`/`noPanClassName` are literally `'nodrag'`/`'nopan'`, and
- * the pane's own drag-to-pan filter walks up from `event.target` looking for
- * `.nopan` before starting a d3-zoom pan gesture. In Task 8, `nodesDraggable`
- * was globally `false`, so nothing local ever claimed a card's mousedown —
- * without `nodrag nopan` on the whole node root, a mousedown on ANY button in
- * the card (move/duplicate/remove/select) bubbled all the way to the pane,
- * whose d3-zoom pan handler threw under jsdom. A re-reviewer proved this by
- * reverting the class and reproducing the crash.
- *
- * Task 9 turns `nodesDraggable` on for the Design lens, so `nodrag nopan`
- * CANNOT stay on the whole node root any more — that would block dragging
- * everywhere (defeating this task), since `nodrag` on an ancestor suppresses
- * drag-start for every descendant mousedown, root included. Nor can the two
- * classes simply come OFF the interactive buttons: a second, DIFFERENT jsdom
- * crash surfaces the moment a button's mousedown is left for React Flow's
- * per-node d3-drag to handle at all — d3-drag's own gesture setup
- * (`d3-drag/src/nodrag.js`, called from `mousedowned`) dereferences
- * `event.view.document`, and jsdom/`@testing-library/user-event`'s synthetic
- * `MouseEvent` does not carry a `view`, so it throws `Cannot read properties
- * of null (reading 'document')` — independent of, and in addition to, the
- * pane-pan crash Task 8 fixed. Proven by first trying "nodrag/nopan on
- * `.chain-node__tools` only, body carries neither": the "wires reorder /
- * duplicate / remove..." test (which also clicks the body's select button)
- * crashed with exactly that trace.
- *
- * So both classes stay on EVERY interactive control — `.chain-node__body`
- * (the select button) AND `.chain-node__tools` (the move/duplicate/remove
- * toolbar) — exactly the elements Task 8 already protected, just moved down
- * from their shared ancestor onto each of them individually. What changes is
- * the ROOT: `.chain-node.chain-node--step` itself now carries NEITHER class,
- * so it — its border, padding, and any card surface outside the button and
- * toolbar — is what React Flow drags. A click that starts and ends on a
- * button (no intervening pointer movement) still fires that button's
- * `onClick` normally; only a press-and-move gesture on the card frame itself
- * initiates a node drag. `panOnDrag` stays at its default `true` on
- * `<ReactFlow>` below either way — not the fix, same as Task 8.
- *
- * DRAG HANDLE (Task 9, review round 1, finding 1) — the card's own border/
- * padding strip left over after the scoping above is a ~10-14% sliver that
- * never sits under the labels/chips a cursor naturally lands on; without a
- * discoverable affordance a DC reads that as "dragging is broken". Fixed
- * with React Flow's per-node `dragHandle` (set to `.chain-node__grip` in
- * `rfNodes` below), which restricts where a drag gesture may START to the
- * small grip rendered at the top of the card, rather than trying to further
- * carve up `.chain-node__body`'s hit area. This changes nothing about the
- * `nodrag`/`nopan` placement above (still needed: `dragHandle` filtering and
- * the `nodrag` classname filter are two independent checks inside React
- * Flow's drag hook, so leaving both in place is belt-and-braces against
- * both jsdom crashes, not redundant with the fix).
+ * The CGO trigger node — what OWNS the chain. Styled like an automation tool's
+ * trigger (the chain starts here). One source port on the right. Not a step, so
+ * it keeps the `chain-start` testid the suite pins, moved onto this real node.
+ */
+function CgoNode({ data }) {
+  return (
+    <div className="chain-node chain-node--cgo" data-testid="chain-start">
+      <div className="chain-node__kicker">Trigger · CGO</div>
+      <div className="chain-node__title mono">{data.cgo || 'cortexsim-agent'}</div>
+      <div className="chain-node__scope">
+        <button type="button" className="scope-link" onClick={data.onTenant}>
+          <span className="scope-link__label">Tenant</span>
+          <span className="scope-link__value mono">{data.tenantName || 'none selected'}</span>
+        </button>
+        <button type="button" className="scope-link" onClick={data.onAgent}>
+          <span className="scope-link__label">Agent</span>
+          <span className="scope-link__value mono">{data.agentName || 'none selected'}</span>
+        </button>
+      </div>
+      {!data.runLens && <Handle type="source" id="out" position={Position.Right} isConnectable={false} />}
+    </div>
+  )
+}
+
+/**
+ * One STEP. The card body, badges, detection chips and tool buttons are the same
+ * DOM the suite pins (`chain-step-{id}`, `chain-node-grip-{id}`, the door/channel/
+ * target badges, the move/duplicate/remove aria-labels) — what changed from the
+ * windowed canvas is the flow direction: the target port is on the LEFT and the
+ * source on the RIGHT, matching the left-to-right layout. `Handle`s mount only
+ * when connectable (Run lens renders none, so it reads strictly read-only).
  */
 function StepNode({ data, isConnectable }) {
   const s = data.step
@@ -222,25 +152,12 @@ function StepNode({ data, isConnectable }) {
       }
       style={{ borderLeft: `3px solid ${data.tint}` }}
     >
-      {isConnectable && <Handle type="target" position={Position.Top} />}
-      {/* Drag handle (review round 1, finding 1) — the only surface
-          `dragHandle: '.chain-node__grip'` (set on the node object below)
-          allows a drag gesture to start from. Deliberately NOT a <button>:
-          it performs no click action of its own, so it isn't focusable or
-          exposed as an actionable control — `title`+`aria-label` alone make
-          it discoverable to a mouse user and a screen reader without
-          claiming keyboard operability the drag gesture doesn't have.
-          Task 13: NOT rendered in the Run lens at all — `nodesDraggable` is
-          already false there, but a visible-and-inert grip still reads as a
-          live affordance; the Run lens must read as strictly read-only. */}
+      {isConnectable && <Handle type="target" id="in" position={Position.Left} />}
       {!data.runLens && (
         <div
           className="chain-node__grip"
           title="Drag to reposition"
           aria-label="Drag to reposition"
-          // NOT `chain-step-grip-...`: several existing tests scan
-          // `getAllByTestId(/^chain-step-/)` to pin step-card DOM order and
-          // would pick this up as a spurious extra "step" entry.
           data-testid={`chain-node-grip-${s.id}`}
         >
           ⠿
@@ -256,14 +173,14 @@ function StepNode({ data, isConnectable }) {
         <span className="chain-node__row">
           <span className="chain-node__kind">{s.authored ? 'new' : 'step'}</span>
           <span className="chain-node__id mono">{s.id}</span>
-          {/* Channel badge — GATED so an agent-default node (no channel,
-              no target) renders byte-identically to today. An eal step
-              shows its emitter; an agent step with a second endpoint
-              shows where it runs. Reuses existing chip tones (no hex). */}
           {data.door && (
             <span
               className="pov-chip-plane chain-node__doorbadge"
-              data-testid={`chain-step-door-${s.id}`}
+              /* `chain-door-` NOT `chain-step-door-`: the door badge now shows on
+                 every lens, and several tests scan `[data-testid^="chain-step-"]`
+                 to pin step-card DOM order — reusing that prefix would make a
+                 badge read as a spurious extra "step". */
+              data-testid={`chain-door-${s.id}`}
               title={`launches through ${LANE_LABEL[data.door] || data.door} — drag into another lane to retarget`}
             >
               {data.door}
@@ -287,17 +204,24 @@ function StepNode({ data, isConnectable }) {
             </span>
           ) : null}
           <span className="composer__spacer" />
+          {data.offChain && (
+            <span
+              className="chip chip--missed chain-node__offchain"
+              data-testid={`chain-offchain-${s.id}`}
+              title="Not connected to the chain — drag from a step's right port to this card, or the draft will not save"
+            >
+              off-chain
+            </span>
+          )}
           {data.runState && (
             <span
               className="chain-node__runbadge"
               style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: STATE_TINT[data.runState],
-                letterSpacing: '0.04em',
+                fontSize: 10, fontWeight: 700,
+                color: STATE_TINT[data.runState], letterSpacing: '0.04em',
               }}
             >
-              {data.runState}
+              {data.runState === 'NOT_RUN' ? 'not in run' : data.runState}
             </span>
           )}
           <span className="chain-node__order mono">
@@ -316,115 +240,200 @@ function StepNode({ data, isConnectable }) {
               </span>
             ))
           ) : (
-            /* Not decoration — the on-canvas marker for the step that
-               becomes a GAP in the POV readout. */
             <span className="chip chip--missed">no expected detection</span>
           )}
         </span>
       </button>
-      <div className="chain-node__tools nodrag nopan">
-        <button type="button" title="Move earlier" aria-label={`Move ${s.id} earlier`}
-          onClick={data.onMoveEarlier}>↑</button>
-        <button type="button" title="Move later" aria-label={`Move ${s.id} later`}
-          onClick={data.onMoveLater}>↓</button>
-        <button type="button" title="Duplicate step" aria-label={`Duplicate ${s.id}`}
-          onClick={data.onDuplicate}>⧉</button>
-        <button type="button" title="Remove step" aria-label={`Remove ${s.id}`}
-          onClick={data.onRemove}>×</button>
-      </div>
-      {isConnectable && <Handle type="source" position={Position.Bottom} />}
+      {!data.runLens && (
+        <div className="chain-node__tools nodrag nopan">
+          <button type="button" title="Move earlier" aria-label={`Move ${s.id} earlier`}
+            onClick={stop(data.onMoveEarlier)}>↑</button>
+          <button type="button" title="Move later" aria-label={`Move ${s.id} later`}
+            onClick={stop(data.onMoveLater)}>↓</button>
+          <button type="button" title="Duplicate step" aria-label={`Duplicate ${s.id}`}
+            onClick={stop(data.onDuplicate)}>⧉</button>
+          <button type="button" title="Remove step" aria-label={`Remove ${s.id}`}
+            onClick={stop(data.onRemove)}>×</button>
+        </div>
+      )}
+      {isConnectable && <Handle type="source" id="out" position={Position.Right} />}
     </div>
   )
 }
-
-const nodeTypes = { step: StepNode }
-
-/** Lane key → the band label the canvas prints ('AGT' → 'ENDPOINT'). */
-const LANE_LABEL = Object.fromEntries(COMPOSER_LANES.map(([key, label]) => [key, label]))
 
 /**
- * The dashed connector + endpoint dots that used to be the `root`/`terminal`
- * SVG edges (START→first step, last leaf→END) before those steps' spine
- * edges got filtered out of `rfEdges` (START/END are not React Flow nodes,
- * so React Flow has nowhere to attach them). Without a replacement the chain
- * visually breaks apart into three floating blocks — this restores the same
- * dashed-grey/steel-dot visual language as the removed SVG paths, just drawn
- * in normal document flow between the blocks rather than in the old
- * absolute-coordinate SVG. Advisory, like the stitch overlay below: it is
- * not wired to React Flow's own pan/zoom, because it doesn't need to be —
- * it only ever bridges the fixed gap between two ordinary flow children.
+ * The Proof terminal node — where a run is measured. One target port on the
+ * left. Keeps the `chain-end` testid, moved onto this real node.
  */
-function SpineConnector({ testId }) {
+function ProofNode({ data }) {
+  const n = data.teardown?.length || 0
   return (
-    <div className="composer-canvas__connector" data-testid={testId} aria-hidden="true">
-      <svg width="20" height="24" viewBox="0 0 20 24">
-        <line
-          x1="10" y1="0" x2="10" y2="24"
-          stroke="var(--bd, #c1ccd6)"
-          strokeWidth="1.5"
-          strokeDasharray="4 4"
-        />
-        <circle cx="10" cy="0" r="3" fill="var(--cortex-steel, #6B7E8E)" />
-        <circle cx="10" cy="24" r="3" fill="var(--cortex-steel, #6B7E8E)" />
-      </svg>
+    <div className="chain-node chain-node--proof" data-testid="chain-end">
+      {!data.runLens && <Handle type="target" id="in" position={Position.Left} isConnectable={false} />}
+      <div className="chain-node__kicker">Proof · teardown</div>
+      <div className="chain-node__title">Teardown &amp; proof</div>
+      <div className="chain-node__sub mono">
+        {n ? `${n} cleanup command${n === 1 ? '' : 's'}` : 'no cleanup declared'}
+      </div>
     </div>
   )
 }
 
-// Grid a dropped node snaps to, in flow-coordinate pixels. Shared by the
-// visual `snapGrid` prop (what the DC sees while dragging) and the manual
-// rounding in `onNodesChange` below (what actually gets committed) — the
-// commit path does its own rounding rather than trusting React Flow's
-// internal snap alone, since the test seam drives `onNodesChange` directly,
-// bypassing React Flow's own drag pipeline entirely.
-const SNAP = 8
+const nodeTypes = { cgo: CgoNode, step: StepNode, proof: ProofNode }
+
+// ─── Edge components ────────────────────────────────────────────────────────
+
+/**
+ * A causality edge — the one PERSISTED relationship. Renders the pivot as an
+ * interactive chip (click to cycle through the seven pivots) plus a delete
+ * button (child becomes a root). Both live in an `EdgeLabelRenderer` portal and
+ * are `nodrag nopan` with `pointer-events:all` so they stay clickable over the
+ * pane. A derived edge (cgo→root, leaf→proof) is muted and inert.
+ */
+function CausalityEdge({
+  id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
+  markerEnd, style, data, selected,
+}) {
+  const [path, labelX, labelY] = getBezierPath({
+    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+  })
+  const pivot = data?.pivot || 'process_lineage'
+  const showChip = selected || pivot !== 'process_lineage'
+  // The Run lens shows the spine that RAN: its pivot is a label there, never
+  // a control that would rewrite the draft from a read-only view.
+  const editable = !data?.runLens && typeof data?.onCyclePivot === 'function'
+  return (
+    <>
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} interactionWidth={24} />
+      <EdgeLabelRenderer>
+        <div
+          className={'composer-edge-label nodrag nopan' + (selected ? ' composer-edge-label--on' : '')}
+          style={{ transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)` }}
+        >
+          {showChip && (editable ? (
+            <button
+              type="button"
+              className="composer-edge-pivot"
+              title={`pivot: ${pivot} — click to change`}
+              // The VALUE leads the name: a screen reader must hear which pivot
+              // will be saved, and voice control can say the visible text.
+              aria-label={`${pivot} pivot, ${source} to ${target} — activate to change`}
+              onClick={() => data.onCyclePivot()}
+            >
+              {pivot}
+            </button>
+          ) : (
+            <span className="composer-edge-pivot composer-edge-pivot--static" title={`pivot: ${pivot}`}>
+              {pivot}
+            </span>
+          ))}
+          {editable && selected && (
+            <button
+              type="button"
+              className="composer-edge-del"
+              title="Delete this link (the child becomes a root)"
+              aria-label={`Delete the link from ${source} to ${target}`}
+              onClick={() => data?.onDelete?.()}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  )
+}
+
+function DerivedEdge({
+  id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, data,
+}) {
+  const [path] = getBezierPath({
+    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+  })
+  // A trigger edge into an OFF-CHAIN step is drawn as a warning: the loader
+  // allows one root, so this link is a statement the draft cannot save.
+  const off = !!data?.offChain
+  return (
+    <BaseEdge
+      id={id}
+      path={path}
+      markerEnd={markerEnd}
+      style={{
+        stroke: off ? 'var(--warn-str, #FFCB06)' : 'var(--bd2, #4A4A4A)',
+        strokeWidth: off ? 1.5 : 1.25,
+        strokeDasharray: off ? '6 4' : '2 5',
+      }}
+    />
+  )
+}
+
+const edgeTypes = { causality: CausalityEdge, derived: DerivedEdge }
+
+/**
+ * Fit the viewport once per `fitKey`, and only after React Flow has MEASURED
+ * every node. The scenario arrives asynchronously, so the pane mounts and
+ * reports a size before any card has dimensions; a fit issued then is a no-op
+ * and the graph sat at scale(1) in the corner on some loads (observed live).
+ * Rendered as a child of <ReactFlow> so it can read the store. Keyed by lens,
+ * so adding or dropping a node never yanks the viewport the DC has panned.
+ */
+function FitOnReady({ fitKey, onReady }) {
+  const ready = useNodesInitialized()
+  const rf = useReactFlow()
+  const done = useRef(null)
+  useEffect(() => {
+    if (!ready || done.current === fitKey) return undefined
+    const id = requestAnimationFrame(() => { done.current = fitKey; onReady(rf) })
+    return () => cancelAnimationFrame(id)
+  }, [ready, fitKey, rf, onReady])
+  return null
+}
+
+// ─── Design / Lanes / Run pane ───────────────────────────────────────────────
 
 const DesignGraph = forwardRef(function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
-  onMoveStep, onDuplicateStep, onRemoveStep, onAddStep, onNodeMoved = () => {},
-  // Lanes lens (swimlanes). `laneOverrides` is the draft's `{stepId: lane}`
-  // map; `onLaneChange(stepId, lane)` fires when a drag ends inside a
-  // different band. Defaulted so the Design and Run lenses need nothing.
+  onMoveStep, onDuplicateStep, onRemoveStep, onNodeMoved = () => {},
   laneOverrides = null, onLaneChange = () => {},
-  // Fires (fromId, toId) when a legal causality edge is drawn (Task 10,
-  // direct-manipulation) — `fromId` is the proposed parent, `toId` the step
-  // that would take it. Defaulted so a caller that never mounts the Design
-  // lens (or a test not exercising connect) needs nothing extra.
   onConnectSteps = () => {},
-  stitchModel = null, showStitch = false, storedLayout = null,
-  // Reports the REAL pane zoom (from React Flow's own `onInit`/`onMove`,
-  // never a locally-tracked counter) whenever it changes (Important 1,
-  // 2026-09 final-fix wave). Lets a caller-owned header control display the
-  // actual number instead of the dead −/100%/+ toolbar the review found:
-  // `zoom` state at the ComposerCanvas root used to be rendered there but
-  // consumed only by RunGraph, so in the Design lens the buttons changed
-  // nothing and the percentage never moved off 100%. Defaulted so the Run
-  // lens's own read-only DesignGraph instance (the authored-spine-under-the-
-  // real-graph render, below in the root component) needs nothing extra.
-  onZoomChange = () => {},
+  onDeleteStepId = () => {}, onEdgeDelete = () => {}, onReparent = () => {},
+  onSetPivot = () => {}, onDropCreate = () => {}, onCanvasDrop = () => {},
+  stitchModel = null, showStitch = false,
+  storedLayout = null, onZoomChange = () => {},
+  // Pixel insets {top,right,bottom,left} of the stage the drawers and dock
+  // cover. Fits frame the graph in the VISIBLE region between them rather
+  // than behind a panel. Read through a ref so toggling a drawer never yanks
+  // the viewport the DC has panned — only an explicit fit uses it.
+  viewInsets = null,
 }, ref) {
-  const layout = useMemo(
-    () => layoutChain({ ...draft, steps }),
-    [draft, steps],
-  )
-  // Overlay any DC-dragged positions (Task 9) onto the computed layout. A
-  // draft that has never been touched (`storedLayout` null/empty) round-trips
-  // byte-identically — see `mergeStoredPositions`'s doc comment.
-  const laidOut = useMemo(
-    () => mergeStoredPositions(layout, storedLayout),
-    [layout, storedLayout],
-  )
-  const { bounds } = laidOut
+  const insetsRef = useRef(viewInsets)
+  insetsRef.current = viewInsets
+  const fitPadding = () => {
+    const i = insetsRef.current
+    if (!i) return 0.2
+    // Drawer insets are real occlusion and stay exact. The VERTICAL margins
+    // (caption pill, dock, breathing room) are capped at 18% of the pane each:
+    // on a short stage fixed margins ate nearly all of it and the chain fitted
+    // at 20%.
+    // Before the pane is measured (React Flow's own prop-driven fit reads this
+    // during render), fall back to a small fixed margin, never the uncapped
+    // one — the uncapped margins clamped the initial fit to minZoom.
+    const h = paneRef.current?.clientHeight || 0
+    const capV = (v) => (h ? Math.max(8, Math.min(v, h * 0.18)) : Math.min(v, 24))
+    return {
+      top: `${Math.round(capV((i.top || 0) + 32))}px`,
+      right: `${(i.right || 0) + 32}px`,
+      bottom: `${Math.round(capV((i.bottom || 0) + 32))}px`,
+      left: `${(i.left || 0) + 32}px`,
+    }
+  }
   const runLens = lens === 'run'
   const lanesLens = lens === 'lanes'
+  const rfRef = useRef(null)
+  const [refusal, setRefusal] = useState(null)
 
-  // Swimlane geometry. EDGES still come from `laidOut` (spineEdges, drawn by
-  // React Flow from wherever the nodes are), so the lane layout only has to
-  // answer where each node sits: x by execution order, y by the band of the
-  // door it launches through. Stored drag positions are deliberately NOT
-  // merged here — on this lens horizontal position IS order and vertical
-  // position IS the lane, so a free position would un-say both.
+  // Lane layout (Lanes lens only) — steps at x=order, y=door band.
   const laneLayout = useMemo(
     () => (lanesLens ? layoutLanes(steps, laneOverrides, draft.plane) : null),
     [lanesLens, steps, laneOverrides, draft.plane],
@@ -435,153 +444,140 @@ const DesignGraph = forwardRef(function DesignGraph({
     return m
   }, [laneLayout])
 
-  // The last refused connect attempt, or null. Design-lens-only state (the
-  // Run lens never offers the affordance that would set it) — see the
-  // CONNECTING file-header note and `onConnect` below.
-  const [refusal, setRefusal] = useState(null)
+  // Stable per-step callbacks, keyed by index, so the node memo below does not
+  // rebuild its data closures every render (which would clobber React Flow's
+  // in-flight drag / selection state on each keystroke elsewhere).
+  const onSelectStep = useCallback((id) => onSelect(id), [onSelect])
 
-  const stepLaidOutNodes = useMemo(
-    () => laidOut.nodes.filter((n) => n.kind === 'step'),
-    [laidOut],
-  )
-  const stepIds = useMemo(
-    () => new Set(stepLaidOutNodes.map((n) => n.id)),
-    [stepLaidOutNodes],
+  // The pure graph, then callbacks injected into node/edge data.
+  const built = useMemo(
+    () => buildGraph(draft, steps, {
+      // The door badge on Design/Run reads the step's own channel/plane: a
+      // lane override is arrangement on the Lanes lens, and the plane lanes
+      // (CC/BVM/ENG) do not change how the step launches.
+      selectedId, runLens, causalityStates, laneOverrides: null, layout: storedLayout,
+    }),
+    [draft, steps, selectedId, runLens, causalityStates, laneOverrides, storedLayout],
   )
 
-  // React Flow's node/edge shape. START and END are excluded on purpose (see
-  // the file-header note) — "one node per step" is the contract Task 8's own
-  // test pins.
-  const rfNodes = useMemo(
-    () => stepLaidOutNodes.map((n) => {
-      const s = n.step
-      const i = steps.indexOf(s)
-      const plane = stepPlane(s, draft)
-      const channel = effectiveChannel(s)
-      const laneNode = lanesLens ? lanePos.get(n.id) : null
+  const rfNodes = useMemo(() => {
+    // Lanes lens: steps only, positioned by band; no cgo/proof nodes (the
+    // LAUNCH/PROOF bands say the same thing).
+    const base = lanesLens
+      ? steps.map((s, i) => {
+        const ln = lanePos.get(s.id)
+        const plane = s.detections?.[0]?.plane || draft.plane || null
+        return {
+          id: s.id, type: 'step',
+          position: ln ? { x: ln.x, y: ln.y } : { x: 40, y: 40 },
+          dragHandle: '.chain-node__grip',
+          data: {
+            kind: 'step', step: s, order: i + 1, selected: selectedId === s.id,
+            tint: PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)',
+            runState: null, runLens: false,
+            door: ln ? ln.lane : laneOf(s, laneOverrides, draft.plane),
+            channelKind: effectiveChannel(s) === 'eal' ? 'eal' : (s.target ? 'target' : null),
+          },
+        }
+      })
+      : built.nodes
+
+    return base.map((n) => {
+      if (n.type !== 'step') {
+        // cgo/proof: inject the scope-link navigation.
+        if (n.type === 'cgo') {
+          return { ...n, selected: false, data: {
+            ...n.data, tenantName, agentName,
+            onTenant: () => onNavigate('tenants'),
+            onAgent: () => onNavigate('agents'),
+          } }
+        }
+        return n
+      }
+      const i = steps.findIndex((s) => s.id === n.id)
       return {
-        id: n.id,
-        type: 'step',
-        position: laneNode ? { x: laneNode.x, y: laneNode.y } : { x: n.x, y: n.y },
-        // No per-node `draggable`/`connectable` override here (Task 9/10):
-        // that would pin every node's drag/connect-ability regardless of the
-        // pane-level `nodesDraggable`/`nodesConnectable` props below, which
-        // are what actually gate both off in the Run lens.
-        // Review round 1, finding 1 — restrict where a drag gesture may
-        // START to the small grip StepNode renders, instead of the whole
-        // card (which would refight the nodrag-scoping problem) or a
-        // useless sliver of card border (undiscoverable). `nodesDraggable`
-        // being false in the Run lens already means no drag can start
-        // regardless of this handle — but Task 13 stopped rendering the
-        // grip's DOM there at all (see `data.runLens` below and `StepNode`),
-        // since an inert-but-visible grip reads as a live affordance.
-        dragHandle: '.chain-node__grip',
+        ...n,
+        selected: selectedId === n.id && !runLens,
         data: {
-          step: s,
-          order: (i < 0 ? 0 : i) + 1,
-          selected: selectedId === s.id,
-          tint: PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)',
-          runState: runLens ? (causalityStates?.[s.id]?.state || 'EXPECTED') : null,
-          // Task 13 (reviewer-found gap): the grip renders in BOTH lenses
-          // via this same StepNode, but a drag can only ever start in the
-          // Design lens (`nodesDraggable={!runLens}` below) — an inert grip
-          // in the Run lens looks like a live affordance that does nothing.
-          runLens,
-          // The door this step launches through — Lanes lens only, where the
-          // band it sits in already says so and the badge makes it legible
-          // once the node is scrolled away from the band label.
-          door: laneNode ? laneNode.lane : null,
-          channelKind: channel === 'eal' ? 'eal' : (s.target ? 'target' : null),
-          onSelectStep: () => onSelect(s.id),
+          ...n.data,
+          onSelectStep: () => onSelectStep(n.id),
           onMoveEarlier: () => onMoveStep(i, -1),
           onMoveLater: () => onMoveStep(i, 1),
           onDuplicate: () => onDuplicateStep(i),
           onRemove: () => onRemoveStep(i),
         },
       }
-    }),
-    [
-      stepLaidOutNodes, steps, draft, selectedId, runLens, lanesLens, lanePos, causalityStates,
-      onSelect, onMoveStep, onDuplicateStep, onRemoveStep,
-    ],
-  )
+    })
+  }, [
+    built, lanesLens, steps, lanePos, selectedId, runLens, draft, laneOverrides,
+    tenantName, agentName, onNavigate, onSelectStep, onMoveStep, onDuplicateStep, onRemoveStep,
+  ])
 
-  // Root (start→step) and terminal (leaf→end) edges reference START/END,
-  // which are not React Flow nodes here — an edge to a node React Flow
-  // doesn't have is simply dropped, so only the real inter-step causality
-  // edges are worth constructing.
-  //
-  // PIVOT TYPING (Important 3, 2026-09 final-fix wave). Spec §5.5: "a
-  // `process_lineage` pivot chains parent→child process nodes; any
-  // non-process pivot emits its own typed edge and leaves the step rooted at
-  // the CGO... the canvas must render that difference, not flatten it into a
-  // process chain." `composerLayout.js`'s `spineEdges` already carries the
-  // authored pivot as `e.kind` (defaulting `process_lineage`) — a plan
-  // snippet for this task labelled non-lineage edges (`e.pivot !==
-  // 'process_lineage' ? e.pivot : undefined`) but that was lost when the
-  // field was corrected from the never-real `e.pivot` to the actual `e.kind`,
-  // leaving every edge styled identically regardless of pivot. Restored here:
-  // a typed pivot gets React Flow's own edge `label` (free — `BaseEdge`
-  // renders it) plus a dashed stroke, so it reads as a distinct edge kind
-  // rather than another link in the process chain.
-  const rfEdges = useMemo(
-    () => laidOut.edges
-      .filter((e) => stepIds.has(e.source) && stepIds.has(e.target))
-      .map((e) => {
-        const typedPivot = e.kind && e.kind !== 'process_lineage' ? e.kind : null
-        return {
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          type: 'default',
-          label: typedPivot || undefined,
-          style: {
-            stroke: 'var(--ac, #00C0E8)',
-            strokeWidth: 1.5,
-            ...(typedPivot ? { strokeDasharray: '5 4' } : {}),
+  const rfEdges = useMemo(() => {
+    const base = lanesLens
+      ? built.edges.filter((e) => e.type === 'causality')
+      : built.edges
+    return base.map((e) => {
+      if (e.type !== 'causality') {
+        return { ...e, markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--bd2, #4A4A4A)' } }
+      }
+      const markerEnd = { type: MarkerType.ArrowClosed, color: e.style?.stroke || 'var(--tx2, #C7C7C7)' }
+      // Read-only lens: no edit callbacks at all, so nothing on an edge can
+      // rewrite the draft from the Run lens.
+      if (runLens) return { ...e, markerEnd }
+      return {
+        ...e,
+        markerEnd,
+        data: {
+          ...e.data,
+          onDelete: () => onEdgeDelete(e.target),
+          onCyclePivot: () => {
+            const cur = e.data?.pivot || 'process_lineage'
+            const next = PIVOTS[(PIVOTS.indexOf(cur) + 1) % PIVOTS.length]
+            onSetPivot(e.target, next)
           },
-        }
-      }),
-    [laidOut, stepIds],
-  )
+        },
+      }
+    })
+  }, [built, lanesLens, runLens, onEdgeDelete, onSetPivot])
 
-  // Whether to draw the START/END spine connectors (see `SpineConnector`).
-  // `spineEdges` guarantees a `root` edge for every parentless step and
-  // exactly one `terminal` edge whenever there is at least one leaf, so with
-  // any steps at all both are normally present — computed rather than
-  // assumed unconditional, so a future edge-case in the layout module fails
-  // toward "no stray connector" rather than a silent throw.
-  const hasRootEdge = laidOut.edges.some((e) => e.kind === 'root')
-  const hasTerminalEdge = laidOut.edges.some((e) => e.kind === 'terminal')
+  // Design-lens stitch overlay: the entity-join edges the context IMPLIES,
+  // EXPECTED-only (authored intent, never outcome). Computed from the LTR node
+  // positions this canvas actually draws, so the join is pixel-locked to the
+  // cards (it rides the pane transform via ViewportPortal) rather than the old
+  // vertical-spine coordinates. A key nothing consumes, or a single consumer,
+  // draws no edge; consecutive consumers in step order draw one hop each.
+  const stitchEdges = useMemo(() => {
+    if (runLens || lanesLens || !showStitch) return []
+    const planted = plantedKeys(stitchModel)
+    if (!planted.length) return []
+    const posById = new Map(built.nodes.filter((n) => n.type === 'step').map((n) => [n.id, n.position]))
+    const CARD_H = 92
+    const port = (p) => ({ x: p.x + GRAPH_LAYOUT.nodeW, y: p.y + CARD_H / 2 })
+    const out = []
+    for (const key of planted) {
+      const consumers = steps.filter((s) => stitchPlaceholdersIn(s.command).includes(key))
+      for (let i = 0; i < consumers.length - 1; i += 1) {
+        const a = posById.get(consumers[i].id)
+        const b = posById.get(consumers[i + 1].id)
+        if (!a || !b) continue
+        out.push({ id: `stitch:${key}:${consumers[i].id}->${consumers[i + 1].id}`, key, from: port(a), to: port(b) })
+      }
+    }
+    return out
+  }, [runLens, lanesLens, showStitch, stitchModel, steps, built.nodes])
 
-  // Design-lens entity-join overlay: the stitch edges the context IMPLIES,
-  // EXPECTED-only (authored intent, never outcome). Off by default; drawn as a
-  // distinct dashed secondary layer offset to the right of the spine.
-  // Design lens only: the overlay's coordinates are `layoutChain`'s vertical
-  // spine, which the Lanes lens does not use — drawn there it would join
-  // points that are not where the nodes are.
-  const stitchEdges = useMemo(
-    () => (showStitch && !lanesLens ? stitchOverlayEdges(steps, stitchModel) : []),
-    [showStitch, lanesLens, steps, stitchModel],
-  )
-
-  // React Flow reports position changes ALREADY IN FLOW COORDINATES — it has
-  // done the zoom division for us. Do not re-apply zoom here; that would
-  // double-scale every drag (see the file-header note). Commit only on drag
-  // END (`dragging === false`): committing every intermediate animation
-  // frame would write a draft-dirty state dozens of times per drag.
+  // ── Node change handling (position commit on drop + lane retarget) ──
   const onNodesChange = useCallback((changes) => {
     for (const c of changes) {
       if (c.type === 'position' && c.dragging === false && c.position) {
         if (lanesLens) {
-          // On the Lanes lens a drop means "this step launches through THAT
-          // door". The band under the drop decides; x is recomputed from
-          // execution order on the next render, so nothing is stored for it.
           const before = lanePos.get(c.id)
           const lane = laneAtY(c.position.y)
           if (!before || before.lane !== lane) onLaneChange(c.id, lane)
           continue
         }
+        if (c.id === CGO_ID || c.id === PROOF_ID) continue
         onNodeMoved(
           c.id,
           Math.round(c.position.x / SNAP) * SNAP,
@@ -591,53 +587,217 @@ const DesignGraph = forwardRef(function DesignGraph({
     }
   }, [onNodeMoved, onLaneChange, lanesLens, lanePos])
 
-  // Test seam: the pane's transform makes synthetic pointer events unreliable
-  // in jsdom, so tests drive onNodesChange directly. Assignment only. Gated
-  // out of production builds (review round 1, minor finding) — Vite/Vitest
-  // set `import.meta.env.MODE` to `'test'` under `vitest run`, so this stays
-  // live for the test suite and is stripped by `vite build`'s production
-  // mode, which also dead-code-eliminates the whole branch.
   if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
     window.__rfOnNodesChange = onNodesChange
   }
 
-  // ── Connecting (Task 10) ──────────────────────────────────────────────────
-  // `isValidConnection` runs WHILE the DC is still dragging the edge, so an
-  // illegal target simply never accepts — the edge is refused BEFORE it
-  // exists rather than created and reverted. This is where the D2 spine
-  // constraint lives now that a drag affordance exists at all.
+  // ── Semi-controlled graph ──
+  // The draft stays the source of truth (`rfNodes`/`rfEdges` are derived from
+  // it), but React Flow's own changes — dimensions, in-flight drag positions,
+  // selection — are applied to LOCAL state so the library can do its job: a
+  // dragged card follows the pointer (not a jump on drop), nodes carry their
+  // `measured` size (the MiniMap renders only measured nodes, and edges attach
+  // to measured handles), and edges can be selected (which is what reveals the
+  // pivot chip and the delete button). Whenever the derived graph changes, the
+  // local copy is re-synced from it, carrying over `measured` and any drag in
+  // flight. `remove` changes are NOT applied locally — deletion goes through
+  // onNodesDelete / onEdgesDelete into the draft, and the re-sync drops the node.
+  const [liveNodes, setLiveNodes] = useState(rfNodes)
+  const [liveEdges, setLiveEdges] = useState(rfEdges)
+  useEffect(() => {
+    setLiveNodes((prev) => {
+      const byId = new Map(prev.map((n) => [n.id, n]))
+      return rfNodes.map((n) => {
+        const p = byId.get(n.id)
+        if (!p) return n
+        const carried = p.measured ? { ...n, measured: p.measured } : n
+        return p.dragging ? { ...carried, position: p.position, dragging: true } : carried
+      })
+    })
+  }, [rfNodes])
+  useEffect(() => {
+    setLiveEdges((prev) => {
+      const selected = new Set(prev.filter((e) => e.selected).map((e) => e.id))
+      return rfEdges.map((e) => (selected.has(e.id) ? { ...e, selected: true } : e))
+    })
+  }, [rfEdges])
+  const handleNodesChange = useCallback((changes) => {
+    setLiveNodes((nds) => applyNodeChanges(changes.filter((c) => c.type !== 'remove'), nds))
+    onNodesChange(changes)
+  }, [onNodesChange])
+  const handleEdgesChange = useCallback((changes) => {
+    setLiveEdges((eds) => applyEdgeChanges(changes.filter((c) => c.type !== 'remove'), eds))
+  }, [])
+
+  // ── Connecting ──
   const isValidConnection = useCallback(
-    ({ source, target }) => canConnect(steps, source, target).ok,
+    ({ source, target }) => {
+      if (source === CGO_ID || target === PROOF_ID) return false
+      return canConnect(steps, source, target).ok
+    },
     [steps],
   )
 
   const onConnect = useCallback(({ source, target }) => {
+    if (source === CGO_ID || target === PROOF_ID) return
     const verdict = canConnect(steps, source, target)
-    if (!verdict.ok) {
-      setRefusal(verdict) // visible, with its reason — never a silent no-op
-      return
-    }
+    if (!verdict.ok) { setRefusal(verdict); return }
     setRefusal(null)
     onConnectSteps(source, target)
   }, [steps, onConnectSteps])
 
-  // Same test seam as `window.__rfOnNodesChange` above, same production gate.
   if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
     window.__rfOnConnect = onConnect
   }
 
-  // Zero-size mount guard (Task 11). The Composer is a LAZILY-MOUNTED
-  // destination (see the file-header note on Task 8) — it can mount while
-  // its tab is hidden, at 0x0. A bare `fitView` asks React Flow to compute a
-  // viewport transform that fits the graph into a container with no real
-  // dimensions yet; the reference implementation observed this producing
-  // duplicated DOM on re-init once the pane was later measured. Only pass
-  // `fitView` once a ResizeObserver has actually reported a non-zero pane —
-  // a hidden-then-shown tab gets exactly one real fit, on the first
-  // dimensions that are real.
+  // Releasing a connection drag that React Flow did NOT accept. React Flow never
+  // calls onConnect for a connection isValidConnection rejected, so this is
+  // the only place a refusal can be explained. Three outcomes, each visible:
+  //  - released over a card (its port, or anywhere on its body) → connect if
+  //    canConnect allows it, otherwise show WHY not (it used to end silently,
+  //    with only a red port as the cue);
+  //  - released over empty canvas from a step's OUTPUT port → n8n
+  //    create-on-drop: a new step there, parented to the source card;
+  //  - anything else → nothing: a drag out of an INPUT port into space, or an
+  //    edge reconnect being abandoned (React Flow routes those here too, and
+  //    used to spawn a phantom step).
+  const reconnectingRef = useRef(false)
+  const onConnectEnd = useCallback((event, state) => {
+    if (!state || state.isValid) return
+    if (reconnectingRef.current) return
+    const from = state.fromNode
+    if (!from || from.type !== 'step') return
+    const fromSource = (state.fromHandle?.type || 'source') === 'source'
+    const pt = (event && 'changedTouches' in event && event.changedTouches?.[0]) || event
+    const under = (typeof document.elementFromPoint === 'function'
+      && document.elementFromPoint(pt.clientX, pt.clientY)) || event?.target || null
+    const nodeEl = under && typeof under.closest === 'function' ? under.closest('.react-flow__node') : null
+    const toId = state.toNode?.id || nodeEl?.getAttribute('data-id') || null
+    if (toId) {
+      if (toId === from.id) return
+      if (toId === CGO_ID || toId === PROOF_ID) {
+        setRefusal({ reason: 'The trigger and the proof are the fixed ends of the chain — connect a step to a step.' })
+        return
+      }
+      const [parent, child] = fromSource ? [from.id, toId] : [toId, from.id]
+      const verdict = canConnect(steps, parent, child)
+      if (!verdict.ok) { setRefusal(verdict); return }
+      setRefusal(null)
+      onConnectSteps(parent, child)
+      return
+    }
+    if (!fromSource) return
+    const onPane = under && typeof under.closest === 'function' && under.closest('.react-flow__pane')
+    if (!onPane) return
+    const rf = rfRef.current
+    if (!rf) return
+    onDropCreate({
+      position: rf.screenToFlowPosition({ x: pt.clientX, y: pt.clientY }),
+      parentId: from.id,
+    })
+  }, [steps, onConnectSteps, onDropCreate])
+
+  if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
+    window.__rfOnConnectEnd = onConnectEnd
+  }
+
+  // ── Delete (reparent) ──
+  // ONE handler for the whole deletion. React Flow removes the edges attached
+  // to a deleted node too, and its pipeline reports them (onEdgesDelete) BEFORE
+  // the node (onNodesDelete): handling edges separately cleared the children's
+  // parents first, so reparent-on-delete had nothing left to re-attach and the
+  // children fell off the chain (observed live: deleting step-03 left step-04
+  // as a second root). A deleted node owns its attached edges; only an edge
+  // whose two ends both survive is an edge deletion in its own right.
+  const onDelete = useCallback(({ nodes = [], edges = [] }) => {
+    const goneSteps = new Set(nodes.filter((n) => n.type === 'step').map((n) => n.id))
+    for (const e of edges) {
+      if (e.type !== 'causality') continue
+      if (goneSteps.has(e.source) || goneSteps.has(e.target)) continue
+      onEdgeDelete(e.target)
+    }
+    for (const id of goneSteps) onDeleteStepId(id)
+  }, [onDeleteStepId, onEdgeDelete])
+
+  if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
+    window.__rfOnDelete = onDelete
+  }
+
+  // Delete / Backspace — scoped to the CANVAS. React Flow's own deleteKeyCode
+  // listens on the whole DOCUMENT and only spares inputs, so with a card
+  // selected, Backspace on a button in the workflow bar, a drawer, the dock —
+  // or behind the exit confirm — deleted the card, with no undo. This handler
+  // sits on the canvas element: only a key pressed with focus inside the graph
+  // can delete anything (`deleteKeyCode={null}` below turns the global one off).
+  const liveNodesRef = useRef(liveNodes)
+  liveNodesRef.current = liveNodes
+  const liveEdgesRef = useRef(liveEdges)
+  liveEdgesRef.current = liveEdges
+  const onCanvasKeyDown = useCallback((e) => {
+    if (runLens) return
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return
+    const t = e.target
+    if (t && typeof t.closest === 'function'
+      && t.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) return
+    const nodes = liveNodesRef.current.filter((n) => n.selected && n.type === 'step')
+    const edges = liveEdgesRef.current.filter((ed) => ed.selected && ed.type === 'causality')
+    if (!nodes.length && !edges.length) return
+    e.preventDefault()
+    onDelete({ nodes, edges })
+  }, [runLens, onDelete])
+
+  // ── Reconnect (re-parent) ──
+  // Edges reconnect at their TAIL only (composerGraph `reconnectable:
+  // 'source'`): dragging it to another step changes THIS child's parent. The
+  // old version took the head too, so dropping an arrowhead on a third step
+  // kept the original edge and silently stole the new step from its parent.
+  const onReconnect = useCallback((oldEdge, conn) => {
+    if (conn.target !== oldEdge.target || conn.source === oldEdge.source) return
+    if (conn.source === CGO_ID || conn.source === PROOF_ID) return
+    const verdict = canConnect(steps, conn.source, conn.target)
+    if (!verdict.ok) { setRefusal(verdict); return }
+    setRefusal(null)
+    onReparent(conn.target, conn.source)
+  }, [steps, onReparent])
+  const onReconnectStart = useCallback(() => { reconnectingRef.current = true }, [])
+  // A reconnect React Flow refused (isValidConnection said no) never reaches
+  // onReconnect — say why here, as for a refused new connection.
+  const onReconnectEnd = useCallback((_e, edge, _handleType, cs) => {
+    reconnectingRef.current = false
+    if (!cs || cs.isValid || !cs.toNode) return
+    const parent = cs.toNode.id
+    if (parent === edge.source || parent === edge.target) return
+    if (parent === CGO_ID || parent === PROOF_ID) {
+      setRefusal({ reason: 'The trigger and the proof are the fixed ends of the chain — re-attach to a step.' })
+      return
+    }
+    const verdict = canConnect(steps, parent, edge.target)
+    if (!verdict.ok) setRefusal(verdict)
+  }, [steps])
+
+  if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
+    window.__rfOnReconnect = onReconnect
+  }
+
+  // ── Palette drag-and-drop ──
+  const onDragOver = useCallback((e) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [])
+  const onDrop = useCallback((e) => {
+    e.preventDefault()
+    const key = e.dataTransfer.getData('application/cortexsim-node')
+    if (!key) return
+    const rf = rfRef.current
+    const position = rf
+      ? rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+      : { x: 0, y: 0 }
+    onCanvasDrop(key, position)
+  }, [onCanvasDrop])
+
+  // ── Zero-size mount guard + live zoom ──
   const paneRef = useRef(null)
   const [measured, setMeasured] = useState(false)
-
   useEffect(() => {
     const el = paneRef.current
     if (!el) return
@@ -649,66 +809,59 @@ const DesignGraph = forwardRef(function DesignGraph({
     return () => ro.disconnect()
   }, [])
 
-  // ── Live zoom (Important 1) ───────────────────────────────────────────────
-  // Captured via `onInit` rather than `useReactFlow()` because the control
-  // that needs it (the canvas head, in the root component below) is a
-  // SIBLING of this pane, not a descendant of the `ReactFlowProvider` a few
-  // lines down — a hook only resolves inside the provider it belongs to, but
-  // the plain `ReactFlowInstance` object `onInit` hands back can be called
-  // from anywhere holding a ref to it, which is exactly what `useImperativeHandle`
-  // below exposes.
-  const rfInstanceRef = useRef(null)
-
   const handleInit = useCallback((instance) => {
-    rfInstanceRef.current = instance
+    rfRef.current = instance
     onZoomChange(instance.getZoom())
   }, [onZoomChange])
+  const handleMove = useCallback((_e, viewport) => onZoomChange(viewport.zoom), [onZoomChange])
 
-  // Fires on EVERY viewport change — wheel zoom, drag-pan, React Flow's own
-  // built-in `<Controls>` zoom buttons, AND the imperative calls below — so
-  // whatever reads `onZoomChange` is always the REAL pane, never a value
-  // that can silently drift from it.
-  const handleMove = useCallback((_event, viewport) => {
-    onZoomChange(viewport.zoom)
-  }, [onZoomChange])
+  // The overview map appears while the DC pans or zooms (when it answers
+  // "where am I?") and fades shortly after, unless pinned from the controls.
+  // A permanent map sat on top of the chain's right end on short stages —
+  // the Proof node was hidden under it at 1024x768.
+  const [miniPinned, setMiniPinned] = useState(false)
+  const [moving, setMoving] = useState(false)
+  const moveTimer = useRef(null)
+  const handleMoveStart = useCallback(() => {
+    clearTimeout(moveTimer.current)
+    setMoving(true)
+  }, [])
+  const handleMoveEnd = useCallback(() => {
+    clearTimeout(moveTimer.current)
+    moveTimer.current = setTimeout(() => setMoving(false), 1400)
+  }, [])
+  useEffect(() => () => clearTimeout(moveTimer.current), [])
 
   useImperativeHandle(ref, () => ({
-    zoomIn: () => rfInstanceRef.current?.zoomIn(),
-    zoomOut: () => rfInstanceRef.current?.zoomOut(),
-    zoomReset: () => rfInstanceRef.current?.zoomTo(1),
+    zoomIn: () => rfRef.current?.zoomIn(),
+    zoomOut: () => rfRef.current?.zoomOut(),
+    zoomReset: () => rfRef.current?.zoomTo(1),
+    fit: () => rfRef.current?.fitView({ duration: 200, padding: fitPadding(), maxZoom: 1.2 }),
   }), [])
 
-  // ── Lens fit ──────────────────────────────────────────────────────────────
-  // `fitView` (the prop above) fits the NODES, which on the Lanes lens is
-  // wrong: three steps in one band fit at 189% with every other band
-  // off-screen, so the lens shows a chain and no lanes. The Lanes lens fits
-  // the whole stage — all seven bands — and switching back to Design refits
-  // the nodes, so each lens opens on the thing it exists to show. Keyed on
-  // the stage bounds too, so a step added while on Lanes widens the fit.
+  // Lanes fits the whole band stage (all seven bands, not just the cards);
+  // Design/Run fit the nodes into the region the drawers leave visible.
   const laneStageW = laneLayout ? laneLayout.bounds.width : 0
   const laneStageH = laneLayout ? laneLayout.bounds.height : 0
-  useEffect(() => {
-    const rf = rfInstanceRef.current
-    if (!rf || !measured) return
+  const fitForLens = useCallback((rf) => {
     if (lanesLens) {
       rf.fitBounds({ x: 0, y: 0, width: laneStageW, height: laneStageH }, { padding: 0.04, duration: 0 })
     } else {
-      rf.fitView({ duration: 0 })
+      rf.fitView({ duration: 0, padding: fitPadding(), maxZoom: 1.2 })
     }
-  }, [lanesLens, measured, laneStageW, laneStageH])
+    // fitPadding reads a ref; deliberately not a dep (see viewInsets above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lanesLens, laneStageW, laneStageH])
+  const fitKey = lanesLens ? `lanes:${laneStageW}x${laneStageH}` : lens
+
+  const miniColor = useCallback((n) => {
+    if (n.type === 'cgo') return 'var(--tx2, #C7C7C7)'
+    if (n.type === 'proof') return 'var(--cortex-success, #2f9e44)'
+    return n.data?.tint || 'var(--cortex-steel, #6B7E8E)'
+  }, [])
 
   return (
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
-      {/* A refused connect attempt, ABOVE the canvas — visible and reasoned,
-          never a silent no-op (Task 10). Design-lens-only in practice, but
-          NOT because `onConnect` is only wired up in the Design lens — both
-          lenses' `DesignGraph` instances wire it identically. What actually
-          keeps `refusal` from ever being set by the Run lens's read-only
-          spine is `nodesConnectable={!runLens}` below suppressing the
-          `Handle`s `StepNode` would otherwise render (see the CONNECTING
-          file-header note) — with no Handle to drag from, no connect gesture
-          can start there, so `onConnect` never fires regardless of being
-          wired. */}
       {refusal && (
         <div className="canvas-refusal" data-testid="canvas-refusal" role="status" aria-live="polite">
           <strong>Edge refused</strong> — {refusal.reason}
@@ -716,81 +869,75 @@ const DesignGraph = forwardRef(function DesignGraph({
         </div>
       )}
 
-      {/* START anchor — not a step, so it stays outside React Flow. In the
-          Lanes lens the LAUNCH band says the same thing inside the pane, so
-          the anchor and its connector would be a second, disagreeing
-          statement of where the chain begins. */}
-      {!lanesLens && (
-        <div className="chain-node chain-node--start" data-testid="chain-start">
-          <div className="chain-node__kicker">Start</div>
-          <div className="chain-node__title">On launch</div>
-          <div className="chain-node__scope">
-            <button type="button" className="scope-link" onClick={() => onNavigate('tenants')}>
-              <span className="scope-link__label">Tenant</span>
-              <span className="scope-link__value mono">{tenantName || 'none selected'}</span>
-            </button>
-            <button type="button" className="scope-link" onClick={() => onNavigate('agents')}>
-              <span className="scope-link__label">Agent</span>
-              <span className="scope-link__value mono">{agentName || 'none selected'}</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {hasRootEdge && !lanesLens && <SpineConnector testId="composer-connector-root" />}
-
-      <div className="composer-canvas__flow" ref={paneRef}>
+      {/* Focusable (programmatically) so a selected edge can take Delete: an
+          edge click moves focus here; the key handler is scoped to this box. */}
+      <div className="composer-canvas__flow" ref={paneRef} tabIndex={-1} onKeyDown={onCanvasKeyDown}>
         <ReactFlowProvider>
           <ReactFlow
-            nodes={rfNodes}
-            edges={rfEdges}
+            nodes={liveNodes}
+            edges={liveEdges}
             nodeTypes={nodeTypes}
-            // Design lens only — the Run lens's own DesignGraph instance
-            // (below, in the root component) passes lens='run', so runLens
-            // is true there and dragging stays off: that render shows the
-            // authored spine for context, not a surface to redesign on.
+            // The card's own <button> is the keyboard control; React Flow's
+            // wrapper was a second, unnamed tab stop whose announced
+            // "press Enter to select" did nothing here.
+            nodesFocusable={false}
+            edgeTypes={edgeTypes}
             nodesDraggable={!runLens}
-            onNodesChange={onNodesChange}
+            nodesConnectable={!runLens}
+            elementsSelectable={!runLens}
+            onNodesChange={handleNodesChange}
+            onEdgesChange={handleEdgesChange}
+            onNodeClick={(_e, n) => { if (n.type === 'step') onSelect(n.id) }}
+            onPaneClick={() => onSelect(null)}
+            onEdgeClick={() => paneRef.current?.focus({ preventScroll: true })}
             snapToGrid
             snapGrid={[SNAP, SNAP]}
-            // Design lens only — same reasoning as `nodesDraggable` above.
-            // No per-node `connectable` override (see `rfNodes`), so this is
-            // the single source of truth `StepNode` reads via its own
-            // resolved `isConnectable` prop.
-            nodesConnectable={!runLens}
             onConnect={onConnect}
+            onConnectEnd={onConnectEnd}
             isValidConnection={isValidConnection}
+            onDelete={onDelete}
+            onReconnect={runLens ? undefined : onReconnect}
+            onReconnectStart={onReconnectStart}
+            onReconnectEnd={onReconnectEnd}
+            deleteKeyCode={null}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
             fitView={measured}
+            fitViewOptions={{ padding: fitPadding(), maxZoom: 1.2 }}
+            minZoom={0.2}
+            maxZoom={2}
             onInit={handleInit}
             onMove={handleMove}
+            onMoveStart={handleMoveStart}
+            onMoveEnd={handleMoveEnd}
             proOptions={{ hideAttribution: false }}
           >
-            <Background />
-            <Controls />
+            <FitOnReady fitKey={fitKey} onReady={fitForLens} />
+            <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--bd2, #4A4A4A)" />
+            <Controls showInteractive={false}>
+              {!lanesLens && (
+                <ControlButton
+                  onClick={() => setMiniPinned((v) => !v)}
+                  title={miniPinned ? 'Unpin the overview map' : 'Pin the overview map'}
+                  aria-label={miniPinned ? 'Unpin the overview map' : 'Pin the overview map'}
+                  aria-pressed={miniPinned}
+                  className={'composer-minimap-toggle' + (miniPinned ? ' composer-minimap-toggle--on' : '')}
+                >
+                  ▣
+                </ControlButton>
+              )}
+            </Controls>
+            {!lanesLens && (miniPinned || moving) && (
+              <MiniMap
+                pannable
+                zoomable
+                nodeColor={miniColor}
+                nodeStrokeWidth={2}
+                ariaLabel="Chain overview"
+                className="composer-minimap"
+              />
+            )}
 
-            {/* Stitch overlay — additive, EXPECTED-only dashed entity-join
-                edges the context implies. STATE_TINT.EXPECTED (never
-                CONFIRMED/BROKEN; those belong to the Run lens). Off unless
-                showStitch && a model.
-                REGRESSION FIX (Important 2, 2026-09 final-fix wave): this used
-                to be a plain sibling `<svg>` drawn in `layout.bounds` PIXEL
-                space next to (not inside) the ReactFlow pane above — but
-                React Flow's own `fitView` independently pans/scales that
-                pane, so the two disagreed at any non-identity transform, not
-                only long chains (it was correctly aligned before this branch,
-                d7f9ad0, when overlay and nodes shared one scaled space).
-                `<ViewportPortal>` renders this INSIDE the pane's own
-                transformed `.react-flow__viewport` layer, so the overlay's
-                flow-space coordinates (the SAME `layoutChain` coordinates
-                `rfNodes` above uses for `position`) ride the identical
-                pan/zoom transform node positions do — pixel-locked, not
-                advisory. */}
-            {/* Swimlane bands — Lanes lens only. Same ViewportPortal
-                mechanism as the stitch overlay below, for the same reason:
-                flow-space coordinates that ride the pane's own pan/zoom, so
-                a band and the nodes it contains cannot drift apart at any
-                transform. Pointer-transparent so a drag that starts over a
-                band still reaches the node. */}
             {laneLayout && (
               <ViewportPortal>
                 <div
@@ -818,14 +965,11 @@ const DesignGraph = forwardRef(function DesignGraph({
             {stitchEdges.length > 0 && (
               <ViewportPortal>
                 <svg
-                  width={bounds.width}
-                  height={bounds.height}
                   data-testid="composer-stitch-overlay"
                   style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible', pointerEvents: 'none' }}
                   aria-hidden="true"
                 >
                   {stitchEdges.map((se) => {
-                    // Bulge to the right of the spine so the join reads as a second layer.
                     const bulge = 28 + Math.abs(se.to.y - se.from.y) / 3
                     const d = `M ${se.from.x} ${se.from.y} `
                       + `C ${se.from.x + bulge} ${se.from.y} `
@@ -850,42 +994,14 @@ const DesignGraph = forwardRef(function DesignGraph({
           </ReactFlow>
         </ReactFlowProvider>
       </div>
-
-      {hasTerminalEdge && !lanesLens && <SpineConnector testId="composer-connector-terminal" />}
-
-      {/* END anchor — not a step, so it stays outside React Flow. The PROOF
-          band stands in for it on the Lanes lens, as LAUNCH does for START. */}
-      {!lanesLens && (
-        <div className="chain-node chain-node--end" data-testid="chain-end">
-          <div className="chain-node__kicker">End</div>
-          <div className="chain-node__title">Teardown &amp; proof</div>
-          <div className="chain-node__sub mono">
-            {draft.teardown?.length
-              ? `${draft.teardown.length} cleanup command${draft.teardown.length === 1 ? '' : 's'}`
-              : 'no cleanup declared'}
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        className="chain-node chain-node--add"
-        onClick={onAddStep}
-        data-testid="composer-add-step"
-      >
-        + Add step
-      </button>
     </div>
   )
 })
 
-// ─── Run lens ─────────────────────────────────────────────────────────────────
+// ─── Run lens (the REAL causality graph) ─────────────────────────────────────
 
 function RunGraph({ causalityGraph, zoom, binding = null, hasRun = false }) {
   const summary = causalityGraph?.causality_summary || {}
-  // The REAL resolved 5-tuple/UPN/host/CI/cloud-resource the run used, persisted
-  // on the run (runs.stitch_binding). Quoted verbatim — Gate A5: real values,
-  // nothing invented. Absent for a run whose scenario had no stitch context.
   const bindingEntries = binding && typeof binding === 'object'
     ? Object.entries(binding).filter(([, v]) => v != null && v !== '')
     : []
@@ -898,80 +1014,45 @@ function RunGraph({ causalityGraph, zoom, binding = null, hasRun = false }) {
   )
 
   if (!causalityGraph) {
-    // Honesty, both directions (Task 13): a scenario with NO run at all gets
-    // the original "EXPECTED only" copy — nothing is inferred because there
-    // is genuinely nothing to infer from. A scenario that DOES have a
-    // scoped run, but whose graph hasn't arrived yet (fetch in flight, or
-    // failed), must NOT reuse that copy — claiming "nothing is inferred
-    // before a run exists" while a run demonstrably exists is exactly the
-    // false claim this task was opened to close.
     if (hasRun) {
       return (
-        <div
-          className="composer-canvas__runempty"
-          data-testid="composer-run-graph"
-          style={{
-            border: '1px dashed var(--bd, #c1ccd6)', borderRadius: 8, padding: '18px 20px',
-            color: 'var(--cortex-steel, #6B7E8E)', fontSize: 13,
-          }}
-        >
-          <strong style={{ color: 'var(--ink, #003366)' }}>Run found — causality graph not loaded yet.</strong>
-          {' '}A run exists for this scenario; its causality graph has not finished
+        <div className="composer-canvas__runempty" data-testid="composer-run-graph">
+          <strong>Run found — causality graph not loaded yet.</strong>{' '}
+          A run exists for this scenario; its causality graph has not finished
           loading (or the fetch failed). This is not "no run" — it will render here
           with CONFIRMED / BROKEN edges once the graph arrives.
         </div>
       )
     }
-    // Honesty: no run has produced observations. EXPECTED only — never a
-    // fabricated CONFIRMED.
     return (
-      <div
-        className="composer-canvas__runempty"
-        data-testid="composer-run-graph"
-        style={{
-          border: '1px dashed var(--bd, #c1ccd6)', borderRadius: 8, padding: '18px 20px',
-          color: 'var(--cortex-steel, #6B7E8E)', fontSize: 13,
-        }}
-      >
-        <strong style={{ color: 'var(--ink, #003366)' }}>No run yet — EXPECTED only.</strong>
-        {' '}Launch this chain (or reconcile an observed run) and the real
-        causality graph will render here with CONFIRMED / BROKEN edges. Nothing on
-        this canvas is inferred before a run exists.
+      <div className="composer-canvas__runempty" data-testid="composer-run-graph">
+        <strong>No run yet — EXPECTED only.</strong>{' '}
+        Launch this chain (or reconcile an observed run) and the real causality
+        graph will render here with CONFIRMED / BROKEN edges. Nothing on this
+        canvas is inferred before a run exists.
       </div>
     )
   }
 
   return (
     <div data-testid="composer-run-graph" className="composer-canvas__rungraph">
-      <div
-        className="composer-canvas__runbar"
-        style={{
-          display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap',
-          marginBottom: 12, fontSize: 12,
-        }}
-      >
-        <span style={{ fontWeight: 700, color: 'var(--ink, #003366)' }}>
+      <div className="composer-canvas__runbar">
+        <span className="composer-canvas__runpct">
           chain completeness:{' '}
           {typeof completeness === 'number' ? `${completeness}%` : 'not measured'}
         </span>
         {broken.length > 0 ? (
-          <span style={{ color: 'var(--cortex-danger, #e03131)', fontWeight: 600 }} data-testid="composer-broken-stitches">
+          <span className="composer-canvas__runbroken" data-testid="composer-broken-stitches">
             {broken.length} broken stitch{broken.length === 1 ? '' : 'es'}: {broken.join(', ')}
           </span>
         ) : (
-          <span style={{ color: 'var(--cortex-success, #2f9e44)' }}>no broken stitches</span>
+          <span className="composer-canvas__runok">no broken stitches</span>
         )}
       </div>
 
       {bindingEntries.length > 0 && (
-        <div
-          className="composer-canvas__binding"
-          data-testid="composer-stitch-binding"
-          style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, fontSize: 11 }}
-        >
-          <span style={{ fontWeight: 700, color: 'var(--ink, #003366)' }}>
-            resolved binding:
-          </span>
+        <div className="composer-canvas__binding" data-testid="composer-stitch-binding">
+          <span className="composer-canvas__bindlabel">resolved binding:</span>
           {bindingEntries.map(([k, v]) => (
             <span key={k} className="mono composer-canvas__binding-pair">
               {k}=<strong>{String(v)}</strong>
@@ -980,70 +1061,38 @@ function RunGraph({ causalityGraph, zoom, binding = null, hasRun = false }) {
         </div>
       )}
 
-      <div
-        style={{
-          position: 'relative',
-          width: bounds.width * zoom,
-          height: bounds.height * zoom,
-          minHeight: 80,
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute', top: 0, left: 0,
-            width: bounds.width, height: bounds.height,
-            transform: `scale(${zoom})`, transformOrigin: 'top left',
-          }}
-        >
-          <svg
-            width={bounds.width}
-            height={bounds.height}
-            style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
-            aria-hidden="true"
-          >
+      <div style={{ position: 'relative', width: bounds.width * zoom, height: bounds.height * zoom, minHeight: 80 }}>
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: bounds.width, height: bounds.height,
+          transform: `scale(${zoom})`, transformOrigin: 'top left',
+        }}>
+          <svg width={bounds.width} height={bounds.height}
+            style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }} aria-hidden="true">
             {edges.map((e) => {
               const stroke = STATE_TINT[e.state] || 'var(--cortex-steel, #6B7E8E)'
               return (
                 <g key={e.id}>
-                  <path
-                    d={edgePath(e.from, e.to, 'horizontal')}
-                    fill="none"
-                    stroke={stroke}
+                  <path d={edgePath(e.from, e.to)} fill="none" stroke={stroke}
                     strokeWidth={e.state === 'BROKEN' ? 2 : 1.5}
-                    strokeDasharray={e.state === 'EXPECTED' ? '5 4' : undefined}
-                  >
-                    {/* Always a text equivalent: colour + stroke width alone are
-                        a colour-blind failure for CONFIRMED vs BROKEN. */}
-                    <title>
-                      {`${e.kind || 'edge'} · ${e.state}`}
-                      {e.rationale ? `: ${e.rationale}` : ''}
-                    </title>
+                    strokeDasharray={e.state === 'EXPECTED' ? '5 4' : undefined}>
+                    <title>{`${e.kind || 'edge'} · ${e.state}`}{e.rationale ? `: ${e.rationale}` : ''}</title>
                   </path>
                 </g>
               )
             })}
           </svg>
-
           {nodes.map((n) => {
             const tint = KIND_TINT[n.kind] || 'var(--cortex-steel, #6B7E8E)'
             const label = n.node?.label || n.node?.name || n.id
             return (
-              <div
-                key={n.id}
-                className={`chain-node chain-node--run chain-node--kind-${n.kind}`}
+              <div key={n.id} className={`chain-node chain-node--run chain-node--kind-${n.kind}`}
                 data-node-kind={n.kind}
                 style={{
-                  position: 'absolute', left: n.x, top: n.y, width: n.w,
-                  minHeight: n.h, boxSizing: 'border-box',
-                  borderLeft: `4px solid ${tint}`, background: 'var(--s1, #fff)',
-                  border: '1px solid var(--bd, #dde3e8)', borderRadius: 6, padding: '8px 10px',
-                  fontSize: 12,
-                }}
-              >
-                <div style={{ textTransform: 'uppercase', fontSize: 9, color: tint, fontWeight: 700, letterSpacing: '0.05em' }}>
-                  {n.kind}
-                </div>
-                <div className="mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>{label}</div>
+                  position: 'absolute', left: n.x, top: n.y, width: n.w, minHeight: n.h,
+                  boxSizing: 'border-box', borderLeft: `4px solid ${tint}`,
+                }}>
+                <div className="chain-node--run__kind" style={{ color: tint }}>{n.kind}</div>
+                <div className="mono chain-node--run__label">{label}</div>
               </div>
             )
           })}
@@ -1053,7 +1102,7 @@ function RunGraph({ causalityGraph, zoom, binding = null, hasRun = false }) {
   )
 }
 
-// ─── Root ─────────────────────────────────────────────────────────────────────
+// ─── Root ────────────────────────────────────────────────────────────────────
 
 export default function ComposerCanvas({
   draft = {},
@@ -1068,11 +1117,6 @@ export default function ComposerCanvas({
   causalityGraph = null,
   causalityStates = {},
   activeRun = null,
-  // Whether a run exists for THIS draft's own scenario (Task 13) — distinct
-  // from `causalityGraph` being populated: a scoped run can exist while its
-  // graph is still loading, and RunGraph's empty-state copy must not claim
-  // "no run" in that case. Defaulted so a caller that never scopes a run
-  // (e.g. existing ComposerCanvas.test.jsx callers) keeps today's copy.
   hasRun = false,
   originError = null,
   loadingOrigin = false,
@@ -1084,37 +1128,26 @@ export default function ComposerCanvas({
   onDuplicateStep = () => {},
   onRemoveStep = () => {},
   onAddStep = () => {},
-  // Fires (stepId, x, y) on drag END, already in flow coordinates and
-  // snapped to the 8px grid (Task 9). ComposerView wires this to
-  // `setNodePosition`. Defaulted so a caller that doesn't drag anything
-  // never has to pass it.
   onNodeMoved = () => {},
-  // Fires (fromId, toId) when a legal causality edge is drawn on the canvas
-  // (Task 10). ComposerView wires this to `setCausalityParent` (plus a
-  // topological re-sort — see `composerSpine.js`'s `topologicallySortSteps`).
-  // Defaulted so a caller that never draws a connection never has to pass it.
   onConnectSteps = () => {},
+  onDeleteStepId = () => {},
+  onEdgeDelete = () => {},
+  onReparent = () => {},
+  onSetPivot = () => {},
+  onDropCreate = () => {},
+  onCanvasDrop = () => {},
   onStartLibrary = () => {},
   onStartTtp = () => {},
   onStartBlank = () => {},
   onNavigate = () => {},
-  // ── Phase-2 Stitch Context (additive, defaulted — overlay OFF by default so
-  //    every existing ComposerCanvas.test assertion stays green) ──
   stitchModel = null,
   showStitch = false,
   onToggleStitch = () => {},
-  // Stored per-node canvas positions (`draft.layout`, Task 5/6) — additive
-  // and defaulted so a draft that has never had a node dragged renders
-  // byte-identically. Task 9 is what actually writes to this map; Task 8
-  // only wires it through to the lens that reads it.
   storedLayout = null,
-  // Lanes lens (swimlanes): the draft's lane overrides and the drop handler.
   laneOverrides = null,
   onLaneChange = () => {},
+  viewInsets = null,
 }) {
-  // Run lens: zoom stays a plain piece of state — RunGraph is a manually
-  // CSS-scaled `<svg>` layer, not a React Flow pane, so there is no live
-  // viewport for a control to read from; this state IS the ground truth.
   const [zoom, setZoom] = useState(1)
   const runLens = lens === 'run'
   const hasSteps = steps.length > 0
@@ -1123,28 +1156,20 @@ export default function ComposerCanvas({
   const zoomIn = () => setZoom((z) => Math.min(1.6, Math.round((z + 0.1) * 10) / 10))
   const zoomReset = () => setZoom(1)
 
-  // Design lens (Important 1, 2026-09 final-fix wave): the zoom toolbar used
-  // to render unconditionally against the Run lens's `zoom` state above, but
-  // the Design lens's own React Flow pane owns its zoom independently (its
-  // `<Controls>` replaced the mechanism when Task 8 swapped renderers) — so
-  // in that lens the buttons changed nothing and the percentage never left
-  // 100%, a display that lies to the operator. `designZoom` mirrors the REAL
-  // pane zoom (via `DesignGraph`'s `onZoomChange`, fed by React Flow's own
-  // `onInit`/`onMove`, never a locally-incremented counter); `designGraphRef`
-  // exposes that same pane's imperative `zoomIn`/`zoomOut`/`zoomReset` so the
-  // header buttons drive it for real. Only wired to the Design lens's OWN
-  // `DesignGraph` instance below — the Run lens also mounts a second,
-  // read-only `DesignGraph` (the authored spine under the real graph), which
-  // deliberately does not feed this, since the header toolbar there controls
-  // `zoom`/RunGraph instead.
   const designGraphRef = useRef(null)
   const [designZoom, setDesignZoom] = useState(1)
 
-  // Task 11: whether the canvas is currently overlaying any DC-dragged
-  // positions onto the computed layout — read by the Re-layout control's
-  // test (`ComposerView.test.jsx`) via this element's own dataset, so the
-  // assertion goes through the real prop rather than reaching into state.
   const hasStoredLayout = !!(storedLayout && Object.keys(storedLayout).length)
+
+  const graphProps = {
+    draft, steps, selectedId, onSelect, lens, causalityStates,
+    tenantName, agentName, onNavigate,
+    onMoveStep, onDuplicateStep, onRemoveStep, onNodeMoved,
+    laneOverrides, onLaneChange, onConnectSteps,
+    onDeleteStepId, onEdgeDelete, onReparent, onSetPivot, onDropCreate, onCanvasDrop,
+    stitchModel, showStitch,
+    storedLayout, viewInsets,
+  }
 
   return (
     <section
@@ -1158,7 +1183,6 @@ export default function ComposerCanvas({
         <span className="composer-canvas__name">{draft.name || 'Open a scenario, or add a step'}</span>
         <span className="composer__spacer" />
 
-        {/* Lens toggle — Design edits structure, Run renders the real graph. */}
         <div className="composer-canvas__lens" role="group" aria-label="Canvas lens">
           {[['design', 'Design'], ['lanes', 'Lanes'], ['run', 'Run']].map(([id, label]) => (
             <button
@@ -1174,8 +1198,6 @@ export default function ComposerCanvas({
           ))}
         </div>
 
-        {/* Stitch overlay toggle — a design-lens entity-join layer. Sits beside
-            the lens toggle; EXPECTED-only intent, never a run outcome. */}
         <button
           type="button"
           data-testid="composer-stitch-toggle"
@@ -1201,15 +1223,8 @@ export default function ComposerCanvas({
           ))}
         </div>
 
-        {/* Zoom controls. Design lens: wired to the real React Flow pane
-            (`designGraphRef` / `designZoom`, see the state doc-comment above)
-            so the number IS the actual viewport zoom and the buttons drive
-            it — the pre-fix version was inert here (React Flow's own
-            `<Controls>` had already taken over the mechanism). Run lens:
-            unchanged, state-backed (`zoom`/`setZoom`), since RunGraph has no
-            React Flow instance underneath it to read. */}
         {canvasView !== 'yaml' && (
-          <div className="composer-canvas__zoom" role="group" aria-label="Zoom" style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
+          <div className="composer-canvas__zoom" role="group" aria-label="Zoom">
             {runLens ? (
               <>
                 <button type="button" className="canvas-view" aria-label="Zoom out" onClick={zoomOut}>−</button>
@@ -1221,6 +1236,7 @@ export default function ComposerCanvas({
                 <button type="button" className="canvas-view" aria-label="Zoom out" onClick={() => designGraphRef.current?.zoomOut()}>−</button>
                 <button type="button" className="canvas-view" aria-label="Reset zoom" onClick={() => designGraphRef.current?.zoomReset()}>{Math.round(designZoom * 100)}%</button>
                 <button type="button" className="canvas-view" aria-label="Zoom in" onClick={() => designGraphRef.current?.zoomIn()}>+</button>
+                <button type="button" className="canvas-view" aria-label="Fit view" onClick={() => designGraphRef.current?.fit()}>Fit</button>
               </>
             )}
           </div>
@@ -1229,7 +1245,7 @@ export default function ComposerCanvas({
 
       <div className="composer-canvas__meta">
         {validation.counts.steps} steps
-        {draft.cgo && <> · single process_lineage spine · CGO {draft.cgo}</>}
+        {draft.cgo && <> · {spinePhrase(steps, validation)} · CGO {draft.cgo}</>}
         {runLens && activeRun && <> · run {activeRun.run_id || activeRun.id || ''} {activeRun.status || ''}</>}
       </div>
 
@@ -1297,26 +1313,7 @@ export default function ComposerCanvas({
             <DesignGraph
               ref={designGraphRef}
               onZoomChange={setDesignZoom}
-              draft={draft}
-              steps={steps}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              lens={lens}
-              causalityStates={causalityStates}
-              tenantName={tenantName}
-              agentName={agentName}
-              onNavigate={onNavigate}
-              onMoveStep={onMoveStep}
-              onDuplicateStep={onDuplicateStep}
-              onRemoveStep={onRemoveStep}
-              onAddStep={onAddStep}
-              onNodeMoved={onNodeMoved}
-              onConnectSteps={onConnectSteps}
-              stitchModel={stitchModel}
-              showStitch={showStitch}
-              storedLayout={storedLayout}
-              laneOverrides={laneOverrides}
-              onLaneChange={onLaneChange}
+              {...graphProps}
             />
           )}
 
@@ -1328,28 +1325,19 @@ export default function ComposerCanvas({
                 binding={activeRun?.stitch_binding || null}
                 hasRun={hasRun}
               />
-              {/* The authored spine stays visible under the Run lens, each card
-                  badged with its REAL run status (default EXPECTED before a run
-                  produces observations) so the DC sees intent against outcome. */}
-              <DesignGraph
-                draft={draft}
-                steps={steps}
-                selectedId={selectedId}
-                onSelect={onSelect}
-                lens={lens}
-                causalityStates={causalityStates}
-                tenantName={tenantName}
-                agentName={agentName}
-                onNavigate={onNavigate}
-                onMoveStep={onMoveStep}
-                onDuplicateStep={onDuplicateStep}
-                onRemoveStep={onRemoveStep}
-                onAddStep={onAddStep}
-                onNodeMoved={onNodeMoved}
-                onConnectSteps={onConnectSteps}
-                storedLayout={storedLayout}
-              />
+              <DesignGraph {...graphProps} />
             </>
+          )}
+
+          {hasSteps && !runLens && (
+            <button
+              type="button"
+              className="composer-add-step"
+              onClick={onAddStep}
+              data-testid="composer-add-step"
+            >
+              + Add step
+            </button>
           )}
         </>
       )}

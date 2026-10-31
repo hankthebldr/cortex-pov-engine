@@ -57,6 +57,19 @@ const PLANE_LANE = {
 /**
  * Which lane a step launches through.
  *
+ * Precedence — an override may never contradict what will actually run:
+ *   1. An eal-channel step is DATA STREAMS, always. It IS a data-stream
+ *      emitter regardless of the plane it targets, and any other override is
+ *      ignored.
+ *   2. On an agent step, an override applies — except 'DC', which only the
+ *      channel can put a step in.
+ *   3. Otherwise the door is derived from the plane.
+ *
+ * The override map is written by a drag, but the channel can change after it
+ * (the inspector's channel picker, a re-drag): a stale 'DC' left on a step
+ * that now runs on the beacon, or an 'AGT'/'CC' left on one that is now an
+ * EAL emitter, would put the badge behind a door the step does not use.
+ *
  * @param {Object} step
  * @param {Object} [overrides]  `{ [stepId]: laneKey }` from the draft
  * @param {string|null} [draftPlane]  the draft's plane, used when the step has none
@@ -64,11 +77,9 @@ const PLANE_LANE = {
  */
 export function laneOf(step, overrides = null, draftPlane = null) {
   if (!step) return 'AGT'
-  const o = overrides && overrides[step.id]
-  if (o && STEP_LANES.includes(o)) return o
-  // Channel is the strongest signal: an eal step IS a data-stream emitter
-  // regardless of the plane it targets.
   if (effectiveChannel(step) === 'eal') return 'DC'
+  const o = overrides && overrides[step.id]
+  if (o && o !== 'DC' && STEP_LANES.includes(o)) return o
   const plane = step.plane || (step.detections && step.detections[0] && step.detections[0].plane) || draftPlane
   return PLANE_LANE[plane] || 'AGT'
 }
