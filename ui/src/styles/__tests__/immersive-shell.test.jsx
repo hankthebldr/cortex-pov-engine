@@ -131,8 +131,13 @@ function blankComments(css) {
 function selectorsOf(css) {
   const out = []
   const re = /([^{}@;]+)\{/g
+  // Blank once, outside the loop. Blanking inside the `while` condition
+  // re-ran the comment regex over the whole sheet on every rule match —
+  // O(rules × bytes) per sheet, ~7 s per sweep on a GitHub runner against the
+  // 5 s default timeout, while the M-series laptop that authored it saw ~1.5 s.
+  const src = blankComments(css)
   let m
-  while ((m = re.exec(blankComments(css)))) {
+  while ((m = re.exec(src))) {
     const text = m[1].trim()
     if (!text || /^(from|to|\d+%)/.test(text)) continue
     for (const s of text.split(',')) {
@@ -170,7 +175,13 @@ const ELEMENTS = {
 }
 
 describe('static sweep: no global-sheet rule out-specifies the immersive overrides', () => {
-  const sheets = GLOBAL_SHEETS.map((f) => ({ file: f, css: fs.readFileSync(path.join(STYLES_DIR, f), 'utf8') }))
+  // Parse each sheet once; the three element sweeps below filter the same
+  // selector lists rather than re-tokenising four sheets apiece.
+  const sheets = GLOBAL_SHEETS.map((f) => {
+    const css = fs.readFileSync(path.join(STYLES_DIR, f), 'utf8')
+    return { file: f, css, selectors: selectorsOf(css) }
+  })
+  const shellSelectors = selectorsOf(fs.readFileSync(SHELL_CSS, 'utf8'))
 
   it('the immersive selectors exist, including inside the <=1000px block', () => {
     const shell = blankComments(fs.readFileSync(SHELL_CSS, 'utf8'))
@@ -186,13 +197,13 @@ describe('static sweep: no global-sheet rule out-specifies the immersive overrid
     it(`every immersive ${name} rule (media blocks included) out-specifies every competing ${name} rule`, () => {
       // Read from the file, never hardcoded: weakening a selector in the CSS
       // must fail here, not pass against a copy of the old selector.
-      const mine = selectorsOf(fs.readFileSync(SHELL_CSS, 'utf8'))
+      const mine = shellSelectors
         .filter((sel) => sel.includes('immersive') && classRe.test(subjectOf(sel)))
       expect(mine.length, `no immersive ${name} rule found`).toBeGreaterThan(0)
 
       const competitors = []
-      for (const { file, css } of sheets) {
-        for (const sel of selectorsOf(css)) {
+      for (const { file, selectors } of sheets) {
+        for (const sel of selectors) {
           if (sel.includes('immersive')) continue
           if (!classRe.test(subjectOf(sel))) continue
           competitors.push({ file, sel, spec: specificity(sel) })
