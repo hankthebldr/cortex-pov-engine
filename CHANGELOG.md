@@ -8,7 +8,7 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-10-30
+## [1.1.0] - 2026-11-01
 
 **The library grows from 177 to 193 scenarios, fifteen of them Unit 42
 chains (thirteen counted as stitched) plus a macOS agentic-endpoint
