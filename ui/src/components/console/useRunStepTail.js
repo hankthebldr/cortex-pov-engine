@@ -128,6 +128,12 @@ export function buildStepRows(steps = [], run = null, parsed = { order: [], step
   })
 }
 
+/** Operator-facing labels for the `status` a step row carries. One copy. */
+export const STEP_STATUS_LABEL = Object.freeze({
+  queued: 'queued', running: 'running', ok: 'ok', error: 'error',
+  severed: 'severed', not_reached: 'not reached',
+})
+
 const POLL_MS = 3_000
 
 /**

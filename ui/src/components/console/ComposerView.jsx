@@ -18,7 +18,7 @@ import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { isRunTerminal } from './runStatus.js'
 import useShelf from './useShelf.js'
 import useLaunchScenario from './useLaunchScenario.js'
-import useRunStepTail from './useRunStepTail.js'
+import useRunStepTail, { STEP_STATUS_LABEL } from './useRunStepTail.js'
 import { relativeTime, absoluteTime, detectionCell, runAgent, statusKey } from './runRows.js'
 import { HS } from './readiness/healthModel.js'
 import { causalityStepStates } from './composerLayout.js'
@@ -1649,11 +1649,6 @@ function runChipClass(status) {
   if (s === 'complete') return 'chip--detected'
   if (s === 'failed' || s === 'aborted') return 'chip--missed'
   return 'chip--pending'
-}
-
-const STEP_STATUS_LABEL = {
-  queued: 'queued', running: 'running', ok: 'ok', error: 'error',
-  severed: 'severed', not_reached: 'not reached',
 }
 
 /**

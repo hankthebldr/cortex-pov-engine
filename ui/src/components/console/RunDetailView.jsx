@@ -3,6 +3,8 @@ import InflightView from './InflightView.jsx'
 import EvidenceView from './EvidenceView.jsx'
 import DetectionStoryline, { isRunUnproven } from '../DetectionStoryline.jsx'
 import CausalityGraph from '../CausalityGraph.jsx'
+import RunTechniquesView from './RunTechniquesView.jsx'
+import RunTopologyView from './RunTopologyView.jsx'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { scenarioIdOf } from '../../api/ids.js'
@@ -40,7 +42,7 @@ function tailOutput(output, lines = 8) {
  *   runId      — the selected run's id (string)
  *   run        — the resolved run record from the provider (or null if unknown)
  *   activeRun  — the provider's derived live run ({ runId, ... }) or null
- *   subTab     — 'live' | 'evidence' | 'storyline' | 'causality'
+ *   subTab     — 'live' | 'evidence' | 'storyline' | 'techniques' | 'topology' | 'causality'
  *   onSubTab   — (tab) => void   switch sub-tab (writes ?tab=)
  *   onBack     — () => void      return to the run list
  *   onError    — (msg) => void
@@ -54,8 +56,10 @@ export const RUN_SUBTABS = [
   // storyline is the narrative a DC walks a room through; this is the table a
   // customer's detection engineer audits. Collapsing them gave a page that was
   // too narrative to audit and too tabular to follow.
+  { id: 'techniques', label: 'Techniques' },
   // The generated lane topology: which ingestion doors this run actually
   // touched, and where the causality crossed between them.
+  { id: 'topology', label: 'Topology' },
   { id: 'causality', label: 'Causality' },
 ]
 
@@ -232,6 +236,23 @@ export default function RunDetailView({
             runId={runId}
             scenarioId={descriptor.scenarioId}
             onOpenEvidence={() => onSubTab('evidence')}
+            onError={onError}
+          />
+        )}
+        {tab === 'techniques' && (
+          <RunTechniquesView
+            runId={runId}
+            run={run}
+            onOpenEvidence={() => onSubTab('evidence')}
+            onError={onError}
+          />
+        )}
+        {tab === 'topology' && (
+          <RunTopologyView
+            runId={runId}
+            run={run}
+            onOpenEvidence={() => onSubTab('evidence')}
+            onOpenCausality={() => onSubTab('causality')}
             onError={onError}
           />
         )}
