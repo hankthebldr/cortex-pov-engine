@@ -916,7 +916,7 @@
 .theme-console .run-detail .run-tech__verdict-chip--pass,
 .theme-console .run-detail .run-topo__verdict-chip--pass { color: var(--pos); border-color: var(--pos); }
 .theme-console .run-detail .run-tech__verdict-chip--fail,
-.theme-console .run-detail .run-topo__verdict-chip--fail { color: var(--neg); border-color: var(--neg); }
+.theme-console .run-detail .run-topo__verdict-chip--fail { color: var(--crit); border-color: var(--crit); }
 .theme-console .run-detail .run-tech__verdict-chip--pending,
 .theme-console .run-detail .run-topo__verdict-chip--pending { color: var(--warn-str); border-color: var(--warn-str); }
 .theme-console .run-detail .run-tech__verdict-chip--not_applicable,
@@ -937,7 +937,7 @@
 }
 .theme-console .run-detail .run-tech__stage--empty { opacity: 0.38; border-top-color: var(--bd); }
 .theme-console .run-detail .run-tech__stage--hit { border-top-color: var(--pos); }
-.theme-console .run-detail .run-tech__stage--miss { border-top-color: var(--neg); }
+.theme-console .run-detail .run-tech__stage--miss { border-top-color: var(--crit); }
 .theme-console .run-detail .run-tech__stage--pending { border-top-color: var(--warn-str); }
 .theme-console .run-detail .run-tech__stage--excluded { border-top-color: var(--tx3); }
 .theme-console .run-detail .run-tech__stage-name { font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--tx); }
@@ -948,7 +948,7 @@
   border: 1px solid var(--bd2); color: var(--tx2);
 }
 .theme-console .run-detail .run-tech__tech-chip--hit { border-color: var(--pos); color: var(--pos); }
-.theme-console .run-detail .run-tech__tech-chip--miss { border-color: var(--neg); color: var(--neg); }
+.theme-console .run-detail .run-tech__tech-chip--miss { border-color: var(--crit); color: var(--crit); }
 .theme-console .run-detail .run-tech__tech-chip--pending { border-color: var(--warn-str); color: var(--warn-str); }
 .theme-console .run-detail .run-tech__tech-chip--excluded { border-color: var(--bd); color: var(--tx3); }
 
@@ -962,7 +962,7 @@
 .theme-console .run-detail .run-tech__tone--hit,
 .theme-console .run-detail .run-topo__tone--hit { color: var(--pos); }
 .theme-console .run-detail .run-tech__tone--miss,
-.theme-console .run-detail .run-topo__tone--miss { color: var(--neg); }
+.theme-console .run-detail .run-topo__tone--miss { color: var(--crit); }
 .theme-console .run-detail .run-tech__tone--pending,
 .theme-console .run-detail .run-topo__tone--pending { color: var(--warn-str); }
 .theme-console .run-detail .run-tech__tone--excluded,
@@ -1002,7 +1002,7 @@
 }
 .theme-console .run-detail .run-topo__lane--empty { opacity: 0.4; border-left-color: var(--bd); }
 .theme-console .run-detail .run-topo__lane--hit { border-left-color: var(--pos); }
-.theme-console .run-detail .run-topo__lane--miss { border-left-color: var(--neg); }
+.theme-console .run-detail .run-topo__lane--miss { border-left-color: var(--crit); }
 .theme-console .run-detail .run-topo__lane--pending { border-left-color: var(--warn-str); }
 .theme-console .run-detail .run-topo__lane-head {
   display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-right: 1px solid var(--bd);
@@ -1018,7 +1018,7 @@
   padding: 7px 8px; border: 1px solid var(--bd2); border-radius: 4px; background: var(--s2);
 }
 .theme-console .run-detail .run-topo__cell--hit { border-color: var(--pos); }
-.theme-console .run-detail .run-topo__cell--miss { border-color: var(--neg); }
+.theme-console .run-detail .run-topo__cell--miss { border-color: var(--crit); }
 .theme-console .run-detail .run-topo__cell--pending { border-color: var(--warn-str); }
 .theme-console .run-detail .run-topo__cell--excluded { border-color: var(--bd); opacity: 0.7; }
 .theme-console .run-detail .run-topo__cell--none { border-style: dashed; }
@@ -1030,7 +1030,7 @@
 .theme-console .run-detail .run-topo__cell-det { font-size: 11px; margin-top: 2px; }
 .theme-console .run-detail .run-topo__st--ok { color: var(--pos); }
 .theme-console .run-detail .run-topo__st--error,
-.theme-console .run-detail .run-topo__st--severed { color: var(--neg); }
+.theme-console .run-detail .run-topo__st--severed { color: var(--crit); }
 .theme-console .run-detail .run-topo__st--running { color: var(--ac); }
 .theme-console .run-detail .run-topo__st--queued,
 .theme-console .run-detail .run-topo__st--not_reached { color: var(--tx3); }
@@ -1042,7 +1042,7 @@
 }
 .theme-console .run-detail .run-topo__engine--empty { border-left-color: var(--bd); }
 .theme-console .run-detail .run-topo__engine--hit { border-left-color: var(--pos); }
-.theme-console .run-detail .run-topo__engine--miss { border-left-color: var(--neg); }
+.theme-console .run-detail .run-topo__engine--miss { border-left-color: var(--crit); }
 .theme-console .run-detail .run-topo__engine--pending { border-left-color: var(--warn-str); }
 .theme-console .run-detail .run-topo__engine-head { display: flex; flex-direction: column; gap: 2px; }
 .theme-console .run-detail .run-topo__engine-count,
