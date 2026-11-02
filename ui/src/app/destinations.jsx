@@ -7,6 +7,8 @@ import { SurfaceBoundary } from '../components/console/SurfaceError.jsx'
 import { useEnvironment } from '../context/EnvironmentContext.jsx'
 import { getScenario } from '../api/client.js'
 import { isRunTerminal } from '../components/console/runStatus.js'
+import RunList from '../components/console/RunList.jsx'
+import { absoluteTime, detectionCell, runAgent } from '../components/console/runRows.js'
 import { runIdOf, idMatches } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
 
@@ -393,7 +395,12 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
           onOpen={(id, tab) => setParams({ run: id, tab }, { replace: true })}
         />
         <ScopeHealthStrip />
-        <RunList runs={runs} onOpen={(id) => setParams({ run: id, tab: 'live' }, { replace: true })} />
+        <RunList
+          runs={runs}
+          params={params}
+          setParams={setParams}
+          onOpen={(id) => setParams({ run: id, tab: 'live', scenario: null, status: null, page: null }, { replace: true })}
+        />
       </div>
     )
   }
@@ -445,10 +452,13 @@ function LastRunCard({ onOpen = () => {} }) {
   const isLive = !!running
   const stats = [
     ['Status', shown.status || 'unknown'],
-    ['Detections', shown.detected_count != null && shown.expected_detections != null
-      ? `${shown.detected_count} / ${shown.expected_detections}` : '—'],
-    ['Started', shown.started_at || '—'],
-    ['Agent', shown.target_agent_id || shown.agent_id || '—'],
+    // `detectionCell` carries the truthfulness rule: a failed run with no hit
+    // reads `unproven`, a run with no Result rows reads a dash.
+    ['Detections', detectionCell(shown).text],
+    ['Started', absoluteTime(shown.started_at) || '—'],
+    // The agent is the run's `target` column — this card used to read two
+    // field names that no response ever carried.
+    ['Agent', runAgent(shown)],
   ]
 
   return (
@@ -525,42 +535,6 @@ function ScopeHealthStrip() {
           <div className="scope-health__note">{t.note}</div>
         </div>
       ))}
-    </div>
-  )
-}
-
-function RunList({ runs = [], onOpen = () => {} }) {
-  if (!runs.length) {
-    return (
-      <div className="run-list-empty">
-        no runs yet — launch a scenario from Simulate
-      </div>
-    )
-  }
-  return (
-    <div className="run-list" role="table" aria-label="Run history">
-      {runs.map((r) => {
-        const id = runIdOf(r)
-        const terminal = isRunTerminal(r.status)
-        const live = r.status === 'running'
-        return (
-          <button
-            key={id}
-            type="button"
-            role="row"
-            className="run-list__row"
-            onClick={() => onOpen(id)}
-          >
-            <span className="mono run-list__scenario">{r.scenario_id || id}</span>
-            <span className="mono run-list__id">{id}</span>
-            <span
-              className={'chip run-list__status-chip' + (live ? ' run-list__status-chip--live' : terminal ? ' run-list__status-chip--done' : ' run-list__status-chip--pending')}
-            >
-              {r.status || 'unknown'}
-            </span>
-          </button>
-        )
-      })}
     </div>
   )
 }
