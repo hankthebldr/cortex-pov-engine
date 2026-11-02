@@ -18,6 +18,8 @@ import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { isRunTerminal } from './runStatus.js'
 import useShelf from './useShelf.js'
 import useLaunchScenario from './useLaunchScenario.js'
+import useRunStepTail from './useRunStepTail.js'
+import { relativeTime, absoluteTime, detectionCell, runAgent, statusKey } from './runRows.js'
 import { HS } from './readiness/healthModel.js'
 import { causalityStepStates } from './composerLayout.js'
 import ComposerCanvas from './ComposerCanvas.jsx'
@@ -170,6 +172,9 @@ export default function ComposerView({
   const [lens, setLens] = useState('design')              // 'design' | 'run'
   const [wsTab, setWsTab] = useState('payload')
   const [wsOpen, setWsOpen] = useState(false)
+  // The run the Active pane shows: the run a canvas launch just created,
+  // else one picked in History, else (null) the provider's own activeRun.
+  const [followRunId, setFollowRunId] = useState(null)
   const [benchQuery, setBenchQuery] = useState('')
   const [paletteTab, setPaletteTab] = useState('build')
   const [notice, setNotice] = useState(null)
@@ -445,10 +450,18 @@ export default function ComposerView({
   // too, or Launch would run the save while the canvas shows the original.
   const viaSavedRow = edited || !!savedScenarioId
   const launchTarget = viaSavedRow ? savedDetail : originDetail
+  // A launch from the canvas is FOLLOWED here, in the Active run pane, instead
+  // of bouncing the DC to the Runs page (UX review §A finding 6: the Composer's
+  // panes pointed away from the canvas). `Follow ▸` in that pane is still the
+  // deep link to Runs for the full Live / Evidence view.
   const launch = useLaunchScenario(launchTarget, {
     onRunComplete: (run) => {
+      const id = runIdOf(run) || null
+      setFollowRunId(id)
+      setWsTab('active')
+      setWsOpen(true)
       env.refreshRuns()
-      onNavigate('runs', { run: runIdOf(run), tab: 'live' })
+      say(id ? `Run ${id} started — following it below` : 'Run started')
     },
     onError: (msg) => say(msg),
   })
@@ -1432,7 +1445,7 @@ export default function ComposerView({
                 onClick={() => { setWsTab(id); setWsOpen(true) }}
               >
                 {label}
-                <span className="ws-tab__meta mono">{wsMeta(id, { env, shelf, validation })}</span>
+                <span className="ws-tab__meta mono">{wsMeta(id, { env, shelf, validation, followRunId })}</span>
               </button>
             ))}
             <span className="composer__spacer" />
@@ -1451,8 +1464,25 @@ export default function ComposerView({
             <div className="composer-ws__body" data-testid="composer-ws-body">
               {wsTab === 'payload' && <PayloadPane shelf={shelf} onNavigate={onNavigate} />}
               {wsTab === 'preflight' && <PreflightPane model={env.healthModel} validation={validation} onNavigate={onNavigate} />}
-              {wsTab === 'active' && <ActivePane activeRun={env.activeRun} onNavigate={onNavigate} />}
-              {wsTab === 'history' && <HistoryPane runs={env.runs} onNavigate={onNavigate} />}
+              {wsTab === 'active' && (
+                <ActivePane
+                  followRunId={followRunId}
+                  activeRun={env.activeRun}
+                  runs={env.runs}
+                  steps={launchTarget?.steps || steps}
+                  onNavigate={onNavigate}
+                  onUnfollow={() => setFollowRunId(null)}
+                />
+              )}
+              {wsTab === 'history' && (
+                <HistoryPane
+                  runs={env.runs}
+                  originId={fromId}
+                  followRunId={followRunId}
+                  onFollow={(id) => { setFollowRunId(id); setWsTab('active') }}
+                  onNavigate={onNavigate}
+                />
+              )}
             </div>
           )}
         </div>
@@ -1512,7 +1542,7 @@ function NoSelectionAside({ draft, onOpenMeta }) {
 }
 
 /** Tab subtitles. Every one is a real count or an explicit unknown. */
-function wsMeta(id, { env, shelf, validation }) {
+function wsMeta(id, { env, shelf, validation, followRunId = null }) {
   if (id === 'payload') {
     if (shelf.loading) return '…'
     if (shelf.available === false) return 'no shelf'
@@ -1523,7 +1553,13 @@ function wsMeta(id, { env, shelf, validation }) {
     const d = env.healthModel.degraded.length
     return d === 0 ? 'all ok' : `${d} degraded`
   }
-  if (id === 'active') return env.activeRun ? `step ${env.activeRun.step}/${env.activeRun.totalSteps}` : 'idle'
+  if (id === 'active') {
+    if (followRunId) {
+      const r = env.runs.find((x) => runIdOf(x) === followRunId)
+      return r?.status || 'following'
+    }
+    return env.activeRun ? `step ${env.activeRun.step}/${env.activeRun.totalSteps}` : 'idle'
+  }
   if (id === 'history') return String(env.runs.length)
   return validation.ok ? 'ok' : ''
 }
@@ -1606,55 +1642,179 @@ function PreflightPane({ model, validation, onNavigate }) {
   )
 }
 
-function ActivePane({ activeRun, onNavigate }) {
-  if (!activeRun) {
-    return <div className="ws-empty">No run in flight. Preflight, then launch.</div>
+/** Status chip tone for a run row in the workstream. */
+function runChipClass(status) {
+  const s = statusKey(status)
+  if (s === 'running') return 'chip--signal'
+  if (s === 'complete') return 'chip--detected'
+  if (s === 'failed' || s === 'aborted') return 'chip--missed'
+  return 'chip--pending'
+}
+
+const STEP_STATUS_LABEL = {
+  queued: 'queued', running: 'running', ok: 'ok', error: 'error',
+  severed: 'severed', not_reached: 'not reached',
+}
+
+/**
+ * ActivePane — tails the FOLLOWED run inline: a header off the run record and
+ * one row per step (id · identity · status · rc · duration) from the host's
+ * step outcomes + the beacon's transcript (`useRunStepTail`). The followed run
+ * is the one a canvas launch just created, else one picked in History, else
+ * the provider's own activeRun.
+ */
+function ActivePane({ followRunId, activeRun, runs, steps, onNavigate, onUnfollow }) {
+  const runId = followRunId || activeRun?.runId || null
+  const { run, rows, error, terminal } = useRunStepTail(runId, steps)
+  if (!runId) {
+    return (
+      <div className="ws-empty">
+        No run in flight. Preflight, then launch — the run is followed here.
+      </div>
+    )
   }
+  // The list row carries the detection aggregates; the detail row carries
+  // status + transcript. Both are the same run; neither is invented.
+  const listRow = runs.find((r) => runIdOf(r) === runId) || null
+  const status = run?.status || listRow?.status || 'pending'
+  const det = listRow ? detectionCell(listRow) : { text: '—', title: 'detections not reported yet' }
+  const done = rows.filter((r) => r.status === 'ok' || r.status === 'error' || r.status === 'severed').length
+  const stepLabel = rows.length ? `step ${Math.min(done + (terminal ? 0 : 1), rows.length)}/${rows.length}` : '—'
+  const since = run?.started_at || listRow?.started_at
+  const liveIsOther = followRunId && activeRun && activeRun.runId !== followRunId
+
   return (
-    <div className="ws-rows">
-      <div className="ws-row">
-        <span className="mono ws-row__id">{activeRun.runId}</span>
-        <span className="ws-row__mid">{activeRun.scenarioId}</span>
-        <span className="ws-row__digest mono">
-          step {activeRun.step}/{activeRun.totalSteps} · {activeRun.detected}/{activeRun.total} detected
+    <div className="ws-active" data-testid="ws-active" data-run-id={runId}>
+      <div className="ws-row ws-row--active-head">
+        <span className="mono ws-row__id" title={runId}>{runId}</span>
+        <span className="ws-row__mid">{run?.scenario_id || listRow?.scenario_id || '—'}</span>
+        <span className="ws-row__digest mono" title={absoluteTime(since)}>
+          {stepLabel} · {det.text} detected · {runAgent(run || listRow || {})} · {relativeTime(since)}
         </span>
-        <button
-          type="button"
-          className="btn btn--xs"
-          onClick={() => onNavigate('runs', { run: activeRun.runId, tab: 'live' })}
-        >
-          Follow ▸
-        </button>
+        <span className="ws-active__ctl">
+          <span className={'chip ' + runChipClass(status)} data-testid="ws-active-status">{status}</span>
+          <button
+            type="button"
+            className="btn btn--xs"
+            onClick={() => onNavigate('runs', { run: runId, tab: terminal ? 'evidence' : 'live' })}
+          >
+            Follow ▸
+          </button>
+        </span>
+      </div>
+      {error && <div className="ws-empty ws-active__error">could not load the run: {error}</div>}
+      {liveIsOther && (
+        <div className="ws-empty">
+          another run is in flight ({activeRun.scenarioId}).
+          <button type="button" className="btn btn--xs" onClick={onUnfollow}>show the live run</button>
+        </div>
+      )}
+      <div className="ws-steps" role="table" aria-label="Run steps">
+        <div className="ws-step ws-step--head" role="row" aria-hidden="true">
+          <span>step</span><span>identity</span><span>status</span><span>rc</span><span>duration</span>
+        </div>
+        {rows.length === 0 && (
+          <div className="ws-empty">no steps known for this run yet</div>
+        )}
+        {rows.map((r) => (
+          <div
+            className={`ws-step ws-step--${r.status}`}
+            role="row"
+            key={r.id}
+            data-testid="ws-step-row"
+            data-step-id={r.id}
+            data-status={r.status}
+          >
+            <span role="cell" className="mono ws-step__id" title={r.name || undefined}>
+              {r.index}. {r.id}{r.technique ? <span className="ws-step__tech"> · {r.technique}</span> : null}
+            </span>
+            <span role="cell" className="mono ws-step__identity" title={r.identityNote ? `IDENTITY NOT HONOURED: ${r.identityNote}` : undefined}>
+              {r.identity || '—'}{r.identityNote ? <span className="ws-step__warn"> !! not honoured</span> : null}
+            </span>
+            <span role="cell" className="mono ws-step__status" title={r.reason || r.runtimeNote || undefined}>
+              {STEP_STATUS_LABEL[r.status] || r.status}{r.signal ? ` (${r.signal})` : ''}
+            </span>
+            <span role="cell" className="mono ws-step__rc">{r.rc == null ? '—' : r.rc}</span>
+            <span role="cell" className="mono ws-step__dur">{r.duration || '—'}</span>
+          </div>
+        ))}
+      </div>
+      <div className="ws-active__foot mono">
+        rc and termination are the host's record; identity and duration are the beacon's transcript · tenant-verified: 0
       </div>
     </div>
   )
 }
 
-function HistoryPane({ runs, onNavigate }) {
+/**
+ * HistoryPane — every run on this SimCore, newest first, scoped by default to
+ * the scenario the canvas was opened from. A row click FOLLOWS the run in the
+ * Active pane (inspect without leaving the Composer); `Open ▸` is the deep
+ * link to the Runs page.
+ */
+function HistoryPane({ runs, originId, followRunId, onFollow, onNavigate }) {
+  const [all, setAll] = useState(!originId)
+  const scoped = (all || !originId) ? runs : runs.filter((r) => r.scenario_id === originId)
   if (!runs.length) return <div className="ws-empty">No runs yet.</div>
   return (
-    <div className="ws-rows">
-      {runs.slice(0, 8).map((r) => {
-        const id = runIdOf(r)
-        return (
+    <div className="ws-history" data-testid="ws-history">
+      <div className="ws-history__bar">
+        <span className="mono ws-history__count">
+          {scoped.length} of {runs.length} run{runs.length === 1 ? '' : 's'}
+          {originId && !all ? <> · <span className="mono">{originId}</span></> : null}
+        </span>
+        {originId && (
           <button
             type="button"
-            className="ws-row ws-row--button"
-            key={id}
-            onClick={() => onNavigate('runs', {
-              run: id,
-              tab: isRunTerminal(r.status) ? 'evidence' : 'live',
-            })}
+            className="btn btn--xs"
+            data-testid="ws-history-scope"
+            onClick={() => setAll((v) => !v)}
           >
-            <span className="mono ws-row__id">{id}</span>
-            <span className="ws-row__mid">{r.scenario_id || '—'}</span>
-            <span className="ws-row__digest mono">{r.started_at || ''}</span>
-            <span className={'chip ' + (isRunTerminal(r.status) ? 'chip--detected' : 'chip--pending')}>
-              {r.status || 'unknown'}
-            </span>
+            {all ? `only ${originId}` : 'all runs'}
           </button>
-        )
-      })}
+        )}
+      </div>
+      {scoped.length === 0 && (
+        <div className="ws-empty">No runs of {originId} on this SimCore yet — switch to all runs.</div>
+      )}
+      <div className="ws-rows">
+        {scoped.map((r) => {
+          const id = runIdOf(r)
+          const det = detectionCell(r)
+          return (
+            <div
+              className={'ws-row ws-row--history' + (followRunId === id ? ' ws-row--on' : '')}
+              key={id}
+              data-testid="ws-history-row"
+              data-run-id={id}
+            >
+              <button
+                type="button"
+                className="ws-row__inspect"
+                title="Inspect in the Active run pane"
+                onClick={() => onFollow(id)}
+              >
+                <span className="mono ws-row__id">{id}</span>
+                <span className="ws-row__mid">{r.scenario_id || '—'}</span>
+              </button>
+              <span className="ws-row__digest mono" title={`${absoluteTime(r.started_at)} · ${det.title}`}>
+                {relativeTime(r.started_at)} · {runAgent(r)} · {det.text}
+              </span>
+              <span className={'chip ' + runChipClass(r.status)}>{r.status || 'unknown'}</span>
+              <button
+                type="button"
+                className="btn btn--xs"
+                onClick={() => onNavigate('runs', {
+                  run: id,
+                  tab: isRunTerminal(r.status) ? 'evidence' : 'live',
+                })}
+              >
+                Open ▸
+              </button>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
