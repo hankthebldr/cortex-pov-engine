@@ -129,4 +129,18 @@ describe('RunTopologyView', () => {
     await waitFor(() => expect(screen.getByTestId('topo-error')).toBeInTheDocument())
     expect(screen.queryByTestId('topo-lane')).toBeNull()
   })
+
+  it('on a STAGED push run every cell reads staged — not queued, not not-reached — and nothing calls it unproven', async () => {
+    routes('staged', {
+      'GET /api/runs/r1': { ...runRecord('staged'), mode: 'push', output: '', step_outcomes: [], tc_verdict: null },
+    })
+    render(<RunTopologyView runId="r1" />)
+    await waitFor(() => expect(screen.getAllByTestId('topo-cell').length).toBe(3))
+    const cells = screen.getAllByTestId('topo-cell')
+    expect(cells.every((c) => c.dataset.status === 'staged')).toBe(true)
+    expect(cells[0]).toHaveTextContent('staged')
+    expect(cells[0]).not.toHaveTextContent('queued')
+    expect(screen.queryByTestId('topo-unproven')).toBeNull()
+    expect(screen.getByTestId('run-topology')).toHaveAttribute('data-proven', 'false')
+  })
 })

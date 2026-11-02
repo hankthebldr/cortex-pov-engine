@@ -768,7 +768,8 @@
 .theme-console .ws-step__tech { color: var(--tx3); }
 .theme-console .ws-step__identity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .theme-console .ws-step__warn { color: var(--warn-str, #f5c451); font-weight: 600; }
-.theme-console .ws-step--queued { opacity: 0.6; }
+.theme-console .ws-step--queued,
+.theme-console .ws-step--staged { opacity: 0.6; }
 .theme-console .ws-step--running { border-color: var(--ac); }
 .theme-console .ws-step--running .ws-step__status { color: var(--ac-ink); }
 .theme-console .ws-step--ok .ws-step__status { color: var(--pos); }

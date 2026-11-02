@@ -4,7 +4,9 @@
  * this fails here instead of the Composer's Active pane silently going blank.
  */
 import { describe, it, expect } from 'vitest'
-import { parseStepTranscript, buildStepRows } from '../useRunStepTail.js'
+import useRunStepTail, { parseStepTranscript, buildStepRows, STEP_STATUS_LABEL } from '../useRunStepTail.js'
+import { renderHook, waitFor } from '@testing-library/react'
+import { installRoutes } from '../../../test/mockFetch.js'
 
 const TRANSCRIPT = [
   '=== STEP 1/3 · step-01 · T1087.001 · identity=www-data ===',
@@ -94,5 +96,34 @@ describe('buildStepRows', () => {
 
   it('is all queued with no run yet', () => {
     expect(buildStepRows(STEPS, null, parseStepTranscript(null)).every((r) => r.status === 'queued')).toBe(true)
+  })
+})
+
+describe('buildStepRows — push bundles', () => {
+  const steps = [{ id: 'step-01', name: 'a' }, { id: 'step-02', name: 'b' }]
+  it('reads a staged push bundle as staged — never queued (no beacon will come), never not reached (nothing ran)', () => {
+    const rows = buildStepRows(steps, { status: 'staged', mode: 'push' }, parseStepTranscript(''))
+    expect(rows.map((r) => r.status)).toEqual(['staged', 'staged'])
+    expect(STEP_STATUS_LABEL.staged).toBe('staged')
+  })
+  it('keeps a pull run queued while it waits for its beacon', () => {
+    const rows = buildStepRows(steps, { status: 'pending', mode: 'pull' }, parseStepTranscript(''))
+    expect(rows.map((r) => r.status)).toEqual(['queued', 'queued'])
+  })
+  it('lets host evidence on a push run win over the staged default', () => {
+    const run = { status: 'staged', mode: 'push', step_outcomes: [{ step_id: 'step-01', termination: 'exited', rc: 0 }] }
+    const rows = buildStepRows(steps, run, parseStepTranscript(''))
+    expect(rows[0].status).toBe('ok')
+    expect(rows[1].status).toBe('staged')
+  })
+})
+
+describe('useRunStepTail — settled runs', () => {
+  it('settles on a staged run: terminal is true so the tail stops asking, rows read staged', async () => {
+    installRoutes({ 'GET /api/runs/r9': { run_id: 'r9', status: 'staged', mode: 'push', output: '' } })
+    const { result } = renderHook(() => useRunStepTail('r9', [{ id: 'step-01' }]))
+    await waitFor(() => expect(result.current.run).toBeTruthy())
+    expect(result.current.terminal).toBe(true)
+    expect(result.current.rows[0].status).toBe('staged')
   })
 })

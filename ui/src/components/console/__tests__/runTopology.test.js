@@ -180,3 +180,13 @@ describe('buildTopologyModel', () => {
     expect(m.totals).toEqual({ steps: 0, rows: 0, hits: 0, denominator: 0 })
   })
 })
+
+describe('buildTopologyModel — push bundles', () => {
+  it('reads every cell of a staged push run as staged, and the run as unproven', () => {
+    const m = buildTopologyModel({ scenario: SCENARIO, run: { status: 'staged', mode: 'push' }, results: RESULTS })
+    expect(m.proven).toBe(false)
+    expect(m.columns).toHaveLength(6)
+    expect(m.columns.every((c) => c.status === 'staged')).toBe(true)
+    expect(m.columns.some((c) => c.tone === 'miss')).toBe(false)
+  })
+})

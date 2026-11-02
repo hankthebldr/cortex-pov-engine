@@ -1033,6 +1033,7 @@
 .theme-console .run-detail .run-topo__st--severed { color: var(--crit); }
 .theme-console .run-detail .run-topo__st--running { color: var(--ac); }
 .theme-console .run-detail .run-topo__st--queued,
+.theme-console .run-detail .run-topo__st--staged,
 .theme-console .run-detail .run-topo__st--not_reached { color: var(--tx3); }
 
 .theme-console .run-detail .run-topo__engine {

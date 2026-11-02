@@ -29,7 +29,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getRun } from '../../api/client.js'
-import { isRunTerminal } from './runStatus.js'
+import { isRunTerminal, isRunSettled } from './runStatus.js'
 import useRunEventStream from './useRunEventStream.js'
 
 const HEADER = /^=== STEP (\d+)\/(\d+) · (\S+) · (\S*) · identity=(\S*) ===\s*$/
@@ -91,6 +91,7 @@ export function buildStepRows(steps = [], run = null, parsed = { order: [], step
   const outcomes = new Map()
   for (const o of run?.step_outcomes || []) if (o?.step_id) outcomes.set(o.step_id, o)
   const terminal = isRunTerminal(run?.status)
+  const pushMode = String(run?.mode || '').toLowerCase() === 'push'
   const known = Array.isArray(steps) && steps.length
     ? steps.map((s) => ({ id: s.id, name: s.name, identity: s.identity, technique: s.mitre_technique }))
     : parsed.order.map((id) => ({ id }))
@@ -108,6 +109,13 @@ export function buildStepRows(steps = [], run = null, parsed = { order: [], step
       status = rc === 0 ? 'ok' : 'error'
     } else if (t || (o && o.started_at)) {
       status = terminal ? 'not_reached' : 'running'
+    } else if (pushMode) {
+      // A push bundle executes off this SimCore: no beacon queues the step
+      // and no host records it. 'staged' is the honest state — never
+      // 'queued' (a beacon will come) and never 'not_reached' (the chain ran
+      // here and stopped short). Host evidence above still wins when a DC
+      // reports it back.
+      status = 'staged'
     } else if (terminal) {
       status = 'not_reached'
     }
@@ -131,7 +139,7 @@ export function buildStepRows(steps = [], run = null, parsed = { order: [], step
 /** Operator-facing labels for the `status` a step row carries. One copy. */
 export const STEP_STATUS_LABEL = Object.freeze({
   queued: 'queued', running: 'running', ok: 'ok', error: 'error',
-  severed: 'severed', not_reached: 'not reached',
+  severed: 'severed', not_reached: 'not reached', staged: 'staged',
 })
 
 const POLL_MS = 3_000
@@ -169,7 +177,9 @@ export default function useRunStepTail(runId, steps = []) {
     }
     fetchOnce()
     const t = setInterval(() => {
-      if (runRef.current && isRunTerminal(runRef.current.status)) return
+      // Settled, not merely terminal: a staged push bundle never advances
+      // here either, and polling it every 3 s for ever is a leak.
+      if (runRef.current && isRunSettled(runRef.current.status)) return
       fetchOnce()
     }, POLL_MS)
     return () => { cancelled = true; clearInterval(t) }
@@ -202,5 +212,5 @@ export default function useRunStepTail(runId, steps = []) {
     [steps, run],
   )
 
-  return { run, rows, error, loading, terminal: isRunTerminal(run?.status) }
+  return { run, rows, error, loading, terminal: isRunSettled(run?.status) }
 }
