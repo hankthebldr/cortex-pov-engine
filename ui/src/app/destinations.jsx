@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { openParam, uctcOpen } from './openParam.js'
 
 import ConsoleRail from '../components/console/ConsoleRail.jsx'
 import TelemetryStrip from '../components/console/TelemetryStrip.jsx'
@@ -242,7 +243,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
           onClearPlane={() => setSelectedPlane(null)}
           techniqueFilter={techniqueFilter}
           onClearTechniqueFilter={() => setTechniqueFilter(null)}
-          requestOpenScenarioId={params.open || null}
+          requestOpenScenarioId={openParam(params)}
           pinnedIds={pinnedIds}
           isPinned={isPinned}
           togglePin={togglePin}
@@ -349,7 +350,7 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
   // surface — the header pill already answers "is something in flight" from
   // anywhere, and it reads the same derived activeRun this does, so the two
   // cannot disagree.
-  const runId = params.run || null
+  const runId = openParam(params, 'run')
   const subTab = params.tab || 'live'
   const compare = params.compare === '1'
 
@@ -572,7 +573,7 @@ const CoverageSurface = withSuspense(CoverageView)
 function TtpsSurface({ params = {}, onNavigate = () => {} }) {
   return (
     <Suspense fallback={<DestinationLoading />}>
-      <TtpBrowserView initialTtpId={params.ttp || null} onNavigate={onNavigate} />
+      <TtpBrowserView initialTtpId={openParam(params, 'ttp')} onNavigate={onNavigate} />
     </Suspense>
   )
 }
@@ -582,8 +583,17 @@ function TtpsSurface({ params = {}, onNavigate = () => {} }) {
 // `TOOL-LINPEAS` in another and make the DC hold the join. Renamed from
 // "Tools & Payloads" because the rail now names it by what a DC deploys.
 const AdaptersSurface = withSuspense(ToolAdapterCatalog)
-// Deep-linkable: #/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03
-const UcTcSurface = withSuspense(UcTcIndexView)
+// Deep-linkable: #/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03 — and, like every
+// surface, `?open=<id>`, told apart by prefix because the index has two id
+// spaces (see `uctcOpen`).
+function UcTcSurface({ params = {}, ...rest }) {
+  const { uc, tc } = uctcOpen(params)
+  return (
+    <Suspense fallback={<DestinationLoading />}>
+      <UcTcIndexView {...rest} params={{ ...params, uc, tc }} />
+    </Suspense>
+  )
+}
 const EalSurface = withSuspense(EalConsole)
 const DataStreamsSurface = withSuspense(DataStreamsView)
 const EnvironmentsSurface = withSuspense(LabView)
@@ -604,10 +614,11 @@ const TenantsSurface = withSuspense(TenantView)
 // `?run=` deep link pin a specific one.
 function ProofSurface({ params = {} }) {
   const { runs, activeRun, lastRun } = useEnvironment()
+  const runParam = openParam(params, 'run')
   const pinnedRun = useMemo(() => {
-    if (!params.run) return null
-    return runs.find((r) => idMatches(runIdOf(r), params.run)) || null
-  }, [runs, params.run])
+    if (!runParam) return null
+    return runs.find((r) => idMatches(runIdOf(r), runParam)) || null
+  }, [runs, runParam])
   return (
     <Suspense fallback={<DestinationLoading />}>
       <EvidenceView
