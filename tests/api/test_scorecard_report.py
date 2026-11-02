@@ -74,13 +74,15 @@ def seeded_run(session_factory):
             base = datetime.utcnow() - timedelta(minutes=3)
             # ``mttd_seconds`` is a computed property (observed_at - executed_at),
             # not a settable column — the detected row derives ~90s on its own.
-            # (signal_type, expected, observed, observed_at)
+            # (signal_type, expected, observed, observed_at, executed_at) -- the
+            # miss is engine-written below (R7); step-03 ran a moment ago, so
+            # its window is still open and it stays pending.
             rows = [
-                ("ABIOC", "passwd read", True, base + timedelta(seconds=90)),
-                ("BIOC", "shadow read", False, base + timedelta(seconds=120)),
-                ("XQL", "creds dumped", False, None),
+                ("ABIOC", "passwd read", True, base + timedelta(seconds=90), base),
+                ("BIOC", "shadow read", False, None, base),
+                ("XQL", "creds dumped", False, None, datetime.utcnow()),
             ]
-            for i, (sig, det, obs, obs_at) in enumerate(rows, start=1):
+            for i, (sig, det, obs, obs_at, executed) in enumerate(rows, start=1):
                 db.add(Result(
                     run_id="r-sc",
                     step_id=f"step-0{i}",
@@ -90,8 +92,20 @@ def seeded_run(session_factory):
                     expected_detection=det,
                     observed=obs,
                     observed_at=obs_at,
-                    executed_at=base,
+                    executed_at=executed,
                 ))
+            await db.commit()
+        async with session_factory() as db:
+            # A complete reconcile that matched nothing: the engine's own
+            # silent-row judgement writes the miss (round 3 R7).
+            from connectors.service import _judge_silent_results
+            from sqlalchemy import select as _select
+            run = (await db.execute(_select(Run).where(Run.run_id == "r-sc"))).scalar_one()
+            rows = list((await db.execute(
+                _select(Result).where(Result.run_id == "r-sc"))).scalars().all())
+            # step-02's host record says it ran: only then is silence a miss.
+            await _judge_silent_results(db, run, rows, {"step-02": "exited"},
+                                        window_seconds=60, evidence_complete=True)
             await db.commit()
 
     asyncio.run(_seed())
@@ -176,3 +190,26 @@ def test_scorecard_unknown_run_404(client):
     r = client.get("/api/runs/no-such-run/report", params={"format": "scorecard"})
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "RUN_NOT_FOUND"
+
+
+def test_scorecard_leads_with_integrity_banner_on_tool_absent(client, seeded_run, session_factory):
+    from sqlalchemy import update
+    from models import Run
+
+    async def _mark():
+        async with session_factory() as db:
+            await db.execute(update(Run).where(Run.run_id == seeded_run)
+                             .values(output="!! TOOL_ABSENT: hydra\n"))
+            await db.commit()
+
+    asyncio.run(_mark())
+    md = client.get(f"/api/runs/{seeded_run}/report", params={"format": "scorecard"}).text
+    assert md.lstrip().startswith("## ") and "READ THIS FIRST" in md.splitlines()[0]
+    assert "TOOL_ABSENT" in md.split("# Cortex POV")[0]
+    html_ = client.get(f"/api/runs/{seeded_run}/report", params={"format": "scorecard-html"}).text
+    assert html_.index("READ THIS FIRST") < html_.index("Cortex POV Efficacy Scorecard")
+
+
+def test_scorecard_without_integrity_problem_has_no_banner(client, seeded_run):
+    md = client.get(f"/api/runs/{seeded_run}/report", params={"format": "scorecard"}).text
+    assert "READ THIS FIRST" not in md

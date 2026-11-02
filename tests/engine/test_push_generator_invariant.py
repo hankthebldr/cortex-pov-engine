@@ -76,6 +76,40 @@ def test_golden_file_covers_the_corpus(repo_root: Path) -> None:
     )
 
 
+def _unexplained_nulls(golden: dict[str, dict], corpus: dict[str, dict]) -> list[str]:
+    """Scenarios whose golden has NO digest at all but never declared it.
+
+    A ``null`` for both formats means "this scenario emits no bundle". That is
+    legitimate only when the scenario says so (``push_supported: false``);
+    otherwise a scenario that silently lost every emittable target would be
+    recorded as a harmless null and the byte-identity guard would wave it through.
+    """
+    return sorted(
+        sid for sid, want in golden.items()
+        if want["bash"] is None and want["powershell"] is None
+        and corpus.get(sid, {}).get("push_supported") is not False
+    )
+
+
+def test_null_golden_digest_requires_push_supported_false(repo_root: Path) -> None:
+    golden = json.loads(GOLDEN.read_text())
+    corpus = _corpus(repo_root)
+    assert not _unexplained_nulls(golden, corpus), (
+        "golden has a null/null digest for scenario(s) that did not declare "
+        f"push_supported: false: {_unexplained_nulls(golden, corpus)}"
+    )
+
+
+def test_null_golden_digest_guard_has_teeth() -> None:
+    """A null/null for a push_supported: true (or silent) scenario is a failure."""
+    golden = {"SIM-X-1": {"bash": None, "powershell": None},
+              "SIM-X-2": {"bash": None, "powershell": None},
+              "SIM-X-3": {"bash": "abc", "powershell": None}}
+    corpus = {"SIM-X-1": {"push_supported": True}, "SIM-X-2": {"push_supported": False},
+              "SIM-X-3": {"push_supported": True}}
+    assert _unexplained_nulls(golden, corpus) == ["SIM-X-1"]
+
+
 def test_bash_and_powershell_bundles_are_byte_identical(repo_root: Path) -> None:
     """Every bundle for every scenario hashes to its pre-change value."""
     golden = json.loads(GOLDEN.read_text())

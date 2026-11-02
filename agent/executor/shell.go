@@ -50,10 +50,36 @@ func RunCommandCtx(ctx context.Context, cmdStr string) (stdout, stderr string, e
 	return RunCommandCtxStream(ctx, cmdStr, nil)
 }
 
-// RunCommandCtxStream executes cmdStr via the host shell (`sh -c` on POSIX,
+// Termination values reported in Outcome.Termination.
+const (
+	TerminationExited   = "exited"   // process ended on its own (any exit status)
+	TerminationSignaled = "signaled" // process was killed by a signal we did not initiate
+	TerminationAborted  = "aborted"  // ctx cancelled: operator/abort-driven kill
+)
+
+// Outcome is the full result of one command, including HOW it ended. ExitCode
+// alone cannot tell a step that ran `exit 137` from one killed by SIGKILL (both
+// read 137); Termination and Signal carry that distinction. On Windows, which
+// has no signal concept, Termination is "exited" or "aborted" and Signal is 0.
+type Outcome struct {
+	Stdout      string
+	Stderr      string
+	ExitCode    int
+	Termination string
+	Signal      int
+}
+
+// RunCommandCtxStream executes cmdStr via the host shell and returns the four
+// values it always has; it is a thin wrapper over RunCommandCtxStreamOutcome.
+func RunCommandCtxStream(ctx context.Context, cmdStr string, onChunk OutputChunkFunc) (stdout, stderr string, exitCode int, err error) {
+	o, err := RunCommandCtxStreamOutcome(ctx, cmdStr, onChunk)
+	return o.Stdout, o.Stderr, o.ExitCode, err
+}
+
+// RunCommandCtxStreamOutcome executes cmdStr via the host shell (`sh -c` on POSIX,
 // PowerShell on Windows — see the platform_*.go files) and captures stdout and
 // stderr separately, honouring ctx for cancellation and streaming chunks to onChunk if non-nil.
-func RunCommandCtxStream(ctx context.Context, cmdStr string, onChunk OutputChunkFunc) (stdout, stderr string, exitCode int, err error) {
+func RunCommandCtxStreamOutcome(ctx context.Context, cmdStr string, onChunk OutputChunkFunc) (Outcome, error) {
 	cmd := newShellCmd(cmdStr)
 
 	var outBuf, errBuf bytes.Buffer
@@ -66,7 +92,7 @@ func RunCommandCtxStream(ctx context.Context, cmdStr string, onChunk OutputChunk
 	}
 
 	if startErr := cmd.Start(); startErr != nil {
-		return outBuf.String(), errBuf.String(), -1, startErr
+		return Outcome{Stdout: outBuf.String(), Stderr: errBuf.String(), ExitCode: -1, Termination: TerminationExited}, startErr
 	}
 
 	// Watch ctx in a goroutine; on cancel, SIGTERM the process group then SIGKILL
@@ -87,32 +113,33 @@ func RunCommandCtxStream(ctx context.Context, cmdStr string, onChunk OutputChunk
 	runErr := cmd.Wait()
 	close(waitDone)
 
-	stdout = outBuf.String()
-	stderr = errBuf.String()
+	stdout := outBuf.String()
+	stderr := errBuf.String()
 
 	if cancelled.Load() {
 		// Operator/abort-driven termination. Surface a stable, non-fatal signal.
-		return stdout, stderr, 130, context.Canceled
+		return Outcome{Stdout: stdout, Stderr: stderr, ExitCode: 130, Termination: TerminationAborted}, context.Canceled
 	}
 
 	if runErr != nil {
 		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			exitCode, termination, sig := 1, TerminationExited, 0
 			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
 				if status.Signaled() {
 					// Killed by a signal we did not initiate via ctx — convention 128+signal.
-					exitCode = 128 + int(status.Signal())
+					sig = int(status.Signal())
+					exitCode = 128 + sig
+					termination = TerminationSignaled
 				} else {
 					exitCode = status.ExitStatus()
 				}
-			} else {
-				exitCode = 1
 			}
 			// Non-zero exit is not an error from the caller's perspective.
-			return stdout, stderr, exitCode, nil
+			return Outcome{Stdout: stdout, Stderr: stderr, ExitCode: exitCode, Termination: termination, Signal: sig}, nil
 		}
 		// Real error (should be rare after a successful Start).
-		return stdout, stderr, -1, runErr
+		return Outcome{Stdout: stdout, Stderr: stderr, ExitCode: -1, Termination: TerminationExited}, runErr
 	}
 
-	return stdout, stderr, 0, nil
+	return Outcome{Stdout: stdout, Stderr: stderr, ExitCode: 0, Termination: TerminationExited}, nil
 }

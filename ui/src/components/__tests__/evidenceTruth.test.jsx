@@ -33,7 +33,12 @@ describe('Proof & Export — status belongs to the run on screen', () => {
         { run_id: 'run-A', scenario_id: 'SIM-EDR-001', status: 'running', started_at: '2026-10-04T12:00:00' },
         { run_id: 'run-B', scenario_id: 'SIM-EDR-002', status: 'failed', started_at: '2026-10-04T11:00:00' },
       ] },
-      'GET /api/results/run-A': { results: [result(1), result(2, { observed: true, mttd_seconds: 40 })] },
+      'GET /api/results/run-A': {
+        results: [result(1), result(2, { observed: true, mttd_seconds: 40 })],
+        // The server's coverage (core/api/results.py), which the KPI renders.
+        coverage: { denominator: 2, observed_in_denominator: 1, pct: 50.0,
+          excluded: { not_reached: 0, not_executed: 0, soak_pending: 0 } },
+      },
       'GET /api/scenarios': { scenarios: [] },
       'GET /api/agents': { agents: [] },
       'GET /api/health': { status: 'ok' },

@@ -59,7 +59,9 @@ def run_classify_cli(tmp_path, run_record, scenario="SIM-EDR-001"):
     above, which only exist post-fix."""
     run_path = tmp_path / "run.json"
     out_path = tmp_path / "verdict.json"
-    run_path.write_text(json.dumps(run_record), encoding="utf-8")
+    # GET /api/runs/{id} always carries step_outcomes now; classify.py refuses a
+    # record without it.
+    run_path.write_text(json.dumps({"step_outcomes": [], **run_record}), encoding="utf-8")
     proc = subprocess.run(
         [sys.executable, str(CLASSIFY_PATH), "--run", str(run_path),
          "--scenario", scenario, "--out", str(out_path)],

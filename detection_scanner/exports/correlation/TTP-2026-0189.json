@@ -1,0 +1,26 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1033",
+    "T1021.002",
+    "T1570",
+    "T1036.003",
+    "T1071.001",
+    "T1003",
+    "T1003.002",
+    "T1569.002",
+    "T1136.001",
+    "T1562.001",
+    "T1486"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-030 Admin Share C$ Mapped Then Executable Copied into Public Music) AND ABIOC(MP-030 Compromised Account Uncommon Administrative Share Access) AND (IOC(file-sha256 from the report on panw_ngfw_threat_raw) OR ABIOC(MP-030 Sliver Recurring Beacon to Rare Domain)) AND BIOC(MP-030 Credential Dump Log KB0722.log Written to Windows Temp) AND BIOC(MP-030 Security Sensor Service Stopped Disabled and Deleted) AND BIOC(MP-030 Mass File Rename to PLAY Extension with Ransom Note Drop) within 3600s on the same src_host (agent_hostname on xdr_data; endpoint_device_name on the NGFW records; on msft_windows_security the share events land on the target host, so the identity leg keys on source_address = the src_host's IP, not host_name) -> one incident naming the compromised account, the Sliver C2 (americajobmail.site / 172.96.137.224) and the EDR-removal-then-impact sequence.",
+      "name": "Jumpy Pisces to Play Hand-off \u2014 Endpoint, Network and Identity Stitch on One Host",
+      "rule_id": "CR-MP-0030",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0189"
+}

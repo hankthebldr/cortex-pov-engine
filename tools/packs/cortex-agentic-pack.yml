@@ -39,6 +39,7 @@ cleanup:
 
 ttp_refs:
   - TTP-2026-0042
+  - TTP-2026-0197
 
 equivalents: []
 

@@ -7,6 +7,7 @@ import MultiRunCompare from './MultiRunCompare.jsx'
 import MttdHistogram from './MttdHistogram.jsx'
 import ExportMenu from './ExportMenu.jsx'
 import { isRunUnproven } from '../DetectionStoryline.jsx'
+import { statusLabel as labelFor, outcomeClass, isBulkAttestable, isAttestationRefused, BULK_SKIPPED_REASONS } from '../../outcomes.js'
 
 /**
  * EvidenceView — the Evidence tab.
@@ -68,8 +69,11 @@ export default function EvidenceView({
   )
 
   const handleValidateAll = useCallback(async () => {
-    // Mark every pending row as detected (DC sweeps after a successful run).
-    const pending = rows.filter((r) => r.observed == null && r.id != null)
+    // Attest every eligible row as detected (DC sweeps after a successful run):
+    // the rows `PUT /validate` accepts, minus engine misses (outcomes.js::isBulkAttestable). A
+    // step that never ran or a two-witness prevented row is skipped, and the
+    // skip is counted next to the button.
+    const pending = rows.filter((r) => isBulkAttestable(r) && r.id != null)
     for (const r of pending) {
       await validate(r.id, true, null)
     }
@@ -137,16 +141,25 @@ export default function EvidenceView({
               <button
                 className="btn"
                 onClick={handleValidateAll}
-                disabled={kpis.pending === 0 || unproven}
+                disabled={kpis.unvalidated === 0 || unproven}
                 title={unproven
                   ? `Run ${runStatus} — attesting detections on a run that never executed would fabricate evidence`
                   : 'Mark all pending detections as observed'}
               >
                 Validate all
-                {kpis.pending > 0 && (
-                  <span className="kbd">{kpis.pending}</span>
+                {kpis.unvalidated > 0 && (
+                  <span className="kbd">{kpis.unvalidated}</span>
                 )}
               </button>
+              {kpis.skipped > 0 && (
+                <span
+                  className="mono evidence-header__skipped"
+                  data-testid="validate-all-skipped"
+                  title="Rows Validate all will not attest: the step never ran, it is a prevention, or the engine judged it a miss (overrule one row at a time)"
+                >
+                  {kpis.skipped} skipped ({BULK_SKIPPED_REASONS})
+                </span>
+              )}
               <ExportMenu runId={targetRunId} onError={onError} />
             </>
           )}
@@ -214,7 +227,11 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         <Kpi
           label="Coverage"
           value="—"
-          meta="no detections seeded for this run"
+          meta={kpis.coverageUnknown
+            ? 'server sent no coverage denominator'
+            : kpis.seeded > 0
+              ? `nothing to score — ${kpis.excluded} excluded (never ran or soaking)`
+              : 'no detections seeded for this run'}
           tone="tx"
         />
       ) : (
@@ -223,7 +240,8 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
           value={kpis.coverage}
           suffix="%"
           valueClass="kpi__value--detected"
-          meta={`${kpis.detected} / ${kpis.total} detections confirmed`}
+          meta={`${kpis.detected} / ${kpis.total} detections confirmed`
+            + (kpis.excluded > 0 ? ` · ${kpis.excluded} excluded (never ran or soaking)` : '')}
           tone="ac"
         />
       )}
@@ -235,13 +253,22 @@ function KpiRow({ kpis, unproven = false, runStatus = null }) {
         meta={kpis.median != null ? 'across confirmed detections' : 'no detections yet'}
         tone={kpis.median != null ? 'ac' : 'tx'}
       />
-      <Kpi
-        label="XSIAM Stitch"
-        value={kpis.stitched}
-        suffix={` / ${kpis.total > 0 ? kpis.total : 0}`}
-        meta="analytics-plane detections observed"
-        tone="info"
-      />
+      {kpis.stitchDenominator > 0 ? (
+        <Kpi
+          label="XSIAM Stitch"
+          value={kpis.stitched}
+          suffix={` / ${kpis.stitchDenominator}`}
+          meta="analytics-plane detections observed"
+          tone="info"
+        />
+      ) : (
+        <Kpi
+          label="XSIAM Stitch"
+          value="—"
+          meta="no analytics-plane detection to score on this run"
+          tone="tx"
+        />
+      )}
       <Kpi
         label="Pending"
         value={kpis.pending}
@@ -313,12 +340,9 @@ function Scorecard({ rows, loading, selectedRowId, onSelectRow, onValidate }) {
 }
 
 function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
-  const status = row.observed === true
-    ? 'detected'
-    : row.observed === false
-    ? 'missed'
-    : 'pending'
-  const statusLabel = status === 'detected' ? 'Detected' : status === 'missed' ? 'Missed' : 'Pending'
+  // The status the server's outcome axis says (outcomes.js::resultStatus).
+  const status = outcomeClass(row.status)
+  const statusLabel = labelFor(row.status, row)
 
   // Inline-button clicks shouldn't propagate to the row click (avoid
   // double-firing validate + selecting the row at the same time).
@@ -352,7 +376,7 @@ function ScorecardRow({ row, isSelected, onSelect, onValidate }) {
         <span className={`scorecard__status scorecard__status--${status}`}>
           {statusLabel}
         </span>
-        {row.id != null && (
+        {row.id != null && !isAttestationRefused(row) && (
           <div className="scorecard__row-actions">
             {row.observed !== true && (
               <button

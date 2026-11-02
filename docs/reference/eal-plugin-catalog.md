@@ -1,5 +1,8 @@
 # EAL (Emulated Attack Layer) Simulator — Plugin Catalog & Reference
 
+> **Count update (2026-10-27):** the tree ships **27 EAL plugins** (ground truth, unchanged on 2026-10-28), including `ngfw_threat_emitter`;
+> the tables below predate that and are not regenerated here.
+>
 > **Status:** canonical reference, generated 2026-06-07 from a full read of
 > `core/eal_simulator/`, `core/eal_simulator/plugins/`, `core/api/eal.py`,
 > `tests/eal_simulator/`, and `docs/eal-simulator/`.
@@ -247,7 +250,7 @@ emitted by the executor itself: `campaign_started`, `campaign_refused`,
 
 ---
 
-## 2. Plugin catalog (all 14 plugins)
+## 2. Plugin catalog (partial: the table below lists 14 and `ngfw_threat_emitter`; the registry holds 27)
 
 Plugins fall into three implementation families:
 - **In-process HTTP emitters** (httpx): c2_http_beacon, bulk_https_exfil,
@@ -270,11 +273,12 @@ Plugins fall into three implementation families:
 | 7 | `ssh_egress` | NDR | Outbound SSH banner (RFC-4253) + synthesised `SSH_MSG_KEXINIT` pseudo-frame; stops before key exchange | `target_host:target_port` (default 22) | T1021.004, T1572 | `plugins/ssh_egress.py` |
 | 8 | `idp_signin_emulator` | ITDR | Synthetic IdP audit events (Okta/Microsoft Entra/Google shape) POSTed to a collector; 5 behavioural presets | operator `collector_url` | T1110.003, T1110.004, T1078.004, T1556.006, T1539 | `plugins/idp_signin_emulator.py` |
 | 9 | `oauth_grant_emulator` | Cloud App / CASB | Outbound OAuth 2.0 authorize GETs with planted risky scopes + bogus client_id | Okta/Microsoft/Google authorize endpoint | T1550.001, T1528, T1078.004, T1098 | `plugins/oauth_grant_emulator.py` |
-| 10 | `llm_provider_egress` | AI Access | Authentic-shape POSTs to OpenAI/Anthropic/Gemini carrying planted DLP markers (PII/secret/source/jailbreak), optional size padding | provider API host | T1567, T1041, T1552 | `plugins/llm_provider_egress.py` |
+| 10 | `llm_provider_egress` | AI Access | Authentic-shape POSTs to OpenAI/Anthropic/Gemini/DeepSeek/OpenRouter carrying planted DLP markers (PII/secret/source/jailbreak), optional size padding | provider API host | T1567, T1041, T1552 | `plugins/llm_provider_egress.py` |
 | 11 | `airs_prompt_attack` | AIRS | Shells out to `cortex-prompt-attacker`; Probe→Mutator→Target→Scorer pipeline against a vulnerable LLM; JSONL→ECS | `target_url` (the AIRS target) | T1656, T1059, T1499 | `plugins/airs_prompt_attack.py` |
 | 12 | `browser_attack_runner` | BROWSER (Prisma) | Shells out to `cortex-browser-attacker` (Playwright/Chromium/Prisma); YAML-declared browser actions; JSONL→ECS | `allowlist_host` (browser navigates) | T1552, T1189, T1176, T1567, T1113 | `plugins/browser_attack_runner.py` |
 | 13 | `agentic_egress` | KOI (supply-chain) | Tarballs an in-tree malicious-agentic-pack component and POSTs it (pypi_mirror does GET-probe + POST) | staging `target_url` | T1195, T1195.002, T1176, T1059 | `plugins/agentic_egress.py` |
 | 14 | `email_emitter` | EMAIL | Synthetic email-security events (Proofpoint TAP `proofpoint_tap_raw` + Microsoft 365 `msft_o365` shape) POSTed to a collector; 4 patterns (phishing_link, malicious_attachment, bec_impersonation, thread_hijack); ITDR-emulator pattern | operator `collector_url` | T1566.001, T1566.002, T1656, T1534, T1598 | `plugins/email_emitter.py` |
+| 27 | `ngfw_threat_emitter` | NDR / Analytics | Synthetic PAN-OS THREAT log: WildFire verdict for an operator-named SHA-256 (`wildfire_malicious_file`) or an inbound web-application exploit attempt from a public source (`vulnerability_inbound`); `action` restricted to `alert`/`allow`, never a block | operator `collector_url` | T1204.002, T1105, T1190 | `plugins/ngfw_threat_emitter.py` |
 
 > The summary table now lists **14 plugin classes**: c2, dns, stratum, smb, bulk,
 > ftp, ssh, idp, oauth, llm, airs, browser, agentic, **email_emitter** (added in
@@ -582,8 +586,9 @@ OAuth client secrets are ever used.**
 #### 10. `llm_provider_egress` (AI Access Security)
 
 **Attack shape.** Authentic-shape POSTs to OpenAI (`/v1/chat/completions`),
-Anthropic (`/v1/messages`), or Gemini (`/v1beta/.../generateContent?key=`)
-carrying a planted DLP payload. Provider 401/403's on the fake key; detection is
+Anthropic (`/v1/messages`), Gemini (`/v1beta/.../generateContent?key=`),
+DeepSeek (`api.deepseek.com/chat/completions`), or OpenRouter
+(`openrouter.ai/api/v1/chat/completions`) carrying a planted DLP payload. Provider 401/403's on the fake key; detection is
 at the proxy on the outbound request.
 
 | `payload_type` | Planted marker |
@@ -603,7 +608,7 @@ provider keys are ever used.**
 
 | Param | Type / default | Bounds |
 |-------|----------------|--------|
-| `provider` | str (required) | openai/anthropic/gemini |
+| `provider` | str (required) | openai/anthropic/gemini/deepseek/openrouter |
 | `payload_type` | str = "benign" | the 5 types |
 | `iterations` | int = 1 | 1–200 |
 | `sleep_seconds` | float = 0.0 | 0–600 |
@@ -760,6 +765,61 @@ Events `agentic_egress_index_probe` (pypi only) + `agentic_egress_artifact_fetch
 > the only consumer). Cosmetic (gap EAL-G13, low).
 
 ---
+
+#### 27. `ngfw_threat_emitter` (NDR / Analytics, added 2026-10-27)
+
+**Attack shape.** One shape-true PAN-OS THREAT log (`subtype: wildfire`) per
+iteration into dataset `panw_ngfw_threat_raw`, naming a file by SHA-256. Lets a
+DC validate WildFire-verdict detections and IOC enrichment on a known-bad
+digest. **Detection only:** `action` accepts `alert` or `allow` (case-insensitive,
+stored lowercase); anything else raises `synthetic threat log may not claim a
+block`, so the plugin can never fabricate proof of prevention.
+
+| Param | Type / default | Notes |
+|-------|----------------|-------|
+| `file_sha256` | str? | `^[a-f0-9]{64}$`, case-insensitive, stored lowercase; required for `wildfire_malicious_file` only |
+| `file_name` | str? | non-empty; required for `wildfire_malicious_file` only |
+| `file_type` | str = `PE` | |
+| `verdict` | str = `malicious` | `malicious` / `grayware` / `benign`; severity `critical` for malicious, else `medium` |
+| `app` | str = `web-browsing` | |
+| `dst_domain` / `dst_ip` | str? | `dst_ip` may stand alone (then `dst_domain`/`url_domain` are `""`); `dst_domain` requires `dst_ip`; override `dst_domain`/`url_domain` and `dst` |
+| `threat_id` | int >= 0 = `0` | `vulnerability_inbound`; 0 marks a synthetic signature |
+| `uri` | str = `/index.php` | `vulnerability_inbound`; carried in `misc` |
+| `victim_ip` / `victim_host` | str? | `vulnerability_inbound`; the record's `dst` (default `10.0.12.34`, dotted quad) and `endpoint_device_name` |
+| `dst_port` | int? 1-65535 | overrides `dst_port` (default 443) |
+| `src_ip` / `src_host` / `src_user` | str? | independent; override `src`, `endpoint_device_name`, `user` |
+| `threat_name` | str? | non-empty when set; overrides `threat_name` (default `Virus/Win32.WGeneric.canary` for malicious, else `wildfire-<verdict>`) |
+| `action` | str = `alert` | `alert` / `allow` only |
+| `event_pattern` | str = `wildfire_malicious_file` | `wildfire_malicious_file` or `vulnerability_inbound` |
+
+`vulnerability_inbound` emits `subtype: vulnerability`, `category: code-execution`,
+`severity: critical`, `direction: client-to-server`, `src` a public address
+(default `198.51.100.23`), untrust-to-trust zones, rule `allow-inbound-web`, and
+`vulnerability_inbound_marker: true`; it carries no `filedigest`/`filename`/
+`filetype`/`verdict`. Second detector: "Vulnerability threat from a publicly
+routed source against a web server" (T1190). `action` stays `alert`/`allow` for
+both patterns.
+
+Supports no negative control. The collector-POST transport, authorisation and
+delivery accounting are the shared `analytics_emitter` spine's.
+
+#### Extensions to analytics streamers not otherwise tabulated (2026-10-28)
+
+`ngfw_eal_emitter` and `globalprotect_emitter` have no row in §2.1 (the table is
+partial); their additions are recorded here. No plugin-count change (27).
+
+- **`ngfw_eal_emitter`** — `dst_ip` may now be set without `dst_domain` (then
+  `dst_hostname` and `url_domain` are `""`); `dst_domain` without `dst_ip` raises
+  `dst_domain requires dst_ip`. New optional overrides applied to every record:
+  `process_name` (non-empty), `dst_port` (1-65535), `app` (non-empty).
+- **`globalprotect_emitter`** — new `event_pattern` `gateway_connected_without_auth`
+  (marker `gateway_connected_without_auth_marker`, T1556): one `gateway-connected`
+  success with `auth_method: auth-cookie` and `preceding_auth_event: NONE`. The
+  negative control emits a `portal-auth` success (same user and `public_ip`, 60 s
+  earlier) then the same record with `preceding_auth_event: portal-auth`. New
+  params: `public_ip` (default far documentation IP), `private_ip` (default random
+  `10.20.0.x`), `machine_name` (`DESKTOP-CORTEXSIM`), `endpoint_mac`
+  (`02:00:00:00:00:07`).
 
 ## 3. Safety model — exhaustive
 

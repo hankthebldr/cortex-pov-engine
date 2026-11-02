@@ -23,7 +23,8 @@ import { causalityStepStates } from './composerLayout.js'
 import ComposerCanvas from './ComposerCanvas.jsx'
 import ComposerInspector from './ComposerInspector.jsx'
 import ComposerPalette from './ComposerPalette.jsx'
-import ExecutionTimeline from './ExecutionTimeline.jsx'
+import ConfirmDialog from './ConfirmDialog.jsx'
+import { reparentOnDelete } from './composerGraph.js'
 import {
   addDetection,
   appendStep,
@@ -35,7 +36,6 @@ import {
   draftFromScenario,
   draftSnapshot,
   draftToApi,
-  duplicateStep,
   editStep,
   emitDraftYaml,
   emptyDraft,
@@ -45,13 +45,13 @@ import {
   PIVOTS,
   PLANES,
   removeDetection,
-  removeStep,
   setCausalityParent,
   setNodePosition,
   setStepLane,
   setStepChannel,
   setStepEal,
   setStepTarget,
+  spineProblems,
   validateDraft,
 } from './composerDraft.js'
 import { topologicallySortSteps } from './composerSpine.js'
@@ -100,6 +100,26 @@ import { setEntity, stitchInsertToken } from './stitchContext.js'
  * suite (`ComposerInspector.test.jsx`) still exercises every editable branch.
  */
 
+/**
+ * Whether a media query matches, tracking changes. jsdom has no matchMedia,
+ * so it reads false there (the wide layout), never throws.
+ */
+function useMediaQuery(query) {
+  const read = () => (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(query).matches
+    : false)
+  const [matches, setMatches] = useState(read)
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+    const mql = window.matchMedia(query)
+    const sync = () => setMatches(mql.matches)
+    sync()
+    mql.addEventListener?.('change', sync)
+    return () => mql.removeEventListener?.('change', sync)
+  }, [query])
+  return matches
+}
+
 const WS_TABS = [
   ['payload', 'Payload plan'],
   ['preflight', 'Preflight'],
@@ -118,7 +138,9 @@ const PALETTE_TABS = [
   { id: 'endpoint', label: 'Endpoint' },
 ]
 
-export default function ComposerView({ params = {}, setParams = () => {}, onNavigate = () => {} }) {
+export default function ComposerView({
+  params = {}, setParams = () => {}, onNavigate = () => {}, onExit = null,
+}) {
   const env = useEnvironment()
   const shelf = useShelf({ adapters: [] })
 
@@ -148,12 +170,29 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const [lens, setLens] = useState('design')              // 'design' | 'run'
   const [wsTab, setWsTab] = useState('payload')
   const [wsOpen, setWsOpen] = useState(false)
-  const [panelsHidden, setPanelsHidden] = useState(false)
   const [benchQuery, setBenchQuery] = useState('')
   const [paletteTab, setPaletteTab] = useState('build')
   const [notice, setNotice] = useState(null)
   // Design-lens stitch overlay is off by default (intent, not outcome).
   const [showStitch, setShowStitch] = useState(false)
+
+  // Composer-mode drawer state. In full-screen mode the palette (node creator)
+  // and the inspector are overlay drawers on the canvas, not grid columns, so
+  // the graph owns the whole stage. Palette opens by default (it is how you add
+  // nodes); the inspector opens when a step is selected.
+  // Both drawers start CLOSED: in composer mode the graph owns the stage. The
+  // palette opens from `＋ Add`; the inspector opens from its tab, or by itself
+  // when a step is selected or the workflow meta is opened,
+  // and with nothing selected it carries the scenario teardown + the way into
+  // the workflow meta (`NoSelectionAside`).
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [inspectorOpen, setInspectorOpen] = useState(false)
+  // Exit-confirm when leaving mode with unsaved edits, and the "Esc again to
+  // exit" arming flag (a single Esc must never throw away an unsaved chain).
+  // One confirm for every gesture that would discard unsaved work (leaving the
+  // mode, opening another scenario over the chain): {title, body, confirmLabel,
+  // onConfirm} or null.
+  const [pendingConfirm, setPendingConfirm] = useState(null)
 
   // ── Draft persistence ──────────────────────────────────────────────────────
   const [savedScenarioId, setSavedScenarioId] = useState(null)
@@ -243,11 +282,26 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
 
   // A draft has diverged from what SimCore holds (the corpus origin) when its
   // step set differs — length, id order, or a hand-authored step.
+  //
+  // Diverged means "what would EXECUTE differs" — not just the step id list.
+  // The id-only check missed every in-place edit (a pivot, a command, a
+  // detection, a channel, a re-parent), and an un-edited draft launches the
+  // ORIGIN corpus row: so a DC could change a relationship on the canvas, hit
+  // Launch, and run something other than what is on screen. Composer mode makes
+  // those edits one click away (the edge pivot chip, Delete, reconnect), so the
+  // comparison is the launch-relevant snapshot, minus pure presentation
+  // (`layout`, `laneOverrides`): dragging a card never forces a draft save.
   const edited = useMemo(() => {
     if (!origin) return steps.length > 0
-    if (steps.length !== origin.steps.length) return true
-    return steps.some((s, i) => s.id !== origin.steps[i]?.id || s.authored)
-  }, [origin, steps])
+    if (steps.some((s) => s.authored)) return true
+    const runShape = (d) => {
+      const snap = draftSnapshot(d)
+      if (!snap) return snap
+      const { layout: _l, laneOverrides: _lo, ...rest } = snap
+      return rest
+    }
+    return JSON.stringify(runShape(draft)) !== JSON.stringify(runShape(origin))
+  }, [origin, steps, draft])
 
   // Has the canvas drifted from the last successful save? A null snapshot is
   // dirty by definition (an unsaved draft), which is exactly what the launch
@@ -256,6 +310,14 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     () => isDraftDirty(draftSnapshot(draft), savedSnapshot),
     [draft, savedSnapshot],
   )
+
+  // What leaving would actually lose. Before any save `dirty` is ALWAYS true
+  // (a null snapshot), so it cannot be the test — an untouched library
+  // scenario was told "This chain has unsaved edits". Before a save it is
+  // `edited`; once a row exists (saved, or loaded) it is drift from that row.
+  const unsaved = savedSnapshot ? dirty : edited
+  const unsavedRef = React.useRef(unsaved)
+  unsavedRef.current = unsaved
 
   const tenantName = env.tenant ? (env.tenant.name || env.tenant.id) : null
   const agentName = env.agent ? (env.agent.hostname || agentIdOf(env.agent)) : null
@@ -283,7 +345,11 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   // "running"). `runIdOf()` reads run_id/id, so calling it on env.activeRun
   // as before always resolved to null — the "prefer the live run" branch was
   // dead code even before scoping, not merely unscoped.
-  const scenarioId = draft.originId || null
+  //
+  // Once the chain is saved as a draft row it launches AS that row, so its
+  // runs belong to the row's id — showing the origin corpus scenario's runs
+  // there would paint another chain's verdicts on these cards.
+  const scenarioId = savedScenarioId || draft.originId || null
 
   const scopedRun = useMemo(() => {
     if (!scenarioId) return null
@@ -346,12 +412,39 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     () => causalityStepStates(causalityGraph),
     [causalityGraph],
   )
+  // A card may only wear a run's verdict if that step is the step that RAN.
+  // States are keyed by step id, so an edited step (new command, new pivot)
+  // or a new step would otherwise show the old run's CONFIRMED for something
+  // that never executed. Those cards read NOT_RUN instead. With no run graph
+  // at all every card stays EXPECTED, as before.
+  const shownRunStates = useMemo(() => {
+    if (!causalityGraph) return causalityStates
+    const shape = (s) => JSON.stringify(draftSnapshot({ steps: [s] }).steps[0])
+    // What ran: the saved row once there is one (runs are scoped to it, see
+    // `scenarioId`), else the origin scenario.
+    const ran = new Map(
+      savedScenarioId && savedSnapshot
+        ? savedSnapshot.steps.map((ss) => [ss.id, JSON.stringify(ss)])
+        : (origin?.steps || []).map((s) => [s.id, shape(s)]),
+    )
+    const out = {}
+    for (const s of steps) {
+      out[s.id] = ran.get(s.id) === shape(s)
+        ? (causalityStates[s.id] || { state: 'EXPECTED' })
+        : { state: 'NOT_RUN' }
+    }
+    return out
+  }, [causalityGraph, causalityStates, origin, steps, savedScenarioId, savedSnapshot])
 
   // ── Launch (the existing path, against the SAVED row when edited) ────────────
-  // For an unedited chain we launch the corpus origin directly. For an edited
-  // chain we launch the persisted draft row — SimCore runs the SAVED steps, and
-  // the button refuses until they have been saved.
-  const launchTarget = edited ? savedDetail : originDetail
+  // An unedited corpus scenario launches the corpus row directly. Anything else
+  // launches a SAVED draft row — an edited chain, or a draft that was loaded or
+  // saved here — because SimCore runs the saved steps, never the canvas. A
+  // loaded draft that was saved and then edited BACK to its load-time shape is
+  // not "unedited": its row now holds the later save, so it must go this way
+  // too, or Launch would run the save while the canvas shows the original.
+  const viaSavedRow = edited || !!savedScenarioId
+  const launchTarget = viaSavedRow ? savedDetail : originDetail
   const launch = useLaunchScenario(launchTarget, {
     onRunComplete: (run) => {
       env.refreshRuns()
@@ -454,17 +547,59 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   // Declared BEFORE the palette memo that calls it: `const` bindings are in the
   // temporal dead zone until their initializer runs, and useMemo runs its
   // factory synchronously during render.
+  // `+ Add step` / a click on a palette step kind EXTENDS the chain, the way a
+  // node editor appends after the selected node: the new step is parented to
+  // the selected step, else to the last leaf. That keeps a declared spine at one
+  // root by default — an unparented append was a second root, which the loader
+  // rejects at save. Two cases stay free: an empty chain (the new step IS the
+  // root) and a legacy star with no declared causality and several roots, where
+  // linking would itself make every other root off-chain.
+  const selectedRef = React.useRef(selectedId)
+  selectedRef.current = selectedId
+  // Latest-state refs for handlers React Flow can call several times in ONE
+  // tick (a multi-card lane drop calls onLaneChange once per card): reading the
+  // render-time `draft` there made the second call overwrite the first.
+  const draftRef = React.useRef(draft)
+  draftRef.current = draft
+  const stepsRef = React.useRef(steps)
+  stepsRef.current = steps
+  // Every step id used this session, plus every id the origin had. A deleted
+  // id is never minted again, so a new step cannot inherit the deleted one's
+  // stored position, lane override or — in the Run lens — its recorded state.
+  const seenIdsRef = React.useRef(new Set())
+  for (const s of steps) seenIdsRef.current.add(s.id)
+  if (origin) for (const s of origin.steps) seenIdsRef.current.add(s.id)
+  const freshId = useCallback((list) => nextStepId(list, seenIdsRef.current), [])
   const addBlank = useCallback((name) => {
     setSteps((prev) => {
-      const id = nextStepId(prev)
-      const next = appendStep(prev, blankStep(id, { name }))
+      const id = freshId(prev)
+      let next = appendStep(prev, blankStep(id, { name }))
+      const ids = new Set(prev.map((s) => s.id))
+      const declared = prev.some((s) => s.causalityParent && ids.has(s.causalityParent))
+      if (prev.length === 1 || declared) {
+        const parented = new Set(prev.map((s) => s.causalityParent).filter(Boolean))
+        const leaves = prev.filter((s) => !parented.has(s.id))
+        const parent = ids.has(selectedRef.current)
+          ? selectedRef.current
+          : (leaves[leaves.length - 1] || prev[prev.length - 1]).id
+        next = topologicallySortSteps(
+          setCausalityParent(next, id, parent, 'process_lineage', { skipOrderCheck: true }),
+        )
+      }
       setSelectedId(id)
       return next
     })
-  }, [])
+  }, [freshId])
 
   // ── Step & meta edit callbacks (all immutable, via composerDraft ops) ────────
-  const onSelect = useCallback((id) => { setSelectedId(id); setMetaOpen(false) }, [])
+  // Selecting a step always shows its config — including re-clicking the step
+  // that is already selected after the drawer was closed (the effect below only
+  // fires when the selection CHANGES).
+  const onSelect = useCallback((id) => {
+    setSelectedId(id)
+    setMetaOpen(false)
+    if (id) setInspectorOpen(true)
+  }, [])
   const onEditStep = useCallback((id, patch) => setSteps((p) => editStep(p, id, patch)), [])
   const onAddDetection = useCallback((id, det) => setSteps((p) => addDetection(p, id, det)), [])
   const onRemoveDetection = useCallback((id, i) => setSteps((p) => removeDetection(p, id, i)), [])
@@ -547,12 +682,17 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     // Compute once from the MERGED draft, then write each half to the state
     // that owns it. Calling setSteps inside a setDraftMeta updater would be a
     // side effect inside an updater — StrictMode double-invokes those, and the
-    // second call would see steps it had already replaced.
-    const next = setStepLane(draft, stepId, lane)
-    if (next === draft) return
-    if (next.steps !== steps) setSteps(next.steps)
+    // second call would see steps it had already replaced. Read the LATEST
+    // draft through the ref and advance it immediately, so a second card in
+    // the same multi-card drop builds on this one instead of erasing it.
+    const cur = draftRef.current
+    const next = setStepLane(cur, stepId, lane)
+    if (next === cur) return
+    draftRef.current = next
+    stepsRef.current = next.steps
+    if (next.steps !== cur.steps) setSteps(next.steps)
     setDraftMeta((m) => ({ ...m, laneOverrides: next.laneOverrides }))
-  }, [draft, steps])
+  }, [])
 
   // computed layout. Same overlay shape as `onNodeMoved` above — writing
   // `layout: null` into the `draftMeta` overlay is enough on its own
@@ -561,15 +701,116 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
   const onClearLayout = useCallback(() => {
     setDraftMeta((m) => clearLayout(m))
   }, [])
-  const onMoveStep = useCallback((index, delta) => setSteps((p) => moveStep(p, index, delta)), [])
-  const onDuplicateStep = useCallback((index) => setSteps((p) => duplicateStep(p, index)), [])
-  const onRemoveStep = useCallback((index) => setSteps((p) => removeStep(p, index)), [])
+  // Card ↑/↓. Siblings reorder freely; a move that would put a step before its
+  // own parent is refused, with the reason, because the loader rejects that
+  // array ("must be an EARLIER step") and the canvas must not author it.
+  const onMoveStep = useCallback((index, delta) => {
+    const prev = stepsRef.current
+    const next = moveStep(prev, index, delta)
+    if (next === prev) return
+    const before = new Set(spineProblems(prev).forwardRefs || [])
+    const broken = (spineProblems(next).forwardRefs || []).filter((id) => !before.has(id))
+    if (broken.length) {
+      const child = next.find((s) => s.id === broken[0])
+      say(`${broken[0]} can't run before its parent ${child?.causalityParent} — re-link it on the canvas instead.`)
+      return
+    }
+    stepsRef.current = next
+    setSteps(next)
+  }, [say])
+  const onDuplicateStep = useCallback((index) => setSteps((p) => {
+    if (index < 0 || index >= p.length) return p
+    const out = p.slice()
+    out.splice(index + 1, 0, { ...p[index], id: freshId(p), authored: true })
+    return out
+  }), [freshId])
   // Phase-3a channel routing. NOTE the distinction from the launch target:
   // `env.setAgent` + the palette 'Targets' group set the single-agent LAUNCH
   // target; `onSetTarget` here is the per-step SECOND-endpoint case (step.target).
   const onSetChannel = useCallback((id, ch) => setSteps((p) => setStepChannel(p, id, ch)), [])
   const onSetTarget = useCallback((id, t) => setSteps((p) => setStepTarget(p, id, t)), [])
   const onSetEal = useCallback((id, patch) => setSteps((p) => setStepEal(p, id, patch)), [])
+
+  // ── Graph-edit handlers (Composer mode) ──────────────────────────────────────
+  // ONE delete for every gesture — the card's × tool, Delete/Backspace on the
+  // canvas, a multi-select — so two ways of deleting the same card cannot give
+  // two different chains (the × tool used to filter the step out and leave its
+  // children pointing at a parent that no longer exists). The step's children
+  // re-attach to its parent (`reparentOnDelete`), the selection clears, and its
+  // stored position and lane override go with it.
+  const onDeleteStepId = useCallback((id) => {
+    setSteps((p) => reparentOnDelete(p, id))
+    setSelectedId((cur) => (cur === id ? null : cur))
+    setDraftMeta((m) => {
+      let out = m
+      for (const key of ['layout', 'laneOverrides']) {
+        const cur = m[key] !== undefined ? m[key] : (origin?.[key] ?? null)
+        if (cur && Object.prototype.hasOwnProperty.call(cur, id)) {
+          const { [id]: _gone, ...rest } = cur
+          out = { ...out, [key]: Object.keys(rest).length ? rest : null }
+        }
+      }
+      return out
+    })
+  }, [origin])
+  const onRemoveStep = useCallback((index) => {
+    const id = stepsRef.current[index]?.id
+    if (id) onDeleteStepId(id)
+  }, [onDeleteStepId])
+  // Delete a causality EDGE — the child loses its parent and becomes a root
+  // hanging off the CGO (allowed; the single-root rule is enforced at connect).
+  const onEdgeDelete = useCallback((childId) => {
+    setSteps((p) => setCausalityParent(p, childId, null))
+  }, [])
+  // Reconnect an edge's target end to a new parent (drag the arrowhead).
+  const onReparent = useCallback((childId, parentId) => {
+    setSteps((p) => {
+      const cur = p.find((s) => s.id === childId)
+      const pivot = cur?.causalityPivot || 'process_lineage'
+      return topologicallySortSteps(
+        setCausalityParent(p, childId, parentId, pivot, { skipOrderCheck: true }),
+      )
+    })
+  }, [])
+  // Change a causality edge's pivot (the pivot chip on the edge). Announced,
+  // because the chip's own text changes silently for a screen reader.
+  const onSetPivot = useCallback((childId, pivot) => {
+    setSteps((p) => {
+      const cur = p.find((s) => s.id === childId)
+      if (!cur || !cur.causalityParent) return p
+      return setCausalityParent(p, childId, cur.causalityParent, pivot, { skipOrderCheck: true })
+    })
+    say(`${childId} pivot: ${pivot}`)
+  }, [say])
+  // Create a blank step at a canvas position, optionally parented — the engine
+  // behind drop-to-create (releasing a connection on empty canvas) and
+  // palette drag-and-drop.
+  const addBlankAt = useCallback((name, position, parentId = null) => {
+    // Mint the id ONCE against the current steps so the position write below
+    // targets the same node the step append creates (nextStepId is deterministic
+    // for a given array, but computing it twice invites drift).
+    const id = freshId(stepsRef.current)
+    setSteps((prev) => {
+      let next = appendStep(prev, blankStep(id, { name }))
+      if (parentId) {
+        next = topologicallySortSteps(
+          setCausalityParent(next, id, parentId, 'process_lineage', { skipOrderCheck: true }),
+        )
+      }
+      return next
+    })
+    setSelectedId(id)
+    setInspectorOpen(true)
+    if (position && typeof position.x === 'number') {
+      setDraftMeta((m) => {
+        const curLayout = m.layout !== undefined ? m.layout : (origin?.layout ?? null)
+        return setNodePosition({ ...m, layout: curLayout }, id, position.x, position.y)
+      })
+    }
+  }, [origin, freshId])
+  const onDropCreate = useCallback(({ position, parentId }) => {
+    addBlankAt('New command step', position, parentId)
+  }, [addBlankAt])
 
   // ── Palette groups (every group API-sourced, never hardcoded content) ────────
   const paletteGroups = useMemo(() => {
@@ -599,7 +840,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           meta: s.name || s.plane || '',
           // Opening a scenario REPLACES the draft rather than appending its
           // steps: two chains spliced together share no causality spine.
-          add: () => setParams({ from: id }, { replace: true }),
+          add: () => openScenarioRef.current(id),
         }
       }),
     })
@@ -617,7 +858,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           // Append a step already bound to this card's detection — the path
           // that satisfies the launch gate (a bound step is not a gap).
           add: () => setSteps((prev) => {
-            const stepId = nextStepId(prev)
+            const stepId = freshId(prev)
             const withStep = appendStep(prev, blankStep(stepId, {
               name: t.name || id,
               technique: t.mitre_technique || null,
@@ -673,29 +914,79 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     })
 
     return groups
-  }, [env.scenarios, env.agents, env.setAgent, ttps, adapters, shelf.shelf, addBlank, setParams, onNavigate, say])
+  }, [env.scenarios, env.agents, env.setAgent, ttps, adapters, shelf.shelf, addBlank, freshId, onNavigate, say])
+
+  // A dropped palette item resolves by its key prefix. Step- and TTP-creating
+  // items place a node at the drop point; the rest reuse their click action
+  // (navigate / set the launch agent), since they are not free-standing nodes.
+  const onCanvasDrop = useCallback((key, position) => {
+    if (!key) return
+    if (key === 'k-command') return addBlankAt('New command step', position)
+    if (key === 'k-wait') return addBlankAt('Wait', position)
+    if (key.startsWith('s-')) return openScenarioRef.current(key.slice(2))
+    if (key.startsWith('t-')) {
+      const ttpId = key.slice(2)
+      const card = ttps.find((t) => (t.ttp_id || t.id) === ttpId)
+      if (!card) return undefined
+      const id = freshId(stepsRef.current)
+      setSteps((prev) => {
+        const withStep = appendStep(prev, blankStep(id, {
+          name: card.name || ttpId, technique: card.mitre_technique || null,
+        }))
+        return bindTtpDetection(withStep, id, card)
+      })
+      setSelectedId(id)
+      setInspectorOpen(true)
+      if (position && typeof position.x === 'number') {
+        setDraftMeta((m) => {
+          const curLayout = m.layout !== undefined ? m.layout : (origin?.layout ?? null)
+          return setNodePosition({ ...m, layout: curLayout }, id, position.x, position.y)
+        })
+      }
+      return undefined
+    }
+    if (key.startsWith('ad-')) return onNavigate('adapters', { open: key.slice(3) })
+    if (key.startsWith('a-')) {
+      const id = key.slice(2)
+      const a = env.agents.find((x) => agentIdOf(x) === id)
+      env.setAgent(id); say(`Agent: ${a?.hostname || id}`)
+      return undefined
+    }
+    if (key.startsWith('p-')) return onNavigate('adapters')
+    return undefined
+  }, [addBlankAt, ttps, freshId, origin, onNavigate, env.agents, env.setAgent, say])
 
   // ── Launch button state ──────────────────────────────────────────────────────
+  // The client validation gates a saved-row launch as well as the server's
+  // verdict: the server's chain check accepts the placeholder command, so a
+  // step still reading "# configure the command for this step" would run a
+  // shell comment and report its expected detection as missed — a false
+  // negative manufactured by the tool — while the pill says "Chain incomplete".
   const launchDisabled =
     launch.launching || saving || !launchTarget
       || (!preflighted
         ? true
-        : edited
-          ? (dirty || !savedLaunchable?.launchable)
+        : viaSavedRow
+          ? (dirty || !savedLaunchable?.launchable || !validation.ok)
           : launch.launchDisabled)
 
   const launchTitle = () => {
-    if (edited && (dirty || !savedScenarioId)) {
+    if (viaSavedRow && (dirty || !savedScenarioId)) {
       return 'Save the draft before launching — SimCore runs the SAVED chain, not the canvas edits.'
     }
-    if (edited && savedScenarioId && savedLaunchable && !savedLaunchable.tc_bound) {
+    if (viaSavedRow && !validation.ok) {
+      return `Not launchable: ${validation.problems[0]}`
+    }
+    if (viaSavedRow && savedScenarioId && savedLaunchable && !savedLaunchable.tc_bound) {
       return savedLaunchable.reasons?.join(' ') || 'Not launchable: bind tc_ref to a real FY27 index test case.'
     }
-    if (edited && savedScenarioId && savedLaunchable && !savedLaunchable.chain_valid) {
+    if (viaSavedRow && savedScenarioId && savedLaunchable && !savedLaunchable.chain_valid) {
       return savedLaunchable.reasons?.join(' ') || 'Not launchable: the chain is incomplete.'
     }
     if (!preflighted) return 'Run preflight first'
-    return `Launch ${draft.originId || savedScenarioId || 'draft'} on ${agentName || 'the selected agent'}`
+    // Name what the click will actually run — the saved row after an edit.
+    const what = launchTarget?.scenario_id || draft.originId || savedScenarioId || 'draft'
+    return `Launch ${what} on ${agentName || 'the selected agent'}`
   }
 
   const yamlText = useMemo(
@@ -703,13 +994,151 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
     [draft, tenantName, agentName],
   )
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  const showPanels = !panelsHidden
+  // ── Exit the mode (guarded on unsaved edits) ─────────────────────────────────
+  const attemptExit = useCallback(() => {
+    if (!onExit) return
+    if (unsavedRef.current && stepsRef.current.length) {
+      setPendingConfirm({
+        title: 'Leave the Composer?',
+        body: 'This chain has unsaved edits. Leaving the Composer discards them — save the draft first to keep them. (SimCore only ever runs a saved chain, never the canvas.)',
+        confirmLabel: 'Discard and leave',
+        onConfirm: onExit,
+      })
+    } else {
+      onExit()
+    }
+  }, [onExit])
+
+  // Opening a library scenario REPLACES the chain on the canvas (two chains
+  // spliced together share no spine), so with unsaved edits it asks first, the
+  // same way leaving the mode does.
+  const openScenario = useCallback((id) => {
+    const go = () => setParams({ from: id }, { replace: true })
+    if (unsavedRef.current && stepsRef.current.length) {
+      setPendingConfirm({
+        title: 'Replace this chain?',
+        body: `Opening ${id} replaces the chain on the canvas and discards its unsaved edits.`,
+        confirmLabel: 'Discard and open',
+        onConfirm: go,
+      })
+    } else {
+      go()
+    }
+  }, [setParams])
+  const openScenarioRef = React.useRef(openScenario)
+  openScenarioRef.current = openScenario
+
+  // Escape cascade: peel one layer per press, and NEVER exit on a single Esc
+  // (a stray key must not discard an unsaved chain). A window bubble-phase
+  // listener runs after every document listener, so `e.defaultPrevented` means
+  // an overlay (⌘K palette, a dialog) already consumed the key — AppShell now
+  // only preventDefaults Escape when it actually closed the palette/help.
+  // The "again" window is as long as the hint is on screen (a screen reader
+  // takes ~2s to speak it); when the window closes, so does the hint.
+  const ESC_HINT = 'Press Esc again to exit the Composer'
+  const escArmedRef = React.useRef(false)
+  const escTimerRef = React.useRef(null)
+  useEffect(() => () => clearTimeout(escTimerRef.current), [])
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return
+      const t = e.target
+      const tag = t && t.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+        || (t && t.isContentEditable)) { t.blur(); return }
+      if (pendingConfirm) return
+      if (inspectorOpen) { closeInspector(); return }
+      if (selectedId) { setSelectedId(null); return }
+      if (paletteOpen) { closePalette(); return }
+      if (!onExit) return
+      if (escArmedRef.current) {
+        escArmedRef.current = false
+        clearTimeout(escTimerRef.current)
+        setNotice((n) => (n === ESC_HINT ? null : n))
+        attemptExit()
+        return
+      }
+      escArmedRef.current = true
+      say(ESC_HINT)
+      clearTimeout(escTimerRef.current)
+      escTimerRef.current = setTimeout(() => {
+        escArmedRef.current = false
+        setNotice((n) => (n === ESC_HINT ? null : n))
+      }, 3000)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // closePalette/closeInspector are stable (useCallback below, no deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingConfirm, inspectorOpen, selectedId, paletteOpen, onExit, attemptExit, say])
+
+  // ── Drawers ─────────────────────────────────────────────────────────────────
+  // Opening a drawer from its tab moves keyboard focus INTO it; closing returns
+  // focus to the tab that opens it again. Without this the activated button
+  // unmounted and focus fell to <body> — a keyboard user was lost, and nothing
+  // was announced. (A drawer opened by SELECTING a step does not steal focus
+  // from the canvas: Delete there must still reach the selected card.)
+  const focusNextRef = React.useRef(null)
+  useEffect(() => {
+    const sel = focusNextRef.current
+    if (!sel) return
+    focusNextRef.current = null
+    const el = document.querySelector(sel)
+    if (el && typeof el.focus === 'function') el.focus()
+  })
+  const openPalette = useCallback(() => {
+    focusNextRef.current = '.composer-mode__drawer--left .composer-bench__filter'
+    setPaletteOpen(true)
+  }, [])
+  const closePalette = useCallback(() => {
+    focusNextRef.current = '.composer-mode__reopen--left'
+    setPaletteOpen(false)
+  }, [])
+  const openInspector = useCallback(() => {
+    focusNextRef.current = '.composer-mode__drawer--right .composer-mode__drawer-title'
+    setInspectorOpen(true)
+  }, [])
+  const closeInspector = useCallback(() => {
+    focusNextRef.current = '.composer-mode__reopen--right'
+    setInspectorOpen(false)
+  }, [])
+
+  // The pixels of the stage the overlay drawers and the dock cover, so a Fit
+  // frames the graph in the VISIBLE region. Must agree with composer.css:
+  // drawers 300px / 360px (248px / 300px at <= 1100px) plus 12px gutters,
+  // and the ~48px dock tab row.
+  const narrow = useMediaQuery('(max-width: 1100px)')
+  const viewInsets = useMemo(() => ({
+    top: 24,
+    left: paletteOpen ? (narrow ? 260 : 312) : 0,
+    right: inspectorOpen ? (narrow ? 312 : 372) : 0,
+    bottom: 48,
+  }), [paletteOpen, inspectorOpen, narrow])
+
+  // Open the inspector drawer whenever a step becomes selected (and the DC has
+  // not explicitly closed it this selection). Closing it is a one-press Esc or
+  // the drawer's own ✕; re-selecting re-opens.
+  useEffect(() => {
+    if (selectedId || metaOpen) setInspectorOpen(true)
+  }, [selectedId, metaOpen])
+
+  // ── Render ─────────────────────────────────────────────
 
   return (
-    <div className="composer" data-testid="composer-view">
-      {/* ── Title row ── */}
-      <div className="composer__head">
+    <div className="composer composer--mode" data-testid="composer-view">
+      {/* ── Workflow bar (the only chrome above the full-bleed canvas) ── */}
+      <div className="composer__head composer-mode__bar">
+        {onExit && (
+          <button
+            type="button"
+            className="btn btn--xs composer-mode__exit"
+            data-testid="composer-exit"
+            onClick={attemptExit}
+            title="Leave the Composer (or press Esc twice)"
+          >
+            ← Exit
+          </button>
+        )}
         <span className="composer__accent" aria-hidden="true" />
         <div className="composer__title-block">
           <h1 className="composer__title">Simulation Composer</h1>
@@ -727,7 +1156,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
                 <span className="composer__meta">
                   · {validation.counts.steps} steps · {validation.counts.techniques} techniques
                   {savedScenarioId && <span className="composer__saved"> · saved {savedScenarioId}</span>}
-                  {edited && dirty && <strong className="composer__edited"> · unsaved edits</strong>}
+                  {unsaved && steps.length > 0 && <strong className="composer__edited"> · unsaved edits</strong>}
                 </span>
               </>
             ) : (
@@ -850,20 +1279,9 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
         {notice || ''}
       </div>
 
-      {/* ── palette · canvas · inspector ── */}
-      <div className={'composer__grid' + (showPanels ? '' : ' composer__grid--solo')}>
-        {showPanels && (
-          <ComposerPalette
-            tabs={PALETTE_TABS}
-            activeTab={paletteTab}
-            onTab={setPaletteTab}
-            groups={paletteGroups}
-            query={benchQuery}
-            onQuery={setBenchQuery}
-            loading={shelf.loading}
-          />
-        )}
-
+      {/* ── Stage: the full-bleed canvas, with the palette and inspector as
+          overlay drawers on top of it rather than grid columns beside it ── */}
+      <div className="composer-mode__stage">
         <ComposerCanvas
           draft={draft}
           steps={steps}
@@ -875,7 +1293,7 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           onSelect={onSelect}
           validation={validation}
           causalityGraph={causalityGraph}
-          causalityStates={causalityStates}
+          causalityStates={shownRunStates}
           activeRun={canonicalActiveRun}
           hasRun={!!activeRunId}
           originError={originError}
@@ -891,6 +1309,12 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           onLaneChange={onLaneChange}
           laneOverrides={draft.laneOverrides}
           onConnectSteps={handleConnectSteps}
+          onDeleteStepId={onDeleteStepId}
+          onEdgeDelete={onEdgeDelete}
+          onReparent={onReparent}
+          onSetPivot={onSetPivot}
+          onDropCreate={onDropCreate}
+          onCanvasDrop={onCanvasDrop}
           onAddStep={() => addBlank('New command step')}
           onStartLibrary={() => onNavigate('library')}
           onStartTtp={() => onNavigate('ttps')}
@@ -900,98 +1324,152 @@ export default function ComposerView({ params = {}, setParams = () => {}, onNavi
           showStitch={showStitch}
           onToggleStitch={() => setShowStitch((v) => !v)}
           storedLayout={draft.layout}
+          viewInsets={viewInsets}
         />
 
-        {showPanels && (
-          (selected || metaOpen) ? (
-            <ComposerInspector
-              selected={selected}
-              draft={draft}
-              steps={steps}
-              onEditStep={onEditStep}
-              onAddDetection={onAddDetection}
-              onRemoveDetection={onRemoveDetection}
-              onSetCausalityParent={onSetCausalityParent}
-              onBindTtp={onBindTtp}
-              onEditMeta={onEditMeta}
-              pivots={PIVOTS}
-              detectionTypes={DETECTION_TYPES}
-              planes={PLANES}
-              onNavigate={onNavigate}
-              stitchModel={draft.stitchContext}
-              onSetStitchEntity={onSetStitchEntity}
-              onInsertStitch={onInsertStitch}
-              agentName={agentName}
-              agents={env.agents}
-              onSetChannel={onSetChannel}
-              onSetTarget={onSetTarget}
-              onSetEal={onSetEal}
+        {/* Palette drawer (the node creator) — left overlay, drag items onto
+            the canvas or click to add to the selected step. */}
+        {paletteOpen ? (
+          <aside className="composer-mode__drawer composer-mode__drawer--left" aria-label="Node palette">
+            <div className="composer-mode__drawer-head">
+              <span className="composer-mode__drawer-title">Add to chain</span>
+              <span className="composer__spacer" />
+              <button
+                type="button" className="ws-ctl" aria-label="Collapse palette"
+                title="Collapse palette" onClick={closePalette}
+              >
+                ⟨
+              </button>
+            </div>
+            <ComposerPalette
+              tabs={PALETTE_TABS}
+              activeTab={paletteTab}
+              onTab={setPaletteTab}
+              groups={paletteGroups}
+              query={benchQuery}
+              onQuery={setBenchQuery}
+              loading={shelf.loading}
+              draggable
             />
-          ) : (
-            <NoSelectionAside draft={draft} onOpenMeta={() => setMetaOpen(true)} />
-          )
+          </aside>
+        ) : (
+          <button
+            type="button"
+            className="composer-mode__reopen composer-mode__reopen--left"
+            onClick={openPalette}
+            title="Open the node palette"
+          >
+            ＋ Add
+          </button>
         )}
-      </div>
 
-      {/* ── Workstream ── */}
-      <div className="composer-ws">
-        <div className="composer-ws__tabs" role="tablist" aria-label="Composer workstream">
-          {WS_TABS.map(([id, label]) => (
+        {/* Inspector drawer — right overlay. Shows the selected step's config,
+            the workflow meta, or (nothing selected) the teardown + a way in. */}
+        {inspectorOpen ? (
+          <aside className="composer-mode__drawer composer-mode__drawer--right" aria-label="Step inspector">
+            <div className="composer-mode__drawer-head">
+              <span className="composer-mode__drawer-title mono" tabIndex={-1}>
+                {selected ? selected.id : metaOpen ? 'Workflow' : 'Step config'}
+              </span>
+              <span className="composer__spacer" />
+              <button
+                type="button" className="ws-ctl" aria-label="Close inspector"
+                title="Close inspector" onClick={closeInspector}
+              >
+                ⟩
+              </button>
+            </div>
+            {(selected || metaOpen) ? (
+              <ComposerInspector
+                selected={selected}
+                draft={draft}
+                steps={steps}
+                onEditStep={onEditStep}
+                onAddDetection={onAddDetection}
+                onRemoveDetection={onRemoveDetection}
+                onSetCausalityParent={onSetCausalityParent}
+                onBindTtp={onBindTtp}
+                onEditMeta={onEditMeta}
+                pivots={PIVOTS}
+                detectionTypes={DETECTION_TYPES}
+                planes={PLANES}
+                onNavigate={onNavigate}
+                stitchModel={draft.stitchContext}
+                onSetStitchEntity={onSetStitchEntity}
+                onInsertStitch={onInsertStitch}
+                agentName={agentName}
+                agents={env.agents}
+                onSetChannel={onSetChannel}
+                onSetTarget={onSetTarget}
+                onSetEal={onSetEal}
+              />
+            ) : (
+              <NoSelectionAside draft={draft} onOpenMeta={() => setMetaOpen(true)} />
+            )}
+          </aside>
+        ) : (
+          <button
+            type="button"
+            className="composer-mode__reopen composer-mode__reopen--right"
+            onClick={openInspector}
+            title="Open the inspector"
+          >
+            Inspector
+          </button>
+        )}
+
+        {/* Workstream — bottom overlay dock (payload · preflight · active · history). */}
+        <div className={'composer-ws composer-mode__dock' + (wsOpen ? ' composer-ws--open' : '')}>
+          <div className="composer-ws__tabs" role="tablist" aria-label="Composer workstream">
+            {WS_TABS.map(([id, label]) => (
+              <button
+                type="button"
+                key={id}
+                role="tab"
+                aria-selected={wsTab === id && wsOpen}
+                data-testid={`ws-tab-${id}`}
+                className={'ws-tab' + (wsTab === id && wsOpen ? ' ws-tab--on' : '')}
+                onClick={() => { setWsTab(id); setWsOpen(true) }}
+              >
+                {label}
+                <span className="ws-tab__meta mono">{wsMeta(id, { env, shelf, validation })}</span>
+              </button>
+            ))}
+            <span className="composer__spacer" />
             <button
               type="button"
-              key={id}
-              role="tab"
-              aria-selected={wsTab === id && wsOpen}
-              data-testid={`ws-tab-${id}`}
-              className={'ws-tab' + (wsTab === id && wsOpen ? ' ws-tab--on' : '')}
-              onClick={() => { setWsTab(id); setWsOpen(true) }}
+              className="ws-ctl"
+              onClick={() => setWsOpen((v) => !v)}
+              aria-expanded={wsOpen}
+              aria-label={wsOpen ? 'Collapse workstream' : 'Expand workstream'}
             >
-              {label}
-              <span className="ws-tab__meta mono">{wsMeta(id, { env, shelf, validation })}</span>
+              {wsOpen ? '▾' : '▴'}
             </button>
-          ))}
-          <span className="composer__spacer" />
-          <button
-            type="button"
-            className="ws-ctl"
-            onClick={() => setPanelsHidden((v) => !v)}
-            title="Show or hide the palette and inspector"
-          >
-            {showPanels ? 'Hide panels' : 'Show panels'}
-          </button>
-          <button
-            type="button"
-            className="ws-ctl"
-            onClick={() => setWsOpen((v) => !v)}
-            aria-expanded={wsOpen}
-            aria-label={wsOpen ? 'Collapse workstream' : 'Expand workstream'}
-          >
-            {wsOpen ? '▾' : '▴'}
-          </button>
-        </div>
-
-        {wsOpen && (
-          <div className="composer-ws__body" data-testid="composer-ws-body">
-            {wsTab === 'payload' && <PayloadPane shelf={shelf} onNavigate={onNavigate} />}
-            {wsTab === 'preflight' && <PreflightPane model={env.healthModel} validation={validation} onNavigate={onNavigate} />}
-            {wsTab === 'active' && <ActivePane activeRun={env.activeRun} onNavigate={onNavigate} />}
-            {wsTab === 'history' && <HistoryPane runs={env.runs} onNavigate={onNavigate} />}
           </div>
-        )}
+
+          {wsOpen && (
+            <div className="composer-ws__body" data-testid="composer-ws-body">
+              {wsTab === 'payload' && <PayloadPane shelf={shelf} onNavigate={onNavigate} />}
+              {wsTab === 'preflight' && <PreflightPane model={env.healthModel} validation={validation} onNavigate={onNavigate} />}
+              {wsTab === 'active' && <ActivePane activeRun={env.activeRun} onNavigate={onNavigate} />}
+              {wsTab === 'history' && <HistoryPane runs={env.runs} onNavigate={onNavigate} />}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* The canvas answers "what is the shape of this chain"; this answers
-          "what happens, in what order, and what state is each step in" — which
-          a free-node canvas genuinely cannot, because two nodes side by side
-          may or may not run in sequence. It is also the per-step run control,
-          so a single object can be fired without composing a chain round it. */}
-      <ExecutionTimeline
-        steps={steps}
-        laneOverrides={draft.laneOverrides}
-        draftPlane={draft.plane}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        onRunStep={() => {}}
+      <ConfirmDialog
+        open={!!pendingConfirm}
+        title={pendingConfirm?.title}
+        body={pendingConfirm?.body}
+        confirmLabel={pendingConfirm?.confirmLabel}
+        cancelLabel="Stay"
+        confirmVariant="danger"
+        // Focus the SAFE choice: a destructive default trains Enter-to-dismiss,
+        // and the one time the dialog guards real work, Enter would discard it.
+        initialFocus="cancel"
+        onConfirm={() => { const go = pendingConfirm?.onConfirm; setPendingConfirm(null); if (go) go() }}
+        onClose={() => setPendingConfirm(null)}
       />
     </div>
   )

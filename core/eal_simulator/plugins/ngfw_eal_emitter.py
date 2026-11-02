@@ -62,7 +62,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from ..analytics_emitter import AnalyticsEmitterParams, AnalyticsLogEmitter
 
@@ -119,6 +119,9 @@ def _ngfw_eal_event(
     marker: str,
     sim_run_id: str,
     extra: Optional[dict[str, Any]] = None,
+    src_ip: Optional[str] = None,
+    src_host: Optional[str] = None,
+    src_user: Optional[str] = None,
 ) -> dict[str, Any]:
     """Shape a PAN-OS NGFW Enhanced-Application-Log traffic record.
 
@@ -139,7 +142,7 @@ def _ngfw_eal_event(
         "device_name": _FIREWALL_HOSTNAME,
         "vsys": "vsys1",
         "session_id": secrets.randbelow(9_000_000) + 1_000_000,
-        "src": _SRC_HOST,
+        "src": src_ip or _SRC_HOST,
         "dst": session.dst_ip,
         "src_port": secrets.randbelow(16383) + 49152,
         "dst_port": session.dst_port,
@@ -158,9 +161,9 @@ def _ngfw_eal_event(
         "session_end_reason": session.session_end_reason,
         "url_domain": session.dst_domain,
         "dst_hostname": session.dst_domain,
-        "user": _SRC_USER,
+        "user": src_user if src_user is not None else _SRC_USER,
         # -- EAL enhanced endpoint-process context --
-        "endpoint_device_name": _ENDPOINT_DEVICE,
+        "endpoint_device_name": src_host if src_host is not None else _ENDPOINT_DEVICE,
         "process_name": session.process_name,
         "process_hash": secrets.token_hex(32),
         marker: True,
@@ -276,6 +279,73 @@ class NgfwEalEmitterParams(AnalyticsEmitterParams):
                     "large_upload_https | massive_upload_rare_domain | "
                     "rare_ssh_session | recurring_rare_domain_access.",
     )
+    dst_domain: Optional[str] = Field(
+        default=None,
+        description="Override the destination domain on every record (dst_hostname "
+                    "and url_domain), e.g. a published threat-intel indicator the "
+                    "tenant can enrich. Requires dst_ip.",
+    )
+    dst_ip: Optional[str] = Field(
+        default=None,
+        description="Override the destination IP on every record (dst). May be "
+                    "set without dst_domain, in which case dst_hostname and "
+                    "url_domain are blank.",
+    )
+    process_name: Optional[str] = Field(
+        default=None,
+        description="Override process_name on every record. Non-empty when set.",
+    )
+    dst_port: Optional[int] = Field(
+        default=None, ge=1, le=65535,
+        description="Override dst_port on every record.",
+    )
+    app: Optional[str] = Field(
+        default=None,
+        description="Override the PAN-OS App-ID (app) on every record. "
+                    "Non-empty when set.",
+    )
+
+    src_ip: Optional[str] = Field(
+        default=None,
+        description="Override the session source IP (src) so the synthetic "
+                    "network record shares an entity with a real endpoint "
+                    "alert. Dotted quad; RFC1918 allowed. Independent of the "
+                    "dst pair.",
+    )
+    src_host: Optional[str] = Field(
+        default=None,
+        description="Override the source endpoint hostname "
+                    "(endpoint_device_name).",
+    )
+    src_user: Optional[str] = Field(
+        default=None,
+        description="Override the source user (user), e.g. domain\\name.",
+    )
+
+    @field_validator("dst_domain", "dst_ip", "src_host", "src_user", "process_name", "app")
+    @classmethod
+    def _non_empty_when_set(cls, v: Optional[str], info) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError(f"{info.field_name} must be non-empty when set")
+        return v
+
+    @field_validator("src_ip")
+    @classmethod
+    def _src_ip_quad(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        parts = v.split(".")
+        if len(parts) != 4 or not all(
+            p.isascii() and p.isdigit() and 0 <= int(p) <= 255 for p in parts
+        ):
+            raise ValueError(f"src_ip must be a dotted-quad IPv4 address, got '{v}'")
+        return v
+
+    @model_validator(mode="after")
+    def _dst_pair(self) -> "NgfwEalEmitterParams":
+        if self.dst_domain is not None and self.dst_ip is None:
+            raise ValueError("dst_domain requires dst_ip")
+        return self
 
     @property
     def dataset(self) -> str:
@@ -344,8 +414,23 @@ class NgfwEalEmitter(AnalyticsLogEmitter):
         self, params: NgfwEalEmitterParams, *, sim_run_id: str, iteration: int,
     ) -> list[dict[str, Any]]:
         marker, _alert, session = _PATTERN_SESSION[params.event_pattern]
+        if params.dst_ip is not None:
+            session = dataclasses.replace(
+                session, dst_domain=params.dst_domain or "", dst_ip=params.dst_ip,
+            )
+        if params.process_name is not None:
+            session = dataclasses.replace(session, process_name=params.process_name)
+        if params.dst_port is not None:
+            session = dataclasses.replace(session, dst_port=params.dst_port)
+        if params.app is not None:
+            session = dataclasses.replace(session, app=params.app)
 
         events: list[dict[str, Any]] = []
+        src_kw = {
+            "src_ip": params.src_ip,
+            "src_host": params.src_host,
+            "src_user": params.src_user,
+        }
 
         if params.event_pattern in _BURST_PATTERNS:
             # A recurring, regular-interval burst of sessions to the rare
@@ -356,6 +441,7 @@ class NgfwEalEmitter(AnalyticsLogEmitter):
                     marker=marker,
                     sim_run_id=sim_run_id,
                     extra={"beacon_sequence": seq, "recurring_marker": True},
+                    **src_kw,
                 ))
             return events
 
@@ -363,5 +449,6 @@ class NgfwEalEmitter(AnalyticsLogEmitter):
             session=session,
             marker=marker,
             sim_run_id=sim_run_id,
+            **src_kw,
         ))
         return events

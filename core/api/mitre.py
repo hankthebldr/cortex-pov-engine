@@ -29,7 +29,8 @@ every previously-emitted key is preserved. New, additive fields per technique:
 ``sources`` (which of scenario/step/additional/card contributed it),
 ``card_refs`` (the TTP cards covering it), ``in_card_corpus`` (bool), and
 ``detection_kinds`` (per-kind tally of deployable card detections, including
-``correlation`` and named ``analytics`` modules).
+``correlation``, named ``analytics`` modules and agent ``prevention``
+modules).
 """
 
 from __future__ import annotations
@@ -38,10 +39,11 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from engine.outcome import is_hit, is_in_denominator
 from engine.ttp_catalog import catalog
 from models import Result, Run, Scenario
 
@@ -209,7 +211,8 @@ async def get_mitre_coverage(
       - sources: which of {scenario, step, additional, card} contributed it
       - card_refs: TTP cards (by ttp_ref) whose corpus covers this technique
       - in_card_corpus: true if the card corpus documents this technique
-      - detection_kinds: {bioc, xql, correlation, ioc, analytics} card tallies
+      - detection_kinds: {bioc, xql, correlation, ioc, analytics, abioc, modeling,
+        prevention} card tallies
     """
     # Collect scenarios — active-only by default (GAP-API-009).
     scen_stmt = select(Scenario)
@@ -230,16 +233,33 @@ async def get_mitre_coverage(
     # constant-size answer degrade linearly with POV history. Grouping by
     # (scenario, step) collapses the result set to the distinct step surface
     # (~hundreds of rows) regardless of how many runs have accumulated.
-    detection_tally = (await db.execute(
+    #
+    # Round 4 I-1: the tally is grouped by the outcome axis too (a handful of
+    # extra groups per step), so the numerator goes through ``is_hit`` and the
+    # denominator through ``is_in_denominator`` in Python -- the one rule, not
+    # a SQL re-encoding of it. Unknown outcomes raise.
+    raw_tally = (await db.execute(
         select(
             Run.scenario_id,
             Result.step_id,
+            Result.outcome,
+            Result.outcome_reason,
+            Result.observed,
             func.count(Result.id),
-            func.sum(case((Result.observed, 1), else_=0)),
         )
         .join(Run, Result.run_id == Run.run_id)
-        .group_by(Run.scenario_id, Result.step_id)
+        .group_by(Run.scenario_id, Result.step_id, Result.outcome,
+                  Result.outcome_reason, Result.observed)
     )).all()
+    folded: dict[tuple, list[int]] = {}
+    for scen_id, step_id, outcome, reason, observed, n in raw_tally:
+        if not is_in_denominator(outcome, reason):
+            continue
+        slot = folded.setdefault((scen_id, step_id), [0, 0])
+        slot[0] += n
+        if is_hit(outcome, observed):
+            slot[1] += n
+    detection_tally = [(k[0], k[1], v[0], v[1]) for k, v in folded.items()]
 
     # Build technique -> data mapping
     techniques: dict[str, dict] = {}
@@ -265,6 +285,8 @@ async def get_mitre_coverage(
                     # Plan 01 ABIOC (validated behavioral-ML) +
                     # Plan 02 modeling substrate (informational only).
                     "abioc": 0, "modeling": 0,
+                    # Agent prevention modules (type: Prevention).
+                    "prevention": 0,
                 },
             }
         else:
@@ -405,6 +427,8 @@ async def get_mitre_coverage(
     # informational — NOT validated detection).
     with_abioc = sum(1 for t in output if t["detection_kinds"]["abioc"] > 0)
     with_modeling = sum(1 for t in output if t["detection_kinds"]["modeling"] > 0)
+    # Agent prevention modules (BTP, exploit protection, ...) backing a technique.
+    with_prevention = sum(1 for t in output if t["detection_kinds"]["prevention"] > 0)
 
     logger.info(
         "mitre_coverage techniques=%d detected=%d in_card_corpus=%d include_inactive=%s",
@@ -424,6 +448,7 @@ async def get_mitre_coverage(
             "with_correlation": with_correlation,
             "with_abioc": with_abioc,
             "with_modeling": with_modeling,
+            "with_prevention": with_prevention,
             "include_inactive": include_inactive,
         },
     }

@@ -5,6 +5,8 @@ Tables:
   Scenario        — loaded from YAML, never user-created
   Run             — execution record per launch
   Result          — detection outcome per run
+  StepOutcome     — host evidence per step (step_outcomes)
+  Observation     — tenant evidence, raw alert per run (observations)
   Assertion       — POS/PLT/AUT proof artifact, loaded from YAML
   AssertionRun    — execution record per assertion evaluation
   AssertionCheck  — per-check outcome within an assertion run
@@ -17,7 +19,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import mapped_column, Mapped, relationship
 
 from database import Base
@@ -97,6 +99,12 @@ class Scenario(Base):
     #   ALTER TABLE scenarios ADD COLUMN composer_layout JSON
     composer_layout: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
+    # Published Unit 42 indicators (scenario `indicators[]`, loader codes
+    # S-22..S-27). Nullable JSON list; NULL/[] for every scenario without one.
+    # NOTE: prod needs `ALTER TABLE scenarios ADD COLUMN indicators JSON`
+    # (database._migrate_scenarios_columns does it on boot).
+    indicators: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
+
     # ── Measurement contract (v2.0 KPI block) ──────────────────────────────
     # The scenario loader validated these for several releases and then dropped
     # them, so a run could report observed/not-observed and MTTD but never
@@ -158,6 +166,7 @@ class Scenario(Base):
             "tags": self.tags,
             "author": self.author,
             "cgo_anchor": self.cgo_anchor,
+            "indicators": self.indicators or [],
             "stitch_context": self.stitch_context,
             "composer_layout": self.composer_layout,
             "validation_methodology": self.validation_methodology,
@@ -177,6 +186,12 @@ class Scenario(Base):
 
 class Run(Base):
     __tablename__ = "runs"
+    # A report run has at most one block partner: the database, not a
+    # check-then-insert read, is the authority on "already paired".
+    __table_args__ = (
+        Index("uq_runs_paired_with_run_id", "paired_with_run_id", unique=True,
+              sqlite_where=text("paired_with_run_id IS NOT NULL")),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
@@ -252,6 +267,19 @@ class Run(Base):
     # None when nothing was declared/checked; [] when checked and clean.
     runtime_dependency_gaps: Mapped[Optional[list[dict[str, Any]]]] = mapped_column(JSON, nullable=True)
 
+    # ── Prevention-efficacy launch context (operator-declared) ──────────────
+    # What the operator said about the agent profile and run conditions. Added by
+    # _migrate_prevention_columns in database.py.
+    agent_profile_mode: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
+    bas_mode_attested: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    soakless_attested: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    attested_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    attested_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    paired_with_run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    canary_run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    severed_at_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    block_mode_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
     results: Mapped[list["Result"]] = relationship("Result", back_populates="run_rel")
@@ -273,6 +301,15 @@ class Run(Base):
             "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
             "runtime_install_authorized": self.runtime_install_authorized,
             "runtime_dependency_gaps": self.runtime_dependency_gaps,
+            "agent_profile_mode": self.agent_profile_mode,
+            "bas_mode_attested": self.bas_mode_attested,
+            "soakless_attested": self.soakless_attested,
+            "attested_by": self.attested_by,
+            "attested_at": self.attested_at.isoformat() if self.attested_at else None,
+            "paired_with_run_id": self.paired_with_run_id,
+            "canary_run_id": self.canary_run_id,
+            "severed_at_step": self.severed_at_step,
+            "block_mode_status": self.block_mode_status,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "output": self.output,
@@ -325,6 +362,16 @@ class Result(Base):
     kpi_verdict: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # pass|fail|pending|not_applicable
     verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # ── Outcome axis (prevention efficacy) ─────────────────────────────────
+    # expected_outcome is what the scenario claims; outcome is what the evidence
+    # showed (NULL until judged). Added by _migrate_prevention_columns.
+    expected_outcome: Mapped[str] = mapped_column(String, nullable=False, default="detect")
+    prevention_module: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    outcome: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    outcome_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    alert_action: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    alert_outcome: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     # Relationships
     run_rel: Mapped["Run"] = relationship("Run", back_populates="results")
 
@@ -362,6 +409,92 @@ class Result(Base):
             "detection_severity": self.detection_severity,
             "detection_name": self.detection_name,
             "mitre_technique": self.mitre_technique,
+            "expected_outcome": self.expected_outcome,
+            "prevention_module": self.prevention_module,
+            "outcome": self.outcome,
+            "outcome_reason": self.outcome_reason,
+            "alert_action": self.alert_action,
+            "alert_outcome": self.alert_outcome,
+        }
+
+
+class StepOutcome(Base):
+    """Host evidence for one step of one run (how the step's process ended).
+
+    ``started_at`` is NOT when the step started: it is stamped when the step's
+    first ``/output`` reaches SimCore, and the beacon posts a step's output
+    after the step ends (``agent/beacon/client.go``). Read it as "the host had
+    finished this step by then". ``engine.beacon_lost.pick_severed`` relies on
+    exactly that. It is also the conservative start of the silent-row judgement
+    window (``connectors.service._judge_silent_results``): a step is never
+    judged silent until ``window`` after it reported. It is NOT the match lower
+    bound or the MTTD start -- those stay ``Result.executed_at``, because an
+    alert raised during the step precedes this timestamp. The name is kept to
+    avoid a column migration.
+    """
+
+    __tablename__ = "step_outcomes"
+    __table_args__ = (UniqueConstraint("run_id", "step_id", name="uq_step_outcomes_run_step"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, ForeignKey("runs.run_id"), nullable=False, index=True)
+    step_id: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    exit_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    termination: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    signal: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "step_id": self.step_id,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "exit_code": self.exit_code,
+            "termination": self.termination,
+            "signal": self.signal,
+            "reason": self.reason,
+            "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
+        }
+
+
+class Observation(Base):
+    """Tenant evidence: one raw alert pulled back for a run."""
+
+    __tablename__ = "observations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Deliberately not a FK constraint, to keep result deletes simple.
+    result_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    external_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    observed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    alert_source: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    action: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    action_pretty: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    alert_outcome: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    raw: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "run_id": self.run_id,
+            "result_id": self.result_id,
+            "source": self.source,
+            "external_id": self.external_id,
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
+            "name": self.name,
+            "alert_source": self.alert_source,
+            "action": self.action,
+            "action_pretty": self.action_pretty,
+            "alert_outcome": self.alert_outcome,
+            "raw": self.raw,
+            "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,
         }
 
 

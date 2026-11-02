@@ -22,16 +22,34 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import and_, case, func, not_, or_, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from engine import efficacy_scorecard
+from engine import host_evidence
 from engine import report_generator
+from engine.outcome import (
+    HOST_WITNESS,
+    EXCLUDED_FROM_DENOMINATOR,
+    OUTCOMES,
+    is_hit,
+    is_in_denominator,
+    PROFILE_MODES,
+    TERMINATIONS,
+    TERMINATION_BEACON_LOST,
+    TERMINATION_NOT_RUN,
+    TOOL_ABSENT,
+    UPSTREAM_FAILED,
+    UPSTREAM_NOT_EXECUTED,
+    UPSTREAM_SEVERED,
+)
+from engine.pairing import build_pair_delta
 from engine.orchestrator import orchestrator
 from events import event_bus
-from models import Result, Run, Scenario
+from models import Agent, Result, Run, Scenario, StepOutcome
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.runs")
@@ -62,6 +80,21 @@ _INTEGRITY_MARKERS: tuple[tuple[str, str], ...] = (
     ("RUN FAILED ON RESTART",
      "SimCore restarted before the agent collected this task; the run never "
      "reached the target."),
+    ("!! TOOL_ABSENT",
+     "A step's tool was not present on the target, so the step did not run "
+     "and its absent detections say nothing about Cortex."),
+    ("!! RUNTIME_DEPENDENCY_MISSING",
+     "A runtime dependency the step needs was missing on the target, so the "
+     "step could not execute as authored."),
+    ("command not found",
+     "A step invoked a command the target does not have, so the TTP did not "
+     "run as authored."),
+    ("BEACON LOST",
+     "The beacon stopped reporting mid-run, so later steps may not have run "
+     "and the host evidence is incomplete."),
+    ("!! TERMINATION_UNKNOWN",
+     "The beacon reported a step ending in a way it could not classify, so "
+     "whether the agent severed the step is unknown."),
 )
 
 
@@ -170,6 +203,167 @@ def _verdict_section(run: Run) -> list[str]:
     return out
 
 
+_OUTCOME_ICON = {
+    "prevented": "🛡",
+    "detected": "✅",
+    "missed": "❌",
+    "pending": "⏳",
+    "not_reached": "⏭",
+    "not_executed": "⚠",
+}
+
+
+def _result_icon(r: Result) -> str:
+    """Icon mirroring the stored outcome. An outcome-less row is ✅ when
+    validated, else awaiting reconcile -- never ❌ (residual R4)."""
+    if r.outcome is None:
+        return "✅" if r.observed else "⏳ (awaiting reconcile)"
+    if r.outcome not in OUTCOMES:
+        raise ValueError(f"unrecognised result outcome {r.outcome!r}")
+    icon = _OUTCOME_ICON[r.outcome]
+    if r.outcome == "pending" and r.outcome_reason:
+        icon += f" ({r.outcome_reason})"
+    return icon
+
+
+def _coverage_stats(results: list[Result]) -> dict:
+    """The one coverage computation: the headline and the by_type table share it."""
+    total = len(results)
+    in_den = [r for r in results if is_in_denominator(r.outcome, r.outcome_reason)]
+    denominator = len(in_den)
+    # Hits through the one predicate (R1): pending is never a hit.
+    observed = sum(1 for r in results if is_hit(r.outcome, r.observed))
+    observed_in_den = sum(1 for r in in_den if is_hit(r.outcome, r.observed))
+    prevented = sum(1 for r in results if r.outcome == "prevented")
+    pct = round(observed_in_den / denominator * 100, 1) if denominator > 0 else 0.0
+    by_type: dict = {}
+    for r in in_den:
+        t = by_type.setdefault(r.signal_type, {"total": 0, "observed": 0, "prevented": 0})
+        t["total"] += 1
+        if is_hit(r.outcome, r.observed):
+            t["observed"] += 1
+        if r.outcome == "prevented":
+            t["prevented"] += 1
+    return {
+        "total": total, "denominator": denominator, "observed": observed,
+        "observed_in_denominator": observed_in_den,
+        "prevented": prevented, "excluded": total - denominator, "pct": pct,
+        "by_type": by_type,
+    }
+
+
+def _fmt_secs(secs) -> str:
+    return f"{secs}s" if secs is not None else ""
+
+
+def _chain_integrity_section(run: Run, scenario: Optional[Scenario], results: list[Result]) -> list[str]:
+    not_reached = [r for r in results if r.outcome == "not_reached"]
+    not_executed = [r for r in results if r.outcome == "not_executed"]
+    if not (run.severed_at_step or not_reached or not_executed):
+        return []
+
+    def _uniq(seq):
+        return list(dict.fromkeys(seq))
+
+    out = ["## Chain Integrity", ""]
+    if run.severed_at_step:
+        n = len(scenario.steps) if scenario is not None and scenario.steps else None
+        of_n = f" of {n}" if n else ""
+        out.append(f"- severed at {run.severed_at_step}{of_n}")
+    if not_reached:
+        out.append(f"- not_reached: [{', '.join(_uniq(r.step_id for r in not_reached))}]")
+    if not_executed:
+        ne = _uniq(f"{r.step_id} ({r.outcome_reason})" if r.outcome_reason else r.step_id
+                   for r in not_executed)
+        out.append(f"- not_executed: [{', '.join(ne)}]")
+    out.append("")
+    return out
+
+
+async def _resolve_pair_partner(db: AsyncSession, run: Run) -> Optional[Run]:
+    """Forward via ``paired_with_run_id``, else the newest run pointing at this one."""
+    partner: Optional[Run] = None
+    if run.paired_with_run_id:
+        partner = (await db.execute(
+            select(Run).where(Run.run_id == run.paired_with_run_id)
+        )).scalar_one_or_none()
+    if partner is None:
+        partner = (await db.execute(
+            select(Run).where(Run.paired_with_run_id == run.run_id)
+            .order_by(Run.started_at.desc()).limit(1)
+        )).scalar_one_or_none()
+    return partner
+
+
+async def _run_result_dicts(db: AsyncSession, rid: str) -> list[dict]:
+    rows = (await db.execute(
+        select(Result).where(Result.run_id == rid).order_by(Result.id)
+    )).scalars().all()
+    return [r.to_dict() for r in rows]
+
+
+def _prevention_delta_section(run: Run, run_results: list[Result], partner: Optional[Run],
+                              partner_results: list[dict]) -> list[str]:
+    if partner is None:
+        return []
+    delta = build_pair_delta(run.to_dict(), [r.to_dict() for r in run_results],
+                             partner.to_dict(), partner_results)
+
+    def _cell(side, with_reason):
+        if side is None:
+            return "—"
+        text = str(side.get("outcome") or "—")
+        if with_reason and side.get("outcome_reason"):
+            text += f" ({side['outcome_reason']})"
+        if side.get("mttd_seconds") is not None:
+            text += f" {_fmt_secs(side['mttd_seconds'])}"
+        return text
+
+    out = ["## Prevention Delta (report → block)", "",
+           "| Step | Detection | Type | Module | Report-mode | Block-mode |",
+           "|------|-----------|------|--------|-------------|------------|"]
+    for step in delta["steps"]:
+        for d in step["detections"]:
+            out.append(
+                f"| {step['step_id']} | {d['detection_id'] or '—'} | {d['signal_type'] or '—'} | "
+                f"{d['prevention_module'] or '—'} | {_cell(d['report'], False)} | "
+                f"{_cell(d['block'], True)} |"
+            )
+    out.append("")
+    return out
+
+
+_ATT = " — attested"
+
+
+def _attestations_section(run: Run) -> list[str]:
+    if not (run.agent_profile_mode != "unknown" or run.bas_mode_attested is not None
+            or run.soakless_attested is not None or run.attested_by):
+        return []
+
+    def _flag(v):
+        return "not attested" if v is None else ("enabled" if v else "disabled")
+
+    at = run.attested_at.isoformat() + "Z" if run.attested_at else "unknown"  # naive UTC by convention
+    out = [
+        "## Attestations", "",
+        f"- agent profile mode: {run.agent_profile_mode} — attested by "
+        f"{run.attested_by or 'unknown'} at {at}, not verified",
+        f"- BAS mode: {_flag(run.bas_mode_attested)}{_ATT if run.bas_mode_attested is not None else ''}",
+        f"- soakless: {_flag(run.soakless_attested)}{_ATT if run.soakless_attested is not None else ''}",
+    ]
+    if run.block_mode_status and run.canary_run_id:
+        out.append(f"- canary: {run.block_mode_status} (run {run.canary_run_id})")
+    elif run.block_mode_status:
+        out.append(f"- canary: {run.block_mode_status}")
+    elif run.canary_run_id:
+        out.append(f"- canary: run {run.canary_run_id} (status unknown)")
+    else:
+        out.append("- canary: not run")
+    out.append("")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
@@ -206,6 +400,22 @@ class LaunchRequest(BaseModel):
     # the deployment. Default False — nothing is ever installed on a target
     # implicitly.
     allow_runtime_install: bool = False
+    # Prevention-efficacy launch context. Operator-declared: the engine never
+    # touches the agent profile, it records what the operator says it is.
+    agent_profile_mode: str = "unknown"
+    bas_mode_attested: Optional[bool] = None
+    soakless_attested: Optional[bool] = None
+    attested_by: Optional[str] = None
+    # Links this launch (the block-mode run) to its completed report-mode run.
+    paired_with_run_id: Optional[str] = None
+    canary_run_id: Optional[str] = None
+
+    @field_validator("agent_profile_mode")
+    @classmethod
+    def _profile_mode_in_vocabulary(cls, v: str) -> str:
+        if v not in PROFILE_MODES:
+            raise ValueError(f"agent_profile_mode must be one of {sorted(PROFILE_MODES)}")
+        return v
 
 
 class OutputRequest(BaseModel):
@@ -215,9 +425,44 @@ class OutputRequest(BaseModel):
     step_id: Optional[str] = None
 
 
+_PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
+_STEP_REASONS = frozenset({UPSTREAM_SEVERED, UPSTREAM_NOT_EXECUTED, UPSTREAM_FAILED, TOOL_ABSENT})
+
+
+class StepOutcomeIn(BaseModel):
+    """One step's host evidence, as the beacon reports it on /complete."""
+
+    step_id: str
+    exit_code: Optional[int] = None
+    termination: str
+    signal: Optional[int] = None
+    reason: Optional[str] = None
+
+    @field_validator("termination")
+    @classmethod
+    def _termination_in_vocabulary(cls, v: str) -> str:
+        if v not in TERMINATIONS:
+            raise ValueError(f"termination must be one of {sorted(TERMINATIONS)}")
+        return v
+
+    @model_validator(mode="after")
+    def _reason_in_vocabulary(self) -> "StepOutcomeIn":
+        # Out-of-vocabulary input is rejected here (422), never tolerated: a
+        # `not_run` step with a reason nobody recognises would otherwise reach
+        # host_outcome_for_step and surface as a 500 mid-/complete.
+        if self.reason is not None and self.reason not in _STEP_REASONS:
+            raise ValueError(f"reason must be one of {sorted(_STEP_REASONS)}")
+        if self.termination == TERMINATION_NOT_RUN and self.reason is None:
+            raise ValueError("a not_run step must carry a reason")
+        return self
+
+
 class CompleteRequest(BaseModel):
     exit_code: int
     summary: str
+    # Per-step host evidence. Absent from an old beacon, which must behave
+    # exactly as before: no step_outcomes rows, status rule unchanged.
+    steps: list[StepOutcomeIn] = []
 
 
 # Terminal Run states — reaching any of these stops the agent and makes
@@ -279,6 +524,12 @@ _LAUNCH_PRECONDITION_CODES = frozenset({
     # endpoint exists) is not met — 409, not a 422 that sends the operator
     # hunting a JSON typo. Refused all-or-nothing before any task is enqueued.
     "TARGET_AGENT_NOT_ENROLLED",
+    # paired_with_run_id names a run that cannot be this launch's partner
+    # (different scenario/target, same mode, not terminal, or unknown).
+    "PAIR_INVALID",
+    # canary_run_id names a run that cannot prove this launch's profile
+    # (unknown, wrong scenario/target, or not terminal).
+    "CANARY_INVALID",
 })
 
 
@@ -402,6 +653,12 @@ async def _launch_run_impl(
         identity=body.identity,
         consent=body.consent,
         allow_runtime_install=body.allow_runtime_install,
+        agent_profile_mode=body.agent_profile_mode,
+        bas_mode_attested=body.bas_mode_attested,
+        soakless_attested=body.soakless_attested,
+        attested_by=body.attested_by,
+        paired_with_run_id=body.paired_with_run_id,
+        canary_run_id=body.canary_run_id,
     )
 
     if not result.success:
@@ -465,6 +722,54 @@ async def launch_run_compat(
     return await _launch_run_impl(body, db)
 
 
+class CanaryRequest(BaseModel):
+    target_agent_id: str
+
+
+@router.post("/canary")
+async def launch_canary(
+    body: CanaryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Launch the block-mode canary against an agent. (POST /api/runs/canary)
+
+    Defined before the ``/{run_id}`` routes so "canary" is never read as a run id.
+    """
+    from engine import canary  # noqa: PLC0415
+
+    scenario_id = canary.canary_scenario_id("linux")
+    if scenario_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Canary not available",
+                "code": "CANARY_NOT_AVAILABLE",
+                "detail": "CORTEXSIM_CANARY_SCENARIO_LINUX is not set; "
+                          "block mode will be attested-only",
+            },
+        )
+    result = await orchestrator.launch(
+        scenario_id=scenario_id,
+        mode="pull",
+        db=db,
+        target_agent_id=body.target_agent_id,
+        agent_profile_mode="block",
+    )
+    if not result.success:
+        status = result.http_status or (
+            409 if result.error_code in _LAUNCH_PRECONDITION_CODES else 422
+        )
+        raise HTTPException(
+            status_code=status,
+            detail={
+                "error": result.error,
+                "code": result.error_code,
+                "detail": result.error_detail or "",
+            },
+        )
+    return {"run_id": result.run_id, "scenario_id": scenario_id}
+
+
 @router.get("")
 async def list_runs(db: AsyncSession = Depends(get_db)):
     """List all run records."""
@@ -473,6 +778,26 @@ async def list_runs(db: AsyncSession = Depends(get_db)):
     runs = result.scalars().all()
     logger.info("list_runs count=%d", len(runs))
     return {"runs": [r.to_dict() for r in runs], "total": len(runs)}
+
+
+async def _step_outcomes_view(db: AsyncSession, run: Run) -> list[dict]:
+    """The one place host evidence is projected for reads: StepOutcome rows in
+    scenario order (rows for steps the scenario no longer lists go last, by id)."""
+    rows = (await db.execute(
+        select(StepOutcome).where(StepOutcome.run_id == run.run_id)
+        .order_by(StepOutcome.id))).scalars().all()
+    # Only the `steps` column: this runs on every GET (the harness polls every 3 s).
+    steps = (await db.execute(
+        select(Scenario.steps).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
+    order = [st.get("id") for st in (steps or []) if isinstance(st, dict)]
+    rank = {sid: i for i, sid in enumerate(order)}
+    rows = sorted(rows, key=lambda r: rank.get(r.step_id, len(rank)))
+    return [{
+        "step_id": r.step_id, "termination": r.termination, "signal": r.signal,
+        "rc": r.exit_code, "reason": r.reason,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+        "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
+    } for r in rows]
 
 
 @router.get("/{run_id}")
@@ -486,7 +811,30 @@ async def get_run(run_id: str, db: AsyncSession = Depends(get_db)):
             detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
         )
     logger.info("get_run run_id=%s status=%s", run_id, run.status)
-    return run.to_dict()
+    return {**run.to_dict(), "step_outcomes": await _step_outcomes_view(db, run)}
+
+
+@router.get("/{run_id}/pair")
+async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Return this run, its report/block partner, and the per-detection delta."""
+    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
+    if run is None:
+        raise _run_not_found(run_id)
+
+    partner = await _resolve_pair_partner(db, run)
+    if partner is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "Run is not paired", "code": "RUN_NOT_PAIRED",
+                    "detail": f"run_id='{run_id}' has no paired_with_run_id and no run points at it"},
+        )
+
+    a, b = run.to_dict(), partner.to_dict()
+    return {
+        "runs": [a, b],
+        "delta": build_pair_delta(a, await _run_result_dicts(db, run.run_id), b,
+                                  await _run_result_dicts(db, partner.run_id)),
+    }
 
 
 @router.get("/{run_id}/report")
@@ -531,6 +879,7 @@ async def get_report(
             # reports only the first invites "94% covered" to be read as "94%
             # passed", which the two numbers do not support.
             tc_verdicts=[run.tc_verdict],
+            integrity=_execution_integrity(run),
         )
         if format == "scorecard-html":
             return Response(
@@ -540,20 +889,13 @@ async def get_report(
         return PlainTextResponse(efficacy_scorecard.render_markdown(scorecard))
 
     # Compute stats
-    total = len(results)
-    observed = sum(1 for r in results if r.observed)
-    coverage_pct = round((observed / total * 100), 1) if total > 0 else 0.0
+    cov = _coverage_stats(results)
+    total, observed, coverage_pct = cov["total"], cov["observed"], cov["pct"]
+    by_type = cov["by_type"]
 
-    by_type = {}
-    for r in results:
-        st = r.signal_type
-        if st not in by_type:
-            by_type[st] = {"total": 0, "observed": 0}
-        by_type[st]["total"] += 1
-        if r.observed:
-            by_type[st]["observed"] += 1
-
-    mttd_values = [r.mttd_seconds for r in results if r.mttd_seconds is not None]
+    # Same exclusion as scoring: a row whose step never ran contributes no MTTD.
+    mttd_values = [r.mttd_seconds for r in results
+                   if r.mttd_seconds is not None and r.outcome not in EXCLUDED_FROM_DENOMINATOR]
     mttd_avg = round(sum(mttd_values) / len(mttd_values), 1) if mttd_values else None
     mttd_min = round(min(mttd_values), 1) if mttd_values else None
     mttd_max = round(max(mttd_values), 1) if mttd_values else None
@@ -568,7 +910,13 @@ async def get_report(
             "results": [r.to_dict() for r in results],
             "execution_integrity": integrity,
             "coverage": {
+                # observed: raw count of observed rows; total: raw row count;
+                # denominator: rows that can be scored; observed_in_denominator: observed
+                # rows among those; pct: observed_in_denominator / denominator;
+                # prevented: outcome == "prevented"; excluded: total - denominator.
                 "observed": observed, "total": total, "pct": coverage_pct,
+                "observed_in_denominator": cov["observed_in_denominator"],
+                "denominator": cov["denominator"], "prevented": cov["prevented"], "excluded": cov["excluded"],
                 "by_type": {k: {**v, "pct": round(v["observed"] / v["total"] * 100, 1) if v["total"] > 0 else 0} for k, v in by_type.items()},
             },
             "mttd": {"avg_seconds": mttd_avg, "min_seconds": mttd_min, "max_seconds": mttd_max, "count": len(mttd_values)} if mttd_values else None,
@@ -662,14 +1010,27 @@ async def get_report(
     # Coverage summary
     lines.append("## Detection Coverage Summary")
     lines.append("")
-    lines.append(f"**Overall: {observed}/{total} detections confirmed ({coverage_pct}%)**")
+    lines.append(
+        f"**Overall: {cov['observed_in_denominator']}/{cov['denominator']} detections confirmed ({coverage_pct}%) — "
+        f"{cov['prevented']} prevented · {cov['excluded']} excluded "
+        f"(not reached / not executed / soak-pending)**"
+    )
     lines.append("")
-    lines.append("| Detection Type | Observed | Total | Coverage |")
-    lines.append("|----------------|----------|-------|----------|")
+    if cov["denominator"] == 0:
+        lines.append("> Denominator is 0 — nothing in this run can be scored (see Chain Integrity).")
+        lines.append("")
+    lines.append("| Detection Type | Observed | Prevented | Total | Coverage |")
+    lines.append("|----------------|----------|-----------|-------|----------|")
     for dt, stats in by_type.items():
         pct = round(stats["observed"] / stats["total"] * 100, 1) if stats["total"] > 0 else 0
-        lines.append(f"| {dt} | {stats['observed']} | {stats['total']} | {pct}% |")
+        lines.append(f"| {dt} | {stats['observed']} | {stats['prevented']} | {stats['total']} | {pct}% |")
     lines.append("")
+
+    lines.extend(_chain_integrity_section(run, scenario, results))
+    partner = await _resolve_pair_partner(db, run)
+    if partner is not None:
+        lines.extend(_prevention_delta_section(
+            run, results, partner, await _run_result_dicts(db, partner.run_id)))
 
     # Test-case verdict — the answer coverage % cannot give. A coverage
     # percentage with no verdict is exactly the inflation the verifier exists
@@ -696,6 +1057,8 @@ async def get_report(
         lines.append(f"| Detections Measured | {len(mttd_values)} |")
         lines.append("")
 
+    lines.extend(_attestations_section(run))
+
     # Per-step results
     lines.append("## Detailed Detection Results")
     lines.append("")
@@ -707,7 +1070,7 @@ async def get_report(
             lines.append(f"### {r.step_id}: {r.step_name or '—'}")
             lines.append("")
 
-        status_icon = "✅" if r.observed else "❌"
+        status_icon = _result_icon(r)
         mttd_str = f" (MTTD: {_fmt_mttd(r.mttd_seconds)})" if r.mttd_seconds is not None else "" if mttd_values else ""
         lines.append(f"- {status_icon} **[{r.signal_type}]** {r.expected_detection}{mttd_str}")
         if r.notes:
@@ -884,6 +1247,17 @@ async def append_output(
     if res.rowcount == 0:
         await db.rollback()
         raise _run_not_found(run_id)
+    if body.step_id:
+        # First output for a step marks when it started. One INSERT .. ON
+        # CONFLICT DO NOTHING in the same transaction as the append: concurrent
+        # stdout/stderr writers race here, and a read-then-insert would either
+        # violate the unique key or overwrite the earliest started_at.
+        await db.execute(
+            sqlite_insert(StepOutcome)
+            .values(run_id=run_id, step_id=body.step_id,
+                    started_at=datetime.utcnow(), recorded_at=datetime.utcnow())
+            .on_conflict_do_nothing(index_elements=["run_id", "step_id"])
+        )
     await db.commit()
 
     await _safe_publish(
@@ -894,6 +1268,48 @@ async def append_output(
 
     logger.info("output appended run_id=%s bytes=%d step=%s", run_id, len(body.output), body.step_id)
     return {"status": "ok", "run_id": run_id}
+
+
+async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[str]) -> bool:
+    """Was the non-zero exit the agent doing its job, not a failure?
+
+    True only when the host witnessed a sever on ``severed``, the run was
+    launched in block mode, and that step carries a ``prevent`` expectation:
+    then the kill is the expected result and the run is not ``failed``.
+    """
+    if severed is None:
+        return False
+    mode = (await db.execute(
+        select(Run.agent_profile_mode).where(Run.run_id == run_id)
+    )).scalar_one_or_none()
+    if mode != "block":
+        return False
+    hit = (await db.execute(
+        select(Result.id).where(
+            Result.run_id == run_id, Result.step_id == severed,
+            Result.expected_outcome == "prevent",
+        ).limit(1)
+    )).first()
+    return hit is not None
+
+
+async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
+                               agent_profile_mode: str) -> None:
+    """Project reported step outcomes onto the run's Results from the stored StepOutcome rows (caller commits)."""
+    if not steps:
+        return
+    # Project from the STORED rows, not the request: they already honour the
+    # witness guard, so a later endpoint cannot erase an earlier host witness.
+    stored = (await db.execute(
+        select(StepOutcome).where(StepOutcome.run_id == run_id,
+                                  StepOutcome.termination.is_not(None))
+    )).scalars().all()
+    rows = (await db.execute(
+        select(Result).where(Result.run_id == run_id,
+                             Result.step_id.in_([s.step_id for s in stored]))
+    )).scalars().all()
+    host_evidence.apply_host_outcomes(rows, stored, agent_profile_mode=agent_profile_mode)
+    await db.flush()
 
 
 @router.post("/{run_id}/complete")
@@ -934,7 +1350,11 @@ async def complete_run(
         "open_tasks": func.max(func.coalesce(Run.open_tasks, 1) - 1, 0),
         "output": func.coalesce(Run.output, "") + summary_text,
     }
-    if body.exit_code != 0:
+    severed = host_evidence.severed_step(body.steps)
+    if severed is not None:
+        # Never clear a severance an earlier endpoint already recorded.
+        values["severed_at_step"] = func.coalesce(Run.severed_at_step, severed)
+    if body.exit_code != 0 and not await _severed_prevent_ok(db, run_id, severed):
         values["status"] = "failed"
     res = await db.execute(
         update(Run)
@@ -958,11 +1378,34 @@ async def complete_run(
         orchestrator.clear_aborted(run_id)
         return {"status": run.status, "run_id": run_id, "already_terminal": True}
 
+    # Host evidence for each step, in the same write transaction. A duplicate
+    # /complete upserts the same rows (idempotent); started_at, set by /output,
+    # is deliberately not in the update set.
+    for st in body.steps:
+        vals = dict(exit_code=st.exit_code, termination=st.termination,
+                    signal=st.signal or None, reason=st.reason,
+                    recorded_at=datetime.utcnow())
+        stmt = sqlite_insert(StepOutcome).values(run_id=run_id, step_id=st.step_id, **vals)
+        # Another endpoint may report the same step. A host witness (or a lost
+        # beacon) already on the row is never downgraded by a non-witness
+        # termination; a witness may replace anything.
+        guard = None
+        if st.termination not in HOST_WITNESS:
+            col = StepOutcome.__table__.c.termination
+            guard = or_(col.is_(None), col.notin_(_PROTECTED_TERMINATIONS))
+        await db.execute(stmt.on_conflict_do_update(
+            index_elements=["run_id", "step_id"], set_=vals, where=guard))
+
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes
     # with it.
     run = await _reload_run(db, run_id)
     remaining, status = run.open_tasks, run.status
+    profile_mode = run.agent_profile_mode
+    # Project the host evidence onto the Results INSIDE this write transaction,
+    # before any terminalising commit: a crash must not leave a terminal run
+    # with unprojected Results that a duplicate /complete cannot repair.
+    await _apply_host_evidence(db, run_id, body.steps, profile_mode)
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal
@@ -1134,5 +1577,16 @@ async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
 
     if _is_terminal(run):
         abort = True
+
+    # A beacon polling here is alive: refresh its liveness so the heartbeat
+    # sweep never mistakes a long-running silent step for a lost beacon. One
+    # atomic UPDATE; the response is unchanged.
+    if run.target:
+        now = datetime.utcnow()
+        await db.execute(
+            update(Agent).where(Agent.agent_id == run.target)
+            .values(last_seen=now, status="online")
+            .execution_options(synchronize_session=False))
+        await db.commit()
 
     return {"abort": abort, "run_id": run_id, "status": run.status}

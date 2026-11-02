@@ -60,6 +60,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from engine.outcome import is_hit, is_in_denominator
 from engine.ttp_catalog import catalog as ttp_catalog
 from models import Result, Run
 from tools.adapter_catalog import catalog as adapter_catalog
@@ -284,9 +285,11 @@ async def get_ttp_runs(
                 "detection_ids": [],
             }
             by_run[run.run_id] = bucket
-        bucket["expected"] += 1
-        if result.observed:
-            bucket["observed"] += 1
+        # Round 4 I-1: the one denominator rule and the one hit predicate.
+        if is_in_denominator(result.outcome, result.outcome_reason):
+            bucket["expected"] += 1
+            if is_hit(result.outcome, result.observed):
+                bucket["observed"] += 1
         if result.detection_id and result.detection_id not in bucket["detection_ids"]:
             bucket["detection_ids"].append(result.detection_id)
         mttd = result.mttd_seconds

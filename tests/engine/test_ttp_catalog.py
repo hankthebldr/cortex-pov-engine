@@ -213,3 +213,42 @@ def test_scenario_loader_warns_on_dangling_ref(tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="cortexsim.loader"):
         _warn_dangling_ttp_refs(schema, "fixture.yml")
     assert any("unresolved TTP card" in rec.message for rec in caplog.records)
+
+
+def test_gap4_prevention_slugs_resolve_from_fixture_card():
+    """GAP-4 for the seventh kind: a ``prevention-*`` detection_id referenced by
+    a scenario resolves to a card detection object. Uses a catalog built from
+    the fixture directory, never the global corpus."""
+    from engine.ttp_catalog import TtpCatalog  # noqa: PLC0415
+
+    fixtures = REPO_ROOT / "tests" / "fixtures"
+    cat = TtpCatalog()
+    assert cat.load(str(fixtures / "cards")) >= 1
+
+    card = cat.find("TTP-2026-9901", "prevention-btp-reverse-shell-from-web-server")
+    assert card is not None and card.kind == "prevention" and card.module == "btp"
+
+    scn = yaml.safe_load((fixtures / "scenarios" / "sim-test-prev-001.yml").read_text())
+    for step in scn["steps"]:
+        for ed in step["expected_detections"]:
+            if str(ed.get("detection_id", "")).startswith("prevention-"):
+                assert cat.find(ed["ttp_ref"], ed["detection_id"]) is not None
+
+
+def test_prevention_only_card_reports_nonzero_kind_counts():
+    import importlib.util  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    from engine.ttp_catalog import TtpCatalog  # noqa: PLC0415
+
+    cat = TtpCatalog()
+    cat.load(str(REPO_ROOT / "tests" / "fixtures" / "cards"))
+    counts = cat.card_detection_kind_counts("TTP-2026-9901")
+    assert counts["prevention"] == 1 and sum(counts.values()) == 1
+
+    spec = importlib.util.spec_from_file_location(
+        "coverage_report_kinds", REPO_ROOT / "detection_scanner" / "scripts" / "coverage_report.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["coverage_report_kinds"] = mod
+    spec.loader.exec_module(mod)
+    assert set(counts) == set(mod._CATALOG_KINDS)

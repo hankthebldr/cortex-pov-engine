@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from './components/console/AppShell.jsx'
 import ConfirmDialog from './components/console/ConfirmDialog.jsx'
 import { SurfaceBoundary } from './components/console/SurfaceError.jsx'
@@ -13,6 +13,7 @@ import {
   navGroups,
   navOwner,
 } from './app/destinations.jsx'
+import { exitTarget, nextReturnTarget } from './app/immersiveReturn.js'
 import SectionTabs from './components/console/SectionTabs.jsx'
 import useSetupProgress from './components/console/useSetupProgress.js'
 import { downloadReportBundle, getToolAdapters } from './api/client.js'
@@ -239,6 +240,25 @@ function ConsoleShell() {
   // ── Resolve + mount the current destination surface ───────────────────────
   const dest = getDestination(router.destination) || getDestination(DEFAULT_DESTINATION)
   const Surface = dest.Component
+  // Immersive mode is DERIVED from the route on every render and never stored:
+  // it is a property of the page that is open, not a preference.
+  const immersive = !!dest.immersive
+
+  // The last ordinary page (and its params) — what an immersive surface's Exit
+  // returns to. A ref, not state: recording it must not re-render the console.
+  const returnRef = useRef(null)
+  useEffect(() => {
+    returnRef.current = nextReturnTarget(returnRef.current, dest, router.params)
+  }, [dest, router.params])
+
+  // Keyed on `router.navigate` (stable), not `router` (a fresh object every
+  // render), so a surface that lists onExit in an effect's deps does not
+  // re-subscribe on every console render.
+  const navigate = router.navigate
+  const exitImmersive = useCallback(() => {
+    const { destination, params } = exitTarget(returnRef.current, dest, DEFAULT_DESTINATION)
+    navigate(destination, params)
+  }, [dest, navigate])
 
   return (
     <>
@@ -252,6 +272,7 @@ function ConsoleShell() {
         tenant={env.tenant}
         agent={env.agent}
         activeNav={navOwner(dest.id)}
+        immersive={immersive}
         // Drives the safety banner's per-tenant acknowledgement: switching to a
         // customer tenant re-arms the blast-radius warning that was
         // acknowledged against a lab one. `tenant` is the resolved object, so
@@ -274,7 +295,8 @@ function ConsoleShell() {
       >
         {/* Every fetcher below swallows its failure into an empty list, so a
             dead SimCore reads as "nothing configured" on all ten destinations.
-            Say it once, globally, above whichever surface is mounted. */}
+            Say it once, globally, above whichever surface is mounted —
+            immersive ones included: an unreachable SimCore is never hidden. */}
         {env.apiError && (
           <div className="api-down" role="alert" data-testid="api-down-banner">
             <span className="api-down__tag">SIMCORE UNREACHABLE</span>
@@ -287,13 +309,16 @@ function ConsoleShell() {
           </div>
         )}
 
-        <SectionTabs destination={dest.id} onNavigate={router.navigate} />
+        {/* An immersive surface owns everything below the header; its own
+            Exit (onExit) replaces the tab strip as the way back. */}
+        {!immersive && <SectionTabs destination={dest.id} onNavigate={router.navigate} />}
 
         <SurfaceBoundary resetKey={router.destination} title={dest.label}>
           <Surface
             params={router.params}
             setParams={router.setParams}
             onNavigate={router.navigate}
+            onExit={immersive ? exitImmersive : undefined}
           />
         </SurfaceBoundary>
       </AppShell>

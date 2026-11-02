@@ -43,6 +43,7 @@ import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 try:
     import yaml
@@ -56,12 +57,15 @@ REPO_ROOT = ROOT.parent                                # repo root
 # Directories the scenario loader prunes (mirror scenario_loader._find_yaml_files).
 _SKIP_SCENARIO_DIRS = {"probes", "packages", "campaigns"}
 
-# The six canonical scenario-side detection types (expected_detections[].type).
-_STEP_TYPES = ("BIOC", "XQL", "Correlation", "IOC", "ABIOC", "Analytics")
+# The seven canonical scenario-side detection types (expected_detections[].type).
+# "Prevention" is the agent's own prevention module, not a rule family: it gets
+# its own bucket but is EXCLUDED from the denominator of the ABIOC+Analytics
+# share (a prevention step-detection is not an opportunity for an ML-anchored one).
+_STEP_TYPES = ("BIOC", "XQL", "Correlation", "IOC", "ABIOC", "Analytics", "Prevention")
 _STEP_TYPE_BY_LOWER = {t.lower(): t for t in _STEP_TYPES}
 
 # Catalog-side detection kinds (mirror ttp_catalog.card_detection_kind_counts).
-_CATALOG_KINDS = ("bioc", "xql", "correlation", "ioc", "analytics", "abioc", "modeling")
+_CATALOG_KINDS = ("bioc", "xql", "correlation", "ioc", "analytics", "abioc", "modeling", "prevention")
 
 # Fixed methodology families F1..F10, labels lifted verbatim from
 # scenarios/_schema.yml (the methodology_family enum documentation).
@@ -104,6 +108,10 @@ def default_config() -> dict[str, Any]:
         "name_similarity": 0.60,
         "top": 15,
         "strict": False,
+        # signal_quality gates: set to the values measured 2026-10-28 (Unit 42 recent-posts chains); first set 2026-10-27 (library signal expansion).
+        "hq_signal_floor": 236,
+        "stitched_chain_floor": 13,
+        "marker_only_ceiling": 0.1266,
     }
 
 
@@ -204,6 +212,120 @@ def _load_cards(ttps_dir: str, warnings: list[str]) -> list[dict[str, Any]]:
             continue
         out.append(raw)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Signal quality: stitched chains and high-quality signals (HQS)
+# ---------------------------------------------------------------------------
+
+# plane -> evidence leg. ANALYTICS / EMAIL / TIM / ASM / DLP map to nothing.
+LEG_MAP: dict[str, str] = {
+    "EDR": "endpoint", "KOI": "endpoint", "BROWSER": "endpoint",
+    "NDR": "network",
+    "CDR": "cloud-identity", "CSPM": "cloud-identity", "CLOUD_APP": "cloud-identity",
+    "ITDR": "cloud-identity", "AI_SPM": "cloud-identity", "AI_ACCESS": "cloud-identity",
+    "AIRS": "cloud-identity",
+}
+
+_MARKER_LINE_RE = re.compile(
+    r"^\s*(echo|printf|Write-Host|Write-Output|true)\b|^\s*[:#](?=\s|$)|^\s*$"
+)
+_LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
+_UNIT42_HOST = "unit42.paloaltonetworks.com"
+
+
+def _planes_of(scn: dict[str, Any]) -> set[str]:
+    planes: set[str] = set()
+    for p in scn.get("required_planes_in_incident") or []:
+        if isinstance(p, str):
+            planes.add(p)
+    for step in scn.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        for ed in step.get("expected_detections") or []:
+            if isinstance(ed, dict) and isinstance(ed.get("plane"), str):
+                planes.add(ed["plane"])
+    return planes
+
+
+def scenario_legs(scn: dict[str, Any]) -> set[str]:
+    """Evidence legs touched by the union of required planes and detection planes."""
+    return {LEG_MAP[p] for p in _planes_of(scn) if p in LEG_MAP}
+
+
+def is_marker_only_step(step: dict[str, Any]) -> bool:
+    """True when the step's command emits nothing a sensor could observe."""
+    cmd = step.get("command") if isinstance(step, dict) else None
+    if not isinstance(cmd, str) or not cmd.strip():
+        return True
+    if "scripts.eal_simulator.cli" in cmd or "cortexsim-eal" in cmd:
+        return False
+    for line in re.split(r"\n|;|&&|\|\||\|", cmd):
+        if _MARKER_LINE_RE.match(line) or _LOCAL_CURL_RE.search(line):
+            continue
+        return False
+    return True
+
+
+def _in_band(ind: Any) -> bool:
+    """An indicator this scenario puts on the wire (``in_band`` absent → True).
+    ``in_band: false`` marks published context the chain does not emit."""
+    return isinstance(ind, dict) and ind.get("in_band", True) is not False
+
+
+def is_stitched_chain(scn: dict[str, Any]) -> bool:
+    url = scn.get("threat_report_url")
+    host = urlparse(url).hostname if isinstance(url, str) else None
+    req = scn.get("required_planes_in_incident") or []
+    inds = scn.get("indicators") or []
+    return bool(
+        len(scenario_legs(scn)) >= 2
+        and scn.get("stitching_key")
+        and len(req) >= 2
+        and host == _UNIT42_HOST
+        and any(_in_band(i) for i in inds)
+    )
+
+
+def signal_quality(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
+    """HQS = a step-detection in a stitched chain on a step that is not marker-only."""
+    chain_ids: list[str] = []
+    hq = step_dets = steps_total = marker_steps = with_ind = ind_total = ind_oob = 0
+    for scn in scenarios:
+        stitched = is_stitched_chain(scn)
+        inds = scn.get("indicators") or []
+        if inds:
+            with_ind += 1
+            in_band = sum(1 for i in inds if _in_band(i))
+            ind_total += in_band
+            ind_oob += len(inds) - in_band
+        if stitched:
+            chain_ids.append(str(scn.get("scenario_id")))
+        for step in scn.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            steps_total += 1
+            marker = is_marker_only_step(step)
+            if marker:
+                marker_steps += 1
+            n = sum(1 for ed in step.get("expected_detections") or [] if isinstance(ed, dict))
+            step_dets += n
+            if stitched and not marker:
+                hq += n
+    return {
+        "leg_map": dict(LEG_MAP),
+        "stitched_chains": len(chain_ids),
+        "stitched_chain_ids": sorted(chain_ids),
+        "hq_signals": hq,
+        "step_detections": step_dets,
+        "hq_share": _r4(hq / step_dets) if step_dets else 0.0,
+        "marker_only_steps": marker_steps,
+        "steps": steps_total,
+        "marker_only_share": _r4(marker_steps / steps_total) if steps_total else 0.0,
+        "scenarios_with_indicators": with_ind,
+        "indicators": ind_total,  # in-band only
+        "indicators_not_in_band": ind_oob,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -469,15 +591,18 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
         catalog_by_kind["analytics"] += len(det.get("analytics_modules") or [])
         catalog_by_kind["abioc"] += len(det.get("abiocs") or [])
         catalog_by_kind["modeling"] += len(det.get("modeling_rules") or [])
+        catalog_by_kind["prevention"] += len(det.get("prevention_modules") or [])
     catalog_total = sum(catalog_by_kind.values())
     catalog_shares = {
         k: _r4(catalog_by_kind[k] / catalog_total) if catalog_total else 0.0
         for k in _CATALOG_KINDS
     }
 
+    # Rule-family denominator: step-detections whose type is not Prevention.
+    rule_step_total = step_total - step_by_type["Prevention"]
     abioc_analytics_share = _r4(
-        (step_by_type["ABIOC"] + step_by_type["Analytics"]) / step_total
-    ) if step_total else 0.0
+        (step_by_type["ABIOC"] + step_by_type["Analytics"]) / rule_step_total
+    ) if rule_step_total else 0.0
     correlation_share = _r4(step_by_type["Correlation"] / step_total) if step_total else 0.0
     modeling_rule_share = _r4(catalog_by_kind["modeling"] / catalog_total) if catalog_total else 0.0
     abioc_analytics_below = abioc_analytics_share < abioc_analytics_target
@@ -542,7 +667,7 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
                             f"{tactic_floor} scenarios — backfill {deficit} more"),
             })
     if abioc_analytics_below:
-        deficit = round((abioc_analytics_target - abioc_analytics_share) * step_total)
+        deficit = round((abioc_analytics_target - abioc_analytics_share) * rule_step_total)
         recs.append({
             "kind": "detection-type", "target": "abioc_analytics",
             "current": abioc_analytics_share, "target_value": _r4(abioc_analytics_target),
@@ -612,6 +737,21 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
             ),
         })
 
+    sq = signal_quality(scenarios)
+    hq_floor = int(c["hq_signal_floor"])
+    chain_floor = int(c["stitched_chain_floor"])
+    marker_ceiling = float(c["marker_only_ceiling"])
+    for kind, target, bad, detail in (
+        ("hq_signal_floor", "hq_signals", sq["hq_signals"] < hq_floor,
+         f"hq_signals {sq['hq_signals']} < floor {hq_floor}"),
+        ("stitched_chain_floor", "stitched_chains", sq["stitched_chains"] < chain_floor,
+         f"stitched_chains {sq['stitched_chains']} < floor {chain_floor}"),
+        ("marker_only_ceiling", "marker_only_share", (sq["marker_only_steps"] / sq["steps"] if sq["steps"] else 0.0) > marker_ceiling,
+         f"marker_only_share {sq['marker_only_share']} > ceiling {marker_ceiling}"),
+    ):
+        if bad:
+            strict_breaches.append({"kind": kind, "target": target, "detail": detail})
+
     exit_code = _exit_code(strict, strict_breaches)
 
     return {
@@ -666,6 +806,7 @@ def compute_report(scenarios_dir: str, ttps_dir: str, cfg: dict[str, Any]) -> di
             "pairs": pairs,
         },
         "recommendations": recs,
+        "signal_quality": sq,
         "strict_breaches": strict_breaches,
         "exit_code": exit_code,
         "_warnings": warnings,
@@ -788,10 +929,22 @@ def render_human(result: dict[str, Any], quiet: bool) -> None:
         print(f"  consolidate: {len(ov['pairs'])} near-duplicate detection pair(s) — "
               f"review/merge rather than authoring net-new (see Section 5)")
 
+    # SIGNAL QUALITY
+    sq = result["signal_quality"]
+    print()
+    print("── SIGNAL QUALITY ──")
+    print(f"Stitched chains: {sq['stitched_chains']} · HQ signals: {sq['hq_signals']}/"
+          f"{sq['step_detections']} ({sq['hq_share']:.1%}) · marker-only steps: "
+          f"{sq['marker_only_steps']}/{sq['steps']} ({sq['marker_only_share']:.1%}) · "
+          f"indicators: {sq['indicators']} in-band (+{sq['indicators_not_in_band']} not in-band) "
+          f"in {sq['scenarios_with_indicators']} scenario(s)")
+
     # SUMMARY
     n_breach = len(result["strict_breaches"])
     n_warn = len(warns) + n_breach
     print()
+    for b in result["strict_breaches"]:
+        print(f"BREACH  {b['kind']}: {b.get('detail', '')}")
     print(f"--- coverage: {n_warn} warn(s), {n_breach} strict-breach(es) "
           f"(WARN-only; use --strict to gate) ---")
 
@@ -815,6 +968,14 @@ def main() -> int:
     ap.add_argument("--name-similarity", type=float, default=0.60,
                     help="Jaccard threshold on name tokens for the overlap finder")
     ap.add_argument("--top", type=int, default=15, help="max rows in the author-next list")
+    # default=None: an absent flag keeps default_config()'s measured floor; a
+    # 0/0/1.0 argparse default overwrote it and --strict could never breach.
+    ap.add_argument("--hq-signal-floor", type=int, default=None,
+                    help="min high-quality signals (stitched-chain, non-marker step-detections)")
+    ap.add_argument("--stitched-chain-floor", type=int, default=None,
+                    help="min stitched chains (Unit 42-sourced, >=2 legs, >=1 in-band indicator)")
+    ap.add_argument("--marker-only-ceiling", type=float, default=None,
+                    help="max share of steps whose command is marker-only")
     ap.add_argument("--scenarios-dir", default=str(REPO_ROOT / "scenarios"),
                     help="override the scenarios directory")
     ap.add_argument("--ttps-dir", default=str(ROOT / "ttps"),
@@ -840,6 +1001,10 @@ def main() -> int:
         "top": args.top,
         "strict": args.strict,
     }
+    for key in ("hq_signal_floor", "stitched_chain_floor", "marker_only_ceiling"):
+        val = getattr(args, key)
+        if val is not None:
+            cfg[key] = val
 
     result = compute_report(args.scenarios_dir, args.ttps_dir, cfg)
 

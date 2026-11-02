@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import textwrap
 from datetime import datetime
 from typing import Any, Optional
 
@@ -43,11 +45,27 @@ _YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 #   ABIOC       — Analytics Behavioral IOC: PANW-authored, auto-tuned
 #                 behavioral-ML detection with an identified causality chain
 #                 (distinct from hand-authored BIOC)
+#   Prevention  — the XDR agent's own prevention module acting on the host
+#                 (BTP, exploit protection, ...). Not a rule: carried on cards
+#                 as detections.prevention_modules[]; may carry outcome: prevent.
 # NOTE: XDM modeling rules (Plan 02) are a normalization *substrate*, NOT a
 # detection_type — they are carried on cards as detections.modeling_rules[],
-# never as an expected_detections[].type value. This frozenset stays at six.
+# never as an expected_detections[].type value.
 DETECTION_TYPES: frozenset[str] = frozenset(
-    {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC"}
+    {"BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC", "Prevention"}
+)
+
+# The agent prevention modules a detections.prevention_modules[] card object
+# may name (validate.py rejects any other value).
+PREVENTION_MODULES: frozenset[str] = frozenset({
+    "btp", "exploit_protection", "local_analysis", "wildfire",
+    "anti_ransomware", "credential_protection", "device_control", "host_firewall",
+})
+
+_OUTCOMES: frozenset[str] = frozenset({"detect", "prevent"})
+_PREVENT_MASK_RE = re.compile(
+    r"\|\|\s*(true|echo\b|:(?=\s|$|;)|exit\s+0\b|/bin/true\b|printf\b)"
+    r"|;\s*true\s*$|2>/dev/null\s*\|\|"
 )
 
 
@@ -119,6 +137,170 @@ class CgoAnchorSchema(BaseModel):
     primary_username: Optional[str] = None
 
 
+# ---------------------------------------------------------------------------
+# Indicators (S-22..S-27) — a published Unit 42 IOC carried as structured data
+# ---------------------------------------------------------------------------
+
+INDICATOR_TYPES = frozenset({
+    "sha256", "sha1", "md5", "domain", "url", "ipv4", "ipv6", "user_agent", "ja3", "ja4",
+})
+INDICATOR_SAFE_FORMS = frozenset({
+    "log_field", "dns_lookup", "hash_only", "wildfire_test_file", "eicar",
+})
+# Attribution prefixes (compared lowercase): the Unit 42 blog and the PANW
+# timely-threat-intel GitHub org. An indicator with no such source is not ours
+# to ship.
+SOURCE_URL_HOSTS: tuple[str, ...] = (
+    "https://unit42.paloaltonetworks.com/",
+    "https://github.com/paloaltonetworks/",
+)
+_HASH_TYPES = frozenset({"sha256", "sha1", "md5"})
+_HASH_LEN = {"sha256": 64, "sha1": 40, "md5": 32}
+_HASH_SAFE_FORMS = frozenset({"hash_only", "wildfire_test_file", "eicar", "log_field"})
+# Which safe_form is physically meaningful for which type (S-27).
+_SAFE_FORMS_BY_TYPE: dict[str, frozenset[str]] = {
+    **{t: _HASH_SAFE_FORMS for t in _HASH_TYPES},
+    "domain": frozenset({"dns_lookup", "log_field"}),
+    "url": frozenset({"log_field"}),
+    "ipv4": frozenset({"log_field"}),
+    "ipv6": frozenset({"log_field"}),
+    "user_agent": frozenset({"log_field"}),
+    "ja3": frozenset({"log_field"}),
+    "ja4": frozenset({"log_field"}),
+}
+_INDICATOR_ID_RE = re.compile(r"^ind-\d{2}$")
+_DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9-]+\.)+[a-z]{2,}$")
+_IPV4_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
+# getent hosts / resolvectl query cannot name a resolver, so they are never exempt.
+DNS_LOOKUP_RE = re.compile(r"^\s*(dig|nslookup|host|drill)\b")
+FETCH_VERB_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])(curl|wget|pip3?|npm|git\s+clone|Invoke-WebRequest|iwr|certutil|bitsadmin|Start-BitsTransfer|aria2c|scp|tftp|ftp)(?:\.exe)?(?![A-Za-z0-9_.-])", re.IGNORECASE)
+# S-25 shared regexes. The stdlib hook (.claude/hooks/lint-scenario.py) carries
+# byte-identical copies; tests/engine/test_lint_scenario_hook.py pins them.
+# Heredoc opener: '<<' / '<<-' that is not a here-string ('<<<'), with a
+# word-like delimiter. Applied (by _heredoc_delim) to the line with comments and
+# $(( )) / (( )) arithmetic removed, so '<<' there opens nothing.
+_HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)-?[ \t]*(['\"]?)([A-Za-z_][\w.-]*)\1")
+_SH_COMMENT_RE = re.compile(r"(?:^|[ \t])#.*$")
+_SH_ARITH_RE = re.compile(r"\(\((?:[^()]|\([^()]*\))*\)\)")
+# Chaining that can add a connection to a lookup line: ; && || | $( ` and
+# redirection / background / process substitution < > & <( >(.
+_SHELL_CHAIN_RE = re.compile(r";|&&|\|\||\||\$\(|`|<\(|>\(|<|>|&")
+# A lookup line must name its resolver: dig/drill/host by a whitespace-led
+# '@<token>' (which may not be the indicator); nslookup by $LAB_RESOLVER,
+# $env:LAB_RESOLVER or ${LAB_RESOLVER...} as the token after the queried name.
+_AT_LOOKUP_RE = re.compile(r"^\s*(?:dig|drill|host)\b.*?(?:^|\s)@\S+")
+_NSLOOKUP_RESOLVER_RE = re.compile(
+    r"^\s*nslookup\s+(?:-\S+\s+)*[^\s-]\S*\s+[\"']?(?:\$LAB_RESOLVER|\$env:LAB_RESOLVER|\$\{LAB_RESOLVER[^}\s]*\})[\"']?(?:\s|$)")
+_RESOLVER_AT_RE = re.compile(r"(?:^|\s)@(\S+)")
+# A params: block is data only inside a campaign-file write ...
+_CAMPAIGN_FILE_WRITE_RE = re.compile(r"(?<![\w./-])cat\s+>\s*['\"]?[^\s'\"<>]+\.ya?ml['\"]?\s+<<(?!<)")
+# Any spelling of a 'plugin' key (plugin:, plugin :, "plugin":, 'plugin':).
+_PLUGIN_KEY_RE = re.compile(r"^\s*(?:-\s+)?[\"']?plugin[\"']?\s*:(.*)$")
+_URL_HOST_RE = re.compile(r"^https?://(?:[^/@\s]*@)?(\[[^\]\s]+\]|[^/:?#\s]+)", re.IGNORECASE)
+# ... whose every plugin is a collector-POST log streamer (records POSTed to an
+# operator-supplied collector, so an indicator is a field value, not a peer).
+# Mirrored in the hook; parity asserted in tests/engine/test_lint_scenario_hook.py.
+COLLECTOR_POST_PLUGINS = frozenset({
+    "ngfw_eal_emitter", "ngfw_threat_emitter", "cloud_audit_emitter",
+    "cloud_storage_compute_emitter", "azure_audit_emitter", "k8s_audit_emitter",
+    "m365_activity_emitter", "ad_windows_emitter", "idp_signin_emulator", "email_emitter",
+    "duo_auth_emitter", "globalprotect_emitter", "third_party_alert_emitter",
+    "third_party_firewall_emitter", "third_party_vpn_emitter",
+})
+
+
+def _ipv4_is_routable(value: str) -> bool:
+    m = _IPV4_RE.match(value)
+    if not m:
+        return False
+    a, b, c, d = (int(g) for g in m.groups())
+    if max(a, b, c, d) > 255:
+        return False
+    if a in (0, 10, 127) or (a == 169 and b == 254) or (a == 192 and b == 168):
+        return False
+    if a == 172 and 16 <= b <= 31:
+        return False
+    return True
+
+
+def _ipv6_is_routable(value: str) -> bool:
+    import ipaddress
+    try:
+        ip = ipaddress.IPv6Address(value)
+    except ValueError:
+        return False
+    return not (ip.is_loopback or ip.is_link_local or ip.is_unspecified
+                or ip.is_multicast or (ip.packed[0] & 0xFE) == 0xFC)
+
+
+class IndicatorSchema(BaseModel):
+    """A single published IOC (hash/domain/IP/...) carried as structured data.
+
+    S-22 type/value well-formed · S-23 attributed to Unit 42 / PANW GitHub ·
+    S-24 names the step(s) it surfaces in (existence checked at scenario level)
+    · S-27 safe_form fits the type. S-25/S-26 (unsafe surfacing in a step
+    command) are cross-field and live in ``unsafe_indicator_lines``.
+    """
+    id: str
+    type: str
+    value: str
+    source_url: str
+    safe_form: str
+    surfaces_in: list[str]
+    description: Optional[str] = None
+    # False: the value is published context that this scenario does not put on
+    # the wire (coverage_report counts only in-band indicators toward a chain).
+    in_band: bool = True
+
+    @field_validator("in_band", mode="before")
+    @classmethod
+    def _in_band_is_bool(cls, v: Any, info: Any) -> bool:
+        if not isinstance(v, bool):
+            raise ValueError(f"S-22: indicator {info.data.get('id')} in_band must be a bool, got {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def _validate_indicator(self) -> "IndicatorSchema":
+        if not _INDICATOR_ID_RE.match(self.id):
+            raise ValueError(f"S-22: indicator id {self.id!r} must match ind-NN")
+        if self.type not in INDICATOR_TYPES:
+            raise ValueError(f"S-22: indicator {self.id} type {self.type!r} not in {sorted(INDICATOR_TYPES)}")
+        v = self.value
+        if not v or not v.strip():
+            raise ValueError(f"S-22: indicator {self.id} value is empty")
+        bad = None
+        if self.type in _HASH_TYPES:
+            if not re.fullmatch(r"[A-Fa-f0-9]{%d}" % _HASH_LEN[self.type], v):
+                bad = f"is not a {_HASH_LEN[self.type]}-hex {self.type}"
+        elif self.type == "ipv4":
+            if not _ipv4_is_routable(v):
+                bad = "is not a routable dotted-quad (private/loopback/link-local/0.* refused)"
+        elif self.type == "ipv6":
+            if not _ipv6_is_routable(v):
+                bad = "is not a routable IPv6 address"
+        elif self.type == "domain":
+            if "[" in v or "]" in v or not _DOMAIN_RE.match(v.lower()):
+                bad = "is not a plain, un-defanged FQDN"
+        elif self.type == "url":
+            if not v.lower().startswith(("http://", "https://")) or "hxxp" in v.lower():
+                bad = "must start http:// or https:// and be un-defanged"
+        if bad:
+            raise ValueError(f"S-22: indicator {self.id} value {v!r} {bad}")
+        if not self.source_url.lower().startswith(SOURCE_URL_HOSTS):
+            raise ValueError(
+                f"S-23: indicator {self.id} source_url must start with one of {list(SOURCE_URL_HOSTS)}")
+        if not self.surfaces_in:
+            raise ValueError(f"S-24: indicator {self.id} surfaces_in must name at least one step")
+        if self.safe_form not in INDICATOR_SAFE_FORMS:
+            raise ValueError(f"S-27: indicator {self.id} safe_form {self.safe_form!r} not in {sorted(INDICATOR_SAFE_FORMS)}")
+        if self.safe_form not in _SAFE_FORMS_BY_TYPE[self.type]:
+            raise ValueError(
+                f"S-27: indicator {self.id} safe_form {self.safe_form!r} is not valid for type "
+                f"{self.type!r} (allowed: {sorted(_SAFE_FORMS_BY_TYPE[self.type])})")
+        return self
+
+
 class StepCausalitySchema(BaseModel):
     """Step-level causality contract: this step's process descends from
     ``parent_step`` via the declared ``pivot`` edge kind. The root step omits
@@ -160,6 +342,39 @@ class StepExpectedDetection(BaseModel):
     # v2.0 — per-detection KPI contribution (e.g. this detection contributes to
     # the scenario-level MTTD measurement with its own threshold).
     kpi_contribution: Optional[KpiThreshold] = None
+    # Efficacy outcome the step is expected to produce: "detect" (an alert) or
+    # "prevent" (the agent's prevention module stops the action). "prevent" is
+    # only meaningful for type Prevention on a runtime plane (EDR / CDR).
+    outcome: str = "detect"
+
+    @field_validator("outcome")
+    @classmethod
+    def validate_outcome(cls, v: str) -> str:
+        if v not in _OUTCOMES:
+            raise ValueError(
+                f"expected_detection outcome must be one of {sorted(_OUTCOMES)}, got '{v}'"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _validate_outcome_contract(self) -> "StepExpectedDetection":
+        if self.outcome == "prevent":
+            if self.type != "Prevention":
+                raise ValueError("outcome: prevent requires type: Prevention")
+            if self.plane not in ("EDR", "CDR"):
+                raise ValueError(
+                    f"outcome: prevent is only valid on the EDR or CDR plane, got '{self.plane}'"
+                )
+        if (
+            self.type == "Prevention"
+            and self.detection_id
+            and not self.detection_id.startswith("prevention-")
+        ):
+            raise ValueError(
+                f"a Prevention expectation's detection_id must start with "
+                f"'prevention-', got '{self.detection_id}'"
+            )
+        return self
 
 
 class EalStepSchema(BaseModel):
@@ -266,6 +481,16 @@ class StepSchema(BaseModel):
                 raise ValueError(
                     "target is only permitted on an agent-channel step"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_prevent_step(self) -> "StepSchema":
+        # S-21: a prevented step is expected to be killed mid-command. A masked
+        # exit (`|| true`, `; true`) would make a blocked step and an unblocked
+        # one indistinguishable to the harness, so it is refused at load.
+        if any(d.outcome == "prevent" for d in self.expected_detections) and \
+                _PREVENT_MASK_RE.search(self.command or ""):
+            raise ValueError("S-21: a step carrying a prevent expectation may not mask its exit")
         return self
 
 
@@ -405,6 +630,159 @@ def validate_causality_spine(steps: list[Any]) -> None:
         )
 
 
+def _heredoc_delim(line: str) -> Optional[str]:
+    """The delimiter a line opens a heredoc with, or None (comments, here-strings
+    and arithmetic shifts open nothing)."""
+    code = _SH_ARITH_RE.sub(" ", _SH_COMMENT_RE.sub("", line))
+    m = _HEREDOC_RE.search(code)
+    return m.group(2) if m else None
+
+
+def _heredoc_body(lines: list[str], delim: str) -> list[str]:
+    body: list[str] = []
+    for line in lines:
+        if line.strip() == delim:
+            break
+        body.append(line)
+    return body
+
+
+def _resolver_named(line: str) -> bool:
+    """dig/drill/host: a whitespace-led @<token>; nslookup: a LAB_RESOLVER variable."""
+    return bool(_NSLOOKUP_RESOLVER_RE.match(line) or _AT_LOOKUP_RE.match(line))
+
+
+def _plugin_value(raw: str) -> str:
+    return re.sub(r"\s+#.*$", "", raw).strip().strip("'\"")
+
+
+def _params_are_data(opener: str, body: list) -> bool:
+    """A heredoc's params: blocks are data only when it writes a campaign file
+    (cat > <path>.yml <<), the body parses as YAML with a non-empty steps[], and
+    EVERY step's plugin is a collector-POST streamer. Any other shape, any parse
+    failure, or any 'plugin' key (in any spelling) with another value fails closed."""
+    if not _CAMPAIGN_FILE_WRITE_RE.search(_SH_COMMENT_RE.sub("", opener)):
+        return False
+    for line in body:
+        m = _PLUGIN_KEY_RE.match(line)
+        if m and _plugin_value(m.group(1)) not in COLLECTOR_POST_PLUGINS:
+            return False
+    try:
+        doc = yaml.safe_load(textwrap.dedent("\n".join(body)))
+    except Exception:  # noqa: BLE001 — any parse failure fails closed
+        return False
+    steps = doc.get("steps") if isinstance(doc, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return False
+    return all(isinstance(st, dict) and isinstance(st.get("plugin"), str)
+               and st["plugin"] in COLLECTOR_POST_PLUGINS for st in steps)
+
+
+def _indicator_probes(indicators: list[IndicatorSchema]) -> list[tuple[str, str, str, str]]:
+    """(scan_type, value, id, note) per scannable value. A url also yields its host,
+    scanned as a domain (or ipv4/ipv6 for an IP literal)."""
+    probes: list[tuple[str, str, str, str]] = []
+    for ind in indicators:
+        probes.append((ind.type, ind.value, ind.id, ""))
+        if ind.type == "url":
+            m = _URL_HOST_RE.match(ind.value)
+            if m:
+                host = m.group(1)
+                if host.startswith("["):
+                    probes.append(("ipv6", host[1:-1], ind.id, f" (host {host})"))
+                else:
+                    kind = "ipv4" if _IPV4_RE.match(host) else "domain"
+                    probes.append((kind, host, ind.id, f" (host {host})"))
+    return probes
+
+
+def _probe_pattern(typ: str, val: str) -> str:
+    # A domain may follow a '.' (subdomain of the indicator); nothing else may be
+    # glued to the front of any value.
+    behind = r"(?<![A-Za-z0-9_-])" if typ == "domain" else r"(?<![A-Za-z0-9_.-])"
+    return behind + re.escape(val) + r"(?![A-Za-z0-9_-]|\.[A-Za-z0-9])"
+
+
+def _scan_command(label: str, command: str, indicators: list[IndicatorSchema]) -> list[str]:
+    out: list[str] = []
+    probes = _indicator_probes(indicators)
+    probe_key = [repr(p[2]) for p in probes]  # one S-25 per indicator per line (ids may be malformed)
+    lines = (command or "").split("\n")
+    heredoc: Optional[str] = None
+    params_data = False
+    params_indent: Optional[int] = None
+    for n, line in enumerate(lines, start=1):
+        in_params = False
+        lookup_ok = False
+        if heredoc is not None:
+            if line.strip() == heredoc:
+                heredoc, params_indent = None, None
+                continue
+            stripped = line.strip()
+            indent = len(line) - len(line.lstrip())
+            if params_indent is not None and stripped and indent <= params_indent:
+                params_indent = None
+            if params_indent is None and re.fullmatch(r"params:\s*", stripped):
+                params_indent = indent
+            elif params_indent is not None:
+                in_params = params_data
+        else:
+            delim = _heredoc_delim(line)
+            if delim:
+                heredoc = delim
+                params_data = _params_are_data(line, _heredoc_body(lines[n:], delim))
+            # A lookup line is exempt (for a domain) only when it is a bare lookup
+            # that names its resolver: no fetch verb, no chaining/redirection.
+            lookup_ok = (bool(DNS_LOOKUP_RE.match(line)) and not FETCH_VERB_RE.search(line)
+                         and not _SHELL_CHAIN_RE.search(line) and _resolver_named(line))
+        hit: set[str] = set()
+        for k, (typ, val, iid, note) in enumerate(probes):
+            if typ in _HASH_TYPES:
+                if re.search(re.escape(val), line, re.IGNORECASE) and FETCH_VERB_RE.search(line):
+                    out.append(f"S-26: {label} line {n}: hash {iid} on a fetch line: {line.strip()[:120]}")
+                continue
+            if typ not in ("domain", "url", "ipv4", "ipv6") or probe_key[k] in hit or in_params:
+                continue
+            pat = _probe_pattern(typ, val)
+            if not re.search(pat, line, re.IGNORECASE):
+                continue
+            if (typ == "domain" and lookup_ok and not any(
+                    re.search(pat, tok, re.IGNORECASE) for tok in _RESOLVER_AT_RE.findall(line))):
+                continue
+            hit.add(probe_key[k])
+            out.append(
+                f"S-25: {label} line {n}: {typ} {iid}{note} outside a resolver-named DNS-lookup "
+                f"line or a collector campaign params: block: {line.strip()[:120]}")
+    return out
+
+
+def unsafe_indicator_lines(indicators: list[IndicatorSchema], steps: list[StepSchema],
+                           cleanup: Optional["CleanupSchema"] = None) -> list[str]:
+    """S-25 / S-26: where an indicator may and may not appear in an executed command.
+
+    Scans every step ``command``, every ``platform_variants`` command and
+    ``cleanup.commands``.
+    S-25 — a domain/url/ipv4/ipv6 value (and a url's host) may appear only
+    (a) for a ``domain`` value, on a bare DNS-lookup line (``DNS_LOOKUP_RE``)
+    that names its resolver (``@<token>`` or ``LAB_RESOLVER``, the resolver not
+    being the indicator) with no fetch verb and no ``; && || | $( ``` ``< > &
+    <( >(``; or (b) under a ``params:`` key inside a campaign-file heredoc
+    (``cat > <path>.yml <<``) whose every ``plugin:`` is in
+    ``COLLECTOR_POST_PLUGINS`` (data POSTed to a collector, never executed).
+    S-26 — a hash value may not share a line with a fetch verb.
+    Pure; one human line per violation.
+    """
+    out: list[str] = []
+    for step in steps:
+        out += _scan_command(f"step {step.id}", step.command, indicators)
+        for os_name, cmd in (step.platform_variants or {}).items():
+            out += _scan_command(f"step {step.id} platform_variants[{os_name}]", cmd, indicators)
+    if cleanup is not None:
+        for cmd in cleanup.commands or []:
+            out += _scan_command("cleanup", cmd, indicators)
+    return out
+
+
 class ScenarioSchema(BaseModel):
     scenario_id: str
     name: str
@@ -453,6 +831,8 @@ class ScenarioSchema(BaseModel):
     # The Causality Group Owner anchor drives the CGO node label/username in the
     # causality graph. Absent → the graph falls back to 'cortexsim-agent'/'root'.
     cgo_anchor: Optional[CgoAnchorSchema] = None
+    # ── Published indicators (S-22..S-27), optional/back-compat ─────────────
+    indicators: list[IndicatorSchema] = Field(default_factory=list)
     # ── K8s delivery contract (optional, back-compat) ───────────────────────
     # Declares the cluster posture the generated manifest must PLANT. The
     # workload is simultaneously the KSPM finding a posture engine should
@@ -596,6 +976,24 @@ class ScenarioSchema(BaseModel):
         scenarios and composer drafts share one implementation.
         """
         validate_causality_spine(self.steps)
+        return self
+
+    @model_validator(mode="after")
+    def _validate_indicators(self) -> "ScenarioSchema":
+        if not self.indicators:
+            return self
+        step_ids = {s.id for s in self.steps}
+        for ind in self.indicators:
+            missing = [x for x in ind.surfaces_in if x not in step_ids]
+            if missing:
+                raise ValueError(f"S-24: indicator {ind.id} surfaces_in names unknown step(s) {missing}")
+        ids = [i.id for i in self.indicators]
+        dupes = sorted({x for x in ids if ids.count(x) > 1})
+        if dupes:
+            raise ValueError(f"S-22: duplicate indicator id(s) {dupes}")
+        lines = unsafe_indicator_lines(self.indicators, self.steps, self.cleanup)
+        if lines:
+            raise ValueError("\n".join(lines))
         return self
 
     @model_validator(mode="after")
@@ -1122,6 +1520,7 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "tags": schema.tags,
         "author": schema.author,
         "cgo_anchor": schema.cgo_anchor.model_dump() if schema.cgo_anchor else None,
+        "indicators": [i.model_dump() for i in schema.indicators],
         # Measurement contract — validated since the v2.0 pass, persisted since
         # Phase 2. Without these a run can report observed/MTTD but cannot say
         # whether the test case PASSED.

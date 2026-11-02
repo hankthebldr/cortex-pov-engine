@@ -19,7 +19,14 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from connectors.measures import denominator_exclusion, empty_exclusions
 from database import get_db
+from engine.outcome import (
+    EXCLUDED_FROM_DENOMINATOR,
+    OUTCOME_DETECTED,
+    OUTCOME_PREVENTED,
+    is_hit,
+)
 from events import event_bus
 from models import Result
 
@@ -74,19 +81,37 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
                 detail={"error": "Run not found", "code": "RUN_NOT_FOUND", "detail": f"run_id='{run_id}'"},
             )
 
-    # Compute coverage stats
+    # Coverage over the rows that could have produced evidence. Rows whose step
+    # never ran (``not_reached`` / ``not_executed``) and soak-pending
+    # Analytics/ABIOC rows leave numerator AND denominator — the one rule,
+    # ``engine.outcome.is_in_denominator``, via ``measures.denominator_exclusion``
+    # (the same split ``detection_accuracy`` and the run report use). A
+    # prevented row is a hit: the agent saw it and stopped it.
     total = len(results)
-    observed_count = sum(1 for r in results if r.observed)
-    coverage_pct = round((observed_count / total * 100), 1) if total > 0 else 0.0
-
-    # Per signal-type breakdown
-    by_type: dict[str, dict[str, int]] = {}
+    excluded = empty_exclusions()
+    in_den = []
     for r in results:
+        why = denominator_exclusion(r)
+        if why is None:
+            in_den.append(r)
+        else:
+            excluded[why] += 1
+    denominator = len(in_den)
+    # Hits through the one predicate (R1): a ``pending`` row is never a hit,
+    # whatever ``observed`` says; ``observed`` decides only without an outcome.
+    observed_count = sum(1 for r in results if is_hit(r.outcome, r.observed))
+    observed_in_den = sum(1 for r in in_den if is_hit(r.outcome, r.observed))
+    prevented = sum(1 for r in in_den if r.outcome == OUTCOME_PREVENTED)
+    coverage_pct = round((observed_in_den / denominator * 100), 1) if denominator > 0 else 0.0
+
+    # Per signal-type breakdown, over the same denominator.
+    by_type: dict[str, dict[str, int]] = {}
+    for r in in_den:
         st = r.signal_type
         if st not in by_type:
             by_type[st] = {"total": 0, "observed": 0}
         by_type[st]["total"] += 1
-        if r.observed:
+        if is_hit(r.outcome, r.observed):
             by_type[st]["observed"] += 1
 
     coverage_by_type = {
@@ -113,11 +138,25 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
         "coverage": {
             "observed": observed_count,
             "total": total,
+            "denominator": denominator,
+            "observed_in_denominator": observed_in_den,
+            "prevented": prevented,
+            "excluded": excluded,
             "pct": coverage_pct,
             "by_type": coverage_by_type,
         },
         "mttd": mttd_stats,
     }
+
+
+async def _has_engine_evidence(db: AsyncSession, result: Result) -> bool:
+    """Did a reconcile match an alert to this row? ``apply_verdicts`` records
+    one ``Observation`` per (result, alert); an attestation records none."""
+    from models import Observation  # noqa: PLC0415
+
+    hit = await db.execute(select(Observation.id).where(
+        Observation.result_id == result.id).limit(1))
+    return hit.first() is not None
 
 
 @router.put("/{result_id}/validate")
@@ -127,10 +166,30 @@ async def validate_result(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    DC marks a detection as observed or not observed.
-    When observed=true on a not-yet-observed row, sets observed_at to now
-    (enabling MTTD calculation); an already-observed row keeps its observed_at.
-    When observed=false, clears observed_at.
+    DC marks a detection as observed or not observed -- an operator
+    ATTESTATION (residual R5), so it writes the outcome every surface renders.
+
+    * ``observed=true`` on a row whose outcome is None / ``pending`` /
+      ``missed`` sets ``outcome = detected`` (reason cleared). The provenance
+      stays what the storyline already reads: ``observed_at`` with no matched
+      alert. A not-yet-observed row gets ``observed_at = now`` (MTTD); an
+      already-observed row keeps its ``observed_at``.
+    * ``observed=false`` RETRACTS the attestation: clears ``observed`` and
+      ``observed_at``; a ``detected`` the attestation wrote (no matched-alert
+      ``Observation``) reverts to None; an engine-written outcome stands. A
+      retraction never writes ``missed``. On an engine-matched row (an
+      ``Observation`` exists) there is nothing to retract: 409
+      ``NOT_AN_ATTESTATION``, nothing changes.
+    * ``observed=true`` on an ``expected_outcome: prevent`` row (any mode):
+      409 ``ATTESTATION_NOT_A_WITNESS`` -- a hand mark cannot stand in for the
+      alert witness. Re-asserting on an already-observed prevent row updates
+      the note only (round 3 R5c).
+    * ``not_reached`` / ``not_executed``: 409 ``RESULT_STEP_NOT_RUN`` -- no
+      attestation for a step that never ran.
+    * ``prevented``: 409 ``RESULT_PREVENTED`` -- an attestation never
+      downgrades a two-witness verdict. Re-asserting ``observed=true`` on an
+      already-observed prevented row (the console's "save notes") is not an
+      attestation: it updates the note and nothing else.
     """
     stmt = select(Result).where(Result.id == result_id)
     row = await db.execute(stmt)
@@ -142,6 +201,49 @@ async def validate_result(
             detail={"error": "Result not found", "code": "RESULT_NOT_FOUND", "detail": f"id={result_id}"},
         )
 
+    if result.outcome in EXCLUDED_FROM_DENOMINATOR:
+        raise HTTPException(status_code=409, detail={
+            "error": "Cannot attest a step that never ran",
+            "code": "RESULT_STEP_NOT_RUN",
+            "detail": f"id={result_id} outcome={result.outcome} reason={result.outcome_reason}",
+        })
+    if result.outcome == OUTCOME_PREVENTED:
+        if not (body.observed and result.observed):
+            raise HTTPException(status_code=409, detail={
+                "error": "An attestation never downgrades a two-witness prevented verdict",
+                "code": "RESULT_PREVENTED",
+                "detail": f"id={result_id} outcome=prevented",
+            })
+        if body.notes is not None:
+            result.notes = body.notes
+            await db.commit()
+        return result.to_dict()
+
+    if body.observed and result.expected_outcome == "prevent":
+        if result.observed:
+            # Re-asserting on an already-observed prevent row (the console's
+            # "save notes") attests nothing: the note, and only the note.
+            if body.notes is not None:
+                result.notes = body.notes
+                await db.commit()
+            return result.to_dict()
+        raise HTTPException(status_code=409, detail={
+            "error": ("A manual attestation cannot stand in for the alert witness; "
+                      "reconcile against the tenant"),
+            "code": "ATTESTATION_NOT_A_WITNESS",
+            "detail": f"id={result_id} expected_outcome=prevent outcome={result.outcome}",
+        })
+
+    if not body.observed and await _has_engine_evidence(db, result):
+        # Round 4: an engine-matched row carries no attestation to retract.
+        # Refuse and change nothing -- clearing observed/observed_at here left a
+        # "detected, not observed" row and erased the matched alert's MTTD.
+        raise HTTPException(status_code=409, detail={
+            "error": "Nothing to retract: an alert matched this row; it is not an attestation",
+            "code": "NOT_AN_ATTESTATION",
+            "detail": f"id={result_id} outcome={result.outcome}",
+        })
+
     # Re-asserting `observed: true` on an already-observed row is idempotent:
     # it must NOT move observed_at. The console's "save notes" sends exactly
     # that call, and re-stamping replaced a reconcile-matched alert time (real
@@ -152,7 +254,18 @@ async def validate_result(
     if body.observed:
         if not already_observed:
             result.observed_at = datetime.utcnow()
+        if result.outcome != OUTCOME_DETECTED:
+            result.outcome = OUTCOME_DETECTED
+            result.outcome_reason = None
     else:
+        # A retraction (round 3 R5b): it withdraws the operator's attestation
+        # and nothing else. A `detected` here has no matched-alert Observation
+        # (that case is refused above), so the attestation wrote it -> back to
+        # unjudged (the next reconcile re-judges). Any other outcome stands. A
+        # retraction never writes `missed`.
+        if result.outcome == OUTCOME_DETECTED:
+            result.outcome = None
+            result.outcome_reason = None
         result.observed_at = None
 
     if body.notes is not None:
@@ -171,6 +284,7 @@ async def validate_result(
                 "data": {
                     "result_id": result.id,
                     "observed": result.observed,
+                    "outcome": result.outcome,
                     "plane": result.plane,
                     "mttd_seconds": result.mttd_seconds,
                 },

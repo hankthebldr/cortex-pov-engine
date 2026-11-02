@@ -47,9 +47,10 @@ def _results():
         # detected, MTTD 300s, NDR / Correlation
         _result(id=3, plane="NDR", detection_kind="correlation", observed=True,
                 observed_at="2026-01-01T00:05:00", mttd_seconds=300.0),
-        # missed (observed_at set, observed False), EDR / XQL
+        # missed (an engine-decided outcome -- R4: only ``outcome`` makes a
+        # miss; ``observed_at`` without ``observed`` is no longer one), EDR / XQL
         _result(id=4, plane="EDR", detection_kind="xql", observed=False,
-                observed_at="2026-01-01T00:00:10", mttd_seconds=None),
+                observed_at=None, mttd_seconds=None, outcome="missed"),
         # pending, ASM / IOC
         _result(id=5, plane="ASM", detection_kind="ioc", observed=False,
                 observed_at=None, mttd_seconds=None),
@@ -306,3 +307,17 @@ def test_pass_pct_is_none_when_nothing_was_scoreable():
                                   run_ids=["r1"], tc_verdicts=["not_applicable"])
     assert sc.verdicts.pass_pct is None
     assert sc.verdicts.not_applicable == 1
+
+
+# --- residual R2: prevention rows have their own detection-type bucket --------
+
+def test_prevention_row_lands_in_its_own_bucket_not_other():
+    from engine.efficacy_scorecard import DETECTION_TYPES, normalize_detection_type
+
+    assert "Prevention" in DETECTION_TYPES
+    row = _result(signal_type="Prevention", detection_kind=None,
+                  expected_outcome="prevent", outcome="prevented", observed=True)
+    assert normalize_detection_type(row) == "Prevention"
+    sc = es.build_efficacy_scorecard([row])
+    labels = [b.label for b in sc.by_detection_type]
+    assert "Prevention" in labels and "Other" not in labels

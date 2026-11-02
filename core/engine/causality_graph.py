@@ -51,6 +51,9 @@ from typing import Any, Optional
 
 from engine.detection_storyline import (
     STATUS_DETECTED,
+    STATUS_NOT_EXECUTED,
+    STATUS_NOT_REACHED,
+    STATUS_PREVENTED,
     _as_dict,
     build_storyline,
     build_summary,
@@ -98,6 +101,8 @@ EDGE_KINDS: tuple[str, ...] = (
 STATE_EXPECTED = "EXPECTED"
 STATE_CONFIRMED = "CONFIRMED"
 STATE_BROKEN = "BROKEN"
+# The chain was cut here by a runtime control (Run.severed_at_step).
+STATE_SEVERED = "SEVERED"
 
 # Plane → causality lane / role. Endpoint planes carry the CGO process spine;
 # network is the far end of the hero cross-plane stitch; exposure planes emit
@@ -241,17 +246,21 @@ def _parse_ts(value: Any) -> Optional[datetime]:
 
 
 def _control_layer(result: dict[str, Any]) -> str:
-    """``exposure`` | ``prevention`` for one seeded detection.
+    """``exposure`` | ``runtime_control`` for one seeded detection.
 
     Prefers the scenario-declared ``control_layer`` (persisted onto the Result by
     the loader), falling back to the plane role so legacy rows still classify:
     exposure planes (ASM / CSPM / AI-SPM) are posture / at-rest controls, every
-    other plane is a runtime prevention control.
+    other plane is a runtime control. A scenario-declared legacy ``prevention``
+    maps to ``runtime_control`` (the bucket was renamed; ``prevented`` is now an
+    outcome, not a layer).
     """
     cl = _lower(result.get("control_layer"))
-    if cl in ("exposure", "prevention"):
+    if cl == "exposure":
         return cl
-    return "exposure" if plane_role(result.get("plane")) == "exposure" else "prevention"
+    if cl in ("prevention", "runtime_control"):
+        return "runtime_control"
+    return "exposure" if plane_role(result.get("plane")) == "exposure" else "runtime_control"
 
 
 def _asset_ref(result: dict[str, Any], observation: Optional[dict[str, Any]]) -> Optional[str]:
@@ -451,6 +460,9 @@ def build_causality_graph(
     # typed edges after all nodes exist. Each entry:
     # {parent_node, child_node, pivot, parent_sid, sid}.
     declared_pivot_edges: list[dict[str, Any]] = []
+    # Steps whose every Result is ``not_reached`` (a runtime control cut the
+    # chain upstream): their nodes carry status "not_reached".
+    not_reached_steps: set[Any] = set()
 
     for order_idx, sid in enumerate(step_order):
         group = entries_by_step[sid]
@@ -472,6 +484,8 @@ def build_causality_graph(
                 if ts is not None:
                     detected_times.append(ts)
         step_detected = any(e["status"] == STATUS_DETECTED for e in group)
+        if group and all(e["status"] == STATUS_NOT_REACHED for e in group):
+            not_reached_steps.add(sid)
         step_observed[sid] = step_detected
         step_observed_at[sid] = min(detected_times) if detected_times else None
         step_asset[sid] = asset
@@ -493,6 +507,7 @@ def build_causality_graph(
                     "step_id": sid,
                     "step_index": idx,
                     "observed": step_detected,
+                    **({"status": STATUS_NOT_REACHED} if sid in not_reached_steps else {}),
                 })
                 exposure_node_by_asset[asset_key] = node_id
             step_node_id[sid] = node_id
@@ -513,10 +528,11 @@ def build_causality_graph(
                 "causality_id": causality_id,
                 "mitre_technique": group[0].get("mitre_technique") or step_spec.get("mitre_technique"),
                 "asset_ref": asset,
-                "control_layer": "prevention",
+                "control_layer": "runtime_control",
                 "step_id": sid,
                 "step_index": idx,
                 "observed": step_detected,
+                **({"status": STATUS_NOT_REACHED} if sid in not_reached_steps else {}),
             })
             pid_counter += 1
             step_node_id[sid] = node_id
@@ -609,7 +625,12 @@ def build_causality_graph(
             "step_index": e.get("step_index"),
             "observed": bool(e.get("observed")),
             "observed_at": e["observed"].get("observed_at") if e.get("observed") else None,
+            "alert_id": e["observed"].get("alert_id") if e.get("observed") else None,
             "entities": ent,
+            "outcome": e.get("outcome"),
+            "outcome_reason": e.get("outcome_reason"),
+            "prevention_module": e.get("prevention_module"),
+            "alert_action": e.get("alert_action"),
         })
         parent = step_node_id.get(e.get("step_id"))
         if parent:
@@ -626,6 +647,20 @@ def build_causality_graph(
                            _edge_state(step_observed[prev], step_observed[cur],
                                        None, None, None),
                            f"scenario step order {step_index_of[prev]}→{step_index_of[cur]}"))
+
+    # --- Severed chain -------------------------------------------------------
+    # A runtime control cut the chain at ``severed_at_step``: the edges leaving
+    # that step's node (sequence + process_lineage) are SEVERED. Mirrors the
+    # Run row; nothing here decides where the chain was cut.
+    severed_at_step = _as_dict(run).get("severed_at_step")
+    severed_node = step_node_id.get(severed_at_step) if severed_at_step else None
+    if severed_node:
+        for edge in edges:
+            if edge["source"] == severed_node and edge["kind"] in (
+                EDGE_SEQUENCE, EDGE_PROCESS_LINEAGE,
+            ):
+                edge["state"] = STATE_SEVERED
+                edge["rationale"] = f"{edge['rationale']} (severed at {severed_at_step})"
 
     # --- exposure_exploit + exploit_impact ----------------------------------
     _emit_exposure_edges(
@@ -667,6 +702,7 @@ def build_causality_graph(
     summary = build_summary(entries)  # delegated — identical to timeline/scorecard
     summary["node_count"] = len(nodes)
     summary["edge_count"] = len(edges)
+    summary["severed_at_step"] = severed_at_step
     summary["critical_path"] = _critical_path(
         cgo_id, exposure_node_by_asset, runtime_steps, step_node_id, step_index_of
     )
@@ -953,14 +989,16 @@ def _causality_summary(nodes, edges, entries, results_by_id, obs_map, meta):
     # Dual-control coverage: detected vs expected by control layer.
     dual: dict[str, dict[str, int]] = {
         "exposure": {"detected": 0, "expected": 0},
-        "prevention": {"detected": 0, "expected": 0},
+        "runtime_control": {"detected": 0, "expected": 0},
     }
     for e in entries:
         rd = results_by_id.get(e.get("result_id"), {})
         cl = _control_layer(rd)
+        if e["status"] in (STATUS_NOT_REACHED, STATUS_NOT_EXECUTED):
+            continue  # the step never ran: neither a hit nor a gap
         bucket = dual.setdefault(cl, {"detected": 0, "expected": 0})
         bucket["expected"] += 1
-        if e["status"] == STATUS_DETECTED:
+        if e["status"] in (STATUS_DETECTED, STATUS_PREVENTED):
             bucket["detected"] += 1
 
     dual_control_verdict = _dual_control_verdict(dual)
@@ -983,7 +1021,7 @@ def _causality_summary(nodes, edges, entries, results_by_id, obs_map, meta):
 def _dual_control_verdict(dual: dict[str, dict[str, int]]) -> str:
     """The code-to-cloud verdict string for the POV report."""
     expo = dual.get("exposure", {})
-    prev = dual.get("prevention", {})
+    prev = dual.get("runtime_control", {})
     expo_hit = expo.get("detected", 0) > 0
     prev_hit = prev.get("detected", 0) > 0
     has_expo = expo.get("expected", 0) > 0
@@ -994,7 +1032,7 @@ def _dual_control_verdict(dual: dict[str, dict[str, int]]) -> str:
         return ("Dual-control CONFIRMED — the platform both shrank the attack "
                 "surface at rest AND severed the exploit at runtime.")
     if prev_hit and not expo_hit:
-        return ("Prevention-only gap — you blocked it but never shrank the "
+        return ("Runtime-control-only gap — you blocked it but never shrank the "
                 "surface. A point EDR stops today's exploit; the exposure recurs.")
     if expo_hit and not prev_hit:
         return ("Exposure-only gap — you flagged it but could not stop it. A "

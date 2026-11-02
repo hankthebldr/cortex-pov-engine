@@ -39,28 +39,28 @@ const GRAPH_RAW = {
         id: 'alert:1', kind: 'alert', lane: 'endpoint', stage: 'exploit', plane: 'EDR',
         label: 'Shell from www-data', status: 'detected', detection_type: 'BIOC',
         mttd_seconds: 12, detection_id: 'bioc-mp-007-shell-from-www-data', result_id: 1,
-        control_layer: 'prevention',
+        control_layer: 'runtime_control',
       },
       {
         id: 'alert:2', kind: 'alert', lane: 'endpoint', stage: 'exploit', plane: 'EDR',
         label: 'Anomalous credential access', status: 'pending', detection_type: 'ABIOC',
-        detection_id: 'abioc-mp-007-cred-access-behavioral', result_id: 2, control_layer: 'prevention',
+        detection_id: 'abioc-mp-007-cred-access-behavioral', result_id: 2, control_layer: 'runtime_control',
       },
       { id: 'proc:s4', kind: 'process', lane: 'endpoint', stage: 'exploit', label: 'redis-cli', sublabel: 'www-data' },
       {
         id: 'alert:3', kind: 'alert', lane: 'network', stage: 'exploit', plane: 'NDR',
         label: 'Unauth Redis access', status: 'detected', detection_type: 'XQL',
-        mttd_seconds: 20, detection_id: 'xql-mp-007-ndr-unauth-redis', result_id: 3, control_layer: 'prevention',
+        mttd_seconds: 20, detection_id: 'xql-mp-007-ndr-unauth-redis', result_id: 3, control_layer: 'runtime_control',
       },
       {
         id: 'alert:4', kind: 'alert', lane: 'network', stage: 'impact', plane: 'NDR',
         label: 'C2 beacon', status: 'missed', detection_type: 'XQL',
-        detection_id: 'xql-mp-007-ndr-beacon', result_id: 4, control_layer: 'prevention',
+        detection_id: 'xql-mp-007-ndr-beacon', result_id: 4, control_layer: 'runtime_control',
       },
       {
         id: 'alert:5', kind: 'alert', lane: 'correlation', stage: 'impact', plane: 'ANALYTICS',
         label: 'Incident spans 3 planes', status: 'pending', detection_type: 'Correlation',
-        detection_id: 'CR-MP-0007', result_id: 5, control_layer: 'prevention',
+        detection_id: 'CR-MP-0007', result_id: 5, control_layer: 'runtime_control',
       },
     ],
     edges: [

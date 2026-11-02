@@ -40,10 +40,12 @@ from database import get_db
 from engine import k8s_manifest as km
 from engine.push_generator import (
     BundleTargetUnsatisfiable,
+    PushNotSupported,
     emittable_targets,
     generate_bash,
     generate_k8s,
     generate_powershell,
+    push_not_supported,
     resolve_target,
 )
 from models import Scenario
@@ -779,6 +781,11 @@ def _resolve_format(scenario_id: str, scenario_dict: dict, format: str) -> tuple
             },
         )
 
+    if push_not_supported(scenario_dict):
+        raise HTTPException(
+            status_code=409, detail=PushNotSupported(scenario_id).to_error()
+        )
+
     targets = emittable_targets(scenario_dict)
 
     if format == "auto":
@@ -919,7 +926,8 @@ async def generate_bundle(
     Refusals: **409 CLUSTER_CONSENT_REQUIRED** (send the key),
     **403 CLUSTER_PRIVILEGE_DISABLED** (the deployment owner must set
     ``CORTEXSIM_ALLOW_PRIVILEGED_K8S``), **422 CLUSTER_CAPABILITY_FORBIDDEN** /
-    **CLUSTER_NAMESPACE_FORBIDDEN** (nothing unlocks these).
+    **CLUSTER_NAMESPACE_FORBIDDEN** (nothing unlocks these),
+    **409 PUSH_NOT_SUPPORTED** (the scenario declares ``push_supported: false``).
 
     ``bash`` and ``powershell`` are accepted for surface symmetry and are
     ungated — they are self-contained scripts a DC runs on a host they already

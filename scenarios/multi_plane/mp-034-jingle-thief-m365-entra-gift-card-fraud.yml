@@ -1,0 +1,406 @@
+# Jingle Thief / CL-CRI-1032 (Unit 42, 2025-10-22): a financially motivated group phishes M365 credentials, signs
+# in from Moroccan (and US proxy) infrastructure, sweeps SharePoint/OneDrive for gift-card workflows, bulk-downloads,
+# then plants an Exchange forwarding rule to keep watching the mailbox. Identity + cloud-app only: the report
+# describes no endpoint or malware leg, so none is invented. Every leg names ONE user principal (stitching_key
+# user_principal) as target_user, set by step-01 and read back by every later step. DC points at: Entra sign-in
+# analytics in msft_azure_ad_signin (step-01/02, ITDR); SharePoint/OneDrive/Exchange analytics in msft_o365_audit
+# (step-03..06, CLOUD_APP); CR-MP-0034 for the stitched incident. The report's five IPs are declared but
+# `in_band: false`: neither identity emitter has a client-address param (records carry RFC 5737 addresses), so
+# they stay out-of-band until the emitters gain one — backlog. Not emitted (no emitter preset, backlog):
+# Sent->Deleted Items hiding, rogue Authenticator / SSPR / Entra device registration, gift-card app abuse. The
+# report's phishing URLs are wildcard patterns, not domains, so there is no DNS lookup and no real IdP or mail
+# platform is ever called.
+scenario_id: SIM-MP-034
+name: "Jingle Thief (CL-CRI-1032) — M365/Entra Account Takeover to SharePoint Recon and Mailbox Forwarding (Unit 42)"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - Analytics
+  - XQL
+  - Correlation
+
+uc_ref: UCS-ITDR-02
+tc_ref: TC-ITDR-03
+tc_refs:
+  - TC-ITDR-03
+  - TC-ITDR-02
+  - TC-AES-07
+  - TC-IR-13
+pov_scenario_id: POV-SC-001
+uc_name: "Identity Threat Detection & Response"
+tc_name: "Validate CIE syncs and correlates AD, Azure AD, and cloud IdPs"
+
+mitre_tactic: "TA0001"
+mitre_tactic_name: "Initial Access"
+mitre_technique: "T1078.004"
+mitre_technique_name: "Valid Accounts: Cloud Accounts"
+additional_techniques:
+  - technique: "T1213.002"
+    name: "Data from Information Repositories: Sharepoint"
+  - technique: "T1530"
+    name: "Data from Cloud Storage"
+  - technique: "T1114.003"
+    name: "Email Collection: Email Forwarding Rule"
+  - technique: "T1564.008"
+    name: "Hide Artifacts: Email Hiding Rules"
+
+threat_report: "Unit 42 — Jingle Thief: Inside a Cloud-Based Gift Card Fraud Campaign"
+threat_report_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
+
+execution_identity:
+  default: direct
+  options:
+    - direct
+
+push_supported: false
+pull_supported: true
+
+infra_modules_needed:
+  - base
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F1"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 900
+  unit: "seconds"
+success_criteria: |
+  For one canary user principal, the Entra risky-login and impossible-traveler analytics
+  fire in msft_azure_ad_signin, and the SharePoint enumeration, OneDrive enumeration,
+  mass-download and Exchange forwarding-rule analytics fire in msft_o365_audit, every
+  record naming the same principal. CR-MP-0034 stitches ITDR + CLOUD_APP into one
+  incident on that principal within the window. The report's IPs are searched for in the
+  tenant by the DC; this run does not put them on the wire.
+moat_tier: "LEAD"
+
+correlation_window_seconds: 3600
+required_planes_in_incident:
+  - ITDR
+  - CLOUD_APP
+stitching_key: user_principal
+
+indicators:
+  - id: ind-01
+    type: ipv4
+    value: "105.156.109.227"
+    source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
+    safe_form: log_field
+    surfaces_in: [step-01, step-02]
+    in_band: false
+    description: "Moroccan infrastructure (report IOC list, first entry). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
+  - id: ind-02
+    type: ipv4
+    value: "196.65.139.51"
+    source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
+    safe_form: log_field
+    surfaces_in: [step-01, step-02]
+    in_band: false
+    description: "Moroccan infrastructure (report IOC list). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
+  - id: ind-03
+    type: ipv4
+    value: "41.141.201.19"
+    source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
+    safe_form: log_field
+    surfaces_in: [step-01, step-02]
+    in_band: false
+    description: "Moroccan infrastructure (report IOC list). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
+  - id: ind-04
+    type: ipv4
+    value: "70.187.192.236"
+    source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
+    safe_form: log_field
+    surfaces_in: [step-01, step-02]
+    in_band: false
+    description: "US infrastructure, potential proxy or compromised host (report IOC list). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
+  - id: ind-05
+    type: ipv4
+    value: "72.49.91.23"
+    source_url: "https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign/"
+    safe_form: log_field
+    surfaces_in: [step-01, step-02]
+    in_band: false
+    description: "US infrastructure, potential proxy or compromised host (report IOC list). Sign-in client address the DC searches for; NOT yet in-band — idp_signin_emulator has no client-address param (backlog)"
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# No endpoint process belongs to this story: the actor works through a browser session
+# against M365. The CGO is the runner's python3 emitter process; step-01 is the root and
+# every later step is the same principal's next action in the same tenant (shared_entity),
+# which is the entity CR-MP-0034 fuses on.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "direct"
+
+steps:
+  - id: step-01
+    name: "Phished credentials replayed — Entra sign-in flagged at-risk from an anonymised address"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/entra/signin/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      CORTEXSIM_USER="${CORTEXSIM_USER:-cortexsim.canary@${LAB_TENANT:-cortexsim-canary.invalid}}"
+      printf '%s\n' "$CORTEXSIM_USER" > /tmp/mp-034-principal
+      cat > /tmp/mp-034-risky.yml <<YML
+      campaign_id: CMP-MP-RISKY-034
+      name: "MP-034 — Jingle Thief azure_risky_login"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-034, unit42, jingle-thief]
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: microsoft
+            event_pattern: azure_risky_login
+            target_user: "$CORTEXSIM_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-risky.yml --live
+    identity: direct
+    mitre_technique: "T1078.004"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "Entra sign-in for the shared principal flagged atRisk from an anonymised address — the report's Table 1 alert 'A possible risky login to Azure' after the credential-phishing initial access."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "xql-mp-034-a-possible-risky-login-to-azure"
+      - plane: ITDR
+        type: XQL
+        description: "Validation: the risky sign-in landed in msft_azure_ad_signin with userPrincipalName = the shared principal."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "xql-mp-034-risky-entra-sign-in-for-the-shared-principal-landed-in-msft-azure-ad-signin"
+  - id: step-02
+    name: "Same principal signs in from two distant countries — impossible traveler"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/entra/signin/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
+      cat > /tmp/mp-034-travel.yml <<YML
+      campaign_id: CMP-MP-TRAVEL-034
+      name: "MP-034 — Jingle Thief impossible_travel"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-034, unit42, jingle-thief]
+      steps:
+        - step_id: step-01
+          plugin: idp_signin_emulator
+          params:
+            collector_url: "$COLLECTOR_URL"
+            provider: microsoft
+            event_pattern: impossible_travel
+            target_user: "$CORTEXSIM_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-travel.yml --live
+    identity: direct
+    mitre_technique: "T1078.004"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: shared_entity
+    expected_detections:
+      - plane: ITDR
+        type: Analytics
+        description: "Two successful Entra sign-ins for the same principal from geographically distant addresses inside an impossible interval — the report's Table 1 'Impossible Traveler - SSO' / 'A user connected from a new country' family."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "xql-mp-034-impossible-traveler-sso-for-the-shared-principal"
+  - id: step-03
+    name: "Cloud reconnaissance — SharePoint search/page sweep for gift-card workflows"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/o365/audit/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
+      cat > /tmp/mp-034-sharepoint.yml <<YML
+      campaign_id: CMP-MP-SHAREPOINT-034
+      name: "MP-034 — Jingle Thief sharepoint_enumeration"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-034, unit42, jingle-thief]
+      steps:
+        - step_id: step-01
+          plugin: m365_activity_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: sharepoint_enumeration
+            target_user: "$CORTEXSIM_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-sharepoint.yml --live
+    identity: direct
+    mitre_technique: "T1213.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "SearchQueryPerformed / PageViewed sweep across SharePoint sites by the same principal — the report's search for gift-card workflows, ticketing exports and VPN guides."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "xql-mp-034-sharepoint-enumeration-by-the-compromised-principal"
+  - id: step-04
+    name: "Cloud reconnaissance — OneDrive file enumeration by the same principal"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/o365/audit/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
+      cat > /tmp/mp-034-onedrive.yml <<YML
+      campaign_id: CMP-MP-ONEDRIVE-034
+      name: "MP-034 — Jingle Thief onedrive_enumeration"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-034, unit42, jingle-thief]
+      steps:
+        - step_id: step-01
+          plugin: m365_activity_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            burst_count: 30
+            event_pattern: onedrive_enumeration
+            target_user: "$CORTEXSIM_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-onedrive.yml --live
+    identity: direct
+    mitre_technique: "T1213.002"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "FileAccessed enumeration across a OneDrive by the same principal — the OneDrive half of the report's reconnaissance phase."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "xql-mp-034-onedrive-enumeration-by-the-compromised-principal"
+  - id: step-05
+    name: "Collection — burst of SharePoint/OneDrive file downloads"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/o365/audit/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
+      cat > /tmp/mp-034-download.yml <<YML
+      campaign_id: CMP-MP-DOWNLOAD-034
+      name: "MP-034 — Jingle Thief storage_exfiltration"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-034, unit42, jingle-thief]
+      steps:
+        - step_id: step-01
+          plugin: m365_activity_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            burst_count: 20
+            event_pattern: storage_exfiltration
+            target_user: "$CORTEXSIM_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-download.yml --live
+    identity: direct
+    mitre_technique: "T1530"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-04
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "Burst of FileDownloaded / FileSyncDownloadedFull by the same principal — the report's Table 1 'Massive file downloads from SaaS service'."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "xql-mp-034-massive-file-downloads-from-saas-service"
+      - plane: CLOUD_APP
+        type: XQL
+        description: "Validation: enumeration and download records for the shared principal landed in msft_o365_audit (UserId = the principal)."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "xql-mp-034-sharepoint-onedrive-activity-for-the-shared-principal-landed-in-msft-o365-audit"
+  - id: step-06
+    name: "Mailbox persistence — Exchange inbox forwarding rule, and the stitched incident"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/o365/audit/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      test -s /tmp/mp-034-principal || { printf 'run step-01 first: no shared principal\n' >&2; exit 3; }
+      CORTEXSIM_USER=$(cat /tmp/mp-034-principal)
+      cat > /tmp/mp-034-rule.yml <<YML
+      campaign_id: CMP-MP-RULE-034
+      name: "MP-034 — Jingle Thief mailbox_rule_creation"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-034, unit42, jingle-thief]
+      steps:
+        - step_id: step-01
+          plugin: m365_activity_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: mailbox_rule_creation
+            target_user: "$CORTEXSIM_USER"
+            iterations: 1
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-034-rule.yml --live
+    identity: direct
+    mitre_technique: "T1114.003"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-05
+      pivot: shared_entity
+    expected_detections:
+      - plane: CLOUD_APP
+        type: Analytics
+        description: "New-InboxRule forwarding/hiding rule on the shared principal's mailbox — the report's Table 1 'Exchange inbox forwarding rule configured'."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "xql-mp-034-exchange-inbox-forwarding-rule-configured"
+      - plane: ANALYTICS
+        type: Correlation
+        description: "CR-MP-0034 fuses the risky Entra sign-in, impossible travel, SharePoint/OneDrive enumeration, mass download and the forwarding rule into one incident on the same user principal within the window."
+        ttp_ref: "TTP-2026-0193"
+        detection_id: "CR-MP-0034"
+
+cleanup:
+  commands:
+    - "rm -f /tmp/mp-034-principal /tmp/mp-034-risky.yml /tmp/mp-034-travel.yml /tmp/mp-034-sharepoint.yml /tmp/mp-034-onedrive.yml /tmp/mp-034-download.yml /tmp/mp-034-rule.yml"
+
+author: "Henry Reed"
+created: "2026-10-27"
+last_updated: "2026-10-27"
+tags:
+  - unit42
+  - stitched-chain
+  - actor:cl-cri-1032
+  - actor:jingle-thief
+  - identity-led
+  - m365
+  - entra-id
+  - mailbox-forwarding-rule
+  - gift-card-fraud

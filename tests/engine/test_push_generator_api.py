@@ -63,7 +63,8 @@ def env():
     app.include_router(router, prefix="/api")
     app.dependency_overrides[get_db] = _get_db
 
-    def _seed(scenario_id: str, steps: list[dict], cleanup: dict | None = None) -> None:
+    def _seed(scenario_id: str, steps: list[dict], cleanup: dict | None = None,
+              push_supported: bool = True) -> None:
         from models import Scenario  # noqa: PLC0415
 
         async def _do():
@@ -75,6 +76,7 @@ def env():
                     mitre_tactic="TA0006", mitre_tactic_name="Credential Access",
                     mitre_technique="T1003.001", mitre_technique_name="LSASS",
                     steps=steps, external_tools=[],
+                    push_supported=push_supported,
                     cleanup=cleanup or {"commands": []},
                 ))
                 await db.commit()
@@ -193,3 +195,35 @@ def test_auto_on_a_scenario_with_no_emittable_target_is_409(env):
     r = client.get("/api/scenarios/SIM-TEST-NONE/download")
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "BUNDLE_TARGET_UNSATISFIABLE"
+
+
+class TestPushSupportedFalse:
+    """``push_supported: false`` means "no push bundle is offered". The download
+    route used to ignore it and hand back whatever the resolver could emit."""
+
+    @pytest.mark.parametrize("fmt", ["auto", "bash", "powershell", "k8s"])
+    def test_download_is_409_push_not_supported_for_every_format(self, env, fmt):
+        client, seed = env
+        # Perfectly emittable content: the refusal must come from the flag, not
+        # from the resolver.
+        seed("SIM-TEST-NOPUSH", [BOTH_STEP], push_supported=False)
+        r = client.get(f"/api/scenarios/SIM-TEST-NOPUSH/download?format={fmt}")
+        assert r.status_code == 409
+        body = r.json()["detail"]
+        assert set(body) == {"error", "code", "detail"}
+        assert body["code"] == "PUSH_NOT_SUPPORTED"
+        assert "SIM-TEST-NOPUSH" in body["detail"]
+
+    def test_post_bundle_is_409_push_not_supported(self, env):
+        client, seed = env
+        seed("SIM-TEST-NOPUSH", [BOTH_STEP], push_supported=False)
+        r = client.post("/api/scenarios/SIM-TEST-NOPUSH/bundle", json={"format": "k8s"})
+        assert r.status_code == 409
+        body = r.json()["detail"]
+        assert set(body) == {"error", "code", "detail"}
+        assert body["code"] == "PUSH_NOT_SUPPORTED"
+
+    def test_push_supported_true_is_unaffected(self, env):
+        client, seed = env
+        seed("SIM-TEST-PUSH", [BOTH_STEP], push_supported=True)
+        assert client.get("/api/scenarios/SIM-TEST-PUSH/download").status_code == 200

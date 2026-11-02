@@ -21,7 +21,7 @@ const BASE_URL = typeof window !== 'undefined' ? window.location.origin : ''
  * The presenter view reads a flatter shape, so we map at this client edge
  * rather than forking the builder (keeps the SSE-fold path and the snapshot
  * path reading the same server contract). `provenance` is derived here:
- * machine-verified = a detected row carrying a real alert id (connector
+ * machine-verified = a detected or prevented row carrying a real alert id (connector
  * reconcile), attested = detected via the human checkbox (no alert evidence).
  *
  * @param {Object} s builder output (already envelope-unwrapped)
@@ -44,7 +44,9 @@ function normalizeStoryline(s) {
       const expected = e.expected_detection || {}
       const observed = e.observed || null
       const alertId = observed ? observed.alert_id || null : null
-      if (e.status === 'detected') {
+      // detected and prevented are both alert-backed outcomes; pending /
+      // not_reached / not_executed / missed count in neither bucket.
+      if (e.status === 'detected' || e.status === 'prevented') {
         if (alertId) machineVerified += 1
         else attested += 1
       }
@@ -63,6 +65,12 @@ function normalizeStoryline(s) {
         deep_link: observed ? observed.deep_link || null : null,
         evidence_count: (e.evidence_refs || []).length,
         observed_method: observed ? (alertId ? 'connector' : 'human') : null,
+        // Server-supplied outcome detail, rendered verbatim (never inferred).
+        outcome: e.outcome != null ? e.outcome : null,
+        outcome_reason: e.outcome_reason != null ? e.outcome_reason : null,
+        prevention_module: e.prevention_module != null ? e.prevention_module : null,
+        alert_action: e.alert_action != null ? e.alert_action : null,
+        alert_outcome: e.alert_outcome != null ? e.alert_outcome : null,
       }
     }),
   }))
@@ -74,6 +82,11 @@ function normalizeStoryline(s) {
     steps,
     coverage: {
       detected: summary.detected || 0,
+      prevented: summary.prevented || 0,
+      not_reached: summary.not_reached || 0,
+      not_executed: summary.not_executed || 0,
+      // null when the server predates the denominator rule — not a zero.
+      denominator: summary.denominator != null ? summary.denominator : null,
       expected: summary.total || 0,
       pct: summary.coverage_pct != null ? summary.coverage_pct : 0,
     },

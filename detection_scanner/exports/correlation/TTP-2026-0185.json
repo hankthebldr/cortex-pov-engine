@@ -1,0 +1,23 @@
+{
+  "mitre_techniques": [
+    "T1574.002",
+    "T1543.003",
+    "T1102",
+    "T1071.001",
+    "T1105",
+    "T1119",
+    "T1560.001",
+    "T1567.002",
+    "T1070.004"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-026 mscorsvc.dll Written Beside a Relocated mscorsvw.exe) AND BIOC(MP-026 Service msdnetsvc Created for a Relocated mscorsvw.exe) AND ABIOC(MP-026 Recurring Web Egress from the mscorsvw.exe Side-Load Causality) AND (IOC(file-sha256 igfx.exe) OR XQL(MP-026 HazyBeacon Toolkit sha256s Landed in panw_ngfw_threat_raw)) AND ABIOC(MP-026 Staged Archive Volumes Uploaded to Cloud-Storage API Paths) joined on agent_hostname = endpoint_device_name (src_host) within 3600 seconds -> ONE incident",
+      "name": "CL-STA-1020 HazyBeacon Side-Load to Cloud-Storage Exfil \u2014 Endpoint + NGFW on src_host",
+      "rule_id": "CR-MP-0026",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0185"
+}

@@ -21,7 +21,9 @@ import {
 } from '../console/composerLanes.js'
 import { LANE_BANDS } from '../console/povdata/corpus.js'
 import { LAYOUT } from '../console/composerLayout.js'
-import { emptyDraft, setStepLane, draftToApi, draftFromScenario } from '../console/composerDraft.js'
+import {
+  emptyDraft, setStepLane, setStepChannel, draftToApi, draftFromScenario,
+} from '../console/composerDraft.js'
 
 const step = (id, over = {}) => ({
   id, name: id, command: '', identity: '', technique: null, platforms: [],
@@ -60,12 +62,48 @@ describe('laneOf — one derivation for every consumer', () => {
     expect(laneOf(null)).toBe('AGT')
   })
 
-  it('a draft override wins over every derivation, but only for a real step lane', () => {
+  it('a draft override wins over every plane derivation, but only for a real step lane', () => {
     const s = step('s', { plane: 'NDR' })
     expect(laneOf(s, { s: 'ENG' })).toBe('ENG')
     expect(laneOf(s, { s: 'PROOF' })).toBe('BVM')
     expect(laneOf(s, { s: 'NOPE' })).toBe('BVM')
     expect(laneOf(s, { other: 'ENG' })).toBe('BVM')
+  })
+
+  // Review finding: the override was checked BEFORE the channel, so a lane
+  // left over from an earlier drag could badge a step behind a door it does
+  // not launch through.
+  it('an eal step is DATA STREAMS whatever the override says', () => {
+    const s = step('s', { channel: 'eal', plane: 'NDR' })
+    for (const o of ['AGT', 'CC', 'BVM', 'ENG']) {
+      expect(laneOf(s, { s: o })).toBe('DC')
+    }
+  })
+
+  it('an agent step ignores a DC override — DATA STREAMS is reached by channel only', () => {
+    expect(laneOf(step('s', { plane: 'NDR' }), { s: 'DC' })).toBe('BVM')
+    expect(laneOf(step('s'), { s: 'DC' })).toBe('AGT')
+  })
+
+  it('plane-derived overrides (CC/BVM/ENG/AGT) on an agent step still apply', () => {
+    const s = step('s', { plane: 'NDR' })
+    expect(laneOf(s, { s: 'CC' })).toBe('CC')
+    expect(laneOf(s, { s: 'ENG' })).toBe('ENG')
+    expect(laneOf(s, { s: 'AGT' })).toBe('AGT')
+    expect(laneOf(step('s', { plane: 'EDR' }), { s: 'BVM' })).toBe('BVM')
+  })
+
+  it('a channel changed after a drag moves the badge with it', () => {
+    // Drag into DATA STREAMS (writes channel eal), then the inspector sets the
+    // channel back to agent without a re-drag: the 'DC' override is now stale.
+    const d = setStepLane({ ...emptyDraft(), steps: [step('step-01', { plane: 'NDR' })] }, 'step-01', 'DC')
+    const back = setStepChannel(d.steps, 'step-01', 'agent')
+    expect(d.laneOverrides).toEqual({ 'step-01': 'DC' })
+    expect(laneOf(back[0], d.laneOverrides)).toBe('BVM')
+    // And the reverse: an ENG override on a step later switched to eal.
+    const eng = setStepLane({ ...emptyDraft(), steps: [step('step-01')] }, 'step-01', 'ENG')
+    const toEal = setStepChannel(eng.steps, 'step-01', 'eal')
+    expect(laneOf(toEal[0], eng.laneOverrides)).toBe('DC')
   })
 })
 

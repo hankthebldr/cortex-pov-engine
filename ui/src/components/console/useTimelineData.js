@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getScenario, getRun, getResultsForRun } from '../../api/client.js'
+import { resultStatus, isHitStatus } from '../../outcomes.js'
 
 /**
  * useTimelineData — fetches scenario detail + run results and folds them into
@@ -12,7 +13,9 @@ import { getScenario, getRun, getResultsForRun } from '../../api/client.js'
  *     elapsedMttd,                  // median MTTD across detected detections, null if none
  *     detections: [{
  *       plane, type, description,
- *       status: 'detected' | 'pending' | 'missed' | 'idle',
+ *       status: 'idle' | 'pending' | any outcomes.js::resultStatus key
+ *               (prevented, detected, detected_not_prevented, missed,
+ *                not_reached, not_executed, pending),
  *       mttd, alertId,
  *     }]
  *   }
@@ -24,7 +27,7 @@ import { getScenario, getRun, getResultsForRun } from '../../api/client.js'
  *
  * @param {string|null} scenarioId
  * @param {string|null} runId
- * @returns {{ frames, scenario, run, loading, error, stitches }}
+ * @returns {{ frames, scenario, run, loading, error, stitches, coverage }}
  *           stitches: array of { from, to } step indices to draw arcs between
  */
 export default function useTimelineData(scenarioId, runId) {
@@ -109,8 +112,8 @@ export default function useTimelineData(scenarioId, runId) {
         const r = matches[0]
         let status = 'idle'
         if (stepStatus === 'pending') status = 'pending'
-        if (r && r.observed === true)  status = 'detected'
-        if (r && r.observed === false) status = 'missed'
+        // The server's outcome first: a step that never ran is not "missed".
+        if (r) status = resultStatus(r)
         return {
           key: `${step.id || idx}-${di}`,
           plane: (d.plane || '').toUpperCase(),
@@ -122,7 +125,7 @@ export default function useTimelineData(scenarioId, runId) {
         }
       })
 
-      const detected = detections.filter((d) => d.status === 'detected')
+      const detected = detections.filter((d) => isHitStatus(d.status))
       const elapsedMttd = detected.length
         ? Math.round(detected.reduce((s, d) => s + (d.mttd || 0), 0) / detected.length)
         : null
@@ -171,5 +174,9 @@ export default function useTimelineData(scenarioId, runId) {
     return result
   }, [frames])
 
-  return { frames, scenario, run, loading, error, stitches }
+  // The server's coverage (is_in_denominator) for any caller that states a
+  // "detected N of M" figure; null when the payload carries none.
+  const coverage = (results && !Array.isArray(results) && results.coverage) || null
+
+  return { frames, scenario, run, loading, error, stitches, coverage }
 }

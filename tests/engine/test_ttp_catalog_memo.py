@@ -75,7 +75,7 @@ def test_technique_ids_prefer_the_subtechnique(cat):
 def test_kind_counts_cover_every_detection_family(cat):
     assert cat.card_detection_kind_counts("TTP-TEST-0001") == {
         "bioc": 2, "xql": 1, "correlation": 1, "ioc": 1,
-        "analytics": 1, "abioc": 1, "modeling": 1,
+        "analytics": 1, "abioc": 1, "modeling": 1, "prevention": 0,
     }
 
 
@@ -110,7 +110,7 @@ def test_unknown_card_returns_empty_and_is_memoised(cat):
     assert cat.card_atlas_techniques("TTP-NOPE") == []
     assert cat.card_detection_kind_counts("TTP-NOPE") == {
         "bioc": 0, "xql": 0, "correlation": 0, "ioc": 0,
-        "analytics": 0, "abioc": 0, "modeling": 0,
+        "analytics": 0, "abioc": 0, "modeling": 0, "prevention": 0,
     }
     assert "TTP-NOPE" in cat._techniques_memo
 

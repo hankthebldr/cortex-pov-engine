@@ -18,6 +18,7 @@ package executor
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,11 @@ import (
 	"sync"
 	"sync/atomic"
 )
+
+// ErrAnchorTerminated is returned (wrapped) by RunStep, with rc == -1, when the
+// chain's anchor shell died before emitting a step's exit-code sentinel: the
+// step's outcome is unknown. Callers match it with errors.Is.
+var ErrAnchorTerminated = errors.New("chain anchor shell terminated")
 
 // ChainSession is a persistent anchor shell that runs steps as its children.
 // Not safe for concurrent RunStep calls — steps are sequential by design.
@@ -38,6 +44,13 @@ type ChainSession struct {
 	marker string      // per-session sentinel token (unlikely to appear in output)
 	cancel context.CancelFunc
 	ctx    context.Context
+
+	// exited is closed when the anchor process has exited; waitErr is its Wait
+	// result. One goroutine calls cmd.Wait() (it may be called exactly once) so
+	// RunStep can notice the anchor's death directly instead of on pipe EOF,
+	// which an orphaned step holding the pipes' write ends would delay.
+	exited  chan struct{}
+	waitErr error
 
 	cancelled atomic.Bool
 	wg        sync.WaitGroup
@@ -84,7 +97,12 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 		marker: fmt.Sprintf("__CORTEXSIM_STEP_%d__", os.Getpid()),
 		cancel: cancel,
 		ctx:    sctx,
+		exited: make(chan struct{}),
 	}
+	go func() {
+		s.waitErr = cmd.Wait()
+		close(s.exited)
+	}()
 
 	// Scanner goroutines: stream each pipe line-by-line onto a buffered channel.
 	s.wg.Add(2)
@@ -142,7 +160,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 	var outB, errB strings.Builder
 	var rc int
 	var rcErr error
-	var sawRC bool // true once the anchor emitted this step's exit-code sentinel
+	var sawRC atomic.Bool // true once the anchor emitted this step's exit-code sentinel
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -162,7 +180,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 				if clean := stripANSI(line); strings.HasPrefix(clean, s.marker+" ") {
 					if v, e := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(clean, s.marker+" "))); e == nil {
 						rc = v
-						sawRC = true
+						sawRC.Store(true)
 					} else {
 						rcErr = e
 					}
@@ -199,6 +217,26 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 		}
 	}()
 
+	// The anchor can die while its (now orphaned) step subshell still holds the
+	// pipes' write ends, so EOF alone would not arrive until the orphan exits (or
+	// the step times out). Watch the anchor directly: when it exits without this
+	// step's sentinel, tree-kill the orphan. cmd.Wait() (in s.exited) has by then
+	// closed our read ends, so the scanners finish at once and RunStep returns
+	// ErrAnchorTerminated below via the !sawRC path -- the anchor died first, so
+	// the witness is anchor_terminated, never "step signaled". The kill is not
+	// awaited: killProcessTree sleeps killGrace, and RunStep must not.
+	stepDone := make(chan struct{})
+	defer close(stepDone)
+	go func() {
+		select {
+		case <-s.exited:
+			if !sawRC.Load() {
+				killProcessTree(s.cmd.Process.Pid)
+			}
+		case <-stepDone:
+		}
+	}()
+
 	wg.Wait()
 
 	if s.cancelled.Load() || s.ctx.Err() != nil {
@@ -207,7 +245,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 	if rcErr != nil {
 		return outB.String(), errB.String(), -1, fmt.Errorf("chain sentinel parse: %w", rcErr)
 	}
-	if !sawRC {
+	if !sawRC.Load() {
 		// The anchor closed its pipes before emitting this step's exit-code
 		// sentinel — it died mid-step (OOM-killed, or a step that killed the
 		// anchor shell, e.g. `kill $$` in a subshell). The step's outcome is
@@ -216,7 +254,7 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 		// eliminate. Surface it as an execution error with a non-zero exit so
 		// executeTaskChained fails the run instead of recording a passing step.
 		return outB.String(), errB.String(), -1,
-			fmt.Errorf("chain anchor shell terminated before step completed — step result unknown")
+			fmt.Errorf("%w before step completed — step result unknown", ErrAnchorTerminated)
 	}
 	return outB.String(), errB.String(), rc, nil
 }
@@ -228,7 +266,8 @@ func (s *ChainSession) Close() error {
 	s.closeOnce.Do(func() {
 		_, _ = io.WriteString(s.stdin, anchorExitScript)
 		_ = s.stdin.Close()
-		err = s.cmd.Wait()
+		<-s.exited
+		err = s.waitErr
 		s.cancel()
 		s.wg.Wait()
 	})

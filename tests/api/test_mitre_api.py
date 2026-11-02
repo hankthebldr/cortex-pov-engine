@@ -202,7 +202,8 @@ def test_coverage_surfaces_correlation_detection_kind(client, session_factory):
     body = client.get("/api/mitre/coverage").json()
     by_id = {t["technique_id"]: t for t in body["techniques"]}
     dk = by_id["T1003"]["detection_kinds"]
-    assert set(dk) == {"bioc", "xql", "correlation", "ioc", "analytics", "abioc", "modeling"}
+    assert set(dk) == {"bioc", "xql", "correlation", "ioc", "analytics", "abioc", "modeling",
+                     "prevention"}
     # TTP-2026-0032 carries at least one correlation rule.
     assert dk["correlation"] >= 1
     assert body["summary"]["with_correlation"] >= 1
@@ -251,3 +252,38 @@ def test_coverage_include_inactive_filter(client, session_factory):
     inc_body = client.get("/api/mitre/coverage?include_inactive=true").json()
     assert "T1189" in {t["technique_id"] for t in inc_body["techniques"]}
     assert inc_body["summary"]["include_inactive"] is True
+
+
+def test_coverage_surfaces_prevention_detection_kind(client, session_factory):
+    """A technique whose card declares prevention_modules[] reports it."""
+    import os
+    from pathlib import Path
+    from engine.ttp_catalog import catalog, default_corpus_dir
+    from models import Scenario
+
+    fixtures = Path(__file__).resolve().parent.parent / "fixtures" / "cards"
+    catalog.load(str(fixtures))
+
+    async def _do():
+        async with session_factory() as db:
+            db.add(Scenario(
+                scenario_id="SIM-EDR-950", name="Prevention", plane="EDR",
+                version="1.0", status="active",
+                uc_ref="UCS-EDR-01", uc_name="X", tc_ref="TC-EDR-01", tc_name="Y",
+                mitre_tactic="TA0002", mitre_tactic_name="Execution",
+                mitre_technique="T1059", mitre_technique_name="Command and Scripting Interpreter",
+                steps=[{"id": "step-01", "mitre_technique": "T1059",
+                        "expected_detections": [
+                            {"plane": "EDR", "type": "Prevention", "description": "d",
+                             "ttp_ref": "TTP-2026-9901"}]}],
+            ))
+            await db.commit()
+
+    try:
+        asyncio.run(_do())
+        body = client.get("/api/mitre/coverage").json()
+    finally:
+        catalog.load(default_corpus_dir(os.environ["CORTEXSIM_BASE_DIR"]))
+    by_id = {t["technique_id"]: t for t in body["techniques"]}
+    assert by_id["T1059"]["detection_kinds"]["prevention"] == 1
+    assert body["summary"]["with_prevention"] >= 1

@@ -26,6 +26,7 @@ from eal_simulator.analytics_emitter import AnalyticsEmitterParams
 from eal_simulator.plugins.cloud_audit_emitter import (
     CloudAuditEmitter,
     CloudAuditEmitterParams,
+    _ANOMALOUS_IP,
     _DATASET,
     _EVENT_PATTERNS,
     _PROVIDER_BUILDERS,
@@ -754,3 +755,54 @@ class TestRegistration:
         assert is_c2_plugin(
             "cloud_audit_emitter", CloudAuditEmitter.Meta.mitre_techniques,
         ) is False
+
+
+# --------------------------------------------------------------------------
+# Report-indicator source-IP override
+# --------------------------------------------------------------------------
+
+_OVR_IP = "203.0.113.77"
+
+
+def _ovr_events(provider, pattern, **kw):
+    p = CloudAuditEmitterParams(
+        collector_url=_DEFAULT_COLLECTOR, provider=provider,
+        event_pattern=pattern, burst_count=4, **kw,
+    )
+    return CloudAuditEmitter().build_events(p, sim_run_id="cortexsim-x-i1-aa", iteration=1)
+
+
+def _caller_ip(provider, evt):
+    if provider == "aws":
+        return evt["sourceIPAddress"]
+    return evt["protoPayload"]["requestMetadata"]["callerIp"]
+
+
+class TestSourceIpOverride:
+    def test_default_none(self):
+        assert CloudAuditEmitterParams(collector_url=_DEFAULT_COLLECTOR).source_ip is None
+
+    @pytest.mark.parametrize("provider,pattern", [
+        ("aws", "storage_object_download"),
+        ("aws", "console_login_anomaly"),
+        ("gcp", "storage_object_download"),
+        ("gcp", "secrets_dump"),
+    ])
+    def test_override_on_every_record(self, provider, pattern):
+        events = _ovr_events(provider, pattern, source_ip=_OVR_IP)
+        assert len(events) > 1
+        assert {_caller_ip(provider, e) for e in events} == {_OVR_IP}
+
+    @pytest.mark.parametrize("provider", ["aws", "gcp"])
+    def test_unset_keeps_constant(self, provider):
+        events = _ovr_events(provider, "storage_object_download")
+        assert {_caller_ip(provider, e) for e in events} == {_ANOMALOUS_IP}
+
+    @pytest.mark.parametrize("bad", ["10.0.0", "300.1.1.1", "a.b.c.d", "10.0.0.1.2", "::1", ""])
+    def test_source_ip_must_be_dotted_quad(self, bad):
+        with pytest.raises(ValueError):
+            CloudAuditEmitterParams(collector_url=_DEFAULT_COLLECTOR, source_ip=bad)
+
+    def test_rfc1918_allowed(self):
+        p = CloudAuditEmitterParams(collector_url=_DEFAULT_COLLECTOR, source_ip="10.9.9.9")
+        assert p.source_ip == "10.9.9.9"

@@ -1,0 +1,569 @@
+{
+  "id": "TTP-2026-0188",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-10-27T00:00:00+00:00",
+    "updated_at": "2026-10-27T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "actor-tgr-sta-1030",
+      "shadow-campaigns",
+      "unit42",
+      "stitched-chain",
+      "diaoyu",
+      "cobalt-strike",
+      "shadowguard",
+      "ebpf-rootkit",
+      "bioc",
+      "abioc",
+      "ioc",
+      "correlation",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "windows",
+        "linux"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "TGR-STA-1030 Shadow Campaigns — Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42 stitched chain)",
+    "summary": "Unit 42 Shadow Campaigns stitched chain: pic1.png-gated Diaoyu lure, EDR-name discovery, image-named stage pull, lab-resolver lookups of report C2 domains, NGFW threat logs with report hashes, beacon and SSH relay to report infrastructure, and ShadowGuard kill -900/-901 on Linux, stitched on src_host by CR-MP-0029.",
+    "description": "TGR-STA-1030 (Unit 42, 2026-02-05) phishes government recipients with links to a mega.nz ZIP named for a ministry reorganisation. The same-named executable (original name DiaoYu.exe) only proceeds when a zero-byte pic1.png sits beside it and the screen is at least 1440 wide, checks for Kaspersky, Avira, Bitdefender, SentinelOne and Symantec process names, pulls image-named files from a GitHub repository and ends in Cobalt Strike; later intrusions use VShell, Havoc, SparkRat and Sliver, web shells, GOST/FRP/IOX tunnels and leased VPS relays over SSH. On Linux the group deploys ShadowGuard, an eBPF rootkit that hides up to 32 PIDs, takes allow-list commands as kill -900/-901 and hides anything named swsecret. SIM-MP-029 exercises each behaviour safely against lab targets: a renamed system binary stands in for the loader, stages come from the lab stage host, report domains are resolved once through the operator's lab resolver, and report hashes and IPs appear only in synthetic NGFW records that carry the run host's identity, so the endpoint and network legs stitch on src_host into one incident the Unit 42 indicators enrich."
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "TGR-STA-1030",
+        "aliases": [
+          "Shadow Campaigns"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Shadow Campaigns — global government and critical-infrastructure espionage (2024-2026)"
+    ],
+    "malware_families": [
+      {
+        "name": "Diaoyu"
+      },
+      {
+        "name": "Cobalt Strike",
+        "mitre_software_id": "S0154"
+      },
+      {
+        "name": "VShell"
+      },
+      {
+        "name": "ShadowGuard"
+      }
+    ],
+    "industries_targeted": [
+      "government"
+    ],
+    "first_observed": "2024-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1566",
+        "subtechnique_id": "T1566.002",
+        "name": "Phishing: Spearphishing Link",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1204",
+        "subtechnique_id": "T1204.002",
+        "name": "User Execution: Malicious File",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1497",
+        "subtechnique_id": "T1497.001",
+        "name": "Virtualization/Sandbox Evasion: System Checks",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1518",
+        "subtechnique_id": "T1518.001",
+        "name": "Software Discovery: Security Software Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1090",
+        "name": "Proxy",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1021",
+        "subtechnique_id": "T1021.004",
+        "name": "Remote Services: SSH",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      },
+      {
+        "technique_id": "T1014",
+        "name": "Rootkit",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1564",
+        "subtechnique_id": "T1564.001",
+        "name": "Hide Artifacts: Hidden Files and Directories",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "cross-platform",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-029 — TGR-STA-1030 Shadow Campaigns stitched chain",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR / XSIAM agent on the Windows (or Linux variant) run host; a Linux host with root for the ShadowGuard step.",
+        "check_command": "systemctl status traps_pmd || ls /opt/traps"
+      },
+      {
+        "description": "An NGFW / HTTP log collector the EAL steps POST to, ingesting panw_ngfw_traffic_raw and panw_ngfw_threat_raw; LAB_RESOLVER set to a lab-controlled resolver; STAGE_HOST set to a lab stage host.",
+        "check_command": "echo \"collector=${COLLECTOR_URL:-unset} resolver=${LAB_RESOLVER:-unset} stage=${STAGE_HOST:-unset}\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# The executable payload is the SIM-MP-029 scenario (scenarios/multi_plane/mp-029-*.yml).\n# Endpoint steps run a renamed system binary as the loader stand-in, fetch stages from\n# ${STAGE_HOST}, and resolve report domains once through ${LAB_RESOLVER}. Report hashes and\n# IPs appear only inside EAL campaign params (synthetic NGFW records). Nothing is downloaded\n# from or connected to actor infrastructure.\npython3 -m scripts.eal_simulator.cli run /tmp/mp-029-c2.yml"
+    },
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -rf /tmp/cortexsim-mp-029 /tmp/mp-029-delivery.yml /tmp/mp-029-c2.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "66ec547b97072828534d43022d766e06c17fc1cafe47fbd9d1ffc22e2d52a9c0",
+        "context": "Phishing ZIP archive linked from mega.nz in the reorganisation-themed lure (report: phishing/downloader SHA256). Carried in the SIM-MP-029 step-05 NGFW threat log filedigest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "23ee251df3f9c46661b33061035e9f6291894ebe070497ff9365d6ef2966f7fe",
+        "context": "Diaoyu loader executable inside the phishing ZIP (report: phishing/downloader SHA256). Carried in the step-05 NGFW threat log filedigest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "5175b1720fe3bc568f7857b72b960260ad3982f41366ce3372c04424396df6fe",
+        "context": "Cobalt Strike payload (report: Cobalt Strike SHA256; no filename published). Carried in the step-07 NGFW threat log filedigest.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "7808b1e01ea790548b472026ac783c73a033bb90bbe548bf3006abfbcb48c52d",
+        "context": "ShadowGuard Linux eBPF rootkit (report: ShadowGuard SHA256). Written as a syslog field by step-06; never fetched.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "abwxjp5.me",
+        "context": "TGR-STA-1030 infrastructure domain (report IoC section). Resolved once through the operator lab resolver in step-04; no session is opened.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "msonline.help",
+        "context": "TGR-STA-1030 infrastructure domain (report IoC section). Resolved via the lab resolver in step-04; dst_domain of the step-07 synthetic threat record.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "servgate.me",
+        "context": "TGR-STA-1030 infrastructure domain (report IoC section). Resolved via the lab resolver in step-04; dst_domain of the step-07 synthetic beacon records.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "zamstats.me",
+        "context": "TGR-STA-1030 infrastructure domain (report IoC section). Resolved via the lab resolver in step-04; dst_domain of the step-07 synthetic SSH relay record.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "138.197.44.208",
+        "context": "TGR-STA-1030 VPS (report IoC section). Destination of the step-07 synthetic beacon records only; the report does not pair IPs to domains.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "157.245.194.54",
+        "context": "TGR-STA-1030 VPS (report IoC section). Destination of the step-07 synthetic SSH relay record only.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "208.85.21.30",
+        "context": "TGR-STA-1030 VPS (report IoC section). Destination of the step-07 synthetic threat record only.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+        "published": "2026-02-05",
+        "safe_form": "log_field"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-029 Archive-extracted executable runs beside a zero-byte pic1.png decoy",
+        "description": "A process whose image path carries the lure name (organisatsiooni) starts from a user-writable temp directory, launched by the shell that just expanded the archive (Expand-Archive / python zipfile). Single-event: the zero-byte pic1.png that Diaoyu requires beside it is checked by the step-01 validation query, not by this BIOC. Keys on the lure layout, independent of the loader hash.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_path contains \"organisatsiooni\"\n| filter action_process_image_path contains \"cortexsim-mp-029\" or action_process_image_path contains \"\\\\Temp\\\\\" or action_process_image_path contains \"/tmp/\"\n| filter actor_process_image_name in (\"powershell.exe\", \"pwsh.exe\", \"bash\", \"sh\", \"python3\")\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_path, action_process_image_command_line, causality_actor_process_image_name",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1204.002",
+          "T1566.002"
+        ]
+      },
+      {
+        "name": "MP-029 Diaoyu security-product process-name discovery",
+        "description": "A process in the lure lineage enumerates running processes for the five security-product images Diaoyu checks (Avp.exe, SentryEye.exe, EPSecurityService.exe, SentinelUI.exe, NortonSecurity.exe) and queries display resolution (Diaoyu requires a horizontal resolution of at least 1440).",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"SentinelUI\" or action_process_image_command_line contains \"NortonSecurity\" or action_process_image_command_line contains \"EPSecurityService\" or action_process_image_command_line contains \"SentryEye\" or action_process_image_command_line contains \"Avp\"\n| filter actor_process_image_name in (\"powershell.exe\", \"pwsh.exe\", \"tasklist.exe\", \"bash\", \"grep\", \"pgrep\")\n| fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line, causality_actor_process_image_name",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1518.001",
+          "T1497.001"
+        ]
+      },
+      {
+        "name": "MP-029 Image-named payload staged into a lure execution directory",
+        "description": "The lure lineage downloads files with image extensions over HTTP on the padeqav/WordPress wp-includes/images URI shape into its own execution directory, then rewrites one as a non-image file and hashes it — the Diaoyu stage pull from GitHub that ends in a Cobalt Strike payload.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_CREATE_NEW)\n| filter action_file_name in (\"admin-bar-sprite.png\", \"Windows.jpg\", \"Linux.jpg\", \"Windows.bin\", \"Linux.bin\")\n| filter action_file_path contains \"cortexsim-mp-029\" or action_file_path contains \"\\\\Temp\\\\\" or action_file_path contains \"/tmp/\"\n| fields _time, agent_hostname, actor_process_image_name, action_file_path, causality_actor_process_image_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1105"
+        ]
+      },
+      {
+        "name": "MP-029 ShadowGuard custom kill signal allow-list manipulation",
+        "description": "A root process executes kill with signal 900 or 901 — the ShadowGuard eBPF rootkit's allow-list add/remove commands — after probing /sys/fs/bpf and the sys_enter_kill tracepoint.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"kill\"\n| filter action_process_image_command_line contains \"-900\" or action_process_image_command_line contains \"-901\"\n| fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1014"
+        ]
+      },
+      {
+        "name": "MP-029 ShadowGuard swsecret hidden-artifact creation",
+        "description": "A root process creates a file or directory whose name starts with swsecret — ShadowGuard hides every file or directory with that name.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_name contains \"swsecret\" or action_file_path contains \"swsecret\"\n| fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_file_path",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1014",
+          "T1564.001"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-029 Lure execution lineage validation in xdr_data",
+        "dataset": "xdr_data",
+        "expected_rows_min": 1,
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_path contains \"organisatsiooni\"\n| join type = inner (dataset = xdr_data | filter _time > to_timestamp(current_time() - 3600) | filter event_type = ENUM.FILE and action_file_name = \"pic1.png\" and action_file_size = 0 | fields agent_hostname as decoy_host, action_file_path as decoy_path) as decoy agent_hostname = decoy.decoy_host\n| comp count() as lure_events, values(decoy_path) as decoy_paths by agent_hostname\n| filter lure_events >= 1\n| fields agent_hostname, lure_events, decoy_paths"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-029 Report C2 domain lookups validation in xdr_data",
+        "dataset": "xdr_data",
+        "expected_rows_min": 1,
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter dns_query_name in (\"abwxjp5.me\", \"msonline.help\", \"servgate.me\", \"zamstats.me\")\n| comp count_distinct(dns_query_name) as domains by agent_hostname\n| filter domains >= 1\n| fields agent_hostname, domains"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-029 WildFire threat logs carry report hashes on the run host",
+        "dataset": "panw_ngfw_threat_raw",
+        "expected_rows_min": 1,
+        "query": "dataset = panw_ngfw_threat_raw\n| filter _time > to_timestamp(current_time() - 3600)\n| filter filedigest in (\"66ec547b97072828534d43022d766e06c17fc1cafe47fbd9d1ffc22e2d52a9c0\", \"23ee251df3f9c46661b33061035e9f6291894ebe070497ff9365d6ef2966f7fe\", \"5175b1720fe3bc568f7857b72b960260ad3982f41366ce3372c04424396df6fe\")\n| comp count() as verdicts by src, endpoint_device_name, filedigest\n| fields src, endpoint_device_name, filedigest, verdicts"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-029 ShadowGuard behaviour validation in xdr_data",
+        "dataset": "xdr_data",
+        "expected_rows_min": 1,
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter action_process_image_command_line contains \"kill -90\" or action_file_name contains \"swsecret\"\n| comp count() as shadowguard_events by agent_hostname\n| filter shadowguard_events >= 1\n| fields agent_hostname, shadowguard_events"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-029 C2 and relay sessions landed in panw_ngfw_traffic_raw",
+        "dataset": "panw_ngfw_traffic_raw",
+        "expected_rows_min": 1,
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 3600)\n| filter dst in (\"138.197.44.208\", \"157.245.194.54\") or dst_domain in (\"servgate.me\", \"zamstats.me\")\n| comp count() as sessions by src, endpoint_device_name, dst_domain\n| fields src, endpoint_device_name, dst_domain, sessions"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "TGR-STA-1030 Shadow Campaigns — Diaoyu lure to C2 and relay, stitched on src_host",
+        "rule_id": "CR-MP-0029",
+        "logic": "BIOC(MP-029 Archive-extracted executable runs beside a zero-byte pic1.png decoy) AND BIOC(MP-029 Diaoyu security-product process-name discovery) AND (BIOC(MP-029 Image-named payload staged into a lure execution directory) OR IOC(domain in abwxjp5.me, msonline.help, servgate.me, zamstats.me)) AND (IOC(file-sha256 in the report lure/Cobalt Strike hashes on panw_ngfw_threat_raw) OR ABIOC(MP-029 Recurring beacon to a rare TGR-STA-1030 C2 domain) OR ABIOC(MP-029 Rare process SSH session to a leased relay VPS)) within 3600s on the same endpoint entity (xdr_data agent_hostname = panw_ngfw_*_raw endpoint_device_name, src_ip reconciled by XDM endpoint resolution) -> ONE TGR-STA-1030 incident enriched with the Unit 42 indicators; ShadowGuard BIOCs join when they fire on the same host."
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-029 Recurring beacon to a rare TGR-STA-1030 C2 domain",
+        "description": "The run host produces a tight recurring burst of small HTTPS sessions to servgate.me, a domain rare across the fleet — the Cobalt Strike / VShell beacon shape. Auto-tuned NGFW EAL ABIOC on recurring cadence plus destination rarity.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter dst_domain = \"servgate.me\" or dst = \"138.197.44.208\"\n| comp count() as sessions, avg(bytes_sent) as avg_sent by src, endpoint_device_name, dst_domain\n| filter sessions >= 5\n| fields src, endpoint_device_name, dst_domain, sessions, avg_sent",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1071.001"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host NGFW egress baseline -> recurring sessions to a fleet-rare domain, anchored to src / endpoint_device_name (the run host)."
+      },
+      {
+        "name": "MP-029 Rare process SSH session to a leased relay VPS",
+        "description": "A process that rarely opens SSH creates a port-22 session from the run host to an uncommon external VPS — the leased relay hop the report describes for TGR-STA-1030.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ssh\" and dst_port = 22\n| filter dst_domain = \"zamstats.me\" or dst = \"157.245.194.54\"\n| comp count() as ssh_sessions by src, endpoint_device_name, dst\n| fields src, endpoint_device_name, dst, ssh_sessions",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1090",
+          "T1021.004"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "Learned per-process SSH baseline on the source endpoint -> first SSH session to an uncommon external host, anchored to src / endpoint_device_name."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM NGFW Enhanced Application Logs network analytics",
+        "validated": true,
+        "note": "Backed by the two MP-029 ABIOCs and CR-MP-0029 on panw_ngfw_traffic_raw."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-MP-0029"
+        ],
+        "license_required": "enterprise",
+        "evidence_query": "Endpoint BIOC/IOC alerts and NGFW threat/traffic alerts sharing one src_host are grouped by CR-MP-0029 into a single incident enriched with the Unit 42 TGR-STA-1030 indicators."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "TBD-XDR-001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter action_file_name = \"pic1.png\" or action_process_image_command_line contains \"kill -90\" | comp count() as events by agent_hostname"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-029",
+        "name": "TGR-STA-1030 lure-to-C2 chain stitched into one incident",
+        "description": "Endpoint lure, discovery, staging and C2-lookup behaviour plus NGFW threat and traffic records from one host stitch into a single incident the Unit 42 indicators enrich.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-029A",
+            "objective": "Endpoint BIOCs and domain IOCs fire on the lure lineage.",
+            "preconditions": [
+              "XDR agent on the run host.",
+              "LAB_RESOLVER and STAGE_HOST point at lab-controlled hosts."
+            ],
+            "steps": [
+              "Run steps 01-04.",
+              "Observe the BIOC and IOC alerts on the run host."
+            ],
+            "success_criteria": [
+              "The lure, discovery and staging BIOCs fire.",
+              "At least one report-domain IOC fires."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-MP-029B",
+            "objective": "NGFW threat and traffic records on the same src_host raise the hash IOCs and the beacon/relay ABIOCs.",
+            "preconditions": [
+              "Collector ingesting panw_ngfw_threat_raw and panw_ngfw_traffic_raw."
+            ],
+            "steps": [
+              "Run steps 05 and 07.",
+              "Observe the IOC and ABIOC alerts carrying the run host's src_host."
+            ],
+            "success_criteria": [
+              "Hash IOCs fire on the threat logs.",
+              "The beacon or relay ABIOC fires."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-MP-029C",
+            "objective": "CR-MP-0029 groups both legs into one incident within the window.",
+            "preconditions": [
+              "TS-MP-029A and TS-MP-029B executed."
+            ],
+            "steps": [
+              "Count incidents raised on the run host in the window."
+            ],
+            "success_criteria": [
+              "Exactly one incident spans the endpoint and network alerts.",
+              "The incident carries the Unit 42 indicators."
+            ],
+            "expected_score_weight": 0.3
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Block execution of binaries extracted from archives into user temp directories, and block file-sharing downloads of executables for government users.",
+      "Enforce DNS Security and URL filtering on newly registered and low-reputation domains such as the TGR-STA-1030 set.",
+      "Restrict eBPF program loading (kernel.unprivileged_bpf_disabled, lockdown) and monitor bpf() and tracepoint attachment on Linux servers."
+    ],
+    "detection_engineering": [
+      "Alert on an extracted executable launching beside a zero-byte image file.",
+      "Alert on process enumeration for security-product names from a user-temp lineage.",
+      "Alert on kill with signal numbers above 64 and on files named swsecret*."
+    ],
+    "response_playbook": "XSOAR-PB-TGR-STA-1030-ShadowCampaigns-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — The Shadow Campaigns: Uncovering Global Espionage",
+      "url": "https://unit42.paloaltonetworks.com/shadow-campaigns-uncovering-global-espionage/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1014 Rootkit",
+      "url": "https://attack.mitre.org/techniques/T1014/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1518.001 Security Software Discovery",
+      "url": "https://attack.mitre.org/techniques/T1518/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ]
+}

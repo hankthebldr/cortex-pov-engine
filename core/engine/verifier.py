@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable, Optional
 
+from engine.outcome import is_in_denominator
+
 logger = logging.getLogger("cortexsim.verifier")
 
 # Verdict vocabulary. Shared by Result.kpi_verdict and Run.tc_verdict.
@@ -142,6 +144,9 @@ class RunScore:
     counts: dict[str, int] = field(default_factory=dict)
     primary: Optional[dict[str, Any]] = None
     unscoreable: list[str] = field(default_factory=list)
+    #: Results the host says never ran (``not_reached`` / ``not_executed``):
+    #: their kpi_verdict is ignored, and they are listed so a report can say so.
+    excluded: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -152,7 +157,13 @@ class RunScore:
             "counts": dict(self.counts),
             "primary": self.primary,
             "unscoreable": list(self.unscoreable),
+            "excluded": list(self.excluded),
         }
+
+
+def _in_denominator(r: Any) -> bool:
+    """Attribute adapter over the one rule, ``engine.outcome.is_in_denominator``."""
+    return is_in_denominator(getattr(r, "outcome", None), getattr(r, "outcome_reason", None))
 
 
 def score_run(
@@ -194,8 +205,16 @@ def score_run(
     weighted_pass = 0.0
     weighted_total = 0.0
     unscoreable: list[str] = []
+    excluded: list[str] = []
 
     for r in results:
+        if not _in_denominator(r):
+            # A step that never ran, or a detector still soaking (spec §5.5),
+            # is neither a pass nor a fail.
+            excluded.append(str(getattr(r, "detection_id", None)
+                                or getattr(r, "expected_detection", None)
+                                or getattr(r, "id", "")))
+            continue
         verdict = getattr(r, "kpi_verdict", None)
         if verdict is None:
             continue
@@ -225,7 +244,7 @@ def score_run(
         primary = tv.to_dict()
         if tv.verdict == FAIL:
             return RunScore(FAIL, f"primary KPI failed: {tv.detail}",
-                            weighted_pass, weighted_total, counts, primary, unscoreable)
+                            weighted_pass, weighted_total, counts, primary, unscoreable, excluded)
         if tv.verdict == PENDING:
             # A declared threshold whose KPI never got measured is an OPEN
             # question, not a pass. Falling through here is how a run reported
@@ -234,7 +253,7 @@ def score_run(
             return _clamp(RunScore(
                 PENDING,
                 f"primary KPI declared but not measured: {tv.detail}",
-                weighted_pass, weighted_total, counts, primary, unscoreable,
+                weighted_pass, weighted_total, counts, primary, unscoreable, excluded,
             ), tc_scoreable)
 
     if counts.get(FAIL):
@@ -246,18 +265,18 @@ def score_run(
     elif primary and primary["verdict"] == PASS:
         return _clamp(RunScore(PASS, f"primary KPI passed: {primary['detail']}",
                                weighted_pass, weighted_total, counts, primary,
-                               unscoreable), tc_scoreable)
+                               unscoreable, excluded), tc_scoreable)
     else:
         detail = (
             f"nothing scoreable: {counts.get(NOT_APPLICABLE, 0)} detection(s) "
             f"carry no measurable threshold"
         )
         return RunScore(NOT_APPLICABLE, detail, weighted_pass, weighted_total,
-                        counts, primary, unscoreable)
+                        counts, primary, unscoreable, excluded)
 
     verdict = FAIL if counts.get(FAIL) else (PENDING if counts.get(PENDING) else PASS)
     return _clamp(RunScore(verdict, detail, weighted_pass, weighted_total,
-                           counts, primary, unscoreable), tc_scoreable)
+                           counts, primary, unscoreable, excluded), tc_scoreable)
 
 
 def _clamp(score: RunScore, tc_scoreable: bool) -> RunScore:
@@ -293,8 +312,13 @@ async def verify_results(
     runner: QueryRunner,
     *,
     expected_rows_min: Callable[[Any], int] | None = None,
+    agent_profile_mode: str = "unknown",
 ) -> dict[str, int]:
     """Run each result's ``verification_xql`` and record its verdict.
+
+    In block mode a ``prevent`` row is skipped: a row count proves an alert
+    exists, never that the agent blocked anything. In report/unknown mode a
+    prevent expectation is scored as a detect, so the count is valid evidence.
 
     Results without a ``verification_xql`` are left untouched — they are not
     this harness's to score, and stamping them would misrepresent coverage.
@@ -308,6 +332,18 @@ async def verify_results(
     for r in results:
         xql = getattr(r, "verification_xql", None)
         if not xql:
+            counts["skipped"] += 1
+            continue
+        if not _in_denominator(r):
+            # The host says this step never ran, or the detector is still in its
+            # activation/dedup soak (spec §5.5): a row count cannot certify it,
+            # and zero rows from a soaking detector is not a failure.
+            counts["skipped"] += 1
+            continue
+        if (getattr(r, "expected_outcome", None) == "prevent"
+                and agent_profile_mode == "block"):
+            # A row count proves an alert exists, never that the agent blocked
+            # anything; a block-mode prevent row is judged only by two witnesses.
             counts["skipped"] += 1
             continue
 
@@ -417,10 +453,14 @@ async def verify_run(
     that has it; the default of True preserves the historical behaviour for
     callers that do not.
     """
-    counts = await verify_results(results, runner, expected_rows_min=expected_rows_min)
+    counts = await verify_results(
+        results, runner, expected_rows_min=expected_rows_min,
+        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown")
 
+    # A step the host says never ran cannot contribute a detection time.
     mttd = [r.mttd_seconds for r in results
-            if getattr(r, "mttd_seconds", None) is not None]
+            if getattr(r, "mttd_seconds", None) is not None
+            and _in_denominator(r)]
     score = score_run(
         results,
         threshold=getattr(scenario, "threshold", None),

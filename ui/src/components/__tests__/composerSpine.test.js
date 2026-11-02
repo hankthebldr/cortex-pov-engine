@@ -156,6 +156,95 @@ describe('topologicallySortSteps — the array-order half of the spine invariant
     const ids = sorted.map((s) => s.id)
     expect(ids.indexOf('s1')).toBeLessThan(ids.indexOf('s2'))
     expect(ids.indexOf('s3')).toBeGreaterThan(-1)
+    // Ancestor-first placement: s4 is pulled in just ahead of the step that
+    // needs it; nothing else moves.
+    expect(ids).toEqual(['s1', 's4', 's2', 's3'])
+  })
+
+  // Review finding: the old sort was a level-batched Kahn sort, so it emitted
+  // every depth-N step before any depth-N+1 step and RE-ORDERED arrays that
+  // were already legal. Array order is execution order — the DC's chain ran in
+  // a different order after an edit that never touched those steps.
+  it('returns a valid BRANCHING array unchanged (same reference), not level-sorted', () => {
+    const branching = [
+      { id: 'step-01', causalityParent: null },
+      { id: 'step-02', causalityParent: 'step-01' },
+      { id: 'step-03', causalityParent: 'step-02' },
+      { id: 'step-04', causalityParent: 'step-01' }, // a new branch off the root
+    ]
+    expect(isOrderValid(branching)).toBe(true)
+    expect(topologicallySortSteps(branching)).toBe(branching)
+  })
+
+  it('one "+ Add step" on a branching corpus chain (SIM-EDR-019 spine) leaves existing order alone', () => {
+    // scenarios/edr/edr-019-akira-howling-scorpius-vcenter-to-esxi.yml:
+    // 01 → 02 → 03 → 04 and 01 → 05 → 06 → 07.
+    const edr019 = [
+      { id: 'step-01', causalityParent: null },
+      { id: 'step-02', causalityParent: 'step-01' },
+      { id: 'step-03', causalityParent: 'step-02' },
+      { id: 'step-04', causalityParent: 'step-03' },
+      { id: 'step-05', causalityParent: 'step-01' },
+      { id: 'step-06', causalityParent: 'step-05' },
+      { id: 'step-07', causalityParent: 'step-06' },
+    ]
+    // ComposerView's addBlank appends, parents to the selected step, then sorts.
+    const added = [...edr019, { id: 'step-08', causalityParent: 'step-03' }]
+    expect(topologicallySortSteps(added)).toBe(added)
+    expect(topologicallySortSteps(edr019)).toBe(edr019)
+  })
+
+  it('re-parenting onto a LATER step moves only that ancestor ahead: [01, 02<-03, 03<-01] → [01, 03, 02]', () => {
+    const steps = [
+      { id: 'step-01', causalityParent: null },
+      { id: 'step-02', causalityParent: 'step-03' },
+      { id: 'step-03', causalityParent: 'step-01' },
+    ]
+    const sorted = topologicallySortSteps(steps)
+    expect(sorted.map((s) => s.id)).toEqual(['step-01', 'step-03', 'step-02'])
+    expect(isOrderValid(sorted)).toBe(true)
+  })
+
+  it('keeps the relative order of an unrelated sibling branch while repairing another', () => {
+    // s2 → s3 is one branch; s4 is an unrelated sibling. Only s5 is out of
+    // order (its parent s6 sits after it). The level sort emitted
+    // [s1, s2, s4, s6, s3, s5] — moving s3 behind s4, a step it has nothing
+    // to do with.
+    const steps = [
+      { id: 's1', causalityParent: null },
+      { id: 's2', causalityParent: 's1' },
+      { id: 's3', causalityParent: 's2' },
+      { id: 's4', causalityParent: 's1' },
+      { id: 's5', causalityParent: 's6' },
+      { id: 's6', causalityParent: 's1' },
+    ]
+    const sorted = topologicallySortSteps(steps)
+    expect(isOrderValid(sorted)).toBe(true)
+    expect(sorted.map((s) => s.id)).toEqual(['s1', 's2', 's3', 's4', 's6', 's5'])
+  })
+
+  it('never drops or duplicates a step on a dangling parent or a cycle', () => {
+    const dangling = [
+      { id: 's1', causalityParent: null },
+      { id: 's2', causalityParent: 'gone' },
+      { id: 's3', causalityParent: 's1' },
+    ]
+    // A dangling parent imposes no order — the array is already legal.
+    expect(topologicallySortSteps(dangling)).toBe(dangling)
+
+    const cyclic = [
+      { id: 's1', causalityParent: null },
+      { id: 's2', causalityParent: 's3' },
+      { id: 's3', causalityParent: 's2' },
+      { id: 's4', causalityParent: 'gone' },
+    ]
+    const out = topologicallySortSteps(cyclic)
+    expect(out).toHaveLength(cyclic.length)
+    expect(new Set(out).size).toBe(cyclic.length)
+    expect([...out].sort((a, b) => a.id.localeCompare(b.id))).toEqual(cyclic)
+
+    const selfRef = [{ id: 's1', causalityParent: 's1' }, { id: 's2', causalityParent: null }]
+    expect(topologicallySortSteps(selfRef)).toBe(selfRef)
   })
 
   it('every canConnect-approved edge, once applied, yields a loader-legal array order', () => {

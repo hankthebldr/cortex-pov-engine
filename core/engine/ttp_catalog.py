@@ -45,12 +45,16 @@ class DetectionCard:
 
     ttp_ref: str                 # e.g. "TTP-2026-0002"
     detection_id: str            # e.g. "BIOC-LSASS-001"
-    kind: str                    # bioc | xql | correlation | ioc | analytics | abioc | modeling
+    kind: str                    # bioc | xql | correlation | ioc | analytics | abioc | modeling | prevention
     name: str
     description: str
     severity: Optional[str]
     logic: Optional[str]         # XQL / Sigma / correlation body (verbatim from card)
     mitre_techniques: list[str] = field(default_factory=list)
+    # Prevention cards only: which agent prevention module this describes
+    # (btp, exploit_protection, ...) and the OS platforms it applies to.
+    module: Optional[str] = None
+    platforms: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,6 +66,8 @@ class DetectionCard:
             "severity": self.severity,
             "logic": self.logic,
             "mitre_techniques": list(self.mitre_techniques),
+            "module": self.module,
+            "platforms": list(self.platforms),
         }
 
 
@@ -286,7 +292,7 @@ class TtpCatalog:
         """Per-card tally of deployable detection objects by kind.
 
         Returns a dict keyed by
-        ``bioc | xql | correlation | ioc | analytics | abioc | modeling``
+        ``bioc | xql | correlation | ioc | analytics | abioc | modeling | prevention``
         with the count of each family on the card. Reads the raw
         ``detections`` block so the coverage heatmap can surface *which*
         Cortex detection kinds back a technique (notably ``correlation`` —
@@ -307,7 +313,7 @@ class TtpCatalog:
         raw = self._raw_by_ttp.get(ttp_ref)
         counts = {
             "bioc": 0, "xql": 0, "correlation": 0, "ioc": 0, "analytics": 0,
-            "abioc": 0, "modeling": 0,
+            "abioc": 0, "modeling": 0, "prevention": 0,
         }
         if not raw:
             return counts
@@ -319,6 +325,7 @@ class TtpCatalog:
         counts["analytics"] = len(det.get("analytics_modules") or [])
         counts["abioc"] = len(det.get("abiocs") or [])
         counts["modeling"] = len(det.get("modeling_rules") or [])
+        counts["prevention"] = len(det.get("prevention_modules") or [])
         return counts
 
     def count(self) -> int:
@@ -352,6 +359,7 @@ def _parse_entry(raw: dict[str, Any]) -> Optional[TtpEntry]:
     cards.extend(_parse_ioc_list(ttp_ref, detections_raw.get("iocs") or []))
     cards.extend(_parse_abioc_list(ttp_ref, detections_raw.get("abiocs") or []))
     cards.extend(_parse_modeling_list(ttp_ref, detections_raw.get("modeling_rules") or []))
+    cards.extend(_parse_prevention_list(ttp_ref, detections_raw.get("prevention_modules") or []))
 
     panw_mapping = raw.get("panw_mapping") or {}
     products: list[str] = []
@@ -498,6 +506,32 @@ def _parse_abioc_list(ttp_ref: str, abiocs: list[Any]) -> list[DetectionCard]:
             severity=a.get("severity"),
             logic=a.get("logic"),
             mitre_techniques=list(a.get("mitre_technique_ids") or []),
+        ))
+    return out
+
+
+def _parse_prevention_list(ttp_ref: str, items: list[Any]) -> list[DetectionCard]:
+    """Agent prevention module (btp, exploit_protection, ...). Not a rule: the
+    XDR agent acts on the host. Slug prefix ``prevention-``; ``logic`` carries
+    the alert-name pattern the prevention alert is matched on, ``module`` the
+    module name the orchestrator copies onto Result rows."""
+    out: list[DetectionCard] = []
+    for idx, p in enumerate(items):
+        if not isinstance(p, dict):
+            continue
+        name = p.get("name") or f"prevention-{idx+1}"
+        det_id = p.get("detection_id") or _slug(name, "prevention")
+        out.append(DetectionCard(
+            ttp_ref=ttp_ref,
+            detection_id=det_id,
+            kind="prevention",
+            name=name,
+            description=p.get("description") or "",
+            severity=p.get("severity"),
+            logic=p.get("alert_name_pattern"),
+            mitre_techniques=list(p.get("mitre_techniques") or p.get("mitre_technique_ids") or []),
+            module=p["module"],
+            platforms=list(p.get("platforms") or []),
         ))
     return out
 

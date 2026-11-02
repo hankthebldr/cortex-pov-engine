@@ -31,7 +31,8 @@ def _tenant(alert_or_none):
 _FULL = {"alert_id": "1", "name": "LSASS Memory Access", "source": "XDR BIOC",
          "detection_timestamp": 1780000000000, "host_name": "web-01",
          "mitre_technique_id_and_name": ["T1003.001 - LSASS Memory"],
-         "matching_service_rule_id": "bioc-12"}
+         "matching_service_rule_id": "bioc-12",
+         "action_pretty": "Detected (Reported)"}
 
 
 def test_a_full_alert_reads_ok_and_names_what_was_found():
@@ -75,3 +76,20 @@ def test_no_alert_in_lookback_is_unknown_not_ok():
     # one scope probe + one 7-day lookback, both 1-row
     assert len(calls) == 2 and r.queries_issued == 2
     assert all(c["search_to"] == 1 for c in calls)
+
+
+def test_action_key_is_reported_when_present():
+    fetcher, _ = _tenant({**_FULL, "action_pretty": "Prevented (Blocked)"})
+    r = pf.preflight_reconcile(_CFG, "k", fetcher=fetcher)
+    s = _stage(r, "alert_shape")
+    assert s.status == pf.OK
+    assert s.extra["keys"]["action"] == "action_pretty"
+
+
+def test_missing_action_key_is_degraded_with_remediation():
+    fetcher, _ = _tenant({k: v for k, v in _FULL.items() if k != "action_pretty"})
+    r = pf.preflight_reconcile(_CFG, "k", fetcher=fetcher)
+    s = _stage(r, "alert_shape")
+    assert s.status == pf.DEGRADED and s.code == pf.PF_ALERT_SHAPE_PARTIAL
+    assert s.extra["keys"]["action"] is None
+    assert "action" in s.detail and "prevent" in s.remediation.lower()

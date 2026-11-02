@@ -60,6 +60,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
+from api.storyline import load_observations
 from models import Result, Run, Scenario
 
 logger = logging.getLogger("cortexsim.api.causality")
@@ -211,6 +212,8 @@ async def get_causality(run_id: str, db: AsyncSession = Depends(get_db)):
     )
     results = res_result.scalars().all()
 
+    observations = await load_observations(db, run_id)
+
     # 4. Resolve the builder (structured 503 if module A is absent), then build.
     builder = _load_build_causality_graph()
     try:
@@ -218,6 +221,7 @@ async def get_causality(run_id: str, db: AsyncSession = Depends(get_db)):
             run.to_dict(),
             [r.to_dict() for r in results],
             scenario_steps,
+            observations=observations,
             scenario_meta=scenario_meta,
         )
         payload = _serialize_graph(graph)

@@ -1,0 +1,206 @@
+title: "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42 stitched chain) \u2014 MP-029 Archive-extracted executable runs beside a zero-byte pic1.png decoy"
+id: ttp-2026-0188-bioc-01
+status: experimental
+description: |
+  A process whose image path carries the lure name (organisatsiooni) starts from a user-writable temp directory, launched by the shell that just expanded the archive (Expand-Archive / python zipfile). Single-event: the zero-byte pic1.png that Diaoyu requires beside it is checked by the step-01 validation query, not by this BIOC. Keys on the lure layout, independent of the loader hash.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_path contains "organisatsiooni"
+    | filter action_process_image_path contains "cortexsim-mp-029" or action_process_image_path contains "\\Temp\\" or action_process_image_path contains "/tmp/"
+    | filter actor_process_image_name in ("powershell.exe", "pwsh.exe", "bash", "sh", "python3")
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_path, action_process_image_command_line, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1204/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1204.002
+    - attack.t1566.002
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42 stitched chain) \u2014 MP-029 Diaoyu security-product process-name discovery"
+id: ttp-2026-0188-bioc-02
+status: experimental
+description: |
+  A process in the lure lineage enumerates running processes for the five security-product images Diaoyu checks (Avp.exe, SentryEye.exe, EPSecurityService.exe, SentinelUI.exe, NortonSecurity.exe) and queries display resolution (Diaoyu requires a horizontal resolution of at least 1440).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_command_line contains "SentinelUI" or action_process_image_command_line contains "NortonSecurity" or action_process_image_command_line contains "EPSecurityService" or action_process_image_command_line contains "SentryEye" or action_process_image_command_line contains "Avp"
+    | filter actor_process_image_name in ("powershell.exe", "pwsh.exe", "tasklist.exe", "bash", "grep", "pgrep")
+    | fields _time, agent_hostname, actor_process_image_name, action_process_image_command_line, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1518/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1518.001
+    - attack.t1497.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42 stitched chain) \u2014 MP-029 Image-named payload staged into a lure execution directory"
+id: ttp-2026-0188-bioc-03
+status: experimental
+description: |
+  The lure lineage downloads files with image extensions over HTTP on the padeqav/WordPress wp-includes/images URI shape into its own execution directory, then rewrites one as a non-image file and hashes it — the Diaoyu stage pull from GitHub that ends in a Cobalt Strike payload.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_CREATE_NEW)
+    | filter action_file_name in ("admin-bar-sprite.png", "Windows.jpg", "Linux.jpg", "Windows.bin", "Linux.bin")
+    | filter action_file_path contains "cortexsim-mp-029" or action_file_path contains "\\Temp\\" or action_file_path contains "/tmp/"
+    | fields _time, agent_hostname, actor_process_image_name, action_file_path, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42 stitched chain) \u2014 MP-029 ShadowGuard custom kill signal allow-list manipulation"
+id: ttp-2026-0188-bioc-04
+status: experimental
+description: |
+  A root process executes kill with signal 900 or 901 — the ShadowGuard eBPF rootkit's allow-list add/remove commands — after probing /sys/fs/bpf and the sys_enter_kill tracepoint.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "kill"
+    | filter action_process_image_command_line contains "-900" or action_process_image_command_line contains "-901"
+    | fields _time, agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1014/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1014
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42 stitched chain) \u2014 MP-029 ShadowGuard swsecret hidden-artifact creation"
+id: ttp-2026-0188-bioc-05
+status: experimental
+description: |
+  A root process creates a file or directory whose name starts with swsecret — ShadowGuard hides every file or directory with that name.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter action_file_name contains "swsecret" or action_file_path contains "swsecret"
+    | fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_file_path
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1014/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1014
+    - attack.t1564.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42 stitched chain) \u2014 MP-029 Recurring beacon to a rare TGR-STA-1030 C2 domain"
+id: ttp-2026-0188-abioc-06
+status: experimental
+description: |
+  The run host produces a tight recurring burst of small HTTPS sessions to servgate.me, a domain rare across the fleet — the Cobalt Strike / VShell beacon shape. Auto-tuned NGFW EAL ABIOC on recurring cadence plus destination rarity.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter dst_domain = "servgate.me" or dst = "138.197.44.208"
+    | comp count() as sessions, avg(bytes_sent) as avg_sent by src, endpoint_device_name, dst_domain
+    | filter sessions >= 5
+    | fields src, endpoint_device_name, dst_domain, sessions, avg_sent
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "TGR-STA-1030 Shadow Campaigns \u2014 Diaoyu Lure to Cobalt Strike C2 and ShadowGuard eBPF Rootkit (Unit 42 stitched chain) \u2014 MP-029 Rare process SSH session to a leased relay VPS"
+id: ttp-2026-0188-abioc-07
+status: experimental
+description: |
+  A process that rarely opens SSH creates a port-22 session from the run host to an uncommon external VPS — the leased relay hop the report describes for TGR-STA-1030.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app = "ssh" and dst_port = 22
+    | filter dst_domain = "zamstats.me" or dst = "157.245.194.54"
+    | comp count() as ssh_sessions by src, endpoint_device_name, dst
+    | fields src, endpoint_device_name, dst, ssh_sessions
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1090/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1090
+    - attack.t1021.004
+logsource:
+  product: cross-platform
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium

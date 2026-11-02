@@ -27,6 +27,9 @@
  * after a canvas-approved edge is applied (`ComposerView.jsx`'s
  * `handleConnectSteps`, direct-manipulation Task 10), so the two invariants
  * stay reconciled without ever asking `canConnect` to reason about position.
+ * That repair is minimal and stable — array order IS execution order, so a
+ * valid array is never touched and an invalid one moves only the steps it
+ * must (see `topologicallySortSteps`).
  *
  * A refusal from `canConnect` ALWAYS carries a reason — a silently dropped
  * drag is indistinguishable from a broken canvas, and the DC has to be able
@@ -100,10 +103,10 @@ export function canConnect(steps, fromId, toId) {
 }
 
 /**
- * Topologically re-sort `steps` so every step's `causalityParent` (when set)
- * sits at an EARLIER array index than the step itself — the array-order half
- * of the spine invariant (see the module header); the one `canConnect` above
- * does not check.
+ * Re-order `steps` so every step's `causalityParent` (when it names a step
+ * that is present) sits at an EARLIER array index than the step itself — the
+ * array-order half of the spine invariant (see the module header); the one
+ * `canConnect` above does not check.
  *
  * The intended caller is `ComposerView.jsx`'s `handleConnectSteps`: apply a
  * `canConnect`-approved edge with `setCausalityParent(..., { skipOrderCheck:
@@ -113,39 +116,67 @@ export function canConnect(steps, fromId, toId) {
  * already said yes — the array is repaired to fit the edge instead of the
  * edge being rejected to fit the array.
  *
- * Stable Kahn's-algorithm sort: a step is emitted once its parent has
- * already been emitted; a step with no parent, or whose declared parent is
- * not present in `steps` (a dangling reference — data that is already
- * inconsistent, which a genuine cycle can never produce because `canConnect`
- * refuses one at connect time), is immediately eligible. Ties are broken by
- * original array order, so an array that already satisfies the invariant is
- * returned UNCHANGED (the same reference) — the same no-op-returns-same-ref
- * contract every other op in `composerDraft.js` follows.
+ * Array order IS execution order, so this moves as little as it can:
+ *
+ *  1. An array that already satisfies the invariant is returned UNCHANGED
+ *     (the same reference) — the same no-op-returns-same-ref contract every
+ *     other op in `composerDraft.js` follows. This is checked FIRST, not
+ *     inferred from the sort's output: the earlier level-batched Kahn sort
+ *     emitted every depth-N step before any depth-N+1 step, so a valid
+ *     branching spine (`[01, 02<-01, 03<-02]` plus `04<-01`) came back as
+ *     `[01, 02, 04, 03]`, and one "+ Add step" on a branching corpus chain
+ *     (SIM-EDR-019) silently changed the execution order of steps the DC
+ *     never touched.
+ *  2. Otherwise, a STABLE ancestor-first placement: walk the original order
+ *     and, before emitting a step, emit its not-yet-emitted present ancestors
+ *     (root-most first). Only steps that have to move to precede a
+ *     descendant move; every other step keeps its relative order.
+ *
+ * A parent that is not present in `steps` (a dangling reference) imposes no
+ * order — `spineProblems` names it instead. A cycle (which `canConnect`
+ * refuses at connect time, so only inconsistent data can carry one) stops the
+ * ancestor walk where it closes. Either way every step is emitted exactly
+ * once: placement is tracked by array index, never by id, so even duplicate
+ * ids cannot drop or duplicate a step.
  *
  * @param {Array<{id:string, causalityParent:?string}>} steps
- * @returns {Array} `steps`, re-sorted if (and only if) it needed it
+ * @returns {Array} `steps`, re-ordered if (and only if) it needed it
  */
 export function topologicallySortSteps(steps) {
-  const byId = new Map(steps.map((s) => [s.id, s]))
+  // First occurrence wins, matching what a parent pointer can resolve to.
+  const indexOf = new Map()
+  steps.forEach((s, i) => { if (!indexOf.has(s.id)) indexOf.set(s.id, i) })
+
+  const legal = steps.every((s, i) => (
+    !s.causalityParent
+    || !indexOf.has(s.causalityParent)
+    || indexOf.get(s.causalityParent) < i
+  ))
+  if (legal) return steps
+
   const placed = new Set()
   const out = []
-  let remaining = steps
-
-  while (remaining.length) {
-    const ready = remaining.filter(
-      (s) => !s.causalityParent || placed.has(s.causalityParent) || !byId.has(s.causalityParent),
-    )
-    // A genuine cycle cannot reach here (canConnect refuses one at connect
-    // time) — but rather than drop steps if the data is already
-    // inconsistent, emit whatever is left in its existing order.
-    const batch = ready.length ? ready : remaining
-    for (const s of batch) {
-      out.push(s)
-      placed.add(s.id)
+  steps.forEach((step, i) => {
+    if (placed.has(i)) return
+    // Nearest-first chain of this step and its not-yet-emitted ancestors.
+    const chain = [i]
+    const onPath = new Set([i])
+    let cur = step
+    while (cur.causalityParent && indexOf.has(cur.causalityParent)) {
+      const p = indexOf.get(cur.causalityParent)
+      if (placed.has(p) || onPath.has(p)) break
+      chain.push(p)
+      onPath.add(p)
+      cur = steps[p]
     }
-    remaining = remaining.filter((s) => !placed.has(s.id))
-  }
+    for (let k = chain.length - 1; k >= 0; k -= 1) {
+      placed.add(chain[k])
+      out.push(steps[chain[k]])
+    }
+  })
 
-  const unchanged = out.length === steps.length && out.every((s, i) => s === steps[i])
+  // A self-reference or an unbreakable cycle can leave the order as it was;
+  // keep the same-reference contract for that case too.
+  const unchanged = out.every((s, i) => s === steps[i])
   return unchanged ? steps : out
 }

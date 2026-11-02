@@ -49,6 +49,11 @@ export default function ComposerPalette({
   query = '',
   onQuery = () => {},
   loading = false,
+  // Composer mode: when true, each item is draggable onto the canvas (its `key`
+  // rides the drag as `application/cortexsim-node`, which the canvas resolves to
+  // the right create/attach action). Clicking still runs `add()` as before, so
+  // the two input modes coexist and nothing changes for the windowed caller.
+  draggable = false,
 }) {
   const q = query.trim().toLowerCase()
 
@@ -105,10 +110,15 @@ export default function ComposerPalette({
             <button
               type="button"
               key={it.key}
-              className="bench-item"
+              className={'bench-item' + (draggable && !it.disabled ? ' bench-item--draggable' : '')}
               onClick={it.add}
               disabled={it.disabled}
               title={it.title || it.meta}
+              draggable={draggable && !it.disabled}
+              onDragStart={draggable && !it.disabled ? (e) => {
+                e.dataTransfer.setData('application/cortexsim-node', it.key)
+                e.dataTransfer.effectAllowed = 'copy'
+              } : undefined}
             >
               <span
                 className={`bench-item__dot bench-item__dot--${group.tone}`}

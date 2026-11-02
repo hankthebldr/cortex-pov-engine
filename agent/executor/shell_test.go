@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"runtime"
 	"strings"
 	"testing"
@@ -69,5 +70,40 @@ func TestRunCommand_BinaryNotFoundIsRealError(t *testing.T) {
 	}
 	if code == 0 {
 		t.Errorf("expected non-zero exit for missing binary, got 0")
+	}
+}
+
+func TestRunCommand_SignaledChildReportsTermination(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX signals")
+	}
+	out, err := RunCommandCtxStreamOutcome(context.Background(), "kill -9 $$", nil)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if out.ExitCode != 137 || out.Termination != "signaled" || out.Signal != 9 {
+		t.Fatalf("got exit=%d term=%q sig=%d, want 137/signaled/9", out.ExitCode, out.Termination, out.Signal)
+	}
+}
+
+func TestRunCommand_PlainExit137IsExitedNotSignaled(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh -c is POSIX-only")
+	}
+	out, _ := RunCommandCtxStreamOutcome(context.Background(), "exit 137", nil)
+	if out.ExitCode != 137 || out.Termination != "exited" || out.Signal != 0 {
+		t.Fatalf("got exit=%d %q/%d", out.ExitCode, out.Termination, out.Signal)
+	}
+}
+
+func TestRunCommand_CancelReportsAborted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh -c is POSIX-only")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	out, err := RunCommandCtxStreamOutcome(ctx, "sleep 30", nil)
+	if err != context.Canceled || out.ExitCode != 130 || out.Termination != "aborted" {
+		t.Fatalf("got err=%v exit=%d term=%q", err, out.ExitCode, out.Termination)
 	}
 }

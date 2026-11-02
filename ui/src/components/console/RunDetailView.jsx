@@ -6,6 +6,7 @@ import CausalityGraph from '../CausalityGraph.jsx'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { scenarioIdOf } from '../../api/ids.js'
+import { hasAttestations, attestationLines } from '../../outcomes.js'
 import '../../styles/destinations/run-detail.css'
 
 /**
@@ -88,6 +89,7 @@ export default function RunDetailView({
   const statusToken = runStatusToken(run?.status)
   const failed = isRunUnproven(run?.status)
   const failureTail = failed ? tailOutput(run?.output) : null
+  const attest = hasAttestations(run) ? attestationLines(run) : null
 
   if (!runId) {
     return (
@@ -167,6 +169,27 @@ export default function RunDetailView({
             </p>
           )}
         </div>
+      )}
+
+      {run?.severed_at_step && (
+        <div className="run-severed" role="status" data-testid="run-severed-banner">
+          {`Chain severed at ${run.severed_at_step}`}
+        </div>
+      )}
+
+      {attest && (
+        <section className="run-attest" aria-label="Attestations" data-testid="run-attestations">
+          <h2 className="run-attest__h">Attestations</h2>
+          <p className="run-attest__lede">
+            Operator declarations at launch. SimCore did not observe or verify any of these.
+          </p>
+          <ul className="run-attest__list mono">
+            <li>{attest.profile}</li>
+            <li>{attest.bas}</li>
+            <li>{attest.soakless}</li>
+            <li>{attest.canary}</li>
+          </ul>
+        </section>
       )}
 
       <div

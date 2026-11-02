@@ -1,0 +1,24 @@
+{
+  "mitre_techniques": [
+    "T1566.003",
+    "T1204.002",
+    "T1127",
+    "T1574.014",
+    "T1036.005",
+    "T1562.006",
+    "T1547.001",
+    "T1102.002",
+    "T1572",
+    "T1090"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-025 Build Engine Drops and Executes RuntimeBroker from User App-Data) AND (BIOC(MP-025 RuntimeBroker.exe Executed Outside System32) OR BIOC(MP-025 AppDomainManager Config with ETW Disabled Beside User-Writable EXE)) AND ABIOC(MP-025 Recurring Fixed-Cadence GitHub API Sessions from a Non-Developer-Pattern Host) AND (ABIOC(MP-025 Recurring Tunnel Sessions to a Rare IP-Literal Destination) OR IOC(91.107.156.29) OR IOC(WildFire Blackwood sha256)) within 900s on the same src_host (xdr_data agent_hostname = panw_ngfw endpoint_device_name) -> ONE incident, severity critical",
+      "name": "Blinder Tunnel (CL-STA-1178) \u2014 Developer Lure to GitHub C2 and Chisel Tunnel on One Host",
+      "rule_id": "CR-MP-0025",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0184"
+}

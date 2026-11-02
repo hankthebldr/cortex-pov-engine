@@ -227,6 +227,61 @@ button.pov-chip:hover { border-color: var(--bd2); }
 .pov-workspace--rail-collapsed { --rail-w: 56px; }
 .pov-main { min-width: 0; overflow: auto; position: relative; }
 
+/* ── Immersive mode ──────────────────────────────────────────────────────
+   An immersive destination (destinations.jsx `immersive: true` — today the
+   Composer) owns everything below the header. AppShell stops rendering the
+   nav rail and AppConsole the task tab strip; these rules hand the freed
+   column and the view's padding to the surface, edge to edge, and make the
+   view a flex column so the surface takes exactly what the always-visible
+   api-down banner leaves — never more, so nothing is pushed past the bottom
+   edge, and nothing scrolls at page level.
+
+   SPECIFICITY IS THE MECHANISM, NOT SOURCE ORDER. The live layout is
+   cortex-console.css: `.theme-console .workspace` (0,2,0) sets the rail
+   column, `.theme-console .main` (0,2,0) the `auto 1fr` rows (which would put
+   the lone `.view` in a content-sized row), `.theme-console .view` (0,2,0)
+   the padding and overflow-y:auto, and its <=1000px block re-forces a 62px
+   rail column and pins `.main` to `grid-column: 2` — which, with the rail
+   gone, would park the surface in a second, implicit track. Every rule below
+   is (0,3,0) or higher, so it wins whatever order the sheets load in
+   (guarded by styles/__tests__/immersive-shell.test.jsx). */
+.theme-console .workspace.pov-workspace--immersive {
+  grid-template-columns: minmax(0, 1fr);
+  /* The rail-collapse transition animates grid-template-columns; entering or
+     leaving immersive mode is a route change, not a gesture to animate. */
+  transition: none;
+}
+.theme-console .pov-workspace--immersive > .main {
+  grid-column: 1 / -1;
+  grid-template-rows: minmax(0, 1fr);
+}
+.theme-console .pov-workspace--immersive > .main > .view {
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--s0);
+}
+/* Banners keep their natural height; the surface (always the last child) takes
+   the remainder. `min-height: 0` lets it shrink below its content so its own
+   panes scroll instead of the page. */
+.theme-console .pov-workspace--immersive > .main > .view > * { flex: none; }
+.theme-console .pov-workspace--immersive > .main > .view > :last-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (max-width: 1000px) {
+  /* Restated where cortex-console.css forces the 62px icon-rail column and
+     `.main { grid-column: 2 }` — already out-specified above, repeated here so
+     the narrow-viewport override reads next to the rule it defeats. */
+  .theme-console .workspace.pov-workspace--immersive {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .theme-console .pov-workspace--immersive > .main { grid-column: 1 / -1; }
+}
+
 /* ── Rail ────────────────────────────────────────────────────────────────── */
 .pov-rail {
   background: var(--s1);

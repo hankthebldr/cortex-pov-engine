@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     CORTEXSIM_ENV: str = "production"
     CORTEXSIM_SECRET: str = "changeme"
     # Declared because `.env.example` tells operators to set it and
-    # docker-compose.yml consumes it (`${CORTEXSIM_VERSION:-1.0.0}` drives both
+    # docker-compose.yml consumes it (`${CORTEXSIM_VERSION:-1.1.0}` drives both
     # the image tag and container_name). Nothing in the app branches on the
     # value — it is deployment metadata — but pydantic-settings defaults
     # BaseSettings to `extra='forbid'` and this class reads `.env`, so leaving
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     #
     # Defaults to "unknown" rather than a pinned version: no workflow reads this
     # variable (release.yml derives the image tag from the git tag),
-    # docker-compose.yml carries its own `:-1.0.0` fallback, and core/main.py
+    # docker-compose.yml carries its own `:-1.1.0` fallback, and core/main.py
     # already hardcodes FastAPI's own `version`. A plausible-looking default here
     # would let a deploy that was never told its version report a specific one
     # anyway — degraded should read as degraded.
@@ -62,6 +62,25 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_RECONCILE_INTERVAL: int = 300          # seconds between sweeps
     CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
     CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
+    # A delivered run whose agent is offline and silent this long is terminalised
+    # as beacon_lost by the heartbeat sweep (the XDR agent may kill the beacon).
+    CORTEXSIM_BEACON_LOST_AFTER_SECONDS: int = 180
+
+    # Match window for Analytics / ABIOC expectations, used by every reconcile
+    # path (manual /observations, /reconcile, the auto sweep) via
+    # connectors.service.window_by_type(). The per-detector activation and test
+    # periods live in the *Cortex XDR Analytics Alert Reference Guide*
+    # (docs-cortex.paloaltonetworks.com, "Cortex XDR Analytics Alert Reference
+    # Guide" -- each detector page lists its activation period and test period).
+    # This default is the largest window /reconcile already accepts (86400 s); a
+    # longer window can only delay a `missed`, never manufacture one. Tighten
+    # against the guide for the detectors a POV actually exercises.
+    CORTEXSIM_RECONCILE_WINDOW_ANALYTICS: int = 86400
+
+    # Scenario id of the built-in canary (a benign trigger the agent is expected
+    # to terminate) used by POST /api/runs/canary to prove a block-mode profile.
+    # Empty = no canary shipped: block mode is attested-only, the honest default.
+    CORTEXSIM_CANARY_SCENARIO_LINUX: str = ""
 
     # Auto-verify phase of the reconcile sweep. OFF by default and, unlike
     # reconcile, it runs XQL against the customer's tenant — a metered resource

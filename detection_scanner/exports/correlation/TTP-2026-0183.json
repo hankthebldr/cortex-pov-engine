@@ -1,0 +1,30 @@
+{
+  "mitre_techniques": [
+    "T1505.003",
+    "T1546.004",
+    "T1552.001",
+    "T1543.002",
+    "T1053.003",
+    "T1036.004",
+    "T1059.004",
+    "T1071.001",
+    "T1090",
+    "T1114.001",
+    "T1560.001",
+    "T1567",
+    "T1070.003",
+    "T1070.006",
+    "T1070.002",
+    "T1518.001"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-024 PHP auto_prepend_file Hijack Across PHP and Plesk Configurations) AND BIOC(MP-024 Bash dev-tcp, Named-Pipe and Python Socket Reverse Shells from Web-Server Lineage) AND (ABIOC(MP-024 Abnormal Recurring WebSocket Beacon to SysGoRAT C2) OR IOC(104.194.158.65) OR IOC(d94f75a70b5cabaf786ac57177ed841732e62bdcc9a29e06e5b41d9be567bcfa)) AND (BIOC(MP-024 Qmail Maildir Enumeration and Mailbox Archive Staging) OR ABIOC(MP-024 Massive Mailbox-Archive Upload to a Rare Storage Domain)) AND (ABIOC(MP-024 Uncommon Attempt to Clear Shell History) OR BIOC(MP-024 Endpoint-Agent Process Discovery and Log Wipe by Web-Server Lineage)) within 1800s on the same host (src_host: xdr_data agent_hostname = NGFW endpoint_device_name, which every synthetic NGFW record carries in-band from the run host) -> one CL-UNK-1211 incident spanning the endpoint and network legs, enriched as the actor by the Unit 42 IP, hash and domain indicators.",
+      "name": "CL-UNK-1211 Linux Web-Server Espionage Chain - Endpoint plus NGFW on One Host",
+      "rule_id": "CR-MP-0024",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0183"
+}

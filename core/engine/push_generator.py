@@ -333,6 +333,35 @@ class BundleTargetUnsatisfiable(Exception):
         }
 
 
+class PushNotSupported(Exception):
+    """The scenario declares ``push_supported: false`` -- no push bundle is offered.
+
+    Distinct from :class:`BundleTargetUnsatisfiable`: that one says the CONTENT
+    cannot satisfy the requested target; this one says the author withdrew push
+    delivery altogether (e.g. an agent-only chain whose legs span incompatible
+    targets). Same 409 envelope so callers handle both uniformly.
+    """
+
+    def __init__(self, scenario_id: str):
+        self.scenario_id = scenario_id
+        super().__init__(f"scenario={scenario_id} declares push_supported: false")
+
+    def to_error(self) -> dict[str, Any]:
+        return {
+            "error": "Scenario does not offer a push bundle",
+            "code": "PUSH_NOT_SUPPORTED",
+            "detail": (
+                f"scenario={self.scenario_id} declares push_supported: false — "
+                "run it through an enrolled agent (pull mode) instead"
+            ),
+        }
+
+
+def push_not_supported(scenario: dict[str, Any]) -> bool:
+    """True only for an explicit ``push_supported: false`` (absent means unknown)."""
+    return scenario.get("push_supported") is False
+
+
 def _variant(step: dict[str, Any], key: str) -> str | None:
     variants = step.get("platform_variants") or {}
     if not isinstance(variants, dict):

@@ -77,6 +77,9 @@ const STORYLINE_RAW = {
             },
             observed: null,
             status: 'pending',
+            // An engine-held pending: the live "awaiting detection" state. An
+            // outcome-less row reads "Awaiting reconcile" instead (R4).
+            outcome: 'pending',
             mttd_seconds: null,
             evidence_refs: [],
             result_id: 2,
@@ -163,7 +166,7 @@ describe('<DetectionStoryline />', () => {
     render(<DetectionStoryline runId="run-abc" />)
 
     expect(await screen.findByText(/awaiting detection/i)).toBeInTheDocument()
-    expect(screen.getByText('Awaiting')).toBeInTheDocument()
+    expect(screen.getByText('Pending')).toBeInTheDocument()
     // Correlation engine (strongest XSIAM differentiator) is badged.
     expect(screen.getByText('Correlation')).toBeInTheDocument()
   })

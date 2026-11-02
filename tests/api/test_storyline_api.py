@@ -103,7 +103,7 @@ def stub_storyline_engine(monkeypatch):
                 "provenance": {"machine_verified": 0, "attested": 1},
             }
 
-    def _build(run_dict, results, scenario_steps):
+    def _build(run_dict, results, scenario_steps, *, observations=None):
         captured["run_dict"] = run_dict
         captured["results"] = results
         captured["scenario_steps"] = scenario_steps
@@ -137,7 +137,7 @@ def test_storyline_happy_path(client, seeded_run, stub_storyline_engine):
 def test_storyline_serializes_plain_dict(client, seeded_run, monkeypatch):
     """A builder that returns a raw dict is passed through unchanged."""
     fake_mod = types.ModuleType("engine.detection_storyline")
-    fake_mod.build_storyline = lambda run, results, steps: {"run_id": run["run_id"], "ok": True}
+    fake_mod.build_storyline = lambda run, results, steps, **kw: {"run_id": run["run_id"], "ok": True}
     monkeypatch.setitem(sys.modules, "engine.detection_storyline", fake_mod)
 
     r = client.get(f"/api/runs/{seeded_run}/storyline")
@@ -162,7 +162,7 @@ def test_storyline_engine_unavailable_503(client, seeded_run, monkeypatch):
 
 def test_storyline_build_failure_500(client, seeded_run, monkeypatch):
     """A builder that raises yields a structured 500 (no stack in body)."""
-    def _boom(run, results, steps):
+    def _boom(run, results, steps, **kw):
         raise ValueError("kaboom")
 
     fake_mod = types.ModuleType("engine.detection_storyline")
@@ -174,3 +174,36 @@ def test_storyline_build_failure_500(client, seeded_run, monkeypatch):
     body = r.json()
     assert body["detail"]["code"] == "STORYLINE_BUILD_FAILED"
     assert "kaboom" in body["detail"]["detail"]
+
+
+def test_storyline_api_passes_observations(client, session_factory):
+    """The route loads Observation rows so ``observed.alert_id`` is the tenant id."""
+    import asyncio
+    from datetime import datetime
+    from models import Observation, Result, Run, Scenario
+
+    async def _seed():
+        async with session_factory() as db:
+            db.add(Scenario(scenario_id="SIM-OBS-1", name="n", plane="EDR", version="1",
+                            status="active", uc_ref="u", uc_name="u", tc_ref="t",
+                            tc_name="t", mitre_tactic="TA0006", mitre_tactic_name="x",
+                            mitre_technique="T1003", mitre_technique_name="x",
+                            steps=[{"id": "step-01", "name": "s"}]))
+            db.add(Run(run_id="r-obs", scenario_id="SIM-OBS-1", mode="pull",
+                       status="complete", started_at=datetime.utcnow()))
+            r = Result(run_id="r-obs", step_id="step-01", step_name="s", plane="EDR",
+                       signal_type="BIOC", expected_detection="d", observed=True,
+                       observed_at=datetime.utcnow(), executed_at=datetime.utcnow())
+            db.add(r)
+            await db.flush()
+            db.add(Observation(run_id="r-obs", result_id=r.id, source="xsiam",
+                               external_id="ALERT-9", name="Cred dump",
+                               observed_at=datetime.utcnow()))
+            await db.commit()
+
+    asyncio.run(_seed())
+    body = client.get("/api/runs/r-obs/storyline").json()
+    body = body["detection_storyline"]
+    observed = body["entries"][0]["observed"]
+    assert observed["alert_id"] == "ALERT-9"
+    assert observed["alert_name"] == "Cred dump"

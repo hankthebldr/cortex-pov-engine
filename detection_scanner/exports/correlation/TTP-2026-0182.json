@@ -1,0 +1,35 @@
+{
+  "mitre_techniques": [
+    "T1505.003",
+    "T1140",
+    "T1036.008",
+    "T1570",
+    "T1127",
+    "T1036.005",
+    "T1082",
+    "T1053.005",
+    "T1053.003",
+    "T1102",
+    "T1071.004",
+    "T1071.001",
+    "T1095",
+    "T1105"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-023 Web Service Account Decodes ASPX Web Shell Into Webroot) AND BIOC(MP-023 Renamed System Binary Fontdrvhost Executes Config Ini From ProgramData) AND (BIOC(MP-023 EPolicyManager Persistence Launching Renamed Fontdrvhost) OR IOC(any MP-023 report domain)) AND (ABIOC(MP-023 Recurring Communications From Run Host To Rare CL-STA-0049 Domains) OR IOC(file-sha256 f663149d618be90e5596b28103d38e963c44a69a5de4a1be62547259ca9ffd2d)) within 1800s on the same src_host (xdr_data agent_hostname = panw_ngfw_*_raw endpoint_device_name, reconciled with src_ip by XSIAM endpoint entity resolution) -> one high-severity CL-STA-0049 incident spanning endpoint and network.",
+      "name": "Squidoor CL-STA-0049 Web Shell to Multi-Protocol C2 \u2014 Endpoint + NGFW Stitch",
+      "rule_id": "CR-MP-0023",
+      "severity": "high"
+    },
+    {
+      "description": null,
+      "logic": "panw_ngfw_threat_raw (WildFire verdict malicious, action alert; Squidoor config.ini WildFire verdict) JOIN panw_ngfw_traffic_raw (CL-STA-0049 beacon sessions to the rare report domains) ON endpoint_device_name (with src as the tie-break when the hostname is absent) WHERE |traffic._time - threat._time| <= 1800s -> one network-plane finding for the run host; feeds CR-MP-0023 as its network leg. Joins only NGFW records; no endpoint or cloud dataset.",
+      "name": "MP-023 network-leg fusion \u2014 NGFW threat verdict + traffic session on one host",
+      "rule_id": "CR-MP-NET-0023",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0182"
+}

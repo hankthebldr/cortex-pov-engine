@@ -34,6 +34,12 @@ TTPS = ROOT / "detection_scanner" / "ttps"
 # The analytics-streamer card id range (TTP-2026-0154..0167). Kept explicit so
 # the check targets streamer cards, not the whole corpus.
 STREAMER_IDS = {f"TTP-2026-{n:04d}" for n in range(154, 168)}
+# Plus a card that carries a verbatim hunt against one emitter's dataset but
+# also holds endpoint/incident queries no emitter can serve: 0196 (SIM-MP-037)
+# queries panw_ngfw_threat_raw by normalised names, alongside xdr_data and
+# xsiam_incidents. Only the queries on the scoped datasets are checked.
+CARD_DATASET_SCOPE = {"TTP-2026-0196": {"panw_ngfw_threat_raw"}}
+STREAMER_IDS.add("TTP-2026-0196")
 
 _DATASET_RE = re.compile(r"(?:dataset|preset)\s*=\s*([a-z0-9_]+)", re.IGNORECASE)
 # PRECISE source-field extraction: only the field on the LHS of a filter
@@ -127,9 +133,14 @@ def main():
         cid = card["id"]
         card_datasets = set()
         queried_fields = set()
+        scope = CARD_DATASET_SCOPE.get(cid)
         for name, body in card_bodies(card):
-            for m in _DATASET_RE.finditer(body):
-                card_datasets.add(m.group(1))
+            body_datasets = {m.group(1) for m in _DATASET_RE.finditer(body)}
+            if scope is not None:
+                if not (body_datasets & scope):
+                    continue
+                body_datasets &= scope
+            card_datasets |= body_datasets
             queried_fields |= _queried_fields(body)
 
         # 3. dataset match

@@ -1,0 +1,153 @@
+title: "PHP2Shell PHP-Worker Post-Exploitation via Unit 42 MTH Hunting Queries (T1190 / T1105 / T1620) \u2014 MP-037 Recon Burst by Web Service Account"
+id: ttp-2026-0196-bioc-01
+status: experimental
+description: |
+  Three or more distinct host/user/network recon tools started under a PHP worker or by a web service account outside an interactive session - the Unit 42 hunting query's recon signal as a standalone rule (scripted lookups piped into a text filter excluded, as in the query).
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name ~= "^(?:apache2|httpd|php-fpm[0-9.]*|php-cgi[0-9.]*)$" or actor_process_image_name ~= "^(?:php-fpm[0-9.]*|php-cgi[0-9.]*)$" or (actor_effective_username in ("www-data", "apache", "nginx") and causality_actor_process_image_name not in ("sshd", "sshd-session", "login", "tmux", "screen"))
+    | filter action_process_image_name in ("whoami", "hostname", "id", "uname", "ps", "ip", "cat", "netstat", "ss", "ifconfig", "getent")
+    | filter action_process_image_name != "cat" or action_process_image_command_line ~= "/etc/(?:passwd|shadow|group|os-release|hosts)"
+    | filter action_process_image_command_line !~= "\bid\s+-[ugnrz]+\b"
+    | bin _time span = 1h
+    | comp count_distinct(action_process_image_name) as recon_tools, values(action_process_image_command_line) as cmds by _time, agent_hostname, actor_effective_username
+    | filter recon_tools >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1082/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1082
+    - attack.t1087
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "PHP2Shell PHP-Worker Post-Exploitation via Unit 42 MTH Hunting Queries (T1190 / T1105 / T1620) \u2014 MP-037 Payload Download to File by Web Service Account"
+id: ttp-2026-0196-bioc-02
+status: experimental
+description: |
+  curl with an output file or wget not to stdout, started under a PHP worker or by a web service account. Keeps the hunting query's exclusion of /dev/null and localhost/127.0.0.1 targets, so it is silent on a loopback-only lab.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name ~= "^(?:apache2|httpd|php-fpm[0-9.]*|php-cgi[0-9.]*)$" or actor_process_image_name ~= "^(?:php-fpm[0-9.]*|php-cgi[0-9.]*)$" or (actor_effective_username in ("www-data", "apache", "nginx") and causality_actor_process_image_name not in ("sshd", "sshd-session", "login", "tmux", "screen"))
+    | filter (action_process_image_name = "curl" and action_process_image_command_line ~= "\s(?:-[a-z]*o\b|--output\b)") or (action_process_image_name = "wget" and action_process_image_command_line !~= "\s-[a-z]*o\s*-(?:\s|$)|--output-document=-|--spider")
+    | filter action_process_image_command_line !~= "-o\s*/dev/null|://(?:localhost|127\.0\.0\.1|\[::1\])?[:/]"
+    | fields agent_hostname, actor_effective_username, action_process_image_command_line, causality_actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "PHP2Shell PHP-Worker Post-Exploitation via Unit 42 MTH Hunting Queries (T1190 / T1105 / T1620) \u2014 MP-037 chmod Executable Bit in a tmp-Class Directory by Web Service Account"
+id: ttp-2026-0196-bioc-03
+status: experimental
+description: |
+  chmod adding an execute bit (symbolic +x or an octal mode with an execute bit) to a path under /tmp, /var/tmp, /dev/shm or /run/shm, started under a PHP worker or by a web service account - the hunting query's staging signal.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name ~= "^(?:apache2|httpd|php-fpm[0-9.]*|php-cgi[0-9.]*)$" or actor_process_image_name ~= "^(?:php-fpm[0-9.]*|php-cgi[0-9.]*)$" or (actor_effective_username in ("www-data", "apache", "nginx") and causality_actor_process_image_name not in ("sshd", "sshd-session", "login", "tmux", "screen"))
+    | filter action_process_image_name = "chmod"
+    | filter action_process_image_command_line ~= "\bchmod\s+(?:-[a-z]+\s+)*(?:[0-7]?(?:[1357][0-7]{2}|[0-7][1357][0-7]|[0-7]{2}[1357])|[ugoa,+=rwst-]*[+=][rwst]*x[ugoa,+=rwxst-]*)\s" and action_process_image_command_line ~= "\s/(?:tmp|var/tmp|dev/shm|run/shm)/"
+    | fields agent_hostname, actor_effective_username, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1222/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1222.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "PHP2Shell PHP-Worker Post-Exploitation via Unit 42 MTH Hunting Queries (T1190 / T1105 / T1620) \u2014 MP-037 Execution From dev-shm or a memfd Image by Web Service Account"
+id: ttp-2026-0196-bioc-04
+status: experimental
+description: |
+  A process whose image lives under /tmp, /var/tmp, /dev/shm, /run/shm, /proc/<pid>/fd or a memfd (deleted) image, started under a PHP worker or by a web service account - the hunting query's standalone writable_exec signal.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name ~= "^(?:apache2|httpd|php-fpm[0-9.]*|php-cgi[0-9.]*)$" or actor_process_image_name ~= "^(?:php-fpm[0-9.]*|php-cgi[0-9.]*)$" or (actor_effective_username in ("www-data", "apache", "nginx") and causality_actor_process_image_name not in ("sshd", "sshd-session", "login", "tmux", "screen"))
+    | filter action_process_image_path ~= "^/(?:tmp|var/tmp|dev/shm|run/shm|run/user)/|^/proc/(?:self|[0-9]+)/fd/|^/memfd:|\(deleted\)\s*$"
+    | fields agent_hostname, actor_effective_username, action_process_image_path, action_process_image_command_line, actor_process_image_name
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1620/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1620
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "PHP2Shell PHP-Worker Post-Exploitation via Unit 42 MTH Hunting Queries (T1190 / T1105 / T1620) \u2014 MP-037 Remote-Name Payload Transfer by Web Service Account"
+id: ttp-2026-0196-bioc-05
+status: experimental
+description: |
+  curl --remote-name or wget writing into the working directory, started under a PHP worker or by a web service account - the Linux equivalents of the hunting query's alternate transfer branches, with its localhost exclusion.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter causality_actor_process_image_name ~= "^(?:apache2|httpd|php-fpm[0-9.]*|php-cgi[0-9.]*)$" or actor_process_image_name ~= "^(?:php-fpm[0-9.]*|php-cgi[0-9.]*)$" or (actor_effective_username in ("www-data", "apache", "nginx") and causality_actor_process_image_name not in ("sshd", "sshd-session", "login", "tmux", "screen"))
+    | filter (action_process_image_name = "curl" and action_process_image_command_line ~= "\s(?:-O\b|--remote-name\b)") or (action_process_image_name = "wget" and action_process_image_command_line !~= "\s-[a-z]*[oO]\b|--output-document|--spider")
+    | filter action_process_image_command_line !~= "://(?:localhost|127\.0\.0\.1|\[::1\])?[:/]"
+    | fields agent_hostname, actor_effective_username, action_process_image_command_line
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

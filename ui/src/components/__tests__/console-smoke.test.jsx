@@ -250,6 +250,10 @@ describe('console-view smoke renders', () => {
           { id: 3, mitre_technique: 'T1537',     plane: 'ANALYTICS', detection_type: 'Stitch',
             expected_description: 'XSIAM stitch', observed: false, alert_id: 'inc-001' },
         ],
+        // What /api/results returns alongside the rows (core/api/results.py).
+        coverage: { observed: 1, total: 3, denominator: 3, observed_in_denominator: 1,
+          prevented: 0, excluded: { not_reached: 0, not_executed: 0, soak_pending: 0 },
+          pct: 33.3, by_type: {} },
       },
     })
     render(

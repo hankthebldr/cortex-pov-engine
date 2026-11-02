@@ -1,0 +1,26 @@
+{
+  "mitre_techniques": [
+    "T1566.003",
+    "T1204.002",
+    "T1059.006",
+    "T1140",
+    "T1070.004",
+    "T1036.005",
+    "T1082",
+    "T1555.001",
+    "T1552.004",
+    "T1552.001",
+    "T1071.001",
+    "T1041"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "(BIOC(MP-027 Python Writes init py Into the Home Public Folder) OR ABIOC(MP-027 Self-Deleting Python Script Executed From the Home Public Folder) OR BIOC(MP-027 dockerd Launched From a Temp Path by a Python Interpreter) OR BIOC(MP-027 Python Opens Keychain SSH Key and Cloud CLI Credential Files)) AND (ABIOC(MP-027 NGFW Recurring Rare-Domain Communications From a Developer Workstation) OR IOC(91.103.140.191) OR IOC(70.34.245.118)) within 1800s on the same endpoint entity (xdr_data agent_hostname = panw_ngfw_traffic_raw endpoint_device_name, the src_host every leg carries) -> one Slow Pisces developer-compromise incident whose summary names the lure project, the ~/Public RN Loader drop, the credential collection and the C2 destination.",
+      "name": "Slow Pisces Developer Lure \u2014 Endpoint Loader/Stealer and NGFW C2 on One Workstation",
+      "rule_id": "CR-MP-0027",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0186"
+}

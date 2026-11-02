@@ -25,6 +25,29 @@ import { parseStitchContext, emitStitchContext } from './stitchContext.js'
 /** A step the DC added by hand, before they have configured it. */
 export const BLANK_COMMAND = '# configure the command for this step'
 
+// ─── Carried-field helpers ───────────────────────────────────────────────────
+// Scenario fields the Composer does not edit but MUST carry, or a fork loses
+// them on save (see `draftToApi`). Each is copied — a draft never aliases the
+// scenario object it came from — and is `null` ("not declared") when the source
+// does not declare it, so a draft without them serialises exactly as before.
+
+/** A deep copy of plain API data (JSON in, JSON out). */
+function _plain(v) {
+  return v == null ? null : JSON.parse(JSON.stringify(v))
+}
+
+/** A non-empty list, copied — else null. */
+function _list(v) {
+  return Array.isArray(v) && v.length ? _plain(v) : null
+}
+
+/** A non-empty mapping, copied — else null. */
+function _map(v) {
+  return v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length
+    ? _plain(v)
+    : null
+}
+
 /**
  * Normalise one scenario step into a draft step.
  *
@@ -59,12 +82,22 @@ export function normalizeStep(raw, index) {
       : null,
     causalityParent: raw.causality?.parent_step || null,
     causalityPivot: raw.causality?.pivot || null,
+    // Carried, not edited here. `platform_variants` is the per-OS command the
+    // push generator emits for a target the primary command cannot serve (the
+    // Windows .ps1 path); `requires_interpreters` is what the beacon checks
+    // before running the command, so a missing python refuses instead of
+    // reporting a masked failure as success. Dropping either on a fork
+    // changes what runs.
+    platformVariants: _map(raw.platform_variants),
+    requiresInterpreters: _list(raw.requires_interpreters),
     detections: detections.map((d) => ({
       plane: d.plane || null,
       type: d.type || null,
       description: d.description || null,
       ttpRef: d.ttp_ref || null,
       detectionId: d.detection_id || null,
+      verificationXql: d.verification_xql || null,
+      kpiContribution: _map(d.kpi_contribution),
     })),
     // Steps that came from a scenario are distinguishable from ones the DC
     // added here — the empty-state copy and the YAML comment both need it.
@@ -85,6 +118,30 @@ export function draftFromScenario(scenario) {
     ucRef: scenario.uc_ref || null,
     tcRef: scenario.tc_ref || null,
     moatTier: scenario.moat_tier || null,
+    // Carried verbatim so a fork keeps what the source declared — `draftToApi`
+    // emits each only when present. `externalTools` is the load-bearing one:
+    // the launch consent gate and payload staging read its `adapter_ref`s,
+    // while a step's `{adapter:…}` command resolves from the catalog alone —
+    // so a fork that dropped them would still run a gated tool, unconsented
+    // and unstaged.
+    tcRefs: _list(scenario.tc_refs),
+    povScenarioId: scenario.pov_scenario_id || null,
+    mitreTactic: scenario.mitre_tactic || null,
+    mitreTacticName: scenario.mitre_tactic_name || null,
+    mitreTechnique: scenario.mitre_technique || null,
+    mitreTechniqueName: scenario.mitre_technique_name || null,
+    additionalTechniques: _list(scenario.additional_techniques),
+    executionIdentity: _map(scenario.execution_identity),
+    externalTools: _list(scenario.external_tools),
+    // The measurement contract a run of this chain is scored against.
+    threshold: _map(scenario.threshold),
+    primaryKpi: scenario.primary_kpi || null,
+    validationMethodology: scenario.validation_methodology || null,
+    methodologyFamily: scenario.methodology_family || null,
+    successCriteria: scenario.success_criteria || null,
+    correlationWindowSeconds: scenario.correlation_window_seconds ?? null,
+    stitchingKey: scenario.stitching_key || null,
+    requiredPlanesInIncident: _list(scenario.required_planes_in_incident),
     // The Causality Group Owner is a first-class part of what a chain proves —
     // it is what the START node names, and it is why the steps form one spine.
     cgo: scenario.cgo_anchor
@@ -93,6 +150,7 @@ export function draftFromScenario(scenario) {
       : null,
     // Scenario-level, per the schema. Never copied onto individual steps.
     teardown: Array.isArray(scenario.cleanup?.commands) ? scenario.cleanup.commands : [],
+    k8sTeardown: scenario.cleanup?.k8s_teardown || null,
     // Phase-2 Stitch Context — the authored shared-entity intent. Parsed to the
     // panel's `{[key]:{literal|resolve}}` model, or null for a context-less
     // scenario (the 177-scenario corpus + Phase-1 drafts all land here as null).
@@ -124,7 +182,14 @@ export function draftFromScenario(scenario) {
 export function emptyDraft() {
   return {
     originId: null, name: null, plane: null, ucRef: null, tcRef: null,
-    moatTier: null, cgo: null, teardown: [], stitchContext: null, layout: null,
+    moatTier: null,
+    tcRefs: null, povScenarioId: null,
+    mitreTactic: null, mitreTacticName: null, mitreTechnique: null, mitreTechniqueName: null,
+    additionalTechniques: null, executionIdentity: null, externalTools: null,
+    threshold: null, primaryKpi: null, validationMethodology: null, methodologyFamily: null,
+    successCriteria: null, correlationWindowSeconds: null, stitchingKey: null,
+    requiredPlanesInIncident: null,
+    cgo: null, teardown: [], k8sTeardown: null, stitchContext: null, layout: null,
     laneOverrides: null,
     steps: [],
     scenarioId: null, status: null, author: null, tags: [],
@@ -181,11 +246,20 @@ export function setStepLane(draft, stepId, lane) {
   }
 }
 
-/** Next free `step-NN` id for a draft, so duplicates never collide. */
-export function nextStepId(steps) {
+/**
+ * Next free `step-NN` id for a draft, so duplicates never collide.
+ *
+ * `taken` (a Set or an array, optional) names ids that are not in `steps` but
+ * must still not be minted — callers pass every id used this session. Without
+ * it, deleting `step-03` and adding a step mints `step-03` again, and anything
+ * still keyed by that id (a stored canvas position, a lane override, a run
+ * result the DC is comparing against) silently describes a different step.
+ */
+export function nextStepId(steps, taken = null) {
+  const used = new Set(steps.map((s) => s.id))
+  if (taken != null) for (const id of taken) used.add(id)
   let n = steps.length + 1
-  const taken = new Set(steps.map((s) => s.id))
-  while (taken.has(`step-${String(n).padStart(2, '0')}`)) n += 1
+  while (used.has(`step-${String(n).padStart(2, '0')}`)) n += 1
   return `step-${String(n).padStart(2, '0')}`
 }
 
@@ -205,6 +279,8 @@ export function blankStep(id, { name = 'New step', technique = null } = {}) {
     eal: null,
     causalityParent: null,
     causalityPivot: 'process_lineage',
+    platformVariants: null,
+    requiresInterpreters: null,
     detections: [],
     authored: true,
   }
@@ -269,6 +345,15 @@ export function validateDraft(steps) {
     .filter((s) => (s.channel || 'agent') === 'eal' && !(s.eal && s.eal.plugin))
     .map((s) => s.id)
 
+  // Spine shape, mirroring `validate_causality_spine` (scenario_loader.py): a
+  // parent must name a step that exists and sits EARLIER in the array, and
+  // once ANY step declares a parent the chain may have exactly ONE root.
+  // Before Composer mode a second root was rare; dropping a node onto the
+  // canvas now makes one in a single gesture, and the backend rejects it at
+  // save with a prose 422 — so it is named here, at compose time, with the
+  // step ids, instead of after "Chain valid".
+  const { offChain, danglingParents, forwardRefs } = spineProblems(steps)
+
   const detectionCount = steps.reduce((n, s) => n + s.detections.length, 0)
   const techniques = steps
     .map((s) => s.technique)
@@ -278,6 +363,43 @@ export function validateDraft(steps) {
   const problems = []
   if (!steps.length) {
     problems.push('The chain is empty — add at least one step before preflight.')
+  }
+  // Spine shape first: on a node canvas a disconnected card is the structural
+  // fault to fix before its contents (the pill shows problems[0]).
+  if (offChain.length) {
+    const one = offChain.length === 1
+    problems.push(
+      `${offChain.length} step${one ? ' is' : 's are'} not connected to the chain `
+      + `(${offChain.join(', ')}) — a chain has one root; connect ${one ? 'it' : 'each'} `
+      + `to a step or the draft will not save.`,
+    )
+  }
+  if (danglingParents.length) {
+    const one = danglingParents.length === 1
+    problems.push(
+      `${danglingParents.length} step${one ? '' : 's'} ${one ? 'descends' : 'descend'} `
+      + `from a step that no longer exists (${danglingParents.join(', ')}).`,
+    )
+  }
+  // A child above its parent would EXECUTE first, and the loader rejects it
+  // ("must be an EARLIER step") — so the save would 422 after "Chain valid".
+  if (forwardRefs.length) {
+    const parentOf = new Map(steps.map((s) => [s.id, s.causalityParent]))
+    if (forwardRefs.length === 1) {
+      const id = forwardRefs[0]
+      const parent = parentOf.get(id)
+      problems.push(
+        parent === id
+          ? `1 step names itself as its parent (${id}) — re-link it to an earlier step.`
+          : `1 step runs before its parent (${id}) — move it after ${parent} or re-link it.`,
+      )
+    } else {
+      problems.push(
+        `${forwardRefs.length} steps run before their parents (${forwardRefs.join(', ')}) — `
+        + `move each after its parent (${forwardRefs.map((id) => `${id} after ${parentOf.get(id)}`).join(', ')}) `
+        + `or re-link them.`,
+      )
+    }
   }
   // Agreement matters here because this string is read aloud in a review:
   // "1 step declare no expected detection" is the kind of wrong that makes a
@@ -312,9 +434,50 @@ export function validateDraft(steps) {
     missingDetections,
     missingCommands,
     missingEalPlugin,
+    offChain,
+    danglingParents,
+    forwardRefs,
     counts: { steps: steps.length, detections: detectionCount, techniques: techniques.length },
     techniques,
   }
+}
+
+/**
+ * The three spine-shape defects the strict loader rejects, named by step id.
+ *
+ *  - `danglingParents`: steps whose `causalityParent` names no present step.
+ *  - `offChain`: once ANY step declares a parent, every root after the FIRST
+ *    (array order — the spine's head) is off the chain. A chain with no
+ *    declared causality at all is a legacy star and may have many roots.
+ *    Dangling steps are not roots: they are excluded BEFORE the head is
+ *    chosen, so `[s3→gone, s1, s2→s1]` names s3 as dangling and leaves the
+ *    real head s1 alone (choosing the head first branded s1 off-chain).
+ *  - `forwardRefs`: steps whose `causalityParent` names a present step at the
+ *    SAME or a LATER array index. `validate_causality_spine`
+ *    (core/engine/scenario_loader.py) rejects these — a parent "must be an
+ *    EARLIER step" — and array order is execution order, so a child placed
+ *    above its parent (the ↑/↓ reorder can do it) would run first.
+ *
+ * Shared by `validateDraft` (named problems) and the graph builder (the
+ * off-chain badge), so the canvas and the validation pill cannot disagree.
+ */
+export function spineProblems(steps) {
+  const list = Array.isArray(steps) ? steps : []
+  const indexOf = new Map()
+  list.forEach((s, i) => { if (!indexOf.has(s.id)) indexOf.set(s.id, i) })
+  const danglingParents = list
+    .filter((s) => s.causalityParent && !indexOf.has(s.causalityParent))
+    .map((s) => s.id)
+  const forwardRefs = list
+    .filter((s, i) => s.causalityParent && indexOf.has(s.causalityParent)
+      && indexOf.get(s.causalityParent) >= i)
+    .map((s) => s.id)
+  const declared = list.some((s) => s.causalityParent && indexOf.has(s.causalityParent))
+  // A root is a step that declares no parent at all. A dangling step declares
+  // one (it is named once, above), so it never competes for the head.
+  const roots = list.filter((s) => !s.causalityParent)
+  const offChain = declared ? roots.slice(1).map((s) => s.id) : []
+  return { offChain, danglingParents, forwardRefs }
 }
 
 // ─── YAML emit ───────────────────────────────────────────────────────────────
@@ -489,6 +652,7 @@ function _normalizeDetection(det) {
     ttpRef: det.ttpRef ?? det.ttp_ref ?? null,
     detectionId: det.detectionId ?? det.detection_id ?? null,
     verificationXql: det.verificationXql ?? det.verification_xql ?? null,
+    kpiContribution: _map(det.kpiContribution ?? det.kpi_contribution),
   }
 }
 
@@ -720,6 +884,7 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
           if (d.ttpRef) det.ttp_ref = d.ttpRef
           if (d.detectionId) det.detection_id = d.detectionId
           if (d.verificationXql) det.verification_xql = d.verificationXql
+          if (d.kpiContribution) det.kpi_contribution = d.kpiContribution
           return det
         }),
       }
@@ -732,6 +897,9 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
       if (Array.isArray(s.platforms) && s.platforms.length) step.platforms = s.platforms
       if (s.platformVariants && Object.keys(s.platformVariants).length) {
         step.platform_variants = s.platformVariants
+      }
+      if (Array.isArray(s.requiresInterpreters) && s.requiresInterpreters.length) {
+        step.requires_interpreters = s.requiresInterpreters
       }
       // Phase-3a channel routing — OMIT-WHEN-DEFAULT, mirroring the cgo_anchor /
       // platforms omission above: an agent step with no second endpoint emits
@@ -749,7 +917,19 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
   }
   if (draft.ucRef) body.uc_ref = draft.ucRef
   if (draft.tcRef) body.tc_ref = draft.tcRef
-  if (Array.isArray(draft.tcRefs) && draft.tcRefs.length) body.tc_refs = draft.tcRefs
+  // tc_refs is the evidence set FOR tc_ref, so it is sent only while it still
+  // contains the draft's primary binding. A DC who rebinds tc_ref has left the
+  // origin's set behind, and the backend honours a client list verbatim — the
+  // chain's runs would be credited to test cases it no longer claims. Omitted,
+  // the backend derives [tc_ref]. The UNBOUND sentinel (`orm_sentinels` in
+  // core/engine/composer_draft_schema.py) is not a test case and is never
+  // sent as evidence for one.
+  if (
+    draft.tcRef && draft.tcRef !== 'UNBOUND'
+    && Array.isArray(draft.tcRefs) && draft.tcRefs.includes(draft.tcRef)
+  ) {
+    body.tc_refs = draft.tcRefs
+  }
   // Phase-2 Stitch Context — OMITTED when empty so a context-less draft
   // serializes byte-identically to the corpus. Additive/optional, matching the
   // backend `stitch_context: Optional[StitchContextSchema] = None`.
@@ -763,18 +943,45 @@ export function draftToApi(draft, { author = 'composer' } = {}) {
   if (draft.laneOverrides && Object.keys(draft.laneOverrides).length > 0) {
     body.composer_lanes = draft.laneOverrides
   }
+  // Everything below is carried from the source scenario (`draftFromScenario`)
+  // and OMITTED when absent, so a draft that never had it POSTs the body it
+  // did before. Before these were carried, a fork silently lost them on save.
   if (draft.povScenarioId) body.pov_scenario_id = draft.povScenarioId
   if (draft.mitreTactic) body.mitre_tactic = draft.mitreTactic
   if (draft.mitreTacticName) body.mitre_tactic_name = draft.mitreTacticName
+  if (draft.mitreTechnique) body.mitre_technique = draft.mitreTechnique
   if (draft.mitreTechniqueName) body.mitre_technique_name = draft.mitreTechniqueName
+  if (Array.isArray(draft.additionalTechniques) && draft.additionalTechniques.length) {
+    body.additional_techniques = draft.additionalTechniques
+  }
   const cgoAnchor = _cgoAnchorFromDisplay(draft.cgo)
   if (cgoAnchor) body.cgo_anchor = cgoAnchor
   if (draft.executionIdentity) body.execution_identity = draft.executionIdentity
-  if (Array.isArray(draft.teardown) && draft.teardown.length) {
-    body.cleanup = { commands: draft.teardown }
+  const hasCommands = Array.isArray(draft.teardown) && draft.teardown.length > 0
+  if (hasCommands || draft.k8sTeardown) {
+    body.cleanup = { commands: hasCommands ? draft.teardown : [] }
+    if (draft.k8sTeardown) body.cleanup.k8s_teardown = draft.k8sTeardown
   }
+  // Load-bearing: the launch consent gate (`_check_adapter_consent`) and the
+  // payload shelf read `adapter_ref`s from here, not from the commands. Lost
+  // on save, a gated tool's `{adapter:…}` step still runs — unconsented and
+  // unstaged.
   if (Array.isArray(draft.externalTools) && draft.externalTools.length) {
     body.external_tools = draft.externalTools
+  }
+  // The measurement contract a run is scored against.
+  if (draft.threshold) body.threshold = draft.threshold
+  if (draft.primaryKpi) body.primary_kpi = draft.primaryKpi
+  if (draft.validationMethodology) body.validation_methodology = draft.validationMethodology
+  if (draft.methodologyFamily) body.methodology_family = draft.methodologyFamily
+  if (draft.successCriteria) body.success_criteria = draft.successCriteria
+  if (draft.moatTier) body.moat_tier = draft.moatTier
+  if (draft.correlationWindowSeconds != null) {
+    body.correlation_window_seconds = draft.correlationWindowSeconds
+  }
+  if (draft.stitchingKey) body.stitching_key = draft.stitchingKey
+  if (Array.isArray(draft.requiredPlanesInIncident) && draft.requiredPlanesInIncident.length) {
+    body.required_planes_in_incident = draft.requiredPlanesInIncident
   }
   return body
 }
@@ -827,6 +1034,9 @@ export function draftSnapshot(draft) {
     laneOverrides: draft.laneOverrides || null,
     steps: (draft.steps || []).map((s) => ({
       id: s.id,
+      // Load-bearing, NOT cosmetic: the POV run report prints each result's
+      // step name, so a rename changes what the customer reads.
+      name: s.name ?? null,
       command: s.command ?? null,
       identity: s.identity ?? null,
       technique: s.technique ?? null,
@@ -839,7 +1049,11 @@ export function draftSnapshot(draft) {
       eal: s.eal ? { plugin: s.eal.plugin ?? '', params: s.eal.params ?? {} } : null,
       platforms: Array.isArray(s.platforms) ? s.platforms.slice() : [],
       causalityParent: s.causalityParent ?? null,
-      causalityPivot: s.causalityPivot ?? null,
+      // A pivot without a parent is never serialised (`draftToApi` emits
+      // `causality` only with a parent), so it cannot change what runs.
+      // Clearing an edge keeps the step's old pivot (`setCausalityParent`), and
+      // a root that was connected then disconnected must not read as an edit.
+      causalityPivot: s.causalityParent ? (s.causalityPivot ?? null) : null,
       detections: (s.detections || []).map((d) => ({
         plane: d.plane ?? null,
         type: d.type ?? null,

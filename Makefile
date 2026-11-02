@@ -16,7 +16,7 @@ SHELL := /bin/bash
 
 # Version drives the image tag AND the container name (single source; override
 # with `make VERSION=… <target>` or export CORTEXSIM_VERSION). Working toward 1.0.
-VERSION     ?= 1.0.0
+VERSION     ?= 1.1.0
 IMAGE       ?= cortex-pov-engine-simcore:$(VERSION)
 COMPOSE     ?= docker compose
 # A high-entropy secret so the production-mode boot guard (validate_master_key

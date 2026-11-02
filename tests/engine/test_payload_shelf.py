@@ -251,7 +251,12 @@ def test_a_pack_with_no_artifact_is_reported_not_raised(wired, shelf, pack):
     assert plan.artifacts == ()
     assert [u.adapter_id for u in plan.unstaged_adapters] == ["TOOL-LINPEAS"]
     assert plan.air_gapped is False
-    assert any(w["code"] == "TARGET_EGRESS_REQUIRED" for w in plan.warnings)
+    egress = [w for w in plan.warnings if w["code"] == "TARGET_EGRESS_REQUIRED"]
+    assert [w["adapter_id"] for w in egress] == ["TOOL-LINPEAS"]
+    assert egress[0]["detail"] == (
+        "pull mode does not install tier-4 tools; the target must already "
+        "carry /tmp/linpeas.sh on PATH"
+    )
 
 
 def test_an_unknown_adapter_ref_is_skipped_not_fatal(wired, shelf):

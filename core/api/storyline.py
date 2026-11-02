@@ -68,7 +68,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from models import Result, Run, Scenario
+from models import Observation, Result, Run, Scenario
 
 logger = logging.getLogger("cortexsim.api.storyline")
 
@@ -76,6 +76,25 @@ logger = logging.getLogger("cortexsim.api.storyline")
 # beside the rest of the run surface at ``/api/runs/{run_id}/storyline`` — the
 # same pattern the connector reconcile router uses.
 router = APIRouter(prefix="/runs", tags=["storyline"])
+
+
+async def load_observations(db: AsyncSession, run_id: str) -> dict[int, dict[str, Any]]:
+    """``{result_id: observation dict}`` for the run's tenant evidence.
+
+    ``alert_id`` is the key the storyline's ``observed`` projection reads; without
+    it a reconcile-matched detection renders as a bare human checkbox. The first
+    recorded observation per result wins.
+    """
+    rows = (await db.execute(
+        select(Observation).where(Observation.run_id == run_id)
+                           .order_by(Observation.id),
+    )).scalars().all()
+    out: dict[int, dict[str, Any]] = {}
+    for obs in rows:
+        if obs.result_id is None or obs.result_id in out:
+            continue
+        out[obs.result_id] = {**obs.to_dict(), "alert_id": obs.external_id}
+    return out
 
 
 def _serialize_storyline(obj: Any) -> dict[str, Any]:
@@ -180,6 +199,8 @@ async def get_storyline(run_id: str, db: AsyncSession = Depends(get_db)):
     )
     results = res_result.scalars().all()
 
+    observations = await load_observations(db, run_id)
+
     # 4. Resolve the builder (structured 503 if module A is absent), then build.
     builder = _load_build_storyline()
     try:
@@ -187,6 +208,7 @@ async def get_storyline(run_id: str, db: AsyncSession = Depends(get_db)):
             run.to_dict(),
             [r.to_dict() for r in results],
             scenario_steps,
+            observations=observations,
         )
         payload = _serialize_storyline(storyline)
     except HTTPException:

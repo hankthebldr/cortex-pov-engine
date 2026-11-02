@@ -1026,7 +1026,7 @@ func (c *BeaconClient) reportStagingFailure(task *Task, set *stagedSet) {
 		"FAILED (exit %d) | scenario=%s steps=%d | %s %d of %d artifact(s) could not be staged (%s) — NO STEPS RAN. This run proves NOTHING about the customer's detection coverage.",
 		artifactStagingExitCode, task.ScenarioID, total, artifactStagingFailedMarker,
 		len(set.Failures), set.Total, strings.Join(codes, ","))
-	if err := c.Complete(task.RunID, artifactStagingExitCode, summary); err != nil {
+	if err := c.Complete(task.RunID, artifactStagingExitCode, summary, []StepOutcome{}); err != nil {
 		log.Printf("[beacon] complete (staging failure) error: %v", err)
 	}
 	log.Printf("[beacon] %s run_id=%s scenario=%s codes=%s", artifactStagingFailedMarker,

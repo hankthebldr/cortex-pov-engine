@@ -37,7 +37,8 @@ def test_signal_family_vocabulary():
     assert signal_family("XDR Analytics") == "analytics"
     assert signal_family("Correlation") == "correlation"
     assert signal_family("XDR IOC") == "ioc"
-    assert signal_family("XDR Agent") is None          # not a rule family
+    assert signal_family("XDR Agent") == "prevention"  # the agent's own prevention modules
+    assert signal_family("Some Other Engine") is None
     assert signal_family(None) is None
     # Result.signal_type side
     assert signal_family("ABIOC") == "abioc"
@@ -56,10 +57,10 @@ def test_a_bioc_alert_does_not_satisfy_a_correlation_expectation():
 
 def test_an_unknown_source_is_unconstrained_but_recorded():
     results = [_R(1, signal_type="Correlation")]
-    verdicts = reconcile(results, [_a(source="XDR Agent")])
+    verdicts = reconcile(results, [_a(source="Some Other Engine")])
     assert verdicts[0].matched
     assert "source" not in verdicts[0].matched_on
-    assert verdicts[0].alert_source == "XDR Agent"
+    assert verdicts[0].alert_source == "Some Other Engine"
 
 
 # ── host scoping ────────────────────────────────────────────────────────────

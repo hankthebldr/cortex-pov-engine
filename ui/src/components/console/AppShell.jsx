@@ -26,6 +26,14 @@ import { tourSeen as readTourSeen } from '../onboarding/onboardingState.js'
  *   onAbortRun    — () => void
  *   paletteItems  — items for ⌘K
  *   onExportPOV   — () => void  triggered by ⌘E from anywhere
+ *   immersive     — boolean (default false). The open destination is immersive
+ *                   (see destinations.jsx): the header, the safety gate and the
+ *                   `banner` slot stay; the DestinationNav rail is not rendered
+ *                   and the workspace gives the surface every pixel below the
+ *                   header edge to edge (povengine-shell.css). Route-derived by
+ *                   the caller on every render and NEVER persisted — it does not
+ *                   touch the stored railCollapsed / theaterMode preferences, so
+ *                   leaving immersive mode restores the rail exactly as it was.
  *   children      — the mounted destination surface
  */
 export default function AppShell({
@@ -52,10 +60,21 @@ export default function AppShell({
   // apart. It is also a statement about SimCore, not about whichever
   // destination happens to be open, so the shell is where it belongs.
   banner = null,
+  immersive = false,
   children,
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [helpOpen, setHelpOpen]       = useState(false)
+  // Mirrors of the two overlay flags for the global keydown handler below,
+  // which must know whether an Escape actually closed something — without
+  // re-subscribing (and so re-ordering itself behind the overlays' own
+  // document listeners) every time one opens.
+  const paletteOpenRef = useRef(false)
+  const helpOpenRef = useRef(false)
+  useEffect(() => {
+    paletteOpenRef.current = paletteOpen
+    helpOpenRef.current = helpOpen
+  }, [paletteOpen, helpOpen])
   // Rail collapse — persisted so a DC's preference survives reloads.
   const [railCollapsed, setRailCollapsed] = useState(() => {
     try { return window.localStorage.getItem('cortexsim.railCollapsed') === 'true' } catch { return false }
@@ -142,6 +161,13 @@ export default function AppShell({
     if (destination !== tourNavTargetRef.current) tour.exit()
   }, [destination, tour.active, tour.exit])
 
+  // Read through a ref so the handler below subscribes ONCE, at mount. It used
+  // to re-subscribe whenever the caller's onExportPOV identity changed (which
+  // AppConsole's does on every active-run update), and a re-subscribed
+  // document listener runs AFTER any overlay listener added in the meantime.
+  const onExportPOVRef = useRef(onExportPOV)
+  useEffect(() => { onExportPOVRef.current = onExportPOV }, [onExportPOV])
+
   // Global ⌘K / ⌘/ / ⌘E handlers (preserved from the stepper shell).
   useEffect(() => {
     const handler = (e) => {
@@ -154,18 +180,25 @@ export default function AppShell({
         e.preventDefault()
         setHelpOpen((v) => !v)
       } else if (mod && key === 'e' && !e.shiftKey) {
-        if (onExportPOV) {
+        if (onExportPOVRef.current) {
           e.preventDefault()
-          onExportPOV()
+          onExportPOVRef.current()
         }
       } else if (key === 'escape') {
+        // Consume the key ONLY when it closed an overlay. A surface with its
+        // own window-level Escape (e.g. the immersive Composer) runs after
+        // this document listener and reads
+        // `e.defaultPrevented` to tell "the palette ate it" from "this Escape
+        // is mine". Preventing unconditionally would make every surface's
+        // Escape dead; never preventing made one keypress do two things.
+        if (paletteOpenRef.current || helpOpenRef.current) e.preventDefault()
         setPaletteOpen(false)
         setHelpOpen(false)
       }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [onExportPOV])
+  }, [])
 
   const handleCloseHelp = useCallback(() => {
     setHelpOpen(false)
@@ -173,7 +206,7 @@ export default function AppShell({
   }, [])
 
   // Header / workspace, with the safety gate above while it is shown.
-  const shellClass = 'pov-shell shell shell--no-phasebar'
+  const shellClass = 'pov-shell shell shell--no-phasebar' + (immersive ? ' pov-shell--immersive' : '')
 
   // Theater mode lost its header button (one fewer control in a bar that had
   // ten) and lives in ⌘K instead, beside the other view toggles.
@@ -195,7 +228,11 @@ export default function AppShell({
     // the default and light is opt-in, so "no attribute" can no longer mean
     // "light" — it would mean the token layer's :root light set leaking under
     // a shell that expects dark surfaces.
-    <div className={`${themeClass} ${shellClass}`} data-theme={colorTheme}>
+    <div
+      className={`${themeClass} ${shellClass}`}
+      data-theme={colorTheme}
+      data-mode={immersive ? 'immersive' : undefined}
+    >
       {/* Skip link — keyboard users land here on Tab; jumps past bar/nav to the
           main workspace. Invisible until focused. */}
       <a href="#cortexsim-main" className="skip-link">
@@ -225,14 +262,26 @@ export default function AppShell({
 
       {banner}
 
-      <div className={'pov-workspace workspace' + (railCollapsed ? ' pov-workspace--rail-collapsed workspace--rail-collapsed' : '')}>
-        <DestinationNav
-          groups={navGroups}
-          active={activeNav || destination}
-          onNavigate={onNavigate}
-          collapsed={railCollapsed}
-          onToggleCollapse={toggleRail}
-        />
+      {/* Immersive mode drops the rail outright rather than collapsing it:
+          the collapse state is the DC's persisted preference and stays
+          untouched, so the rail comes back exactly as they left it. */}
+      <div
+        className={
+          'pov-workspace workspace' +
+          (immersive
+            ? ' pov-workspace--immersive'
+            : railCollapsed ? ' pov-workspace--rail-collapsed workspace--rail-collapsed' : '')
+        }
+      >
+        {!immersive && (
+          <DestinationNav
+            groups={navGroups}
+            active={activeNav || destination}
+            onNavigate={onNavigate}
+            collapsed={railCollapsed}
+            onToggleCollapse={toggleRail}
+          />
+        )}
 
         <main className="pov-main main" id="cortexsim-main" aria-label="POVengine workspace">
           <div className="view" key={destination}>

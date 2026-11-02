@@ -27,6 +27,18 @@ campaign's `target_allowlist`.
 
 Use case prefix: `UCS-KOI-NN`
 
+`SIM-KOI-009` (GlassWorm) is the first endpoint-resident scenario in this
+plane: it runs on a macOS developer endpoint through a pull beacon, where
+a poisoned IDE extension executes, persists and collects developer
+credentials. `SIM-KOI-001..008` cover fetch and scan paths only. Its
+Cortex Agentic Endpoint Security (AES) leg is an **observation, not a
+scored detection**: no public dataset name for AES findings exists in this
+repo, so the DC records what AES shows (inventory, publisher, risk score,
+whether a guardrail would have blocked) as an evidence line. Only the XDR
+behavioural leg and the optional NGFW egress leg are machine-scored. Lab
+setup is in `docs/reference/lab-runbook.md` under "Agentic endpoint
+(macOS)".
+
 > **Status**: scenarios are `status: active` as of Phase 5. Each step
 > declares an inline campaign YAML and invokes
 > `python -m scripts.eal_simulator.cli run` against the

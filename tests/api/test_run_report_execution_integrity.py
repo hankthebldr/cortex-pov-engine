@@ -88,3 +88,38 @@ async def test_markdown_report_leads_with_the_warning(session_factory, make_clie
     # And the JSON surface carries the same verdict, so a console can render it.
     js = client.get("/api/runs/run-void/report?format=json").json()
     assert js["execution_integrity"]["ok"] is False
+
+
+@pytest.mark.parametrize("marker", [
+    "!! TOOL_ABSENT: hydra",
+    "!! RUNTIME_DEPENDENCY_MISSING",
+    "bash: hydra: command not found",
+    "BEACON LOST",
+    "!! TERMINATION_UNKNOWN: weird signal=3",
+])
+def test_new_host_evidence_markers_void_the_report(marker):
+    v = _execution_integrity(_Run(f"--- STEP 1 ---\n{marker}\n"))
+    assert v["ok"] is False and len(v["problems"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_absent_output_renders_read_this_first(session_factory, make_client):
+    from api.runs import router
+    from models import Run, Scenario
+
+    async with session_factory() as db:
+        db.add(Scenario(
+            scenario_id="SIM-EDR-023", name="hydra spray", version="1.0",
+            status="active", plane="EDR", detection_types=["BIOC"],
+            uc_ref="UC-01", tc_ref="TC-01", uc_name="uc", tc_name="tc",
+            tc_refs=["TC-01"], mitre_tactic="TA0006", mitre_tactic_name="Credential Access",
+            mitre_technique="T1110", mitre_technique_name="Brute Force",
+            additional_techniques=[], execution_identity={},
+            push_supported=False, pull_supported=True, external_tools=[], steps=[],
+        ))
+        db.add(Run(run_id="run-absent", scenario_id="SIM-EDR-023", mode="pull",
+                   status="failed", output="!! TOOL_ABSENT: hydra\n"))
+        await db.commit()
+
+    body = make_client(router).get("/api/runs/run-absent/report?format=markdown").text
+    assert "READ THIS FIRST" in body and "TOOL_ABSENT" in body

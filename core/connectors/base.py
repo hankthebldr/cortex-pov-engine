@@ -32,6 +32,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
+from engine.outcome import classify_alert_outcome
+
 logger = logging.getLogger("cortexsim.connectors")
 
 
@@ -66,7 +68,16 @@ class ObservedAlert:
     #: The case the tenant grouped this alert into, when the alert object says
     #: so (``incident_id`` / ``case_id``). Exact basis for the correlation rate.
     incident_id: Optional[str] = None
+    #: What the agent DID about it, as the tenant states it: ``action`` is the
+    #: raw enum ("BLOCKED"), ``action_pretty`` the display form ("Prevented
+    #: (Blocked)"). ``outcome`` is derived from them and is never passed in.
+    action: Optional[str] = None
+    action_pretty: Optional[str] = None
     raw: dict[str, Any] = field(default_factory=dict)    # untouched source record
+    outcome: str = field(init=False, default="unknown")  # prevented|detected|unknown
+
+    def __post_init__(self) -> None:
+        self.outcome = classify_alert_outcome(self.action_pretty, self.action)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -81,6 +92,9 @@ class ObservedAlert:
             "alert_source": self.alert_source,
             "category": self.category,
             "incident_id": self.incident_id,
+            "action": self.action,
+            "action_pretty": self.action_pretty,
+            "outcome": self.outcome,
         }
 
     @classmethod
@@ -122,6 +136,8 @@ class ObservedAlert:
             alert_source=_str_or_none(d.get("alert_source") or d.get("alert_type")),
             category=_str_or_none(d.get("category")),
             incident_id=_str_or_none(d.get("incident_id") or d.get("case_id")),
+            action=_str_or_none(d.get("action")),
+            action_pretty=_str_or_none(d.get("action_pretty")),
             raw=d if isinstance(d, dict) else {},
         )
 

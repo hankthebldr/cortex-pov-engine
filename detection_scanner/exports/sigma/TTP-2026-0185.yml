@@ -1,0 +1,238 @@
+title: "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Cloud-Storage Exfil (T1574.002 / T1102 / T1567.002) \u2014 MP-026 mscorsvc.dll Written Beside a Relocated mscorsvw.exe"
+id: ttp-2026-0185-bioc-01
+status: experimental
+description: |
+  A signed mscorsvw.exe is written outside %WINDIR%\Microsoft.NET and a DLL named mscorsvc.dll is written into the same directory by the same causality — the HazyBeacon side-load staging pair.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE, ENUM.FILE_RENAME)
+    | filter lowercase(action_file_name) in ("mscorsvw.exe", "mscorsvc.dll", "libmscorsvc.so", "mscorsvw")
+    | filter lowercase(action_file_path) not contains "\\microsoft.net\\framework"
+    | alter dir = arrayindex(regextract(lowercase(action_file_path), "^(.*)[\\\\/][^\\\\/]+$"), 0)
+    | comp count_distinct(action_file_name) as pair, values(action_file_path) as paths by agent_hostname, causality_actor_process_instance_id, dir
+    | filter pair >= 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1574/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1574.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Cloud-Storage Exfil (T1574.002 / T1102 / T1567.002) \u2014 MP-026 Service msdnetsvc Created for a Relocated mscorsvw.exe"
+id: ttp-2026-0185-bioc-02
+status: experimental
+description: |
+  A service named msdnetsvc (or any service whose image is an mscorsvw.exe outside the .NET Framework directory) is created; on Linux the equivalent is a write of /etc/systemd/system/msdnetsvc.service — the report's persistence for the side-loaded DLL.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and lowercase(action_process_image_name) = "sc.exe" and lowercase(action_process_image_command_line) contains " create " and (lowercase(action_process_image_command_line) contains "msdnetsvc" or (lowercase(action_process_image_command_line) contains "mscorsvw.exe" and lowercase(action_process_image_command_line) not contains "\\microsoft.net\\framework"))) or (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path = "/etc/systemd/system/msdnetsvc.service")
+    | fields _time, agent_hostname, actor_effective_username, actor_process_image_name, action_process_image_command_line, action_file_path, causality_actor_process_instance_id
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1543/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1543.003
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Cloud-Storage Exfil (T1574.002 / T1102 / T1567.002) \u2014 MP-026 HazyBeacon Collector and Uploader Set Written Under ProgramData"
+id: ttp-2026-0185-bioc-03
+status: experimental
+description: |
+  One causality writes three or more of igfx.exe, GoogleGet.exe, google.exe, GoogleDrive.exe, GoogleDriveUpload.exe and Dropbox.exe under C:\ProgramData — the report's collector and cloud-storage uploader set.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter lowercase(action_file_path) contains "programdata" or action_file_path contains "cortexsim-mp026"
+    | filter lowercase(action_file_name) in ("igfx.exe", "googleget.exe", "google.exe", "googledrive.exe", "googledriveupload.exe", "dropbox.exe", "igfx", "googleget", "google", "googledrive", "googledriveupload", "dropbox")
+    | comp count_distinct(action_file_name) as tools by agent_hostname, causality_actor_process_instance_id
+    | filter tools >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Cloud-Storage Exfil (T1574.002 / T1102 / T1567.002) \u2014 MP-026 Host-Named Archive of Keyword-Matched Documents Split into Volumes"
+id: ttp-2026-0185-bioc-04
+status: experimental
+description: |
+  A causality creates an archive named after the host and then writes numbered volume files (.001/.002 or 7z -v) of it in the same directory — the igfx.exe + 7z.exe collection pattern.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)
+    | filter lowercase(action_file_name) ~= "\.(zip|tgz|7z)(\.[0-9]{3})?$"
+    | alter short_host = lowercase(arrayindex(split(agent_hostname, "."), 0))
+    | filter lowercase(action_file_name) contains short_host
+    | alter is_volume = if(action_file_name ~= "\.[0-9]{3}$", 1, 0)
+    | comp sum(is_volume) as volumes, count() as writes by agent_hostname, causality_actor_process_instance_id
+    | filter volumes >= 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1119/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1119
+    - attack.t1560.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Cloud-Storage Exfil (T1574.002 / T1102 / T1567.002) \u2014 MP-026 Side-Load Causality Deletes Its Own Archives and Payloads"
+id: ttp-2026-0185-bioc-05
+status: experimental
+description: |
+  The causality that wrote the archive volumes and the collector/uploader executables deletes them — the report's post-exfil clean-up.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_REMOVE
+    | filter lowercase(action_file_name) ~= "\.(zip|tgz|7z)\.[0-9]{3}$" or lowercase(action_file_name) in ("igfx.exe", "googleget.exe", "google.exe", "googledrive.exe", "googledriveupload.exe", "dropbox.exe", "igfx", "googleget", "google", "googledrive", "googledriveupload", "dropbox")
+    | comp count() as deletions, count_distinct(action_file_name) as distinct_files by agent_hostname, causality_actor_process_instance_id
+    | filter distinct_files >= 3
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1070/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1070.004
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Cloud-Storage Exfil (T1574.002 / T1102 / T1567.002) \u2014 MP-026 Recurring Web Egress from the mscorsvw.exe Side-Load Causality"
+id: ttp-2026-0185-abioc-06
+status: experimental
+description: |
+  A process whose causality chain is rooted in mscorsvw.exe (never an HTTP client in its learned baseline) opens a tight recurring series of outbound web sessions to one destination. Keys on behaviour, not the redacted Lambda URL.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT
+    | filter lowercase(causality_actor_process_image_name) in ("mscorsvw.exe", "mscorsvw") or causality_actor_process_image_path contains "cortexsim-mp026" or lowercase(actor_process_image_name) in ("powershell.exe", "pwsh.exe", "curl", "curl.exe")
+    | filter action_remote_port in (80, 443, 8080)
+    | comp count() as sessions, count_distinct(action_remote_ip) as dests, values(actor_process_image_name) as egress_procs by agent_hostname, causality_actor_process_instance_id
+    | filter sessions >= 3 and dests = 1
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1102/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1102
+    - attack.t1071.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Cloud-Storage Exfil (T1574.002 / T1102 / T1567.002) \u2014 MP-026 NGFW Recurring HTTPS Beacon from the Side-Load Host"
+id: ttp-2026-0185-abioc-07
+status: experimental
+description: |
+  NGFW EAL behavioural alert: the side-load host (src_host) makes a tight recurring burst of small HTTPS sessions to one fleet-rare destination. The destination is a preset because the report redacts the Lambda URL; the record stitches on src_host.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = panw_ngfw_traffic_raw
+    | filter app in ("ssl", "web-browsing") and dst_port = 443
+    | comp count() as sessions, avg(bytes_sent) as avg_bytes, count_distinct(dst) as dests by src, endpoint_device_name, url_domain
+    | filter sessions >= 6 and dests = 1 and avg_bytes < 4096
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1071/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1071.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: medium
+---
+title: "CL-STA-1020 HazyBeacon \u2014 mscorsvw.exe DLL Side-Load, AWS Lambda-URL C2 and Cloud-Storage Exfil (T1574.002 / T1102 / T1567.002) \u2014 MP-026 Staged Archive Volumes Uploaded to Cloud-Storage API Paths"
+id: ttp-2026-0185-abioc-08
+status: experimental
+description: |
+  A process descended from the side-load causality reads split archive volumes and POSTs them to Google Drive / Dropbox upload API paths.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter causality_actor_process_image_path contains "cortexsim-mp026" or lowercase(causality_actor_process_image_name) in ("mscorsvw.exe", "mscorsvw") or lowercase(actor_process_image_name) in ("powershell.exe", "pwsh.exe", "curl", "curl.exe")
+    | filter (event_type = ENUM.FILE and lowercase(action_file_name) ~= "\.(zip|tgz|7z)\.[0-9]{3}$") or (event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT)
+    | alter is_read = if(event_type = ENUM.FILE, 1, 0), is_conn = if(event_type = ENUM.NETWORK, 1, 0)
+    | comp sum(is_read) as volume_reads, sum(is_conn) as uploads by agent_hostname, causality_actor_process_instance_id
+    | filter volume_reads >= 1 and uploads >= 2
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1567/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1567.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

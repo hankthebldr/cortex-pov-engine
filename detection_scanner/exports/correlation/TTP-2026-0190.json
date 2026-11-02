@@ -1,0 +1,26 @@
+{
+  "mitre_techniques": [
+    "T1078",
+    "T1135",
+    "T1021.002",
+    "T1570",
+    "T1036.005",
+    "T1567.002",
+    "T1048",
+    "T1489",
+    "T1490",
+    "T1070.001",
+    "T1070.002",
+    "T1486"
+  ],
+  "rules": [
+    {
+      "description": null,
+      "logic": "BIOC(MP-031 Share Enumeration Output Written to found_shares.txt) AND BIOC(MP-031 Encryptor Copied to Admin Share Path and Run Detached with no_impl key) AND (IOC(file-sha256 from the report on panw_ngfw_threat_raw) OR ABIOC(MP-031 Rclone Massive Upload to Rare External Destination) OR IOC(ipv4 91.238.181.238)) AND BIOC(MP-031 Renamed Binary Run as rclone from ProgramData with rclone conf) AND BIOC(MP-031 Mass Kill of vmx Named Virtual Machine Processes) AND BIOC(MP-031 Locker Encrypts vmfs Datastore Files to kcr5umw with Ransom Note) within 3600s on the same src_host (agent_hostname on xdr_data; endpoint_device_name on the NGFW records) -> one incident naming the encryptor hashes, the Rclone exfil IP and the stop-wipe-encrypt sequence.",
+      "name": "Repellent Scorpius Cicada3301 \u2014 Endpoint and Network Stitch on One Host",
+      "rule_id": "CR-MP-0031",
+      "severity": "high"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0190"
+}
