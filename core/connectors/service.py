@@ -53,6 +53,7 @@ from engine.outcome import (
 )
 from events import event_bus
 from integrations.xsiam.codes import remediation_for
+from integrations.xsiam.loader import XSIAM_KIND as XSIAM_TENANT_KIND
 from models import Agent, Observation, Result, Run, Scenario, StepOutcome
 from security.credentials import CredentialStore
 
@@ -86,6 +87,54 @@ class ReconcileOutcome:
     newly_matched: int
 
 
+# ── which credential kind may serve which connector ─────────────────────────
+#
+# ONE definition, consumed by GET /api/connectors, POST /runs/{id}/reconcile,
+# POST /api/connectors/xsiam/preflight and the auto-reconcile sweep. They forked
+# once: the listing reported the `xsiam` connector configured on an
+# `xsiam_tenant` row while the other three filtered on kind == "xsiam" alone, so
+# the tenant a DC had just been told was configured answered NO_INTEGRATION a
+# click later and the sweep was a silent no-op every cycle.
+#
+# The table is ONE-WAY by construction. Reading alerts is the baseline every
+# XSIAM credential carries (`_project` in api/connectors.py), so the Tier-2
+# tenant credential may serve alert read-back. Nothing maps the other way:
+# configuring reconcile must not silently authorise XQL, which spends a metered
+# resource the customer's own analysts share.
+_EQUIVALENT_CREDENTIAL_KINDS: dict[str, tuple[str, ...]] = {
+    "xsiam": (XSIAM_TENANT_KIND,),
+}
+
+
+def credential_kinds_for(connector_kind: str) -> tuple[str, ...]:
+    """Every credential kind that may serve ``connector_kind``, dedicated kind first."""
+    return (connector_kind, *_EQUIVALENT_CREDENTIAL_KINDS.get(connector_kind, ()))
+
+
+async def resolve_connector_integrations(store: CredentialStore, connector_kind: str) -> list:
+    """Credential rows that may serve ``connector_kind``: the dedicated kind's rows
+    first, then each equivalent kind's, each group in the store's name order."""
+    rows: list = []
+    for kind in credential_kinds_for(connector_kind):
+        rows.extend(await store.list_integrations(kind=kind))
+    return rows
+
+
+def pick_integration(rows: list, integration_name: Optional[str]):
+    """The row to use: the named one, else the first. A name that matches nothing
+    RAISES rather than falling back — a reconcile asked for tenant A that quietly
+    read tenant B would credit the wrong tenant's alerts to this run."""
+    if integration_name is None:
+        return rows[0]
+    for row in rows:
+        if row.name == integration_name:
+            return row
+    raise ReconcileError(
+        "INTEGRATION_NOT_FOUND",
+        f"no integration named '{integration_name}' may serve this connector",
+        detail={"available": [r.name for r in rows]})
+
+
 async def reconcile_run(
     db: AsyncSession,
     run: Run,
@@ -114,12 +163,12 @@ async def reconcile_run(
                              f"unknown connector '{connector_kind}'")
 
     store = CredentialStore(db)
-    integrations = await store.list_integrations(kind=connector_kind)
+    integrations = await resolve_connector_integrations(store, connector_kind)
     if not integrations:
+        kinds = " or ".join(f"'{k}'" for k in credential_kinds_for(connector_kind))
         raise ReconcileError("NO_INTEGRATION",
-                             f"configure an integration of kind '{connector_kind}' first")
-    integ = (next((i for i in integrations if i.name == integration_name), integrations[0])
-             if integration_name else integrations[0])
+                             f"configure an integration of kind {kinds} first")
+    integ = pick_integration(integrations, integration_name)
     try:
         secret = await store.get_integration_secret(integ.name)
     except Exception as e:  # noqa: BLE001
@@ -1356,7 +1405,8 @@ async def auto_reconcile_once(
 
     store = CredentialStore(db)
     configured_kinds = {i.kind for i in await store.list_integrations()}
-    active_kinds = [c["kind"] for c in available_connectors() if c["kind"] in configured_kinds]
+    active_kinds = [c["kind"] for c in available_connectors()
+                    if configured_kinds.intersection(credential_kinds_for(c["kind"]))]
     if not active_kinds:
         # No reconcile connector does NOT imply no verification: the two use
         # different credential kinds, and a tenant wired only for XQL is a

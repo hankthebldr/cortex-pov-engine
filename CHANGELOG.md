@@ -8,6 +8,26 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An `xsiam_tenant` credential now serves alert read-back everywhere the
+  console said it did.** `GET /api/connectors` reported the `xsiam` connector
+  `configured: true` on a tenant-kind credential (listed under
+  `equivalent_integrations`) while `POST /api/runs/{id}/reconcile?connector=xsiam`,
+  `POST /api/connectors/xsiam/preflight` and the auto-reconcile sweep each
+  filtered on kind `xsiam` alone — so the tenant a DC had just been told was
+  configured answered `NO_INTEGRATION` / `PF_NO_INTEGRATION` a click later, and
+  the sweep was a silent no-op every cycle. One table
+  (`core/connectors/service.py::credential_kinds_for`) now backs all four
+  surfaces. A dedicated `xsiam` row still takes precedence; `?integration=`
+  resolves a name across both kinds. The equivalence is **one-way** — kind
+  `xsiam` still never serves XQL. The preflight report gains
+  `credential: {name, kind}` naming the vault entry it exercised.
+- **`?integration=<name>` that matches nothing is a 404 `INTEGRATION_NOT_FOUND`,
+  not a fallback to the first row.** A reconcile asked for tenant A that
+  quietly read tenant B would have credited B's alerts to the run; the error
+  lists the names that are available and pulls nothing.
+
 ## [1.1.0] - 2026-11-02
 
 **The library grows from 177 to 193 scenarios, fifteen of them Unit 42

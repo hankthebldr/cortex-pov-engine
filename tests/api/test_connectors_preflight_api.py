@@ -310,3 +310,39 @@ def test_observations_with_unreadable_timestamps_are_reported(client, session_fa
     assert body["ingested"] == 1
     assert body["dropped_unparseable_timestamps"] == 2
     assert "floor, not a measurement" in body["warning"]
+
+
+# ── the xsiam preflight accepts the tenant credential; never the reverse ────
+
+
+def test_xsiam_preflight_accepts_a_tenant_kind_credential(client, cred_client, monkeypatch):
+    """The listing calls the xsiam connector configured on an `xsiam_tenant`
+    row; its preflight must preflight THAT row rather than answer
+    PF_NO_INTEGRATION. The fake fetcher refuses, so the report is blocked at
+    the live stage — the point is which credential it reached for."""
+    import connectors.base as base
+    from connectors.base import ConnectorError
+
+    _put_integration(cred_client, name="deathstar", kind="xsiam_tenant",
+                     config={"base_url": _GOOD_URL, "api_key_id": "7"})
+
+    def boom(*a, **kw):
+        raise ConnectorError("connection refused")
+    monkeypatch.setattr(base, "default_http_fetcher", boom)
+
+    body = client.post("/api/connectors/xsiam/preflight").json()
+    codes = [s["code"] for s in body["stages"]]
+    assert "PF_NO_INTEGRATION" not in codes, codes
+    assert body["tenant"] == "deathstar"
+    assert body["stages"][0]["code"] == "PF_OK"  # config stage read the tenant row
+
+
+def test_a_reconcile_credential_never_serves_the_tenant_kind(client, cred_client):
+    """Negative control for the equivalence: kind `xsiam` grants alert
+    read-back only. Configuring reconcile must not silently authorise XQL."""
+    _put_integration(cred_client, name="acme", kind="xsiam",
+                     config={"fqdn": _GOOD_FQDN, "api_key_id": "1"})
+    body = client.post("/api/connectors/xsiam_tenant/preflight").json()
+    assert body["overall"] == "blocked"
+    assert body["stages"][0]["code"] == "PF_NO_INTEGRATION"
+    assert body["queries_issued"] == 0
