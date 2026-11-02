@@ -924,15 +924,21 @@
 .theme-console .run-detail .run-topo__verdict-chip--not_applicable,
 .theme-console .run-detail .run-topo__verdict-chip--unscored { color: var(--tx3); border-color: var(--bd2); }
 
-/* the strip */
+/* the strip — 14 equal columns that FIT their container. A kill chain is read
+   left to right in one row, and a stage behind a scrollbar is a stage nobody
+   reads (minmax(92px) overflowed a 1132px column by 208px at 1920 wide, hiding
+   Exfiltration and Impact). Names wrap and hyphenate inside a narrow cell
+   instead of pushing the row wider than the page. */
 .theme-console .run-detail .run-tech__strip {
   list-style: none; margin: 0; padding: 0 0 4px;
-  display: grid; grid-template-columns: repeat(14, minmax(92px, 1fr)); gap: 4px;
-  overflow-x: auto;
+  display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px;
+}
+@media (max-width: 1280px) {
+  .theme-console .run-detail .run-tech__strip { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 }
 .theme-console .run-detail .run-tech__stage {
-  display: flex; flex-direction: column; gap: 4px; min-height: 92px;
-  padding: 8px 8px 6px; border: 1px solid var(--bd); border-top: 3px solid var(--bd2);
+  display: flex; flex-direction: column; gap: 4px; min-height: 92px; min-width: 0;
+  padding: 7px 6px 6px; border: 1px solid var(--bd); border-top: 3px solid var(--bd2);
   border-radius: 4px; background: var(--s1);
 }
 .theme-console .run-detail .run-tech__stage--empty { opacity: 0.38; border-top-color: var(--bd); }
@@ -940,11 +946,14 @@
 .theme-console .run-detail .run-tech__stage--miss { border-top-color: var(--crit); }
 .theme-console .run-detail .run-tech__stage--pending { border-top-color: var(--warn-str); }
 .theme-console .run-detail .run-tech__stage--excluded { border-top-color: var(--tx3); }
-.theme-console .run-detail .run-tech__stage-name { font-size: 11px; font-weight: 600; line-height: 1.2; color: var(--tx); }
+.theme-console .run-detail .run-tech__stage-name {
+  font-size: 10.5px; font-weight: 600; line-height: 1.2; color: var(--tx);
+  overflow-wrap: anywhere; hyphens: auto;
+}
 .theme-console .run-detail .run-tech__stage-count { font-size: 11px; color: var(--tx3); }
 .theme-console .run-detail .run-tech__stage-techs { display: flex; flex-wrap: wrap; gap: 3px; margin-top: auto; }
 .theme-console .run-detail .run-tech__tech-chip {
-  font-size: 10px; padding: 1px 5px; border-radius: 3px;
+  font-size: 9.5px; padding: 1px 4px; border-radius: 3px;
   border: 1px solid var(--bd2); color: var(--tx2);
 }
 .theme-console .run-detail .run-tech__tech-chip--hit { border-color: var(--pos); color: var(--pos); }
