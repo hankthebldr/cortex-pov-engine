@@ -358,6 +358,7 @@ export default function OperationsView({
           ? (runsByScenario.get(selectedId) || [])
           : []}
         onOpenRunEvidence={onOpenRunEvidence}
+        onOpenInComposer={selectedId ? () => onNavigate('composer', { open: selectedId }) : null}
         onContinueToLaunch={onContinueToLaunch
           ? () => {
               // Scenario is already armed on select; close the drawer and hand

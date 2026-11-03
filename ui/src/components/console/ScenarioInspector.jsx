@@ -30,6 +30,8 @@ import { SUPPLY, supplyOf } from './supplyState.js'
  *   onTogglePin       — () => void
  *   onClose           — () => void
  *   onContinueToLaunch— () => void  hand off to the canonical ③ Launch step
+ *   onOpenInComposer  — () => void  open this scenario on the Composer canvas;
+ *                       optional — the parent owns the navigation
  */
 export default function ScenarioInspector({
   scenario,
@@ -41,6 +43,7 @@ export default function ScenarioInspector({
   runHistory = [],
   onOpenRunEvidence = () => {},
   onContinueToLaunch = null,
+  onOpenInComposer = null,
 }) {
   if (!scenario || !launch) return <aside className="inspector" />
 
@@ -89,6 +92,18 @@ export default function ScenarioInspector({
             onToggle={onTogglePin}
             variant="inspector"
           />
+          {/* Library → Composer. Without this the only way to edit a chain you
+              had just read was to type #/composer?open=<id> by hand. */}
+          {onOpenInComposer && (
+            <button
+              type="button"
+              className="btn"
+              onClick={onOpenInComposer}
+              title="Open this scenario on the Composer canvas and edit its chain"
+            >
+              Edit in Composer
+            </button>
+          )}
           <button type="button" className="btn" onClick={onClose}>Close</button>
         </div>
 
