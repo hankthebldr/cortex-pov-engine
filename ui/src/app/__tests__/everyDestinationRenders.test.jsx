@@ -37,7 +37,7 @@ void React
 // itself from data (a run id), the expectation is the stable part of it.
 const TITLES = {
   start: /^get started$/i,
-  library: /^library$/i,
+  library: /^scenarios$/i,
   runs: /^runs$/i,
   proof: /.+/,
   ttps: /ttp cards/i,

@@ -402,9 +402,9 @@ function TechniqueDetailPanel({ technique, onClose, onFilterByTechnique }) {
           className="btn btn--primary"
           onClick={() => onFilterByTechnique(technique.technique_id)}
           disabled={!technique.scenarios || technique.scenarios.length === 0}
-          title="Switch to Operations and filter scenarios that exercise this technique"
+          title="Switch to Scenarios, filtered to the ones that exercise this technique"
         >
-          Filter Operations <span className="kbd">→</span>
+          Filter Scenarios <span className="kbd">→</span>
         </button>
       </div>
     </div>

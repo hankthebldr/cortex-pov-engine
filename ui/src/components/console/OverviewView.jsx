@@ -39,9 +39,9 @@ export default function OverviewView({ onNavigate = () => {} }) {
 
   const doors = [
     {
-      id: 'library', title: 'Library',
+      id: 'library', title: 'Scenarios',
       lede: 'Run something that already exists. Unit 42-anchored scenarios, TTP cards and CLI items, each with its expected detections already declared.',
-      cta: 'Open the Library',
+      cta: 'Open Scenarios',
       when: 'Fastest path. Most POV sessions never need anything else.',
     },
     {

@@ -94,14 +94,14 @@ export function makeLazySurface(loader, title) {
  * filter rail, mounted in the same paint as the default destination, so
  * splitting it out would only add a chunk round-trip with no benefit.
  */
-const OperationsView = makeLazySurface(() => import('../components/console/OperationsView.jsx'), 'Library')
+const OperationsView = makeLazySurface(() => import('../components/console/OperationsView.jsx'), 'Scenarios')
 const ComposerView = makeLazySurface(() => import('../components/console/ComposerView.jsx'), 'Composer')
 const LaunchView = makeLazySurface(() => import('../components/console/LaunchView.jsx'), 'New POV run')
 const TargetsView = makeLazySurface(() => import('../components/console/TargetsView.jsx'), 'Agents')
 const RunDetailView = makeLazySurface(() => import('../components/console/RunDetailView.jsx'), 'Runs')
 const MultiRunCompare = makeLazySurface(() => import('../components/console/MultiRunCompare.jsx'), 'Runs · Compare')
 const CoverageView = makeLazySurface(() => import('../components/console/CoverageView.jsx'), 'Coverage')
-const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP Cards')
+const TtpBrowserView = makeLazySurface(() => import('../components/console/TtpBrowserView.jsx'), 'TTP cards')
 const ToolAdapterCatalog = makeLazySurface(() => import('../components/console/ToolAdapterCatalog.jsx'), 'Packages')
 const UcTcIndexView = makeLazySurface(() => import('../components/console/UcTcIndexView.jsx'), 'UC / TC Index')
 const LabView = makeLazySurface(() => import('../components/console/LabView.jsx'), 'Lab')

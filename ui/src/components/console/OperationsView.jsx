@@ -268,7 +268,7 @@ export default function OperationsView({
           {/* Masthead eyebrow: the nav group alone, no "· Phase N" — this
               product has no app-level phase stepper to echo (M-4; mirrors
               CoverageView's CoverageKicker, the reference for this pattern). */}
-          <h1>Library</h1>
+          <h1>Scenarios</h1>
           <div className="view-head__meta">
             Plane: <strong>{headMeta.planeLabel}</strong>
             {' · '}<span className="mono">

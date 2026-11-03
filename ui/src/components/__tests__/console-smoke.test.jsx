@@ -224,8 +224,8 @@ describe('console-view smoke renders', () => {
     })
     render(<OperationsView />)
     await waitFor(() => {
-      // Redesign v2: the Operations view heading is now "Library".
-      expect(screen.getByRole('heading', { name: /library/i })).toBeInTheDocument()
+      // The h1 repeats the tab label — Simulate › Scenarios (see headingMatchesTab).
+      expect(screen.getByRole('heading', { name: /scenarios/i })).toBeInTheDocument()
     })
   })
 

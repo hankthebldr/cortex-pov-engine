@@ -82,7 +82,7 @@ const SPEC = [
   },
   {
     key: 'scenario_catalog', label: 'Scenario catalog', countKey: 'count', zeroIsBad: true, required: true,
-    purpose: 'the corpus the Library launches from',
+    purpose: 'the corpus the Scenarios page launches from',
     remediation:
       '0 scenarios loaded — scenarios/ is missing from this deployment or every file was '
       + 'rejected by the schema validator. Check the boot log for rejections.',

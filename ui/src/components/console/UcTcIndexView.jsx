@@ -544,7 +544,7 @@ export default function UcTcIndexView({
           </button>
           {' · '}
           <button type="button" className="uctc__link" data-testid="uctc-goto-ttps" onClick={() => onNavigate('ttps')}>
-            TTP Cards →
+            TTP cards →
           </button>
         </div>
       </div>
@@ -1285,7 +1285,7 @@ function TestCaseDetail({
                           data-testid={`uctc-open-library-${s.scenario_id}`}
                           onClick={() => onNavigate('library', { open: s.scenario_id })}
                         >
-                          Open in Library →
+                          Open in Scenarios →
                         </button>
                       </td>
                     </tr>
