@@ -13,6 +13,7 @@ from typing import Any, Mapping, Optional
 
 from . import codes
 from .exceptions import XqlWriteStageRefused, XsiamCapabilityError
+from .ledger import tenant_ledger_key
 
 XQL_OPERATION_IDS: frozenset[str] = frozenset(
     {"OP-XQL-START-XQL-QUERY", "OP-XQL-GET-QUERY-RESULTS"}
@@ -56,8 +57,6 @@ def ledger_key_for(client: Any) -> str:
     Derived rather than passed so EVERY caller is accounted whether or not it
     remembered to name the tenant. An unattributed query is an unbudgeted query.
     """
-    from engine.verifier import tenant_ledger_key  # noqa: PLC0415 — verifier aliases this module
-
     return tenant_ledger_key(str(getattr(client, "_base", "") or ""))
 
 

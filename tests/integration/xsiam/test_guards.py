@@ -51,11 +51,19 @@ def test_verifier_aliases_the_shared_budget_and_key():
 @pytest.mark.parametrize("name", ["tenant_budget", "ledger_key_for", "xql_capability_granted",
                                   "refuse_xql_write_stage", "require_xql_capability"])
 def test_exactly_one_definition_under_core(name):
+    _one_definition(name, "core/integrations/xsiam/guards.py")
+
+
+def test_tenant_ledger_key_has_one_definition_in_ledger():
+    _one_definition("tenant_ledger_key", "core/integrations/xsiam/ledger.py")
+
+
+def _one_definition(name, home):
     hits = [p for p in (REPO / "core").rglob("*.py")
             if "__pycache__" not in p.parts
             and any(isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name
                     for n in ast.walk(ast.parse(p.read_text())))]
-    assert hits == [REPO / "core/integrations/xsiam/guards.py"]
+    assert hits == [REPO / home]
 
 
 def test_client_carries_capabilities_and_base_url():

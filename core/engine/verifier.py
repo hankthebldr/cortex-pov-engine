@@ -566,19 +566,7 @@ def xsiam_rows_runner(client: Any, timeframe: dict[str, Any]) -> ScalarRunner:
     return _run
 
 
-def tenant_ledger_key(base_url: str) -> str:
-    """THE ledger key for a tenant, derived from its base URL.
-
-    Public because more than one surface needs it and they MUST agree. The
-    health component used to snapshot the ledger by INTEGRATION NAME while this
-    module charged and tripped it by tenant HOST, so the two looked at different
-    rows: a breaker could be open, every verify degrading to pending, and
-    ``/api/health`` would report ``breaker_open: false`` with a full quota. A
-    diagnostic surface that cannot see the thing it exists to report is worse
-    than not having it.
-    """
-    return str(base_url or "").split("://")[-1].split("/")[0] or "default"
-
+from integrations.xsiam.ledger import tenant_ledger_key  # noqa: E402,F401 — re-export
 
 from integrations.xsiam.guards import (  # noqa: E402
     ledger_key_for as _tenant_name,

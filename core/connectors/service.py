@@ -954,6 +954,7 @@ async def resolve_tenant_runner(
     """
     from engine.verifier import xsiam_query_runner  # noqa: PLC0415
     from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
+    from integrations.xsiam.guards import xql_capability_granted  # noqa: PLC0415
     from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client  # noqa: PLC0415
     from security.crypto import CryptoError  # noqa: PLC0415
 
@@ -972,8 +973,7 @@ async def resolve_tenant_runner(
     # SEPARATE authorisation because it spends a metered resource the customer's
     # own analysts share. An absent list means the legacy default — read only —
     # so migrating an existing record can never silently grant XQL.
-    caps = (integ.config or {}).get("capabilities")
-    if isinstance(caps, list) and "xql" not in {str(c).lower() for c in caps}:
+    if not xql_capability_granted(integ.config or {}):
         return TenantRunner(tenant=integ.name, reason="xql_not_authorised",
                             remediation=TENANT_REMEDIATION["xql_not_authorised"])
 
