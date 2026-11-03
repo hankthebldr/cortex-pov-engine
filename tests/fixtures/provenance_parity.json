@@ -1,0 +1,22 @@
+{
+  "_doc": "Oracle shared by ui/.../connectorState.provenanceParity.test.js and tests/connectors/test_provenance.py. Rows are shaped like Run.to_dict() / AssertionRun.to_dict(). If the two sides disagree the fixture or the Python is wrong, never the JS.",
+  "runs": [
+    {"run_id": "r-tenant-queries", "tc_verdict": "pass", "tc_verdict_detail": {"verification": {"queries_issued": 3, "tenant": "acme"}}},
+    {"run_id": "r-local-zero-queries", "tc_verdict": "pass", "tc_verdict_detail": {"verification": {"queries_issued": 0}}},
+    {"run_id": "r-pending-with-tenant", "tc_verdict": "pending", "tc_verdict_detail": {"verification": {"queries_issued": 9, "tenant": "ghost"}}},
+    {"run_id": "r-fail-top-level-queries", "tc_verdict": "fail", "tc_verdict_detail": {"queries_issued": 2, "tenant": "beta"}},
+    {"run_id": "r-verified-flag", "tc_verdict": "pass", "tc_verdict_detail": {"verified_against_tenant": true}},
+    {"run_id": "r-not-applicable", "tc_verdict": "not_applicable", "tc_verdict_detail": {"verification": {"tenant": "ghost2"}}},
+    {"run_id": "r-no-detail", "tc_verdict": "pass", "tc_verdict_detail": null},
+    {"run_id": "r-unscored", "tc_verdict": null, "tc_verdict_detail": null}
+  ],
+  "assertion_runs": [
+    {"run_id": "a-tenant-fail", "tc_verdict": "fail", "tc_verdict_detail": null, "tenant": "lab", "dry_run": false},
+    {"run_id": "a-dry-run", "tc_verdict": "pass", "tc_verdict_detail": null, "tenant": "lab2", "dry_run": true},
+    {"run_id": "a-no-tenant", "tc_verdict": "pass", "tc_verdict_detail": null, "tenant": null},
+    {"run_id": "a-integration", "tc_verdict": "pass", "tc_verdict_detail": {"verification": {"integration": "intg"}}, "tenant": null},
+    {"run_id": "a-pending-tenant", "tc_verdict": "pending", "tc_verdict_detail": null, "tenant": "lab3", "dry_run": false}
+  ],
+  "expected_names": ["acme", "beta", "intg", "lab"],
+  "expected_tenant_count": 5
+}
