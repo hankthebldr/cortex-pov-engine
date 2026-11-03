@@ -181,7 +181,7 @@ export default function TtpBrowserView({ initialTtpId = null, onNavigate = () =>
     <div className="ttpb" data-testid="ttp-browser">
       <div className="view-head">
         <div>
-          <h1>TTP Cards</h1>
+          <h1>TTP cards</h1>
           <div className="view-head__meta">
             {ttps.length} TTPs · {tactics.length} tactics · {platforms.length} platforms · {visible.length} visible
           </div>

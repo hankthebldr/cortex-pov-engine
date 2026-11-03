@@ -237,7 +237,7 @@ export default function useLaunchScenario(scenario, {
   // happens, and nothing says why. Consumers render these verbatim.
   const blockers = useMemo(() => {
     const out = []
-    if (!scenario) out.push('Arm a scenario from the Library')
+    if (!scenario) out.push('Arm a scenario from the Scenarios page')
     if (mode === 'pull' && supportsPull && agents.length === 0) {
       out.push('No agent enrolled — deploy a beacon from Agents')
     }

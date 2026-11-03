@@ -1276,7 +1276,7 @@ export default function ComposerCanvas({
                   <span className="firstrun-option__text">
                     <span className="firstrun-option__title">Start from a library scenario</span>
                     <span className="firstrun-option__note">
-                      Fastest path — the chains in the Library arrive complete with their
+                      Fastest path — the chains in the scenario library arrive complete with their
                       expected detections.
                     </span>
                   </span>

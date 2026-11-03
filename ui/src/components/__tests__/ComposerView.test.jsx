@@ -118,16 +118,22 @@ describe('ComposerView — empty state', () => {
     expect(screen.getByTestId('composer-validation')).toHaveTextContent(/empty/i)
   })
 
-  it('routes the three start options to the surfaces that do them', async () => {
+  it('the "Start from…" options open the palette in place instead of leaving the Composer', async () => {
+    // They used to call onNavigate('library') / onNavigate('ttps') — an exit
+    // with no way back carrying a selection. The palette IS the picker.
     const user = userEvent.setup()
     const onNavigate = vi.fn()
     baseRoutes()
     mount({}, { onNavigate })
     await waitFor(() => expect(screen.getByTestId('composer-firstrun')).toBeInTheDocument())
+    expect(screen.queryByTestId('composer-palette')).toBeNull()
     await user.click(screen.getByText(/Start from a library scenario/i))
-    expect(onNavigate).toHaveBeenCalledWith('library')
+    const palette = screen.getByTestId('composer-palette')
+    await waitFor(() => expect(within(palette).getByText('Scenario library')).toBeInTheDocument())
+    expect(onNavigate).not.toHaveBeenCalled()
     await user.click(screen.getByText(/Start from a TTP card/i))
-    expect(onNavigate).toHaveBeenCalledWith('ttps')
+    expect(screen.getByTestId('composer-palette')).toBeInTheDocument()
+    expect(onNavigate).not.toHaveBeenCalled()
   })
 })
 
@@ -1203,5 +1209,33 @@ describe('ComposerView — drawers', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('Filter the palette')))
     await user.click(screen.getByRole('button', { name: 'Collapse palette' }))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: /＋ Add/ })))
+  })
+})
+
+describe('ComposerView — every library scenario is reachable from inside', () => {
+  const MANY = Array.from({ length: 30 }, (_, i) => ({
+    scenario_id: `SIM-EDR-${String(i + 1).padStart(3, '0')}`,
+    name: `Scenario ${i + 1}`, plane: 'EDR', pull_supported: true, push_supported: true, steps: [],
+  }))
+
+  it('lists the whole library in the palette, not the first 24', async () => {
+    // The palette group was `env.scenarios.slice(0, 24)` and the filter
+    // narrowed THAT slice, so 169 of 193 scenarios could not be opened from
+    // inside the Composer at all.
+    const user = userEvent.setup()
+    baseRoutes({ 'GET /api/scenarios': { scenarios: MANY } })
+    mount()
+    await waitFor(() => expect(screen.getByTestId('composer-firstrun')).toBeInTheDocument())
+    await user.click(screen.getByTitle('Open the node palette'))
+    await user.type(screen.getByLabelText('Filter the palette'), 'SIM-EDR-030')
+    await waitFor(() => expect(screen.getByText('SIM-EDR-030')).toBeInTheDocument())
+  })
+
+  it('accepts `?open=` like every other surface, with `?from=` kept as the alias', async () => {
+    baseRoutes()
+    mount({ open: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-chain')).toBeInTheDocument())
+    expect(screen.getByTestId('chain-start')).toBeInTheDocument()
+    expect(screen.getByTestId('chain-end')).toBeInTheDocument()
   })
 })

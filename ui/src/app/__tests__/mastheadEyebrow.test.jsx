@@ -27,7 +27,7 @@ describe('page mastheads carry no phase vocabulary', () => {
   it('OperationsView (Simulate › Scenarios)', async () => {
     installRoutes({ 'GET /api/scenarios': { scenarios: [] }, 'GET /api/agents': [] })
     render(<OperationsView />)
-    await waitFor(() => expect(screen.getByRole('heading', { name: /library/i })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { name: /scenarios/i })).toBeInTheDocument())
     expect(screen.queryByText(/Phase \d/)).not.toBeInTheDocument()
   })
 

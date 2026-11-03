@@ -474,7 +474,17 @@ async def probe_scenario_catalog(session_factory) -> dict[str, Any]:
     from models import Scenario  # noqa: PLC0415
 
     async with session_factory() as session:
-        count = int(await session.scalar(select(func.count()).select_from(Scenario)) or 0)
+        rows = (await session.execute(
+            select(Scenario.status, func.count()).group_by(Scenario.status)
+        )).all()
+    by_status = {str(status): int(n or 0) for status, n in rows}
+    # `count` is the corpus the Library shows — /api/scenarios defaults to
+    # status=active. A composer draft is a persisted Scenario row too, but a
+    # draft is not corpus coverage (Gate A5), so it is reported apart and never
+    # added in: folding it in put 194 on the About page against 193 in the
+    # Library, and the two were the same catalog.
+    count = by_status.get("active", 0)
+    drafts = by_status.get("draft", 0)
     if count == 0:
         return _degraded(
             "SCENARIO_CATALOG_EMPTY",
@@ -482,9 +492,9 @@ async def probe_scenario_catalog(session_factory) -> dict[str, Any]:
             "every file was rejected by the schema validator. Nothing can be "
             "launched. Fix: check the boot log for 'Scenarios loaded: 0' and the "
             "per-file rejection lines above it; confirm the image COPYs scenarios/.",
-            count=0,
+            count=0, drafts=drafts, by_status=by_status,
         )
-    return _ok(count=count)
+    return _ok(count=count, drafts=drafts, by_status=by_status)
 
 
 async def probe_agents(session_factory) -> dict[str, Any]:

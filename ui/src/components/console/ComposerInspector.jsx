@@ -320,7 +320,7 @@ export default function ComposerInspector({
           ) : (
             <div className="detection-card detection-card--empty">
               This step declares no expected detection. It will execute and then be
-              reported as a gap — bind a TTP card from the TTP Cards surface.
+              reported as a gap — bind a TTP card from the TTP cards surface.
               <button
                 type="button"
                 className="btn btn--xs"

@@ -284,6 +284,19 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       const next = first ? (first.name || first.id) : null
       setTenantId(next)
       writeLS(LS_TENANT, next)
+      return
+    }
+    // NOTHING SELECTED YET — the gap the agent branch below closed for agents.
+    // This effect only ever repaired a STALE id, so a fresh browser on a
+    // SimCore with one registered tenant sat on "no tenant bound" in the
+    // header while Get started, which reads the LIST, said "Connected to
+    // <name>". Only the one-tenant case binds itself: with several, picking
+    // silently would name a tenant the DC did not choose, and an honest
+    // "none" is the better of the two.
+    if (!tenantId && tenants.length === 1) {
+      const only = tenants[0].name || tenants[0].id
+      setTenantId(only)
+      writeLS(LS_TENANT, only)
     }
   }, [loading.tenants, errors.tenants, tenants, tenantId])
 

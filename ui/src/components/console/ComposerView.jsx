@@ -23,6 +23,7 @@ import { causalityStepStates } from './composerLayout.js'
 import ComposerCanvas from './ComposerCanvas.jsx'
 import ComposerInspector from './ComposerInspector.jsx'
 import ComposerPalette from './ComposerPalette.jsx'
+import { openParam } from '../../app/openParam.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { reparentOnDelete } from './composerGraph.js'
 import {
@@ -144,10 +145,10 @@ export default function ComposerView({
   const env = useEnvironment()
   const shelf = useShelf({ adapters: [] })
 
-  // The origin scenario rides the URL (`#/composer?from=SIM-EDR-001`), so a
+  // The origin scenario rides the URL (`#/composer?open=SIM-EDR-001`; `?from=` is the alias), so a
   // composed draft is a link a DC can send to a colleague and so Library →
   // "Open in Composer" is a plain navigation rather than hidden shared state.
-  const fromId = params.from || null
+  const fromId = openParam(params, 'from')
   // ONE fetch, two consumers. `originDetail` is the raw API body — it is what
   // useLaunchScenario needs (execution_identity, pull/push support) — and
   // `origin` is the normalized draft derived from it.
@@ -832,7 +833,7 @@ export default function ComposerView({
       label: 'Scenario library',
       tone: 'detected',
       tab: 'build',
-      items: env.scenarios.slice(0, 24).map((s) => {
+      items: env.scenarios.map((s) => {
         const id = s.scenario_id || s.id
         return {
           key: `s-${id}`,
@@ -849,7 +850,7 @@ export default function ComposerView({
       label: 'TTP cards',
       tone: 'signal',
       tab: 'build',
-      items: ttps.slice(0, 24).map((t) => {
+      items: ttps.map((t) => {
         const id = t.ttp_id || t.id
         return {
           key: `t-${id}`,
@@ -875,7 +876,7 @@ export default function ComposerView({
       label: 'Tool adapters',
       tone: 'pending',
       tab: 'build',
-      items: adapters.slice(0, 24).map((a) => {
+      items: adapters.map((a) => {
         const id = a.adapter_id || a.id
         return {
           key: `ad-${id}`,
@@ -890,7 +891,7 @@ export default function ComposerView({
       label: 'Targets',
       tone: 'signal',
       tab: 'endpoint',
-      items: env.agents.slice(0, 16).map((a) => {
+      items: env.agents.map((a) => {
         const id = agentIdOf(a)
         return {
           key: `a-${id}`,
@@ -1090,6 +1091,15 @@ export default function ComposerView({
     focusNextRef.current = '.composer-mode__drawer--left .composer-bench__filter'
     setPaletteOpen(true)
   }, [])
+  // The first-run "Start from a library scenario / a TTP card" options open
+  // the palette IN PLACE. They used to navigate to the Library / Catalog — an
+  // exit from the Composer with no way back carrying a selection — so the only
+  // in-Composer picker was this palette, and it listed 24 of 193.
+  const startFromPalette = useCallback(() => {
+    setPaletteTab('build')
+    setBenchQuery('')
+    openPalette()
+  }, [openPalette])
   const closePalette = useCallback(() => {
     focusNextRef.current = '.composer-mode__reopen--left'
     setPaletteOpen(false)
@@ -1316,8 +1326,8 @@ export default function ComposerView({
           onDropCreate={onDropCreate}
           onCanvasDrop={onCanvasDrop}
           onAddStep={() => addBlank('New command step')}
-          onStartLibrary={() => onNavigate('library')}
-          onStartTtp={() => onNavigate('ttps')}
+          onStartLibrary={startFromPalette}
+          onStartTtp={startFromPalette}
           onStartBlank={() => addBlank('New command step')}
           onNavigate={onNavigate}
           stitchModel={draft.stitchContext}

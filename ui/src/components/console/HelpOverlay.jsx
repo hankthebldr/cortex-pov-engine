@@ -79,7 +79,7 @@ const TABS_CHEATSHEET = [
   },
   {
     name: 'ATT&CK Coverage (More ▾)',
-    body: 'MITRE matrix showing what techniques the scenario library covers. Click a technique cell → detail panel → "Filter Library →" jumps to the Library step pre-filtered to scenarios exercising that technique.',
+    body: 'MITRE matrix showing what techniques the scenario library covers. Click a technique cell → detail panel → "Filter Scenarios →" jumps to Scenarios pre-filtered to the ones exercising that technique.',
   },
 ]
 

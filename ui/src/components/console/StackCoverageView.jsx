@@ -272,7 +272,7 @@ function SelectedCellPanel({ cell, scenarios, onClose, onFilterByCell }) {
             onClick={() => onFilterByCell(cell.scenarioIds)}
             disabled={cell.scenarioIds.length === 0}
           >
-            Filter Operations <span className="kbd">→</span>
+            Filter Scenarios <span className="kbd">→</span>
           </button>
           <button type="button" className="btn" onClick={onClose}>
             Close

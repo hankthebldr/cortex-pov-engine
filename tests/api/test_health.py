@@ -251,8 +251,11 @@ def test_scenario_catalog_zero_is_degraded():
         async def __aexit__(self, *a):
             return False
 
-        async def scalar(self, _stmt):
-            return 0
+        async def execute(self, _stmt):
+            class _Empty:
+                def all(self):
+                    return []
+            return _Empty()
 
     comp = asyncio.run(health.probe_scenario_catalog(lambda: _Session()))
     assert comp["status"] == "degraded"
@@ -684,3 +687,65 @@ def test_a_well_formed_identity_spec_is_ok(identity_spec_at):
     comp = health.probe_identity_spec()
     assert comp["status"] == "ok"
     assert comp["source"] == "file"
+
+
+def test_scenario_catalog_counts_the_corpus_apart_from_drafts():
+    """The Library lists active rows only (``/api/scenarios`` defaults to
+    ``status=active``), so a health count that folds composer drafts in
+    disagrees with the Library by exactly the draft count — 194 against 193 on
+    a SimCore with one saved draft. ``count`` must be what the Library shows;
+    drafts are reported on their own, never added to the corpus."""
+    from api import health
+
+    class _Result:
+        def all(self):
+            return [("active", 193), ("draft", 1)]
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def scalar(self, _stmt):  # the pre-fix total, every row
+            return 194
+
+        async def execute(self, _stmt):
+            return _Result()
+
+    comp = asyncio.run(health.probe_scenario_catalog(lambda: _Session()))
+    assert comp["status"] == "ok"
+    assert comp["count"] == 193
+    assert comp["drafts"] == 1
+    assert comp["by_status"] == {"active": 193, "draft": 1}
+
+
+def test_scenario_catalog_drafts_alone_is_still_degraded():
+    """Drafts are not corpus: a deployment whose only Scenario rows are
+    composer drafts has nothing in the Library and nothing launchable from
+    it, so drafts must not rescue the probe from SCENARIO_CATALOG_EMPTY."""
+    from api import health
+
+    class _Result:
+        def all(self):
+            return [("draft", 2)]
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def scalar(self, _stmt):
+            return 2
+
+        async def execute(self, _stmt):
+            return _Result()
+
+    comp = asyncio.run(health.probe_scenario_catalog(lambda: _Session()))
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "SCENARIO_CATALOG_EMPTY"
+    assert comp["count"] == 0
+    assert comp["drafts"] == 2
