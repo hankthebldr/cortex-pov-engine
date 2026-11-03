@@ -43,3 +43,13 @@ class XsiamQueryError(XsiamError):
 class XsiamQuotaError(XsiamError):
     code = "XSIAM_QUOTA_ERROR"
     http_status = 429
+
+
+class XsiamCapabilityError(XsiamError):
+    code = "XSIAM_CAPABILITY_MISSING"
+    http_status = 403  # the credential was never authorised for XQL
+
+
+class XqlWriteStageRefused(XsiamError):
+    code = "XQL_WRITE_STAGE_REFUSED"
+    http_status = 400  # caller's query tries to write
