@@ -3,7 +3,10 @@
 > **Audience:** Henry (Cortex DC leadership) and whoever picks up the tenant-interaction
 > surface in CortexSim or `cortex-pov-agent`.
 >
-> **Status:** review complete, nothing built. Every claim below is from reading the two
+> **Status (updated 2026-11-02, evening):** items 1 and 2 of §2.7 are built on two topic
+> branches cut from `dev`, unpushed, no PR. See §2.10 for what changed from this review.
+>
+> **Original status:** review complete, nothing built. Every claim below is from reading the two
 > trees side by side on 2026-11-02 (cortex-bot `v1.2.0`, commit as cloned that day;
 > CortexSim `main` @ `1ad8a88`, the v1.1.0 release). No tenant was touched.
 > ***tenant-verified is still 0*** and nothing in this note moves it.
@@ -282,3 +285,37 @@ evidence in each PR body. Item 6 is a feature branch of its own.
 3. **Policy.** Is there a WW DC position on DC-published tooling that holds customer
    tenant keys? If not, this review is a reasonable seed for one: Viewer role, no
    self-tests against prospects, evidence only through the engine.
+
+### 2.10 Build log and corrections (2026-11-02, evening)
+
+| Item | Branch | Commits | Result |
+|---|---|---|---|
+| 1 · catalog harvest | `feature/api-xsiam-catalog-harvest` | `70321fa` generator · `403c942` harvest · `b327bf9` doc counts | 116 → **148** ops, 23 → 30 categories (79 read · 51 write · 18 destructive). Guard red first: 35 failed. Host suite 5325 passed / 30 skipped. |
+| 2 · alerts-path probe | `fix/api-preflight-alerts-path` | `bf319b5` | New `PF_ALERTS_PATH_MISMATCH`. Guard red on `dev`'s logic: 5 failed. Host suite 5293 passed / 30 skipped. |
+
+Both branches are unpushed and have no PR. Neither changes `tenant-verified`.
+
+**Corrections to this review, found while building:**
+
+- **The harvest is 32 ops, not ~28.** The MDR family is eight distinct `mth/child/*`
+  subpaths (5 read, 3 write), not one path. Two vulnerability-finding reads were invisible
+  to the original count because cortex-bot sends them as bare paths that the official
+  fetcher prefixes with `/public_api/v1`. Final split: 22 read · 8 write · 2 destructive.
+- **`terminate_causality` is `destructive`, not `write`.** It kills a process tree and cannot
+  be undone. That is stricter than the catalog's `isolate`, which is `write`, on purpose.
+- **§2.3 row 1 overstated the loud case.** If v1 is gone and returns 404, reconcile already
+  refuses to score, so it fails loudly and never reads 0. The manufactured false negative
+  needs v1 to answer 200 with nothing while v2 holds the alerts. The probe now covers both
+  cases. The connector default stays v1. Preflight tells the DC which value to set and
+  never switches the path itself.
+- **The doc mirror had no generator** and every count quote said "read-only", which was
+  never true. `scripts/gen_xsiam_operation_catalog.py` regenerates it. It is dry-run by
+  default and was proven byte-identical on the old packs. The quotes now say "gated".
+- **The executor wrapped every bodyless POST in `request_data`.** Bring-your-own-scan
+  ingest rejects that wrapper, so its preview showed a request that would fail. A
+  `no-request-data-wrapper` tag now sends `{}` instead.
+
+**Still open from §2.7:** item 3, observed entitlement from `get_tenant_info`. Item 4, the
+contributing-event witness. Item 5, per-family raise-on-unknown unwrappers. Item 6, the MCP
+server, which runs in its own session on `feature/api-mcp-server`. CHANGELOG entries for
+items 1 and 2 are owed at release prep.
