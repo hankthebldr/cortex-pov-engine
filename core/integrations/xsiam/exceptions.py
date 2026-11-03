@@ -53,3 +53,8 @@ class XsiamCapabilityError(XsiamError):
 class XqlWriteStageRefused(XsiamError):
     code = "XQL_WRITE_STAGE_REFUSED"
     http_status = 400  # caller's query tries to write
+
+
+class XqlRequestShapeInvalid(XsiamError):
+    code = "XQL_REQUEST_SHAPE_INVALID"
+    http_status = 400  # the start-query body has no usable query string

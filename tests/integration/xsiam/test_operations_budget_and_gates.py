@@ -145,3 +145,46 @@ def test_metrics_is_charged_and_refused_when_budget_is_spent(tmp_path, monkeypat
     assert r.status_code == 429, r.text
     assert r.json()["code"] == "XSIAM_QUOTA_ERROR"
     assert stub.calls == []
+
+
+QUOTA = "/api/xsiam/tenants/acme/operations/OP-XQL-GET-QUOTA"
+STREAM = "/api/xsiam/tenants/acme/operations/OP-XQL-GET-QUERY-RESULTS-STREAM"
+
+
+def _used(ledger, stub):
+    return ledger.snapshot(_key(stub), limit=10)["queries_last_24h"]
+
+
+def test_quota_and_stream_ops_are_capability_gated(tmp_path, monkeypatch):
+    client, stub, ledger = _app(tmp_path, monkeypatch)
+    stub.capabilities = ["read_alerts"]
+    for url in (QUOTA, STREAM):
+        r = client.post(url, json={})
+        assert r.status_code == 403, (url, r.status_code, r.text)
+        assert r.json()["code"] == "XSIAM_CAPABILITY_MISSING"
+    assert stub.calls == []
+    stub.capabilities = ["xql"]
+    r = client.post(QUOTA, json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["queries_issued"] == 1
+    assert r.json()["ledger"]["queries_last_24h"] == 0
+    r = client.post(STREAM, json={})
+    assert r.status_code == 200, r.text
+    assert r.json()["queries_issued"] == 0
+    assert r.json()["ledger"]["queries_last_24h"] == 0
+    assert _used(ledger, stub) == 0
+
+
+@pytest.mark.parametrize("op_body", [
+    {"request_data": []},
+    {"request_data": {}},
+    {"request_data": {"query": 5}},
+    {"request_data": {"query": ""}},
+])
+def test_start_op_refuses_bad_request_shape(tmp_path, monkeypatch, op_body):
+    client, stub, ledger = _app(tmp_path, monkeypatch)
+    r = client.post(START, json={"body": op_body})
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "XQL_REQUEST_SHAPE_INVALID"
+    assert stub.calls == []
+    assert _used(ledger, stub) == 0

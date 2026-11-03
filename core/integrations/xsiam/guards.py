@@ -12,11 +12,17 @@ import re
 from typing import Any, Mapping, Optional
 
 from . import codes
-from .exceptions import XqlWriteStageRefused, XsiamCapabilityError
+from .exceptions import XqlRequestShapeInvalid, XqlWriteStageRefused, XsiamCapabilityError
 from .ledger import tenant_ledger_key
 
+#: Ops that are polls of an already-started query: gated, never charged.
+XQL_POLL_OPERATION_IDS: frozenset[str] = frozenset(
+    {"OP-XQL-GET-QUERY-RESULTS", "OP-XQL-GET-QUERY-RESULTS-STREAM"}
+)
+
+#: Every op needing the "xql" capability. GET-QUOTA runs no query: gated, not charged.
 XQL_OPERATION_IDS: frozenset[str] = frozenset(
-    {"OP-XQL-START-XQL-QUERY", "OP-XQL-GET-QUERY-RESULTS"}
+    {"OP-XQL-START-XQL-QUERY", "OP-XQL-GET-QUOTA"} | XQL_POLL_OPERATION_IDS
 )
 
 _WRITE_STAGE = re.compile(r"target\s+type\s*=\s*(dataset|lookup)\b", re.I)
@@ -40,6 +46,21 @@ def require_xql_capability(capabilities: Optional[list[str]], *, tenant: str) ->
             f"tenant '{tenant}' is not authorised for XQL: "
             f"config.capabilities does not include \"xql\""
         )
+
+
+def xql_query_text(payload: Any) -> str:
+    """The query string of a start-query body, or raise XqlRequestShapeInvalid."""
+    request_data = payload.get("request_data") if isinstance(payload, dict) else None
+    if not isinstance(request_data, dict):
+        raise XqlRequestShapeInvalid("body.request_data must be an object")
+    if "query" not in request_data:
+        raise XqlRequestShapeInvalid("body.request_data.query is missing")
+    query = request_data["query"]
+    if not isinstance(query, str):
+        raise XqlRequestShapeInvalid("body.request_data.query must be a string")
+    if not query.strip():
+        raise XqlRequestShapeInvalid("body.request_data.query is empty")
+    return query
 
 
 def refuse_xql_write_stage(query: str) -> None:

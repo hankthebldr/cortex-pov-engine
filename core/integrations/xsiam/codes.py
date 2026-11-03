@@ -31,6 +31,7 @@ XSIAM_TRANSPORT_ERROR = "XSIAM_TRANSPORT_ERROR"
 XSIAM_PARSE_ERROR = "XSIAM_PARSE_ERROR"
 XSIAM_CAPABILITY_MISSING = "XSIAM_CAPABILITY_MISSING"
 XQL_WRITE_STAGE_REFUSED = "XQL_WRITE_STAGE_REFUSED"
+XQL_REQUEST_SHAPE_INVALID = "XQL_REQUEST_SHAPE_INVALID"
 
 ALL_CODES = (
     XSIAM_AUTH_ERROR,
@@ -42,6 +43,7 @@ ALL_CODES = (
     XSIAM_PARSE_ERROR,
     XSIAM_CAPABILITY_MISSING,
     XQL_WRITE_STAGE_REFUSED,
+    XQL_REQUEST_SHAPE_INVALID,
 )
 
 #: What the DC should DO, and — critically — what the failure means for the
@@ -91,6 +93,9 @@ REMEDIATION: dict[str, str] = {
     XQL_WRITE_STAGE_REFUSED: (
         "remove the `target type = dataset|lookup` stage; XQL through CortexSim "
         "is read-only"
+    ),
+    XQL_REQUEST_SHAPE_INVALID: (
+        "send body.request_data as an object with a non-empty string `query`"
     ),
 }
 

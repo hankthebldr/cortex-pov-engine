@@ -25,8 +25,8 @@ from integrations.xsiam.exceptions import (
 )
 from integrations.xsiam import ledger as ledger_mod
 from integrations.xsiam.guards import (
-    XQL_OPERATION_IDS, ledger_key_for, refuse_xql_write_stage,
-    require_xql_capability, tenant_budget,
+    XQL_OPERATION_IDS, XQL_POLL_OPERATION_IDS, ledger_key_for,
+    refuse_xql_write_stage, require_xql_capability, tenant_budget, xql_query_text,
 )
 from integrations.xsiam.operations.catalog import catalog as op_catalog
 
@@ -272,14 +272,13 @@ async def execute_operation(
     if op.op_id in XQL_OPERATION_IDS:
         require_xql_capability(getattr(client, "capabilities", None), tenant=name)
         if op.op_id == _START_XQL_OP_ID:
-            query_text = ((payload or {}).get("request_data") or {}).get("query")
-            if isinstance(query_text, str):
-                refuse_xql_write_stage(query_text)
+            refuse_xql_write_stage(xql_query_text(payload))
             async with _budgeted(client):
                 reply = await client.request(
                     op.method, path, json=payload, params=(body.query or None))
-        else:  # polling results: not metered
-            queries_issued = 0
+        else:
+            if op.op_id in XQL_POLL_OPERATION_IDS:
+                queries_issued = 0  # polling a started query is not metered
             reply = await client.request(
                 op.method, path, json=payload, params=(body.query or None))
     else:
