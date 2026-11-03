@@ -16,6 +16,8 @@ TENANT_AMBIGUOUS = "TENANT_AMBIGUOUS"
 MCP_RATE_LIMITED = "MCP_RATE_LIMITED"
 SIMCORE_UNREACHABLE = "SIMCORE_UNREACHABLE"
 SIMCORE_SHAPE_UNKNOWN = "SIMCORE_SHAPE_UNKNOWN"
+SIMCORE_TRANSPORT_ERROR = "SIMCORE_TRANSPORT_ERROR"
+MCP_INVALID_ARGUMENTS = "MCP_INVALID_ARGUMENTS"
 
 REMEDIATION: dict[str, str] = {
     MCP_WRITE_NOT_EXECUTABLE: "a human runs the previewed request in the console; MCP only previews writes",
@@ -25,6 +27,8 @@ REMEDIATION: dict[str, str] = {
     MCP_RATE_LIMITED: "wait retry_after_seconds, or raise CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE",
     SIMCORE_UNREACHABLE: "start SimCore (./scripts/dev-up.sh) or set CORTEXSIM_URL; this is not a tenant error",
     SIMCORE_SHAPE_UNKNOWN: "the SimCore response did not match what this tool reads; check the SimCore version",
+    SIMCORE_TRANSPORT_ERROR: "the request reached SimCore but no complete answer came back; check SimCore's log before retrying a tenant-class call",
+    MCP_INVALID_ARGUMENTS: "fix the arguments; the tool's inputSchema lists the accepted fields",
 }
 
 

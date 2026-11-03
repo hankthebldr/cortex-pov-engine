@@ -91,3 +91,19 @@ def test_error_structured_content_validates_as_envelope():
 
     previewed = McpToolError(code="MCP_WRITE_NOT_EXECUTABLE", error="e", detail="d", data={"p": 1})
     assert previewed.as_structured(ev)["data"] == {"p": 1}
+
+
+def test_unknown_count_is_stated_as_not_known_and_not_zero():
+    text = statement(basis="simcore", queries_issued=None, tenant="deathstar", tenant_verified=0)
+    assert text == ("Tenant deathstar was called via SimCore; the number of tenant operations is not "
+                    "known — this is not zero. tenant-verified: 0")
+    ev = Evidence(basis="simcore", queries_issued=None, tenant="deathstar", statement=text)
+    assert ev.model_dump()["queries_issued"] is None
+
+
+def test_unread_tenant_verified_is_never_a_stated_zero():
+    text = statement(basis="simcore", queries_issued=0, tenant=None, tenant_verified=None)
+    assert text.endswith("tenant-verified: not read")
+    assert "tenant-verified: 0" not in text
+    ev = Evidence(basis="simcore", tenant_verified=None, statement=text)
+    assert ev.tenant_verified is None

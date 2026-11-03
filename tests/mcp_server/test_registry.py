@@ -120,8 +120,11 @@ async def test_simcore_unreachable_keeps_its_own_code():
     assert res.isError
     sc = res.structuredContent
     assert sc["code"] == "SIMCORE_UNREACHABLE"
+    # readiness could not be read either, so tenant-verified is "not read", never a stated 0
     assert sc["evidence"]["statement"] == (
-        "No tenant answered this call. SimCore itself was unreachable. tenant-verified: 0")
+        "No tenant answered this call. SimCore itself was unreachable. tenant-verified: not read")
+    assert sc["evidence"]["tenant_verified"] is None
+    assert sc["evidence"]["queries_issued"] == 0
     assert sc["evidence"]["as_of"] is None
 
 
@@ -181,3 +184,55 @@ def test_cap_list_and_cap_text():
     assert cap_text(text, max_bytes=100) == (text, False, 20)
     cut, truncated, total = cap_text(text, max_bytes=5)
     assert (cut, truncated, total) == ("éé", True, 20)
+
+
+@pytest.mark.asyncio
+async def test_invalid_arguments_have_their_own_code():
+    mcp, calls, _ = _mcp()
+    res = await call(mcp, "cortexsim.run.launch", scenario_id="SIM-EDR-001", allow_runtime_install=True)
+    assert res.isError
+    sc = res.structuredContent
+    assert sc["code"] == "MCP_INVALID_ARGUMENTS"
+    assert sc["evidence"]["basis"] == "authored"
+    assert "allow_runtime_install" in sc["detail"]
+    assert paths(calls, "POST") == []
+
+
+@pytest.mark.asyncio
+async def test_json_string_list_and_dict_arguments_are_pre_parsed_like_stock_fastmcp():
+    seen = {}
+
+    def scope(request):
+        seen["scope"] = json.loads(request.content)
+        return {"total": 0, "runnable_count": 0, "blocked_count": 0,
+                "runnable": [], "blocked": [], "upsell": []}
+
+    def run(request):
+        seen["run"] = json.loads(request.content)
+        return {"assertion_id": "A-1", "dry_run": True}
+
+    mcp, calls, _ = _mcp({("POST", "/api/pov/scope"): scope,
+                          ("POST", "/api/assertions/A-1/run"): run,
+                          ("GET", '/api/scenarios/["x"]'): {"id": '["x"]'}})
+    res = await call(mcp, "cortexsim.pov.scope", base_platform='["xsiam"]')
+    assert not res.isError, res.content[0].text
+    assert seen["scope"]["base_platform"] == ["xsiam"]
+    res = await call(mcp, "cortexsim.assertion.run", id="A-1", context='{"a": "b"}')
+    assert not res.isError, res.content[0].text
+    assert seen["run"]["context"] == {"a": "b"}
+    # a str field keeps a JSON-looking string verbatim
+    res = await call(mcp, "cortexsim.scenario.get", id='["x"]')
+    assert not res.isError, res.content[0].text
+    assert any(r.url.raw_path == b"/api/scenarios/%5B%22x%22%5D" for r in calls)
+
+
+@pytest.mark.asyncio
+async def test_unreadable_readiness_states_tenant_verified_not_read():
+    down = httpx.Response(503, json={"error": "down", "code": "DB_UNAVAILABLE", "detail": "x"})
+    mcp, _, _ = _mcp({("GET", "/api/readiness"): down,
+                      ("GET", "/api/runs/r1"): {"run_id": "r1"}})
+    res = await call(mcp, "cortexsim.run.get", run_id="r1")
+    assert res.isError and res.structuredContent["code"] == "DB_UNAVAILABLE"
+    ev = res.structuredContent["evidence"]
+    assert ev["tenant_verified"] is None
+    assert ev["statement"].endswith("tenant-verified: not read")

@@ -46,6 +46,10 @@ class ListIn(_In):
 
 
 # --- list tools ---------------------------------------------------------------
+class RunResultsIn(RunIdIn, ListIn):
+    pass
+
+
 class ScenarioListIn(ListIn):
     plane: str | None = None
     uc_ref: str | None = None
@@ -75,6 +79,13 @@ class ScopeRequestIn(_In):
     base_platform: list[str] = Field(default_factory=list)
     addons: list[str] = Field(default_factory=list)
     planes: list[str] = Field(default_factory=list)
+
+
+class PovScopeIn(ScopeRequestIn, ListIn):
+    """``ScopeRequestIn`` plus the section 5.5 caps; ``limit``/``offset`` are never posted."""
+
+    def to_scope_body(self) -> dict[str, Any]:
+        return self.model_dump(include=set(ScopeRequestIn.model_fields))
 
 
 # --- XSIAM operations / XQL (mirror of api.xsiam) -----------------------------

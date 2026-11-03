@@ -51,11 +51,13 @@ def ledger_from_snapshot(snap: Optional[dict]) -> Optional[Ledger]:
 
 class Evidence(BaseModel):
     basis: Basis
-    queries_issued: int = 0
+    #: ``None`` = the tenant was called via SimCore and the count was not reported.
+    queries_issued: Optional[int] = 0
     http_round_trips: Optional[int] = None
     tenant: Optional[str] = None
     ledger: Optional[Ledger] = None
-    tenant_verified: int = 0
+    #: ``None`` = ``GET /api/readiness`` could not be read; never a stated 0.
+    tenant_verified: Optional[int] = 0
     statement: str
     as_of: Optional[str] = None
     truncated: bool = False
@@ -71,15 +73,15 @@ class Envelope(BaseModel):
 def statement(
     *,
     basis: str,
-    queries_issued: int,
+    queries_issued: Optional[int],
     tenant: Optional[str],
-    tenant_verified: int,
+    tenant_verified: Optional[int],
     tool_id: Optional[str] = None,
     not_backed: bool = False,
     simcore_unreachable: bool = False,
 ) -> str:
     """The section 7 sentence for the call's condition (checked in this order)."""
-    tail = f"tenant-verified: {tenant_verified}"
+    tail = "tenant-verified: not read" if tenant_verified is None else f"tenant-verified: {tenant_verified}"
     if simcore_unreachable:
         return f"No tenant answered this call. SimCore itself was unreachable. {tail}"
     if not_backed:
@@ -91,6 +93,11 @@ def statement(
         return (
             "Preview only. Nothing was sent to the tenant. To execute, a human runs "
             f"the request in execute_as_human. {tail}"
+        )
+    if queries_issued is None:
+        return (
+            f"Tenant {tenant or '(unnamed)'} was called via SimCore; the number of tenant "
+            f"operations is not known — this is not zero. {tail}"
         )
     if queries_issued == 0:
         return f"No tenant answered this call. This is {basis}, not tenant evidence. {tail}"

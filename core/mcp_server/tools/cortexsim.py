@@ -11,9 +11,8 @@ from typing import Any, Optional
 
 from ..client import SimCoreError, SimCoreShapeUnknown, encode_segment
 from ..envelope import Envelope
-from ..errors import SIMCORE_SHAPE_UNKNOWN, McpToolError
+from ..errors import McpToolError
 from ..registry import (
-    TenantCallError,
     ToolContext,
     ToolSpec,
     cap_list,
@@ -24,20 +23,23 @@ from ..registry import (
     readiness,
     resolve_tenant,
     take_token,
+    tenant_call,
 )
 from ..schemas import (
     AssertionListIn,
     AssertionRunIn,
     EmptyInput,
     IdIn,
+    ListIn,
     McpLaunchRequest,
+    PovScopeIn,
     PreflightIn,
     ReconcileIn,
     ReportIn,
     RunIdIn,
     RunListIn,
+    RunResultsIn,
     ScenarioListIn,
-    ScopeRequestIn,
     VerifyIn,
 )
 
@@ -60,6 +62,15 @@ def _int(body: dict, where: str, key: str) -> int:
 
 def _params(**kw: Any) -> dict:
     return {k: v for k, v in kw.items() if v is not None}
+
+
+def _cap_field(body: dict, where: str, key: str, args: ListIn) -> tuple[dict, bool]:
+    """Cap ``body[key]`` (section 5.5); ``total`` is the uncapped length."""
+    rows = _require(body, where, key)[key]
+    if not isinstance(rows, list):
+        raise SimCoreShapeUnknown(200, f"{where}: {key} is not a list")
+    page, truncated = cap_list(rows, limit=args.limit, offset=args.offset)
+    return {**body, key: page, "total": len(rows), "truncated": truncated}, truncated
 
 
 async def _simcore(ctx: ToolContext, data: Any, basis: str, truncated: bool = False) -> Envelope:
@@ -99,11 +110,17 @@ async def pov_profiles(ctx: ToolContext, args: EmptyInput) -> Envelope:
     return await _simcore(ctx, body, "authored")
 
 
-async def pov_scope(ctx: ToolContext, args: ScopeRequestIn) -> Envelope:
-    return await _simcore(ctx, await ctx.client.post("/api/pov/scope", json=args.model_dump()), "authored")
+async def pov_scope(ctx: ToolContext, args: PovScopeIn) -> Envelope:
+    where = "POST /api/pov/scope"
+    body = _require(await ctx.client.post("/api/pov/scope", json=args.to_scope_body()), where,
+                    "runnable", "blocked", "upsell")
+    runnable, t1 = cap_list(body["runnable"], limit=args.limit, offset=args.offset)
+    blocked, t2 = cap_list(body["blocked"], limit=args.limit, offset=args.offset)
+    data = {**body, "runnable": runnable, "blocked": blocked, "truncated": t1 or t2}
+    return await _simcore(ctx, data, "authored", t1 or t2)
 
 
-async def _uctc(ctx: ToolContext, path: str) -> Envelope:
+async def _uctc(ctx: ToolContext, path: str, *, cap: Optional[tuple[str, ListIn]] = None) -> Envelope:
     body = _require(await ctx.client.get(path), f"GET {path}", "index_loaded")
     if body["index_loaded"] is not True:
         raise McpToolError(
@@ -111,7 +128,10 @@ async def _uctc(ctx: ToolContext, path: str) -> Envelope:
             f"GET {path} answered index_loaded: false — this is degraded, not '0 test cases'",
             remediation="ship docs/uc_tc_mapping/_v2.2-source/ in the image; the registry is fail-soft",
             basis="authored")
-    return await _simcore(ctx, body, "authored")
+    if cap is None:
+        return await _simcore(ctx, body, "authored")
+    data, truncated = _cap_field(body, f"GET {path}", cap[0], cap[1])
+    return await _simcore(ctx, data, "authored", truncated)
 
 
 async def uctc_summary(ctx: ToolContext, args: EmptyInput) -> Envelope:
@@ -126,12 +146,12 @@ async def uctc_test_case(ctx: ToolContext, args: IdIn) -> Envelope:
     return await _uctc(ctx, f"/api/uctc/test-cases/{encode_segment(args.id)}")
 
 
-async def uctc_coverage(ctx: ToolContext, args: EmptyInput) -> Envelope:
-    return await _uctc(ctx, "/api/uctc/coverage")
+async def uctc_coverage(ctx: ToolContext, args: ListIn) -> Envelope:
+    return await _uctc(ctx, "/api/uctc/coverage", cap=("by_use_case", args))
 
 
-async def uctc_gaps(ctx: ToolContext, args: EmptyInput) -> Envelope:
-    return await _uctc(ctx, "/api/uctc/gaps")
+async def uctc_gaps(ctx: ToolContext, args: ListIn) -> Envelope:
+    return await _uctc(ctx, "/api/uctc/gaps", cap=("gaps", args))
 
 
 async def uctc_by_scenario(ctx: ToolContext, args: IdIn) -> Envelope:
@@ -170,9 +190,10 @@ async def run_list(ctx: ToolContext, args: RunListIn) -> Envelope:
     return await _simcore(ctx, {"runs": page, "total": total, "truncated": truncated}, "simcore", truncated)
 
 
-async def run_results(ctx: ToolContext, args: RunIdIn) -> Envelope:
+async def run_results(ctx: ToolContext, args: RunResultsIn) -> Envelope:
     path = f"/api/results/{encode_segment(args.run_id)}"
-    return await _simcore(ctx, _require(await ctx.client.get(path), f"GET {path}", "results"), "simcore")
+    data, truncated = _cap_field(await ctx.client.get(path), f"GET {path}", "results", args)
+    return await _simcore(ctx, data, "simcore", truncated)
 
 
 async def run_report(ctx: ToolContext, args: ReportIn) -> Envelope:
@@ -203,31 +224,40 @@ async def run_reconcile(ctx: ToolContext, args: ReconcileIn) -> Envelope:
     tenant = await resolve_tenant(ctx, args.tenant, kind="xsiam")
     take_token(ctx)
     path = _run_path(args.run_id, "/reconcile")
-    try:
-        body = await ctx.client.post(path, params={
-            "connector": "xsiam", "integration": tenant, "window_seconds": args.window_seconds})
-    except SimCoreError as err:
-        if err.code != "CONNECTOR_PULL_FAILED":
-            raise
-        raise TenantCallError(err.code, err.error, err.detail, tenant=tenant,
-                              queries_issued=_pull_failed_page(err),
-                              ledger_snapshot=await ledger_for(ctx, tenant)) from err
-    queries = _int(body, f"POST {path}", "queries_issued")
+
+    def pull_failed_page(err: SimCoreError) -> Optional[int]:
+        return _pull_failed_page(err) if err.code == "CONNECTOR_PULL_FAILED" else None
+
+    body, queries = await tenant_call(
+        ctx, tenant=tenant,
+        coro=ctx.client.post(path, params={"connector": "xsiam", "integration": tenant,
+                                           "window_seconds": args.window_seconds}),
+        read=lambda b: _int(b, f"POST {path}", "queries_issued"),
+        failure_count=pull_failed_page)
     ev = await evidence_for_tenant(ctx, tenant=tenant, queries_issued=queries,
                                    ledger_snapshot=await ledger_for(ctx, tenant))
     return Envelope(data=body, evidence=ev)
 
 
+def _verify_read(path: str):
+    def read(body: dict) -> tuple[int, Optional[str]]:
+        return _int(body, f"POST {path}", "queries_issued"), _require(body, f"POST {path}", "tenant")["tenant"]
+    return read
+
+
 async def run_verify(ctx: ToolContext, args: VerifyIn) -> Envelope:
     tenant = await resolve_tenant(ctx, args.tenant, kind="xsiam_tenant", required=False)
-    if tenant is not None:
-        take_token(ctx)
     path = _run_path(args.run_id, "/verify")
-    body = await ctx.client.post(path, params=_params(
+    coro = ctx.client.post(path, params=_params(
         integration=tenant, force="true" if args.force else None,
         timeframe_seconds=args.timeframe_seconds))
-    queries = _int(body, f"POST {path}", "queries_issued")
-    named = _require(body, f"POST {path}", "tenant")["tenant"] or tenant
+    if tenant is None:  # nothing configured: the route answers pending without a tenant call
+        body = await coro
+        queries, named = _verify_read(path)(body)
+    else:
+        take_token(ctx)
+        body, (queries, named) = await tenant_call(ctx, tenant=tenant, coro=coro, read=_verify_read(path))
+    named = named or tenant
     ev = await evidence_for_tenant(ctx, tenant=named, queries_issued=queries,
                                    ledger_snapshot=await ledger_for(ctx, named))
     return Envelope(data=body, evidence=ev)
@@ -237,12 +267,18 @@ async def connector_preflight(ctx: ToolContext, args: PreflightIn) -> Envelope:
     tenant = await resolve_tenant(ctx, args.tenant, kind=args.kind)
     take_token(ctx)
     path = f"/api/connectors/{args.kind}/preflight"
-    body = _require(await ctx.client.post(path, params=_params(integration=tenant, datasets=args.datasets)),
-                    f"POST {path}", "stages")
+
     # The report's queries_issued already counts tenant OPERATIONS (healthcheck,
     # scope XQL, each dataset probe, each alert pull) — the ledger unit. The
     # route reports no raw HTTP count, so http_round_trips stays null.
-    queries = _int(body, f"POST {path}", "queries_issued")
+    def read(body: dict) -> int:
+        _require(body, f"POST {path}", "stages")
+        return _int(body, f"POST {path}", "queries_issued")
+
+    body, queries = await tenant_call(
+        ctx, tenant=tenant,
+        coro=ctx.client.post(path, params=_params(integration=tenant, datasets=args.datasets)),
+        read=read)
     ev = await evidence_for_tenant(ctx, tenant=tenant, queries_issued=queries,
                                    ledger_snapshot=await ledger_for(ctx, tenant), http_round_trips=None)
     return Envelope(data=body, evidence=ev)
@@ -266,31 +302,32 @@ async def assertion_get(ctx: ToolContext, args: IdIn) -> Envelope:
 
 async def assertion_run(ctx: ToolContext, args: AssertionRunIn) -> Envelope:
     path = f"/api/assertions/{encode_segment(args.id)}/run"
-    tenant: Optional[str] = args.tenant
-    if not args.dry_run:
-        tenant = await resolve_tenant(ctx, args.tenant, kind="xsiam_tenant", required=False)
-        if tenant is not None:
-            take_token(ctx)
-    body = await ctx.client.post(path, json={**_params(integration=tenant),
-                                             "dry_run": args.dry_run, "context": args.context})
     if args.dry_run:
+        body = await ctx.client.post(path, json={**_params(integration=args.tenant),
+                                                 "dry_run": True, "context": args.context})
         return await _simcore(ctx, body, "preview")
-    named = _require(body, f"POST {path}", "tenant")["tenant"]
-    if named is None:  # no tenant wired: the route resolved pending without a query
-        ev = await evidence_for_tenant(ctx, tenant=None, queries_issued=0, ledger_snapshot=None)
-        return Envelope(data=body, evidence=ev)
-    if "queries_issued" not in body:
-        raise TenantCallError(
-            SIMCORE_SHAPE_UNKNOWN, "the live assertion run did not report queries_issued",
-            f"POST {path} ran against tenant {named} (its result is in data); the route does not "
-            "report how many tenant operations it issued, so this layer will not state a number. "
-            "Do not retry to get one: a retry queries the tenant again.",
-            tenant=named, ledger_snapshot=await ledger_for(ctx, named), data=body,
-            remediation="add queries_issued to POST /api/assertions/{id}/run (spec Appendix D)",
-            statement_override=(
-                f"Tenant {named} was called, but SimCore did not report how many operations it "
-                "issued; this is neither tenant evidence nor a zero. tenant-verified: {tenant_verified}"))
-    ev = await evidence_for_tenant(ctx, tenant=named, queries_issued=_int(body, f"POST {path}", "queries_issued"),
+    tenant = await resolve_tenant(ctx, args.tenant, kind="xsiam_tenant", required=False)
+    coro = ctx.client.post(path, json={**_params(integration=tenant),
+                                       "dry_run": False, "context": args.context})
+
+    def read(body: dict) -> tuple[Optional[str], int]:
+        named = _require(body, f"POST {path}", "tenant")["tenant"]
+        if named is None:  # no tenant wired: the route resolved pending without a query
+            return None, 0
+        if "queries_issued" not in body:
+            raise SimCoreShapeUnknown(
+                200, f"POST {path} ran against tenant {named} (its result is in data) but does not "
+                "report queries_issued (spec Appendix D); do not retry to get a count — a retry "
+                "queries the tenant again")
+        return named, _int(body, f"POST {path}", "queries_issued")
+
+    if tenant is None:
+        body = await coro
+        named, queries = read(body)
+    else:
+        take_token(ctx)
+        body, (named, queries) = await tenant_call(ctx, tenant=tenant, coro=coro, read=read)
+    ev = await evidence_for_tenant(ctx, tenant=named, queries_issued=queries,
                                    ledger_snapshot=await ledger_for(ctx, named))
     return Envelope(data=body, evidence=ev)
 
@@ -317,8 +354,11 @@ def specs() -> list[ToolSpec]:
           f"GET /api/scenarios/{{id}}. {_SIMCORE_ONLY}"),
         s("cortexsim.pov.profiles", EmptyInput, pov_profiles, "read", "simcore",
           f"GET /api/pov/profiles: the canned tenant entitlement profiles. {_SIMCORE_ONLY}"),
-        s("cortexsim.pov.scope", ScopeRequestIn, pov_scope, "read", "simcore",
-          f"POST /api/pov/scope (mutates nothing): scope the corpus to an entitlement set. {_SIMCORE_ONLY}"),
+        s("cortexsim.pov.scope", PovScopeIn, pov_scope, "read", "simcore",
+          "POST /api/pov/scope (mutates nothing): scope the corpus to an entitlement set. runnable[] and "
+          "blocked[] are capped by limit/offset (default 50, max 200; not posted to REST) with truncated; "
+          "the route's total/runnable_count/blocked_count are kept; the upsell roll-up (at most one row "
+          f"per SKU, 38 today) is returned whole. {_SIMCORE_ONLY}"),
         s("cortexsim.uctc.summary", EmptyInput, uctc_summary, "read", "simcore",
           f"GET /api/uctc/summary. index_loaded: false is an error (UCTC_INDEX_NOT_LOADED), never "
           f"'0 test cases'. {_SIMCORE_ONLY}"),
@@ -326,10 +366,12 @@ def specs() -> list[ToolSpec]:
           f"GET /api/uctc/use-cases/{{id}}; index_loaded: false is UCTC_INDEX_NOT_LOADED. {_SIMCORE_ONLY}"),
         s("cortexsim.uctc.test_case", IdIn, uctc_test_case, "read", "simcore",
           f"GET /api/uctc/test-cases/{{id}}; index_loaded: false is UCTC_INDEX_NOT_LOADED. {_SIMCORE_ONLY}"),
-        s("cortexsim.uctc.coverage", EmptyInput, uctc_coverage, "read", "simcore",
-          f"GET /api/uctc/coverage; index_loaded: false is UCTC_INDEX_NOT_LOADED. {_SIMCORE_ONLY}"),
-        s("cortexsim.uctc.gaps", EmptyInput, uctc_gaps, "read", "simcore",
-          f"GET /api/uctc/gaps; index_loaded: false is UCTC_INDEX_NOT_LOADED. {_SIMCORE_ONLY}"),
+        s("cortexsim.uctc.coverage", ListIn, uctc_coverage, "read", "simcore",
+          "GET /api/uctc/coverage; by_use_case[] capped with truncated + total; index_loaded: false is "
+          f"UCTC_INDEX_NOT_LOADED. {_SIMCORE_ONLY}"),
+        s("cortexsim.uctc.gaps", ListIn, uctc_gaps, "read", "simcore",
+          "GET /api/uctc/gaps; gaps[] capped with truncated + total; index_loaded: false is "
+          f"UCTC_INDEX_NOT_LOADED. {_SIMCORE_ONLY}"),
         s("cortexsim.uctc.by_scenario", IdIn, uctc_by_scenario, "read", "simcore",
           f"GET /api/uctc/by-scenario/{{id}}; index_loaded: false is UCTC_INDEX_NOT_LOADED. {_SIMCORE_ONLY}"),
         s("cortexsim.run.launch", McpLaunchRequest, run_launch, "write", "host",
@@ -341,8 +383,8 @@ def specs() -> list[ToolSpec]:
         s("cortexsim.run.list", RunListIn, run_list, "read", "simcore",
           f"GET /api/runs filtered by status/scenario_id, newest first; capped with truncated + total. "
           f"{_SIMCORE_ONLY}"),
-        s("cortexsim.run.results", RunIdIn, run_results, "read", "simcore",
-          "GET /api/results/{run_id}: each Result keeps its outcome axis verbatim (prevented needs two "
+        s("cortexsim.run.results", RunResultsIn, run_results, "read", "simcore",
+          "GET /api/results/{run_id}, capped with truncated + total: each Result keeps its outcome axis verbatim (prevented needs two "
           f"witnesses; a lost beacon reads pending). {_SIMCORE_ONLY}"),
         s("cortexsim.run.report", ReportIn, run_report, "read", "simcore",
           f"GET /api/runs/{{id}}/report?format=markdown, capped at 256 KiB with truncated. {_SIMCORE_ONLY}"),

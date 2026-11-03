@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 import httpx
 
-from .errors import SIMCORE_SHAPE_UNKNOWN, SIMCORE_UNREACHABLE
+from .errors import SIMCORE_SHAPE_UNKNOWN, SIMCORE_TRANSPORT_ERROR, SIMCORE_UNREACHABLE
 
 
 class SimCoreError(Exception):
@@ -38,6 +38,19 @@ class SimCoreUnreachable(SimCoreError):
 
     def __init__(self, detail: str) -> None:
         super().__init__(0, SIMCORE_UNREACHABLE, "SimCore did not answer", detail)
+
+
+class SimCoreTransportError(SimCoreError):
+    """The request left (connect succeeded) but no complete response came back.
+
+    Distinct from :class:`SimCoreUnreachable`: SimCore may have acted on it, and
+    for a tenant-class route the tenant may have been queried.
+    """
+
+    code = SIMCORE_TRANSPORT_ERROR
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(0, SIMCORE_TRANSPORT_ERROR, "SimCore did not complete its answer", detail)
 
 
 class SimCoreShapeUnknown(SimCoreError):
@@ -97,6 +110,9 @@ class SimCoreClient:
             resp = await self._http.request(method, path, **kwargs)
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise SimCoreUnreachable(f"{method} {self.base_url}{path}: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise SimCoreTransportError(
+                f"{method} {self.base_url}{path}: {type(exc).__name__}: {exc}") from exc
         self.last_date = resp.headers.get("date")
         ctype = resp.headers.get("content-type", "")
         try:

@@ -19,13 +19,14 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any, Awaitable, Callable, Iterable, Literal, Optional
 
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase
+from mcp.server.fastmcp.utilities.func_metadata import ArgModelBase, FuncMetadata
 from mcp.types import CallToolResult, TextContent, ToolAnnotations
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .client import SimCoreClient, SimCoreError, SimCoreShapeUnknown, SimCoreUnreachable
 from .envelope import Envelope, Evidence, as_of_from_date_header, ledger_from_snapshot, statement
 from .errors import (
+    MCP_INVALID_ARGUMENTS,
     MCP_RATE_LIMITED,
     NO_TENANT_CONFIGURED,
     REMEDIATION,
@@ -61,11 +62,11 @@ class ToolSpec:
 
 
 class TenantCallError(McpToolError):
-    """An error from a call that may have reached a tenant: keeps its count.
+    """A failure after a tenant-class request left: keeps what is known.
 
-    ``statement_override`` exists for the one case the section 7 table cannot
-    phrase: a tenant was called but SimCore did not report how many operations
-    it issued, which is neither zero nor a number.
+    ``queries_issued`` is ``None`` when the count was not reported (the tenant
+    may have been queried — that is not zero), an int when the route said so
+    (a failed pull's page). Basis is ``reachable`` only on a reported count >= 1.
     """
 
     def __init__(
@@ -75,17 +76,16 @@ class TenantCallError(McpToolError):
         detail: str,
         *,
         tenant: Optional[str],
-        queries_issued: int = 0,
+        queries_issued: Optional[int] = None,
         ledger_snapshot: Optional[dict] = None,
         remediation: Optional[str] = None,
         data: Any = None,
-        statement_override: Optional[str] = None,
     ) -> None:
-        super().__init__(code, error, detail, remediation=remediation, basis="simcore",
+        basis = "reachable" if queries_issued is not None and queries_issued >= 1 else "simcore"
+        super().__init__(code, error, detail, remediation=remediation, basis=basis,
                          tenant=tenant, data=data)
         self.queries_issued = queries_issued
         self.ledger_snapshot = ledger_snapshot
-        self.statement_override = statement_override
 
 
 # --- readiness (SimCore-local, zero outbound) ---------------------------------
@@ -121,6 +121,49 @@ async def ledger_for(ctx: ToolContext, tenant: Optional[str]) -> Optional[dict]:
     return None
 
 
+async def safe_ledger_for(ctx: ToolContext, tenant: Optional[str]) -> Optional[dict]:
+    """:func:`ledger_for` for error paths: a failed read is ``None``, never a new error."""
+    try:
+        return await ledger_for(ctx, tenant)
+    except Exception:  # noqa: BLE001 — the original failure must win
+        return None
+
+
+async def tenant_call(
+    ctx: ToolContext,
+    *,
+    tenant: Optional[str],
+    coro: Awaitable[dict],
+    read: Callable[[dict], Any],
+    failure_count: Optional[Callable[[SimCoreError], Optional[int]]] = None,
+) -> tuple[dict, Any]:
+    """Send a tenant-class request and ``read`` its body; ``(body, read(body))``.
+
+    ``SimCoreUnreachable`` re-raises unchanged: the request never left, so a
+    count of 0 is true. Anything else after the request left becomes
+    :class:`TenantCallError` with the underlying code, ``queries_issued=None``
+    (or ``failure_count(err)`` when the route reported one) and the body in
+    ``data`` — never "No tenant answered".
+    """
+    body: Optional[dict] = None
+    try:
+        body = await coro
+        return body, read(body)
+    except SimCoreUnreachable:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        if isinstance(exc, SimCoreError):
+            code, error, detail, remediation = exc.code, exc.error, exc.detail, REMEDIATION.get(exc.code)
+            queries = failure_count(exc) if failure_count else None
+            data = body if body is not None else exc.body
+        else:
+            code, error, detail, remediation = MCP_INTERNAL_ERROR, type(exc).__name__, str(exc)[:2000], None
+            queries, data = None, body
+        raise TenantCallError(code, error, detail, tenant=tenant, queries_issued=queries,
+                              ledger_snapshot=await safe_ledger_for(ctx, tenant),
+                              remediation=remediation, data=data) from exc
+
+
 async def evidence_for_simcore(ctx: ToolContext, *, basis: str = "authored", truncated: bool = False) -> Evidence:
     tv = await _tenant_verified(ctx)
     return Evidence(
@@ -135,7 +178,7 @@ async def evidence_for_tenant(
     ctx: ToolContext,
     *,
     tenant: Optional[str],
-    queries_issued: int,
+    queries_issued: Optional[int],
     ledger_snapshot: Optional[dict],
     http_round_trips: Optional[int] = None,
     basis: Optional[str] = None,
@@ -143,7 +186,10 @@ async def evidence_for_tenant(
     """``reachable`` when the route reports ``queries_issued >= 1``; otherwise
     ``configured`` (a credential was named, nothing answered) or ``simcore``."""
     if basis is None:
-        basis = "reachable" if queries_issued >= 1 else ("configured" if tenant else "simcore")
+        if queries_issued is None:
+            basis = "simcore"
+        else:
+            basis = "reachable" if queries_issued >= 1 else ("configured" if tenant else "simcore")
     tv = await _tenant_verified(ctx)
     return Evidence(
         basis=basis, queries_issued=queries_issued, http_round_trips=http_round_trips,
@@ -240,6 +286,16 @@ class _RawArguments(ArgModelBase):
         return dict(self.model_extra or {})
 
 
+class _PassThroughMetadata(FuncMetadata):
+    """Keeps FastMCP's JSON-string pre-parsing (Claude Desktop sends lists and
+    dicts as JSON strings) while the arguments themselves pass through raw."""
+
+    parse_with: FuncMetadata
+
+    def pre_parse_json(self, data: dict[str, Any]) -> dict[str, Any]:
+        return self.parse_with.pre_parse_json(data)
+
+
 def _error_result(code: str, error: str, detail: str, structured: dict) -> CallToolResult:
     return CallToolResult(
         isError=True,
@@ -248,20 +304,20 @@ def _error_result(code: str, error: str, detail: str, structured: dict) -> CallT
     )
 
 
-async def _safe_tenant_verified(ctx: ToolContext) -> int:
+async def _safe_tenant_verified(ctx: ToolContext) -> Optional[int]:
+    """``None`` when readiness could not be read — never a stated 0 that was not read."""
     try:
         return await _tenant_verified(ctx)
     except Exception:  # noqa: BLE001 — an error result must still be built
-        return int(ctx._readiness["tenant_verified"]) if ctx._readiness else 0
+        return None
 
 
 async def _error_evidence(ctx: ToolContext, *, basis: str, tenant: Optional[str] = None,
-                          queries_issued: int = 0, ledger_snapshot: Optional[dict] = None,
-                          unreachable: bool = False, statement_override: Optional[str] = None) -> Evidence:
+                          queries_issued: Optional[int] = 0, ledger_snapshot: Optional[dict] = None,
+                          unreachable: bool = False) -> Evidence:
     tv = await _safe_tenant_verified(ctx)
-    text = statement_override.replace("{tenant_verified}", str(tv)) if statement_override else statement(
-        basis=basis, queries_issued=queries_issued, tenant=tenant, tenant_verified=tv,
-        simcore_unreachable=unreachable)
+    text = statement(basis=basis, queries_issued=queries_issued, tenant=tenant, tenant_verified=tv,
+                     simcore_unreachable=unreachable)
     return Evidence(
         basis=basis, queries_issued=queries_issued, tenant=tenant,
         ledger=ledger_from_snapshot(ledger_snapshot), tenant_verified=tv, statement=text,
@@ -272,7 +328,13 @@ async def _error_evidence(ctx: ToolContext, *, basis: str, tenant: Optional[str]
 def wrap(spec: ToolSpec, ctx: ToolContext) -> Callable[..., Awaitable[CallToolResult]]:
     async def tool(**kwargs: Any) -> CallToolResult:
         try:
-            args = spec.input_model(**kwargs)
+            try:
+                args = spec.input_model(**kwargs)
+            except ValidationError as exc:
+                detail = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or '(arguments)'}: {e['msg']}"
+                                   for e in exc.errors())
+                raise McpToolError(MCP_INVALID_ARGUMENTS, f"invalid arguments for {spec.id}", detail,
+                                   remediation=REMEDIATION[MCP_INVALID_ARGUMENTS], basis="authored") from exc
             env = await spec.impl(ctx, args)
             dumped = env.model_dump(mode="json")
             text = f"{env.evidence.statement}\n{json.dumps(dumped, sort_keys=True)}"
@@ -281,8 +343,7 @@ def wrap(spec: ToolSpec, ctx: ToolContext) -> Callable[..., Awaitable[CallToolRe
             ev = await _error_evidence(
                 ctx, basis=err.basis, tenant=err.tenant,
                 queries_issued=getattr(err, "queries_issued", 0),
-                ledger_snapshot=getattr(err, "ledger_snapshot", None),
-                statement_override=getattr(err, "statement_override", None))
+                ledger_snapshot=getattr(err, "ledger_snapshot", None))
             return _error_result(err.code, err.error, err.detail, err.as_structured(ev))
         except SimCoreUnreachable as err:
             ev = await _error_evidence(ctx, basis="simcore", unreachable=True)
@@ -326,6 +387,11 @@ def register(mcp: FastMCP, specs: Iterable[ToolSpec], ctx: ToolContext) -> list[
         mcp.tool(name=name, title=spec.id, description=spec.description,
                  annotations=annotations_for(spec))(wrap(spec, ctx))
         # FastMCP's argument model ignores unknown fields; route every argument
-        # to wrap() so the input model's extra="forbid" is enforced.
-        mcp._tool_manager.get_tool(name).fn_metadata.arg_model = _RawArguments
+        # to wrap() so the input model's extra="forbid" is enforced, keeping the
+        # SDK's JSON-string pre-parse (it reads the original model's fields).
+        tool = mcp._tool_manager.get_tool(name)
+        orig = tool.fn_metadata
+        tool.fn_metadata = _PassThroughMetadata(
+            arg_model=_RawArguments, output_schema=orig.output_schema,
+            output_model=orig.output_model, wrap_output=orig.wrap_output, parse_with=orig)
     return specs

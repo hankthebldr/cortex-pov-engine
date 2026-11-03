@@ -151,3 +151,28 @@ async def test_get_text_returns_the_body_and_maps_errors_like_get():
     with pytest.raises(SimCoreError) as ei:
         await c.get_text("/api/runs/r2/report")
     assert (ei.value.status, ei.value.code) == (404, "RUN_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", [httpx.ReadTimeout("read timed out"), httpx.ReadError("reset"),
+                                 httpx.RemoteProtocolError("peer closed")])
+async def test_failure_after_the_request_left_is_a_transport_error_not_unreachable(exc):
+    from mcp_server.client import SimCoreTransportError
+
+    def handler(request):
+        raise exc
+
+    with pytest.raises(SimCoreTransportError) as ei:
+        await _client(handler).post("/api/runs/r1/verify")
+    assert ei.value.code == "SIMCORE_TRANSPORT_ERROR"
+    assert not isinstance(ei.value, SimCoreUnreachable)
+    assert "POST" in ei.value.detail and type(exc).__name__ in ei.value.detail
+
+
+@pytest.mark.asyncio
+async def test_connect_timeout_is_still_unreachable():
+    def handler(request):
+        raise httpx.ConnectTimeout("connect timed out")
+
+    with pytest.raises(SimCoreUnreachable):
+        await _client(handler).get("/api/health")
