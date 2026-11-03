@@ -112,9 +112,12 @@ async def tenant_health(name: str, session: AsyncSession = Depends(get_db)) -> d
 async def tenant_metrics(name: str, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     client = await load_xsiam_client(session, name)
     require_xql_capability(getattr(client, "capabilities", None), tenant=name)
-    reply = await client.run_xql(INGESTION_HEALTH_XQL, dict(_DEFAULT_TIMEFRAME))
+    async with _budgeted(client):
+        reply = await client.run_xql(INGESTION_HEALTH_XQL, dict(_DEFAULT_TIMEFRAME))
     return {"sources": shape_ingestion_results(reply),
-            "remaining_quota": reply.get("remaining_quota")}
+            "remaining_quota": reply.get("remaining_quota"),
+            "queries_issued": 1,
+            "ledger": _ledger_snapshot(client)}
 
 
 @router.post("/tenants/{name}/xql")

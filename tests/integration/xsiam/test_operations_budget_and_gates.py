@@ -124,3 +124,24 @@ def test_get_xql_limit_is_capped_at_1000(tmp_path, monkeypatch):
     assert r.json()["queries_issued"] == 0
     assert "ledger" in r.json()
     assert stub.calls[-1]["kwargs"]["limit"] == 1000
+
+
+def test_metrics_is_charged_and_refused_when_budget_is_spent(tmp_path, monkeypatch):
+    client, stub, ledger = _app(tmp_path, monkeypatch)
+    from connectors import tuning
+    limit = tuning.xsiam_max_queries_per_day()
+    assert ledger.snapshot(_key(stub), limit=limit)["queries_last_24h"] == 0
+    r = client.get("/api/xsiam/tenants/acme/metrics")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["queries_issued"] == 1
+    assert isinstance(body["ledger"], dict)
+    assert body["ledger"]["queries_last_24h"] == 1
+    assert "sources" in body and "remaining_quota" in body
+    for _ in range(limit - 1):
+        ledger.charge(_key(stub), limit=limit)
+    stub.calls.clear()
+    r = client.get("/api/xsiam/tenants/acme/metrics")
+    assert r.status_code == 429, r.text
+    assert r.json()["code"] == "XSIAM_QUOTA_ERROR"
+    assert stub.calls == []
