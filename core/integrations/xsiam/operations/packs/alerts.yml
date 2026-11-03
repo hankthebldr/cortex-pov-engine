@@ -20,3 +20,18 @@ operations:
     path: "/public_api/v1/alerts/insert_cef_alerts"
     access_class: write
     tags: [confirm-tail]
+  # ── harvested 2026-11-02 from cortex-bot (see system.yml header for provenance) ──
+  - op_id: OP-ALERTS-GET-ALERTS-MULTI-EVENTS-V2
+    name: "Get Alerts (multi-events), v2"
+    method: POST
+    path: "/public_api/v2/alerts/get_alerts_multi_events"
+    access_class: read
+    tags: [cortex-bot-observed]
+  - op_id: OP-ALERTS-GET-CONTRIBUTING-EVENT
+    name: "Get contributing events of an alert"
+    method: POST
+    path: "/public_api/v1/alerts/get_contributing_event/"
+    access_class: read
+    # XSIAM-native correlation alerts only; external alerts return HTTP 500, which a
+    # consumer must read as "no witness available", never as a failed detection.
+    tags: [cortex-bot-observed, native-correlation-only]

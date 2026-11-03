@@ -211,7 +211,9 @@ async def execute_operation(
 
     payload = body.body
     if op.method == "POST" and payload is None:
-        payload = {"request_data": {}}  # minimal envelope most POST ops expect
+        # Minimal envelope most POST ops expect. A few (BYOS ingest) reject the
+        # wrapper; they say so with a tag, so the preview shows what would be sent.
+        payload = {} if "no-request-data-wrapper" in op.tags else {"request_data": {}}
     request_echo = {
         "method": op.method, "path": path,
         "body": payload, "query": body.query or None,

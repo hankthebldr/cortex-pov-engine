@@ -5,7 +5,7 @@
 > `POST /api/xsiam/tenants/{name}/operations/{op_id}`). This table is generated
 > from the loaded catalog — if the packs change, regenerate it.
 >
-> **116 operations** across **23 categories** — 57 read · 43 write · 16 destructive.
+> **148 operations** across **30 categories** — 79 read · 51 write · 18 destructive.
 ## Access classes & gating
 | Class | Badge | Executor behavior |
 |---|---|---|
@@ -13,6 +13,7 @@
 | `write` | ⚠ | **Dry-run by default.** Live call needs `CORTEXSIM_XSIAM_ALLOW_WRITE=1` **and** `consent.write_authorized=true`. |
 | `destructive` | 🚫 | **Dry-run by default.** Live call needs `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE=1` **and** `consent.destructive_authorized=true`. |
 > Ops tagged `confirm-tail` were not in the source CSV (truncated at row 96); they come from the already-documented read surface and should be confirmed against the live tenant portal.
+> Ops tagged `cortex-bot-observed` were harvested on 2026-11-02 from a field-built MCP server whose author ran them against a live tenant; paths are kept exactly as that tool sends them. That is the author's observation, **not** a CortexSim tenant verification (tenant-verified is 0). Provenance and per-family quirks: `docs/brainstorm/2026-11-02-cortex-bot-review-and-pov-integration.md`. Regenerate this file with `python3 scripts/gen_xsiam_operation_catalog.py --write`.
 
 ## API Keys
 | Op ID | Method | Path | Access | Doc |
@@ -25,6 +26,8 @@
 | Op ID | Method | Path | Access | Doc |
 |---|---|---|---|---|
 | `OP-ALERTS-GET-ALERTS-MULTI-EVENTS` | POST | `/public_api/v1/alerts/get_alerts_multi_events` | ✅ read | `confirm-tail` |
+| `OP-ALERTS-GET-ALERTS-MULTI-EVENTS-V2` | POST | `/public_api/v2/alerts/get_alerts_multi_events` | ✅ read | `cortex-bot-observed` |
+| `OP-ALERTS-GET-CONTRIBUTING-EVENT` | POST | `/public_api/v1/alerts/get_contributing_event/` | ✅ read | `cortex-bot-observed` |
 | `OP-ALERTS-INSERT-CEF-ALERTS` | POST | `/public_api/v1/alerts/insert_cef_alerts` | ⚠ write | `confirm-tail` |
 | `OP-ALERTS-INSERT-PARSED-ALERTS` | POST | `/public_api/v1/alerts/insert_parsed_alerts` | ⚠ write | `confirm-tail` |
 
@@ -41,9 +44,11 @@
 |---|---|---|---|---|
 | `OP-ASSETS` | POST | `/public_api/v1/assets` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/fed2351a8c999-get-all-or-filtered-assets) |
 | `OP-ASSETS-ENUM-FIELD-NAME` | GET | `/public_api/v1/assets/enum/{field_name}` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/f9605d8505dd4-get-enum-values-of-specified-field) |
+| `OP-ASSETS-GET-ASSETS` | POST | `/public_api/v1/assets/get_assets/` | ✅ read | `cortex-bot-observed` |
 | `OP-ASSETS-ID` | GET | `/public_api/v1/assets/{id}` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/fveqneo44ui9b-get-asset-by-id) |
 | `OP-ASSETS-ID-RAW-FIELDS` | GET | `/public_api/v1/assets/{id}/raw_fields` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/558aa6d5460af-get-raw-fields-of-asset-by-id) |
 | `OP-ASSETS-SCHEMA` | GET | `/public_api/v1/assets/schema` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/c3acd957a0efc-get-schema-of-asset-inventory) |
+| `OP-COMPLIANCE-GET-ASSESSMENT-RESULTS` | POST | `/public_api/v1/compliance/get_assessment_results/` | ✅ read | `cortex-bot-observed` |
 
 ## Attack surface management
 | Op ID | Method | Path | Access | Doc |
@@ -85,6 +90,13 @@
 | `OP-BIOC-GET` | POST | `/public_api/v1/bioc/get` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/fs6edxqfk9957-get-bio-cs) |
 | `OP-BIOC-INSERT` | POST | `/public_api/v1/bioc/insert` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/7jub2d42k5d6x-insert-or-update-bio-cs) |
 
+## Cases and Issues
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-CASE-SEARCH` | POST | `/public_api/v1/case/search/` | ✅ read | `cortex-bot-observed` |
+| `OP-ISSUE-CREATE` | POST | `/public_api/v1/issue` | ⚠ write | `cortex-bot-observed` |
+| `OP-ISSUE-SEARCH` | POST | `/public_api/v1/issue/search/` | ✅ read | `cortex-bot-observed` |
+
 ## Correlation Rules
 | Op ID | Method | Path | Access | Doc |
 |---|---|---|---|---|
@@ -103,6 +115,9 @@
 | `OP-DASHBOARDS-DELETE` | POST | `/public_api/v1/dashboards/delete` | 🚫 destructive | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/sw5z379fbcbix-delete-dashboards) |
 | `OP-DASHBOARDS-GET` | POST | `/public_api/v1/dashboards/get` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/k58hffooxe978-get-dashboards) |
 | `OP-DASHBOARDS-INSERT` | POST | `/public_api/v1/dashboards/insert` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/4l206rch3z7fw-insert-or-update-dashboards) |
+| `OP-WIDGETS-DELETE` | POST | `/public_api/v1/widgets/delete` | 🚫 destructive | `cortex-bot-observed` |
+| `OP-WIDGETS-GET` | POST | `/public_api/v1/widgets/get` | ✅ read | `cortex-bot-observed` |
+| `OP-WIDGETS-INSERT` | POST | `/public_api/v1/widgets/insert` | ⚠ write | `cortex-bot-observed` |
 
 ## Dataset Management
 | Op ID | Method | Path | Access | Doc |
@@ -155,6 +170,12 @@
 | `OP-INDICATORS-GET` | POST | `/public_api/v1/indicators/get` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/3n8jxnuxhy57s-get-indicators-io-cs) |
 | `OP-INDICATORS-INSERT` | POST | `/public_api/v1/indicators/insert` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/vmlrb0v0w8ext-insert-or-update-io-cs) |
 
+## Identity Threat
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-GET-RISKY-HOSTS` | POST | `/public_api/v1/get_risky_hosts` | ✅ read | `cortex-bot-observed` |
+| `OP-GET-RISKY-USERS` | POST | `/public_api/v1/get_risky_users` | ✅ read | `cortex-bot-observed` |
+
 ## Incidents
 | Op ID | Method | Path | Access | Doc |
 |---|---|---|---|---|
@@ -175,6 +196,18 @@
 | `OP-XQL-LOOKUPS-GET-DATA` | POST | `/public_api/v1/xql/lookups/get_data` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/d0c74jng28f5s-get-data-from-a-lookup-dataset) |
 | `OP-XQL-LOOKUPS-REMOVE-DATA` | POST | `/public_api/v1/xql/lookups/remove_data` | 🚫 destructive | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/9py3apgtkh8o4-remove-data-from-a-lookup-dataset) |
 
+## Managed Threat Hunting
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-MTH-ADD-COMMENT` | POST | `/public_api/v1/mth/child/add_comment` | ⚠ write | `cortex-bot-observed` |
+| `OP-MTH-GET-ALL-REPORTS` | POST | `/public_api/v1/mth/child/get_all_reports` | ✅ read | `cortex-bot-observed` |
+| `OP-MTH-GET-COMMENTS` | POST | `/public_api/v1/mth/child/get_comments` | ✅ read | `cortex-bot-observed` |
+| `OP-MTH-GET-REPORTS-BY-INCIDENT-ID` | POST | `/public_api/v1/mth/child/get_reports_by_incident_id` | ✅ read | `cortex-bot-observed` |
+| `OP-MTH-GET-REPORTS-BY-SOURCE-ID` | POST | `/public_api/v1/mth/child/get_reports_by_source_id` | ✅ read | `cortex-bot-observed` |
+| `OP-MTH-GET-REPORTS-BY-STATUSES` | POST | `/public_api/v1/mth/child/get_reports_by_statuses` | ✅ read | `cortex-bot-observed` |
+| `OP-MTH-REPORT-UPDATE-ASSIGN` | POST | `/public_api/v1/mth/child/report/update/assign` | ⚠ write | `cortex-bot-observed` |
+| `OP-MTH-REPORT-UPDATE-STATUS` | POST | `/public_api/v1/mth/child/report/update/status` | ⚠ write | `cortex-bot-observed` |
+
 ## Playbooks
 | Op ID | Method | Path | Access | Doc |
 |---|---|---|---|---|
@@ -193,12 +226,14 @@
 | Op ID | Method | Path | Access | Doc |
 |---|---|---|---|---|
 | `OP-ACTIONS-FILE-RETRIEVAL-DETAILS` | POST | `/public_api/v1/actions/file_retrieval_details` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ifeyx54qbusiq-file-retrieval-details) |
+| `OP-ACTIONS-GET-ACTION-STATUS` | POST | `/public_api/v1/actions/get_action_status/` | ✅ read | `cortex-bot-observed` |
 | `OP-ENDPOINTS-ABORT-SCAN` | POST | `/public_api/v1/endpoints/abort_scan` | ⚠ write | `confirm-tail` |
 | `OP-ENDPOINTS-FILE-RETRIEVAL` | POST | `/public_api/v1/endpoints/file_retrieval` | ⚠ write | `confirm-tail` |
 | `OP-ENDPOINTS-ISOLATE` | POST | `/public_api/v1/endpoints/isolate` | ⚠ write | `confirm-tail` |
 | `OP-ENDPOINTS-QUARANTINE` | POST | `/public_api/v1/endpoints/quarantine` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/rd1ptd5jtusi2-quarantine-files) |
 | `OP-ENDPOINTS-RESTORE` | POST | `/public_api/v1/endpoints/restore` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/lslt3zwmpw7p9-restore-file) |
 | `OP-ENDPOINTS-SCAN` | POST | `/public_api/v1/endpoints/scan` | ⚠ write | `confirm-tail` |
+| `OP-ENDPOINTS-TERMINATE-CAUSALITY` | POST | `/public_api/v1/endpoints/terminate_causality` | 🚫 destructive | `cortex-bot-observed` |
 | `OP-ENDPOINTS-UNISOLATE` | POST | `/public_api/v1/endpoints/unisolate` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/lfv45czgt4kd6-unisolate-endpoints) |
 | `OP-HASH-EXCEPTIONS-ALLOWLIST` | POST | `/public_api/v1/hash_exceptions/allowlist` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/md2df8eqgx7fr-allow-list-files) |
 | `OP-HASH-EXCEPTIONS-BLOCKLIST` | POST | `/public_api/v1/hash_exceptions/blocklist` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/bugt5tvao9rls-block-list-files) |
@@ -213,6 +248,32 @@
 | `OP-SCRIPTS-GET-SCRIPTS` | POST | `/public_api/v1/scripts/get_scripts` | ✅ read | `confirm-tail` |
 | `OP-SCRIPTS-RUN-SCRIPT` | POST | `/public_api/v1/scripts/run_script` | ⚠ write | `confirm-tail` |
 | `OP-SCRIPTS-RUN-SNIPPET-CODE-SCRIPT` | POST | `/public_api/v1/scripts/run_snippet_code_script` | ⚠ write | `confirm-tail` |
+
+## System
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-SYSTEM-GET-TENANT-INFO` | POST | `/public_api/v1/system/get_tenant_info` | ✅ read | `cortex-bot-observed` |
+
+## Triage
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-GET-TRIAGE-PRESETS` | POST | `/public_api/v1/get_triage_presets` | ✅ read | `cortex-bot-observed` |
+
+## Vulnerability Management
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-UVEM-GET-VULNERABILITIES` | POST | `/public_api/uvem/v1/get_vulnerabilities` | ✅ read | `cortex-bot-observed` |
+| `OP-VULN-MGMT-EXTERNAL-SCANS-ASSETS` | POST | `/public_api/vulnerability-management/v1/external-scans/assets` | ⚠ write | `cortex-bot-observed` |
+| `OP-VULN-MGMT-EXTERNAL-SCANS-JOB` | GET | `/public_api/vulnerability-management/v1/external-scans/assets/jobs/{job_id}` | ✅ read | `cortex-bot-observed` |
+| `OP-VULN-MGMT-FINDING-PLATFORM-ID` | POST | `/public_api/v1/vulnerability-management/v1/vulnerability-finding/{platform_id}` | ✅ read | `cortex-bot-observed` |
+| `OP-VULN-MGMT-FINDING-SEARCH` | POST | `/public_api/v1/vulnerability-management/v1/vulnerability-finding/search` | ✅ read | `cortex-bot-observed` |
+| `OP-VULN-MGMT-SCAN` | POST | `/public_api/vulnerability-management/v1/scan` | ⚠ write | `cortex-bot-observed` |
+
+## War Room
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-ENTRIES-GET` | POST | `/public_api/v1/entries/get` | ✅ read | `cortex-bot-observed` |
+| `OP-ENTRIES-INSERT` | POST | `/public_api/v1/entries/insert` | ⚠ write | `cortex-bot-observed` |
 
 ## XQL
 | Op ID | Method | Path | Access | Doc |
