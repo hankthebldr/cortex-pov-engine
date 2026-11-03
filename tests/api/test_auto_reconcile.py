@@ -13,7 +13,8 @@ def db_factory(memory_db):
     return SessionLocal
 
 
-def _seed(SessionLocal, *, run_id, started_at, with_integration=True):
+def _seed(SessionLocal, *, run_id, started_at, with_integration=True,
+          integration_kind="xsiam"):
     from models import Result, Run
     from security.credentials import CredentialStore
 
@@ -32,7 +33,7 @@ def _seed(SessionLocal, *, run_id, started_at, with_integration=True):
                 # CREDENTIAL_ERROR the loop silently skips.
                 store = CredentialStore(s)
                 await store.put_integration(
-                    name="xsiam-prod", kind="xsiam",
+                    name="xsiam-prod", kind=integration_kind,
                     plaintext_secret="API_KEY",
                     config={"fqdn": "api-t.xdr.us.paloaltonetworks.com",
                             "api_key_id": "1"})
@@ -120,3 +121,27 @@ def test_reconcile_run_raises_structured_error_on_no_integration(db_factory):
             return ei.value
     err = asyncio.run(_run())
     assert err.code == "NO_INTEGRATION"
+
+
+def test_auto_reconcile_sweeps_on_a_tenant_kind_credential_alone(db_factory):
+    """The sweep decided "nothing to reconcile" by intersecting connector kinds
+    with credential kinds literally, so a DC who registered only the
+    `xsiam_tenant` credential — the one the console calls configured — got a
+    silent no-op every cycle. The tenant credential serves alert read-back."""
+    from connectors.service import auto_reconcile_once
+
+    t0 = datetime.now(timezone.utc) - timedelta(minutes=10)
+    _seed(db_factory, run_id="run-auto-tenant", started_at=t0,
+          integration_kind="xsiam_tenant")
+    fetcher = _fake_fetcher_with_alert(t0 + timedelta(seconds=20))
+
+    async def _run():
+        async with db_factory() as db:
+            return await auto_reconcile_once(
+                db, lookback_seconds=86400, window_seconds=3600, fetcher=fetcher)
+    stats = asyncio.run(_run())
+
+    assert stats["kinds"] == ["xsiam"]
+    assert stats["runs_considered"] == 1
+    assert stats["runs_reconciled"] == 1
+    assert stats["newly_matched"] == 1
