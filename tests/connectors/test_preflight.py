@@ -59,7 +59,9 @@ def test_an_empty_tenant_is_degraded_not_ready():
     assert r.overall == pf.DEGRADED
     assert _stage(r, "scope_alerts").status == pf.OK
     assert _stage(r, "alert_shape").code == pf.PF_ALERT_SHAPE_UNKNOWN
-    assert r.queries_issued == 2, "one scope probe + one bounded lookback, both 1-row"
+    assert r.queries_issued == 3, (
+        "scope probe + bounded lookback + one probe of the other alerts "
+        "version (an empty v1 may be a v2 tenant), all 1-row")
 
 
 def test_a_bad_tenant_url_is_caught_before_any_request_is_made():
@@ -372,8 +374,9 @@ def test_the_report_states_what_it_does_and_does_not_prove():
     r = pf.preflight_reconcile(_CFG, "k",
                                fetcher=lambda *a: (200, json.dumps({"reply": {"alerts": []}})))
     body = r.to_dict()
-    # scope probe + the alert-shape lookback an empty tenant forces: both 1-row.
-    assert body["queries_issued"] == 2
+    # scope probe + the alert-shape lookback an empty tenant forces + the
+    # alternate-version probe that rules out a path mismatch: all 1-row.
+    assert body["queries_issued"] == 3
     assert "queries_issued=0 was not answered by a tenant" in body["proves"]
 
     blocked = pf.preflight_reconcile({"fqdn": "http://x", "api_key_id": "1"}, "k")

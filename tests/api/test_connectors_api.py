@@ -189,3 +189,105 @@ def test_manual_ingest_publishes_result_observed_sse(session_factory):
         assert summary["observed"] == 1
 
     asyncio.run(scenario())
+
+
+# ── one registration serves both XSIAM call paths ──────────────────────────
+#
+# GET /api/connectors reports the `xsiam` connector `configured: true` when the
+# only registered credential is an `xsiam_tenant` row, and lists it under
+# `equivalent_integrations`. The resolver behind POST /reconcile used to filter
+# on kind == "xsiam" alone, so the very tenant the listing called configured
+# was refused with NO_INTEGRATION a click later. The listing's claim is the
+# contract; these tests hold the resolver to it.
+#
+# The equivalence is ONE-WAY: a tenant credential may serve alert read-back,
+# a reconcile credential never serves XQL (see test_connectors_preflight_api).
+
+_TENANT_FQDN = "api-deathstar.xdr.us.paloaltonetworks.com"
+_RECONCILE_FQDN = "api-acme.xdr.us.paloaltonetworks.com"
+
+
+@pytest.fixture
+def cred_client(make_client):
+    from api.credentials import router
+    return make_client(router)
+
+
+def _put_integration(cred_client, *, name, kind, fqdn):
+    r = cred_client.put("/api/credentials/integrations", json={
+        "name": name, "kind": kind, "plaintext_secret": "k" * 40,
+        "config": {"base_url": f"https://{fqdn}", "api_key_id": "7"}})
+    assert r.status_code == 200, r.text
+
+
+def _recording_fetcher(calls):
+    import json
+
+    def fetcher(method, url, headers, body, timeout):
+        calls.append(url)
+        return 200, json.dumps({"reply": {"alerts": [], "total_count": 0,
+                                           "result_count": 0}})
+    return fetcher
+
+
+def test_reconcile_accepts_the_tenant_credential_the_listing_calls_configured(
+        client, cred_client, session_factory, monkeypatch):
+    import connectors.base as base
+
+    run_id = _seed_run_with_results(session_factory, run_id="run-conn-tenant")
+    _put_integration(cred_client, name="deathstar", kind="xsiam_tenant", fqdn=_TENANT_FQDN)
+
+    xsiam = next(c for c in client.get("/api/connectors").json()["connectors"]
+                 if c["kind"] == "xsiam")
+    assert xsiam["configured"] is True  # the listing's claim …
+    assert [i["name"] for i in xsiam["equivalent_integrations"]] == ["deathstar"]
+
+    calls: list[str] = []
+    monkeypatch.setattr(base, "default_http_fetcher", _recording_fetcher(calls))
+    r = client.post(f"/api/runs/{run_id}/reconcile?connector=xsiam")
+    assert r.status_code == 200, r.text  # … must be honoured by the resolver
+    assert r.json()["source"] == "xsiam:deathstar"
+    assert calls and _TENANT_FQDN in calls[0], calls
+
+
+def test_reconcile_prefers_a_dedicated_reconcile_row_and_resolves_names_across_kinds(
+        client, cred_client, session_factory, monkeypatch):
+    """With both kinds registered the dedicated `xsiam` row is the default, and
+    `?integration=` finds a row of either kind by name."""
+    import connectors.base as base
+
+    run_id = _seed_run_with_results(session_factory, run_id="run-conn-both")
+    _put_integration(cred_client, name="deathstar", kind="xsiam_tenant", fqdn=_TENANT_FQDN)
+    _put_integration(cred_client, name="acme", kind="xsiam", fqdn=_RECONCILE_FQDN)
+
+    calls: list[str] = []
+    monkeypatch.setattr(base, "default_http_fetcher", _recording_fetcher(calls))
+
+    r = client.post(f"/api/runs/{run_id}/reconcile?connector=xsiam")
+    assert r.status_code == 200, r.text
+    assert r.json()["source"] == "xsiam:acme"
+    assert _RECONCILE_FQDN in calls[-1]
+
+    r = client.post(f"/api/runs/{run_id}/reconcile?connector=xsiam&integration=deathstar")
+    assert r.status_code == 200, r.text
+    assert r.json()["source"] == "xsiam:deathstar"
+    assert _TENANT_FQDN in calls[-1]
+
+
+def test_reconcile_with_an_unknown_integration_name_is_a_404_not_a_silent_fallback(
+        client, cred_client, session_factory, monkeypatch):
+    """Before the shared resolver, a name that matched nothing fell back to the
+    first row of the kind. Asked for tenant A, it read tenant B and credited
+    B's alerts to the run. Refuse, name what IS available, pull nothing."""
+    import connectors.base as base
+
+    run_id = _seed_run_with_results(session_factory, run_id="run-conn-noname")
+    _put_integration(cred_client, name="acme", kind="xsiam", fqdn=_RECONCILE_FQDN)
+
+    calls: list[str] = []
+    monkeypatch.setattr(base, "default_http_fetcher", _recording_fetcher(calls))
+    r = client.post(f"/api/runs/{run_id}/reconcile?connector=xsiam&integration=nope")
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"]["code"] == "INTEGRATION_NOT_FOUND"
+    assert r.json()["detail"]["detail"]["available"] == ["acme"]
+    assert calls == []

@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from connectors import ObservedAlert, available_connectors, reconcile
 from connectors.matcher import DEFAULT_WINDOW_SECONDS
+from connectors.service import credential_kinds_for, resolve_connector_integrations
 from database import get_db
 from models import Result, Run
 from integrations.xsiam.loader import XSIAM_KIND as XSIAM_TENANT_KIND
@@ -82,13 +83,14 @@ async def list_connectors(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
 
     out = []
     for c in available_connectors():
-        configured = by_kind.get(c["kind"], [])
+        dedicated, *equivalent_kinds = credential_kinds_for(c["kind"])
+        configured = by_kind.get(dedicated, [])
         # A DC who correctly registered an `xsiam_tenant` credential used to see
         # `configured: false` here, because this listing only ever looked at the
-        # reconcile kind. Report both; the reconcile connector reads either
-        # spelling of the tenant URL.
-        equivalent = (by_kind.get(XSIAM_TENANT_KIND, [])
-                      if c["kind"] == "xsiam" else [])
+        # reconcile kind. Report both — from the SAME table the reconcile
+        # resolver, the preflight and the auto sweep consult, so "configured"
+        # here is a promise those three keep.
+        equivalent = [i for k in equivalent_kinds for i in by_kind.get(k, [])]
         out.append({
             **c,
             "configured": bool(configured or equivalent),
@@ -200,6 +202,7 @@ async def ingest_observations(
 _RECONCILE_ERROR_STATUS = {
     "CONNECTOR_NOT_FOUND": 404,
     "NO_INTEGRATION": 400,
+    "INTEGRATION_NOT_FOUND": 404,
     "CREDENTIAL_ERROR": 500,
     "CONNECTOR_PULL_FAILED": 502,
 }
@@ -263,14 +266,15 @@ async def preflight_connector(
     from connectors import preflight as pf
 
     store = CredentialStore(db)
-    rows = await store.list_integrations(kind=kind)
+    rows = await resolve_connector_integrations(store, kind)
     if not rows:
+        kinds = " or ".join(f"'{k}'" for k in credential_kinds_for(kind))
         # Explicit "nothing registered" beats an empty green report.
         return pf.PreflightReport(
             tenant=integration, kind=kind,
             stages=[pf.Stage(
                 "config", pf.BLOCKED, pf.PF_NO_INTEGRATION,
-                f"no integration of kind '{kind}' is registered",
+                f"no integration of kind {kinds} is registered",
                 remediation=("Register the credential first. With none configured "
                              "every verdict resolves `pending` — CortexSim reports "
                              "nothing measured rather than nothing detected."),
@@ -299,14 +303,19 @@ async def preflight_connector(
         ).to_dict()
 
     if kind == "xsiam":
-        return pf.preflight_reconcile(row.config or {}, secret,
-                                      integration_name=row.name).to_dict()
-    if kind == XSIAM_TENANT_KIND:
-        return (await _preflight_tenant(db, row, datasets)).to_dict()
-
-    raise HTTPException(status_code=400, detail={
-        "error": "No preflight for this credential kind", "code": "PREFLIGHT_UNSUPPORTED",
-        "detail": f"kind='{kind}'"})
+        report = pf.preflight_reconcile(row.config or {}, secret,
+                                        integration_name=row.name).to_dict()
+    elif kind == XSIAM_TENANT_KIND:
+        report = (await _preflight_tenant(db, row, datasets)).to_dict()
+    else:
+        raise HTTPException(status_code=400, detail={
+            "error": "No preflight for this credential kind", "code": "PREFLIGHT_UNSUPPORTED",
+            "detail": f"kind='{kind}'"})
+    # Name the credential actually exercised: an `xsiam` preflight may have run
+    # on the equivalent `xsiam_tenant` row, and a DC reading "ok" must be able
+    # to tell which vault entry that verdict belongs to.
+    report["credential"] = {"name": row.name, "kind": row.kind}
+    return report
 
 
 async def _preflight_tenant(db: AsyncSession, row: Any, datasets: Optional[str]) -> Any:

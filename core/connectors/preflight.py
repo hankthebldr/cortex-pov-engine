@@ -65,6 +65,18 @@ PF_NOT_PROBED = "PF_NOT_PROBED"
 PF_ALERT_SHAPE_PARTIAL = "PF_ALERT_SHAPE_PARTIAL"
 PF_ALERT_SHAPE_UNMATCHABLE = "PF_ALERT_SHAPE_UNMATCHABLE"
 PF_ALERT_SHAPE_UNKNOWN = "PF_ALERT_SHAPE_UNKNOWN"
+PF_ALERTS_PATH_MISMATCH = "PF_ALERTS_PATH_MISMATCH"
+
+#: The two published versions of the alert read. The connector defaults to v1
+#: (the vendor lists it as legacy); a field-built MCP server reads v2 against a
+#: live tenant. When the configured one errors with a path-shaped status, or is
+#: empty for the whole lookback, preflight spends ONE 1-row query on the other.
+ALERTS_PATH_V1 = "/public_api/v1/alerts/get_alerts_multi_events"
+ALERTS_PATH_V2 = "/public_api/v2/alerts/get_alerts_multi_events"
+_ALERTS_PATH_ALTERNATE = {ALERTS_PATH_V1: ALERTS_PATH_V2, ALERTS_PATH_V2: ALERTS_PATH_V1}
+#: Statuses that say "no such path here". 401/403/429/5xx say something else
+#: (key, role, quota, server) and never trigger the alternate probe.
+_PATH_SHAPED_STATUSES = frozenset({400, 404, 405, 410})
 
 #: How far back the alert-shape probe looks for ONE alert to inspect. A tenant
 #: with nothing in seven days is reported as *unverified*, not as ready.
@@ -264,6 +276,27 @@ def preflight_reconcile(
             if probe.ok and probe.observations:
                 sample = probe.observations[0]
                 total_count = (probe.detail or {}).get("total_count")
+        if sample is None:
+            configured = _configured_alerts_path(config, conn)
+            alt = _ALERTS_PATH_ALTERNATE.get(configured)
+            if alt:
+                alt_pull = _pull_alternate(conn, ccfg, alt, report,
+                                           since=now - timedelta(days=ALERT_SHAPE_LOOKBACK_DAYS),
+                                           until=now)
+                if alt_pull.ok and alt_pull.observations:
+                    # The quiet failure: reconcile would "work" and match
+                    # nothing. Withdraw the capability claim; the key reads
+                    # alerts, just not where reconcile looks.
+                    report.capabilities_confirmed.remove("read_alerts")
+                    report.stages.append(_path_mismatch_stage(
+                        "alert_shape", configured, alt,
+                        f"{configured} returned no alert in {ALERT_SHAPE_LOOKBACK_DAYS} days "
+                        f"while {alt} returned some",
+                        consequence=("Reconcile would read zero alerts and score every "
+                                     "seeded detection `missed`: a false negative "
+                                     "manufactured by the path, not by the customer's "
+                                     "detections.")))
+                    return report
         report.stages.append(_alert_shape_stage(
             sample, total_count,
             path=(pull.detail or {}).get("path") or config.get("alerts_path")))
@@ -296,6 +329,19 @@ def preflight_reconcile(
             remediation=codes.remediation_for(codes.XSIAM_QUOTA_ERROR)))
         _skip_rest(report, ["alert_shape"])
         return report
+    configured = _configured_alerts_path(config, conn)
+    alt = _ALERTS_PATH_ALTERNATE.get(configured)
+    if status in _PATH_SHAPED_STATUSES and alt:
+        alt_pull = _pull_alternate(conn, ccfg, alt, report,
+                                   since=now - timedelta(minutes=1), until=now)
+        if alt_pull.ok:
+            report.stages.append(_path_mismatch_stage(
+                "scope_alerts", configured, alt,
+                f"{configured} returned HTTP {status}; {alt} answered",
+                consequence=("Every reconcile fails until this is set, so MTTD stays "
+                             "unmeasured and verdicts resolve `pending`.")))
+            _skip_rest(report, ["alert_shape"])
+            return report
     report.stages.append(Stage(
         "scope_alerts", BLOCKED,
         PF_ALERTS_FORBIDDEN if status == 403 else PF_UPSTREAM_ERROR,
@@ -632,6 +678,34 @@ def _alert_shape_stage(sample: Any, total_count: Any, path: Optional[str] = None
     return Stage("alert_shape", OK, PF_OK,
                  f"the sampled alert carries every key the matcher reads ({found})",
                  extra=extra)
+
+
+def _configured_alerts_path(config: dict[str, Any], conn: Any) -> str:
+    """The path the reconcile pull actually uses: the credential's override, else the default."""
+    return str(config.get("alerts_path") or getattr(conn, "_ALERTS_PATH", ALERTS_PATH_V1))
+
+
+def _pull_alternate(conn: Any, ccfg: Any, path: str, report: PreflightReport, *,
+                    since: datetime, until: datetime) -> Any:
+    """ONE 1-row read on the other alerts version. Counted, never retried."""
+    from .base import ConnectorConfig  # noqa: PLC0415
+
+    alt_cfg = ConnectorConfig(integration_name=ccfg.integration_name,
+                              config={**(ccfg.config or {}), "alerts_path": path},
+                              secret=ccfg.secret)
+    report.queries_issued += 1
+    return conn.pull(alt_cfg, since=since, until=until, filters={"limit": 1})
+
+
+def _path_mismatch_stage(stage_id: str, configured: str, working: str,
+                         detail: str, *, consequence: str) -> Stage:
+    return Stage(
+        stage_id, BLOCKED, PF_ALERTS_PATH_MISMATCH, detail,
+        remediation=(f"Set `alerts_path` to `{working}` on this integration credential "
+                     f"and re-run preflight. {consequence} Preflight does not change "
+                     f"the path itself."),
+        extra={"configured_path": configured, "working_path": working},
+    )
 
 
 def _skip_rest(report: PreflightReport, stage_ids: list[str]) -> None:

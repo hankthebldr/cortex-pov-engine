@@ -775,7 +775,7 @@ unreachable in the field (it 403s with `ARTIFACT_FORBIDDEN` naming the fix).
 | GET | `/api/connectors` | List connector kinds and, per kind, whether a usable integration credential is **configured** and **verified** | includes `preflight_url`; reports **both** credential kinds (`xsiam` = alert read-back, `xsiam_tenant` = XQL) |
 | POST | `/api/connectors/{kind}/preflight` | **Staged tenant preflight** — "is my connection working?" answered *before* the POV | `{tenant, kind, base_url_host, overall, stages[], queries_issued, capabilities_confirmed[], capabilities_denied[], proves}` |
 | POST | `/api/runs/{run_id}/observations` | Manual batch ingest of alerts a DC exported from the console — no credential, fully offline. Scoped like a pull (`scope_to_host` on the run's host; another host's alert is excluded); the batch is `unscoped` — every pass withheld (`PASS_WITHHELD_UNSCOPED`) — when the run has no resolvable target or any alert names no host. Silence in a manual batch is never a miss. | seeded `Result` rows gain `observed_at` → MTTD; summary carries `host_scope`, and `excluded_other_host` + a `warning` naming the expected host whenever another host's alert was not counted (same shape as `dropped_unparseable_timestamps`) |
-| POST | `/api/runs/{run_id}/reconcile?connector=xsiam` | Credential-backed pull for the run's window | same funnel (`apply_verdicts`) as the manual path; summary carries `host_scope`, `truncated`/`truncation`, `warnings[]`, `measurement`, and `incidents_considered` when a correlation scenario needed the incidents read |
+| POST | `/api/runs/{run_id}/reconcile?connector=xsiam` | Credential-backed pull for the run's window — a credential of kind `xsiam`, else an `xsiam_tenant` one (one-way: the tenant kind serves alert read-back, kind `xsiam` never serves XQL); `?integration=` names a row of either kind and an unknown name is **404 `INTEGRATION_NOT_FOUND`**, never a fallback | same funnel (`apply_verdicts`) as the manual path; summary carries `host_scope`, `truncated`/`truncation`, `warnings[]`, `measurement`, and `incidents_considered` when a correlation scenario needed the incidents read |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification via read-only XQL (see §1.3) | 200 + `pending` + `reason` when no credential |
 
 **Preflight stages**, in order, each with a stable `code` and a `remediation`
@@ -789,7 +789,7 @@ would read as "fine". Only an unreachable host short-circuits.
 **`alert_shape` (2026-09-20)** answers "will matching work on *this* tenant's
 alert objects?" — the question a POV used to answer with zero matches. It
 reuses the scope probe's alert or issues one more 1-row call over a 7-day
-lookback (so an empty tenant costs `queries_issued: 2`), then reports under
+lookback (so an empty tenant costs `queries_issued: 3` with the alternate-path probe below), then reports under
 `keys` which of the field names the reconcile connector reads are present by
 role (`timestamp · technique · name · host · source · rule_id · action`), the alert
 `source` value, the tenant `total_count`, and `keys_seen`. The `action` role
@@ -801,6 +801,19 @@ case matching rests on technique/name), `PF_ALERT_SHAPE_UNMATCHABLE` (blocked: n
 name — reconcile could only ever read 0 %, and that 0 % would be wrong),
 `PF_ALERT_SHAPE_UNKNOWN` (degraded: no alert in 7 days, shape unverified). A
 tenant with no alert to inspect is therefore **degraded, not ready**.
+
+**Alerts-path probe (2026-11-02).** The connector reads
+`/public_api/v1/alerts/get_alerts_multi_events` unless the credential's `alerts_path` says
+otherwise; a field-built MCP server reads the same call on **v2** against a live tenant.
+When the configured path is v1 or v2 and either (a) errors with a path-shaped status
+(400 · 404 · 405 · 410) or (b) returns no alert over the whole 7-day lookback, preflight
+spends **one** more 1-row query on the other version. If that one answers (a) or has alerts
+(b), the stage is `BLOCKED` / `PF_ALERTS_PATH_MISMATCH` with `configured_path`,
+`working_path` and a remediation naming the exact `alerts_path` value to set. Case (b) is
+the quiet one: reconcile would "work", match nothing and score every seeded detection
+`missed`, so `read_alerts` is withdrawn from `capabilities_confirmed`. 401 · 403 · 429 · 5xx
+never trigger the probe (they are about the key, the role, the quota or the server, not
+the path), nor does a custom `alerts_path`. Preflight never changes the path itself.
 
 `queries_issued` is in every response **on purpose**: a preflight driven by an
 injected transport reports `0`, and the `proves` string says so verbatim, so a
