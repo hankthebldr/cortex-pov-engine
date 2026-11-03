@@ -31,7 +31,7 @@ def _alert(ext, *, host="web-01", seconds=30, technique="T1003.001", incident=No
     return a
 
 
-def _tenant(alerts, incidents=None):
+def _tenant(alerts, incidents=None, *, fail_incidents_on_page=None):
     calls = []
 
     def fetcher(method, url, headers, body, timeout):
@@ -39,8 +39,12 @@ def _tenant(alerts, incidents=None):
         calls.append(url)
         if "incidents" in url:
             rows = incidents or []
-            return 200, json.dumps({"reply": {"total_count": len(rows), "result_count": len(rows),
-                                              "incidents": rows}})
+            page_no = rd["search_from"] // 100 + 1
+            if fail_incidents_on_page == page_no:
+                return 500, json.dumps({"reply": {"err_code": 500, "err_msg": "boom"}})
+            page = rows[rd["search_from"]:rd["search_to"]]
+            return 200, json.dumps({"reply": {"total_count": len(rows), "result_count": len(page),
+                                              "incidents": page}})
         page = alerts[rd["search_from"]:rd["search_to"]]
         return 200, json.dumps({"reply": {"total_count": len(alerts), "result_count": len(page),
                                           "alerts": page}})
@@ -111,3 +115,32 @@ def test_correlation_scenario_incident_read_adds_one(session_factory):
     summary, _ = asyncio.run(_reconcile(session_factory, fetcher))
     assert any("incidents" in c for c in calls), "fallback incidents read must be attempted"
     assert summary["queries_issued"] == 1 + 1
+
+
+def _inc(i):
+    host = "web-01:aef3" if i % 2 == 0 else "db-02:1"
+    return {"incident_id": str(100 + i), "alert_count": 1, "hosts": [host],
+            "creation_time": _epoch_ms(datetime.utcnow())}
+
+
+def test_paged_incidents_read_counts_every_page(session_factory):
+    """150 incidents = 2 pages of 100; 75 are on web-01. One alert page + two incident pages."""
+    _seed(session_factory, results=2, threshold=CORR, primary_kpi="Cross-Source Correlation Rate")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059")))
+    fetcher, calls = _tenant([_alert("a"), _alert("b", technique="T1059")],
+                             incidents=[_inc(i) for i in range(150)])
+    summary, _ = asyncio.run(_reconcile(session_factory, fetcher))
+    assert sum("incidents" in c for c in calls) == 2
+    assert summary["incidents_considered"] == 75
+    assert summary["queries_issued"] == 1 + 2
+
+
+def test_incidents_read_failing_on_page_two_counts_two(session_factory):
+    """Incidents page 1 succeeds, page 2 returns HTTP 500: two requests were sent."""
+    _seed(session_factory, results=2, threshold=CORR, primary_kpi="Cross-Source Correlation Rate")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059")))
+    fetcher, _ = _tenant([_alert("a"), _alert("b", technique="T1059")],
+                         incidents=[_inc(i) for i in range(150)], fail_incidents_on_page=2)
+    summary, _ = asyncio.run(_reconcile(session_factory, fetcher))
+    assert summary["incidents_error"]["code"]
+    assert summary["queries_issued"] == 1 + 2

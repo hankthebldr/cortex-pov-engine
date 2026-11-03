@@ -227,7 +227,7 @@ async def reconcile_run(
         # incident list for the same window, scoped to the run's host. Only
         # for correlation-shaped scenarios — accuracy never needs it.
         ipull = conn.pull_incidents(cfg, since=since, until=until)
-        incidents_queries = int((ipull.detail or {}).get("pages") or 1)
+        incidents_queries = _pages_issued(ipull.detail)
         if ipull.ok:
             want = host_scope["host"]
             ctx["incidents"] = [i for i in ipull.incidents
@@ -244,7 +244,7 @@ async def reconcile_run(
     summary["pulled"] = len(pull.observations)
     # Ledger units: every tenant page read is one query; the incidents read
     # counts its own pages when it was attempted (ok or not).
-    summary["queries_issued"] = int((pull.detail or {}).get("pages") or 1) + incidents_queries
+    summary["queries_issued"] = _pages_issued(pull.detail) + incidents_queries
     summary["host_scope"] = host_scope
     if "incidents" in ctx:
         summary["incidents_considered"] = len(ctx["incidents"])
@@ -279,6 +279,12 @@ async def reconcile_run(
         summary["warnings"] = warnings
         summary["warning"] = " ".join(warnings)
     return ReconcileOutcome(summary=summary, newly_matched=newly)
+
+
+def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
+    """Ledger units a harvest spent: ``pages`` on success, the ``page`` a failed read died on."""
+    d = detail or {}
+    return int(d.get("pages") or d.get("page") or 1)
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
