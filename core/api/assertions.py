@@ -221,6 +221,22 @@ async def get_assertion(assertion_id: str) -> dict[str, Any]:
 # Evaluation
 # ---------------------------------------------------------------------------
 
+class _CountingRunner:
+    """Counts runner invocations — one per tenant operation (the ledger unit).
+
+    The count is taken BEFORE awaiting, so a query that raises still counts: it
+    reached the tenant and the ledger charged it.
+    """
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.calls = 0
+
+    async def __call__(self, query: str):
+        self.calls += 1
+        return await self.inner(query)
+
+
 @router.post("/{assertion_id}/run")
 async def run_assertion_endpoint(
     assertion_id: str,
@@ -250,9 +266,12 @@ async def run_assertion_endpoint(
     context.setdefault("lookback_seconds", str(body.timeframe_seconds))
 
     runner = None
+    counter: Optional[_CountingRunner] = None
     tenant = body.integration
     if not body.dry_run:
         runner, tenant = await _resolve_runner(db, body)
+        if runner is not None:
+            counter = runner = _CountingRunner(runner)
 
     outcome = await assertion_engine.run_assertion(
         spec, runner=runner, context=context,
@@ -267,6 +286,9 @@ async def run_assertion_endpoint(
         "tc_scoreable": assertion_engine.tc_scoreable(spec),
         "index": assertion_engine.index_meta(spec),
         "stimulus": spec.stimulus.model_dump(),
+        # One per runner call (each is exactly one tenant XQL); 0 for a dry
+        # run, no tenant, or not entitled — the runner was never invoked.
+        "queries_issued": counter.calls if counter else 0,
     }
 
     if body.dry_run or not body.persist:

@@ -228,6 +228,17 @@ async def test_assertion_run_live_without_a_reported_count_is_not_read_as_zero()
 
 
 @pytest.mark.asyncio
+async def test_assertion_run_live_reads_queries_issued_off_the_route():
+    out = {"assertion_id": "A-1", "tc_verdict": "pass", "dry_run": False, "tenant": "deathstar",
+           "checks": [], "run_id": "AR-1", "queries_issued": 3}
+    mcp, _ = _mcp({("POST", "/api/assertions/A-1/run"): out, ("GET", "/api/readiness"): TENANTS})
+    res = await call(mcp, "cortexsim.assertion.run", id="A-1", dry_run=False)
+    assert not res.isError
+    ev = res.structuredContent["evidence"]
+    assert ev["queries_issued"] == 3 and ev["basis"] == "reachable"
+
+
+@pytest.mark.asyncio
 async def test_assertion_list_surfaces_rejected():
     rejected = [{"source": "assertions/pos/x.yml", "code": "A-17", "detail": "cannot fail"}]
     mcp, _ = _mcp({("GET", "/api/assertions"): {
