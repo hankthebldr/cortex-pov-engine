@@ -72,10 +72,27 @@ class SimCoreClient:
     async def post(self, path: str, json: Any = None, params: Optional[dict] = None) -> dict:
         return await self._request("POST", path, json=json, params=params)
 
+    async def get_text(self, path: str, params: Optional[dict] = None) -> str:
+        """A non-JSON 2xx body (e.g. ``text/markdown``) as text; errors map as in :meth:`get`."""
+        resp, _ = await self._send("GET", path, params=params)
+        return resp.text
+
     async def aclose(self) -> None:
         await self._http.aclose()
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> dict:
+        resp, body = await self._send(method, path, **kwargs)
+        if not isinstance(body, dict):
+            ctype = resp.headers.get("content-type", "")
+            raise SimCoreShapeUnknown(
+                resp.status_code,
+                f"{method} {path}: expected a JSON object, got content-type {ctype!r}, "
+                f"first 80 bytes {resp.content[:80]!r}",
+            )
+        return body
+
+    async def _send(self, method: str, path: str, **kwargs: Any) -> tuple[httpx.Response, Any]:
+        """Issue the request; a non-2xx raises :class:`SimCoreError`. Returns ``(resp, json-or-None)``."""
         try:
             resp = await self._http.request(method, path, **kwargs)
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
@@ -105,10 +122,4 @@ class SimCoreClient:
                 f"SimCore answered HTTP {resp.status_code}",
                 f"{method} {path}: content-type {ctype!r}, body {resp.content[:80]!r}",
             )
-        if not isinstance(body, dict):
-            raise SimCoreShapeUnknown(
-                resp.status_code,
-                f"{method} {path}: expected a JSON object, got content-type {ctype!r}, "
-                f"first 80 bytes {resp.content[:80]!r}",
-            )
-        return body
+        return resp, body

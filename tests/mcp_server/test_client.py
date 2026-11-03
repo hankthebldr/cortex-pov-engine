@@ -133,3 +133,21 @@ async def test_structured_detail_is_kept_on_body():
     assert e.code == "CONNECTOR_PULL_FAILED"
     assert e.body["detail"]["page"] == 1
     assert isinstance(e.detail, str) and "page" in e.detail
+
+
+@pytest.mark.asyncio
+async def test_get_text_returns_the_body_and_maps_errors_like_get():
+    def handler(request):
+        if request.url.path == "/api/runs/r1/report":
+            assert dict(request.url.params) == {"format": "markdown"}
+            return httpx.Response(200, text="# POV report", headers={
+                "content-type": "text/markdown", "Date": "Mon, 02 Nov 2026 18:04:11 GMT"})
+        return httpx.Response(404, json={"detail": {"error": "Run not found", "code": "RUN_NOT_FOUND",
+                                                    "detail": "run_id=r2"}})
+
+    c = _client(handler)
+    assert await c.get_text("/api/runs/r1/report", params={"format": "markdown"}) == "# POV report"
+    assert c.last_date == "Mon, 02 Nov 2026 18:04:11 GMT"
+    with pytest.raises(SimCoreError) as ei:
+        await c.get_text("/api/runs/r2/report")
+    assert (ei.value.status, ei.value.code) == (404, "RUN_NOT_FOUND")
