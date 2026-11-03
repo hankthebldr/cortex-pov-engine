@@ -759,6 +759,73 @@ async def probe_eal_collectors(session_factory) -> dict[str, Any]:
     return _ok(**common)
 
 
+def probe_mcp() -> dict[str, Any]:
+    """The opt-in streamable-HTTP MCP mount at ``/mcp``.
+
+    Checked here, without leaving the process: whether the flag is on, whether
+    the MCP SDK and ``mcp_server`` package import, and how many tools the mount
+    would register (``len(CANONICAL_IDS)``). Checked here, NOT here: whether a
+    client can actually reach ``/mcp`` or whether the mount survived SimCore's
+    lifespan — that needs an inbound request, which this endpoint never makes.
+    A flag that is OFF is ``ok`` with ``MCP_DISABLED``: an opt-in feature that
+    was never asked for is not a fault. Zero outbound calls.
+    """
+    import importlib.metadata  # noqa: PLC0415
+
+    try:
+        sdk = f"mcp=={importlib.metadata.version('mcp')}"
+    except Exception:  # noqa: BLE001 — the SDK version is reported, never fatal
+        sdk = "unavailable"
+
+    if not settings.CORTEXSIM_MCP_HTTP:
+        return _ok(
+            code="MCP_DISABLED",
+            mounted=False,
+            path="/mcp",
+            transport="streamable-http",
+            tools=0,
+            sdk=sdk,
+            detail="opt-in; set CORTEXSIM_MCP_HTTP=1 to mount",
+        )
+
+    try:
+        from mcp_server.naming import CANONICAL_IDS  # noqa: PLC0415
+    except ImportError as exc:
+        return _degraded(
+            "MCP_SDK_IMPORT_FAILED",
+            f"CORTEXSIM_MCP_HTTP is set but the mcp_server package did not import "
+            f"({type(exc).__name__}: {exc}). Fix: pip install -r core/requirements.txt "
+            f"(mcp==1.30.0) and confirm core/mcp_server/ is in the image.",
+            mounted=False,
+            path="/mcp",
+            transport="streamable-http",
+            tools=0,
+            sdk=sdk,
+        )
+
+    if len(CANONICAL_IDS) == 0:
+        return _degraded(
+            "MCP_NO_TOOLS",
+            "CORTEXSIM_MCP_HTTP is set and the mount would register zero tools, so a "
+            "connected client would see an empty surface. Fix: populate the "
+            "core/mcp_server/naming.py::CANONICAL_IDS table, the one the mount registers from.",
+            mounted=False,
+            path="/mcp",
+            transport="streamable-http",
+            tools=0,
+            sdk=sdk,
+        )
+
+    return _ok(
+        mounted=True,
+        path="/mcp",
+        transport="streamable-http",
+        tools=len(CANONICAL_IDS),
+        sdk=sdk,
+        detail=f"mounted at /mcp with {len(CANONICAL_IDS)} tools",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Assembly
 # ---------------------------------------------------------------------------
@@ -783,6 +850,7 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "task_queue",
     "integrations",
     "eal_collectors",
+    "mcp",
 )
 
 
@@ -862,6 +930,7 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["task_queue"] = await _aguard("task_queue", probe_task_queue)
     components["integrations"] = await _aguard("integrations", probe_integrations)
     components["eal_collectors"] = await _aguard("eal_collectors", probe_eal_collectors)
+    components["mcp"] = _guard("mcp", probe_mcp)
     return components
 
 

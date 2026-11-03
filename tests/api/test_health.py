@@ -749,3 +749,54 @@ def test_scenario_catalog_drafts_alone_is_still_degraded():
     assert comp["code"] == "SCENARIO_CATALOG_EMPTY"
     assert comp["count"] == 0
     assert comp["drafts"] == 2
+
+
+# ---------------------------------------------------------------------------
+# mcp component — opt-in /mcp mount, zero outbound calls
+# ---------------------------------------------------------------------------
+
+
+def test_mcp_off_is_ok_with_disabled_code(monkeypatch):
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", False)
+    comp = health.probe_mcp()
+    assert comp["status"] == "ok"
+    assert comp["code"] == "MCP_DISABLED"
+    assert comp["mounted"] is False
+    assert comp["path"] == "/mcp"
+    assert comp["detail"] == "opt-in; set CORTEXSIM_MCP_HTTP=1 to mount"
+
+
+def test_mcp_on_but_sdk_missing_is_degraded(monkeypatch):
+    import builtins
+
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    real_import = builtins.__import__
+
+    def _no_mcp_server(name, *args, **kwargs):
+        if name.startswith("mcp_server"):
+            raise ImportError("simulated: mcp SDK package absent")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _no_mcp_server)
+    comp = health.probe_mcp()
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "MCP_SDK_IMPORT_FAILED"
+    assert "Fix:" in comp["detail"]
+
+
+def test_mcp_on_reports_tool_count(monkeypatch):
+    import config
+    from api import health
+    from mcp_server.naming import CANONICAL_IDS
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    comp = health.probe_mcp()
+    assert comp["status"] == "ok"
+    assert comp["mounted"] is True
+    assert comp["tools"] == len(CANONICAL_IDS)
