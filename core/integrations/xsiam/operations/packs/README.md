@@ -30,6 +30,15 @@ operations:
 - **`consent`** defaults to `none`/`write`/`destructive` from `access_class`; only set it to
   override.
 - Invalid rows are **rejected and logged** at boot, never fatal (one bad row won't sink a file).
+- **Tags with behaviour.** `no-request-data-wrapper` makes the executor send `{}` instead of
+  `{"request_data": {}}` for a bodyless POST (BYOS ingest rejects the wrapper). Every other tag
+  is documentation only.
+- **Provenance tags.** `confirm-tail` = not in the source CSV. `cortex-bot-observed` = harvested
+  from a field tool whose author ran it against a live tenant (an observation, not a CortexSim
+  verification). `prefix-inferred` = the full path was composed from that tool's default
+  `/public_api/v1` prefix, not copied as a literal.
+- After editing packs, regenerate the doc mirror:
+  `python3 scripts/gen_xsiam_operation_catalog.py` (dry run), then `--write`.
 
 The human-readable mirror of this catalog is
 `docs/reference/xsiam-platform-apis/14-operation-catalog.md`.

@@ -1,0 +1,24 @@
+# War Room — Cortex XSIAM Platform API operations
+# Harvested 2026-11-02 from the field-built cortex-bot MCP server. Paths are kept
+# exactly as that tool sends them (trailing slash included): the sent form is the one
+# with live-tenant evidence. `cortex-bot-observed` marks that provenance; it is the
+# author's observation, NOT a CortexSim tenant verification (tenant-verified is 0).
+# `prefix-inferred` = cortex-bot sent a bare path and the official server's fetcher
+# prepended /public_api/v1; the full path here is composed, not a literal.
+# Review: docs/brainstorm/2026-11-02-cortex-bot-review-and-pov-integration.md
+# entries/insert runs ANY !automation in an investigation's War Room; it is the
+# arbitrary-automation primitive, so it stays write-gated and previews by default.
+category: "War Room"
+operations:
+  - op_id: OP-ENTRIES-GET
+    name: "Get War Room entries"
+    method: POST
+    path: "/public_api/v1/entries/get"
+    access_class: read
+    tags: [cortex-bot-observed, prefix-inferred]
+  - op_id: OP-ENTRIES-INSERT
+    name: "Insert War Room entry (runs a command)"
+    method: POST
+    path: "/public_api/v1/entries/insert"
+    access_class: write
+    tags: [cortex-bot-observed, prefix-inferred]
