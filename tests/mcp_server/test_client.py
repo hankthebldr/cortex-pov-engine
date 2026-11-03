@@ -98,3 +98,38 @@ def test_tenant_name_with_separators_is_one_encoded_segment():
     for bad in ("", ".", ".."):
         with pytest.raises(ValueError):
             encode_segment(bad)
+
+
+@pytest.mark.asyncio
+async def test_fastapi_nested_detail_envelope_is_unwrapped():
+    def handler(request):
+        return httpx.Response(409, json={"detail": {
+            "error": "bundle cannot satisfy target",
+            "code": "BUNDLE_TARGET_UNSATISFIABLE",
+            "detail": "steps 3,4 are windows-only",
+        }})
+
+    with pytest.raises(SimCoreError) as ei:
+        await _client(handler).post("/api/runs", json={})
+    e = ei.value
+    assert e.status == 409
+    assert e.code == "BUNDLE_TARGET_UNSATISFIABLE"
+    assert e.detail == "steps 3,4 are windows-only"
+    assert e.body["code"] == "BUNDLE_TARGET_UNSATISFIABLE"
+
+
+@pytest.mark.asyncio
+async def test_structured_detail_is_kept_on_body():
+    def handler(request):
+        return httpx.Response(502, json={"detail": {
+            "error": "pull failed",
+            "code": "CONNECTOR_PULL_FAILED",
+            "detail": {"page": 1, "path": "/public_api/v1/alerts/get_alerts_multi_events"},
+        }})
+
+    with pytest.raises(SimCoreError) as ei:
+        await _client(handler).post("/api/runs/r1/reconcile")
+    e = ei.value
+    assert e.code == "CONNECTOR_PULL_FAILED"
+    assert e.body["detail"]["page"] == 1
+    assert isinstance(e.detail, str) and "page" in e.detail

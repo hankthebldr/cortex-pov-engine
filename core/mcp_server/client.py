@@ -1,12 +1,16 @@
 """httpx client for SimCore's REST API.
 
-Every failure keeps its code: SimCore's ``{error, code, detail}`` body becomes
-:class:`SimCoreError`; a dead SimCore is :class:`SimCoreUnreachable` (never
+Every failure keeps its code. SimCore's error object arrives in two shapes,
+because ``core/main.py`` registers no ``HTTPException`` handler: flat
+``{error, code, detail}`` from routes returning a ``JSONResponse``, and nested
+``{"detail": {error, code, detail}}`` from routes raising ``HTTPException``.
+Both become :class:`SimCoreError` (the unwrapped object is kept on ``.body``); a dead SimCore is :class:`SimCoreUnreachable` (never
 confusable with a tenant error); a body that is not a JSON object is
 :class:`SimCoreShapeUnknown` and is never read as empty.
 """
 from __future__ import annotations
 
+import json
 import urllib.parse
 from typing import Any, Optional
 
@@ -18,8 +22,11 @@ from .errors import SIMCORE_SHAPE_UNKNOWN, SIMCORE_UNREACHABLE
 class SimCoreError(Exception):
     code = "SIMCORE_ERROR"
 
-    def __init__(self, status: int, code: str, error: str, detail: str) -> None:
+    def __init__(
+        self, status: int, code: str, error: str, detail: str, *, body: Optional[dict] = None
+    ) -> None:
         super().__init__(f"{code}: {error} - {detail}")
+        self.body = body
         self.status = status
         self.code = code
         self.error = error
@@ -80,12 +87,17 @@ class SimCoreClient:
         except ValueError:
             body = None
         if not resp.is_success:
-            if isinstance(body, dict) and "code" in body:
+            obj = None
+            if isinstance(body, dict):
+                if "code" in body:
+                    obj = body
+                elif isinstance(body.get("detail"), dict) and "code" in body["detail"]:
+                    obj = body["detail"]
+            if obj is not None:
+                inner = obj.get("detail", "")
+                text = inner if isinstance(inner, str) else json.dumps(inner, sort_keys=True)
                 raise SimCoreError(
-                    resp.status_code,
-                    str(body["code"]),
-                    str(body.get("error", "")),
-                    str(body.get("detail", "")),
+                    resp.status_code, str(obj["code"]), str(obj.get("error", "")), text, body=obj
                 )
             raise SimCoreError(
                 resp.status_code,
