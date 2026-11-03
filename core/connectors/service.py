@@ -219,6 +219,7 @@ async def reconcile_run(
         select(Scenario).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
     family = kpi_family(getattr(scenario, "primary_kpi", None),
                         getattr(scenario, "threshold", None))
+    incidents_queries = 0
     if (family == CORRELATION and host_scope["host"] is not None
             and not any(ctx["alert_incidents"].values())
             and hasattr(conn, "pull_incidents")):
@@ -226,6 +227,7 @@ async def reconcile_run(
         # incident list for the same window, scoped to the run's host. Only
         # for correlation-shaped scenarios — accuracy never needs it.
         ipull = conn.pull_incidents(cfg, since=since, until=until)
+        incidents_queries = int((ipull.detail or {}).get("pages") or 1)
         if ipull.ok:
             want = host_scope["host"]
             ctx["incidents"] = [i for i in ipull.incidents
@@ -240,6 +242,9 @@ async def reconcile_run(
                                           pull_context=ctx, observations=eligible,
                                           window_seconds=window_seconds)
     summary["pulled"] = len(pull.observations)
+    # Ledger units: every tenant page read is one query; the incidents read
+    # counts its own pages when it was attempted (ok or not).
+    summary["queries_issued"] = int((pull.detail or {}).get("pages") or 1) + incidents_queries
     summary["host_scope"] = host_scope
     if "incidents" in ctx:
         summary["incidents_considered"] = len(ctx["incidents"])
