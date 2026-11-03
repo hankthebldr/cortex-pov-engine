@@ -7,6 +7,7 @@ import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
 import useScenarioRunHistory from './useScenarioRunHistory.js'
 import { getScenarios, getScenario } from '../../api/client.js'
+import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
 /**
  * OperationsView — the default tab in AppConsole.
@@ -52,8 +53,16 @@ export default function OperationsView({
   onArmScenario = () => {},
   onContinueToLaunch = null,
 }) {
-  const [scenarios, setScenarios]       = useState([])
-  const [loading, setLoading]           = useState(true)
+  // The provider already holds the corpus. Seed the "all planes" view from it
+  // so the first paint shows the Library instead of an empty grid behind
+  // "loading scenarios…"; the fetch below still runs — it is the only
+  // plane-filtered source and the retry path — and replaces the seed when it
+  // lands. A plane-scoped view has no seed: the provider list is unfiltered.
+  const env = useEnvironment()
+  const seedFor = (plane) =>
+    (!plane && Array.isArray(env.scenarios) && env.scenarios.length ? env.scenarios : [])
+  const [scenarios, setScenarios]       = useState(() => seedFor(selectedPlane))
+  const [loading, setLoading]           = useState(() => seedFor(selectedPlane).length === 0)
   // A failed list fetch is NOT an empty library. It used to fold into
   // setScenarios([]) and report through `onError` — which the Library
   // destination wires to a no-op — so a 500 or a 20 s timeout on
@@ -84,7 +93,11 @@ export default function OperationsView({
     // Only the newest plane's answer may land: switching EDR → CDR while the
     // EDR fetch is still in flight otherwise shows EDR's list under CDR.
     let cancelled = false
-    setLoading(true)
+    // A seeded list stays on screen while the refresh is in flight; the
+    // loading note is for when there is nothing truthful to show.
+    const seed = seedFor(selectedPlane)
+    if (seed.length) setScenarios(seed)
+    setLoading(seed.length === 0)
     setLoadError(null)
     const params = selectedPlane ? { plane: selectedPlane } : {}
     getScenarios(params)
@@ -259,7 +272,12 @@ export default function OperationsView({
           <div className="view-head__meta">
             Plane: <strong>{headMeta.planeLabel}</strong>
             {' · '}<span className="mono">
-              {loadError ? '—' : headMeta.count}
+              {/* A count is a fact about a list that ARRIVED. While the fetch
+                  is in flight this read "0 scenarios · loading…" — a zero
+                  rendered as a fact, which is the Gate A5 failure mode. */}
+              <span data-testid="library-count">
+                {loadError ? '—' : loading ? '…' : headMeta.count}
+              </span>
               {techniqueFilter && headMeta.count !== headMeta.totalCount && (
                 <span className="ops-head__total">
                   /{headMeta.totalCount}
