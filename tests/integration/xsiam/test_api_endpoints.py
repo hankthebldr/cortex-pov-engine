@@ -64,6 +64,9 @@ async def _ret(value):  # tiny awaitable wrapper for the patched loader
 
 
 class _StubClient:
+    capabilities = ["xql"]
+    _base = "https://api-stub.xdr.us.paloaltonetworks.com"
+
     def __init__(self, *, health=None, raise_exc=None, xql_reply=None, qid="q1"):
         self._health, self._raise = health, raise_exc
         self._xql_reply, self._qid = xql_reply, qid

@@ -30,6 +30,9 @@ async def _ret(value):
 class _StubClient:
     """Records request() calls so tests can assert a live call did/didn't happen."""
 
+    capabilities = ["xql"]
+    _base = "https://api-stub.xdr.us.paloaltonetworks.com"
+
     def __init__(self):
         self.calls = []
 
