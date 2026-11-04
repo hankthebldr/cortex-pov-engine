@@ -7324,19 +7324,74 @@
   padding: 48px; text-align: center; color: var(--c-text-muted);
   font-family: var(--font-mono); font-size: 12px;
 }
+.theme-console .run-list { margin-bottom: 18px; }
+.theme-console .run-list__controls {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 0 10px;
+}
+.theme-console .run-list__filter {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-display);
+  font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--tx3);
+}
+.theme-console .run-list__filter select {
+  font-size: 11px; padding: 4px 8px; max-width: 260px;
+  background: var(--s1); color: var(--tx);
+  border: 1px solid var(--bd); border-radius: 4px;
+}
+.theme-console .run-list__spacer { flex: 1; }
+.theme-console .run-list__pager-label { font-size: 11px; color: var(--tx2); }
+.theme-console .run-list__pager-btn, .theme-console .run-list__clear { font-size: 11px; padding: 3px 9px; }
+.theme-console .run-list__table { display: flex; flex-direction: column; gap: 6px; }
+.theme-console .run-list__head, .theme-console .run-list__row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) 92px minmax(120px, 1fr) 80px 96px 96px;
+  gap: 12px; align-items: center;
+}
+.theme-console .run-list__head {
+  padding: 0 14px 2px;
+  font-family: var(--font-display);
+  font-size: 8px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--tx3);
+}
 .theme-console .run-list__row {
-  display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
-  width: 100%; padding: 10px 14px; text-align: left;
+  width: 100%; padding: 9px 14px; text-align: left;
   background: var(--c-surface-raised, rgba(255,255,255,0.03));
   border: 1px solid var(--c-hairline, rgba(255,255,255,0.08));
-  border-radius: 3px; margin-bottom: 6px; color: var(--c-text); cursor: pointer;
+  border-radius: 3px; color: var(--c-text); cursor: pointer;
 }
-.theme-console .run-list__scenario { font-size: 12px; }
+.theme-console .run-list__row:hover { border-color: var(--ac-line); }
+.theme-console .run-list__row--grouped { margin-left: 18px; width: calc(100% - 18px); }
+.theme-console .run-list__scenario { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.theme-console .run-list__scenario-id { font-size: 12px; }
 .theme-console .run-list__id { font-size: 10px; color: var(--c-text-muted); }
+.theme-console .run-list__started, .theme-console .run-list__agent,
+.theme-console .run-list__duration { font-size: 11px; color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-console .run-list__det { font-size: 12px; font-weight: 600; }
+.theme-console .run-list__det--hit { color: var(--c-detected, #6ee7a8); }
+.theme-console .run-list__det--partial { color: var(--c-pending, #f5c451); }
+.theme-console .run-list__det--zero { color: var(--tx2); }
+.theme-console .run-list__det--live { color: var(--cortex-teal, #00C0E8); }
+.theme-console .run-list__det--unproven { color: var(--c-missed, #ff6b6b); font-weight: 500; font-style: italic; }
+.theme-console .run-list__det--none { color: var(--tx3); font-weight: 400; }
+.theme-console .run-list__status { display: flex; justify-content: flex-end; }
 .theme-console .run-list__status-chip { font-size: 10px; }
 .theme-console .run-list__status-chip--live { color: var(--cortex-teal, #00C0E8); }
 .theme-console .run-list__status-chip--done { color: var(--c-detected, #6ee7a8); }
 .theme-console .run-list__status-chip--pending { color: var(--c-pending, #f5c451); }
+.theme-console .run-list__status-chip--unproven { color: var(--c-missed, #ff6b6b); }
+.theme-console .run-list__group { display: flex; flex-direction: column; gap: 6px; }
+.theme-console .run-list__group-toggle {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin-left: 18px; padding: 4px 10px; text-align: left;
+  background: transparent; border: 1px dashed var(--bd); border-radius: 3px;
+  color: var(--tx2); font-size: 11px; cursor: pointer;
+}
+.theme-console .run-list__group-toggle:hover { border-color: var(--ac-line); color: var(--tx); }
+.theme-console .run-list__group-what { color: var(--tx2); }
+.theme-console .run-list__group-breakdown { color: var(--tx3); font-size: 10px; }
+.theme-console .run-list__foot { margin-top: 10px; font-size: 10px; color: var(--tx3); }
 
 /* ─── "What ran last" card (leads the Runs & Proof surface) ───
    A left rule rather than a full accent fill: it must read as the most

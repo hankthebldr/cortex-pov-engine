@@ -886,3 +886,182 @@
   border-color: var(--ac-str);
   color: var(--ac-tx);
 }
+
+/* ───────────────────────────────────────────────────────────────────
+   Techniques tab (RunTechniquesView.jsx) — kill-chain strip + verdict
+   table. Tones: hit / miss / pending / excluded / empty. An EMPTY stage
+   is dimmed, never green — "no technique here" is not "all detected".
+   ─────────────────────────────────────────────────────────────────── */
+.theme-console .run-detail .run-tech,
+.theme-console .run-detail .run-topo { display: flex; flex-direction: column; gap: 16px; }
+.theme-console .run-detail .run-tech__head,
+.theme-console .run-detail .run-topo__head { display: flex; flex-direction: column; gap: 6px; }
+.theme-console .run-detail .run-tech__verdict,
+.theme-console .run-detail .run-topo__engine-verdict { display: flex; align-items: center; gap: 10px; }
+.theme-console .run-detail .run-tech__k,
+.theme-console .run-detail .run-topo__k { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tx3); }
+.theme-console .run-detail .run-tech__totals,
+.theme-console .run-detail .run-tech__detail,
+.theme-console .run-detail .run-topo__totals,
+.theme-console .run-detail .run-topo__note { font-size: 11px; color: var(--tx3); }
+.theme-console .run-detail .run-tech__sentence,
+.theme-console .run-detail .run-topo__sentence { margin: 0; font-size: 12px; color: var(--tx2); }
+.theme-console .run-detail .run-tech__unproven,
+.theme-console .run-detail .run-topo__unproven { margin: 0; font-size: 12px; color: var(--warn-str); }
+.theme-console .run-detail .run-tech__empty,
+.theme-console .run-detail .run-topo__empty { padding: 40px 0; text-align: center; color: var(--tx3); font-size: 12px; }
+
+.theme-console .run-detail .run-tech__verdict-chip,
+.theme-console .run-detail .run-topo__verdict-chip { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.theme-console .run-detail .run-tech__verdict-chip--pass,
+.theme-console .run-detail .run-topo__verdict-chip--pass { color: var(--pos); border-color: var(--pos); }
+.theme-console .run-detail .run-tech__verdict-chip--fail,
+.theme-console .run-detail .run-topo__verdict-chip--fail { color: var(--crit); border-color: var(--crit); }
+.theme-console .run-detail .run-tech__verdict-chip--pending,
+.theme-console .run-detail .run-topo__verdict-chip--pending { color: var(--warn-str); border-color: var(--warn-str); }
+.theme-console .run-detail .run-tech__verdict-chip--not_applicable,
+.theme-console .run-detail .run-tech__verdict-chip--unscored,
+.theme-console .run-detail .run-topo__verdict-chip--not_applicable,
+.theme-console .run-detail .run-topo__verdict-chip--unscored { color: var(--tx3); border-color: var(--bd2); }
+
+/* the strip — 14 equal columns that FIT their container. A kill chain is read
+   left to right in one row, and a stage behind a scrollbar is a stage nobody
+   reads (minmax(92px) overflowed a 1132px column by 208px at 1920 wide, hiding
+   Exfiltration and Impact). Names wrap and hyphenate inside a narrow cell
+   instead of pushing the row wider than the page. */
+.theme-console .run-detail .run-tech__strip {
+  list-style: none; margin: 0; padding: 0 0 4px;
+  display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px;
+}
+@media (max-width: 1280px) {
+  .theme-console .run-detail .run-tech__strip { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+}
+.theme-console .run-detail .run-tech__stage {
+  display: flex; flex-direction: column; gap: 4px; min-height: 92px; min-width: 0;
+  padding: 7px 6px 6px; border: 1px solid var(--bd); border-top: 3px solid var(--bd2);
+  border-radius: 4px; background: var(--s1);
+}
+.theme-console .run-detail .run-tech__stage--empty { opacity: 0.38; border-top-color: var(--bd); }
+.theme-console .run-detail .run-tech__stage--hit { border-top-color: var(--pos); }
+.theme-console .run-detail .run-tech__stage--miss { border-top-color: var(--crit); }
+.theme-console .run-detail .run-tech__stage--pending { border-top-color: var(--warn-str); }
+.theme-console .run-detail .run-tech__stage--excluded { border-top-color: var(--tx3); }
+.theme-console .run-detail .run-tech__stage-name {
+  font-size: 10.5px; font-weight: 600; line-height: 1.2; color: var(--tx);
+  overflow-wrap: anywhere; hyphens: auto;
+}
+.theme-console .run-detail .run-tech__stage-count { font-size: 11px; color: var(--tx3); }
+.theme-console .run-detail .run-tech__stage-techs { display: flex; flex-wrap: wrap; gap: 3px; margin-top: auto; }
+.theme-console .run-detail .run-tech__tech-chip {
+  font-size: 9.5px; padding: 1px 4px; border-radius: 3px;
+  border: 1px solid var(--bd2); color: var(--tx2);
+}
+.theme-console .run-detail .run-tech__tech-chip--hit { border-color: var(--pos); color: var(--pos); }
+.theme-console .run-detail .run-tech__tech-chip--miss { border-color: var(--crit); color: var(--crit); }
+.theme-console .run-detail .run-tech__tech-chip--pending { border-color: var(--warn-str); color: var(--warn-str); }
+.theme-console .run-detail .run-tech__tech-chip--excluded { border-color: var(--bd); color: var(--tx3); }
+
+/* the table */
+.theme-console .run-detail .run-tech__table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.theme-console .run-detail .run-tech__table th {
+  text-align: left; padding: 6px 8px; font-size: 11px; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--tx3); border-bottom: 1px solid var(--bd);
+}
+.theme-console .run-detail .run-tech__table td { padding: 7px 8px; border-bottom: 1px solid var(--bd); vertical-align: top; color: var(--tx); }
+.theme-console .run-detail .run-tech__tone--hit,
+.theme-console .run-detail .run-topo__tone--hit { color: var(--pos); }
+.theme-console .run-detail .run-tech__tone--miss,
+.theme-console .run-detail .run-topo__tone--miss { color: var(--crit); }
+.theme-console .run-detail .run-tech__tone--pending,
+.theme-console .run-detail .run-topo__tone--pending { color: var(--warn-str); }
+.theme-console .run-detail .run-tech__tone--excluded,
+.theme-console .run-detail .run-topo__tone--excluded,
+.theme-console .run-detail .run-topo__tone--none { color: var(--tx3); }
+.theme-console .run-detail .run-tech__muted { color: var(--tx3); }
+
+.theme-console .run-detail .run-tech__unplaced,
+.theme-console .run-detail .run-topo__unplaced { padding: 10px 12px; border: 1px dashed var(--bd2); border-radius: 4px; font-size: 12px; }
+.theme-console .run-detail .run-tech__unplaced ul,
+.theme-console .run-detail .run-topo__unplaced ul { margin: 6px 0 0; padding-left: 16px; line-height: 1.7; color: var(--tx2); }
+.theme-console .run-detail .run-tech__unplaced-id,
+.theme-console .run-detail .run-topo__unplaced-id { color: var(--tx); }
+.theme-console .run-detail .run-tech__foot,
+.theme-console .run-detail .run-topo__foot {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  font-size: 11px; color: var(--tx3);
+}
+.theme-console .run-detail .run-topo__foot-actions { display: flex; gap: 6px; }
+
+/* ───────────────────────────────────────────────────────────────────
+   Topology tab (RunTopologyView.jsx) — five lane bands, cells in
+   execution-order columns, Engine pinned as the terminal on the right.
+   An EMPTY lane is dimmed and says so — "no step launched through this
+   door" is not a clean door.
+   ─────────────────────────────────────────────────────────────────── */
+.theme-console .run-detail .run-topo__board {
+  display: grid; grid-template-columns: minmax(0, 1fr) 248px; gap: 12px; align-items: start;
+}
+@media (max-width: 960px) {
+  .theme-console .run-detail .run-topo__board { grid-template-columns: 1fr; }
+}
+.theme-console .run-detail .run-topo__lanes { display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-x: auto; }
+.theme-console .run-detail .run-topo__lane {
+  display: grid; grid-template-columns: 156px minmax(0, 1fr); min-height: 96px;
+  border: 1px solid var(--bd); border-left: 3px solid var(--bd2); border-radius: 4px; background: var(--s1);
+}
+.theme-console .run-detail .run-topo__lane--empty { opacity: 0.4; border-left-color: var(--bd); }
+.theme-console .run-detail .run-topo__lane--hit { border-left-color: var(--pos); }
+.theme-console .run-detail .run-topo__lane--miss { border-left-color: var(--crit); }
+.theme-console .run-detail .run-topo__lane--pending { border-left-color: var(--warn-str); }
+.theme-console .run-detail .run-topo__lane-head {
+  display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-right: 1px solid var(--bd);
+}
+.theme-console .run-detail .run-topo__lane-key { font-size: 10px; letter-spacing: 0.08em; color: var(--tx3); }
+.theme-console .run-detail .run-topo__lane-label { font-size: 12px; font-weight: 700; color: var(--tx); }
+.theme-console .run-detail .run-topo__lane-sub { font-size: 11px; color: var(--tx3); }
+.theme-console .run-detail .run-topo__lane-count { font-size: 11px; color: var(--tx2); margin-top: auto; }
+.theme-console .run-detail .run-topo__track { display: grid; gap: 6px; padding: 6px; align-items: stretch; min-width: 0; }
+.theme-console .run-detail .run-topo__lane-none { align-self: center; padding: 4px 6px; font-size: 11px; color: var(--tx3); }
+.theme-console .run-detail .run-topo__cell {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  padding: 7px 8px; border: 1px solid var(--bd2); border-radius: 4px; background: var(--s2);
+}
+.theme-console .run-detail .run-topo__cell--hit { border-color: var(--pos); }
+.theme-console .run-detail .run-topo__cell--miss { border-color: var(--crit); }
+.theme-console .run-detail .run-topo__cell--pending { border-color: var(--warn-str); }
+.theme-console .run-detail .run-topo__cell--excluded { border-color: var(--bd); opacity: 0.7; }
+.theme-console .run-detail .run-topo__cell--none { border-style: dashed; }
+.theme-console .run-detail .run-topo__cell-id { font-size: 10px; color: var(--tx3); }
+.theme-console .run-detail .run-topo__cell-name,
+.theme-console .run-detail .run-topo__cell-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-console .run-detail .run-topo__cell-name { font-size: 12px; font-weight: 600; color: var(--tx); }
+.theme-console .run-detail .run-topo__cell-meta { font-size: 10px; color: var(--tx2); }
+.theme-console .run-detail .run-topo__cell-det { font-size: 11px; margin-top: 2px; }
+.theme-console .run-detail .run-topo__st--ok { color: var(--pos); }
+.theme-console .run-detail .run-topo__st--error,
+.theme-console .run-detail .run-topo__st--severed { color: var(--crit); }
+.theme-console .run-detail .run-topo__st--running { color: var(--ac); }
+.theme-console .run-detail .run-topo__st--queued,
+.theme-console .run-detail .run-topo__st--staged,
+.theme-console .run-detail .run-topo__st--not_reached { color: var(--tx3); }
+
+.theme-console .run-detail .run-topo__engine {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  border: 1px solid var(--bd); border-left: 3px solid var(--bd2); border-radius: 4px; background: var(--s1);
+  position: sticky; top: 8px;
+}
+.theme-console .run-detail .run-topo__engine--empty { border-left-color: var(--bd); }
+.theme-console .run-detail .run-topo__engine--hit { border-left-color: var(--pos); }
+.theme-console .run-detail .run-topo__engine--miss { border-left-color: var(--crit); }
+.theme-console .run-detail .run-topo__engine--pending { border-left-color: var(--warn-str); }
+.theme-console .run-detail .run-topo__engine-head { display: flex; flex-direction: column; gap: 2px; }
+.theme-console .run-detail .run-topo__engine-count,
+.theme-console .run-detail .run-topo__engine-detail,
+.theme-console .run-detail .run-topo__engine-foot { font-size: 11px; color: var(--tx3); }
+.theme-console .run-detail .run-topo__engine-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.theme-console .run-detail .run-topo__engine-row {
+  display: flex; flex-direction: column; gap: 1px; padding: 6px 8px;
+  border: 1px solid var(--bd2); border-radius: 3px; font-size: 11px;
+}
+.theme-console .run-detail .run-topo__engine-row-meta { font-size: 10px; color: var(--tx3); }
+.theme-console .run-detail .run-topo__crossings { font-size: 11px; color: var(--tx2); }

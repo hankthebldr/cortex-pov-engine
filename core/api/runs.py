@@ -35,6 +35,8 @@ from engine.outcome import (
     HOST_WITNESS,
     EXCLUDED_FROM_DENOMINATOR,
     OUTCOMES,
+    OUTCOME_DETECTED,
+    OUTCOME_PREVENTED,
     is_hit,
     is_in_denominator,
     PROFILE_MODES,
@@ -770,14 +772,52 @@ async def launch_canary(
     return {"run_id": result.run_id, "scenario_id": scenario_id}
 
 
+# The SQL twin of ``engine.outcome.row_status`` for the list aggregate below:
+# an engine outcome of detected / prevented is a hit; any other outcome
+# (``pending`` included, even when the reconcile set ``observed=True``) is
+# not; a row with NO outcome has never been judged and is a hit only when a
+# DC validated it (``observed``). Kept beside ``is_hit`` on purpose — the two
+# must say the same thing, and ``tests/api/test_runs_api.py`` pins the cases.
+_RESULT_IS_HIT = case(
+    (Result.outcome.in_((OUTCOME_DETECTED, OUTCOME_PREVENTED)), 1),
+    (and_(Result.outcome.is_(None), Result.observed.is_(True)), 1),
+    else_=0,
+)
+
+
+async def _detection_aggregates(db: AsyncSession) -> dict[str, tuple[int, int]]:
+    """``{run_id: (expected_detections, detected_count)}`` in ONE grouped query.
+
+    The Runs page lists every run on every poll; a per-run Result query here
+    would be N+1 on the hottest read in the console.
+    """
+    rows = await db.execute(
+        select(Result.run_id, func.count(Result.id), func.sum(_RESULT_IS_HIT))
+        .group_by(Result.run_id)
+    )
+    return {rid: (int(total or 0), int(hits or 0)) for rid, total, hits in rows.all()}
+
+
 @router.get("")
 async def list_runs(db: AsyncSession = Depends(get_db)):
-    """List all run records."""
+    """List all run records.
+
+    Each row carries ``expected_detections`` (seeded Result rows) and
+    ``detected_count`` (hits by the one numerator rule) so the Runs list can
+    show ``detected / expected`` without opening the run. A run with no Result
+    rows reports ``0 / 0`` — the console renders that as a dash, never as a
+    measured zero.
+    """
     stmt = select(Run).order_by(Run.started_at.desc())
     result = await db.execute(stmt)
     runs = result.scalars().all()
+    agg = await _detection_aggregates(db)
     logger.info("list_runs count=%d", len(runs))
-    return {"runs": [r.to_dict() for r in runs], "total": len(runs)}
+    rows = []
+    for r in runs:
+        expected, detected = agg.get(r.run_id, (0, 0))
+        rows.append({**r.to_dict(), "expected_detections": expected, "detected_count": detected})
+    return {"runs": rows, "total": len(runs)}
 
 
 async def _step_outcomes_view(db: AsyncSession, run: Run) -> list[dict]:

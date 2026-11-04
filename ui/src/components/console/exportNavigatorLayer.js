@@ -16,6 +16,7 @@
  *   not_run          → #5A6B84 (muted blue, score  30) — scenario exists, not run
  *   no_scenario      → unset / not in layer
  */
+import { ATTACK_TACTICS } from './attackTactics.js'
 
 const STATUS_TO_COLOR = {
   detected:         { color: '#4FD1A1', score: 100 },
@@ -143,22 +144,9 @@ function buildComment(t) {
 // ATT&CK tactic IDs to the lowercase-with-hyphens "shortname" Navigator
 // uses for filtering. Manual mapping — the Navigator's v4.5 schema
 // expects the shortname, not the TAxxxx id.
-const TACTIC_SHORTNAMES = {
-  TA0043: 'reconnaissance',
-  TA0042: 'resource-development',
-  TA0001: 'initial-access',
-  TA0002: 'execution',
-  TA0003: 'persistence',
-  TA0004: 'privilege-escalation',
-  TA0005: 'defense-evasion',
-  TA0006: 'credential-access',
-  TA0007: 'discovery',
-  TA0008: 'lateral-movement',
-  TA0009: 'collection',
-  TA0011: 'command-and-control',
-  TA0010: 'exfiltration',
-  TA0040: 'impact',
-}
+// Derived from the one kill-chain table so the export and the run
+// Techniques strip can never disagree on tactic order or spelling.
+const TACTIC_SHORTNAMES = Object.fromEntries(ATTACK_TACTICS.map((t) => [t.id, t.slug]))
 
 function tacticDisplayName(tacticId) {
   return TACTIC_SHORTNAMES[tacticId] || (tacticId || '').toLowerCase()
