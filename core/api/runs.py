@@ -22,10 +22,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, field_validator, model_validator
-from sqlalchemy import and_, case, func, not_, or_, select, update
+from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy import LargeBinary, and_, case, cast, func, not_, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from database import get_db
 from engine import efficacy_scorecard
@@ -425,11 +426,37 @@ class LaunchRequest(BaseModel):
         return v
 
 
+#: SEC-14 / OPS-06 — run output is bounded. One /output chunk is at most 1 MiB
+#: (the beacon sends one chunk per step), one run's stored output at most
+#: 32 MiB. Past the run cap only INTEGRITY lines are still accepted (below),
+#: within a further 1 MiB reserve, so a runaway step can neither fill the disk
+#: nor push the markers the report's integrity check reads out of the record.
+RUN_OUTPUT_CHUNK_MAX_BYTES = 1 << 20
+RUN_OUTPUT_CAP_BYTES = 32 << 20
+RUN_OUTPUT_INTEGRITY_RESERVE_BYTES = 1 << 20
+#: Line prefixes that survive the cap: `!! ` markers (IDENTITY NOT HONOURED,
+#: TOOL_ABSENT, RUNTIME_DEPENDENCY_MISSING, PLATFORM VARIANT, ...),
+#: `__CORTEXSIM` sentinels and `cortexsim-` tags.
+_INTEGRITY_LINE_PREFIXES = ("!! ", "__CORTEXSIM", "cortexsim-")
+_TRUNCATION_MARKER = "[OUTPUT TRUNCATED at "
+
+
 class OutputRequest(BaseModel):
-    output: str
+    # max_length is a cheap first cut in characters; the validator below is
+    # the real limit, in bytes on the wire.
+    output: str = Field(..., max_length=RUN_OUTPUT_CHUNK_MAX_BYTES)
     # Optional step id (e.g. "step-02") so per-step output can be grouped in
     # the live SSE stream. Backward compatible — older agents omit it.
     step_id: Optional[str] = None
+
+    @field_validator("output")
+    @classmethod
+    def _chunk_within_byte_limit(cls, v: str) -> str:
+        n = len(v.encode("utf-8"))
+        if n > RUN_OUTPUT_CHUNK_MAX_BYTES:
+            raise ValueError(
+                f"output chunk is {n} bytes; the limit is {RUN_OUTPUT_CHUNK_MAX_BYTES}")
+        return v
 
 
 _PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
@@ -801,39 +828,84 @@ _RESULT_IS_HIT = case(
 )
 
 
-async def _detection_aggregates(db: AsyncSession) -> dict[str, tuple[int, int]]:
+async def _detection_aggregates(
+    db: AsyncSession, run_ids: Optional[list[str]] = None,
+) -> dict[str, tuple[int, int]]:
     """``{run_id: (expected_detections, detected_count)}`` in ONE grouped query.
 
     The Runs page lists every run on every poll; a per-run Result query here
-    would be N+1 on the hottest read in the console.
+    would be N+1 on the hottest read in the console. ``run_ids`` narrows it to
+    the page being returned.
     """
-    rows = await db.execute(
-        select(Result.run_id, func.count(Result.id), func.sum(_RESULT_IS_HIT))
-        .group_by(Result.run_id)
-    )
+    stmt = (select(Result.run_id, func.count(Result.id), func.sum(_RESULT_IS_HIT))
+            .group_by(Result.run_id))
+    if run_ids is not None:
+        stmt = stmt.where(Result.run_id.in_(run_ids))
+    rows = await db.execute(stmt)
     return {rid: (int(total or 0), int(hits or 0)) for rid, total, hits in rows.all()}
 
 
+#: Default page for GET /api/runs. The list used to be unbounded.
+LIST_RUNS_DEFAULT_LIMIT = 500
+LIST_RUNS_MAX_LIMIT = 5000
+#: Characters of output a summary row carries (the tail the console shows).
+LIST_RUNS_OUTPUT_TAIL_CHARS = 2048
+
+
 @router.get("")
-async def list_runs(db: AsyncSession = Depends(get_db)):
-    """List all run records.
+async def list_runs(
+    fields: Optional[str] = Query(
+        None, pattern="^summary$",
+        description="`summary` drops `output` and adds `output_bytes` + `output_tail` "
+                    "(the last 2 KB). Omit for the full historical row shape."),
+    limit: int = Query(LIST_RUNS_DEFAULT_LIMIT, ge=1, le=LIST_RUNS_MAX_LIMIT),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """List run records, newest first, ``limit`` / ``offset`` paged.
 
     Each row carries ``expected_detections`` (seeded Result rows) and
     ``detected_count`` (hits by the one numerator rule) so the Runs list can
     show ``detected / expected`` without opening the run. A run with no Result
     rows reports ``0 / 0`` — the console renders that as a dash, never as a
     measured zero.
+
+    ``total`` is the number of runs that exist, not the length of this page.
+    Without ``fields`` the row and response shape are exactly the historical
+    ones (OPS-06: the console's 10 s poll used to pull every run's whole
+    output on every tick; it switches to ``fields=summary``).
     """
-    stmt = select(Run).order_by(Run.started_at.desc())
-    result = await db.execute(stmt)
-    runs = result.scalars().all()
-    agg = await _detection_aggregates(db)
-    logger.info("list_runs count=%d", len(runs))
+    total = (await db.execute(select(func.count(Run.id)))).scalar_one()
+    page = select(Run).order_by(Run.started_at.desc()).limit(limit).offset(offset)
+    summary = fields == "summary"
+    if summary:
+        stmt = (
+            page.options(defer(Run.output))
+            .add_columns(
+                func.length(cast(func.coalesce(Run.output, ""), LargeBinary)),
+                func.substr(func.coalesce(Run.output, ""), -LIST_RUNS_OUTPUT_TAIL_CHARS),
+            )
+        )
+        fetched = (await db.execute(stmt)).all()
+        runs = [row[0] for row in fetched]
+        extras = {row[0].run_id: (int(row[1] or 0), row[2] or "") for row in fetched}
+    else:
+        runs = (await db.execute(page)).scalars().all()
+        extras = {}
+    agg = await _detection_aggregates(db, [r.run_id for r in runs])
+    logger.info("list_runs count=%d total=%d fields=%s", len(runs), total, fields)
     rows = []
     for r in runs:
         expected, detected = agg.get(r.run_id, (0, 0))
-        rows.append({**r.to_dict(), "expected_detections": expected, "detected_count": detected})
-    return {"runs": rows, "total": len(runs)}
+        row = {**r.to_dict(include_output=not summary),
+               "expected_detections": expected, "detected_count": detected}
+        if summary:
+            row["output_bytes"], row["output_tail"] = extras[r.run_id]
+        rows.append(row)
+    if summary:
+        return {"runs": rows, "total": total, "fields": "summary",
+                "limit": limit, "offset": offset}
+    return {"runs": rows, "total": total}
 
 
 async def _step_outcomes_view(db: AsyncSession, run: Run) -> list[dict]:
@@ -1293,16 +1365,34 @@ async def append_output(
     never read-in-Python-then-write: the beacon's stdout and stderr writers POST
     concurrently, and a read-modify-write dropped every chunk but the last —
     including the refusal markers the POV report's integrity check reads.
+
+    Bounded (SEC-14 / OPS-06): the append is guarded IN THE SAME STATEMENT by
+    the run's stored byte length, so concurrent writers cannot jointly exceed
+    :data:`RUN_OUTPUT_CAP_BYTES`. A chunk that does not fit keeps only its
+    integrity lines (:data:`_INTEGRITY_LINE_PREFIXES`), and
+    ``[OUTPUT TRUNCATED at N bytes]`` is appended exactly once (the guard is
+    in SQL too). The step-start record below is host evidence, not output,
+    and is written either way.
     """
+    chunk = body.output
+    stored = func.length(cast(func.coalesce(Run.output, ""), LargeBinary))
     res = await db.execute(
         update(Run)
-        .where(Run.run_id == run_id)
-        .values(output=func.coalesce(Run.output, "") + body.output)
+        .where(Run.run_id == run_id,
+               stored + len(chunk.encode("utf-8")) <= RUN_OUTPUT_CAP_BYTES)
+        .values(output=func.coalesce(Run.output, "") + chunk)
         .execution_options(synchronize_session=False)
     )
+    appended = chunk
+    truncated = False
     if res.rowcount == 0:
-        await db.rollback()
-        raise _run_not_found(run_id)
+        exists = (await db.execute(
+            select(Run.id).where(Run.run_id == run_id))).scalar_one_or_none()
+        if exists is None:
+            await db.rollback()
+            raise _run_not_found(run_id)
+        truncated = True
+        appended = await _append_past_cap(db, run_id, chunk, stored)
     if body.step_id:
         # First output for a step marks when it started. One INSERT .. ON
         # CONFLICT DO NOTHING in the same transaction as the append: concurrent
@@ -1316,14 +1406,66 @@ async def append_output(
         )
     await db.commit()
 
-    await _safe_publish(
-        run_id,
-        {"type": "run.output", "run_id": run_id,
-         "data": {"step_id": body.step_id, "chunk": body.output}},
-    )
+    if appended:
+        await _safe_publish(
+            run_id,
+            {"type": "run.output", "run_id": run_id,
+             "data": {"step_id": body.step_id, "chunk": appended}},
+        )
 
-    logger.info("output appended run_id=%s bytes=%d step=%s", run_id, len(body.output), body.step_id)
+    if truncated:
+        logger.warning(
+            "output over cap run_id=%s offered=%d kept=%d step=%s",
+            run_id, len(chunk), len(appended), body.step_id)
+        return {"status": "ok", "run_id": run_id, "truncated": True,
+                "accepted_bytes": len(appended.encode("utf-8"))}
+    logger.info("output appended run_id=%s bytes=%d step=%s", run_id, len(chunk), body.step_id)
     return {"status": "ok", "run_id": run_id}
+
+
+async def _append_past_cap(db: AsyncSession, run_id: str, chunk: str, stored) -> str:
+    """The over-cap path of :func:`append_output`. Returns what was appended.
+
+    1. ``[OUTPUT TRUNCATED at N bytes]`` (N = the stored length when it was
+       written), guarded by ``instr`` so concurrent writers add it once.
+    2. The chunk's integrity lines, within the integrity reserve.
+
+    Both are single guarded UPDATEs, like the fast path.
+    """
+    appended = ""
+    n_stored = (await db.execute(
+        select(stored).where(Run.run_id == run_id))).scalar_one()
+    marker = f"\n{_TRUNCATION_MARKER}{int(n_stored or 0)} bytes]\n"
+    res = await db.execute(
+        update(Run)
+        .where(Run.run_id == run_id,
+               func.instr(func.coalesce(Run.output, ""), _TRUNCATION_MARKER) == 0)
+        .values(output=func.coalesce(Run.output, "") + marker)
+        .execution_options(synchronize_session=False)
+    )
+    if res.rowcount:
+        appended += marker
+    kept = "".join(
+        ln if ln.endswith("\n") else ln + "\n"
+        for ln in chunk.splitlines(keepends=True)
+        if ln.startswith(_INTEGRITY_LINE_PREFIXES)
+    )
+    if kept:
+        res = await db.execute(
+            update(Run)
+            .where(Run.run_id == run_id,
+                   stored + len(kept.encode("utf-8"))
+                   <= RUN_OUTPUT_CAP_BYTES + RUN_OUTPUT_INTEGRITY_RESERVE_BYTES)
+            .values(output=func.coalesce(Run.output, "") + kept)
+            .execution_options(synchronize_session=False)
+        )
+        if res.rowcount:
+            appended += kept
+        else:
+            logger.warning(
+                "integrity reserve exhausted run_id=%s — %d marker byte(s) dropped",
+                run_id, len(kept))
+    return appended
 
 
 async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[str]) -> bool:

@@ -284,8 +284,10 @@ class Run(Base):
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
     results: Mapped[list["Result"]] = relationship("Result", back_populates="run_rel")
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    def to_dict(self, *, include_output: bool = True) -> dict[str, Any]:
+        """``include_output=False`` omits ``output`` WITHOUT touching it, so a
+        caller that deferred the column (the run-list summary) never loads it."""
+        out = {
             "id": self.id,
             "run_id": self.run_id,
             "scenario_id": self.scenario_id,
@@ -312,8 +314,10 @@ class Run(Base):
             "block_mode_status": self.block_mode_status,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "output": self.output,
         }
+        if include_output:
+            out["output"] = self.output
+        return out
 
 
 class Result(Base):

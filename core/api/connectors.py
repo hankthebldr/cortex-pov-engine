@@ -42,10 +42,16 @@ router = APIRouter(prefix="/connectors", tags=["connectors"])
 runs_reconcile_router = APIRouter(prefix="/runs", tags=["connectors"])
 
 
+#: OPS-06 — one manual batch is bounded. Matching is O(results x alerts) in
+#: process, so an unbounded paste is a request that can pin the event loop.
+MAX_OBSERVATIONS_PER_BATCH = 5000
+
+
 class ObservationsBody(BaseModel):
     """Manual batch of observed alerts (exported from the Cortex console)."""
 
-    observations: list[dict[str, Any]] = Field(default_factory=list)
+    observations: list[dict[str, Any]] = Field(
+        default_factory=list, max_length=MAX_OBSERVATIONS_PER_BATCH)
     window_seconds: int = DEFAULT_WINDOW_SECONDS
     reevaluate: bool = False  # if true, also re-check already-observed results
 
