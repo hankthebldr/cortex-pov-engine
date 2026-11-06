@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
@@ -120,6 +120,101 @@ def _execution_integrity(run: Any) -> dict[str, Any]:
         if marker in output
     ]
     return {"ok": not problems, "problems": problems}
+
+
+_STEP_HEADER_RE = __import__("re").compile(r"=== STEP \d+/\d+ · ([^\s·]+) · ")
+_PLATFORM_VARIANT_RE = __import__("re").compile(
+    r"!! PLATFORM VARIANT: step=(\S+) ran its (\S+) variant")
+_IDENTITY_MARKER = "!! IDENTITY NOT HONOURED"
+
+
+def _identity_degraded_steps(output: str) -> list[str]:
+    """Step ids whose output carries the beacon's identity-degradation marker.
+
+    The beacon writes ``=== STEP n/N · <step-id> · ...`` then, for a step it
+    could not run as the declared identity, ``!! IDENTITY NOT HONOURED: ...``
+    (``agent/beacon/client.go::formatStepOutput``). Chunks are concatenated
+    without a separator, so the header is searched anywhere on a line. A
+    marker with no preceding header is reported as ``(unattributed)`` rather
+    than dropped.
+    """
+    steps: list[str] = []
+    current: Optional[str] = None
+    for line in (output or "").splitlines():
+        m = _STEP_HEADER_RE.search(line)
+        if m:
+            current = m.group(1)
+        if _IDENTITY_MARKER in line:
+            sid = current or "(unattributed)"
+            if sid not in steps:
+                steps.append(sid)
+    return steps
+
+
+def _report_caveats(run: Any, scenario: Optional[Any]) -> list[str]:
+    """Scoped caveats for the markdown report (UI-09 / CONT-11).
+
+    Unlike the execution-integrity section these do not void the run — each
+    names the steps a reader must not over-read. Returns ``[]`` (no section at
+    all) for an unremarkable run, so its report is byte-identical to before.
+    """
+    output = getattr(run, "output", "") or ""
+    blocks: list[list[str]] = []
+
+    degraded = _identity_degraded_steps(output)
+    if degraded:
+        blocks.append([
+            "### Identity Not Honoured",
+            "",
+            "The beacon could not run these steps as their declared identity "
+            "(`!! IDENTITY NOT HONOURED` in the run output — e.g. Windows has no "
+            "credential-free unattended impersonation, so the step ran as the "
+            "beacon's own account): "
+            + ", ".join(f"`{s}`" for s in degraded) + ".",
+            "",
+            "Detections keyed on process lineage or the acting user cannot match "
+            "by construction here — lineage-keyed misses on these steps are not a "
+            "coverage measurement.",
+        ])
+
+    variants = []
+    for sid, os_name in _PLATFORM_VARIANT_RE.findall(output):
+        if (sid, os_name) not in variants:
+            variants.append((sid, os_name))
+    if variants:
+        blocks.append([
+            "### Platform Variants",
+            "",
+            "These steps ran their `platform_variants` command, not the primary "
+            "command their expected detections were authored against, so a miss "
+            "on them is unverified for this OS:",
+            "",
+            *[f"- `{sid}` — {os_name} variant" for sid, os_name in variants],
+        ])
+
+    cleanup = (getattr(scenario, "cleanup", None) or {}) if scenario is not None else {}
+    commands = [c for c in (cleanup.get("commands") or [])
+                if isinstance(c, str) and c.strip()]
+    if getattr(run, "mode", None) == "pull" and commands:
+        blocks.append([
+            "### Cleanup Not Run",
+            "",
+            f"pull mode does not execute cleanup.commands: {len(commands)} "
+            f"command{'s' if len(commands) != 1 else ''} not run. Run them on the "
+            "target by hand, or the scenario's artefacts stay on the endpoint:",
+            "",
+            "```",
+            *commands,
+            "```",
+        ])
+
+    if not blocks:
+        return []
+    lines = ["## ⚠ Caveats", ""]
+    for block in blocks:
+        lines.extend(block)
+        lines.append("")
+    return lines
 
 
 def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
@@ -1096,6 +1191,9 @@ async def get_report(
             "and re-run once staging is fixed."
         )
         lines.append("")
+
+    # Scoped caveats next — still above the coverage numbers they qualify.
+    lines.extend(_report_caveats(run, s))
 
     if s:
         lines.append("## MITRE ATT&CK Mapping")
