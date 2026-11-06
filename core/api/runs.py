@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import LargeBinary, and_, case, cast, func, not_, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -521,11 +521,18 @@ class LaunchRequest(BaseModel):
         return v
 
 
-#: SEC-14 / OPS-06 — run output is bounded. One /output chunk is at most 1 MiB
-#: (the beacon sends one chunk per step), one run's stored output at most
-#: 32 MiB. Past the run cap only INTEGRITY lines are still accepted (below),
-#: within a further 1 MiB reserve, so a runaway step can neither fill the disk
-#: nor push the markers the report's integrity check reads out of the record.
+#: SEC-14 / OPS-06 — run output is bounded. One /output chunk STORES at most
+#: 1 MiB of ordinary text, one run's stored output at most 32 MiB. Past the run
+#: cap only lines that survive truncation (below) are still accepted, within a
+#: further 1 MiB reserve, so a runaway step can neither fill the disk nor push
+#: the markers the report's integrity check reads out of the record.
+#:
+#: An oversized chunk is CUT, never refused. The beacon sends ONE chunk per step
+#: and does not cap it (agent/beacon/client.go::formatStepOutput), so a 422 here
+#: dropped a large step's `=== STEP` header, its `!! IDENTITY NOT HONOURED` and
+#: its step-start record together — and the step read in the report as an
+#: ordinary miss. Bounding what a request may make the process hold in memory
+#: is a whole-app request-body concern, not this route's.
 RUN_OUTPUT_CHUNK_MAX_BYTES = 1 << 20
 RUN_OUTPUT_CAP_BYTES = 32 << 20
 RUN_OUTPUT_INTEGRITY_RESERVE_BYTES = 1 << 20
@@ -533,25 +540,76 @@ RUN_OUTPUT_INTEGRITY_RESERVE_BYTES = 1 << 20
 #: TOOL_ABSENT, RUNTIME_DEPENDENCY_MISSING, PLATFORM VARIANT, ...),
 #: `__CORTEXSIM` sentinels and `cortexsim-` tags.
 _INTEGRITY_LINE_PREFIXES = ("!! ", "__CORTEXSIM", "cortexsim-")
+#: The beacon's step frame: the header that ATTRIBUTES every marker after it to
+#: a step (`_identity_degraded_steps`), and the exit footer. A marker whose
+#: header was dropped reads as `(unattributed)`.
+_STEP_FRAME_PREFIXES = ("=== STEP ", "=== ARTIFACT STAGING", "--- exit_code=")
 _TRUNCATION_MARKER = "[OUTPUT TRUNCATED at "
+_CHUNK_TRUNCATION_MARKER = "[OUTPUT CHUNK TRUNCATED: "
+#: Room left in a cut chunk for its own truncation marker line.
+_CHUNK_MARKER_RESERVE_BYTES = 256
+
+
+def _survives_truncation(line: str) -> bool:
+    """A line no truncation may drop: an integrity line, a step frame, or any
+    line carrying a string the report's execution-integrity check reads."""
+    if line.startswith(_INTEGRITY_LINE_PREFIXES) or line.startswith(_STEP_FRAME_PREFIXES):
+        return True
+    return any(marker in line for marker, _ in _INTEGRITY_MARKERS)
+
+
+def _bound_chunk(chunk: str) -> tuple[str, Optional[int]]:
+    """Cut one /output chunk to :data:`RUN_OUTPUT_CHUNK_MAX_BYTES`.
+
+    Returns ``(text, offered_bytes)``; ``offered_bytes`` is ``None`` when the
+    chunk fit and ``text`` is the chunk unchanged. Otherwise every line that
+    :func:`_survives_truncation` is kept, in order, ordinary lines are kept
+    from the top until the budget is spent (a line that straddles it is cut on
+    a character boundary), and one ``[OUTPUT CHUNK TRUNCATED: ...]`` line says
+    how much was kept. Surviving lines are never dropped here, even past the
+    bound; the run cap and its integrity reserve bound them.
+    """
+    raw = chunk.encode("utf-8")
+    if len(raw) <= RUN_OUTPUT_CHUNK_MAX_BYTES:
+        return chunk, None
+    lines = chunk.splitlines(keepends=True)
+    keep = [_survives_truncation(ln) for ln in lines]
+    frame_bytes = sum(len(ln.encode("utf-8")) + 1 for ln, k in zip(lines, keep) if k)
+    budget = RUN_OUTPUT_CHUNK_MAX_BYTES - frame_bytes - _CHUNK_MARKER_RESERVE_BYTES
+    out: list[str] = []
+    for ln, k in zip(lines, keep):
+        if k:
+            out.append(ln if ln.endswith("\n") else ln + "\n")
+            continue
+        if budget <= 0:
+            continue
+        b = ln.encode("utf-8")
+        if len(b) <= budget:
+            out.append(ln)
+            budget -= len(b)
+            continue
+        part = b[:max(budget - 1, 0)].decode("utf-8", "ignore")
+        if part:
+            out.append(part if part.endswith("\n") else part + "\n")
+        budget = 0
+    kept = "".join(out)
+    if kept and not kept.endswith("\n"):
+        kept += "\n"
+    kept_bytes = len(kept.encode("utf-8"))
+    marker = (f"{_CHUNK_TRUNCATION_MARKER}{kept_bytes} of {len(raw)} bytes kept — "
+              "ordinary lines past the per-chunk bound were dropped; every step "
+              "header and integrity line was kept]\n")
+    return kept + marker, len(raw)
 
 
 class OutputRequest(BaseModel):
-    # max_length is a cheap first cut in characters; the validator below is
-    # the real limit, in bytes on the wire.
-    output: str = Field(..., max_length=RUN_OUTPUT_CHUNK_MAX_BYTES)
+    # Deliberately no length limit: an oversized chunk is cut by the route
+    # (`_bound_chunk`), keeping its step frame and integrity lines. A 422 here
+    # lost them together with the step-start record.
+    output: str
     # Optional step id (e.g. "step-02") so per-step output can be grouped in
     # the live SSE stream. Backward compatible — older agents omit it.
     step_id: Optional[str] = None
-
-    @field_validator("output")
-    @classmethod
-    def _chunk_within_byte_limit(cls, v: str) -> str:
-        n = len(v.encode("utf-8"))
-        if n > RUN_OUTPUT_CHUNK_MAX_BYTES:
-            raise ValueError(
-                f"output chunk is {n} bytes; the limit is {RUN_OUTPUT_CHUNK_MAX_BYTES}")
-        return v
 
 
 _PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
@@ -1464,15 +1522,17 @@ async def append_output(
     concurrently, and a read-modify-write dropped every chunk but the last —
     including the refusal markers the POV report's integrity check reads.
 
-    Bounded (SEC-14 / OPS-06): the append is guarded IN THE SAME STATEMENT by
-    the run's stored byte length, so concurrent writers cannot jointly exceed
-    :data:`RUN_OUTPUT_CAP_BYTES`. A chunk that does not fit keeps only its
-    integrity lines (:data:`_INTEGRITY_LINE_PREFIXES`), and
+    Bounded (SEC-14 / OPS-06): a chunk over :data:`RUN_OUTPUT_CHUNK_MAX_BYTES`
+    is first cut by :func:`_bound_chunk` (accepted, never refused — its step
+    frame and integrity lines survive). The append is then guarded IN THE SAME
+    STATEMENT by the run's stored byte length, so concurrent writers cannot
+    jointly exceed :data:`RUN_OUTPUT_CAP_BYTES`. A chunk that does not fit
+    keeps only the lines that :func:`_survives_truncation`, and
     ``[OUTPUT TRUNCATED at N bytes]`` is appended exactly once (the guard is
     in SQL too). The step-start record below is host evidence, not output,
     and is written either way.
     """
-    chunk = body.output
+    chunk, offered_bytes = _bound_chunk(body.output)
     stored = func.length(cast(func.coalesce(Run.output, ""), LargeBinary))
     res = await db.execute(
         update(Run)
@@ -1511,14 +1571,22 @@ async def append_output(
              "data": {"step_id": body.step_id, "chunk": appended}},
         )
 
+    reply: dict[str, Any] = {"status": "ok", "run_id": run_id}
+    if offered_bytes is not None:
+        logger.warning(
+            "output chunk over the per-chunk bound run_id=%s offered=%d kept=%d step=%s",
+            run_id, offered_bytes, len(chunk.encode("utf-8")), body.step_id)
+        reply.update(chunk_truncated=True, offered_bytes=offered_bytes,
+                     accepted_bytes=len(appended.encode("utf-8")))
     if truncated:
         logger.warning(
             "output over cap run_id=%s offered=%d kept=%d step=%s",
             run_id, len(chunk), len(appended), body.step_id)
-        return {"status": "ok", "run_id": run_id, "truncated": True,
-                "accepted_bytes": len(appended.encode("utf-8"))}
-    logger.info("output appended run_id=%s bytes=%d step=%s", run_id, len(chunk), body.step_id)
-    return {"status": "ok", "run_id": run_id}
+        reply.update(truncated=True, accepted_bytes=len(appended.encode("utf-8")))
+    if offered_bytes is None and not truncated:
+        logger.info("output appended run_id=%s bytes=%d step=%s",
+                    run_id, len(chunk), body.step_id)
+    return reply
 
 
 async def _append_past_cap(db: AsyncSession, run_id: str, chunk: str, stored) -> str:
@@ -1526,7 +1594,8 @@ async def _append_past_cap(db: AsyncSession, run_id: str, chunk: str, stored) ->
 
     1. ``[OUTPUT TRUNCATED at N bytes]`` (N = the stored length when it was
        written), guarded by ``instr`` so concurrent writers add it once.
-    2. The chunk's integrity lines, within the integrity reserve.
+    2. The chunk's lines that :func:`_survives_truncation` — integrity lines
+       and the step frame that attributes them — within the integrity reserve.
 
     Both are single guarded UPDATEs, like the fast path.
     """
@@ -1546,7 +1615,7 @@ async def _append_past_cap(db: AsyncSession, run_id: str, chunk: str, stored) ->
     kept = "".join(
         ln if ln.endswith("\n") else ln + "\n"
         for ln in chunk.splitlines(keepends=True)
-        if ln.startswith(_INTEGRITY_LINE_PREFIXES)
+        if _survives_truncation(ln)
     )
     if kept:
         res = await db.execute(

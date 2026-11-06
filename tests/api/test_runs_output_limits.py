@@ -8,14 +8,18 @@ the lab network) could grow one ``runs.output`` TEXT cell without bound — and
 
 Now:
 
-* one chunk is at most 1 MiB (422 past it, nothing appended);
+* one chunk stores at most 1 MiB of ordinary text. A bigger chunk is CUT, not
+  refused: the beacon sends one chunk per step and never caps it, so a 422 lost
+  the step's ``=== STEP`` header, its ``!! IDENTITY NOT HONOURED`` and its
+  step-start record together. The cut keeps every step frame and integrity
+  line and says ``[OUTPUT CHUNK TRUNCATED: N of M bytes kept ...]``;
 * one run's output is at most 32 MiB. Past the cap only INTEGRITY lines are
   still accepted — ``!! `` markers (``!! IDENTITY NOT HONOURED``,
-  ``!! TOOL_ABSENT``, ...), ``__CORTEXSIM`` sentinels and ``cortexsim-`` tags —
-  because those are what the POV report's execution-integrity check reads, and
-  dropping them would turn "this run did not execute as authored" into an
-  ordinary-looking run; ``[OUTPUT TRUNCATED at N bytes]`` is appended exactly
-  once;
+  ``!! TOOL_ABSENT``, ...), ``__CORTEXSIM`` sentinels and ``cortexsim-`` tags,
+  plus the step frame that attributes them — because those are what the POV
+  report's execution-integrity check reads, and dropping them would turn "this
+  run did not execute as authored" into an ordinary-looking run;
+  ``[OUTPUT TRUNCATED at N bytes]`` is appended exactly once;
 * a manual observations batch is at most 5000 alerts.
 """
 from __future__ import annotations
@@ -77,26 +81,104 @@ def test_the_documented_limits():
     assert runs.RUN_OUTPUT_CAP_BYTES == 32 * MIB
 
 
-def test_an_oversized_chunk_is_refused_and_nothing_is_appended(client, session_factory):
+_HEADER = "=== STEP 2/3 · step-02 · T1003.001 · identity=svc-backup ==="
+_IDENTITY = ("!! IDENTITY NOT HONOURED: windows has no credential-free impersonation; "
+             "ran as the beacon's own account")
+_LATE_MARKER = "!! RUNTIME_DEPENDENCY_MISSING: python3"
+_FOOTER = "--- exit_code=0 duration=93.4s ---"
+
+
+def _step_chunk(noise_bytes: int) -> str:
+    """One step's /output exactly as the beacon formats it
+    (agent/beacon/client.go::formatStepOutput): header, identity marker,
+    the step's stdout, the exit footer — all in ONE chunk."""
+    noise = "linpeas: noise line\n" * (noise_bytes // 20)
+    return (f"{_HEADER}\n{_IDENTITY}\n--- STDOUT ---\n{noise}"
+            f"{_LATE_MARKER}\n{_FOOTER}")
+
+
+def _step_rows(session_factory):
+    from models import StepOutcome
+
+    async def _rows():
+        async with session_factory() as db:
+            return (await db.execute(select(StepOutcome))).scalars().all()
+
+    return asyncio.run(_rows())
+
+
+def test_an_oversized_chunk_keeps_its_step_header_and_integrity_lines(client, session_factory):
+    """The beacon sends ONE chunk per step and never caps it, so a 1.5 MiB step
+    (linpeas, pspy, a find sweep) used to be refused whole with a 422: its
+    `=== STEP` header, its `!! IDENTITY NOT HONOURED` and its step start were
+    all lost, and a step whose identity was not honoured read in the report as
+    an ordinary miss. Now the chunk is accepted, cut to the per-chunk bound, and
+    keeps every frame and integrity line."""
+    from api.runs import _identity_degraded_steps
+
     _seed(session_factory)
-    r = _post(client, "A" * (MIB + 1))
-    assert r.status_code in (413, 422), r.status_code
-    assert _output(session_factory) == ""
+    chunk = _step_chunk(int(1.5 * MIB))
+    assert len(chunk.encode("utf-8")) > 1.4 * MIB
+    r = _post(client, chunk, step_id="step-02")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["chunk_truncated"] is True
+    assert body["offered_bytes"] == len(chunk.encode("utf-8"))
+    assert body["accepted_bytes"] <= MIB
+
+    out = _output(session_factory)
+    assert len(out.encode("utf-8")) <= MIB
+    for line in (_HEADER, _IDENTITY, _LATE_MARKER, _FOOTER):
+        assert line in out, line
+    assert re.search(r"\[OUTPUT CHUNK TRUNCATED: \d+ of \d+ bytes kept", out), out[-600:]
+    # The run-cap marker is a different statement and is not written.
+    assert "[OUTPUT TRUNCATED at" not in out
+    # The order is preserved: the header still attributes the marker.
+    assert out.index(_HEADER) < out.index(_IDENTITY) < out.index(_LATE_MARKER)
+    assert _identity_degraded_steps(out) == ["step-02"]
+    # And the step start — host evidence age_reference reads — is recorded.
+    rows = _step_rows(session_factory)
+    assert [(r.step_id, r.started_at is not None) for r in rows] == [("step-02", True)]
 
 
-def test_a_chunk_over_the_byte_limit_in_multibyte_text_is_refused(client, session_factory):
-    """The limit is bytes on the wire, not characters: 300 Ki of a 4-byte
-    character is 1.2 MiB."""
+def test_an_oversized_multibyte_chunk_is_cut_on_a_character_boundary(client, session_factory):
+    """The bound is bytes on the wire, not characters: 300 Ki of a 4-byte
+    character is 1.2 MiB. The cut never splits a character."""
     _seed(session_factory)
     r = _post(client, "\U0001F600" * (300 * 1024))
-    assert r.status_code in (413, 422), r.status_code
-    assert _output(session_factory) == ""
+    assert r.status_code == 200, r.text
+    assert r.json()["chunk_truncated"] is True
+    out = _output(session_factory)
+    raw = out.encode("utf-8")  # would raise on a lone surrogate
+    assert len(raw) <= MIB
+    kept = out.split("\n", 1)[0]
+    assert kept and set(kept) == {"\U0001F600"}
 
 
-def test_a_chunk_at_the_limit_is_accepted(client, session_factory):
+def test_a_chunk_at_the_limit_is_accepted_whole(client, session_factory):
     _seed(session_factory)
-    assert _post(client, "B" * MIB).status_code == 200
-    assert len(_output(session_factory)) == MIB
+    r = _post(client, "B" * MIB)
+    assert r.status_code == 200
+    assert "chunk_truncated" not in r.json()
+    assert _output(session_factory) == "B" * MIB
+
+
+def test_past_the_run_cap_a_step_header_still_attributes_its_marker(
+        client, session_factory, monkeypatch):
+    """Past the run cap only integrity lines used to survive, so the marker of
+    a step whose header was dropped read as `(unattributed)` in the report."""
+    from api import runs
+    from api.runs import _identity_degraded_steps
+
+    monkeypatch.setattr(runs, "RUN_OUTPUT_CAP_BYTES", 1000, raising=False)
+    _seed(session_factory)
+    assert _post(client, "x" * 900 + "\n").status_code == 200
+    assert _post(client, _step_chunk(2000), step_id="step-02").json()["truncated"] is True
+
+    out = _output(session_factory)
+    assert _HEADER in out and _IDENTITY in out and _FOOTER in out
+    assert "linpeas: noise line" not in out
+    assert _identity_degraded_steps(out) == ["step-02"]
 
 
 def test_past_the_run_cap_only_integrity_lines_land_and_the_marker_is_written_once(
