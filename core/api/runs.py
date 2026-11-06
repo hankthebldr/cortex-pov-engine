@@ -94,6 +94,11 @@ _INTEGRITY_MARKERS: tuple[tuple[str, str], ...] = (
     ("BEACON LOST",
      "The beacon stopped reporting mid-run, so later steps may not have run "
      "and the host evidence is incomplete."),
+    ("BEACON ABANDONED TASK",
+     "The beacon stayed alive but stopped reporting on this run (its "
+     "completion was lost, typically across a SimCore restart), so SimCore "
+     "closed it without the beacon's step record: later steps may not have "
+     "run and the host evidence is incomplete."),
     ("!! TERMINATION_UNKNOWN",
      "The beacon reported a step ending in a way it could not classify, so "
      "whether the agent severed the step is unknown."),
@@ -1421,13 +1426,28 @@ async def complete_run(
         if run is None:
             raise _run_not_found(run_id)
         logger.info(
-            "run_complete ignored — run already terminal run_id=%s status=%s exit_code=%d",
+            "run_complete refused — run already terminal run_id=%s status=%s exit_code=%d",
             run_id, run.status, body.exit_code,
         )
         # Run is already terminal — drop it from the orchestrator's aborted set
         # so the in-memory set stays bounded even on the abort→late-complete path.
         orchestrator.clear_aborted(run_id)
-        return {"status": run.status, "run_id": run_id, "already_terminal": True}
+        orchestrator.forget_control_poll(run_id)
+        # 409, not 200 (OPS-03). The beacon now RETRIES /complete, so this
+        # answer is what tells it to stop: the run was already finished (by an
+        # earlier /complete, an operator abort, a staging refusal, or the
+        # beacon-lost / abandoned-task sweep) and NOTHING in this request —
+        # summary, exit code or steps[] — was applied. A 200 here read as
+        # "accepted", which a retrying client cannot tell apart from success.
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Run already terminal",
+                "code": "RUN_ALREADY_TERMINAL",
+                "detail": {"run_id": run_id, "status": run.status,
+                           "already_terminal": True},
+            },
+        )
 
     # Host evidence for each step, in the same write transaction. A duplicate
     # /complete upserts the same rows (idempotent); started_at, set by /output,
@@ -1487,8 +1507,9 @@ async def complete_run(
     run = await _reload_run(db, run_id)
 
     # Run reached a terminal state — drop it from the orchestrator's aborted
-    # set so the in-memory set stays bounded.
+    # set (and the control-poll record) so the in-memory state stays bounded.
     orchestrator.clear_aborted(run_id)
+    orchestrator.forget_control_poll(run_id)
 
     await _safe_publish(
         run_id,
@@ -1642,6 +1663,13 @@ async def run_control(run_id: str, db: AsyncSession = Depends(get_db)):
 
     if _is_terminal(run):
         abort = True
+        orchestrator.forget_control_poll(run_id)
+    else:
+        # OPS-03: the one signal that a beacon is executing THIS run (the
+        # agent's last_seen only says the agent is alive). The abandoned-run
+        # sweep reads it; in memory on purpose, measured from boot after a
+        # restart.
+        orchestrator.note_control_poll(run_id)
 
     # A beacon polling here is alive: refresh its liveness so the heartbeat
     # sweep never mistakes a long-running silent step for a lost beacon. One

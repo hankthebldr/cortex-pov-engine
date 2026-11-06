@@ -361,6 +361,62 @@ class Orchestrator:
         # survives in production, but it makes the whole path unreachable from
         # TestClient — which is precisely why no Python test covered it.
         self._events: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Event]] = {}
+        # run_id -> when a beacon last polled GET /api/runs/{id}/control. The
+        # beacon polls it before every step and every 2 s while one runs, so
+        # it is the one signal that says "a beacon is executing THIS run" —
+        # an agent's last_seen only says the agent is alive. In memory on
+        # purpose: it is a liveness signal, and a restart is measured from
+        # `started_at` (see engine.beacon_lost.terminalise_abandoned_runs).
+        self._control_polls: dict[str, datetime] = {}
+        self.started_at: datetime = datetime.utcnow()
+
+    # ------------------------------------------------------------------
+    # control-channel liveness (OPS-03)
+    # ------------------------------------------------------------------
+
+    #: Bound on the control-poll map. Entries are dropped when a run reaches a
+    #: terminal state; this only matters if that never happens.
+    _CONTROL_POLL_CAP = 10_000
+
+    def note_control_poll(self, run_id: str, when: Optional[datetime] = None) -> None:
+        """Record that a beacon just polled this run's control channel."""
+        if run_id not in self._control_polls and len(self._control_polls) >= self._CONTROL_POLL_CAP:
+            oldest = min(self._control_polls, key=self._control_polls.__getitem__)
+            self._control_polls.pop(oldest, None)
+        self._control_polls[run_id] = when or datetime.utcnow()
+
+    def last_control_poll(self, run_id: str) -> Optional[datetime]:
+        """When a beacon last polled this run's control channel, this process."""
+        return self._control_polls.get(run_id)
+
+    def forget_control_poll(self, run_id: str) -> None:
+        """Drop a terminal run's entry. Idempotent."""
+        self._control_polls.pop(run_id, None)
+
+    async def reap_abandoned(
+        self, agent_id: str, db: AsyncSession, now: Optional[datetime] = None,
+    ) -> list[str]:
+        """Terminalise ``agent_id``'s delivered runs its beacon walked away from.
+
+        Never lets a reaping failure break task delivery: the run stays
+        ``running`` and the next poll tries again.
+        """
+        from config import settings as _settings  # noqa: PLC0415
+        from engine.beacon_lost import terminalise_abandoned_runs  # noqa: PLC0415
+
+        try:
+            return await terminalise_abandoned_runs(
+                db, now or datetime.utcnow(),
+                after_seconds=int(_settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS),
+                agent_id=agent_id, control_polls=self,
+            )
+        except Exception:
+            logger.exception("abandoned-run reaping failed agent=%s", agent_id)
+            try:
+                await db.rollback()
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("rollback after failed reaping also failed")
+            return []
 
     # ------------------------------------------------------------------
     # launch
@@ -1492,7 +1548,14 @@ class Orchestrator:
         The run is stamped ``delivered_at`` in the same commit. Deleting the
         row erases the only other evidence that the task reached a beacon, and
         :meth:`rehydrate` needs that evidence to leave an executing run alone.
+
+        Every poll first reaps this agent's ABANDONED runs (OPS-03): a beacon
+        asking for new work is alive, and if it has stopped polling a delivered
+        run's control channel it is no longer executing that run. This is the
+        only periodic signal that fires for such an agent — its fresh
+        ``last_seen`` keeps the offline-agent beacon-lost sweep away.
         """
+        await self.reap_abandoned(agent_id, db)
         task = self.dequeue(agent_id)
         if task is not None:
             from models import QueuedTask, Run  # noqa: PLC0415
@@ -1582,13 +1645,28 @@ class Orchestrator:
             ``TASK_LOST_ON_RESTART`` (OPS-01) so no later alert is credited to
             a run that never reached the target.
           * A run whose task WAS delivered (``delivered_at`` set) has no row by
-            design — delivery deletes it — and is executing on its beacon. It
-            is left ``running``: failing it made /control stop the beacon
-            mid-step and put "the run never reached the target" in the POV
-            report of a run that did. Its own /complete terminalises it.
+            design — delivery deletes it — and is left ``running``: failing it
+            made /control stop the beacon mid-step and put "the run never
+            reached the target" in the POV report of a run that did.
+
+            Leaving it running is NOT the same as "its own /complete
+            terminalises it" (the claim this docstring used to make). The
+            beacon may have POSTed its /complete into the restart window, and
+            it does not wait for an answer the way a long-poll does; the run
+            then never hears from it again. Its agent keeps polling /tasks, so
+            ``last_seen`` stays fresh and the offline-agent beacon-lost sweep
+            never fires either. Such a run is reaped by
+            :func:`engine.beacon_lost.terminalise_abandoned_runs` (OPS-03): no
+            ``/control`` poll for the run within
+            ``CORTEXSIM_BEACON_LOST_AFTER_SECONDS`` of ``max(boot,
+            delivered_at)`` while its agent is demonstrably alive means the
+            beacon is no longer executing it.
 
         Returns counts ``{rehydrated, failed_orphans, in_flight}`` for logging.
         """
+        # A fresh boot: no control poll survives a restart, so the abandoned-run
+        # sweep measures silence from now, never from before the process lived.
+        self.started_at = datetime.utcnow()
         from models import QueuedTask, Run  # noqa: PLC0415
 
         # 1. Re-load every durable task into the in-memory queue.

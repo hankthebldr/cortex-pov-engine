@@ -196,13 +196,16 @@ def test_complete_after_abort_keeps_run_aborted(client, session_factory):
     run_id = _seed_run(session_factory, "ab-then-complete", status="running")
     client.post(f"/api/runs/{run_id}/abort").raise_for_status()
 
-    # Agent reports the aborted exit (130) afterwards.
+    # Agent reports the aborted exit (130) afterwards. The run is already
+    # terminal, so the callback is refused (409) — the answer that stops a
+    # retrying beacon — and carries the status the run finished with.
     r = client.post(
         f"/api/runs/{run_id}/complete",
         json={"exit_code": 130, "summary": "aborted by operator"},
     )
-    assert r.status_code == 200
-    assert r.json()["status"] == "aborted"
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "RUN_ALREADY_TERMINAL"
+    assert r.json()["detail"]["detail"]["status"] == "aborted"
 
     detail = client.get(f"/api/runs/{run_id}").json()
     assert detail["status"] == "aborted"

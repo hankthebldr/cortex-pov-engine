@@ -129,7 +129,8 @@ def test_duplicate_complete_does_not_duplicate_step_outcomes(client, session_fac
     _seed(session_factory, mode="block")
     assert client.post("/api/runs/r1/complete", json=_SEVER_BODY).status_code == 200
     again = client.post("/api/runs/r1/complete", json=_SEVER_BODY)
-    assert again.status_code == 200
+    # Already terminal: refused (409) and nothing re-applied.
+    assert again.status_code == 409
     assert len(_rows(session_factory, StepOutcome)) == 3
     assert _run(session_factory) == ("complete", "step-02")
 
