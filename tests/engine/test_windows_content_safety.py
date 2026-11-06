@@ -555,6 +555,71 @@ def test_a_cmd_copy_into_authorized_keys_is_still_an_artifact():
     assert gaps and "authorized_keys" in gaps[0], gaps
 
 
+# ---------------------------------------------------------------------------
+# GUI-subsystem binaries: PowerShell does not wait for them
+# ---------------------------------------------------------------------------
+#
+# rundll32.exe (like regsvr32, mshta, wscript) is a Windows GUI-subsystem
+# executable. PowerShell's call operator returns as soon as such a process
+# starts, so `& rundll32.exe comsvcs.dll, MiniDump ...` followed by
+# `Test-Path $dmp` races the dump: the step can fail with "wrote no dump" and
+# then the full LSASS dump lands on disk after the step (and its in-step
+# delete) are gone. A pull run never executes scenario cleanup, so nothing
+# removes it. cmd waits for a GUI program run from a batch file, so only the
+# PowerShell dialect is checked. Waiting means `Start-Process ... -Wait`, or a
+# pipe to Out-Null / Wait-Process.
+
+_GUI_EXE = r"(?:rundll32|regsvr32|mshta|wscript)(?:\.exe)?"
+_GUI_CALL = re.compile(
+    rf"(?im)^[ \t]*(?:&[ \t]*)?[\"']?[^\s\"'|;]*\b{_GUI_EXE}[\"']?(?=\s|$)(?P<rest>[^\n]*)$"
+)
+_GUI_START = re.compile(rf"(?im)^[^\n#]*\bStart-Process\b[^\n]*\b{_GUI_EXE}\b[^\n]*$")
+_WAITS = re.compile(r"\|\s*(?:Out-Null|Wait-Process)\b", re.I)
+
+
+def _gui_races(text: str) -> list[str]:
+    if pg.infer_windows_shell(text) != "powershell":
+        return []
+    code = _strip_comments(text)
+    bad = [m.group(0).strip()[:120] for m in _GUI_CALL.finditer(code) if not _WAITS.search(m.group("rest"))]
+    bad += [m.group(0).strip()[:120] for m in _GUI_START.finditer(code)
+            if not re.search(r"(?<![\w-])-Wait\b", m.group(0), re.I)]
+    return bad
+
+
+def test_no_windows_text_races_a_gui_subsystem_binary():
+    bad: list[str] = []
+    for sid, d in sorted(CORPUS.items()):
+        steps, _ = _windows_shaped(d)
+        bad += [f"{sid} {s}: {line}" for s, t in steps for line in _gui_races(t)]
+    assert not bad, "\n  ".join(
+        ["PowerShell does not wait for these GUI-subsystem calls:"] + bad
+    )
+
+
+@pytest.mark.parametrize("text", [
+    # SIM-EDR-006 step-02 at 7e6e91e, verbatim.
+    '$lsass = (Get-Process -Name lsass).Id\n'
+    '& "$env:SystemRoot\\System32\\rundll32.exe" "$env:SystemRoot\\System32\\comsvcs.dll," MiniDump $lsass $dmp full\n'
+    'if (-not (Test-Path -LiteralPath $dmp)) { exit 1 }',
+    "Start-Process -FilePath rundll32.exe -ArgumentList 'comsvcs.dll, MiniDump 1 x full'\nTest-Path x",
+    "rundll32.exe comsvcs.dll, MiniDump 1 C:\\x.dmp full\nGet-Item C:\\x.dmp",
+])
+def test_the_gui_race_detector_catches_each_shape(text):
+    assert _gui_races(text), text
+
+
+@pytest.mark.parametrize("text", [
+    "$p = Start-Process -FilePath \"$env:SystemRoot\\System32\\rundll32.exe\" "
+    "-ArgumentList 'comsvcs.dll, MiniDump 1 x full' -NoNewWindow -Wait -PassThru",
+    "& rundll32.exe comsvcs.dll, MiniDump 1 x full | Out-Null\nTest-Path x",
+    "Set-Content -Path x -Value 'models mshta.exe proxying a remote fetch'",
+    "rundll32.exe comsvcs.dll, MiniDump 1 C:\\x.dmp full",  # cmd dialect: batch waits
+])
+def test_the_gui_race_detector_accepts_waiting_forms(text):
+    assert _gui_races(text) == []
+
+
 def test_bash_cleanup_does_not_count_as_windows_teardown():
     """The MP-025/026 shape: a pwsh call wrapped in bash is skipped on Windows."""
     d = {
