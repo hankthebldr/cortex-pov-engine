@@ -32,7 +32,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 @pytest.fixture(scope="module")
 def compose() -> dict:
-    return yaml.safe_load((REPO / "docker-compose.yml").read_text())
+    return yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -51,7 +51,7 @@ def test_docker_socket_is_not_mounted(simcore):
 
 
 def test_no_service_mounts_the_docker_socket(compose):
-    raw = (REPO / "docker-compose.yml").read_text()
+    raw = (REPO / "docker-compose.yml").read_text(encoding="utf-8")
     # Comments may explain why it is absent; a mount line may not carry it.
     live = [ln for ln in raw.splitlines()
             if "docker.sock" in ln and not ln.lstrip().startswith("#")]
@@ -89,7 +89,7 @@ def test_bind_and_host_guard_settings_reach_the_container(simcore):
 
 
 def _dockerfile_cmd() -> list[str]:
-    lines = (REPO / "core" / "Dockerfile").read_text().splitlines()
+    lines = (REPO / "core" / "Dockerfile").read_text(encoding="utf-8").splitlines()
     cmds = [ln for ln in lines if ln.startswith("CMD ")]
     assert cmds, "core/Dockerfile has no CMD"
     return json.loads(cmds[-1][len("CMD "):])

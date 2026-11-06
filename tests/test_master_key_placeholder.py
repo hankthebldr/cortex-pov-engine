@@ -29,7 +29,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 
 def _template_secret() -> str:
-    text = (REPO / ".env.example").read_text()
+    text = (REPO / ".env.example").read_text(encoding="utf-8")
     m = re.search(r"^CORTEXSIM_SECRET=(.*)$", text, re.MULTILINE)
     assert m, ".env.example no longer documents CORTEXSIM_SECRET"
     value = m.group(1).strip()

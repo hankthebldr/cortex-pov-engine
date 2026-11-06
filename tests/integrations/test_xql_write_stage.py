@@ -149,7 +149,7 @@ def test_the_shipped_corpus_is_not_refused():
 
     queries: list[tuple[str, str]] = []
     for path in (REPO / "scenarios").rglob("*.yml"):
-        doc = yaml.safe_load(path.read_text())
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(doc, dict):
             continue
         for step in doc.get("steps") or []:
@@ -168,7 +168,7 @@ def test_the_shipped_corpus_is_not_refused():
             elif isinstance(node, list):
                 for v in node:
                     _walk(v)
-        _walk(yaml.safe_load(path.read_text()))
+        _walk(yaml.safe_load(path.read_text(encoding="utf-8")))
 
     assert len(queries) > 30, f"corpus walk found only {len(queries)} queries"
     refused = []
@@ -415,11 +415,11 @@ def _py_files():
 def test_only_the_client_names_the_xql_start_path():
     hits = []
     for path in _py_files():
-        tree = ast.parse(path.read_text(), filename=str(path))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) \
                     and "xql/start_xql_query" in node.value:
-                hits.append(str(path.relative_to(CORE)))
+                hits.append(path.relative_to(CORE).as_posix())
     assert hits == ["integrations/xsiam/client.py"], (
         f"the XQL start path is spelled outside the client: {hits}. Every query "
         f"must reach the wire through XsiamClient.start_xql_query."
@@ -430,7 +430,7 @@ def test_start_xql_query_is_the_only_sender():
     """Inside the client, the only HTTP call that targets the start path is in
     start_xql_query, and it is preceded by the guard."""
     path = CORE / "integrations" / "xsiam" / "client.py"
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
 
     senders: list[str] = []
     for fn in ast.walk(tree):
@@ -461,9 +461,9 @@ def test_every_query_caller_outside_the_client_goes_through_the_client():
     for path in _py_files():
         if path == CORE / "integrations" / "xsiam" / "client.py":
             continue
-        tree = ast.parse(path.read_text(), filename=str(path))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) \
                     and "/xql/" in node.value and "public_api" in node.value:
-                offenders.append(f"{path.relative_to(CORE)}:{node.lineno}")
+                offenders.append(f"{path.relative_to(CORE).as_posix()}:{node.lineno}")
     assert offenders == [], offenders
