@@ -150,13 +150,15 @@ async def reconcile_run(
     window, scope them to the run's target host, correlate to ``results``,
     persist matches, emit SSE.
 
-    ``host`` overrides the scope host; when omitted it is resolved from
+    ``host`` overrides the scope host (``host_source: "operator"`` in the
+    summary — the API's ``?host=``); when omitted or blank it is resolved from
     ``Run.target`` → ``Agent.hostname``. A run with no resolvable host is
     reconciled UNSCOPED and the summary says so — on a shared tenant that means
     an alert from any endpoint could have been credited.
 
     Raises :class:`ReconcileError` (never HTTP) on any failure.
     """
+    host = (host or "").strip() or None
     conn = get_connector(connector_kind, fetcher=fetcher)
     if conn is None:
         raise ReconcileError("CONNECTOR_NOT_FOUND",
@@ -254,6 +256,7 @@ async def reconcile_run(
                                           window_seconds=window_seconds)
     summary["pulled"] = len(pull.observations)
     summary["host_scope"] = host_scope
+    summary["host_source"] = host_source(host, host_scope)
     if "incidents" in ctx:
         summary["incidents_considered"] = len(ctx["incidents"])
     if "incidents_error" in ctx:
@@ -271,7 +274,8 @@ async def reconcile_run(
             "unscoped: this run has no resolvable target host, so an alert from "
             "ANY endpoint in the tenant could match. A matched detect expectation "
             "is therefore recorded pending (UNSCOPED_MATCH) with no MTTD, not "
-            "detected; reconcile with the endpoint's host to credit it.")
+            "detected; reconcile again with ?host=<the endpoint it ran on> to "
+            "credit it.")
     if truncation:
         summary["truncated"] = True
         summary["truncation"] = truncation
@@ -335,6 +339,19 @@ def reconcile_candidates(run: Any, results: list) -> tuple[list, bool]:
 
     ran_here = in_process_steps(run)
     return [r for r in results if r.step_id in ran_here], True
+
+
+def host_source(override: Optional[str], host_scope: dict[str, Any]) -> Optional[str]:
+    """Who named the host a reconcile was scoped to.
+
+    ``"operator"`` — the DC passed it (``?host=`` / the ``/observations`` body);
+    ``"run_target"`` — resolved from the run's launch agent; ``None`` — nothing
+    did, and the reconcile was unscoped. Reported beside ``host_scope`` so an
+    operator-asserted scope is never read as one SimCore resolved itself.
+    """
+    if host_scope.get("host") is None:
+        return None
+    return "operator" if override else "run_target"
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:

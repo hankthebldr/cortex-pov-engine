@@ -13,6 +13,12 @@ Default (option c): an unscoped match leaves the row ``pending`` with reason
 candidate alert is still recorded as an ``Observation`` and named in the row's
 notes. A host-scoped reconcile — the ``host`` override on ``reconcile_run`` —
 stays exactly as before, and can later upgrade the row to ``detected``.
+
+The override must be reachable from the API, or every push run — every Windows
+``.ps1`` bundle included — could only ever read ``pending`` for its detect
+expectations, even when the DC hand-picked the alerts: ``?host=`` on
+``POST /reconcile`` and ``host`` in the ``/observations`` body name the endpoint
+the bundle ran on, and the summary records ``host_source: "operator"``.
 """
 from __future__ import annotations
 
@@ -190,3 +196,96 @@ def test_the_silent_row_judge_does_not_erase_an_unscoped_match(session_factory):
     asyncio.run(_close_window_and_pull_nothing())
     row, _ = _row(session_factory)
     assert (row.outcome, row.outcome_reason) == ("pending", "UNSCOPED_MATCH")
+
+
+# ---------------------------------------------------------------------------
+# The override through the API: push coverage is measurable when the DC names
+# the endpoint the bundle ran on
+# ---------------------------------------------------------------------------
+
+
+def _http(session_factory):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from api.connectors import runs_reconcile_router
+    from database import get_db
+
+    async def _get_db():
+        async with session_factory() as s:
+            yield s
+
+    app = FastAPI()
+    app.include_router(runs_reconcile_router, prefix="/api")
+    app.dependency_overrides[get_db] = _get_db
+    return TestClient(app)
+
+
+def test_the_reconcile_route_scopes_a_push_run_to_the_host_the_dc_names(
+        session_factory, monkeypatch):
+    import connectors.base as base
+
+    run_id = _seed(session_factory)
+    monkeypatch.setattr(base, "default_http_fetcher", _fetcher(host="LAB-WIN-07.corp.local",
+                                                               seconds=90))
+    client = _http(session_factory)
+
+    # Without a host the route is unscoped and honest: pending, no MTTD.
+    r = client.post(f"/api/runs/{run_id}/reconcile?connector=xsiam")
+    assert r.status_code == 200, r.text
+    assert r.json()["unscoped_matches"] == 1 and r.json()["host_source"] is None
+    row, _ = _row(session_factory)
+    assert (row.outcome, row.outcome_reason) == ("pending", "UNSCOPED_MATCH")
+
+    # Naming the endpoint the .ps1 ran on scopes it, and the match is credited.
+    r = client.post(f"/api/runs/{run_id}/reconcile?connector=xsiam&host=lab-win-07")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["host_source"] == "operator"
+    assert body["host_scope"]["host"] == "lab-win-07"
+    assert body["newly_matched"] == 1 and "unscoped_matches" not in body
+    row, _ = _row(session_factory)
+    assert (row.outcome, row.observed) == ("detected", True)
+    assert abs(row.mttd_seconds - 90.0) < 2.0
+
+
+def test_the_reconcile_route_host_override_still_excludes_another_hosts_alert(
+        session_factory, monkeypatch):
+    import connectors.base as base
+
+    run_id = _seed(session_factory)
+    monkeypatch.setattr(base, "default_http_fetcher", _fetcher(host="finance-laptop-42"))
+    r = _http(session_factory).post(
+        f"/api/runs/{run_id}/reconcile?connector=xsiam&host=lab-win-07")
+    assert r.status_code == 200, r.text
+    assert r.json()["host_scope"]["excluded_other_host"] == 1
+    assert r.json()["newly_matched"] == 0
+    row, _ = _row(session_factory)
+    assert row.outcome != "detected" and row.mttd_seconds is None
+
+
+def test_the_observations_body_takes_the_host_too(session_factory):
+    run_id = _seed(session_factory)
+    alert = {"external_id": "m-1", "name": "LSASS memory access", "technique": "T1003.001",
+             "host": "lab-win-07", "observed_at": (T0 + timedelta(seconds=30)).isoformat() + "Z"}
+    r = _http(session_factory).post(f"/api/runs/{run_id}/observations",
+                                    json={"host": "lab-win-07", "observations": [alert]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["host_source"] == "operator" and body["host_scope"]["host"] == "lab-win-07"
+    assert body["newly_matched"] == 1 and body["observed"] == 1
+    assert "unscoped" not in body
+    row, _ = _row(session_factory)
+    assert (row.outcome, row.observed) == ("detected", True)
+    assert abs(row.mttd_seconds - 30.0) < 2.0
+
+
+def test_a_blank_host_is_no_override(session_factory):
+    """`host=""` must not read as a host: it stays unscoped and says so."""
+    run_id = _seed(session_factory)
+    alert = {"external_id": "m-2", "name": "LSASS memory access", "technique": "T1003.001",
+             "host": "anyone", "observed_at": (T0 + timedelta(seconds=30)).isoformat() + "Z"}
+    r = _http(session_factory).post(f"/api/runs/{run_id}/observations",
+                                    json={"host": "   ", "observations": [alert]})
+    assert r.status_code == 200, r.text
+    assert r.json()["host_source"] is None and r.json()["unscoped_matches"] == 1
