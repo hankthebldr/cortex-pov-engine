@@ -98,6 +98,10 @@ async def lifespan(app: FastAPI):
     from config import validate_master_key  # noqa: PLC0415
     validate_master_key(settings.CORTEXSIM_SECRET, env=settings.CORTEXSIM_ENV)
 
+    # 0b. Say, loudly, what this deployment exposes (SEC-01/SEC-10). Always
+    #     fires: there is no API authentication to configure yet.
+    warn_unauthenticated()
+
     # 1. Initialize database (create tables).
     #    A storage fault here is a DEPLOYMENT problem, not a defect, so it gets
     #    the same treatment as the master-key guard: a named code, a plain
@@ -266,20 +270,83 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow all origins (jumpbox internal tool, no auth exists). Per the
-# CORS spec a wildcard origin cannot carry credentials — browsers reject
-# `allow_origins=["*"]` + `allow_credentials=True` outright — so credentials
-# stay OFF. Nothing here sends them (no auth, no cookies, no session), so this
-# keeps the API fully open while making the config spec-valid. Do not flip
-# allow_credentials back to True without narrowing allow_origins off "*" — the
-# two together are invalid and a browser will refuse the response.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# ---------------------------------------------------------------------------
+# HTTP exposure: CORS opt-in + Host guard (SEC-07)
+#
+# CORS used to be allow_origins=["*"]. With no authentication anywhere, that let
+# ANY web page a DC had open read every API response — runs, the credential
+# inventory, agent ids — into its own JavaScript. Nothing needs it: the console
+# is served by SimCore and calls the API at window.location.origin
+# (ui/src/api/client.js), and the Vite dev server proxies /api, so both are
+# same-origin. CORS is therefore mounted ONLY for origins an operator names in
+# CORTEXSIM_CORS_ORIGINS, and never with credentials.
+#
+# The Host guard (security/host_guard.py) closes what CORS never did: DNS
+# rebinding, where the attacker's page becomes same-origin with SimCore. It is
+# added LAST so it is the OUTERMOST layer and refuses before anything answers.
+# Still open until SEC-01: a cross-site *simple* POST to an IP literal is
+# delivered without a preflight, so body-less POST routes remain forgeable.
+# ---------------------------------------------------------------------------
+
+from security.host_guard import HostGuardMiddleware, parse_allowed_hosts  # noqa: E402
+
+
+def parse_cors_origins(raw: str | None) -> list[str]:
+    """``"https://a.example, https://b.example,"`` -> the non-empty entries."""
+    return [o.strip() for o in (raw or "").split(",") if o.strip()]
+
+
+def install_http_security(app: FastAPI, *, cors_origins: list[str],
+                          allowed_hosts: list[str]) -> None:
+    """Mount CORS (only if origins are named) and then the Host guard.
+
+    Starlette's ``add_middleware`` prepends, so the guard — added second — is
+    ``user_middleware[0]``, the outermost layer.
+    """
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            # Never True: with no authentication there is nothing a credential
+            # would legitimately carry, and wildcard + credentials makes
+            # Starlette reflect every caller's Origin (tests/api/test_cors.py).
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    app.add_middleware(HostGuardMiddleware, allowed_hosts=list(allowed_hosts))
+
+
+install_http_security(
+    app,
+    cors_origins=parse_cors_origins(settings.CORTEXSIM_CORS_ORIGINS),
+    allowed_hosts=parse_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS),
 )
+
+
+def exposed_bind() -> str:
+    """The host address the API is published on, for messages. Unset -> compose's default."""
+    return (settings.CORTEXSIM_BIND or "").strip() or "0.0.0.0"
+
+
+def warn_unauthenticated() -> None:
+    """The loud boot line. It always fires today: no authentication exists."""
+    bind = exposed_bind()
+    hosts = parse_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS)
+    logger.warning(
+        "SECURITY: SimCore's operator and agent APIs are UNAUTHENTICATED (SEC-01). "
+        "Anyone who can reach %s:%d can launch runs, start tools, read the "
+        "credential inventory and impersonate agents. %s Host guard: %s. CORS: %s. "
+        "Restrict the port to the DC's address (security group / host firewall) "
+        "or publish on one interface with CORTEXSIM_BIND. GET /api/health reports "
+        "this as api_auth: API_UNAUTHENTICATED.",
+        bind, settings.CORTEXSIM_PORT,
+        ("CORTEXSIM_BIND is unset, so compose publishes on every interface."
+         if bind == "0.0.0.0" else f"Published on {bind} only."),
+        ("disabled (CORTEXSIM_ALLOWED_HOSTS='*')" if "*" in hosts else
+         "localhost, IP literals, this host's names" + (f", {', '.join(hosts)}" if hosts else "")),
+        ", ".join(parse_cors_origins(settings.CORTEXSIM_CORS_ORIGINS)) or "off (same-origin only)",
+    )
 
 
 # ---------------------------------------------------------------------------

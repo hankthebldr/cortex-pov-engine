@@ -18,6 +18,12 @@ from pydantic import BaseModel, Field, field_validator
 
 ALLOWED_PROVIDERS = ("aws", "gcp", "azure")
 
+#: Narrowest-allowed prefix for ``dc_ssh_cidr``. /16 is 65,536 IPv4 addresses —
+#: a whole site. For IPv6 the same idea is a site allocation, /48; an IPv6 /16
+#: would be 2**112 addresses and no floor at all.
+_MIN_PREFIX_V4 = 16
+_MIN_PREFIX_V6 = 48
+
 # Providers that actually ship Terraform modules on disk. gcp/azure are
 # accepted by the Pydantic Literal (Phase C/D scope) but have ZERO modules,
 # so requests against them must fail fast at the request boundary with a
@@ -66,9 +72,22 @@ class InfraGenerateParams(BaseModel):
     @classmethod
     def _validate_cidr(cls, v: str) -> str:
         try:
-            ipaddress.ip_network(v, strict=False)
+            net = ipaddress.ip_network(v, strict=False)
         except ValueError as e:
             raise ValueError(f"invalid CIDR: {v}") from e
+        # SEC-10. The base module's jumpbox security group applies this CIDR to
+        # BOTH 22/tcp and 8888/tcp (infra/modules/aws/base/main.tf), so it is
+        # also the only network control in front of SimCore's unauthenticated
+        # API. The field's name says SSH; a DC typing 0.0.0.0/0 "to get SSH
+        # working" published the API to the internet and nothing objected.
+        floor = _MIN_PREFIX_V4 if net.version == 4 else _MIN_PREFIX_V6
+        if net.prefixlen < floor:
+            raise ValueError(
+                f"dc_ssh_cidr {v} is too broad (/{net.prefixlen}; the floor is "
+                f"/{floor} for IPv{net.version}). It also opens 8888/tcp — the "
+                f"SimCore UI and API, which are unauthenticated — to every address "
+                f"in it. Use the DC's own egress address (/32) or the lab's range."
+            )
         return v
 
 

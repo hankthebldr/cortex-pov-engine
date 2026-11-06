@@ -138,6 +138,27 @@ class Settings(BaseSettings):
     # lines to find it. Opt in explicitly when you actually want statement-level
     # tracing.
     CORTEXSIM_SQL_ECHO: bool = False
+
+    # ── Exposure (SEC-07 / SEC-10) ──────────────────────────────────────────
+    # SimCore's operator and agent APIs are UNAUTHENTICATED (SEC-01 is open);
+    # /api/health reports it as api_auth: API_UNAUTHENTICATED and boot warns.
+    #
+    # CORTEXSIM_BIND: the host address docker-compose.yml publishes the port on
+    # ("${CORTEXSIM_BIND:-0.0.0.0}:${CORTEXSIM_PORT}:8888"). The app does not
+    # bind it — uvicorn's --host does — it is read so the boot warning and the
+    # health detail can NAME what is exposed. Empty means compose's default,
+    # every host interface.
+    CORTEXSIM_BIND: str = ""
+    # Host names the console/API answers to beyond localhost, IP literals and
+    # this machine's own hostname/FQDN — the DNS-rebinding guard
+    # (core/security/host_guard.py). Comma list; "*.lab.example" matches
+    # subdomains; "*" disables the check.
+    CORTEXSIM_ALLOWED_HOSTS: str = ""
+    # Origins allowed to read the API cross-origin. Empty (the default) mounts
+    # no CORS middleware at all: the console is same-origin and needs none.
+    # Credentials are never allowed, even when this is set.
+    CORTEXSIM_CORS_ORIGINS: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

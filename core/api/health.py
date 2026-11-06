@@ -445,6 +445,54 @@ def probe_payload_shelf(scenarios: Optional[list[dict[str, Any]]] = None) -> dic
     return _ok(**common)
 
 
+def probe_api_auth() -> dict[str, Any]:
+    """SEC-01 / SEC-10 — what this deployment exposes, stated as a component.
+
+    There is no API authentication in SimCore yet, so this is permanently
+    ``degraded`` (code ``API_UNAUTHENTICATED``). That is deliberate and it is
+    the repo's own rule: a zero is degraded, not ok. A deployment anyone on the
+    network can drive must not read green, and the overall status of every
+    current deployment is therefore ``degraded`` until auth lands.
+
+    It flips only when an authentication mechanism exists to inspect — never
+    because a bind address or firewall rule *looks* narrow, which this process
+    cannot verify (a 127.0.0.1 publish behind a port-forward is still exposed).
+    """
+    from security.host_guard import parse_allowed_hosts  # noqa: PLC0415
+
+    raw_bind = (getattr(settings, "CORTEXSIM_BIND", "") or "").strip()
+    bind = raw_bind or "0.0.0.0"
+    port = settings.CORTEXSIM_PORT
+    allowed = parse_allowed_hosts(getattr(settings, "CORTEXSIM_ALLOWED_HOSTS", ""))
+    cors = [o.strip() for o in (getattr(settings, "CORTEXSIM_CORS_ORIGINS", "") or "").split(",")
+            if o.strip()]
+    where = (
+        f"{bind}:{port} (CORTEXSIM_BIND unset — docker-compose publishes on every "
+        f"interface of the host)" if not raw_bind else f"{bind}:{port}"
+    )
+    return _degraded(
+        "API_UNAUTHENTICATED",
+        f"The operator and agent APIs are unauthenticated: anyone who can reach "
+        f"{where} can launch runs, start tools, read the credential inventory, "
+        f"enroll or impersonate agents and post their output. The Host guard "
+        f"blocks DNS-rebinding pages and CORS is "
+        f"{'limited to ' + ', '.join(cors) if cors else 'off (same-origin only)'}, "
+        f"but neither stops a direct network client, and a body-less cross-site "
+        f"POST to an IP address is still delivered. "
+        f"Fix: publish SimCore only where the DC needs it — CORTEXSIM_BIND=127.0.0.1 "
+        f"for a console-only host, or the lab NIC's address — and restrict the "
+        f"port to the DC's and the enrolled endpoints' addresses with a security "
+        f"group or host firewall. API authentication itself is not implemented "
+        f"yet (SEC-01); this component stays degraded until it is.",
+        authenticated=False,
+        bind=bind,
+        port=port,
+        host_guard="disabled" if "*" in allowed else "enforced",
+        allowed_hosts=allowed,
+        cors_origins=cors,
+    )
+
+
 # -- async probes -----------------------------------------------------------
 
 
@@ -729,6 +777,9 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "task_queue",
     "integrations",
     "eal_collectors",
+    # Exposure, not readiness: last so the list still reads top-down from "can
+    # this process store anything" to "is anything configured to leave it".
+    "api_auth",
 )
 
 
@@ -807,6 +858,7 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["task_queue"] = await _aguard("task_queue", probe_task_queue)
     components["integrations"] = await _aguard("integrations", probe_integrations)
     components["eal_collectors"] = await _aguard("eal_collectors", probe_eal_collectors)
+    components["api_auth"] = _guard("api_auth", probe_api_auth)
     return components
 
 
