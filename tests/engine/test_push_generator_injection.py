@@ -13,8 +13,11 @@ boundary for; the generator must still not emit an injectable artifact.
 """
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 
 import pytest
@@ -153,3 +156,136 @@ def test_comment_safe_strips_every_line_break():
     for ch in ("\n", "\r", "\x0b", "\x0c", "\x1c", "\x85", "\u2028", "\u2029", "\x00"):
         assert pg._comment_safe(f"a{ch}b") == "a b"
     assert pg._comment_safe("a\tb") == "a\tb"  # TAB cannot end a comment line
+
+
+# ─── PowerShell parser-backed guards (PUSH-10, SEC-13) ──────────────────────
+#
+# These claims are about how PowerShell PARSES the bundle, so they are checked
+# with PowerShell's own parser (System.Management.Automation.Language.Parser),
+# never by substring. Skipped when no PowerShell is installed, except under CI
+# or CORTEXSIM_REQUIRE_POWERSHELL=1, where a missing parser FAILS.
+
+_AST_PROBE = r"""
+$t = $null; $e = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($env:CORTEXSIM_PS1, [ref]$t, [ref]$e)
+$cmds = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true))
+$inj = @()
+$idents = @()
+foreach ($c in $cmds) {
+    $name = $c.GetCommandName()
+    if ($name -eq 'Write-Output' -and $c.Extent.Text -match 'INJ') { $inj += $c.Extent.Text }
+    if ($name -eq 'Invoke-CsStep') {
+        $els = $c.CommandElements
+        for ($i = 0; $i -lt $els.Count - 1; $i++) {
+            if ($els[$i] -is [System.Management.Automation.Language.CommandParameterAst] -and $els[$i].ParameterName -eq 'Identity') {
+                $idents += [string]$els[$i + 1].Value
+            }
+        }
+    }
+}
+$errs = @($e | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message })
+[pscustomobject]@{ errors = $errs; end = $ast.EndBlock.Statements.Count; inj = $inj; identities = $idents } | ConvertTo-Json -Compress -Depth 4
+"""
+
+
+@pytest.fixture(scope="module")
+def ps_exe() -> str:
+    exe = (shutil.which("powershell.exe") if sys.platform == "win32" else None) or shutil.which("pwsh")
+    if exe is None:
+        if os.environ.get("CORTEXSIM_REQUIRE_POWERSHELL") == "1" or os.environ.get("CI"):
+            pytest.fail("PowerShell is required here (CI or CORTEXSIM_REQUIRE_POWERSHELL=1)")
+        pytest.skip("no PowerShell interpreter on PATH")
+    return exe
+
+
+def _ast(ps_exe: str, bundle: str, tmp_path) -> dict:
+    path = tmp_path / "probe.ps1"
+    path.write_text(bundle, encoding="utf-8")
+    proc = subprocess.run(
+        [ps_exe, "-NoProfile", "-NonInteractive", "-Command", _AST_PROBE],
+        env={**os.environ, "CORTEXSIM_PS1": str(path)},
+        capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    data = json.loads(proc.stdout)
+    for key in ("errors", "inj", "identities"):
+        if data.get(key) is None:
+            data[key] = []
+        elif isinstance(data[key], str):
+            data[key] = [data[key]]
+    return data
+
+
+def _win_scn(steps: list[dict], cleanup: list[str] | None = None, **top) -> dict:
+    scn = {
+        "scenario_id": "SIM-INJ-PS", "name": "injection probe", "version": "1.0", "plane": "EDR",
+        "steps": steps, "cleanup": {"commands": cleanup or []},
+    }
+    scn.update(top)
+    return scn
+
+
+def _ps_step(step_id: str, command: str, **extra) -> dict:
+    step = {"id": step_id, "name": "n", "identity": "direct", "platforms": ["windows"],
+            "command": "echo posix", "platform_variants": {"windows": command},
+            "expected_detections": []}
+    step.update(extra)
+    return step
+
+
+@pytest.mark.parametrize("terminator", ["'@", "\u2019@", "\u2018@", "\u201b@"])
+def test_ps_forged_here_string_terminator_cannot_inject(ps_exe, tmp_path, terminator):
+    """PUSH-10 case 1: a step line `’@` followed by `Write-Output INJ` must not
+    become a top-level command. PowerShell treats U+2018..U+201B as single
+    quotes, so `’@` ends a literal here-string exactly as `'@` does."""
+    body = f"Write-Output 'a'\n{terminator}\nWrite-Output INJ-PUSH10"
+    data = _ast(ps_exe, pg.generate_powershell(_win_scn([_ps_step("step-01", body)])), tmp_path)
+    assert not data["errors"], data["errors"]
+    assert not data["inj"], f"author text became code: {data['inj']}"
+    # And the hardened _ps_literal on its own:
+    lit_bundle = "$v = " + pg._ps_literal(body) + "\n"
+    data = _ast(ps_exe, lit_bundle, tmp_path)
+    assert not data["errors"], data["errors"]
+    assert not data["inj"], f"_ps_literal let the payload out: {data['inj']}"
+    assert data["end"] == 1
+
+
+def test_ps_posix_cleanup_with_a_typographic_apostrophe_still_parses(ps_exe, tmp_path):
+    """PUSH-10 case 2: a POSIX-only cleanup is named (residue) in the bundle as
+    a single-quoted literal; `don’t` used to close that literal and break the
+    whole bundle at parse time."""
+    scn = _win_scn(
+        [_ps_step("step-01", "Write-Output 'x'")],
+        cleanup=["rm -f /tmp/x  # don\u2019t leave this behind; Write-Output INJ-CLEANUP"],
+    )
+    data = _ast(ps_exe, pg.generate_powershell(scn), tmp_path)
+    assert not data["errors"], data["errors"]
+    assert not data["inj"], data["inj"]
+
+
+@pytest.mark.parametrize("quote", ["'", "\u2019", "\u2018", "\u201a", "\u201b"])
+def test_ps_identity_with_a_quote_stays_inside_its_literal(ps_exe, tmp_path, quote):
+    """PUSH-10 case 3: the identity reaches Invoke-CsStep byte-for-byte, as ONE
+    string argument — never closing its literal and injecting a command."""
+    identity = f"o{quote}brien{quote}; Write-Output INJ-IDENT; {quote}"
+    scn = _win_scn([_ps_step("step-01", "Write-Output 'x'", identity=identity)])
+    data = _ast(ps_exe, pg.generate_powershell(scn), tmp_path)
+    assert not data["errors"], data["errors"]
+    assert not data["inj"], data["inj"]
+    assert data["identities"] == [identity]
+
+
+@pytest.mark.parametrize("break_seq", _HOSTILE_BREAKS)
+def test_ps_comment_fields_cannot_start_a_statement(ps_exe, tmp_path, break_seq):
+    """SEC-13 (PowerShell): same draft, PowerShell's parser — which ALSO treats a
+    lone CR as a line break. The EndBlock statement count must match a benign
+    twin's exactly, and the injected command must not exist as a command."""
+    benign_scn, hostile_scn = _benign(), _hostile(break_seq, "Write-Output INJ-SEC13")
+    for scn in (benign_scn, hostile_scn):
+        scn["steps"][0]["platforms"] = ["windows"]
+        scn["steps"][0]["platform_variants"] = {"windows": "Write-Output 'ok'"}
+    benign = _ast(ps_exe, pg.generate_powershell(benign_scn), tmp_path)
+    hostile = _ast(ps_exe, pg.generate_powershell(hostile_scn), tmp_path)
+    assert not hostile["errors"], hostile["errors"]
+    assert not hostile["inj"], hostile["inj"]
+    assert hostile["end"] == benign["end"]

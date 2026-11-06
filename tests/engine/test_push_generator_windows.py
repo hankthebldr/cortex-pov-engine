@@ -365,17 +365,36 @@ class TestGeneratePowerShell:
         scn = _scn([{"id": "step-01", "command": "echo 'marker — with em dash'"}])
         assert pg.generate_powershell(scn).startswith("\ufeff")
 
-    def test_here_string_falls_back_when_the_payload_would_terminate_it(self):
-        """A command line starting with `'@` closes a literal here-string early
-        and produces a syntactically broken bundle."""
-        scn = _scn([{
-            "id": "step-01", "platforms": ["windows"],
-            "command": "Write-Output 'a'\n'@ this line would close a here-string\nWrite-Output 'b'",
-        }])
-        out = pg.generate_powershell(scn)
-        # Fallback form: single-quoted string with doubled quotes, no here-string.
-        assert "$CsCmd_step_01 = @'" not in out
-        assert "''@ this line would close a here-string" in out
+    @pytest.mark.parametrize("terminator", ["'@", "\u2018@", "\u2019@", "\u201a@", "\u201b@"])
+    def test_here_string_falls_back_when_the_payload_would_terminate_it(self, terminator):
+        """A line starting with ANY single-quote-class character followed by `@`
+        closes a literal here-string early — PowerShell treats U+2018..U+201B as
+        single quotes, so a pasted `’@` forges the terminator exactly as `'@`
+        does. The fallback is a single-quoted literal with every quote doubled."""
+        lit = pg._ps_literal(f"Write-Output 'a'\n{terminator} closes it\nWrite-Output 'b'")
+        assert not lit.startswith("@'"), "a forgeable here-string terminator was not detected"
+        assert lit.startswith("'") and lit.endswith("'")
+        assert f"{terminator[0]}{terminator[0]}@ closes it" in lit
+
+    def test_here_string_kept_when_no_line_can_terminate_it(self):
+        assert pg._ps_literal("Write-Output 'a'\n x '@ mid-line is fine").startswith("@'\n")
+
+    @pytest.mark.parametrize("quote", ["'", "\u2018", "\u2019", "\u201a", "\u201b"])
+    def test_single_quoted_literals_double_every_quote_class_character(self, quote):
+        assert pg._ps_sq(f"don{quote}t") == f"'don{quote}{quote}t'"
+        assert pg._ps_inline(f"don{quote}t") == f"'don{quote}{quote}t'"
+
+    def test_step_text_never_appears_as_code(self):
+        """Step bodies travel base64-encoded and are decoded at run time, so no
+        quoting layer surrounds author text — and the readable copy is a comment."""
+        import base64  # noqa: PLC0415
+
+        body = "Write-Output 'a'\n'@\nWrite-Output 'b'"
+        out = pg.generate_powershell(_scn([{"id": "step-01", "platforms": ["windows"], "command": body}]))
+        literal = out.split("$CsCmd_01 = '", 1)[1].split("'", 1)[0]
+        assert base64.b64decode(literal).decode("utf-8") == body
+        for line in body.split("\n"):
+            assert f"#   | {line}\n" in out
 
     def test_identity_degradation_is_surfaced_per_step(self):
         scn = _scn([{"id": "step-01", "identity": "www-data", "command": "echo 'x'"}])
@@ -422,7 +441,8 @@ class TestGeneratePowerShell:
         """Server 2016/2019/2022 and Win10/11 ship Windows PowerShell 5.1."""
         scn = _scn([{"id": "step-01", "command": "echo 'x'"}])
         # Generated CODE only — payload literals may legitimately contain `&&`.
-        code = pg.generate_powershell(scn).split("$CsCmd_step_01")[0]
+        # (tests/engine/test_push_ps_execution.py proves the same by AST walk.)
+        code = pg.generate_powershell(scn).split("$CsCmd_01")[0]
         for op in ("&&", "||", "??"):
             assert op not in code
 
@@ -470,32 +490,54 @@ class TestBashUnchanged:
         assert pg.generate_bash(scn).splitlines()[0].startswith("#!")
 
 
-def test_step_script_forces_terminating_errors():
-    """A failing PowerShell step must not log "completed successfully".
+def _powershell_or_skip() -> str:
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import sys  # noqa: PLC0415
 
-    PowerShell's default ErrorActionPreference is 'Continue': a cmdlet that
-    fails non-terminatingly writes to stderr and the process still exits 0. Each
-    step runs as its own `pwsh -File`, so without an explicit preference the
-    step body inherits that default and Invoke-CsStep's $LASTEXITCODE check sees
-    zero — reporting a step that did nothing as a success.
+    exe = (shutil.which("powershell.exe") if sys.platform == "win32" else None) or shutil.which("pwsh")
+    if exe is None:
+        if os.environ.get("CORTEXSIM_REQUIRE_POWERSHELL") == "1" or os.environ.get("CI"):
+            pytest.fail("PowerShell is required here (CI or CORTEXSIM_REQUIRE_POWERSHELL=1)")
+        pytest.skip("no PowerShell interpreter on PATH")
+    return exe
 
-    That is a manufactured false green, and it is the worst shape this bundle
-    can take: the DC reads "the TTP ran" and concludes Cortex missed it, when in
-    fact no attack telemetry was ever emitted. This is the PowerShell analogue
-    of the bash bundle's `set -euo pipefail`.
+
+def test_a_failing_step_is_reported_as_failed_when_executed(tmp_path):
+    """A failing PowerShell step must not log "completed successfully" — proven
+    by RUNNING the bundle, not by grepping it.
+
+    This replaces ``test_step_script_forces_terminating_errors``, which asserted
+    only that the substring ``$ErrorActionPreference = 'Stop'`` appeared in the
+    bundle. It did — inside a DOUBLE-quoted string, so the harness's own value
+    expanded in and every step file began ``Continue = 'Stop'``: the
+    ``continue`` keyword, which ended the step with exit 0 before its TTP line
+    ran. The substring test passed with every PowerShell step a no-op. The full
+    execution guard is tests/engine/test_push_ps_execution.py.
     """
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    exe = _powershell_or_skip()
     scn = _scn([{
         "id": "step-01",
         "command": "echo posix",
         "platforms": ["windows"],
-        "platform_variants": {"windows": "Get-Process -Name nosuchprocess"},
+        "platform_variants": {"windows": "Get-Process -Name cortexsim-nosuchprocess-xyz"},
     }])
-    bundle = pg.generate_powershell(scn)
-
-    assert "$ErrorActionPreference = 'Stop'" in bundle, (
-        "the per-step script must force terminating errors, or a failing step "
-        "exits 0 and is logged as a success"
+    path = tmp_path / "b.ps1"
+    path.write_text(pg.generate_powershell(scn), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CORTEXSIM_")}
+    env.update({"TEMP": str(tmp_path), "TMP": str(tmp_path)})
+    args = [exe, "-NoProfile", "-NonInteractive"]
+    if sys.platform == "win32":
+        args += ["-ExecutionPolicy", "Bypass"]
+    proc = subprocess.run(
+        args + ["-File", str(path)], env=env, capture_output=True, text=True,
+        timeout=120, encoding="utf-8", errors="replace", cwd=str(tmp_path),
     )
-    # It must be written INTO the step body, not merely set in the harness —
-    # the step is a separate process and does not inherit the harness setting.
-    assert "$stepBody" in bundle
+    out = proc.stdout + proc.stderr
+    assert "Step step-01 completed successfully" not in out, out
+    assert "cortexsim-step-result step=step-01 outcome=ran-nonzero exit=1" in out, out
+    assert proc.returncode == 1, out

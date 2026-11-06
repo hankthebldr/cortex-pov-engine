@@ -639,8 +639,13 @@ def test_ps_bundle_structural_invariants(path: pathlib.Path):
             f"({code.count(open_c)} vs {code.count(close_c)})"
         )
 
-    # 2. Every here-string that opens must close.
-    assert bundle.count("@'\n") == len(re.findall(r"(?m)^'@", bundle)), (
+    # 2. Every here-string that opens must close. Counted over NON-comment
+    #    lines: the review listing of a step body (`#   | …`) may legitimately
+    #    quote a here-string the step itself uses.
+    noncomment = "\n".join(
+        ln for ln in bundle.split("\n") if not ln.lstrip().startswith("#")
+    ) + "\n"
+    assert noncomment.count("@'\n") == len(re.findall(r"(?m)^'@", noncomment)), (
         f"{label}: unterminated here-string in generated PowerShell"
     )
 
@@ -692,21 +697,35 @@ def test_ps_every_resolved_step_command_in_bundle(path: pathlib.Path):
     The whole point of the Windows target is that the authored
     `platform_variants['windows']` command — 17.5 KB across the corpus that the
     bash generator silently dropped on the floor — actually reaches the host.
+
+    Step text travels base64-encoded (no quoting layer around author text), so
+    "reaches the host" is asserted EXACTLY: the i-th step literal decodes to the
+    i-th resolved command byte-for-byte, and its review listing is present.
     """
+    import base64  # noqa: PLC0415
+
     scenario = _load_scenario(path)
     bundle = _ps_bundle(path)
     resolution = _push.resolve_target(scenario, "windows")
     assert resolution.steps, f"{_label(path)} resolved zero windows steps"
-    for res in resolution.steps:
+    literals = re.findall(r"(?m)^\$CsCmd_(\d+) = '([A-Za-z0-9+/=]*)'$", bundle)
+    assert len(literals) == len(resolution.steps), (
+        f"{_label(path)}: {len(literals)} step literals for {len(resolution.steps)} resolved steps"
+    )
+    for (idx, b64), res in zip(literals, resolution.steps):
+        decoded = base64.b64decode(b64).decode("utf-8")
+        assert decoded == res.command, (
+            f"{_label(path)} {res.step_id}: the bundle carries different text than the "
+            f"resolver resolved (literal $CsCmd_{idx})"
+        )
         witness = next(
             (ln.strip() for ln in res.command.splitlines()
              if ln.strip() and not ln.strip().startswith("#")),
             None,
         )
         assert witness, f"{_label(path)} {res.step_id} has no executable line"
-        # Here-string embedding is verbatim — no escaping, so no normalization.
         assert witness in bundle, (
-            f"{_label(path)} {res.step_id} command missing from PowerShell bundle "
+            f"{_label(path)} {res.step_id} review listing missing from PowerShell bundle "
             f"(witness: {witness[:80]!r})"
         )
 
