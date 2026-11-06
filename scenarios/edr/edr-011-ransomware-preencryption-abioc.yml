@@ -131,7 +131,19 @@ steps:
     mitre_technique: "T1490"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: "vssadmin delete shadows /all /quiet; wbadmin delete catalog -quiet; bcdedit /set {default} recoveryenabled no"
+      # SAFE-MODE (CONT-03): this variant deleted EVERY Volume Shadow Copy,
+      # the backup catalog, and disabled boot recovery on the endpoint — none of
+      # it recoverable by the DC. The ABIOC keys on a vssadmin/wbadmin process
+      # whose command line contains "shadows", so a real vssadmin listing plus a
+      # delete of the nil shadow id (no shadow can carry it) produces the same
+      # process telemetry and destroys nothing. Never /all, wbadmin or bcdedit.
+      # vssadmin exits non-zero for "no items found"; that is the expected
+      # result, so the exit code is reset.
+      windows: |
+        vssadmin.exe list shadows
+        vssadmin.exe delete shadows '/shadow={00000000-0000-0000-0000-000000000000}' /quiet
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-preenc-recovery-inhibition-issued'
     causality:
       parent_step: step-02
       pivot: process_lineage

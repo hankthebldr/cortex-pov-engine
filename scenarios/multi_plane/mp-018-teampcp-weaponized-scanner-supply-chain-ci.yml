@@ -125,8 +125,21 @@ steps:
     platforms: ["linux", "k8s", "windows"]
     # The child reads the Runner.Worker process memory — same-entity (runner PID)
     # reuse, not a fresh fork. On Windows the equivalent is a comsvcs minidump.
+    # The variant used to carry a literal `<RunnerWorkerPID>` placeholder (a
+    # cmd redirect from a file of that name) and left the runner's memory dump
+    # in C:\Windows\Temp\rw.dmp. It now resolves the real Runner.Worker PID,
+    # fails loudly when no runner job is in flight, and deletes the dump in-step.
     platform_variants:
-      windows: "rundll32.exe C:\\Windows\\System32\\comsvcs.dll MiniDump <RunnerWorkerPID> C:\\Windows\\Temp\\rw.dmp full"
+      windows: |
+        $p = Get-Process -Name Runner.Worker -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $p) { Write-Error 'no Runner.Worker process on this host: step-02 needs an Actions runner job in flight, so it did not run'; exit 1 }
+        $dmp = Join-Path $env:SystemRoot 'Temp\cortexsim-mp018-rw.dmp'
+        & "$env:SystemRoot\System32\rundll32.exe" "$env:SystemRoot\System32\comsvcs.dll," MiniDump $p.Id $dmp full
+        $ok = Test-Path -LiteralPath $dmp
+        Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $dmp
+        if (-not $ok) { Write-Error 'comsvcs MiniDump wrote no dump: prevented by the endpoint agent, or not elevated'; exit 1 }
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-mp018-runner-worker-minidump-written-and-deleted'
     causality:
       parent_step: step-01
       pivot: shared_entity

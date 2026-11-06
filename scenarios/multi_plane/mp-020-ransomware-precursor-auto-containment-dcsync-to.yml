@@ -195,7 +195,13 @@ steps:
     mitre_technique: "T1021.001"
     platforms: ["windows", "linux"]
     platform_variants:
-      windows: "netstat.exe -ano | findstr.exe 3389"
+      # findstr exits 1 when nothing listens on 3389 — the usual answer — and
+      # fail-fast read that as a failed step, skipping 05-06. The probe is the
+      # TTP; its exit code is not (SIM-MP-029 precedent).
+      windows: |
+        netstat.exe -ano | findstr.exe 3389
+        $global:LASTEXITCODE = 0
+        Write-Output 'cortexsim-mp-020-rdp-listener-probe-complete'
     # Lateral movement opens network sessions to further hosts using the stolen
     # account (network_session pivot).
     causality:
@@ -215,7 +221,10 @@ steps:
     mitre_technique: "T1020"
     platforms: ["windows", "linux"]
     platform_variants:
-      windows: "powershell.exe -NoProfile -Command \"Compress-Archive -Path $env:WINDIR\\System32\\drivers\\etc\\hosts -DestinationPath $env:TEMP\\cortexsim-mp020.zip -Force\""
+      # The staged archive is shown and removed in-step instead of being left in
+      # %TEMP%. Paths are single-quoted inside the child command so a %TEMP%
+      # with a space in it still works.
+      windows: "powershell.exe -NoProfile -Command \"Compress-Archive -Path '$env:WINDIR\\System32\\drivers\\etc\\hosts' -DestinationPath '$env:TEMP\\cortexsim-mp020.zip' -Force; Get-Item '$env:TEMP\\cortexsim-mp020.zip' | Select-Object FullName, Length; Remove-Item -Force '$env:TEMP\\cortexsim-mp020.zip'\""
     # The exfil ties the endpoint (renamed-rclone process) to the network egress
     # session (endpoint_network_stitch pivot).
     causality:
@@ -261,6 +270,9 @@ cleanup:
     # the one artifact this scenario writes, so cleanup must actually remove it
     # rather than merely assert that nothing was written.
     - "rm -rf /tmp/.cortexsim-mp020"
+    # Windows: the staging archive, if step-05 was interrupted before its
+    # in-step delete. Bash-inert (also emitted into the bash bundle).
+    - 'Remove-Item -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-mp020.zip"'
     - "echo 'cortexsim-mp-020 cleanup complete — exfil staging dir removed; no real DCSync/persistence/encryption performed'"
 
 # ── Provenance ──────────────────────────────────────────────────────────────

