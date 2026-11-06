@@ -30,7 +30,11 @@ Draft-specific structural rules it ADDS (surfaced as ``DRAFT_SCHEMA_INVALID``):
 empty ``steps`` rejected, duplicate step ids rejected, and the derived
 ``detection_types`` union must be non-empty (mirrors
 ``ScenarioSchema.validate_detection_types`` — a draft with no detection anywhere
-proves nothing and is not a legal saved state).
+proves nothing and is not a legal saved state). Two hardening rules for content
+arriving over an unauthenticated API: single-line fields (name, author, tags,
+step id/name, detection description/id/ttp_ref) refuse control characters
+(SEC-13), and ``verification_xql`` refuses XQL's tenant-writing ``target`` stage
+(SEC-05, the same guard ``XsiamClient.start_xql_query`` enforces).
 
 This module NEVER touches the corpus boot path: ``scenario_loader``'s loader,
 ``ScenarioSchema`` and ``make check-refs`` stay byte-identical, and drafts live
@@ -82,6 +86,35 @@ class DraftValidationError(ValueError):
 
 
 # ---------------------------------------------------------------------------
+# Single-line fields (SEC-13, schema half)
+# ---------------------------------------------------------------------------
+#
+# The push generator echoes a draft's name, step ids/names and detection
+# descriptions into `#` comments and echo / Write-Host lines of bash and
+# PowerShell bundles. A newline in one of them ends the comment and the next
+# line runs as a command on the customer endpoint; an ESC sequence rewrites the
+# operator's terminal. Those fields are single-line by meaning, so a control
+# character in one is refused at the door. (The generator half — escaping at
+# emit time — is the push-bundle lane's.) `command` is multi-line by design and
+# is NOT restricted here. Unicode line/paragraph separators and NEL count: some
+# consumers treat them as line breaks.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f\x85  ]")
+
+
+def _refuse_control_chars(where: str, value: Optional[str]) -> None:
+    if value is None:
+        return
+    m = _CONTROL_CHAR_RE.search(value)
+    if m:
+        raise ValueError(
+            f"{where} contains a control character ({m.group(0)!r} at position "
+            f"{m.start()}); single-line fields may not carry CR, LF, tab or other "
+            f"control characters because they are echoed into generated bash and "
+            f"PowerShell bundles"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Draft schema
 # ---------------------------------------------------------------------------
 
@@ -104,6 +137,12 @@ class DraftStepSchema(StepSchema):
 
     identity: Optional[str] = None
     mitre_technique: Optional[str] = None
+
+    @field_validator("id", "name")
+    @classmethod
+    def _single_line(cls, v: str, info) -> str:  # noqa: ANN001 — pydantic ValidationInfo
+        _refuse_control_chars(f"step {info.field_name}", v)
+        return v
 
 
 class NodePosition(BaseModel):
@@ -188,6 +227,20 @@ class DraftScenarioSchema(BaseModel):
     def _name_non_empty(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError("name must be a non-empty string")
+        _refuse_control_chars("name", v)
+        return v
+
+    @field_validator("author")
+    @classmethod
+    def _author_single_line(cls, v: Optional[str]) -> Optional[str]:
+        _refuse_control_chars("author", v)
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def _tags_single_line(cls, v: list[str]) -> list[str]:
+        for i, tag in enumerate(v):
+            _refuse_control_chars(f"tags[{i}]", tag)
         return v
 
     @field_validator("plane")
@@ -261,6 +314,39 @@ class DraftScenarioSchema(BaseModel):
             raise ValueError(
                 f"duplicate step id(s) not allowed in a draft: {dupes}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_detections(self) -> "DraftScenarioSchema":
+        """Per-detection rules the shared ``StepExpectedDetection`` (corpus
+        loader, not this module) does not carry.
+
+        * SEC-13: ``description`` / ``detection_id`` / ``ttp_ref`` are
+          single-line.
+        * SEC-05: ``verification_xql`` may not write to the tenant. A draft is
+          launchable and its results are verified against the tenant, so a
+          saved ``| target type=lookup ...`` is a deferred write to the
+          customer's Cortex. The client refuses it at send time too; refusing at
+          save means it is never stored, never shown in a report as "the
+          verification query", and never retried by the sweep. Same guard
+          function as the client — not a second lexer.
+        """
+        from integrations.xsiam.client import (  # noqa: PLC0415
+            XqlWriteStageRefused, refuse_xql_write_stages,
+        )
+        from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
+
+        for step in self.steps:
+            for j, det in enumerate(step.expected_detections):
+                where = f"step '{step.id}' expected_detections[{j}]"
+                _refuse_control_chars(f"{where}.description", det.description)
+                _refuse_control_chars(f"{where}.detection_id", det.detection_id)
+                _refuse_control_chars(f"{where}.ttp_ref", det.ttp_ref)
+                if det.verification_xql is not None:
+                    try:
+                        refuse_xql_write_stages(det.verification_xql)
+                    except (XqlWriteStageRefused, XsiamConfigError) as exc:
+                        raise ValueError(f"{where}.verification_xql: {exc.detail}") from exc
         return self
 
     @model_validator(mode="after")
