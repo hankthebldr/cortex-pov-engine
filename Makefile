@@ -199,13 +199,20 @@ check-ui-layout: ## assert the console survives narrow viewports (real browser; 
 	  echo "no SimCore on :8888 — start it first (make up), or set CORTEXSIM_BASE_URL"; exit 1; }
 	cd ui && npx playwright test tests/e2e/08-viewport-matrix.spec.ts
 
-check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target (needs `make build`)
+# Presence is not identity: a non-empty file named cortexsim-agent-windows-amd64.exe
+# that is really a linux ELF (a mislabelled loop variable in the agent-builder
+# stage) passes `test -s` and the checksum, and fails only on the customer's
+# endpoint. The second run checks each target's header with the IMAGE's own
+# python3 (the script arrives on stdin -- still no host mount): ELF + e_machine
+# for linux, Mach-O 64 + cputype for darwin, MZ/PE + machine for windows.
+check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target, with the right magic bytes (needs `make build`)
 	docker run --rm --entrypoint sh $(IMAGE) -c '\
 	  set -e; cd /app/agent-dist; sha256sum -c SHA256SUMS; \
 	  for t in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64.exe; do \
 	    test -s "cortexsim-agent-$$t" || { echo "MISSING cortexsim-agent-$$t"; exit 1; }; \
 	  done; \
 	  echo "shelf OK: $$(ls cortexsim-agent-* | wc -l) targets"'
+	docker run --rm -i --entrypoint python3 $(IMAGE) - /app/agent-dist < scripts/ci/check_agent_magic.py
 
 # The same argument once more, for the surface a DC actually stands in front of.
 # check-agent-shelf asks "does the image ship the beacon the tree builds"; this
