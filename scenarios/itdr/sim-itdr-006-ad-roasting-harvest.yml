@@ -225,8 +225,9 @@ cleanup:
   commands:
     - "rm -f /tmp/cortexsim_itdr006_users.txt /tmp/cortexsim_itdr006_asrep.txt /tmp/cortexsim_itdr006_tgs.txt"
     # Windows: a step interrupted before its in-step delete leaves the hashes
-    # here. Bash-inert (also emitted into the bash bundle).
-    - 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-itdr006"'
+    # here. The bash bundle runs this line too, under set -u, so it carries no
+    # `$` ("$env:TEMP" would end cleanup() with `env: unbound variable`).
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-itdr006" rd /s /q "%TEMP%\cortexsim-itdr006"'
     - "echo '[CortexSim] SIM-ITDR-006 cleanup complete'"
 
 author: "Henry Reed"

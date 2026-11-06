@@ -602,16 +602,17 @@ steps:
 
 cleanup:
   commands:
+    - "if grep -qs cortexsim-mp026 /etc/systemd/system/msdnetsvc.service; then rm -f /etc/systemd/system/msdnetsvc.service; command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload; fi; true"
+    - "rm -f /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
     # Native Windows teardown (CONT-11). The previous form wrapped pwsh in bash
     # (`command -v pwsh && pwsh -Command ...`), which the Windows bundle skips,
     # so Windows never ran it. These lines are PowerShell the Windows bundle
-    # runs, and are also bash-inert (no parentheses, unquoted $, redirects or &)
-    # because the bash bundle emits every cleanup line verbatim. The service is
-    # deleted only when its binPath is the lab copy step-02 registered.
+    # runs. The bash bundle runs them too (as command-not-found) under set -u,
+    # so they carry no `$` at all, not even inside double quotes, and they sit
+    # after the POSIX lines. The service is deleted only when its binPath is
+    # the lab copy step-02 registered.
     - "Get-CimInstance -ClassName Win32_Service -Filter \"Name='msdnetsvc'\" -ErrorAction SilentlyContinue | Where-Object PathName -Like '*cortexsim-mp026*' | Invoke-CimMethod -MethodName Delete"
     - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path 'C:\\ProgramData\\cortexsim-mp026'"
-    - "if grep -qs cortexsim-mp026 /etc/systemd/system/msdnetsvc.service; then rm -f /etc/systemd/system/msdnetsvc.service; command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload; fi; true"
-    - "rm -f /tmp/mp-026-beacon.yml /tmp/mp-026-threat.yml && rm -rf /var/tmp/.cortexsim-mp026"
 
 author: "Henry Reed"
 created: "2026-10-27"

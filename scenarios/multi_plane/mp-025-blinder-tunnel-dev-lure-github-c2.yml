@@ -625,21 +625,24 @@ steps:
 cleanup:
   commands:
     - "for h in /home/* \"$HOME\"; do rb=\"$h/.local/share/Microsoft/RuntimeBrokers\"; if grep -qs cortexsim-mp025 \"$rb/RuntimeBroker.exe.config\"; then pkill -f \"$rb/RuntimeBroker.exe\"; rm -rf \"$rb\"; fi; a=\"$h/.config/autostart/MicrosoftRuntime.desktop\"; grep -qs cortexsim-mp025 \"$a\" && rm -f \"$a\"; p=\"$h/source/repos/DubaiAirport_Carrers_IT_Test\"; if grep -qs 'CortexSim SAFE-MODE replica' \"$p/FlightManager/FlightManager.csproj\"; then rm -rf \"$p\" \"$h/Downloads/DubaiAirport_Carrers_IT_Test.zip\"; fi; done; true"
-    # Native Windows teardown (CONT-11). The previous single line wrapped pwsh
-    # in bash (`command -v pwsh && pwsh -Command ...`), which the Windows bundle
-    # skips, so it never ran on Windows. Each line below is PowerShell the
-    # Windows bundle runs AND bash-inert (no parentheses, unquoted $, redirects
-    # or &), because the bash bundle emits every cleanup line verbatim. Each
-    # removal stays guarded the way the old line was: only the lab RuntimeBroker
-    # path, only a Run value pointing at it, only a directory whose config
-    # carries the cortexsim-mp025 marker.
-    - "Get-Process -Name RuntimeBroker -ErrorAction SilentlyContinue | Where-Object Path -Like '*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe' | Stop-Process -Force -ErrorAction SilentlyContinue"
-    - "Get-ItemProperty -Path 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run' -Name MicrosoftRuntime -ErrorAction SilentlyContinue | Where-Object MicrosoftRuntime -Like '*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe*' | Remove-ItemProperty -Name MicrosoftRuntime -ErrorAction SilentlyContinue"
-    - "Select-String -Path \"$env:LOCALAPPDATA\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe.config\" -SimpleMatch -Pattern cortexsim-mp025 -List -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path | Split-Path -Parent | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
-    - "Select-String -Path \"$env:USERPROFILE\\source\\repos\\DubaiAirport_Carrers_IT_Test\\FlightManager\\Resources\\RuntimeBroker.exe.config\" -SimpleMatch -Pattern cortexsim-mp025 -List -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path | Split-Path -Parent | Split-Path -Parent | Split-Path -Parent | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue"
-    - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path \"$env:USERPROFILE\\Downloads\\DubaiAirport_Carrers_IT_Test.zip\", \"$env:TEMP\\cortexsim-mp025\""
     - "rm -rf /tmp/cortexsim-mp025"
     - "rm -f /tmp/cortexsim-mp025-github.yml /tmp/cortexsim-mp025-tunnel.yml"
+    # Native Windows teardown (CONT-11). The previous single line wrapped pwsh
+    # in bash (`command -v pwsh && pwsh -Command ...`), which the Windows bundle
+    # skips, so it never ran on Windows. The bash bundle also runs every line
+    # below (as command-not-found) under set -u, so none carries a `$`, not
+    # even in double quotes: "$env:LOCALAPPDATA" raises `env: unbound variable`
+    # there and ends cleanup() early. Hence %VAR% in cmd lines, which bash
+    # leaves alone, and the POSIX lines first. Each removal stays guarded the
+    # way the old line was: only the lab RuntimeBroker path, only a Run value
+    # pointing at it, only a directory whose config carries the cortexsim-mp025
+    # marker (findstr exits non-zero without it, so `&&` skips the rd).
+    - "Get-Process -Name RuntimeBroker -ErrorAction SilentlyContinue | Where-Object Path -Like '*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe' | Stop-Process -Force -ErrorAction SilentlyContinue"
+    - "Get-ItemProperty -Path 'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run' -Name MicrosoftRuntime -ErrorAction SilentlyContinue | Where-Object MicrosoftRuntime -Like '*\\Microsoft\\RuntimeBrokers\\RuntimeBroker.exe*' | Remove-ItemProperty -Name MicrosoftRuntime -ErrorAction SilentlyContinue"
+    - 'cmd.exe /c findstr /m /c:cortexsim-mp025 "%LOCALAPPDATA%\Microsoft\RuntimeBrokers\RuntimeBroker.exe.config" && rd /s /q "%LOCALAPPDATA%\Microsoft\RuntimeBrokers"'
+    - 'cmd.exe /c findstr /m /c:cortexsim-mp025 "%USERPROFILE%\source\repos\DubaiAirport_Carrers_IT_Test\FlightManager\Resources\RuntimeBroker.exe.config" && rd /s /q "%USERPROFILE%\source\repos\DubaiAirport_Carrers_IT_Test"'
+    - 'cmd.exe /c if exist "%USERPROFILE%\Downloads\DubaiAirport_Carrers_IT_Test.zip" del /f /q "%USERPROFILE%\Downloads\DubaiAirport_Carrers_IT_Test.zip"'
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-mp025" rd /s /q "%TEMP%\cortexsim-mp025"'
 
 author: "Henry Reed"
 created: "2026-10-27"

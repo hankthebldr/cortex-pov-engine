@@ -591,10 +591,12 @@ steps:
 
 cleanup:
   commands:
-    # Native Windows teardown (CONT-11): the bash-wrapped pwsh form was skipped
-    # by the Windows bundle. PowerShell the bundle runs, and bash-inert.
-    - 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-mp-029"'
     - "rm -rf /tmp/cortexsim-mp-029 /tmp/mp-029-delivery.yml /tmp/mp-029-c2.yml"
+    # Native Windows teardown (CONT-11): the bash-wrapped pwsh form was skipped
+    # by the Windows bundle. The bash bundle runs this line too, under set -u,
+    # so it carries no `$` ("$env:TEMP" would end cleanup() with `env: unbound
+    # variable`), and it sits after the POSIX line it could otherwise strand.
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-mp-029" rd /s /q "%TEMP%\cortexsim-mp-029"'
 
 author: "Henry Reed"
 created: "2026-10-27"

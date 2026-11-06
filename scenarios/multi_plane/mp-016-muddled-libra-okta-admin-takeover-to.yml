@@ -277,9 +277,12 @@ steps:
 # ── Cleanup ─────────────────────────────────────────────────────────────────
 cleanup:
   commands:
-    # Windows: the SAFE-MODE records steps 04-05 write under %TEMP%. Bash-inert.
-    - 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-mp016"'
     - "rm -rf /tmp/cortexsim-mp016"
+    # Windows: the SAFE-MODE records steps 04-05 write under %TEMP%. The bash
+    # bundle runs this line too (as a command-not-found), under set -u, so it
+    # carries no `$`: a double-quoted "$env:TEMP" raises `env: unbound
+    # variable` there and ends cleanup() before the lines after it.
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-mp016" rd /s /q "%TEMP%\cortexsim-mp016"'
     - "echo '[CortexSim] SIM-MP-016 cleanup complete - no persistent artifacts'"
 
 # ── Provenance ──────────────────────────────────────────────────────────────

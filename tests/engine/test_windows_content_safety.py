@@ -229,6 +229,13 @@ _AK = re.compile(r"authorized_keys", re.I)
 _AK_RESTORE_VERB = re.compile(
     r"\b(?:Remove-Item|Move-Item|WriteAllBytes|Where-Object)\b|-notmatch\b|\bfindstr\s+/v\b", re.I
 )
+# The same, plus the cmd forms a teardown may take: a cleanup line that reaches
+# the bash bundle must not carry `$`, so it is cmd (`del`, or `copy /y /b` back
+# from a .bak). Used only to recognise teardown, never to excuse a step's write:
+# `copy /y k.pub ...\authorized_keys` in a step is still an artifact.
+_AK_TEARDOWN_VERB = re.compile(
+    _AK_RESTORE_VERB.pattern + r"|\b(?:del|erase)\s+/|\bcopy\s+/y\s+/b\s+\"?[^\"\s]*\.bak\b", re.I
+)
 _ASSIGN = re.compile(r"^\s*\$(?P<var>\w+)\s*=")
 
 
@@ -313,7 +320,7 @@ def _torn_down(kind: str, name: str, end: int, var: str | None,
     for pool, v in pools:
         stmts = [s for _, s in _statements(pool)]
         if kind == "authorized_keys":
-            if any(_AK_RESTORE_VERB.search(s) and _names(s, name, v) for s in stmts):
+            if any(_AK_TEARDOWN_VERB.search(s) and _names(s, name, v) for s in stmts):
                 return True
             continue
         if kind == "file":
@@ -530,9 +537,22 @@ def test_the_teardown_detector_catches_each_artifact_class(text, kind):
     ("sc.exe create cortexsim-x binPath= C:\\Windows\\System32\\whoami.exe", ["sc.exe delete cortexsim-x"]),
     ("Rubeus.exe kerberoast /outfile:C:\\Windows\\Temp\\cortexsim-tgs.txt; Remove-Item C:\\Windows\\Temp\\cortexsim-tgs.txt", []),
     ("Set-Content -Path $env:TEMP\\cortexsim-a.txt -Value x", ["Remove-Item -Force $env:TEMP\\cortexsim-*.txt"]),
+    # The $-free cmd forms a cleanup line takes when it also reaches the bash bundle.
+    ("Set-Content -Path $env:TEMP\\cortexsim-a.txt -Value x",
+     ['cmd.exe /c if exist "%TEMP%\\cortexsim-a.txt" del /f /q "%TEMP%\\cortexsim-a.txt"']),
+    ("Add-Content $env:USERPROFILE\\.ssh\\authorized_keys (Get-Content k.pub)",
+     ['cmd.exe /c if exist "%TEMP%\\x\\authorized_keys.absent" del /f /q "%USERPROFILE%\\.ssh\\authorized_keys"']),
+    ("Add-Content $env:USERPROFILE\\.ssh\\authorized_keys (Get-Content k.pub)",
+     ['cmd.exe /c copy /y /b "%TEMP%\\x\\authorized_keys.bak" "%USERPROFILE%\\.ssh\\authorized_keys"']),
 ])
 def test_the_teardown_detector_accepts_in_step_and_cleanup_teardown(text, cleanup):
     assert _teardown_gaps([("s1", text)], cleanup, user_temp=True) == []
+
+
+def test_a_cmd_copy_into_authorized_keys_is_still_an_artifact():
+    """The cmd teardown forms recognise teardown only; they never excuse a write."""
+    gaps = _teardown_gaps([("s1", 'copy /y k.pub "%USERPROFILE%\\.ssh\\authorized_keys"')], [], user_temp=False)
+    assert gaps and "authorized_keys" in gaps[0], gaps
 
 
 def test_bash_cleanup_does_not_count_as_windows_teardown():

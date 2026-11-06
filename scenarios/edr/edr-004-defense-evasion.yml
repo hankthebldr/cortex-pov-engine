@@ -280,11 +280,13 @@ cleanup:
   commands:
     - "rm -f /tmp/cortexsim_auth_backup /tmp/cortexsim_fake_auth.log /tmp/cortexsim_timestomp_test"
     - "rm -f '/tmp/[kworker/0:1]' '/tmp/systemd-journald' /tmp/cortexsim_masq*"
-    # Windows teardown for a step interrupted before its in-step delete. Also
-    # emitted verbatim into the bash bundle, so each line stays bash-inert.
+    # Windows teardown for a step interrupted before its in-step delete. The
+    # bash bundle runs these lines too (as command-not-found) under set -u, so
+    # none carries a `$`: a double-quoted "$env:TEMP" raises `env: unbound
+    # variable` there and ends cleanup() before the lines after it.
     - "Remove-EventLog -LogName CortexSim-EDR004 -ErrorAction SilentlyContinue"
     - "del /F /Q %SystemRoot%\\Temp\\svchost.exe"
-    - 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-edr004"'
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr004" rd /s /q "%TEMP%\cortexsim-edr004"'
     - "echo '[CortexSim] SIM-EDR-004 cleanup complete'"
 
 author: "Henry Reed"

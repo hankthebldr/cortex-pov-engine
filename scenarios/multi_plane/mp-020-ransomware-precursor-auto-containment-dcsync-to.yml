@@ -271,8 +271,10 @@ cleanup:
     # rather than merely assert that nothing was written.
     - "rm -rf /tmp/.cortexsim-mp020"
     # Windows: the staging archive, if step-05 was interrupted before its
-    # in-step delete. Bash-inert (also emitted into the bash bundle).
-    - 'Remove-Item -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-mp020.zip"'
+    # in-step delete. The bash bundle runs this line too, under set -u, so it
+    # carries no `$` ("$env:TEMP" would end cleanup() with `env: unbound
+    # variable`).
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-mp020.zip" del /f /q "%TEMP%\cortexsim-mp020.zip"'
     - "echo 'cortexsim-mp-020 cleanup complete — exfil staging dir removed; no real DCSync/persistence/encryption performed'"
 
 # ── Provenance ──────────────────────────────────────────────────────────────

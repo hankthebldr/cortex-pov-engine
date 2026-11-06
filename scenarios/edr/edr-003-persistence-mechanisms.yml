@@ -250,8 +250,8 @@ steps:
         $bak = Join-Path $d 'authorized_keys.bak'
         $hadDir = Test-Path $ssh
         $hadFile = Test-Path $ak
-        # The absence marker holds the path to delete, so the interrupted-run
-        # cleanup line can pipe it to Remove-Item without a script block.
+        # The backup, or an absence marker when there was no file, is what the
+        # interrupted-run cleanup lines key on to restore or remove the file.
         if ($hadFile) { Copy-Item -Force -LiteralPath $ak -Destination $bak } else { Set-Content -Path (Join-Path $d 'authorized_keys.absent') -Value $ak }
         New-Item -ItemType Directory -Force -Path $ssh | Out-Null
         Add-Content -Path $ak -Value (Get-Content "$k.pub")
@@ -318,19 +318,24 @@ cleanup:
     - "rm -f /tmp/cortexsim_cron_test /tmp/cortexsim_cron_backup /tmp/cortexsim-backdoor.service /tmp/cortexsim_profile_test"
     - "rm -rf /tmp/.cortexsim_ssh_test"
     # Windows teardown, for a step interrupted between create and its in-step
-    # delete. The bash bundle also emits every cleanup line verbatim, so each
-    # Windows line stays bash-inert: no parentheses, unquoted $, redirects or &
-    # (bash -n + shellcheck); on Linux each is a harmless command-not-found.
+    # delete. The bash bundle also runs every cleanup line (on Linux each of
+    # these is a harmless command-not-found) under `set -u`, so no Windows line
+    # carries a `$`, not even inside double quotes: "$env:TEMP" raises `env:
+    # unbound variable` there and ends cleanup() before the lines after it.
+    # Hence cmd lines with %VAR%, which bash leaves alone; no parentheses,
+    # redirects or a lone & either (bash -n + shellcheck).
     - "schtasks.exe /delete /tn cortexsim-edr003-healthmonitor /f"
     - "cmd.exe /c sc.exe delete cortexsim-edr003-syshealthmon"
     - "cmd.exe /c net.exe user cortexsim-edr003 /delete"
     - 'reg.exe delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v cortexsim-edr003-syshealth /f'
     # A step-04 interrupted mid-way leaves its backup (or the absence marker)
     # under %TEMP%\cortexsim-edr003; a completed step-04 already deleted it, so
-    # these three lines are then no-ops.
-    - 'Move-Item -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-edr003\authorized_keys.bak" -Destination "$env:USERPROFILE\.ssh\authorized_keys"'
-    - 'Get-Content -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-edr003\authorized_keys.absent" | Remove-Item -Force -ErrorAction SilentlyContinue'
-    - 'Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path "$env:TEMP\cortexsim-edr003"'
+    # these three lines are then no-ops. copy /b writes the backup's bytes back
+    # into the existing file (as the in-step WriteAllBytes does) rather than
+    # moving the backup, with its %TEMP% ACL, into the user's .ssh directory.
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003\authorized_keys.bak" copy /y /b "%TEMP%\cortexsim-edr003\authorized_keys.bak" "%USERPROFILE%\.ssh\authorized_keys"'
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003\authorized_keys.absent" del /f /q "%USERPROFILE%\.ssh\authorized_keys"'
+    - 'cmd.exe /c if exist "%TEMP%\cortexsim-edr003" rd /s /q "%TEMP%\cortexsim-edr003"'
     - "echo '[CortexSim] SIM-EDR-003 cleanup complete'"
 
 author: "Henry Reed"
