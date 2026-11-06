@@ -1,0 +1,28 @@
+{
+  "name": "CortexSim CI Windows cmdlet error",
+  "plane": "EDR",
+  "author": "ci-windows-native-e2e",
+  "tags": ["ci", "windows-native-e2e"],
+  "uc_ref": "UCS-EDR-02",
+  "tc_ref": "TC-EDR-03",
+  "mitre_tactic": "TA0002",
+  "mitre_tactic_name": "Execution",
+  "mitre_technique": "T1059.001",
+  "mitre_technique_name": "PowerShell",
+  "steps": [
+    {
+      "id": "step-03",
+      "name": "Cmdlet non-terminating error, expect rc != 0",
+      "command": "Get-Process -Name cortexsim-no-such-process",
+      "mitre_technique": "T1059.001",
+      "platforms": ["windows"],
+      "expected_detections": [
+        {
+          "plane": "EDR",
+          "type": "BIOC",
+          "description": "CI placeholder: the draft launch gate requires one expected detection per step. Nothing is measured, no tenant is queried, tenant-verified stays 0."
+        }
+      ]
+    }
+  ]
+}
