@@ -23,9 +23,16 @@ jobs:
   python-tests:
     name: python (unit + api + scenario catalog)
     runs-on: ubuntu-22.04
+    # Tests that drive a real PowerShell skip when none is on PATH, and a
+    # skipped guard reads exactly like a passing one. The hosted image ships
+    # pwsh: assert it, and tell the suites to fail rather than skip.
+    env:
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
       - uses: actions/checkout@v4
         with: { submodules: false }
+      - name: PowerShell present (pwsh)
+        run: pwsh --version || exit 1
       - uses: actions/setup-python@v5
         with: { python-version: '3.11', cache: pip }
       - name: Install deps
@@ -39,8 +46,12 @@ jobs:
   go-tests:
     name: go (agent)
     runs-on: ubuntu-22.04
+    env:
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
       - uses: actions/checkout@v4
+      - name: PowerShell present (pwsh)
+        run: pwsh --version || exit 1
       - uses: actions/setup-go@v5
         with: { go-version: '1.21' }
       - name: Test
@@ -96,8 +107,12 @@ jobs:
     # Both together: ~5 seconds wall-clock for the full library.
     name: ttp static (tier A + B)
     runs-on: ubuntu-22.04
+    env:
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
       - uses: actions/checkout@v4
+      - name: PowerShell present (pwsh)
+        run: pwsh --version || exit 1
       - uses: actions/setup-python@v5
         with: { python-version: '3.11', cache: pip }
       - name: Install shellcheck

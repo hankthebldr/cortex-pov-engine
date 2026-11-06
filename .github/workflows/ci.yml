@@ -40,6 +40,17 @@ name: CI
 #   e2e-isolated — Tier-C observed-signal assertion suite (no docker) as a hard
 #               gate; the docker detonation e2e is opt-in behind a `tier-c-e2e`
 #               PR label.
+#   windows   — the ONLY job that executes anything on Windows: windows-2022,
+#               Windows PowerShell 5.1, native go test, 5.1 parse +
+#               PSScriptAnalyzer, a real SimCore boot, the console's install
+#               one-liner, and pull / abort / push / uninstall against a beacon
+#               running as a Windows service. See its header for what it does
+#               NOT cover.
+#
+# Every native Linux job that runs suites with a real-PowerShell test (agent,
+# refs here; python-tests, ttp-static, go-tests in test.yml) asserts pwsh is
+# present and sets CORTEXSIM_REQUIRE_POWERSHELL=1, so such a test fails rather
+# than skips: a skipped guard reads exactly like a passing one.
 #
 # All jobs run independently and in parallel — a failure in one surfaces a
 # precise gate without masking the others.
@@ -136,14 +147,29 @@ jobs:
       - name: UI image-parity gate (image serves the console this tree builds)
         run: IMAGE=cortexsim:ci scripts/check-ui-shelf.sh
 
+      # The same Gate B question asked of the beacon: does the BUILT IMAGE ship
+      # every target, windows-amd64.exe included? The tree shipped 5 targets
+      # from the script and 4 from the image for months because every gate
+      # looked at the source and agreed with itself. Like the non-UTC pass, it
+      # runs whenever the image built, so a pytest failure cannot hide it.
+      - name: Beacon image-parity gate (image serves every beacon target)
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        run: make IMAGE=cortexsim:ci check-agent-shelf
+
   # ---------------------------------------------------------------------------
   # agent — Go beacon: build + vet + race-tested.
   # ---------------------------------------------------------------------------
   agent:
     name: agent (go build/vet/test -race)
     runs-on: ubuntu-22.04
+    env:
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
       - uses: actions/checkout@v4
+      # The PowerShell exec tests skip when no PowerShell is on PATH. The
+      # hosted image ships pwsh: assert it, so the skip can never happen here.
+      - name: PowerShell present (pwsh)
+        run: pwsh --version || exit 1
       - uses: actions/setup-go@v5
         with:
           go-version: '1.21'
@@ -265,8 +291,12 @@ jobs:
   refs:
     name: refs (UC/TC strict validation + ground-truth drift gate)
     runs-on: ubuntu-22.04
+    env:
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
       - uses: actions/checkout@v4
+      - name: PowerShell present (pwsh)
+        run: pwsh --version || exit 1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -275,6 +305,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r core/requirements.txt pytest pytest-asyncio
+      # Every emitted PowerShell artifact parsed under pwsh AND walked for the
+      # PowerShell-7-only syntax Windows PowerShell 5.1 (the product floor)
+      # cannot parse. pwsh parsing alone is necessary, not sufficient; the
+      # windows job is where 5.1 itself parses them.
+      - name: PowerShell 5.1 floor gate
+        run: make check-powershell
       - name: Every scenario resolves under CORTEXSIM_STRICT_REFS
         # A failure here names the scenario that would refuse to load in
         # production. Fix the ref (or the crosswalk), never the gate.
@@ -468,3 +504,158 @@ jobs:
           done
           deploy/tier-c/run-tier-c.sh --scenario SIM-EDR-001 \
             --simcore http://localhost:8888 --results "$RUNNER_TEMP/tierc-out"
+
+  # ---------------------------------------------------------------------------
+  # windows — the only job that EXECUTES anything on Windows.
+  #
+  # Every other job runs on ubuntu-22.04. Before this job, nothing behind
+  # //go:build windows had ever run, no Windows PowerShell 5.1 had parsed a
+  # bundle or an installer, and no Windows service had ever been created: the
+  # `agent` job proves only that the beacon COMPILES for GOOS=windows.
+  #
+  # One phase per step (scripts/ci/windows-native-e2e.ps1 -Phase <p>), so a
+  # failure names its gate and the independent phases after it still run:
+  #   floor      Windows PowerShell 5.1 Desktop, or nothing below is 5.1 proof
+  #   go         native go vet + go test ./... -count=1 (no -race: it needs
+  #              cgo), Git's sh removed from PATH; a TestPowerShell* skip fails
+  #   build      the SHIPPED recipe, scripts/build-agent-dist.sh, then PE32+
+  #              x86-64 / SHA256SUMS / Authenticode checks on what it wrote
+  #   render     scripts/ci/render_powershell.py (the powershell-gate lane)
+  #   parse      ParseFile (as -File reads it) + ParseInput (as iwr | iex does)
+  #   pssa       PSScriptAnalyzer compatibility rules vs Server 2016/2019 5.1
+  #   boot       SimCore under uvicorn on 127.0.0.1:8888 from this checkout
+  #   install    the console's token one-liner in a child powershell.exe
+  #   pull       exit codes, fail-fast, step_outcomes, stderr as plain text
+  #   abort      tree-kill reaches the step and nothing outside it
+  #   push       the PowerShell push bundle for the same probe, run with -File
+  #   uninstall  no service, no install dir, no beacon process left behind
+  #   collect    SCM events, sc.exe, Defender state, SimCore db (always runs)
+  # Everything lands in the `windows-proof` artifact.
+  #
+  # Unconditional, no paths: filter, no needs:, no continue-on-error: a job
+  # that can be skipped or soft-fail reads exactly like a passing one. It is
+  # EXPECTED RED until the beacon-windows-service, beacon-windows-exec,
+  # windows-installer and push-bundle-harness lanes land; make it a required
+  # check once it is green.
+  #
+  # What a green run does NOT cover:
+  #   - an https SimCore under Windows PowerShell 5.1's TLS defaults
+  #   - Server Core (no desktop experience, different feature set)
+  #   - code pages other than cp1252 (the runner is en-US)
+  #   - AppLocker, WDAC or Constrained Language Mode
+  #   - a real Cortex XDR agent on the host (prevention, blocking, injection)
+  #   - reboot survival of the service
+  #   - the non-admin install path (DEGRADED_NO_SUPERVISOR)
+  # It never contacts a Cortex tenant. tenant-verified stays 0.
+  # ---------------------------------------------------------------------------
+  windows:
+    name: windows (native 5.1 + beacon service e2e)
+    runs-on: windows-2022
+    timeout-minutes: 40
+    defaults:
+      run:
+        # Windows PowerShell 5.1 (powershell.exe), not pwsh.
+        shell: powershell
+    env:
+      CGO_ENABLED: '0'
+      PYTHONUTF8: '1'
+      CORTEXSIM_ENV: development
+      CORTEXSIM_REQUIRE_POWERSHELL: '1'
+      # TODO(pssa-pin): no PSGallery lookup was made when this job was written.
+      # Empty installs the newest PSScriptAnalyzer and records its version in
+      # windows-proof/pssa-meta.json; pin that version here after the first run.
+      CORTEXSIM_PSSA_VERSION: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-go@v5
+        with:
+          # Same string as the agent job until CI-11 settles which Go ships.
+          go-version: '1.21'
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: floor (Windows PowerShell 5.1 Desktop)
+        id: floor
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase floor
+
+      - name: go (native go vet + go test, no sh on PATH)
+        id: go
+        if: ${{ !cancelled() }}
+        timeout-minutes: 15
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase go
+
+      - name: build (shipped recipe scripts/build-agent-dist.sh)
+        id: build_dist
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: OUT_DIR="$RUNNER_TEMP/agent-dist" bash scripts/build-agent-dist.sh
+
+      - name: build (PE32+ x86-64, SHA256SUMS, Authenticode)
+        id: build
+        if: ${{ !cancelled() && steps.build_dist.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase build
+
+      # cmd, not powershell: pip writes progress to stderr, and native stderr
+      # under the powershell shell's ErrorActionPreference=stop is a throw.
+      - name: deps (pip install -r core/requirements.txt)
+        id: deps
+        if: ${{ !cancelled() }}
+        shell: cmd
+        run: python -m pip install --disable-pip-version-check -r core/requirements.txt
+
+      - name: render (scripts/ci/render_powershell.py)
+        id: render
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase render
+
+      - name: parse (ParseFile + ParseInput under 5.1)
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.render.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase parse
+
+      - name: pssa (PSScriptAnalyzer, Server 2016/2019 5.1 profiles)
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.render.outcome == 'success' }}
+        timeout-minutes: 15
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase pssa
+
+      - name: boot (SimCore on 127.0.0.1:8888)
+        id: boot
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' && steps.build.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase boot
+
+      - name: install (console token one-liner, service)
+        id: install
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.boot.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase install
+
+      - name: pull (exit codes, fail-fast, stderr)
+        if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase pull
+
+      - name: abort (tree-kill scope)
+        if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase abort
+
+      - name: push (PowerShell bundle with -File)
+        if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.boot.outcome == 'success' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase push
+
+      - name: uninstall (uninstall one-liner)
+        if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase uninstall
+
+      - name: collect (evidence, always)
+        if: ${{ always() }}
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase collect
+
+      - name: Upload windows-proof
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-proof
+          path: ${{ runner.temp }}/windows-proof
+          if-no-files-found: warn
+          retention-days: 14
