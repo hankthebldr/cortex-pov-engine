@@ -103,12 +103,29 @@ def _slim_step(step: dict) -> dict:
     return out
 
 
+def _bundle_targets(doc: dict) -> list[str]:
+    """The push-bundle targets ``GET /{id}/download`` will actually serve (UI-08).
+
+    ``posix`` (bash / k8s) and/or ``windows`` (PowerShell), from the SAME
+    resolver the download route gates on — so the console can label a scenario
+    Windows-only, or offer the .ps1, without a speculative download that comes
+    back 409. ``[]`` for ``push_supported: false``: the route refuses those with
+    PUSH_NOT_SUPPORTED whatever the content could emit, and an empty list must
+    not be read as "this scenario has no commands". Measured cost: ~0.3 ms per
+    scenario, so the list projection carries it too.
+    """
+    if push_not_supported(doc):
+        return []
+    return list(emittable_targets(doc))
+
+
 def _slim_scenario(scenario: Scenario) -> dict:
     """Summary projection of a scenario for the list endpoint."""
     full = scenario.to_dict()
     slim = {k: v for k, v in full.items() if k not in _LIST_OMIT_FIELDS}
     steps = full.get("steps")
     slim["steps"] = [_slim_step(s) for s in steps if isinstance(s, dict)] if isinstance(steps, list) else []
+    slim["bundle_targets"] = _bundle_targets(full)
     return slim
 
 
@@ -206,7 +223,9 @@ async def get_scenario(
         )
 
     logger.info("get_scenario scenario_id=%s", scenario_id)
-    return scenario.to_dict()
+    doc = scenario.to_dict()
+    doc["bundle_targets"] = _bundle_targets(doc)
+    return doc
 
 
 @router.get("/{scenario_id}/infra-hints")

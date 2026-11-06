@@ -227,3 +227,40 @@ class TestPushSupportedFalse:
         client, seed = env
         seed("SIM-TEST-PUSH", [BOTH_STEP], push_supported=True)
         assert client.get("/api/scenarios/SIM-TEST-PUSH/download").status_code == 200
+
+
+class TestBundleTargets:
+    """UI-08: the console can only label a scenario Windows-only (or offer the
+    .ps1) if the API says which bundles exist. ``bundle_targets`` is computed by
+    the SAME resolver the download route gates on, so the two cannot disagree."""
+
+    @pytest.mark.parametrize("sid,steps,push,expected", [
+        ("SIM-TEST-POSIX", [POSIX_STEP], True, ["posix"]),
+        ("SIM-TEST-WIN", [WINDOWS_STEP], True, ["windows"]),
+        ("SIM-TEST-BOTH", [BOTH_STEP], True, ["posix", "windows"]),
+        # Refused by the download route whatever the content could emit.
+        ("SIM-TEST-NOPUSH", [BOTH_STEP], False, []),
+        # Neither target resolves: an honest empty list, and the route agrees.
+        ("SIM-TEST-NONE", [
+            {"id": "step-01", "command": "curl -s http://h/ -o /tmp/x"},
+            {"id": "step-02", "platforms": ["windows"], "command": "Get-Process lsass"},
+        ], True, []),
+    ])
+    def test_detail_and_list_carry_bundle_targets(self, env, sid, steps, push, expected):
+        client, seed = env
+        seed(sid, steps, push_supported=push)
+        detail = client.get(f"/api/scenarios/{sid}")
+        assert detail.status_code == 200
+        assert detail.json()["bundle_targets"] == expected
+        rows = {r["scenario_id"]: r for r in client.get("/api/scenarios").json()["scenarios"]}
+        assert rows[sid]["bundle_targets"] == expected
+
+    @pytest.mark.parametrize("fmt,target", [("bash", "posix"), ("powershell", "windows")])
+    def test_bundle_targets_agree_with_the_download_route(self, env, fmt, target):
+        client, seed = env
+        for sid, steps in (("SIM-TEST-POSIX", [POSIX_STEP]), ("SIM-TEST-WIN", [WINDOWS_STEP]),
+                           ("SIM-TEST-BOTH", [BOTH_STEP])):
+            seed(sid, steps)
+            advertised = target in client.get(f"/api/scenarios/{sid}").json()["bundle_targets"]
+            served = client.get(f"/api/scenarios/{sid}/download?format={fmt}").status_code == 200
+            assert advertised == served, f"{sid}/{fmt}: advertised={advertised} served={served}"
