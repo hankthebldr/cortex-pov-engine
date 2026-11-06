@@ -49,6 +49,34 @@ func TestAgentCapabilities_ArtifactFetchAdvertisedOnEveryPlatform(t *testing.T) 
 	}
 }
 
+func withBeaconElevated(t *testing.T, elevated bool) {
+	t.Helper()
+	old := beaconElevated
+	beaconElevated = func() bool { return elevated }
+	t.Cleanup(func() { beaconElevated = old })
+}
+
+// CONT-14. A DC picking a Windows host for a scenario whose steps assert
+// `administrator` needs to know, at the roster, whether this beacon can give
+// them an elevated token — before the run, not from a degraded step afterwards.
+func TestAgentCapabilities_WindowsAdvertisesElevationOnlyWhenTrue(t *testing.T) {
+	withBeaconElevated(t, true)
+	if !has(agentCapabilities("windows"), "elevated") {
+		t.Fatalf("elevated windows beacon does not advertise elevated: %v", agentCapabilities("windows"))
+	}
+	withBeaconElevated(t, false)
+	if has(agentCapabilities("windows"), "elevated") {
+		t.Fatalf("NON-elevated windows beacon claims elevated: %v", agentCapabilities("windows"))
+	}
+	// Linux/macOS lists are pinned elsewhere and must not grow from this.
+	withBeaconElevated(t, true)
+	for _, goos := range []string{"linux", "darwin"} {
+		if has(agentCapabilities(goos), "elevated") {
+			t.Errorf("agentCapabilities(%s) gained elevated: %v", goos, agentCapabilities(goos))
+		}
+	}
+}
+
 // POSIX registration is unchanged — the roster contract other tooling reads must
 // not shift as a side effect of the Windows work.
 func TestAgentCapabilities_POSIXUnchanged(t *testing.T) {

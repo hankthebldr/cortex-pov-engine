@@ -16,9 +16,14 @@ import (
 )
 
 // windowsResolver mimics identity.Resolve as it behaves on a Windows host where
-// the beacon runs as CONTOSO\svc_cortexsim.
+// the beacon runs as CONTOSO\svc_cortexsim with an ELEVATED token.
 func windowsResolver(username string) identity.Resolution {
-	return identity.ResolveFor("windows", username, `CONTOSO\svc_cortexsim`)
+	return identity.ResolveForElevation("windows", username, `CONTOSO\svc_cortexsim`, true)
+}
+
+// unelevatedWindowsResolver is the same host with a NON-elevated token.
+func unelevatedWindowsResolver(username string) identity.Resolution {
+	return identity.ResolveForElevation("windows", username, `CONTOSO\svc_cortexsim`, false)
 }
 
 func windowsTask() *Task {
@@ -142,6 +147,29 @@ func TestExecuteTaskChained_AlsoRecordsUnhonouredIdentity(t *testing.T) {
 	completes := rs.find("POST", "/complete")
 	if len(completes) != 1 || !strings.Contains(completes[0].Body, "IDENTITY DEGRADED") {
 		t.Fatalf("chained completion summary hides the degradation: %+v", completes)
+	}
+}
+
+// CONT-14: on a NON-elevated Windows beacon a `root` step runs without
+// administrative rights, so even the "direct" identity is not honoured — and the
+// run record must say so, in the step output AND the run-card summary.
+func TestExecuteTask_UnelevatedWindowsBeaconFlagsPrivilegedSteps(t *testing.T) {
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+
+	c := New(rs.URL, "a-win", 0)
+	c.resolveIdentity = unelevatedWindowsResolver
+	c.executeTask(context.Background(), windowsTask())
+
+	outputs := rs.find("POST", "/output")
+	if len(outputs) != 2 {
+		t.Fatalf("expected one /output POST per step, got %d", len(outputs))
+	}
+	if !strings.Contains(outputs[1].Body, "IDENTITY NOT HONOURED: root requires an elevated token; this beacon is not elevated") {
+		t.Fatalf("step-02 (root) on a non-elevated beacon is not flagged:\n%s", outputs[1].Body)
+	}
+	if body := rs.find("POST", "/complete")[0].Body; !strings.Contains(body, "IDENTITY DEGRADED: 2 step(s)") {
+		t.Fatalf("summary does not count both degraded steps: %s", body)
 	}
 }
 
