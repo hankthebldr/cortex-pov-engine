@@ -11,6 +11,7 @@ Manages an in-memory task queue: Dict[agent_id, List[Task]]
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -368,6 +369,20 @@ class Orchestrator:
         # purpose: it is a liveness signal, and a restart is measured from
         # `started_at` (see engine.beacon_lost.terminalise_abandoned_runs).
         self._control_polls: dict[str, datetime] = {}
+        # Idle evidence per ENDPOINT, for a multi-endpoint fan-out. The beacon
+        # executes one task at a time inside its poll loop, so a GET /tasks
+        # from an agent proves that agent is holding no task at that moment.
+        # `_task_polls[agent]` is the sequence number of its latest poll;
+        # `_deliveries[run][agent]` the sequence number at which that agent
+        # collected the run's task. A poll numbered after the delivery means
+        # the agent has let go of its partition (finished it, or dropped its
+        # /complete). Sequence numbers, not clock readings, because the poll
+        # that COLLECTS a task and the delivery it causes share a timestamp.
+        # In memory, like `_control_polls`: a delivery from before this
+        # process booted is unknown, and then any poll since boot counts.
+        self._liveness_seq = itertools.count(1)
+        self._task_polls: dict[str, int] = {}
+        self._deliveries: dict[str, dict[str, int]] = {}
         self.started_at: datetime = datetime.utcnow()
 
     # ------------------------------------------------------------------
@@ -390,8 +405,44 @@ class Orchestrator:
         return self._control_polls.get(run_id)
 
     def forget_control_poll(self, run_id: str) -> None:
-        """Drop a terminal run's entry. Idempotent."""
+        """Drop a terminal run's liveness entries (control poll and per-endpoint
+        deliveries). Idempotent."""
         self._control_polls.pop(run_id, None)
+        self._deliveries.pop(run_id, None)
+
+    def note_task_poll(self, agent_id: str) -> None:
+        """Record that ``agent_id`` just polled ``/tasks`` — it holds no task."""
+        if agent_id not in self._task_polls and len(self._task_polls) >= self._CONTROL_POLL_CAP:
+            self._task_polls.pop(next(iter(self._task_polls)), None)
+        self._task_polls[agent_id] = next(self._liveness_seq)
+
+    def note_delivery(self, run_id: str, agent_id: str) -> None:
+        """Record that ``agent_id`` just collected its task for ``run_id``."""
+        if run_id not in self._deliveries and len(self._deliveries) >= self._CONTROL_POLL_CAP:
+            self._deliveries.pop(next(iter(self._deliveries)), None)
+        self._deliveries.setdefault(run_id, {})[agent_id] = next(self._liveness_seq)
+
+    def idle_since_delivery(self, run_id: str, agent_id: str) -> bool:
+        """Has ``agent_id`` polled for new work since it could have collected
+        its task for ``run_id``?
+
+        True means the agent has let go of that partition. False — including
+        "no poll from this agent since boot" — means it may still hold it.
+        """
+        polled = self._task_polls.get(agent_id)
+        if polled is None:
+            return False
+        return polled > self._deliveries.get(run_id, {}).get(agent_id, 0)
+
+    def has_queued_task(self, run_id: str) -> bool:
+        """Is any task for ``run_id`` still waiting in an agent's queue?"""
+        return any(t.run_id == run_id for q in self._queue.values() for t in q)
+
+    def reset_liveness(self) -> None:
+        """Forget every liveness record. A restarted process has none."""
+        self._control_polls.clear()
+        self._task_polls.clear()
+        self._deliveries.clear()
 
     async def reap_abandoned(
         self, agent_id: str, db: AsyncSession, now: Optional[datetime] = None,
@@ -1562,10 +1613,16 @@ class Orchestrator:
         run's control channel it is no longer executing that run. This is the
         only periodic signal that fires for such an agent — its fresh
         ``last_seen`` keeps the offline-agent beacon-lost sweep away.
+
+        The poll is recorded as idle evidence for this agent BEFORE the reap,
+        and the delivery it causes AFTER, so the collecting poll is never
+        mistaken for "has let go of the task it just collected".
         """
+        self.note_task_poll(agent_id)
         await self.reap_abandoned(agent_id, db)
         task = self.dequeue(agent_id)
         if task is not None:
+            self.note_delivery(task.run_id, agent_id)
             from models import QueuedTask, Run  # noqa: PLC0415
             from sqlalchemy import delete, update  # noqa: PLC0415
 
@@ -1667,14 +1724,20 @@ class Orchestrator:
             :func:`engine.beacon_lost.terminalise_abandoned_runs` (OPS-03): no
             ``/control`` poll for the run within
             ``CORTEXSIM_BEACON_LOST_AFTER_SECONDS`` of ``max(boot,
-            delivered_at)`` while its agent is demonstrably alive means the
-            beacon is no longer executing it.
+            delivered_at)`` while its agent is demonstrably alive, no task for
+            it is still queued, and EVERY endpoint holding one of its tasks has
+            polled ``/tasks`` since boot means no beacon is executing it. A
+            multi-endpoint fan-out is not reaped while a second endpoint has
+            yet to collect its task or has not been seen idle since.
 
         Returns counts ``{rehydrated, failed_orphans, in_flight}`` for logging.
         """
-        # A fresh boot: no control poll survives a restart, so the abandoned-run
-        # sweep measures silence from now, never from before the process lived.
+        # A fresh boot: no control poll, idle poll or delivery record survives a
+        # restart, so the abandoned-run sweep measures silence from now, never
+        # from before the process lived, and needs every endpoint to be seen
+        # idle again before it reaps.
         self.started_at = datetime.utcnow()
+        self.reset_liveness()
         from models import QueuedTask, Run  # noqa: PLC0415
 
         # 1. Re-load every durable task into the in-memory queue.

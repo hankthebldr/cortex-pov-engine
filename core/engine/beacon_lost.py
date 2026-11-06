@@ -34,7 +34,7 @@ from engine.outcome import (
     TERMINATION_NOT_RUN,
     UPSTREAM_SEVERED,
 )
-from models import Agent, Result, Run, Scenario, StepOutcome
+from models import Agent, QueuedTask, Result, Run, Scenario, StepOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +259,11 @@ async def terminalise_lost_runs(db: AsyncSession, agent_id: str, now: datetime,
 #
 # What says "a beacon is executing THIS run" is the run's own control channel:
 # GET /api/runs/{id}/control is polled before every step and every 2 s while a
-# step runs, by whichever endpoint holds the run (a fan-out included).
+# step runs, by whichever endpoint holds the run (a fan-out included). Silence
+# there is necessary but not sufficient: an endpoint staging a large artifact
+# polls nothing, and a fan-out's second task may not be collected yet. What
+# says "this endpoint has let go" is that endpoint polling /tasks again — the
+# beacon runs one task at a time inside its poll loop.
 
 TERMINATION_CODE_ABANDONED = "BEACON_ABANDONED_TASK"
 
@@ -299,35 +303,85 @@ def abandoned_reference(*, booted_at: datetime, delivered_at: datetime,
     return max(cands)
 
 
+def run_endpoints(run: Run) -> set[str]:
+    """Every agent that was handed (or is still owed) one of the run's tasks.
+
+    A single-endpoint run: its launch target. A multi-endpoint fan-out: every
+    distinct ``target`` of an agent-channel step in its routing ledger
+    (``Run.channel_dispatch``). ``delivered_at`` and ``Run.target`` alone say
+    nothing about the second endpoint — the first is stamped by the FIRST
+    partition's delivery, the second is only the launch target.
+    """
+    ledger = run.channel_dispatch or []
+    eps = {e["target"] for e in ledger
+           if isinstance(e, dict) and e.get("channel") == "agent" and e.get("target")}
+    if not eps and run.target:
+        eps = {run.target}
+    return eps
+
+
+async def _still_held(db: AsyncSession, run: Run, control_polls: Any) -> Optional[str]:
+    """Why some endpoint may still be working on ``run``, or ``None``.
+
+    A beacon executes one task at a time inside its poll loop, so a ``GET
+    /tasks`` from an agent after it collected the run's task proves it has let
+    go of that partition. The run is abandoned only when no task for it is
+    still queued and EVERY endpoint has done so.
+    """
+    if control_polls.has_queued_task(run.run_id):
+        return "a task for it is still queued"
+    queued = (await db.execute(
+        select(func.count()).select_from(QueuedTask)
+        .where(QueuedTask.run_id == run.run_id))).scalar_one()
+    if queued:
+        return "a task for it is still queued"
+    for ep in sorted(run_endpoints(run)):
+        if not control_polls.idle_since_delivery(run.run_id, ep):
+            return f"endpoint {ep} has not polled for new work since it could have collected its task"
+    return None
+
+
 async def terminalise_abandoned_runs(db: AsyncSession, now: datetime, *,
                                      after_seconds: int,
                                      agent_id: Optional[str] = None,
                                      control_polls: Any = None) -> list[str]:
-    """Terminalise delivered ``running`` runs whose beacon walked away.
+    """Terminalise delivered ``running`` runs whose beacons all walked away.
 
-    A run qualifies when its agent is ALIVE (``last_seen`` younger than
-    ``after_seconds`` — an offline agent is :func:`terminalise_lost_runs`'s)
-    and nothing has said a beacon is working on it for ``after_seconds``
-    (:func:`abandoned_reference`). It is terminalised through the same
-    machinery as a lost beacon, with a ``BEACON ABANDONED TASK`` marker and
-    ``termination: BEACON_ABANDONED_TASK`` on its ``run.status`` frame.
+    A run qualifies when
 
-    ``agent_id`` narrows the sweep to one agent's runs (the /tasks poll path);
-    ``control_polls`` is anything exposing ``last_control_poll(run_id)`` and
-    ``started_at`` — the orchestrator singleton by default.
+    * its launch target is ALIVE (``last_seen`` younger than ``after_seconds``
+      — an offline target is :func:`terminalise_lost_runs`'s),
+    * nothing has said a beacon is working on it for ``after_seconds``
+      (:func:`abandoned_reference`: no control poll, no step start), and
+    * nothing still holds it (:func:`_still_held`): no task for it is queued,
+      and every endpoint in :func:`run_endpoints` has polled ``/tasks`` since
+      it could have collected its task. For a single-endpoint run reaped on
+      its own agent's poll that is the poll itself; for a fan-out it is what
+      keeps a second endpoint that is still queued, busy with another run, or
+      staging a large artifact from having its live partition ended under it.
 
-    Known limit: a beacon phase that polls no control channel for longer than
-    ``after_seconds`` (artifact staging of a very large file, an authorized
-    runtime package install) would read as abandoned. The threshold must stay
-    above the longest such phase.
+    It is terminalised through the same machinery as a lost beacon, with a
+    ``BEACON ABANDONED TASK`` marker and ``termination: BEACON_ABANDONED_TASK``
+    on its ``run.status`` frame.
+
+    ``agent_id`` narrows the sweep to the runs that agent was an endpoint of
+    (the /tasks poll path); ``control_polls`` is the orchestrator singleton by
+    default — anything exposing ``started_at``, ``last_control_poll(run_id)``,
+    ``has_queued_task(run_id)`` and ``idle_since_delivery(run_id, agent_id)``.
+
+    Known limit: an endpoint that collected its task and then died without
+    ever polling again leaves the run to the offline-agent path, which looks
+    only at the launch target. A fan-out whose SECOND endpoint died therefore
+    stays ``running`` until an operator aborts it — the same as before this
+    sweep existed, and never a false explanation in the report.
     """
     if control_polls is None:
         from engine.orchestrator import orchestrator as control_polls  # noqa: PLC0415
 
     q = select(Run).where(Run.status == "running", Run.delivered_at.is_not(None))
-    if agent_id is not None:
-        q = q.where(Run.target == agent_id)
     runs = list((await db.execute(q)).scalars().all())
+    if agent_id is not None:
+        runs = [r for r in runs if agent_id in run_endpoints(r)]
 
     done: list[str] = []
     for run in runs:
@@ -337,6 +391,10 @@ async def terminalise_abandoned_runs(db: AsyncSession, now: datetime, *,
             select(Agent.last_seen).where(Agent.agent_id == run.target))).scalar_one_or_none()
         if last_seen is None or (now - last_seen).total_seconds() >= after_seconds:
             continue  # not demonstrably alive: the offline-agent path owns it
+        held = await _still_held(db, run, control_polls)
+        if held is not None:
+            logger.debug("beacon_abandoned skip run_id=%s: %s", run.run_id, held)
+            continue
         outcomes = (await db.execute(
             select(StepOutcome).where(StepOutcome.run_id == run.run_id)
             .order_by(StepOutcome.id))).scalars().all()

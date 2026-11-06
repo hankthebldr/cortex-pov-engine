@@ -86,7 +86,7 @@ def _clean_orchestrator():
     def _reset():
         orchestrator._aborted.clear()
         orchestrator._queue.clear()
-        getattr(orchestrator, "_control_polls", {}).clear()
+        orchestrator.reset_liveness()
 
     _reset()
     yield
@@ -158,7 +158,9 @@ def _restart(session_factory):
 
 def _age(session_factory, run_id, seconds):
     """Move the run's delivery and the process boot ``seconds`` into the past,
-    keeping the agent's last_seen fresh (it is idle-polling /tasks)."""
+    keeping the agent's last_seen fresh (it is idle-polling /tasks — which is
+    also the idle evidence the sweep needs, recorded here for the tests that
+    call the sweep directly rather than through GET /tasks)."""
     from engine.orchestrator import orchestrator
     from models import Agent, Run
 
@@ -173,6 +175,7 @@ def _age(session_factory, run_id, seconds):
 
     asyncio.run(_go())
     orchestrator.started_at = datetime.utcnow() - timedelta(seconds=seconds)
+    orchestrator.note_task_poll("agent-1")
 
 
 def _sweep(session_factory, now=None):
@@ -414,3 +417,154 @@ def test_a_duplicate_complete_is_409(client, session_factory):
     second = client.post(f"/api/runs/{run_id}/complete", json={"exit_code": 1, "summary": "dup"})
     assert second.status_code == 409
     assert _run(session_factory, run_id).status == "complete"
+
+
+# ---------------------------------------------------------------------------
+# A multi-endpoint fan-out is abandoned only when EVERY endpoint has let go
+# ---------------------------------------------------------------------------
+#
+# `delivered_at` is stamped by the FIRST partition's delivery and `Run.target`
+# is only the launch target. Reaping on "the launch target is idle and the
+# control channel is silent" therefore ended a fan-out whose first endpoint had
+# finished while its second was still queued (busy with another run, or
+# offline), or had collected its task and was staging a large artifact — and
+# wrote "/complete most likely lost across a SimCore restart" into the report
+# of a run that was still working.
+
+
+def _seed_fanout(session_factory):
+    """Two linux agents; step-01 runs on agent-1 (launch target), step-02 on agent-2."""
+    from engine.orchestrator import orchestrator
+    from models import Agent, Scenario
+
+    async def _go():
+        async with session_factory() as db:
+            db.add(Scenario(
+                scenario_id="SIM-EDR-963", name="T", version="1.0", status="active",
+                plane="EDR", uc_ref="UCS-EDR-01", uc_name="x", tc_ref="TC-EDR-01",
+                tc_name="y", mitre_tactic="TA0006", mitre_tactic_name="CA",
+                mitre_technique="T1003.001", mitre_technique_name="LSASS",
+                execution_identity={"default": "root"}, push_supported=True,
+                pull_supported=True,
+                steps=[
+                    {"id": "step-01", "name": "s1", "identity": "root", "command": "id",
+                     "mitre_technique": "T1003.001",
+                     "expected_detections": [{"plane": "EDR", "type": "BIOC",
+                                              "description": "det 1", "outcome": "detect"}]},
+                    {"id": "step-02", "name": "s2", "identity": "root", "command": "id",
+                     "target": "agent-2", "mitre_technique": "T1003.001",
+                     "expected_detections": [{"plane": "EDR", "type": "BIOC",
+                                              "description": "det 2", "outcome": "detect"}]},
+                ],
+            ))
+            for aid in ("agent-1", "agent-2"):
+                db.add(Agent(agent_id=aid, hostname=f"h-{aid}", os="linux",
+                             capabilities=["shell", "identity-harness"], interpreters=[],
+                             registered_at=datetime.utcnow(), last_seen=datetime.utcnow(),
+                             status="online"))
+            await db.commit()
+            res = await orchestrator.launch(
+                scenario_id="SIM-EDR-963", mode="pull", db=db, target_agent_id="agent-1")
+            assert res.success, res.error
+            return res.run_id
+
+    return asyncio.run(_go())
+
+
+def _collect(client, agent_id, run_id):
+    r = client.get(f"/api/agents/{agent_id}/tasks")
+    assert r.status_code == 200, r.text
+    task = r.json()["task"]
+    assert task is not None and task["run_id"] == run_id, r.json()
+    return task
+
+
+def _age_fanout(session_factory, run_id, seconds):
+    """Delivery, process boot and every control poll ``seconds`` in the past;
+    both agents' last_seen fresh."""
+    from engine.orchestrator import orchestrator
+    from models import Agent, Run
+
+    async def _go():
+        async with session_factory() as db:
+            run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
+            run.delivered_at = datetime.utcnow() - timedelta(seconds=seconds)
+            run.started_at = run.delivered_at
+            for agent in (await db.execute(select(Agent))).scalars().all():
+                agent.last_seen = datetime.utcnow()
+            await db.commit()
+
+    asyncio.run(_go())
+    orchestrator.started_at = datetime.utcnow() - timedelta(seconds=seconds)
+    orchestrator._control_polls.clear()
+
+
+def _complete_partition(client, run_id, step_id):
+    r = client.post(f"/api/runs/{run_id}/complete",
+                    json={"exit_code": 0, "summary": f"{step_id} ok",
+                          "steps": [{"step_id": step_id, "termination": "exited",
+                                     "exit_code": 0}]})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_a_fanout_whose_second_task_is_still_queued_is_not_reaped(client, session_factory):
+    """The reviewed defect, reproduced at 0452666: agent-1 finishes its
+    partition; agent-2's task is still QUEUED (agent-2 busy elsewhere). 180 s
+    later agent-1's idle poll reaped the run, and agent-2 was then told abort."""
+    run_id = _seed_fanout(session_factory)
+    _collect(client, "agent-1", run_id)
+    assert _complete_partition(client, run_id, "step-01")["pending_endpoints"] == 1
+    _age_fanout(session_factory, run_id, AFTER + 60)
+
+    r = client.get("/api/agents/agent-1/tasks")  # agent-1 idle-polls for new work
+    assert r.status_code == 200 and r.json() == {"task": None}
+
+    run = _run(session_factory, run_id)
+    assert run.status == "running", run.output
+    assert "BEACON ABANDONED TASK" not in (run.output or "")
+    # agent-2 finally collects its partition and is NOT told to stop.
+    _collect(client, "agent-2", run_id)
+    assert client.get(f"/api/runs/{run_id}/control").json()["abort"] is False
+    assert _complete_partition(client, run_id, "step-02")["status"] == "complete"
+
+
+def test_a_fanout_whose_second_endpoint_is_staging_is_not_reaped(client, session_factory):
+    """agent-2 collected its task and is staging a large artifact: it polls
+    neither /control nor /tasks. agent-1 finished and idles. Not abandoned."""
+    run_id = _seed_fanout(session_factory)
+    _collect(client, "agent-1", run_id)
+    _collect(client, "agent-2", run_id)
+    _complete_partition(client, run_id, "step-01")
+    _age_fanout(session_factory, run_id, AFTER + 60)
+
+    assert client.get("/api/agents/agent-1/tasks").json() == {"task": None}
+    assert _sweep(session_factory) == []  # the unscoped sweep agrees
+
+    run = _run(session_factory, run_id)
+    assert run.status == "running", run.output
+    assert client.get(f"/api/runs/{run_id}/control").json()["abort"] is False
+
+
+def test_a_fanout_both_endpoints_let_go_is_reaped_once_both_are_seen_idle(
+        client, session_factory, frames):
+    """The positive control: both partitions' /complete lost across a restart.
+    Reaped only once BOTH endpoints have polled for new work since boot — and
+    the second endpoint's own idle poll can be the one that reaps it."""
+    run_id = _seed_fanout(session_factory)
+    _collect(client, "agent-1", run_id)
+    _collect(client, "agent-2", run_id)
+    _restart(session_factory)
+    _age_fanout(session_factory, run_id, AFTER + 60)
+
+    # Only agent-1 has been seen idle since boot: agent-2 may still be working.
+    assert client.get("/api/agents/agent-1/tasks").json() == {"task": None}
+    assert _run(session_factory, run_id).status == "running"
+
+    # agent-2 polls for new work too: nothing holds the run any more.
+    assert client.get("/api/agents/agent-2/tasks").json() == {"task": None}
+    run = _run(session_factory, run_id)
+    assert run.status == "complete", run.output
+    assert "BEACON ABANDONED TASK" in run.output
+    status_frames = [f for f in frames if f["type"] == "run.status"]
+    assert status_frames[-1]["data"]["termination"] == "BEACON_ABANDONED_TASK"
