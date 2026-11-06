@@ -166,7 +166,10 @@ async def ingest_observations(
         db, run_id, results, verdicts, source="manual-import",
         # The DC chose these alerts by hand, so silence is never a miss
         # (basis `manual`); a pass stands only when every alert was host-scoped.
+        # host_unresolved: the run has no host at all (push runs) — a detect
+        # match is then UNSCOPED_MATCH, never detected (DOCS-03).
         pull_context={"basis": "manual", "unscoped": unscoped, "truncated": False,
+                      "host_unresolved": host_scope["host"] is None,
                       "alert_incidents": {e: by_ext[e].incident_id for e in matched_ext
                                           if e in by_ext}},
         observations=alerts, window_seconds=body.window_seconds)

@@ -221,6 +221,9 @@ async def reconcile_run(
     ctx: dict[str, Any] = {
         "basis": "reconcile",
         "unscoped": host_scope["host"] is None,
+        # No host to scope against at all (push runs, a vanished agent row,
+        # no `host` override): a detect match is UNSCOPED_MATCH, not detected.
+        "host_unresolved": host_scope["host"] is None,
         "truncated": bool(truncation),
         "dropped": pull.dropped,
         "alert_incidents": {e: getattr(by_ext.get(e), "incident_id", None) for e in matched_ext},
@@ -266,8 +269,9 @@ async def reconcile_run(
     if host_scope["host"] is None:
         warnings.append(
             "unscoped: this run has no resolvable target host, so an alert from "
-            "ANY endpoint in the tenant was eligible to be credited — on a shared "
-            "tenant treat every match here as unconfirmed.")
+            "ANY endpoint in the tenant could match. A matched detect expectation "
+            "is therefore recorded pending (UNSCOPED_MATCH) with no MTTD, not "
+            "detected; reconcile with the endpoint's host to credit it.")
     if truncation:
         summary["truncated"] = True
         summary["truncation"] = truncation
@@ -290,6 +294,12 @@ async def reconcile_run(
         summary["warning"] = " ".join(warnings)
     return ReconcileOutcome(summary=summary, newly_matched=newly)
 
+
+#: ``Result.outcome_reason`` for a ``detect`` expectation that matched an alert
+#: during an UNSCOPED reconcile (no resolvable host — push runs). The alert
+#: could have been raised by any endpoint in the tenant, so the row stays
+#: ``pending`` and gets no ``observed_at`` (no MTTD) — DOCS-03, option (c).
+UNSCOPED_MATCH = "UNSCOPED_MATCH"
 
 NEVER_DELIVERED_WARNING = (
     "never delivered: this pull run's task was never collected by a beacon, so "
@@ -425,9 +435,11 @@ async def apply_verdicts(
     alerts = list(observations or [])
     by_ext = {a.external_id: a for a in alerts if getattr(a, "external_id", None)}
     unscoped = bool(pull_context and pull_context.get("unscoped"))
+    host_unresolved = bool(pull_context and pull_context.get("host_unresolved"))
     seen_obs = await _existing_observation_keys(db, run_id)
 
     matched = 0
+    unscoped_matches = 0
     applied: list[tuple[Any, Result]] = []
     for v in verdicts:
         if not v.matched:
@@ -453,6 +465,23 @@ async def apply_verdicts(
         if result.outcome in EXCLUDED_FROM_DENOMINATOR:
             # The host says this step never ran: an alert inside its window came
             # from something else. Never observed, never MTTD, never re-judged.
+            continue
+        if host_unresolved and result.expected_outcome != "prevent":
+            # DOCS-03 (option c): with no host to scope against, the alert
+            # could be ANY endpoint's. A detect expectation is not met by it:
+            # the row stays pending, unobserved, with no observed_at and so no
+            # MTTD. The alert is on record (the Observation above) and named
+            # in the notes; a host-scoped reconcile can still credit it.
+            # (Prevent rows keep their own two-witness rule:
+            # PASS_WITHHELD_UNSCOPED.)
+            result.outcome = OUTCOME_PENDING
+            result.outcome_reason = UNSCOPED_MATCH
+            note = (f"unscoped candidate via {source} — not credited: no target host "
+                    f"to scope against (alert={v.alert_external_id or v.alert_name or 'n/a'}, "
+                    f"matched on {', '.join(v.matched_on)})")
+            if note not in (result.notes or ""):
+                result.notes = ((result.notes + " | ") if result.notes else "") + note
+            unscoped_matches += 1
             continue
         result.observed = True
         result.observed_at = v.observed_at
@@ -508,6 +537,8 @@ async def apply_verdicts(
     # hook here scores every one of them, with no new scheduling and no
     # outbound call: Tier 1 reads only rows CortexSim already owns.
     summary = efficacy_summary(results, matched, source)
+    if unscoped_matches:
+        summary["unscoped_matches"] = unscoped_matches
     if run is not None:
         summary["tc_verdict"] = await score_run_safely(
             db, run, source=f"reconcile:{source}", results=results,
@@ -598,6 +629,11 @@ async def _judge_silent_results(
         if r.observed or r.executed_at is None:
             continue
         if r.outcome not in (None, OUTCOME_PENDING):
+            continue
+        if r.outcome_reason == UNSCOPED_MATCH:
+            # An alert DID match; it just could not be attributed to this
+            # run's host. That is better evidence than silence, and a later
+            # empty or soak pass must not overwrite it with "no host record".
             continue
         if r.signal_type in by_type:
             if first_run_seen is None:
