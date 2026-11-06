@@ -796,58 +796,177 @@ fi
 
 
 _POSIX_UNINSTALLER = r"""#!/usr/bin/env bash
-# ─── CortexSim beacon uninstaller (Linux / macOS) ───────────────────────────
+# --- CortexSim beacon uninstaller (Linux / macOS) ----------------------------
 #
 #   curl -fsSL '<server>/api/agents/install?uninstall=1' | bash
+#   (a beacon installed as root needs:  ... | sudo bash)
 #
 # A DC leaving a customer site needs one line that takes the beacon back off the
-# endpoint. Best-effort by design (no `set -e`): every removal is attempted even
-# if an earlier one was never installed.
+# endpoint AND an honest answer about whether it did. Every location is checked
+# (no `set -e`: one missing item must not stop the rest), and what was FOUND is
+# tracked separately from what was REMOVED:
+#   - nothing found              -> "nothing to remove", exit 0
+#   - everything found removed   -> "done", exit 0
+#   - anything found but kept    -> FAILED code=UNINSTALL_INCOMPLETE naming each
+#                                   item, exit 1
+# A non-root run that can SEE a root install refuses up front (NEEDS_ROOT)
+# instead of half-removing it and calling the host clean.
+#
+# Env: CORTEXSIM_BIN_DIR / CORTEXSIM_LOG -- the same overrides the installer
+# honours, so a relocated install is found too.
 set -uo pipefail
 
 SVC="cortexsim-agent"
 PLIST_LABEL="com.paloaltonetworks.cortexsim.agent"
-REMOVED=0
-cs_say() { echo "[cortexsim] $*"; }
-cs_gone() { cs_say "removed: $1"; REMOVED=$((REMOVED+1)); }
+PROC_PATTERN='cortexsim-agent --server'
 
-if command -v systemctl >/dev/null 2>&1; then
-  if systemctl is-enabled "$SVC" >/dev/null 2>&1 || [ -f "/etc/systemd/system/$SVC.service" ]; then
-    systemctl disable --now "$SVC" >/dev/null 2>&1 || true
-    rm -f "/etc/systemd/system/$SVC.service" && cs_gone "system unit /etc/systemd/system/$SVC.service"
-    systemctl daemon-reload >/dev/null 2>&1 || true
+SYS_UNIT="/etc/systemd/system/$SVC.service"
+SYS_PLIST="/Library/LaunchDaemons/$PLIST_LABEL.plist"
+SYS_BIN="/usr/local/bin/cortexsim-agent"
+SYS_LOG="/var/log/cortexsim-agent.log"
+USER_UNIT="$HOME/.config/systemd/user/$SVC.service"
+USER_PLIST="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
+USER_BIN="$HOME/.local/bin/cortexsim-agent"
+USER_STATE="$HOME/.cortexsim"
+EXTRA_BIN=""
+if [ -n "${CORTEXSIM_BIN_DIR:-}" ]; then EXTRA_BIN="${CORTEXSIM_BIN_DIR%/}/cortexsim-agent"; fi
+EXTRA_LOG=""
+case "${CORTEXSIM_LOG:-}" in
+  *cortexsim*) EXTRA_LOG="$CORTEXSIM_LOG" ;;   # never delete a log we did not name
+esac
+
+FOUND=0
+REMOVED=0
+LEFT=""
+IS_ROOT=0
+[ "$(id -u)" = "0" ] && IS_ROOT=1
+
+cs_say() { echo "[cortexsim] $*"; }
+cs_found() { FOUND=$((FOUND+1)); }
+cs_gone() { cs_say "removed: $1"; REMOVED=$((REMOVED+1)); }
+cs_left() {  # item why
+  cs_say "NOT removed: $1 ($2)" >&2
+  LEFT="$LEFT
+[cortexsim]          - $1 ($2)"
+}
+cs_fail() {  # code what fix
+  echo "" >&2
+  echo "[cortexsim] FAILED  stage=uninstall  code=$1" >&2
+  echo "[cortexsim]   what : $2" >&2
+  echo "[cortexsim]   fix  : $3" >&2
+  cs_say "the agent row stays in SimCore until you delete it: DELETE /api/agents/<agent_id>"
+  exit 1
+}
+
+cs_rm_file() {  # path label
+  [ -e "$1" ] || [ -L "$1" ] || return 0
+  cs_found
+  if rm -f "$1" 2>/dev/null && [ ! -e "$1" ] && [ ! -L "$1" ]; then
+    cs_gone "$2 $1"
+  else
+    cs_left "$2 $1" "rm failed"
   fi
-  if [ -f "$HOME/.config/systemd/user/$SVC.service" ]; then
-    systemctl --user disable --now "$SVC" >/dev/null 2>&1 || true
-    rm -f "$HOME/.config/systemd/user/$SVC.service" && cs_gone "user unit $HOME/.config/systemd/user/$SVC.service"
-    systemctl --user daemon-reload >/dev/null 2>&1 || true
+}
+
+cs_rm_dir() {  # path label
+  [ -e "$1" ] || [ -L "$1" ] || return 0
+  cs_found
+  if rm -rf "$1" 2>/dev/null && [ ! -e "$1" ] && [ ! -L "$1" ]; then
+    cs_gone "$2 $1"
+  else
+    cs_left "$2 $1" "rm -rf failed"
+  fi
+}
+
+# -- preflight: a root install needs root to remove ----------------------------
+if [ "$IS_ROOT" != "1" ]; then
+  NEED=""
+  for p in "$SYS_UNIT" "$SYS_PLIST" "$SYS_BIN" "$SYS_LOG"; do
+    if [ -e "$p" ] || [ -L "$p" ]; then NEED="$NEED $p"; fi
+  done
+  if [ -n "$NEED" ]; then
+    cs_fail NEEDS_ROOT \
+      "a root-installed beacon is present (${NEED# }) and this shell is $(id -un 2>/dev/null || echo non-root); nothing was removed" \
+      "re-run with sudo:  curl -fsSL '<server>/api/agents/install?uninstall=1' | sudo bash"
   fi
 fi
 
-if command -v launchctl >/dev/null 2>&1; then
-  for p in "/Library/LaunchDaemons/$PLIST_LABEL.plist" "$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"; do
-    if [ -f "$p" ]; then
+# -- supervisors: stop first, so nothing restarts what we remove ---------------
+if [ -e "$SYS_UNIT" ] || [ -L "$SYS_UNIT" ]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl disable --now "$SVC" >/dev/null 2>&1 || true
+  fi
+  cs_rm_file "$SYS_UNIT" "system unit"
+  if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload >/dev/null 2>&1 || true; fi
+fi
+if [ -e "$USER_UNIT" ] || [ -L "$USER_UNIT" ]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user disable --now "$SVC" >/dev/null 2>&1 || true
+  fi
+  cs_rm_file "$USER_UNIT" "user unit"
+  if command -v systemctl >/dev/null 2>&1; then systemctl --user daemon-reload >/dev/null 2>&1 || true; fi
+fi
+for p in "$SYS_PLIST" "$USER_PLIST"; do
+  if [ -e "$p" ] || [ -L "$p" ]; then
+    if command -v launchctl >/dev/null 2>&1; then
       launchctl bootout "system/$PLIST_LABEL" >/dev/null 2>&1 || true
       launchctl bootout "gui/$(id -u)/$PLIST_LABEL" >/dev/null 2>&1 || true
       launchctl unload -w "$p" >/dev/null 2>&1 || true
-      rm -f "$p" && cs_gone "launchd job $p"
     fi
-  done
-fi
-
-# Anything still running from the nohup fallback.
-if command -v pkill >/dev/null 2>&1; then
-  if pkill -f 'cortexsim-agent --server' >/dev/null 2>&1; then cs_gone "running beacon process(es)"; fi
-fi
-
-for b in /usr/local/bin/cortexsim-agent "$HOME/.local/bin/cortexsim-agent"; do
-  if [ -e "$b" ]; then rm -f "$b" && cs_gone "binary $b"; fi
+    cs_rm_file "$p" "launchd job"
+  fi
 done
 
-if [ "$REMOVED" = "0" ]; then
-  cs_say "nothing to remove — no CortexSim beacon found on this host"
+# -- any beacon still running (the nohup fallback, or a stale one) -------------
+# Killing is not the same as gone: verify with pgrep, escalate to SIGKILL once,
+# and report survivors (typically owned by another user) instead of claiming them.
+if command -v pgrep >/dev/null 2>&1; then
+  if pgrep -f "$PROC_PATTERN" >/dev/null 2>&1; then
+    cs_found
+    pkill -f "$PROC_PATTERN" >/dev/null 2>&1 || true
+    sleep 1
+    if pgrep -f "$PROC_PATTERN" >/dev/null 2>&1; then
+      pkill -9 -f "$PROC_PATTERN" >/dev/null 2>&1 || true
+      sleep 1
+    fi
+    if pgrep -f "$PROC_PATTERN" >/dev/null 2>&1; then
+      cs_left "running beacon process(es) $(pgrep -f "$PROC_PATTERN" 2>/dev/null | tr '\n' ' ')" \
+        "still running after SIGKILL -- owned by another user?"
+    else
+      cs_gone "running beacon process(es)"
+    fi
+  fi
+elif command -v pkill >/dev/null 2>&1; then
+  # No pgrep to verify with: report the kill as what it is, unverified.
+  if pkill -f "$PROC_PATTERN" >/dev/null 2>&1; then
+    cs_found; cs_gone "running beacon process(es) (signalled; not verifiable without pgrep)"
+  fi
+fi
+
+# -- files ----------------------------------------------------------------------
+SEEN=""
+for b in "$SYS_BIN" "$USER_BIN" "$EXTRA_BIN"; do
+  [ -n "$b" ] || continue
+  case " $SEEN " in *" $b "*) continue ;; esac
+  SEEN="$SEEN $b"
+  cs_rm_file "$b" "binary"
+done
+for l in "$SYS_LOG" "$EXTRA_LOG"; do
+  [ -n "$l" ] || continue
+  cs_rm_file "$l" "log"
+done
+cs_rm_dir "$USER_STATE" "state/log directory"
+
+# -- verdict --------------------------------------------------------------------
+if [ -n "$LEFT" ]; then
+  cs_fail UNINSTALL_INCOMPLETE \
+    "found $FOUND item(s), removed $REMOVED; still present:$LEFT" \
+    "re-run with sudo:  curl -fsSL '<server>/api/agents/install?uninstall=1' | sudo bash  -- then check the items above by hand"
+fi
+if [ "$FOUND" = "0" ]; then
+  cs_say "nothing to remove -- no CortexSim beacon found on this host"
 else
-  cs_say "done — $REMOVED item(s) removed"
+  cs_say "done -- removed $REMOVED of $FOUND item(s)"
 fi
 cs_say "the agent row stays in SimCore until you delete it: DELETE /api/agents/<agent_id>"
 """
