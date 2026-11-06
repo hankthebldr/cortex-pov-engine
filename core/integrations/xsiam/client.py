@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import posixpath
+import re
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Optional
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
@@ -22,6 +25,183 @@ from .exceptions import (
 )
 
 logger = logging.getLogger("cortexsim.xsiam")
+
+
+# ---------------------------------------------------------------------------
+# XQL write-stage refusal (SEC-05) — the ONE guard
+# ---------------------------------------------------------------------------
+#
+# XQL is not read-only. Its `target` stage writes the query's result into a
+# dataset or a lookup — `| target type=lookup append=false <name>` REPLACES an
+# existing lookup, possibly one the customer's own correlation rules read. The
+# API docs this repo carries called XQL "never writes", the catalog labelled
+# start_xql_query `read`, and operator free text, the generic operation
+# executor, scenario verification_xql and assertion probes all reached it
+# uninspected. That is a write path to Cortex, which this product promises not
+# to have.
+#
+# `refuse_xql_write_stages` is the single guard. It is enforced inside
+# `XsiamClient.start_xql_query` — the only method that puts a query string on
+# the wire (tests/integrations/test_xql_write_stage.py holds that by AST) — and
+# `request()` routes the start path through that method. The API routes, the
+# operation executor and the verifier runners call it EARLY as well, so a
+# refused query costs no credential decrypt and no quota; they are the same
+# function, not a second implementation.
+#
+# Fail-closed lexing: stages are split on `|` outside double-quoted string
+# literals under all four readings of {comments `//` and `/* */` honoured or
+# not} x {backslash escapes honoured or not}. If ANY reading sees a `target`
+# stage, the query is refused. Wherever XQL's real grammar differs from one of
+# those readings, that reading can only add a refusal, never remove one. An
+# unterminated quote or block comment is NOT treated as one.
+
+#: The one spelling of the start path in core/ (drift guard: test_xql_write_stage).
+XQL_START_PATH = "/public_api/v1/xql/start_xql_query"
+
+#: Stage keywords that write to the tenant.
+XQL_WRITE_STAGES = frozenset({"target"})
+
+_STAGE_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+class XqlWriteStageRefused(XsiamConfigError):
+    """An XQL query carried a stage that writes to the tenant."""
+
+    code = "XQL_WRITE_STAGE_REFUSED"
+    http_status = 400
+
+
+def _xql_stages(query: str, *, comments: bool, escapes: bool) -> list[str]:
+    """Split ``query`` into pipe stages under one lexing reading.
+
+    String literals and (when ``comments``) comments are replaced by a single
+    space so they can neither hide a ``|`` nor glue two tokens together.
+    """
+    stages: list[str] = []
+    cur: list[str] = []
+    i, n = 0, len(query)
+    while i < n:
+        c = query[i]
+        if c == '"':
+            j = i + 1
+            closed = False
+            while j < n:
+                if escapes and query[j] == "\\":
+                    j += 2
+                    continue
+                if query[j] == '"':
+                    closed = True
+                    break
+                j += 1
+            if closed:
+                cur.append(" ")
+                i = j + 1
+            else:
+                # An unterminated quote is not a string: everything after it is
+                # still code. Treating it as a string would let `"abc | target`
+                # hide a stage behind a syntax error XQL might not raise.
+                cur.append(" ")
+                i += 1
+            continue
+        if comments and query.startswith("//", i):
+            j = query.find("\n", i)
+            i = n if j == -1 else j
+            cur.append(" ")
+            continue
+        if comments and query.startswith("/*", i):
+            j = query.find("*/", i + 2)
+            if j != -1:
+                cur.append(" ")
+                i = j + 2
+                continue
+            # Unterminated: not a comment (fail closed) — fall through.
+        if c == "|":
+            stages.append("".join(cur))
+            cur = []
+            i += 1
+            continue
+        cur.append(c)
+        i += 1
+    stages.append("".join(cur))
+    return stages
+
+
+def refuse_xql_write_stages(query: Any) -> str:
+    """Return ``query`` unchanged, or raise :class:`XqlWriteStageRefused`.
+
+    A non-string query is an unrecognised shape and is refused too
+    (:class:`XsiamConfigError`) — never read as "nothing to inspect".
+    """
+    if not isinstance(query, str):
+        raise XsiamConfigError(
+            f"XQL query must be a string, got {type(query).__name__}; refusing to "
+            f"send what cannot be inspected"
+        )
+    for comments in (True, False):
+        for escapes in (True, False):
+            for stage in _xql_stages(query, comments=comments, escapes=escapes):
+                m = _STAGE_WORD_RE.match(stage.lstrip())
+                if m and m.group(0).lower() in XQL_WRITE_STAGES:
+                    raise XqlWriteStageRefused(
+                        f"XQL query refused: it contains a `{m.group(0)}` stage, which "
+                        f"writes the result into a tenant dataset or lookup (`| target "
+                        f"type=lookup append=false <name>` replaces an existing lookup). "
+                        f"CortexSim only reads from Cortex. Remove the `{m.group(0)}` "
+                        f"stage; a query that merely mentions the word inside a "
+                        f"\"string\" is accepted."
+                    )
+    return query
+
+
+def is_xql_start_path(path: Any) -> bool:
+    """True when ``path`` (however spelled) addresses start_xql_query."""
+    if not isinstance(path, str):
+        return False
+    raw = unquote(urlsplit(path.strip()).path or "")
+    norm = posixpath.normpath("/" + raw.lstrip("/")).lower()
+    return norm == XQL_START_PATH
+
+
+def _xql_start_body(body: Any) -> tuple[str, Optional[dict[str, Any]], dict[str, Any]]:
+    """Unpack a start_xql_query body: ``{"request_data": {"query": str, ...}}``.
+
+    Any other shape is refused — an unrecognised shape must raise, not read as
+    a body with no query in it.
+    """
+    if not isinstance(body, dict) or set(body) != {"request_data"}:
+        raise XsiamConfigError(
+            "start_xql_query body must be exactly {\"request_data\": {\"query\": ...}}; "
+            f"got {type(body).__name__}"
+            + (f" with keys {sorted(body)}" if isinstance(body, dict) else "")
+        )
+    rd = body["request_data"]
+    if not isinstance(rd, dict) or not isinstance(rd.get("query"), str):
+        raise XsiamConfigError(
+            "start_xql_query needs request_data.query as a string"
+        )
+    timeframe = rd.get("timeframe")
+    if timeframe is not None and not isinstance(timeframe, dict):
+        raise XsiamConfigError("start_xql_query request_data.timeframe must be an object")
+    extra = {k: v for k, v in rd.items() if k not in ("query", "timeframe")}
+    return rd["query"], timeframe, extra
+
+
+def inspect_operation_body(path: str, body: Any) -> None:
+    """Gate for catalog operations tagged ``body-inspected``.
+
+    The operation's ``access_class`` cannot express "read unless the body says
+    otherwise", so these ops are inspected here, before dry-run OR live. A
+    tagged op whose path this function does not know how to inspect is refused:
+    a new tagged op must teach this function its body, not slip through it.
+    """
+    if is_xql_start_path(path):
+        query, _tf, _extra = _xql_start_body(body)
+        refuse_xql_write_stages(query)
+        return
+    raise XsiamConfigError(
+        f"operation path {path!r} is tagged body-inspected but no inspector is "
+        f"defined for it; refusing rather than sending an uninspected body"
+    )
 
 
 class XsiamClient:
@@ -155,17 +335,43 @@ class XsiamClient:
         Sends ``json`` verbatim (the caller/operation supplies the
         ``request_data``-shaped body — the client never invents a payload),
         unwraps ``reply``, and surfaces HTTP-200 app-errors via ``_check_app_error``.
+
+        The XQL start path is NOT sent from here: it is delegated to
+        :meth:`start_xql_query`, the one sender of a query string, so the
+        executor is not a second, unguarded door onto XQL (SEC-05).
         """
+        if is_xql_start_path(path):
+            if method.upper() != "POST" or params:
+                raise XsiamConfigError(
+                    "start_xql_query is POST-only and takes no query-string params"
+                )
+            query, timeframe, extra = _xql_start_body(json)
+            return await self.start_xql_query(query, timeframe, extra=extra)
         async with self._client() as c:
             resp = await c.request(method.upper(), path, json=json, params=params)
         data = self._unwrap(resp)
         reply = data.get("reply", data) if isinstance(data, dict) else data
         return self._check_app_error(reply)
 
-    async def start_xql_query(self, query: str, timeframe: dict[str, Any]) -> str:
-        body = {"request_data": {"query": query, "timeframe": timeframe}}
+    async def start_xql_query(
+        self, query: str, timeframe: Optional[dict[str, Any]] = None,
+        *, extra: Optional[dict[str, Any]] = None,
+    ) -> str:
+        """Start an XQL query — the ONLY place a query string reaches the wire.
+
+        ``refuse_xql_write_stages`` runs first, before the request is built, so
+        a write stage costs zero transport calls. ``timeframe`` is omitted from
+        the body when None (the tenant's default); ``extra`` carries any other
+        ``request_data`` keys a catalog-operation caller supplied.
+        """
+        refuse_xql_write_stages(query)
+        request_data: dict[str, Any] = dict(extra or {})
+        request_data["query"] = query
+        if timeframe is not None:
+            request_data["timeframe"] = timeframe
+        body = {"request_data": request_data}
         async with self._client() as c:
-            resp = await c.post("/public_api/v1/xql/start_xql_query", json=body)
+            resp = await c.post(XQL_START_PATH, json=body)
         data = self._unwrap(resp)
         reply = data.get("reply", data) if isinstance(data, dict) else data
         # XSIAM returns HTTP 200 with an error object ({"err_code": ..., "err_msg": ...})

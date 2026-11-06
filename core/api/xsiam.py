@@ -17,6 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from database import get_db
 from security import CredentialStore
+from integrations.xsiam.client import (
+    inspect_operation_body, is_xql_start_path, refuse_xql_write_stages,
+)
 from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client
 from integrations.xsiam.queries import INGESTION_HEALTH_XQL, shape_ingestion_results
 from integrations.xsiam.exceptions import XsiamApiError, XsiamConfigError, XsiamError
@@ -87,6 +90,10 @@ async def tenant_metrics(name: str, session: AsyncSession = Depends(get_db)) -> 
 @router.post("/tenants/{name}/xql")
 async def start_xql(name: str, body: XqlRequest,
                     session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    # SEC-05: refuse a write stage BEFORE the credential is decrypted. The
+    # client enforces the same guard again at send time — this is the same
+    # function, called early, not a second implementation.
+    refuse_xql_write_stages(body.query)
     client = await load_xsiam_client(session, name)
     query_id = await client.start_xql_query(body.query, body.timeframe)
     return {"query_id": query_id}
@@ -214,6 +221,11 @@ async def execute_operation(
         # Minimal envelope most POST ops expect. A few (BYOS ingest) reject the
         # wrapper; they say so with a tag, so the preview shows what would be sent.
         payload = {} if "no-request-data-wrapper" in op.tags else {"request_data": {}}
+    if "body-inspected" in op.tags or is_xql_start_path(path):
+        # SEC-05: an op whose effect depends on its BODY (XQL `target` writes)
+        # cannot be gated by access_class alone. Inspected for dry-run too: a
+        # preview of a request SimCore would refuse is a misleading preview.
+        inspect_operation_body(path, payload)
     request_echo = {
         "method": op.method, "path": path,
         "body": payload, "query": body.query or None,
