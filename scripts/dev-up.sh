@@ -94,6 +94,27 @@ else
     exit 1
   fi
   log "No .env found — generating one from .env.example (development mode)."
+
+  # A surviving data volume holds every stored credential encrypted under the
+  # PREVIOUS .env's CORTEXSIM_SECRET. A freshly generated secret cannot open
+  # them, and nothing else will say so until a tenant test fails in front of
+  # the customer. Read-only check; warn, do not stop (starting fresh is a
+  # legitimate choice — it just has to be a conscious one).
+  DB_VOLUME="cortex-pov-engine_simcore_db"
+  if command -v docker >/dev/null 2>&1 && docker volume inspect "${DB_VOLUME}" >/dev/null 2>&1; then
+    warn "================================================================"
+    warn "WARNING: docker volume '${DB_VOLUME}' already exists, and it is"
+    warn "about to be paired with a NEWLY GENERATED CORTEXSIM_SECRET."
+    warn "Every credential stored in it (customer tenant API keys) was"
+    warn "encrypted with the OLD secret and will be unreadable; SimCore will"
+    warn "report it as MASTER_KEY_MISMATCH in /api/health."
+    warn "  - To keep them: restore the old .env (or put the old"
+    warn "    CORTEXSIM_SECRET into ${ENV_FILE}) and re-run this script."
+    warn "  - To start over: re-enter each credential under the new secret"
+    warn "    (PUT /api/credentials/integrations)."
+    warn "================================================================"
+  fi
+
   SECRET="$(gen_secret)"
 
   # Render the template to a temp file and move it into place, rather than

@@ -639,6 +639,33 @@ async def probe_task_queue(session_factory) -> dict[str, Any]:
     return _ok(stranded={}, **common)
 
 
+async def probe_master_key(session_factory) -> dict[str, Any]:
+    """OPS-12 — does the current ``CORTEXSIM_SECRET`` open this vault at all?
+
+    A regenerated ``.env`` over a surviving data volume leaves every stored
+    credential undecryptable. Before this probe, ``integrations`` still read
+    ``ok`` with N configured and the first sign was a ``CRYPTO_ERROR`` 500 on a
+    tenant test in front of the customer.
+
+    It decrypts the key-check SimCore writes at first boot (or, for a database
+    that predates it, test-decrypts the stored secrets). A local decrypt only:
+    no tenant call, and ``stamp=False`` — a health probe never writes.
+
+    Its own component, not a field of ``integrations``: vault integrity is not
+    tenant configuration, and a mismatch must name itself in
+    ``degraded_components`` rather than hide behind an integrations code.
+    """
+    from security.credentials import check_master_key  # noqa: PLC0415
+
+    async with session_factory() as session:
+        result = await check_master_key(session, stamp=False)
+
+    common = {"key_check": result.status, "secrets_checked": result.secrets_checked}
+    if result.status == "mismatch":
+        return _degraded(result.code, result.detail, **common)
+    return _ok(detail=result.detail, **common)
+
+
 async def probe_integrations(session_factory) -> dict[str, Any]:
     """Configured tenant credentials — read from the DB ONLY.
 
@@ -775,6 +802,7 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "agent_binaries",
     "agents",
     "task_queue",
+    "master_key",
     "integrations",
     "eal_collectors",
     # Exposure, not readiness: last so the list still reads top-down from "can
@@ -856,6 +884,7 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["agent_binaries"] = _guard("agent_binaries", probe_agent_binaries)
     components["agents"] = await _aguard("agents", probe_agents)
     components["task_queue"] = await _aguard("task_queue", probe_task_queue)
+    components["master_key"] = await _aguard("master_key", probe_master_key)
     components["integrations"] = await _aguard("integrations", probe_integrations)
     components["eal_collectors"] = await _aguard("eal_collectors", probe_eal_collectors)
     components["api_auth"] = _guard("api_auth", probe_api_auth)

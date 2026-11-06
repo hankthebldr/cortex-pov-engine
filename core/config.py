@@ -9,6 +9,15 @@ from pydantic_settings import BaseSettings
 _FORBIDDEN_MASTER_KEYS = {"changeme", "change-me", "default", "secret", ""}
 _MIN_MASTER_KEY_LEN = 32
 
+#: The placeholder `.env.example` ships, verbatim. It is 46 characters, so it
+#: cleared the length floor, and it is not in the list above, so before SEC-11 it
+#: booted — in BOTH envs — and encrypted the credential vault with a key that is
+#: committed, public and identical for every DC. tests/test_master_key_placeholder.py
+#: reads the live value from .env.example, so this constant cannot drift silently.
+_ENV_EXAMPLE_PLACEHOLDER = "replace-me-with-a-generated-32plus-byte-secret"
+#: Any value with this prefix is a template placeholder, not a key.
+_PLACEHOLDER_PREFIX = "replace-me"
+
 
 class MasterKeyError(RuntimeError):
     """Raised at boot when CORTEXSIM_SECRET is missing, default, or too weak."""
@@ -170,12 +179,36 @@ def validate_master_key(secret: str, *, env: str) -> None:
     against the in-tree default still work. The credentials layer still
     encrypts in dev — the operator just knows the lab key.
 
+    Exception: the ``.env.example`` placeholder (anything starting
+    ``replace-me``) is refused in BOTH environments — it is public, and the
+    vault it would encrypt is real in development too (SEC-11).
+
     Why: the master key encrypts every credential the operator entrusts to
     CortexSim. A 'changeme' default would render the layer cryptographically
     worthless against anyone with read access to the SQLite file. Refusing
     to boot is the right failure mode for production.
     """
     stripped = (secret or "").strip()
+
+    # SEC-11 — the published template placeholder is refused in EVERY env.
+    # "Development" is what docker-compose.yml defaults to, and the vault it
+    # encrypts holds real customer tenant keys whatever the env says, so the
+    # dev-mode escape hatch below must not cover a key the whole internet has.
+    if stripped == _ENV_EXAMPLE_PLACEHOLDER or stripped.lower().startswith(_PLACEHOLDER_PREFIX):
+        raise MasterKeyError(
+            "CORTEXSIM_SECRET is still the placeholder from .env.example "
+            f"({stripped[:24]}...). That value is committed to the repository, so "
+            "every credential encrypted with it is readable by anyone with the "
+            "database file. This is refused in development AND production.\n"
+            "\n"
+            "To fix:\n"
+            "  1. Generate a real secret:\n"
+            "       python3 -c 'import secrets; print(secrets.token_urlsafe(48))'\n"
+            "  2. Put it in .env as CORTEXSIM_SECRET=<value> (or run "
+            "scripts/dev-up.sh, which writes one for you).\n"
+            "  3. Re-run the boot command."
+        )
+
     is_forbidden = stripped.lower() in _FORBIDDEN_MASTER_KEYS
     is_short = len(stripped) < _MIN_MASTER_KEY_LEN
 

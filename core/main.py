@@ -125,6 +125,25 @@ async def lifespan(app: FastAPI):
         os._exit(DB_BOOT_EXIT_CODE)
     logger.info("Database initialized at %s", settings.CORTEXSIM_BASE_DIR + "/data/cortexsim.db")
 
+    # 1b. Master-key check (OPS-12). A regenerated .env over a surviving data
+    #     volume leaves every stored credential undecryptable, and nothing said
+    #     so until a tenant test 500'd in front of the customer. Stamp the
+    #     key-check on first boot; on every later boot decrypt it. A mismatch
+    #     does not refuse boot (runs, scenarios and push bundles need no vault)
+    #     — it is logged here and reported by /api/health as MASTER_KEY_MISMATCH.
+    #     A local decrypt only; no tenant is contacted.
+    from security.credentials import check_master_key  # noqa: PLC0415
+    try:
+        async with _db_context() as db:
+            key_check = await check_master_key(db, stamp=True)
+            await db.commit()
+        if key_check.status == "mismatch":
+            logger.error("MASTER_KEY_MISMATCH — %s", key_check.detail)
+        else:
+            logger.info("Master-key check: %s", key_check.status)
+    except Exception:  # noqa: BLE001 — a failed check must not take boot down
+        logger.exception("master-key check failed — /api/health will report it")
+
     # 2. Load scenarios from YAML
     scenarios_dir = settings.CORTEXSIM_SCENARIOS_DIR
     if not os.path.isabs(scenarios_dir):
