@@ -27,7 +27,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
-        wiki wiki-check ci clean launch-preflight
+        wiki wiki-check ci clean launch-preflight check-powershell
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -213,6 +213,36 @@ check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target, with th
 	  done; \
 	  echo "shelf OK: $$(ls cortexsim-agent-* | wc -l) targets"'
 	docker run --rm -i --entrypoint python3 $(IMAGE) - /app/agent-dist < scripts/ci/check_agent_magic.py
+
+# Render EVERY PowerShell artifact the repo emits (Windows installer variants,
+# the Windows uninstaller, every windows push bundle, every PowerShell step a
+# beacon runs, the beacon's own wrapper, every tracked *.ps1) and parse each the
+# way Windows PowerShell 5.1 reads it: UTF-8 if it carries a BOM, else
+# Windows-1252 -- plus the UTF-8 read the `iwr | iex` path uses -- then walk the
+# AST for PowerShell-7-only constructs.
+#
+# NECESSARY, NOT SUFFICIENT: this runs pwsh 7 (ubuntu runners ship it; so does
+# Homebrew), and pwsh is not Windows PowerShell 5.1, the product floor. A green
+# run is not evidence that anything executes on Windows -- that is the
+# windows-native-ci job's job (PSScriptAnalyzer + real 5.1). The renderer is
+# hermetic (TestClient in-process, no network, no tenant). Both halves run even
+# when the first fails, so one invocation reports every finding.
+PS_GATE_DIR ?= build/ps-gate
+PS_GATE_PY  ?= $(WIKI_PY)
+PWSH        ?= pwsh
+
+check-powershell: ## render all emitted PowerShell + parse it as 5.1 reads it (pwsh; necessary, not sufficient)
+	@command -v $(PWSH) >/dev/null 2>&1 || { \
+	  echo "check-powershell: no '$(PWSH)' on PATH -- install PowerShell 7; a skipped gate reads as a pass"; exit 1; }
+	$(PWSH) --version
+	@rc=0; \
+	PYTHONPATH=core $(PS_GATE_PY) scripts/ci/render_powershell.py --out $(PS_GATE_DIR) || rc=1; \
+	if [ -f "$(PS_GATE_DIR)/manifest.json" ]; then \
+	  $(PWSH) -NoProfile -NonInteractive -File scripts/ci/ps51-gate.ps1 -Dir $(PS_GATE_DIR) || rc=1; \
+	else \
+	  echo "check-powershell: the renderer wrote no manifest -- nothing was gated"; rc=1; \
+	fi; \
+	exit $$rc
 
 # The same argument once more, for the surface a DC actually stands in front of.
 # check-agent-shelf asks "does the image ship the beacon the tree builds"; this
