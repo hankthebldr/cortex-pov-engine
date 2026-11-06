@@ -111,6 +111,7 @@ def test_default_launch_is_not_runtime_install_authorized(session_factory, monke
         orch = _fresh_orchestrator()
         async with session_factory() as db:
             await _seed_scenario(db)
+            await _seed_agent(db)
             result = await orch.launch(
                 scenario_id="SIM-EDR-001", mode="pull", db=db,
                 target_agent_id="agent-1",
@@ -135,6 +136,7 @@ def test_request_flag_alone_does_not_authorize_without_deployment_flag(session_f
         orch = _fresh_orchestrator()
         async with session_factory() as db:
             await _seed_scenario(db)
+            await _seed_agent(db)
             result = await orch.launch(
                 scenario_id="SIM-EDR-001", mode="pull", db=db,
                 target_agent_id="agent-1",
@@ -160,6 +162,7 @@ def test_both_keys_set_authorizes_and_is_recorded_and_reaches_the_wire(session_f
         orch = _fresh_orchestrator()
         async with session_factory() as db:
             await _seed_scenario(db)
+            await _seed_agent(db)
             result = await orch.launch(
                 scenario_id="SIM-EDR-001", mode="pull", db=db,
                 target_agent_id="agent-1",
@@ -192,6 +195,7 @@ def test_runtime_install_authorized_omitted_from_wire_when_false(session_factory
         orch = _fresh_orchestrator()
         async with session_factory() as db:
             await _seed_scenario(db)
+            await _seed_agent(db)
             result = await orch.launch(
                 scenario_id="SIM-EDR-001", mode="pull", db=db,
                 target_agent_id="agent-1",
@@ -248,10 +252,11 @@ def test_preflight_reports_clean_not_none_when_agent_has_the_interpreter(session
     asyncio.run(_run())
 
 
-def test_preflight_is_none_when_target_agent_was_never_seen(session_factory):
-    """No Agent row exists for the target — the same shape
-    test_orchestrator_queue.py's tests launch against. Must not crash, and
-    must record None (not checked) rather than fabricating a clean report."""
+def test_launch_against_a_never_seen_target_is_refused_not_preflighted(session_factory):
+    """No Agent row exists for the target. That used to launch, record the
+    preflight as None ("not checked") and queue a task nothing would ever
+    collect. It is now refused before any Run exists (OPS-08,
+    ``TARGET_AGENT_NOT_ENROLLED``), so there is no preflight to fabricate."""
     from models import Run
 
     async def _run():
@@ -262,8 +267,9 @@ def test_preflight_is_none_when_target_agent_was_never_seen(session_factory):
                 scenario_id="SIM-EDR-001", mode="pull", db=db,
                 target_agent_id="never-registered-agent",
             )
-            assert result.success
-            run = (await db.execute(select(Run).where(Run.run_id == result.run_id))).scalar_one()
-            assert run.runtime_dependency_gaps is None
+            assert result.success is False
+            assert result.error_code == "TARGET_AGENT_NOT_ENROLLED"
+            assert result.http_status == 409
+            assert (await db.execute(select(Run))).scalars().all() == []
 
     asyncio.run(_run())

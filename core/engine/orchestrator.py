@@ -148,6 +148,187 @@ class LaunchResult:
     # the two routes disagree about the same exception. None = let the API
     # decide from `error_code`, which is the historical behaviour.
     http_status: Optional[int] = None
+    # Things the operator must know about a launch that was NOT refused: the
+    # target beacon is offline (the task waits), its OS is unknown (posix was
+    # assumed), or a step runs a platform variant whose expectations were
+    # authored against the primary command. Empty for an unremarkable launch,
+    # so the API response for one is byte-identical to before.
+    warnings: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Pull-mode platform gate (BEACON-01 / CONT-01)
+# ---------------------------------------------------------------------------
+#
+# A pull task used to ship ``scenario.steps`` verbatim, whatever the target's
+# operating system. A Windows beacon handed a POSIX primary runs it through
+# PowerShell, which exits 0 on text it cannot execute: the step "succeeds",
+# nothing the scenario expects fires, and every expectation reads `missed` — a
+# false negative about the customer's Windows coverage that CortexSim made.
+#
+# The push path already answers "can this content run on that OS?" per target
+# (``push_generator.resolve_target``). The pull path now asks the SAME function,
+# so a scenario that cannot emit a Windows bundle cannot be dispatched to a
+# Windows beacon either, and the two delivery modes cannot disagree.
+
+#: ``Agent.os`` values (lower-cased) and the execution target each one means.
+#: The beacon registers ``runtime.GOOS``; the installers send the same strings.
+_WINDOWS_AGENT_OS = frozenset({"windows"})
+_POSIX_AGENT_OS = frozenset({"linux", "darwin", "macos"})
+
+
+class AgentOsUnrecognised(ValueError):
+    """``Agent.os`` names no OS this engine knows how to target.
+
+    Raised rather than defaulted: guessing ``posix`` for an OS nobody
+    recognised is how a run executes the wrong dialect and reads green.
+    """
+
+
+def platform_target_for_os(os_value: Optional[str]) -> tuple[str, Optional[str]]:
+    """``(target, warning)`` for an agent's registered OS.
+
+    ``windows`` → ``windows``; ``linux`` / ``darwin`` / ``macos`` → ``posix``.
+    An EMPTY value (a legacy registration that never said) is treated as
+    ``posix`` — the historical behaviour — with an explicit warning, because
+    that is an assumption the run record must carry. Any other value raises
+    :class:`AgentOsUnrecognised`.
+    """
+    norm = (os_value or "").strip().lower()
+    if not norm:
+        return "posix", (
+            "!! TARGET_AGENT_OS_UNKNOWN: the target agent registered no operating "
+            "system, so POSIX commands were dispatched. If this endpoint is "
+            "Windows, every step ran the wrong dialect — re-register the beacon."
+        )
+    if norm in _WINDOWS_AGENT_OS:
+        return "windows", None
+    if norm in _POSIX_AGENT_OS:
+        return "posix", None
+    raise AgentOsUnrecognised(norm)
+
+
+def resolve_steps_for_target(
+    steps: list[dict[str, Any]], target: str,
+) -> tuple[list[dict[str, Any]], list[str], list[tuple[str, str]]]:
+    """Resolve each step's command for ``target``.
+
+    Returns ``(dispatched_steps, variant_markers, unresolved)``:
+
+    * ``dispatched_steps`` — NEW step dicts (the input is never mutated: the
+      scenario row is shared across runs) whose ``command`` is the text the
+      target can run, plus ``shell`` (``powershell`` / ``cmd`` on windows, ``""``
+      on posix — the beacon picks its interpreter from it) and
+      ``resolved_from`` (``primary`` / ``neutral`` / ``variant:<os>``). A
+      ``primary`` resolution keeps the authored command byte-for-byte.
+    * ``variant_markers`` — one ``!! PLATFORM VARIANT`` line per step that runs
+      a variant: its ``expected_detections`` were authored against the primary
+      command, so a miss on it is not yet a coverage measurement.
+    * ``unresolved`` — ``(step_id, REASON_CODE)`` for every step the target
+      cannot run. The caller REFUSES when this is non-empty: a partially
+      dispatched chain runs green, emits a subset of the attack, and the report
+      reads the gap as the customer's miss.
+
+    Pure: no DB, no I/O. Resolution reads the RAW authored steps — exactly the
+    document the push generator judges — so pull and push agree on every
+    scenario; ``{adapter:*}`` / ``{stitch:*}`` rendering happens afterwards on
+    whatever text was chosen.
+    """
+    from engine.push_generator import resolve_target  # noqa: PLC0415
+
+    resolution = resolve_target({"steps": steps}, target)  # type: ignore[arg-type]
+    by_id = {r.step_id: r for r in resolution.steps}
+    dispatched: list[dict[str, Any]] = []
+    markers: list[str] = []
+    for step in steps:
+        new_step = dict(step)
+        r = by_id.get(step.get("id", "step-??"))
+        if r is not None:
+            if r.source != "primary":
+                new_step["command"] = r.command
+            new_step["shell"] = r.shell if target == "windows" else ""
+            new_step["resolved_from"] = r.source
+            if r.source.startswith("variant:"):
+                variant_os = r.source.split(":", 1)[1]
+                markers.append(
+                    f"!! PLATFORM VARIANT: step={r.step_id} ran its {variant_os} "
+                    "variant; its expected_detections were authored against the "
+                    "primary command and are unverified for this OS"
+                )
+        dispatched.append(new_step)
+    return dispatched, markers, list(resolution.unresolved)
+
+
+def _unsatisfiable_refusal(
+    *, target: str, agent_id: str, agent_os: Optional[str],
+    unresolved: list[tuple[str, str]],
+) -> "LaunchResult":
+    """The 409 for a pull launch whose content the target OS cannot run.
+
+    Mirrors ``BUNDLE_TARGET_UNSATISFIABLE`` (the push twin) so a console
+    renders both with one code path.
+    """
+    hint = (
+        "declare platform_variants.windows on those steps, or launch against a "
+        "POSIX agent"
+        if target == "windows"
+        else "declare platform_variants.linux on those steps, or launch against "
+        "a Windows agent"
+    )
+    steps = ", ".join(f"{sid} ({reason})" for sid, reason in unresolved)
+    return LaunchResult(
+        success=False,
+        error=(
+            f"PULL_TARGET_UNSATISFIABLE: agent '{agent_id}' is {target} and "
+            f"cannot run step(s) [{steps}] — {hint}"
+        ),
+        error_code="PULL_TARGET_UNSATISFIABLE",
+        error_detail={
+            "target": target,
+            "agent_id": agent_id,
+            "agent_os": agent_os,
+            "unresolved": [{"step_id": s, "reason": r} for s, r in unresolved],
+            "hint": hint,
+        },
+        http_status=409,
+    )
+
+
+def _os_refusal(agent_id: str, agent_os: str) -> "LaunchResult":
+    return LaunchResult(
+        success=False,
+        error=(
+            f"PULL_TARGET_OS_UNRECOGNISED: agent '{agent_id}' registered os="
+            f"'{agent_os}', which names no target this engine can dispatch to "
+            "(windows, linux, darwin, macos) — re-register the beacon"
+        ),
+        error_code="PULL_TARGET_OS_UNRECOGNISED",
+        error_detail={"agent_id": agent_id, "agent_os": agent_os},
+        http_status=409,
+    )
+
+
+def _offline_warning(agent: Any, now: datetime) -> Optional[str]:
+    """A non-refusing warning when the target beacon is not polling."""
+    from api.agents import _derive_status  # noqa: PLC0415 — one liveness rule
+
+    status, age = _derive_status(getattr(agent, "last_seen", None), now)
+    if status != "offline":
+        return None
+    seen = "never" if getattr(agent, "last_seen", None) is None else f"{int(age)}s ago"
+    return (
+        f"TARGET_AGENT_OFFLINE: agent '{agent.agent_id}' last polled {seen}; the "
+        "task is queued and runs only when its beacon polls again"
+    )
+
+
+@dataclass
+class _PullPlan:
+    """The single-endpoint dispatch decided BEFORE the Run row exists."""
+
+    steps: list[dict[str, Any]]
+    target: str
+    output_markers: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -368,10 +549,29 @@ class Orchestrator:
         # target record no gaps here (None, not [] — "not checked", not
         # "checked and clean").
         runtime_dependency_gaps: Optional[list[dict[str, Any]]] = None
+        pull_plan: Optional[_PullPlan] = None
+        launch_warnings: list[str] = []
         if mode == "pull" and target_agent_id:
             agent_row = (await db.execute(
                 select(Agent).where(Agent.agent_id == target_agent_id)
             )).scalar_one_or_none()
+            # The platform gate and the enrollment check run BEFORE the Run
+            # row exists, so a launch that cannot be dispatched seeds nothing.
+            planned = self._plan_single_endpoint_pull(
+                scenario, target_agent_id, agent_row,
+            )
+            if isinstance(planned, LaunchResult):
+                logger.warning(
+                    "Launch refused scenario=%s code=%s target=%s detail=%s",
+                    scenario_id, planned.error_code, target_agent_id,
+                    planned.error_detail,
+                )
+                return planned
+            pull_plan = planned
+            if agent_row is not None:
+                offline = _offline_warning(agent_row, datetime.utcnow())
+                if offline:
+                    launch_warnings.append(offline)
             if agent_row is not None:
                 readiness = evaluate_runtime_readiness(scenario, agent_row.interpreters)
                 runtime_dependency_gaps = [g.to_dict() for g in readiness.gaps]
@@ -440,10 +640,15 @@ class Orchestrator:
         )
 
         if mode == "pull":
-            return await self._handle_pull(
+            launched = await self._handle_pull(
                 run_id, scenario, target_agent_id, identity, db,
                 runtime_install_authorized=runtime_install_authorized,
+                pull_plan=pull_plan,
             )
+            # Launch-time warnings first (offline target), then whatever the
+            # dispatch itself had to say (variants, unknown OS).
+            launched.warnings = launch_warnings + launched.warnings
+            return launched
         elif mode == "push":
             return await self._handle_push(run_id, scenario, db)
         else:
@@ -451,6 +656,65 @@ class Orchestrator:
                 db, run_id,
                 error=f"Unknown mode '{mode}' — must be 'pull' or 'push'",
             )
+
+    # ------------------------------------------------------------------
+    # pull pre-flight: enrollment + platform gate, before any Run row
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _plan_single_endpoint_pull(
+        scenario: Any, target_agent_id: str, agent_row: Optional[Any],
+    ) -> "Optional[_PullPlan | LaunchResult]":
+        """Decide a single-endpoint pull dispatch, or refuse it, pre-seed.
+
+        Returns ``None`` for a composed (multi-channel / per-step target) run:
+        its partitions are resolved per target agent in :meth:`_handle_pull`,
+        after that path's own all-or-nothing enrollment check.
+
+        Refusals (each a 409 with no Run, no Result, no task):
+
+        * ``TARGET_AGENT_NOT_ENROLLED`` — the target has no Agent row. This
+          used to seed a run and queue a task that nothing would ever collect,
+          which then sat ``running`` until a restart called it an orphan.
+        * ``PULL_TARGET_OS_UNRECOGNISED`` — ``Agent.os`` names no known OS.
+        * ``PULL_TARGET_UNSATISFIABLE`` — some step has no command the target
+          OS can run (the push path's ``BUNDLE_TARGET_UNSATISFIABLE``).
+        """
+        from engine.scenario_loader import effective_channel  # noqa: PLC0415
+
+        steps = list(getattr(scenario, "steps", None) or [])
+        if any(effective_channel(s) != "agent" or s.get("target") for s in steps):
+            return None
+        if agent_row is None:
+            return LaunchResult(
+                success=False,
+                error=(
+                    f"TARGET_AGENT_NOT_ENROLLED: target agent '{target_agent_id}' is "
+                    "not enrolled — enroll it, or launch against an enrolled agent"
+                ),
+                error_code="TARGET_AGENT_NOT_ENROLLED",
+                error_detail={
+                    "missing_agents": [target_agent_id],
+                    "referencing_steps": {
+                        target_agent_id: [s.get("id") for s in steps],
+                    },
+                },
+                http_status=409,
+            )
+        try:
+            target, os_warning = platform_target_for_os(agent_row.os)
+        except AgentOsUnrecognised:
+            return _os_refusal(target_agent_id, agent_row.os)
+        dispatched, markers, unresolved = resolve_steps_for_target(steps, target)
+        if unresolved:
+            return _unsatisfiable_refusal(
+                target=target, agent_id=target_agent_id, agent_os=agent_row.os,
+                unresolved=unresolved,
+            )
+        return _PullPlan(
+            steps=dispatched, target=target,
+            output_markers=([os_warning] if os_warning else []) + markers,
+        )
 
     # ------------------------------------------------------------------
     # refusal after the Run row exists
@@ -481,7 +745,9 @@ class Orchestrator:
 
         The seeded Result rows are deliberately KEPT: they record what the
         scenario expected to detect, and a failed run with its expectations
-        intact is evidence.
+        intact is evidence. They are stamped ``not_executed`` /
+        ``LAUNCH_REFUSED`` (OPS-01): nothing ran, so no alert can ever be
+        credited to them and they leave every efficacy denominator.
 
         Refusals that fire BEFORE the row is committed (the launch consent gate)
         must keep creating no run at all — a ``failed`` run would read as "we
@@ -498,6 +764,7 @@ class Orchestrator:
             run.output = (run.output or "") + (
                 f"\n--- LAUNCH REFUSED — {error} ---\n"
             )
+            await stamp_not_executed(db, run_id, REASON_LAUNCH_REFUSED, commit=False)
             await db.commit()
             await _publish_run_status(run_id, "failed")
 
@@ -644,6 +911,64 @@ class Orchestrator:
         await db.commit()
         return outcomes
 
+    async def _resolve_composed_partitions(
+        self,
+        scenario: Any,
+        launch_target: str,
+        db: AsyncSession,
+        output_markers: list[str],
+        warnings: list[str],
+    ) -> tuple[list[dict[str, Any]], Optional[LaunchResult]]:
+        """Platform-resolve a composed run, one agent partition at a time.
+
+        Returns ``(steps, refusal)``. ``steps`` keeps the authored order; agent
+        steps carry their partition agent's resolution, EAL steps (which run
+        in SimCore's own process) are untouched. ``refusal`` is a
+        ``PULL_TARGET_*`` LaunchResult when any partition cannot run on its
+        agent — all-or-nothing, the same posture as the enrollment check.
+
+        A partition whose agent is NOT enrolled is left unresolved and the raw
+        steps are returned: :meth:`_handle_pull`'s existing check refuses that
+        launch as ``TARGET_AGENT_NOT_ENROLLED``, which stays the first answer an
+        operator gets for a phantom endpoint.
+        """
+        from models import Agent  # noqa: PLC0415
+
+        raw = list(getattr(scenario, "steps", None) or [])
+        partitions, _eal = _partition_channels(raw, launch_target)
+        rows: dict[str, Any] = {}
+        for tgt in partitions:
+            rows[tgt] = (await db.execute(
+                select(Agent).where(Agent.agent_id == tgt)
+            )).scalar_one_or_none()
+        if any(row is None for row in rows.values()):
+            return raw, None
+
+        replaced: dict[int, dict[str, Any]] = {}
+        now = datetime.utcnow()
+        for tgt, part in partitions.items():
+            row = rows[tgt]
+            try:
+                target, os_warning = platform_target_for_os(row.os)
+            except AgentOsUnrecognised:
+                return raw, _os_refusal(tgt, row.os)
+            dispatched, markers, unresolved = resolve_steps_for_target(part, target)
+            if unresolved:
+                return raw, _unsatisfiable_refusal(
+                    target=target, agent_id=tgt, agent_os=row.os,
+                    unresolved=unresolved,
+                )
+            if os_warning:
+                output_markers.append(f"{os_warning} (agent '{tgt}')")
+            output_markers.extend(markers)
+            if tgt != launch_target:  # launch() already warned for its own target
+                offline = _offline_warning(row, now)
+                if offline:
+                    warnings.append(offline)
+            for original, new in zip(part, dispatched):
+                replaced[id(original)] = new
+        return [replaced.get(id(s), s) for s in raw], None
+
     async def _handle_pull(
         self,
         run_id: str,
@@ -652,6 +977,7 @@ class Orchestrator:
         identity: Optional[str],
         db: AsyncSession,
         runtime_install_authorized: bool = False,
+        pull_plan: Optional[_PullPlan] = None,
     ) -> LaunchResult:
         from models import Agent, Run  # noqa: PLC0415
 
@@ -660,6 +986,7 @@ class Orchestrator:
                 db, run_id,
                 error="target_agent_id is required for pull mode",
             )
+        output_markers: list[str] = list(pull_plan.output_markers) if pull_plan else []
 
         execution_identity = getattr(scenario, "execution_identity", None) or {}
 
@@ -728,8 +1055,31 @@ class Orchestrator:
             )
 
         egress_warnings = _egress_warnings(scenario)
+
+        # ── Platform gate (BEACON-01) ───────────────────────────────────────
+        # Choose, per step, the command text the target OS can actually run —
+        # BEFORE {adapter:*} / {stitch:*} rendering, on the same raw document
+        # the push generator judges. The single-endpoint plan was decided (and
+        # refusals issued) before the Run existed; a composed run is resolved
+        # here, per target agent, once every target is known to be enrolled.
+        dispatch_warnings: list[str] = []
+        if pull_plan is not None:
+            raw_steps = pull_plan.steps
+        else:
+            raw_steps, refusal = await self._resolve_composed_partitions(
+                scenario, target_agent_id, db, output_markers, dispatch_warnings,
+            )
+            if refusal is not None:
+                return await self._refuse_after_seed(
+                    db, run_id,
+                    error=refusal.error,
+                    error_code=refusal.error_code,
+                    error_detail=refusal.error_detail,
+                    http_status=refusal.http_status,
+                )
+
         adapter_steps, required_binaries = _resolve_adapter_placeholders_with_binaries(
-            scenario.steps or []
+            raw_steps
         )
         steps = _resolve_stitch_placeholders(adapter_steps, binding)
         # The beacon refuses a step whose binary is not on PATH (not_run /
@@ -912,11 +1262,14 @@ class Orchestrator:
 
         # Surface the egress warning on the run itself, before any beacon can
         # write: the console shows Run.output, a log line is not seen by a DC.
-        if egress_warnings:
+        # The platform markers (CONT-09: a step running a variant whose
+        # expectations were authored against the primary; an agent that never
+        # said which OS it is) go on the same record, for the same reason.
+        if egress_warnings or output_markers:
             lines = "".join(
                 f"!! TARGET_EGRESS_REQUIRED: {aid} — {text}\n"
                 for aid, text in egress_warnings
-            )
+            ) + "".join(f"{m}\n" for m in output_markers)
             await db.execute(
                 update(Run)
                 .where(Run.run_id == run_id)
@@ -940,6 +1293,7 @@ class Orchestrator:
             run_id=run_id,
             mode="pull",
             message=queued_message,
+            warnings=dispatch_warnings + output_markers,
         )
 
     # ------------------------------------------------------------------
@@ -1224,7 +1578,9 @@ class Orchestrator:
           * Any Run still in ``pending``/``running`` whose task did NOT survive
             in the durable queue AND was never delivered is marked ``failed``
             (its work was lost) so it does not hang forever. A note is appended
-            to the run output.
+            to the run output, and its Results are stamped ``not_executed`` /
+            ``TASK_LOST_ON_RESTART`` (OPS-01) so no later alert is credited to
+            a run that never reached the target.
           * A run whose task WAS delivered (``delivered_at`` set) has no row by
             design — delivery deletes it — and is executing on its beacon. It
             is left ``running``: failing it made /control stop the beacon
@@ -1269,6 +1625,12 @@ class Orchestrator:
             run.output = (run.output or "") + (
                 "\n--- RUN FAILED ON RESTART — queued task was lost "
                 "(SimCore restarted before the agent picked it up) ---\n"
+            )
+            # A composed run's EAL steps ran in SimCore's own process at launch;
+            # only the beacon partitions were lost.
+            await stamp_not_executed(
+                db, run.run_id, REASON_TASK_LOST_ON_RESTART, commit=False,
+                exclude_steps=in_process_steps(run),
             )
             failed_orphans += 1
         if failed_orphans:
@@ -1847,6 +2209,85 @@ def _build_channel_dispatch(
                 "code": None,
             })
     return ledger
+
+
+#: ``Result.outcome_reason`` values for a run that terminated WITHOUT executing
+#: (OPS-01). Each one names the path that ended it, so a report can say why a
+#: row left the denominator rather than only that it did.
+REASON_LAUNCH_REFUSED = "LAUNCH_REFUSED"
+REASON_TASK_LOST_ON_RESTART = "TASK_LOST_ON_RESTART"
+REASON_BEACON_LOST_UNCLASSIFIED = "BEACON_LOST_UNCLASSIFIED"
+REASON_ABORTED_BEFORE_DELIVERY = "ABORTED_BEFORE_DELIVERY"
+REASON_AGENT_CANNOT_STAGE_ARTIFACTS = "AGENT_CANNOT_STAGE_ARTIFACTS"
+
+
+async def stamp_not_executed(
+    db: AsyncSession,
+    run_id: str,
+    reason: str,
+    *,
+    commit: bool = True,
+    exclude_steps: Any = (),
+) -> int:
+    """Stamp every Result of a run that never executed ``not_executed``.
+
+    The shared helper for every path that terminates a run without executing
+    it: a launch refused after seeding, an orphan failed by :meth:`rehydrate`,
+    a beacon-lost run that cannot be classified, an abort before delivery, and
+    (for the owner of ``core/api/agents.py``) a task refused at the
+    artifact-staging capability gate.
+
+    Before this, those runs kept their seeded rows with ``outcome`` NULL —
+    i.e. *pending, awaiting reconcile*. A matching alert from anything else on
+    the host then credited a detection, with a real-looking MTTD, to a run that
+    never touched the endpoint. ``not_executed`` is in
+    ``EXCLUDED_FROM_DENOMINATOR``: ``apply_verdicts`` never credits such a row
+    and every coverage figure leaves it out.
+
+    A row the host already marked ``not_reached`` / ``not_executed`` keeps its
+    own (better) reason. ``exclude_steps`` names steps that DID execute
+    in-process (a composed run's EAL steps) and must not be stamped.
+
+    Returns the number of rows stamped. ``commit=False`` leaves the commit to
+    a caller that is mid-transaction.
+    """
+    from engine.outcome import (  # noqa: PLC0415
+        EXCLUDED_FROM_DENOMINATOR,
+        OUTCOME_NOT_EXECUTED,
+    )
+    from models import Result  # noqa: PLC0415
+
+    if not reason:
+        raise ValueError("stamp_not_executed needs a reason")
+    skip = set(exclude_steps or ())
+    rows = (await db.execute(
+        select(Result).where(Result.run_id == run_id)
+    )).scalars().all()
+    stamped = 0
+    for r in rows:
+        if r.step_id in skip or r.outcome in EXCLUDED_FROM_DENOMINATOR:
+            continue
+        r.outcome = OUTCOME_NOT_EXECUTED
+        r.outcome_reason = reason
+        stamped += 1
+    if commit:
+        await db.commit()
+    if stamped:
+        logger.info("run_id=%s: %d result(s) stamped not_executed (%s)",
+                    run_id, stamped, reason)
+    return stamped
+
+
+def in_process_steps(run: Any) -> set[str]:
+    """Step ids a composed run executed inside SimCore (its EAL steps).
+
+    Read from ``Run.channel_dispatch``; empty for a single-channel run.
+    """
+    ledger = getattr(run, "channel_dispatch", None) or []
+    return {
+        e.get("step_id") for e in ledger
+        if isinstance(e, dict) and e.get("channel") == "eal" and e.get("step_id")
+    }
 
 
 async def _publish_run_status(

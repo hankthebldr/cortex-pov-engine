@@ -532,6 +532,12 @@ _LAUNCH_PRECONDITION_CODES = frozenset({
     # canary_run_id names a run that cannot prove this launch's profile
     # (unknown, wrong scenario/target, or not terminal).
     "CANARY_INVALID",
+    # The target agent's OS cannot run some step of this scenario (the pull
+    # twin of BUNDLE_TARGET_UNSATISFIABLE), or names no OS we can target. Both
+    # also carry http_status=409 from the orchestrator; listed so the mapping
+    # stays right for any caller that drops it.
+    "PULL_TARGET_UNSATISFIABLE",
+    "PULL_TARGET_OS_UNRECOGNISED",
 })
 
 
@@ -699,6 +705,11 @@ async def _launch_run_impl(
     }
     if result.download_url:
         response["download_url"] = result.download_url
+    # Present only when there is something to say (an offline target, an
+    # unknown agent OS, a step running a platform variant), so the response for
+    # an unremarkable launch keeps its exact historical shape.
+    if result.warnings:
+        response["warnings"] = list(result.warnings)
 
     return response
 

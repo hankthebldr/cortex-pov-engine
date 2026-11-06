@@ -64,6 +64,16 @@ def _seed(session_factory, scenario_id="SIM-EDR-996"):
                     ],
                 }],
             ))
+            # The target is enrolled: an unenrolled one is refused before the
+            # Run row exists, ahead of the payload refusal under test.
+            from datetime import datetime
+
+            from models import Agent
+
+            db.add(Agent(agent_id="a1", hostname="h-a1", os="linux",
+                         capabilities=["shell", "identity-harness"], interpreters=[],
+                         registered_at=datetime.utcnow(), last_seen=datetime.utcnow(),
+                         status="online"))
             await db.commit()
 
     asyncio.run(_do())
