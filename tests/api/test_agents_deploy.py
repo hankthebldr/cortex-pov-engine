@@ -15,6 +15,11 @@ import subprocess
 import pytest
 
 
+# The shape POST /api/agents/enroll/tokens mints; the installer refuses
+# anything else with BAD_TOKEN before it reaches a script.
+WELL_FORMED_TOKEN = "cxs_" + "Ab1-_" * 8
+
+
 @pytest.fixture
 def client(make_client):
     from api.agents import router
@@ -180,9 +185,13 @@ def test_generated_installer_is_valid_bash_in_every_mode(client, dist):
     for url in (
         "/api/agents/install?os=linux",
         "/api/agents/install?os=linux&mode=foreground",
-        "/api/agents/install?os=macos&token=cxs_abc123def456",
+        "/api/agents/install?os=macos&token=" + WELL_FORMED_TOKEN,
     ):
-        script = client.get(url).text
+        r = client.get(url)
+        # Without this a 400 JSON body sailed through `bash -n` (one word is
+        # valid syntax), so a refused URL read as a valid installer.
+        assert r.status_code == 200, f"{url}: {r.status_code} {r.text[:200]}"
+        script = r.text
         p = subprocess.run(["bash", "-n", "/dev/stdin"], input=script,
                            capture_output=True, text=True, timeout=10)
         assert p.returncode == 0, f"{url} failed bash -n:\n{p.stderr}"
@@ -202,24 +211,29 @@ def test_unsupported_os_is_a_structured_400(client, dist):
 
 
 # ---------------------------------------------------------------------------
-# Windows: honest about a beacon that does not exist yet
+# Windows: honest about a deployment that serves no Windows beacon
 # ---------------------------------------------------------------------------
 
 
 def test_windows_installer_refuses_before_enrolling_when_no_beacon_is_served(client, dist):
-    script = client.get("/api/agents/install?os=windows&token=cxs_tok").text
+    r = client.get(f"/api/agents/install?os=windows&token={WELL_FORMED_TOKEN}")
+    assert r.status_code == 200
+    script = r.text
     assert "WINDOWS_AGENT_UNAVAILABLE" in script
-    # It must bail BEFORE the enroll call, or a target that can never run the
-    # beacon leaves a phantom agent row in the console.
-    assert script.index("WINDOWS_AGENT_UNAVAILABLE") < script.index("/api/agents/enroll")
+    # It must bail BEFORE the enroll call runs, or a target that can never run
+    # the beacon leaves a phantom agent row in the console. Compare CALL sites:
+    # the helper that holds the enroll URL is defined above the body.
+    assert script.index("WINDOWS_AGENT_UNAVAILABLE") < script.index("= Cs-Enroll")
     assert "PUSH mode" in script
+    # ...unless the operator pre-staged a beacon: the air-gapped path stays open.
+    assert "if (-not $env:CORTEXSIM_BIN)" in script
 
 
 def test_windows_installer_goes_live_the_day_a_windows_beacon_is_shipped(client, dist):
     (dist / "cortexsim-agent-windows-amd64.exe").write_bytes(b"MZ-fake-windows")
-    script = client.get("/api/agents/install?os=windows&token=cxs_tok").text
+    script = client.get(f"/api/agents/install?os=windows&token={WELL_FORMED_TOKEN}").text
     assert "WINDOWS_AGENT_UNAVAILABLE" not in script
-    assert "sc.exe create CortexSimAgent" in script
+    assert "New-Service -Name $Svc -BinaryPathName" in script
     assert "CHECKSUM_MISMATCH" in script
     assert "go install" not in script
 

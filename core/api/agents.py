@@ -328,10 +328,101 @@ def _is_loopback(url: str) -> bool:
     return (host or "").strip().lower() in _LOOPBACK_HOSTS
 
 
+# ---------------------------------------------------------------------------
+# Validation of every value the installers bake into script text
+# ---------------------------------------------------------------------------
+#
+# The installers are TEMPLATES: id / server / token / interval (and, when no
+# ?server= is given, the request's Host header) are substituted into bash and
+# PowerShell source verbatim. Before these checks, ?id=x'; Write-Host PWNED; '
+# produced a script that ran the attacker's text — as SYSTEM, once the Windows
+# installer registered it as the service command line. Allow-lists, not escaping:
+# every legitimate value fits a narrow charset, and a narrow charset is safe in
+# a bash double-quoted string, a PowerShell single-quoted string AND a service
+# binPath at once, which no single escaping scheme is.
+
+_SERVER_CHARSET = re.compile(r"[A-Za-z0-9.:/\[\]_~-]+")
+_AGENT_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+# Mirrors the mint below: "cxs_" + secrets.token_urlsafe(32) (43 url-safe chars).
+_TOKEN_RE = re.compile(r"cxs_[A-Za-z0-9_-]{20,128}")
+_INTERVAL_RE = re.compile(r"[0-9]{1,4}")
+_INTERVAL_MIN, _INTERVAL_MAX = 1, 3600
+
+
+def _bad_request(code: str, error: str, detail: str) -> HTTPException:
+    return HTTPException(status_code=400, detail={"error": error, "code": code, "detail": detail})
+
+
+def _server_problem(url: str) -> Optional[str]:
+    """Why ``url`` cannot be baked as the beacon's callback, or None if it can."""
+    if not url or not _SERVER_CHARSET.fullmatch(url):
+        return ("only http(s)://host[:port][/path] using letters, digits and . : / [ ] _ ~ - "
+                "is accepted")
+    try:
+        parsed = urlparse(url)
+        port = parsed.port  # raises ValueError for a non-numeric / out-of-range port
+    except ValueError as exc:
+        return f"not a parseable URL ({exc})"
+    if parsed.scheme not in ("http", "https"):
+        return "scheme must be http or https"
+    if not parsed.hostname:
+        return "no host"
+    if parsed.username is not None or parsed.password is not None:
+        return "userinfo (user:pass@) is not accepted"
+    if parsed.query or parsed.fragment or parsed.params:
+        return "a query string or fragment is not accepted"
+    if port is not None and not 1 <= port <= 65535:
+        return "port out of range"
+    return None
+
+
+def _agent_id_problem(agent_id: str) -> Optional[str]:
+    if _AGENT_ID_RE.fullmatch(agent_id or ""):
+        return None
+    return ("1-64 characters: a letter or digit, then letters, digits, '.', '_' or '-'")
+
+
+def _token_problem(token: str) -> Optional[str]:
+    if _TOKEN_RE.fullmatch(token or ""):
+        return None
+    return ("an enrollment token is 'cxs_' followed by 20-128 URL-safe characters; mint one "
+            "with POST /api/agents/enroll/tokens")
+
+
+def _parse_interval(raw: str) -> int:
+    if _INTERVAL_RE.fullmatch((raw or "").strip()):
+        value = int(raw.strip())
+        if _INTERVAL_MIN <= value <= _INTERVAL_MAX:
+            return value
+    raise _bad_request("BAD_INTERVAL", "Invalid poll interval",
+                       f"interval must be a whole number of seconds, {_INTERVAL_MIN}-{_INTERVAL_MAX}")
+
+
+def _check_baked(server: str, agent_id: str, interval: int, token: Optional[str]) -> None:
+    """Renderer-side re-check (defence in depth): a caller that bypassed the
+    route's validation gets an exception, never an injectable script."""
+    problems = []
+    if _server_problem(server):
+        problems.append(f"server {server!r}: {_server_problem(server)}")
+    if _agent_id_problem(agent_id):
+        problems.append(f"agent_id {agent_id!r}: {_agent_id_problem(agent_id)}")
+    if not isinstance(interval, int) or not _INTERVAL_MIN <= interval <= _INTERVAL_MAX:
+        problems.append(f"interval {interval!r}: out of range")
+    if token and _token_problem(token):
+        problems.append(f"token: {_token_problem(token)}")
+    if problems:
+        raise ValueError("refusing to render an installer with unvalidated values: "
+                         + "; ".join(problems))
+
+
 def _resolve_server(request: Request, override: Optional[str]) -> str:
     """Server URL the agent beacons back to. Prefer an explicit override
     (the DC knows the jumpbox's reachable address); else derive from the
     request so `curl <host>/api/agents/install | bash` just works.
+
+    Either way the result is validated (``_server_problem``) before it reaches
+    a template: the derived default comes from the Host header, which is as
+    caller-controlled as the query string.
 
     A loopback address here is NOT refused. Installing the beacon on the
     SimCore host itself is a real flow (local dev, and the installer e2e
@@ -347,8 +438,16 @@ def _resolve_server(request: Request, override: Optional[str]) -> str:
     SERVER fails on the target. See `_loopback_banner`.
     """
     if override:
-        return override.rstrip("/")
-    return str(request.base_url).rstrip("/")
+        resolved, source = override.strip().rstrip("/"), "?server="
+    else:
+        resolved, source = str(request.base_url).rstrip("/"), "the request's Host header"
+    problem = _server_problem(resolved)
+    if problem:
+        raise _bad_request(
+            "BAD_SERVER", "Invalid server URL",
+            f"the callback URL from {source} cannot be baked into an installer: {problem}. "
+            "Pass ?server=http://<simcore-ip>:8888")
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +530,7 @@ case "$UNAME_S" in
   Linux)  OS_ID="linux" ;;
   Darwin) OS_ID="darwin" ;;
   *) cs_fail detect UNSUPPORTED_OS "uname -s reported '$UNAME_S'" \
-       "supported: Linux, macOS. For Windows targets use PUSH mode (the console's Push bundle)." ;;
+       "supported: Linux, macOS. For Windows, from an elevated Windows PowerShell: iwr '$SERVER/api/agents/install?os=windows' -UseBasicParsing | iex" ;;
 esac
 UNAME_M="$(uname -m 2>/dev/null || echo unknown)"
 case "$UNAME_M" in
@@ -972,130 +1071,807 @@ cs_say "the agent row stays in SimCore until you delete it: DELETE /api/agents/<
 """
 
 
-_WINDOWS_INSTALLER = r"""# ─── CortexSim beacon installer (Windows / PowerShell) ──────────────────────
+# ---------------------------------------------------------------------------
+# Windows (PowerShell 5.1 floor)
+# ---------------------------------------------------------------------------
 #
+# Both Windows templates obey four rules; tests/api/test_windows_installer.py and
+# tests/api/test_agents_uninstaller.py hold each one:
+#
+#   1. Pure ASCII. Windows PowerShell 5.1 reads a BOM-less .ps1 as cp1252, where
+#      byte 0x94 of a UTF-8 em-dash is a closing smart quote that ends a string.
+#      The downloaded install-cortexsim-agent.ps1 did not parse on the floor.
+#   2. The body runs inside `& { ... }` and never calls a bare `exit`: under
+#      `iwr | iex` it runs in the operator's own session, and `exit` closed it.
+#      Failures `throw`; one top-level catch prints them, then exits only when
+#      the script is a FILE ($PSCommandPath set), else returns.
+#   3. Every native tool (sc.exe, icacls) runs through Cs-Exec, with
+#      $ErrorActionPreference relaxed for that call only (5.1 turns redirected
+#      native stderr into a terminating error under 'Stop'), and its
+#      $LASTEXITCODE is checked on the very next line. A native tool never throws.
+#   4. No PowerShell-7-only syntax (?:, ??, &&, ||, ?.) and no assignment to an
+#      automatic variable ($Args was clobbered by the old installer).
+
+_WINDOWS_COMMON_FUNCTIONS = r"""function Cs-Say([string]$Msg) { Write-Host "[cortexsim] $Msg" }
+
+function Cs-Exec([string]$Exe, [string[]]$Argv) {
+  # Native call under its own error preference; the CALLER checks $LASTEXITCODE.
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $out = ''
+  try {
+    $global:LASTEXITCODE = 0
+    $out = (& $Exe @Argv 2>&1 | Out-String)
+  } catch {
+    $global:LASTEXITCODE = 9009
+    $out = "$($_.Exception.Message)"
+  } finally {
+    $ErrorActionPreference = $prev
+  }
+  return ("$out".Trim() -replace '\s+', ' ')
+}
+"""
+
+_WINDOWS_INSTALLER = r"""# --- CortexSim beacon installer (Windows / PowerShell 5.1+) ----------------
+#
+#   From an ELEVATED Windows PowerShell (Run as administrator):
 #   iwr '<server>/api/agents/install?os=windows&token=<tok>' -UseBasicParsing | iex
 #
-# Same contract as the POSIX installer: no compiler on the endpoint, the beacon
-# comes prebuilt and checksummed from SimCore, and it is registered as a Windows
-# service so it survives logoff and reboot. Failures carry a stable code and are
-# reported back to SimCore.
+#   or save it and run:
+#   powershell -NoProfile -ExecutionPolicy Bypass -File .\install-cortexsim-agent.ps1
+#
+# Same contract as the POSIX installer: no compiler on the endpoint; the beacon
+# comes prebuilt and sha256-verified from the SimCore that served this script;
+# it is registered as the Windows service CortexSimAgent (LocalSystem,
+# automatic start, restart on failure). OK is reported only after the service
+# is still Running past the Service Control Manager's start window AND the
+# beacon has polled SimCore on its own. Every failure prints a stable code with
+# a fix line and is reported to SimCore (GET /api/agents/install/attempts).
+#
+# Pure ASCII, and the body runs inside "& { ... }" with no bare `exit`: a
+# failure under "iwr | iex" leaves your shell, its $ErrorActionPreference and
+# its variables exactly as they were.
+#
+# Env overrides:
+#   CORTEXSIM_SERVER / CORTEXSIM_TOKEN / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL
+#   CORTEXSIM_BIN=C:\path\cortexsim-agent.exe  pre-staged beacon (air-gapped host)
+#   CORTEXSIM_ALLOW_UNSUPERVISED=1  not elevated: run a per-user beacon instead of
+#                                   a service -- it dies at logoff and at reboot
+#   CORTEXSIM_NO_PROXY=1            reach SimCore directly, bypassing the system proxy
+#   CORTEXSIM_TELEMETRY=0           suppress the install-status POSTs
+& {
+Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
-$Server   = if ($env:CORTEXSIM_SERVER)   { $env:CORTEXSIM_SERVER }   else { '@@SERVER@@' }
-$AgentId  = if ($env:CORTEXSIM_AGENT_ID) { $env:CORTEXSIM_AGENT_ID } else { '@@AGENT_ID@@' }
-$Interval = if ($env:CORTEXSIM_INTERVAL) { $env:CORTEXSIM_INTERVAL } else { '@@INTERVAL@@' }
-$Token    = if ($env:CORTEXSIM_TOKEN)    { $env:CORTEXSIM_TOKEN }    else { '@@TOKEN@@' }
-$Server   = $Server.TrimEnd('/')
-$Arch     = if ([Environment]::Is64BitOperatingSystem) { 'amd64' } else { 'unsupported' }
+$ProgressPreference = 'SilentlyContinue'
+$Cs = @{ Stage = 'detect'; Code = ''; What = ''; Fix = ''; Work = '' }
+$UrlPattern = '^https?://[A-Za-z0-9.\[\]:_~-]+(/[A-Za-z0-9.:/\[\]_~-]*)?$'
 
-function Cs-Report($Stage, $Code, $Detail) {
+@@COMMON@@
+function Cs-Report([string]$Stage, [string]$Code, [string]$Detail) {
   if ($env:CORTEXSIM_TELEMETRY -eq '0') { return }
+  if ("$Server" -notmatch $UrlPattern) { return }
   try {
-    $b = @{ stage = $Stage; code = $Code; detail = "$Detail"; hostname = $env:COMPUTERNAME;
-            os = 'windows'; arch = $Arch; agent_id = $AgentId } | ConvertTo-Json -Compress
-    Invoke-RestMethod -Method Post -Uri "$Server/api/agents/install/telemetry" `
-      -ContentType 'application/json' -Body $b -TimeoutSec 5 | Out-Null
+    $d = "$Detail"
+    if ($d.Length -gt 1900) { $d = $d.Substring(0, 1900) }
+    $b = @{ stage = $Stage; code = $Code; detail = $d; hostname = $HostN; os = 'windows';
+            arch = $Arch; agent_id = $AgentId } | ConvertTo-Json -Compress
+    $null = Cs-Http 'POST' "$Server/api/agents/install/telemetry" $b 5000 ''
   } catch { }
 }
 
-function Cs-Fail($Stage, $Code, $What, $Fix) {
-  Write-Host ""
-  Write-Host "[cortexsim] FAILED  stage=$Stage  code=$Code"
-  Write-Host "[cortexsim]   what : $What"
-  if ($Fix) { Write-Host "[cortexsim]   fix  : $Fix" }
+function Cs-Fail([string]$Stage, [string]$Code, [string]$What, [string]$Fix) {
+  $Cs.Stage = $Stage; $Cs.Code = $Code; $Cs.What = $What; $Cs.Fix = $Fix
   Cs-Report $Stage $Code $What
-  exit 1
+  throw "CORTEXSIM_FAILED:$Code"
 }
 
-Write-Host "[cortexsim] target server : $Server"
-@@PREFLIGHT@@
-
-if ($Arch -eq 'unsupported') {
-  Cs-Fail 'detect' 'UNSUPPORTED_ARCH' '32-bit Windows is not supported' 'use a 64-bit host'
-}
-
-if ($Token) {
-  Write-Host "[cortexsim] enrolling with token ...$($Token.Substring([Math]::Max(0,$Token.Length-6)))"
-  $payload = @{ token = $Token; hostname = $env:COMPUTERNAME; os = 'windows';
-                capabilities = @('shell') } | ConvertTo-Json -Compress
+function Cs-Http([string]$Method, [string]$Uri, [string]$Body, [int]$TimeoutMs, [string]$OutFile) {
+  # [Net.HttpWebRequest], not Invoke-WebRequest: one exception shape on 5.1 and
+  # 7, no Internet Explorer engine dependency, no progress-bar slowdown, and the
+  # status + body of a non-2xx answer are kept instead of thrown away.
+  # Status 0 means SimCore was never reached.
+  $res = @{ Status = 0; Body = ''; Error = ''; WebStatus = ''; Ok = $false }
+  $resp = $null
   try {
-    $resp = Invoke-RestMethod -Method Post -Uri "$Server/api/agents/enroll" `
-      -ContentType 'application/json' -Body $payload -TimeoutSec 30
+    $req = [Net.WebRequest]::Create($Uri)
+    $req.Method = $Method
+    $req.Timeout = $TimeoutMs
+    $req.ReadWriteTimeout = [Math]::Max($TimeoutMs, 30000)
+    if ($env:CORTEXSIM_NO_PROXY -eq '1') { $req.Proxy = New-Object Net.WebProxy }
+    # Per request, not [Net.ServicePointManager]: under iex that is the
+    # operator's own session, and a global would outlive this script.
+    try { $req.ServicePoint.Expect100Continue = $false } catch { }
+    if ($Body) {
+      $bytes = [Text.Encoding]::UTF8.GetBytes($Body)
+      $req.ContentType = 'application/json'
+      $req.ContentLength = $bytes.Length
+      $rs = $req.GetRequestStream()
+      try { $rs.Write($bytes, 0, $bytes.Length) } finally { $rs.Close() }
+    }
+    try {
+      $resp = $req.GetResponse()
+    } catch {
+      $ex = $_.Exception
+      while ($ex -and -not ($ex -is [Net.WebException])) { $ex = $ex.InnerException }
+      if ($ex -and $ex.Response) { $resp = $ex.Response } else { throw }
+    }
+    $res.Status = [int]$resp.StatusCode
+    $stream = $resp.GetResponseStream()
+    if ($OutFile -and $res.Status -eq 200) {
+      $fs = [IO.File]::Create($OutFile)
+      try { $stream.CopyTo($fs) } finally { $fs.Close() }
+    } else {
+      $sr = New-Object IO.StreamReader($stream)
+      $res.Body = $sr.ReadToEnd()
+    }
+    $res.Ok = $true
   } catch {
-    Cs-Fail 'enroll' 'ENROLL_DENIED' "$($_.Exception.Message)" `
-      "mint a fresh token: POST $Server/api/agents/enroll/tokens"
+    $ex = $_.Exception
+    while ($ex -and -not ($ex -is [Net.WebException])) { $ex = $ex.InnerException }
+    if ($ex) { $res.WebStatus = "$($ex.Status)"; $res.Error = "$($ex.Message)" }
+    else { $res.Error = "$($_.Exception.Message)" }
+  } finally {
+    if ($resp) { try { $resp.Close() } catch { } }
   }
-  $AgentId = $resp.agent_id
-  if (-not $AgentId) { Cs-Fail 'enroll' 'NO_AGENT_ID' 'enroll returned no agent_id' 'SimCore/installer version mismatch' }
-  Write-Host "[cortexsim] enrolled as   : $AgentId"
+  return $res
 }
 
-$Work = New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP ("cortexsim-" + [guid]::NewGuid()))
-$Dl   = Join-Path $Work.FullName 'cortexsim-agent.exe'
+function Cs-Detail([string]$Body) {
+  # The server's structured {error, code, detail}, folded onto one line.
+  $t = "$Body"
+  try {
+    $j = $t | ConvertFrom-Json
+    $d = $j.detail
+    if ($d -and $d.code) { return ("$($d.code): $($d.error) -- $($d.detail)") }
+    if ($j.code) { return ("$($j.code): $($j.error)") }
+  } catch { }
+  $t = ($t -replace '\s+', ' ').Trim()
+  if ($t.Length -gt 400) { $t = $t.Substring(0, 400) }
+  return $t
+}
+
+function Cs-FailUnreachable([string]$Stage, [string]$Code, $Res) {
+  if ($Res.WebStatus -eq 'TrustFailure' -or $Res.WebStatus -eq 'SecureChannelFailure') {
+    Cs-Fail $Stage 'TLS_UNTRUSTED' "TLS to $Server failed ($($Res.WebStatus)): $($Res.Error)" 'import the SimCore certificate into Cert:\LocalMachine\Root on this host, or fetch the installer over http:// on an isolated lab network'
+  }
+  Cs-Fail $Stage $Code "cannot reach $Server ($($Res.WebStatus)): $($Res.Error)" ('check routing / proxy / firewall from this host to SimCore (CORTEXSIM_NO_PROXY=1 skips the system proxy), then re-run' + $LoopbackHint)
+}
+
+function Cs-Enroll {
+  Cs-Say "enrolling with token ...$($Token.Substring([Math]::Max(0, $Token.Length - 6)))"
+  $payload = @{ token = $Token; hostname = $HostN; os = 'windows';
+                capabilities = @('shell', 'powershell') } | ConvertTo-Json -Compress
+  $r = Cs-Http 'POST' "$Server/api/agents/enroll" $payload 30000 ''
+  if ($r.Status -eq 0) { Cs-FailUnreachable 'enroll' 'SERVER_UNREACHABLE' $r }
+  if ($r.Status -eq 403) {
+    Cs-Fail 'enroll' 'ENROLL_DENIED' "HTTP 403 from /api/agents/enroll -- $(Cs-Detail $r.Body)" "the token is unknown, expired, revoked or used up: mint a fresh token (POST $Server/api/agents/enroll/tokens, or the console's Targets view) and re-run"
+  }
+  if ($r.Status -ne 200) {
+    Cs-Fail 'enroll' 'ENROLL_FAILED' "HTTP $($r.Status) from /api/agents/enroll -- $(Cs-Detail $r.Body)" 'SimCore rejected the request for a reason other than the token; read the detail above (and GET /api/health on SimCore), then re-run'
+  }
+  $id = ''
+  try { $id = "$(($r.Body | ConvertFrom-Json).agent_id)" } catch { $id = '' }
+  if (-not $id) {
+    Cs-Fail 'enroll' 'NO_AGENT_ID' "enroll returned 200 with no agent_id: $(Cs-Detail $r.Body)" 'SimCore/installer version mismatch: re-fetch the one-liner from this SimCore'
+  }
+  if ($id -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') {
+    Cs-Fail 'enroll' 'NO_AGENT_ID' "enroll returned an agent_id this installer will not put on a service command line: '$id'" 'SimCore/installer version mismatch: re-fetch the one-liner from this SimCore'
+  }
+  return $id
+}
+
+function Cs-FetchBinary([string]$Dest) {
+  $url = "$Server/api/agents/binary?os=windows&arch=$Arch"
+  Cs-Say "fetching prebuilt beacon (windows/$Arch)"
+  $r = Cs-Http 'GET' $url '' 300000 $Dest
+  if ($r.Status -eq 0) { Cs-FailUnreachable 'download' 'SERVER_UNREACHABLE' $r }
+  if ($r.Status -eq 404) {
+    Cs-Fail 'download' 'BINARY_UNAVAILABLE' "SimCore serves no windows/$Arch beacon -- $(Cs-Detail $r.Body)" 'on the SimCore host run make agent-dist (or rebuild the image) and re-run; air-gapped: copy the beacon over and set $env:CORTEXSIM_BIN'
+  }
+  if ($r.Status -ne 200) {
+    Cs-Fail 'download' 'BINARY_FETCH_FAILED' "HTTP $($r.Status) from /api/agents/binary -- $(Cs-Detail $r.Body)" "GET $url by hand to read the structured error; a proxy answering for SimCore looks like this too (CORTEXSIM_NO_PROXY=1)"
+  }
+  if (-not $r.Ok) {
+    Cs-Fail 'download' 'BINARY_FETCH_FAILED' "the download to $Dest did not complete: $($r.Error)" 're-run; if it repeats, check Cortex XDR/Defender alerts for cortexsim-agent.exe (a blocked write looks like this too)'
+  }
+}
+
+function Cs-FetchDigest {
+  $r = Cs-Http 'GET' "$Server/api/agents/binary/sha256?os=windows&arch=$Arch" '' 30000 ''
+  if ($r.Status -eq 0) {
+    Cs-Fail 'verify' 'DIGEST_FETCH_FAILED' "cannot reach $Server for the beacon's sha256 ($($r.WebStatus)): $($r.Error)" ('the binary was fetched but its digest was not, so it cannot be verified; re-run' + $LoopbackHint)
+  }
+  if ($r.Status -ne 200) {
+    Cs-Fail 'verify' 'DIGEST_FETCH_FAILED' "HTTP $($r.Status) from /api/agents/binary/sha256 -- $(Cs-Detail $r.Body)" 'the binary was fetched but its digest was not, so it cannot be verified; re-run'
+  }
+  $d = "$($r.Body)".Trim().ToLower()
+  if ($d -notmatch '^[0-9a-f]{64}$') {
+    Cs-Fail 'verify' 'DIGEST_FETCH_FAILED' "SimCore answered the digest request with something that is not a sha256: '$(Cs-Detail $r.Body)'" 'a proxy or captive portal is answering for SimCore; set CORTEXSIM_NO_PROXY=1 or fix routing, then re-run'
+  }
+  return $d
+}
+
+function Cs-AssertPresent([string]$Path, [string]$Stage) {
+  # Endpoint protection removes or locks a fresh beacon between the write and
+  # the next read. Name that, instead of failing inside Get-FileHash with a raw
+  # .NET error or running a 0-byte file.
+  $why = ''
+  $hash = ''
+  try {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { $why = 'the file is gone' }
+    elseif ((Get-Item -LiteralPath $Path -Force).Length -eq 0) { $why = 'the file is 0 bytes' }
+    else { $hash = "$((Get-FileHash -Algorithm SHA256 -LiteralPath $Path -ErrorAction Stop).Hash)".ToLower() }
+  } catch {
+    $why = "the file cannot be read ($($_.Exception.GetType().Name): $($_.Exception.Message))"
+  }
+  if (-not $hash) {
+    if (-not $why) { $why = 'no digest could be computed' }
+    Cs-Fail $Stage 'BINARY_QUARANTINED' "$Path : $why -- endpoint protection most likely removed or locked it" 'check Cortex XDR/Defender alerts for cortexsim-agent.exe; add a lab exclusion or allow-list the sha256'
+  }
+  return $hash
+}
+
+function Cs-StopProcesses([string]$OnlyPath) {
+  $procs = @(Get-Process -Name 'cortexsim-agent' -ErrorAction SilentlyContinue)
+  if ($OnlyPath) { $procs = @($procs | Where-Object { $_.Path -eq $OnlyPath }) }
+  if ($procs.Count -eq 0) { return }
+  Cs-Say "stopping $($procs.Count) running cortexsim-agent process(es): $(($procs | ForEach-Object { $_.Id }) -join ', ')"
+  foreach ($p in $procs) { try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { } }
+  try { $procs | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue } catch { }
+  $alive = @($procs | Where-Object { $a = $true; try { $a = -not $_.HasExited } catch { $a = $true }; $a })
+  if ($alive.Count -gt 0) {
+    Cs-Fail 'install' 'STALE_PROCESS' "cortexsim-agent pid(s) $(($alive | ForEach-Object { $_.Id }) -join ', ') would not stop" 'stop them from an elevated shell (Stop-Process -Name cortexsim-agent -Force) or reboot, then re-run'
+  }
+}
+
+function Cs-Stamp($Value) {
+  # last_seen as a [datetime]: 5.1's ConvertFrom-Json hands back the ISO
+  # string, 7's hands back a DateTime already. Compare instants, not strings.
+  if ($null -eq $Value) { return $null }
+  if ($Value -is [datetime]) { return $Value }
+  $out = [datetime]::MinValue
+  $ok = [datetime]::TryParse("$Value", [Globalization.CultureInfo]::InvariantCulture,
+                             [Globalization.DateTimeStyles]::RoundtripKind, [ref]$out)
+  if ($ok) { return $out }
+  return $null
+}
+
+function Cs-LastSeen {
+  $r = Cs-Http 'GET' "$Server/api/agents" '' 10000 ''
+  if ($r.Status -ne 200) { return $null }
+  try { $j = $r.Body | ConvertFrom-Json } catch { return $null }
+  foreach ($a in @($j.agents)) {
+    if ("$($a.agent_id)" -eq $AgentId) { return (Cs-Stamp $a.last_seen) }
+  }
+  return $null
+}
+
 try {
-  Invoke-WebRequest -Uri "$Server/api/agents/binary?os=windows&arch=$Arch" -OutFile $Dl -UseBasicParsing -TimeoutSec 300
+  # -- stage: detect ------------------------------------------------------------
+  try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch { }
+  $Server   = if ($env:CORTEXSIM_SERVER)   { "$env:CORTEXSIM_SERVER" }   else { '@@SERVER@@' }
+  $AgentId  = if ($env:CORTEXSIM_AGENT_ID) { "$env:CORTEXSIM_AGENT_ID" } else { '@@AGENT_ID@@' }
+  $Interval = if ($env:CORTEXSIM_INTERVAL) { "$env:CORTEXSIM_INTERVAL" } else { '@@INTERVAL@@' }
+  $Token    = if ($env:CORTEXSIM_TOKEN)    { "$env:CORTEXSIM_TOKEN" }    else { '@@TOKEN@@' }
+  $Server   = $Server.Trim().TrimEnd('/')
+  $LoopbackHint = '@@LOOPBACK_HINT@@'
+  $HostN    = "$env:COMPUTERNAME"
+  if (-not $HostN) { $HostN = [Environment]::MachineName }
+  $Arch     = 'unknown'
+  $Svc      = 'CortexSimAgent'
+  $SvcLog   = "$env:ProgramData\CortexSim\agent.log"
+  Cs-Say "target server : $Server"
+
+  # Env overrides reach the service command line too, so they get the same
+  # allow-list the server applied to the baked values.
+  if ($Server -notmatch $UrlPattern) {
+    Cs-Fail 'detect' 'BAD_SERVER' "CORTEXSIM_SERVER / baked server '$Server' is not http(s)://host[:port][/path]" 'set CORTEXSIM_SERVER=http://<simcore-ip>:8888, or clear it to use the server this script came from'
+  }
+  if ($AgentId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') {
+    Cs-Fail 'detect' 'BAD_AGENT_ID' "agent id '$AgentId' is not 1-64 letters, digits, '.', '_' or '-'" 'fix or clear CORTEXSIM_AGENT_ID (with a token, SimCore assigns the id)'
+  }
+  if ($Interval -notmatch '^[0-9]{1,4}$' -or [int]$Interval -lt 1 -or [int]$Interval -gt 3600) {
+    Cs-Fail 'detect' 'BAD_INTERVAL' "interval '$Interval' is not 1-3600 seconds" 'fix or clear CORTEXSIM_INTERVAL'
+  }
+  $IntervalN = [int]$Interval
+  if ($Token -and $Token -notmatch '^cxs_[A-Za-z0-9_-]{20,128}$') {
+    Cs-Fail 'detect' 'BAD_TOKEN' 'the enrollment token is not cxs_ followed by 20-128 URL-safe characters' 'copy the token again from the console, or mint a fresh one'
+  }
+  @@PREFLIGHT@@
+  if ($env:OS -ne 'Windows_NT') {
+    Cs-Fail 'detect' 'UNSUPPORTED_OS' "this is the Windows installer and this host is not Windows (OS='$env:OS')" "on Linux or macOS run:  curl -fsSL '$Server/api/agents/install?os=linux' | bash"
+  }
+  if (-not [Environment]::Is64BitOperatingSystem) {
+    Cs-Fail 'detect' 'UNSUPPORTED_ARCH' '32-bit Windows is not supported' 'use a 64-bit host'
+  }
+  $Arch = 'amd64'
+  if ("$env:PROCESSOR_ARCHITECTURE" -eq 'ARM64' -or "$env:PROCESSOR_ARCHITEW6432" -eq 'ARM64') {
+    Cs-Say 'NOTE: ARM64 Windows -- the amd64 beacon runs under x64 emulation'
+  }
+
+  # Elevation is decided BEFORE enrolling: an unelevated run used to enrol
+  # first and only then find it could not install a service.
+  $IsAdmin = $false
+  try {
+    $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  } catch { $IsAdmin = $false }
+  $Unsupervised = $false
+  if (-not $IsAdmin) {
+    if ($env:CORTEXSIM_ALLOW_UNSUPERVISED -ne '1') {
+      Cs-Fail 'detect' 'NOT_ELEVATED' 'this PowerShell session is not elevated, so the CortexSimAgent service cannot be installed (nothing was enrolled or changed)' "open Windows PowerShell as Administrator (right-click > Run as administrator) and re-run the one-liner. For a per-user beacon that dies at logoff and at reboot instead, first run:  `$env:CORTEXSIM_ALLOW_UNSUPERVISED='1'"
+    }
+    $Unsupervised = $true
+    Cs-Say 'WARN: not elevated and CORTEXSIM_ALLOW_UNSUPERVISED=1 -- installing a per-user beacon, NOT a service: it dies at logoff and at reboot'
+  }
+
+  $PreStaged = "$env:CORTEXSIM_BIN"
+  if ($PreStaged -and -not (Test-Path -LiteralPath $PreStaged -PathType Leaf)) {
+    Cs-Fail 'detect' 'BIN_NOT_FOUND' "CORTEXSIM_BIN='$PreStaged' is not a file" 'fix the path, or clear $env:CORTEXSIM_BIN to download the beacon from SimCore'
+  }
+  Cs-Say "platform      : windows/$Arch ($HostN)"
+
+  # -- stage: enroll --------------------------------------------------------------
+  $Cs.Stage = 'enroll'
+  if ($Token) {
+    $AgentId = Cs-Enroll
+    Cs-Say "enrolled as   : $AgentId"
+  } else {
+    Cs-Say "agent id      : $AgentId (self-asserted -- prefer ?token= so SimCore assigns it)"
+  }
+
+  # -- stage: download + verify ---------------------------------------------------
+  $Cs.Stage = 'download'
+  $Work = Join-Path ([IO.Path]::GetTempPath()) ('cortexsim-' + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $Work | Out-Null
+  $Cs.Work = $Work
+  if ($PreStaged) {
+    Cs-Say "using pre-staged binary: $PreStaged"
+    $Actual = Cs-AssertPresent $PreStaged 'verify'
+    $dr = Cs-Http 'GET' "$Server/api/agents/binary/sha256?os=windows&arch=$Arch" '' 30000 ''
+    $Expect = "$($dr.Body)".Trim().ToLower()
+    if ($dr.Status -eq 200 -and $Expect -match '^[0-9a-f]{64}$') {
+      if ($Expect -ne $Actual) {
+        Cs-Fail 'verify' 'CHECKSUM_MISMATCH' "CORTEXSIM_BIN has sha256 $Actual but SimCore serves $Expect" 'do NOT run this binary: copy the beacon from this SimCore again (or clear CORTEXSIM_BIN to download it)'
+      }
+      Cs-Say "checksum OK   : $($Actual.Substring(0, 16))... (matches SimCore)"
+    } elseif ($dr.Status -eq 200) {
+      Cs-Fail 'verify' 'DIGEST_FETCH_FAILED' "SimCore answered the digest request with something that is not a sha256: '$(Cs-Detail $dr.Body)'" 'a proxy or captive portal is answering for SimCore; set CORTEXSIM_NO_PROXY=1 or fix routing, then re-run'
+    } else {
+      Cs-Say "WARN: integrity NOT verified -- SimCore has no digest to compare with (HTTP $($dr.Status)); running the pre-staged binary as-is"
+      Cs-Report 'verify' 'CHECKSUM_SKIPPED' "pre-staged CORTEXSIM_BIN sha256=$Actual; digest endpoint HTTP $($dr.Status) $($dr.Error)"
+    }
+    $Src = $PreStaged
+  } else {
+    $Dl = Join-Path $Work 'cortexsim-agent.exe'
+    Cs-FetchBinary $Dl
+    $Actual = Cs-AssertPresent $Dl 'download'
+    $Cs.Stage = 'verify'
+    $Expect = Cs-FetchDigest
+    if ($Expect -ne $Actual) {
+      Cs-Fail 'verify' 'CHECKSUM_MISMATCH' "expected $Expect, got $Actual" 'do NOT run this binary: re-fetch, and look for an intercepting TLS proxy'
+    }
+    Cs-Say "checksum OK   : $($Actual.Substring(0, 16))..."
+    $Src = $Dl
+  }
+
+  # -- stage: install -------------------------------------------------------------
+  $Cs.Stage = 'install'
+  if (-not $Unsupervised) {
+    $InstallDir = "$env:ProgramData\CortexSim"
+    $Bin = "$InstallDir\cortexsim-agent.exe"
+
+    # 1. Stop what is running, so the binary can be replaced and no stale
+    #    beacon keeps polling under an old --id.
+    $existing = Get-Service -Name $Svc -ErrorAction SilentlyContinue
+    if ($existing) {
+      Cs-Say "existing service $Svc found ($($existing.Status)) -- stopping it"
+      $stopErr = ''
+      try {
+        if ("$($existing.Status)" -ne 'Stopped') { Stop-Service -Name $Svc -Force -ErrorAction Stop }
+        $existing.WaitForStatus('Stopped', '00:00:30')
+      } catch { $stopErr = "$($_.Exception.Message)" }
+      if ($stopErr) {
+        Cs-Fail 'install' 'SERVICE_STOP_FAILED' "could not stop the existing $Svc service: $stopErr" "stop it by hand (Stop-Service $Svc -Force) or reboot, then re-run"
+      }
+    }
+    Cs-StopProcesses ''
+
+    # 2. A directory no other account controls: this binary runs as SYSTEM.
+    $dirErr = ''
+    if (Test-Path -LiteralPath $InstallDir) {
+      try {
+        $item = Get-Item -LiteralPath $InstallDir -Force
+        if (-not $item.PSIsContainer) { $dirErr = 'it is a file, not a directory' }
+        elseif ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $dirErr = 'it is a junction or symbolic link' }
+        else {
+          $owner = "$((Get-Acl -LiteralPath $InstallDir).GetOwner([Security.Principal.SecurityIdentifier]).Value)"
+          if ($owner -ne 'S-1-5-32-544' -and $owner -ne 'S-1-5-18') {
+            $dirErr = "it is owned by $owner, not BUILTIN\Administrators (S-1-5-32-544) or SYSTEM (S-1-5-18)"
+          }
+        }
+      } catch { $dirErr = "its owner could not be read: $($_.Exception.Message)" }
+      if ($dirErr) {
+        Cs-Fail 'install' 'INSTALL_DIR_UNTRUSTED' "$InstallDir already exists and $dirErr; a SYSTEM service will not be installed into a directory another account may control" "inspect it; if it is an earlier CortexSim install, remove it from an elevated shell (iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex), then re-run"
+      }
+    } else {
+      try { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null } catch { $dirErr = "$($_.Exception.Message)" }
+      if ($dirErr) {
+        Cs-Fail 'install' 'BIN_INSTALL_FAILED' "could not create $InstallDir : $dirErr" 'check free space and permissions under ProgramData'
+      }
+    }
+    $o = Cs-Exec 'icacls.exe' @($InstallDir, '/inheritance:r', '/grant:r', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-544:(OI)(CI)F', '*S-1-5-32-545:(OI)(CI)RX')
+    if ($LASTEXITCODE -ne 0) { Cs-Fail 'install' 'INSTALL_DIR_ACL_FAILED' "icacls $InstallDir exited $LASTEXITCODE : $o" 'run from an elevated Windows PowerShell; check that no policy blocks ACL changes under ProgramData' }
+    $o = Cs-Exec 'icacls.exe' @($InstallDir, '/setowner', '*S-1-5-32-544', '/T')
+    if ($LASTEXITCODE -ne 0) { Cs-Fail 'install' 'INSTALL_DIR_ACL_FAILED' "icacls /setowner on $InstallDir exited $LASTEXITCODE : $o" 'run from an elevated Windows PowerShell, then re-run' }
+
+    # 3. The binary, re-checked after the copy: AV acts on the new path too.
+    $cpErr = ''
+    try { Copy-Item -LiteralPath $Src -Destination $Bin -Force -ErrorAction Stop } catch { $cpErr = "$($_.Exception.Message)" }
+    if ($cpErr -match 'virus|unwanted software') {
+      Cs-Fail 'install' 'BINARY_QUARANTINED' "writing $Bin was blocked: $cpErr" 'check Cortex XDR/Defender alerts for cortexsim-agent.exe; add a lab exclusion or allow-list the sha256'
+    }
+    if ($cpErr) { Cs-Fail 'install' 'BIN_INSTALL_FAILED' "could not write $Bin : $cpErr" 'check free space; a file held open by a process that would not stop looks like this too (reboot, then re-run)' }
+    $Installed = Cs-AssertPresent $Bin 'install'
+    if ($Installed -ne $Actual) {
+      Cs-Fail 'install' 'BINARY_QUARANTINED' "the installed copy has sha256 $Installed, not the verified $Actual" 'check Cortex XDR/Defender alerts for cortexsim-agent.exe; add a lab exclusion or allow-list the sha256'
+    }
+    Cs-Say "beacon        : $Bin"
+
+    # 4. The service. A registration left over from a previous install is
+    #    deleted first; 1072 means it is marked for deletion and lingers until
+    #    every handle to it (services.msc, Event Viewer) is closed.
+    $existing = Get-Service -Name $Svc -ErrorAction SilentlyContinue
+    if ($existing) {
+      $o = Cs-Exec 'sc.exe' @('delete', $Svc)
+      if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1072 -and $LASTEXITCODE -ne 1060) { Cs-Fail 'install' 'SERVICE_DELETE_FAILED' "sc.exe delete $Svc exited $LASTEXITCODE : $o" 'remove it by hand from an elevated shell (sc.exe delete CortexSimAgent), then re-run' }
+      $gone = $false
+      for ($i = 0; $i -lt 30; $i++) {
+        if (-not (Get-Service -Name $Svc -ErrorAction SilentlyContinue)) { $gone = $true; break }
+        Start-Sleep -Seconds 1
+      }
+      if (-not $gone) {
+        Cs-Fail 'install' 'SERVICE_PENDING_DELETE' "the previous $Svc registration is marked for deletion but still present after 30 s" 'close services.msc, Event Viewer and any tool holding the service open (or reboot), then re-run'
+      }
+    }
+    # New-Service, not sc.exe create: 5.1 re-quotes native arguments, and
+    # binPath= "`"$Bin`" ..." reached the SCM mangled. A cmdlet takes the
+    # string as-is. Every value in it was validated above.
+    $BinPath = '"' + $Bin + '" --server ' + $Server + ' --id ' + $AgentId + ' --interval ' + $IntervalN
+    $svcErr = ''
+    try {
+      New-Service -Name $Svc -BinaryPathName $BinPath -DisplayName 'CortexSim beacon agent' -Description "CortexSim detection-simulation beacon for $Server. Remove: iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex" -StartupType Automatic -ErrorAction Stop | Out-Null
+    } catch { $svcErr = "$($_.Exception.Message)" }
+    if ($svcErr) {
+      Cs-Fail 'install' 'SERVICE_CREATE_FAILED' "New-Service $Svc failed: $svcErr" 'run from an elevated Windows PowerShell; if a policy blocks service creation, use PUSH mode from the console instead'
+    }
+    $o = Cs-Exec 'sc.exe' @('failure', $Svc, 'reset=', '86400', 'actions=', 'restart/10000/restart/10000/restart/60000')
+    if ($LASTEXITCODE -ne 0) { Cs-Fail 'install' 'SERVICE_CONFIG_FAILED' "sc.exe failure $Svc exited $LASTEXITCODE : $o" 'the service exists but will not be restarted after a crash; set it by hand (sc.exe failure CortexSimAgent reset= 86400 actions= restart/10000) and re-run' }
+    $o = Cs-Exec 'sc.exe' @('failureflag', $Svc, '1')
+    if ($LASTEXITCODE -ne 0) { Cs-Fail 'install' 'SERVICE_CONFIG_FAILED' "sc.exe failureflag $Svc exited $LASTEXITCODE : $o" 'the service exists but a stop with an error code will not trigger a restart; re-run' }
+
+    # 5. Running is not enough: a binary without a service handler is killed by
+    #    the SCM after ~30 s (error 1053), so hold past that window and look again.
+    $StartFix = "error 1053 ('did not respond to the start or control request in a timely fashion') means this beacon build has no Windows service handler -- rebuild SimCore's agent-dist from a current tree. Otherwise read $SvcLog and: Get-WinEvent -LogName System -MaxEvents 20 | Where-Object ProviderName -eq 'Service Control Manager'"
+    $startErr = ''
+    try {
+      Start-Service -Name $Svc -ErrorAction Stop
+      (Get-Service -Name $Svc).WaitForStatus('Running', '00:01:00')
+    } catch { $startErr = "$($_.Exception.Message)" }
+    if ($startErr) {
+      Cs-Fail 'install' 'SERVICE_START_FAILED' "$Svc did not reach Running: $startErr" $StartFix
+    }
+    Cs-Say "service $Svc is Running -- holding 35 s past the SCM start window (a 1053 kill shows up here)"
+    Start-Sleep -Seconds 35
+    $now = Get-Service -Name $Svc -ErrorAction SilentlyContinue
+    if (-not $now -or "$($now.Status)" -ne 'Running') {
+      Cs-Fail 'install' 'SERVICE_START_FAILED' "$Svc was Running but is '$($now.Status)' 35 s later: it is crashing or being stopped" $StartFix
+    }
+  } else {
+    $InstallDir = "$env:LOCALAPPDATA\CortexSim"
+    $Bin = "$InstallDir\cortexsim-agent.exe"
+    $LogOut = "$InstallDir\cortexsim-agent.log"
+    $LogErr = "$InstallDir\cortexsim-agent.err.log"
+    if (-not $env:LOCALAPPDATA) {
+      Cs-Fail 'install' 'BIN_INSTALL_FAILED' 'LOCALAPPDATA is not set for this user' 'run from a normal interactive user session, or elevate and install the service instead'
+    }
+    Cs-StopProcesses $Bin
+    $cpErr = ''
+    try {
+      New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+      Copy-Item -LiteralPath $Src -Destination $Bin -Force -ErrorAction Stop
+    } catch { $cpErr = "$($_.Exception.Message)" }
+    if ($cpErr -match 'virus|unwanted software') {
+      Cs-Fail 'install' 'BINARY_QUARANTINED' "writing $Bin was blocked: $cpErr" 'check Cortex XDR/Defender alerts for cortexsim-agent.exe; add a lab exclusion or allow-list the sha256'
+    }
+    if ($cpErr) { Cs-Fail 'install' 'BIN_INSTALL_FAILED' "could not write $Bin : $cpErr" 'check free space and permissions on LOCALAPPDATA' }
+    $Installed = Cs-AssertPresent $Bin 'install'
+    if ($Installed -ne $Actual) {
+      Cs-Fail 'install' 'BINARY_QUARANTINED' "the installed copy has sha256 $Installed, not the verified $Actual" 'check Cortex XDR/Defender alerts for cortexsim-agent.exe; add a lab exclusion or allow-list the sha256'
+    }
+    Cs-Say "beacon        : $Bin"
+    $proc = $null
+    $spErr = ''
+    $spArgs = @{ FilePath = $Bin; ArgumentList = @('--server', $Server, '--id', $AgentId, '--interval', "$IntervalN");
+                 RedirectStandardOutput = $LogOut; RedirectStandardError = $LogErr; PassThru = $true; ErrorAction = 'Stop' }
+    # -WindowStyle exists only on Windows (pwsh elsewhere rejects the parameter).
+    if ("$([Environment]::OSVersion.Platform)" -eq 'Win32NT') { $spArgs.WindowStyle = 'Hidden' }
+    try {
+      $proc = Start-Process @spArgs
+    } catch { $spErr = "$($_.Exception.Message)" }
+    if ($spErr -or -not $proc) {
+      Cs-Fail 'install' 'PROCESS_START_BLOCKED' "could not start $Bin : $spErr" 'check Cortex XDR/Defender alerts for cortexsim-agent.exe (a blocked launch looks like this), or an AppLocker / WDAC rule on LOCALAPPDATA'
+    }
+    Start-Sleep -Seconds 3
+    if ($proc.HasExited) {
+      Cs-Fail 'install' 'PROCESS_START_BLOCKED' "$Bin stopped at once with code $($proc.ExitCode)" "read $LogErr; endpoint protection killing it on launch looks like this too (check Cortex XDR/Defender alerts for cortexsim-agent.exe)"
+    }
+    Cs-Say "  pid   : $($proc.Id)"
+  }
+
+  # -- stage: verify ----------------------------------------------------------------
+  # An /api/agents row is NOT proof of a live beacon: enrollment itself stamps
+  # last_seen. The proof is last_seen ADVANCING past a baseline sampled after
+  # the SCM window -- the beacon polled SimCore again, on its own.
+  $Cs.Stage = 'verify'
+  $WaitTotal = [Math]::Max(3 * $IntervalN, 6)
+  $Step = [Math]::Min([Math]::Max($IntervalN, 1), 5)
+  Cs-Say ''
+  Cs-Say "verifying '$AgentId' checks in (up to $WaitTotal s)..."
+  $Baseline = Cs-LastSeen
+  $Checked = $false
+  $Waited = 0
+  while ($Waited -lt $WaitTotal) {
+    Start-Sleep -Seconds $Step
+    $Waited += $Step
+    $Seen = Cs-LastSeen
+    if ($Seen -and ((-not $Baseline) -or ($Seen -gt $Baseline))) { $Checked = $true; break }
+  }
+  if (-not $Checked) {
+    if ($Unsupervised) { $Where = "Get-Process -Id $($proc.Id); Get-Content '$LogErr' -Tail 50" }
+    else { $Where = "Get-Service $Svc; Get-Content '$SvcLog' -Tail 50" }
+    Cs-Fail 'verify' 'AGENT_NEVER_CHECKED_IN' "'$AgentId' never polled $Server/api/agents again within $WaitTotal s (last_seen never advanced past '$Baseline')" "the beacon is running but cannot reach SimCore, or a stale process on another --id holds the service. It is the BEACON, not this shell, that must reach $Server -- a service runs as SYSTEM without your proxy settings. Check: $Where"
+  }
+
+  # -- verdict ---------------------------------------------------------------------
+  $Cs.Stage = 'install'
+  Cs-Say ''
+  if ($Unsupervised) {
+    Cs-Report 'install' 'DEGRADED_NO_SUPERVISOR' "per-user process pid $($proc.Id), not a service; checked in after $Waited s"
+    Cs-Say "DEGRADED -- '$AgentId' is live (pid $($proc.Id), confirmed after $Waited s) but UNSUPERVISED: no restart after a crash, and it dies at logoff and at reboot"
+    Cs-Say "  logs     : $LogOut  (stderr: $LogErr)"
+    Cs-Say '  service  : re-run from an elevated Windows PowerShell to install CortexSimAgent'
+  } else {
+    Cs-Report 'install' 'OK' "service $Svc on windows/$Arch, Running past the SCM window, checked in after $Waited s"
+    Cs-Say "done -- '$AgentId' is live and polling SimCore (service $Svc, confirmed after $Waited s)"
+    Cs-Say "  status   : Get-Service $Svc"
+    Cs-Say "  logs     : $SvcLog"
+  }
+  Cs-Say "  uninstall: iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex"
 } catch {
-  Cs-Fail 'download' 'BINARY_FETCH_FAILED' "$($_.Exception.Message)" `
-    "on the SimCore host build the windows beacon into agent-dist/, then re-run"
+  $msg = "$($_.Exception.Message)"
+  if ($msg -notlike 'CORTEXSIM_FAILED:*') {
+    # Nothing anticipated this. Report it under its own message rather than
+    # dressing it up as one of the known codes.
+    $Cs.Code = 'UNEXPECTED_ERROR'
+    $Cs.What = "$msg (script line $($_.InvocationInfo.ScriptLineNumber))"
+    $Cs.Fix = 're-run; if it repeats, send this output and GET /api/agents/install/attempts to the CortexSim maintainers'
+    Cs-Report $Cs.Stage $Cs.Code $Cs.What
+  }
+  Write-Host ''
+  Write-Host "[cortexsim] FAILED  stage=$($Cs.Stage)  code=$($Cs.Code)" -ForegroundColor Red
+  Write-Host "[cortexsim]   what : $($Cs.What)"
+  if ($Cs.Fix) { Write-Host "[cortexsim]   fix  : $($Cs.Fix)" }
+  if ($PSCommandPath) { exit 1 } else { return }
+} finally {
+  if ($Cs.Work -and (Test-Path -LiteralPath $Cs.Work)) {
+    Remove-Item -LiteralPath $Cs.Work -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
-$Expect = (Invoke-RestMethod -Uri "$Server/api/agents/binary/sha256?os=windows&arch=$Arch" -TimeoutSec 30).Trim()
-$Actual = (Get-FileHash -Algorithm SHA256 -Path $Dl).Hash.ToLower()
-if ($Expect -ne $Actual) {
-  Cs-Fail 'verify' 'CHECKSUM_MISMATCH' "expected $Expect, got $Actual" `
-    'do NOT run this binary — re-fetch and look for an intercepting TLS proxy'
 }
-Write-Host "[cortexsim] checksum OK   : $($Actual.Substring(0,16))..."
+""".replace("@@COMMON@@", _WINDOWS_COMMON_FUNCTIONS)
 
-$InstallDir = Join-Path $env:ProgramData 'CortexSim'
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-$Bin = Join-Path $InstallDir 'cortexsim-agent.exe'
-Copy-Item -Force $Dl $Bin
 
-$IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
-           ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$Args = "--server $Server --id $AgentId --interval $Interval"
-if ($IsAdmin) {
-  sc.exe stop CortexSimAgent   | Out-Null
-  sc.exe delete CortexSimAgent | Out-Null
-  sc.exe create CortexSimAgent binPath= "`"$Bin`" $Args" start= auto DisplayName= "CortexSim beacon agent" | Out-Null
-  sc.exe failure CortexSimAgent reset= 0 actions= restart/10000 | Out-Null
-  sc.exe start CortexSimAgent | Out-Null
-  Write-Host "[cortexsim] installed service: CortexSimAgent (auto-start, restart on failure)"
-  Write-Host "[cortexsim]   status: sc.exe query CortexSimAgent"
-} else {
-  Cs-Report 'install' 'DEGRADED_NO_SUPERVISOR' 'not elevated — started as a detached process'
-  Start-Process -FilePath $Bin -ArgumentList $Args -WindowStyle Hidden
-  Write-Host "[cortexsim] NOT elevated — started detached; it will NOT survive a reboot."
-  Write-Host "[cortexsim]   re-run this from an elevated shell to install the service."
+_WINDOWS_UNINSTALLER = r"""# --- CortexSim beacon uninstaller (Windows / PowerShell 5.1+) --------------
+#
+#   From an ELEVATED Windows PowerShell (Run as administrator):
+#   iwr '<server>/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex
+#
+# Idempotent: run it twice, the second run finds nothing. What was FOUND is
+# tracked separately from what was REMOVED:
+#   - nothing found              -> "nothing to remove"
+#   - everything found removed   -> "done"
+#   - anything found but kept    -> FAILED code=UNINSTALL_INCOMPLETE naming each item
+# Same rules as the installer: pure ASCII, the body inside "& { ... }", no bare
+# `exit`, every native exit code checked.
+& {
+Set-StrictMode -Off
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$Svc = 'CortexSimAgent'
+$Found = New-Object System.Collections.ArrayList
+$Removed = New-Object System.Collections.ArrayList
+$Left = New-Object System.Collections.ArrayList
+$Cs = @{ Code = ''; What = ''; Fix = ''; Hint = '' }
+
+@@COMMON@@
+function Cs-Fail([string]$Code, [string]$What, [string]$Fix) {
+  $Cs.Code = $Code; $Cs.What = $What; $Cs.Fix = $Fix
+  throw "CORTEXSIM_FAILED:$Code"
 }
-Cs-Report 'install' 'OK' "windows/$Arch"
-Write-Host "[cortexsim] done — '$AgentId' should appear in the console within $Interval s"
-"""
+function Cs-Found([string]$Item) { [void]$Found.Add($Item) }
+function Cs-Gone([string]$Item) { [void]$Removed.Add($Item); Cs-Say "removed: $Item" }
+function Cs-Left([string]$Item, [string]$Why) { [void]$Left.Add("$Item ($Why)"); Cs-Say "NOT removed: $Item ($Why)" }
+function Cs-RemovePath([string]$Path, [string]$Label) {
+  if (-not $Path) { return }
+  if (-not (Test-Path -LiteralPath $Path)) { return }
+  Cs-Found "$Label $Path"
+  $err = ''
+  try { Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop } catch { $err = "$($_.Exception.Message)" }
+  if (Test-Path -LiteralPath $Path) {
+    if (-not $err) { $err = 'still present after Remove-Item' }
+    Cs-Left "$Label $Path" $err
+  } else {
+    Cs-Gone "$Label $Path"
+  }
+}
+function Cs-DeleteNote {
+  if ($Cs.Hint) { Cs-Say "the agent row stays in SimCore until you delete it: $($Cs.Hint)" }
+  else { Cs-Say 'the agent row stays in SimCore until you delete it: DELETE /api/agents/<agent_id>' }
+}
+
+try {
+  if ($env:OS -ne 'Windows_NT') {
+    Cs-Fail 'UNSUPPORTED_OS' "this is the Windows uninstaller and this host is not Windows (OS='$env:OS')" "on Linux or macOS run:  curl -fsSL '<server>/api/agents/install?uninstall=1' | bash"
+  }
+  $IsAdmin = $false
+  try {
+    $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  } catch { $IsAdmin = $false }
+  $SysDir = "$env:ProgramData\CortexSim"
+  $SvcObj = Get-Service -Name $Svc -ErrorAction SilentlyContinue
+  if (-not $IsAdmin -and ($SvcObj -or (Test-Path -LiteralPath $SysDir))) {
+    Cs-Fail 'NOT_ELEVATED' "the $Svc service or $SysDir is present and this session is not elevated; nothing was removed" 'open Windows PowerShell as Administrator (right-click > Run as administrator) and re-run the one-liner'
+  }
+
+  # Read the registration before deleting it, so the agent row can be named.
+  if ($SvcObj) {
+    try {
+      $img = "$((Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$Svc" -ErrorAction Stop).ImagePath)"
+      $srv = ''; $aid = ''
+      if ($img -match '--server\s+(\S+)') { $srv = $Matches[1] }
+      if ($img -match '--id\s+(\S+)') { $aid = $Matches[1] }
+      if ($srv -and $aid) { $Cs.Hint = "Invoke-RestMethod -Method Delete '$srv/api/agents/$aid'" }
+    } catch { }
+  }
+
+  # 1. The service: 1060 = not installed, 1062 = installed but not running.
+  $o = Cs-Exec 'sc.exe' @('stop', $Svc)
+  $stopCode = $LASTEXITCODE
+  $SvcPresent = [bool]$SvcObj -or ($stopCode -ne 1060)
+  if ($SvcPresent) {
+    Cs-Found "service $Svc"
+    if ($stopCode -ne 0 -and $stopCode -ne 1062 -and $stopCode -ne 1060) { Cs-Say "WARN: sc.exe stop $Svc returned $stopCode : $o" }
+    try { (Get-Service -Name $Svc -ErrorAction Stop).WaitForStatus('Stopped', '00:00:30') } catch { }
+  }
+
+  # 2. Every beacon process: the service's, a per-user one, or a stale one.
+  $procs = @(Get-Process -Name 'cortexsim-agent' -ErrorAction SilentlyContinue)
+  if ($procs.Count -gt 0) {
+    $ids = ($procs | ForEach-Object { $_.Id }) -join ', '
+    Cs-Found "running cortexsim-agent process(es) $ids"
+    foreach ($p in $procs) { try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { } }
+    try { $procs | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue } catch { }
+    $alive = @($procs | Where-Object { $a = $true; try { $a = -not $_.HasExited } catch { $a = $true }; $a })
+    if ($alive.Count -gt 0) {
+      Cs-Left "cortexsim-agent process(es) $(($alive | ForEach-Object { $_.Id }) -join ', ')" 'still running after Stop-Process -Force'
+    } else {
+      Cs-Gone "running cortexsim-agent process(es) $ids"
+    }
+  }
+
+  # 3. The registration. 1072 = already marked for deletion: it lingers until
+  #    services.msc / Event Viewer let go of it, or until a reboot.
+  if ($SvcPresent) {
+    $o = Cs-Exec 'sc.exe' @('delete', $Svc)
+    $delCode = $LASTEXITCODE
+    if ($delCode -eq 0 -or $delCode -eq 1060) {
+      $gone = $false
+      for ($i = 0; $i -lt 15; $i++) {
+        if (-not (Get-Service -Name $Svc -ErrorAction SilentlyContinue)) { $gone = $true; break }
+        Start-Sleep -Seconds 1
+      }
+      if ($gone) { Cs-Gone "service $Svc" }
+      else { Cs-Left "service $Svc" 'marked for deletion; it disappears once services.msc / Event Viewer are closed, or at the next reboot' }
+    } elseif ($delCode -eq 1072) {
+      Cs-Left "service $Svc" 'already marked for deletion (1072): reboot pending, or close services.msc / Event Viewer'
+    } else {
+      Cs-Left "service $Svc" "sc.exe delete returned $delCode : $o"
+    }
+  }
+
+  # 4. Files: the service install (binary + agent.log), a per-user install,
+  #    the beacon's staging caches, and any installer scratch left by a kill.
+  Cs-RemovePath $SysDir 'install directory'
+  if ($env:LOCALAPPDATA) { Cs-RemovePath "$env:LOCALAPPDATA\CortexSim" 'per-user install' }
+  Cs-RemovePath (Join-Path ([IO.Path]::GetTempPath()) 'cortexsim-cache') 'staging cache'
+  if ($env:SystemRoot) {
+    Cs-RemovePath "$env:SystemRoot\Temp\cortexsim-cache" 'staging cache'
+    Cs-RemovePath "$env:SystemRoot\SystemTemp\cortexsim-cache" 'staging cache'
+  }
+  foreach ($d in @(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'cortexsim-*' -ErrorAction SilentlyContinue)) {
+    Cs-RemovePath $d.FullName 'installer scratch'
+  }
+
+  # -- verdict ---------------------------------------------------------------------
+  Cs-Say ''
+  if ($Left.Count -gt 0) {
+    Cs-Fail 'UNINSTALL_INCOMPLETE' ("found $($Found.Count) item(s), removed $($Removed.Count); still present: " + ($Left -join '; ')) 're-run from an elevated Windows PowerShell; for a service marked for deletion close services.msc / Event Viewer or reboot, then re-run'
+  } elseif ($Found.Count -eq 0) {
+    Cs-Say 'nothing to remove -- no CortexSim beacon found on this host'
+  } else {
+    Cs-Say "done -- removed $($Removed.Count) of $($Found.Count) item(s)"
+  }
+  Cs-DeleteNote
+} catch {
+  $msg = "$($_.Exception.Message)"
+  if ($msg -notlike 'CORTEXSIM_FAILED:*') {
+    $Cs.Code = 'UNEXPECTED_ERROR'
+    $Cs.What = "$msg (script line $($_.InvocationInfo.ScriptLineNumber))"
+    $Cs.Fix = 're-run from an elevated Windows PowerShell; if it repeats, remove the items above by hand'
+  }
+  Write-Host ''
+  Write-Host "[cortexsim] FAILED  stage=uninstall  code=$($Cs.Code)" -ForegroundColor Red
+  Write-Host "[cortexsim]   what : $($Cs.What)"
+  if ($Cs.Fix) { Write-Host "[cortexsim]   fix  : $($Cs.Fix)" }
+  Cs-DeleteNote
+  if ($PSCommandPath) { exit 1 } else { return }
+}
+}
+""".replace("@@COMMON@@", _WINDOWS_COMMON_FUNCTIONS)
 
 # Emitted into the Windows installer when this SimCore has no windows beacon to
 # serve. It fires BEFORE enrollment so a target that cannot run the beacon never
-# creates a phantom agent row.
+# creates a phantom agent row -- unless the operator pre-staged one
+# (CORTEXSIM_BIN), which is exactly the air-gapped case this must not block.
 #
-# The executor now HAS _windows build-tag variants and the dist matrix includes
-# windows/amd64, so this is no longer a statement about the agent — it is a
-# statement about THIS deployment. A SimCore built without the agent-builder
-# stage, or running from a checkout with no agent-dist/, still serves nothing,
-# and the DC needs to know that is a packaging gap rather than a missing feature.
+# The executor HAS _windows build-tag variants and the dist matrix includes
+# windows/amd64, so this is not a statement about the agent -- it is a statement
+# about THIS deployment. A SimCore built without the agent-builder stage, or
+# running from a checkout with no agent-dist/, serves nothing, and the DC needs
+# to know that is a packaging gap rather than a missing feature.
 _WINDOWS_PREFLIGHT_UNAVAILABLE = (
-    "Cs-Fail 'detect' 'WINDOWS_AGENT_UNAVAILABLE' `\n"
-    "  'this SimCore is not serving a windows/amd64 beacon — the image was built "
-    "without the agent-builder stage, or agent-dist/ is missing' `\n"
-    "  'rebuild with make agent-dist (or docker build -f core/Dockerfile), or use PUSH "
-    "mode: generate a bundle from the console and run it on the endpoint'"
+    "if (-not $env:CORTEXSIM_BIN) {\n"
+    "    Cs-Fail 'detect' 'WINDOWS_AGENT_UNAVAILABLE' "
+    "'this SimCore is not serving a windows/amd64 beacon: the image was built without the "
+    "agent-builder stage, or agent-dist/ is missing' "
+    "'rebuild with make agent-dist (or docker build -f core/Dockerfile), or use PUSH mode: "
+    "generate a bundle from the console and run it on the endpoint. Air-gapped: copy the "
+    "beacon over and set $env:CORTEXSIM_BIN'\n"
+    "  }"
 )
 
 
+_PLACEHOLDER = re.compile(r"@@[A-Z_]+@@")
+
+
 def _render(template: str, **subs: str) -> str:
-    """Substitute @@NAME@@ placeholders. Deliberately not str.format — the
-    templates are shell/PowerShell and are full of literal braces."""
+    """Substitute @@NAME@@ placeholders. Deliberately not str.format -- the
+    templates are shell/PowerShell and are full of literal braces.
+
+    Strict both ways: a substitution the template does not contain, or a
+    placeholder left behind, raises. A silently unrendered ``@@TOKEN@@`` is a
+    script that enrols with the literal string "@@TOKEN@@"."""
     out = template
     for key, value in subs.items():
-        out = out.replace(f"@@{key}@@", value)
+        marker = f"@@{key}@@"
+        if marker not in template:
+            raise ValueError(f"template has no {marker} placeholder")
+        if "@@" in value:
+            raise ValueError(f"substitution for {marker} contains '@@'")
+        out = out.replace(marker, value)
+    left = sorted(set(_PLACEHOLDER.findall(out)))
+    if left:
+        raise ValueError(f"unrendered placeholders: {left}")
     return out
 
 
@@ -1105,6 +1881,12 @@ _LOOPBACK_HINT = (
     "from the control plane's routable address: "
     "'<control-plane>/api/agents/install?server=http://<control-plane-ip>:8888'"
 )
+_WINDOWS_LOOPBACK_HINT = (
+    " -- NOTE: SERVER is a loopback address, so on THIS host it means this host. "
+    "If you copied the one-liner from a console open at localhost, re-fetch it "
+    "from the control plane's routable address: "
+    "'<control-plane>/api/agents/install?os=windows&server=http://<control-plane-ip>:8888'"
+)
 
 
 def _loopback_hint(server: str) -> str:
@@ -1112,8 +1894,14 @@ def _loopback_hint(server: str) -> str:
     return _LOOPBACK_HINT if _is_loopback(server) else ""
 
 
+def _ps_single_quoted(value: str) -> str:
+    """Body of a PowerShell single-quoted literal: a quote is written twice."""
+    return value.replace("'", "''")
+
+
 def _posix_installer(server: str, agent_id: str, interval: int,
                      token: Optional[str], mode: str) -> str:
+    _check_baked(server, agent_id, interval, token)
     return _render(
         _POSIX_INSTALLER,
         SERVER=server, AGENT_ID=agent_id, INTERVAL=str(interval),
@@ -1124,11 +1912,26 @@ def _posix_installer(server: str, agent_id: str, interval: int,
 
 def _windows_installer(server: str, agent_id: str, interval: int,
                        token: Optional[str]) -> str:
+    _check_baked(server, agent_id, interval, token)
     preflight = "" if _binary_path("windows", "amd64").is_file() else _WINDOWS_PREFLIGHT_UNAVAILABLE
+    hint = _WINDOWS_LOOPBACK_HINT if _is_loopback(server) else ""
     return _render(
         _WINDOWS_INSTALLER,
         SERVER=server, AGENT_ID=agent_id, INTERVAL=str(interval),
         TOKEN=token or "", PREFLIGHT=preflight,
+        LOOPBACK_HINT=_ps_single_quoted(hint),
+    )
+
+
+def _script_response(body: str, *, windows: bool, uninstall: bool) -> PlainTextResponse:
+    stem = "uninstall-cortexsim-agent" if uninstall else "install-cortexsim-agent"
+    if windows:
+        media, fname = "text/plain; charset=utf-8", f"{stem}.ps1"
+    else:
+        media, fname = "text/x-shellscript; charset=utf-8", f"{stem}.sh"
+    return PlainTextResponse(
+        body, media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
 
 
@@ -1138,64 +1941,78 @@ async def agent_installer(
     os: str = "linux",
     id: str = "jumpbox-01",
     server: Optional[str] = None,
-    interval: int = 10,
+    interval: str = Query(default="10", description="Beacon poll interval, 1-3600 seconds"),
     token: Optional[str] = None,
-    mode: str = "service",
+    mode: Optional[str] = None,
     uninstall: bool = False,
 ):
-    """Generate a ready-to-run beacon installer for the chosen OS.
+    """Generate a ready-to-run beacon installer (or uninstaller) for the chosen OS.
 
-    Linux/macOS → bash  (`curl -fsSL '<server>/api/agents/install?token=<tok>' | bash`)
-    Windows     → PowerShell (.ps1)
+    Linux/macOS -> bash  (`curl -fsSL '<server>/api/agents/install?token=<tok>' | bash`)
+    Windows     -> PowerShell 5.1+ (`iwr '<server>/api/agents/install?os=windows&token=<tok>'
+                   -UseBasicParsing | iex` from an ELEVATED shell)
 
     Recommended flow: mint a token (`POST /api/agents/enroll/tokens`) and pass
-    `?token=`. The script then ENROLLS to obtain a server-assigned agent id — the
+    `?token=`. The script then ENROLLS to obtain a server-assigned agent id -- the
     DC never invents one. Without a token it falls back to the explicit `?id=`
     (legacy self-asserted path).
 
     The script needs **no compiler and no public-internet egress**: it downloads
     the prebuilt beacon from this SimCore (`GET /api/agents/binary`) and verifies
-    its sha256. `?mode=service` (default) installs a supervised systemd/launchd
-    service that survives the SSH session and a reboot; `?mode=foreground` keeps
-    the old babysat behaviour for a throwaway container. `?uninstall=1` returns
-    the removal script instead.
+    its sha256. `?mode=service` (default) installs a supervised service
+    (systemd / launchd / the Windows SCM); `?mode=foreground` keeps the babysat
+    behaviour on Linux/macOS and is refused on Windows (400 `BAD_MODE`), which has
+    no foreground mode. `?uninstall=1` returns the removal script for the OS:
+    bash for Linux/macOS (the default), PowerShell for `os=windows`.
+
+    Every value baked into the script is validated first and refused with a
+    structured 400: `BAD_OS`, `BAD_MODE`, `BAD_AGENT_ID`, `BAD_SERVER` (covers the
+    Host-header-derived default too), `BAD_TOKEN`, `BAD_INTERVAL`.
     """
     os_norm = (os or "linux").strip().lower()
     if os_norm in {"macos", "mac", "osx"}:
         os_norm = "darwin"
+    if os_norm in {"win"}:
+        os_norm = "windows"
     if os_norm not in {"linux", "darwin", "windows"}:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "Unsupported OS", "code": "BAD_OS",
-                    "detail": "os must be 'linux', 'darwin' (macos), or 'windows'"},
-        )
+        raise _bad_request("BAD_OS", "Unsupported OS",
+                           "os must be 'linux', 'darwin' (macos), or 'windows'")
     mode_norm = (mode or "service").strip().lower()
     if mode_norm not in {"service", "foreground"}:
-        raise HTTPException(
-            status_code=400,
-            detail={"error": "Unsupported install mode", "code": "BAD_MODE",
-                    "detail": "mode must be 'service' (supervised) or 'foreground'"},
-        )
+        raise _bad_request("BAD_MODE", "Unsupported install mode",
+                           "mode must be 'service' (supervised) or 'foreground'")
 
     if uninstall:
-        # One removal script covers Linux and macOS; the Windows path is the
-        # documented sc.exe delete, which needs no generated wrapper.
-        return PlainTextResponse(
-            _POSIX_UNINSTALLER, media_type="text/x-shellscript; charset=utf-8",
-            headers={"Content-Disposition": 'attachment; filename="uninstall-cortexsim-agent.sh"'},
-        )
+        if mode_norm == "foreground":
+            raise _bad_request(
+                "BAD_MODE", "mode does not apply to uninstall",
+                "mode selects how to INSTALL; drop it from an ?uninstall=1 request")
+        if os_norm == "windows":
+            return _script_response(_WINDOWS_UNINSTALLER, windows=True, uninstall=True)
+        return _script_response(_POSIX_UNINSTALLER, windows=False, uninstall=True)
 
+    if os_norm == "windows" and mode_norm == "foreground":
+        raise _bad_request(
+            "BAD_MODE", "Windows has no foreground mode",
+            "the Windows installer registers the CortexSimAgent service from an elevated "
+            "shell. For a per-user beacon that dies at logoff and at reboot instead, set "
+            "$env:CORTEXSIM_ALLOW_UNSUPERVISED='1' before running it.")
+
+    interval_n = _parse_interval(interval)
+    problem = _agent_id_problem(id)
+    if problem:
+        raise _bad_request("BAD_AGENT_ID", "Invalid agent id", f"id {problem}")
+    if token:
+        problem = _token_problem(token)
+        if problem:
+            raise _bad_request("BAD_TOKEN", "Invalid enrollment token", problem)
     resolved = _resolve_server(request, server)
+
     if os_norm == "windows":
-        body = _windows_installer(resolved, id, interval, token)
-        media, fname = "text/plain; charset=utf-8", "install-cortexsim-agent.ps1"
-    else:
-        body = _posix_installer(resolved, id, interval, token, mode_norm)
-        media, fname = "text/x-shellscript; charset=utf-8", "install-cortexsim-agent.sh"
-    return PlainTextResponse(
-        body, media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+        return _script_response(_windows_installer(resolved, id, interval_n, token),
+                                windows=True, uninstall=False)
+    return _script_response(_posix_installer(resolved, id, interval_n, token, mode_norm),
+                            windows=False, uninstall=False)
 
 
 # Heartbeat staleness thresholds (seconds against utcnow - last_seen).

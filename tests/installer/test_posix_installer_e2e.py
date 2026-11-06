@@ -282,7 +282,9 @@ def test_pre_staged_binary_needs_no_network_fetch(simcore, sandbox, tmp_path):
 def test_enroll_denial_surfaces_the_servers_own_structured_detail(simcore, sandbox):
     """Regression: the old installer used `curl -f`, which discarded the body and
     replaced the server's ENROLL_DENIED detail with a guess."""
-    script = _fetch(f"{simcore}/api/agents/install?token=cxs_not_a_real_token&mode=foreground")
+    # Well-formed (the installer route refuses a malformed token with BAD_TOKEN
+    # before any script exists) but never minted, so the ENROLL step denies it.
+    script = _fetch(f"{simcore}/api/agents/install?token=cxs_not_a_real_token_but_well_formed&mode=foreground")
     p = _run_installer(script, sandbox)
 
     assert p.returncode == 1
@@ -314,7 +316,7 @@ def test_empty_shelf_fails_with_the_command_that_fixes_it(simcore, sandbox, dist
 
 
 def test_unreachable_server_is_distinguished_from_a_rejected_token(sandbox, simcore):
-    script = _fetch(f"{simcore}/api/agents/install?token=cxs_x&mode=foreground")
+    script = _fetch(f"{simcore}/api/agents/install?token=cxs_unreachable_server_test_token&mode=foreground")
     # Repoint the script at a closed port: same script, different failure mode.
     sandbox["env"]["CORTEXSIM_SERVER"] = f"http://127.0.0.1:{_free_port()}"
     sandbox["env"]["CORTEXSIM_TELEMETRY"] = "0"  # nothing is listening to report to
