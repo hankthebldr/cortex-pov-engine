@@ -1548,7 +1548,21 @@ async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
         logger.info("abort_run idempotent no-op run_id=%s status=%s", run_id, run.status)
         return {"status": run.status, "run_id": run_id, "was_terminal": True}
     await db.commit()
-    await _reload_run(db, run_id)
+    aborted = await _reload_run(db, run_id)
+
+    # OPS-01: a pull run aborted before any beacon collected its task ran
+    # nothing on the target — its rows can never be credited an alert. A
+    # delivered run is left alone: the beacon's own /complete steps[] says
+    # which steps ran before the abort reached them.
+    if aborted is not None and aborted.mode == "pull" and aborted.delivered_at is None:
+        from engine.orchestrator import (  # noqa: PLC0415
+            REASON_ABORTED_BEFORE_DELIVERY,
+            in_process_steps,
+            stamp_not_executed,
+        )
+
+        await stamp_not_executed(db, run_id, REASON_ABORTED_BEFORE_DELIVERY,
+                                 exclude_steps=in_process_steps(aborted))
 
     # Drop any queued task (in-memory + durable) + record the id so the agent's
     # /control poll stops it.

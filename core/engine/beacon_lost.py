@@ -169,6 +169,16 @@ async def terminalise_lost_runs(db: AsyncSession, agent_id: str, now: datetime,
             continue
 
         if severed is None:
+            # Nothing says which step (if any) ran, so no row may be credited
+            # an alert later: the run is failed and its rows leave every
+            # denominator (OPS-01), in the same commit as the flip.
+            from engine.orchestrator import (  # noqa: PLC0415
+                REASON_BEACON_LOST_UNCLASSIFIED,
+                stamp_not_executed,
+            )
+
+            await stamp_not_executed(db, run_id, REASON_BEACON_LOST_UNCLASSIFIED,
+                                     commit=False)
             await db.commit()
             logger.warning("beacon_lost run_id=%s agent=%s could not be classified; failed",
                            run_id, agent_id)

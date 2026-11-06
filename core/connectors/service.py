@@ -176,7 +176,17 @@ async def reconcile_run(
 
     cfg = ConnectorConfig(integration_name=integ.name, config=integ.config or {}, secret=secret)
 
-    exec_times = [r.executed_at for r in results if r.executed_at]
+    candidates, never_delivered = reconcile_candidates(run, results)
+    if never_delivered and not candidates:
+        # Nothing on this run can be credited, so spending a metered tenant
+        # query on it would only buy the chance to credit the wrong alert.
+        summary = efficacy_summary(results, 0, f"{connector_kind}:{integ.name}")
+        summary.update({"pulled": 0, "never_delivered": True, "verdicts": [],
+                        "warnings": [NEVER_DELIVERED_WARNING],
+                        "warning": NEVER_DELIVERED_WARNING})
+        return ReconcileOutcome(summary=summary, newly_matched=0)
+
+    exec_times = [r.executed_at for r in candidates if r.executed_at]
     since = (min(exec_times) if exec_times
              else (run.started_at or datetime.utcnow() - timedelta(hours=1)))
     until = datetime.utcnow() + timedelta(minutes=5)
@@ -199,7 +209,7 @@ async def reconcile_run(
 
     scope_host = host if host is not None else await resolve_run_host(db, run)
     eligible, host_scope = scope_to_host(pull.observations, scope_host)
-    verdicts = reconcile(results, eligible, window_seconds=window_seconds,
+    verdicts = reconcile(candidates, eligible, window_seconds=window_seconds,
                          window_seconds_by_type=window_by_type(),
                          window_end_by_result=await match_window_ends(
                              db, run.run_id, results, window_seconds=window_seconds))
@@ -248,6 +258,11 @@ async def reconcile_run(
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
 
     warnings: list[str] = []
+    if never_delivered:
+        # A composed run whose beacon task was never collected: only its
+        # in-process (EAL) steps were candidates.
+        summary["never_delivered"] = True
+        warnings.append(NEVER_DELIVERED_WARNING)
     if host_scope["host"] is None:
         warnings.append(
             "unscoped: this run has no resolvable target host, so an alert from "
@@ -274,6 +289,42 @@ async def reconcile_run(
         summary["warnings"] = warnings
         summary["warning"] = " ".join(warnings)
     return ReconcileOutcome(summary=summary, newly_matched=newly)
+
+
+NEVER_DELIVERED_WARNING = (
+    "never delivered: this pull run's task was never collected by a beacon, so "
+    "nothing ran on the target. Its rows are not reconcile candidates and no "
+    "alert was credited to them — an alert in this window came from something "
+    "else on the host."
+)
+
+
+def reconcile_candidates(run: Any, results: list) -> tuple[list, bool]:
+    """``(candidates, never_delivered)`` — the rows an alert may be credited to.
+
+    A pull run whose task no beacon ever collected (``delivered_at`` NULL) did
+    not execute on the target, so none of its beacon-step rows is evidence of
+    anything (OPS-01). Its terminating path SHOULD already have stamped them
+    ``not_executed``; this is the defence in depth for any path that did not,
+    and for a run that is simply still queued.
+
+    A composed run's EAL steps executed inside SimCore at launch, so their rows
+    stay candidates. Push runs and delivered pull runs are unaffected.
+
+    A pull run that reads ``complete`` is a candidate even with ``delivered_at``
+    NULL: ``complete`` is written only by a beacon's ``/complete``, the
+    classified beacon-lost path or an in-process dispatch — each proof that it
+    executed — so such a row predates the ``delivered_at`` migration. Excluding
+    it would make every historical run unreconcilable for no honesty gain.
+    """
+    if (getattr(run, "mode", None) != "pull"
+            or getattr(run, "delivered_at", None) is not None
+            or getattr(run, "status", None) == "complete"):
+        return list(results), False
+    from engine.orchestrator import in_process_steps  # noqa: PLC0415
+
+    ran_here = in_process_steps(run)
+    return [r for r in results if r.step_id in ran_here], True
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
@@ -1444,6 +1495,13 @@ async def auto_reconcile_once(
             select(Result).where(Result.run_id == run.run_id)
         )).scalars().all())
         if not any((not r.observed) and r.executed_at for r in results):
+            continue
+        candidates, never_delivered = reconcile_candidates(run, results)
+        if never_delivered and not any(
+                (not r.observed) and r.executed_at for r in candidates):
+            # Counted, not silent: a sweep that skips a queued or orphaned run
+            # must say so rather than read as "nothing matched".
+            _note("never_delivered")
             continue
         skip = _reconcile_eligible(run, max_attempts=max_attempts,
                                    backoff_seconds=backoff_seconds, now=now)

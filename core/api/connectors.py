@@ -138,14 +138,18 @@ async def ingest_observations(
     submitted alert names no host, because then nothing ties it to this run.
     """
     from connectors.matcher import scope_to_host
-    from connectors.service import (apply_verdicts, match_window_ends, resolve_run_host,
-                                    window_by_type)
+    from connectors.service import (NEVER_DELIVERED_WARNING, apply_verdicts,
+                                    match_window_ends, reconcile_candidates,
+                                    resolve_run_host, window_by_type)
 
     run, results = await _load_run_results(db, run_id)
+    # OPS-01 defence in depth: a pull run no beacon ever collected ran nothing,
+    # so none of its beacon-step rows may be credited a pasted alert.
+    candidates, never_delivered = reconcile_candidates(run, results)
     submitted, dropped = ObservedAlert.from_dicts(body.observations, default_source="manual")
     alerts, host_scope = scope_to_host(submitted, await resolve_run_host(db, run))
     unscoped = host_scope["host"] is None or host_scope["without_host"] > 0
-    verdicts = reconcile(results, alerts, window_seconds=body.window_seconds,
+    verdicts = reconcile(candidates, alerts, window_seconds=body.window_seconds,
                          only_unobserved=not body.reevaluate,
                          window_seconds_by_type=window_by_type(),
                          window_end_by_result=await match_window_ends(
@@ -166,6 +170,9 @@ async def ingest_observations(
     summary["ingested"] = len(submitted)
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
     warnings: list[str] = []
+    if never_delivered:
+        summary["never_delivered"] = True
+        warnings.append(NEVER_DELIVERED_WARNING)
     if dropped:
         # These alerts were submitted and NOT counted. Silently shortening the
         # list would understate coverage with no explanation; the old code was
