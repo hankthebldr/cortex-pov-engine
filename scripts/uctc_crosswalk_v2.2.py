@@ -640,16 +640,21 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
 
 
 # ---------------------------------------------------------------------------
-# PLT assertion pack — assertions/plt/*.yml -> index binding.
+# Assertion evidence (POS/PLT/AUT) — reported per class, on its own line, and
+# deliberately NOT merged into the `index TCs evidenced` line (which walks
+# Scenario rows only). An assertion is AUTHORED evidence, not PROVEN evidence: a
+# row only becomes proven when an AssertionRun against a real tenant returns a
+# pass or a fail, so proven is held at zero until a tenant says otherwise.
 #
-# Deliberately a SEPARATE dict from CROSSWALK, and deliberately NOT merged into
-# the `index TCs evidenced` line the report prints. Those two decisions are the
-# same decision: an assertion is AUTHORED evidence, not PROVEN evidence, and a
-# PLT row only becomes proven when an AssertionRun against a real tenant returns
-# a pass or a fail. Folding these four into the scenario number would move
-# 84/266 to 88/266 on the strength of four YAML files, which is the exact
-# inflation the pack exists to avoid. They are reported on their own line, with
-# proven held at zero until a tenant says otherwise.
+# The per-class COUNTS come from the real AssertionCatalog over
+# assertions/{pos,plt,aut}/ (load_assertion_bindings below), never from the
+# dicts in this section. These dicts once were the count: they described 4 PLT
+# and 2 POS artifacts while the loader loaded 7 and 18, and ground-truth.md
+# printed both numbers on one page (DOCS-17). What remains here is narrative
+# for the artifacts someone has written it for — headline mechanism and what
+# the artifact deliberately does NOT prove — and the report refuses to run if
+# an entry names an artifact the loader does not load, or binds it to
+# different test cases than the YAML does.
 #
 # assertion_id -> (tc_refs, headline mechanism, what it deliberately does NOT prove)
 # ---------------------------------------------------------------------------
@@ -681,10 +686,10 @@ PLT_ASSERTION_CROSSWALK: dict[str, tuple[list[str], str, str]] = {
 
 # PLT index rows examined and NOT bound, with the reason. Kept in the crosswalk
 # because an honest gap list is the other half of an honest coverage number.
+# The report refuses to run if a row listed here is bound by a loaded artifact:
+# TC-NDR-05 sat here as "cannot be exercised" for two months after
+# PLT-NDR-005 bound it (d65cbe8, 2026-09-03).
 PLT_NOT_BOUND: dict[str, str] = {
-    "TC-NDR-05": "needs a genuinely THIRD-PARTY network sensor shape; every network "
-                 "emitter in the engine is first-party PAN-OS, so the test case's "
-                 "distinctive claim cannot be exercised.",
     "TC-XTI-06": "needs 12 months of resident data. A POV tenant three weeks old "
                  "fails for its age, which is indistinguishable from a retention "
                  "misconfiguration through XQL alone — false red.",
@@ -701,23 +706,23 @@ PLT_NOT_BOUND: dict[str, str] = {
                   "(two IdP datasets normalize) is already PLT-ITDR-006's claim, and "
                   "binding both would double-count one piece of work.",
     "TC-TH-04": "Marketplace content-pack provenance is not exposed by any read API.",
-    "TC-ERV-01+": "the remaining 35 PLT rows need a Cortex Cloud REST client the "
+    "TC-ERV-01+": "the remaining PLT rows (neither bound by a loaded artifact nor "
+                  "named above) need a Cortex Cloud REST client the "
                   "engine does not have, billing/consumption data no API exposes, or "
                   "an autonomous agent action that belongs to the AUT class.",
 }
 
 
 # ---------------------------------------------------------------------------
-# POS assertion pack — assertions/pos/k8s/*.yml -> index binding.
+# POS narrative — the K8s pack (assertions/pos/k8s/*.yml) only. The POS COUNT
+# is every POS artifact the loader loads, not these two.
 #
-# Same discipline as PLT_ASSERTION_CROSSWALK, and the same two decisions: an
-# assertion is AUTHORED evidence, not PROVEN, and it is reported on its own line
-# and NEVER folded into the `index TCs evidenced` number (which walks Scenario
-# rows only). Only TC-KSPM-03 is a NET-NEW binding — TC-CSPM-02 is already
-# authored by POS-CSPM-001 against the AWS cspm module, so POS-CSPM-004 adds
-# breadth (a Kubernetes resource class) and moves the coverage number by ZERO.
-# Reporting that split is the whole point; the K8s pass has repeatedly chosen an
-# honest smaller number over an inflated one.
+# Same discipline as PLT_ASSERTION_CROSSWALK: AUTHORED, not PROVEN, reported on
+# its own line and NEVER folded into the `index TCs evidenced` number (which
+# walks Scenario rows only). TC-CSPM-02 is authored by POS-CSPM-001 against the
+# AWS cspm module, so POS-CSPM-004 adds breadth (a Kubernetes resource class)
+# and moves the coverage number by ZERO. The report prints that split as
+# net-new vs breadth-not-coverage for every class.
 #
 # assertion_id -> (tc_refs, headline mechanism, what it deliberately does NOT prove)
 # ---------------------------------------------------------------------------
@@ -904,6 +909,85 @@ PROPOSED_TCS: list[dict[str, str]] = [
 # ---------------------------------------------------------------------------
 
 
+#: Validation classes an assertion artifact may carry, in report order.
+ASSERTION_CLASSES = ("PLT", "POS", "AUT")
+
+
+class AssertionBindingError(RuntimeError):
+    """The assertion corpus cannot be counted honestly — raise, never read 0."""
+
+
+def load_assertion_bindings() -> dict[str, dict[str, list[str]]]:
+    """``{class: {assertion_id: tc_refs}}`` from the REAL AssertionCatalog.
+
+    The same loader SimCore boots, under strict refs (the production default),
+    over ``assertions/{pos,plt,aut}/``. This replaced counting the hand tables
+    above. Every failure mode raises: an unimportable loader, a rejected
+    artifact, or a validation class this report does not know. Reading any of
+    those as "zero authored" is the drift this function exists to remove.
+    """
+    os.environ.setdefault("CORTEXSIM_BASE_DIR", REPO)
+    core = os.path.join(REPO, "core")
+    if core not in sys.path:
+        sys.path.insert(0, core)
+    try:
+        from engine.assertions import AssertionCatalog, default_assertions_dir
+    except ImportError as exc:
+        raise AssertionBindingError(
+            f"cannot import the AssertionCatalog ({exc}). The assertion lines are "
+            "counted by the real loader, so this report needs core/requirements.txt: "
+            "run it with the project venv (PYTHONPATH=core .venv/bin/python ...) or "
+            "inside the image (make ground-truth)."
+        ) from exc
+
+    cat = AssertionCatalog()
+    cat.load(default_assertions_dir(REPO), strict=True)
+    if cat.rejected:
+        names = sorted(os.path.relpath(r["source"], REPO) for r in cat.rejected)
+        raise AssertionBindingError(
+            f"{len(names)} assertion artifact(s) rejected by the strict loader, so "
+            f"they are not authored evidence and the counts would understate the "
+            f"tree: {names}"
+        )
+    out: dict[str, dict[str, list[str]]] = {c: {} for c in ASSERTION_CLASSES}
+    for a in cat.all():
+        if a.validation_class not in out:
+            raise AssertionBindingError(
+                f"{a.assertion_id} carries validation_class {a.validation_class!r}, "
+                f"which this report does not count (known: {list(ASSERTION_CLASSES)})"
+            )
+        out[a.validation_class][a.assertion_id] = list(a.tc_refs)
+    return out
+
+
+def check_assertion_narrative(bindings: dict[str, dict[str, list[str]]], tc) -> list[str]:
+    """Problems that make the narrative dicts disagree with the loaded corpus.
+
+    A narrative entry for an artifact that does not load, or that names
+    different test cases than the YAML binds, describes evidence that does not
+    exist. A NOT_BOUND row that a loaded artifact binds tells the reader a gap
+    is open when it was closed.
+    """
+    problems: list[str] = []
+    for cls, table in (("PLT", PLT_ASSERTION_CROSSWALK), ("POS", POS_ASSERTION_CROSSWALK)):
+        for aid, (refs, _, _) in sorted(table.items()):
+            loaded = bindings[cls].get(aid)
+            if loaded is None:
+                problems.append(f"{cls}_ASSERTION_CROSSWALK names {aid}, which the "
+                                f"loader does not load as a {cls} artifact")
+            elif set(loaded) != set(refs):
+                problems.append(f"{cls}_ASSERTION_CROSSWALK binds {aid} to {sorted(refs)} "
+                                f"but the artifact binds {sorted(loaded)}")
+    for cls, table in (("PLT", PLT_NOT_BOUND), ("POS", POS_NOT_BOUND)):
+        bound = {r for refs in bindings[cls].values() for r in refs}
+        for row in sorted(table):
+            if row in tc and row in bound:
+                by = sorted(a for a, refs in bindings[cls].items() if row in refs)
+                problems.append(f"{cls}_NOT_BOUND lists {row} as not bound, but "
+                                f"{by} bind it")
+    return problems
+
+
 def load_index():
     tc = {r["tc_id"]: r for r in csv.DictReader(open(os.path.join(IDX, "tc_index_v2.2.csv")))}
     spec = {r["tc_id"]: r for r in csv.DictReader(open(os.path.join(IDX, "detection_spec_v2.2.csv")))}
@@ -989,6 +1073,12 @@ def main() -> int:
             build_rows, rows_to_csv_text, scoreboard_markdown, write_xlsx,
         )
         evidenced_scen = {r for refs, _, _ in CROSSWALK.values() for r in refs}
+        # KNOWN GAP: the sheet still reads the narrative dicts (6 test cases),
+        # not load_assertion_bindings() like --report does, so it UNDER-reports
+        # assertion-authored rows. Switching it changes the committed
+        # engine_coverage_v2.3.csv + scoreboard.md, which must be regenerated
+        # (`make uctc-sheet`) in the same change or
+        # tests/engine/test_uctc_emit_xlsx.py goes red.
         evidenced_assert = (
             {r for refs, _, _ in PLT_ASSERTION_CROSSWALK.values() for r in refs}
             | {r for refs, _, _ in POS_ASSERTION_CROSSWALK.values() for r in refs}
@@ -1063,57 +1153,49 @@ def main() -> int:
         print("proposed v2.3 TCs:", len(PROPOSED_TCS),
               dict(Counter(p["uc_id"] for p in PROPOSED_TCS).most_common()))
 
-        # Reported on its own line, never folded into the number above. An
-        # assertion existing is AUTHORED, not PROVEN — proven needs an
-        # AssertionRun against a real tenant returning pass or fail.
-        plt_total = sum(1 for v in spec.values() if v["validation_class"] == "PLT")
-        plt_bound = {r for refs, _, _ in PLT_ASSERTION_CROSSWALK.values() for r in refs}
-        bad_plt = sorted(r for r in plt_bound if r not in tc)
-        wrong_class = sorted(
-            r for r in plt_bound
-            if spec.get(r, {}).get("validation_class") not in ("", "PLT")
-        )
-        if bad_plt:
-            print(f"ERROR: PLT assertion crosswalk references non-existent test "
-                  f"cases: {bad_plt}", file=sys.stderr)
+        # Assertion evidence, one line per validation class, never folded into
+        # the number above. Counted from the REAL AssertionCatalog, not the
+        # narrative dicts. An assertion existing is AUTHORED, not PROVEN —
+        # proven needs an AssertionRun against a real tenant returning pass or
+        # fail, and none has run, so PROVEN is printed as 0 on purpose.
+        try:
+            bindings = load_assertion_bindings()
+        except AssertionBindingError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
             return 1
-        if wrong_class:
-            print(f"ERROR: PLT assertion crosswalk binds non-PLT rows: "
-                  f"{wrong_class}", file=sys.stderr)
+        narrative_problems = check_assertion_narrative(bindings, tc)
+        if narrative_problems:
+            for p in narrative_problems:
+                print(f"ERROR: {p}", file=sys.stderr)
             return 1
-        print(f"PLT assertions: {len(PLT_ASSERTION_CROSSWALK)} artifact(s) "
-              f"-> {len(plt_bound)}/{plt_total} PLT rows AUTHORED "
-              f"| 0/{plt_total} PROVEN (no tenant run recorded) "
-              f"| {len(PLT_NOT_BOUND)} documented non-bindings")
-
-        # The K8s POS pack, on its own line for the same reason. Only NET-NEW POS
-        # rows (ones no Scenario and no other assertion already reached) are the
-        # honest coverage delta; a row already authored elsewhere is breadth, not
-        # coverage, and is called out as such.
-        pos_total = sum(1 for v in spec.values() if v["validation_class"] == "POS")
-        pos_bound = {r for refs, _, _ in POS_ASSERTION_CROSSWALK.values() for r in refs}
-        bad_pos = sorted(r for r in pos_bound if r not in tc)
-        wrong_pos = sorted(
-            r for r in pos_bound
-            if spec.get(r, {}).get("validation_class") not in ("", "POS")
-        )
-        if bad_pos:
-            print(f"ERROR: POS assertion crosswalk references non-existent test "
-                  f"cases: {bad_pos}", file=sys.stderr)
-            return 1
-        if wrong_pos:
-            print(f"ERROR: POS assertion crosswalk binds non-POS rows: "
-                  f"{wrong_pos}", file=sys.stderr)
-            return 1
-        # A POS row is net-new only if no scenario in CROSSWALK already evidences
-        # it; TC-CSPM-02 is evidenced by SIM-CSPM-001, so it is breadth here.
-        pos_net_new = sorted(pos_bound - evidenced)
-        pos_breadth = sorted(pos_bound & evidenced)
-        print(f"POS assertions (K8s pack): {len(POS_ASSERTION_CROSSWALK)} artifact(s) "
-              f"-> {len(pos_bound)}/{pos_total} POS rows AUTHORED "
-              f"| 0/{pos_total} PROVEN (no tenant run recorded) "
-              f"| net-new {pos_net_new} | breadth-not-coverage {pos_breadth} "
-              f"| {len(POS_NOT_BOUND)} documented non-bindings")
+        not_bound = {"PLT": PLT_NOT_BOUND, "POS": POS_NOT_BOUND, "AUT": {}}
+        for cls in ASSERTION_CLASSES:
+            artifacts = bindings[cls]
+            cls_total = sum(1 for v in spec.values() if v["validation_class"] == cls)
+            cls_bound = {r for refs in artifacts.values() for r in refs}
+            bad_refs = sorted(r for r in cls_bound if r not in tc)
+            wrong_class = sorted(
+                r for r in cls_bound
+                if spec.get(r, {}).get("validation_class") not in ("", cls)
+            )
+            if bad_refs:
+                print(f"ERROR: {cls} assertions reference non-existent test "
+                      f"cases: {bad_refs}", file=sys.stderr)
+                return 1
+            if wrong_class:
+                print(f"ERROR: {cls} assertions bind non-{cls} rows: "
+                      f"{wrong_class}", file=sys.stderr)
+                return 1
+            # A row is net-new only if no scenario in CROSSWALK already
+            # evidences it; one a scenario reached (e.g. TC-CSPM-02 via
+            # SIM-CSPM-001) is breadth, and moves the coverage number by zero.
+            net_new = sorted(cls_bound - evidenced)
+            breadth = sorted(cls_bound & evidenced)
+            print(f"{cls} assertions: {len(artifacts)} artifact(s) "
+                  f"-> {len(cls_bound)}/{cls_total} {cls} rows AUTHORED "
+                  f"| 0/{cls_total} PROVEN (no tenant run recorded) "
+                  f"| net-new {net_new} | breadth-not-coverage {breadth} "
+                  f"| {len(not_bound[cls])} documented non-bindings")
 
     if args.emit:
         cw = os.path.join(OUT, "crosswalk-v2.2.csv")
