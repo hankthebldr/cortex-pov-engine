@@ -134,7 +134,7 @@ steps:
     command: "echo cortexsim-koi-007-cr-koi-0007-stitched-mcp-sampling-abuse-incident"
     identity: svc-backup
     mitre_technique: "T1656"
-    platforms: ["linux", "macos", "windows"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-02
       pivot: shared_entity

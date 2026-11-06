@@ -172,7 +172,7 @@ steps:
     mitre_technique: "T1566.002"
     # ROOT of the malicious chain — no causality block; links from the
     # outlook.exe CGO. Mail delivery/click is OS-agnostic at the identity level.
-    platforms: ["windows", "linux", "macos"]
+    platforms: ["linux", "macos"]
     expected_detections:
       - plane: EMAIL
         type: XQL
@@ -252,7 +252,7 @@ steps:
       echo cortexsim-mp021-cloud-admin-assumption-emitted
     identity: root
     mitre_technique: "T1078.004"
-    platforms: ["windows", "linux"]
+    platforms: ["linux"]
     causality:
       parent_step: step-03
       pivot: shared_entity
@@ -283,7 +283,7 @@ steps:
     # merges it into the malicious incident has failed grouping precision, and
     # a platform that blanket-suppresses automation noise has missed it. Both
     # failures are separately visible in the confusion matrix.
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: temporal
@@ -312,7 +312,7 @@ steps:
       echo "cortexsim-mp021-benign-floor-emitted classes=4 target=$SIZE"
     identity: svc-backup
     mitre_technique: "T1078"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: temporal
@@ -342,7 +342,7 @@ steps:
       echo cortexsim-mp021-terminal-measurement-complete
     identity: root
     mitre_technique: "T1078.004"
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     causality:
       parent_step: step-04
       pivot: shared_entity

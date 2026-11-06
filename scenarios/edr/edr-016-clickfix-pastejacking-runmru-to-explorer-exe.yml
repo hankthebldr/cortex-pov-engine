@@ -106,7 +106,10 @@ steps:
     mitre_technique: "T1204.004"
     # Root step — links from the explorer.exe CGO. RunMRU is a Windows-only
     # Run-dialog artifact, so no cross-OS variant applies here.
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -187,7 +190,10 @@ steps:
     causality:
       parent_step: step-03
       pivot: endpoint_network_stitch
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     expected_detections:
       - plane: ANALYTICS
         type: Correlation

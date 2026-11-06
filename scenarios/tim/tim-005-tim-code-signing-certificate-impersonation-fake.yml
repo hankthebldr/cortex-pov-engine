@@ -101,7 +101,10 @@ steps:
     command: "echo '[SAFE-MODE] cortexsim-tim-005 rogue-signer execution marker: MicrosoftUpdate.exe signed by rogue cert CN=justwatch.com issuer=WR3 (CA:TRUE, chain untrusted)' || true"
     identity: svc-backup
     mitre_technique: "T1036.001"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -122,7 +125,7 @@ steps:
     command: "echo '[SAFE-MODE] cortexsim-tim-005 outbound C2 session marker to 136.243.203.109:443 (Vidar exfil) — destination NOT contacted; telemetry-only' || true"
     identity: svc-backup
     mitre_technique: "T1071.001"
-    platforms: ["windows", "linux"]
+    platforms: ["linux"]
     causality:
       parent_step: step-02
       pivot: endpoint_network_stitch
@@ -138,7 +141,10 @@ steps:
     command: "echo '[SAFE-MODE] cortexsim-tim-005 correlation CR-TIM-0005 stitch marker: rogue-signer execution match + Vidar C2 session -> one malvertising-loader incident' || true"
     identity: svc-backup
     mitre_technique: "T1071.001"
-    platforms: ["windows"]
+    # TODO(windows-variant, CONT-06): the TTP is Windows-native, but this
+    # step's command is a POSIX SAFE-MODE stand-in, so it is labelled with
+    # the OS it actually runs on until a real platform_variants.windows exists.
+    platforms: ["linux"]
     causality:
       parent_step: step-03
       pivot: temporal

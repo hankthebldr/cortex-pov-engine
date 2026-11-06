@@ -1140,6 +1140,9 @@ async def load_scenarios(scenarios_dir: str, db: AsyncSession) -> list[str]:
         # Wave-2 schema hygiene (warn, never reject): detection_types drift
         # (S-09), too-thin step lists (S-01), and detection-less steps (S-02).
         _warn_scenario_hygiene(schema, filepath)
+        # S-28/S-29/S-30 — declared platforms that no command can honour, and
+        # doubled backslashes in windows variants. Warn, never reject.
+        _warn_platform_labels(schema, filepath)
 
         # UC/TC foreign-key validation against the master index snapshot
         # (S-10..S-14). Warns by default; rejects only under
@@ -1487,6 +1490,110 @@ def _warn_scenario_hygiene(schema: "ScenarioSchema", filepath: str) -> None:
             schema.scenario_id, sorted(declared), sorted(emitted_types),
             missing_from_declared, declared_but_unemitted, filepath,
         )
+
+
+# ---------------------------------------------------------------------------
+# Platform labels (S-28 / S-29 / S-30) — WARNINGS, never errors
+# ---------------------------------------------------------------------------
+
+#: Platforms a POSIX bundle / POSIX beacon serves.
+_POSIX_PLATFORMS = frozenset({"linux", "macos", "container", "k8s"})
+#: A line that is a regex operand legitimately escapes a backslash as ``\\``.
+_REGEX_OPERAND_RE = re.compile(r"-(?:Pattern|c?i?match|notmatch|replace|split)\b|\[regex\]", re.IGNORECASE)
+_BACKSLASH_RUN_RE = re.compile(r"\\{2,}")
+_UNC_PREV = frozenset(" \t\"'(=,")
+
+
+def _has_non_unc_double_backslash(text: str) -> bool:
+    """True when ``text`` carries ``\\\\`` anywhere but a UNC prefix.
+
+    A UNC prefix is exactly two backslashes at the start of a path token
+    (start of line, after whitespace, a quote, ``(``, ``=`` or ``,``) followed by
+    a host or a variable (``\\\\$h\\C$``, ``\\\\srv\\share``). Lines that are regex
+    operands are skipped: there ``\\\\`` is an escaped backslash, not a path.
+    """
+    for line in text.splitlines():
+        if _REGEX_OPERAND_RE.search(line):
+            continue
+        for m in _BACKSLASH_RUN_RE.finditer(line):
+            prev = line[m.start() - 1] if m.start() else ""
+            nxt = line[m.end()] if m.end() < len(line) else ""
+            unc = (
+                len(m.group()) == 2
+                and (prev == "" or prev in _UNC_PREV)
+                and (nxt.isalnum() or nxt in "$_.{-")
+            )
+            if not unc:
+                return True
+    return False
+
+
+def platform_label_findings(schema: "ScenarioSchema") -> list[str]:
+    """Steps whose declared ``platforms`` no command can honour. Pure; never raises.
+
+    ``S-28`` — the step declares ``windows`` but neither its ``command`` nor
+               its ``platform_variants.windows`` resolves through
+               ``push_generator.resolve_target(..., "windows")``.
+    ``S-29`` — the mirror: the step declares a POSIX platform (linux, macos,
+               container, k8s) but resolves for no POSIX target.
+    ``S-30`` — a windows variant carries a doubled backslash outside a UNC
+               prefix. Single-quoted YAML keeps ``\\\\`` verbatim, so
+               ``'C:\\\\Windows\\\\Temp'`` reaches reg.exe / schtasks.exe with
+               doubled separators (SIM-EDR-003, PUSH-15).
+
+    The label is what the console, the per-OS coverage counts and the DC read.
+    A label that nothing on that OS can execute is a coverage claim with no
+    command behind it. These are WARNINGS by design: boot must never fail on
+    them, and they are not gated by ``CORTEXSIM_STRICT_REFS``.
+
+    The resolver is the one the push generator uses, applied to the step alone,
+    so the lint and the bundle can never disagree about what "resolves" means.
+    ``eal``-channel steps are skipped: SimCore, not the endpoint, executes them.
+    """
+    from engine.push_generator import resolve_target  # noqa: PLC0415  (lazy: keep schema-only imports cheap)
+
+    out: list[str] = []
+    sid = schema.scenario_id
+    for step in schema.steps:
+        if effective_channel(step) != "agent":
+            continue
+        plats = {str(p).strip().lower() for p in (step.platforms or [])}
+        if not plats:
+            continue
+        one = {"steps": [step.model_dump()]}
+        if "windows" in plats and not resolve_target(one, "windows").emittable:
+            out.append(
+                f"S-28 scenario={sid} step={step.id} declares 'windows' but neither its "
+                f"command nor platform_variants.windows resolves for a Windows target — "
+                f"relabel it to the OS its command runs on, or author a windows variant"
+            )
+        if plats & _POSIX_PLATFORMS and not resolve_target(one, "posix").emittable:
+            out.append(
+                f"S-29 scenario={sid} step={step.id} declares "
+                f"{sorted(plats & _POSIX_PLATFORMS)} but neither its command nor a "
+                f"linux/macos variant resolves for a POSIX target — relabel it, or "
+                f"author a linux variant"
+            )
+        win = (step.platform_variants or {}).get("windows")
+        if isinstance(win, str) and _has_non_unc_double_backslash(win):
+            out.append(
+                f"S-30 scenario={sid} step={step.id} platform_variants.windows carries a "
+                f"doubled backslash outside a UNC prefix — single-quoted YAML keeps '\\\\' "
+                f"verbatim; write single backslashes"
+            )
+    return out
+
+
+def _warn_platform_labels(schema: "ScenarioSchema", filepath: str) -> None:
+    """Log every :func:`platform_label_findings` entry. Never raises."""
+    try:
+        findings = platform_label_findings(schema)
+    except Exception as exc:  # noqa: BLE001 — a lint must never brick boot
+        logger.warning("S-28 lint could not run for scenario=%s: %s (from %s)",
+                       schema.scenario_id, exc, filepath)
+        return
+    for finding in findings:
+        logger.warning("%s (from %s)", finding, filepath)
 
 
 def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
