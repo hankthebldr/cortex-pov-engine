@@ -49,6 +49,54 @@ REASON_WINDOWS_UNAVAILABLE = "WINDOWS_COMMAND_UNAVAILABLE"
 #: Windows PowerShell 5.1, the cmd ``&`` is a parse error and nothing runs.
 REASON_MIXED_DIALECT = "MIXED_DIALECT"
 
+# ---------------------------------------------------------------------------
+# Interpolation safety — every scenario-sourced value that lands in a bundle
+# ---------------------------------------------------------------------------
+#
+# Scenario YAML (and, through the composer, a draft a DC typed) is the input.
+# A value that reaches a ``#`` comment line must not be able to END that line:
+# a CR/LF in a name, step name or detection description would otherwise start a
+# new, uncommented line — a top-level command in the artifact a DC runs on a
+# customer host, invisible to ``bash -n`` and to the PowerShell parser.
+
+#: C0/C1 controls except TAB, plus the Unicode line/paragraph separators. TAB is
+#: kept because it cannot end a comment in either shell and corpus commands use it.
+_COMMENT_UNSAFE_RE = re.compile("[\x00-\x08\x0a-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def _comment_safe(value: Any) -> str:
+    """Render ``value`` for interpolation into a single bash/PowerShell comment line.
+
+    CR, LF and every other control character become a space, so the value can
+    never terminate the ``#`` line it is placed on. ``str()`` semantics are
+    kept (``None`` renders ``None``, as the f-strings this replaced did) so the
+    output for every clean value is byte-identical.
+    """
+    return _COMMENT_UNSAFE_RE.sub(" ", str(value))
+
+
+def _expected_comment(prefix: str, det: dict[str, Any]) -> str:
+    """One ``expected_detections`` entry as a comment line (bash and PowerShell)."""
+    return (
+        f"{prefix}[{_comment_safe(det.get('plane', '?'))}] "
+        f"{_comment_safe(det.get('type', '?'))}: {_comment_safe(det.get('description', ''))}"
+    )
+
+
+def _safe_token(value: Any, fallback: str = "UNKNOWN") -> str:
+    """A value used in CODE position (a file name, a log message, a variable):
+    restricted to ``[A-Za-z0-9_.-]``. Corpus scenario ids already are."""
+    out = re.sub(r"[^A-Za-z0-9_.-]", "_", str(value))
+    return out or fallback
+
+
+def _bash_dq(value: Any) -> str:
+    """Escape ``value`` for the inside of a bash DOUBLE-quoted string."""
+    s = _comment_safe(value)
+    for ch in ("\\", '"', "$", "`"):
+        s = s.replace(ch, "\\" + ch)
+    return s
+
 
 _HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 _COMMENT_RE = re.compile(r"(?m)(?:(?<=^)|(?<=\s))#[^\n]*")
@@ -652,14 +700,14 @@ set -euo pipefail
 # Logging setup
 # ---------------------------------------------------------------------------
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
-LOG_FILE="/tmp/cortexsim-{scenario_id}-${{TIMESTAMP}}.log"
+LOG_FILE="/tmp/cortexsim-{safe_scenario_id}-${{TIMESTAMP}}.log"
 exec > >(tee -a "${{LOG_FILE}}") 2>&1
 
 log() {{
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$1] $2"
 }}
 
-log INFO "CortexSim bundle starting — scenario={scenario_id}"
+log INFO "CortexSim bundle starting — scenario={safe_scenario_id}"
 log INFO "Log file: ${{LOG_FILE}}"
 """
 
@@ -811,28 +859,31 @@ def generate_bash(scenario: dict[str, Any]) -> str:
     expected_lines: list[str] = []
     for step in steps:
         for det in step.get("expected_detections", []):
-            expected_lines.append(
-                f"#   [{det.get('plane','?')}] {det.get('type','?')}: {det.get('description','')}"
-            )
+            expected_lines.append(_expected_comment("#   ", det))
     expected_detections_comment = "\n".join(expected_lines) + "\n" if expected_lines else "#   (none specified)\n"
 
     # --- Header ---
+    # Every comment-line value is _comment_safe (SEC-13): a newline in a name or
+    # description must not start an uncommented line. The scenario id is also
+    # used in CODE position (log path, log messages) so it goes through
+    # _safe_token there — byte-identical for every corpus id.
     script = _BASH_HEADER_TMPL.format(
-        scenario_id=scenario_id,
-        name=name,
-        version=version,
-        plane=plane,
-        uc_ref=uc_ref,
-        uc_name=uc_name,
-        tc_ref=tc_ref,
-        tc_name=tc_name,
-        mitre_tactic=mitre_tactic,
-        mitre_tactic_name=mitre_tactic_name,
-        mitre_technique=mitre_technique,
-        mitre_technique_name=mitre_technique_name,
+        scenario_id=_comment_safe(scenario_id),
+        safe_scenario_id=_safe_token(scenario_id),
+        name=_comment_safe(name),
+        version=_comment_safe(version),
+        plane=_comment_safe(plane),
+        uc_ref=_comment_safe(uc_ref),
+        uc_name=_comment_safe(uc_name),
+        tc_ref=_comment_safe(tc_ref),
+        tc_name=_comment_safe(tc_name),
+        mitre_tactic=_comment_safe(mitre_tactic),
+        mitre_tactic_name=_comment_safe(mitre_tactic_name),
+        mitre_technique=_comment_safe(mitre_technique),
+        mitre_technique_name=_comment_safe(mitre_technique_name),
         expected_detections_comment=expected_detections_comment,
-        threat_report=threat_report,
-        author=author,
+        threat_report=_comment_safe(threat_report),
+        author=_comment_safe(author),
     )
 
     # --- Identity harness ---
@@ -850,7 +901,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         if tool_name and tool.get("type") == "binary" and not tool.get("install_inline", False):
             deps_seen.add(tool_name)
     for dep in sorted(deps_seen):
-        script += f'check_dep "{dep}"\n'
+        script += f'check_dep "{_bash_dq(dep)}"\n'
     script += "\n"
 
     # --- Inline tool downloads (install_inline tools) ---
@@ -862,8 +913,11 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         for tool in inline_tools:
             tname = tool.get("name", "tool")
             tsource = tool.get("source", "")
-            script += f'log INFO "Downloading inline tool: {tname}"\n'
-            script += f'curl -sSLo "/tmp/{tname}" "{tsource}" || log WARN "Failed to download {tname}"\n'
+            script += f'log INFO "Downloading inline tool: {_bash_dq(tname)}"\n'
+            script += (
+                f'curl -sSLo "/tmp/{_bash_dq(tname)}" "{_bash_dq(tsource)}" '
+                f'|| log WARN "Failed to download {_bash_dq(tname)}"\n'
+            )
         script += "\n"
 
     # --- Tool-adapter installs ---
@@ -880,7 +934,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
             continue
         ad = adapter_catalog.find(ref)
         if ad is None:
-            adapter_lines.append(f'log WARN "Adapter {ref} not in catalog — install skipped"')
+            adapter_lines.append(f'log WARN "Adapter {_bash_dq(ref)} not in catalog — install skipped"')
             continue
         if ad.safety_class == "c2-framework":
             adapter_lines.append(
@@ -920,7 +974,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
     cleanup_cmds = cleanup_data.get("commands", [])
     cleanup_lines = "\n".join(f'    {cmd}' for cmd in cleanup_cmds) if cleanup_cmds else "    true  # no cleanup commands defined"
     script += _CLEANUP_TMPL.format(
-        scenario_id=scenario_id,
+        scenario_id=_safe_token(scenario_id),
         cleanup_commands=cleanup_lines,
     )
     script += "\n"
@@ -962,11 +1016,11 @@ def generate_bash(scenario: dict[str, Any]) -> str:
             identity = step.get("identity", "direct")
             command = step.get("command", "true")
 
-        script += f"# --- {step_id}: {step_name}\n"
+        script += f"# --- {_comment_safe(step_id)}: {_comment_safe(step_name)}\n"
         if mitre_tech:
-            script += f"# MITRE: {mitre_tech}\n"
+            script += f"# MITRE: {_comment_safe(mitre_tech)}\n"
         for det in expected:
-            script += f"# Expected: [{det.get('plane','?')}] {det.get('type','?')}: {det.get('description','')}\n"
+            script += _expected_comment("# Expected: ", det) + "\n"
         # Escape EVERY value embedded in the run_as call, not just the command.
         # identity and step_id are single-quoted positional args too, and a quote
         # in either breaks out and injects a top-level command into the bundle a
@@ -988,7 +1042,7 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         script += f"run_as '{escaped_identity}' '{escaped_cmd}' '{escaped_step_id}' || true\n\n"
 
     # --- Footer ---
-    script += _FOOTER.format(scenario_id=scenario_id)
+    script += _FOOTER.format(scenario_id=_safe_token(scenario_id))
 
     logger.info("Generated bash bundle for scenario=%s (%d steps)", scenario_id, len(steps))
     return script

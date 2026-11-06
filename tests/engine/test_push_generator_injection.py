@@ -17,6 +17,9 @@ import os
 import subprocess
 import tempfile
 
+import pytest
+
+from engine import push_generator as pg
 from engine.push_generator import generate_bash, generate_powershell
 
 
@@ -85,3 +88,68 @@ def test_powershell_step_id_is_escaped_in_the_invoke_call():
     )
     # The escaped form (quote doubled) must be present instead.
     assert "step-01''; Remove-Item x #" in script
+
+
+# ─── SEC-13: comment-interpolated fields stay on their comment line ─────────
+#
+# Every value interpolated into a `#` line — scenario name, step name,
+# detection description, UC/TC names, MITRE names — must not be able to END
+# that line. A CR/LF in a composer draft field would otherwise start an
+# uncommented line: a top-level command in the artifact a DC runs.
+
+_HOSTILE_BREAKS = ["\n", "\r\n", "\r", "\u2028", "\x0b", "\x85"]
+
+
+def _hostile(break_seq: str, cmd: str) -> dict:
+    """A draft whose every comment-interpolated field tries to start a new line."""
+    inj = f"{break_seq}{cmd}"
+    step = {
+        "id": "step-01", "name": "step" + inj, "identity": "direct",
+        "mitre_technique": "T1059" + inj,
+        "command": "echo 'ok'",
+        "expected_detections": [{"plane": "EDR" + inj, "type": "BIOC" + inj, "description": "desc" + inj}],
+    }
+    return {
+        "scenario_id": "SIM-SEC13-001", "name": "name" + inj, "version": "1.0" + inj,
+        "plane": "EDR" + inj, "uc_ref": "UCS-X" + inj, "uc_name": "uc" + inj,
+        "tc_ref": "TC-X" + inj, "tc_name": "tc" + inj,
+        "mitre_tactic": "TA0002" + inj, "mitre_tactic_name": "Execution" + inj,
+        "mitre_technique": "T1059" + inj, "mitre_technique_name": "Cmd" + inj,
+        "threat_report": "report" + inj, "author": "me" + inj,
+        "steps": [step], "cleanup": {"commands": []},
+    }
+
+
+def _benign() -> dict:
+    return _hostile("", "")
+
+
+def _column0_commands(script: str) -> int:
+    return sum(1 for ln in script.split("\n") if ln and not ln[0].isspace() and not ln.startswith("#"))
+
+
+@pytest.mark.parametrize("break_seq", _HOSTILE_BREAKS)
+def test_bash_comment_fields_cannot_start_a_command_line(break_seq):
+    """SEC-13 (bash): a CR/LF in a name, step name or detection description
+    must not start an uncommented line in the bundle."""
+    marker = os.path.join(tempfile.gettempdir(), "cortexsim-sec13-bash-marker")
+    benign = generate_bash(_benign())
+    hostile = generate_bash(_hostile(break_seq, f"touch {marker}"))
+    with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as f:
+        f.write(hostile)
+        tmp = f.name
+    try:
+        r = subprocess.run(["bash", "-n", tmp], capture_output=True, text=True, timeout=30)
+        assert r.returncode == 0, r.stderr
+    finally:
+        os.unlink(tmp)
+    assert _column0_commands(hostile) == _column0_commands(benign), (
+        "a comment-interpolated field started a new top-level command line"
+    )
+    assert f"\ntouch {marker}" not in hostile and f"\rtouch {marker}" not in hostile
+
+
+def test_comment_safe_strips_every_line_break():
+    for ch in ("\n", "\r", "\x0b", "\x0c", "\x1c", "\x85", "\u2028", "\u2029", "\x00"):
+        assert pg._comment_safe(f"a{ch}b") == "a b"
+    assert pg._comment_safe("a\tb") == "a\tb"  # TAB cannot end a comment line
