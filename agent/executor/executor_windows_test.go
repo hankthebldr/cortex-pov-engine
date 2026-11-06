@@ -177,6 +177,11 @@ func TestChainSession_WindowsCloseDoesNotKillAfterTheAnchorExited(t *testing.T) 
 // PUSH-18: a cmd step runs under cmd.exe from a file, keeps cmd's exit code,
 // sees the author's text verbatim, and leaves no temp file behind.
 func TestRunShell_WindowsCmdStepRunsUnderCmd(t *testing.T) {
+	// A private temp dir: other packages' tests run concurrently and also
+	// write cortexsim-step-*.cmd files into the shared %TEMP%.
+	tmp := t.TempDir()
+	t.Setenv("TMP", tmp)
+	t.Setenv("TEMP", tmp)
 	before, _ := filepath.Glob(filepath.Join(os.TempDir(), "cortexsim-step-*.cmd"))
 	o, err := RunShellCtxStreamOutcome(context.Background(), ShellCmd,
 		"echo \"quoted & piped\"\necho %COMSPEC%\nexit /b 3", nil)

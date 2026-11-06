@@ -32,3 +32,29 @@ func TestRunShell_POSIXRefusesAForeignShell(t *testing.T) {
 		t.Errorf("chained POSIX anchor ran a cmd step: rc=%d err=%v", rc, err)
 	}
 }
+
+func TestRunCommand_CapturesStderrSeparately(t *testing.T) {
+	stdout, stderr, code, err := RunCommand(">&2 echo err && echo out && exit 0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != 0 {
+		t.Errorf("expected 0, got %d", code)
+	}
+	if !strings.Contains(stdout, "out") {
+		t.Errorf("stdout = %q", stdout)
+	}
+	if !strings.Contains(stderr, "err") {
+		t.Errorf("stderr = %q", stderr)
+	}
+}
+
+func TestRunCommand_SignaledChildReportsTermination(t *testing.T) {
+	out, err := RunCommandCtxStreamOutcome(context.Background(), "kill -9 $$", nil)
+	if err != nil {
+		t.Fatalf("err=%v", err)
+	}
+	if out.ExitCode != 137 || out.Termination != "signaled" || out.Signal != 9 {
+		t.Fatalf("got exit=%d term=%q sig=%d, want 137/signaled/9", out.ExitCode, out.Termination, out.Signal)
+	}
+}

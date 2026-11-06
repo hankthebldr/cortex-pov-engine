@@ -685,7 +685,7 @@ func TestStage_TokenIsSentWhenConfigured(t *testing.T) {
 
 func TestStage_NoexecMountIsAPreflightFailureNotAMidRunMystery(t *testing.T) {
 	if !execProbeSupported() {
-		t.Skip("exec probe not applicable on this platform")
+		t.Skip("no exec probe on this platform; Windows twin: TestStage_WindowsWritesNoExecProbe")
 	}
 	body := []byte("#!/bin/sh\nexit 0\n")
 	srv := newShelfServer(t, body)
@@ -708,7 +708,7 @@ func TestStage_NoexecMountIsAPreflightFailureNotAMidRunMystery(t *testing.T) {
 
 func TestStage_NonExecutableArtifactIsNotProbed(t *testing.T) {
 	if !execProbeSupported() {
-		t.Skip("exec probe not applicable on this platform")
+		t.Skip("no exec probe on this platform; Windows twin: TestStage_WindowsWritesNoExecProbe")
 	}
 	body := []byte("data")
 	srv := newShelfServer(t, body)
@@ -802,7 +802,7 @@ func TestCleanup_LeavesANonEmptyDirectoryAlone(t *testing.T) {
 
 func TestCleanup_RemovesTheExecProbe(t *testing.T) {
 	if !execProbeSupported() {
-		t.Skip("exec probe not applicable on this platform")
+		t.Skip("no exec probe on this platform; Windows twin: TestStage_WindowsWritesNoExecProbe")
 	}
 	body := []byte("#!/bin/sh\nexit 0\n")
 	srv := newShelfServer(t, body)
