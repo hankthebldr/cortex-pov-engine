@@ -400,22 +400,31 @@ class Orchestrator:
 
         Never lets a reaping failure break task delivery: the run stays
         ``running`` and the next poll tries again.
+
+        Runs in its OWN session on the caller's engine: terminalisation may
+        roll back (a racing ``/complete``, a scoring fault), and a rollback on
+        the request's session would expire the ``Agent`` row the /tasks
+        handler still reads after this returns.
         """
         from config import settings as _settings  # noqa: PLC0415
         from engine.beacon_lost import terminalise_abandoned_runs  # noqa: PLC0415
 
+        bind = getattr(db, "bind", None)
         try:
-            return await terminalise_abandoned_runs(
-                db, now or datetime.utcnow(),
-                after_seconds=int(_settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS),
-                agent_id=agent_id, control_polls=self,
-            )
+            if bind is None:  # pragma: no cover - an unbound session: share it
+                return await terminalise_abandoned_runs(
+                    db, now or datetime.utcnow(),
+                    after_seconds=int(_settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS),
+                    agent_id=agent_id, control_polls=self,
+                )
+            async with AsyncSession(bind, expire_on_commit=False) as reap_db:
+                return await terminalise_abandoned_runs(
+                    reap_db, now or datetime.utcnow(),
+                    after_seconds=int(_settings.CORTEXSIM_BEACON_LOST_AFTER_SECONDS),
+                    agent_id=agent_id, control_polls=self,
+                )
         except Exception:
             logger.exception("abandoned-run reaping failed agent=%s", agent_id)
-            try:
-                await db.rollback()
-            except Exception:  # pragma: no cover - defensive
-                logger.exception("rollback after failed reaping also failed")
             return []
 
     # ------------------------------------------------------------------

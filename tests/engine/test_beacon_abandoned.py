@@ -339,6 +339,44 @@ def test_an_undelivered_run_is_not_this_sweeps_business(session_factory):
     assert _run(session_factory, run_id).status == "running"
 
 
+def test_a_reaping_fault_never_breaks_task_delivery(client, session_factory, monkeypatch):
+    """Reaping rides on the /tasks poll; if it raises, the poll must still hand
+    the beacon its next task (the run stays running and the next poll retries)."""
+    import engine.beacon_lost as bl
+    from engine.orchestrator import orchestrator
+    from models import Agent, Scenario
+
+    async def _boom(*_a, **_kw):
+        raise RuntimeError("reaper exploded")
+
+    monkeypatch.setattr(bl, "terminalise_abandoned_runs", _boom)
+
+    async def _go():
+        async with session_factory() as db:
+            db.add(Scenario(
+                scenario_id="SIM-EDR-962", name="T", version="1.0", status="active",
+                plane="EDR", uc_ref="UCS-EDR-01", uc_name="x", tc_ref="TC-EDR-01",
+                tc_name="y", mitre_tactic="TA0006", mitre_tactic_name="CA",
+                mitre_technique="T1003.001", mitre_technique_name="LSASS",
+                execution_identity={"default": "root"}, push_supported=True,
+                pull_supported=True,
+                steps=[{"id": "step-01", "name": "s", "identity": "root", "command": "id",
+                        "expected_detections": []}]))
+            db.add(Agent(agent_id="agent-1", hostname="h1", os="linux",
+                         capabilities=["shell"], interpreters=[],
+                         registered_at=datetime.utcnow(), last_seen=datetime.utcnow(),
+                         status="online"))
+            await db.commit()
+            res = await orchestrator.launch(scenario_id="SIM-EDR-962", mode="pull", db=db,
+                                            target_agent_id="agent-1")
+            return res.run_id
+
+    run_id = asyncio.run(_go())
+    r = client.get("/api/agents/agent-1/tasks")
+    assert r.status_code == 200
+    assert r.json()["task"]["run_id"] == run_id
+
+
 # ---------------------------------------------------------------------------
 # /complete on a terminal run: 409, nothing re-applied
 # ---------------------------------------------------------------------------
