@@ -526,19 +526,23 @@ def test_bundle_starts_with_shebang(path: pathlib.Path):
 # ═════════════════════════════════════════════════════════════════════
 #
 # ON THE SYNTAX GATE, PLAINLY: `pwsh` is NOT present in the cortexsim:dev
-# image and is NOT on the maintainer's host, so `test_ps_bundle_parses_as
-# _powershell` SKIPS in both places today. A skip that reads as a pass is
-# exactly the fake-green this suite exists to kill, so:
+# image, so `test_ps_bundle_parses_as_powershell` SKIPS there. A skip that
+# reads as a pass is exactly the fake-green this suite exists to kill, so:
 #
-#   * `test_powershell_parser_available_in_ci` FAILS (not skips) when CI=1 and
-#     pwsh is missing — CI must provide the real parser or go red;
+#   * `test_powershell_parser_available_in_ci` FAILS (not skips) when CI is
+#     set or CORTEXSIM_REQUIRE_POWERSHELL=1 and pwsh is missing — a context
+#     that promises the real parser must provide it or go red;
 #   * `test_ps_bundle_structural_invariants` is ALWAYS on and is honest about
 #     what it is: bracket/quote balance plus a set of contract assertions. It
 #     is NOT a syntax check and does not pretend to be one.
 #
-# The generated bundles WERE verified against the real
-# System.Management.Automation.Language.Parser (PowerShell 7.4) during
-# development; all 12 parse clean and three execute end-to-end under pwsh.
+# What is asserted today, and where: every Windows-emittable corpus bundle is
+# PARSED by the real System.Management.Automation.Language.Parser here (pwsh
+# 7, when present). EXECUTION is asserted on synthetic scenarios in
+# tests/engine/test_push_ps_execution.py — under pwsh on Linux/macOS, and under
+# powershell.exe (5.1) when that file runs on a Windows host. No corpus bundle
+# is executed by this suite, and pwsh 7 parsing does not prove the Windows
+# PowerShell 5.1 floor (that file's AST walk rejects PS7-only harness syntax).
 
 def _ps_bundle(path: pathlib.Path) -> str:
     return _push.generate_powershell(_load_scenario(path))
@@ -613,13 +617,35 @@ def test_ps_bundle_parses_as_powershell(path: pathlib.Path):
         pathlib.Path(tmp).unlink(missing_ok=True)
 
 
+def _powershell_required() -> bool:
+    return bool(os.environ.get("CI")) or os.environ.get("CORTEXSIM_REQUIRE_POWERSHELL") == "1"
+
+
 def test_powershell_parser_available_in_ci():
-    """A skipped syntax check in CI is indistinguishable from a passing one."""
-    if os.environ.get("CI"):
+    """A skipped syntax check in CI is indistinguishable from a passing one.
+
+    Fails when CI is set OR CORTEXSIM_REQUIRE_POWERSHELL=1 and pwsh is absent —
+    the explicit opt-in is how a developer (or a non-GitHub runner without CI
+    set) asks for the parse gate to be mandatory rather than skippable.
+    """
+    if _powershell_required():
         assert shutil.which("pwsh"), (
-            "CI must provide pwsh — the .ps1 parse gate is not optional. "
-            "Install PowerShell on the runner (mirroring the shellcheck apt step)."
+            "pwsh is required here (CI or CORTEXSIM_REQUIRE_POWERSHELL=1) — the "
+            ".ps1 parse gate is not optional. Install PowerShell on the runner "
+            "(mirroring the shellcheck apt step)."
         )
+
+
+def test_powershell_requirement_guard_has_teeth(monkeypatch):
+    """CI-08: CORTEXSIM_REQUIRE_POWERSHELL=1 alone (no CI) must make a missing
+    pwsh a FAILURE, not a silent pass."""
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("CORTEXSIM_REQUIRE_POWERSHELL", "1")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: None)
+    with pytest.raises(AssertionError, match="CORTEXSIM_REQUIRE_POWERSHELL"):
+        test_powershell_parser_available_in_ci()
+    monkeypatch.delenv("CORTEXSIM_REQUIRE_POWERSHELL")
+    test_powershell_parser_available_in_ci()  # neither set: no requirement
 
 
 @pytest.mark.parametrize("path", WINDOWS_SCENARIOS, ids=_label)
