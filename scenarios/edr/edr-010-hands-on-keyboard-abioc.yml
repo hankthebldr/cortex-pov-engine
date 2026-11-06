@@ -84,7 +84,9 @@ steps:
     mitre_technique: "T1059.004"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: "powershell.exe -NoExit -Command \"whoami; hostname\""
+      # CONT-13: -NoExit left an interactive shell waiting for input, so the
+      # step never returned in a non-interactive run.
+      windows: "powershell.exe -NoProfile -Command \"whoami; hostname\""
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -104,7 +106,14 @@ steps:
     mitre_technique: "T1046"
     platforms: ["linux", "windows"]
     platform_variants:
-      windows: "whoami /all; net user; net group \"Domain Admins\" /domain; nltest /dclist:; ipconfig /all"
+      # CONT-13: this is cmd, where `;` is not a command separator — the whole
+      # line was handed to whoami as arguments. One command per line.
+      windows: |
+        whoami /all
+        net user
+        net group "Domain Admins" /domain
+        nltest /dclist:
+        ipconfig /all
     causality:
       parent_step: step-01
       pivot: process_lineage
