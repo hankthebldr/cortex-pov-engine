@@ -230,6 +230,14 @@ LEG_MAP: dict[str, str] = {
 _MARKER_LINE_RE = re.compile(
     r"^\s*(echo|printf|Write-Host|Write-Output|true)\b|^\s*[:#](?=\s|$)|^\s*$"
 )
+# The PowerShell twin of `echo '...' > /tmp/marker`: build a path, make a
+# directory, write a marker file, print a line. None of it is a sensor-visible
+# TTP, so a step made only of these is marker-only exactly like its bash form.
+_PS_MARKER_LINE_RE = re.compile(
+    r"^\s*(?:Set-Content|New-Item|Join-Path|Out-Null|Write-Host|Write-Output)\b"
+    r"|^\s*\$\w+\s*=\s*Join-Path\b",
+    re.IGNORECASE,
+)
 _LOCAL_CURL_RE = re.compile(r"curl.*(127\.0\.0\.1|localhost|\$\{?STAGE_HOST)")
 _UNIT42_HOST = "unit42.paloaltonetworks.com"
 
@@ -261,7 +269,7 @@ def is_marker_only_step(step: dict[str, Any]) -> bool:
     if "scripts.eal_simulator.cli" in cmd or "cortexsim-eal" in cmd:
         return False
     for line in re.split(r"\n|;|&&|\|\||\|", cmd):
-        if _MARKER_LINE_RE.match(line) or _LOCAL_CURL_RE.search(line):
+        if _MARKER_LINE_RE.match(line) or _PS_MARKER_LINE_RE.match(line) or _LOCAL_CURL_RE.search(line):
             continue
         return False
     return True
