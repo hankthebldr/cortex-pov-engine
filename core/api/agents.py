@@ -16,6 +16,7 @@ Endpoints:
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import logging
 import os  # NOTE: shadowed by the `os` query parameter inside agent_installer().
 import re
@@ -1083,25 +1084,89 @@ _ONLINE_WINDOW_S = 30
 _STALE_WINDOW_S = 300  # 5 minutes
 
 
-def _client_ip(request: Request) -> Optional[str]:
-    """The request source IP, honestly derived — NEVER invented.
+# Parsed CORTEXSIM_TRUSTED_PROXIES, keyed by the raw string so a changed env
+# re-parses and a malformed value is logged once, not on every heartbeat.
+_trusted_proxy_cache: dict[str, Optional[tuple]] = {}
 
-    When the beacon reaches SimCore through a proxy/load balancer, the socket
-    peer is the proxy, so the real client is the FIRST hop of
-    ``X-Forwarded-For`` (``client, proxy1, proxy2``). Without that header we use
-    the socket peer (``request.client.host``). A transport with no client
-    address (some test transports, in-process ASGI calls) yields None — the
-    stitch resolver then keeps a labelled synthetic src_ip rather than a
-    fabricated real one. See models.Agent.last_ip.
+
+def _trusted_proxies() -> Optional[tuple]:
+    """The CIDRs whose ``X-Forwarded-For`` is believed, or None if the setting
+    is malformed.
+
+    Read from ``os.environ`` on every call (not cached in settings) so an
+    operator can fix it without a code change; parsing is memoised per value.
+    Empty -- the default -- means no proxy is trusted.
     """
+    raw = os.environ.get("CORTEXSIM_TRUSTED_PROXIES", "")
+    if raw in _trusted_proxy_cache:
+        return _trusted_proxy_cache[raw]
+    try:
+        parsed: Optional[tuple] = tuple(
+            ipaddress.ip_network(part.strip(), strict=False)
+            for part in raw.split(",") if part.strip())
+    except ValueError as exc:
+        logger.error(
+            "CORTEXSIM_TRUSTED_PROXIES=%r is not a comma-separated list of CIDRs (%s): "
+            "X-Forwarded-For is not evaluated, and a beacon whose request carries it "
+            "records NO source IP until this is fixed", raw, exc)
+        parsed = None
+    _trusted_proxy_cache[raw] = parsed
+    return parsed
+
+
+def _as_ip(value: Optional[str]):
+    if not value:
+        return None
+    try:
+        ip = ipaddress.ip_address(value.strip().strip("[]"))
+    except ValueError:
+        return None
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        return ip.ipv4_mapped
+    return ip
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """The request source IP, honestly derived -- NEVER invented.
+
+    The socket peer (``request.client.host``) is the observation. A proxy in
+    front of SimCore makes the peer the proxy, so ``X-Forwarded-For`` is read --
+    but ONLY when that peer is inside a CIDR in ``CORTEXSIM_TRUSTED_PROXIES``
+    (comma-separated; empty by default). It used to be believed from anyone, so
+    any host that could reach SimCore could stamp an arbitrary address onto an
+    agent row, and from there onto the run's ``src_ip``, the field detections
+    are stitched on.
+
+    Behind a trusted proxy the hops are walked RIGHT to LEFT, skipping trusted
+    proxies: a proxy appends the address it saw, so the left-most entry is
+    whatever the client chose to send. A hop that is not an IP address, or a
+    malformed trusted-proxy setting, yields None: no observation is better than
+    a wrong one (the stitch resolver then keeps a labelled synthetic src_ip).
+    A transport with no client address yields None too. See models.Agent.last_ip.
+    """
+    peer = request.client.host if request.client is not None and request.client.host else None
     xff = request.headers.get("x-forwarded-for")
-    if xff:
-        first = xff.split(",")[0].strip()
-        if first:
-            return first
-    if request.client is not None and request.client.host:
-        return request.client.host
-    return None
+    if not xff:
+        return peer
+    nets = _trusted_proxies()
+    if nets is None:
+        return None
+
+    def trusted(ip) -> bool:
+        return ip is not None and any(ip in net for net in nets)
+
+    if not nets or not trusted(_as_ip(peer)):
+        return peer
+    hops = [h.strip() for h in xff.split(",") if h.strip()]
+    for hop in reversed(hops):
+        ip = _as_ip(hop)
+        if ip is None:
+            return None
+        if not trusted(ip):
+            return str(ip)
+    # Every hop is itself a trusted address: the left-most is the origin.
+    first = _as_ip(hops[0]) if hops else None
+    return str(first) if first is not None else peer
 
 
 def _derive_status(last_seen: Optional[datetime], now: datetime) -> tuple[str, float]:
