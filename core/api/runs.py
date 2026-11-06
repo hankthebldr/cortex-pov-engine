@@ -16,7 +16,9 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Any, Optional
 
@@ -550,12 +552,18 @@ _CHUNK_TRUNCATION_MARKER = "[OUTPUT CHUNK TRUNCATED: "
 _CHUNK_MARKER_RESERVE_BYTES = 256
 
 
+#: One pass per line: an integrity / frame prefix at the start, or any
+#: execution-integrity marker anywhere. Compiled once — a 32 MiB chunk is
+#: about 1.6 M lines.
+_SURVIVES_RE = re.compile(
+    "^(?:" + "|".join(re.escape(p) for p in _INTEGRITY_LINE_PREFIXES + _STEP_FRAME_PREFIXES)
+    + ")|" + "|".join(re.escape(m) for m, _ in _INTEGRITY_MARKERS))
+
+
 def _survives_truncation(line: str) -> bool:
     """A line no truncation may drop: an integrity line, a step frame, or any
     line carrying a string the report's execution-integrity check reads."""
-    if line.startswith(_INTEGRITY_LINE_PREFIXES) or line.startswith(_STEP_FRAME_PREFIXES):
-        return True
-    return any(marker in line for marker, _ in _INTEGRITY_MARKERS)
+    return _SURVIVES_RE.search(line) is not None
 
 
 def _bound_chunk(chunk: str) -> tuple[str, Optional[int]]:
@@ -1532,7 +1540,12 @@ async def append_output(
     in SQL too). The step-start record below is host evidence, not output,
     and is written either way.
     """
-    chunk, offered_bytes = _bound_chunk(body.output)
+    if len(body.output.encode("utf-8")) > RUN_OUTPUT_CHUNK_MAX_BYTES:
+        # Off the event loop: cutting a tens-of-MiB chunk is CPU work every
+        # other request (other beacons' /control polls included) would wait on.
+        chunk, offered_bytes = await asyncio.to_thread(_bound_chunk, body.output)
+    else:
+        chunk, offered_bytes = body.output, None
     stored = func.length(cast(func.coalesce(Run.output, ""), LargeBinary))
     res = await db.execute(
         update(Run)
