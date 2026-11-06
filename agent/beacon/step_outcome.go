@@ -26,6 +26,11 @@ const (
 	ReasonUpstreamNotExecuted = "UPSTREAM_NOT_EXECUTED"
 	ReasonToolAbsent          = "TOOL_ABSENT"
 	ReasonUpstreamFailed      = "UPSTREAM_FAILED"
+	// ReasonPlatformUnsatisfiable: the step cannot run on this host's platform
+	// (BEACON-01), so it was not run. SimCore must accept it in its step-reason
+	// vocabulary and map it to not_executed — see core/api/runs.py _STEP_REASONS
+	// and core/engine/outcome.py host_outcome_for_step.
+	ReasonPlatformUnsatisfiable = "PLATFORM_UNSATISFIABLE"
 )
 
 // toolAbsentMarker prefixes the /output line written for a step whose declared
@@ -144,8 +149,13 @@ func (c *BeaconClient) afterStep(task *Task, i int, led *outcomeLedger, res iden
 
 // classifyChainedRC marks a chained step's result as signaled when its integer
 // rc is in 129..159 (session.RunStep reports no termination detail).
+//
+// POSIX only (BEACON-09). A Windows process has no signals: rc 137 there is a
+// process that exited 137 (or was TerminateProcess-ed with 137), never "killed
+// by SIGKILL". Reading it as signaled severed the chain and wrote a host
+// witness the endpoint never produced.
 func classifyChainedRC(res *identity.ExecResult) {
-	if res.ExitCode >= 129 && res.ExitCode <= 159 {
+	if beaconGOOS != "windows" && res.ExitCode >= 129 && res.ExitCode <= 159 {
 		res.Termination = TermSignaled
 		res.Signal = res.ExitCode - 128
 		return

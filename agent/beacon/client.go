@@ -102,6 +102,17 @@ type Step struct {
 	MitreTechnique string         `json:"mitre_technique"`
 	Causality      *StepCausality `json:"causality,omitempty"`
 	Platforms      []string       `json:"platforms,omitempty"`
+	// PlatformVariants are per-OS equivalents of Command keyed by OS
+	// (`windows`, `linux`, ...). BEACON-01: before this field existed
+	// encoding/json dropped the key, so on Windows every step ran its POSIX
+	// primary through PowerShell. See planStep.
+	PlatformVariants map[string]string `json:"platform_variants,omitempty"`
+	// Shell is set when SimCore has ALREADY resolved the step for this host:
+	// "powershell" | "cmd" on Windows. Empty means "the beacon decides".
+	Shell string `json:"shell,omitempty"`
+	// ResolvedFrom names where SimCore took Command from (e.g.
+	// "variant:windows"); informational, echoed into the step output.
+	ResolvedFrom string `json:"resolved_from,omitempty"`
 	// RequiresInterpreters names the logical interpreters (e.g. "python") this
 	// step's command depends on but does not itself install. Checked against
 	// the target's real PATH before the command ever runs — see
@@ -117,6 +128,100 @@ type Step struct {
 	// step not_run / TOOL_ABSENT instead of running it (see preflightTools).
 	RequiredBinaries []string `json:"required_binaries,omitempty"`
 	// expected_detections intentionally omitted — the server seeds Result rows.
+}
+
+// platformNotRunMarker prefixes the /output line for a step this host refused
+// to run because the step cannot run here. A stable literal, like
+// toolAbsentMarker: it is what a DC — and any parser of the run record — greps
+// for to tell "never ran on this host" from "ran and Cortex saw nothing".
+const platformNotRunMarker = "!! STEP NOT RUN: PLATFORM_UNSATISFIABLE"
+
+// platformUnsatisfiableExitCode is reported when NO step of a task could run on
+// this host. EX_CONFIG, the same "this never ran" code artifact staging uses.
+const platformUnsatisfiableExitCode = 78
+
+// stepPlan is how THIS host will run one step.
+type stepPlan struct {
+	command string
+	shell   string // executor step shell: "" = host default, executor.ShellCmd = cmd.exe
+	note    string // written into the step's output when non-empty
+	refuse  string // non-empty: do NOT run the step; this is its marker line
+}
+
+// planStep decides what text this host runs for a step, under which shell — or
+// that the step cannot run here at all (BEACON-01).
+//
+// Windows, in order:
+//  1. Shell set: SimCore already resolved the step for this host. Run Command
+//     under that shell (powershell | cmd). Any other value is refused — an
+//     unrecognised shape raises, it does not read as the default.
+//  2. platform_variants.windows present: run it under PowerShell.
+//  3. platforms declared and windows not among them: refuse. Running the POSIX
+//     primary through PowerShell is how SIM-EDR-003 step-01 (cron text that
+//     exits 0 after its final echo) reported SUCCESS while doing nothing.
+//  4. Otherwise the primary, under PowerShell, as before.
+//
+// POSIX hosts do NOT refuse on platform labels: ~100 corpus steps are labelled
+// windows-only while carrying POSIX text, and refusing them would break Linux
+// runs that work today. A step SimCore resolved to a non-POSIX shell is refused,
+// because handing cmd or PowerShell text to sh runs garbage that may exit 0.
+func planStep(step *Step, goos string) stepPlan {
+	shell := strings.ToLower(strings.TrimSpace(step.Shell))
+	if goos != "windows" {
+		switch shell {
+		case "", "sh", "bash":
+			return stepPlan{command: step.Command}
+		}
+		return stepPlan{refuse: fmt.Sprintf("%s step=%s declared=shell:%s host=%s",
+			platformNotRunMarker, step.ID, shell, goos)}
+	}
+
+	switch shell {
+	case executor.ShellPowerShell, executor.ShellCmd:
+		sh := ""
+		if shell == executor.ShellCmd {
+			sh = executor.ShellCmd
+		}
+		note := fmt.Sprintf("[cortexsim] platform: SimCore resolved this step to shell=%s", shell)
+		if step.ResolvedFrom != "" {
+			note += " (from " + step.ResolvedFrom + ")"
+		}
+		return stepPlan{command: step.Command, shell: sh, note: note}
+	case "":
+	default:
+		return stepPlan{refuse: fmt.Sprintf("%s step=%s declared=shell:%s host=windows",
+			platformNotRunMarker, step.ID, shell)}
+	}
+
+	if v, ok := step.PlatformVariants["windows"]; ok && strings.TrimSpace(v) != "" {
+		return stepPlan{command: v,
+			note: "[cortexsim] platform: ran platform_variants.windows under PowerShell, not the primary command"}
+	}
+	if len(step.Platforms) > 0 && !declaresPlatform(step.Platforms, "windows") {
+		return stepPlan{refuse: fmt.Sprintf("%s step=%s declared=%s host=windows",
+			platformNotRunMarker, step.ID, strings.Join(step.Platforms, ","))}
+	}
+	return stepPlan{command: step.Command}
+}
+
+func declaresPlatform(platforms []string, want string) bool {
+	for _, p := range platforms {
+		if strings.EqualFold(strings.TrimSpace(p), want) {
+			return true
+		}
+	}
+	return false
+}
+
+// joinNotes joins the non-empty notes with newlines.
+func joinNotes(notes ...string) string {
+	var kept []string
+	for _, n := range notes {
+		if n != "" {
+			kept = append(kept, n)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // hasCausalityContract reports whether the task declares the causality contract
@@ -140,6 +245,57 @@ type ControlState struct {
 	Abort  bool   `json:"abort"`
 	RunID  string `json:"run_id"`
 	Status string `json:"status"`
+
+	// Lost is local only: the control channel itself failed (transport error,
+	// non-200, undecodable body). Abort is still true — the beacon fails CLOSED
+	// (BEACON-11 / OPS-04; Henry's decision is pending) — but the run record
+	// must not then say a person stopped the run.
+	Lost       bool   `json:"-"`
+	LostDetail string `json:"-"`
+}
+
+// ReasonControlChannelLost is the stable literal carried in the /complete
+// summary and the step output when a run was stopped because the control
+// channel failed, not because anyone asked. It is deliberately NOT a
+// StepOutcome reason: SimCore's step-reason vocabulary does not carry it.
+const ReasonControlChannelLost = "CONTROL_CHANNEL_LOST"
+
+// stopLine is the /output line written when the run stops before a step.
+func (s ControlState) stopLine() string {
+	if s.Lost {
+		return "--- STOPPED: control channel lost (NOT an operator abort) [" + ReasonControlChannelLost + "] ---"
+	}
+	return "--- ABORTED (operator) ---"
+}
+
+// stopBeforeSummary is the /complete summary for a run stopped before stepID.
+func (s ControlState) stopBeforeSummary(stepID string) string {
+	if s.Lost {
+		return fmt.Sprintf("control channel lost — run stopped before step %s (NOT an operator abort) | reason=%s%s",
+			stepID, ReasonControlChannelLost, s.lostDetail())
+	}
+	return "aborted by operator"
+}
+
+// stopDuringSummary is the /complete summary for a run whose in-flight step was
+// terminated.
+func (s ControlState) stopDuringSummary(stepID string) string {
+	if s.Lost {
+		return fmt.Sprintf("control channel lost — step terminated (NOT an operator abort) | step=%s reason=%s%s",
+			stepID, ReasonControlChannelLost, s.lostDetail())
+	}
+	return fmt.Sprintf("aborted by operator — step %s terminated", stepID)
+}
+
+func (s ControlState) lostDetail() string {
+	if s.LostDetail == "" {
+		return ""
+	}
+	return " detail=" + s.LostDetail
+}
+
+func controlLost(runID, detail string) ControlState {
+	return ControlState{Abort: true, RunID: runID, Status: "unknown", Lost: true, LostDetail: detail}
 }
 
 // abortExitCode is the conventional exit code reported when a run is aborted by
@@ -211,7 +367,20 @@ type BeaconClient struct {
 	// StreamOutput enables real-time line-by-line output streaming to SimCore
 	// during command execution.
 	StreamOutput bool
+
+	// execStep runs one per-step command. nil means identity.ExecuteCtxStream.
+	// Injectable so the Windows step-selection path is observable from a POSIX
+	// runner: the test records what WOULD reach the executor.
+	execStep func(context.Context, identity.ExecutionIdentity, executor.OutputChunkFunc) (identity.ExecResult, error)
 }
+
+// beaconGOOS is the host OS for step-shape decisions. A package var only so a
+// test can drive the Windows branches from a POSIX runner (runtimeDepsGOOS idiom).
+var beaconGOOS = runtime.GOOS
+
+// postRetryBackoff is the wait before each retry of a /complete or step /output
+// POST. A var only so tests can shrink it.
+var postRetryBackoff = []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second}
 
 // stepTimeout returns the effective execution timeout for a step.
 func (c *BeaconClient) stepTimeout(step *Step) time.Duration {
@@ -425,30 +594,34 @@ func (c *BeaconClient) PollTasksWait(waitSec int) (*Task, error) {
 // Control polls the run's abort control channel.
 // Corresponds to: GET /api/runs/{run_id}/control
 //
-// A missing run (404) or any transport error is treated as a stop signal
-// (abort=true): if the run row has vanished the agent should halt rather than
-// spin. The server also returns abort=true for any terminal run status.
+// It fails CLOSED: a missing run (404), any other non-200, a transport error or
+// an undecodable body all return abort=true, so a beacon that cannot see the
+// control channel stops rather than runs on unsupervised. Those cases are
+// marked Lost so the run record says the CHANNEL stopped the run; only an
+// explicit `abort:true` body is an operator abort. (SimCore itself answers a
+// vanished run with 200 abort:true, so a 404 here is a proxy or a different
+// server, not SimCore saying "stop".)
 func (c *BeaconClient) Control(runID string) (ControlState, error) {
 	url := fmt.Sprintf("%s/api/runs/%s/control", c.ServerURL, runID)
 
 	resp, err := c.http.Get(url)
 	if err != nil {
-		return ControlState{Abort: true, RunID: runID, Status: "unknown"}, fmt.Errorf("control GET: %w", err)
+		return controlLost(runID, "transport error"), fmt.Errorf("control GET: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return ControlState{Abort: true, RunID: runID, Status: "unknown"}, nil
+		return controlLost(runID, "HTTP 404"), nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
-		return ControlState{Abort: true, RunID: runID, Status: "unknown"},
+		return controlLost(runID, fmt.Sprintf("HTTP %d", resp.StatusCode)),
 			fmt.Errorf("control: unexpected status %d: %s", resp.StatusCode, b)
 	}
 
 	var state ControlState
 	if err := json.NewDecoder(resp.Body).Decode(&state); err != nil {
-		return ControlState{Abort: true, RunID: runID, Status: "unknown"}, fmt.Errorf("control decode: %w", err)
+		return controlLost(runID, "undecodable body"), fmt.Errorf("control decode: %w", err)
 	}
 	return state, nil
 }
@@ -457,6 +630,14 @@ func (c *BeaconClient) Control(runID string) (ControlState, error) {
 // it to a specific step. stepID may be empty for un-attributed output.
 // Corresponds to: POST /api/runs/{run_id}/output  body {output, step_id?}
 func (c *BeaconClient) SendOutput(runID, stepID, output string) error {
+	return c.sendOutput(runID, stepID, output, true)
+}
+
+// sendOutput posts one output frame. retry=false is for live streaming chunks:
+// those are written from inside the child's pipe writer, and a 31-second retry
+// ladder there would stall the TTP itself; the step's full output is still
+// posted (with retry) when the step ends.
+func (c *BeaconClient) sendOutput(runID, stepID, output string, retry bool) error {
 	body := map[string]string{
 		"run_id": runID,
 		"output": output,
@@ -464,7 +645,13 @@ func (c *BeaconClient) SendOutput(runID, stepID, output string) error {
 	if stepID != "" {
 		body["step_id"] = stepID
 	}
-	_, err := c.post(fmt.Sprintf("/api/runs/%s/output", runID), body)
+	path := fmt.Sprintf("/api/runs/%s/output", runID)
+	var err error
+	if retry {
+		_, err = c.postRetry(path, body)
+	} else {
+		_, err = c.post(path, body)
+	}
 	if err != nil {
 		return fmt.Errorf("sendOutput: %w", err)
 	}
@@ -483,7 +670,7 @@ func (c *BeaconClient) Complete(runID string, exitCode int, summary string, step
 		"summary":   summary,
 		"steps":     steps,
 	}
-	_, err := c.post(fmt.Sprintf("/api/runs/%s/complete", runID), body)
+	_, err := c.postRetry(fmt.Sprintf("/api/runs/%s/complete", runID), body)
 	if err != nil {
 		return fmt.Errorf("complete: %w", err)
 	}
@@ -614,10 +801,10 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 	if len(task.Artifacts) > 0 {
 		// Do not stage tooling for a run the operator has already killed.
 		if state, _ := c.Control(task.RunID); state.Abort {
-			log.Printf("[beacon] abort detected before artifact staging (run_id=%s)", task.RunID)
-			_ = c.SendOutput(task.RunID, "", "--- ABORTED (operator) before artifact staging ---")
+			log.Printf("[beacon] stop detected before artifact staging (run_id=%s lost=%v)", task.RunID, state.Lost)
+			_ = c.SendOutput(task.RunID, "", strings.TrimSuffix(state.stopLine(), " ---")+" before artifact staging ---")
 			led.markRemaining(0, ReasonUpstreamFailed)
-			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", led.steps)
+			_ = c.Complete(task.RunID, abortExitCode, state.stopBeforeSummary("(artifact staging)"), led.steps)
 			return
 		}
 	}
@@ -647,16 +834,21 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 
 	finalExitCode := 0
 	degradedSteps := 0
+	refused := 0
 
 	for i, step := range task.Steps {
 		// (a) Abort check before each step.
 		if state, _ := c.Control(task.RunID); state.Abort {
-			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
-			_ = c.SendOutput(task.RunID, step.ID, "--- ABORTED (operator) ---")
-			led.markRemaining(i, ReasonUpstreamFailed)
-			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", led.steps)
+			c.stopBeforeStep(task, i, led, state)
 			return
 		}
+		plan := planStep(&step, beaconGOOS)
+		if plan.refuse != "" {
+			c.refuseStep(task, i, led, plan)
+			refused++
+			continue
+		}
+		step.Command = plan.command
 
 		username := c.resolveStepUsername(task, &step)
 		idRes := c.resolve(username)
@@ -674,7 +866,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		depOutcome := c.resolveRuntimeDeps(task, &step)
 
 		var res identity.ExecResult
-		var aborted bool
+		var stop *ControlState
 		var timedOut bool
 		var execErr error
 		stTimeout := c.stepTimeout(&step)
@@ -685,12 +877,13 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 				Mode:     idRes.Mode,
 				Username: idRes.Username,
 				Command:  step.Command,
+				Shell:    plan.shell,
 			}
-			res, aborted, timedOut, execErr = c.runStep(ctx, task.RunID, step.ID, execID, stTimeout)
+			res, stop, timedOut, execErr = c.runStep(ctx, task.RunID, step.ID, execID, stTimeout)
 		}
 		depOutcome.cleanup()
 
-		notes := depOutcome.note
+		notes := joinNotes(plan.note, depOutcome.note)
 		if timedOut {
 			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
 			if notes != "" {
@@ -706,11 +899,10 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
 
-		if aborted {
+		if stop != nil {
 			led.recordAborted(i)
-			log.Printf("[beacon] step %s terminated by operator abort (run_id=%s)", step.ID, task.RunID)
-			_ = c.Complete(task.RunID, abortExitCode,
-				fmt.Sprintf("aborted by operator — step %s terminated", step.ID), led.steps)
+			log.Printf("[beacon] step %s terminated (lost-control=%v, run_id=%s)", step.ID, stop.Lost, task.RunID)
+			_ = c.Complete(task.RunID, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
 			return
 		}
 
@@ -755,6 +947,11 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		}
 	}
 
+	if refused == totalSteps {
+		// Nothing ran on this host. A zero here would read as SUCCESS for a run
+		// that executed no TTP at all.
+		finalExitCode = platformUnsatisfiableExitCode
+	}
 	summary := buildSummary(task, finalExitCode, degradedSteps, led.steps)
 	if err := c.Complete(task.RunID, finalExitCode, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
@@ -799,14 +996,19 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 
 	finalExitCode := 0
 	degradedSteps := 0
+	refused := 0
 	for i, step := range task.Steps {
 		if state, _ := c.Control(task.RunID); state.Abort {
-			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
-			_ = c.SendOutput(task.RunID, step.ID, "--- ABORTED (operator) ---")
-			led.markRemaining(i, ReasonUpstreamFailed)
-			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", led.steps)
+			c.stopBeforeStep(task, i, led, state)
 			return
 		}
+		plan := planStep(&step, beaconGOOS)
+		if plan.refuse != "" {
+			c.refuseStep(task, i, led, plan)
+			refused++
+			continue
+		}
+		step.Command = plan.command
 
 		username := c.resolveStepUsername(task, &step)
 		idRes := c.resolve(username)
@@ -821,7 +1023,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		depOutcome := c.resolveRuntimeDeps(task, &step)
 
 		var res identity.ExecResult
-		var aborted bool
+		var stop *ControlState
 		var timedOut bool
 		var execErr error
 		stTimeout := c.stepTimeout(&step)
@@ -844,11 +1046,11 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			log.Printf("[beacon] step %d/%d id=%s name=%q technique=%s identity=%s mode=%s (chained)",
 				i+1, totalSteps, step.ID, step.Name, step.MitreTechnique, username, idRes.Mode)
 
-			res, aborted, timedOut, execErr = c.runChainedStep(sessCtx, sessCancel, session, task.RunID, wrapped, stTimeout)
+			res, stop, timedOut, execErr = c.runChainedStep(sessCtx, sessCancel, session, task.RunID, step.ID, plan.shell, wrapped, stTimeout)
 		}
 		depOutcome.cleanup()
 
-		notes := depOutcome.note
+		notes := joinNotes(plan.note, depOutcome.note)
 		if timedOut {
 			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
 			if notes != "" {
@@ -863,11 +1065,10 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, sendErr)
 		}
 
-		if aborted {
+		if stop != nil {
 			led.recordAborted(i)
-			log.Printf("[beacon] step %s terminated by operator abort (run_id=%s)", step.ID, task.RunID)
-			_ = c.Complete(task.RunID, abortExitCode,
-				fmt.Sprintf("aborted by operator — step %s terminated", step.ID), led.steps)
+			log.Printf("[beacon] step %s terminated (lost-control=%v, run_id=%s)", step.ID, stop.Lost, task.RunID)
+			_ = c.Complete(task.RunID, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
 			return
 		}
 		if timedOut {
@@ -918,6 +1119,11 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		}
 	}
 
+	if refused == totalSteps {
+		// Nothing ran on this host. A zero here would read as SUCCESS for a run
+		// that executed no TTP at all.
+		finalExitCode = platformUnsatisfiableExitCode
+	}
 	summary := buildSummary(task, finalExitCode, degradedSteps, led.steps)
 	if err := c.Complete(task.RunID, finalExitCode, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
@@ -929,8 +1135,8 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 // On abort or timeout it cancels the session (tearing down the anchor group).
 func (c *BeaconClient) runChainedStep(
 	sessCtx context.Context, sessCancel context.CancelFunc,
-	session *executor.ChainSession, runID, wrapped string, timeout time.Duration,
-) (identity.ExecResult, bool, bool, error) {
+	session *executor.ChainSession, runID, stepID, shell, wrapped string, timeout time.Duration,
+) (identity.ExecResult, *ControlState, bool, error) {
 	if timeout <= 0 {
 		timeout = defaultStepTimeout
 	}
@@ -941,7 +1147,7 @@ func (c *BeaconClient) runChainedStep(
 	done := make(chan result, 1)
 	go func() {
 		start := time.Now()
-		stdout, stderr, code, e := session.RunStep(wrapped)
+		stdout, stderr, code, e := session.RunStepShell(stepID, shell, wrapped)
 		done <- result{
 			res: identity.ExecResult{ExitCode: code, Stdout: stdout, Stderr: stderr, Duration: time.Since(start)},
 			err: e,
@@ -954,26 +1160,24 @@ func (c *BeaconClient) runChainedStep(
 	timeoutTimer := time.NewTimer(timeout)
 	defer timeoutTimer.Stop()
 
-	aborted := false
 	for {
 		select {
 		case <-sessCtx.Done():
 			r := <-done
-			return r.res, aborted, false, c.nonCancelErr(r.err)
+			return r.res, nil, false, c.nonCancelErr(r.err)
 		case <-timeoutTimer.C:
-			sessCancel() // tear down the chain session process group
+			sessCancel() // tear down the chain session's whole tree
 			r := <-done
 			r.res.ExitCode = timeoutExitCode
-			return r.res, false, true, nil
+			return r.res, nil, true, nil
 		case <-ticker.C:
 			if state, _ := c.Control(runID); state.Abort {
-				aborted = true
-				sessCancel() // tear the anchor group down
+				sessCancel() // tear the anchor's whole tree down
 				r := <-done
-				return r.res, true, false, nil
+				return r.res, &state, false, nil
 			}
 		case r := <-done:
-			return r.res, aborted, false, c.nonCancelErr(r.err)
+			return r.res, nil, false, c.nonCancelErr(r.err)
 		}
 	}
 }
@@ -985,14 +1189,19 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 	led := newOutcomeLedger(task)
 	finalExitCode := 0
 	degradedSteps := 0
+	refused := 0
 	for i, step := range task.Steps {
 		if state, _ := c.Control(task.RunID); state.Abort {
-			log.Printf("[beacon] abort detected before step %s (run_id=%s)", step.ID, task.RunID)
-			_ = c.SendOutput(task.RunID, step.ID, "--- ABORTED (operator) ---")
-			led.markRemaining(i, ReasonUpstreamFailed)
-			_ = c.Complete(task.RunID, abortExitCode, "aborted by operator", led.steps)
+			c.stopBeforeStep(task, i, led, state)
 			return
 		}
+		plan := planStep(&step, beaconGOOS)
+		if plan.refuse != "" {
+			c.refuseStep(task, i, led, plan)
+			refused++
+			continue
+		}
+		step.Command = plan.command
 		username := c.resolveStepUsername(task, &step)
 		idRes := c.resolve(username)
 		logIdentity(step.ID, username, idRes)
@@ -1006,19 +1215,19 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 		}
 		depOutcome := c.resolveRuntimeDeps(task, &step)
 		var res identity.ExecResult
-		var aborted bool
+		var stop *ControlState
 		var timedOut bool
 		var execErr error
 		stTimeout := c.stepTimeout(&step)
 		if depOutcome.blocked {
 			res = depOutcome.synthetic
 		} else {
-			execID := identity.ExecutionIdentity{Mode: idRes.Mode, Username: idRes.Username, Command: step.Command}
-			res, aborted, timedOut, execErr = c.runStep(ctx, task.RunID, step.ID, execID, stTimeout)
+			execID := identity.ExecutionIdentity{Mode: idRes.Mode, Username: idRes.Username, Command: step.Command, Shell: plan.shell}
+			res, stop, timedOut, execErr = c.runStep(ctx, task.RunID, step.ID, execID, stTimeout)
 		}
 		depOutcome.cleanup()
 
-		notes := depOutcome.note
+		notes := joinNotes(plan.note, depOutcome.note)
 		if timedOut {
 			tn := fmt.Sprintf("%s command exceeded %s timeout and was terminated", stepTimeoutMarker, stTimeout)
 			if notes != "" {
@@ -1032,10 +1241,9 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 		if err := c.SendOutput(task.RunID, step.ID, stepOut); err != nil {
 			log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
 		}
-		if aborted {
+		if stop != nil {
 			led.recordAborted(i)
-			_ = c.Complete(task.RunID, abortExitCode,
-				fmt.Sprintf("aborted by operator — step %s terminated", step.ID), led.steps)
+			_ = c.Complete(task.RunID, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
 			return
 		}
 		if timedOut {
@@ -1064,6 +1272,11 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 			break
 		}
 	}
+	if refused == totalSteps {
+		// Nothing ran on this host. A zero here would read as SUCCESS for a run
+		// that executed no TTP at all.
+		finalExitCode = platformUnsatisfiableExitCode
+	}
 	summary := buildSummary(task, finalExitCode, degradedSteps, led.steps)
 	if err := c.Complete(task.RunID, finalExitCode, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
@@ -1077,7 +1290,7 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 // The step runs under a child context derived from ctx with a step execution timeout;
 // on timeout, abort (or parent cancel) the child context is cancelled, which signals
 // the step's process group via the executor's RunCommandCtx.
-func (c *BeaconClient) runStep(ctx context.Context, runID, stepID string, execID identity.ExecutionIdentity, timeout time.Duration) (identity.ExecResult, bool, bool, error) {
+func (c *BeaconClient) runStep(ctx context.Context, runID, stepID string, execID identity.ExecutionIdentity, timeout time.Duration) (identity.ExecResult, *ControlState, bool, error) {
 	if timeout <= 0 {
 		timeout = defaultStepTimeout
 	}
@@ -1093,52 +1306,81 @@ func (c *BeaconClient) runStep(ctx context.Context, runID, stepID string, execID
 	var onChunk executor.OutputChunkFunc
 	if c.StreamOutput {
 		onChunk = func(chunk string, isStderr bool) {
-			_ = c.SendOutput(runID, stepID, chunk)
+			_ = c.sendOutput(runID, stepID, chunk, false)
 		}
 	}
 
+	run := c.execStep
+	if run == nil {
+		run = identity.ExecuteCtxStream
+	}
 	go func() {
-		r, e := identity.ExecuteCtxStream(stepCtx, execID, onChunk)
+		r, e := run(stepCtx, execID, onChunk)
 		done <- result{r, e}
 	}()
 
 	controlTicker := time.NewTicker(controlPollInterval)
 	defer controlTicker.Stop()
 
-	aborted := false
 	for {
 		select {
 		case <-ctx.Done():
 			// Agent shutdown — cancel the step and wait for it to drain.
 			cancel()
 			r := <-done
-			return r.res, false, false, c.nonCancelErr(r.err)
+			return r.res, nil, false, c.nonCancelErr(r.err)
 
 		case <-stepCtx.Done():
 			if errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
 				r := <-done
 				r.res.ExitCode = timeoutExitCode
-				return r.res, false, true, nil
+				return r.res, nil, true, nil
 			}
 			r := <-done
-			return r.res, false, false, c.nonCancelErr(r.err)
+			return r.res, nil, false, c.nonCancelErr(r.err)
 
 		case <-controlTicker.C:
-			// (b) Abort check while the step runs.
+			// (b) Abort check while the step runs. A lost control channel stops
+			// the step too (fail-closed); the returned state says which it was.
 			if state, _ := c.Control(runID); state.Abort {
-				aborted = true
-				cancel() // SIGTERM → SIGKILL the process group
+				cancel() // tear the step's whole tree down
 				r := <-done
-				return r.res, true, false, nil
+				return r.res, &state, false, nil
 			}
 
 		case r := <-done:
 			// ExecuteCtx returns context.Canceled if we cancelled mid-flight; the
 			// only way that happens here is a race where ctx was cancelled (shutdown)
 			// just as the step finished. Treat a clean finish as not-aborted.
-			return r.res, aborted, false, c.nonCancelErr(r.err)
+			return r.res, nil, false, c.nonCancelErr(r.err)
 		}
 	}
+}
+
+// stopBeforeStep reports a run stopped by the control channel before step i ran.
+func (c *BeaconClient) stopBeforeStep(task *Task, i int, led *outcomeLedger, state ControlState) {
+	stepID := task.Steps[i].ID
+	log.Printf("[beacon] stop detected before step %s (run_id=%s lost-control=%v)", stepID, task.RunID, state.Lost)
+	_ = c.SendOutput(task.RunID, stepID, state.stopLine())
+	led.markRemaining(i, ReasonUpstreamFailed)
+	_ = c.Complete(task.RunID, abortExitCode, state.stopBeforeSummary(stepID), led.steps)
+}
+
+// refuseStep records step i as not run on this host (BEACON-01) and writes the
+// marker into the run record. The run continues with the next step: a step
+// that cannot run HERE is not a failed step, and its detections read
+// not_executed — never "missed".
+func (c *BeaconClient) refuseStep(task *Task, i int, led *outcomeLedger, plan stepPlan) {
+	step := &task.Steps[i]
+	log.Printf("[beacon] %s (run_id=%s)", plan.refuse, task.RunID)
+	out := fmt.Sprintf("=== STEP %d/%d · %s · %s ===\n%s\n"+
+		"   THIS STEP DID NOT RUN on this host. Its detections are not_executed, not missed.\n"+
+		"--- exit_code=none duration=0s ---",
+		i+1, len(task.Steps), step.ID, step.MitreTechnique, plan.refuse)
+	if err := c.SendOutput(task.RunID, step.ID, out); err != nil {
+		log.Printf("[beacon] sendOutput (step %s) error: %v", step.ID, err)
+	}
+	led.record(StepOutcome{StepID: step.ID, Termination: TermNotRun, Reason: ReasonPlatformUnsatisfiable})
 }
 
 // nonCancelErr filters out context.Canceled (which is an expected abort/shutdown
@@ -1172,29 +1414,70 @@ func (c *BeaconClient) resolveStepUsername(task *Task, step *Step) string {
 // Internal helpers
 // -------------------------------------------------------------------------
 
-// post marshals body as JSON and POSTs it to path on the SimCore server.
+// post marshals body as JSON and POSTs it to path on the SimCore server, once.
 // Returns the raw response body on success (2xx).
 func (c *BeaconClient) post(path string, body interface{}) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
-
-	resp, err := c.http.Post(
-		c.ServerURL+path,
-		"application/json",
-		bytes.NewReader(data),
-	)
+	respBody, status, err := c.postOnce(path, data)
 	if err != nil {
 		return nil, fmt.Errorf("POST %s: %w", path, err)
 	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("POST %s: status %d: %s", path, resp.StatusCode, respBody)
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("POST %s: status %d: %s", path, status, respBody)
 	}
 	return respBody, nil
+}
+
+func (c *BeaconClient) postOnce(path string, data []byte) ([]byte, int, error) {
+	resp, err := c.http.Post(c.ServerURL+path, "application/json", bytes.NewReader(data))
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	return respBody, resp.StatusCode, nil
+}
+
+// postRetry is post for the two POSTs whose loss costs evidence: a step's
+// /output and the run's /complete (BEACON-11 / OPS-04). Base made ONE attempt,
+// so a SimCore restart or a proxy blip at the moment a step finished lost that
+// step's output, or left the run "running" until the beacon-lost sweep.
+//
+// It retries ONLY transport errors and 5xx, waiting postRetryBackoff[i] before
+// retry i (1+2+4+8+16 s: up to 5 retries, 6 attempts, ~31 s). 409 means the run
+// is already terminal on SimCore — nothing a retry can change — and is treated
+// as success. 404 (unknown run) and every other 4xx stop at once.
+func (c *BeaconClient) postRetry(path string, body interface{}) ([]byte, error) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
+	}
+	for attempt := 0; ; attempt++ {
+		respBody, status, err := c.postOnce(path, data)
+		var retryErr error
+		switch {
+		case err != nil:
+			retryErr = fmt.Errorf("POST %s: %w", path, err)
+		case status >= 200 && status < 300:
+			return respBody, nil
+		case status == http.StatusConflict:
+			log.Printf("[beacon] POST %s: 409 — run already terminal on SimCore; treating as delivered", path)
+			return respBody, nil
+		case status >= 500:
+			retryErr = fmt.Errorf("POST %s: status %d: %s", path, status, respBody)
+		default:
+			return nil, fmt.Errorf("POST %s: status %d: %s", path, status, respBody)
+		}
+		if attempt >= len(postRetryBackoff) {
+			return nil, retryErr
+		}
+		wait := postRetryBackoff[attempt]
+		log.Printf("[beacon] %v — retry %d/%d in %s", retryErr, attempt+1, len(postRetryBackoff), wait)
+		time.Sleep(wait)
+	}
 }
 
 // identityDegradedMarker prefixes an unhonoured-identity notice. It is a stable
@@ -1426,6 +1709,16 @@ func buildSummary(task *Task, exitCode, degradedSteps int, steps []StepOutcome) 
 	}
 	if id, term, ok := severedAt(steps); ok {
 		summary += fmt.Sprintf(" | SEVERED at %s (%s)", id, term)
+	}
+	var notHere []string
+	for _, st := range steps {
+		if st.Termination == TermNotRun && st.Reason == ReasonPlatformUnsatisfiable {
+			notHere = append(notHere, st.StepID)
+		}
+	}
+	if len(notHere) > 0 {
+		summary += fmt.Sprintf(" | %s: %d step(s) not run on this host (%s) — their detections are "+
+			"not_executed, not missed", ReasonPlatformUnsatisfiable, len(notHere), strings.Join(notHere, ","))
 	}
 	for _, st := range steps {
 		if st.terminationUnknown {
