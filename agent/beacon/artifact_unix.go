@@ -49,3 +49,7 @@ func defaultExecProbe(probePath string) error {
 }
 
 func hostGOOS() string { return runtime.GOOS }
+
+// isSharingViolation is Windows-only: POSIX has no mandatory file locking that
+// fails a rename.
+func isSharingViolation(error) bool { return false }
