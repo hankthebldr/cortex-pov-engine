@@ -13,7 +13,9 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any, Optional
 
@@ -25,7 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models import ToolInstance
 from tools.adapter_catalog import catalog as adapter_catalog
-from tools.instantiator import InstallResult, StartResult, StopResult, ToolStatus, instantiator
+from tools.instantiator import (
+    InstallResult, StartResult, StopResult, ToolParamError, ToolStatus, instantiator,
+)
 from tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger("cortexsim.api.tools")
@@ -35,6 +39,20 @@ router = APIRouter(prefix="/tools", tags=["tools"])
 
 class StartParams(BaseModel):
     params: dict[str, Any] = {}
+
+
+#: The install currently running, if any: tool name -> monotonic start time.
+#:
+#: OPS-05. ``instantiator.install`` is a blocking ``subprocess.run`` with a
+#: ten-minute cap (a cargo build). It used to run directly inside this async
+#: route — on the event loop — so for the length of a build every other request
+#: (console, /api/health, every beacon's task poll) waited behind it. It now
+#: runs in a worker thread, and only one runs at a time: two cargo builds racing
+#: in one source tree corrupt each other's target/, and a second click on
+#: Install while the first is still compiling is far more often impatience than
+#: intent. Checked-and-set with no ``await`` in between, so it is atomic on the
+#: single event loop without a lock that could bind to the wrong loop.
+_install_in_flight: dict[str, float] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +302,28 @@ async def install_tool(tool_name: str, db: AsyncSession = Depends(get_db)):
             detail={"error": "Tool not found", "code": "TOOL_NOT_FOUND", "detail": f"tool_name='{tool_name}'"},
         )
 
+    if _install_in_flight:
+        running, since = next(iter(_install_in_flight.items()))
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Another tool install is already running",
+                "code": "INSTALL_IN_PROGRESS",
+                "detail": (
+                    f"'{running}' has been installing for "
+                    f"{int(time.monotonic() - since)}s; installs run one at a time. "
+                    f"Retry when it finishes (GET /api/tools shows its status)."
+                ),
+            },
+        )
+
     logger.info("install_tool tool=%s", tool_name)
-    result: InstallResult = instantiator.install(tool_name)
+    _install_in_flight[tool_name] = time.monotonic()
+    try:
+        # A worker thread, not the event loop: the build may take ten minutes.
+        result: InstallResult = await asyncio.to_thread(instantiator.install, tool_name)
+    finally:
+        _install_in_flight.pop(tool_name, None)
 
     if result.success:
         await _sync_tool_instance(
@@ -316,8 +354,19 @@ async def start_tool(
             detail={"error": "Tool not found", "code": "TOOL_NOT_FOUND", "detail": f"tool_name='{tool_name}'"},
         )
 
-    logger.info("start_tool tool=%s params=%s", tool_name, body.params)
-    result: StartResult = instantiator.start(tool_name, body.params)
+    try:
+        # Validated BEFORE anything else happens — including the log line, so a
+        # refused value is never echoed as though it were about to run.
+        instantiator.validate_start_params(tool_name, body.params)
+        logger.info("start_tool tool=%s params=%s", tool_name, body.params)
+        result: StartResult = instantiator.start(tool_name, body.params)
+    except ToolParamError as exc:
+        logger.warning("start_tool tool=%s refused: %s", tool_name, exc.detail)
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Tool start parameter refused", "code": exc.code,
+                    "detail": exc.detail},
+        ) from exc
 
     if result.success:
         await _sync_tool_instance(
