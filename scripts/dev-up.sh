@@ -13,14 +13,18 @@
 #      actionable fix (not a raw docker error) when it isn't.
 #   2. If ./.env is missing, generate one from .env.example with a freshly
 #      generated CORTEXSIM_SECRET and CORTEXSIM_ENV=development. An existing
-#      .env is never clobbered — your secret survives re-runs.
+#      .env is never clobbered — your secret survives re-runs. Generating one
+#      while the cortex-pov-engine_simcore_db volume already exists warns
+#      loudly: the credentials in it were encrypted with the OLD secret.
 #   3. `docker compose up -d --build`.
 #   4. Poll http://localhost:${CORTEXSIM_PORT}/api/health until it responds.
-#      {"status":"ok"} prints success; {"status":"degraded"} still counts as
-#      a successful bring-up (the app IS up) and prints which component(s)
-#      are degraded and why, rather than silently spinning for 90s and
-#      reporting a bare timeout for a server that came up fine. Only a
-#      genuine non-response times out as an actual failure.
+#      {"status":"degraded"} still counts as a successful bring-up (the app IS
+#      up) and prints which component(s) are degraded and why, rather than
+#      silently spinning for 90s and reporting a bare timeout for a server
+#      that came up fine. Expect degraded on EVERY bring-up today: the
+#      api_auth component reports API_UNAUTHENTICATED until SimCore has API
+#      authentication (SEC-01). {"status":"ok"} prints success. Only a genuine
+#      non-response times out as an actual failure.
 #
 # Usage:  scripts/dev-up.sh
 # ==============================================================================
