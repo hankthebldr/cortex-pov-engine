@@ -637,7 +637,6 @@ class Orchestrator:
                 offline = _offline_warning(agent_row, datetime.utcnow())
                 if offline:
                     launch_warnings.append(offline)
-            if agent_row is not None:
                 readiness = evaluate_runtime_readiness(scenario, agent_row.interpreters)
                 runtime_dependency_gaps = [g.to_dict() for g in readiness.gaps]
                 if readiness.gaps:
