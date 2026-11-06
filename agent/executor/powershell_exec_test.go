@@ -6,18 +6,39 @@ package executor
 // failed" rather than "the agent is broken".
 //
 // These tests run against whatever PowerShell is on PATH (pwsh on Linux/macOS
-// and on GitHub's ubuntu runners, powershell.exe on Windows) and skip when none
-// is. PowerShell 7 and Windows PowerShell 5.1 agree on every construct used
-// here — $LASTEXITCODE, $?, exit, [Console]::Out/Error — so exercising pwsh is
-// a real check of the 5.1 path, not a proxy for it.
+// and on GitHub's ubuntu runners, powershell.exe on Windows). They skip when
+// none is — unless CORTEXSIM_REQUIRE_POWERSHELL=1, which turns the skip into a
+// failure (requirePowerShell), so a CI job that is MEANT to run them cannot go
+// green by having no interpreter.
+//
+// What pwsh 7 proves here, and what it does not (CI-14). pwsh exercises the
+// -EncodedCommand encoding, the sentinel framing, the anchor's statement-by-
+// statement stdin loop and the exit-wrapper's SHAPE. It is NOT Windows
+// PowerShell 5.1 — the product floor — and the two diverge on exactly the
+// semantics this file cares about:
+//
+//   - native stderr and $?: 5.1 wraps a native tool's redirected stderr in
+//     NativeCommandError records and clears $? even at exit 0; pwsh 7.2+ does
+//     not. Truth-table row (iv) therefore passes on pwsh with or without the fix.
+//   - `&&` / `||` pipeline chain operators exist only in pwsh 7; in 5.1 they
+//     are parse errors.
+//   - encoding: 5.1 writes redirected output in the OEM code page and reads a
+//     BOM-less script file as ANSI; pwsh 7 is UTF-8 throughout. The non-ASCII
+//     round trip therefore also passes on pwsh with or without the fix.
+//
+// The 5.1 proof is the windows-native-ci job (windows-latest, powershell.exe
+// 5.1) running this package with CORTEXSIM_REQUIRE_POWERSHELL=1. Until that job
+// has run green, nothing here is proven on Windows.
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +51,21 @@ func findPowerShell() string {
 			return p
 		}
 	}
+	return ""
+}
+
+// requirePowerShell returns a PowerShell executable or stops the test: Skip
+// normally, Fatal when CORTEXSIM_REQUIRE_POWERSHELL=1 (CI-08).
+func requirePowerShell(t *testing.T) string {
+	t.Helper()
+	if p := findPowerShell(); p != "" {
+		return p
+	}
+	if os.Getenv("CORTEXSIM_REQUIRE_POWERSHELL") == "1" {
+		t.Fatal("CORTEXSIM_REQUIRE_POWERSHELL=1 but no PowerShell (powershell.exe or pwsh) is on PATH — " +
+			"this job exists to run these tests, so a missing interpreter is a failure, not a skip")
+	}
+	t.Skip("no PowerShell on PATH")
 	return ""
 }
 
@@ -56,15 +92,93 @@ func runEncoded(t *testing.T, psExe, command string) (stdout string, exitCode in
 	return out.String(), 0
 }
 
+// runEncodedFull is runEncoded that also returns stderr and the raw stdout
+// bytes, for the assertions that are about BYTES (encoding, CLIXML framing).
+func runEncodedFull(t *testing.T, psExe, command string) (stdout []byte, stderr string, exitCode int) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	args := append(append([]string{}, powerShellArgs...),
+		"-EncodedCommand", encodePowerShellCommand(powerShellExitWrapper(command)))
+	cmd := exec.CommandContext(ctx, psExe, args...)
+
+	var out, errOut bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	err := cmd.Run()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return out.Bytes(), errOut.String(), exitErr.ExitCode()
+	}
+	if err != nil {
+		t.Fatalf("could not run %s: %v", psExe, err)
+	}
+	return out.Bytes(), errOut.String(), 0
+}
+
+// THE CANONICAL TRUTH TABLE. The push-bundle harness asserts the same four rows
+// for .ps1 bundles, so pull and push agree on what a PowerShell step's exit code
+// means. Row (iv) is the Windows PowerShell 5.1 divergence: 5.1 turns a native
+// tool's redirected stderr into NativeCommandError records and clears $? even
+// at exit 0. pwsh 7.2+ no longer does, so on this host row (iv) passes with or
+// without the fix — only the windows-native-ci job (powershell.exe 5.1) proves it.
+func TestPowerShellExitWrapper_CanonicalTruthTable(t *testing.T) {
+	psExe := requirePowerShell(t)
+	native := "& '" + psExe + "' -NoProfile -NonInteractive -Command "
+	rows := []struct {
+		name, command string
+		want          int
+	}{
+		{"(i) Write-Output is 0", "Write-Output ok", 0},
+		{"(ii) last statement a native exiting 3 is 3", native + "'exit 3'", 3},
+		{"(iii) last statement a failing cmdlet is 1", "Get-Item 'C:\\cortexsim\\no\\such\\path-xyz'", 1},
+		{"(iv) a native writing stderr at exit 0 is 0",
+			native + "\"[Console]::Error.WriteLine('warn'); exit 0\" 2>&1", 0},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			if _, _, code := runEncodedFull(t, psExe, r.command); code != r.want {
+				t.Errorf("exit = %d, want %d", code, r.want)
+			}
+		})
+	}
+}
+
+// BEACON-10. TTP output is evidence stored byte-for-byte; a non-ASCII byte must
+// reach SimCore as UTF-8. pwsh 7 is UTF-8 by default, so this passes here on
+// either side of the fix; the windows-native-ci job is where the OEM code page
+// of 5.1 would make it red.
+func TestPowerShellExitWrapper_NonASCIIOutputIsUTF8(t *testing.T) {
+	psExe := requirePowerShell(t)
+	out, _, code := runEncodedFull(t, psExe, "Write-Output 'é'")
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !bytes.Contains(out, []byte{0xC3, 0xA9}) {
+		t.Fatalf("stdout = % x, want the UTF-8 bytes c3 a9 for 'é'", out)
+	}
+}
+
+// BEACON-06. An error record must reach the run record as text. Without
+// -OutputFormat Text, a powershell whose stderr is a pipe frames it as
+// `#< CLIXML <Objs ...>` — observed on pwsh 7.6 and on Windows PowerShell 5.1.
+func TestPowerShellExitWrapper_StderrIsTextNotCLIXML(t *testing.T) {
+	psExe := requirePowerShell(t)
+	_, stderr, _ := runEncodedFull(t, psExe, "Write-Error 'cortexsim-boom'")
+	if strings.HasPrefix(strings.TrimSpace(stderr), "#< CLIXML") {
+		t.Fatalf("stderr is CLIXML, not text:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "cortexsim-boom") {
+		t.Fatalf("stderr does not carry the error text: %q", stderr)
+	}
+}
+
 // The exit-code contract is what every fail-fast, Result-row and push/pull
 // parity guarantee in the engine rests on. Left unwrapped,
 // `powershell -Command <failing thing>` exits 0 and a broken TTP reports as a
 // step that PASSED — the exact false-green this engine exists to eliminate.
 func TestPowerShellExitWrapper_RealInterpreterHonoursExitCodes(t *testing.T) {
-	psExe := findPowerShell()
-	if psExe == "" {
-		t.Skip("no PowerShell on PATH")
-	}
+	psExe := requirePowerShell(t)
 
 	t.Run("success is 0 and stdout is captured", func(t *testing.T) {
 		out, code := runEncoded(t, psExe, "Write-Output 'cortexsim-ok'")
@@ -131,10 +245,7 @@ func TestPowerShellExitWrapper_RealInterpreterHonoursExitCodes(t *testing.T) {
 // This is what ChainSession drives on Windows, reconstructed here because
 // NewChainSession compiles to the POSIX anchor on this host.
 func TestPowerShellChainStepScript_RealInterpreterRoundTrip(t *testing.T) {
-	psExe := findPowerShell()
-	if psExe == "" {
-		t.Skip("no PowerShell on PATH")
-	}
+	psExe := requirePowerShell(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -177,9 +288,11 @@ func TestPowerShellChainStepScript_RealInterpreterRoundTrip(t *testing.T) {
 	outCh, errCh := lines(stdoutPipe), lines(stderrPipe)
 
 	const marker = "__CORTEXSIM_STEP_TEST__"
-	// powerShellExe is a Windows literal; on this host point it at the real binary.
+	// Render through the explicit-interpreter form so the step child is the
+	// PowerShell found on this host (on Windows the default render is already
+	// the absolute %SystemRoot% path; on POSIX it is a literal placeholder).
 	writeStep := func(cmd string) {
-		script := strings.ReplaceAll(powerShellChainStepScript(marker, cmd), powerShellExe, psExe)
+		script := powerShellChainStepScriptFor(psExe, marker, "step-x", cmd)
 		if _, err := io.WriteString(stdin, script); err != nil {
 			t.Fatalf("write step: %v", err)
 		}
@@ -267,6 +380,29 @@ func TestPowerShellChainStepScript_RealInterpreterRoundTrip(t *testing.T) {
 	_ = drainErr()
 	if strings.TrimSpace(stripANSI(out)) != "unset" {
 		t.Errorf("cross-step state leaked: %q", out)
+	}
+
+	// BEACON-03. Step A succeeds (rc 0), then step B's child cannot be launched
+	// at all — the shape an EDR/AppLocker block or a missing image takes. B must
+	// NOT inherit A's $LASTEXITCODE of 0: a step that never ran read as a PASS.
+	writeStep("Write-Output 'step-a'")
+	_, rc = collectOut()
+	_ = drainErr()
+	if rc != 0 {
+		t.Fatalf("step A rc = %d, want 0", rc)
+	}
+	missing := filepath.Join(t.TempDir(), "nonexistent", "blocked.exe")
+	blocked := powerShellChainStepScriptFor(missing, marker, "step-b", "Write-Output 'never'")
+	if _, err := io.WriteString(stdin, blocked); err != nil {
+		t.Fatalf("write step B: %v", err)
+	}
+	_, rc = collectOut()
+	stderrB := drainErr()
+	if rc == 0 {
+		t.Errorf("step B's child never launched but its rc is 0 — it inherited step A's $LASTEXITCODE")
+	}
+	if !strings.Contains(stripANSI(stderrB), "!! STEP CHILD NOT LAUNCHED step=step-b") {
+		t.Errorf("step B carries no STEP CHILD NOT LAUNCHED marker; stderr=%q", stderrB)
 	}
 
 	_, _ = io.WriteString(stdin, anchorExitScript)

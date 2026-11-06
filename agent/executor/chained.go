@@ -52,6 +52,10 @@ type ChainSession struct {
 	exited  chan struct{}
 	waitErr error
 
+	// killer tears the anchor's whole tree down (Windows: its Job Object;
+	// POSIX: its process group). Attached right after Start, released by Close.
+	killer *treeKiller
+
 	cancelled atomic.Bool
 	wg        sync.WaitGroup
 	closeOnce sync.Once
@@ -98,6 +102,7 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 		cancel: cancel,
 		ctx:    sctx,
 		exited: make(chan struct{}),
+		killer: attachTreeKiller(cmd),
 	}
 	go func() {
 		s.waitErr = cmd.Wait()
@@ -111,11 +116,22 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 
 	// Watcher: on ctx cancel, tear down the whole anchor tree so an in-flight
 	// step (and the idle anchor) die together — same contract as RunCommandCtx.
+	//
+	// BEACON-04: once the anchor has EXITED there is nothing of ours left to
+	// kill, so the watcher does nothing. That is the Close() path — Close
+	// cancels only after the anchor has already exited cleanly — and base fired
+	// the tree kill there anyway: on Windows at a pid os/exec had already
+	// released (free for reuse; the beacon runs as SYSTEM), and on POSIX into
+	// the group, killing the background children of steps that had SUCCEEDED,
+	// which the per-step path never does. The anchor-dies-mid-step case is
+	// handled separately in RunStep, through the same killer.
 	go func() {
 		<-sctx.Done()
 		s.cancelled.Store(true)
-		if s.cmd.Process != nil {
-			killProcessTree(s.cmd.Process.Pid)
+		select {
+		case <-s.exited:
+		default:
+			s.killer.Kill()
 		}
 	}()
 
@@ -142,15 +158,27 @@ func (s *ChainSession) scan(r io.Reader, ch chan<- string) {
 // wrappedCmd is the exact string the default path would pass to `sh -c` (e.g.
 // `runuser -l www-data -c '...'`), so identity-harness semantics are identical.
 func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCode int, err error) {
+	return s.RunStepShell("", "", wrappedCmd)
+}
+
+// RunStepShell is RunStep for a named step under a step shell ("" = the host
+// default; on Windows also "powershell" and "cmd"). stepID only labels the
+// not-launched marker a Windows anchor prints (BEACON-03).
+func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, stderr string, exitCode int, err error) {
 	if s.cancelled.Load() || s.ctx.Err() != nil {
 		return "", "", 130, context.Canceled
 	}
 
 	// The step runs in a real CHILD PROCESS of the anchor (a POSIX subshell, or a
-	// nested powershell.exe on Windows) so it is a descendant of the one CGO —
-	// a connected causality tree — while the sentinels are emitted by the ANCHOR
-	// itself so they still fire if the step called `exit`. See script.go.
-	script := chainStepScript(s.marker, wrappedCmd)
+	// nested powershell.exe / cmd.exe on Windows) so it is a descendant of the
+	// one CGO — a connected causality tree — while the sentinels are emitted by
+	// the ANCHOR itself so they still fire if the step called `exit`. See
+	// script.go.
+	script, cleanup, serr := chainStepScriptFor(s.marker, stepID, shell, wrappedCmd)
+	if serr != nil {
+		return "", "", -1, fmt.Errorf("chain step: %w", serr)
+	}
+	defer cleanup()
 	if _, werr := io.WriteString(s.stdin, script); werr != nil {
 		return "", "", -1, fmt.Errorf("chain write: %w", werr)
 	}
@@ -224,14 +252,16 @@ func (s *ChainSession) RunStep(wrappedCmd string) (stdout, stderr string, exitCo
 	// closed our read ends, so the scanners finish at once and RunStep returns
 	// ErrAnchorTerminated below via the !sawRC path -- the anchor died first, so
 	// the witness is anchor_terminated, never "step signaled". The kill is not
-	// awaited: killProcessTree sleeps killGrace, and RunStep must not.
+	// awaited: Kill sleeps killGrace, and RunStep must not. It goes through the
+	// session's killer, never the anchor's (now released) pid: on Windows the
+	// orphan is still in the anchor's Job Object, on POSIX in its group.
 	stepDone := make(chan struct{})
 	defer close(stepDone)
 	go func() {
 		select {
 		case <-s.exited:
 			if !sawRC.Load() {
-				killProcessTree(s.cmd.Process.Pid)
+				s.killer.Kill()
 			}
 		case <-stepDone:
 		}
@@ -268,8 +298,9 @@ func (s *ChainSession) Close() error {
 		_ = s.stdin.Close()
 		<-s.exited
 		err = s.waitErr
-		s.cancel()
+		s.cancel() // the anchor has exited: the watcher kills nothing
 		s.wg.Wait()
+		s.killer.Release()
 	})
 	return err
 }

@@ -13,7 +13,7 @@ import (
 
 // killGrace is how long a cancelled command's process tree is given to exit
 // between the two termination sweeps (POSIX: SIGTERM before SIGKILL; Windows:
-// the first TerminateProcess sweep before the re-snapshot sweep).
+// the first job termination before the second).
 const killGrace = 3 * time.Second
 
 // OutputChunkFunc receives output chunks in real-time as they are produced.
@@ -80,7 +80,20 @@ func RunCommandCtxStream(ctx context.Context, cmdStr string, onChunk OutputChunk
 // PowerShell on Windows — see the platform_*.go files) and captures stdout and
 // stderr separately, honouring ctx for cancellation and streaming chunks to onChunk if non-nil.
 func RunCommandCtxStreamOutcome(ctx context.Context, cmdStr string, onChunk OutputChunkFunc) (Outcome, error) {
-	cmd := newShellCmd(cmdStr)
+	return RunShellCtxStreamOutcome(ctx, "", cmdStr, onChunk)
+}
+
+// RunShellCtxStreamOutcome is RunCommandCtxStreamOutcome under an explicit step
+// shell: "" is the host default (sh on POSIX, PowerShell on Windows); on
+// Windows "powershell" and "cmd" (PUSH-18) are also accepted. A shell this
+// host cannot execute is an error, never a silent fall-back to the default —
+// running cmd batch text under sh would execute garbage that may still exit 0.
+func RunShellCtxStreamOutcome(ctx context.Context, shell, cmdStr string, onChunk OutputChunkFunc) (Outcome, error) {
+	cmd, cleanup, buildErr := newShellCmdFor(shell, cmdStr)
+	if buildErr != nil {
+		return Outcome{ExitCode: -1, Termination: TerminationExited}, buildErr
+	}
+	defer cleanup()
 
 	var outBuf, errBuf bytes.Buffer
 	if onChunk != nil {
@@ -94,24 +107,33 @@ func RunCommandCtxStreamOutcome(ctx context.Context, cmdStr string, onChunk Outp
 	if startErr := cmd.Start(); startErr != nil {
 		return Outcome{Stdout: outBuf.String(), Stderr: errBuf.String(), ExitCode: -1, Termination: TerminationExited}, startErr
 	}
+	// Taken immediately after Start, while the child's pid is still pinned by
+	// os/exec's own handle (BEACON-04): on Windows this is where the child joins
+	// its Job Object; on POSIX it records the process group.
+	killer := attachTreeKiller(cmd)
 
-	// Watch ctx in a goroutine; on cancel, SIGTERM the process group then SIGKILL
-	// after a grace period. waitDone stops the watcher once the command returns.
-	// cancelled is read by the main goroutine after Wait() returns and written by
-	// the watcher, so it must be accessed atomically.
+	// Watch ctx in a goroutine; on cancel, tear the whole tree down (POSIX:
+	// SIGTERM the group then SIGKILL after a grace period; Windows: terminate
+	// the job). waitDone stops the watcher once the command returns. cancelled
+	// is read by the main goroutine after Wait() returns and written by the
+	// watcher, so it must be accessed atomically.
 	waitDone := make(chan struct{})
 	var cancelled atomic.Bool
 	go func() {
 		select {
 		case <-ctx.Done():
 			cancelled.Store(true)
-			killProcessTree(cmd.Process.Pid)
+			killer.Kill()
 		case <-waitDone:
 		}
 	}()
 
 	runErr := cmd.Wait()
 	close(waitDone)
+	// Reaped: from here on nothing may be killed on this command's behalf. A
+	// Kill already in progress still completes (and Windows keeps its handles
+	// open until it has); one that had not started is refused.
+	killer.Release()
 
 	stdout := outBuf.String()
 	stderr := errBuf.String()
