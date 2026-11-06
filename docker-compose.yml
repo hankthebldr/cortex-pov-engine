@@ -14,8 +14,14 @@ services:
     build:
       context: .
       dockerfile: core/Dockerfile
+    # The publish address is EXPLICIT. SimCore's operator and agent APIs are
+    # unauthenticated (GET /api/health -> api_auth: API_UNAUTHENTICATED), so the
+    # interface they listen on is the only access control a default deploy has.
+    # 0.0.0.0 (every host interface) stays the default because enrolled beacons
+    # must reach this port; set CORTEXSIM_BIND to 127.0.0.1 for a console-only
+    # host, or to the lab NIC's address to keep it off the corporate side.
     ports:
-      - "${CORTEXSIM_PORT:-8888}:8888"
+      - "${CORTEXSIM_BIND:-0.0.0.0}:${CORTEXSIM_PORT:-8888}:8888"
     volumes:
       # Bind-mount content at runtime so dev edits are live-reloadable. The production
       # image also bundles these, so the installer path (no mounts) works too. NOTE:
@@ -36,7 +42,9 @@ services:
       #   curl -fsSL http://<cp>:8888/agent/enroll.sh | CORTEXSIM_TOKEN=… bash
       - ./dist/agent:/app/core/static/agent:ro
       - simcore_db:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      # The host Docker socket is deliberately NOT mounted. Nothing in core/
+      # talks to Docker, and with it any command execution in this root,
+      # unauthenticated container would be root on the host.
     environment:
       # Default to development so a bare `docker compose up` does not trip the
       # production master-key guard (core/config.py). Set CORTEXSIM_ENV=production
@@ -46,6 +54,22 @@ services:
       # booting with "changeme". `scripts/dev-up.sh` generates this for you;
       # otherwise see .env.example for one-liners to generate a secret.
       - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:?set CORTEXSIM_SECRET in .env (run scripts/dev-up.sh, or see .env.example)}
+      # Passed through so the app can NAME its exposure (boot warning and
+      # /api/health api_auth) and enforce the host guard / CORS opt-in from
+      # the same .env the port mapping reads.
+      - CORTEXSIM_BIND=${CORTEXSIM_BIND:-0.0.0.0}
+      # Host names (beyond localhost, IP literals and the container's own
+      # hostname) the console/API may be reached by — DNS-rebinding guard.
+      # Comma list; '*.lab.example' matches subdomains; '*' disables the check.
+      # A beacon or browser using a DNS name not listed here gets
+      # 400 HOST_NOT_ALLOWED naming this variable.
+      - CORTEXSIM_ALLOWED_HOSTS=${CORTEXSIM_ALLOWED_HOSTS:-}
+      # Origins allowed to read the API cross-origin. Empty = same-origin only
+      # (the console needs nothing else).
+      - CORTEXSIM_CORS_ORIGINS=${CORTEXSIM_CORS_ORIGINS:-}
+    # uvicorn gets --timeout-graceful-shutdown 5 (core/Dockerfile CMD); this
+    # leaves room for that plus the lifespan shutdown before compose SIGKILLs.
+    stop_grace_period: 15s
     restart: unless-stopped
 
 volumes:

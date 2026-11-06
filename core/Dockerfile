@@ -393,4 +393,10 @@ WORKDIR /app/core
 
 EXPOSE 8888
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888"]
+# --timeout-graceful-shutdown: on SIGTERM uvicorn otherwise waits for EVERY open
+# connection to close, and the console holds SSE streams (/api/events) open
+# indefinitely — so `docker compose down/restart` never finished a graceful
+# shutdown and was SIGKILLed mid-write after compose's grace period. 5 s bounds
+# it; docker-compose.yml's stop_grace_period (15 s) leaves room for the
+# lifespan shutdown after it.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--timeout-graceful-shutdown", "5"]
