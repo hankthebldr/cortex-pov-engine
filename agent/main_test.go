@@ -3,8 +3,16 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/signal"
+	"runtime"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -52,5 +60,81 @@ func TestShutdownSignalsCoversInterruptAndTerm(t *testing.T) {
 		if !seen {
 			t.Errorf("shutdownSignals is missing %v", sig)
 		}
+	}
+}
+
+// TestRunAsServiceIsNotHandledOffWindows: on Linux and macOS there is no
+// service control manager to connect to, so the dispatcher must decline
+// immediately and leave main on the console path it always had. A non-Windows
+// beacon that believed it was a service would skip signal handling and could
+// not be stopped by systemd or launchd.
+func TestRunAsServiceIsNotHandledOffWindows(t *testing.T) {
+	called := false
+	handled, code, err := runAsService(serviceName, func(context.Context) int {
+		called = true
+		return 9
+	})
+	if handled {
+		t.Error("runAsService reported handled=true off Windows")
+	}
+	if code != 0 || err != nil {
+		t.Errorf("runAsService returned code=%d err=%v, want 0/nil", code, err)
+	}
+	if called {
+		t.Error("runAsService invoked the beacon off Windows — main would run it twice")
+	}
+	if underSCM() {
+		t.Error("underSCM() is true off Windows")
+	}
+}
+
+// TestRunBeaconRegistersThenReturnsOnCancel: runBeacon is the whole beacon
+// startup the service dispatcher now calls. It must still register with
+// SimCore (the move must not have dropped it) and must return promptly once
+// its context is cancelled — that return is what lets the SCM see STOPPED.
+func TestRunBeaconRegistersThenReturnsOnCancel(t *testing.T) {
+	t.Setenv("CORTEXSIM_STAGE_ROOT", t.TempDir())
+
+	var mu sync.Mutex
+	var reg map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/agents/register" {
+			body, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			_ = json.Unmarshal(body, &reg)
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}"))
+	}))
+	defer srv.Close()
+
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(prev)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already stopping: Run must return without polling
+
+	done := make(chan int, 1)
+	go func() {
+		done <- runBeacon(ctx, beaconConfig{server: srv.URL, id: "svc-test-01", interval: time.Second})
+	}()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Errorf("runBeacon returned %d, want 0", code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("runBeacon did not return after its context was cancelled")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if reg == nil {
+		t.Fatal("runBeacon never registered with SimCore")
+	}
+	if reg["agent_id"] != "svc-test-01" || reg["os"] != runtime.GOOS {
+		t.Errorf("registration body = %v, want agent_id=svc-test-01 os=%s", reg, runtime.GOOS)
 	}
 }
