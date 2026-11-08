@@ -13,6 +13,43 @@ import { absoluteTime, detectionCell, runAgent } from '../components/console/run
 import { runIdOf, idMatches } from '../api/ids.js'
 import { agentIsOnline } from '../components/console/setupProgress.js'
 
+/**
+ * A surface's last reported failure, visible and dismissable.
+ *
+ * The Library and guided-flow mounts used to pass `onError={() => {}}`, so a
+ * failure reported through it — a scenario that would not load, a refused push
+ * bundle, a launch the server turned down — reached nothing on screen. The
+ * views that own a button also render its refusal beside it; this notice is the
+ * floor for everything else (a scenario-detail fetch that failed) and the
+ * record of the last failure when the drawer that showed it has closed.
+ */
+export function useSurfaceNotice() {
+  const [notice, setNotice] = useState(null) // { message, tone }
+  const report = useCallback((message, tone = 'error') => {
+    const text = typeof message === 'string' ? message : (message?.message || String(message || ''))
+    if (text) setNotice({ message: text, tone })
+  }, [])
+  const clear = useCallback(() => setNotice(null), [])
+  return { notice, report, clear }
+}
+
+export function SurfaceNotice({ notice, onDismiss, testId = 'surface-notice' }) {
+  if (!notice) return null
+  const isError = notice.tone !== 'info' && notice.tone !== 'warn'
+  return (
+    <div
+      className={`launch-result launch-result--${isError ? 'error' : 'pending'} surface-notice`}
+      role={isError ? 'alert' : 'status'}
+      data-testid={testId}
+    >
+      <span className="surface-notice__message">{notice.message}</span>{' '}
+      <button type="button" className="btn btn--xs" onClick={onDismiss} aria-label="Dismiss message">
+        Dismiss
+      </button>
+    </div>
+  )
+}
+
 export function DestinationLoading() {
   return (
     <div className="destination-loading" role="status" aria-live="polite">
@@ -211,6 +248,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
   const [selectedPlane, setSelectedPlane] = useState(null)
   const [techniqueFilter, setTechniqueFilter] = useState(null)
   const armedRef = useRef(null)
+  const surface = useSurfaceNotice()
 
   const railPlanes = useMemo(
     () => planes.map((p) => ({ ...p, isActive: selectedPlane === p.code })),
@@ -239,6 +277,7 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
         onUnpin={unpin}
       />
       <Suspense fallback={<DestinationLoading />}>
+        <SurfaceNotice notice={surface.notice} onDismiss={surface.clear} testId="library-notice" />
         <OperationsView
           onNavigate={onNavigate}
           selectedPlane={selectedPlane}
@@ -255,8 +294,8 @@ function LibrarySurface({ params = {}, onNavigate = () => {} }) {
             onNavigate('runs', { run: runIdOf(run), tab: 'evidence' })}
           onRunComplete={(run) =>
             onNavigate('runs', { run: runIdOf(run), tab: 'live' })}
-          onError={() => {}}
-          onSurfaceMessage={() => {}}
+          onError={(msg) => surface.report(msg, 'error')}
+          onSurfaceMessage={(msg, tone = 'info') => surface.report(msg, tone)}
         />
       </Suspense>
     </div>
@@ -289,15 +328,22 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
   // DISTINCT state from "no plan" — see useDecodedPlan (I-1) — and must reach
   // LaunchView so Launch stays disabled until the decode settles.
   const { plan: payloadPlan, resolving: payloadPlanResolving } = useDecodedPlan(params.plan || null)
+  const surface = useSurfaceNotice()
 
   useEffect(() => {
     if (!armId) { setScenario(null); return undefined }
     let cancelled = false
     getScenario(armId)
       .then((d) => { if (!cancelled) setScenario(d || null) })
-      .catch(() => { if (!cancelled) setScenario(null) })
+      .catch((err) => {
+        if (cancelled) return
+        setScenario(null)
+        // Without this the page said "Arm a scenario from Simulate to begin"
+        // for a scenario that WAS armed and failed to load — the wrong fix.
+        surface.report(`Could not load armed scenario ${armId}: ${err?.message || 'request failed'}`)
+      })
     return () => { cancelled = true }
-  }, [armId])
+  }, [armId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="guided-flow">
@@ -311,6 +357,8 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
           </div>
         </div>
       </div>
+
+      <SurfaceNotice notice={surface.notice} onDismiss={surface.clear} testId="guided-notice" />
 
       <Suspense fallback={<DestinationLoading />}>
         <TargetsView
@@ -328,10 +376,14 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
             payloadPlanResolving={payloadPlanResolving}
             selectedTarget={selectedTarget}
             onRunComplete={(run) => {
+              surface.clear()
               refreshRuns()
               onNavigate('runs', { run: runIdOf(run), tab: 'live' })
             }}
-            onError={() => {}}
+            // LaunchView already renders the refusal as an alert beside the
+            // button that was clicked; the notice is its polite echo at the
+            // top of the flow, so it is not announced twice.
+            onError={(msg) => surface.report(msg, 'warn')}
             onGoLibrary={() => onNavigate('library')}
             onGoTargets={() => {}}
           />
