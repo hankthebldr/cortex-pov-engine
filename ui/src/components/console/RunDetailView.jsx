@@ -9,7 +9,51 @@ import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { scenarioIdOf } from '../../api/ids.js'
 import { hasAttestations, attestationLines } from '../../outcomes.js'
+import { parseStepTranscript } from './useRunStepTail.js'
 import '../../styles/destinations/run-detail.css'
+
+// Launch/host markers that change what a missing detection MEANS. Both carry
+// `step=<id>` and may sit outside a step's === STEP === block (the variant
+// marker is written at launch, before any step runs), so they are matched by
+// line rather than through the step parser — which stays the one reader of
+// the per-step grammar (identity, exit code, duration).
+const VARIANT_MARKER = /^!! PLATFORM VARIANT:\s*step=(\S+)\s*(.*)$/
+const NOT_RUN_MARKER = /^!! STEP NOT RUN: PLATFORM_UNSATISFIABLE\s+step=(\S+)\s*(.*)$/
+
+/**
+ * What in this run's transcript says its steps did not run as authored.
+ * Pure. Identity comes from `parseStepTranscript` (useRunStepTail.js) — reused,
+ * not re-implemented, so a beacon format change fails one parser test.
+ */
+export function runDegradations(output) {
+  const parsed = parseStepTranscript(output)
+  const identity = parsed.order
+    .map((id) => ({ id, ...parsed.steps[id] }))
+    .filter((s) => s.identityNote)
+  const total = parsed.order.reduce((m, id) => Math.max(m, parsed.steps[id].total || 0), 0)
+    || parsed.order.length
+
+  const variant = []
+  const notRun = []
+  const seen = { variant: new Set(), notRun: new Set() }
+  if (typeof output === 'string') {
+    for (const raw of output.split('\n')) {
+      const line = raw.replace(/\r$/, '').trim()
+      let m = VARIANT_MARKER.exec(line)
+      if (m && !seen.variant.has(m[1])) {
+        seen.variant.add(m[1])
+        variant.push({ id: m[1], note: m[2] || '' })
+        continue
+      }
+      m = NOT_RUN_MARKER.exec(line)
+      if (m && !seen.notRun.has(m[1])) {
+        seen.notRun.add(m[1])
+        notRun.push({ id: m[1], note: m[2] || '' })
+      }
+    }
+  }
+  return { identity, total, variant, notRun }
+}
 
 /**
  * Last few lines of a run's captured output — the actual reason it died.
@@ -47,6 +91,84 @@ function tailOutput(output, lines = 8) {
  *   onBack     — () => void      return to the run list
  *   onError    — (msg) => void
  */
+
+/**
+ * The three ways a step can finish without having run as the scenario authored
+ * it, each said ONCE at the top of the run — before any proof surface invites a
+ * coverage reading of the steps it names.
+ *
+ *   identity  — `!! IDENTITY NOT HONOURED`: the step ran as the beacon's own
+ *               account. On Windows that is every non-direct identity.
+ *   variant   — `!! PLATFORM VARIANT`: the step ran its per-OS variant, and its
+ *               expected detections were authored against the primary command.
+ *   not run   — `!! STEP NOT RUN: PLATFORM_UNSATISFIABLE`: the host refused the
+ *               step; its detections cannot have fired.
+ *
+ * `partial`: only the summary row's output tail was readable, so a step named
+ * early in the transcript may be missing from these counts — said, not hidden.
+ */
+function RunDegradationBanners({ degraded, partial = false }) {
+  const { identity, total, variant, notRun } = degraded
+  if (!identity.length && !variant.length && !notRun.length) return null
+  const partialNote = partial && (
+    <p className="run-attest__lede">
+      Read from the last 2 KB of this run&apos;s output only — the full transcript could not be
+      loaded, so these counts may be low.
+    </p>
+  )
+  return (
+    <>
+      {identity.length > 0 && (
+        <div className="run-severed run-degraded" role="status" data-testid="run-identity-banner">
+          <div>
+            {`${identity.length} of ${Math.max(total, identity.length)} steps ran as the beacon account, `
+              + 'not the authored identity — lineage-keyed misses on these steps are not a coverage '
+              + 'measurement'}
+          </div>
+          <ul className="run-attest__list">
+            {identity.map((s) => (
+              <li key={s.id}>
+                <span className="mono">{s.id}</span>
+                {s.identity ? <> · authored <span className="mono">{s.identity}</span></> : null}
+                {` — ${s.identityNote}`}
+              </li>
+            ))}
+          </ul>
+          {partialNote}
+        </div>
+      )}
+      {variant.length > 0 && (
+        <div className="run-severed run-degraded" role="status" data-testid="run-platform-variant-banner">
+          <div>
+            {`${variant.length} step${variant.length === 1 ? '' : 's'} ran a platform variant, not the `
+              + 'authored command — expected detections unverified for this OS'}
+          </div>
+          <ul className="run-attest__list">
+            {variant.map((s) => (
+              <li key={s.id}><span className="mono">{s.id}</span>{s.note ? ` — ${s.note}` : ''}</li>
+            ))}
+          </ul>
+          {partialNote}
+        </div>
+      )}
+      {notRun.length > 0 && (
+        <div className="run-severed run-degraded" role="status" data-testid="run-platform-notrun-banner">
+          <div>
+            {`${notRun.length} step${notRun.length === 1 ? '' : 's'} never ran on this host `
+              + '(PLATFORM_UNSATISFIABLE) — their detections could not fire, so a miss on them is not '
+              + 'a coverage measurement'}
+          </div>
+          <ul className="run-attest__list">
+            {notRun.map((s) => (
+              <li key={s.id}><span className="mono">{s.id}</span>{s.note ? ` — ${s.note}` : ''}</li>
+            ))}
+          </ul>
+          {partialNote}
+        </div>
+      )}
+    </>
+  )
+}
 
 export const RUN_SUBTABS = [
   { id: 'live',      label: 'Live'      },
@@ -89,10 +211,14 @@ export default function RunDetailView({
     return s?.name || null
   }, [scenarios, descriptor.scenarioId])
 
+  const output = typeof run?.output === 'string' ? run.output : null
+  const degraded = useMemo(() => runDegradations(output), [output])
+  const partial = false
+
   const isThisActive = !!(activeRun && activeRun.runId === runId)
   const statusToken = runStatusToken(run?.status)
   const failed = isRunUnproven(run?.status)
-  const failureTail = failed ? tailOutput(run?.output) : null
+  const failureTail = failed ? tailOutput(output) : null
   const attest = hasAttestations(run) ? attestationLines(run) : null
 
   if (!runId) {
@@ -180,6 +306,8 @@ export default function RunDetailView({
           {`Chain severed at ${run.severed_at_step}`}
         </div>
       )}
+
+      <RunDegradationBanners degraded={degraded} partial={partial} />
 
       {attest && (
         <section className="run-attest" aria-label="Attestations" data-testid="run-attestations">
