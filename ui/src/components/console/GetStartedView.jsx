@@ -1,10 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import '../../styles/destinations/get-started.css'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import { agentInstallUrl, mintEnrollmentToken } from '../../api/client.js'
+import { parseServerTime } from '../../api/time.js'
 import TenantManager from './TenantManager.jsx'
 import useSetupProgress from './useSetupProgress.js'
 import { agentIsOnline } from './setupProgress.js'
+import { attemptRole, attemptsSince, beaconShipState, installerOS, pullOneLiner, WINDOWS_ELEVATION_LABEL } from './deployCommands.js'
+import {
+  CopyLive,
+  InstallAttemptsList,
+  LatestAttempt,
+  WindowsBeaconMissing,
+  WindowsCaveats,
+  useCopyFeedback,
+  useInstallAttempts,
+} from './DeployParts.jsx'
 
 /**
  * GetStartedView — the console's front door: what to do, in order, on THIS
@@ -111,9 +122,11 @@ function AgentStep({ step, onNavigate }) {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const [server, setServer] = useState(origin)
   const [token, setToken] = useState(null)
+  const [mintedAtMs, setMintedAtMs] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
-  const [copied, setCopied] = useState(false)
+  const copier = useCopyFeedback({ resetMs: 1600 })
+  const commandRef = useRef(null)
 
   // Poll while waiting: the provider polls runs and health, not agents, so
   // without this the step would sit at "waiting" after the beacon checked in.
@@ -123,12 +136,21 @@ function AgentStep({ step, onNavigate }) {
     return () => clearInterval(t)
   }, [step.done, refreshAgents])
 
-  const noBinaries = (healthModel?.degraded || []).includes('agent_binaries')
+  // Installer telemetry while this step is open and unfinished, so a failed
+  // one-liner surfaces its code here instead of an endless "waiting".
+  const attemptsState = useInstallAttempts(!step.done, { refreshKey: token ? (token.id ?? token.token) : null })
+
+  // Per target, from agent_binaries.missing[] — not the component's colour,
+  // which is degraded when ANY target is missing.
+  const ship = beaconShipState(healthModel, os)
+  const isWindows = installerOS(os) === 'windows'
 
   const mint = useCallback(async () => {
     setBusy(true); setError(null)
     try {
-      setToken(await mintEnrollmentToken({ label: 'get-started', ttl_seconds: 3600, max_uses: 1 }))
+      const t = await mintEnrollmentToken({ label: 'get-started', ttl_seconds: 3600, max_uses: 1 })
+      setMintedAtMs(Date.now())
+      setToken(t)
     } catch (err) {
       setError(err.message || 'Could not create an install token')
     } finally {
@@ -138,15 +160,15 @@ function AgentStep({ step, onNavigate }) {
 
   const base = server.replace(/\/+$/, '')
   const installUrl = `${base}${agentInstallUrl({ os })}`
-  const command = token
-    ? (os === 'windows'
-        ? `$env:CORTEXSIM_TOKEN='${token.token}'; iwr -useb "${installUrl}" | iex`
-        : `curl -fsSL "${installUrl}" | CORTEXSIM_TOKEN='${token.token}' bash`)
-    : null
+  const command = token ? pullOneLiner({ os, url: installUrl, token: token.token }) : null
 
-  const copy = () => {
-    try { navigator.clipboard.writeText(command); setCopied(true); setTimeout(() => setCopied(false), 1600) } catch { /* select manually */ }
-  }
+  const sinceMs = token
+    ? (Number.isFinite(parseServerTime(token.created_at)) ? parseServerTime(token.created_at) : mintedAtMs)
+    : NaN
+  const latest = token ? attemptsSince(attemptsState.attempts, sinceMs)[0] || null : null
+  const latestFailed = !!latest && attemptRole(latest.code) === 'alert'
+
+  const resetToken = () => { setToken(null); setMintedAtMs(null) }
 
   if (step.done) {
     const online = agents.filter(agentIsOnline)
@@ -169,14 +191,14 @@ function AgentStep({ step, onNavigate }) {
         <div className="gs-seg" role="radiogroup">
           {[['linux', 'Linux'], ['darwin', 'macOS'], ['windows', 'Windows']].map(([v, l]) => (
             <button key={v} type="button" role="radio" aria-checked={os === v}
-              className={'gs-seg__opt' + (os === v ? ' is-on' : '')} onClick={() => { setOs(v); setToken(null) }}>{l}</button>
+              className={'gs-seg__opt' + (os === v ? ' is-on' : '')} onClick={() => { setOs(v); resetToken() }}>{l}</button>
           ))}
         </div>
       </div>
 
       <label className="gs-field">
         <span className="gs-label">POVengine address the host can reach</span>
-        <input className="gs-input mono" value={server} onChange={(e) => { setServer(e.target.value); setToken(null) }} />
+        <input className="gs-input mono" value={server} onChange={(e) => { setServer(e.target.value); resetToken() }} />
         {LOOPBACK.test(base) && (
           <span className="gs-hint gs-hint--warn">
             This is a loopback address. It only works if the agent runs on this same machine — for another host, use this machine&apos;s LAN IP or DNS name.
@@ -184,12 +206,17 @@ function AgentStep({ step, onNavigate }) {
         )}
       </label>
 
-      {noBinaries && (
-        <p className="gs-hint gs-hint--warn">
-          This server has no prebuilt agents, so the installer will build from source and needs Go on the host.
-          Run <code>make agent-dist</code> on the POVengine host to fix that.
-        </p>
-      )}
+      {ship.state === 'missing' && (isWindows
+        ? <WindowsBeaconMissing className="gs-hint gs-hint--warn" testId="gs-windows-missing" />
+        : (
+          <p className="gs-hint gs-hint--warn" data-testid="gs-posix-missing">
+            This POVengine has no prebuilt {os === 'darwin' ? 'macOS' : 'Linux'} agent
+            ({ship.target}), so the installer can only build from source — that needs Go and a CortexSim
+            checkout on the host (<code>CORTEXSIM_SRC</code>). Run <code>make agent-dist</code> on the
+            POVengine host to fix that.
+          </p>
+        ))}
+      {isWindows && ship.state !== 'missing' && <WindowsCaveats ship={ship} testId="gs-windows-caveats" />}
 
       {!command ? (
         <button type="button" className="pov-btn pov-btn--primary" onClick={mint} disabled={busy} data-testid="gs-agent-generate">
@@ -197,15 +224,24 @@ function AgentStep({ step, onNavigate }) {
         </button>
       ) : (
         <div className="gs-cmd">
-          <span className="gs-label">Run this on the host (token works once, for 1 hour)</span>
-          <pre className="gs-cmd__text mono" data-testid="gs-agent-command">{command}</pre>
+          <span className="gs-label">{isWindows ? WINDOWS_ELEVATION_LABEL : 'Run this on the host'}</span>
+          <span className="gs-hint">The token works once, for 1 hour.</span>
+          <pre className="gs-cmd__text mono" data-testid="gs-agent-command" ref={commandRef}>{command}</pre>
           <div className="gs-row">
-            <button type="button" className="pov-btn pov-btn--primary" onClick={copy}>{copied ? 'Copied' : 'Copy command'}</button>
-            <span className="gs-wait"><span className="gs-dot gs-dot--pulse" /> Waiting for the agent to check in…</span>
+            <button type="button" className="pov-btn pov-btn--primary"
+              onClick={() => copier.copy('command', command, commandRef, 'install command')}>
+              {copier.isCopied('command') ? 'Copied' : 'Copy command'}
+            </button>
+            {!latestFailed && (
+              <span className="gs-wait"><span className="gs-dot gs-dot--pulse" /> Waiting for the agent to check in…</span>
+            )}
           </div>
+          <CopyLive feedback={copier.feedback} testId="gs-copy-live" />
+          <LatestAttempt attempt={latest} testId="gs-attempt-latest" />
         </div>
       )}
       {error && <p className="gs-hint gs-hint--err">{error}</p>}
+      {command && <InstallAttemptsList state={attemptsState} limit={3} />}
     </div>
   )
 }

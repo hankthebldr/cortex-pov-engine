@@ -6,10 +6,11 @@
  * hands off to the guided launch with a real scenario id.
  */
 import React from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContext.jsx'
+import { buildHealthModel } from '../console/readiness/healthModel.js'
 import GetStartedView from '../console/GetStartedView.jsx'
 
 void React
@@ -64,6 +65,13 @@ describe('GetStartedView', () => {
     expect(onNavigate).toHaveBeenCalledWith('guided', { arm: 'SIM-EDR-001' })
   })
 
+  it('an agent the installer only enrolled does not finish the step (UI-05)', () => {
+    const t = new Date(Date.now() - 3000).toISOString().replace('Z', '')
+    mount({ agents: [{ agent_id: 'jb-1a2b3c', hostname: 'jb', os: 'linux', status: 'online', registered_at: t, last_seen: t, last_seen_age_seconds: 3 }] })
+    expect(screen.getByTestId('gs-step-agent')).toHaveAttribute('data-done', 'false')
+    expect(screen.getByTestId('gs-step-agent').textContent).toMatch(/1 enrolled — waiting for first beacon poll/)
+  })
+
   it('surfaces a failed first run with a way into it', () => {
     const onNavigate = mount({
       agents: [ONLINE],
@@ -73,5 +81,140 @@ describe('GetStartedView', () => {
     expect(screen.getByTestId('gs-simulate-failed')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /open the failed run/i }))
     expect(onNavigate).toHaveBeenCalledWith('runs', { run: 'r-9', tab: 'live' })
+  })
+})
+
+// ── Agent step: per-target beacon availability, the Windows command, failures ─
+const TOKEN = { id: 1, token: 'cxs_GsT0kenAbCdEfGhIjKlMnOpQrStUvWxYz', created_at: '2026-11-05T10:00:00', expires_at: '2026-11-05T11:00:00', max_uses: 1, used_count: 0, remaining_uses: 1, revoked: false }
+const ORIGIN = window.location.origin
+const TLS = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; '
+
+function healthMissing(missing) {
+  return buildHealthModel({
+    status: 'degraded',
+    components: {
+      agent_binaries: {
+        status: 'degraded',
+        code: missing.length === 3 ? 'AGENT_DIST_EMPTY' : 'AGENT_DIST_INCOMPLETE',
+        detail: `missing ${missing.join(', ')}`,
+        missing,
+        available: [],
+      },
+    },
+  })
+}
+
+function agentRoutes(attempts = []) {
+  return installRoutes({
+    'GET /api/tenants': [],
+    'GET /api/xsiam/tenants': [],
+    'POST /api/agents/enroll/tokens': TOKEN,
+    'GET /api/agents/install/attempts': { attempts, total: attempts.length, retained_max: 100 },
+  })
+}
+
+const pickOs = (label) => fireEvent.click(screen.getByRole('radio', { name: label }))
+const agentStep = () => screen.getByTestId('gs-step-agent')
+
+describe('GetStartedView — agent step reads which beacons ship, per target (UI-16)', () => {
+  beforeEach(() => { window.localStorage.clear(); agentRoutes() })
+
+  it('Windows missing: the PowerShell installer will refuse — not "needs Go"', () => {
+    mount({ healthModel: healthMissing(['windows/amd64']) })
+    pickOs('Windows')
+    expect(agentStep().textContent).toMatch(/the PowerShell installer will refuse \(WINDOWS_AGENT_UNAVAILABLE\)/)
+    expect(agentStep().textContent).not.toMatch(/needs Go/)
+  })
+
+  it('Windows missing says nothing about the Linux target the DC actually picked', () => {
+    mount({ healthModel: healthMissing(['windows/amd64']) })
+    expect(agentStep().textContent).not.toMatch(/build from source/)
+    expect(agentStep().textContent).not.toMatch(/WINDOWS_AGENT_UNAVAILABLE/)
+  })
+
+  it('a POSIX target missing keeps the source-build message', () => {
+    mount({ healthModel: healthMissing(['darwin/amd64', 'linux/amd64', 'windows/amd64']) })
+    expect(agentStep().textContent).toMatch(/build from source/)
+    expect(agentStep().textContent).toMatch(/Go/)
+  })
+})
+
+describe('GetStartedView — the Windows command (INST-12 / UI-11)', () => {
+  beforeEach(() => { window.localStorage.clear(); agentRoutes() })
+
+  it('opts into TLS 1.2 before iwr, exactly', async () => {
+    mount()
+    pickOs('Windows')
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    expect((await screen.findByTestId('gs-agent-command')).textContent).toBe(
+      `${TLS}$env:CORTEXSIM_TOKEN='${TOKEN.token}'; iwr -useb "${ORIGIN}/api/agents/install?os=windows&interval=10" | iex`,
+    )
+  })
+
+  it('tells the DC to paste it into an elevated Windows PowerShell', async () => {
+    mount()
+    pickOs('Windows')
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    await screen.findByTestId('gs-agent-command')
+    expect(screen.getByText('Open Windows PowerShell as Administrator, then paste')).toBeInTheDocument()
+    expect(agentStep().textContent).toMatch(/not yet proven on a Windows host/i)
+  })
+})
+
+describe('GetStartedView — installer failures replace the endless wait (UI-06)', () => {
+  beforeEach(() => { window.localStorage.clear() })
+
+  it('a failure after the mint is an alert and the waiting line goes away', async () => {
+    agentRoutes([{ stage: 'download', code: 'BINARY_FETCH_FAILED', detail: '404 Not Found', hostname: 'jb', os: 'linux', arch: 'amd64', reported_at: '2026-11-05T10:00:06' }])
+    mount()
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    await screen.findByTestId('gs-agent-command')
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('BINARY_FETCH_FAILED')
+    expect(alert.textContent).toContain('404 Not Found')
+    expect(screen.queryByText(/Waiting for the agent to check in/)).toBeNull()
+  })
+
+  it('with nothing reported yet it still waits, and says where failures would appear', async () => {
+    agentRoutes([])
+    mount()
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    await screen.findByTestId('gs-agent-command')
+    expect(screen.getByText(/Waiting for the agent to check in/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('deploy-attempts').textContent).toMatch(/in-memory/i))
+  })
+})
+
+describe('GetStartedView — copy (UI-14)', () => {
+  const restore = []
+  function setEnv({ secure, clipboard, execCommand }) {
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: secure })
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: clipboard })
+    document.execCommand = execCommand
+    restore.push(() => { delete window.isSecureContext; delete window.navigator.clipboard; delete document.execCommand })
+  }
+  beforeEach(() => { window.localStorage.clear(); agentRoutes() })
+  afterEach(() => { while (restore.length) restore.pop()() })
+
+  async function generated() {
+    mount()
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    await screen.findByTestId('gs-agent-command')
+    return screen.getByRole('button', { name: /copy command/i })
+  }
+
+  it('says Copied only after the clipboard accepted it', async () => {
+    setEnv({ secure: true, clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) }, execCommand: vi.fn(() => false) })
+    const btn = await generated()
+    fireEvent.click(btn)
+    await waitFor(() => expect(screen.getByTestId('gs-copy-live').textContent).toMatch(/select/i))
+    expect(btn.textContent).not.toMatch(/^Copied/)
+  })
+
+  it('falls back to execCommand on http:// and says Copied when it worked', async () => {
+    setEnv({ secure: false, clipboard: undefined, execCommand: vi.fn(() => true) })
+    const btn = await generated()
+    fireEvent.click(btn)
+    await waitFor(() => expect(btn.textContent).toMatch(/Copied/))
   })
 })

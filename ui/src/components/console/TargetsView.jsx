@@ -8,23 +8,50 @@ import {
 import { agentIdOf } from '../../api/ids.js'
 import { parseServerTime, serverDate } from '../../api/time.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
+import { agentLiveness, LIVENESS } from './setupProgress.js'
+import {
+  installerOS,
+  pullOneLiner,
+  windowsDownloadRunLine,
+  uninstallCommand,
+  WINDOWS_MANUAL_UNINSTALL,
+  WINDOWS_ELEVATION_LABEL,
+  WINDOWS_INSTALLER_FILE,
+  POSIX_INSTALLER_FILE,
+  beaconShipState,
+  attemptsSince,
+} from './deployCommands.js'
+import {
+  useInstallAttempts,
+  useCopyFeedback,
+  CopyLive,
+  LatestAttempt,
+  InstallAttemptsList,
+  WindowsBeaconMissing,
+  WindowsCaveats,
+} from './DeployParts.jsx'
 import '../../styles/destinations/agents.css'
+import '../../styles/destinations/deploy-console.css'
 
-// Compact relative time for last-seen ("12s" / "5m" / "3h" / "2d").
-function relTime(iso) {
-  if (!iso) return 'never'
-  const ms = Date.now() - parseServerTime(iso)
-  if (Number.isNaN(ms)) return '—'
-  const s = Math.max(0, Math.floor(ms / 1000))
+// Compact relative age ("12s" / "5m" / "3h" / "2d") from a number of seconds.
+function fmtAge(seconds) {
+  if (seconds == null || !Number.isFinite(seconds)) return 'never'
+  const s = Math.max(0, Math.floor(seconds))
   if (s < 60) return `${s}s ago`
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
 }
 
-// Normalize an agent's reported OS to an installer target.
-function installerOS(os) {
-  return /win/i.test(os || '') ? 'windows' : 'linux'
+// Pill / dot modifier per liveness state. Online keeps the `live` modifier the
+// shared stylesheets already colour; offline and enrolled are defined in
+// deploy-console.css.
+const LIVENESS_CLASS = {
+  [LIVENESS.ONLINE]: 'live',
+  [LIVENESS.STALE]: 'stale',
+  [LIVENESS.OFFLINE]: 'offline',
+  [LIVENESS.ENROLLED]: 'enrolled',
+  [LIVENESS.UNKNOWN]: 'unknown',
 }
 
 
@@ -55,11 +82,9 @@ function installerOS(os) {
  *   onGoToLab       — () => void             open the Environments/IaC generator
  */
 
-const AGENT_STALE_MS = 60_000 // beacon considered stale after 60s of silence
-
 export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {} }) {
   // ── Global scope from the provider (agents + active agent are ambient) ─────
-  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors } = useEnvironment()
+  const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors, healthModel } = useEnvironment()
   const agentsError = errors?.agents || null
   const activeAgentId = activeAgent ? agentIdOf(activeAgent) : null
 
@@ -76,10 +101,17 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   const [tokenTtl, setTokenTtl]     = useState(3600)      // seconds
   const [tokenUses, setTokenUses]   = useState(1)
   const [token, setToken]           = useState(null)      // minted token (shown once)
+  const [mintedAtMs, setMintedAtMs] = useState(null)      // browser clock at mint, fallback only
   const [minting, setMinting]       = useState(false)
   const [mintError, setMintError]   = useState(null)
   const [showLegacy, setShowLegacy] = useState(false)
-  const [copied, setCopied]         = useState(false)
+  const deployCopy = useCopyFeedback()
+  const cardCopy = useCopyFeedback()
+  const oneLinerRef = useRef(null)
+  const tokenRef = useRef(null)
+  const runLineRef = useRef(null)
+  const legacyRef = useRef(null)
+  const uninstallRef = useRef(null)
   const [pendingDelete, setPendingDelete] = useState(null) // agent_id awaiting confirm
   const [busyDelete, setBusyDelete] = useState(null)       // agent_id mid-delete
 
@@ -107,24 +139,24 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   // Token-bearing installer (preferred) vs legacy explicit-id installer.
   // The token rides in an env var rather than the URL so it stays out of the
   // jumpbox's shell history and any proxy access log the customer keeps.
+  // Command strings come from deployCommands.js — the one spelling shared
+  // with Get started (TLS 1.2 opt-in included for Windows PowerShell 5.1).
+  const isWindows = installerOS(deployOS) === 'windows'
   const installUrl = `${origin}${agentInstallUrl({ os: deployOS })}`
   const legacyInstallUrl = `${origin}${agentInstallUrl({ os: deployOS, id: deployId || 'jumpbox-01' })}`
-  const oneLiner = token
-    ? (deployOS === 'windows'
-        ? `$env:CORTEXSIM_TOKEN='${token.token}'; iwr -useb "${installUrl}" | iex`
-        : `curl -fsSL "${installUrl}" | CORTEXSIM_TOKEN='${token.token}' bash`)
-    : null
-  const legacyOneLiner = deployOS === 'windows'
-    ? `iwr -useb "${legacyInstallUrl}" | iex`
-    : `curl -fsSL "${legacyInstallUrl}" | bash`
+  const oneLiner = token ? pullOneLiner({ os: deployOS, url: installUrl, token: token.token }) : null
+  const legacyOneLiner = pullOneLiner({ os: deployOS, url: legacyInstallUrl })
+  const downloadRunLine = token && isWindows ? windowsDownloadRunLine({ token: token.token }) : null
+  const ship = beaconShipState(healthModel, deployOS)
 
-  const copyText = useCallback((text) => {
-    if (!text) return
-    try {
-      navigator.clipboard.writeText(text)
-      setCopied(true); setTimeout(() => setCopied(false), 1800)
-    } catch { /* clipboard blocked — user can select manually */ }
-  }, [])
+  // Install telemetry: poll while the modal is open; the verdict on THIS token
+  // is the newest attempt SimCore recorded after the token's own created_at
+  // (server clock against server clock — no browser skew).
+  const attemptsState = useInstallAttempts(deployOpen, { refreshKey: token ? (token.id ?? token.token) : null })
+  const sinceMs = token
+    ? (Number.isFinite(parseServerTime(token.created_at)) ? parseServerTime(token.created_at) : mintedAtMs)
+    : NaN
+  const latestAttempt = token ? attemptsSince(attemptsState.attempts, sinceMs)[0] || null : null
 
   const mint = useCallback(async () => {
     setMinting(true); setMintError(null)
@@ -134,6 +166,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
         ttl_seconds: Number(tokenTtl),
         max_uses: Number(tokenUses),
       })
+      setMintedAtMs(Date.now())
       setToken(t)
     } catch (err) {
       setMintError(err.message || 'Could not mint an enrollment token')
@@ -146,7 +179,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     setDeployOpen(false)
     // The full token value is unrecoverable once dismissed — drop it from state
     // rather than leaving a live credential sitting in a closed dialog.
-    setToken(null); setMintError(null); setShowLegacy(false)
+    setToken(null); setMintedAtMs(null); setMintError(null); setShowLegacy(false)
   }, [])
 
   // ── Dialog focus + Escape ────────────────────────────────────────────────
@@ -199,13 +232,6 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   }, [refresh])
 
   const isSel = (kind, id) => selectedTarget && selectedTarget.kind === kind && selectedTarget.id === id
-
-  const agentStatus = (a) => {
-    const seen = a.last_seen || a.last_seen_at || a.updated_at
-    if (!seen) return 'unknown'
-    const age = Date.now() - parseServerTime(seen)
-    return age < AGENT_STALE_MS ? 'live' : 'stale'
-  }
 
   // Selecting an agent lifts it to global scope (setAgent) AND, in the guided
   // flow, arms it as the launch target. One click, both concepts in sync.
@@ -275,10 +301,16 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
           )}
           {agents.map((a) => {
             const id = agentIdOf(a)
-            const st = agentStatus(a)
+            const live = agentLiveness(a)
+            const st = LIVENESS_CLASS[live.state] || 'unknown'
             const os = a.os || a.platform || 'linux'
+            const targetOs = installerOS(os)
             const confirming = pendingDelete === id
             const isActive = id === activeAgentId
+            const removeCmd = uninstallCommand({ os: targetOs, origin })
+            const ageTitle = live.ageSource === 'server'
+              ? 'age measured on SimCore\'s clock'
+              : live.ageSource === 'browser' ? 'age from this browser\'s clock — SimCore sent none' : undefined
             return (
               <div
                 key={id}
@@ -298,11 +330,25 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     <span className={`status-dot status-dot--${st}`} />
                     <span className="target-card__title mono">{id}</span>
                     {isActive && <span className="target-card__pill target-card__pill--active">active</span>}
-                    <span className={`target-card__pill target-card__pill--${st}`}>{st}</span>
+                    <span className={`target-card__pill target-card__pill--${st}`} title={live.label}>
+                      {live.state === LIVENESS.UNKNOWN ? 'unknown' : live.state}
+                    </span>
                   </div>
                   <p className="target-card__sub">
-                    {a.hostname || a.host || 'unknown host'} · {os} · seen {relTime(a.last_seen || a.last_seen_at || a.updated_at)}
+                    {a.hostname || a.host || 'unknown host'} · {os} ·{' '}
+                    <span title={ageTitle}>seen {fmtAge(live.ageSeconds)}</span>
                   </p>
+                  {live.state === LIVENESS.ENROLLED && (
+                    <span className="target-card__waiting">
+                      {live.label}. The installer reached SimCore; no beacon has polled yet, so do not
+                      launch onto it.{targetOs === 'windows'
+                        ? ' If this does not change within a minute, check the CortexSimAgent service on the host and the install attempts in Deploy agent.'
+                        : ' If this does not change within a minute, the beacon did not start — check the install attempts in Deploy agent.'}
+                    </span>
+                  )}
+                  {live.state === LIVENESS.UNKNOWN && live.label !== 'unknown' && (
+                    <span className="target-card__waiting">SimCore {live.label}.</span>
+                  )}
                   {isSel('agent', id) && <span className="target-card__selected">✓ selected · pull mode</span>}
                   {!isSel('agent', id) && isActive && (
                     <span className="target-card__selected">✓ active agent</span>
@@ -310,16 +356,40 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 </button>
 
                 {confirming ? (
-                  <div className="target-card__confirm">
-                    <span>Delete <strong className="mono">{id}</strong>?</span>
-                    <button type="button" className="btn btn--xs" onClick={() => setPendingDelete(null)}>Cancel</button>
-                    <button
-                      type="button"
-                      className="btn btn--xs btn--danger"
-                      disabled={busyDelete === id}
-                      onClick={() => removeAgent(id)}
-                    >{busyDelete === id ? '…' : 'Delete'}</button>
-                  </div>
+                  <>
+                    <div className="target-card__remove" data-testid="agent-remove-help">
+                      <p>
+                        This <strong>removes the registry row only</strong>. A beacon still running on the
+                        host re-registers on its next poll and the row comes back. To remove the beacon
+                        itself, run this on the host{targetOs === 'windows' ? ' in Windows PowerShell as Administrator' : ''}:
+                      </p>
+                      <div className="deploy-snippet">
+                        <code data-testid="agent-uninstall-cmd" ref={uninstallRef}>{removeCmd}</code>
+                        <button
+                          type="button"
+                          className="btn btn--xs"
+                          onClick={() => cardCopy.copy(`uninstall-${id}`, removeCmd, uninstallRef, 'removal command')}
+                        >{cardCopy.isCopied(`uninstall-${id}`) ? '✓ copied' : 'Copy'}</button>
+                      </div>
+                      {targetOs === 'windows' && (
+                        <p>
+                          If the host cannot reach SimCore, remove it by hand:{' '}
+                          <code className="mono" data-testid="agent-uninstall-manual">{WINDOWS_MANUAL_UNINSTALL}</code>
+                        </p>
+                      )}
+                      <CopyLive feedback={cardCopy.feedback} testId="agent-copy-live" />
+                    </div>
+                    <div className="target-card__confirm">
+                      <span>Delete <strong className="mono">{id}</strong> from the registry?</span>
+                      <button type="button" className="btn btn--xs" onClick={() => setPendingDelete(null)}>Cancel</button>
+                      <button
+                        type="button"
+                        className="btn btn--xs btn--danger"
+                        disabled={busyDelete === id}
+                        onClick={() => removeAgent(id)}
+                      >{busyDelete === id ? '…' : 'Delete row'}</button>
+                    </div>
+                  </>
                 ) : (
                   <div className="target-card__actions">
                     {!isActive && (
@@ -332,8 +402,8 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     )}
                     <a
                       className="card-action"
-                      href={agentInstallUrl({ os: installerOS(os), id })}
-                      download
+                      href={agentInstallUrl({ os: targetOs, id })}
+                      download={targetOs === 'windows' ? WINDOWS_INSTALLER_FILE : POSIX_INSTALLER_FILE}
                       title="Re-download this agent's installer"
                     >↓ installer</a>
                     <button
@@ -436,8 +506,12 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               Mint an enrollment token, run one line on the jumpbox, and SimCore assigns the
               agent id when the token is redeemed — nobody has to invent one. Tokens expire
               and can be revoked. The target needs <strong>no toolchain</strong> — SimCore
-              serves a prebuilt, checksummed beacon — only <code>curl</code> and outbound
-              reach to this SimCore.
+              serves a prebuilt, checksummed beacon —{' '}
+              <span data-testid="deploy-prereqs">
+                {isWindows
+                  ? <>only Windows PowerShell 5.1 (built into Windows) and outbound reach to this SimCore.</>
+                  : <>only <code>curl</code>, <code>bash</code> and outbound reach to this SimCore.</>}
+              </span>
             </p>
             {originIsLoopback && (
               <p className="deploy-warn" role="status" data-testid="deploy-loopback-warn">
@@ -446,18 +520,13 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 the <strong>jumpbox itself</strong> — the beacon would install and call
                 nothing. Reopen the console on the control plane's reachable address (e.g.
                 <code className="mono">http://&lt;control-plane-ip&gt;:8888</code>) before
-                copying. The install endpoint refuses this too
-                (<code className="mono">INSTALLER_SERVER_LOOPBACK</code>).
+                copying. SimCore does not refuse a loopback address — installing on this same
+                machine is legitimate — so nothing downstream stops the paste.
               </p>
             )}
-            {deployOS === 'windows' && (
-              <p className="deploy-warn" role="status">
-                ⚠ No Windows beacon ships yet — this script refuses before it enrolls
-                (<code className="mono">WINDOWS_AGENT_UNAVAILABLE</code>) rather than
-                registering a host it cannot drive. Use the offline <strong>push bundle</strong>
-                for Windows targets.
-              </p>
-            )}
+            {isWindows && (ship.state === 'missing'
+              ? <WindowsBeaconMissing />
+              : <WindowsCaveats ship={ship} />)}
 
             <div className="deploy-field">
               <span className="launch-field__label">Target OS</span>
@@ -540,9 +609,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     Enrollment token — shown once, copy it now
                   </span>
                   <div className="deploy-snippet">
-                    <code data-testid="deploy-token">{token.token}</code>
-                    <button type="button" className="btn btn--xs" onClick={() => copyText(token.token)}>
-                      Copy
+                    <code data-testid="deploy-token" ref={tokenRef}>{token.token}</code>
+                    <button type="button" className="btn btn--xs" onClick={() => deployCopy.copy('token', token.token, tokenRef, 'enrollment token')}>
+                      {deployCopy.isCopied('token') ? '✓ copied' : 'Copy'}
                     </button>
                   </div>
                   <span className="deploy-hint mono">
@@ -553,30 +622,56 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
 
                 <div className="deploy-field">
                   <span className="launch-field__label">
-                    Run this on the target ({deployOS === 'windows' ? 'PowerShell' : 'bash'})
+                    {isWindows ? WINDOWS_ELEVATION_LABEL : 'Run this on the target (bash)'}
                   </span>
                   <div className="deploy-snippet">
-                    <code data-testid="deploy-one-liner">{oneLiner}</code>
-                    <button type="button" className="btn btn--xs" onClick={() => copyText(oneLiner)}>
-                      {copied ? '✓ copied' : 'Copy'}
+                    <code data-testid="deploy-one-liner" ref={oneLinerRef}>{oneLiner}</code>
+                    <button type="button" className="btn btn--xs" onClick={() => deployCopy.copy('one-liner', oneLiner, oneLinerRef, 'install command')}>
+                      {deployCopy.isCopied('one-liner') ? '✓ copied' : 'Copy'}
                     </button>
                   </div>
                 </div>
 
                 <div className="deploy-actions">
-                  <a className="btn btn--primary btn--lg" href={installUrl} download>
-                    ↓ Download installer ({deployOS === 'windows' ? '.ps1' : '.sh'})
+                  <a
+                    className="btn btn--primary btn--lg"
+                    href={installUrl}
+                    download={isWindows ? WINDOWS_INSTALLER_FILE : POSIX_INSTALLER_FILE}
+                  >
+                    ↓ Download installer ({isWindows ? '.ps1' : '.sh'})
                   </a>
-                  <button type="button" className="btn" onClick={() => { setToken(null); setCopied(false) }}>
+                  {downloadRunLine && (
+                    <div className="deploy-run-line">
+                      <span className="launch-field__label">
+                        Then, in Windows PowerShell as Administrator, from the download folder
+                      </span>
+                      <div className="deploy-snippet">
+                        <code data-testid="deploy-download-run" ref={runLineRef}>{downloadRunLine}</code>
+                        <button type="button" className="btn btn--xs" onClick={() => deployCopy.copy('run-line', downloadRunLine, runLineRef, 'run line')}>
+                          {deployCopy.isCopied('run-line') ? '✓ copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <span className="deploy-hint">
+                        Without the token it falls back to the legacy shared id
+                        (<code className="mono">jumpbox-01</code>), so every host run that way claims the same agent.
+                      </span>
+                    </div>
+                  )}
+                  <button type="button" className="btn" onClick={() => { setToken(null); setMintedAtMs(null) }}>
                     Mint another
                   </button>
                 </div>
-                <p className="deploy-hint">
-                  The beacon appears in this list within one poll interval (~10s) once the
-                  token is redeemed.
-                </p>
+                {latestAttempt ? (
+                  <LatestAttempt attempt={latestAttempt} />
+                ) : (
+                  <p className="deploy-hint">
+                    The beacon appears in this list within one poll interval (~10s) once the
+                    token is redeemed. If the installer fails, its code shows here.
+                  </p>
+                )}
               </>
             )}
+            <CopyLive feedback={deployCopy.feedback} testId="deploy-copy-live" />
 
             {/* Legacy path — kept because a host that cannot redeem a token
                 (no outbound POST, pre-seeded image) still needs an installer. */}
@@ -602,9 +697,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     />
                   </label>
                   <div className="deploy-snippet">
-                    <code>{legacyOneLiner}</code>
-                    <button type="button" className="btn btn--xs" onClick={() => copyText(legacyOneLiner)}>
-                      Copy
+                    <code data-testid="deploy-legacy-one-liner" ref={legacyRef}>{legacyOneLiner}</code>
+                    <button type="button" className="btn btn--xs" onClick={() => deployCopy.copy('legacy', legacyOneLiner, legacyRef, 'legacy install command')}>
+                      {deployCopy.isCopied('legacy') ? '✓ copied' : 'Copy'}
                     </button>
                   </div>
                   <span className="deploy-hint mono">
@@ -613,6 +708,8 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 </div>
               )}
             </div>
+
+            <InstallAttemptsList state={attemptsState} />
           </div>
         </div>
       )}
