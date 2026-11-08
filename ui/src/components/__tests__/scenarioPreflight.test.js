@@ -266,7 +266,12 @@ describe('overall verdict', () => {
   })
 
   it('unknown outranks pass — an unchecked precondition is not a ready one', () => {
-    const pf = base({ shelf: normalizeShelf(null, null) })
+    // A current SimCore (it reports bundle_targets), so the platform verdict is
+    // server truth and adds no label-based warning of its own.
+    const pf = base({
+      scenario: { ...SCENARIO, bundle_targets: ['posix'] },
+      shelf: normalizeShelf(null, null),
+    })
     expect(pf.verdict).toBe(PF.UNKNOWN)
   })
 
@@ -311,5 +316,143 @@ describe('measurement — the KPI producer gap (found by driving a live SimCore)
       integrations: [],
     })
     expect(check(pf, 'measurement').detail).toMatch(/still owed, NOT a failed detection/)
+  })
+})
+
+// ─── UI-08 · platform from SERVER truth, not step labels ─────────────────────
+//
+// ~100 corpus steps are labelled `windows` while carrying POSIX text. SIM-EDR-014
+// is the sharpest case: every step says `platforms: [windows]`, and the push
+// generator — reading the command TEXT — can only emit it for POSIX. The label
+// heuristic therefore BLOCKED the one target that runs it (a Linux beacon) and
+// cleared the one that cannot (a Windows beacon). `bundle_targets` comes from
+// the same resolver the download route gates on.
+describe('platform — server truth (bundle_targets)', () => {
+  const EDR_014 = {
+    ...SCENARIO,
+    scenario_id: 'SIM-EDR-014',
+    steps: [
+      { id: 'step-01', identity: 'www-data', platforms: ['windows'] },
+      { id: 'step-02', identity: 'www-data', platforms: ['windows'] },
+    ],
+    bundle_targets: ['posix'],
+  }
+  const WIN_AGENT = { ...AGENT_ONLINE, os: 'windows', capabilities: ['shell', 'powershell'] }
+
+  it('SIM-EDR-014 shape: a Linux beacon PASSes on server truth', () => {
+    const pf = base({ scenario: EDR_014 })
+    const p = check(pf, 'platform')
+    expect(p.status).toBe(PF.PASS)
+    expect(p.summary).toMatch(/posix/)
+  })
+
+  it('SIM-EDR-014 shape: a Windows beacon BLOCKS — SimCore has no Windows text for it', () => {
+    const pf = base({ scenario: EDR_014, agents: [WIN_AGENT] })
+    const p = check(pf, 'platform')
+    expect(p.status).toBe(PF.BLOCK)
+    expect(p.detail).toMatch(/PULL_TARGET_UNSATISFIABLE/)
+    expect(pf.blocking.map((b) => b.id)).toContain('platform')
+  })
+
+  it('SIM-EDR-014 shape: push + bash PASSes', () => {
+    const pf = base({ scenario: EDR_014, target: PUSH_TARGET, pushFormat: 'bash' })
+    expect(check(pf, 'platform').status).toBe(PF.PASS)
+  })
+
+  it('SIM-EDR-014 shape: push + powershell BLOCKS, naming the 409 SimCore will send', () => {
+    const pf = base({ scenario: EDR_014, target: PUSH_TARGET, pushFormat: 'powershell' })
+    const p = check(pf, 'platform')
+    expect(p.status).toBe(PF.BLOCK)
+    expect(p.detail).toMatch(/BUNDLE_TARGET_UNSATISFIABLE/)
+  })
+
+  it('labels that disagree with server truth are a SECONDARY warning, not the verdict', () => {
+    const pf = base({ scenario: EDR_014 })
+    expect(check(pf, 'platform').status).toBe(PF.PASS)
+    const labels = check(pf, 'platform-labels')
+    expect(labels).toBeTruthy()
+    expect(labels.status).toBe(PF.WARN)
+    expect(labels.detail).toMatch(/windows/)
+  })
+
+  it('labels that agree add no row', () => {
+    const pf = base({ scenario: { ...SCENARIO, bundle_targets: ['posix'] } })
+    expect(check(pf, 'platform').status).toBe(PF.PASS)
+    expect(check(pf, 'platform-labels')).toBeUndefined()
+  })
+
+  it('a windows-only scenario PASSes push with powershell or auto, and BLOCKS with bash', () => {
+    const win = {
+      ...SCENARIO,
+      steps: [{ id: 'step-01', platforms: ['windows'] }],
+      bundle_targets: ['windows'],
+    }
+    for (const fmt of ['powershell', 'auto']) {
+      const p = check(base({ scenario: win, target: PUSH_TARGET, pushFormat: fmt }), 'platform')
+      expect(p.status, fmt).toBe(PF.PASS)
+    }
+    expect(check(base({ scenario: win, target: PUSH_TARGET, pushFormat: 'bash' }), 'platform').status)
+      .toBe(PF.BLOCK)
+  })
+
+  it('a Windows beacon PASSes when SimCore can emit Windows text', () => {
+    const pf = base({
+      scenario: { ...SCENARIO, steps: [{ id: 'step-01', platforms: ['windows'] }], bundle_targets: ['windows'] },
+      agents: [WIN_AGENT],
+    })
+    expect(check(pf, 'platform').status).toBe(PF.PASS)
+  })
+
+  it('an empty bundle_targets on a push-capable scenario BLOCKS both modes', () => {
+    const none = { ...SCENARIO, bundle_targets: [] }
+    expect(check(base({ scenario: none }), 'platform').status).toBe(PF.BLOCK)
+    expect(check(base({ scenario: none, target: PUSH_TARGET, pushFormat: 'auto' }), 'platform').status)
+      .toBe(PF.BLOCK)
+  })
+
+  it('an empty bundle_targets on push_supported:false says nothing about pull — falls back to labels', () => {
+    const agentOnly = { ...SCENARIO, push_supported: false, bundle_targets: [] }
+    const pf = base({ scenario: agentOnly })
+    expect(check(pf, 'platform').status).toBe(PF.PASS)
+    expect(check(pf, 'platform-labels').status).toBe(PF.WARN)
+  })
+
+  it('an unrecognised bundle_targets shape is not read as server truth', () => {
+    const pf = base({ scenario: { ...SCENARIO, bundle_targets: 'posix' } })
+    expect(check(pf, 'platform-labels').status).toBe(PF.WARN)
+    expect(check(pf, 'platform-labels').detail).toMatch(/unrecognised/)
+  })
+
+  it('an unknown agent OS stays UNKNOWN even with server truth', () => {
+    const pf = base({
+      scenario: { ...SCENARIO, bundle_targets: ['posix'] },
+      agents: [{ ...AGENT_ONLINE, os: '' }],
+    })
+    expect(check(pf, 'platform').status).toBe(PF.UNKNOWN)
+  })
+})
+
+describe('platform — older SimCore without bundle_targets (label heuristic)', () => {
+  it('keeps the label verdict and adds a WARN that it is label-based', () => {
+    const pf = base()
+    expect(check(pf, 'platform').status).toBe(PF.PASS)
+    const labels = check(pf, 'platform-labels')
+    expect(labels.status).toBe(PF.WARN)
+    expect(labels.summary).toMatch(/label-based/)
+    expect(pf.verdict).not.toBe(PF.PASS)
+  })
+
+  it('a windows-only scenario PASSes push with powershell or auto on labels alone', () => {
+    const win = { ...SCENARIO, steps: [{ id: 'step-01', platforms: ['windows'] }] }
+    for (const fmt of ['powershell', 'auto']) {
+      expect(check(base({ scenario: win, target: PUSH_TARGET, pushFormat: fmt }), 'platform').status, fmt)
+        .toBe(PF.PASS)
+    }
+  })
+
+  it('no labels and no server truth stays UNKNOWN with no label-based row', () => {
+    const pf = base({ scenario: { ...SCENARIO, steps: [{ id: 's' }] } })
+    expect(check(pf, 'platform').status).toBe(PF.UNKNOWN)
+    expect(check(pf, 'platform-labels')).toBeUndefined()
   })
 })

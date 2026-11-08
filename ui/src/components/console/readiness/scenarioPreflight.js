@@ -66,7 +66,7 @@ const NO_WRAPPER_IDENTITIES = new Set(['direct', 'root', 'container-runtime', ''
  * @param {object}      input.adapterIndex  adapter_id → adapter row
  * @param {Array|null}  input.integrations  /api/credentials/integrations rows
  * @param {string}      input.identity      the identity the operator selected
- * @param {string}      input.pushFormat    'bash' | 'k8s'
+ * @param {string}      input.pushFormat    'auto' | 'bash' | 'powershell' | 'k8s'
  * @returns {{verdict, checks, blocking, warnings, unknowns}}
  */
 export function preflightScenario({
@@ -86,7 +86,9 @@ export function preflightScenario({
 
   checks.push(toolCheck(scenario, shelf, adapterIndex))
   checks.push(targetCheck(scenario, target, agents))
-  checks.push(platformCheck(scenario, target, agents, pushFormat))
+  const platform = platformChecks(scenario, target, agents, pushFormat)
+  checks.push(platform.primary)
+  if (platform.labels) checks.push(platform.labels)
   checks.push(identityCheck(scenario, target, agents, identity))
   checks.push(measurementCheck(scenario, integrations))
 
@@ -239,8 +241,188 @@ function targetCheck(scenario, target, agents) {
 }
 
 // ─── 3 · Mode / platform ─────────────────────────────────────────────────────
+//
+// SERVER TRUTH FIRST. `bundle_targets` on GET /api/scenarios/{id} is computed by
+// the same resolver the download route (push) and the launch target check
+// (pull) gate on: it reads the command TEXT, not the `platforms` label. ~100
+// corpus steps are labelled `windows` while carrying POSIX text — SIM-EDR-014
+// is every step of a scenario — so a label-keyed verdict BLOCKED the one
+// target that runs it (a Linux beacon) and cleared the one that cannot.
+//
+// The labels are still read, as a SECONDARY row (`platform-labels`): a WARN
+// when they disagree with what SimCore will actually do, and — on an older
+// SimCore that does not report `bundle_targets` — a WARN that the primary
+// verdict is label-based and therefore not to be trusted as far as the server's.
 
-function platformCheck(scenario, target, agents, pushFormat) {
+/** Push format → the target it needs (the server's `_FORMAT_TARGET`). */
+const FORMAT_TARGET = { bash: 'posix', k8s: 'posix', powershell: 'windows' }
+const BUNDLE_TARGETS = new Set(['posix', 'windows'])
+// Exactly the server's sets (orchestrator `_WINDOWS_AGENT_OS` / `_POSIX_AGENT_OS`).
+// Any other non-empty value is one SimCore refuses (PULL_TARGET_OS_UNRECOGNISED),
+// so it must not be guessed into a target here.
+const WINDOWS_OS = new Set(['windows'])
+const POSIX_OS = new Set(['linux', 'darwin', 'macos'])
+
+/**
+ * `bundle_targets` as server truth, or why it cannot be.
+ * @returns {{targets: string[]|null, reason: 'absent'|'unrecognised'|'push_withdrawn'|null}}
+ */
+function serverTargets(scenario) {
+  const raw = scenario.bundle_targets
+  if (raw === undefined || raw === null) return { targets: null, reason: 'absent' }
+  // An unrecognised shape is not read as "no targets" — that would BLOCK every
+  // launch on a field this console does not understand.
+  if (!Array.isArray(raw) || raw.some((t) => !BUNDLE_TARGETS.has(t))) {
+    return { targets: null, reason: 'unrecognised' }
+  }
+  // [] for push_supported:false is the route refusing push, not a statement
+  // about what the content can run — it says nothing about a pull target.
+  if (raw.length === 0 && scenario.push_supported === false) {
+    return { targets: null, reason: 'push_withdrawn' }
+  }
+  return { targets: raw, reason: null }
+}
+
+/** The execution target this launch needs, or null when it cannot be known. */
+function requiredTarget(target, agents, pushFormat, serverList) {
+  if (target && target.kind !== 'agent') {
+    const fmt = pushFormat || 'auto'
+    if (fmt === 'auto') {
+      // The server's auto rule: POSIX first, PowerShell for windows-only content.
+      if (!serverList) return null
+      if (serverList.includes('posix')) return 'posix'
+      if (serverList.includes('windows')) return 'windows'
+      return null
+    }
+    return FORMAT_TARGET[fmt] || null
+  }
+  const agent = (agents || []).find((a) => (a.agent_id || a.id) === (target && target.id)) || null
+  const os = String((agent && agent.os) || '').toLowerCase()
+  if (WINDOWS_OS.has(os)) return 'windows'
+  if (POSIX_OS.has(os)) return 'posix'
+  return null
+}
+
+/** Does every platform-declaring step's LABEL claim `targetName`? */
+function labelsClaim(declaring, targetName) {
+  return declaring.every((s) => s.platforms.some((p) => {
+    const v = String(p).toLowerCase()
+    return targetName === 'windows' ? v === 'windows' : v !== 'windows'
+  }))
+}
+
+function platformChecks(scenario, target, agents, pushFormat) {
+  const steps = Array.isArray(scenario.steps) ? scenario.steps : []
+  const declaring = steps.filter((s) => Array.isArray(s.platforms) && s.platforms.length)
+  const server = serverTargets(scenario)
+
+  if (!server.targets) {
+    const primary = labelPlatformCheck(scenario, target, agents, pushFormat)
+    // No labels and no server truth: the UNKNOWN already says it all.
+    if (!declaring.length) return { primary, labels: null }
+    const why = {
+      absent: 'This SimCore does not report `bundle_targets`, so the platform verdict above is '
+        + 'read from the steps\' `platforms` labels.',
+      unrecognised: `This SimCore reported \`bundle_targets\` in an unrecognised shape `
+        + `(${JSON.stringify(scenario.bundle_targets)}), so it was not used and the platform verdict `
+        + 'above is read from the steps\' `platforms` labels.',
+      push_withdrawn: 'This scenario declares push_supported: false, so SimCore reports no '
+        + 'bundle targets for it and the platform verdict above is read from the steps\' '
+        + '`platforms` labels.',
+    }[server.reason]
+    return {
+      primary,
+      labels: mk('platform-labels', 'Platform labels', PF.WARN, 'verdict is label-based',
+        `${why} Labels are not what runs: ~100 corpus steps are labelled \`windows\` while carrying `
+        + 'POSIX text, so a label can clear a target that cannot run the command — or block one that '
+        + 'can.',
+        'Upgrade this SimCore to one that reports bundle_targets, or read the step commands before '
+        + 'launching.'),
+    }
+  }
+
+  const list = server.targets
+  const isPush = !!(target && target.kind !== 'agent')
+  const needed = requiredTarget(target, agents, pushFormat, list)
+
+  let primary
+  if (!target) {
+    primary = mk('platform', 'Platform', PF.UNKNOWN,
+      list.length ? `SimCore can emit ${list.join(' · ')}` : 'SimCore can emit no target',
+      'No target selected, so there is nothing to check the scenario against yet.')
+  } else if (!list.length) {
+    primary = mk('platform', 'Platform', PF.BLOCK, 'no target can run every step',
+      'SimCore resolves no execution target — POSIX or Windows — for which every step has a '
+      + `command. ${isPush ? 'The download answers 409 BUNDLE_TARGET_UNSATISFIABLE' : 'A pull launch '
+      + 'answers 409 PULL_TARGET_UNSATISFIABLE'} naming the steps.`,
+      'Declare platform_variants on the offending steps.')
+  } else if (!needed) {
+    const agent = isPush ? null
+      : (agents || []).find((a) => (a.agent_id || a.id) === target.id) || null
+    const os = agent && agent.os ? String(agent.os) : ''
+    primary = mk('platform', 'Platform', PF.UNKNOWN, `SimCore can emit ${list.join(' · ')}`,
+      isPush
+        ? `The bundle format "${pushFormat}" names no target this console recognises.`
+        : os
+          ? `The beacon registered os="${os}", which is neither windows nor linux/darwin/macos, so `
+            + 'platform compatibility cannot be checked here — and a current SimCore refuses the '
+            + 'launch (PULL_TARGET_OS_UNRECOGNISED) rather than guess.'
+          : 'The target\'s OS is unknown, so platform compatibility cannot be checked. (SimCore '
+            + 'dispatches POSIX commands to a beacon that registered no OS.)',
+      isPush ? '' : 'Re-register the beacon from a current build so it reports its OS.')
+  } else if (!list.includes(needed)) {
+    const other = list.find((t) => t !== needed)
+    primary = mk('platform', 'Platform', PF.BLOCK,
+      `SimCore has no ${needed} command for every step`,
+      isPush
+        ? `This scenario's command text resolves only for ${list.join(' · ')}, and the `
+          + `${pushFormat} bundle needs ${needed}. SimCore answers 409 BUNDLE_TARGET_UNSATISFIABLE `
+          + 'naming the offending steps.'
+        : `This scenario's command text resolves only for ${list.join(' · ')}, and this beacon is `
+          + `${needed}. SimCore refuses the launch with 409 PULL_TARGET_UNSATISFIABLE rather than run `
+          + 'the wrong dialect — which historically passed as green while doing nothing the scenario '
+          + 'claimed.',
+      isPush
+        ? `Download it as ${other === 'windows' ? 'PowerShell (.ps1)' : 'bash (.sh)'}, `
+          + 'or use format=auto.'
+        : `Pick a ${other === 'windows' ? 'Windows' : 'Linux/macOS'} beacon, or push the bundle instead.`)
+  } else {
+    const variants = steps.filter((s) => s && s.platform_variants
+      && typeof s.platform_variants === 'object'
+      && Object.keys(s.platform_variants).some((k) => (needed === 'windows'
+        ? String(k).toLowerCase() === 'windows'
+        : String(k).toLowerCase() !== 'windows'))).length
+    primary = mk('platform', 'Platform', PF.PASS, `SimCore resolves every step for ${needed}`,
+      `From bundle_targets [${list.join(', ')}] — the resolver SimCore itself gates on, reading `
+      + `the command text.${variants ? ` ${variants} step${variants === 1 ? '' : 's'} declare a `
+        + `${needed} platform variant; a step that runs its variant is marked PLATFORM VARIANT on `
+        + 'the run, because its expected detections were authored against the primary command.' : ''}`)
+  }
+
+  // Secondary: do the labels say the same thing SimCore will do?
+  let labels = null
+  if (needed && declaring.length) {
+    const claim = labelsClaim(declaring, needed)
+    const truth = list.includes(needed)
+    if (claim !== truth) {
+      const union = Array.from(new Set(declaring.flatMap((s) => s.platforms)))
+      labels = mk('platform-labels', 'Platform labels', PF.WARN,
+        `step labels say ${union.join(' · ')}; SimCore resolves ${list.join(' · ') || 'nothing'}`,
+        truth
+          ? `The steps are labelled ${union.join(' / ')}, but their command text resolves for `
+            + `${needed}, so this run goes ahead on SimCore's reading. A label that disagrees with the `
+            + 'command is a corpus defect, not a launch problem — but any detection keyed on the '
+            + 'labelled OS will not fire here.'
+          : `The steps are labelled ${union.join(' / ')}, but their command text has no ${needed} `
+            + 'form. The label is wrong; the refusal above is correct.',
+        'Fix the step `platforms` labels to match the commands they carry.')
+    }
+  }
+
+  return { primary, labels }
+}
+
+function labelPlatformCheck(scenario, target, agents, pushFormat) {
   const steps = Array.isArray(scenario.steps) ? scenario.steps : []
   const declaring = steps.filter((s) => Array.isArray(s.platforms) && s.platforms.length)
   if (!declaring.length) {
@@ -255,16 +437,18 @@ function platformCheck(scenario, target, agents, pushFormat) {
   if (target && target.kind !== 'agent') {
     // Push. The bundle format has to be able to carry the steps.
     const windowsOnly = union.length === 1 && union[0] === 'windows'
-    if (windowsOnly && pushFormat !== 'powershell') {
+    // `auto` lets SimCore pick PowerShell for windows-only content, so only an
+    // explicit POSIX format (bash / k8s) is refused for it.
+    if (windowsOnly && pushFormat !== 'powershell' && pushFormat !== 'auto') {
       return mk('platform', 'Platform', PF.BLOCK,
         'windows-only scenario in a non-PowerShell bundle',
         'Every step declares `windows`, and this bundle format cannot carry PowerShell. SimCore '
         + 'answers 409 BUNDLE_TARGET_UNSATISFIABLE naming the offending steps.',
-        'Download the bundle as PowerShell (format=powershell), or run it through a Windows beacon.')
+        'Pick the PowerShell (.ps1) or auto bundle format, or run it through a Windows beacon.')
     }
     return mk('platform', 'Platform', PF.PASS, `declares ${union.join(' · ')}`,
       `${declaring.length} of ${steps.length} steps declare a platform. The bundle is generated for `
-      + `the ${pushFormat} target.`)
+      + `the ${pushFormat} format.`)
   }
 
   const agent = (agents || []).find((a) => (a.agent_id || a.id) === (target && target.id)) || null
