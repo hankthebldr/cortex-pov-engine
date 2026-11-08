@@ -114,6 +114,19 @@ describe('<RunDetailView /> with a summary-shaped list row (OPS-06)', () => {
     expect(getRun).toHaveBeenCalled()
   })
 
+  it('an older SimCore\'s polled row, when it has grown past the fetched record, wins', async () => {
+    // Full-shape list (no fields=summary support): the record was fetched when
+    // the run had reached step 2; the 10 s poll has since delivered step 3.
+    const atStep2 = OUTPUT.slice(0, OUTPUT.indexOf('=== STEP 3/3'))
+    installRoutes({ 'GET /api/runs/run-win-1': { ...RUN, output: atStep2 } })
+    const { rerender } = render(
+      <RunDetailView runId="run-win-1" run={{ ...RUN, output: atStep2 }} subTab="live" />,
+    )
+    expect(await banner()).toHaveTextContent('1 of 3 steps')
+    rerender(<RunDetailView runId="run-win-1" run={RUN} subTab="live" />)
+    await waitFor(() => expect(screen.getByTestId('run-identity-banner')).toHaveTextContent('2 of 3 steps'))
+  })
+
   it('a failed run shows the fetched tail, not "no output captured"', async () => {
     const failedRow = { ...SUMMARY_ROW, status: 'failed', output_tail: '' }
     const failed = {

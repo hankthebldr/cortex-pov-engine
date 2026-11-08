@@ -238,8 +238,17 @@ export default function RunDetailView({
   }, [runId, run?.status, run?.output_bytes])
 
   const { output, outputFrom } = useMemo(() => {
-    if (typeof detail?.output === 'string') return { output: detail.output, outputFrom: 'record' }
-    if (typeof run?.output === 'string') return { output: run.output, outputFrom: 'row' }
+    const rowOutput = typeof run?.output === 'string' ? run.output : null
+    if (typeof detail?.output === 'string') {
+      // The transcript only ever grows. On an older SimCore the polled row
+      // still carries full output and can be newer than the record fetched at
+      // mount — take whichever has more, never the stale one.
+      if (rowOutput !== null && rowOutput.length > detail.output.length) {
+        return { output: rowOutput, outputFrom: 'row' }
+      }
+      return { output: detail.output, outputFrom: 'record' }
+    }
+    if (rowOutput !== null) return { output: rowOutput, outputFrom: 'row' }
     if (typeof run?.output_tail === 'string' && run.output_tail) {
       return { output: run.output_tail, outputFrom: 'tail' }
     }
