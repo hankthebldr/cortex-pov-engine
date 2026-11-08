@@ -10,12 +10,17 @@
  * Before this guard none of them reached the Run Detail header: on a Windows
  * beacon (where EVERY non-direct identity collapses to `direct`) the run read
  * like any other, and a lineage-keyed miss read as the customer's gap.
+ *
+ * OPS-06 — the console's 10 s run poll now asks for `fields=summary`, which
+ * drops `output`. So the detail view must fetch GET /api/runs/{id} itself and
+ * must not mistake a summary row's missing output for "no output captured".
  */
 import React from 'react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 import RunDetailView from '../console/RunDetailView.jsx'
+import { EnvironmentProvider } from '../../context/EnvironmentContext.jsx'
 
 void React
 
@@ -91,5 +96,51 @@ describe('<RunDetailView /> platform banners', () => {
     expect(b).toHaveTextContent('PLATFORM_UNSATISFIABLE')
     expect(b).toHaveTextContent('step-04')
     expect(b).toHaveTextContent(/never ran/i)
+  })
+})
+
+describe('<RunDetailView /> with a summary-shaped list row (OPS-06)', () => {
+  const SUMMARY_ROW = {
+    run_id: 'run-win-1', scenario_id: 'SIM-EDR-013', status: 'complete', mode: 'pull',
+    target: 'win-01', output_bytes: OUTPUT.length, output_tail: OUTPUT.slice(-60),
+  }
+
+  it('fetches the run record for the full output the banners need', async () => {
+    const getRun = vi.fn(() => RUN)
+    installRoutes({ 'GET /api/runs/run-win-1': getRun })
+    render(<RunDetailView runId="run-win-1" run={SUMMARY_ROW} subTab="live" />)
+    const b = await banner()
+    expect(b).toHaveTextContent('2 of 3 steps')
+    expect(getRun).toHaveBeenCalled()
+  })
+
+  it('a failed run shows the fetched tail, not "no output captured"', async () => {
+    const failedRow = { ...SUMMARY_ROW, status: 'failed', output_tail: '' }
+    const failed = {
+      ...RUN, status: 'failed',
+      output: 'step-01 start\nrunuser: may not be used by non-root users\n--- exit_code=1',
+    }
+    installRoutes({ 'GET /api/runs/run-win-1': failed })
+    render(<RunDetailView runId="run-win-1" run={failedRow} subTab="live" />)
+    const fb = await screen.findByTestId('run-failure-banner')
+    await waitFor(() => expect(fb).toHaveTextContent(/may not be used by non-root users/))
+    expect(fb).not.toHaveTextContent(/no output captured/i)
+  })
+})
+
+describe('EnvironmentProvider run poll (OPS-06)', () => {
+  it('asks for the summary projection, not every run\'s whole output', async () => {
+    const calls = []
+    installRoutes({
+      'GET /api/runs': (url) => { calls.push(url); return { runs: [], total: 0 } },
+      'GET /api/scenarios': { scenarios: [], total: 0 },
+      'GET /api/agents': { agents: [], total: 0 },
+      'GET /api/xsiam/tenants': { tenants: [] },
+      'GET /api/health': { status: 'ok' },
+    })
+    render(<EnvironmentProvider runPollMs={60_000}><div>child</div></EnvironmentProvider>)
+    await waitFor(() => expect(calls.length).toBeGreaterThan(0))
+    const qs = new URL(calls[0], 'http://localhost').searchParams
+    expect(qs.get('fields')).toBe('summary')
   })
 })

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import InflightView from './InflightView.jsx'
 import EvidenceView from './EvidenceView.jsx'
 import DetectionStoryline, { isRunUnproven } from '../DetectionStoryline.jsx'
@@ -7,7 +7,8 @@ import RunTechniquesView from './RunTechniquesView.jsx'
 import RunTopologyView from './RunTopologyView.jsx'
 import { runStatusToken, runStatusGlyph } from './runStatus.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
-import { scenarioIdOf } from '../../api/ids.js'
+import { scenarioIdOf, idMatches } from '../../api/ids.js'
+import { getRun } from '../../api/client.js'
 import { hasAttestations, attestationLines } from '../../outcomes.js'
 import { parseStepTranscript } from './useRunStepTail.js'
 import '../../styles/destinations/run-detail.css'
@@ -211,9 +212,41 @@ export default function RunDetailView({
     return s?.name || null
   }, [scenarios, descriptor.scenarioId])
 
-  const output = typeof run?.output === 'string' ? run.output : null
+  // The run RECORD, for its full output. The list row this view is handed comes
+  // from the console's 10 s poll, which asks for `fields=summary` and so carries
+  // no `output` (OPS-06) — reading the transcript off it would show "no output
+  // captured" for a run that captured plenty, and no degradation banners at all.
+  // An older SimCore returns the full row; that still works, because a fetched
+  // record only replaces the row's output when it is recognisably this run's.
+  const [detail, setDetail] = useState(null)
+  useEffect(() => { setDetail(null) }, [runId])
+  useEffect(() => {
+    if (!runId) return undefined
+    let cancelled = false
+    Promise.resolve()
+      .then(() => getRun(runId))
+      .then((d) => {
+        if (cancelled) return
+        const isThisRun = d && typeof d === 'object' && typeof d.output === 'string'
+          && (d.run_id == null || idMatches(d.run_id, runId))
+        // Keep the previous record on an unusable answer: a transient bad read
+        // must not blank banners the operator was already reading.
+        if (isThisRun) setDetail(d)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [runId, run?.status, run?.output_bytes])
+
+  const { output, outputFrom } = useMemo(() => {
+    if (typeof detail?.output === 'string') return { output: detail.output, outputFrom: 'record' }
+    if (typeof run?.output === 'string') return { output: run.output, outputFrom: 'row' }
+    if (typeof run?.output_tail === 'string' && run.output_tail) {
+      return { output: run.output_tail, outputFrom: 'tail' }
+    }
+    return { output: null, outputFrom: null }
+  }, [detail, run])
   const degraded = useMemo(() => runDegradations(output), [output])
-  const partial = false
+  const partial = outputFrom === 'tail'
 
   const isThisActive = !!(activeRun && activeRun.runId === runId)
   const statusToken = runStatusToken(run?.status)

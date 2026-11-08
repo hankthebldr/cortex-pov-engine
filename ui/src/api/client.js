@@ -445,11 +445,20 @@ export async function postRun(body) {
 }
 
 /**
- * GET /api/runs
+ * GET /api/runs[?fields=summary]
+ *
+ * `fields: 'summary'` asks for the list projection without each run's full
+ * `output` (rows carry `output_bytes` + `output_tail` instead). An older
+ * SimCore ignores the parameter and returns the full shape, which callers
+ * still handle. Anything that needs a run's whole transcript reads
+ * `getRun(id)` — never the list.
+ *
+ * @param {{fields?: 'summary'}} [opts]
  * @returns {Promise<Array>}
  */
-export async function getRuns() {
-  const data = await request('/api/runs')
+export async function getRuns({ fields } = {}) {
+  const qs = fields ? `?fields=${encodeURIComponent(fields)}` : ''
+  const data = await request(`/api/runs${qs}`)
   return Array.isArray(data) ? data : data?.runs ?? []
 }
 

@@ -173,8 +173,15 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       .finally(() => setLoading((l) => ({ ...l, scenarios: false })))
   }, [setListError])
 
+  // The summary projection (OPS-06). This list is polled every 10 s by every
+  // open console, and the full shape carried every run's whole transcript on
+  // every tick. Rows here therefore carry NO `output` on a current SimCore
+  // (`output_bytes` + `output_tail` instead): a surface that needs a run's
+  // transcript reads GET /api/runs/{id} for that run — RunDetailView,
+  // useRunStepTail and RunTopologyView all do. An older SimCore ignores the
+  // parameter and returns the full shape, which every consumer still handles.
   const refreshRuns = useCallback(() => {
-    return getRuns()
+    return getRuns({ fields: 'summary' })
       .then((data) => setRuns(Array.isArray(data) ? data : []))
       .catch(() => {})
       .finally(() => setLoading((l) => ({ ...l, runs: false })))
