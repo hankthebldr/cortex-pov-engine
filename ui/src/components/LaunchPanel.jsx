@@ -1,6 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { postRun, getAgents, downloadScenario } from '../api/client.js'
 import { agentIdOf } from '../api/ids.js'
+import { PUSH_FORMATS, saveBlob, errorRecord, describeError } from './console/useLaunchScenario.js'
+import LaunchErrorNotice, { DownloadOutcome } from './console/LaunchErrorNotice.jsx'
+
+/** What each push format is, in one line, beside the selector. */
+const FORMAT_HINT = {
+  auto: 'SimCore picks the target the scenario\'s command text can satisfy — bash for POSIX '
+    + 'content, PowerShell for windows-only content',
+  bash: 'Self-contained bash script — runs on any Ubuntu 22.04 box',
+  powershell: 'Self-contained PowerShell script for the Windows PowerShell 5.1 floor '
+    + '(Server 2016+ / Windows 10+): powershell.exe -NoProfile -ExecutionPolicy Bypass -File <file>',
+  k8s: 'K8s YAML manifest — apply with kubectl apply -f <file>',
+}
+
+const DOWNLOAD_LABEL = {
+  auto: 'Download bundle',
+  bash: 'Download Bash Bundle',
+  powershell: 'Download PowerShell (.ps1)',
+  k8s: 'Download K8s YAML',
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -10,10 +29,11 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
   const [identity, setIdentity]       = useState('')
   const [agents, setAgents]           = useState([])
   const [selectedAgent, setSelectedAgent] = useState('')
-  const [pushFormat, setPushFormat]   = useState('bash')      // 'bash' | 'k8s'
+  const [pushFormat, setPushFormat]   = useState('auto')      // PUSH_FORMATS value
   const [launching, setLaunching]     = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [lastRun, setLastRun]         = useState(null)        // { status, message }
+  const [downloadResult, setDownloadResult] = useState(null)  // shown beside the button
 
   // ── Populate identity options from scenario ────────────────────────────────
   const identityOptions = scenario?.execution_identity?.options || []
@@ -57,7 +77,7 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
       if (onRunComplete) onRunComplete(run)
     } catch (err) {
       const msg = err.message || 'Launch failed'
-      setLastRun({ status: 'error', message: msg })
+      setLastRun(errorRecord(err, 'Launch failed'))
       if (onError) onError(msg)
     } finally {
       setLaunching(false)
@@ -65,28 +85,29 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
   }, [scenario, mode, identity, selectedAgent, onRunComplete, onError])
 
   // ── Download push script ──────────────────────────────────────────────────
-  const handleDownload = useCallback(async () => {
+  // The filename is the server's (Content-Disposition), so a PowerShell bundle
+  // is saved as .ps1 rather than the .sh this used to hard-code. A refusal is
+  // rendered beside the button, not only handed to onError.
+  const handleDownload = useCallback(async (formatOverride) => {
     if (!scenario) return
+    const fmt = typeof formatOverride === 'string' && formatOverride ? formatOverride : pushFormat
+    if (fmt !== pushFormat) setPushFormat(fmt)
     setDownloading(true)
+    setDownloadResult(null)
     try {
       const id = scenario.scenario_id || scenario.id
-      const blob = await downloadScenario(id, pushFormat)
-      const ext  = pushFormat === 'k8s' ? 'yml' : 'sh'
-      const filename = `cortexsim-${id}-${pushFormat}.${ext}`
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
-      a.href     = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const res = await downloadScenario(id, fmt)
+      saveBlob(res.blob, res.filename)
+      setDownloadResult({ status: 'success', filename: res.filename, target: res.target, format: res.format })
     } catch (err) {
-      if (onError) onError(err.message || 'Download failed')
+      setDownloadResult({ ...errorRecord(err, 'Download failed'), format: fmt })
+      if (onError) onError(describeError(err))
     } finally {
       setDownloading(false)
     }
   }, [scenario, pushFormat, onError])
+
+  useEffect(() => { setDownloadResult(null) }, [scenario?.scenario_id])
 
   const disabled = !scenario || launching
 
@@ -195,38 +216,42 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
                 <label className="form-label">Script Format</label>
                 <div className="launch-panel__push-row">
                   <div className="segmented-control">
-                    <button
-                      className={pushFormat === 'bash' ? 'active' : ''}
-                      onClick={() => setPushFormat('bash')}
-                    >
-                      bash
-                    </button>
-                    <button
-                      className={pushFormat === 'k8s' ? 'active' : ''}
-                      onClick={() => setPushFormat('k8s')}
-                    >
-                      k8s
-                    </button>
+                    {PUSH_FORMATS.map((f) => (
+                      <button
+                        key={f.value}
+                        className={pushFormat === f.value ? 'active' : ''}
+                        aria-pressed={pushFormat === f.value}
+                        title={f.label}
+                        onClick={() => setPushFormat(f.value)}
+                      >
+                        {f.short}
+                      </button>
+                    ))}
                   </div>
 
                   <button
                     className="btn btn-secondary"
                     onClick={handleDownload}
                     disabled={downloading || !scenario}
-                    title={`Download ${pushFormat === 'k8s' ? 'K8s YAML manifest' : 'Bash bundle'}`}
+                    title={DOWNLOAD_LABEL[pushFormat] || 'Download bundle'}
                   >
                     {downloading ? (
                       <><span className="spinner" /> Preparing…</>
                     ) : (
-                      <> &#8595; Download {pushFormat === 'k8s' ? 'K8s YAML' : 'Bash Bundle'}</>
+                      <> &#8595; {DOWNLOAD_LABEL[pushFormat] || 'Download bundle'}</>
                     )}
                   </button>
                 </div>
                 <span className="launch-panel__hint">
-                  {pushFormat === 'bash'
-                    ? 'Self-contained bash script — runs on any Ubuntu 22.04 box'
-                    : 'K8s YAML manifest — apply with kubectl apply -f <file>'}
+                  {FORMAT_HINT[pushFormat] || FORMAT_HINT.auto}
                 </span>
+                <DownloadOutcome
+                  result={downloadResult}
+                  scenario={scenario}
+                  onDownload={handleDownload}
+                  busy={downloading}
+                  testId="launch-panel-download-result"
+                />
               </div>
             )}
 
@@ -247,12 +272,18 @@ export default function LaunchPanel({ scenario, onRunComplete, onError }) {
               </button>
 
               {/* Status feedback */}
-              {lastRun && (
-                <div className={`launch-panel__status launch-panel__status--${lastRun.status === 'success' ? 'success' : 'error'}`}>
-                  <span>{lastRun.status === 'success' ? '✓' : '✕'}</span>
+              {lastRun && lastRun.status === 'success' && (
+                <div className="launch-panel__status launch-panel__status--success" role="status">
+                  <span>✓</span>
                   {lastRun.message}
                 </div>
               )}
+              {/* A refusal keeps its code and structured detail. */}
+              <LaunchErrorNotice
+                result={lastRun}
+                className="launch-panel__status launch-panel__status--error"
+                testId="launch-panel-error"
+              />
             </div>
 
           </div>

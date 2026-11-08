@@ -7,6 +7,8 @@ import { getToolAdapters } from '../../api/client.js'
 import useShelf from './useShelf.js'
 import { parseServerTime } from '../../api/time.js'
 import { SUPPLY, supplyOf } from './supplyState.js'
+import { PUSH_FORMATS } from './useLaunchScenario.js'
+import LaunchErrorNotice, { DownloadOutcome } from './LaunchErrorNotice.jsx'
 
 /**
  * ScenarioInspector — right-side 420px drawer with pinned launch CTA at top,
@@ -107,16 +109,19 @@ export default function ScenarioInspector({
           <button type="button" className="btn" onClick={onClose}>Close</button>
         </div>
 
-        {launch.lastRun && (
-          <div
-            className={'mono insp-launch__status' + (launch.lastRun.status === 'success'
-              ? ' insp-launch__status--success'
-              : ' insp-launch__status--missed')}
-          >
-            {launch.lastRun.status === 'success' ? '\u2713 ' : '\u2717 '}
+        {launch.lastRun && launch.lastRun.status !== 'error' && (
+          <div className="mono insp-launch__status insp-launch__status--success" role="status">
+            {'\u2713 '}
             {launch.lastRun.message}
           </div>
         )}
+        {/* A refused launch keeps its code and structured detail (unresolved
+            steps, missing agents) \u2014 the same rendering the Launch step uses. */}
+        <LaunchErrorNotice
+          result={launch.lastRun}
+          testId="insp-launch-error"
+          className="mono insp-launch__status insp-launch__status--missed"
+        />
       </div>
 
       {/* ── Mode + identity + agent (compact) ───────────────────────────── */}
@@ -194,21 +199,22 @@ export default function ScenarioInspector({
             </div>
           )}
 
-          {/* Push: format */}
+          {/* Push: format. `auto` lets SimCore pick .sh or .ps1 from the
+              scenario's command text; PowerShell is the Windows bundle. */}
           {launch.mode === 'push' && (
             <div className="insp-config__row">
               <label className="insp-config__label">Format</label>
               <div className="insp-segmented">
-                <button
-                  type="button"
-                  className={launch.pushFormat === 'bash' ? 'is-active' : ''}
-                  onClick={() => launch.setPushFormat('bash')}
-                >bash</button>
-                <button
-                  type="button"
-                  className={launch.pushFormat === 'k8s' ? 'is-active' : ''}
-                  onClick={() => launch.setPushFormat('k8s')}
-                >k8s</button>
+                {PUSH_FORMATS.map((f) => (
+                  <button
+                    key={f.value}
+                    type="button"
+                    className={launch.pushFormat === f.value ? 'is-active' : ''}
+                    aria-pressed={launch.pushFormat === f.value}
+                    title={f.label}
+                    onClick={() => launch.setPushFormat(f.value)}
+                  >{f.short}</button>
+                ))}
               </div>
             </div>
           )}
@@ -238,6 +244,8 @@ export default function ScenarioInspector({
               {launch.downloading ? 'Preparing…' : 'Push bundle'}
             </button>
           </div>
+          {/* Beside the button that asked: a refused bundle names its steps. */}
+          <DownloadOutcome launch={launch} scenario={scenario} testId="insp-download-result" />
         </div>
       </div>
 

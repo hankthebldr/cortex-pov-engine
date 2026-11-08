@@ -4,6 +4,18 @@ import { getLaunchCapability } from '../../api/payloads.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { triStateFromValue } from '../../outcomes.js'
 
+/**
+ * Push-bundle formats GET /api/scenarios/{id}/download serves. One list, so the
+ * Launch step, the drawer's quick-launch and the legacy panel cannot drift
+ * apart again (all three offered only bash | k8s while SimCore served .ps1).
+ */
+export const PUSH_FORMATS = Object.freeze([
+  { value: 'auto', label: 'auto — SimCore picks .sh or .ps1', short: 'auto' },
+  { value: 'bash', label: 'bash (.sh)', short: 'bash' },
+  { value: 'powershell', label: 'PowerShell (.ps1)', short: 'PowerShell' },
+  { value: 'k8s', label: 'kubernetes (.yml)', short: 'k8s' },
+])
+
 /** "message [CODE]: detail" from a thrown API error, code and detail never dropped. */
 export function describeError(err) {
   let text = err?.message || 'Request failed'
@@ -12,6 +24,149 @@ export function describeError(err) {
     text += `: ${err.detail}`
   }
   return text
+}
+
+/**
+ * The step ids a bundle / pull refusal names, from either detail shape:
+ *   push 409 BUNDLE_TARGET_UNSATISFIABLE — a STRING,
+ *     "target=posix scenario=… unresolved=[step-01 (REASON), …] — hint"
+ *   pull 409 PULL_TARGET_UNSATISFIABLE   — an OBJECT,
+ *     {target, agent_os, unresolved: [{step_id, reason}], hint}
+ *
+ * @returns {{target: string|null, unresolved: Array<{step_id, reason}>, hint: string|null}}
+ */
+export function parseTargetRefusal(detail) {
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    const unresolved = Array.isArray(detail.unresolved)
+      ? detail.unresolved.map((u) => (Array.isArray(u)
+        ? { step_id: String(u[0] ?? ''), reason: u[1] != null ? String(u[1]) : null }
+        : { step_id: String(u?.step_id ?? ''), reason: u?.reason != null ? String(u.reason) : null }))
+        .filter((u) => u.step_id)
+      : []
+    return {
+      target: typeof detail.target === 'string' ? detail.target : null,
+      unresolved,
+      hint: typeof detail.hint === 'string' ? detail.hint : null,
+    }
+  }
+  if (typeof detail !== 'string' || !detail) return { target: null, unresolved: [], hint: null }
+  const target = /\btarget=(\S+)/.exec(detail)?.[1] || null
+  const list = /\bunresolved=\[([^\]]*)\]/.exec(detail)?.[1] || ''
+  const unresolved = list.split(',').map((s) => s.trim()).filter(Boolean).map((s) => {
+    const m = /^(\S+)\s*(?:\(([^)]*)\))?$/.exec(s)
+    return m ? { step_id: m[1], reason: m[2] || null } : { step_id: s, reason: null }
+  })
+  const hint = /\s—\s(.+)$/.exec(detail)?.[1]?.trim() || null
+  return { target, unresolved, hint }
+}
+
+/**
+ * Operator-readable lines for an error `detail` of ANY shape, so a structured
+ * refusal is never reduced to its status line. Known keys are worded; any other
+ * key is rendered `key: value` rather than dropped — an unrecognised shape must
+ * be shown, not read as nothing.
+ *
+ * @returns {string[]}
+ */
+export function errorDetailLines(detail) {
+  if (detail == null || detail === '') return []
+  if (typeof detail === 'string') {
+    const parsed = parseTargetRefusal(detail)
+    if (parsed.unresolved.length) {
+      return [
+        ...(parsed.target ? [`target: ${parsed.target}`] : []),
+        ...parsed.unresolved.map((u) => `${u.step_id}${u.reason ? ` — ${u.reason}` : ''}`),
+        ...(parsed.hint ? [`→ ${parsed.hint}`] : []),
+      ]
+    }
+    return [detail]
+  }
+  if (Array.isArray(detail)) {
+    return detail.map((d) => (d && typeof d === 'object'
+      ? [d.loc && [].concat(d.loc).join('.'), d.msg || d.message || JSON.stringify(d)]
+        .filter(Boolean).join(': ')
+      : String(d)))
+  }
+  if (typeof detail !== 'object') return [String(detail)]
+
+  const lines = []
+  const seen = new Set()
+  const take = (k) => { seen.add(k); return detail[k] }
+  const refusal = parseTargetRefusal(detail)
+  if (refusal.unresolved.length) {
+    take('unresolved')
+    for (const u of refusal.unresolved) lines.push(`${u.step_id}${u.reason ? ` — ${u.reason}` : ''}`)
+  }
+  if (Array.isArray(detail.missing_agents)) {
+    lines.push(`not enrolled: ${take('missing_agents').join(', ')}`)
+  }
+  if (detail.referencing_steps && typeof detail.referencing_steps === 'object') {
+    for (const [agentId, steps] of Object.entries(take('referencing_steps'))) {
+      lines.push(`${agentId} ← ${[].concat(steps || []).join(', ')}`)
+    }
+  }
+  if (Array.isArray(detail.fields)) {
+    for (const f of take('fields')) {
+      lines.push(f && typeof f === 'object'
+        ? `${f.field || [].concat(f.loc || []).join('.') || 'field'}: ${f.msg || f.message || f.type || 'invalid'}`
+        : String(f))
+    }
+  }
+  const hint = typeof detail.hint === 'string' ? take('hint') : null
+  for (const [k, v] of Object.entries(detail)) {
+    if (seen.has(k) || v == null || v === '') continue
+    lines.push(`${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
+  }
+  if (hint) lines.push(`→ ${hint}`)
+  return lines
+}
+
+/** Hand a downloaded blob to the browser under `filename`. */
+export function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a   = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * Which other format a bundle refusal can offer as a one-click retry, or null.
+ *
+ * Only an EXPLICIT posix format (bash / k8s) refused for want of POSIX text is
+ * offered PowerShell, and vice versa. `auto` already tried both targets, so a
+ * refusal under it has no alternative to offer; and when the scenario reports
+ * `bundle_targets`, an alternative it does not list is not offered either — a
+ * button that is certain to 409 again is worse than no button.
+ */
+export function bundleRetryFormat(result, scenario) {
+  if (!result || result.status !== 'error' || result.code !== 'BUNDLE_TARGET_UNSATISFIABLE') return null
+  if (!result.format || result.format === 'auto') return null
+  const { target } = parseTargetRefusal(result.detail)
+  const known = Array.isArray(scenario?.bundle_targets) ? scenario.bundle_targets : null
+  if (target === 'posix' && result.format !== 'powershell') {
+    return !known || known.includes('windows') ? 'powershell' : null
+  }
+  if (target === 'windows' && result.format === 'powershell') {
+    return !known || known.includes('posix') ? 'bash' : null
+  }
+  return null
+}
+
+/** The structured error record the launch and download surfaces render. */
+export function errorRecord(err, fallback) {
+  return {
+    status: 'error',
+    message: err?.message || fallback,
+    code: err?.code || null,
+    // Kept in its original shape: a pull refusal's detail is an OBJECT
+    // (unresolved steps, missing agents) and flattening it to null — what the
+    // launch path used to do — dropped exactly the step ids the DC must fix.
+    detail: err?.detail ?? null,
+  }
 }
 
 /**
@@ -38,7 +193,16 @@ export default function useLaunchScenario(scenario, {
   const [identity, setIdentity]           = useState('')
   const [agents, setAgents]               = useState([])
   const [selectedAgent, setSelectedAgent] = useState('')
-  const [pushFormat, setPushFormat]       = useState('bash')      // 'bash' | 'k8s'
+  // 'auto' | 'bash' | 'powershell' | 'k8s'. Defaults to `auto` — SimCore picks
+  // the target the scenario's command text can satisfy (POSIX first, PowerShell
+  // for windows-only content). Defaulting to bash made every windows-only
+  // scenario's first download a 409.
+  const [pushFormat, setPushFormat]       = useState('auto')
+  // null | {status:'success', filename, target, format}
+  //      | {status:'error', message, code, detail, format}
+  // Rendered BESIDE the download button. A refusal used to reach only
+  // `onError`, which the Library and guided-flow mounts wired to a no-op.
+  const [downloadResult, setDownloadResult] = useState(null)
   // Launch-time consent for gated tool adapters (dual-use / c2-framework).
   const [consent, setConsent]             = useState({})          // { simulation_authorized?, c2_authorized? }
   const [launching, setLaunching]         = useState(false)
@@ -74,6 +238,7 @@ export default function useLaunchScenario(scenario, {
   useEffect(() => {
     setIdentity(defaultIdentity || identityOptions[0] || '')
     setLastRun(null)
+    setDownloadResult(null)
     setPairedWith('')
     setCanaryRunId('')
     setCanaryError(null)
@@ -195,11 +360,10 @@ export default function useLaunchScenario(scenario, {
     } catch (err) {
       const msg = err.message || 'Launch failed'
       // Keep the structured contract intact — the panel renders the code as a
-      // secondary line so a 422 reads as a named field, not a status number.
-      setLastRun({
-        status: 'error', message: msg, code: err.code || null,
-        detail: typeof err.detail === 'string' ? err.detail : null,
-      })
+      // secondary line so a 422 reads as a named field, not a status number,
+      // and an OBJECT detail (PULL_TARGET_UNSATISFIABLE's unresolved steps,
+      // TARGET_AGENT_NOT_ENROLLED's missing agents) as a list.
+      setLastRun(errorRecord(err, 'Launch failed'))
       if (onError) onError(msg)
       return null
     } finally {
@@ -209,24 +373,26 @@ export default function useLaunchScenario(scenario, {
       payloadPlanResolving, onRunComplete, onError,
       profileMode, basMode, soaklessMode, attestedBy, pairedWith, canaryRunId])
 
-  const downloadPushBundle = useCallback(async () => {
-    if (!scenario) return
+  // `formatOverride` lets a refusal offer a one-click retry in another format
+  // ("Download as PowerShell"). It is ignored unless it is a string, because
+  // this handler is also wired straight to onClick and receives the event.
+  const downloadPushBundle = useCallback(async (formatOverride) => {
+    if (!scenario) return null
+    const fmt = typeof formatOverride === 'string' && formatOverride ? formatOverride : pushFormat
+    if (fmt !== pushFormat) setPushFormat(fmt)
     setDownloading(true)
+    setDownloadResult(null)
     try {
       const id  = scenario.scenario_id || scenario.id
-      const blob = await downloadScenario(id, pushFormat)
-      const ext  = pushFormat === 'k8s' ? 'yml' : 'sh'
-      const filename = `cortexsim-${id}-${pushFormat}.${ext}`
-      const url = URL.createObjectURL(blob)
-      const a   = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const res = await downloadScenario(id, fmt)
+      saveBlob(res.blob, res.filename)
+      const ok = { status: 'success', filename: res.filename, target: res.target, format: res.format }
+      setDownloadResult(ok)
+      return ok
     } catch (err) {
-      if (onError) onError(err.message || 'Download failed')
+      setDownloadResult({ ...errorRecord(err, 'Download failed'), format: fmt })
+      if (onError) onError(describeError(err))
+      return null
     } finally {
       setDownloading(false)
     }
@@ -262,6 +428,7 @@ export default function useLaunchScenario(scenario, {
     consent, setConsent,
     launching, downloading,
     lastRun,
+    downloadResult,
     payloadPlanAccepted,
     profileMode, setProfileMode,
     basMode, setBasMode,

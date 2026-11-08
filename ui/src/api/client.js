@@ -250,18 +250,66 @@ export async function getScenarioInfraHints(scenarioId) {
   return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/infra-hints`)
 }
 
+/** Extension a bundle is saved under when the server names no file. */
+const BUNDLE_EXT = { bash: 'sh', powershell: 'ps1', k8s: 'yml' }
+
 /**
- * GET /api/scenarios/:id/download?format=bash|k8s
- * Returns a Blob for file download.
- * @param {string|number} id
- * @param {'bash'|'k8s'} format
- * @returns {Promise<Blob>}
+ * The filename from a Content-Disposition header, or null.
+ *
+ * Only the basename survives: a header is server-controlled text and the value
+ * becomes an `<a download>` name, so a path separator in it is dropped rather
+ * than trusted.
  */
-export async function downloadScenario(id, format = 'bash') {
-  const response = await request(`/api/scenarios/${id}/download?format=${format}`, {
-    _returnBlob: true,
-  })
-  return response.blob()
+export function filenameFromDisposition(header) {
+  if (!header || typeof header !== 'string') return null
+  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(header)
+  const plain = /filename\s*=\s*"([^"]*)"|filename\s*=\s*([^;\s]+)/.exec(header)
+  let name = null
+  if (star) {
+    try { name = decodeURIComponent(star[1].trim()) } catch { name = null }
+  }
+  if (!name && plain) name = (plain[1] ?? plain[2] ?? '').trim()
+  if (!name) return null
+  name = name.split(/[\\/]/).pop()
+  return name || null
+}
+
+/**
+ * GET /api/scenarios/:id/download?format=auto|bash|powershell|k8s
+ *
+ * `auto` (the default, and the server's own default) lets SimCore pick the
+ * target the scenario's command TEXT can satisfy: POSIX first, PowerShell for
+ * windows-only content. A bundle the content cannot satisfy is refused with 409
+ * BUNDLE_TARGET_UNSATISFIABLE naming the offending steps; the thrown error
+ * carries `.code` and `.detail` (`target=… unresolved=[step-01 (…)] — hint`).
+ *
+ * @param {string|number} id
+ * @param {'auto'|'bash'|'powershell'|'k8s'} [format='auto']
+ * @returns {Promise<{blob: Blob, filename: string, format: string,
+ *   target: ('posix'|'windows'|null), alternates: string[]}>}
+ *   `target` is the X-CortexSim-Bundle-Target header — the target SimCore
+ *   actually emitted for, which under `auto` is the only way to know whether
+ *   the file is a .sh or a .ps1. `filename` is the server's Content-Disposition
+ *   name when it sends one, else `cortexsim-<id>.<sh|ps1|yml>` by format.
+ */
+export async function downloadScenario(id, format = 'auto') {
+  const fmt = format || 'auto'
+  const response = await request(
+    `/api/scenarios/${encodeURIComponent(id)}/download?format=${encodeURIComponent(fmt)}`,
+    { _returnBlob: true },
+  )
+  const headers = response.headers
+  const target = headers?.get?.('X-CortexSim-Bundle-Target') || null
+  const alternates = (headers?.get?.('X-CortexSim-Bundle-Alternates') || '')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+  const resolved = fmt === 'auto'
+    ? (target === 'windows' ? 'powershell' : target === 'posix' ? 'bash' : 'auto')
+    : fmt
+  const ext = BUNDLE_EXT[resolved] || 'txt'
+  const fallback = resolved === 'k8s' ? `cortexsim-${id}-k8s.${ext}` : `cortexsim-${id}.${ext}`
+  const filename = filenameFromDisposition(headers?.get?.('Content-Disposition')) || fallback
+  const blob = await response.blob()
+  return { blob, filename, format: resolved, target, alternates }
 }
 
 // ─── Composer drafts ──────────────────────────────────────────────────────────

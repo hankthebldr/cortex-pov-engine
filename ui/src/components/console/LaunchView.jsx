@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import useLaunchScenario from './useLaunchScenario.js'
+import useLaunchScenario, { PUSH_FORMATS } from './useLaunchScenario.js'
+import LaunchErrorNotice, { DownloadOutcome } from './LaunchErrorNotice.jsx'
 import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
 import { getToolAdapters, listIntegrations } from '../../api/client.js'
 import useShelf from './useShelf.js'
@@ -297,8 +298,7 @@ export default function LaunchView({
                 value={launch.pushFormat}
                 onChange={(e) => launch.setPushFormat(e.target.value)}
               >
-                <option value="bash">bash (.sh)</option>
-                <option value="k8s">kubernetes (.yml)</option>
+                {PUSH_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </label>
           )}
@@ -381,6 +381,13 @@ export default function LaunchView({
             )}
           </div>
 
+          {/* The download's own outcome, beside the button that asked for it.
+              A refusal names its steps; a refusal that another format can
+              satisfy offers that format in one click. */}
+          {targetMode === 'push' && (
+            <DownloadOutcome launch={launch} scenario={scenario} testId="launch-download-result" />
+          )}
+
           {/* Why the button is dead. Rendered next to it, tied by
               aria-describedby so a screen reader hears the reason too. */}
           {blockers.length > 0 && (
@@ -393,13 +400,17 @@ export default function LaunchView({
             </ul>
           )}
 
-          {launch.lastRun && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
+          {launch.lastRun && launch.lastRun.status !== 'error' && (
             <div className={`launch-result launch-result--${launch.lastRun.status}`} role="status">
               {launch.lastRun.message}
               {launch.lastRun.code && (
                 <span className="launch-result__code mono"> [{launch.lastRun.code}]</span>
               )}
             </div>
+          )}
+          {launch.lastRun?.status === 'error'
+            && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
+            <LaunchErrorNotice result={launch.lastRun} testId="launch-error" />
           )}
         </section>
       </div>
