@@ -544,10 +544,17 @@ function ScopeHealthStrip() {
 // Each of these mounts exactly one lazy component with a straight props
 // pass-through, so `withSuspense` covers both the lazy-load and the boundary.
 const CoverageSurface = withSuspense(CoverageView)
-function TtpsSurface({ params = {}, onNavigate = () => {} }) {
+// `params` + `setParams` carry the grid's organization (`?group=&sort=&include=`)
+// so "by subdomain" survives a trip into the UC / TC index and back.
+function TtpsSurface({ params = {}, setParams, onNavigate = () => {} }) {
   return (
     <Suspense fallback={<DestinationLoading />}>
-      <TtpBrowserView initialTtpId={openParam(params, 'ttp')} onNavigate={onNavigate} />
+      <TtpBrowserView
+        initialTtpId={openParam(params, 'ttp')}
+        onNavigate={onNavigate}
+        params={params}
+        setParams={setParams}
+      />
     </Suspense>
   )
 }
