@@ -1542,6 +1542,7 @@ $global:LASTEXITCODE = $null
 $CortexSimStepEpilogue = @'
 $__cs_ok = $?
 $__cs_native = $LASTEXITCODE
+if ($env:CORTEXSIM_STEP_SENTINEL) { try { [System.IO.File]::WriteAllText($env:CORTEXSIM_STEP_SENTINEL, '1') } catch { } }
 if ((-not $__cs_ok) -and ($__cs_native -eq 0) -and ($Error.Count -gt 0) -and ([string]$Error[0].FullyQualifiedErrorId -like 'NativeCommandError*')) { $__cs_ok = $true }
 if (($null -ne $__cs_native) -and ($__cs_native -ne 0)) { exit $__cs_native }
 if (-not $__cs_ok) { exit 1 }
@@ -1565,6 +1566,11 @@ function Invoke-CsProcess {
     # An empty stdin: a step that prompts (ssh, runas) reads end-of-file
     # instead of hanging the unattended bundle on the console.
     [System.IO.File]::WriteAllText($in, '')
+    # Reaching the epilogue is a positive signal: it writes this file. A step
+    # body that ends early (a top-level return / break / continue / exit 0)
+    # skips the epilogue's exit-code check and exits 0 whatever failed, so a
+    # 0 without the file is not a success.
+    $sentinel = $null
 
     if ($Shell -eq 'cmd') {
         if ((-not $CortexSimIsWindows) -or [string]::IsNullOrEmpty($env:ComSpec)) {
@@ -1584,6 +1590,8 @@ function Invoke-CsProcess {
         }
     } else {
         $file = Join-Path $CortexSimStage ($Name + '.ps1')
+        $sentinel = Join-Path $CortexSimStage ($Name + '.epilogue')
+        if (Test-Path -LiteralPath $sentinel) { Remove-Item -LiteralPath $sentinel -Force }
         $nl = [Environment]::NewLine
         $body = $CortexSimStepPrelude + $nl + $Text + $nl + $CortexSimStepEpilogue + $nl
         # UTF-8 WITH a BOM on 5.1 and 7 alike: 5.1 reads a BOM-less file as ANSI.
@@ -1608,7 +1616,9 @@ function Invoke-CsProcess {
         RedirectStandardInput  = $in
         ErrorAction            = 'Stop'
     }
-    $p = Start-Process @startArgs
+    if ($sentinel) { $env:CORTEXSIM_STEP_SENTINEL = $sentinel }
+    try { $p = Start-Process @startArgs }
+    finally { Remove-Item -LiteralPath 'env:CORTEXSIM_STEP_SENTINEL' -ErrorAction SilentlyContinue }
     # Windows PowerShell 5.1: without a cached handle, ExitCode reads null
     # once the process has exited. Touching .Handle caches it.
     $null = $p.Handle
@@ -1617,6 +1627,8 @@ function Invoke-CsProcess {
         $code = $p.ExitCode
         if ($null -eq $code) {
             $result = @{ Outcome = 'threw'; Code = $null; Detail = 'exit code unavailable' }
+        } elseif ($code -eq 0 -and $sentinel -and -not (Test-Path -LiteralPath $sentinel)) {
+            $result = @{ Outcome = 'threw'; Code = 0; Detail = 'reason=EPILOGUE_NOT_REACHED (a top-level return, break, continue or exit 0 ended the step before its result was read)' }
         } elseif ($code -eq 0) {
             $result = @{ Outcome = 'ran-ok'; Code = 0; Detail = '' }
         } else {

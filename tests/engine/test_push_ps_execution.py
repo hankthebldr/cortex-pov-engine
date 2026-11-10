@@ -221,6 +221,26 @@ def test_steps_really_run_and_failures_are_reported(ps_exe, tmp_path):
     assert "Step outcome summary" in out, diag
 
 
+@pytest.mark.parametrize("ender", ["return", "continue", "break", "exit 0"])
+def test_a_step_that_ends_before_the_epilogue_is_not_a_success(ps_exe, tmp_path, ender):
+    """The epilogue is the only thing that turns a step's result into an exit
+    code. A top-level `return` (or `continue`, the keyword behind the original
+    no-op bug) skipped it, and `Get-Item /nonexistent; return` was reported
+    ran-ok / exit 0. Reaching the epilogue is now a positive signal."""
+    scn = _scenario([
+        _win_step("step-01", "Write-Output 'before'; Get-Item /nonexistent-cortexsim-x; " + ender),
+        _win_step("step-02", "Write-Output 'still-runs'"),
+    ])
+    proc, out, _ = _run_bundle(ps_exe, pg.generate_powershell(scn), tmp_path)
+    diag = _diag(proc, out)
+    results = _results(out)
+    assert results.get("step-01", ("?",))[0] == "threw", diag
+    assert "EPILOGUE_NOT_REACHED" in out, diag
+    assert "Step step-01 completed successfully" not in out, diag
+    assert results.get("step-02") == ("ran-ok", "0"), diag
+    assert proc.returncode == 1, diag
+
+
 def test_step_timeout_kills_the_step_and_the_bundle_continues(ps_exe, tmp_path):
     """PUSH-12: a hung step (an ssh tunnel, an interactive prompt) must not hang
     the bundle forever. Its process tree is killed at ``timeout_seconds`` and the
