@@ -116,8 +116,12 @@ Either order works. The manifest emits the Namespace (with its Pod Security
 labels, as the push path does); a pod applied before the Secret exists waits in
 `CreateContainerConfigError` and starts when the Secret appears.
 
-That URL form covers the `baseline` profile only. Gated profiles are generated
-by a `POST` that carries consent and are applied from the returned file (§5).
+That is the `baseline` profile. **[Henry]** Gated profiles are the same single
+URL apply, with the profile and its consent keys in the query string (§5):
+
+```bash
+kubectl apply -f 'http://<simcore>:8888/api/agents/manifest?profile=lab-privileged&cluster_privilege_authorized=true&node_access_authorized=true&authorized_by=<name>'
+```
 
 **[call]** The token lives in a Secret, never in the manifest URL or body. The
 SimCore URL lives there too and the manifest carries neither, so it is static
@@ -150,6 +154,8 @@ second manifest generator.
 | `prepare` | `packages` | Startup preparation, §6 |
 | `arch` | `amd64` | Which beacon binary digest to pin (`amd64`/`arm64`) |
 | `ttl_seconds` | `43200` | Absolute expiry, §7. Bounded 60..43200 by the existing `ClusterPosture` validator |
+| `cluster_privilege_authorized`, `node_access_authorized` | absent | Consent keys for gated profiles, §5. Only the literal `true` counts |
+| `authorized_by` | absent | Required with any consent key; who accepted the risk |
 
 ### Objects
 
@@ -224,19 +230,40 @@ Profiles are expressed as `ClusterPosture` values and gated by
 `CLUSTER_PRIVILEGE_DISABLED` 403), per-object capability naming and posture
 finding labels all come for free and stay consistent with the push path.
 
-**Gated profiles are not available on the `GET`.** The push path closed that
-door on purpose (`core/api/scenarios.py::_gated_format_requires_post`: "GET
+**[Henry] Gated profiles are served on the `GET`, with consent in the query
+string**, so every profile is one `kubectl apply -f <url>`. Decided 2026-11-10.
+
+This is a deliberate, scoped departure from the push path, which refuses gated
+manifests on `GET` (`core/api/scenarios.py::_gated_format_requires_post`: "GET
 carries no consent body, so the privileged bytes are never produced on this
-path"), and this endpoint keeps the rule:
+path"). That rule stays exactly as it is for
+`GET /api/scenarios/{id}/download?format=k8s`. It is relaxed for
+`GET /api/agents/manifest` only, and the things that keep it a decision rather
+than a click are:
 
-- `GET /api/agents/manifest` serves `baseline` only. Asking it for a gated
-  profile returns 409 `GATED_FORMAT_REQUIRES_POST` naming the remedy.
-- `POST /api/agents/manifest` with `{profile, consent: {...}, authorized_by}`
-  returns the manifest as a file. The console's Kubernetes tab does this and
-  hands the DC a download plus `kubectl apply -f cortexsim-agent.yaml`.
+- **Explicit keys, no default.** A gated profile with a consent key missing, or
+  set to anything but `true`, returns 409 `CLUSTER_CONSENT_REQUIRED` whose body
+  names each capability, the object it lands on and the literal key to add.
+  Never a silent downgrade to `baseline`.
+- **`authorized_by` is required** with any consent key (400 without it). It is
+  written into the manifest header and an annotation on every object, and the
+  generation is logged server-side with the profile, the keys and the caller's
+  address. `kubectl apply` leaves no other trace on SimCore.
+- **The kill switch still decides `node_access`.** With
+  `CORTEXSIM_ALLOW_PRIVILEGED_K8S` at its default `false`, `lab-privileged`
+  returns 403 `CLUSTER_PRIVILEGE_DISABLED` whatever the URL says. Henry's lab
+  SimCore sets it once; a shared or demo SimCore cannot emit the bytes.
+- **Consent keys are not secrets.** They may sit in shell history and proxy
+  logs. The enrollment token still never appears in the URL.
 
-*This is open with Henry (§12): it means his own lab shape is a file apply, not
-a URL apply.*
+What is given up, stated so nobody rediscovers it: on a SimCore with the kill
+switch on, a pasted link is enough to obtain a privileged manifest. Applying it
+still needs cluster-admin on the target cluster, and the manifest says in its
+header who authorised it and what it grants.
+
+The console's Kubernetes tab builds this URL from checkboxes and an
+`authorized_by` field, and shows it only once the keys are ticked. No `POST`
+variant is needed in phase 1.
 
 **A standing pod has one posture for its life.** The push path gives each
 scenario its own posture; here the agent's profile is fixed at apply time. So:
@@ -356,6 +383,8 @@ privileged with the host filesystem mounted. The design must say so plainly:
   and the lifetime, the way `build_header` does for push manifests.
 - Every object is labelled `cortexsim.io/agent=true` and carries the posture
   finding labels, so a customer's own KSPM flags it and can attribute it.
+- Every gated manifest names who authorised it (`authorized_by`) in the header
+  and in an annotation on each object.
 - The enrollment token is the only credential in the cluster. It grants
   enrollment, not console access.
 - SimCore-to-pod traffic is whatever the DC's SimCore serves (plain HTTP in a
@@ -389,7 +418,10 @@ commands should do the assembly. Phase 1 is the second statement; phases 2 and
 - Manifest object-graph tests per profile: what is and is not present, that
   `baseline` contains no privileged field, that the beacon digest in the
   manifest equals the served binary's.
-- Consent and kill-switch refusals, with the codes.
+- Consent and kill-switch refusals, with the codes: a gated profile with a key
+  missing or not `true` (409), without `authorized_by` (400), with the kill
+  switch off (403). And a guard that the push path's
+  `GATED_FORMAT_REQUIRES_POST` refusal on `download?format=k8s` is unchanged.
 - Launch refusal when scenario posture exceeds agent profile.
 - Go: enrollment, id reuse across restart, `SIGTERM` tree-kill, lifetime expiry,
   identity-absent degradation.
@@ -438,7 +470,5 @@ is *authored, not proven*, and `tenant-verified` stays **0**.
    them with inert equivalents (a sinkholed Stratum handshake already exists as
    `SIM-NDR` content; WildFire test files are already used), or leave them in the
    lab repos?
-2. **Gated profiles by file, not URL** (§5). Keeping the repo's "no privileged
-   bytes on a GET" rule means `lab-privileged` is generated by a consented
-   `POST` and applied from a file. The alternative is consent keys in the query
-   string so one `kubectl apply -f <url>` works, at the cost of that rule.
+
+**Settled:** gated profiles by URL with query-string consent (§5), Henry, 2026-11-10.
