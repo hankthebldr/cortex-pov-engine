@@ -220,7 +220,7 @@ first — `make rust-dist` does both phases.
 - **`INSTALL_DIR_UNTRUSTED`** fires where an elevated admin ran the OLD installer on a client SKU; run the uninstaller first.
 - **Server params are validated.** `GET /api/agents/install` validates every parameter it interpolates (`BAD_AGENT_ID`, `BAD_SERVER`, `BAD_TOKEN`, `BAD_INTERVAL`, `BAD_MODE`).
 - **Host allowlist.** A beacon or K8s init container given a `--server` DNS name that is not `localhost` or an IP must have that name in `CORTEXSIM_ALLOWED_HOSTS`, or every poll gets `400 HOST_NOT_ALLOWED`.
-- **Console view.** The deploy modal and the Get-started agent step poll `GET /api/agents/install/attempts` every 5 s while open. A row the installer only enrolled reads "enrolled — waiting for first beacon poll", never online. The spellings live in one place, `ui/src/components/console/deployCommands.js`.
+- **Console view.** The deploy modal and the Get-started agent step poll `GET /api/agents/install/attempts` every 5 s while open. A row the installer only enrolled reads "enrolled — waiting for first beacon poll", never online. Install and uninstall commands, `installerOS`, `beaconShipState` and the clipboard helper are spelled in one place, `ui/src/components/console/deployCommands.js`. Attempt polling, copy feedback and the Windows notices are in `DeployParts.jsx`, styled by `ui/src/styles/destinations/deploy-console.css`.
 - **Unproven:** the beacon is unsigned, and the `iwr | iex` cradle may be blocked or quarantined by XDR/Defender in prevent mode.
 
 ### Core Module Structure
