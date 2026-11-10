@@ -1821,9 +1821,12 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
     worse: it would run green, emit a subset of the attack, and the POV report
     would read the gap as "the customer's stack detected nothing".
 
-    What the emitted bundle guarantees, each proven by EXECUTION in
-    tests/engine/test_push_ps_execution.py (under pwsh; the Windows-only
-    behaviour is exercised by that file on a Windows host):
+    What the emitted bundle is meant to guarantee. Each is asserted by
+    execution in tests/engine/test_push_ps_execution.py under pwsh 7 on
+    Linux/macOS only. The Windows PowerShell 5.1 and cmd.exe paths (taskkill
+    tree kill, the NativeCommandError rule, Handle/ExitCode, cmd command-line
+    context) are UNPROVEN until that file runs on a Windows runner; no Windows
+    host has executed a bundle:
 
     * every step's text actually runs, in its own child process, with the
       beacon's exit-code semantics, a timeout and a killed process tree;
