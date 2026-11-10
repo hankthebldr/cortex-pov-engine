@@ -21,6 +21,7 @@ import (
 
 	"github.com/hankthebldr/cortexsim/agent/beacon"
 	"github.com/hankthebldr/cortexsim/agent/executor"
+	"github.com/hankthebldr/cortexsim/agent/runtimefacts"
 )
 
 const (
@@ -133,7 +134,7 @@ func main() {
 		hostname = *idFlag
 	}
 
-	capabilities := agentCapabilities(runtime.GOOS)
+	capabilities := agentCapabilities(runtime.GOOS, runtimefacts.InContainer(nil))
 
 	// Honest, live snapshot of what interpreters this host actually has right
 	// now — never a guess, never derived from GOOS. SimCore uses it to
