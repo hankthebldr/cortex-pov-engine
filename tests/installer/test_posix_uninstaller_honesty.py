@@ -34,8 +34,12 @@ SYSTEM_PATHS = (
     "/usr/local/bin/cortexsim-agent",
     "/Library/LaunchDaemons",
     "/var/log/cortexsim-agent.log",
+    "/opt/cortexsim/cache",
+    "/opt/cortexsim/tools",
+    "/tmp/.cortexsim",
 )
-SYSTEM_PREFIXES = ("/etc/systemd", "/usr/local/bin", "/Library/LaunchDaemons", "/var/log")
+SYSTEM_PREFIXES = ("/etc/systemd", "/usr/local/bin", "/Library/LaunchDaemons", "/var/log",
+                   "/opt/cortexsim", "/tmp/.cortexsim")
 
 
 def _script() -> str:
@@ -57,8 +61,13 @@ def sandbox(tmp_path):
         "/usr/local/bin/cortexsim-agent": root / "usr-local-bin" / "cortexsim-agent",
         "/Library/LaunchDaemons": root / "Library-LaunchDaemons",
         "/var/log/cortexsim-agent.log": root / "var-log" / "cortexsim-agent.log",
+        "/opt/cortexsim/cache": root / "opt-cortexsim" / "cache",
+        "/opt/cortexsim/tools": root / "opt-cortexsim" / "tools",
+        "/tmp/.cortexsim": root / "tmp-dot-cortexsim",
     }
     for key, p in paths.items():
+        if key.startswith(("/opt/", "/tmp/")):
+            continue  # beacon cache trees: absent unless a test creates them
         (p if key.endswith(("system", "LaunchDaemons")) else p.parent).mkdir(parents=True, exist_ok=True)
 
     # HOME lives under a directory literally named "locked" so the optional
@@ -75,8 +84,14 @@ def sandbox(tmp_path):
     env = {k: v for k, v in os.environ.items() if not k.startswith("CORTEXSIM_")}
     env["PATH"] = f"{fakebin}{os.pathsep}{env['PATH']}"
     env["HOME"] = str(home)
+    # The uninstaller removes the beacon's ${TMPDIR}/cortexsim-cache and
+    # ${XDG_CACHE_HOME}/cortexsim: point both into the sandbox, never the host.
+    tmpdir = tmp_path / "tmpdir"
+    tmpdir.mkdir()
+    env["TMPDIR"] = str(tmpdir)
+    env["XDG_CACHE_HOME"] = str(home / ".cache")
     yield {"paths": paths, "home": home, "fakebin": fakebin, "env": env,
-           "calls": calls, "tmp": tmp_path}
+           "calls": calls, "tmp": tmp_path, "tmpdir": tmpdir}
     # chmod 555 dirs must be writable again or tmp_path cleanup fails.
     for dirpath, dirnames, _ in os.walk(tmp_path):
         for d in dirnames:
@@ -230,3 +245,40 @@ def test_as_root_the_system_log_is_removed(sandbox):
     p = _run(_rewrite(_script(), sandbox), sandbox)
     assert p.returncode == 0, p.stdout + p.stderr
     assert not log.exists()
+
+
+def test_the_beacon_staging_caches_are_found_and_removed(sandbox):
+    """The beacon caches staged dual-use tools (linpeas, pspy, ...) under
+    /opt/cortexsim/cache, ${XDG_CACHE_HOME}/cortexsim or ${TMPDIR}/cortexsim-cache
+    and stages under /tmp/.cortexsim (agent/beacon/artifact.go). An uninstall
+    that never looked there printed "nothing to remove" over a host that still
+    carried them."""
+    caches = [
+        sandbox["paths"]["/opt/cortexsim/cache"],
+        sandbox["paths"]["/tmp/.cortexsim"],
+        sandbox["tmpdir"] / "cortexsim-cache",
+        sandbox["home"] / ".cache" / "cortexsim",
+    ]
+    for c in caches:
+        c.mkdir(parents=True)
+        (c / "linpeas.sh").write_text("#!/bin/sh\n")
+    p = _run(_rewrite(_script(), sandbox), sandbox)
+    out = p.stdout + p.stderr
+    assert p.returncode == 0, out
+    for c in caches:
+        assert not c.exists(), f"{c} survived the uninstall:\n{out}"
+    assert "nothing to remove" not in out
+    assert f"{len(caches)} of {len(caches)}" in out, out
+
+
+def test_a_cache_dir_override_is_removed_only_when_it_names_cortexsim(sandbox):
+    named = sandbox["tmp"] / "lab" / "cortexsim-tools"
+    unnamed = sandbox["tmp"] / "lab" / "operator-data"
+    for d in (named, unnamed):
+        d.mkdir(parents=True)
+    p = _run(_rewrite(_script(), sandbox), sandbox, {"CORTEXSIM_CACHE_DIR": str(named),
+                                                    "CORTEXSIM_STAGE_ROOT": str(unnamed)})
+    out = p.stdout + p.stderr
+    assert p.returncode == 0, out
+    assert not named.exists(), out
+    assert unnamed.exists(), "a tree we did not name must never be deleted"

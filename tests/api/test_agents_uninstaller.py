@@ -178,6 +178,27 @@ def test_windows_uninstaller_stops_every_process_and_removes_every_location(clie
     assert "Temp\\cortexsim-cache" in script  # C:\Windows\Temp, where a SYSTEM service stages
 
 
+def test_windows_uninstaller_removes_the_beacons_own_cache_and_stage_trees(client):
+    """agent/beacon/artifact.go caches under /opt/cortexsim/cache first, which
+    on Windows is <SystemDrive>:\\opt\\cortexsim, stages under
+    %windir%\\Temp\\cortexsim, and a SYSTEM service's os.UserCacheDir is the
+    systemprofile LocalAppData. The cache holds staged dual-use tools, so an
+    uninstall that skipped these called a carrying host clean."""
+    script = _win_uninstaller(client)
+    for where in ('"$env:SystemDrive\\opt\\cortexsim"',
+                  '"$env:SystemRoot\\Temp\\cortexsim"',
+                  "systemprofile\\AppData\\Local\\cortexsim",
+                  "$env:CORTEXSIM_CACHE_DIR", "$env:CORTEXSIM_STAGE_ROOT"):
+        assert where in script, where
+
+
+def test_windows_uninstaller_scratch_glob_is_the_installers_own_shape(client):
+    """`cortexsim-*` under TEMP could match a directory an operator made; only
+    the installer's `cortexsim-<guid N>` scratch is removed."""
+    script = _win_uninstaller(client)
+    assert "-match '^cortexsim-[0-9a-f]{32}$'" in script
+
+
 def test_nothing_to_remove_is_reserved_for_nothing_found(client):
     """The base uninstaller printed it whenever nothing was REMOVED — so a
     failed removal read as a clean host."""

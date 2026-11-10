@@ -927,6 +927,22 @@ USER_UNIT="$HOME/.config/systemd/user/$SVC.service"
 USER_PLIST="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
 USER_BIN="$HOME/.local/bin/cortexsim-agent"
 USER_STATE="$HOME/.cortexsim"
+# Where the beacon itself caches and stages tools (agent/beacon/artifact.go:
+# getArtifactCacheDir, findExecutableFallback, stageRootFor). The cache holds
+# the staged dual-use tools (linpeas, pspy, ...), so an uninstall that skips it
+# would call a host clean that still carries them.
+SYS_CACHE="/opt/cortexsim/cache"
+SYS_TOOLS="/opt/cortexsim/tools"
+STAGE_ROOT="/tmp/.cortexsim"
+TMP_CACHE="${TMPDIR:-/tmp}"; TMP_CACHE="${TMP_CACHE%/}/cortexsim-cache"
+USER_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/cortexsim"
+USER_CACHE_MAC="$HOME/Library/Caches/cortexsim"
+EXTRA_DIRS=""
+for v in "${CORTEXSIM_CACHE_DIR:-}" "${CORTEXSIM_STAGE_ROOT:-}"; do
+  case "$v" in
+    /*cortexsim*) EXTRA_DIRS="$EXTRA_DIRS $v" ;;   # never delete a tree we did not name
+  esac
+done
 EXTRA_BIN=""
 if [ -n "${CORTEXSIM_BIN_DIR:-}" ]; then EXTRA_BIN="${CORTEXSIM_BIN_DIR%/}/cortexsim-agent"; fi
 EXTRA_LOG=""
@@ -1055,6 +1071,10 @@ for l in "$SYS_LOG" "$EXTRA_LOG"; do
   cs_rm_file "$l" "log"
 done
 cs_rm_dir "$USER_STATE" "state/log directory"
+for d in "$SYS_CACHE" "$SYS_TOOLS" "$STAGE_ROOT" "$TMP_CACHE" "$USER_CACHE" "$USER_CACHE_MAC" $EXTRA_DIRS; do
+  cs_rm_dir "$d" "staging cache"
+done
+rmdir "${SYS_CACHE%/cache}" 2>/dev/null || true   # their parent, only once empty
 
 # -- verdict --------------------------------------------------------------------
 if [ -n "$LEFT" ]; then
@@ -1468,7 +1488,9 @@ try {
       $stopErr = ''
       try {
         if ("$($existing.Status)" -ne 'Stopped') { Stop-Service -Name $Svc -Force -ErrorAction Stop }
-        $existing.WaitForStatus('Stopped', '00:00:30')
+        # 90 s: the beacon's service handler may sit in STOP_PENDING for up to
+        # its 60 s stop deadline while it tree-kills a step and posts /complete.
+        $existing.WaitForStatus('Stopped', '00:01:30')
       } catch { $stopErr = "$($_.Exception.Message)" }
       if ($stopErr) {
         Cs-Fail 'install' 'SERVICE_STOP_FAILED' "could not stop the existing $Svc service: $stopErr" "stop it by hand (Stop-Service $Svc -Force) or reboot, then re-run"
@@ -1494,7 +1516,39 @@ try {
         Cs-Fail 'install' 'INSTALL_DIR_UNTRUSTED' "$InstallDir already exists and $dirErr; a SYSTEM service will not be installed into a directory another account may control" "inspect it; if it is an earlier CortexSim install, remove it from an elevated shell (iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex), then re-run"
       }
     } else {
-      try { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null } catch { $dirErr = "$($_.Exception.Message)" }
+      # Created WITH its final DACL and owner, in one call. New-Item would give
+      # it ProgramData's inherited ACL (Users may create files, CREATOR OWNER
+      # gets full control) until icacls below ran, and in that window a local
+      # non-admin could drop cortexsim-agent.exe here with their own explicit
+      # ACE that the later Copy-Item would keep: a SYSTEM service binary a
+      # non-admin can rewrite.
+      try {
+        $sec = New-Object System.Security.AccessControl.DirectorySecurity
+        $sec.SetAccessRuleProtection($true, $false)
+        $inh = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+        $none = [Security.AccessControl.PropagationFlags]::None
+        foreach ($ace in @(@('S-1-5-18', 'FullControl'), @('S-1-5-32-544', 'FullControl'), @('S-1-5-32-545', 'ReadAndExecute'))) {
+          $sid = New-Object System.Security.Principal.SecurityIdentifier($ace[0])
+          $sec.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, [Security.AccessControl.FileSystemRights]$ace[1], $inh, $none, 'Allow')))
+        }
+        $sec.SetOwner((New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')))
+        # .NET Framework (Windows PowerShell 5.1) has the two-argument
+        # CreateDirectory; .NET Core (PowerShell 7) moved it to an extension.
+        if ([IO.Directory].GetMethod('CreateDirectory', [type[]]@([string], [Security.AccessControl.DirectorySecurity]))) {
+          [void][IO.Directory]::CreateDirectory($InstallDir, $sec)
+        } else {
+          [IO.FileSystemAclExtensions]::Create((New-Object IO.DirectoryInfo($InstallDir)), $sec)
+        }
+        # CreateDirectory on a path that appeared since Test-Path returns it
+        # untouched: one created by someone else in that window is not ours.
+        $owner = "$((Get-Acl -LiteralPath $InstallDir).GetOwner([Security.Principal.SecurityIdentifier]).Value)"
+        if ($owner -ne 'S-1-5-32-544' -and $owner -ne 'S-1-5-18') {
+          Cs-Fail 'install' 'INSTALL_DIR_UNTRUSTED' "$InstallDir appeared while the installer was creating it and is owned by $owner" 'inspect it and remove it from an elevated shell, then re-run'
+        }
+      } catch {
+        if ("$($_.Exception.Message)" -like 'CORTEXSIM_FAILED:*') { throw }
+        $dirErr = "$($_.Exception.Message)"
+      }
       if ($dirErr) {
         Cs-Fail 'install' 'BIN_INSTALL_FAILED' "could not create $InstallDir : $dirErr" 'check free space and permissions under ProgramData'
       }
@@ -1798,8 +1852,23 @@ try {
     Cs-RemovePath "$env:SystemRoot\Temp\cortexsim-cache" 'staging cache'
     Cs-RemovePath "$env:SystemRoot\SystemTemp\cortexsim-cache" 'staging cache'
   }
+  # Where the beacon itself caches and stages (agent/beacon/artifact.go): its
+  # cache tries /opt/cortexsim/cache first, which on Windows resolves to
+  # <drive>:\opt\cortexsim; stageRootFor is %windir%\Temp\cortexsim; a SYSTEM
+  # service's os.UserCacheDir is the systemprofile LocalAppData. The cache holds
+  # the staged dual-use tools, so skipping it would call the host clean.
+  if ($env:SystemDrive) { Cs-RemovePath "$env:SystemDrive\opt\cortexsim" 'staging cache' }
+  if ($env:SystemRoot) {
+    Cs-RemovePath "$env:SystemRoot\Temp\cortexsim" 'staging root'
+    Cs-RemovePath "$env:SystemRoot\System32\config\systemprofile\AppData\Local\cortexsim" 'staging cache'
+  }
+  foreach ($v in @($env:CORTEXSIM_CACHE_DIR, $env:CORTEXSIM_STAGE_ROOT)) {
+    if ($v -and $v -like '*cortexsim*') { Cs-RemovePath $v 'staging cache' }  # never a tree we did not name
+  }
   foreach ($d in @(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Directory -Filter 'cortexsim-*' -ErrorAction SilentlyContinue)) {
-    Cs-RemovePath $d.FullName 'installer scratch'
+    # Only the installer's own scratch shape (cortexsim-<guid N>), never a
+    # directory an operator happened to give the same prefix.
+    if ($d.Name -match '^cortexsim-[0-9a-f]{32}$') { Cs-RemovePath $d.FullName 'installer scratch' }
   }
 
   # -- verdict ---------------------------------------------------------------------

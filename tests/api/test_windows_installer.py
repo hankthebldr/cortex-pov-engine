@@ -555,6 +555,36 @@ def test_install_dir_is_locked_down_by_sid_not_by_localised_name(shelf):
     assert "GetOwner([Security.Principal.SecurityIdentifier])" in script
 
 
+def test_a_fresh_install_dir_is_created_with_its_final_dacl(shelf):
+    """New-Item gave the directory ProgramData's inherited ACL (Users may
+    create files, CREATOR OWNER gets full control) until icacls ran, so a local
+    non-admin racing the installer could plant cortexsim-agent.exe with their
+    own ACE, which Copy-Item keeps: a SYSTEM binary a non-admin can rewrite.
+    Static only -- the DACL itself is proven by the windows-native CI job."""
+    script = _render(shelf, "token+binary")
+    start = script.find("# 2. A directory no other account controls")
+    end = script.find("# 3. The binary", start)
+    assert start != -1 and end != -1
+    block = script[start:end]
+    assert "New-Item -ItemType Directory -Path $InstallDir" not in block
+    assert "SetAccessRuleProtection($true, $false)" in block
+    assert "[IO.Directory]::CreateDirectory($InstallDir, $sec)" in block
+    assert "[IO.FileSystemAclExtensions]::Create(" in block, "PowerShell 7 (.NET Core) path"
+    assert "SetOwner(" in block and "'S-1-5-32-544'" in block
+    # A directory that appeared between Test-Path and CreateDirectory is not ours.
+    assert block.count("GetOwner([Security.Principal.SecurityIdentifier])") >= 2
+    assert block.find("CreateDirectory($InstallDir") < block.rfind("GetOwner(")
+
+
+def test_existing_service_stop_waits_past_the_beacon_stop_deadline(shelf):
+    """The beacon's SCM handler may hold STOP_PENDING for its 60 s stop
+    deadline (agent/service_state.go svcStopDeadline); a 30 s wait failed a
+    re-install over an in-flight run with SERVICE_STOP_FAILED."""
+    script = _render(shelf, "token+binary")
+    assert "WaitForStatus('Stopped', '00:01:30')" in script
+    assert "WaitForStatus('Stopped', '00:00:30')" not in script
+
+
 def test_unelevated_install_never_touches_programdata(shelf):
     script = _render(shelf, "token+binary")
     start = script.find("$InstallDir = \"$env:LOCALAPPDATA")
