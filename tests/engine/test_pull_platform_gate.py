@@ -164,10 +164,15 @@ def test_both_scenario_to_windows_agent_dispatches_windows_variants(session_fact
         assert step["shell"] in ("cmd", "powershell"), step
         # The authored platform label travels unchanged.
         assert step["platforms"] == authored[step["id"]]["platforms"]
-    # step-04 is a PowerShell block, the rest are cmd one-liners.
+    # The dispatched shell is the push generator's own dialect reading of the
+    # variant (the Windows content lane rewrote SIM-EDR-003's variants as
+    # PowerShell blocks with an exit-code check, so no step is cmd any more).
+    from engine.push_generator import infer_windows_shell
+
     shells = {s["id"]: s["shell"] for s in task.steps}
+    for sid, shell in shells.items():
+        assert shell == infer_windows_shell(authored[sid]["platform_variants"]["windows"]), sid
     assert shells["step-04"] == "powershell"
-    assert shells["step-01"] == "cmd"
 
     # CONT-09: every variant step is flagged — in the response AND on the run.
     markers = [w for w in res.warnings if w.startswith("!! PLATFORM VARIANT:")]
