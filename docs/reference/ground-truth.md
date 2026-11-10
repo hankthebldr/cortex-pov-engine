@@ -11,10 +11,10 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Scenarios rejected at load | 0 |
 | TTP cards | 191 |
 | Detection planes | 16 |
-| Step-detections | 1377 |
+| Step-detections | 1369 |
 | Catalog detection objects | 2123 |
-| ABIOC+Analytics share (step-detections) | 15.6% |
-| Correlation share (step-detections) | 10.1% |
+| ABIOC+Analytics share (step-detections) | 15.5% |
+| Correlation share (step-detections) | 10.0% |
 | Distinct MITRE techniques (base) | 235 (128) |
 | EAL plugins | 27 |
 | AWS IaC modules | 11 |
@@ -45,8 +45,8 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | Metric | Value |
 |---|---:|
 | Stitched chains | 13 |
-| High-quality signals (stitched, non-marker step-detections) | 236/1377 (17.1%) |
-| Marker-only steps | 100/796 (12.6%) |
+| High-quality signals (stitched, non-marker step-detections) | 236/1369 (17.2%) |
+| Marker-only steps | 98/789 (12.4%) |
 | Scenarios with indicators | 14 |
 | Indicators (in-band) | 87 |
 | Indicators (not in-band) | 5 |
@@ -55,13 +55,13 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 
 | Type | Count |
 |---|---:|
-| ABIOC | 159 |
+| ABIOC | 156 |
 | Analytics | 56 |
 | BIOC | 365 |
-| Correlation | 139 |
+| Correlation | 137 |
 | IOC | 119 |
 | Prevention | 0 |
-| XQL | 539 |
+| XQL | 536 |
 
 ## Tool adapters
 
@@ -92,8 +92,9 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | DET/HNT TCs evidenced | 70/107 |
 | S-13 tier disagreements | 124 |
 | S-14 posture-class-primary bindings | 14 |
-| PLT assertions authored | 4/43 rows (4 artifact(s), 0 tenant-proven) |
-| POS assertions authored | 2/110 rows (2 artifact(s), 0 tenant-proven) |
+| PLT assertions authored | 7/43 rows (7 artifact(s), 7 row(s) no scenario reaches, 0 tenant-proven) |
+| POS assertions authored | 16/110 rows (18 artifact(s), 6 row(s) no scenario reaches, 0 tenant-proven) |
+| AUT assertions authored | 3/6 rows (3 artifact(s), 3 row(s) no scenario reaches, 0 tenant-proven) |
 
 ## HTTP routes
 

@@ -36,7 +36,7 @@
     "warnings": 0
   },
   "corpus": {
-    "abioc_analytics_share": 0.1561,
+    "abioc_analytics_share": 0.1549,
     "catalog_detections": 2123,
     "catalog_detections_by_kind": {
       "abioc": 164,
@@ -48,7 +48,7 @@
       "prevention": 0,
       "xql": 626
     },
-    "correlation_share": 0.1009,
+    "correlation_share": 0.1001,
     "detection_planes": 16,
     "methodology_family_counts": {
       "F1": 129,
@@ -84,15 +84,15 @@
       "TIM": 9
     },
     "scenarios_rejected": 0,
-    "step_detections": 1377,
+    "step_detections": 1369,
     "step_detections_by_type": {
-      "ABIOC": 159,
+      "ABIOC": 156,
       "Analytics": 56,
       "BIOC": 365,
-      "Correlation": 139,
+      "Correlation": 137,
       "IOC": 119,
       "Prevention": 0,
-      "XQL": 539
+      "XQL": 536
     },
     "ttp_cards": 191
   },
@@ -113,7 +113,7 @@
   "iac_modules_aws": 11,
   "schema_version": 1,
   "signal_quality": {
-    "hq_share": 0.1714,
+    "hq_share": 0.1724,
     "hq_signals": 236,
     "indicators": 87,
     "indicators_not_in_band": 5,
@@ -130,11 +130,11 @@
       "KOI": "endpoint",
       "NDR": "network"
     },
-    "marker_only_share": 0.1256,
-    "marker_only_steps": 100,
+    "marker_only_share": 0.1242,
+    "marker_only_steps": 98,
     "scenarios_with_indicators": 14,
-    "step_detections": 1377,
-    "steps": 796,
+    "step_detections": 1369,
+    "steps": 789,
     "stitched_chain_ids": [
       "SIM-MP-023",
       "SIM-MP-024",
@@ -158,22 +158,32 @@
   },
   "tenant_verified": 0,
   "uctc_index": {
+    "aut_assertions": {
+      "artifacts": 3,
+      "bound": 3,
+      "documented_non_bindings": 0,
+      "index_rows_total": 6,
+      "net_new": 3,
+      "proven": 0
+    },
     "det_hnt_evidenced": 70,
     "det_hnt_total": 107,
     "payload_resolved": 193,
     "payload_unresolved": 0,
     "plt_assertions": {
-      "artifacts": 4,
-      "bound": 4,
-      "documented_non_bindings": 9,
+      "artifacts": 7,
+      "bound": 7,
+      "documented_non_bindings": 8,
       "index_rows_total": 43,
+      "net_new": 7,
       "proven": 0
     },
     "pos_assertions": {
-      "artifacts": 2,
-      "bound": 2,
+      "artifacts": 18,
+      "bound": 16,
       "documented_non_bindings": 4,
       "index_rows_total": 110,
+      "net_new": 6,
       "proven": 0
     },
     "posture_class_primary_s14": 14,
