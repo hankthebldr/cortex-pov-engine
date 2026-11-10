@@ -7,6 +7,8 @@ which consent it needs. Nothing here lists a finding slug or a consent key.
 from __future__ import annotations
 
 import re
+from datetime import datetime
+from typing import Any, Optional
 
 from engine import identity_spec
 from engine import k8s_manifest as km
@@ -255,3 +257,299 @@ def start_script(*, arch: str, prepare: str, expires_at: str, profile: str) -> s
         EXPIRES=expires_at,
         PROFILE=profile,
     )
+
+
+# ── Object graph ─────────────────────────────────────────────────────────────
+
+AGENT_APP = "cortexsim-agent"
+ENROLL_SECRET = "cortexsim-enroll"
+BOOT_CONFIGMAP = "cortexsim-agent-boot"
+_AGENT_LABEL = "cortexsim.io/agent"
+
+_INIT_RESOURCES = {
+    "limits": {"cpu": "200m", "memory": "128Mi"},
+    "requests": {"cpu": "50m", "memory": "32Mi"},
+}
+
+_KUBECTL_COPY = (
+    "mkdir -p /cortexsim/bin && cp \"$(command -v kubectl)\" /cortexsim/bin/kubectl "
+    "|| { echo KUBECTL_COPY_FAILED > /dev/termination-log; exit %d; }" % km.EXIT_NEVER_RAN
+)
+
+_CARRIER_OBJECT = {
+    "namespace": "Namespace",
+    "serviceaccount": "ServiceAccount",
+    "clusterrole": "ClusterRole",
+    "clusterrolebinding": "ClusterRoleBinding",
+    "podtemplate": "Deployment",
+}
+
+
+def build_agent_objects(
+    *,
+    profile: str,
+    image: str,
+    arch: str,
+    prepare: str,
+    ttl_seconds: int,
+    beacon_sha256: str,
+    now: datetime,
+    authorized_by: Optional[str],
+) -> list[dict[str, Any]]:
+    """The agent manifest as a list of dicts; serialisation adds nothing."""
+    posture = agent_posture(profile, image=image, ttl_seconds=ttl_seconds)
+    findings = km.findings_for(posture)
+    ns = AGENT_NAMESPACE
+    expires = km._iso(now.timestamp() + ttl_seconds)
+
+    # Validates arch / prepare / expiry before anything is built.
+    fetch_sh = fetch_script(arch=arch, beacon_sha256=beacon_sha256)
+    start_sh = start_script(arch=arch, prepare=prepare, expires_at=expires, profile=profile)
+
+    base = {**km._base_labels(AGENT_SCENARIO_ID, "agent", "pull"), _AGENT_LABEL: "true"}
+    common = {
+        "cortexsim.io/expires-at": expires,
+        "cortexsim.io/agent-profile": profile,
+        **({"cortexsim.io/authorized-by": authorized_by} if authorized_by else {}),
+    }
+
+    def carried(carrier: str) -> list[km.PostureFinding]:
+        return km._for_carrier(findings, carrier)
+
+    objects: list[dict[str, Any]] = []
+
+    ns_labels = {**base, **km._finding_labels(carried("namespace"))}
+    if posture.requires_privileged_psa():
+        ns_labels.update(km._pod_security_labels())
+    objects.append({
+        "apiVersion": "v1", "kind": "Namespace",
+        "metadata": {
+            "name": ns, "labels": ns_labels,
+            "annotations": {**common, **km._finding_annotations(list(findings))},
+        },
+    })
+
+    sa_findings = carried("serviceaccount")
+    objects.append({
+        "apiVersion": "v1", "kind": "ServiceAccount",
+        "metadata": {
+            "name": AGENT_APP, "namespace": ns,
+            "labels": {**base, **km._finding_labels(sa_findings)},
+            "annotations": km._finding_annotations(sa_findings),
+        },
+        "automountServiceAccountToken": posture.service_account.automount_token,
+    })
+
+    cluster_scoped: list[tuple[str, str]] = []
+    if posture.service_account.cluster_role_rules:
+        cr_findings, crb_findings = carried("clusterrole"), carried("clusterrolebinding")
+        objects.append({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+            "metadata": {
+                "name": AGENT_APP,
+                "labels": {**base, **km._finding_labels(cr_findings)},
+                "annotations": km._finding_annotations(cr_findings),
+            },
+            "rules": [km._rbac(r) for r in posture.service_account.cluster_role_rules],
+        })
+        objects.append({
+            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
+            "metadata": {
+                "name": AGENT_APP,
+                "labels": {**base, **km._finding_labels(crb_findings)},
+                "annotations": km._finding_annotations(crb_findings),
+            },
+            "roleRef": {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "ClusterRole", "name": AGENT_APP,
+            },
+            "subjects": [{"kind": "ServiceAccount", "name": AGENT_APP, "namespace": ns}],
+        })
+        cluster_scoped = [("clusterroles", AGENT_APP), ("clusterrolebindings", AGENT_APP)]
+
+    objects.append({
+        "apiVersion": "v1", "kind": "ConfigMap",
+        "metadata": {"name": BOOT_CONFIGMAP, "namespace": ns, "labels": dict(base)},
+        "data": {"fetch.sh": fetch_sh, "start.sh": start_sh},
+    })
+
+    pod_findings = carried("podtemplate")
+    pod_annotations = {**common, **km._finding_annotations(pod_findings)}
+    objects.append({
+        "apiVersion": "apps/v1", "kind": "Deployment",
+        "metadata": {
+            "name": AGENT_APP, "namespace": ns,
+            "labels": {**base, "app.kubernetes.io/name": AGENT_APP},
+            "annotations": dict(pod_annotations),
+        },
+        "spec": {
+            "replicas": posture.replicas,
+            "selector": {"matchLabels": {"app.kubernetes.io/name": AGENT_APP, _AGENT_LABEL: "true"}},
+            "template": {
+                "metadata": {
+                    "labels": {
+                        **base, "app.kubernetes.io/name": AGENT_APP,
+                        **km._finding_labels(pod_findings),
+                    },
+                    "annotations": pod_annotations,
+                },
+                "spec": _agent_pod_spec(posture, image=image),
+            },
+        },
+    })
+
+    # The reaper deletes the agent namespace itself (the push path relies on the
+    # same call), plus exactly the cluster-scoped objects emitted above.
+    objects.extend(km._reaper(
+        scenario_id=AGENT_SCENARIO_ID, sid_lower="agent", ns=ns, base=base,
+        ttl=ttl_seconds, image=km.DEFAULT_REAPER_IMAGE, cluster_scoped=cluster_scoped,
+    ))
+
+    # Every object expires and names who authorised it, reaper objects included.
+    for obj in objects:
+        meta = obj["metadata"]
+        meta["annotations"] = {**common, **meta.get("annotations", {})}
+    return objects
+
+
+def _agent_pod_spec(posture: ClusterPosture, *, image: str) -> dict[str, Any]:
+    volumes: list[dict[str, Any]] = [
+        {"name": "cortexsim", "emptyDir": {}},
+        {"name": "cortexsim-boot", "configMap": {"name": BOOT_CONFIGMAP}},
+        {"name": "cortexsim-enroll",
+         "secret": {"secretName": ENROLL_SECRET, "optional": False}},
+    ]
+    state = {"name": "cortexsim", "mountPath": "/cortexsim"}
+    boot = {"name": "cortexsim-boot", "mountPath": "/cortexsim-boot", "readOnly": True}
+    secret = {"name": "cortexsim-enroll", "mountPath": "/secret", "readOnly": True}
+    hp_volumes, hp_mounts = km._host_path_volumes(posture)
+    volumes.extend(hp_volumes)
+
+    termination = {
+        "terminationMessagePolicy": "File",
+        "terminationMessagePath": "/dev/termination-log",
+    }
+    downward = lambda path: {"valueFrom": {"fieldRef": {"fieldPath": path}}}  # noqa: E731
+
+    spec: dict[str, Any] = {
+        "serviceAccountName": AGENT_APP,
+        "automountServiceAccountToken": posture.service_account.automount_token,
+        "restartPolicy": "Always",
+        "terminationGracePeriodSeconds": 30,
+        "enableServiceLinks": False,
+        "volumes": volumes,
+    }
+    spec.update(km._host_namespace_flags(posture))
+    affinity = km._node_access_affinity(posture)
+    if affinity:
+        spec["affinity"] = affinity
+
+    spec["initContainers"] = [
+        {
+            "name": "fetch",
+            "image": km.DEFAULT_FETCH_IMAGE,
+            "command": ["/bin/sh", "/cortexsim-boot/fetch.sh"],
+            # fetch.sh reads /secret/server.
+            "volumeMounts": [dict(state), dict(boot), dict(secret)],
+            **termination,
+            "resources": _INIT_RESOURCES,
+        },
+        {
+            # How kubectl reaches an arbitrary image with no egress.
+            "name": "kubectl",
+            "image": km.DEFAULT_REAPER_IMAGE,
+            "command": ["/bin/sh", "-c", _KUBECTL_COPY],
+            "volumeMounts": [dict(state)],
+            **termination,
+            "resources": _INIT_RESOURCES,
+        },
+    ]
+    container: dict[str, Any] = {
+        "name": "agent",
+        "image": image,
+        "command": ["/bin/sh", "/cortexsim-boot/start.sh"],
+        "env": [
+            {"name": "POD_NAME", **downward("metadata.name")},
+            {"name": "POD_NAMESPACE", **downward("metadata.namespace")},
+            {"name": "NODE_NAME", **downward("spec.nodeName")},
+        ],
+        "securityContext": km._container_security_context(posture.security_context),
+        "volumeMounts": [dict(state), dict(boot), dict(secret), *hp_mounts],
+        **termination,
+    }
+    resources = km._resources_block(posture)
+    if resources:
+        container["resources"] = resources
+    spec["containers"] = [container]
+    return spec
+
+
+def _agent_header(
+    *,
+    profile: str,
+    posture: ClusterPosture,
+    objects: list[dict[str, Any]],
+    expires: str,
+    authorized_by: Optional[str],
+    consent: dict[str, bool],
+) -> str:
+    findings = km.findings_for(posture)
+    kinds: dict[str, str] = {}
+    for o in objects:  # first of each kind is the agent's; the reaper's come last
+        kinds.setdefault(o["kind"], o["metadata"]["name"])
+    granted = sorted(k for k, v in consent.items() if v)
+    rule = km._HEADER_RULE
+    out = [rule, "# CortexSim Kubernetes Container Agent\n", rule]
+    out.append(f"# Profile    : {profile}   Risk tier: {posture.risk_tier()}\n")
+    out.append(f"# Namespace  : {AGENT_NAMESPACE}   Expires: {expires}\n")
+    out.append(f"# Consent    : {', '.join(granted) if granted else '(none required)'}\n")
+    out.append(f"# Authorized : {authorized_by or '(not recorded)'}\n")
+    out.append("#\n")
+    out.append(
+        "# The pod enrolls with, and obeys, whichever SimCore the cortexsim-enroll\n"
+        "# Secret names. This file carries no token and no Secret object.\n"
+    )
+    out.append("# After a SimCore upgrade that changes the beacon, restarted pods exit 78 until this manifest is re-applied.\n")
+    out.append("#\n")
+    if findings:
+        out.append(f"# PLANTED POSTURE FINDINGS ({len(findings)})\n")
+        for f in findings:
+            obj = _CARRIER_OBJECT.get(f.carrier, f.carrier)
+            out.append(f"#   {f.slug:<42} -> {obj}/{kinds.get(obj, '?')}\n")
+    else:
+        out.append("# PLANTED POSTURE FINDINGS: none beyond Kubernetes defaults\n")
+    out.append("#\n")
+    out.append(
+        f"# A reaper Job deletes namespace {AGENT_NAMESPACE} and the cluster-scoped objects\n"
+        "# above at expiry. It is a safety net: delete the manifest yourself when done.\n"
+    )
+    out.append(rule)
+    return "".join(out)
+
+
+def generate_agent_manifest(
+    *,
+    profile: str,
+    image: str,
+    arch: str,
+    prepare: str,
+    ttl_seconds: int,
+    beacon_sha256: str,
+    now: datetime,
+    authorized_by: Optional[str],
+    consent: dict[str, bool],
+) -> str:
+    """Refuse without consent, then render the agent manifest as multi-doc YAML."""
+    posture = agent_posture(profile, image=image, ttl_seconds=ttl_seconds)
+    km.check_cluster_consent(AGENT_SCENARIO_ID, posture, consent)
+    objects = build_agent_objects(
+        profile=profile, image=image, arch=arch, prepare=prepare,
+        ttl_seconds=ttl_seconds, beacon_sha256=beacon_sha256, now=now,
+        authorized_by=authorized_by,
+    )
+    header = _agent_header(
+        profile=profile, posture=posture, objects=objects,
+        expires=km._iso(now.timestamp() + ttl_seconds),
+        authorized_by=authorized_by, consent=consent,
+    )
+    return km.render(objects, header)
