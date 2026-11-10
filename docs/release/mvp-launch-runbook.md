@@ -11,6 +11,12 @@ staging step between the merge button and a published artifact.
 Run `make launch-preflight` before the merge. Everything below is either what
 that script checks or what it deliberately cannot.
 
+> **Beta addendum (2026-11-10).** §7 is the Windows onboarding procedure for
+> beta DCs, and §8 lists known issues, open decisions and deferred findings.
+> Read both **before** the first customer endpoint. Nothing on the Windows side
+> has executed on a Windows host. The `windows-2022` CI job is authored and
+> **has not yet run on GitHub**. `tenant-verified` is 0.
+
 ---
 
 ## 0 · The one-liner
@@ -342,7 +348,250 @@ says the same:
   number. The console's Readiness surface states this verbatim.
 - **Windows pull is servable, not proven.** The image serves a correct
   `PE32+` and a PowerShell installer, but no Windows host has executed the
-  beacon or the installer.
+  beacon or the installer. Since 2026-11 the same is true of the Windows
+  uninstaller, the beacon's new service handler and every `.ps1` push bundle.
+  Until the `windows-2022` job is observed green on GitHub, nothing may say
+  "works on Windows" (§7, §8).
 - **The Rust tool matrix is baked, not servable.** There is no
   `/api/tools/binary/{tool}` route; `docker cp` is still the only way off the
   image.
+
+---
+
+## 7 · Beta: onboarding a Windows endpoint (read before the first one)
+
+> **Authored, not proven.** Every line below is read from the installer, beacon
+> and push-generator source, and parsed under pwsh 7.6 on macOS/Linux. pwsh 7.6
+> is not Windows PowerShell 5.1, the product floor. No Windows host has
+> executed the beacon, the installer, the uninstaller or a bundle. The
+> `windows-2022` CI job is the first place any of it can run, and it **has not
+> yet run on GitHub**. If something here disagrees with what you see on a real
+> host, the host wins. File it (§8.4) with the `stage=` / `code=` line it
+> printed.
+
+### 7.1 Before the customer is watching
+
+1. **Get an AV/EDR allowance.** The beacon `cortexsim-agent.exe` is **unsigned**
+   (decision CI-06). The `iwr … | iex` cradle is exactly what Cortex XDR or
+   Defender in prevent mode is built to stop. Ask the customer for an
+   allow-list entry or exclusion for
+   `C:\ProgramData\CortexSim\cortexsim-agent.exe` and its sha256. Read the
+   sha256 from `GET /api/agents/binary/sha256?os=windows&arch=amd64` on your
+   SimCore, or from the release's `cortexsim-agent-SHA256SUMS`. Without the
+   allowance, expect `BINARY_QUARANTINED` or `PROCESS_START_BLOCKED` at install,
+   and `ARTIFACT_QUARANTINE_SUSPECTED` on staged tools.
+2. **Make SimCore reachable by name.** If the endpoint will reach SimCore as
+   `http://JUMPBOX:8888`, that name must be in `CORTEXSIM_ALLOWED_HOSTS`
+   (`scripts/dev-up.sh` seeds the jumpbox's own names when it writes `.env`).
+   Otherwise every poll is `400 HOST_NOT_ALLOWED`. An IP literal always
+   passes.
+3. **Know what you will measure.** Only steps that resolve for Windows run.
+   13 scenarios have a Windows push target (9 also POSIX, 4 Windows-only), and
+   69 carry a Windows-labelled step. The console's launch preflight reads the
+   server's `bundle_targets`. There is **no Windows canary**
+   (`CORTEXSIM_CANARY_SCENARIO_LINUX` only).
+
+### 7.2 Install (pull mode)
+
+Mint a token in the console (Targets → Deploy agent), then on the endpoint, in
+**Windows PowerShell opened as Administrator**:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:CORTEXSIM_TOKEN='cxs_…'; iwr -useb "http://<simcore-host>:8888/api/agents/install?os=windows" | iex
+```
+
+- It registers the **`CortexSimAgent`** service (LocalSystem, auto-start,
+  restart on failure) and logs to `%ProgramData%\CortexSim\agent.log`. It
+  prints `OK` only when the service is Running, still Running 35 s later, and
+  the beacon has polled SimCore. **Expect 45–70 s.**
+- **Not elevated** → `NOT_ELEVATED`, and nothing changed. Do not reach for
+  `$env:CORTEXSIM_ALLOW_UNSUPERVISED='1'` unless you mean it. It gives a
+  per-user beacon that **dies at logoff and at reboot**, cannot run admin-only
+  TTPs, and ends `DEGRADED_NO_SUPERVISOR`.
+- **Proxy.** The service runs as SYSTEM and does **not** inherit your proxy
+  settings. If the endpoint can only reach SimCore through a proxy, the beacon
+  will not. `CORTEXSIM_NO_PROXY=1` makes the installer go direct.
+- **Air-gapped.** Pre-stage the exe and set `$env:CORTEXSIM_BIN` to its path.
+  It is digest-checked when SimCore can serve a digest, otherwise
+  `CHECKSUM_SKIPPED`.
+- **Downloaded instead of piped.** Run
+  `Unblock-File .\install-cortexsim-agent.ps1; $env:CORTEXSIM_TOKEN='cxs_…'; powershell -NoProfile -ExecutionPolicy Bypass -File .\install-cortexsim-agent.ps1`.
+  Without the token set, every host run this way claims the same baked-in id.
+- **`INSTALL_DIR_UNTRUSTED`** means an elevated admin ran the **old**
+  installer on this host and owns the directory. Uninstall (§7.4), then
+  install again.
+
+### 7.3 Verify
+
+```powershell
+sc.exe query CortexSimAgent        # STATE : 4  RUNNING
+sc.exe qc CortexSimAgent           # START_TYPE AUTO_START, SERVICE_START_NAME LocalSystem
+Get-Content "$env:ProgramData\CortexSim\agent.log" -Tail 20     # startup line ends mode=service
+```
+
+On SimCore, `GET /api/agents` must show `last_seen_age_seconds` falling on
+repeat calls. In the console, a row the installer only enrolled reads
+"enrolled — waiting for first beacon poll". That is not a live beacon.
+
+| `sc.exe query` reads | Meaning |
+|---|---|
+| died around 30 s, error 1053 | This beacon build has no service handler. Rebuild SimCore's agent-dist from a current tree. |
+| `SERVICE_EXIT_CODE` 3 | Did not stop within 60 s of a stop and was forced STOPPED. An in-flight run may read as orphaned. |
+| `SERVICE_EXIT_CODE` 1 or 2 | The service command line failed validation or flag parsing. `agent.log` has the error. |
+| `SERVICE_EXIT_CODE` 4 | `RegisterServiceCtrlHandlerExW` failed. |
+
+### 7.4 Uninstall
+
+Elevated:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iwr -useb 'http://<simcore-host>:8888/api/agents/install?os=windows&uninstall=1' | iex
+```
+
+It is idempotent and removes the service, `%ProgramData%\CortexSim`, a per-user
+install, and the beacon's cache and staging roots. Those roots hold staged
+dual-use tools: **run the uninstaller before you leave the customer's host.** It
+ends `UNINSTALL_INCOMPLETE` if anything it found survives. A
+`1072 / SERVICE_PENDING_DELETE` means `services.msc` or Event Viewer is holding
+the service open, so close them or reboot. Deleting the agent in the console
+removes only the registry row. POSIX hosts:
+`curl -fsSL '<server>/api/agents/install?uninstall=1' | sudo bash`.
+
+### 7.5 What a Windows run is, and is not
+
+- **Every step runs as `NT AUTHORITY\SYSTEM`** under the service. XDR causality
+  shows SYSTEM, not the admin who installed it. Every non-`direct` identity
+  collapses to that account, with `!! IDENTITY NOT HONOURED` in the run record
+  and the POV report. A lineage-keyed miss on such a step is **not** a
+  customer gap.
+- **Variant steps** (`!! PLATFORM VARIANT`) ran a Windows command whose expected
+  detections were authored against a different one (decision BEACON-01).
+- **Pull mode never runs scenario cleanup.** The POV report lists the commands
+  it did not run under "Cleanup Not Run". Remove the residue by hand.
+- **A missing tool runs untooled with no marker on Windows**
+  (`requires_interpreters` / `required_binaries` are no-ops there).
+- **MTTD is launch-to-alert**, including queue wait and earlier steps.
+
+### 7.6 Push mode on Windows (`.ps1`)
+
+From the jumpbox (`curl '<server>/api/scenarios/SIM-EDR-013/download?format=powershell' -o cortexsim-SIM-EDR-013.ps1`, then copy it over), or on the endpoint itself:
+
+```powershell
+# curl.exe, not curl: in Windows PowerShell 5.1 `curl` is an alias for Invoke-WebRequest
+curl.exe -fsS "http://<simcore-host>:8888/api/scenarios/SIM-EDR-013/download?format=powershell" -o cortexsim-SIM-EDR-013.ps1
+Unblock-File .\cortexsim-SIM-EDR-013.ps1       # clears Mark-of-the-Web; the bundle never calls Set-ExecutionPolicy
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\cortexsim-SIM-EDR-013.ps1
+```
+
+- **Exit codes:** `0` clean · `1` a step non-zero / threw / timed out · `2`
+  refused, residue not acknowledged · `3` a step not executed (`PREREQ_MISSING`,
+  `OPERATOR_INPUT_MISSING`, `NOT_ELEVATED`, `SHELL_UNAVAILABLE`, `NOT_REACHED`) ·
+  `4` cleanup failed. Read the outcome table it prints last.
+- **9 of the 13 Windows bundles refuse to start** until you set
+  `$env:CORTEXSIM_ACCEPT_RESIDUE='1'`, because part of their cleanup cannot run
+  on Windows. The header names exactly what is left behind.
+- **Inputs:** `SIM-EDR-005` and `SIM-MP-020` need a **domain-joined** host
+  (`USERDNSDOMAIN`). `SIM-EDR-017` needs `CORTEXSIM_C2_HOST` set to an
+  egress host you own.
+- **Scoping.** A push run has no host, so reconcile leaves its matches
+  `pending / UNSCOPED_MATCH`, never `detected`. Pass the endpoint:
+  `POST /api/runs/{id}/reconcile?host=<name>`, or `host` in the
+  `/observations` body.
+
+---
+
+## 8 · Beta known issues, open decisions and deferred findings
+
+Read this list before you hit one of these. Finding ids (`SEC-01`, `BEACON-05`, …)
+are the beta-readiness review's; quote them when you report.
+
+### 8.1 Standing limits a beta DC will see
+
+| Limit | What you see | Why / workaround |
+|---|---|---|
+| **API is unauthenticated** (SEC-01) | `/api/health` is `degraded`, with `api_auth: API_UNAUTHENTICATED` on every deployment | By design until auth lands. Any **other** degraded component is a real fault. Keep SimCore on an isolated lab segment; `CORTEXSIM_BIND=127.0.0.1` for a console-only host. |
+| **Installer checksum is corruption-only** (SEC-12) | `CHECKSUM_MISMATCH` / `verify` stage | SimCore serves plain HTTP, so the digest proves integrity in transit, not authenticity. |
+| **Nothing proven on Windows** | — | The `windows-2022` job is authored and has not run. It is expected red until first observed green. |
+| **Unsigned Windows beacon** (CI-06) | Quarantine / block | Exclusion plus published sha256 (§7.1). |
+| **Correlation share is exactly at its floor** | — | 10.0% (137 of 1369). The next scenario without a Correlation row turns `coverage-strict` red. |
+| **Install attempts reset on restart** | `GET /api/agents/install/attempts` empty after a restart | They live in memory (a deque of 100). Use `GET /api/agents` `registered_at`. |
+| **MTTD is launch-to-alert** (OPS-07) | MTTD includes queue wait and earlier steps | Use `POST /api/runs/{id}/observations` with the alert's own timestamp, or reconcile. **Do not** read MTTD from `PUT /api/results/{id}/validate`: that records click latency (DOCS-04). |
+| **Push runs read `pending` until scoped** (DOCS-03) | `UNSCOPED_MATCH` | Pass `?host=` / `host` (§7.6). |
+| **Abort drops host step evidence** | An aborted step's `step_outcomes` never reads `termination=aborted` | After `/abort` the beacon's `/complete` is `409`. This may matter for the prevention two-witness rule; the owner decides. |
+| **Multi-endpoint pull liveness** (OPS-13, deferred) | A fan-out can hang | Rare in beta, and the failure is a hang, not a false claim. Single-endpoint pull is the beta path. |
+| **Push bundles are not consent-gated** (PUSH-08) | `GET /download` hands out dual-use tooling with no prompt | Decision open. Treat a downloaded bundle as you would the tool itself. |
+| **`CORTEXSIM_TRUSTED_PROXIES` in a host-run `.env`** | SimCore refuses to boot (`Extra inputs are not permitted`) | It is read from the environment, not declared on `Settings`. Export it in the shell, or pass it through compose (which does). A one-line `Settings` declaration fixes it. |
+| **PSScriptAnalyzer unpinned** | — | The `windows` job installs the newest. Pin it after its first run. |
+| **Release beacons ≠ image beacons** (CI-11) | Different sha256 | `ci.yml` / `release.yml` build with Go 1.21; `core/Dockerfile` uses `golang:1.22-alpine`. The new `release.yml` has never run. |
+
+### 8.2 Decisions still open for Henry
+
+Each row says what ships **today** (the default a lane implemented), so a DC
+knows the behaviour regardless of the outcome.
+
+| Finding | Question | Ships today | Recommended |
+|---|---|---|---|
+| BEACON-01, CONT-01/08/09, DOCS-01 | What may Windows pull run, when "both" scenarios carry Windows variants under Linux-keyed detections? | Server refuses unsatisfiable targets (`PULL_TARGET_UNSATISFIABLE`), dispatches resolved variant + shell, `!! PLATFORM VARIANT`; beacon refuses `PLATFORM_UNSATISFIABLE` | (a) now; per-variant `expected_detections` + Windows cards before GA |
+| BEACON-05 | Native exit 0 + 5.1 `NativeCommandError`: success? | Trust `$LASTEXITCODE` (beacon and bundle share the truth table); unobserved on 5.1 | Trust `$LASTEXITCODE` |
+| BEACON-08 | Pull CGO anchors relabel only; detections keyed on anchor image (EDR-017 explorer.exe, MP-020 lsass.exe)? | Comment corrected only | Document as a label; re-key on `causality_id` + chain shape |
+| BEACON-09 | How does Windows prevention earn a host witness? | No witness fabricated (rc 129–159 not `signaled` on Windows) | Reason `HOST_WITNESS_UNAVAILABLE_WINDOWS` now; measured mapping after a lab run |
+| BEACON-11, OPS-04 | Tolerance for a control-channel blip / SimCore restart mid-step? | Fail-closed, labelled `CONTROL_CHANNEL_LOST`; bounded `/complete` + `/output` retry; abandoned runs reaped | Abort after ~30 s of failures + spool to disk |
+| BEACON-16 | Is a quarantined staged artifact a prevention witness? | Reworded to `ARTIFACT_QUARANTINE_SUSPECTED`; not fed to scoring | Reword now; feed scoring after a lab run |
+| INST-15, UI-05 | How to represent enrolled-but-never-polled? | UI only: "enrolled — waiting for first beacon poll" | Enroll with `last_seen=None`; require two polls |
+| PUSH-08 | Consent gate on push bundles? | None | Gate POST + runtime guard in the bundle |
+| PUSH-14, CONT-03 | May SIM-EDR-004 clear real Security/System logs? | No: clears a CortexSim-owned channel (keeps event 104, not 1102) | Keep for beta |
+| PUSH-18 | Infer the Windows dialect, or author `shell:`? | Shared structural inference; `MIXED_DIALECT` refused | Inference; authored `shell:` only where ambiguous |
+| CONT-07, CONT-14 | Model elevation for Windows steps? | Beacon advertises `elevated`; `IDENTITY NOT HONOURED` for root/container-runtime/administrator unelevated; bundle `NOT_ELEVATED`; failed-step scoring unchanged | `requires_elevation` + score failed steps pending/not_executed |
+| CONT-11 | Should pull run `cleanup.commands`? | No; the report lists what it did not run; in-step teardown in EDR-003/006, ITDR-006, MP-030 | Beacon runs per-OS cleanup for beta; in-step teardown for new content |
+| CI-02, DOCS-02, UI-01 | Keep the stdlib SCM handler (vs a SYSTEM scheduled task)? | SCM handler | Keep; review `windows-proof` before any doc says "service works" |
+| CI-06 | Authenticode-sign the Windows beacon before GA? | Unsigned; hashes + buildinfo published | Sign before GA |
+| CI-11 | One Go toolchain for CI, Dockerfile and `go.mod`? | Mixed (1.21 / 1.22) | Pin a supported toolchain everywhere after a SHA-1 cert test |
+| SEC-01 | Operator API authentication? | None; `api_auth` degraded, Host guard, CORS off, CIDR floor | Bearer token + split listeners |
+| SEC-04 | Agent-plane auth? | None | Per-agent secret at enrollment |
+| SEC-06 | Stop storing harvested credentials in run output? | Stored | Content discards secrets + server-side redactor |
+| SEC-11 | Compose default `CORTEXSIM_ENV=production`? | `development` (placeholder secret refused in every env) | Yes |
+| SEC-12 | Transport integrity over plain HTTP? | None (checksum is corruption-only) | Per-deploy CA, fingerprint pinned, before GA |
+| OPS-07 | When does the MTTD clock start? | Launch time | `max(executed_at, delivered_at)` now |
+| OPS-08 | Expire undelivered queued tasks? | No TTL; launch at a not-enrolled target refused | TTL 30 min → `TASK_EXPIRED_UNDELIVERED` |
+| DOCS-03 | Scope push-run reconcile to a host? | Unscoped → `pending / UNSCOPED_MATCH`; `?host=` / `host` override (ce9ed13); the alternative is reverting it to a docs-only note | Optional `target_host` at push launch + (c) |
+| DOCS-04 | Should click-to-validate produce MTTD? | Yes (records click latency) | Exclude attested-only rows from MTTD |
+| DOCS-12 | Gate B requires Windows evidence? | Job added, not required | Checkbox; require the job once first green |
+| DOCS-15 | Publish beta scope, known issues and a feedback channel? | This section | `docs/release/BETA.md` + issue form, linked from README |
+| UI-08 | Platform check keyed on server truth? | Both: `bundle_targets` consumed, 100 steps relabelled | Done |
+| UI-11 | Elevation guidance in the console? | Honest trade-off text | Recommend elevation once the job is green |
+| UI-15 | Should the downloaded `.ps1` carry the token? | Tokenless; exact run line shown | Keep |
+
+### 8.3 Deferred findings
+
+- **OPS-13**: multi-endpoint liveness needs the beacon to identify itself on
+  `/control` and a per-(run, agent) delivery record. Deferred, because the
+  failure is a hang, not a false claim.
+- **SEC-03 (partial)**: the `docker.sock` mount is removed. A non-root `USER`
+  in the image is deferred, because it cannot be verified without an image run.
+- **CI-12 (partial)**: per-job least-privilege permissions landed. Pinning
+  every action by commit SHA needs a network lookup; `dependabot.yml` is in
+  place so pinning can follow.
+- **OPS-08 (partial)**: a launch at a not-enrolled target is refused. Failing
+  undelivered runs and dropping their queued tasks when an agent is deleted is
+  deferred, and so is the queued-task TTL (decision above).
+- **Integration follow-ups:**
+  - `make check-powershell` is green but not yet part of `make validate` /
+    `make ci`; it runs only in CI's `refs` job.
+  - `tests/tools/test_check_adapter_wiring.py::test_real_corpus_passes`
+    shells out to the system `python3` and fails on a host without PyYAML.
+    This predates the pass; it is green in the image.
+  - `scripts/check-adapter-sources.sh` reports `FAIL=2` in any worktree whose
+    tier-2 submodules are not initialised.
+
+### 8.4 Unproven on Windows until the `windows-2022` job is green
+
+SimCore booting natively on Windows; the Host guard admitting a Windows
+jumpbox's own (uppercase, NetBIOS-style) name; the SCM handler and
+`StartServiceCtrlDispatcherW` fallback; Job Object tree-kill; 5.1
+`NativeCommandError` semantics; OEM vs UTF-8 output; token elevation; every
+installer and uninstaller path (`icacls`, `New-Service`, the 1053 / 1072
+handling, the check-in proof under SYSTEM); every `.ps1` bundle (none of the
+13 has executed on any OS); `taskkill /T` on timeout; and cmd-dialect steps.
+When you are the first to run one of these on a real host, attach the
+installer's `stage=` / `code=` line, `agent.log`, `sc.exe qc` / `queryex`
+output and the bundle's outcome table to your report.
