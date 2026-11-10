@@ -46,3 +46,16 @@ def test_verify_unknown_integration_returns_structured_envelope(client):
     detail = r.json()["detail"]
     assert isinstance(detail, dict)
     assert detail["code"] == "INTEGRATION_NOT_FOUND"
+
+
+def test_reserved_secret_name_is_a_400_not_a_500(client):
+    """The ``__cortexsim__/`` namespace holds the master-key check row. The
+    store refuses it with a ValueError; the router must say so as a caller
+    error with a stable code, never as a 500 INTERNAL_ERROR.
+
+    Only PUT is reachable over HTTP: the name travels in the body. DELETE takes
+    it as a path segment, and the ``/`` in the prefix never routes (404)."""
+    r = client.put("/api/credentials/secrets",
+                   json={"name": "__cortexsim__/keycheck", "plaintext": "x"})
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"]["code"] == "RESERVED_SECRET_NAME"
