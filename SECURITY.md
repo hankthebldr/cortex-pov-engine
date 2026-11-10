@@ -47,11 +47,16 @@ is built to run on a customer-lab jumpbox where the operating consultant already
 has full administrative access to the host. Adding auth would secure the API
 against an attacker who, by construction, already owns the box. **The
 assumption that carries this is that SimCore is never exposed to an untrusted
-network.** Bind it to localhost or a private lab segment. If you find a path
-that exposes it by default, or a deploy artifact in this repo that binds it
-publicly, that is a real finding.
+network.** `docker-compose.yml` publishes on `${CORTEXSIM_BIND:-0.0.0.0}`,
+every interface, because beacons on the lab network must reach the port. Set
+`CORTEXSIM_BIND=127.0.0.1` for a console-only host, and keep the jumpbox on a
+private lab segment. `/api/health` states the exposure on every deployment: its
+`api_auth` component is permanently `degraded` with `API_UNAUTHENTICATED`
+until authentication lands (SEC-01, open). If you find a path that exposes it
+beyond that, or a deploy artifact in this repo that binds it to a public
+interface, that is a real finding.
 
-**The repository contains offensive tooling and attack content.** 177 scenarios
+**The repository contains offensive tooling and attack content.** 193 scenarios
 invoke real security tools and emulate real adversary behaviour, mapped to MITRE
 ATT&CK. That is the product, not a leak.
 
@@ -76,15 +81,37 @@ vulnerability:
 - **Credentials are encrypted at rest** under `CORTEXSIM_SECRET`. With
   `CORTEXSIM_ENV=production`, SimCore refuses to boot when that key is empty, a
   known placeholder, or shorter than 32 bytes. Note the scope precisely:
-  development mode logs the same warning and boots anyway, so a dev deployment
-  left on a weak key is not protected by this guard.
+  development mode logs that warning and boots anyway, **except** for the
+  `.env.example` placeholder (anything starting `replace-me`), which is refused
+  in every environment. If the key changes under a surviving database,
+  `/api/health` reports `master_key: MASTER_KEY_MISMATCH` instead of reading
+  `ok`.
+- **The browser cannot be turned against the API.** CORS is not mounted unless
+  `CORTEXSIM_CORS_ORIGINS` names origins, and it never allows credentials. A
+  Host guard answers `400 HOST_NOT_ALLOWED` to any `Host` other than
+  `localhost`, an IP literal, the machine's own name, or a name in
+  `CORTEXSIM_ALLOWED_HOSTS`. That is the DNS-rebinding defence.
+- **No caller-supplied argv.** `POST /api/tools/{tool}/start` fills only the
+  placeholders a tool's run template leaves open, as single shlex-quoted
+  tokens (`400 BAD_TOOL_PARAM`). Before 2026-11 a body could override the
+  binary, which was a verified unauthenticated root RCE. The container no
+  longer mounts `docker.sock`.
+- **No XQL write stage.** An XQL `target` stage, which writes a dataset or
+  lookup, is refused with `400 XQL_WRITE_STAGE_REFUSED` on every path that
+  sends a query to a tenant.
+- **Installer and bundle text is not injectable.** Installer parameters are
+  validated before interpolation (`BAD_AGENT_ID` / `BAD_SERVER` / `BAD_TOKEN`
+  / `BAD_INTERVAL`). Control characters are refused in single-line Composer
+  draft fields and stripped from push-bundle comment lines.
+- **`X-Forwarded-For` is trusted only from `CORTEXSIM_TRUSTED_PROXIES`.**
 - **Staged tool artifacts are digest-pinned.** The payload shelf verifies
   SHA-256 against a value the consumer carried in, never one fetched from the
   server being trusted; a mismatch refuses the launch with
   `PAYLOAD_PIN_MISMATCH`.
-- **Push bundles are self-contained.** A generated bundle runs on a clean
-  Ubuntu 22.04 host with no SimCore dependency at runtime, and a CI guard
-  asserts no bundle references a SimCore endpoint.
+- **Push bundles are self-contained.** A generated bash bundle runs on a clean
+  Ubuntu 22.04 host, and a `.ps1` targets Windows PowerShell 5.1, with no
+  SimCore dependency at runtime. A CI guard asserts no bundle references a
+  SimCore endpoint. The `.ps1` has not executed on Windows yet.
 - **C2 frameworks are never auto-staged.** Gated adapters require explicit
   launch consent (`consent.simulation_authorized` / `c2_authorized`).
 - **Enrollment tokens are TTL-bounded, max-use-capped, and revocable.**
@@ -96,3 +123,21 @@ writing to test. It produces telemetry that a SOC will treat as a genuine
 intrusion — coordinate before you detonate. Using it against systems you do not
 have permission to test is unlawful in most jurisdictions and is not a supported
 use of this project.
+
+## Known limits that are not yet closed
+
+These are tracked, not hidden. A report that shows one of them is worse than
+stated here is welcome.
+
+- **No API authentication** (SEC-01) and **no agent-plane authentication**
+  (SEC-04). Any host that reaches the port can drive SimCore or impersonate a
+  beacon.
+- **The installer checksum guards against corruption, not tampering** (SEC-12).
+  SimCore serves plain HTTP, so the digest an installer verifies against comes
+  from the same channel as the binary.
+- **The Windows beacon is unsigned** (CI-06). Its sha256 and `go version -m`
+  build info are published with each release.
+- **The image still runs as root.** A non-root `USER` is deferred because it
+  cannot be verified without an image run (SEC-03, partial).
+- **Run output may contain harvested credentials** that a credential-access
+  step printed (SEC-06, open).
