@@ -1083,6 +1083,130 @@ _ONLINE_WINDOW_S = 30
 _STALE_WINDOW_S = 300  # 5 minutes
 
 
+_MANIFEST_DOCS = "docs/reference/k8s-delivery.md"
+_MANIFEST_CONSENT_KEYS = ("cluster_privilege_authorized", "node_access_authorized")
+_AUTHORIZED_BY_MAX = 120
+
+
+def _consent_true(v: Optional[str]) -> bool:
+    """Only the literal string ``true`` is consent. ``1``/``yes``/``True`` are not."""
+    return v == "true"
+
+
+def _manifest_400(code: str, error: str, detail: str) -> HTTPException:
+    return HTTPException(status_code=400, detail={"error": error, "code": code, "detail": detail})
+
+
+@router.get("/manifest")
+async def agent_manifest(
+    request: Request,
+    profile: str = "baseline",
+    image: str = "debian:12-slim",
+    prepare: str = "packages",
+    arch: str = "amd64",
+    ttl_seconds: str = "43200",
+    cluster_privilege_authorized: Optional[str] = None,
+    node_access_authorized: Optional[str] = None,
+    authorized_by: Optional[str] = None,
+):
+    """Serve the container-agent manifest as ``text/yaml``.
+
+    Gated profiles are served on the GET (spec section 5): consent rides the query
+    string, the kill switch is the deployment's, and a refusal never downgrades
+    to a weaker profile.
+    """
+    from datetime import timezone  # noqa: PLC0415
+
+    from engine import k8s_manifest as km  # noqa: PLC0415
+    from engine.agent_manifest import (  # noqa: PLC0415
+        AGENT_SCENARIO_ID, PREPARE_MODES, PROFILES, agent_posture,
+        generate_agent_manifest,
+    )
+    from engine.orchestrator import allow_privileged_k8s  # noqa: PLC0415
+
+    if profile not in PROFILES:
+        raise _manifest_400("BAD_PROFILE", "Unknown profile",
+                            f"profile must be one of {list(PROFILES)}")
+    if prepare not in PREPARE_MODES:
+        raise _manifest_400("BAD_PREPARE", "Unknown prepare mode",
+                            f"prepare must be one of {list(PREPARE_MODES)}")
+    _, goarch = _normalize_target("linux", arch)
+    try:
+        ttl = int(ttl_seconds)
+    except (TypeError, ValueError):
+        ttl = -1
+    if not 60 <= ttl <= 43200:
+        raise _manifest_400("BAD_TTL", "ttl_seconds out of range",
+                            "ttl_seconds must be an integer between 60 and 43200")
+    if not image or len(image) > 255 or re.search(r"\s", image):
+        raise _manifest_400("BAD_IMAGE", "Invalid image reference",
+                            "image must be non-empty, at most 255 characters, with no whitespace")
+
+    # authorized_by lands in a YAML comment header and an annotation: a newline
+    # or control character there would break out of the comment.
+    who = (authorized_by or "").strip()
+    if authorized_by is not None and (
+        len(authorized_by) > _AUTHORIZED_BY_MAX
+        or any(ord(c) < 32 or ord(c) == 127 for c in authorized_by)
+    ):
+        raise _manifest_400(
+            "BAD_AUTHORIZED_BY", "Invalid authorized_by",
+            f"authorized_by must be at most {_AUTHORIZED_BY_MAX} characters with no "
+            f"newline or control characters")
+    keys_present = [k for k, v in (
+        ("cluster_privilege_authorized", cluster_privilege_authorized),
+        ("node_access_authorized", node_access_authorized)) if v is not None]
+    if keys_present and not who:
+        raise _manifest_400(
+            "AUTHORIZED_BY_REQUIRED", "A named operator is required with consent",
+            "authorized_by must name the operator who obtained the customer's approval")
+
+    consent = {
+        "cluster_privilege_authorized": _consent_true(cluster_privilege_authorized),
+        "node_access_authorized": _consent_true(node_access_authorized),
+    }
+    # The builder defaults the kill switch to open, so it is applied here, first,
+    # with the deployment's real answer. This is what makes 403 (the owner of this
+    # SimCore must change a flag) distinct from 409 (the caller must send a key).
+    posture = agent_posture(profile, image=image, ttl_seconds=ttl)
+    try:
+        km.check_cluster_consent(
+            AGENT_SCENARIO_ID, posture, consent,
+            allow_privileged_k8s=allow_privileged_k8s(),
+        )
+    except km.ClusterConsentRequired as exc:
+        body = exc.to_error()
+        body["docs"] = _MANIFEST_DOCS
+        if exc.disabled_by_deployment:
+            body["code"] = "CLUSTER_PRIVILEGE_DISABLED"
+            body["remedy"] = (
+                "Set CORTEXSIM_ALLOW_PRIVILEGED_K8S=true on the SimCore deployment "
+                "and restart it. This is owned by whoever runs this SimCore, not by "
+                "the caller; no consent key will change it.")
+            raise HTTPException(status_code=403, detail=body) from exc
+        body["code"] = "CLUSTER_CONSENT_REQUIRED"
+        body["remedy"] = (
+            "Re-request with " + " and ".join(f"{k}=true" for k in exc.missing)
+            + " and authorized_by set to the operator who obtained the customer's approval.")
+        raise HTTPException(status_code=409, detail=body) from exc
+
+    beacon_sha256 = _sha256_of(_resolve_binary_or_404("linux", goarch))
+    manifest = generate_agent_manifest(
+        profile=profile, image=image, arch=goarch, prepare=prepare,
+        ttl_seconds=ttl, beacon_sha256=beacon_sha256,
+        now=datetime.now(timezone.utc),
+        authorized_by=who or None, consent=consent,
+    )
+    if posture.tiers():
+        logger.warning(
+            "gated agent manifest served profile=%s consent=%s authorized_by=%s client_ip=%s",
+            profile, [k for k in _MANIFEST_CONSENT_KEYS if consent[k]], who,
+            _client_ip(request))
+    return PlainTextResponse(
+        manifest, media_type="text/yaml",
+        headers={"Content-Disposition": 'attachment; filename="cortexsim-agent.yaml"'})
+
+
 def _client_ip(request: Request) -> Optional[str]:
     """The request source IP, honestly derived — NEVER invented.
 
