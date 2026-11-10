@@ -13,10 +13,38 @@ import (
 	"os/user"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
-// maxStatusLen is the server's limit on string fields (a longer value is a 422).
-const maxStatusLen = 253
+// The server's limits (core/api/agents.py::RuntimeFacts). Over any of them the
+// whole request is a 422 and enrollment stops, so Collect clamps everything.
+const (
+	maxStringLen = 253 // pod/namespace/node names, posture profile, prepare status
+	maxItemLen   = 64  // one entry of Tools or Accounts
+	maxItems     = 200 // entries in Tools or Accounts
+)
+
+// clampString cuts s to n characters without splitting a UTF-8 rune.
+func clampString(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
+}
+
+// clampList drops entries over maxItemLen, then keeps at most maxItems.
+func clampList(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, v := range in {
+		if utf8.RuneCountInString(v) <= maxItemLen {
+			out = append(out, v)
+		}
+	}
+	if len(out) > maxItems {
+		out = out[:maxItems]
+	}
+	return out
+}
 
 // Facts is the runtime_facts payload. Field names and types are what SimCore
 // validates; a wrong type is rejected, so Tools and Accounts are always
@@ -109,9 +137,6 @@ func Collect(opts Options) Facts {
 			if i := strings.IndexAny(line, "\r\n"); i >= 0 {
 				line = line[:i]
 			}
-			if len(line) > maxStatusLen {
-				line = line[:maxStatusLen]
-			}
 			f.PrepareStatus = line
 		}
 	}
@@ -129,6 +154,14 @@ func Collect(opts Options) Facts {
 		}
 	}
 	sort.Strings(f.Accounts)
+
+	f.PodName = clampString(f.PodName, maxStringLen)
+	f.PodNamespace = clampString(f.PodNamespace, maxStringLen)
+	f.NodeName = clampString(f.NodeName, maxStringLen)
+	f.PostureProfile = clampString(f.PostureProfile, maxStringLen)
+	f.PrepareStatus = clampString(f.PrepareStatus, maxStringLen)
+	f.Tools = clampList(f.Tools)
+	f.Accounts = clampList(f.Accounts)
 
 	// Same rule Task 9's anchor rename uses: it execs through bash.
 	_, err := lookPath("bash")

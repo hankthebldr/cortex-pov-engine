@@ -3,12 +3,14 @@ package runtimefacts
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func envFrom(m map[string]string) func(string) string {
@@ -188,5 +190,79 @@ func TestDefaultProbeToolsMatchManifest(t *testing.T) {
 	}
 	if !reflect.DeepEqual(want, DefaultProbeTools) {
 		t.Errorf("DefaultProbeTools drifted from _KNOWN_BINS\n go: %v\n py: %v", DefaultProbeTools, want)
+	}
+}
+
+func TestCollectClampsStringsToServerLimit(t *testing.T) {
+	long := strings.Repeat("a", 400)
+	f := Collect(Options{
+		PostureProfile:    long,
+		PrepareStatusFile: "/s",
+		Getenv:            envFrom(map[string]string{"POD_NAME": long, "POD_NAMESPACE": long, "NODE_NAME": long}),
+		LookPath:          lookPathIn(),
+		ReadFile:          readFileFrom(map[string]string{"/s": long}),
+		LookupUser:        lookupUserIn(),
+	})
+	for name, v := range map[string]string{
+		"PodName": f.PodName, "PodNamespace": f.PodNamespace, "NodeName": f.NodeName,
+		"PostureProfile": f.PostureProfile, "PrepareStatus": f.PrepareStatus,
+	} {
+		if n := len([]rune(v)); n != 253 {
+			t.Errorf("%s has %d chars, want 253", name, n)
+		}
+	}
+}
+
+func TestCollectClampDoesNotSplitRunes(t *testing.T) {
+	// 252 ASCII + a 3-byte rune + more: cutting at byte 253 would split the rune.
+	v := strings.Repeat("a", 252) + "€€€"
+	f := Collect(Options{
+		Getenv:     envFrom(map[string]string{"POD_NAME": v}),
+		LookPath:   lookPathIn(),
+		LookupUser: lookupUserIn(),
+	})
+	if !utf8.ValidString(f.PodName) {
+		t.Fatalf("clamped value is not valid UTF-8: %q", f.PodName[240:])
+	}
+	if n := len([]rune(f.PodName)); n != 253 {
+		t.Errorf("rune count = %d, want 253", n)
+	}
+	if _, err := json.Marshal(f); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCollectCapsListsAndDropsOverlongItems(t *testing.T) {
+	var names []string
+	for i := 0; i < 300; i++ {
+		names = append(names, fmt.Sprintf("t%03d", i))
+	}
+	names = append(names, strings.Repeat("x", 65), strings.Repeat("y", 64))
+	all := func(string) (string, error) { return "/bin/x", nil }
+	f := Collect(Options{
+		ProbeTools:    names,
+		ProbeAccounts: names,
+		Getenv:        envFrom(nil),
+		LookPath:      all,
+		LookupUser:    func(string) error { return nil },
+	})
+	for name, got := range map[string][]string{"Tools": f.Tools, "Accounts": f.Accounts} {
+		if len(got) != 200 {
+			t.Errorf("%s has %d items, want 200", name, len(got))
+		}
+		for _, it := range got {
+			if len(it) > 64 {
+				t.Errorf("%s kept an over-long item (%d chars)", name, len(it))
+			}
+		}
+	}
+	// The 64-char name is legal and sorts after t299, so it is cut by the cap,
+	// not by the length rule; the 65-char one must be gone either way.
+	g := Collect(Options{
+		ProbeTools: []string{strings.Repeat("x", 65), strings.Repeat("y", 64)},
+		Getenv:     envFrom(nil), LookPath: all, LookupUser: lookupUserIn(),
+	})
+	if len(g.Tools) != 1 || len(g.Tools[0]) != 64 {
+		t.Errorf("Tools = %v, want only the 64-char item", g.Tools)
 	}
 }

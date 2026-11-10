@@ -20,6 +20,7 @@ import (
 
 	"github.com/hankthebldr/cortexsim/agent/executor"
 	"github.com/hankthebldr/cortexsim/agent/identity"
+	"github.com/hankthebldr/cortexsim/agent/runtimefacts"
 )
 
 // ErrUnknownAgent is returned by PollTasks when SimCore responds 404 — i.e. the
@@ -179,6 +180,7 @@ type BeaconClient struct {
 	regOS           string
 	regCapabilities []string
 	regInterpreters []string
+	regFacts        *runtimefacts.Facts
 
 	// resolveIdentity maps a step's identity USERNAME to something this host can
 	// actually execute. Injectable so the Windows degradation path — which is the
@@ -242,6 +244,9 @@ func New(serverURL, agentID string, interval time.Duration) *BeaconClient {
 // into the systemd unit at install time — deliberately NOT from the task body,
 // because queued_tasks.payload is plaintext JSON in SQLite.
 func (c *BeaconClient) SetArtifactToken(token string) { c.artifactToken = strings.TrimSpace(token) }
+
+// SetRuntimeFacts supplies the runtime facts Register (and so reRegister) sends.
+func (c *BeaconClient) SetRuntimeFacts(f *runtimefacts.Facts) { c.regFacts = f }
 
 // artifactClient returns the artifact-fetch HTTP client, building it on first
 // use so a zero-value BeaconClient built by a test with a struct literal works.
@@ -330,6 +335,9 @@ func (c *BeaconClient) Register(hostname, goos string, capabilities, interpreter
 		"os":           goos,
 		"capabilities": capabilities,
 		"interpreters": interpreters,
+	}
+	if c.regFacts != nil {
+		body["runtime_facts"] = c.regFacts
 	}
 	_, err := c.post("/api/agents/register", body)
 	if err != nil {
