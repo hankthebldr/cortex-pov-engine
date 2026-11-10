@@ -928,8 +928,16 @@ function Invoke-PhaseBoot {
     $py = (Get-Command python -ErrorAction Stop).Source
     $out = Join-Path $script:ProofDir 'simcore.stdout.log'
     $err = Join-Path $script:ProofDir 'simcore.stderr.log'
-    $proc = Start-Process -FilePath $py -ArgumentList '-m uvicorn main:app --app-dir core --host 127.0.0.1 --port 8888' `
-        -WorkingDirectory $script:Workspace -RedirectStandardOutput $out -RedirectStandardError $err -PassThru -WindowStyle Hidden
+    # Through cmd.exe with no -Redirect*: Start-Process then uses ShellExecute,
+    # so the child does NOT inherit this powershell.exe's handles. With
+    # -RedirectStandardOutput it is CreateProcess(bInheritHandles=TRUE) and
+    # uvicorn would hold the runner's step stdout/stderr pipe open, which can
+    # keep the step from ending. The file redirection is cmd's; the outer
+    # quote pair is the one cmd /c strips. The pid is cmd.exe's: collect
+    # stops the tree with taskkill /T.
+    $cmdArgs = '/d /c ""' + $py + '" -m uvicorn main:app --app-dir core --host 127.0.0.1 --port 8888 > "' + $out + '" 2> "' + $err + '""'
+    $proc = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') -ArgumentList $cmdArgs `
+        -WorkingDirectory $script:Workspace -PassThru -WindowStyle Hidden
     try { $null = $proc.Handle } catch { Write-CsInfo ('could not open a SimCore process handle: ' + $_.Exception.Message) }
     Set-CsStateValue 'simcore_pid' $proc.Id
     Write-CsInfo ('SimCore pid ' + $proc.Id + ' (' + $py + ')')
@@ -1300,7 +1308,11 @@ function Invoke-PhaseCollect {
         $simPid = Get-CsStateValue 'simcore_pid'
         if ($simPid) {
             $p = Get-Process -Id ([int]$simPid) -ErrorAction SilentlyContinue
-            if ($null -ne $p) { Stop-Process -Id ([int]$simPid) -Force; $null = $p.WaitForExit(15000) }
+            if ($null -ne $p) {
+                # The pid is the cmd.exe wrapper; /T takes uvicorn (its child) too.
+                & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID ([int]$simPid) /T /F | Out-Null
+                $null = $p.WaitForExit(15000)
+            }
             Write-CsInfo ('stopped SimCore pid ' + $simPid)
         }
     }

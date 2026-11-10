@@ -621,30 +621,39 @@ jobs:
         timeout-minutes: 15
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase pssa
 
+      # Gated on build_dist (the exe exists), not on the build assertion phase:
+      # one assertion failure there must not skip every e2e phase after it.
+      # The timeout keeps a wedged boot from eating the job's 40 minutes.
       - name: boot (SimCore on 127.0.0.1:8888)
         id: boot
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' && steps.build_dist.outcome == 'success' }}
+        timeout-minutes: 5
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase boot
 
       - name: install (console token one-liner, service)
         id: install
         if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.boot.outcome == 'success' }}
+        timeout-minutes: 10
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase install
 
       - name: pull (exit codes, fail-fast, stderr)
         if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        timeout-minutes: 10
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase pull
 
       - name: abort (tree-kill scope)
         if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        timeout-minutes: 10
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase abort
 
       - name: push (PowerShell bundle with -File)
         if: ${{ !cancelled() && steps.floor.outcome == 'success' && steps.boot.outcome == 'success' }}
+        timeout-minutes: 10
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase push
 
       - name: uninstall (uninstall one-liner)
         if: ${{ !cancelled() && steps.boot.outcome == 'success' && steps.install.outcome != 'skipped' }}
+        timeout-minutes: 10
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\ci\windows-native-e2e.ps1 -Phase uninstall
 
       - name: collect (evidence, always)
