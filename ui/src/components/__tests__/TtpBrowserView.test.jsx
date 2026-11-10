@@ -710,3 +710,312 @@ describe('<TtpBrowserView />', () => {
     expect(screen.queryByText('Detection logic')).not.toBeInTheDocument()
   })
 })
+
+// ── Organize by the FY27 index: group / sort by use case, test case, subdomain ──
+//
+// A card carries no UC/TC ref; the view joins card → scenario → test case →
+// use case → fy27_subdomain (catalogBindings.js). These cases cover the render
+// and — the part that matters most — every way the join can be unavailable
+// without the view claiming "no scenario cites this card".
+
+const det = (ttp_ref) => ({ type: 'BIOC', plane: 'EDR', ...(ttp_ref ? { ttp_ref } : {}) })
+
+const fixtureScenarios = {
+  scenarios: [
+    {
+      scenario_id: 'SIM-EDR-006', name: 'LSASS dump', plane: 'EDR',
+      uc_ref: 'UCS-EDR-03', tc_ref: 'TC-EDR-05', tc_refs: ['TC-EDR-05', 'TC-IR-01'],
+      steps: [{ id: 'step-01', expected_detections: [det('TTP-2026-0002')] }],
+    },
+    {
+      scenario_id: 'SIM-ITDR-002', name: 'DCSync chain', plane: 'ITDR',
+      uc_ref: 'UCS-ITDR-02', tc_ref: 'TC-ITDR-04', tc_refs: ['TC-ITDR-04'],
+      steps: [{ id: 'step-01', expected_detections: [det('TTP-2026-0004')] }],
+    },
+  ],
+  total: 2,
+  projection: 'summary',
+}
+
+const fixtureTestCases = {
+  index_loaded: true,
+  index_version: '2.2',
+  test_cases: [
+    { tc_id: 'TC-EDR-05', title: 'Causality graph shows the full process chain', ucs_id: 'UCS-EDR-03', ucs_name: 'Lack of Endpoint Alert Context', uc_id: 'UC-EDR', use_case: 'Endpoint Detection & Response' },
+    { tc_id: 'TC-IR-01', title: 'Auto-triage reduces manual alert review', ucs_id: 'UCS-IR-01', ucs_name: 'Analyst Fatigue', uc_id: 'UC-IR', use_case: 'Incident Response' },
+    { tc_id: 'TC-ITDR-04', title: 'Detect DCSync replication abuse', ucs_id: 'UCS-ITDR-02', ucs_name: 'Credential Theft', uc_id: 'UC-ITDR', use_case: 'Identity Threat Detection & Response' },
+  ],
+  total: 3,
+}
+
+const fixtureUseCases = {
+  index_loaded: true,
+  index_version: '2.2',
+  use_cases: [
+    { uc_id: 'UC-EDR', use_case: 'Endpoint Detection & Response', fy27_subdomain: 'Endpoint Protection' },
+    { uc_id: 'UC-IR', use_case: 'Incident Response', fy27_subdomain: 'SOC Transformation' },
+    { uc_id: 'UC-ITDR', use_case: 'Identity Threat Detection & Response', fy27_subdomain: 'Identity Security' },
+  ],
+  total: 3,
+}
+
+const indexRoutes = (over = {}) => ({
+  'GET /api/ttps':            fixtureList,
+  'GET /api/scenarios':       fixtureScenarios,
+  'GET /api/uctc/test-cases': fixtureTestCases,
+  'GET /api/uctc/use-cases':  fixtureUseCases,
+  ...over,
+})
+
+const cardIds = (root) =>
+  Array.from(root.querySelectorAll('[data-testid^="ttp-card-TTP"]'))
+    .map((c) => c.getAttribute('data-testid').replace('ttp-card-', ''))
+
+async function renderOrganized(props = {}, routes = indexRoutes()) {
+  installRoutes(routes)
+  const utils = render(<TtpBrowserView {...props} />)
+  await waitFor(() => expect(screen.getByTestId('ttp-card-TTP-2026-0002')).toBeInTheDocument())
+  return utils
+}
+
+describe('<TtpBrowserView /> — organize by use case / test case / subdomain', () => {
+  it('each card face names its primary test case and use case once the index loads', async () => {
+    await renderOrganized()
+    await waitFor(() => expect(screen.getByTestId('ttp-card-uctc-TTP-2026-0002')).toBeInTheDocument())
+    const face = screen.getByTestId('ttp-card-uctc-TTP-2026-0002')
+    expect(face).toHaveTextContent('TC-EDR-05')
+    expect(face).toHaveTextContent('UC-EDR')
+    expect(face).toHaveTextContent('Endpoint Protection')
+    // One more test case is evidenced beyond the primary.
+    expect(face).toHaveTextContent('+1')
+    // A card nothing cites says so, rather than showing an empty row.
+    expect(screen.getByTestId('ttp-card-uctc-TTP-2026-0003')).toHaveTextContent(/no scenario cites this card/i)
+  })
+
+  it('Group by subdomain renders one section per subdomain with its count, uncited last', async () => {
+    await renderOrganized()
+    await waitFor(() => expect(screen.getByTestId('ttp-group-by-subdomain')).not.toBeDisabled())
+    fireEvent.click(screen.getByTestId('ttp-group-by-subdomain'))
+
+    const sections = Array.from(document.querySelectorAll('[data-testid^="ttp-group-section-"]'))
+    expect(sections.map((s) => s.getAttribute('data-group-label'))).toEqual([
+      'Endpoint Protection', 'Identity Security', 'SOC Transformation',
+      'No scenario cites this card',
+    ])
+    expect(screen.getByTestId('ttp-group-count-Endpoint Protection')).toHaveTextContent('1 card')
+    // LSASS evidences TC-IR-01 too, so it is ALSO listed under SOC Transformation.
+    const soc = screen.getByTestId('ttp-group-section-SOC Transformation')
+    expect(cardIds(soc)).toEqual(['TTP-2026-0002'])
+    // …and there its face cites the binding that put it THERE (TC-IR-01, a
+    // secondary), not its lead UC-EDR one — or the placement looks like a bug.
+    const face = soc.querySelector('[data-testid="ttp-card-uctc-TTP-2026-0002"]')
+    expect(face).toHaveTextContent('UC-IR')
+    expect(face).toHaveTextContent('TC-IR-01')
+    expect(face).toHaveTextContent(/secondary/i)
+    expect(face).not.toHaveTextContent('UC-EDR')
+    // Under its own subdomain the same card is not marked secondary.
+    const own = screen.getByTestId('ttp-group-section-Endpoint Protection')
+      .querySelector('[data-testid="ttp-card-uctc-TTP-2026-0002"]')
+    expect(own).toHaveTextContent('TC-EDR-05')
+    expect(own).not.toHaveTextContent(/secondary/i)
+    expect(cardIds(screen.getByTestId('ttp-group-section-__uncited__'))).toEqual(['TTP-2026-0003'])
+    // Flat paging is replaced by the outline.
+    expect(screen.queryByTestId('ttp-pager')).not.toBeInTheDocument()
+  })
+
+  it('says how many cards repeat, so group counts are never read as a card total', async () => {
+    await renderOrganized()
+    await waitFor(() => expect(screen.getByTestId('ttp-group-by-subdomain')).not.toBeDisabled())
+    fireEvent.click(screen.getByTestId('ttp-group-by-subdomain'))
+    const note = screen.getByTestId('ttp-organize-note')
+    expect(note).toHaveTextContent('3 cards in 4 groups')
+    expect(note).toHaveTextContent('1 card is listed more than once')
+    expect(note).toHaveTextContent(/authored/i)
+  })
+
+  it('"Primary test case only" drops the secondary placement', async () => {
+    await renderOrganized()
+    await waitFor(() => expect(screen.getByTestId('ttp-group-by-subdomain')).not.toBeDisabled())
+    // The include row only exists while grouped.
+    expect(screen.queryByTestId('ttp-include-primary')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('ttp-group-by-subdomain'))
+    fireEvent.click(screen.getByTestId('ttp-include-primary'))
+    expect(screen.queryByTestId('ttp-group-section-SOC Transformation')).not.toBeInTheDocument()
+    expect(cardIds(screen.getByTestId('ttp-group-section-Endpoint Protection'))).toEqual(['TTP-2026-0002'])
+  })
+
+  it('a group header collapses and reopens its cards', async () => {
+    await renderOrganized()
+    await waitFor(() => expect(screen.getByTestId('ttp-group-by-subdomain')).not.toBeDisabled())
+    fireEvent.click(screen.getByTestId('ttp-group-by-subdomain'))
+    const toggle = screen.getByTestId('ttp-group-toggle-Identity Security')
+    // Three cards fit one page, so the outline starts open.
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(cardIds(screen.getByTestId('ttp-group-section-Identity Security'))).toEqual(['TTP-2026-0004'])
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(cardIds(screen.getByTestId('ttp-group-section-Identity Security'))).toEqual([])
+    fireEvent.click(toggle)
+    expect(cardIds(screen.getByTestId('ttp-group-section-Identity Security'))).toEqual(['TTP-2026-0004'])
+  })
+
+  it('Group by use case titles the group and opens it in the UC / TC index', async () => {
+    const onNavigate = vi.fn()
+    await renderOrganized({ onNavigate })
+    await waitFor(() => expect(screen.getByTestId('ttp-group-by-uc')).not.toBeDisabled())
+    fireEvent.click(screen.getByTestId('ttp-group-by-uc'))
+    const section = screen.getByTestId('ttp-group-section-UC-ITDR')
+    expect(section).toHaveTextContent('Identity Threat Detection & Response')
+    expect(section).toHaveTextContent('Identity Security')
+    fireEvent.click(screen.getByTestId('ttp-group-open-UC-ITDR'))
+    expect(onNavigate).toHaveBeenCalledWith('uctc', { uc: 'UC-ITDR' })
+  })
+
+  it('Group by test case opens the test case in the UC / TC index', async () => {
+    const onNavigate = vi.fn()
+    await renderOrganized({ onNavigate })
+    await waitFor(() => expect(screen.getByTestId('ttp-group-by-tc')).not.toBeDisabled())
+    fireEvent.click(screen.getByTestId('ttp-group-by-tc'))
+    expect(screen.getByTestId('ttp-group-section-TC-ITDR-04')).toHaveTextContent('Detect DCSync replication abuse')
+    fireEvent.click(screen.getByTestId('ttp-group-open-TC-ITDR-04'))
+    expect(onNavigate).toHaveBeenCalledWith('uctc', { tc: 'TC-ITDR-04' })
+  })
+
+  it('Sort by name reorders the flat grid; Sort by test case puts the uncited card last', async () => {
+    const { container } = await renderOrganized()
+    expect(cardIds(container)).toEqual(['TTP-2026-0002', 'TTP-2026-0003', 'TTP-2026-0004'])
+    fireEvent.click(screen.getByTestId('ttp-sort-by-name'))
+    // AWS IAM… < DCSync… < LSASS…
+    expect(cardIds(container)).toEqual(['TTP-2026-0003', 'TTP-2026-0004', 'TTP-2026-0002'])
+    await waitFor(() => expect(screen.getByTestId('ttp-sort-by-tc')).not.toBeDisabled())
+    fireEvent.click(screen.getByTestId('ttp-sort-by-tc'))
+    // TC-EDR-05 (0002) < TC-ITDR-04 (0004) < unbound (0003)
+    expect(cardIds(container)).toEqual(['TTP-2026-0002', 'TTP-2026-0004', 'TTP-2026-0003'])
+  })
+
+  it('search finds a card by test case id and by subdomain', async () => {
+    const { container } = await renderOrganized()
+    await waitFor(() => expect(screen.getByTestId('ttp-card-uctc-TTP-2026-0004')).toBeInTheDocument())
+    fireEvent.change(screen.getByTestId('ttp-search'), { target: { value: 'TC-ITDR-04' } })
+    expect(cardIds(container)).toEqual(['TTP-2026-0004'])
+    fireEvent.change(screen.getByTestId('ttp-search'), { target: { value: 'endpoint protection' } })
+    expect(cardIds(container)).toEqual(['TTP-2026-0002'])
+  })
+
+  it('reads group / sort / include from the URL params and writes changes back', async () => {
+    const setParams = vi.fn()
+    await renderOrganized({ params: { group: 'uc', sort: 'name', include: 'primary' }, setParams })
+    await waitFor(() => expect(screen.getByTestId('ttp-group-section-UC-EDR')).toBeInTheDocument())
+    expect(screen.getByTestId('ttp-group-by-uc')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('ttp-sort-by-name')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('ttp-include-primary')).toHaveAttribute('aria-pressed', 'true')
+
+    fireEvent.click(screen.getByTestId('ttp-group-by-tc'))
+    expect(setParams).toHaveBeenLastCalledWith({ group: 'tc' })
+    // Defaults are written as null so the router drops the key from the hash.
+    fireEvent.click(screen.getByTestId('ttp-group-by-none'))
+    expect(setParams).toHaveBeenLastCalledWith({ group: null })
+    fireEvent.click(screen.getByTestId('ttp-sort-by-id'))
+    expect(setParams).toHaveBeenLastCalledWith({ sort: null })
+  })
+
+  it('follows the URL when the hash changes under the mounted view', async () => {
+    // An edited address bar or a same-page link changes `params` WITHOUT a
+    // remount. Seen in a real browser: the hash said group=uc, the grid stayed
+    // on subdomain.
+    installRoutes(indexRoutes())
+    const { rerender } = render(<TtpBrowserView params={{ group: 'subdomain' }} />)
+    await waitFor(() => expect(screen.getByTestId('ttp-group-section-Identity Security')).toBeInTheDocument())
+    rerender(<TtpBrowserView params={{ group: 'uc' }} />)
+    await waitFor(() => expect(screen.getByTestId('ttp-group-section-UC-ITDR')).toBeInTheDocument())
+    expect(screen.queryByTestId('ttp-group-section-Identity Security')).not.toBeInTheDocument()
+    expect(screen.getByTestId('ttp-group-by-uc')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('a collapsed group stays collapsed across a re-sort and a trip through another grouping', async () => {
+    await renderOrganized()
+    await waitFor(() => expect(screen.getByTestId('ttp-group-by-subdomain')).not.toBeDisabled())
+    fireEvent.click(screen.getByTestId('ttp-group-by-subdomain'))
+    fireEvent.click(screen.getByTestId('ttp-group-toggle-Identity Security'))
+    const collapsed = () =>
+      expect(screen.getByTestId('ttp-group-toggle-Identity Security')).toHaveAttribute('aria-expanded', 'false')
+    collapsed()
+    fireEvent.click(screen.getByTestId('ttp-sort-by-name'))
+    collapsed()
+    fireEvent.click(screen.getByTestId('ttp-group-by-uc'))
+    fireEvent.click(screen.getByTestId('ttp-group-by-subdomain'))
+    collapsed()
+    // The other groups were never touched and keep following the default.
+    expect(screen.getByTestId('ttp-group-toggle-Endpoint Protection')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  // ── Degraded is not zero ─────────────────────────────────────────────
+
+  it('index not loaded: grouping is disabled with a reason — never "0 use cases", never "uncited"', async () => {
+    await renderOrganized({}, indexRoutes({
+      'GET /api/uctc/test-cases': { index_loaded: false, index_version: null, test_cases: [], total: 0 },
+      'GET /api/uctc/use-cases':  { index_loaded: false, index_version: null, use_cases: [], total: 0 },
+    }))
+    const degraded = await screen.findByTestId('ttp-organize-degraded')
+    expect(degraded).toHaveTextContent(/UC \/ TC index is not loaded/i)
+    for (const id of ['subdomain', 'uc', 'tc']) {
+      expect(screen.getByTestId(`ttp-group-by-${id}`)).toBeDisabled()
+      expect(screen.getByTestId(`ttp-sort-by-${id}`)).toBeDisabled()
+    }
+    // Non-index sorts still work.
+    expect(screen.getByTestId('ttp-sort-by-name')).not.toBeDisabled()
+    expect(screen.queryByText(/no scenario cites this card/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/\b0 use cases\b/i)).not.toBeInTheDocument()
+  })
+
+  it('a SimCore whose scenario list carries no ttp_ref: degraded, and no card is called uncited', async () => {
+    const olderProjection = {
+      ...fixtureScenarios,
+      scenarios: fixtureScenarios.scenarios.map((s) => ({
+        ...s,
+        steps: s.steps.map((st) => ({ ...st, expected_detections: [{ type: 'BIOC', plane: 'EDR' }] })),
+      })),
+    }
+    await renderOrganized({}, indexRoutes({ 'GET /api/scenarios': olderProjection }))
+    const degraded = await screen.findByTestId('ttp-organize-degraded')
+    expect(degraded).toHaveTextContent(/carries no card references/i)
+    expect(screen.getByTestId('ttp-group-by-subdomain')).toBeDisabled()
+    expect(screen.queryByText(/no scenario cites this card/i)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('ttp-card-uctc-TTP-2026-0002')).not.toBeInTheDocument()
+  })
+
+  it('a deep link asking for a grouping the backend cannot serve stays flat and says why', async () => {
+    const { container } = await renderOrganized({ params: { group: 'subdomain' } }, indexRoutes({
+      'GET /api/uctc/test-cases': { index_loaded: false, index_version: null, test_cases: [], total: 0 },
+      'GET /api/uctc/use-cases':  { index_loaded: false, index_version: null, use_cases: [], total: 0 },
+    }))
+    await screen.findByTestId('ttp-organize-degraded')
+    expect(document.querySelector('[data-testid^="ttp-group-section-"]')).toBeNull()
+    expect(cardIds(container)).toEqual(['TTP-2026-0002', 'TTP-2026-0003', 'TTP-2026-0004'])
+    expect(screen.getByTestId('ttp-organize-degraded')).toHaveTextContent(/showing every card ungrouped\./i)
+  })
+
+  it('the degraded note says exactly what fell back — a refused sort is not called "ungrouped"', async () => {
+    const noIndex = indexRoutes({
+      'GET /api/uctc/test-cases': { index_loaded: false, index_version: null, test_cases: [], total: 0 },
+      'GET /api/uctc/use-cases':  { index_loaded: false, index_version: null, use_cases: [], total: 0 },
+    })
+    const { unmount } = await renderOrganized({ params: { sort: 'tc' } }, noIndex)
+    const sortOnly = await screen.findByTestId('ttp-organize-degraded')
+    expect(sortOnly).toHaveTextContent(/showing cards in card id order\./i)
+    expect(sortOnly).not.toHaveTextContent(/ungrouped/i)
+    unmount()
+
+    await renderOrganized({ params: { group: 'uc', sort: 'uc' } }, noIndex)
+    expect(await screen.findByTestId('ttp-organize-degraded'))
+      .toHaveTextContent(/showing every card ungrouped, in card id order\./i)
+  })
+
+  it('an index fetch failure degrades the organize bar and leaves the cards browsable', async () => {
+    const { container } = await renderOrganized({}, { 'GET /api/ttps': fixtureList })
+    const degraded = await screen.findByTestId('ttp-organize-degraded')
+    expect(degraded).toHaveTextContent(/could not be loaded/i)
+    expect(screen.getByTestId('ttp-group-by-subdomain')).toBeDisabled()
+    expect(cardIds(container)).toEqual(['TTP-2026-0002', 'TTP-2026-0003', 'TTP-2026-0004'])
+  })
+})

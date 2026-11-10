@@ -74,7 +74,7 @@ def test_list_drops_the_heavy_unrendered_fields(client, session_factory):
     for dropped in ("command", "platform_variants", "causality", "identity"):
         assert dropped not in step
     det = step["expected_detections"][0]
-    for dropped in ("description", "verification_xql", "detection_id", "ttp_ref"):
+    for dropped in ("description", "verification_xql", "detection_id"):
         assert dropped not in det
 
 
@@ -99,6 +99,47 @@ def test_list_keeps_every_field_the_console_reads(client, session_factory):
     det = step["expected_detections"][0]
     assert det["type"] == "BIOC"
     assert det["plane"] == "EDR"
+
+
+def test_list_keeps_the_card_link_the_catalog_groups_by(client, session_factory):
+    """``expected_detections[].ttp_ref`` is the ONLY bulk source of the
+    card -> scenario link. Catalog > TTP cards joins it to ``tc_ref`` /
+    ``tc_refs`` to group cards by use case, test case and FY27 subdomain.
+
+    Dropping it does not empty a facet — it makes every card read as "no
+    scenario cites this card", a false claim about coverage, so the console
+    treats an absent key as a degraded backend rather than as zero."""
+    _seed(session_factory)
+    row = client.get("/api/scenarios").json()["scenarios"][0]
+
+    det = row["steps"][0]["expected_detections"][0]
+    assert det["ttp_ref"] == "TTP-2026-0004"
+    # The scenario side of the join travels on the same row.
+    assert row["tc_ref"] == "TC-EDR-01"
+    assert "tc_refs" in row
+
+
+def test_list_omits_ttp_ref_where_the_detection_never_declared_one(client, session_factory):
+    """A projection, not a default: a detection authored without ``ttp_ref``
+    must not gain a null one, or "key absent" stops meaning "not served"."""
+    from models import Scenario
+
+    async def _do():
+        async with session_factory() as db:
+            db.add(Scenario(
+                scenario_id="SIM-NOREF-001", name="No card ref", plane="EDR",
+                version="1.0", status="active",
+                uc_ref="UCS-EDR-01", uc_name="X", tc_ref="TC-EDR-01", tc_name="Y",
+                mitre_tactic="TA0006", mitre_tactic_name="CA",
+                mitre_technique="T1003.001", mitre_technique_name="LSASS",
+                steps=[{"id": "step-01", "name": "n", "mitre_technique": "T1003.001",
+                        "expected_detections": [{"type": "XQL", "plane": "EDR"}]}],
+            ))
+            await db.commit()
+
+    asyncio.run(_do())
+    det = client.get("/api/scenarios").json()["scenarios"][0]["steps"][0]["expected_detections"][0]
+    assert "ttp_ref" not in det
 
 
 def test_list_projection_is_materially_smaller(client, session_factory):

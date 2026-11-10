@@ -10,6 +10,30 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ### Fixed
 
+- **Catalog › TTP cards can be navigated by use case, test case and FY27
+  subdomain.** The page listed 191 cards in authoring-id order with status,
+  raw `TA00xx` tactic id and platform as the only handles, so a DC planning a
+  POV in index terms had no way in. It now has **Group by** (subdomain / use
+  case / test case — a collapsible outline with counts, each use-case and
+  test-case row opening the UC / TC index) and **Sort by** (card id, name,
+  subdomain, use case, test case, detections); every card face names the use
+  case, subdomain and test case it is bound to; search matches `TC-…` / `UC-…`
+  ids, use-case names, subdomains and scenario ids; the card detail lists every
+  binding. `#/ttps?group=&sort=&include=` deep-links the choice and survives a
+  trip into the index and back. A card has no UC/TC ref of its own, so the
+  binding is joined through the scenarios that cite it
+  (`ui/src/components/console/catalogBindings.js`) and is labelled what it is:
+  **authored, not proof a detection fired**. By default a card sits under every
+  test case its scenario evidences (163 of 191 repeat by test case, 93 by
+  subdomain) and the bar prints how many repeat; "Primary test case only" is the
+  near-partition. When the join cannot run — index snapshot absent, or a SimCore
+  whose scenario list carries no card references — grouping is **disabled with
+  the reason**; it never renders as "0 use cases" or as 191 uncited cards.
+- **`GET /api/scenarios` keeps `expected_detections[].ttp_ref` in the summary
+  projection** (+35.8 KB on 193 scenarios, +6.3 %). It was the only bulk source
+  of the card → scenario link and the list dropped it, so the join above had
+  nothing to read. A detection authored without the field still gains no key.
+
 - **An `xsiam_tenant` credential now serves alert read-back everywhere the
   console said it did.** `GET /api/connectors` reported the `xsiam` connector
   `configured: true` on a tenant-kind credential (listed under

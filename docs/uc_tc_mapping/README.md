@@ -80,6 +80,21 @@ customer.
   Index (UC rail → TC table → detail drawer), Coverage (worst-covered UC first),
   and Gaps (unevidenced DET/HNT, P1 first). Deep-linkable:
   `#/uctc?tab=index&uc=UC-EDR&tc=TC-EDR-03`.
+- **Catalog › TTP cards** (`#/ttps`) groups and sorts the card corpus by this
+  index: **subdomain** (`fy27_subdomain` on the use-case row — not the UCS
+  level), **use case** and **test case**. A card carries no UC/TC ref of its own
+  (and must not — see *The three namespaces* above), so the binding is joined
+  client-side in `ui/src/components/console/catalogBindings.js`:
+  `card ← scenario.steps[].expected_detections[].ttp_ref`, then that scenario's
+  `tc_ref` (primary) and `tc_refs[]` → test case → use case → subdomain.
+  Deep-linkable: `#/ttps?group=subdomain|uc|tc&sort=…&include=all|primary`.
+  Three rules it keeps: (1) the placement is **authored, not proven** and the
+  surface says so; (2) by default a card is listed under **every** test case its
+  scenario evidences, so group counts overlap and the bar prints how many cards
+  repeat — `include=primary` gives the near-partition; (3) when the join cannot
+  run (`index_loaded: false`, or a SimCore whose scenario list carries no
+  `ttp_ref`) grouping is **disabled with the reason**, never rendered as "no
+  scenario cites this card".
 - **Licensing:** `core/api/pov.py` → `GET /api/pov/profiles`, `/capabilities`,
   `POST /api/pov/scope` scopes the corpus to a tenant's entitlements and
   generates the upsell list from the same registry.
