@@ -52,9 +52,13 @@ def agent_posture(
             privileged=True,
             allow_privilege_escalation=True,
             capabilities_add=["SYS_ADMIN", "NET_ADMIN"],
+            capabilities_drop=[],
         )
         if lab
-        else SecurityContextSpec()
+        # No drop list: the runtime's default capability set, as an ordinary pod has.
+        # apt-get (CHOWN/DAC_OVERRIDE/FOWNER) and useradd/runuser (SETUID/SETGID)
+        # need it; dropping ALL would fail prepare and every non-direct identity.
+        else SecurityContextSpec(capabilities_drop=[])
     )
     host_access = (
         HostAccessSpec(
@@ -285,6 +289,13 @@ _CARRIER_OBJECT = {
 }
 
 
+def _require_aware(now: datetime) -> None:
+    # A naive datetime is read as host-local time by .timestamp(), which would
+    # stamp a shifted expiry on every object.
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise ValueError("now must be timezone-aware (UTC); got a naive datetime")
+
+
 def build_agent_objects(
     *,
     profile: str,
@@ -297,6 +308,7 @@ def build_agent_objects(
     authorized_by: Optional[str],
 ) -> list[dict[str, Any]]:
     """The agent manifest as a list of dicts; serialisation adds nothing."""
+    _require_aware(now)
     posture = agent_posture(profile, image=image, ttl_seconds=ttl_seconds)
     findings = km.findings_for(posture)
     ns = AGENT_NAMESPACE
@@ -540,6 +552,7 @@ def generate_agent_manifest(
     consent: dict[str, bool],
 ) -> str:
     """Refuse without consent, then render the agent manifest as multi-doc YAML."""
+    _require_aware(now)
     posture = agent_posture(profile, image=image, ttl_seconds=ttl_seconds)
     km.check_cluster_consent(AGENT_SCENARIO_ID, posture, consent)
     objects = build_agent_objects(

@@ -36,3 +36,12 @@ def test_ttl_bounds_and_unknown_profile():
         agent_posture("baseline", ttl_seconds=43201)
     with pytest.raises(UnknownAgentProfile):
         agent_posture("root-everything")
+
+
+@pytest.mark.parametrize("profile", ["baseline", "cluster-privilege", "lab-privileged"])
+def test_every_profile_keeps_the_runtime_default_capabilities(profile):
+    assert agent_posture(profile).security_context.capabilities_drop == []
+
+
+def test_baseline_needs_no_consent():
+    assert km.required_consent_keys(agent_posture("baseline")) == ()

@@ -109,3 +109,37 @@ def test_header_names_the_agents_objects_not_the_reapers():
         consent={"cluster_privilege_authorized": True})
     header = text.split("\n---\n")[0]
     assert "-> ClusterRole/cortexsim-agent" in header and "reaper" not in header.replace("A reaper Job", "")
+
+
+import pytest
+
+from engine import k8s_manifest as km
+from engine.agent_manifest import PROFILES, agent_posture
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_main_container_never_drops_all_capabilities(profile):
+    sc = pod(objs(profile, authorized_by="henry"))["containers"][0]["securityContext"]
+    assert "ALL" not in sc.get("capabilities", {}).get("drop", [])
+
+
+def test_baseline_has_no_privilege_or_added_capabilities():
+    sc = pod(objs("baseline"))["containers"][0]["securityContext"]
+    assert sc["privileged"] is False and sc["allowPrivilegeEscalation"] is False
+    assert "add" not in sc.get("capabilities", {})
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_emitted_findings_equal_the_posture_findings(profile):
+    o = objs(profile, authorized_by="henry")
+    assert set(km.emitted_finding_slugs(o)) == {f.slug for f in km.findings_for(agent_posture(profile))}
+    assert km.unmanaged_objects(o) == ()
+
+
+def test_naive_now_is_rejected():
+    naive = datetime(2026, 11, 10)
+    with pytest.raises(ValueError, match="now"):
+        objs("baseline", now=naive)
+    with pytest.raises(ValueError, match="now"):
+        generate_agent_manifest(profile="baseline", image="debian:12-slim", arch="amd64", prepare="packages",
+                                ttl_seconds=43200, beacon_sha256="a" * 64, now=naive, authorized_by=None, consent={})
