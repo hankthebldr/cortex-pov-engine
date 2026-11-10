@@ -23,12 +23,12 @@ import secrets
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +46,28 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 # ---------------------------------------------------------------------------
 
 
+class RuntimeFacts(BaseModel):
+    """What a beacon running inside a pod reports about itself.
+
+    The beacon is unauthenticated and the value is later rendered in the
+    console and read by a launch gate, so it is validated here: known keys
+    only (unknown keys are ignored so a newer beacon still enrolls against an
+    older SimCore), wrong types are a 422.
+    """
+    container: Optional[StrictBool] = None
+    pod_name: Optional[str] = Field(default=None, max_length=253)
+    pod_namespace: Optional[str] = Field(default=None, max_length=253)
+    node_name: Optional[str] = Field(default=None, max_length=253)
+    posture_profile: Optional[str] = Field(default=None, max_length=253)
+    prepare_status: Optional[str] = Field(default=None, max_length=253)
+    tools: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
+    accounts: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
+    anchor_rename: Optional[StrictBool] = None
+
+    def stored(self) -> dict:
+        return self.model_dump(exclude_unset=True)
+
+
 class RegisterRequest(BaseModel):
     agent_id: str
     hostname: str
@@ -57,6 +79,8 @@ class RegisterRequest(BaseModel):
     # exactly as before, with an empty roster (advisory-only — see
     # engine.runtime_preflight and docs/design/agent-runtime-dependencies.md).
     interpreters: list[str] = []
+    # NULL (omitted) = not a container agent / facts unknown; see RuntimeFacts.
+    runtime_facts: Optional[RuntimeFacts] = None
 
 
 class MintTokenRequest(BaseModel):
@@ -78,6 +102,7 @@ class EnrollRequest(BaseModel):
     interpreters: list[str] = []
     # Optional client-suggested name; sanitised + suffixed for uniqueness.
     desired_name: Optional[str] = Field(default=None, max_length=60)
+    runtime_facts: Optional[RuntimeFacts] = None
 
 
 # ---------------------------------------------------------------------------
@@ -1290,6 +1315,7 @@ async def register_agent(
             last_seen=now,
             status="online",
             last_ip=src_ip,
+            runtime_facts=body.runtime_facts.stored() if body.runtime_facts else None,
         )
         db.add(agent)
         logger.info("register_agent NEW agent_id=%s hostname=%s os=%s interpreters=%s",
@@ -1305,6 +1331,10 @@ async def register_agent(
         # not clobber a good address captured on a prior call.
         if src_ip is not None:
             existing.last_ip = src_ip
+        # The beacon re-registers to refresh its facts; an omitted field must
+        # not wipe what is stored.
+        if body.runtime_facts is not None:
+            existing.runtime_facts = body.runtime_facts.stored()
         logger.info("register_agent UPDATED agent_id=%s interpreters=%s", body.agent_id, body.interpreters)
 
     await db.commit()
@@ -1480,6 +1510,7 @@ async def enroll_agent(body: EnrollRequest, request: Request, db: AsyncSession =
         registered_at=now, last_seen=now, status="online",
         # The installer runs ON the jumpbox, so the request source IS the target.
         last_ip=_client_ip(request),
+        runtime_facts=body.runtime_facts.stored() if body.runtime_facts else None,
     ))
     await db.commit()
     logger.info("enroll_agent assigned agent_id=%s (token tail=...%s, use %d/%d)",
