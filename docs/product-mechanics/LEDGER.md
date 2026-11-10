@@ -10,18 +10,18 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 
 | mechanism | P0 | P1 | P2 | open | asked | internal_only | unknown | provisional | conflicting | settled | retired |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| [ING](#ing) Ingestion, parsing and XDM modeling | 3 | 3 | 2 | 8 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [STI](#sti) Stitching (data fusion across sources) | 5 | 5 | 1 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [CAU](#cau) Causality and the Causality Group Owner (CGO) | 2 | 3 | 1 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [BIO](#bio) BIOC matching | 2 | 4 | 0 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [ABI](#abi) ABIOC (analytics BIOC) | 2 | 2 | 1 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [ANA](#ana) Analytics engine (profiles, baselines, thresholds) | 4 | 5 | 2 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [COR](#cor) Correlation rules | 2 | 4 | 1 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [IOC](#ioc) IOC matching and threat intel | 2 | 2 | 1 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [PRV](#prv) Prevention (agent modules, report vs block) | 1 | 2 | 1 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [INC](#inc) Alert-to-incident grouping | 1 | 2 | 1 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 2 | 2 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **all (71)** | **26** | **34** | **11** | **71** | **0** | **0** | **0** | **0** | **0** | **0** | **0** |
+| [ING](#ing) Ingestion, parsing and XDM modeling | 3 | 3 | 2 | 5 | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [STI](#sti) Stitching (data fusion across sources) | 5 | 5 | 1 | 6 | 5 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [CAU](#cau) Causality and the Causality Group Owner (CGO) | 2 | 3 | 1 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [BIO](#bio) BIOC matching | 2 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [ABI](#abi) ABIOC (analytics BIOC) | 2 | 2 | 1 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [ANA](#ana) Analytics engine (profiles, baselines, thresholds) | 4 | 5 | 2 | 7 | 4 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [COR](#cor) Correlation rules | 2 | 4 | 1 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [IOC](#ioc) IOC matching and threat intel | 2 | 2 | 1 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [PRV](#prv) Prevention (agent modules, report vs block) | 1 | 2 | 1 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [INC](#inc) Alert-to-incident grouping | 1 | 2 | 1 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 2 | 2 | 0 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **all (71)** | **26** | **34** | **11** | **45** | **26** | **0** | **0** | **0** | **0** | **0** | **0** |
 
 Priority: **P0** a wrong guess produces a silent miss in a POV today · **P1** it weakens fidelity, attribution or MTTD · **P2** refinement.
 
@@ -49,9 +49,9 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-ING-01](#pm-ing-01) | P0 | open | When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)? |
-| [PM-ING-02](#pm-ing-02) | P0 | open | How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect? |
-| [PM-ING-03](#pm-ing-03) | P0 | open | Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time? |
+| [PM-ING-01](#pm-ing-01) | P0 | asked | When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)? |
+| [PM-ING-02](#pm-ing-02) | P0 | asked | How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect? |
+| [PM-ING-03](#pm-ing-03) | P0 | asked | Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time? |
 | [PM-ING-04](#pm-ing-04) | P1 | open | What is the typical and worst-case latency from collector acceptance to (a) queryable in XQL, (b) visible to BIOC evaluation, (c) visible to correlation rules, (d) visible to analytics engines? |
 | [PM-ING-05](#pm-ing-05) | P1 | open | For third-party data sources, do analytics engines and correlation rules read the raw dataset or the XDM-modeled view? If XDM, which XDM fields must be populated for a record to be counted (e.g. xdm.source.ipv4, xdm.event.type, xdm.source.user.username)? |
 | [PM-ING-06](#pm-ing-06) | P1 | open | When a modeling rule exists for a vendor/product and the record's field names drift (case, nesting, missing optional fields), does the rule silently produce nulls? Is there any tenant-visible signal for low XDM field coverage? |
@@ -60,7 +60,7 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 #### PM-ING-01
 
-**P0 · open** — When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)?
+**P0 · asked** — When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)?
 
 - **Why we ask:** delivery.py counts 2xx as delivered. If accepted is not the same as parsed, every "delivered" campaign verdict can hide an empty dataset.
 - **What the answer moves:** Add a post-delivery canary row-count probe before a step may claim `delivered`; add a parse-failure code to the delivery taxonomy.
@@ -68,24 +68,27 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
   - *if* accepted can still be dropped → Split `accepted` from `landed` in the verdict; landed requires an XQL hit on the canary.
 - **Settle it in the lab:** POST one well-formed and one malformed record carrying distinct canaries to a lab collector; query both canaries after 10 minutes.
 - **Touches:** `core/eal_simulator/delivery.py`, `all collector-POST emitters`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ING-02
 
-**P0 · open** — How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect?
+**P0 · asked** — How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect?
 
 - **Why we ask:** Analytics-family emitters send a top-level `dataset` hint (analytics_emitter.py:354). If routing is decided by the collector's vendor/product, the hint does nothing and a misconfigured collector sends every record to the wrong dataset while still returning 2xx.
 - **What the answer moves:** Collector preflight checks vendor/product pairing per data source; drop or keep the body hint.
 - **Settle it in the lab:** Send identical records with different `dataset` hints through one collector; see which dataset each lands in.
 - **Touches:** `core/eal_simulator/analytics_emitter.py`, `GET /api/eal/campaigns/{id}/collectors`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ING-03
 
-**P0 · open** — Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time?
+**P0 · asked** — Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time?
 
 - **Why we ask:** Detectors window on time. A record filed under the wrong `_time` falls outside every correlation window and every analytics test period while looking perfectly ingested.
 - **What the answer moves:** Emitter timestamp generation per data source; telemetry-replay of historical datasets; MTTD baselines.
 - **Settle it in the lab:** Emit three canary records stamped now, now-3d, now+1h; compare `_time` and `_insert_time` for each.
 - **Touches:** `all collector-POST emitters`, `infra/modules/aws/telemetry-replay`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ING-04
 
@@ -154,11 +157,11 @@ The engine that links records from different sensors (agent network events, NGFW
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-STI-01](#pm-sti-01) | P0 | open | Which exact fields does the data fusion engine match to link an NGFW traffic/threat log to an XDR agent network event: the full 5-tuple (src IP, src port, dst IP, dst port, protocol), a subset, or the 5-tuple plus host identity? Is matching done on raw fields or XDM fields? |
-| [PM-STI-02](#pm-sti-02) | P0 | open | What time tolerance does stitching allow between the agent network event and the firewall record, and which firewall record does it use: session start, session end, or threat log? Are long-lived sessions only stitched once they end? |
-| [PM-STI-03](#pm-sti-03) | P0 | open | When NAT is in play, which side of the translation does stitching use: the firewall's pre-NAT source (matching the endpoint's local IP) or the post-NAT source? Does the engine read the NGFW's NAT fields (nat source IP/port) to bridge the two? |
-| [PM-STI-04](#pm-sti-04) | P0 | open | For a container or Kubernetes pod egressing through node SNAT, can stitching link the pod's process network event (pod IP) to the firewall session (node IP after SNAT)? If so, by what: container_id, conntrack, an agent-reported translation? |
-| [PM-STI-05](#pm-sti-05) | P0 | open | Does network-endpoint stitching require a PAN-OS NGFW logging through Strata Logging Service, or are third-party firewall logs (HTTP collector or syslog) stitched to agent data too? If third-party works, which vendors and which fields? |
+| [PM-STI-01](#pm-sti-01) | P0 | asked | Which exact fields does the data fusion engine match to link an NGFW traffic/threat log to an XDR agent network event: the full 5-tuple (src IP, src port, dst IP, dst port, protocol), a subset, or the 5-tuple plus host identity? Is matching done on raw fields or XDM fields? |
+| [PM-STI-02](#pm-sti-02) | P0 | asked | What time tolerance does stitching allow between the agent network event and the firewall record, and which firewall record does it use: session start, session end, or threat log? Are long-lived sessions only stitched once they end? |
+| [PM-STI-03](#pm-sti-03) | P0 | asked | When NAT is in play, which side of the translation does stitching use: the firewall's pre-NAT source (matching the endpoint's local IP) or the post-NAT source? Does the engine read the NGFW's NAT fields (nat source IP/port) to bridge the two? |
+| [PM-STI-04](#pm-sti-04) | P0 | asked | For a container or Kubernetes pod egressing through node SNAT, can stitching link the pod's process network event (pod IP) to the firewall session (node IP after SNAT)? If so, by what: container_id, conntrack, an agent-reported translation? |
+| [PM-STI-05](#pm-sti-05) | P0 | asked | Does network-endpoint stitching require a PAN-OS NGFW logging through Strata Logging Service, or are third-party firewall logs (HTTP collector or syslog) stitched to agent data too? If third-party works, which vendors and which fields? |
 | [PM-STI-06](#pm-sti-06) | P1 | open | Does stitching require the agent to have recorded its own network event for the connection, or can a firewall record be linked to a process from other evidence (a DNS query event, the host's IP at that time, an RPC/ETW event)? |
 | [PM-STI-07](#pm-sti-07) | P1 | open | What is the observable output of a successful stitch: fields added to the firewall row (e.g. actor process or causality fields), a link in the network story, a joined row in a specific dataset? What XQL proves "this firewall session was stitched to process X"? |
 | [PM-STI-08](#pm-sti-08) | P1 | open | How do identity sources stitch to endpoints: on UPN, sAMAccountName, email, SID, or a normalized user? What normalization does the engine apply (case, domain prefix, @suffix)? |
@@ -168,7 +171,7 @@ The engine that links records from different sensors (agent network events, NGFW
 
 #### PM-STI-01
 
-**P0 · open** — Which exact fields does the data fusion engine match to link an NGFW traffic/threat log to an XDR agent network event: the full 5-tuple (src IP, src port, dst IP, dst port, protocol), a subset, or the 5-tuple plus host identity? Is matching done on raw fields or XDM fields?
+**P0 · asked** — Which exact fields does the data fusion engine match to link an NGFW traffic/threat log to an XDR agent network event: the full 5-tuple (src IP, src port, dst IP, dst port, protocol), a subset, or the 5-tuple plus host identity? Is matching done on raw fields or XDM fields?
 
 - **Why we ask:** Henry's finding says the full tuple must agree. SIM-MP-006's endpoint query omits the local port (mp-006:131), so either the query is wrong or the port is not part of the key.
 - **What the answer moves:** Which fields every network-shaped emitter and agent step must carry and agree on.
@@ -176,38 +179,43 @@ The engine that links records from different sensors (agent network events, NGFW
   - *if* subset (no src port) → Drop src_port from the stitch contract; stop pinning ephemeral ports.
 - **Settle it in the lab:** Run the same agent connection twice: once with the NGFW record's src port matching, once off by one; see which stitches.
 - **Touches:** `core/engine/stitch_context.py`, `scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml`, `ngfw_eal_emitter`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-STI-02
 
-**P0 · open** — What time tolerance does stitching allow between the agent network event and the firewall record, and which firewall record does it use: session start, session end, or threat log? Are long-lived sessions only stitched once they end?
+**P0 · asked** — What time tolerance does stitching allow between the agent network event and the firewall record, and which firewall record does it use: session start, session end, or threat log? Are long-lived sessions only stitched once they end?
 
 - **Why we ask:** Scenarios declare windows from 10 s (mp-006) to 86400 s. PAN-OS traffic logs are often written at session end, which can be minutes after the agent saw the connect.
 - **What the answer moves:** Timing between the agent step and its firewall leg; scenario window values.
 - **Touches:** `scenarios (correlation_window_seconds)`, `ngfw_eal_emitter`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-STI-03
 
-**P0 · open** — When NAT is in play, which side of the translation does stitching use: the firewall's pre-NAT source (matching the endpoint's local IP) or the post-NAT source? Does the engine read the NGFW's NAT fields (nat source IP/port) to bridge the two?
+**P0 · asked** — When NAT is in play, which side of the translation does stitching use: the firewall's pre-NAT source (matching the endpoint's local IP) or the post-NAT source? Does the engine read the NGFW's NAT fields (nat source IP/port) to bridge the two?
 
 - **Why we ask:** Henry's correction put the source in the endpoint's view. If the engine bridges with NAT fields, emitters must populate both pre- and post-NAT fields consistently, or the bridge breaks.
 - **What the answer moves:** Which NGFW fields carry the endpoint's address; whether emitters must also fill NAT fields.
 - **Touches:** `ngfw_eal_emitter`, `third_party_firewall_emitter`, `core/engine/stitch_context.py`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-STI-04
 
-**P0 · open** — For a container or Kubernetes pod egressing through node SNAT, can stitching link the pod's process network event (pod IP) to the firewall session (node IP after SNAT)? If so, by what: container_id, conntrack, an agent-reported translation?
+**P0 · asked** — For a container or Kubernetes pod egressing through node SNAT, can stitching link the pod's process network event (pod IP) to the firewall session (node IP after SNAT)? If so, by what: container_id, conntrack, an agent-reported translation?
 
 - **Why we ask:** SIM-MP-006 asserts NGFW and container endpoint stitch on 5-tuple + container_id within 10 s. The firewall cannot see container_id, so the bridge has to come from somewhere else.
 - **What the answer moves:** Whether SIM-MP-006 is satisfiable as authored; CDR egress scenario design.
 - **Touches:** `scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml`, `scenarios/cdr/`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-STI-05
 
-**P0 · open** — Does network-endpoint stitching require a PAN-OS NGFW logging through Strata Logging Service, or are third-party firewall logs (HTTP collector or syslog) stitched to agent data too? If third-party works, which vendors and which fields?
+**P0 · asked** — Does network-endpoint stitching require a PAN-OS NGFW logging through Strata Logging Service, or are third-party firewall logs (HTTP collector or syslog) stitched to agent data too? If third-party works, which vendors and which fields?
 
 - **Why we ask:** third_party_firewall_emitter and the NDR plane's `moat_tier: MOAT` claims both lean on the answer.
 - **What the answer moves:** Which stitch claims third-party firewall scenarios may make; MOAT labelling.
 - **Touches:** `third_party_firewall_emitter`, `scenarios/ndr/`, `scenarios/multi_plane/`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-STI-06
 
@@ -281,8 +289,8 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-CAU-01](#pm-cau-01) | P0 | open | How does the causality engine choose the CGO? Which processes count as causality boundaries (services, shells spawned by services, remote sessions, the agent's own children)? When our beacon, running as a systemd service, spawns `sh -c`, which process becomes the CGO of the chain? |
-| [PM-CAU-02](#pm-cau-02) | P0 | open | Does the agent record process image name from the executable (/proc/pid/exe, comm) or from argv[0]? Confirm whether an argv[0] rewrite changes causality_actor_process_image_name or action_process_image_name. |
+| [PM-CAU-01](#pm-cau-01) | P0 | asked | How does the causality engine choose the CGO? Which processes count as causality boundaries (services, shells spawned by services, remote sessions, the agent's own children)? When our beacon, running as a systemd service, spawns `sh -c`, which process becomes the CGO of the chain? |
+| [PM-CAU-02](#pm-cau-02) | P0 | asked | Does the agent record process image name from the executable (/proc/pid/exe, comm) or from argv[0]? Confirm whether an argv[0] rewrite changes causality_actor_process_image_name or action_process_image_name. |
 | [PM-CAU-03](#pm-cau-03) | P1 | open | Do privilege-transition wrappers (runuser, sudo, su, setpriv) continue a causality chain or start a new one? Do they appear as nodes, and does the user change alter the causality actor's primary username? |
 | [PM-CAU-04](#pm-cau-04) | P1 | open | Does the agent drop, sample or collapse very short-lived processes or known system binaries? Is there a minimum process lifetime or a deduplication of identical command lines within a window? |
 | [PM-CAU-05](#pm-cau-05) | P1 | open | For a process launched by cron, a systemd timer or a scheduled task, what becomes the CGO: the scheduler, or the launched process? |
@@ -290,20 +298,22 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 
 #### PM-CAU-01
 
-**P0 · open** — How does the causality engine choose the CGO? Which processes count as causality boundaries (services, shells spawned by services, remote sessions, the agent's own children)? When our beacon, running as a systemd service, spawns `sh -c`, which process becomes the CGO of the chain?
+**P0 · asked** — How does the causality engine choose the CGO? Which processes count as causality boundaries (services, shells spawned by services, remote sessions, the agent's own children)? When our beacon, running as a systemd service, spawns `sh -c`, which process becomes the CGO of the chain?
 
 - **Why we ask:** cgo_anchor names a realistic owner (apache2, winword.exe), but the on-wire CGO is decided by the engine, and mechanics-review H3 says it reads `sh`.
 - **What the answer moves:** Whether cgo_anchor needs a real exec-as-service path or an honest relabel.
 - **Touches:** `core/engine/causality_graph.py`, `agent/beacon`, `scenarios (cgo_anchor)`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-CAU-02
 
-**P0 · open** — Does the agent record process image name from the executable (/proc/pid/exe, comm) or from argv[0]? Confirm whether an argv[0] rewrite changes causality_actor_process_image_name or action_process_image_name.
+**P0 · asked** — Does the agent record process image name from the executable (/proc/pid/exe, comm) or from argv[0]? Confirm whether an argv[0] rewrite changes causality_actor_process_image_name or action_process_image_name.
 
 - **Why we ask:** H3 asserts it does not; that claim is unverified against the product.
 - **What the answer moves:** H3's fix: real exec vs relabel.
 - **Settle it in the lab:** Run `exec -a apache2 sh -c 'id'` under the beacon; read actor and causality image fields for the event.
 - **Touches:** `docs/reference/mechanics-review-2026-07.md (H3)`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-CAU-03
 
@@ -362,8 +372,8 @@ Behavioral IOC rules: a predicate over agent event fields (process image, comman
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-BIO-01](#pm-bio-01) | P0 | open | When a BIOC matches on a command line, which process's command line is evaluated (actor, action/child, causality actor), and does it see the full argv including our identity wrapper (`runuser -l www-data -c '<ttp>'`)? |
-| [PM-BIO-02](#pm-bio-02) | P0 | open | For Windows steps executed as `powershell.exe -EncodedCommand <base64>`, do BIOC/ABIOC command-line conditions see the decoded script anywhere (script block logging, AMSI events, a decoded field), or only the base64 argument? |
+| [PM-BIO-01](#pm-bio-01) | P0 | asked | When a BIOC matches on a command line, which process's command line is evaluated (actor, action/child, causality actor), and does it see the full argv including our identity wrapper (`runuser -l www-data -c '<ttp>'`)? |
+| [PM-BIO-02](#pm-bio-02) | P0 | asked | For Windows steps executed as `powershell.exe -EncodedCommand <base64>`, do BIOC/ABIOC command-line conditions see the decoded script anywhere (script block logging, AMSI events, a decoded field), or only the base64 argument? |
 | [PM-BIO-03](#pm-bio-03) | P1 | open | Are BIOC string comparisons case-sensitive? Which operators are supported (contains, wildcard, regex)? How are quoting, escaping and whitespace normalized in action_process_image_command_line? |
 | [PM-BIO-04](#pm-bio-04) | P1 | open | Where and when is a BIOC evaluated: in the agent, in the cloud on ingest, or both, and what is the typical event-to-alert latency? |
 | [PM-BIO-05](#pm-bio-05) | P1 | open | Do BIOCs deduplicate or suppress repeats (same rule, same host or causality, within N minutes)? If a scenario loops a step 20 times, do we get one alert or twenty? |
@@ -371,15 +381,16 @@ Behavioral IOC rules: a predicate over agent event fields (process image, comman
 
 #### PM-BIO-01
 
-**P0 · open** — When a BIOC matches on a command line, which process's command line is evaluated (actor, action/child, causality actor), and does it see the full argv including our identity wrapper (`runuser -l www-data -c '<ttp>'`)?
+**P0 · asked** — When a BIOC matches on a command line, which process's command line is evaluated (actor, action/child, causality actor), and does it see the full argv including our identity wrapper (`runuser -l www-data -c '<ttp>'`)?
 
 - **Why we ask:** A starts-with or exact-match predicate on the TTP command fails if the evaluated string is the wrapper's command line.
 - **What the answer moves:** Identity wrapper form; how card BIOC logic is written (contains vs starts-with).
 - **Touches:** `agent/identity/harness.go`, `detection_scanner/ttps (biocs[])`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-BIO-02
 
-**P0 · open** — For Windows steps executed as `powershell.exe -EncodedCommand <base64>`, do BIOC/ABIOC command-line conditions see the decoded script anywhere (script block logging, AMSI events, a decoded field), or only the base64 argument?
+**P0 · asked** — For Windows steps executed as `powershell.exe -EncodedCommand <base64>`, do BIOC/ABIOC command-line conditions see the decoded script anywhere (script block logging, AMSI events, a decoded field), or only the base64 argument?
 
 - **Why we ask:** Every Windows pull step uses -EncodedCommand (platform_windows.go:40). If detectors see only base64, every command-line-keyed Windows detection is a manufactured miss.
 - **What the answer moves:** Windows execution form: keep -EncodedCommand, switch to -File with a staged .ps1, or -Command.
@@ -387,6 +398,7 @@ Behavioral IOC rules: a predicate over agent event fields (process image, comman
   - *if* only base64 is visible → Change the executor to stage a .ps1 and run -File; re-verify Windows cards.
 - **Settle it in the lab:** Run one Windows step both ways (-EncodedCommand vs -File) with a BIOC keyed on a distinctive string.
 - **Touches:** `agent/executor/platform_windows.go`, `agent/executor/script.go`, `71 Windows-declaring scenarios`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-BIO-03
 
@@ -443,27 +455,29 @@ PANW-authored, auto-tuned behavioral detections evaluated over causality chains.
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-ABI-01](#pm-abi-01) | P0 | open | Does an ABIOC need a learning or baseline period like an analytics alert, or can it fire on the first occurrence of a rare causality pattern on a fresh tenant? |
-| [PM-ABI-02](#pm-abi-02) | P0 | open | What population is "rare" judged against: the host, the tenant, or PANW's global telemetry? Can a lab tenant with two endpoints ever see a behavior as unusual? |
+| [PM-ABI-01](#pm-abi-01) | P0 | asked | Does an ABIOC need a learning or baseline period like an analytics alert, or can it fire on the first occurrence of a rare causality pattern on a fresh tenant? |
+| [PM-ABI-02](#pm-abi-02) | P0 | asked | What population is "rare" judged against: the host, the tenant, or PANW's global telemetry? Can a lab tenant with two endpoints ever see a behavior as unusual? |
 | [PM-ABI-03](#pm-abi-03) | P1 | open | Are causality context features (e.g. CGO class such as web server or Office app, parent image, user type) inputs to ABIOCs, such that a `sh`-owned chain cannot reproduce a web-shell ABIOC? |
 | [PM-ABI-04](#pm-abi-04) | P1 | open | Do ABIOCs auto-tune per tenant so that repeating a scenario teaches the engine it is normal? How long does that take, and can it be reset? |
 | [PM-ABI-05](#pm-abi-05) | P2 | open | Do ABIOC alerts carry a stable rule identifier in the alert record we can match on, rather than only a name and technique? |
 
 #### PM-ABI-01
 
-**P0 · open** — Does an ABIOC need a learning or baseline period like an analytics alert, or can it fire on the first occurrence of a rare causality pattern on a fresh tenant?
+**P0 · asked** — Does an ABIOC need a learning or baseline period like an analytics alert, or can it fire on the first occurrence of a rare causality pattern on a fresh tenant?
 
 - **Why we ask:** SIM-CDR-009 and SIM-CDR-014 declare ABIOC detections in short lab lifetimes.
 - **What the answer moves:** ABIOC scenario readiness gating (same gate as analytics, or none).
 - **Touches:** `scenarios/cdr/ (SIM-CDR-009, SIM-CDR-014)`, `detection_scanner/ttps (abiocs[])`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ABI-02
 
-**P0 · open** — What population is "rare" judged against: the host, the tenant, or PANW's global telemetry? Can a lab tenant with two endpoints ever see a behavior as unusual?
+**P0 · asked** — What population is "rare" judged against: the host, the tenant, or PANW's global telemetry? Can a lab tenant with two endpoints ever see a behavior as unusual?
 
 - **Why we ask:** Our labs are small; customer POV tenants vary widely.
 - **What the answer moves:** Lab sizing guidance; whether a lab can prove an ABIOC at all.
 - **Touches:** `docs/reference/lab-runbook.md`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ABI-03
 
@@ -514,10 +528,10 @@ Detectors that judge activity against a learned profile: port scans, failed conn
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-ANA-01](#pm-ana-01) | P0 | open | For each analytics alert we bind (Port Scan, Port Sweep, Failed Connections, Impossible traveler - VPN, VPN login Brute-Force attempt, A user connected to a VPN from a new country, A user connected from a new country, Abnormal increase in network-related alerts on the same host): what is the trigger in generatable terms: minimum event count, minimum distinct values (distinct dst ports, hosts, countries), inside what window? |
-| [PM-ANA-02](#pm-ana-02) | P0 | open | How do Activation Period and Training Period compose: does an alert need 14 days of data, 30 days, or 14 days to activate and a rolling 30-day baseline after? Can it fire before training completes? |
-| [PM-ANA-03](#pm-ana-03) | P0 | open | Is the activation and training clock per tenant, per data source, or per entity (user, host)? Does a brand-new user in a tenant that has carried VPN data for 60 days count as baselined? |
-| [PM-ANA-04](#pm-ana-04) | P0 | open | Does attack-shaped synthetic traffic sent during the training period become part of the baseline, so a later identical test reads as normal? |
+| [PM-ANA-01](#pm-ana-01) | P0 | asked | For each analytics alert we bind (Port Scan, Port Sweep, Failed Connections, Impossible traveler - VPN, VPN login Brute-Force attempt, A user connected to a VPN from a new country, A user connected from a new country, Abnormal increase in network-related alerts on the same host): what is the trigger in generatable terms: minimum event count, minimum distinct values (distinct dst ports, hosts, countries), inside what window? |
+| [PM-ANA-02](#pm-ana-02) | P0 | asked | How do Activation Period and Training Period compose: does an alert need 14 days of data, 30 days, or 14 days to activate and a rolling 30-day baseline after? Can it fire before training completes? |
+| [PM-ANA-03](#pm-ana-03) | P0 | asked | Is the activation and training clock per tenant, per data source, or per entity (user, host)? Does a brand-new user in a tenant that has carried VPN data for 60 days count as baselined? |
+| [PM-ANA-04](#pm-ana-04) | P0 | asked | Does attack-shaped synthetic traffic sent during the training period become part of the baseline, so a later identical test reads as normal? |
 | [PM-ANA-05](#pm-ana-05) | P1 | open | What exactly does the Deduplication Period suppress (same alert, same entity pair, same source)? If a scenario is rerun inside it (7 days for impossible traveler, 30 days for new country), will the rerun produce no alert? |
 | [PM-ANA-06](#pm-ana-06) | P1 | open | What does Test Period mean: the aggregation window evaluated, how often the detector evaluates, or both? |
 | [PM-ANA-07](#pm-ana-07) | P1 | open | For new-country and impossible-travel alerts, what geolocation source is used, at what point (ingestion or evaluation), and do private, reserved or documentation IP ranges geolocate at all? |
@@ -528,7 +542,7 @@ Detectors that judge activity against a learned profile: port scans, failed conn
 
 #### PM-ANA-01
 
-**P0 · open** — For each analytics alert we bind (Port Scan, Port Sweep, Failed Connections, Impossible traveler - VPN, VPN login Brute-Force attempt, A user connected to a VPN from a new country, A user connected from a new country, Abnormal increase in network-related alerts on the same host): what is the trigger in generatable terms: minimum event count, minimum distinct values (distinct dst ports, hosts, countries), inside what window?
+**P0 · asked** — For each analytics alert we bind (Port Scan, Port Sweep, Failed Connections, Impossible traveler - VPN, VPN login Brute-Force attempt, A user connected to a VPN from a new country, A user connected from a new country, Abnormal increase in network-related alerts on the same host): what is the trigger in generatable terms: minimum event count, minimum distinct values (distinct dst ports, hosts, countries), inside what window?
 
 - **Why we ask:** The vendor pages publish periods and data sources and no threshold. Our emitters guess at volume and spread. This is the "N occurrences of the same src/dst" class.
 - **What the answer moves:** Emitter volume and spread parameters per alert; the detector readiness gate.
@@ -536,30 +550,34 @@ Detectors that judge activity against a learned profile: port scans, failed conn
   - *if* thresholds are adaptive per tenant → Emit a sweep (graduated volumes) and record which volume fired.
 - **Settle it in the lab:** Graduated sweep: emit 3, 5, 10, 25, 50 distinct ports from one source to one host, one hour apart, on an armed tenant; record which tier fires Port Scan.
 - **Touches:** `core/eal_simulator/analytics_alerts.py`, `third_party_firewall_emitter`, `globalprotect_emitter`, `third_party_vpn_emitter`, `duo_auth_emitter`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ANA-02
 
-**P0 · open** — How do Activation Period and Training Period compose: does an alert need 14 days of data, 30 days, or 14 days to activate and a rolling 30-day baseline after? Can it fire before training completes?
+**P0 · asked** — How do Activation Period and Training Period compose: does an alert need 14 days of data, 30 days, or 14 days to activate and a rolling 30-day baseline after? Can it fire before training completes?
 
 - **Why we ask:** The gate is max(activation, training), which is our inference (analytics_alerts.py:78).
 - **What the answer moves:** GATE_BASIS and the readiness verdict.
 - **Touches:** `core/eal_simulator/analytics_alerts.py`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ANA-03
 
-**P0 · open** — Is the activation and training clock per tenant, per data source, or per entity (user, host)? Does a brand-new user in a tenant that has carried VPN data for 60 days count as baselined?
+**P0 · asked** — Is the activation and training clock per tenant, per data source, or per entity (user, host)? Does a brand-new user in a tenant that has carried VPN data for 60 days count as baselined?
 
 - **Why we ask:** Our emitters invent synthetic principals and hosts (canary_token).
 - **What the answer moves:** Whether synthetic entities can fire profile-based alerts or must reuse real ones.
 - **Touches:** `core/eal_simulator/stitch_params.py`, `identity emitters`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ANA-04
 
-**P0 · open** — Does attack-shaped synthetic traffic sent during the training period become part of the baseline, so a later identical test reads as normal?
+**P0 · asked** — Does attack-shaped synthetic traffic sent during the training period become part of the baseline, so a later identical test reads as normal?
 
 - **Why we ask:** Campaigns can run before a source is armed.
 - **What the answer moves:** Campaign scheduling; refuse attack-shaped emission into an unarmed source.
 - **Touches:** `core/eal_simulator/executor.py`, `core/eal_simulator/analytics_alerts.py`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-ANA-05
 
@@ -640,8 +658,8 @@ Authored, scheduled XQL that produces alerts, can join datasets, and is the mech
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-COR-01](#pm-cor-01) | P0 | open | How are correlation rules scheduled: fixed cadence with a query time-frame lookback, or streaming? What schedule and time-frame values are allowed, and what is the minimum interval? |
-| [PM-COR-02](#pm-cor-02) | P0 | open | Does a correlation rule window on event `_time` or ingestion time? Can a record that arrives late fall outside every evaluated window and never match? |
+| [PM-COR-01](#pm-cor-01) | P0 | asked | How are correlation rules scheduled: fixed cadence with a query time-frame lookback, or streaming? What schedule and time-frame values are allowed, and what is the minimum interval? |
+| [PM-COR-02](#pm-cor-02) | P0 | asked | Does a correlation rule window on event `_time` or ingestion time? Can a record that arrives late fall outside every evaluated window and never match? |
 | [PM-COR-03](#pm-cor-03) | P1 | open | Can one correlation rule join across datasets (xdr_data with an NGFW dataset), and what limits apply (join size, row limits, query time, cost)? |
 | [PM-COR-04](#pm-cor-04) | P1 | open | How does a correlation rule's alert get its fields (name, severity, host, user, IPs), and which mapped fields make it join the same incident as the endpoint alerts? |
 | [PM-COR-05](#pm-cor-05) | P1 | open | What suppression or dedup options does a correlation rule have, and what are the defaults? |
@@ -650,19 +668,21 @@ Authored, scheduled XQL that produces alerts, can join datasets, and is the mech
 
 #### PM-COR-01
 
-**P0 · open** — How are correlation rules scheduled: fixed cadence with a query time-frame lookback, or streaming? What schedule and time-frame values are allowed, and what is the minimum interval?
+**P0 · asked** — How are correlation rules scheduled: fixed cadence with a query time-frame lookback, or streaming? What schedule and time-frame values are allowed, and what is the minimum interval?
 
 - **Why we ask:** Our `correlation_window_seconds` goes down to 10 s and claims to be enforced against "XSIAM's default correlation window" (_schema.yml:380). If rules run on a minutes-scale schedule, the field means something else.
 - **What the answer moves:** Map correlation_window_seconds onto the real schedule and time frame; card correlation_rules[] gain those fields.
 - **Touches:** `scenarios/_schema.yml`, `detection_scanner/ttps (correlation_rules[])`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-COR-02
 
-**P0 · open** — Does a correlation rule window on event `_time` or ingestion time? Can a record that arrives late fall outside every evaluated window and never match?
+**P0 · asked** — Does a correlation rule window on event `_time` or ingestion time? Can a record that arrives late fall outside every evaluated window and never match?
 
 - **Why we ask:** Late arrival is normal for session-end firewall logs and batched cloud audit.
 - **What the answer moves:** Emitter timing; card correlation logic.
 - **Touches:** `detection_scanner/ttps (correlation_rules[])`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-COR-03
 
@@ -727,27 +747,29 @@ Indicator-value matching (hash, IP, domain, URL) against agent and network data,
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-IOC-01](#pm-ioc-01) | P0 | open | Which fields does each IOC type match: is a domain IOC matched against DNS query events, HTTP host, TLS SNI, NGFW URL logs or all of them? Is an IP IOC matched on remote address only, or both directions? |
-| [PM-IOC-02](#pm-ioc-02) | P0 | open | Do IOCs apply retroactively to already-ingested data, or only to events after the indicator is added? How long after adding an indicator does matching start? |
+| [PM-IOC-01](#pm-ioc-01) | P0 | asked | Which fields does each IOC type match: is a domain IOC matched against DNS query events, HTTP host, TLS SNI, NGFW URL logs or all of them? Is an IP IOC matched on remote address only, or both directions? |
+| [PM-IOC-02](#pm-ioc-02) | P0 | asked | Do IOCs apply retroactively to already-ingested data, or only to events after the indicator is added? How long after adding an indicator does matching start? |
 | [PM-IOC-03](#pm-ioc-03) | P1 | open | How do TIM feed indicators become detection IOCs: automatically, by reputation or verdict, by expiration? Does an indicator need a bad or suspicious verdict to match? |
 | [PM-IOC-04](#pm-ioc-04) | P1 | open | Which hash types are matched (sha256 only, or md5/sha1 too), and at which event is a file's hash computed (write, execute, both)? |
 | [PM-IOC-05](#pm-ioc-05) | P2 | open | Do IOC alerts dedupe per host or per indicator, and what is the default indicator expiration? |
 
 #### PM-IOC-01
 
-**P0 · open** — Which fields does each IOC type match: is a domain IOC matched against DNS query events, HTTP host, TLS SNI, NGFW URL logs or all of them? Is an IP IOC matched on remote address only, or both directions?
+**P0 · asked** — Which fields does each IOC type match: is a domain IOC matched against DNS query events, HTTP host, TLS SNI, NGFW URL logs or all of them? Is an IP IOC matched on remote address only, or both directions?
 
 - **Why we ask:** 410 card IOCs. If a domain IOC is only matched on DNS events, an HTTPS step to a pre-resolved IP never fires it.
 - **What the answer moves:** What each step must generate for its IOC to be seen.
 - **Touches:** `detection_scanner/ttps (iocs[])`, `scenarios/tim/`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-IOC-02
 
-**P0 · open** — Do IOCs apply retroactively to already-ingested data, or only to events after the indicator is added? How long after adding an indicator does matching start?
+**P0 · asked** — Do IOCs apply retroactively to already-ingested data, or only to events after the indicator is added? How long after adding an indicator does matching start?
 
 - **Why we ask:** Runbook order and MTTD.
 - **What the answer moves:** Runbook sequencing; an indicator-present preflight.
 - **Touches:** `docs/operator-runbook.md`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-IOC-03
 
@@ -796,18 +818,19 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-PRV-01](#pm-prv-01) | P0 | open | When an agent prevention module blocks, which alert fields and values say so (action, action status), and does report mode raise an alert for the same behavior? |
+| [PM-PRV-01](#pm-prv-01) | P0 | asked | When an agent prevention module blocks, which alert fields and values say so (action, action status), and does report mode raise an alert for the same behavior? |
 | [PM-PRV-02](#pm-prv-02) | P1 | open | Which Linux and macOS prevention modules exist, and which are on in a default profile (e.g. behavioral threat protection, local analysis, reverse shell protection, exploit protection)? |
 | [PM-PRV-03](#pm-prv-03) | P1 | open | When a step is blocked, does downstream telemetry still occur for later steps, and should their expected detections read `not_reached`? |
 | [PM-PRV-04](#pm-prv-04) | P2 | open | Do agent profile exceptions suppress both prevention and detection alerts, or prevention only? |
 
 #### PM-PRV-01
 
-**P0 · open** — When an agent prevention module blocks, which alert fields and values say so (action, action status), and does report mode raise an alert for the same behavior?
+**P0 · asked** — When an agent prevention module blocks, which alert fields and values say so (action, action status), and does report mode raise an alert for the same behavior?
 
 - **Why we ask:** The two-witness rule reads the tenant's prevented action (outcome.py:28).
 - **What the answer moves:** The tenant witness in the outcome axis; paired report/block runs.
 - **Touches:** `core/engine/outcome.py`, `core/connectors/xsiam.py`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-PRV-02
 
@@ -855,18 +878,19 @@ The logic that groups alerts into incidents. Our correlation-rate KPI asserts ">
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-INC-01](#pm-inc-01) | P0 | open | What decides whether two alerts land in the same incident: shared causality_id, host, user, time proximity, or a grouping key per alert source? Is there a maximum grouping window? |
+| [PM-INC-01](#pm-inc-01) | P0 | asked | What decides whether two alerts land in the same incident: shared causality_id, host, user, time proximity, or a grouping key per alert source? Is there a maximum grouping window? |
 | [PM-INC-02](#pm-inc-02) | P1 | open | Do informational and low severity alerts (Port Scan is Informational) open incidents, or only attach to existing ones? |
 | [PM-INC-03](#pm-inc-03) | P1 | open | Do alerts ingested from third-party sources join incidents with agent alerts, and on what keys? |
 | [PM-INC-04](#pm-inc-04) | P2 | open | How is incident scoring (SmartScore, starring) computed, and is it exposed in the incident record? |
 
 #### PM-INC-01
 
-**P0 · open** — What decides whether two alerts land in the same incident: shared causality_id, host, user, time proximity, or a grouping key per alert source? Is there a maximum grouping window?
+**P0 · asked** — What decides whether two alerts land in the same incident: shared causality_id, host, user, time proximity, or a grouping key per alert source? Is there a maximum grouping window?
 
 - **Why we ask:** The correlation-rate KPI asserts >= N planes under one incident_id; 21 scenarios score that way.
 - **What the answer moves:** Which shared entity each multi-plane scenario must plant across planes.
 - **Touches:** `core/connectors/measures.py`, `scenarios/multi_plane/`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-INC-02
 
@@ -911,26 +935,28 @@ The state of the tenant that decides whether a detector can fire at all: which c
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-TEN-01](#pm-ten-01) | P0 | open | Which detection content is on by default in a fresh XSIAM tenant (PANW BIOCs, ABIOCs, analytics, correlation rules from content packs), and how can the API list what is enabled, so a preflight can tell "not enabled" from "missed"? |
-| [PM-TEN-02](#pm-ten-02) | P0 | open | Which agent profile settings change what telemetry is collected (network event collection, file monitoring scope, command-line capture), and is there a maximum captured command-line length? |
+| [PM-TEN-01](#pm-ten-01) | P0 | asked | Which detection content is on by default in a fresh XSIAM tenant (PANW BIOCs, ABIOCs, analytics, correlation rules from content packs), and how can the API list what is enabled, so a preflight can tell "not enabled" from "missed"? |
+| [PM-TEN-02](#pm-ten-02) | P0 | asked | Which agent profile settings change what telemetry is collected (network event collection, file monitoring scope, command-line capture), and is there a maximum captured command-line length? |
 | [PM-TEN-03](#pm-ten-03) | P1 | open | Can the detection-content version and agent version be read through the API, so each run records the content it was scored against? |
 | [PM-TEN-04](#pm-ten-04) | P1 | open | Which licences or add-ons gate which detection engines (identity analytics, cloud detection, third-party ingestion volume)? |
 
 #### PM-TEN-01
 
-**P0 · open** — Which detection content is on by default in a fresh XSIAM tenant (PANW BIOCs, ABIOCs, analytics, correlation rules from content packs), and how can the API list what is enabled, so a preflight can tell "not enabled" from "missed"?
+**P0 · asked** — Which detection content is on by default in a fresh XSIAM tenant (PANW BIOCs, ABIOCs, analytics, correlation rules from content packs), and how can the API list what is enabled, so a preflight can tell "not enabled" from "missed"?
 
 - **Why we ask:** A disabled detector reads exactly like a miss.
 - **What the answer moves:** A content-enabled rung on the Readiness ladder.
 - **Touches:** `core/api/health.py`, `ui Readiness view`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-TEN-02
 
-**P0 · open** — Which agent profile settings change what telemetry is collected (network event collection, file monitoring scope, command-line capture), and is there a maximum captured command-line length?
+**P0 · asked** — Which agent profile settings change what telemetry is collected (network event collection, file monitoring scope, command-line capture), and is there a maximum captured command-line length?
 
 - **Why we ask:** Several steps are long one-liners; a truncated command line breaks a contains-match.
 - **What the answer moves:** Step command length; profile preflight.
 - **Touches:** `scenarios (step commands)`
+- **Asked in:** PMQ-2026-11-10-p0-seed
 
 #### PM-TEN-03
 
