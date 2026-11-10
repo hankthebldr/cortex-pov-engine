@@ -329,9 +329,48 @@ rather than assumes:
      `IDENTITY NOT HONOURED` degradation in the run record, as the Windows beacon
      does, rather than failing inside `runuser` with a stderr line.
 
-Not carried over from the lab: live cryptomining to real pools, and real malware
-ELF samples from `timb-machine/linux-malware`. Those need their own decision
-(§10).
+### Realism — the governing rule
+
+**[Henry]** Everything should be as real as possible. Where a real tool, a real
+binary or a real destination exists, the scenario uses it. An inert stand-in is
+allowed only when the real thing cannot be delivered, and the scenario must then
+say which detections the stand-in cannot reach.
+
+**[Henry]** That includes what the lab did: a real `xmrig` mining against a
+public pool, and real malware ELF samples (the lab used DeimosC2, Conti and
+BPFDoor from `timb-machine/linux-malware`). Both carry over.
+
+The **[call]**s below are how they carry over. Each is a default Henry has not
+confirmed:
+
+- **Bytes come from the payload shelf, pinned by sha256**, not from GitHub at
+  dispatch. Same realism on the target, and the sample that ran is provably the
+  one that was meant to. The shelf's `kind: file` covers a single ELF; `xmrig`
+  ships as an archive, which the shelf rejects (`TA-08`), so the miner either
+  needs a single-binary source or stays an image pull as in the lab. Builder to
+  verify, not assume.
+- **A separate consent key** (`live_sample_authorized`), distinct from
+  `simulation_authorized`, required at launch and recorded on the run. Running
+  a known ransomware binary is a different decision from running `linpeas`.
+- **Destructive-class samples are refused on a pod that can reach the node.**
+  A ransomware sample in a `privileged` + `hostPID` pod can encrypt the node
+  through `/proc/1/root`, read-only mount or not. The lab ran its samples in
+  non-root, drop-ALL, read-only-rootfs containers; this keeps that containment:
+  ransomware-class samples launch only on `baseline`. Miners and implants are
+  not restricted by profile.
+- **No wallet or pool is baked in.** The operator supplies both at launch. The
+  scenario refuses to run without them, so CortexSim never mines to an address
+  nobody chose.
+- **The scenario records what it cannot control.** A real implant calls out to
+  whatever its build was configured for. That destination is not ours, may be
+  dead, and may be live. The run record names it.
+- **Staging has a side effect on the DC's own machine.** Real samples on the
+  shelf sit on the SimCore host, where an XDR agent may quarantine them. A
+  quarantined shelf file must surface as `PAYLOAD_NOT_STAGED`, never as a run
+  that started without its sample.
+
+These are scenario content plus shelf work, and they depend on the agent
+existing. They are sequenced as phase 1b (§9), their own branch.
 
 ---
 
@@ -400,6 +439,7 @@ privileged with the host filesystem mounted. The design must say so plainly:
 | Phase | Contents | Closes |
 |---|---|---|
 | **1 — this design** | Manifest endpoint, profiles + consent, init fetch, prepare stage, native enrollment, runtime facts, PID 1, lifetime, console tab, `kind` proof | An enrolled beacon in a pod that detonates the CDR corpus |
+| 1b | Live-sample scenarios (real miner, real malware ELFs) under the realism rule in §6: shelf entries, consent key, profile restriction, scenarios and TTP cards | The lab's `cdr.yml` and `attk-k8.yml` content, dispatched and measured |
 | 2 | Third-party victim images (vulhub, juice-shop): same init handoff, with `start.sh` launching the image's own entrypoint beside the beacon, so the vulnerable service is the real parent process. Per-image wrappers, each with its own proof | The `httpd → sh` row of the CrowdStrike comparison |
 | 3 | Self-running mode: scenario payloads carried in the manifest, fired on a timer with no SimCore | The no-control-plane row |
 | later | Prebuilt CortexSim image for clusters that cannot reach a distro mirror; DaemonSet variant; a published public manifest | — |
@@ -463,12 +503,9 @@ is *authored, not proven*, and `tenant-verified` stays **0**.
   enroll for a cloud-native target, which becomes "two paths"), CLAUDE.md,
   CHANGELOG.
 
-## 12 · Open with Henry
+## 12 · Settled with Henry (2026-11-10)
 
-1. **Miners and live malware.** The lab ran real `xmrig` against public pools
-   and executed real malware ELF samples. Carry those over as scenarios, replace
-   them with inert equivalents (a sinkholed Stratum handshake already exists as
-   `SIM-NDR` content; WildFire test files are already used), or leave them in the
-   lab repos?
-
-**Settled:** gated profiles by URL with query-string consent (§5), Henry, 2026-11-10.
+1. Gated profiles are served by URL with query-string consent (§5).
+2. Real miners and real malware samples carry over, and realism is the governing
+   rule for all content (§6). The safeguards listed there are the author's calls
+   and are Henry's to veto.
