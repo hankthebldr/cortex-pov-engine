@@ -444,8 +444,11 @@ export async function postRun(body) {
   })
 }
 
+/** Page size for GET /api/runs (SimCore's LIST_RUNS_MAX_LIMIT). */
+export const RUNS_PAGE_LIMIT = 5000
+
 /**
- * GET /api/runs[?fields=summary]
+ * GET /api/runs[?fields=summary], every page.
  *
  * `fields: 'summary'` asks for the list projection without each run's full
  * `output` (rows carry `output_bytes` + `output_tail` instead). An older
@@ -453,13 +456,30 @@ export async function postRun(body) {
  * still handle. Anything that needs a run's whole transcript reads
  * `getRun(id)` — never the list.
  *
+ * SimCore pages the list (default 500 rows) and reports `total`. Reading only
+ * the first page silently dropped a deployment's oldest runs once it passed
+ * 500, so this follows `total` until every run is read. A body that is neither
+ * the legacy bare array nor `{runs: [...]}` is an unrecognised shape and
+ * throws, rather than reading as "no runs".
+ *
  * @param {{fields?: 'summary'}} [opts]
  * @returns {Promise<Array>}
  */
 export async function getRuns({ fields } = {}) {
-  const qs = fields ? `?fields=${encodeURIComponent(fields)}` : ''
-  const data = await request(`/api/runs${qs}`)
-  return Array.isArray(data) ? data : data?.runs ?? []
+  const all = []
+  for (let page = 0; page < 100; page += 1) {
+    const qs = new URLSearchParams({ limit: String(RUNS_PAGE_LIMIT), offset: String(all.length) })
+    if (fields) qs.set('fields', fields)
+    const data = await request(`/api/runs?${qs}`)
+    if (Array.isArray(data)) return data // a pre-paging SimCore: one unpaged list
+    if (!data || !Array.isArray(data.runs)) {
+      throw new Error('GET /api/runs returned an unrecognised shape (no runs array)')
+    }
+    all.push(...data.runs)
+    const total = Number.isInteger(data.total) ? data.total : null
+    if (total === null || data.runs.length === 0 || all.length >= total) return all
+  }
+  return all
 }
 
 /**
