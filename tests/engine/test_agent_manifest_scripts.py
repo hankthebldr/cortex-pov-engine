@@ -1,6 +1,8 @@
 import os
+import platform
 import stat
 import subprocess
+import time
 
 import pytest
 
@@ -41,7 +43,7 @@ def test_fetch_pins_the_carried_digest_and_never_asks_the_server_for_one():
 
 def test_start_guards_arch_before_exec_and_bounds_package_calls():
     s = start_script(arch="amd64", prepare="packages", expires_at=EXP, profile="baseline")
-    assert s.index("ARCH_MISMATCH") < s.index("/cortexsim/cortexsim-agent --server")
+    assert s.index("ARCH_MISMATCH") < s.index('"$AGENT" --server')
     assert "exec /cortexsim/cortexsim-agent" not in s
     assert "trap " in s and "--subreaper" in s and "LIFETIME_EXPIRED" in s
     assert "timeout 120" in s and "PREPARE_FAILED" in s
@@ -113,3 +115,74 @@ def test_fetch_strips_trailing_slash_before_building_the_url(tmp_path):
     args = seen.read_text()
     assert "http://simcore:8888/api/agents/binary?os=linux&arch=amd64" in args
     assert "//api" not in args
+
+
+# ── supervision, executed for real under sh ─────────────────────────────────
+_HOST_ARCH = {"x86_64": "amd64", "AMD64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(
+    platform.machine(), "amd64"
+)
+
+
+def _start(tmp_path, beacon_body):
+    ready = tmp_path / "ready"
+    beacon = tmp_path / "beacon"
+    beacon.write_text("#!/bin/sh\n" + beacon_body.replace("@READY@", str(ready)))
+    beacon.chmod(beacon.stat().st_mode | stat.S_IEXEC)
+    script = tmp_path / "start.sh"
+    script.write_text(
+        start_script(arch=_HOST_ARCH, prepare="none", expires_at=EXP, profile="baseline")
+    )
+    out = tmp_path / "out"
+    env = {
+        **os.environ,
+        "CORTEXSIM_AGENT_BIN": str(beacon),
+        "CORTEXSIM_TERMLOG": str(tmp_path / "termlog"),
+    }
+    proc = subprocess.Popen(
+        ["sh", str(script)], env=env, stdout=out.open("w"), stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return proc, out, ready
+
+
+def _wait_for(pred, timeout):
+    end = time.time() + timeout
+    while time.time() < end:
+        if pred():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+_TERM_EXITS_ZERO = 'trap \'kill $s 2>/dev/null; exit 0\' TERM\nsleep 30 &\ns=$!\ntouch @READY@\nwait $s\n'
+
+
+def test_beacon_exit_code_is_passed_through(tmp_path):
+    proc, out, _ = _start(tmp_path, "exit 3\n")
+    assert proc.wait(timeout=10) == 3
+    assert "LIFETIME_EXPIRED" not in out.read_text()
+
+
+def test_term_that_makes_the_beacon_exit_zero_is_a_shutdown_not_an_expiry(tmp_path):
+    proc, out, ready = _start(tmp_path, _TERM_EXITS_ZERO)
+    try:
+        assert _wait_for(ready.exists, 5)
+        proc.terminate()
+        assert proc.wait(timeout=5) == 0
+        assert "LIFETIME_EXPIRED" not in out.read_text()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_unprompted_beacon_exit_zero_idles_until_termed(tmp_path):
+    proc, out, _ = _start(tmp_path, "exit 0\n")
+    try:
+        assert _wait_for(lambda: "LIFETIME_EXPIRED" in out.read_text(), 5)
+        time.sleep(1)
+        assert proc.poll() is None  # still idling, not crash-looping
+        proc.terminate()
+        assert proc.wait(timeout=2) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()

@@ -151,7 +151,9 @@ _PREPARE_PACKAGES = """STATUS=/cortexsim/prepare.status
 PREP_BAD=0
 pf() { echo "PREPARE_FAILED $*" >> "$STATUS"; PREP_BAD=1; }
 bound() {
-  if command -v timeout >/dev/null 2>&1; then timeout 120 "$@"; else "$@"; fi
+  # Background + wait so a TERM trap fires now, not after a long apt/apk run.
+  if command -v timeout >/dev/null 2>&1; then timeout 120 "$@" & else "$@" & fi
+  wait $!
 }
 if command -v apt-get >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
@@ -197,17 +199,24 @@ if [ "$HOST_ARCH" != "@@ARCH@@" ]; then
   exit @@EXIT@@
 fi
 export PATH=/cortexsim/bin:$PATH
+# Installed before prepare so a TERM during a long package run ends the pod promptly.
+# Before the beacon exists the handler just exits 143; afterwards it forwards TERM
+# and records that termination was requested, so a clean exit 0 caused by that TERM
+# is a shutdown, not a lifetime expiry.
+pid=""
+TERMED=0
+trap 'TERMED=1; if [ -n "$pid" ]; then kill -TERM $pid 2>/dev/null; else exit 143; fi' TERM INT
 @@PREPARE@@
-/cortexsim/cortexsim-agent --server "$(cat /secret/server)" --enroll-token-file /secret/token --state-dir /cortexsim/state --expires-at @@EXPIRES@@ --posture-profile @@PROFILE@@ --prepare-status-file /cortexsim/prepare.status --subreaper --long-poll 30 --stream-output &
+AGENT="${CORTEXSIM_AGENT_BIN:-/cortexsim/cortexsim-agent}"
+"$AGENT" --server "$(cat /secret/server)" --enroll-token-file /secret/token --state-dir /cortexsim/state --expires-at @@EXPIRES@@ --posture-profile @@PROFILE@@ --prepare-status-file /cortexsim/prepare.status --subreaper --long-poll 30 --stream-output &
 pid=$!
-trap 'kill -TERM $pid 2>/dev/null' TERM INT
 wait $pid
 rc=$?
 while kill -0 $pid 2>/dev/null; do
   wait $pid
   rc=$?
 done
-if [ "$rc" -eq 0 ]; then
+if [ "$rc" -eq 0 ] && [ "$TERMED" = 0 ]; then
   echo LIFETIME_EXPIRED
   trap 'exit 0' TERM INT
   while :; do
