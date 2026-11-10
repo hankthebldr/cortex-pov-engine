@@ -73,15 +73,42 @@ Standard structured error envelope across the codebase:
 errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"INTERNAL_ERROR","detail":<str>}`
 (`core/main.py` global handler). `CryptoError` → `500 {"code":"CRYPTO_ERROR"}`.
 
+**Cross-cutting refusals (added 2026-11, beta-readiness pass).** These apply
+before or across routers:
+
+| Code | HTTP | Where | Meaning / fix |
+|---|---|---|---|
+| `HOST_NOT_ALLOWED` | 400 | **every route** (outermost ASGI middleware, `core/security/host_guard.py`) | The `Host` header is not `localhost` / `127.0.0.1` / `::1`, an IP literal, this machine's hostname/FQDN, or a name in `CORTEXSIM_ALLOWED_HOSTS` (`*.x` = subdomains, `*` disables). This is the DNS-rebinding guard. Inside the container the hostname is the container id, so a DC browsing to the jumpbox by name, a beacon started with `--server http://JUMPBOX:8888` and an installer's telemetry POST are all refused until that name is listed. `scripts/dev-up.sh` seeds the list when it writes `.env`. |
+| `API_UNAUTHENTICATED` | — (health code) | `/api/health` → `components.api_auth` | The API is unauthenticated (SEC-01 open). **Permanently `degraded` by design**, so every current deployment's overall `status` is `degraded`. Any *other* degraded component is a real fault. |
+| `MASTER_KEY_MISMATCH` | — (health code) | `/api/health` → `components.master_key` | A stored credential no longer decrypts under `CORTEXSIM_SECRET`, typically after `.env` was regenerated over a surviving `simcore_db` volume. |
+| `BAD_TOOL_PARAM` | 400 | `POST /api/tools/{tool}/start` | Caller `params` may fill only the placeholders the run template leaves open. A registry key, an unreferenced key, a value starting `-` or carrying whitespace, or a `*_path` outside `CORTEXSIM_BASE_DIR` is refused, and nothing is spawned. This closed SEC-02, a verified root RCE through `params.binary`. |
+| `INSTALL_IN_PROGRESS` | 409 | `POST /api/tools/{tool}/install` | One install at a time; it runs off the event loop. |
+| `XQL_WRITE_STAGE_REFUSED` | 400 | `POST /api/xsiam/tenants/{name}/xql`, `…/operations/OP-XQL-START-XQL-QUERY` (now tagged body-inspected), the verifier runners, and Composer draft save | The query carries an XQL `target` stage, which writes a dataset or lookup. Enforced inside `XsiamClient.start_xql_query`, under 16 quote/comment/escape readings; refused if any one reading sees a `target`. |
+| `RESERVED_SECRET_NAME` | 400 | `PUT /api/credentials/secrets` | The `__cortexsim__/` namespace holds the master-key check row (was a 500). |
+| `VALIDATION_ERROR` | 422 | `POST /api/infra/generate` | `dc_ssh_cidr` shorter than /16 (IPv4) or /48 (IPv6); the same CIDR also gates port 8888. |
+| `VALIDATION_ERROR` | 422 | `POST` / `PUT /api/scenarios/drafts` | A control character (CR/LF, tab, NUL, ESC, DEL, NEL, U+2028/2029) in a single-line field: name, author, tags, step id/name, or detection description / `detection_id` / `ttp_ref`. `command` stays multi-line. |
+
+CORS is **not mounted** unless `CORTEXSIM_CORS_ORIGINS` names origins, and it
+never allows credentials. Compose publishes on `${CORTEXSIM_BIND:-0.0.0.0}`.
+`X-Forwarded-For` is read only from peers inside `CORTEXSIM_TRUSTED_PROXIES`
+(CIDRs, empty default), right to left. A malformed value means requests that
+carry the header record no `last_ip` (logged once). uvicorn's own
+`--forwarded-allow-ips` (default `127.0.0.1`) can rewrite `request.client`
+before this code runs.
+
 ### 1.1 Health (app-level, `core/main.py`)
 
 | Method | Full path | Purpose | Response |
 |--------|-----------|---------|----------|
-| GET | `/api/health` | Liveness probe | `{"status":"ok","version":"1.0.0"}` |
+| GET | `/api/health` | One diagnostic surface, zero outbound calls | Always HTTP 200: `{"status":"ok"\|"degraded", "version", "commit", "env", "components":{…}, "degraded_components":[…], "checked":[17 keys], "not_checked":[…]}`. **`status` reads `degraded` on every deployment today** because `api_auth` is `API_UNAUTHENTICATED` by design. |
 
-> **GAP-API-007:** `version` is hard-coded `"1.0.0"`; the report footer says
-> `CortexSim v1.0`. No build/commit stamp. The UI (`AppConsole.jsx:115`) notes
-> health "doesn't yet expose sensor status."
+> The response now carries `version` and `commit` (GAP-API-007 is closed).
+> The 17 `checked` components are `db`, `scenario_catalog` (active corpus;
+> `drafts` / `by_status` beside it), `ttp_catalog`, `assertion_catalog`,
+> `adapter_catalog`, `uctc_registry`, `identity_spec`, `eal`,
+> `xsiam_operation_catalog`, `payload_shelf`, `agent_binaries`, `agents`,
+> `task_queue`, `master_key`, `integrations`, `eal_collectors` and
+> `api_auth`.
 
 ### 1.2 Scenarios (`core/api/scenarios.py`, prefix `/scenarios`)
 
@@ -90,7 +117,7 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 | GET | `/api/scenarios` | List scenarios (**summary projection**); optional filters | query: `plane`, `uc_ref`, `ttp_ref`, `entitlement` | `{"scenarios":[<summary>],"total":N,"projection":"summary"}` |
 | GET | `/api/scenarios/{scenario_id}` | Single scenario detail (**full document**) | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
 | GET | `/api/scenarios/{scenario_id}/infra-hints` | Resolve `external_tools[].adapter_ref` → IaC module suggestions | — | `{scenario_id, plane, adapter_refs[], resolved_adapters[], unresolved_refs[], suggested_modules[]}` |
-| GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=bash\|k8s\|powershell\|auto` (default `auto`) | `PlainTextResponse` shell/`.ps1`/yaml w/ `Content-Disposition`; 400 `INVALID_FORMAT`; 409 `BUNDLE_TARGET_UNSATISFIABLE` |
+| GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=auto\|bash\|powershell\|k8s` (default `auto`) | `PlainTextResponse` shell/`.ps1`/yaml w/ `Content-Disposition` + `X-CortexSim-Bundle-Target`; 400 `INVALID_FORMAT`; 409 `BUNDLE_TARGET_UNSATISFIABLE` (reason codes incl. `MIXED_DIALECT`) / `PUSH_NOT_SUPPORTED` |
 
 - `plane` is upper-cased server-side; `uc_ref` exact-match; `ttp_ref` filtered in
   Python against the ORM rows (so the list projection does not affect it).
@@ -115,6 +142,20 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   and the fix. `k8s` is gated on the POSIX resolution (its Job runs `/bin/bash -c`
   in `ubuntu:22.04`). `X-CortexSim-Bundle-Target` is always set;
   `X-CortexSim-Bundle-Alternates` appears when both targets are emittable.
+- **`bundle_targets` (2026-11).** `GET /api/scenarios/{id}` and every
+  `GET /api/scenarios` row carry `bundle_targets: ["posix"|"windows" …]`,
+  computed by the same `emittable_targets()` the download route gates on, so
+  the two cannot disagree. A `push_supported: false` scenario reports `[]`,
+  because the route refuses it with `PUSH_NOT_SUPPORTED` whatever its content
+  could emit. The console's launch preflight keys platform compatibility on
+  this field, not on step `platforms` labels. Counted 2026-11-10: 13 scenarios
+  carry `windows` (9 both, 4 windows-only), 179 are posix-only, and 1
+  (`SIM-MP-030`) emits neither.
+- **`MIXED_DIALECT` (2026-11).** A Windows step whose text is structurally both
+  cmd and PowerShell, for example `%TEMP%` plus a `#` comment, runs correctly
+  under neither interpreter. It is now named in the
+  `BUNDLE_TARGET_UNSATISFIABLE` detail with reason `MIXED_DIALECT` rather
+  than guessed into one shell.
 
 ### 1.3 Runs (`core/api/runs.py`, prefix `/runs`)
 
@@ -125,17 +166,17 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
-| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?}`; 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
+| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?}`; 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` / `PULL_TARGET_UNSATISFIABLE` / `PULL_TARGET_OS_UNRECOGNISED` / `TARGET_AGENT_NOT_ENROLLED` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
-| GET | `/api/runs` | List all runs (newest first) | — | `{"runs":[<run.to_dict()>],"total":N}` |
+| GET | `/api/runs` | List runs, newest first, paged | query: `fields=summary?`, `limit` (default 500, max 5000), `offset` | `{"runs":[<row>],"total":N}`. `total` is the number of runs, not the page length. Every row carries `expected_detections` + `detected_count`. `fields=summary` drops `output` and adds `output_bytes` + `output_tail` (last 2 KB). |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}}`; 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
 | GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used}`; 404 |
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
-| POST | `/api/runs/{run_id}/output` | Agent streams output (append) | `OutputRequest`: `{output}` | `{"status":"ok","run_id"}`; 404 |
-| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: `{"status":<terminal>,"run_id","already_terminal":true}`; 404 `RUN_NOT_FOUND` |
+| POST | `/api/runs/{run_id}/output` | Agent streams output (append), bounded | `OutputRequest`: `{output}` | `{"status":"ok","run_id","chunk_truncated","offered_bytes","accepted_bytes"}`; 404. A chunk over 1 MiB is **accepted and cut**, never 422. |
+| POST | `/api/runs/{run_id}/complete` | Agent reports completion | `CompleteRequest`: `{exit_code, summary, steps[]?}` (`steps[]` is per-step host evidence, §1.3.1; an old beacon omits it; step `reason` accepts `PLATFORM_UNSATISFIABLE`) | last endpoint: `{"status":"complete"\|"failed","run_id","tc_verdict"}`; fan-out still owed endpoints: `{"status","run_id","pending_endpoints"}`; run already finished: **409 `RUN_ALREADY_TERMINAL`** with `detail.already_terminal: true`; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification against a registered XSIAM tenant (outbound XQL) | query: `force=0\|1` | `{run_id, tc_verdict, reverified, tenant, queries_issued, reason?}`; 200 + `pending` + `reason:"no_tenant_integration"` when no credential; 404 `RUN_NOT_FOUND` |
 | POST | `/api/runs/{run_id}/abort` | Operator-initiated abort | — | `{"status":"aborted"\|<terminal>,"run_id","was_terminal"}`; 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/control` | Agent stop-signal poll | — | `{"abort":bool,"run_id","status"}` |
@@ -159,9 +200,46 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   `failed` fan-out still owed endpoints keeps accepting them. On a run that
   already finished (`complete`, `failed` with `completed_at`, `staged`,
   `aborted`, or failed by an `AGENT_CANNOT_STAGE_ARTIFACTS` refusal) a late or
-  duplicate `/complete` is a 200 no-op with `already_terminal: true`: status,
-  `completed_at`, output and verdict are unchanged, and nothing is published or
-  re-scored.
+  duplicate `/complete` is **`409 RUN_ALREADY_TERMINAL`** (changed 2026-11, OPS-03;
+  it was a 200 no-op). Status, `completed_at`, output and verdict are unchanged,
+  and nothing is published or re-scored. The beacon now **retries** `/complete`,
+  and a 200 cannot be told apart from "accepted". The beacon treats 409 as done.
+  **Consequence (open, owner to decide):** once `/abort` has made a run terminal,
+  the beacon's `/complete` is ignored. `step_outcomes` therefore never records
+  `termination=aborted` for the aborted step, and the host evidence of the kill
+  is dropped. That may matter for the prevention two-witness rule.
+- **Output bounds (2026-11, SEC-14 / OPS-06).** A chunk over 1 MiB is accepted and
+  cut. Every step frame line (`=== STEP`, `=== ARTIFACT STAGING`,
+  `--- exit_code=`) and every line carrying an execution-integrity marker
+  (`!! `, `__CORTEXSIM`, `cortexsim-`, `IDENTITY NOT HONOURED`, …) is kept.
+  Ordinary lines are kept from the top until the budget is spent, and
+  `[OUTPUT CHUNK TRUNCATED: N of M bytes kept …]` is appended. The cut runs in a
+  worker thread. Stored output is capped at 32 MiB per run, and past the cap the
+  same frame and integrity lines still survive.
+- **Never executed is never matched (OPS-01).** A launch refused after seeding
+  (`LAUNCH_REFUSED`) and an orphan failed by `rehydrate()` (`TASK_LOST_ON_RESTART`)
+  have their Results stamped `not_executed`. The same holds for a run still
+  queued or aborted before delivery, because reconcile drops beacon-step rows
+  whose task no beacon collected (`delivered_at` NULL). An alert pasted into
+  `/observations` for such a run is never credited.
+- **Abandoned runs (OPS-03).** A delivered run is reaped with a `BEACON ABANDONED
+  TASK` marker only when all four hold: its launch target is alive; its control
+  channel has been silent for `CORTEXSIM_BEACON_LOST_AFTER_SECONDS`; no task for
+  it is still queued; and every endpoint in its routing ledger has polled
+  `/tasks` since it could have collected its task. The marker says the
+  `/complete` never arrived and lists the possible causes: a SimCore restart, a
+  beacon restart, or a drop on the wire.
+- **Pull dispatch by target OS (2026-11).** Each task step now carries `shell`
+  (`powershell` | `cmd` | absent for POSIX), `resolved_from` (`primary` |
+  `neutral` | `variant:<os>`) and `platform_variants`. The command dispatched is the
+  one the push generator's resolver picks for `Agent.os`. A scenario the
+  target OS cannot satisfy is refused **before** any Result is seeded:
+  `409 PULL_TARGET_UNSATISFIABLE` names the unresolved steps,
+  `PULL_TARGET_OS_UNRECOGNISED` means the agent reports no OS we can target,
+  and `TARGET_AGENT_NOT_ENROLLED` covers a single-endpoint launch at an
+  unenrolled agent, or a composed run's per-step `target`. A variant step's
+  output carries `!! PLATFORM VARIANT`: its expected detections were authored
+  against a different command.
 - **`/abort`** (GAP-API-001, **closed 2026-06-08**) transitions a `pending`/`running`
   run to the `aborted` state, stamps `completed_at`, dequeues the task via
   `orchestrator.abort(run_id)`, and publishes a `run.status` SSE frame. It is
@@ -418,7 +496,7 @@ get it.
 
 | Method | Full path | Purpose | Request | Response |
 |--------|-----------|---------|---------|----------|
-| GET | `/api/agents/install` | Generate ready-to-run installer script | query: `os=linux\|macos\|darwin\|windows`, `token?`, `id`, `server?`, `interval`, `mode=service\|foreground`, `uninstall=0\|1` | `PlainTextResponse` bash (`.sh`) or PowerShell (`.ps1`); 400 `BAD_OS` |
+| GET | `/api/agents/install` | Generate ready-to-run installer (or uninstaller) script | query: `os=linux\|macos\|darwin\|windows`, `token?`, `id`, `server?`, `interval`, `mode=service\|foreground`, `uninstall=0\|1` | `PlainTextResponse` bash (`install-cortexsim-agent.sh`) or ASCII PowerShell (`install-cortexsim-agent.ps1`). `uninstall=1` gives `uninstall-cortexsim-agent.ps1` for `os=windows`, else the bash `.sh`. Structured 400s: `BAD_OS`, `BAD_MODE`, `BAD_AGENT_ID`, `BAD_SERVER`, `BAD_TOKEN`, `BAD_INTERVAL` (below) |
 | GET | `/api/agents/binaries` | Inventory the prebuilt beacon shelf | — | `{"binaries":[{os,arch,filename,size_bytes,sha256,modified_at}],"total":N}` |
 | GET | `/api/agents/binary` | Download a prebuilt beacon | query: `os`, `arch` (`uname` spellings accepted) | `FileResponse` + `X-CortexSim-Agent-SHA256`; 400 `BAD_OS`/`BAD_ARCH`; 404 `AGENT_BINARY_UNAVAILABLE` |
 | GET | `/api/agents/binary/sha256` | Expected digest for a target | query: `os`, `arch` | `PlainTextResponse` hex digest; same 400/404 |
@@ -433,6 +511,18 @@ get it.
 | DELETE | `/api/agents/{agent_id}` | Prune a beacon row (does not touch run history) | — | `{"status":"deleted","agent_id"}`; 404 `AGENT_NOT_FOUND` |
 | GET | `/api/agents/{agent_id}/tasks` | Beacon polls for next task; bumps `last_seen` | — | `{"task":<task.to_dict()>}` or `{"task":null}`; 404 if agent unknown |
 
+- **Installer parameter validation (2026-11).** Before this change, `id` /
+  `server` / `token` / `interval` went into the script text verbatim:
+  `?id=x'; Write-Host PWNED; '` was served 200 and, on Windows, became the SYSTEM
+  service's command line. Each parameter is now validated before it is
+  interpolated. `BAD_AGENT_ID`: `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`.
+  `BAD_SERVER`: http/https, host required, no userinfo/query/fragment, charset
+  `[A-Za-z0-9.:/[]_~-]`; this also applies to the Host-derived default.
+  `BAD_TOKEN`: `^cxs_[A-Za-z0-9_-]{20,128}$`, the shape the mint produces.
+  `BAD_INTERVAL`: 1–3600, parsed from a string, so `abc` is also
+  `BAD_INTERVAL`. `BAD_MODE` now also covers `os=windows&mode=foreground` and
+  `uninstall=1&mode=foreground`. The scripts re-check env overrides in-script
+  with the same codes.
 - `register` is idempotent: existing `agent_id` → metadata update + `status=online`
   + `last_seen` bump; else insert.
 - `/{agent_id}/tasks` updates `last_seen=utcnow()` on *every poll*, then calls
@@ -484,6 +574,26 @@ get it.
   `NO_AGENT_ID` · `BINARY_FETCH_FAILED` · `BINARY_UNAVAILABLE` · `CHECKSUM_MISMATCH` ·
   `CHECKSUM_SKIPPED` · `BIN_NOT_EXECUTABLE` · `BIN_INSTALL_FAILED` ·
   `SOURCE_BUILD_FAILED` · `SERVICE_START_FAILED` · `DEGRADED_NO_SUPERVISOR`.
+  **Added 2026-11 (both installers unless marked):** `BAD_SERVER` ·
+  `BAD_AGENT_ID` · `BAD_INTERVAL` · `BAD_TOKEN` (in-script re-checks of env
+  overrides) · `AGENT_NEVER_CHECKED_IN` (Windows now has it too) ·
+  `UNEXPECTED_ERROR`. **Windows only:** `NOT_ELEVATED` · `BIN_NOT_FOUND`
+  (a `CORTEXSIM_BIN` path that does not exist) · `TLS_UNTRUSTED` ·
+  `ENROLL_FAILED` (an enroll failure that is not a 403) ·
+  `DIGEST_FETCH_FAILED` (SimCore answered the digest request with something that
+  is not a sha256, usually a proxy or captive portal) · `BINARY_QUARANTINED`
+  (`Get-FileHash` / `Copy-Item` failed the way a Defender or XDR quarantine
+  does) · `INSTALL_DIR_UNTRUSTED` · `INSTALL_DIR_ACL_FAILED` ·
+  `SERVICE_STOP_FAILED` · `STALE_PROCESS` · `SERVICE_DELETE_FAILED` ·
+  `SERVICE_PENDING_DELETE` (the previous registration is marked for deletion,
+  1072, and still present after 30 s) · `SERVICE_CREATE_FAILED` ·
+  `SERVICE_CONFIG_FAILED` · `PROCESS_START_BLOCKED` (the per-user beacon could
+  not start or exited at once, typically application control or AV) ·
+  `SERVER_UNREACHABLE` (now with the `CORTEXSIM_NO_PROXY=1` hint).
+  **Uninstallers:** `NEEDS_ROOT` (POSIX: a root install seen from a non-root
+  shell, so `… | sudo bash`) · `NOT_ELEVATED` (Windows) ·
+  `UNINSTALL_INCOMPLETE` (both: something found survived removal). Install
+  attempts are an in-memory deque and **reset on SimCore restart**.
 - **Windows beacon: SERVABLE (2026-08-05).** `scripts/build-agent-dist.sh` and the
   `agent-builder` stage in `core/Dockerfile` both cross-compile `windows/amd64` to
   `cortexsim-agent-windows-amd64.exe`, so a deployed image serves it from
@@ -508,9 +618,133 @@ get it.
   <br>**Still unproven: no Windows host has executed the beacon or the PowerShell
   installer.** Serving, digesting and installer emission are verified; `sc.exe`
   service creation and PS 5.1 execution are not. Push mode (§1.2
-  `format=powershell`) remains the path with end-to-end evidence behind it.
+  `format=powershell`) **parses under pwsh 7 on Linux/macOS; it is executed under
+  Windows PowerShell 5.1 only by the `windows-2022` CI job**, which is authored
+  and has not yet run on GitHub. Neither path has end-to-end evidence on Windows
+  (DOCS-12; the earlier wording here was wrong). `check-agent-shelf` now also
+  checks each served binary's magic bytes (ELF `e_machine`, Mach-O `cputype`,
+  MZ/PE machine `0x8664`): `test -s` plus SHA256SUMS used to pass a Linux ELF
+  named `.exe`.
 - The Go beacon treats **SIGHUP** as a graceful shutdown; previously a hangup hit
   the default disposition and killed the beacon when the terminal went away.
+
+#### 1.6.1 Windows onboarding — authored 2026-11, not executed on any Windows host
+
+> Everything in this subsection comes from the installer source and from parsing
+> under pwsh 7.6 on macOS/Linux. pwsh 7.6 is not Windows PowerShell 5.1, the
+> product floor. The `windows-2022` CI job is the first place it can run, and
+> it is authored and **has not yet run on GitHub**. Read it as the contract, not
+> as observed behaviour.
+
+**Before the POV.** The beacon is **unsigned**. `iwr … | iex` is a download
+cradle that Cortex XDR or Defender in prevent mode may block, or whose dropped
+exe it may quarantine. Get an allow-list entry or exclusion for
+`C:\ProgramData\CortexSim\cortexsim-agent.exe` and its published sha256 before
+the customer is watching. The digest is `GET /api/agents/binary/sha256?os=windows&arch=amd64`;
+a release also ships `cortexsim-agent-SHA256SUMS`. The checksum guards against
+**corruption, not tampering**: SimCore serves plain HTTP (SEC-12, open).
+
+**Install — from an elevated Windows PowerShell** (right-click → Run as
+administrator). This is the line the console emits:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:CORTEXSIM_TOKEN='cxs_…'; iwr -useb "http://<simcore-host>:8888/api/agents/install?os=windows" | iex
+```
+
+- The `-bor 3072` prefix **adds** TLS 1.2 to what the session allows. Older
+  .NET Framework defaults cannot reach an https SimCore without it; on plain
+  http it is harmless.
+- The token goes in an env var, never `?token=`, so it stays out of history and
+  proxy logs. Running under `iex` never closes your shell: failures `return`, they
+  do not `exit`.
+- Elevated, it registers the **`CortexSimAgent`** service: LocalSystem,
+  auto-start, restart-on-failure (`sc.exe failure … restart/10000`). The binary
+  is at `C:\ProgramData\CortexSim\cortexsim-agent.exe`. The install dir's ACL is
+  locked at creation: inheritance removed, SYSTEM and Administrators full,
+  Users read/execute, owner Administrators. The log is
+  `%ProgramData%\CortexSim\agent.log`; the beacon writes it via `--log-file` /
+  `CORTEXSIM_AGENT_LOG_FILE` and rotates it to `agent.log.1` at 10 MiB.
+- **`OK` means three things**: the service is Running, it is still Running 35 s
+  later (past the SCM's 1053 window), and the agent's `last_seen` advanced past
+  a baseline sampled after that window. Expect **45–70 s** per install.
+- **Not elevated** → `NOT_ELEVATED`, before anything is enrolled or changed.
+  Setting `$env:CORTEXSIM_ALLOW_UNSUPERVISED='1'` first installs a **per-user
+  beacon** in `%LOCALAPPDATA%\CortexSim` instead. It logs to
+  `cortexsim-agent.log` / `cortexsim-agent.err.log`, **dies at logoff and at
+  reboot**, cannot run admin-only TTPs, and finishes `DEGRADED_NO_SUPERVISOR`.
+- `?mode=foreground` does not exist on Windows (`400 BAD_MODE`).
+- **Downloaded-file form** (for when you cannot paste the cradle). Save
+  `install-cortexsim-agent.ps1`, then run it:
+  `Unblock-File .\install-cortexsim-agent.ps1; $env:CORTEXSIM_TOKEN='cxs_…'; powershell -NoProfile -ExecutionPolicy Bypass -File .\install-cortexsim-agent.ps1`.
+  Without the token in the environment the script falls back to the id baked
+  into the download, so every host run that way would claim the same agent id.
+- **Env vars:**
+  - `CORTEXSIM_BIN`: a pre-staged `.exe`, digest-checked when SimCore can serve
+    a digest, else `CHECKSUM_SKIPPED`; a missing path is `BIN_NOT_FOUND`.
+  - `CORTEXSIM_NO_PROXY=1`: reach SimCore directly. It applies per request,
+    not process-wide. **A SYSTEM service does not inherit your proxy
+    settings**, so the beacon, not your shell, must reach SimCore.
+  - `CORTEXSIM_TELEMETRY=0`: suppress the install-status POSTs.
+- **`HOST_NOT_ALLOWED`**: if `<simcore-host>` is a DNS name, it must be in
+  `CORTEXSIM_ALLOWED_HOSTS` on SimCore (`dev-up.sh` seeds the jumpbox's own
+  names). Otherwise every poll is refused.
+- **`INSTALL_DIR_UNTRUSTED`** fires on hosts where an elevated admin ran the
+  **old** installer on a client SKU, because the "object creator" default owner
+  makes that admin the dir's owner. Run the Windows uninstaller first, then
+  re-install.
+
+**Verify** (elevated shell on the endpoint):
+
+```powershell
+sc.exe query CortexSimAgent          # STATE: 4 RUNNING
+sc.exe qc CortexSimAgent             # BINARY_PATH_NAME, START_TYPE AUTO_START, SERVICE_START_NAME LocalSystem
+Get-Content "$env:ProgramData\CortexSim\agent.log" -Tail 20   # startup line ends mode=service
+```
+
+Then on SimCore, `GET /api/agents`: `last_seen_age_seconds` should keep
+dropping toward zero, and the row gains the `powershell` capability once the
+beacon itself has registered. A row the installer only enrolled reads
+"enrolled — waiting for first beacon poll" in the console, never online.
+`sc.exe query` exit readings: `SERVICE_EXIT_CODE` **3** means the beacon did not
+stop within 60 s of a stop request and was forced STOPPED, so an in-flight run
+may read as orphaned. **1** or **2** means the service command line failed
+validation or flag parsing (`agent.log` holds the error). **4** means
+`RegisterServiceCtrlHandlerExW` failed. A start that dies around 30 s with
+**1053** means the beacon build has no service handler: rebuild SimCore's
+agent-dist from a current tree.
+
+**What a Windows run is, honestly.**
+- Under the service, every step runs as `NT AUTHORITY\SYSTEM`
+  (services.exe → cortexsim-agent.exe → powershell.exe). XDR causality chains
+  show SYSTEM, not the admin who installed.
+- Every non-`direct` identity collapses to the beacon's own account, with
+  `!! IDENTITY NOT HONOURED` in the run record. `root` / `container-runtime` /
+  `administrator` on a non-elevated token read `… requires an elevated token`.
+- Only steps that resolve for Windows run (13 scenarios have a Windows push
+  target, 69 carry a Windows label). Others are refused at launch
+  (`409 PULL_TARGET_UNSATISFIABLE`) or skipped on the host (`!! STEP NOT RUN:
+  PLATFORM_UNSATISFIABLE`, scored `not_executed`).
+- Pull mode never runs scenario `cleanup.commands`; the POV report lists what it
+  did not run.
+- There is no Windows canary (`CORTEXSIM_CANARY_SCENARIO_LINUX` only).
+
+**Uninstall** (elevated; idempotent):
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iwr -useb 'http://<simcore-host>:8888/api/agents/install?os=windows&uninstall=1' | iex
+```
+
+It stops and deletes the service (1072 means already marked for deletion:
+close `services.msc` / Event Viewer, or reboot). It then removes
+`%ProgramData%\CortexSim`, a per-user `%LOCALAPPDATA%\CortexSim` install, and
+the beacon's cache and staging roots (`<SystemDrive>\opt\cortexsim`,
+`%SystemRoot%\Temp\cortexsim` and the user cache). Those hold staged
+dual-use tools. It ends `UNINSTALL_INCOMPLETE` if anything it found survives.
+Manual fallback when the host cannot reach SimCore:
+`Stop-Service CortexSimAgent -Force -ErrorAction SilentlyContinue; sc.exe delete CortexSimAgent; Get-Process cortexsim-agent -ErrorAction SilentlyContinue | Stop-Process -Force; Remove-Item -Recurse -Force "$env:ProgramData\CortexSim","$env:LOCALAPPDATA\CortexSim","$env:SystemDrive\opt\cortexsim","$env:SystemRoot\Temp\cortexsim" -ErrorAction SilentlyContinue`.
+POSIX hosts uninstall with
+`curl -fsSL '<server>/api/agents/install?uninstall=1' | sudo bash`. A non-root
+run against a root install is refused with `NEEDS_ROOT`.
 
 ### 1.7 MITRE (`core/api/mitre.py`, prefix `/mitre`)
 
@@ -774,9 +1008,26 @@ unreachable in the field (it 403s with `ARTIFACT_FORBIDDEN` naming the fix).
 |---|---|---|---|
 | GET | `/api/connectors` | List connector kinds and, per kind, whether a usable integration credential is **configured** and **verified** | includes `preflight_url`; reports **both** credential kinds (`xsiam` = alert read-back, `xsiam_tenant` = XQL) |
 | POST | `/api/connectors/{kind}/preflight` | **Staged tenant preflight** — "is my connection working?" answered *before* the POV | `{tenant, kind, base_url_host, overall, stages[], queries_issued, capabilities_confirmed[], capabilities_denied[], proves}` |
-| POST | `/api/runs/{run_id}/observations` | Manual batch ingest of alerts a DC exported from the console — no credential, fully offline. Scoped like a pull (`scope_to_host` on the run's host; another host's alert is excluded); the batch is `unscoped` — every pass withheld (`PASS_WITHHELD_UNSCOPED`) — when the run has no resolvable target or any alert names no host. Silence in a manual batch is never a miss. | seeded `Result` rows gain `observed_at` → MTTD; summary carries `host_scope`, and `excluded_other_host` + a `warning` naming the expected host whenever another host's alert was not counted (same shape as `dropped_unparseable_timestamps`) |
-| POST | `/api/runs/{run_id}/reconcile?connector=xsiam` | Credential-backed pull for the run's window — a credential of kind `xsiam`, else an `xsiam_tenant` one (one-way: the tenant kind serves alert read-back, kind `xsiam` never serves XQL); `?integration=` names a row of either kind and an unknown name is **404 `INTEGRATION_NOT_FOUND`**, never a fallback | same funnel (`apply_verdicts`) as the manual path; summary carries `host_scope`, `truncated`/`truncation`, `warnings[]`, `measurement`, and `incidents_considered` when a correlation scenario needed the incidents read |
+| POST | `/api/runs/{run_id}/observations` | Manual batch ingest of alerts a DC exported from the console — no credential, fully offline. Body takes an optional **`host`** (≤ 253 chars) naming the endpoint the run executed on; a batch is capped at **5000** alerts. Scoped like a pull (`scope_to_host` on the run's host; another host's alert is excluded); the batch is `unscoped` — every pass withheld (`PASS_WITHHELD_UNSCOPED`) — when the run has no resolvable target or any alert names no host. Silence in a manual batch is never a miss. | seeded `Result` rows gain `observed_at` → MTTD; summary carries `host_scope`, and `excluded_other_host` + a `warning` naming the expected host whenever another host's alert was not counted (same shape as `dropped_unparseable_timestamps`) |
+| POST | `/api/runs/{run_id}/reconcile?connector=xsiam` | Credential-backed pull for the run's window. Optional **`?host=`** (≤ 253 chars) names the endpoint the run executed on. Credential: kind `xsiam`, else an `xsiam_tenant` one (one-way: the tenant kind serves alert read-back, kind `xsiam` never serves XQL); `?integration=` names a row of either kind and an unknown name is **404 `INTEGRATION_NOT_FOUND`**, never a fallback | same funnel (`apply_verdicts`) as the manual path; summary carries `host_scope`, `truncated`/`truncation`, `warnings[]`, `measurement`, and `incidents_considered` when a correlation scenario needed the incidents read |
 | POST | `/api/runs/{run_id}/verify` | **Tier-2** verification via read-only XQL (see §1.3) | 200 + `pending` + `reason` when no credential |
+
+**Host scoping and `UNSCOPED_MATCH` (2026-11, DOCS-03).** A push run has no
+`Run.target`, so its reconcile had no host to scope against and treated every
+alert in the tenant as eligible. A `detect` expectation that matched on
+technique inside the window was written `detected` with an MTTD. On cc26ddf,
+an alert raised on an unrelated laptop was credited to a push run. Now, when
+there is no host at all, a matched `detect` row stays `outcome=pending`,
+`outcome_reason=UNSCOPED_MATCH`, `observed=false`, with **no `observed_at` and
+so no MTTD**. The alert is still recorded. `?host=` on `/reconcile`, or `host`
+in the `/observations` body, scopes the match exactly as a pull run's resolved
+host does: another host's alert is still excluded and counted. A blank value is
+no override. The summary gains **`host_source`**: `"operator"` (named by the
+DC), `"run_target"` (resolved from the launch agent) or `null` (unscoped).
+**A push run, every Windows `.ps1` bundle included, is scoped only when the DC
+passes a host.** Keeping this override rather than a docs-only "push detect reads
+pending" is an open decision for Henry. A run that never executed
+(`not_executed`) is never matched at all.
 
 **Preflight stages**, in order, each with a stable `code` and a `remediation`
 naming the consequence *in verdict terms*: `config` → `dns_tls` → `auth` →
@@ -1147,6 +1398,36 @@ Emits a `Namespace` (`cortexsim-{id}`) + one `batch/v1 Job` per step
 (`ttlSecondsAfterFinished: 300`, `restartPolicy: Never`, `ubuntu:22.04`, inline
 identity-harness `if/elif` block, CPU/mem limits). Begins on `kubectl apply`.
 
+### `generate_powershell(scenario) -> str` (Windows PowerShell 5.1 floor)
+A self-contained, UTF-8-with-BOM `.ps1` for the scenario's **windows**
+resolution (`resolve_target(scenario, "windows")`). Authored 2026-08, then
+rewritten 2026-11 because **every PowerShell-dialect step had been a silent
+no-op since `ea5a52f`** (v1.0.0..v1.1.0). The harness built each step file
+inside a double-quoted string, so `$ErrorActionPreference = 'Stop'` expanded
+to `Continue = 'Stop'`, and that `continue` ended the step with exit 0 before
+the TTP line ran. **Parsed by pwsh 7 and gated by `make check-powershell`; not
+executed on Windows PowerShell 5.1** until the `windows-2022` CI job runs.
+1. **Header**: scenario metadata, expected detections, Preflight (network
+   fetches a step makes), operator inputs, RESIDUE, and the exact run line.
+   The bundle never calls `Set-ExecutionPolicy`.
+2. **Each step** runs in its own child process (`powershell.exe -NoProfile
+   -NonInteractive -ExecutionPolicy Bypass -File <step>.ps1`, or
+   `cmd /d /v:off /s /c` for cmd-dialect text). Text travels base64-encoded.
+   Each step has a timeout (`timeout_seconds`, default 300 s), and
+   `taskkill /T /F` kills the tree on expiry. Prerequisites are probed with
+   `Get-Command` (`PREREQ_MISSING`), and missing operator inputs give
+   `OPERATOR_INPUT_MISSING`. Steps that declare an elevated identity are not
+   run unelevated (`NOT_ELEVATED`). A `0` without the per-step epilogue
+   sentinel is `threw` / `EPILOGUE_NOT_REACHED`.
+3. **RESIDUE gate**: when the scenario's cleanup has lines Windows cannot run
+   (POSIX-only or mixed), the bundle names them and **exits 2** unless
+   `CORTEXSIM_ACCEPT_RESIDUE=1`. Nine of the 13 Windows bundles need it today
+   (2026-11-10).
+4. **Exit code**: `0` clean · `1` a step was non-zero, threw or timed out · `2`
+   residue not acknowledged · `3` a step was not executed (`PREREQ_MISSING`,
+   `OPERATOR_INPUT_MISSING`, `NOT_ELEVATED`, `SHELL_UNAVAILABLE`, `NOT_REACHED`)
+   · `4` cleanup failed. A per-step outcome table always prints.
+
 - Both escape single quotes via `'\''`. Self-contained by design.
 - **GAP-PUSH-001:** the bash identity-harness service-account allowlist
   (`www-data postgres mysql node python3 nobody svc-backup`) and the Go harness
@@ -1174,6 +1455,26 @@ Go 1.21+, **stdlib only**.
   failed initial register means every poll 404s until `register` succeeds again
   (and the agent never re-calls Register in the loop) — GAP-AGENT-003 (medium).
 - Installs SIGINT/SIGTERM handler → cancels context → clean shutdown.
+- **2026-11 additions.** `--log-file` (env `CORTEXSIM_AGENT_LOG_FILE`, not
+  SimCore's `CORTEXSIM_LOG_FILE`) sends the log to a size-capped file (10 MiB,
+  one rotated generation). With no flag the log goes to stderr, except under
+  the Windows SCM, where it defaults to `%ProgramData%\CortexSim\agent.log`.
+  The startup line ends `mode=console` or `mode=service`.
+- **Windows service entry (authored, not executed on Windows).**
+  `agent/service_windows.go` calls `StartServiceCtrlDispatcherW` **before any
+  beacon startup**, through `syscall.NewLazyDLL("advapi32.dll")`; it is
+  stdlib-only, with no `x/sys`. Run from a console, the call fails promptly
+  with 1063 and the beacon falls through to the console path. Under the SCM
+  it reports START_PENDING → RUNNING, accepting STOP and SHUTDOWN. A stop
+  gives STOP_PENDING, cancels the run context (the in-flight step is tree-killed
+  and "agent shutdown — task interrupted" is posted) and forces STOPPED after
+  60 s with `SERVICE_EXIT_CODE` 3. `signal.Notify` is kept off the service
+  path so a user logoff does not stop it. Host *shutdown* gives services only a
+  few seconds, which may be too short for the final `/complete`.
+- **Capabilities.** POSIX: `["shell","identity-harness","artifact-fetch"]`.
+  Windows: `["shell","powershell","artifact-fetch"]`, plus `elevated` only when
+  the process token's `TOKEN_ELEVATION` says so. A Windows beacon **never**
+  claims `identity-harness`.
 
 ### 5.2 Poll loop (`beacon.Run`)
 ```
@@ -1202,6 +1503,23 @@ ctx cancelled → return (clean exit)
   `sh` itself cannot be started or the wait fails with a non-exit error. A step that declares `required_binaries` is
   preflighted before it runs — a missing binary yields the `!! TOOL_ABSENT:` marker, a
   `not_run` / `TOOL_ABSENT` step record and a run completed with `127` (§1.3.1).
+- **Windows step selection (2026-11, BEACON-01; authored, not executed on
+  Windows).** A task step carries `shell` (`powershell` | `cmd`),
+  `resolved_from` and `platform_variants`, and `planStep` decides per host.
+  On Windows: if `shell` is set, `Command` runs under it (an unknown shell is
+  refused); otherwise `platform_variants.windows` runs under PowerShell;
+  otherwise a step whose `platforms` exclude windows is **not run**. It writes
+  `!! STEP NOT RUN: PLATFORM_UNSATISFIABLE step=<id> declared=<platforms>
+  host=windows`, records `not_run` / `PLATFORM_UNSATISFIABLE` and continues; if
+  no step can run, the run completes with **exit 78**. POSIX hosts ignore
+  platform labels. Interpreters launch by absolute path:
+  `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe
+  -EncodedCommand … -OutputFormat Text` with the `$?` / `$LASTEXITCODE` wrapper,
+  or `%SystemRoot%\System32\cmd.exe /d /c <file.cmd>` (verbatim text, CRLF,
+  UTF-8, no `@echo off`). The tree-kill is a Job Object (`TerminateJobObject`
+  on abort, no `KILL_ON_JOB_CLOSE`). `requires_interpreters` and
+  `required_binaries` / `TOOL_ABSENT` are **no-ops on Windows**, so a missing
+  tool runs untooled with no marker.
 - **Output streaming is real, per-step** (GAP-AGENT-004, closed 2026-06-08). The
   beacon now iterates `task.Steps[]` sequentially and POSTs each step's output to
   `/output` as it completes (one `/output` POST per step), so the SSE stream and the
@@ -1218,6 +1536,23 @@ ctx cancelled → return (clean exit)
   per-step host evidence (§1.3.1).
 - On ctx-cancel mid-execution: `Complete(runID, abortExitCode, "agent shutdown — task
   interrupted", steps)` (exit 130) then return.
+- **Retries (2026-11, BEACON-11).** `/complete` and each step's `/output` retry
+  transport errors and 5xx with backoff 1, 2, 4, 8, 16 s: 5 retries, 6 attempts.
+  A 409 (`RUN_ALREADY_TERMINAL`) is treated as success; 404 and other 4xx stop
+  at once. Live streaming chunks are not retried.
+- **Control channel lost ≠ operator abort.** The beacon stays fail-closed. When
+  the `/control` poll itself fails (transport error, non-200, bad body), the step
+  is terminated and the record reads `control channel lost — step terminated (NOT
+  an operator abort) | … reason=CONTROL_CHANNEL_LOST`. Only an explicit
+  `abort:true` body reads `aborted by operator`. Tolerating a blip is an open
+  decision (BEACON-11 / OPS-04).
+- **Artifact staging (BEACON-16).** A staged tool that vanishes or locks between
+  its verified write and its rename is reported as
+  `ARTIFACT_QUARANTINE_SUSPECTED`. On Windows that shows up as a sharing
+  violation or access denied while a scanner holds the file, or a `.part` that
+  disappears. The frame says the step did not run, and to check the endpoint's
+  prevention alerts before reading it as a CortexSim failure or a coverage gap.
+  It no longer says "NOT a gap". The rename gets a brief retry first.
 - **Server-driven abort** (GAP-API-001, closed 2026-06-08): the beacon polls
   `GET /api/runs/{run_id}/control` (a) once before each step and (b) every
   `controlPollInterval` (2s) while a step runs. On `abort=true` it terminates the
@@ -1333,3 +1668,56 @@ Most of the lifecycle backlog **shipped** in the multi-wave revamp:
 > Pull mode is now **end-to-end working**: launch → enqueue → beacon polls + executes
 > per-step with agent-side identity resolution → per-step `/output` → `/complete`,
 > with operator abort via `/abort`+`/control` and live updates over SSE.
+
+---
+
+## 9. Stable failure codes added in the 2026-11 beta-readiness pass
+
+One index of every code this pass introduced or changed, with where it surfaces.
+**None of the Windows-side codes has been observed on a Windows host.** They are
+read from source and exercised under pwsh 7 / injected transports only.
+
+| Code | Surface | Meaning |
+|---|---|---|
+| `HOST_NOT_ALLOWED` (400) | every route | `Host` not allowed; add the name to `CORTEXSIM_ALLOWED_HOSTS` (§1). |
+| `BAD_TOOL_PARAM` (400) | `POST /api/tools/{tool}/start` | Caller param outside the template's open placeholders (SEC-02). |
+| `INSTALL_IN_PROGRESS` (409) | `POST /api/tools/{tool}/install` | One install at a time. |
+| `XQL_WRITE_STAGE_REFUSED` (400) | every XQL path | XQL `target` stage refused (SEC-05). |
+| `RESERVED_SECRET_NAME` (400) | `PUT /api/credentials/secrets` | `__cortexsim__/` is reserved. |
+| `API_UNAUTHENTICATED` | `/api/health` `api_auth` | Permanent, by design, until SEC-01. |
+| `MASTER_KEY_MISMATCH` | `/api/health` `master_key` | Stored credentials no longer decrypt. |
+| `PULL_TARGET_UNSATISFIABLE` (409) | `POST /api/runs` (pull) | The target agent's OS cannot run a step; refused before seeding. |
+| `PULL_TARGET_OS_UNRECOGNISED` (409) | `POST /api/runs` (pull) | The agent reports no OS SimCore can target. |
+| `TARGET_AGENT_NOT_ENROLLED` (409) | `POST /api/runs` | Single-endpoint pull at an unenrolled agent, or a composed run's per-step `target`. |
+| `RUN_ALREADY_TERMINAL` (409) | `POST /api/runs/{id}/complete` | Late or duplicate `/complete`; nothing applied (was a 200). |
+| `LAUNCH_REFUSED` | Result `outcome_reason` | Launch refused after seeding; Results `not_executed`, never matched. |
+| `TASK_LOST_ON_RESTART` | Result `outcome_reason` | Orphan failed by `rehydrate()`; Results `not_executed`, never matched. |
+| `BEACON_ABANDONED_TASK` | run marker | Delivered run whose `/complete` never arrived; reaped under the four conditions in §1.3. |
+| `UNSCOPED_MATCH` | Result `outcome_reason` | A reconcile match with no host to scope against stays `pending`, no MTTD (§1.15). |
+| `PLATFORM_UNSATISFIABLE` | step `reason` on `/complete`; `!! STEP NOT RUN:` marker | Windows beacon refused a step whose `platforms` exclude windows → `not_executed`. |
+| `CONTROL_CHANNEL_LOST` | run output | The `/control` poll failed; the step was terminated. NOT an operator abort. |
+| `ARTIFACT_QUARANTINE_SUSPECTED` | staging frame | Staged tool vanished or locked after write; check prevention alerts first. |
+| `STEP CHILD NOT LAUNCHED` (rc 126) | `!! STEP CHILD NOT LAUNCHED step=<id>` | A chained Windows step's child could not be launched. |
+| `MIXED_DIALECT` | `409 BUNDLE_TARGET_UNSATISFIABLE` detail | Windows step text is structurally both cmd and PowerShell. |
+| `PREREQ_MISSING` / `OPERATOR_INPUT_MISSING` / `NOT_ELEVATED` / `SHELL_UNAVAILABLE` / `NOT_REACHED` | `.ps1` bundle outcome table, exit 3 | The step was not executed. |
+| `RESIDUE_NOT_ACKNOWLEDGED` | `.ps1` bundle, exit 2 | Cleanup residue; set `CORTEXSIM_ACCEPT_RESIDUE=1` to run anyway. |
+| `EPILOGUE_NOT_REACHED` | `.ps1` bundle, `threw` | A top-level `return` / `break` / `continue` / `exit 0` skipped the step's result. |
+| `BAD_AGENT_ID` / `BAD_SERVER` / `BAD_TOKEN` / `BAD_INTERVAL` (400) | `GET /api/agents/install` | Parameter would have been interpolated unsafely (§1.6). |
+| `BAD_MODE` (400) | `GET /api/agents/install` | Now also `os=windows&mode=foreground` and `uninstall=1&mode=foreground`. |
+| `NOT_ELEVATED` | Windows installer / uninstaller | Not run from an elevated session; nothing enrolled or changed. |
+| `SERVICE_START_FAILED` | Windows installer | `CortexSimAgent` not Running, or not Running 35 s later (1053 = no service handler). |
+| `SERVICE_PENDING_DELETE` | Windows installer | The prior registration is marked for deletion (1072) and lingers. |
+| `SERVICE_CREATE_FAILED` / `SERVICE_CONFIG_FAILED` / `SERVICE_STOP_FAILED` / `SERVICE_DELETE_FAILED` / `STALE_PROCESS` | Windows installer | Service lifecycle step failed; the fix line names the manual command. |
+| `INSTALL_DIR_UNTRUSTED` / `INSTALL_DIR_ACL_FAILED` | Windows installer | `%ProgramData%\CortexSim` is owned by another account, or its ACL could not be set. |
+| `DIGEST_FETCH_FAILED` | Windows installer | The digest reply was not a sha256 (proxy / captive portal). |
+| `BINARY_QUARANTINED` | Windows installer | Hashing or copying the beacon failed the way an AV/XDR quarantine does. |
+| `BIN_NOT_FOUND` | Windows installer | `CORTEXSIM_BIN` names no file. |
+| `BINARY_UNAVAILABLE` / `BIN_INSTALL_FAILED` | both installers (now on Windows too) | No beacon could be acquired / written. |
+| `PROCESS_START_BLOCKED` | Windows installer (per-user) | The beacon could not start or exited at once (AppLocker / WDAC / AV). |
+| `TLS_UNTRUSTED` / `ENROLL_FAILED` | Windows installer | TLS trust failure / non-403 enroll failure. |
+| `SERVER_UNREACHABLE` | both installers | Windows form adds the `CORTEXSIM_NO_PROXY=1` hint. |
+| `AGENT_NEVER_CHECKED_IN` | both installers | The beacon never advanced `last_seen`. Windows now checks this too. |
+| `DEGRADED_NO_SUPERVISOR` | both installers | No supervisor; on Windows only with `CORTEXSIM_ALLOW_UNSUPERVISED=1`. |
+| `UNEXPECTED_ERROR` | both installers | An error with no specific code; the detail is printed. |
+| `NEEDS_ROOT` | POSIX uninstaller | Root install seen from a non-root shell; re-run with `sudo bash`. |
+| `UNINSTALL_INCOMPLETE` | both uninstallers | Something it found survived removal. |

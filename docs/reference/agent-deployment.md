@@ -327,53 +327,99 @@ SimCore's own lifecycle field — a non-zero step terminates the run there —
 and is deliberately a different concept from "did Cortex miss a real
 technique."
 
-## 7. Windows and the identity harness
+## 7. Windows: service install, identity, and what is unproven
 
-Windows pull mode is real (§ the project CLAUDE.md's Windows-execution
-section) but its identity story is different in kind, not just detail:
-Windows has no credential-free unattended impersonation, so every
-non-`direct` identity **collapses to `direct`** and the run record carries
-an explicit `!! IDENTITY NOT HONOURED:` marker (`agent/beacon/client.go`'s
-`identityDegradedMarker`) rather than silently running everything as the
-beacon account and calling it done. A Windows beacon registers capabilities
-`["shell", "powershell", "artifact-fetch"]` (`agent/capabilities.go`) —
-notably **not** `identity-harness`, deliberately, so SimCore's own agent
-list never implies a Windows target can honour a scenario's declared
-`identity:`. If a Windows scenario's realism depends on running as a
-specific service account, that dependency is not satisfiable today; the run
-record says so rather than presenting a `direct`-identity execution as the
-requested one.
+> **Not executed on any Windows host.** Everything here is read from the
+> installer and beacon source and parsed under pwsh 7.6 on macOS/Linux. pwsh 7.6
+> is not Windows PowerShell 5.1, the product floor. The `windows-2022` CI job is
+> authored and has not yet run on GitHub. The full contract, including every
+> stage code, is in `docs/reference/api-and-agent-surface.md` §1.6.1.
 
-**Console discrepancy found while verifying this (not fixed here — read-only
-per this task's file ownership, reported for the console owner):** the
-Deploy-agent panel shows a static warning when you select Windows — *"No
-Windows beacon ships yet — this script refuses before it enrolls
-(`WINDOWS_AGENT_UNAVAILABLE`)"* — unconditionally, without ever calling
-`GET /api/agents/binaries` to check. On this stack today that's wrong: the
-binary is staged (§2) and a live fetch of the generated script
-(`GET /api/agents/install?os=windows`) contains **zero** occurrences of
-`WINDOWS_AGENT_UNAVAILABLE` — confirmed by grep against the actual bytes
-returned. `WINDOWS_AGENT_UNAVAILABLE` is a real, correctly-conditional
-backend code (fires only when `_binary_path("windows","amd64")` is missing
-from the deployed image) — the bug is the console showing it as always-true
-copy instead of checking. Trust `GET /api/agents/binaries` over that console
-message. **Separately**, the same panel's loopback warning cites a code,
-`INSTALLER_SERVER_LOOPBACK`, that does not exist anywhere in
-`core/api/agents.py` — confirmed by grep across the whole tree (Python, Go,
-JS/JSX). `_resolve_server()`'s own docstring is explicit that a loopback
-address is deliberately **not** refused server-side (installing on the
-SimCore host itself is a legitimate flow the server can't distinguish from a
-jumpbox paste). The warning's actual advice — reopen the console on a
-routable address before copying — is correct and worth keeping; only the
-"the install endpoint refuses this too" clause is fiction.
+**Install from an elevated Windows PowerShell.** This is the console's line,
+with the TLS 1.2 opt-in Windows PowerShell 5.1 needs for an https SimCore:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:CORTEXSIM_TOKEN='cxs_…'; iwr -useb "http://<simcore-host>:8888/api/agents/install?os=windows" | iex
+```
+
+- **Elevated:** registers the `CortexSimAgent` service (LocalSystem,
+  auto-start). The exe is at `C:\ProgramData\CortexSim\cortexsim-agent.exe`
+  and the log at `%ProgramData%\CortexSim\agent.log`. **New and unproven:**
+  until this pass the beacon had no SCM handler, and every elevated install
+  died with 1053 about 30 s after reporting success. `OK` now means Running,
+  still Running 35 s later, and `last_seen` advanced, so expect 45–70 s.
+  Check it with `sc.exe query CortexSimAgent` (`STATE: 4 RUNNING`).
+- **Not elevated:** refused with `NOT_ELEVATED` before anything is enrolled.
+  `$env:CORTEXSIM_ALLOW_UNSUPERVISED='1'` gives a per-user beacon in
+  `%LOCALAPPDATA%\CortexSim` instead. It **dies at logoff and at reboot**,
+  cannot run admin-only TTPs, and ends `DEGRADED_NO_SUPERVISOR`.
+- **Pre-staging and proxies:** `CORTEXSIM_BIN` names a pre-staged `.exe`,
+  digest-checked when SimCore serves one, else `CHECKSUM_SKIPPED`.
+  `CORTEXSIM_NO_PROXY=1` bypasses the system proxy per request. The service
+  runs as SYSTEM and does not inherit your proxy, so the **beacon**, not your
+  shell, must reach SimCore.
+- **A downloaded `.ps1`** carries Mark-of-the-Web. Run it as
+  `Unblock-File .\install-cortexsim-agent.ps1; $env:CORTEXSIM_TOKEN='cxs_…'; powershell -NoProfile -ExecutionPolicy Bypass -File .\install-cortexsim-agent.ps1`.
+- **Host names:** if `<simcore-host>` is a DNS name, SimCore's
+  `CORTEXSIM_ALLOWED_HOSTS` must list it, or every poll is
+  `400 HOST_NOT_ALLOWED`.
+- **AV/EDR:** the beacon is **unsigned**, and `iwr | iex` is a download cradle.
+  Cortex XDR or Defender in prevent mode may block it or quarantine the exe
+  (`BINARY_QUARANTINED`, `PROCESS_START_BLOCKED`). Get an exclusion for the exe
+  path and its published sha256 before the POV.
+
+**Identity collapses to the beacon's account.** Windows has no credential-free
+unattended impersonation. Every non-`direct` identity **collapses to
+`direct`**, and the run record carries an explicit `!! IDENTITY NOT HONOURED:`
+marker (`agent/beacon/client.go`'s `identityDegradedMarker`); the beacon never
+silently runs everything as itself and calls it done. Under the service that
+account is `NT AUTHORITY\SYSTEM`. `root`, `container-runtime` and
+`administrator` on a non-elevated token read `… requires an elevated token`.
+A Windows beacon registers `["shell", "powershell", "artifact-fetch"]`, plus
+`elevated` only when its token is elevated (`agent/capabilities.go`). It is
+**not** `identity-harness`, deliberately, so SimCore's agent list never implies
+a Windows target can honour a scenario's declared `identity:`. If a Windows
+scenario's realism depends on running as a specific service account, that
+dependency is not satisfiable today, and the run record says so.
+
+**Only Windows-resolvable steps run.** A pull launch whose steps the target's
+OS cannot run is refused `409 PULL_TARGET_UNSATISFIABLE`. A step the beacon
+cannot run is recorded `!! STEP NOT RUN: PLATFORM_UNSATISFIABLE` and scored
+`not_executed`. 13 scenarios have a Windows push target and 69 carry a Windows
+step label (recounted 2026-11-10). There is no Windows canary.
+
+**Console (resolved 2026-11).** The two discrepancies this section used to
+report are fixed:
+- The Deploy-agent panel reads the shelf (`agent_binaries`) instead of always
+  saying "No Windows beacon ships yet".
+- The loopback warning no longer cites the non-existent
+  `INSTALLER_SERVER_LOOPBACK`.
+
+The panel also polls `GET /api/agents/install/attempts` every 5 s while open.
+It shows an installer-only enrolment as "enrolled — waiting for first beacon
+poll", never online, and offers per-OS uninstall lines.
 
 ## 8. Uninstall
 
+Linux / macOS (`sudo`, because a root install seen from a non-root shell is
+refused with `NEEDS_ROOT`):
+
 ```bash
-curl -fsSL 'http://<simcore-host>:8888/api/agents/install?uninstall=1' | bash
+curl -fsSL 'http://<simcore-host>:8888/api/agents/install?uninstall=1' | sudo bash
 ```
 
-Idempotent — safe to run against a host with no beacon installed.
+Windows, from an elevated Windows PowerShell (not executed on Windows):
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iwr -useb 'http://<simcore-host>:8888/api/agents/install?os=windows&uninstall=1' | iex
+```
+
+Both are idempotent. They report what they **found** separately from what they
+**removed**, remove the beacon's cache and staging roots (which hold staged
+dual-use tools), and end `UNINSTALL_INCOMPLETE` if anything they found
+survives. Deleting the agent in the console removes only the registry row; a
+running beacon re-registers on its next poll. If the Windows host cannot reach
+SimCore, use the manual fallback in `api-and-agent-surface.md` §1.6.1.
 
 ## 9. Honest limits that apply to this step specifically
 
@@ -385,8 +431,8 @@ Idempotent — safe to run against a host with no beacon installed.
   both are snapshots (interpreter roster at last registration; identity
   check run once by hand). The beacon's live, per-execution check is what
   actually enforces "never present as success," not either preflight.
-- **`GET /api/agents/install/attempts` is not durable.** It resets on a
-  SimCore restart. If you need a permanent record of who deployed what,
+- **`GET /api/agents/install/attempts` is not durable.** It is an in-memory
+  deque (100) and resets on a SimCore restart. If you need a permanent record of who deployed what,
   correlate against `GET /api/agents` (`registered_at`) instead.
 
 ## References
