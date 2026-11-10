@@ -75,6 +75,11 @@ router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 #   step.expected_detections[].type     → detection-type facet + filter
 #   step.expected_detections[].plane    → cross-plane badge (ScenarioGrid,
 #                                         StackCoverageView, useScenarioFilter)
+#   step.expected_detections[].ttp_ref  → Catalog › TTP cards (catalogBindings):
+#                                         the ONLY bulk card → scenario link,
+#                                         joined to tc_ref / tc_refs to group
+#                                         cards by use case, test case and FY27
+#                                         subdomain. ~30 bytes per detection.
 #   steps.length                        → AppConsole command-palette meta
 #
 # Everything else in a step, plus the four heaviest unread top-level fields,
@@ -88,7 +93,7 @@ _LIST_OMIT_FIELDS = (
     "success_criteria",  # 78.8 KB — index detail view, not the scenario list
 )
 _LIST_STEP_KEYS = ("id", "name", "mitre_technique")
-_LIST_DETECTION_KEYS = ("type", "plane")
+_LIST_DETECTION_KEYS = ("type", "plane", "ttp_ref")
 
 
 def _slim_step(step: dict) -> dict:

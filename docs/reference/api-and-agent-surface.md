@@ -98,7 +98,8 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   SUMMARY row, not a detail document — the full corpus serialised to 1293 KB and
   ~66 % of that was step `command` text and per-detection `description` prose no
   list view renders. Measured **1293.2 KB → 431.2 KB (-66.7 %)**. Each step keeps
-  only `{id, name, mitre_technique, expected_detections:[{type, plane}]}` — the
+  only `{id, name, mitre_technique, expected_detections:[{type, plane}]}` (plus
+  `ttp_ref` since 2026-11-10, next bullet) — the
   fields the console actually reads off a list row (technique/detection-type/plane
   facets in `FilterPalette`, `useScenarioFilter`, `ScenarioGrid`,
   `StackCoverageView`, and `steps.length` in `AppConsole`). Four top-level fields
@@ -107,7 +108,18 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   consumer can tell a summary row from a detail document without guessing at
   missing keys. **`GET /api/scenarios/{id}` is unchanged** and remains the source
   for commands, cleanup, identity, causality, `platform_variants`,
-  `detection_id`/`ttp_ref` and `verification_xql`.
+  `detection_id` and `verification_xql`.
+- **List projection keeps `ttp_ref` (2026-11-10).** Each slim detection is now
+  `{type, plane, ttp_ref}`. `expected_detections[].ttp_ref` is the only bulk
+  source of the card → scenario link, and Catalog › TTP cards joins it to
+  `tc_ref` / `tc_refs` to group cards by use case, test case and FY27 subdomain
+  (`ui/src/components/console/catalogBindings.js`). It is a projection, not a
+  default: a detection authored without `ttp_ref` gains no null key, so the
+  console can tell "this SimCore does not serve card links" (key absent
+  everywhere → grouping disabled, with the reason) from "no scenario cites this
+  card". Cost, measured on the 193-scenario corpus: **+35.8 KB**
+  (1377 detections × 26 bytes; 555.7 KB → 590.7 KB, +6.3 %), against 1770 KB
+  for the same scenarios as detail documents.
 - `download` dispatches through `push_generator.resolve_target` — see §4. `auto`
   prefers POSIX for back-compat and falls back to `windows`. **409, not 400**, is
   returned when the request is well-formed but the scenario's content cannot
