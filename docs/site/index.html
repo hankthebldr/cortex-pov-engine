@@ -4,10 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>CortexSim — Detection Simulation Engine</title>
-<meta name="description" content="Briefing memo: CortexSim drives controlled, high-fidelity signal into Cortex XSIAM/XDR. 177 UC/TC-aligned scenarios across 16 detection planes." />
+<meta name="description" content="Briefing memo: CortexSim drives controlled, high-fidelity signal into Cortex XSIAM/XDR. 193 UC/TC-aligned scenarios across 16 detection planes." />
 <meta name="theme-color" content="#0a0e0b" />
 <meta property="og:title" content="CortexSim — Detection Simulation Engine" />
-<meta property="og:description" content="177 scenarios across 16 Cortex detection planes. Controlled signal generation for XSIAM/XDR detection validation." />
+<meta property="og:description" content="193 scenarios across 16 Cortex detection planes. Controlled signal generation for XSIAM/XDR detection validation." />
 <meta property="og:type" content="website" />
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -232,7 +232,7 @@ footer a{border-bottom:none}
     <dl class="meta">
       <div><dt>For</dt><dd>Cortex Domain Consultants</dd></div>
       <div><dt>From</dt><dd>Henry Reed</dd></div>
-      <div><dt>Counts measured</dt><dd>2026-10-19</dd></div>
+      <div><dt>Counts measured</dt><dd>2026-11-10</dd></div>
       <div><dt>Source</dt><dd><a href="https://github.com/__GH_OWNER__/__GH_REPO__">__GH_OWNER__/__GH_REPO__</a></dd></div>
     </dl>
   </header>
@@ -242,7 +242,7 @@ footer a{border-bottom:none}
     <p>
       CortexSim drives controlled, high-fidelity signal into a customer's XSIAM or
       XDR tenant so a DC can prove detection logic against the same UC/TC the
-      customer is buying — <strong>177 scenarios across 16 detection planes</strong>,
+      customer is buying — <strong>193 scenarios across 16 detection planes</strong>,
       every one a validated foreign key into the FY27 v2.2 index rather than a
       generic atomic test.
     </p>
@@ -285,8 +285,8 @@ footer a{border-bottom:none}
           <!-- corpus -->
           <rect x="1" y="76" width="118" height="66" fill="var(--surface)" stroke="var(--hairline)"/>
           <text x="60" y="101" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="700">CORPUS</text>
-          <text x="60" y="117" text-anchor="middle" fill="var(--ink-muted)">177 scenarios</text>
-          <text x="60" y="130" text-anchor="middle" fill="var(--ink-muted)">175 TTP cards</text>
+          <text x="60" y="117" text-anchor="middle" fill="var(--ink-muted)">193 scenarios</text>
+          <text x="60" y="130" text-anchor="middle" fill="var(--ink-muted)">191 TTP cards</text>
 
           <line x1="119" y1="109" x2="163" y2="109" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
 
@@ -316,7 +316,7 @@ footer a{border-bottom:none}
 
           <rect x="374" y="159" width="150" height="44" fill="var(--surface)" stroke="var(--hairline)"/>
           <text x="386" y="178" fill="var(--ink)" font-weight="700">EAL — collector</text>
-          <text x="386" y="193" fill="var(--ink-muted)">26 plugins</text>
+          <text x="386" y="193" fill="var(--ink-muted)">27 plugins</text>
 
           <line x1="524" y1="37" x2="576" y2="90" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
           <line x1="524" y1="109" x2="576" y2="109" stroke="var(--cortex-green)" stroke-width="1.5" marker-end="url(#ar)"/>
@@ -354,14 +354,14 @@ footer a{border-bottom:none}
   <section class="sec">
     <div class="sechead"><span class="sechead__i">02</span><h2>What the corpus covers</h2></div>
     <p class="lede">
-      177 scenarios decompose into 667 executable steps carrying 1116 expected
+      193 scenarios decompose into 789 executable steps carrying 1369 expected
       detections across 14 MITRE ATT&amp;CK tactics.
     </p>
     <p>
       Counts are re-measured by running the engine's own loader over the tree, not
       estimated from file counts — the two are not the same question. A file count
       reports what was authored; the loader reports what the engine will actually
-      accept under strict validation. They agree today at 177 with zero rejected,
+      accept under strict validation. They agree today at 193 with zero rejected,
       but only because the corpus is clean, and the moment they diverge it is the
       loader that is telling the truth.
     </p>
@@ -512,7 +512,7 @@ footer a{border-bottom:none}
       <table>
         <thead><tr><th>Artifact</th><th>Asks</th><th class="n">Count</th></tr></thead>
         <tbody>
-          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">177</td></tr>
+          <tr><td class="mono">Scenario</td><td>Does the detection fire?</td><td class="n">193</td></tr>
           <tr><td class="mono">POS</td><td>Does a posture state hold?</td><td class="n">18</td></tr>
           <tr><td class="mono">PLT</td><td>Is a capability present?</td><td class="n">7</td></tr>
           <tr><td class="mono">AUT</td><td>Does an outcome hit its budget?</td><td class="n">3</td></tr>
@@ -573,7 +573,7 @@ footer a{border-bottom:none}
         </g>
       </svg>
       <figcaption>
-        <b>Figure 3 — The evidence ladder.</b> 177 scenarios plus 28 assertions are
+        <b>Figure 3 — The evidence ladder.</b> 193 scenarios plus 28 assertions are
         authored. Zero have executed against a live Cortex tenant. Every preflight
         response carries <code>queries_issued</code> for exactly this reason — so a
         run against a mock transport cannot later be quoted as tenant proof.
@@ -597,9 +597,16 @@ footer a{border-bottom:none}
     <p>
       CortexSim ships as tagged
       <a href="https://github.com/__GH_OWNER__/__GH_REPO__/releases">GitHub Releases</a>
-      — <strong>v1.0.2</strong> is the latest, cut 2026-09-08. Each release
-      attaches an installer, Linux and Windows stage-2 archives,
-      <code>SHA256SUMS</code> and a <code>manifest.json</code>, and the pipeline
+      — <strong>v1.1.0</strong> is the latest, cut 2026-11-02. Each release
+      attaches the source-bootstrap installer, <code>SHA256SUMS</code> and a
+      <code>manifest.json</code>. Releases up to v1.1.0 also carried stage-2
+      archives; the Windows one held a single bash file and was never a Windows
+      installer, so the next release drops it and attaches the five unsigned
+      beacon binaries with their own checksums instead. There is no Windows
+      installer archive: Windows endpoints enroll from your own SimCore
+      (<code>/api/agents/install?os=windows</code>) or run a
+      <code>format=powershell</code> push bundle, and neither has executed on a
+      Windows host yet. The pipeline
       pushes a multi-arch image (linux/amd64, linux/arm64) to GHCR. That image is
       not publicly pullable today, so the bring-up below still builds from the
       tree.
@@ -608,8 +615,7 @@ footer a{border-bottom:none}
     <h3>Docker — canonical bring-up</h3>
 <pre><code>git clone https://github.com/__GH_OWNER__/__GH_REPO__.git
 cd __GH_REPO__
-cp .env.example .env
-./scripts/dev-up.sh</code></pre>
+./scripts/dev-up.sh    # generates .env with a fresh secret; the template's placeholder is refused</code></pre>
 
     <h3>No Docker</h3>
 <pre><code>./scripts/dev-up-native.sh              # full bring-up

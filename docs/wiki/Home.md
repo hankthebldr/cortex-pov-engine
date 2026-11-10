@@ -19,7 +19,7 @@ substrate and cross-plane stitching.
 
 | Term | Meaning | Count |
 |---|---|---|
-| **Authored** | Exists and loads clean under strict validation | 177 scenarios · 28 assertions |
+| **Authored** | Exists and loads clean under strict validation | 193 scenarios · 28 assertions |
 | **Executed** | Has run end-to-end through a beacon or push bundle | partial |
 | **Tenant-verified** | Has run against a **live Cortex tenant**, alert read back | **0** |
 
@@ -30,20 +30,21 @@ four never-collapsed rungs: **AUTHORED · CONFIGURED · REACHABLE · VERIFIED**.
 
 ## Current state — counted, not estimated
 
-Measured **2026-08-30** by running the real scenario loader and the real EAL
-plugin registry over the tree. Where any prose disagrees, re-run the count and
-the count wins.
+Copied **2026-11-10** from [`docs/reference/ground-truth.md`](https://github.com/hankthebldr/cortex-pov-engine/blob/main/docs/reference/ground-truth.md),
+which `make ground-truth` regenerates from the real loader and registries, and
+which CI diffs on every push. This page is **not** gated; where it disagrees
+with `ground-truth.md`, that file wins.
 
 | Surface | Count |
 |---|---|
-| Loadable scenarios | **177** across **16 planes** |
-| Steps · step-detections | **667 · 1116** |
-| TTP detection cards | **175** |
-| Assertion artifacts (POS/PLT/AUT) | **22** (15 · 4 · 3) |
-| EAL simulator plugins | **21** |
+| Loadable scenarios | **193** across **16 planes** |
+| Steps · step-detections | **789 · 1369** |
+| TTP detection cards | **191** |
+| Assertion artifacts (POS/PLT/AUT) | **28** (18 · 7 · 3) |
+| EAL simulator plugins | **27** |
 | Tool-adapter packs | **91** (8 shelf-backed · 48 exemption-declared) |
 | AWS IaC modules | **11** |
-| HTTP routes at boot | **133** |
+| HTTP routes at boot | **137** |
 | MITRE ATT&CK tactics | **14** |
 
 ```bash
@@ -52,7 +53,7 @@ make validate && make check-refs && make coverage-strict
 
 ## The catalog
 
-- **[[Scenario Index]]** — all 177 scenarios, every plane, one table
+- **[[Scenario Index]]** — every scenario, every plane, one table
 - **[[ATT-CK-Coverage]]** — tactic → technique → scenario matrix
 - **[[Detection Planes]]** — how planes work, and the per-plane pages
 
@@ -73,19 +74,19 @@ make validate && make check-refs && make coverage-strict
 ## Repo layout
 
 ```
-core/                  ← SimCore FastAPI app — 134 routes
+core/                  ← SimCore FastAPI app — 137 routes
   api/                   REST routers
   engine/                scenario_loader · orchestrator · push_generator
                          uctc_registry · verifier · assertions · payload_shelf
   connectors/            optional read-back measurement loop
   integrations/xsiam/    148-op gated operation catalog (writes preview) + Tier-2 XQL
-  eal_simulator/         EAL traffic simulator + 26 plugins
+  eal_simulator/         EAL traffic simulator + 27 plugins
   planes/                declarative PlaneDescriptor registry (16 planes)
 agent/                 ← Go pull-model beacon (5-target build matrix)
 ui/                    ← React 18 + Vite console
-scenarios/             ← 177 scenario YAMLs, per plane
-assertions/            ← 22 POS/PLT/AUT artifacts
-detection_scanner/ttps ← 175 TTP detection cards
+scenarios/             ← 193 scenario YAMLs, per plane
+assertions/            ← 28 POS/PLT/AUT artifacts
+detection_scanner/ttps ← 191 TTP detection cards
 tools/packs/           ← 91 tool-adapter packs
 payloads/              ← digest-pinned payload shelf
 infra/modules/aws/     ← 11 Terraform modules
