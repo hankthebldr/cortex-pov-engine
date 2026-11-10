@@ -106,10 +106,15 @@ describe('uninstall commands (UI-10)', () => {
       .toBe(`${TLS12_PREFIX}iwr -useb 'https://x:8888/api/agents/install?os=windows&uninstall=1' | iex`)
   })
 
-  it('the manual Windows fallback stops and deletes the service, then the install dir', () => {
-    expect(WINDOWS_MANUAL_UNINSTALL).toBe(
-      'sc.exe stop CortexSimAgent; sc.exe delete CortexSimAgent; Remove-Item -Recurse -Force "$env:ProgramData\\CortexSim"',
-    )
+  it('the manual Windows fallback waits for the stop, then removes every tree', () => {
+    // sc.exe stop returns at STOP_PENDING with the exe still locked.
+    expect(WINDOWS_MANUAL_UNINSTALL).not.toMatch(/sc\.exe stop/)
+    expect(WINDOWS_MANUAL_UNINSTALL.indexOf('Stop-Service CortexSimAgent -Force'))
+      .toBeLessThan(WINDOWS_MANUAL_UNINSTALL.indexOf('sc.exe delete CortexSimAgent'))
+    for (const tree of ['$env:ProgramData\\CortexSim', '$env:LOCALAPPDATA\\CortexSim',
+      '$env:SystemDrive\\opt\\cortexsim', '$env:SystemRoot\\Temp\\cortexsim']) {
+      expect(WINDOWS_MANUAL_UNINSTALL).toContain(tree)
+    }
   })
 })
 

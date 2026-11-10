@@ -25,6 +25,7 @@ import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContext.jsx'
 import { buildHealthModel } from '../console/readiness/healthModel.js'
 import TargetsView from '../console/TargetsView.jsx'
+import { WINDOWS_MANUAL_UNINSTALL } from '../console/deployCommands.js'
 
 void React
 
@@ -243,11 +244,11 @@ describe('Agent cards · delete says what it does and how to really remove a bea
       .toBe(`curl -fsSL '${ORIGIN}/api/agents/install?uninstall=1' | sudo bash`)
   })
 
-  it('Windows: the PowerShell removal line plus the manual sc.exe fallback', () => {
+  it('Windows: the PowerShell removal line plus the manual fallback', () => {
     const c = confirmFor({ agent_id: 'win-l', hostname: 'W', os: 'windows', status: 'online', capabilities: ['shell', 'powershell'], last_seen_age_seconds: 1 })
     expect(within(c).getByTestId('agent-uninstall-cmd').textContent)
       .toBe(`${TLS}iwr -useb '${ORIGIN}/api/agents/install?os=windows&uninstall=1' | iex`)
     expect(within(c).getByTestId('agent-uninstall-manual').textContent)
-      .toBe('sc.exe stop CortexSimAgent; sc.exe delete CortexSimAgent; Remove-Item -Recurse -Force "$env:ProgramData\\CortexSim"')
+      .toBe(WINDOWS_MANUAL_UNINSTALL)
   })
 })

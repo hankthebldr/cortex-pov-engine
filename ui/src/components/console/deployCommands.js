@@ -89,7 +89,14 @@ export function uninstallCommand({ os, origin }) {
 
 /** Manual Windows removal, for when the host cannot reach SimCore. */
 export const WINDOWS_MANUAL_UNINSTALL =
-  'sc.exe stop CortexSimAgent; sc.exe delete CortexSimAgent; Remove-Item -Recurse -Force "$env:ProgramData\\CortexSim"'
+  // Stop-Service waits for STOPPED (sc.exe stop returns at STOP_PENDING, while
+  // the exe is still locked). Removes every tree the uninstall script does:
+  // the service install, a per-user install, and the beacon's own cache and
+  // staging roots (agent/beacon/artifact.go). Not executed on Windows here.
+  'Stop-Service CortexSimAgent -Force -ErrorAction SilentlyContinue; sc.exe delete CortexSimAgent; ' +
+  'Get-Process cortexsim-agent -ErrorAction SilentlyContinue | Stop-Process -Force; ' +
+  'Remove-Item -Recurse -Force "$env:ProgramData\\CortexSim","$env:LOCALAPPDATA\\CortexSim",' +
+  '"$env:SystemDrive\\opt\\cortexsim","$env:SystemRoot\\Temp\\cortexsim" -ErrorAction SilentlyContinue'
 
 // ── Windows facts the DC needs before the session ────────────────────────────
 
