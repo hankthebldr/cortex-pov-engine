@@ -435,7 +435,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               <span className="target-card__pill target-card__pill--ready">always ready</span>
             </div>
             <p className="target-card__sub">
-              Generate a self-contained script (bash / k8s) the DC runs on any clean Ubuntu 22.04 host.
+              Generate a self-contained bundle the DC runs on the target: bash for a clean Ubuntu 22.04 host, PowerShell (.ps1) for Windows PowerShell 5.1, or a K8s manifest.
               No agent, no inbound connection.
             </p>
             {isSel('push', 'bundle') && <span className="target-card__selected">✓ selected · push mode</span>}
