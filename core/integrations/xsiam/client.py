@@ -48,12 +48,16 @@ logger = logging.getLogger("cortexsim.xsiam")
 # refused query costs no credential decrypt and no quota; they are the same
 # function, not a second implementation.
 #
-# Fail-closed lexing: stages are split on `|` outside double-quoted string
-# literals under all four readings of {comments `//` and `/* */` honoured or
-# not} x {backslash escapes honoured or not}. If ANY reading sees a `target`
-# stage, the query is refused. Wherever XQL's real grammar differs from one of
-# those readings, that reading can only add a refusal, never remove one. An
-# unterminated quote or block comment is NOT treated as one.
+# Fail-closed lexing: stages are split on `|` outside quoted spans under every
+# reading of {comments `//` and `/* */` honoured or not} x {backslash escapes
+# honoured or not} x {which characters delimit a quoted span: `"` alone, or `"`
+# plus `'` and/or a backtick}. If ANY reading sees a `target` stage, the query
+# is refused. A single reading CAN remove a refusal (one that treats a
+# character as a delimiter when XQL does not lets a stray `"` inside a backtick
+# field name or a '...' literal swallow a real `| target` stage), which is why
+# the quote-set dimension exists: every plausible set is tried, and only a
+# query that NO reading sees a `target` stage in is sent. An unterminated quote
+# or block comment is NOT treated as one.
 
 #: The one spelling of the start path in core/ (drift guard: test_xql_write_stage).
 XQL_START_PATH = "/public_api/v1/xql/start_xql_query"
@@ -71,25 +75,33 @@ class XqlWriteStageRefused(XsiamConfigError):
     http_status = 400
 
 
-def _xql_stages(query: str, *, comments: bool, escapes: bool) -> list[str]:
+#: The quote-character sets tried; `"` is a string delimiter in every one.
+_XQL_QUOTE_SETS: tuple[frozenset[str], ...] = (
+    frozenset('"'), frozenset("\"'"), frozenset('"`'), frozenset("\"'`"),
+)
+
+
+def _xql_stages(query: str, *, comments: bool, escapes: bool,
+                quotes: frozenset[str] = frozenset('"')) -> list[str]:
     """Split ``query`` into pipe stages under one lexing reading.
 
-    String literals and (when ``comments``) comments are replaced by a single
-    space so they can neither hide a ``|`` nor glue two tokens together.
+    Quoted spans (any character in ``quotes``, closed by the same character)
+    and, when ``comments``, comments are replaced by a single space so they can
+    neither hide a ``|`` nor glue two tokens together.
     """
     stages: list[str] = []
     cur: list[str] = []
     i, n = 0, len(query)
     while i < n:
         c = query[i]
-        if c == '"':
+        if c in quotes:
             j = i + 1
             closed = False
             while j < n:
                 if escapes and query[j] == "\\":
                     j += 2
                     continue
-                if query[j] == '"':
+                if query[j] == c:
                     closed = True
                     break
                 j += 1
@@ -137,19 +149,22 @@ def refuse_xql_write_stages(query: Any) -> str:
             f"XQL query must be a string, got {type(query).__name__}; refusing to "
             f"send what cannot be inspected"
         )
-    for comments in (True, False):
-        for escapes in (True, False):
-            for stage in _xql_stages(query, comments=comments, escapes=escapes):
-                m = _STAGE_WORD_RE.match(stage.lstrip())
-                if m and m.group(0).lower() in XQL_WRITE_STAGES:
-                    raise XqlWriteStageRefused(
-                        f"XQL query refused: it contains a `{m.group(0)}` stage, which "
-                        f"writes the result into a tenant dataset or lookup (`| target "
-                        f"type=lookup append=false <name>` replaces an existing lookup). "
-                        f"CortexSim only reads from Cortex. Remove the `{m.group(0)}` "
-                        f"stage; a query that merely mentions the word inside a "
-                        f"\"string\" is accepted."
-                    )
+    readings = ((comments, escapes, quotes)
+                for comments in (True, False)
+                for escapes in (True, False)
+                for quotes in _XQL_QUOTE_SETS)
+    for comments, escapes, quotes in readings:
+        for stage in _xql_stages(query, comments=comments, escapes=escapes, quotes=quotes):
+            m = _STAGE_WORD_RE.match(stage.lstrip())
+            if m and m.group(0).lower() in XQL_WRITE_STAGES:
+                raise XqlWriteStageRefused(
+                    f"XQL query refused: it contains a `{m.group(0)}` stage, which "
+                    f"writes the result into a tenant dataset or lookup (`| target "
+                    f"type=lookup append=false <name>` replaces an existing lookup). "
+                    f"CortexSim only reads from Cortex. Remove the `{m.group(0)}` "
+                    f"stage; a query that merely mentions the word inside a "
+                    f"\"string\" is accepted."
+                )
     return query
 
 

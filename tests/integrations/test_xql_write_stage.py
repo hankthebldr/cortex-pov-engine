@@ -101,6 +101,11 @@ def _client(rec: _Recorder):
     'dataset = a | filter f = "\\" | target type=lookup x | filter g = "',
     # An unterminated quote is not a string.
     'dataset = a | filter f = "abc | target type=lookup x',
+    # A stray `"` inside a backtick field name or a '...' literal must not open
+    # a fake string that swallows a real target stage. Both were ALLOWED when
+    # only `"` delimited a quoted span.
+    'dataset = a | fields `q"` | target type=lookup append=false y | fields `"r`',
+    "dataset = a | filter x = '\"' | target type=lookup append=false y | filter z = \"'\"",
 ])
 def test_write_stage_is_refused(query):
     from integrations.xsiam.client import XqlWriteStageRefused, refuse_xql_write_stages
@@ -124,6 +129,8 @@ def test_write_stage_is_refused(query):
     "dataset = xdr_data | filter x = 1 // a comment that mentions target",
     "dataset = xdr_data // http://example.test/target\n| fields x",
     'dataset = xdr_data | filter url = "http://x/y" | comp count() as n',
+    # An apostrophe inside a double-quoted string opens nothing.
+    'dataset = xdr_data | filter msg = "don\'t | target type=lookup y" | fields msg',
 ])
 def test_target_inside_a_string_or_identifier_is_allowed(query):
     from integrations.xsiam.client import refuse_xql_write_stages
