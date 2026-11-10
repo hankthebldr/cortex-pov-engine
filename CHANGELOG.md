@@ -8,7 +8,351 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-### Fixed
+**Beta-readiness pass, weighted to Windows.** The pass hardens SimCore for a
+beta where Domain Consultants deploy it into customer labs and enroll beacons on
+real endpoints. It closes one verified unauthenticated root
+command-execution path. It also finds that the Windows push bundles had been
+silent no-ops since v1.0.0, and that the elevated Windows service install died
+about 30 s after it reported success. On the Windows pull path it adds a service
+handler, dispatch keyed to the target's OS, Job Object tree-kill and an ASCII
+installer with an uninstaller. It also adds a `windows-2022` CI job. Counted on
+this tree: 193 scenarios · 191 TTP cards · 27 EAL plugins · **1369**
+step-detections (was 1377: the Windows content now declares only detections a
+lab run can fire) · 137 route decorators · 28 assertion artifacts.
+
+> **Nothing in this section has executed on Windows.** No Windows host was
+> reachable while it was written. Every Windows claim below rests on
+> cross-compilation, `go vet`, compile-only `go test -c`, and parsing under
+> pwsh 7.6 on macOS/Linux. pwsh 7.6 is not Windows PowerShell 5.1, which is the
+> product floor. The new `windows` CI job (windows-2022) is **authored and has
+> not yet run on GitHub**. It is the first place any of this can execute, and
+> it is expected red until it has been observed green once. **`tenant-verified`
+> is still 0.**
+
+### Security
+
+- **Closed an unauthenticated root command execution on `POST /api/tools/{tool}/start`
+  (SEC-02, verified on cc26ddf).** The request's `params` were merged over the
+  registry's own `binary` / `source_path` / `port`, so
+  `{"params":{"binary":"…"}}` against `xdrtop` ran an arbitrary command as
+  SimCore's user, which is root in the image. Caller params now fill only the
+  placeholders the run template leaves open. Each value is one shlex-quoted
+  argv token, and `*_path` must resolve under `CORTEXSIM_BASE_DIR`. A refusal
+  is `400 BAD_TOOL_PARAM` and spawns nothing. `POST /api/tools/{tool}/install`
+  runs off the event loop, one at a time; a concurrent call gets
+  `409 INSTALL_IN_PROGRESS`.
+- **The `docker.sock` mount is gone from `docker-compose.yml`.** Nothing in
+  `core/` uses Docker. The mount only turned any command execution in the
+  container into root on the DC's host. Shutdown is now bounded
+  (`--timeout-graceful-shutdown 5`, `stop_grace_period: 15s`), so open SSE
+  streams no longer get SimCore SIGKILLed mid-write. A non-root `USER` in the
+  image is still deferred: it cannot be verified without an image run.
+- **CORS is off by default, and a Host guard refuses DNS-rebinding requests.**
+  CORS was `allow_origins=["*"]`, so with no authentication any web page a DC
+  had open could read every API response. CORS is now mounted only for origins
+  in `CORTEXSIM_CORS_ORIGINS` (empty default) and never with credentials. The
+  new outermost middleware answers `400 HOST_NOT_ALLOWED` unless `Host` is
+  `localhost`, an IP literal, this machine's own hostname/FQDN, or a name in
+  `CORTEXSIM_ALLOWED_HOSTS` (`*.x` matches subdomains, `*` disables the
+  guard). Inside the container the hostname is the container id, so
+  `scripts/dev-up.sh` seeds `CORTEXSIM_ALLOWED_HOSTS` with the jumpbox's short
+  and fully qualified names when it writes `.env`. **A beacon started with
+  `--server http://<dns-name>:8888` must have that name allowed, or every poll
+  gets `400 HOST_NOT_ALLOWED`.** Compose publishes on
+  `${CORTEXSIM_BIND:-0.0.0.0}`.
+- **`/api/health` now says the API is unauthenticated.** The new `api_auth`
+  component reads `degraded` with `API_UNAUTHENTICATED` on every current
+  deployment, by design, and boot logs a warning naming what is exposed. So
+  the overall health `status` of every deployment is `degraded` until
+  per-request authentication lands (SEC-01, still open). Any **other**
+  degraded component is a real fault. The console labels this component as
+  the expected standing state.
+- **The `.env.example` placeholder secret is refused in every environment
+  (SEC-11).** `replace-me-with-a-generated-32plus-byte-secret` is 46 characters
+  and passed the production guard, so `cp .env.example .env && docker compose
+  up` encrypted the vault under a public, committed key. Anything starting
+  `replace-me` is now refused in development as well as production.
+- **A changed master key is detected (OPS-12).** If `.env` was regenerated over
+  a surviving `simcore_db` volume, every stored credential was undecryptable
+  while `/api/health` still read `integrations: ok`. A key-check row now makes
+  the new `master_key` component report `MASTER_KEY_MISMATCH`, and `dev-up.sh`
+  warns before it does that. A secret name in the reserved `__cortexsim__/`
+  namespace is now `400 RESERVED_SECRET_NAME` instead of a 500.
+- **XQL `target` stages are refused before they reach a tenant (SEC-05).**
+  `| target type=lookup append=false <name>` *replaces* a tenant lookup, which
+  may be one the customer's correlation rules read. Four paths sent query
+  strings to `start_xql_query` uninspected: the `/xql` route, the generic
+  executor for `OP-XQL-START-XQL-QUERY` (catalogued `read`, so it ran with no
+  consent), the verifier runners, and Composer draft `verification_xql`. One
+  fail-closed guard inside `XsiamClient.start_xql_query` now returns
+  `400 XQL_WRITE_STAGE_REFUSED` on every path. A follow-up closed a bypass
+  where a stray quote inside a backtick field or a `'…'` literal hid the
+  stage from the lexer. The guard reads 16 quote/comment/escape readings and
+  refuses if any one sees a `target`. The catalog op is now tagged
+  body-inspected.
+- **Hostile text can no longer become a command in a push bundle (SEC-13).**
+  Composer drafts refuse CR/LF, tab, NUL, ESC, DEL, NEL and U+2028/2029 in
+  single-line fields (name, author, tags, step id/name, detection
+  description/id/ttp_ref). The bash bundle also sanitises every
+  scenario-sourced value it writes into a `#` comment, because a newline there
+  ended the comment and the next line ran on the customer's endpoint.
+- **Installer parameters can no longer inject script text.**
+  `?id=x'; Write-Host PWNED; '` was served 200 and, on Windows, became the
+  SYSTEM service's command line; the bash installer had the same flaw. Both
+  installers now refuse malformed input with structured 400s: `BAD_AGENT_ID`,
+  `BAD_SERVER`, `BAD_TOKEN` and `BAD_INTERVAL`. The `BAD_SERVER` rule also
+  applies to the Host-derived default.
+- **`X-Forwarded-For` is believed only from `CORTEXSIM_TRUSTED_PROXIES` (SEC-15).**
+  Any host could stamp an arbitrary address on an agent row, and
+  `Agent.last_ip` becomes the run's `src_ip`, which detections are stitched on.
+  The header is now read right to left, and only from peers inside the listed
+  CIDRs (empty by default).
+- **Run output, observation batches and the run list are bounded (SEC-14 /
+  OPS-06).** Run output is capped at 1 MiB per chunk and 32 MiB per run, with
+  integrity lines reserved. An observation batch is capped at 5000 alerts.
+  `GET /api/runs` is paged.
+- **`dc_ssh_cidr` refuses prefixes shorter than /16 (IPv4) or /48 (IPv6)** with
+  `422 VALIDATION_ERROR`, because the same CIDR also gates port 8888 on the
+  generated jumpbox.
+- **Release workflow least privilege (CI-12).** `release.yml` now grants
+  `permissions: {}` at the top and per-job scopes beneath it, and the
+  `workflow_dispatch` tag input reaches its script through `env`, not
+  `${{ }}` interpolation. `.github/dependabot.yml` tracks GitHub Actions weekly
+  against `dev`. Pinning every action by commit SHA is deferred: it needs a
+  network lookup this pass could not make.
+
+### Fixed — Windows push bundles (`format=powershell`)
+
+- **Every PowerShell-dialect push step was a silent no-op from v1.0.0 through
+  v1.1.0 (PUSH-01, since `ea5a52f`).** The harness built each step file inside
+  a double-quoted string, so `$ErrorActionPreference = 'Stop'` expanded to
+  `Continue = 'Stop'`. That is the `continue` keyword, which outside a loop
+  ends the step with exit 0 before the TTP line runs. The bundle then logged
+  "completed successfully". At v1.1.0 this hit 48 of the 68 steps in the 13
+  Windows bundles, and every PowerShell cleanup line. Steps now really run. A
+  PowerShell step that skips its epilogue (top-level `return` / `break` /
+  `continue` / `exit 0`) reads `EPILOGUE_NOT_REACHED`, not success. *Proven
+  only under pwsh 7 on macOS/Linux; not executed on Windows PowerShell 5.1.*
+- **A `.ps1` bundle now has an exit-code contract and an outcome table.**
+  `0` clean · `1` a step was non-zero, threw or timed out · `2` refused because
+  cleanup residue was not acknowledged · `3` a step was not executed
+  (`PREREQ_MISSING`, `OPERATOR_INPUT_MISSING`, `NOT_ELEVATED`,
+  `SHELL_UNAVAILABLE`, `NOT_REACHED`) · `4` cleanup failed. Before this, a
+  bundle exited 0 even when steps failed. Every run now ends with a
+  per-step outcome table. Each step has a timeout (default 300 s); on timeout
+  `taskkill /T /F` ends the step's whole process tree. A step needing admin is
+  marked `NOT_ELEVATED` when the session is not elevated. Prerequisites are
+  probed with `Get-Command` before a step runs, and the header lists the
+  operator inputs each bundle requires. The bundle no longer claims "missing
+  tools are logged as WARN". It installs nothing itself, and a missing tool
+  means the step is not executed.
+- **Cleanup residue is refused unless acknowledged.** A Windows bundle refuses
+  to start (exit 2) when its scenario cleanup carries POSIX-only lines it cannot
+  run on Windows, unless `CORTEXSIM_ACCEPT_RESIDUE=1` is set. Today 9 of the 13
+  Windows bundles need it: `SIM-ASM-005`, `SIM-EDR-003`, `SIM-EDR-004`,
+  `SIM-EDR-005`, `SIM-ITDR-006`, `SIM-MP-001`, `SIM-MP-020`, `SIM-NDR-005` and
+  `SIM-NDR-007`. Only `SIM-EDR-006`, `-013`, `-017` and `-021` run without it.
+- **The Windows step dialect is classified by structure, and a mixed dialect is
+  refused (CONT-13).** The old classifier keyed on a hand-picked list of 28
+  cmdlet verbs. It sent `wevtutil cl Security & … & Clear-History` to cmd.exe,
+  where it runs correctly under neither interpreter. The new classifier reads
+  structure: assignments, `[Type]::`, any `Get-Verb` verb, `$env:`, `%VAR%`,
+  infix `&`, and so on. A step that is genuinely both now gets
+  `409 BUNDLE_TARGET_UNSATISFIABLE` with reason `MIXED_DIALECT`. A bare
+  `powershell.exe -Command "…"` step now runs through cmd, because an outer
+  PowerShell emptied every `$x` inside the double quotes.
+- **13 scenarios emit a Windows bundle (9 both-target, 4 Windows-only).**
+  `SIM-EDR-004` stays in that set because its step-01 was rewritten as
+  single-dialect PowerShell (below). The emittable spread over the 193
+  scenarios is posix-only 179 · both 9 · windows-only 4 · none 1 (`SIM-MP-030`).
+  Three scenarios are `push_supported: false`. None of the 13 bundles has
+  executed on any OS; each is parsed by pwsh 7 and AST-checked for
+  PowerShell-7-only syntax.
+
+### Fixed — Windows scenario content
+
+- **Windows content now tears down what it creates.** `SIM-EDR-003` left behind
+  a SYSTEM scheduled task, an auto-start service, a local administrator using
+  the repo password `TempP@ss123`, a real `authorized_keys` line and an HKCU
+  Run key. Every one of its cleanup lines was POSIX and was skipped on
+  Windows. Every Windows create is now paired with an in-step delete.
+  `authorized_keys` is backed up and restored byte-for-byte. Residue was also
+  removed from `SIM-ITDR-006`, `SIM-MP-001/018/020/025/026/029/030` and
+  `SIM-EDR-006`.
+- **No scenario clears a real Windows event log or deletes recovery any more.**
+  `SIM-EDR-004` cleared the real Security, System and Windows PowerShell logs.
+  It now creates, clears and removes a `CortexSim-EDR004` channel, which keeps
+  the clear-log behaviour but not Security event 1102. `SIM-EDR-011` deleted
+  every shadow copy and the backup catalog, and disabled boot recovery. It now
+  lists shadows and deletes only the nil shadow id.
+- **The LSASS dump step waits for the dump before checking it.**
+  `rundll32.exe` is a GUI-subsystem binary, so PowerShell's `&` did not wait
+  for it. `SIM-EDR-006` step-02 therefore raced its own `Test-Path`, reported
+  prevention on no evidence, and left a full LSASS dump in `%TEMP%`. The step
+  now uses `Start-Process -Wait` and deletes the dump in-step. Card
+  `TTP-2026-0002` keys on `action_process_image_name = rundll32.exe`.
+- **Only detections a lab run can fire are declared (CONT-04/10).**
+  `SIM-EDR-021` and `SIM-EDR-013` only wrote marker files, yet declared
+  driver-load, module-load, scheduled-task and shadow-delete detections plus
+  their correlations. A healthy tenant scored every one as a miss. Both now
+  emit real, inert telemetry, and the unfirable detections moved to
+  `purpose: hunt`. `SIM-EDR-017`'s egress leg now runs only against an
+  operator-named `CORTEXSIM_C2_HOST`; before, it defaulted to loopback inside
+  an empty `catch {}`. Corpus step-detections went 1377 to 1369; Correlation
+  share is 10.0% (137 of 1369), exactly at the `coverage-strict` floor.
+- **Windows variant text runs on 5.1 and cmd.** Fixed
+  `%STAGE_HOST%`/`%ASM_TARGET_HOST%` used in PowerShell, which never expands
+  them, and `-SkipCertificateCheck`, which 5.1 lacks. Also fixed
+  `powershell -NoExit`, which never returns, `;` used as a cmd separator, and
+  single-`%` loop variables in a `.cmd` file.
+- **111 Windows labels with no Windows command behind them were relabelled, and
+  three lint codes keep them out.** 100 steps in 28 scenarios declared `windows`
+  with only POSIX text, and 11 more carried Windows primaries the resolver
+  refuses. The console and per-OS counts read those labels as Windows coverage.
+  Scenarios with a Windows-labelled step went **83 → 69** (steps 263 → 152). New
+  boot **warnings** (not gated by `CORTEXSIM_STRICT_REFS`) keep it from
+  recurring: `S-28` (a `windows` label nothing resolves), `S-29` (its POSIX
+  mirror) and `S-30` (a doubled backslash in a Windows variant).
+- **Bash bundles no longer die in cleanup on a Windows teardown line.** A
+  Windows cleanup line containing `"$env:TEMP"` made bash, under `set -u`, end
+  the EXIT trap with `env: unbound variable`. That skipped every Linux cleanup
+  line after it, for example `SIM-MP-016`'s and `SIM-MP-025`'s.
+
+### Fixed — Windows pull path (beacon and installer)
+
+- **The Windows beacon now runs as a real service (BEACON / CI-02).** The
+  elevated installer registered `CortexSimAgent`, but nothing in the beacon ever
+  called `StartServiceCtrlDispatcherW`. Every elevated install therefore died
+  with SCM error 1053 about 30 s after reporting success, and again after every
+  reboot. The beacon now has a stdlib-only advapi32 SCM handler: STOP and
+  SHUTDOWN are handled, there is a 60 s stop deadline, and `go.mod` still has
+  no dependencies. A new `--log-file` (env `CORTEXSIM_AGENT_LOG_FILE`) defaults
+  under the SCM to `%ProgramData%\CortexSim\agent.log`, rotating at 10 MiB with
+  one old generation. Under the SCM, stderr was a null handle and every log
+  line was lost. The startup line ends `mode=console` or `mode=service`. *Not
+  executed on a Windows host.*
+- **Pull dispatch is keyed to the target's OS (BEACON-01 / CONT-01).** The
+  orchestrator shipped `steps[]` verbatim and never read `Agent.os`, so a
+  Windows beacon ran POSIX primaries through PowerShell. A step like
+  `SIM-EDR-003` step-01 exited 0 after doing nothing, and every expectation
+  then read `missed`. SimCore now dispatches the resolved command plus its
+  `shell` (`powershell` | `cmd`) and `resolved_from`, and records a
+  `!! PLATFORM VARIANT` marker on variant steps. A launch the target's OS
+  cannot satisfy is refused with `409 PULL_TARGET_UNSATISFIABLE` before any
+  Result row is seeded. A launch at an agent that is not enrolled gets
+  `409 TARGET_AGENT_NOT_ENROLLED`. On the host, the beacon refuses a step whose
+  `platforms` exclude Windows: it records `!! STEP NOT RUN:
+  PLATFORM_UNSATISFIABLE`, scores the step `not_executed` (never `missed`)
+  and continues. A run where no step can run exits 78, never 0.
+- **The Windows executor kills by Job Object, never by a released pid
+  (BEACON-04).** The old tree-kill swept by bare pid after `Wait` had released
+  the handle, and could adopt a recycled pid while running as SYSTEM. Each
+  command is now assigned to a Job Object right after `Start`, and abort calls
+  `TerminateJobObject`. `KILL_ON_JOB_CLOSE` is not set, so a successful step's
+  background children survive, as on POSIX. `powershell.exe` and `cmd.exe` now
+  launch by absolute `%SystemRoot%` path, with `-OutputFormat Text`.
+- **Privileged identities on Windows need an elevated token (CONT-14/07).**
+  `root`, `container-runtime` and `administrator` on a non-elevated token used to
+  be recorded as honoured. They are now recorded as `!! IDENTITY NOT HONOURED: …
+  requires an elevated token`. A Windows beacon advertises `elevated` only when
+  `TOKEN_ELEVATION` says so. Under the service, steps run as
+  `NT AUTHORITY\SYSTEM`, and causality chains in XDR show SYSTEM, not the admin
+  who installed.
+- **A lost control channel is no longer reported as an operator abort
+  (BEACON-11).** The beacon stays fail-closed, but the record now reads
+  `control channel lost — step terminated (NOT an operator abort)` with
+  `reason=CONTROL_CHANNEL_LOST`. `/complete` and step `/output` retry transport
+  errors and 5xx (1, 2, 4, 8, 16 s). A 409 counts as success; other 4xx stop
+  at once.
+- **A staged tool that endpoint protection quarantines reads
+  `ARTIFACT_QUARANTINE_SUSPECTED` (BEACON-16).** It used to read
+  `ARTIFACT_WRITE_FAILED` and tell the DC the missing detection was "NOT a gap"
+  — prejudging what may be the customer's prevention working.
+- **The Windows installer was rewritten, and a Windows uninstaller added.** The
+  served `.ps1` carried about 90 non-ASCII bytes. Windows PowerShell 5.1 reads
+  a BOM-less file as cp1252, where an em dash breaks the parse ("Missing
+  closing '}'"). `Cs-Fail` called `exit 1`, which under `iwr | iex` closed the
+  operator's own shell, and the token leaked into that shell. The installer is
+  now ASCII and safe under `iex`. It refuses a non-elevated session with
+  `NOT_ELEVATED` before enrolling; with `CORTEXSIM_ALLOW_UNSUPERVISED=1` it
+  installs a per-user beacon that dies at logoff instead
+  (`DEGRADED_NO_SUPERVISOR`). It locks the install dir's ACL at creation and
+  refuses one an admin does not own (`INSTALL_DIR_UNTRUSTED`). It reports
+  `OK` only when the service is Running, still Running 35 s later (past the
+  1053 window), and its `last_seen` has advanced past a baseline. Expect
+  45–70 s per install. `?os=windows&uninstall=1` now returns a PowerShell
+  uninstaller; it used to return the bash one. Both uninstallers now also
+  remove the beacon's cache and staging roots, which hold staged dual-use
+  tools. *Neither has executed on Windows.*
+- **The POSIX uninstaller reports what it found, not just what it removed
+  (INST-13).** A non-root run against a root install printed "nothing to remove"
+  and exited 0 while the beacon was still installed. It now refuses with
+  `NEEDS_ROOT` (`… | sudo bash`) and fails `UNINSTALL_INCOMPLETE` when
+  something it found survives.
+
+### Fixed — run integrity
+
+- **An alert is never credited to a run that never executed (OPS-01).** A run
+  lost on a restart, refused at launch, still queued, or aborted before
+  delivery could have alerts pasted into `/observations`. On cc26ddf that
+  produced `newly_matched 1, MTTD 720 s, coverage 100 %`. Such runs now have
+  their Results stamped `not_executed` (`TASK_LOST_ON_RESTART`,
+  `LAUNCH_REFUSED`) and are never matched.
+- **An unscoped reconcile match is `pending`, not `detected` (DOCS-03).** A push
+  run has no target host, so its reconcile considered every alert in the tenant.
+  On cc26ddf an alert raised on an unrelated laptop was credited to a push run.
+  An unscoped `detect` match now stays `pending` / `UNSCOPED_MATCH`, with no
+  MTTD. To scope a push run, name the endpoint:
+  `POST /api/runs/{id}/reconcile?host=<name>` or `host` in the
+  `/observations` body. The summary gains `host_source`
+  (`operator` | `run_target` | null).
+- **A run its beacon abandoned is reaped (OPS-03).** If a beacon's `/complete`
+  was lost across a SimCore restart, the run read `running` forever, because
+  the agent kept polling and the offline sweep never fired. Such a run is now
+  terminalised with a `BEACON ABANDONED TASK` marker, which no longer guesses
+  the cause. A fan-out is reaped only when every endpoint has let go of its
+  partition. A late `/complete` on a terminal run is now
+  `409 RUN_ALREADY_TERMINAL`, not a 200.
+- **An oversized output chunk is cut, never refused.** The beacon sends one
+  chunk per step. A step over 1 MiB (linpeas, pspy) lost its whole chunk,
+  including `=== STEP` and `!! IDENTITY NOT HONOURED`, and read in the report
+  as an ordinary miss. The chunk is now accepted and cut, keeping every frame
+  and integrity line and adding `[OUTPUT CHUNK TRUNCATED: N of M bytes kept …]`.
+- **The POV report states identity, variant and cleanup caveats.** These are:
+  steps that ran under `IDENTITY NOT HONOURED`, steps that ran a platform
+  variant or were not run, and a "Cleanup Not Run" section. Pull mode never
+  executes `cleanup.commands`, and the report now names the commands left
+  unrun.
+- **A closed console tab releases its SSE subscription** within about 1 s,
+  instead of at the next failed 15 s keepalive (OPS-10).
+
+### Fixed — console
+
+- **The console offers the PowerShell push bundle and shows refusals in place.**
+  Push formats are `auto | bash | PowerShell (.ps1) | k8s` everywhere, defaulting
+  to `auto` like the server. Before, a Windows bundle could not be requested
+  and would have been saved as `.sh`. A `409 BUNDLE_TARGET_UNSATISFIABLE`,
+  `PULL_TARGET_UNSATISFIABLE` or `TARGET_AGENT_NOT_ENROLLED` now renders its
+  offending steps.
+- **Launch preflight judges platform from the server's `bundle_targets`, not
+  step labels (UI-08).** About 100 mislabelled steps had blocked the Linux
+  beacon that runs a scenario and cleared the Windows beacon that cannot.
+- **Run Detail flags steps that did not run as authored** (`IDENTITY NOT
+  HONOURED`, `PLATFORM VARIANT`, `STEP NOT RUN: PLATFORM_UNSATISFIABLE`).
+- **The deploy console tells the truth about Windows.** It always said "No
+  Windows beacon ships yet", cited a code SimCore never emits, and showed an
+  enrolled-but-never-polled agent as online. It now reads the shelf state, and
+  polls install attempts every 5 s while open. A row that has only enrolled
+  reads "enrolled — waiting for first beacon poll". The Windows one-liner
+  carries the TLS 1.2 opt-in, and the uninstall lines are per-OS (`| sudo bash`
+  for POSIX).
+- **The console polls run summaries** (`GET /api/runs?fields=summary`) instead
+  of every run's whole transcript every 10 s, and it reads every page past
+  500 runs.
+- **Library and guided-flow errors render** instead of going to a no-op
+  `onError`.
+
+### Fixed — connectors
 
 - **An `xsiam_tenant` credential now serves alert read-back everywhere the
   console said it did.** `GET /api/connectors` reported the `xsiam` connector
@@ -27,6 +371,104 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   not a fallback to the first row.** A reconcile asked for tenant A that
   quietly read tenant B would have credited B's alerts to the run; the error
   lists the names that are available and pulls nothing.
+- **Preflight probes the other alerts API version before calling a tenant empty
+  (#166).** Reconcile reads alerts on `/public_api/v1/…`, which the vendor lists
+  as legacy. When v1 answered 200 with nothing while v2 held the alerts,
+  reconcile "worked", matched nothing, and every seeded detection read
+  `missed`. Preflight now probes the other version and names the one config
+  value that fixes it.
+- **`/api/health` counts the corpus apart from Composer drafts (#167).** The
+  `scenario_catalog` count read 194 while the Library showed 193. `count` is now
+  the active corpus, `drafts` and `by_status` are reported beside it, and
+  drafts alone never rescue `SCENARIO_CATALOG_EMPTY`.
+
+### Added
+
+- **`windows` CI job on `windows-2022` — authored, NOT yet run on GitHub.**
+  This is the only job that executes anything on Windows. One step per phase
+  of `scripts/ci/windows-native-e2e.ps1`: `floor` (PSEdition Desktop 5.1) ·
+  `go` (native vet + test) · `build` (the shipped recipe, PE32+ / SHA256SUMS /
+  Authenticode) · `render` · `parse` (5.1 `ParseFile` + `ParseInput`) · `pssa` ·
+  `boot` (SimCore on 127.0.0.1) · `install` (the console's token one-liner,
+  service) · `pull` · `abort` · `push` · `uninstall` · `collect`. Evidence goes
+  to the `windows-proof` artifact. The job has no `paths:` filter, no `needs:`
+  and no `continue-on-error`. It is expected red until first observed green,
+  and should become a required check only after that. Three CI-only probe
+  drafts bind `UCS-EDR-02` / `TC-EDR-03` so the launch gate accepts them;
+  drafts are never UC/TC evidence. A green run will **not** cover: an https
+  SimCore under 5.1 TLS defaults, Server Core, code pages other than cp1252,
+  AppLocker/WDAC/Constrained Language Mode, a real Cortex XDR agent, reboot
+  survival, or the non-admin install path.
+- **`make check-powershell`, the PowerShell 5.1 floor gate.** It renders every
+  PowerShell artifact this repo hands to Windows: 4 installers, the
+  uninstaller, 13 bundles, 35 PowerShell steps, 5 beacon-wrapper samples and 3
+  tracked `.ps1` files (61 files; 12 cmd-dialect steps are listed, not parsed).
+  It gates each artifact the way 5.1 reads it. It parses under pwsh 7, then
+  decodes the bytes as 5.1 does: BOM means UTF-8, otherwise Windows-1252. It
+  also checks the UTF-8 read `iwr | iex` uses and a denylist of PS7-only
+  constructs. An empty category fails the gate. **Necessary, not sufficient:**
+  this is not 5.1 execution. It runs in the `refs` job with
+  `CORTEXSIM_REQUIRE_POWERSHELL=1`.
+- **CI fails, not skips, when PowerShell is missing (CI-08).** `agent` and `refs`
+  (ci.yml) and `python-tests`, `ttp-static` and `go-tests` (test.yml) assert
+  `pwsh --version` and set `CORTEXSIM_REQUIRE_POWERSHELL=1`. `backend` also runs
+  `make check-agent-shelf`, which now reads each served beacon's magic bytes:
+  ELF / Mach-O machine, and MZ/PE `0x8664`. Before, a Linux ELF named `.exe`
+  passed.
+- **`bundle_targets` on `GET /api/scenarios/{id}` and every list row** —
+  `["posix"|"windows"…]`, `[]` for `push_supported: false`, computed by the
+  same function the download route gates on.
+- **`GET /api/runs?fields=summary&limit=&offset=`**: `summary` drops `output`
+  and adds `output_bytes` + `output_tail` (last 2 KB). The default limit is
+  500, the max 5000; `total` is the number of runs, not the page length.
+- **Release beacons.** The GitHub Release now attaches the five unsigned
+  beacons plus `cortexsim-agent-SHA256SUMS` and `cortexsim-agent-buildinfo.txt`,
+  and `manifest.json` gains an `agent` block (`signed: false`). `release.yml` no
+  longer ships a `stage2-windows.zip` that contained one bash file; a stage2
+  asset ships only when `installer/stage2/<os>/` exists, and today none does.
+  *The new `release.yml` has never run. The release job checks only the
+  `.exe`'s structure; nothing has executed it on Windows.*
+- **XSIAM operation catalog: 32 field-observed ops harvested (#165).** The ops
+  come from cortex-bot, whose author ran them against a live tenant. The
+  catalog grows to 148 ops in 7 new packs (System, Cases and Issues, Identity
+  Threat, Triage, War Room, Managed Threat Hunting, Vulnerability Management).
+  Each sits behind CortexSim's gate. Writes and destructives stay
+  preview-only: `CORTEXSIM_XSIAM_ALLOW_WRITE` / `_DESTRUCTIVE` default off.
+  Four docs that called the catalog "read-only" now say what it is.
+- **Runs list, Techniques and Topology rebuilt on live run records (#168).**
+  Every Runs row now shows scenario, start time, agent (or "push bundle"),
+  duration, `detected / expected` and status, without being opened. This uses
+  the new `expected_detections` and `detected_count` aggregates on
+  `GET /api/runs`. A `pending` row is never counted as a hit. Techniques
+  places each step through its TTP card. A staged push run is no longer
+  tailed, and its steps read as staged. A Composer canvas launch is followed
+  in the dock.
+- **Console polish (#167).** With exactly one registered tenant, the console
+  binds it. `?open=` is the deep link on every surface, with the legacy keys
+  kept as aliases. The Composer opens every library scenario (it had been cut
+  to 24). The Library prints no count before its list arrives. Page titles
+  now repeat the tab name.
+
+### Changed
+
+- **`POST /api/runs/{id}/complete` on a terminal run is `409
+  RUN_ALREADY_TERMINAL`** (was `200 {already_terminal: true}`). The beacon now
+  retries `/complete`, so a 200 could not be told apart from "accepted".
+- **`POST /api/runs/{id}/output` no longer returns 422 for a chunk over 1 MiB.**
+  It accepts and cuts the chunk, and the reply carries `chunk_truncated` /
+  `offered_bytes` / `accepted_bytes`.
+- **`GET /api/agents/install`**: `?os=windows&mode=foreground` and
+  `uninstall=1&mode=foreground` are `400 BAD_MODE`; `?os=windows&uninstall=1`
+  returns `uninstall-cortexsim-agent.ps1`. The POSIX installer's
+  `UNSUPPORTED_OS` fix line now gives the Windows pull one-liner instead of
+  "use PUSH mode".
+- **Task steps carry `shell`, `resolved_from` and `platform_variants`**, and a
+  Windows beacon honours them. POSIX beacons still ignore platform labels.
+- **MTTD is measured launch-to-alert.** No `run.step` start frames are
+  published and `Result.executed_at` is not re-stamped at step start, so MTTD
+  includes queue wait and the runtime of earlier steps. The operator runbooks
+  that said otherwise are corrected. Changing when the clock starts is an open
+  decision (OPS-07).
 
 ## [1.1.0] - 2026-11-02
 
