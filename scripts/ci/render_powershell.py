@@ -233,6 +233,7 @@ class Renderer:
     def render_scenarios(self) -> None:
         try:
             from engine import push_generator as pg
+            from engine.orchestrator import resolve_steps_for_target
             from engine.scenario_loader import (
                 _find_yaml_files,
                 _parse_and_validate,
@@ -295,15 +296,19 @@ class Renderer:
                         scenario_id=sid,
                     )
 
-            steps_by_id = {s.get("id"): s for s in doc.get("steps") or []}
+            # The pull path dispatches through the orchestrator's own resolver.
+            # It must hand a Windows beacon exactly the text (and shell) this
+            # gate parses; any divergence means the beacon runs text nothing
+            # checked, so it is an error, not a warning.
+            pulled, _markers, _unres = resolve_steps_for_target(list(doc.get("steps") or []), "windows")
+            pulled_by_id = {p.get("id"): p for p in pulled}
             for res in win.steps:
                 rel_src = f"{os.path.relpath(fp, REPO)}#{res.step_id} ({res.source})"
-                if res.source.startswith("variant:") or res.source == "neutral":
-                    raw = steps_by_id.get(res.step_id, {})
-                    if (raw.get("command") or "") != res.command:
-                        pull_divergence.append({
-                            "scenario_id": sid, "step_id": res.step_id, "resolved_from": res.source,
-                        })
+                pulled_step = pulled_by_id.get(res.step_id) or {}
+                if (pulled_step.get("command") or "") != res.command or (pulled_step.get("shell") or "") != res.shell:
+                    pull_divergence.append({
+                        "scenario_id": sid, "step_id": res.step_id, "resolved_from": res.source,
+                    })
                 if res.shell != "powershell":
                     cmd_steps.append({"scenario_id": sid, "step_id": res.step_id,
                                       "shell": res.shell, "source": rel_src})
@@ -324,10 +329,11 @@ class Renderer:
                 f"{len(unresolved_labelled)} Windows-labelled step(s) resolve to no Windows command "
                 f"(warn-only): {sample}")
         if pull_divergence:
-            self.warnings.append(
-                f"{len(pull_divergence)} windows step(s) resolve to a command other than steps[].command; "
-                f"the pull path hands the beacon steps[].command, so a Windows beacon runs different "
-                f"text than this gate parsed (warn-only)")
+            sample = [f"{d['scenario_id']}#{d['step_id']}" for d in pull_divergence][:10]
+            self.errors.append(
+                f"{len(pull_divergence)} windows step(s): the pull dispatch "
+                f"(orchestrator.resolve_steps_for_target) hands the beacon different text or shell "
+                f"than this gate parsed: {sample}")
 
         self.extra["scenarios"] = {
             "yaml_files": len(files), "loaded": loaded, "rejected": rejected,

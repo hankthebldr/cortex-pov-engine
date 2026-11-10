@@ -337,3 +337,39 @@ def _stage_into(d: Path, *fixtures: Path) -> Path:
     for f in fixtures:
         shutil.copyfile(f, d / f.name)
     return d
+
+
+def test_render_has_no_pull_divergence_on_the_real_tree(rendered):
+    """The pull path dispatches through orchestrator.resolve_steps_for_target;
+    it must hand a Windows beacon the very text this gate parsed."""
+    _, manifest, _ = rendered
+    assert manifest["pull_divergence"]["count"] == 0, manifest["pull_divergence"]
+
+
+def test_a_pull_dispatch_that_diverges_from_the_parsed_text_is_an_error(tmp_path, monkeypatch):
+    """Before the pull path resolved variants, the renderer could only WARN that
+    a beacon ran different text. Now any divergence between what the beacon is
+    handed and what the gate parsed is a render error, so the gate fails."""
+    import importlib.util
+
+    if str(REPO / "core") not in sys.path:
+        sys.path.insert(0, str(REPO / "core"))
+    spec = importlib.util.spec_from_file_location("render_powershell_under_test", RENDER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    import engine.orchestrator as orch
+
+    real = orch.resolve_steps_for_target
+
+    def diverging(steps, target):
+        dispatched, markers, unresolved = real(steps, target)
+        for d in dispatched:
+            d["command"] = (d.get("command") or "") + "\n# not what the gate parsed"
+        return dispatched, markers, unresolved
+
+    monkeypatch.setattr(orch, "resolve_steps_for_target", diverging)
+    r = mod.Renderer(tmp_path)
+    r.render_scenarios()
+    assert r.extra["pull_divergence"]["count"] > 0
+    assert any("pull dispatch" in e for e in r.errors), r.errors
