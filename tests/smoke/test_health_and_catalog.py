@@ -14,8 +14,14 @@ def test_health_ok(client: httpx.Client) -> None:
     r = client.get("/api/health")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["status"] == "ok"
     assert "version" in body
+    # api_auth reads degraded on every deployment by design (no per-request
+    # authentication yet), so the overall status is "degraded", never "ok".
+    # Any OTHER degraded component is a real fault and must fail this smoke.
+    degraded = set(body.get("degraded_components") or [])
+    unexpected = degraded - {"api_auth"}
+    assert not unexpected, f"unexpected degraded components: {sorted(unexpected)}"
+    assert body["status"] in {"ok", "degraded"}, body["status"]
 
 
 def test_openapi_reachable(client: httpx.Client) -> None:
