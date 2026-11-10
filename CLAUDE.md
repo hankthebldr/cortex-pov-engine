@@ -38,7 +38,7 @@ your behaviour in this repo:
 
 ### The two gates, in one line each
 
-- **Gate A (`feature/*` -> `dev`)** — all 8 CI jobs green, plus the author's own
+- **Gate A (`feature/*` -> `dev`)** — all 8 ubuntu CI jobs green (the 9th, `windows`, runs but is not yet required: it has not yet run on GitHub), plus the author's own
   evidence in the PR body: what was observably wrong, how the fix was verified,
   and **proof the new guard fails without the fix**. A test never observed failing
   is an assumption with good syntax.
