@@ -568,3 +568,13 @@ def test_a_fanout_both_endpoints_let_go_is_reaped_once_both_are_seen_idle(
     assert "BEACON ABANDONED TASK" in run.output
     status_frames = [f for f in frames if f["type"] == "run.status"]
     assert status_frames[-1]["data"]["termination"] == "BEACON_ABANDONED_TASK"
+
+
+def test_the_abandoned_marker_does_not_name_a_cause_it_cannot_know():
+    """The reaper fires on a SimCore restart, a beacon restart, or a /complete
+    lost on the wire alike; the report must not assert which."""
+    from engine.beacon_lost import _abandoned_marker
+
+    text = _abandoned_marker(240)
+    assert "most likely" not in text
+    assert "SimCore or beacon restart" in text and "not known" in text

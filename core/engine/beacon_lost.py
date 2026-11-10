@@ -273,8 +273,9 @@ def _abandoned_marker(silent_for: float) -> str:
         f"\n--- BEACON ABANDONED TASK — the target's beacon is alive (it keeps "
         f"polling for new work) but has not polled this run's control channel "
         f"for {int(silent_for)}s, so it is no longer executing it; its /complete "
-        "was most likely lost across a SimCore restart. Steps without host "
-        "evidence are not a coverage measurement ---\n"
+        "never arrived (a SimCore or beacon restart, or a dropped request -- "
+        "which one is not known). Steps without host evidence are not a "
+        "coverage measurement ---\n"
     )
 
 
