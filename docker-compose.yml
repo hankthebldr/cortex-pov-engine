@@ -67,6 +67,9 @@ services:
       # Origins allowed to read the API cross-origin. Empty = same-origin only
       # (the console needs nothing else).
       - CORTEXSIM_CORS_ORIGINS=${CORTEXSIM_CORS_ORIGINS:-}
+      # CIDRs whose X-Forwarded-For is believed for an agent's last_ip. Empty =
+      # ignore XFF and record the socket peer (see .env.example).
+      - CORTEXSIM_TRUSTED_PROXIES=${CORTEXSIM_TRUSTED_PROXIES:-}
     # uvicorn gets --timeout-graceful-shutdown 5 (core/Dockerfile CMD); this
     # leaves room for that plus the lifespan shutdown before compose SIGKILLs.
     stop_grace_period: 15s

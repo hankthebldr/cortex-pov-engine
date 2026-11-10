@@ -74,6 +74,21 @@ if ! docker info >/dev/null 2>&1; then
 fi
 log "docker: $(docker --version) — daemon reachable."
 
+
+# This host's short and fully qualified names, lower-cased, deduplicated,
+# comma-joined; anything that is not a plain DNS label sequence is dropped.
+seed_allowed_hosts() {
+  local h out=""
+  for h in "$(hostname -s 2>/dev/null)" "$(hostname -f 2>/dev/null)" "$(hostname 2>/dev/null)"; do
+    h="$(printf '%s' "${h}" | tr '[:upper:]' '[:lower:]')"
+    case "${h}" in
+      ""|localhost|localhost.*|*[!a-z0-9.-]*) continue ;;
+    esac
+    case ",${out}," in *",${h},"*) continue ;; esac
+    out="${out:+${out},}${h}"
+  done
+  printf '%s' "${out}"
+}
 # ---------------------------------------------------------------------------
 # 1. Ensure .env exists with a real secret (development mode).
 # ---------------------------------------------------------------------------
@@ -131,14 +146,26 @@ else
   #     aborted the script having ALREADY created .env, holding the
   #     template's literal placeholder secret. The next run then took the
   #     "already present — leaving it untouched" branch and booted with it.
+  # The host guard admits localhost and IP literals, and inside the container
+  # gethostname() is the container id. Seed this jumpbox's own names so a
+  # beacon or DC reaching it by DNS/NetBIOS name is not refused with 400
+  # HOST_NOT_ALLOWED (which `curl -fsSL ... | bash` hides behind "error: 400").
+  ALLOWED_HOSTS="$(seed_allowed_hosts)"
   tmp_env="${ENV_FILE}.tmp.$$"
   sed \
     -e 's/^CORTEXSIM_ENV=.*/CORTEXSIM_ENV=development/' \
     -e "s|^CORTEXSIM_SECRET=.*|CORTEXSIM_SECRET=${SECRET}|" \
+    -e "s|^CORTEXSIM_ALLOWED_HOSTS=.*|CORTEXSIM_ALLOWED_HOSTS=${ALLOWED_HOSTS}|" \
     "${ENV_EXAMPLE}" > "${tmp_env}"
   chmod 600 "${tmp_env}" 2>/dev/null || true
   mv "${tmp_env}" "${ENV_FILE}"
   log "Wrote ${ENV_FILE} with a freshly generated CORTEXSIM_SECRET."
+  if [[ -n "${ALLOWED_HOSTS}" ]]; then
+    log "CORTEXSIM_ALLOWED_HOSTS=${ALLOWED_HOSTS} (add any other name beacons use to reach this host)."
+  else
+    warn "Could not read this host's name: CORTEXSIM_ALLOWED_HOSTS is empty, so SimCore"
+    warn "answers only by localhost / IP. Set it in ${ENV_FILE} if beacons use a DNS name."
+  fi
 fi
 
 # ---------------------------------------------------------------------------
