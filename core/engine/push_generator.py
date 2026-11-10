@@ -1414,8 +1414,10 @@ $CortexSimWorkRoot      = if ($env:TEMP) { $env:TEMP } else { (Get-Location).Pat
 $CortexSimLog           = Join-Path $CortexSimWorkRoot ('cortexsim-' + $CortexSimScenarioId + '-' + $CortexSimStamp + '.log')
 $CortexSimStage         = Join-Path $CortexSimWorkRoot ('cortexsim-' + $CortexSimScenarioId + '-' + $CortexSimStamp + '.d')
 # $IsLinux/$IsMacOS are PS6+ automatic variables; on the 5.1 floor they are
-# undefined, so null and falsy, which is the Windows branch.
-$CortexSimIsWindows     = -not ($IsLinux -or $IsMacOS)
+# undefined, so null and falsy, which is the Windows branch. Kept to the one
+# shape scripts/ci/ps51-gate.ps1 allows: `if ($IsLinux -or $IsMacOS)`.
+$CortexSimIsWindows     = $true
+if ($IsLinux -or $IsMacOS) { $CortexSimIsWindows = $false }
 $CortexSimTranscript    = $false
 $CortexSimOutcomes      = New-Object System.Collections.ArrayList
 $CortexSimCleanupFailed = $false
