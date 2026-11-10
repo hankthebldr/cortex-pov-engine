@@ -813,6 +813,17 @@ cannot be mistaken for shipped.
 8. ~~Fail loudly.~~ **DONE and verified live** — exit 78, per-step
    `ARTIFACT NOT STAGED` frame, and the "THIS STEP DID NOT RUN … NOT a gap in
    the customer's detection coverage" vocabulary in the run record.
+   **Exception (2026-11, BEACON-16):** when a staged file vanishes or locks
+   between the verified write and the rename, it is reported as
+   `ARTIFACT_QUARANTINE_SUSPECTED`. On Windows that is a sharing violation or
+   access denied while a scanner holds the file, or a `.part` that disappears.
+   That frame does **not** say "NOT a gap". It says the file was removed or
+   locked in a way consistent with endpoint protection, and to check the
+   endpoint's prevention alerts before reading the step as either a CortexSim
+   failure or a coverage gap. A quarantine may be the customer's prevention
+   working. Whether it should become a prevention witness is an open decision;
+   it is not fed to scoring. The rename gets a brief retry first. Only an
+   injected rename function has exercised this; no real EDR quarantine has.
    **But see item 14:** that vocabulary does not reach the POV report.
 
 **K8s track**

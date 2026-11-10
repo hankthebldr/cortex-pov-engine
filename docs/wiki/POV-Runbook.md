@@ -10,16 +10,19 @@ proof-of-value engagement with CortexSim.
 
 **Prepare on your laptop, not the customer's jumpbox.**
 
-1. Clone the repo, build the install bundle:
+1. Clone the repo and bring SimCore up with the canonical one-shot. It
+   generates `.env` with a fresh secret, seeds `CORTEXSIM_ALLOWED_HOSTS` with
+   this host's names, builds the image and starts the stack:
    ```bash
    git clone https://github.com/hankthebldr/cortex-pov-engine.git
    cd cortex-pov-engine
-   ./install.sh   # sets up the docker compose stack on your laptop
+   ./scripts/dev-up.sh
    ```
-2. Confirm the image built. CortexSim is **build-from-source** — there is no
-   published container image to pull, so `install.sh` (or `scripts/dev-up.sh`)
-   builds it locally and that local build is what you carry into the
-   engagement:
+   (`./install.sh` is the full source bootstrap for contributors, not the DC
+   path.)
+2. Confirm the image built. CortexSim is **build-from-source**: there is no
+   published container image to pull, so `scripts/dev-up.sh` builds it locally,
+   and that local build is what you carry into the engagement:
    ```bash
    docker compose images simcore    # expect a locally-built cortexsim image
    ```
@@ -41,17 +44,26 @@ proof-of-value engagement with CortexSim.
 
 1. SSH to the jumpbox (or laptop in lab mode), bring up SimCore:
    ```bash
-   docker compose up -d --build
+   ./scripts/dev-up.sh
    docker compose logs -f simcore
    ```
 2. Confirm health:
    ```bash
-   curl http://localhost:8888/api/health
+   curl -s http://localhost:8888/api/health | jq '{status, degraded_components}'
    curl http://localhost:8888/api/eal/plugins | jq '.plugins[].name'
    ```
-3. Browse to the React UI on `http://localhost:8888/` — confirm the
+   `status` reads **`degraded` on every deployment** because `api_auth` reports
+   `API_UNAUTHENTICATED` by design. Any *other* entry in `degraded_components`
+   is a real fault: fix it before the customer is watching. If endpoints will
+   reach SimCore by DNS name, that name must be in `CORTEXSIM_ALLOWED_HOSTS`,
+   or they get `400 HOST_NOT_ALLOWED`.
+3. **Windows endpoints?** Read `docs/release/mvp-launch-runbook.md` §7 first.
+   Nothing on Windows has executed on a Windows host yet. You need an elevated
+   install and an XDR/Defender exclusion for the unsigned beacon, and every
+   step runs as SYSTEM.
+4. Browse to the React UI on `http://localhost:8888/` — confirm the
    customer can see the scenario library + plane selector.
-4. Walk through one safe scenario together — pick one that
+5. Walk through one safe scenario together — pick one that
    exercises the customer's primary plane. Mark every expected
    detection in XSIAM as you go.
 
@@ -66,9 +78,16 @@ For each plane in scope:
    `target_allowlist`.
 4. **Validate** each expected detection in XSIAM:
    - Use the XQL templates the scenario provides.
-   - Mark `observed_at` via `PUT /api/results/{id}/validate` (or the
-     UI wizard once it ships).
-   - Note MTTD per detection.
+   - Record what fired **with the alert's own timestamp**: either
+     `POST /api/runs/{id}/reconcile?connector=xsiam` (credential-backed), or
+     `POST /api/runs/{id}/observations` with the alerts you exported. For a
+     **push** run, pass the endpoint (`?host=` / `"host"`), or matches stay
+     `pending` (`UNSCOPED_MATCH`).
+   - **Do not** take MTTD from `PUT /api/results/{id}/validate`. That
+     stamps `observed_at` when you click, so it measures your click latency,
+     not Cortex's (DOCS-04).
+   - MTTD is **launch-to-alert**. It includes queue wait and the earlier
+     steps' runtime (OPS-07).
 
 The four AI/Browser/Agentic planes (`AI_ACCESS`, `AIRS`, `BROWSER`,
 `KOI`) get their own dedicated walkthrough — see [[AIRS Validation]],
@@ -90,12 +109,18 @@ The four AI/Browser/Agentic planes (`AI_ACCESS`, `AIRS`, `BROWSER`,
    curl -fsSL "http://localhost:8888/api/runs/<run_id>/report?format=markdown" \
      > pov-run-<run_id>.md
    ```
-2. (Phase 8) generate the Cortex-branded PDF:
+2. Export the evidence bundle (detection matrix CSV, ATT&CK Navigator layer
+   and executive summary). There is no PDF route:
    ```bash
-   curl -fsSLO "http://localhost:8888/api/runs/<run_id>/report.pdf"
+   curl -fsSL "http://localhost:8888/api/runs/<run_id>/report/bundle" \
+     -o pov-run-<run_id>.tar.gz
    ```
+   Read the markdown report's integrity caveats before you hand it over:
+   `IDENTITY NOT HONOURED`, `PLATFORM VARIANT`, `STEP NOT RUN` and
+   "Cleanup Not Run". Pull mode never runs scenario cleanup; remove the residue
+   it names.
 3. Hand the customer:
-   - One report PDF per scenario
+   - One report per scenario
    - The MTTD heatmap
    - The gap-callout list with Marketplace remediations
    - The signed authorisation + target_allowlist used

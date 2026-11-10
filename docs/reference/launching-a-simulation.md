@@ -263,6 +263,72 @@ docker cp cortexsim-SIM-EDR-001.sh cortexsim-tier-d-target:/root/
 docker exec cortexsim-tier-d-target bash /root/cortexsim-SIM-EDR-001.sh
 ```
 
+### 4a. Push mode on Windows — the `.ps1` bundle (authored 2026-11; not executed on Windows)
+
+> No `.ps1` bundle has executed on Windows, or on any OS: each one is parsed
+> under pwsh 7 and passed by `make check-powershell`. Windows PowerShell 5.1 is
+> the floor, and the `windows-2022` CI job is the first place a bundle can run.
+> That job is authored and has not yet run on GitHub.
+
+Thirteen scenarios emit a Windows bundle: `SIM-ASM-005`, `SIM-EDR-003/004/005`,
+`SIM-ITDR-006`, `SIM-MP-001/020` and `SIM-NDR-005/007` emit both targets, and
+`SIM-EDR-006/013/017/021` are Windows-only. `GET /api/scenarios/{id}` reports
+which in `bundle_targets`. Download on the jumpbox and copy the file over:
+
+```bash
+curl '<server>/api/scenarios/SIM-EDR-013/download?format=powershell' -o cortexsim-SIM-EDR-013.ps1
+```
+
+Then on the Windows endpoint:
+
+```powershell
+Unblock-File .\cortexsim-SIM-EDR-013.ps1     # downloaded files carry Mark-of-the-Web
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\cortexsim-SIM-EDR-013.ps1
+```
+
+The bundle never calls `Set-ExecutionPolicy` (a machine-scope change that also
+fails unelevated). `-ExecutionPolicy Bypass` on the command line is the whole
+mechanism. On the endpoint itself use `curl.exe`, not `curl`, which in Windows
+PowerShell 5.1 is an alias for `Invoke-WebRequest`. `format=auto` prefers POSIX,
+so ask for `powershell` explicitly on a both-target scenario.
+
+**What changed in 2026-11, and why it matters.** Before then, every
+PowerShell-dialect step in these bundles was a **silent no-op** that logged
+"completed successfully", and the bundle exited 0 whatever happened. A bundle
+now:
+
+- **runs each step in its own child process with a timeout.** It uses the
+  step's `timeout_seconds`, default 300 s; on expiry `taskkill /T /F` ends the
+  step's whole tree.
+- **probes prerequisites first** with `Get-Command`. A missing tool means the
+  step is **not executed** (`PREREQ_MISSING`). Nothing is installed, and the
+  old "missing tools are logged as WARN" is gone. A step that fetches from the
+  internet at run time is named under Preflight in the header. `SIM-EDR-006`
+  no longer does: it needs a **pre-staged ProcDump** and fails loudly
+  without one.
+- **lists required operator inputs** in its header and does not run a step
+  whose input is unset (`OPERATOR_INPUT_MISSING`). `SIM-EDR-005` step-05 and
+  `SIM-MP-020` step-02 need `USERDNSDOMAIN`, so a domain-joined host.
+  `SIM-EDR-017` step-01 needs `CORTEXSIM_C2_HOST` set to an egress host you own.
+  `STAGE_HOST` (`SIM-ASM-005` step-04) and `CORTEXSIM_STITCH_WAIT_SECONDS`
+  (`SIM-EDR-017`) are optional.
+- **marks admin steps `NOT_ELEVATED`** in a non-elevated session instead of
+  running them.
+- **refuses to start (exit 2)** when part of the scenario's cleanup cannot run
+  on Windows, unless `$env:CORTEXSIM_ACCEPT_RESIDUE='1'` is set. Nine of the
+  13 need it: all except `SIM-EDR-006/013/017/021`. The header names exactly
+  what will be left behind; remove it by hand afterwards.
+- **prints a per-step outcome table** and exits `0` clean · `1` a step
+  non-zero, threw or timed out · `2` residue not acknowledged · `3` a step not
+  executed (`PREREQ_MISSING`, `OPERATOR_INPUT_MISSING`, `NOT_ELEVATED`,
+  `SHELL_UNAVAILABLE`, `NOT_REACHED`) · `4` cleanup failed.
+
+**Reading the result.** A push run has no target host, so reconcile cannot
+scope it on its own. A matched detection stays `pending` / `UNSCOPED_MATCH`,
+with no MTTD, until you name the endpoint:
+`POST /api/runs/{id}/reconcile?connector=xsiam&host=<endpoint>`, or
+`"host": "<endpoint>"` in the `/observations` body.
+
 ## 5. GAP FOUND — push mode has no runtime-dependency refusal
 
 Verbatim tail of a real run, exit code **0**:

@@ -79,9 +79,16 @@ Pick a plane → scenario → **Launch**. On launch the orchestrator:
   per step** — this is your ground-truth denominator (coverage is measured
   against a *known* set, enabling per-engine false-negative accounting);
 - enqueues the step task (durable, write-through to `queued_tasks`);
-- emits `run.step` `start` frames so **timeline nodes light at step-start**
-  (not launch), and re-stamps `Result.executed_at` at real step start so MTTD is
-  **detector latency**, not launch-to-click.
+- stamps each seeded `Result.executed_at` **at launch**. No `run.step` start
+  frames are published, and `executed_at` is **not** re-stamped when the step
+  really starts. (An earlier version of this runbook said both happened; neither
+  does, OPS-15.) **MTTD is therefore launch-to-alert.** It includes the queue
+  wait before the beacon collects the task and the runtime of every earlier
+  step. Read a long MTTD on a late step with that in mind. When the clock should
+  start is an open decision (OPS-07).
+- refuses a pull launch the target's OS cannot satisfy
+  (`409 PULL_TARGET_UNSATISFIABLE`, before anything is seeded), or one at an
+  agent that is not enrolled (`409 TARGET_AGENT_NOT_ENROLLED`).
 
 The Go beacon polls `/api/agents/{id}/tasks`, runs each step through the
 **identity harness** (service accounts → authentic process lineage the
