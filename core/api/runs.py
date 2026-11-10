@@ -46,6 +46,7 @@ from engine.outcome import (
     TERMINATIONS,
     TERMINATION_BEACON_LOST,
     TERMINATION_NOT_RUN,
+    PLATFORM_UNSATISFIABLE,
     TOOL_ABSENT,
     UPSTREAM_FAILED,
     UPSTREAM_NOT_EXECUTED,
@@ -88,6 +89,9 @@ _INTEGRITY_MARKERS: tuple[tuple[str, str], ...] = (
     ("!! TOOL_ABSENT",
      "A step's tool was not present on the target, so the step did not run "
      "and its absent detections say nothing about Cortex."),
+    ("!! STEP NOT RUN: PLATFORM_UNSATISFIABLE",
+     "A step cannot run on this endpoint's platform, so the beacon did not run "
+     "it and its absent detections say nothing about Cortex."),
     ("!! RUNTIME_DEPENDENCY_MISSING",
      "A runtime dependency the step needs was missing on the target, so the "
      "step could not execute as authored."),
@@ -621,7 +625,8 @@ class OutputRequest(BaseModel):
 
 
 _PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
-_STEP_REASONS = frozenset({UPSTREAM_SEVERED, UPSTREAM_NOT_EXECUTED, UPSTREAM_FAILED, TOOL_ABSENT})
+_STEP_REASONS = frozenset({UPSTREAM_SEVERED, UPSTREAM_NOT_EXECUTED, UPSTREAM_FAILED, TOOL_ABSENT,
+                           PLATFORM_UNSATISFIABLE})
 
 
 class StepOutcomeIn(BaseModel):

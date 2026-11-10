@@ -56,6 +56,10 @@ UPSTREAM_SEVERED = "UPSTREAM_SEVERED"
 UPSTREAM_NOT_EXECUTED = "UPSTREAM_NOT_EXECUTED"
 UPSTREAM_FAILED = "UPSTREAM_FAILED"
 TOOL_ABSENT = "TOOL_ABSENT"
+#: The beacon refused a step its host platform cannot run (a linux-only step
+#: dispatched to a Windows beacon, say). It never executed, so its silent
+#: detections say nothing about Cortex: ``not_executed``, never ``missed``.
+PLATFORM_UNSATISFIABLE = "PLATFORM_UNSATISFIABLE"
 TOOL_PRESENCE_UNCHECKED = "TOOL_PRESENCE_UNCHECKED"
 #: A silent row's window closed, but the pull was unscoped, truncated, lossy or
 #: a hand-picked manual import: silence there is not evidence of a miss.
@@ -151,7 +155,7 @@ def host_outcome_for_step(termination: Optional[str], reason: Optional[str]) -> 
         return None
     if reason in (UPSTREAM_SEVERED, UPSTREAM_FAILED):
         return OUTCOME_NOT_REACHED
-    if reason in (TOOL_ABSENT, UPSTREAM_NOT_EXECUTED):
+    if reason in (TOOL_ABSENT, UPSTREAM_NOT_EXECUTED, PLATFORM_UNSATISFIABLE):
         return OUTCOME_NOT_EXECUTED
     raise ValueError(f"not_run with unrecognised reason: {reason!r}")
 
