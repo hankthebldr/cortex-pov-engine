@@ -73,7 +73,8 @@ def test_consent_without_authorized_by_is_400(client, fake_agent_dist):
     assert _detail(r)["code"] == "AUTHORIZED_BY_REQUIRED"
 
 
-@pytest.mark.parametrize("who", ["a" * 121, "x%0Ay", "x%0Dy", "x%00y"])
+@pytest.mark.parametrize("who", ["a" * 121, "x%0Ay", "x%0Dy", "x%00y", "x%E2%80%A8y", "x%C2%85y",
+                                 "x%E2%80%A9y", "x%E2%80%A8---%E2%80%A8apiVersion:%20v1", "x%23y"])
 def test_authorized_by_that_could_break_the_yaml_header_is_rejected(client, fake_agent_dist, who):
     r = client.get(f"{BASE}?{GATED}&cluster_privilege_authorized=true&authorized_by={who}")
     assert r.status_code == 400 and _detail(r)["code"] == "BAD_AUTHORIZED_BY"
@@ -130,3 +131,48 @@ def test_gated_serve_is_logged_with_operator_and_ip(client, fake_agent_dist, cap
 
 def test_route_is_not_swallowed_by_agent_id_routes(client, fake_agent_dist):
     assert client.get(BASE).status_code == 200
+
+
+@pytest.mark.parametrize("who", ["x%E2%80%A8---%E2%80%A8apiVersion:%20v1", "x%C2%85y", "x%E2%80%A9y", "x%0Ay"])
+def test_baseline_with_a_hostile_authorized_by_is_400_not_a_200(client, fake_agent_dist, who):
+    r = client.get(f"{BASE}?authorized_by={who}")
+    assert r.status_code == 400 and _detail(r)["code"] == "BAD_AUTHORIZED_BY"
+
+
+def test_valid_authorized_by_without_consent_keys_is_accepted(client, fake_agent_dist):
+    assert client.get(f"{BASE}?authorized_by=Henry%20R.%20(lab)").status_code == 200
+
+
+@pytest.mark.parametrize("img", ["a%20b", "a%0Ab", "a%E2%80%A8b", "a$(id)", "-lead"])
+def test_hostile_image_is_400(client, fake_agent_dist, img):
+    r = client.get(f"{BASE}?image={img}")
+    assert r.status_code == 400 and _detail(r)["code"] == "BAD_IMAGE"
+
+
+def test_digest_pinned_registry_image_is_accepted(client, fake_agent_dist):
+    img = "registry.example.com:5000/team/img:1.2@sha256:" + "a" * 64
+    r = client.get(f"{BASE}?image={img}")
+    assert r.status_code == 200 and img in r.text
+
+
+@pytest.mark.parametrize("profile,extra", [
+    ("baseline", ""),
+    ("cluster-privilege", "&cluster_privilege_authorized=true&authorized_by=henry"),
+])
+def test_response_yaml_holds_exactly_the_built_objects(client, fake_agent_dist, profile, extra):
+    import yaml
+    from datetime import datetime, timezone
+    from engine.agent_manifest import build_agent_objects
+    r = client.get(f"{BASE}?profile={profile}{extra}")
+    assert r.status_code == 200
+    got = sorted((o["kind"], o["metadata"]["name"]) for o in yaml.safe_load_all(r.text) if o)
+    built = build_agent_objects(
+        profile=profile, image="debian:12-slim", arch="amd64", prepare="packages",
+        ttl_seconds=43200, beacon_sha256=fake_agent_dist.sha256("linux", "amd64"),
+        now=datetime.now(timezone.utc), authorized_by=None)
+    assert got == sorted((o["kind"], o["metadata"]["name"]) for o in built)
+
+
+def test_lab_privileged_with_switch_off_and_no_keys_is_403_not_409(client, fake_agent_dist):
+    r = client.get(f"{BASE}?{LAB}")
+    assert r.status_code == 403 and _detail(r)["code"] == "CLUSTER_PRIVILEGE_DISABLED"

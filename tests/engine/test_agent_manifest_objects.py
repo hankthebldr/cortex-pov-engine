@@ -66,7 +66,7 @@ def test_fetch_init_container_can_read_the_secret():
 
 def test_no_secret_object_and_no_token_in_the_manifest():
     text = generate_agent_manifest(profile="baseline", image="debian:12-slim", arch="amd64", prepare="packages",
-                                   ttl_seconds=43200, beacon_sha256="a" * 64, now=NOW, authorized_by=None, consent={})
+                                   ttl_seconds=43200, beacon_sha256="a" * 64, now=NOW, authorized_by=None, consent={}, allow_privileged_k8s=True)
     assert "kind: Secret" not in text and "cxs_" not in text
     assert "restarted pods exit 78 until this manifest is re-applied" in text
     assert list(yaml.safe_load_all(text))   # parses
@@ -84,7 +84,7 @@ def test_gated_profiles_refuse_without_consent():
     import pytest
     from engine import k8s_manifest as km
     kw = dict(image="debian:12-slim", arch="amd64", prepare="packages", ttl_seconds=43200,
-              beacon_sha256="a" * 64, now=NOW, authorized_by="henry")
+              beacon_sha256="a" * 64, now=NOW, authorized_by="henry", allow_privileged_k8s=True)
     with pytest.raises(km.ClusterConsentRequired):
         generate_agent_manifest(profile="lab-privileged", consent={}, **kw)
     text = generate_agent_manifest(
@@ -106,7 +106,7 @@ def test_header_names_the_agents_objects_not_the_reapers():
     text = generate_agent_manifest(
         profile="cluster-privilege", image="debian:12-slim", arch="amd64", prepare="packages",
         ttl_seconds=43200, beacon_sha256="a" * 64, now=NOW, authorized_by="henry",
-        consent={"cluster_privilege_authorized": True})
+        consent={"cluster_privilege_authorized": True}, allow_privileged_k8s=True)
     header = text.split("\n---\n")[0]
     assert "-> ClusterRole/cortexsim-agent" in header and "reaper" not in header.replace("A reaper Job", "")
 
@@ -142,4 +142,57 @@ def test_naive_now_is_rejected():
         objs("baseline", now=naive)
     with pytest.raises(ValueError, match="now"):
         generate_agent_manifest(profile="baseline", image="debian:12-slim", arch="amd64", prepare="packages",
-                                ttl_seconds=43200, beacon_sha256="a" * 64, now=naive, authorized_by=None, consent={})
+                                ttl_seconds=43200, beacon_sha256="a" * 64, now=naive, authorized_by=None, consent={}, allow_privileged_k8s=True)
+
+
+# --- injection guards and the kill switch at the sink -----------------------
+
+_KW = dict(image="debian:12-slim", arch="amd64", prepare="packages", ttl_seconds=43200,
+           beacon_sha256="a" * 64, now=NOW)
+
+
+@pytest.mark.parametrize("who", ["x\u2028---\u2028apiVersion: v1", "x\u0085y", "x\u2029y", "x\ny",
+                                 "x\ry", "a" * 121, "", "  ", "x#y", "x:y"])
+def test_authorized_by_that_fails_the_allowlist_is_refused_by_the_builder(who):
+    with pytest.raises(ValueError):
+        generate_agent_manifest(profile="baseline", authorized_by=who, consent={},
+                                allow_privileged_k8s=True, **_KW)
+    with pytest.raises(ValueError):
+        build_agent_objects(profile="baseline", authorized_by=who, **_KW)
+
+
+@pytest.mark.parametrize("img", ["a b", "a\nb", "a\u2028b", "a$(id)", "-lead", "", "a" * 256])
+def test_image_that_fails_the_allowlist_is_refused_by_the_builder(img):
+    kw = {**_KW, "image": img}
+    with pytest.raises(ValueError):
+        generate_agent_manifest(profile="baseline", authorized_by=None, consent={},
+                                allow_privileged_k8s=True, **kw)
+
+
+@pytest.mark.parametrize("profile,consent", [
+    ("baseline", {}),
+    ("cluster-privilege", {"cluster_privilege_authorized": True}),
+    ("lab-privileged", {"cluster_privilege_authorized": True, "node_access_authorized": True}),
+])
+def test_emitted_yaml_contains_exactly_the_built_objects(profile, consent):
+    text = generate_agent_manifest(
+        profile=profile, authorized_by="Henry R. (lab)", consent=consent,
+        allow_privileged_k8s=True,
+        image="registry.example.com:5000/team/img:1.2@sha256:" + "a" * 64,
+        **{k: v for k, v in _KW.items() if k != "image"})
+    built = build_agent_objects(
+        profile=profile, authorized_by="Henry R. (lab)",
+        image="registry.example.com:5000/team/img:1.2@sha256:" + "a" * 64,
+        **{k: v for k, v in _KW.items() if k != "image"})
+    key = lambda o: (o["kind"], o["metadata"]["name"])
+    assert sorted(key(o) for o in yaml.safe_load_all(text) if o) == sorted(key(o) for o in built)
+
+
+def test_kill_switch_is_enforced_inside_the_builder():
+    from engine import k8s_manifest as km
+    with pytest.raises(km.ClusterConsentRequired) as ei:
+        generate_agent_manifest(
+            profile="lab-privileged", authorized_by="henry",
+            consent={"cluster_privilege_authorized": True, "node_access_authorized": True},
+            allow_privileged_k8s=False, **_KW)
+    assert ei.value.disabled_by_deployment is True

@@ -296,6 +296,34 @@ def _require_aware(now: datetime) -> None:
         raise ValueError("now must be timezone-aware (UTC); got a naive datetime")
 
 
+#: The ONLY accepted shapes for the two caller-controlled free-text inputs.
+#: Allowlists, not denylists: ``authorized_by`` is written into a YAML comment
+#: header, and U+0085 / U+2028 / U+2029 are YAML line breaks that a control-char
+#: filter misses, turning the rest of the value into live YAML documents.
+AUTHORIZED_BY_RE = re.compile(r"^[A-Za-z0-9 ._@+'()\-]{1,120}$")
+IMAGE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@\-]{0,254}$")
+
+
+def validate_authorized_by(value: str) -> str:
+    """Return the stripped value, or raise ValueError."""
+    v = value.strip() if isinstance(value, str) else ""
+    if not AUTHORIZED_BY_RE.fullmatch(v):
+        raise ValueError(
+            "authorized_by must be 1-120 characters of letters, digits, space "
+            "and . _ @ + ' ( ) -"
+        )
+    return v
+
+
+def validate_image(value: str) -> str:
+    if not isinstance(value, str) or not IMAGE_RE.fullmatch(value):
+        raise ValueError(
+            "image must be 1-255 characters of letters, digits and . _ / : @ -, "
+            "starting with a letter or digit"
+        )
+    return value
+
+
 def build_agent_objects(
     *,
     profile: str,
@@ -309,6 +337,9 @@ def build_agent_objects(
 ) -> list[dict[str, Any]]:
     """The agent manifest as a list of dicts; serialisation adds nothing."""
     _require_aware(now)
+    validate_image(image)
+    if authorized_by is not None:
+        authorized_by = validate_authorized_by(authorized_by)
     posture = agent_posture(profile, image=image, ttl_seconds=ttl_seconds)
     findings = km.findings_for(posture)
     ns = AGENT_NAMESPACE
@@ -550,11 +581,21 @@ def generate_agent_manifest(
     now: datetime,
     authorized_by: Optional[str],
     consent: dict[str, bool],
+    allow_privileged_k8s: bool,
 ) -> str:
-    """Refuse without consent, then render the agent manifest as multi-doc YAML."""
+    """Refuse without consent, then render the agent manifest as multi-doc YAML.
+
+    ``allow_privileged_k8s`` is required, not defaulted: the deployment's kill
+    switch must be an explicit decision by every caller.
+    """
     _require_aware(now)
+    validate_image(image)
+    if authorized_by is not None:
+        authorized_by = validate_authorized_by(authorized_by)
     posture = agent_posture(profile, image=image, ttl_seconds=ttl_seconds)
-    km.check_cluster_consent(AGENT_SCENARIO_ID, posture, consent)
+    km.check_cluster_consent(
+        AGENT_SCENARIO_ID, posture, consent, allow_privileged_k8s=allow_privileged_k8s,
+    )
     objects = build_agent_objects(
         profile=profile, image=image, arch=arch, prepare=prepare,
         ttl_seconds=ttl_seconds, beacon_sha256=beacon_sha256, now=now,

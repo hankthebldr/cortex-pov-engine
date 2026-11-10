@@ -1085,7 +1085,6 @@ _STALE_WINDOW_S = 300  # 5 minutes
 
 _MANIFEST_DOCS = "docs/reference/k8s-delivery.md"
 _MANIFEST_CONSENT_KEYS = ("cluster_privilege_authorized", "node_access_authorized")
-_AUTHORIZED_BY_MAX = 120
 
 
 def _consent_true(v: Optional[str]) -> bool:
@@ -1120,7 +1119,7 @@ async def agent_manifest(
     from engine import k8s_manifest as km  # noqa: PLC0415
     from engine.agent_manifest import (  # noqa: PLC0415
         AGENT_SCENARIO_ID, PREPARE_MODES, PROFILES, agent_posture,
-        generate_agent_manifest,
+        generate_agent_manifest, validate_authorized_by, validate_image,
     )
     from engine.orchestrator import allow_privileged_k8s  # noqa: PLC0415
 
@@ -1138,21 +1137,19 @@ async def agent_manifest(
     if not 60 <= ttl <= 43200:
         raise _manifest_400("BAD_TTL", "ttl_seconds out of range",
                             "ttl_seconds must be an integer between 60 and 43200")
-    if not image or len(image) > 255 or re.search(r"\s", image):
-        raise _manifest_400("BAD_IMAGE", "Invalid image reference",
-                            "image must be non-empty, at most 255 characters, with no whitespace")
+    try:
+        validate_image(image)
+    except ValueError as exc:
+        raise _manifest_400("BAD_IMAGE", "Invalid image reference", str(exc)) from exc
 
-    # authorized_by lands in a YAML comment header and an annotation: a newline
-    # or control character there would break out of the comment.
-    who = (authorized_by or "").strip()
-    if authorized_by is not None and (
-        len(authorized_by) > _AUTHORIZED_BY_MAX
-        or any(ord(c) < 32 or ord(c) == 127 for c in authorized_by)
-    ):
-        raise _manifest_400(
-            "BAD_AUTHORIZED_BY", "Invalid authorized_by",
-            f"authorized_by must be at most {_AUTHORIZED_BY_MAX} characters with no "
-            f"newline or control characters")
+    # authorized_by lands in a YAML comment header and an annotation: allowlist
+    # it (engine.agent_manifest owns the one definition), supplied or not.
+    who = ""
+    if authorized_by is not None and authorized_by.strip():
+        try:
+            who = validate_authorized_by(authorized_by)
+        except ValueError as exc:
+            raise _manifest_400("BAD_AUTHORIZED_BY", "Invalid authorized_by", str(exc)) from exc
     keys_present = [k for k, v in (
         ("cluster_privilege_authorized", cluster_privilege_authorized),
         ("node_access_authorized", node_access_authorized)) if v is not None]
@@ -1196,6 +1193,7 @@ async def agent_manifest(
         ttl_seconds=ttl, beacon_sha256=beacon_sha256,
         now=datetime.now(timezone.utc),
         authorized_by=who or None, consent=consent,
+        allow_privileged_k8s=allow_privileged_k8s(),
     )
     if posture.tiers():
         logger.warning(
