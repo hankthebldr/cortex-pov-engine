@@ -3,6 +3,7 @@ CortexSim API — dataset prerequisites.
 
   GET /api/prerequisites/datasets                — the registry, joined to the cards that read each dataset
   GET /api/scenarios/{scenario_id}/prerequisites — what one scenario needs on the Cortex and source side
+  GET /api/scenarios/{scenario_id}/query-library — the scenario's hunt queries as paste-ready text
 
 Read-only, local files and the scenario table only: no outbound call, no tenant claim
 (``tenant_verified`` is 0). An absent registry answers 200 with ``registry_loaded: false``;
@@ -15,8 +16,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,7 @@ from engine.dataset_requirements import (
     registry_source,
 )
 from engine.prerequisites import derive
+from engine.query_library import ALLOWED_PURPOSES, render as render_query_library
 from engine.ttp_catalog import catalog
 from models import Scenario
 
@@ -102,3 +104,32 @@ async def get_scenario_prerequisites(scenario_id: str, db: AsyncSession = Depend
         return derive(scenario.to_dict(), catalog.all_raw(), registry)
     except (DatasetRequirementsError, ValueError) as exc:
         return _card_shape(exc)
+
+
+@router.get("/scenarios/{scenario_id}/query-library")
+async def get_scenario_query_library(
+    scenario_id: str,
+    purpose: str = Query("hunt,investigation"),
+    db: AsyncSession = Depends(get_db),
+):
+    purposes = tuple(p.strip() for p in purpose.split(","))
+    if any(p not in ALLOWED_PURPOSES for p in purposes) or len(set(purposes)) != len(purposes):
+        return JSONResponse(
+            status_code=422,
+            content={"error": "purpose must be a comma-separated list of distinct known purposes",
+                     "code": "PURPOSE_UNRECOGNISED",
+                     "detail": f"purpose={purpose!r}; allowed: {', '.join(ALLOWED_PURPOSES)}"},
+        )
+    result = await db.execute(select(Scenario).where(Scenario.scenario_id == scenario_id))
+    scenario: Optional[Scenario] = result.scalar_one_or_none()
+    if scenario is None:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Scenario not found", "code": "SCENARIO_NOT_FOUND",
+                     "detail": f"scenario_id='{scenario_id}'"},
+        )
+    try:
+        text = render_query_library(scenario.to_dict(), catalog.all_raw(), purposes)
+    except ValueError as exc:
+        return _card_shape(exc)
+    return PlainTextResponse(text, media_type="text/plain; charset=utf-8")

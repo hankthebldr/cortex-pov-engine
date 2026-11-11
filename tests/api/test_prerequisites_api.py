@@ -279,3 +279,33 @@ def test_boot_bad_card_shape_strict_off_continues_strict_on_raises(monkeypatch):
     _boot(monkeypatch, strict=False, registry={}, cards=bad)
     with pytest.raises(DatasetRequirementsError, match="TTP-BAD"):
         _boot(monkeypatch, strict=True, registry={}, cards=bad)
+
+
+# --- Task 5: query library -------------------------------------------------
+
+def test_query_library_is_plain_text_and_rejects_unknown_purpose(client):
+    r = client.get(f"/api/scenarios/{SCENARIO}/query-library")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/plain")
+    assert "content-disposition" not in r.headers
+    r = client.get(f"/api/scenarios/{SCENARIO}/query-library?purpose=fun")
+    assert r.status_code == 422
+    assert r.json()["code"] == "PURPOSE_UNRECOGNISED"
+
+
+@pytest.mark.parametrize("bad", ["", "hunt,", "hunt,hunt", "hunt,,metric"])
+def test_query_library_empty_or_duplicate_purpose_is_422(client, bad):
+    r = client.get(f"/api/scenarios/{SCENARIO}/query-library", params={"purpose": bad})
+    assert r.status_code == 422 and r.json()["code"] == "PURPOSE_UNRECOGNISED"
+
+
+def test_query_library_unknown_scenario_is_404(client):
+    r = client.get("/api/scenarios/SIM-NOPE-999/query-library")
+    assert r.status_code == 404 and r.json()["code"] == "SCENARIO_NOT_FOUND"
+
+
+def test_query_library_real_corpus_validation(client):
+    r = client.get(f"/api/scenarios/{SCENARIO}/query-library?purpose=validation")
+    assert r.status_code == 200
+    assert r.text.startswith(f"# {SCENARIO}")
+    assert "(validation)" in r.text.splitlines()[0]
+    assert "## " in r.text
