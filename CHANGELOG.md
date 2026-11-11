@@ -338,7 +338,11 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   ingestion or stitching: **`tenant-verified` is still 0**. Every `PN_` code is in
   `docs/reference/api-and-agent-surface.md` §1.17. New settings:
   `CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT` (default 120) and
-  `CORTEXSIM_PANOS_ALLOW_WRITE` (default false, consumed by nothing). Security: the
+  `CORTEXSIM_PANOS_ALLOW_WRITE` (default false, consumed by nothing). New dependency:
+  `tzdata==2026.6`, because `python:3.11-slim` ships no zone database and a
+  firewall's configured zone (e.g. `US/Eastern`) would otherwise resolve unknown,
+  leaving the clock and log-age stages at `PN_CLOCK_TZ_UNKNOWN` on every deployed
+  SimCore. Security: the
   client cannot write to a firewall. It sends only allowlisted `show`/`test`
   commands, re-serialised in its own canonical form, and `config action=show` reads
   whose xpath fully matches an anchored allowlist; a refused request raises before
