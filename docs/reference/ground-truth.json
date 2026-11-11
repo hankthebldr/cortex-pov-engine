@@ -99,16 +99,16 @@
   "eal_plugins": 27,
   "generated_by": "scripts/generate_ground_truth.py",
   "http_routes": {
-    "apirouter_instances": 25,
+    "apirouter_instances": 26,
     "by_method": {
       "api_route": 1,
       "delete": 5,
-      "get": 88,
+      "get": 92,
       "post": 37,
       "put": 6
     },
-    "decorator_count": 137,
-    "router_files": 23
+    "decorator_count": 141,
+    "router_files": 24
   },
   "iac_modules_aws": 11,
   "schema_version": 1,

@@ -8,6 +8,26 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added
+
+- **Dataset requirement registry and scenario prerequisites.**
+  `spec/dataset_requirements.yml` records, for each of the 31 datasets the 191
+  detection cards query, what must exist on the Cortex side, what the source
+  product must emit, and which EAL plugin can stand in for it. Three read-only
+  routes serve it: `GET /api/prerequisites/datasets`,
+  `GET /api/scenarios/{id}/prerequisites` (derived through the cards a scenario
+  cites, with note codes instead of silent gaps) and
+  `GET /api/scenarios/{id}/query-library` (the cards' queries as paste-ready
+  text, `?purpose=` selects hunt, investigation, validation or metric). An
+  absent registry is reported as degraded in `/api/health`, never as "no
+  requirements"; a malformed one answers a structured 500;
+  `CORTEXSIM_STRICT_DATASETS=true` (default off) refuses boot on either, or on
+  a card dataset with no entry. Every row is `from documentation`: **no row is
+  confirmed in a tenant, `tenant-verified` is still 0**, and every Cortex-side
+  object name is `null` until read in a tenant. These routes return the error
+  object at the top level, unlike the older scenario routes. See
+  `docs/reference/dataset-requirements.md`.
+
 ### Fixed
 
 - **Catalog › TTP cards can be navigated by use case, test case and FY27
