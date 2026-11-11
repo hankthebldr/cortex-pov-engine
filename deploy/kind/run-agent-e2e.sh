@@ -79,7 +79,7 @@ _dump() {
 FAILED=0
 fail() {
   FAILED=1
-  say "$STAGE FAIL $*"
+  say "$STAGE FAIL $*" | redact
   dump
   exit 1
 }
@@ -449,7 +449,7 @@ observe "processes mid-step (cgo_anchor apache2 requested): $(tr '\n' ' ' <<<"$p
 if grep -qE '(^|; )pid=[0-9]+ ppid=[0-9]+ cmd=apache2( |;)' <<<"$procs"; then
   observe "anchor rename present: $(grep -oE 'pid=[0-9]+ ppid=[0-9]+ cmd=apache2 ' <<<"$procs" | tr '\n' ' ')"
 else
-  defect "cgo_anchor apache2 requested on debian (bash present) but no process cmdline starts with 'apache2' while the step runs: $(tr '\n' ' ' <<<"$procs" | head -c 600)"
+  defect "cgo_anchor apache2 requested on debian (sh is dash, renamed) but no process cmdline starts with 'apache2' while the step runs: $(tr '\n' ' ' <<<"$procs" | head -c 600)"
 fi
 http GET "/api/runs/$ARUN" >/dev/null
 observe "output SimCore holds for $ARUN mid-step: $(jq -c '.output' "$WORK/body" | head -c 200)"
@@ -457,9 +457,14 @@ code=$(http POST "/api/runs/$ARUN/abort")
 [ "$code" = 200 ] || fail "abort returned HTTP $code: $(body | head -c 300)"
 status=$(wait_run "$ARUN" 60)
 [ "$status" = aborted ] || fail "run $ARUN is '$status' after abort, not aborted"
+# "Gone" needs a sample that actually came from the pod: one carrying PID 1's
+# line. A failed `kubectl exec` prints an error, matches no step process, and
+# would otherwise pass; it keeps polling and the stage fails on timeout.
 gone=0
 for _ in $(seq 1 30); do
-  if ! pexec "$PS_SCRIPT" | grep -qE 'cmd=(sleep 300|apache2)( |;)'; then gone=1; break; fi
+  sample=$(pexec "$PS_SCRIPT")
+  if grep -qE '(^|; )pid=1 ' <<<"$sample" \
+     && ! grep -qE 'cmd=(sleep 300|apache2)( |;)' <<<"$sample"; then gone=1; break; fi
   sleep 1
 done
 [ "$gone" = 1 ] || fail "run $ARUN reads aborted but its step is still alive in $POD after 30s: $(pexec "$PS_SCRIPT" | tr '\n' ' ')"
