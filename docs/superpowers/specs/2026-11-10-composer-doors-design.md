@@ -1,7 +1,7 @@
 # Composer: doors by signal path, not by plane (2026-11-10)
 
-Status: **proposed, awaiting approval.** Nothing is built. Branch
-`feature/ui-composer-doors`, cut from `dev` @ 3f5426a. This is phase 2 of
+Status: **approved 2026-11-10**, with CLOUD CONTROL PLANE as a fourth path
+(§10). Branch `feature/ui-composer-doors`, cut from `dev` @ 3f5426a. This is phase 2 of
 `2026-11-10-composer-correlation-story-design.md` (phase 1 merged as #173). It
 replaces that spec's §8 where the two disagree; §9 below lists where and why.
 
@@ -207,14 +207,13 @@ Every new guard is observed failing with its change reverted.
 
 ## 10. Decisions
 
-**One question.** 44 steps call `aws` or `kubectl` directly from the beacon.
-The agent sees the `aws` process, but the evidence their detections read mostly
-arrives another way: 30 of the 44 read only datasets that #174's registry marks
-as API- or audit-log-ingested (CloudTrail, Kubernetes audit). Name **CLOUD
-CONTROL PLANE** as a fourth path (recommended), or fold those steps into
-ENDPOINT RUNTIME?
+**Decided (Henry, 2026-11-10): a direct cloud API call is a fourth path,
+CLOUD CONTROL PLANE.** 44 steps call `aws` or `kubectl` directly from the
+beacon. The agent sees the `aws` process, but the evidence their detections read
+mostly arrives another way: 30 of the 44 read only datasets that #174's registry
+marks as API- or audit-log-ingested (CloudTrail, Kubernetes audit).
 
-**Defaults I take unless struck.**
+**Defaults taken** (none was struck).
 
 1. Derive the path; add no YAML field (§4).
 2. Lanes are read-only; drag no longer retargets; `laneOverrides` is removed (§5).
