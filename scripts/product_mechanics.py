@@ -618,9 +618,16 @@ answers:
         distribution: public
         excerpt: optional, at most 25 words
     follow_ups:
-      - Optional new question the answer raised.
+      - >-
+        Optional new question the answer raised. Write every item as a `>-` block
+        like this one: a bare item that starts "Lab: ..." or wraps onto a second
+        line is not valid YAML, and ingest rejects the whole file.
 ```
 ````
+
+Two shapes ingest rejects that are easy to miss: a source `date` that is not a full
+`YYYY-MM-DD` (write the day you read the page, never `2026-08-xx`), and a `follow_ups`
+item that is not a quoted string or `>-` block.
 """
 
 
