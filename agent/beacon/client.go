@@ -52,13 +52,16 @@ var ErrUnknownAgent = errors.New("agent not registered with SimCore")
 
 // Task is one pull-mode work item: an ordered list of steps to execute.
 type Task struct {
-	TaskID          string `json:"task_id"`
-	RunID           string `json:"run_id"`
-	ScenarioID      string `json:"scenario_id"`
-	Steps           []Step `json:"steps"`
-	IdentityContext string `json:"identity_context"` // launch-time username override; "" if null
-	IdentityDefault string `json:"identity_default"` // scenario execution_identity.default
-	CreatedAt       string `json:"created_at"`
+	TaskID     string `json:"task_id"`
+	RunID      string `json:"run_id"`
+	ScenarioID string `json:"scenario_id"`
+	Steps      []Step `json:"steps"`
+	// anchorNotHonoured is set by the chained path when the requested cgo_anchor
+	// could not be applied; buildSummary reports it.
+	anchorNotHonoured bool
+	IdentityContext   string `json:"identity_context"` // launch-time username override; "" if null
+	IdentityDefault   string `json:"identity_default"` // scenario execution_identity.default
+	CreatedAt         string `json:"created_at"`
 	// CgoAnchor is the scenario's declared Causality Group Owner (a realistic
 	// initial-access process). Present only for scenarios that declare the
 	// causality contract; nil (and ignored on the wire) otherwise.
@@ -800,7 +803,7 @@ var newChainSession = executor.NewChainSession
 // anchorNotHonouredLine is the run-record notice for a cgo_anchor the host's
 // shell could not carry (no bash: a multi-call sh cannot be renamed).
 func anchorNotHonouredLine(image string) string {
-	return fmt.Sprintf("ANCHOR NOT HONOURED: requested %s; this image has only a multi-call shell, "+
+	return fmt.Sprintf("ANCHOR NOT HONOURED: requested %s; this image has no shell that can be started under another name (no bash on PATH), "+
 		"so the chain runs under 'sh'. Detections keyed on the anchor process name will not match.", image)
 }
 
@@ -837,7 +840,10 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 	// record, once, before any step: otherwise anchor-keyed detections read as
 	// "Cortex missed it".
 	if cgoImage != "" && !session.AnchorRenamed() && len(task.Steps) > 0 {
-		_ = c.SendOutput(task.RunID, task.Steps[0].ID, anchorNotHonouredLine(cgoImage))
+		task.anchorNotHonoured = true
+		if err := c.SendOutput(task.RunID, task.Steps[0].ID, anchorNotHonouredLine(cgoImage)); err != nil {
+			log.Printf("[beacon] sendOutput (anchor notice, run_id=%s) error: %v", task.RunID, err)
+		}
 	}
 
 	log.Printf("[beacon] causality-chained execution run_id=%s cgo=%q steps=%d",
@@ -1469,6 +1475,10 @@ func buildSummary(task *Task, exitCode, degradedSteps int, steps []StepOutcome) 
 		summary += fmt.Sprintf(" | IDENTITY DEGRADED: %d step(s) ran as the beacon account "+
 			"instead of their declared identity — actor attribution is UNVALIDATED (see step output)",
 			degradedSteps)
+	}
+	if task.anchorNotHonoured {
+		summary += " | ANCHOR NOT HONOURED: the chain ran under 'sh', not the requested cgo_anchor " +
+			"name — detections keyed on the anchor process name will not match (see first step output)"
 	}
 	if id, term, ok := severedAt(steps); ok {
 		summary += fmt.Sprintf(" | SEVERED at %s (%s)", id, term)

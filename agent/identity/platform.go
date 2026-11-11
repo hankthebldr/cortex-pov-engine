@@ -24,11 +24,18 @@ package identity
 // checked against the real process token rather than assumed.
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os/exec"
 	"os/user"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/hankthebldr/cortexsim/agent/executor"
 )
 
 // Resolution is the outcome of mapping a scenario step's identity USERNAME to
@@ -61,10 +68,82 @@ func Resolve(requested string) Resolution {
 	return ResolveWith(runtime.GOOS, requested, CurrentUsername(), lookupAccount)
 }
 
-// lookupAccount reports an error when the OS does not know the account.
-func lookupAccount(name string) error {
-	_, err := user.Lookup(name)
-	return err
+// hostAccountCheck is the account check Resolve uses on this host.
+var hostAccountCheck = NewAccountChecker(
+	func(name string) error { _, err := user.Lookup(name); return err },
+	idProbe,
+)
+
+// lookupAccount reports an error only when the account is genuinely absent.
+func lookupAccount(name string) error { return hostAccountCheck(name) }
+
+// ProbeResult is the outcome of the confirmation probe.
+type ProbeResult int
+
+const (
+	// ProbeUnknown: the probe could not run or did not finish (no `id` on PATH,
+	// timeout, start failure). It never counts as evidence of absence.
+	ProbeUnknown ProbeResult = iota
+	ProbePresent
+	ProbeAbsent
+)
+
+var accountNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}\$?$`)
+
+// NewAccountChecker returns a check that reports an error only when BOTH lookup
+// fails AND probe positively says the account is absent. user.Lookup with CGO
+// off reads only /etc/passwd, so an account that exists through NSS (sssd, LDAP,
+// AD-joined hosts) fails it though runuser, which goes through PAM/NSS, would
+// honour it; a false "missing" changes actor attribution, a false "present" only
+// preserves the old behaviour. Names that are not plain account names are absent
+// without running anything (the name comes from a scenario). Conclusive probe
+// results are cached per name; an unknown result is not.
+func NewAccountChecker(lookup func(string) error, probe func(string) ProbeResult) func(string) error {
+	var mu sync.Mutex
+	cache := map[string]ProbeResult{}
+	return func(name string) error {
+		if !accountNameRE.MatchString(name) {
+			return fmt.Errorf("account name %q is not a valid account name", name)
+		}
+		if lookup(name) == nil {
+			return nil
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		r, ok := cache[name]
+		if !ok {
+			r = probe(name)
+			if r != ProbeUnknown {
+				cache[name] = r
+			}
+		}
+		if r == ProbeAbsent {
+			return fmt.Errorf("account %q does not exist", name)
+		}
+		return nil
+	}
+}
+
+// idProbe asks `id -u -- <name>` (NSS-aware; present on busybox, alpine, debian
+// and macOS), through the tracked start path, with a 3 second timeout. The name
+// is one argv element after `--`, never a shell string.
+func idProbe(name string) ProbeResult {
+	idPath, err := exec.LookPath("id")
+	if err != nil {
+		return ProbeUnknown
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, idPath, "-u", "--", name)
+	err = executor.RunTracked(cmd)
+	if err == nil {
+		return ProbePresent
+	}
+	var ee *exec.ExitError
+	if ctx.Err() == nil && errors.As(err, &ee) && ee.ExitCode() == 1 {
+		return ProbeAbsent
+	}
+	return ProbeUnknown
 }
 
 // ResolveWith is ResolveFor plus a second reason to degrade: an impersonation
