@@ -274,9 +274,13 @@ def test_malformed_card_still_raises(catalog):
         _req(catalog, _det("BIOC", "TTP-BAD-LOGIC", "BIOC-BAD"))
 
 
-def test_unregistered_dataset_raises(catalog):
-    with pytest.raises(DoorResolutionError, match="made_up_raw"):
-        _req(catalog, _det("XQL", "TTP-UNREG", "XQL-UNREG"))
+def test_unregistered_dataset_underived_not_raised(catalog):
+    req = _req(catalog, _det("XQL", "TTP-UNREG", "XQL-UNREG"))
+    assert req.underived == "UNREGISTERED_DATASET" and req.all_of == ()
+    # A registry with the row derives the door, so the code names the registry gap only.
+    registry = {**REGISTRY, "made_up_raw": _row("made_up_raw", ["xdr_agent"])}
+    assert detection_requirement(ENDPOINT_STEP, _det("XQL", "TTP-UNREG", "XQL-UNREG"),
+                                 catalog=catalog, registry=registry).all_of == (("xdr_agent",),)
 
 
 def test_absent_registry_raises(catalog):
@@ -404,6 +408,18 @@ def test_readiness_counts_collector_route_blocked(catalog):
     out = _ready(catalog, sc, {"http_collector:okta-col", "saas_okta"})
     assert out["route_blocked"] == 2 and out["scorable"] == 0 and out["closed"] == []
     assert out["state"] == "needs_doors"
+
+
+def test_readiness_keeps_going_past_missing_card(catalog):
+    """A card id not in the catalog is counted underived; the rest are still judged."""
+    sc = _scenario(
+        (ENDPOINT_STEP, [_det("BIOC", "TTP-NOT-IN-CATALOG", "BIOC-1"), _det("BIOC", "TTP-EDR", "BIOC-XDR")]),
+        (ENDPOINT_STEP, [_det("XQL", "TTP-EDR", "XQL-NGFW"), _det("XQL", "TTP-UNREG", "XQL-UNREG")]),
+    )
+    out = _ready(catalog, sc, {"xdr_agent:a1"})
+    assert out["total"] == 4 and out["underived"] == 2
+    assert out["scorable"] == 1 and out["state"] == "partial"
+    assert out["closed"] == [{"door_id": "ngfw_traffic", "detections": 1}]
 
 
 def test_readiness_with_nothing_derivable_is_not_evaluated(catalog):

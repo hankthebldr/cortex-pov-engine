@@ -1,9 +1,9 @@
 """TRIPWIRE: the corpus join of expected detections to ingestion doors.
 
 Pins the counts the ingestion-doors spec reports in §1. 1,411 / 199 / 502 were
-measured on dev 8c90739 by an independent script; the per-door counts were
-measured by ``engine.door_resolution`` on feature/api-ingestion-doors f6fd90f
-on 2026-11-11. A scenario, card or registry edit that moves a detection
+measured on dev 8c90739 by an independent script. The per-door counts are of
+the corpus as of feature/api-ingestion-doors f6fd90f, measured on 2026-11-11
+with ``engine.door_resolution`` as committed in c4e52a2. A scenario, card or registry edit that moves a detection
 between doors moves a number here, on purpose: update the spec with it.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ import yaml
 
 from config import settings
 from engine.dataset_requirements import load
-from engine.door_resolution import detection_requirement, scenario_readiness
+from engine.door_resolution import UNDERIVED_CODES, detection_requirement, scenario_readiness
 from engine.ingestion_doors import DOORS, door_key
 from engine.ttp_catalog import TtpCatalog, default_corpus_dir
 
@@ -47,7 +47,7 @@ def corpus():
     load.cache_clear()
 
 
-# Measured 2026-11-11 on feature/api-ingestion-doors f6fd90f.
+# The corpus as of f6fd90f, measured 2026-11-11 with the code at c4e52a2.
 # {door: (detections needing it, scenarios needing it)}; a detection needing two
 # doors counts once under each. Collector-route and underived detections are
 # counted below, not here.
@@ -74,9 +74,13 @@ DOOR_COUNTS: dict[str, tuple[int, int]] = {
     "saas_google_workspace": (2, 2),
     "syslog_ivanti_connect_secure": (1, 1),
 }
-# No corpus detection names a missing card, so CARD_NOT_FOUND is absent. NO_DATASET
-# is the 293 of spec §11 less the 68 on collector steps (47 IOC, 21 correlation).
-UNDERIVED: dict[str, int] = {"NO_DATASET": 225, "DOORS_UNKNOWN": 61, "NO_PROVIDER": 39}
+# Every code, zeros included. No corpus detection names a missing card, and every
+# dataset a card reads has a registry row. NO_DATASET is the 293 of spec §11 less
+# the 68 on collector steps (47 IOC, 21 correlation).
+UNDERIVED: dict[str, int] = {
+    "CARD_NOT_FOUND": 0, "NO_DATASET": 225, "DOORS_UNKNOWN": 61, "NO_PROVIDER": 39,
+    "UNREGISTERED_DATASET": 0,
+}
 COLLECTOR_BY_TYPE: dict[str, int] = {
     "XQL": 63, "IOC": 47, "ABIOC": 38, "Analytics": 21, "Correlation": 21, "BIOC": 9,
 }
@@ -116,7 +120,8 @@ def test_corpus_door_counts(corpus):
     assert door_dets["xdr_agent"] == 502, "507 xdr_data detections less the 5 on collector steps"
     assert xdr_sole == XDR_AGENT_SOLE
     assert {d: (door_dets[d], len(door_scen[d])) for d in door_dets} == DOOR_COUNTS
-    assert dict(underived) == UNDERIVED
+    assert set(underived) <= set(UNDERIVED_CODES)
+    assert {code: underived[code] for code in UNDERIVED_CODES} == UNDERIVED
     assert dict(collector_types) == COLLECTOR_BY_TYPE
 
 

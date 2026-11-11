@@ -26,8 +26,9 @@ agent-scoped door is keyed with the ``agent_id`` it is judged for.
 Rules that bind this file:
 
   * **Tolerance hides bugs.** An unrecognised detection, scenario or card shape
-    raises, as does a dataset the registry does not list. Only a missing card
-    or a missing dataset is ``underived``; nothing else is.
+    raises, as do a malformed card and an absent or malformed registry. Only a
+    missing card, a missing or unregistered dataset, an unknown door and an
+    unnamed provider are ``underived``, each with its own code; nothing else is.
   * **A zero is degraded.** A scenario with no derived detection reads
     ``not_evaluated``, never ``ready``.
 
@@ -69,7 +70,11 @@ COLLECTOR_DOOR = "http_collector"
 #:                   object that names no dataset (an IOC, no ``dataset =`` anchor)
 #:   DOORS_UNKNOWN   a dataset it reads has a registry ``doors_unknown`` row
 #:   NO_PROVIDER     it reads a multi-provider cloud dataset and names no provider
-UNDERIVED_CODES: tuple[str, ...] = ("CARD_NOT_FOUND", "NO_DATASET", "DOORS_UNKNOWN", "NO_PROVIDER")
+#:   UNREGISTERED_DATASET  a dataset it reads has no registry row (the code
+#:                   ``engine.prerequisites`` uses for the same fault)
+UNDERIVED_CODES: tuple[str, ...] = (
+    "CARD_NOT_FOUND", "NO_DATASET", "DOORS_UNKNOWN", "NO_PROVIDER", "UNREGISTERED_DATASET",
+)
 
 DETECTION_TYPES: tuple[str, ...] = ("BIOC", "XQL", "Analytics", "Correlation", "IOC", "ABIOC", "Prevention")
 _ANALYTICS_TYPES = frozenset({"Analytics", "ABIOC"})
@@ -88,7 +93,7 @@ _TAG_DOOR = {k.lower(): v for k, v in _PROVIDER_DOOR.items()}
 
 
 class DoorResolutionError(ValueError):
-    """An input this module cannot read: a shape, a registry, or a dataset it does not know."""
+    """An input this module cannot read: an unrecognised shape, or an absent registry."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -261,14 +266,11 @@ def detection_requirement(
 
     if code is not None:
         return DoorRequirement(needs_analytics=needs_analytics, underived=code)
-    rows: list[DatasetRequirement] = []
-    for ds in datasets:
-        row = registry.get(ds)
-        if row is None:
-            raise DoorResolutionError(
-                f"card {card.ttp_ref} detection {card.detection_id!r} reads dataset {ds!r}, "
-                f"which the dataset requirement registry does not list")
-        rows.append(row)
+    rows = [registry.get(ds) for ds in datasets]
+    if any(row is None for row in rows):
+        # Registry drift, counted like the other gaps so one card cannot abort a
+        # whole scenario's readiness. CORTEXSIM_STRICT_DATASETS refuses boot on it.
+        return DoorRequirement(needs_analytics=needs_analytics, underived="UNREGISTERED_DATASET")
     if any(row.doors_unknown is not None for row in rows):
         return DoorRequirement(needs_analytics=needs_analytics, underived="DOORS_UNKNOWN")
 

@@ -42,8 +42,9 @@ Scenarios needing several doors are counted once per door.
 Only 44 scenarios need the XDR agent and nothing else; 88 need the agent, the
 NGFW, or both, and nothing more.
 
-**Per door, as `engine.door_resolution` derives it** (measured on
-feature/api-ingestion-doors f6fd90f on 2026-11-11, pinned in
+**Per door, as `engine.door_resolution` derives it** (the corpus as of
+feature/api-ingestion-doors f6fd90f, measured on 2026-11-11 with the code at
+its implementation commit c4e52a2, pinned in
 `tests/engine/test_door_corpus.py`). These counts apply §5 in order, so they
 differ from the table above in three ways. Collector steps are judged by their
 route and counted under no door. Every `dataset =` anchor is read, not only the
@@ -226,7 +227,10 @@ How a detection gets its door, in order:
 3. **`cloud_audit_logs` is split by provider.** A detection's provider is read
    from a `cloud_provider` filter in its query, else from the card's provider
    tag (`aws`, `gcp`, `azure`). A detection naming none is `underived`, never
-   admitted by whichever provider happens to be open.
+   admitted by whichever provider happens to be open. Narrowing applies to
+   every dataset whose OR-set holds two or more cloud provider doors (today
+   `cloud_audit_logs`, `cortex_cloud_posture` and `ai_spm_findings`); a row with
+   one provider door, such as `msft_azure_audit`, is not narrowed.
 4. **Agent-scoped doors resolve against the step's own target**, since a
    fan-out runs steps on different beacons. A k8s pod beacon matches by the node
    name in its runtime facts; without one it is `unknown`. A push run has no
