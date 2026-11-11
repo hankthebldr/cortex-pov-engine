@@ -8,6 +8,28 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — two Linux persistence chains built to group into one case
+
+- **SIM-EDR-023 and SIM-EDR-024**, with cards TTP-2026-0198/0199. SIM-EDR-023
+  is a cron foothold that re-runs the WildFire test ELF. SIM-EDR-024 plants a
+  sudo backdoor account and an SSH key, then a systemd timer. Both footholds
+  re-run every 5 minutes, survive a reboot and remove themselves after 45
+  minutes. Both target the standalone Linux XDR agent.
+- **Grounded in the lab tenant's read-back.** The low built-in alerts the lab
+  raised never formed a case: Low issues neither create nor join one. Each
+  chain's Medium+ alerts are the agent's Local Analysis verdict plus BIOCs and
+  a correlation rule the operator installs at Medium from
+  `docs/lab/2026-11-11-persistence-grouping-lab-run.md`. Steps are 40 s apart
+  because back-to-back steps lost telemetry in the lab. Every BIOC, XQL and
+  correlation body parsed in the tenant (read-only); the ones that could match
+  past lab activity matched it.
+- **The corpus's first Prevention expectation** (`prevention-local-analysis-malware`).
+  The scenario lint hook now accepts the Prevention type, as the loader
+  already did.
+- **Counts:** 195 scenarios, 193 cards, 1392 step-detections, Correlation
+  share 10.1% (141). `tenant-verified` is still 0; nothing here has run
+  against the tenant.
+
 ### Added — collector targets: the tenant's ingestion doors, entered once per POV
 
 - **A DC enters the tenant-side collectors once and every in-process consumer
