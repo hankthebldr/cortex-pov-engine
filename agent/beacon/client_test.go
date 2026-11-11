@@ -330,7 +330,9 @@ func TestSendOutput_PostsRunIdStepIdAndOutput(t *testing.T) {
 	if r.Path != "/api/runs/r-42/output" {
 		t.Errorf("wrong path: %s", r.Path)
 	}
-	if !strings.Contains(r.Body, `"output":"hello"`) {
+	// A frame always ends with a newline, so SimCore's raw append never glues
+	// the next frame onto it (step_frame_newline_test.go).
+	if !strings.Contains(r.Body, `"output":"hello\n"`) {
 		t.Errorf("body missing output: %s", r.Body)
 	}
 	if !strings.Contains(r.Body, `"step_id":"step-01"`) {

@@ -759,7 +759,18 @@ func (c *BeaconClient) Control(runID string) (ControlState, error) {
 // SendOutput streams partial or final command output back to SimCore, attributing
 // it to a specific step. stepID may be empty for un-attributed output.
 // Corresponds to: POST /api/runs/{run_id}/output  body {output, step_id?}
+//
+// Every frame sent here ends with a newline. SimCore appends each body as-is,
+// and the step block (formatStepOutput), the refused-step block and the
+// fail-fast stop line all end on their closing "--- … ---" frame, so without
+// it the next step's "=== STEP" header was glued onto the previous footer and
+// a line-oriented reader of the run record saw only the first step (observed
+// on a lab run). Live streaming chunks (sendOutput with retry=false) are raw
+// pieces of a child's output and are not touched.
 func (c *BeaconClient) SendOutput(runID, stepID, output string) error {
+	if output != "" && !strings.HasSuffix(output, "\n") {
+		output += "\n"
+	}
 	return c.sendOutput(runID, stepID, output, true)
 }
 
