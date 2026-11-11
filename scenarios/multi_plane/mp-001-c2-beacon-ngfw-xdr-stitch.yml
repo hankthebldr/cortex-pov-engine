@@ -251,9 +251,9 @@ cleanup:
   commands:
     - "rm -f /tmp/cortexsim_stage2.sh"
     # Windows: removes the stage-2 file if step-04 was interrupted before its
-    # in-step delete. The bash bundle runs this line too, under set -u, so it
-    # carries no `$` ("$env:TEMP" would end cleanup() with `env: unbound
-    # variable`).
+    # in-step delete. The bash bundle and the K8s bootstrap do NOT run this
+    # line: push_generator withholds a Windows-only cleanup line from the POSIX
+    # target and names it in a `# skipped (Windows-only)` comment.
     - 'cmd.exe /c if exist "%TEMP%\cortexsim_stage2.ps1" del /f /q "%TEMP%\cortexsim_stage2.ps1"'
     - "echo '[CortexSim] SIM-MP-001 cleanup complete - staged stage-2 files removed'"
 

@@ -593,9 +593,9 @@ cleanup:
   commands:
     - "rm -rf /tmp/cortexsim-mp-029 /tmp/mp-029-delivery.yml /tmp/mp-029-c2.yml"
     # Native Windows teardown (CONT-11): the bash-wrapped pwsh form was skipped
-    # by the Windows bundle. The bash bundle runs this line too, under set -u,
-    # so it carries no `$` ("$env:TEMP" would end cleanup() with `env: unbound
-    # variable`), and it sits after the POSIX line it could otherwise strand.
+    # by the Windows bundle. The bash bundle and the K8s bootstrap do NOT run
+    # this line: push_generator withholds a Windows-only cleanup line from the
+    # POSIX target and names it in a `# skipped (Windows-only)` comment.
     - 'cmd.exe /c if exist "%TEMP%\cortexsim-mp-029" rd /s /q "%TEMP%\cortexsim-mp-029"'
 
 author: "Henry Reed"

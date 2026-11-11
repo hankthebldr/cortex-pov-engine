@@ -318,12 +318,12 @@ cleanup:
     - "rm -f /tmp/cortexsim_cron_test /tmp/cortexsim_cron_backup /tmp/cortexsim-backdoor.service /tmp/cortexsim_profile_test"
     - "rm -rf /tmp/.cortexsim_ssh_test"
     # Windows teardown, for a step interrupted between create and its in-step
-    # delete. The bash bundle also runs every cleanup line (on Linux each of
-    # these is a harmless command-not-found) under `set -u`, so no Windows line
-    # carries a `$`, not even inside double quotes: "$env:TEMP" raises `env:
-    # unbound variable` there and ends cleanup() before the lines after it.
-    # Hence cmd lines with %VAR%, which bash leaves alone; no parentheses,
-    # redirects or a lone & either (bash -n + shellcheck).
+    # delete. The bash bundle and the K8s bootstrap do NOT run these lines:
+    # push_generator withholds a Windows-only cleanup line from the POSIX
+    # target and names it in a `# skipped (Windows-only)` comment. `sc.exe` and
+    # `net.exe` are wrapped in `cmd.exe /c` because neither is a marker the
+    # generator recognises on its own: unwrapped, the Windows bundle would
+    # list them as residue and the bash bundle would try to run them.
     - "schtasks.exe /delete /tn cortexsim-edr003-healthmonitor /f"
     - "cmd.exe /c sc.exe delete cortexsim-edr003-syshealthmon"
     - "cmd.exe /c net.exe user cortexsim-edr003 /delete"

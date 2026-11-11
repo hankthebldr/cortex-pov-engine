@@ -607,10 +607,10 @@ cleanup:
     # Native Windows teardown (CONT-11). The previous form wrapped pwsh in bash
     # (`command -v pwsh && pwsh -Command ...`), which the Windows bundle skips,
     # so Windows never ran it. These lines are PowerShell the Windows bundle
-    # runs. The bash bundle runs them too (as command-not-found) under set -u,
-    # so they carry no `$` at all, not even inside double quotes, and they sit
-    # after the POSIX lines. The service is deleted only when its binPath is
-    # the lab copy step-02 registered.
+    # runs. The bash bundle and the K8s bootstrap do NOT run them:
+    # push_generator withholds a Windows-only cleanup line from the POSIX
+    # target and names it in a `# skipped (Windows-only)` comment. The service
+    # is deleted only when its binPath is the lab copy step-02 registered.
     - "Get-CimInstance -ClassName Win32_Service -Filter \"Name='msdnetsvc'\" -ErrorAction SilentlyContinue | Where-Object PathName -Like '*cortexsim-mp026*' | Invoke-CimMethod -MethodName Delete"
     - "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path 'C:\\ProgramData\\cortexsim-mp026'"
 

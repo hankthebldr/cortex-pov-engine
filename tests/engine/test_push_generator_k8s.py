@@ -446,6 +446,50 @@ def test_missing_binary_is_exit_78_not_a_silent_skip() -> None:
     assert f"exit {km.EXIT_NEVER_RAN}" in body
 
 
+_WINDOWS_CLEANUP_HEAD = re.compile(
+    r"(?m)^\( (?:[\w.\\/-]+\.(?:exe|cmd|bat|ps1)|[A-Z][a-z]+-[A-Z][A-Za-z]+|del|rd) [^\n]*\) \|\| true$"
+)
+
+
+def test_bootstrap_cleanup_carries_no_windows_only_teardown() -> None:
+    """RG-PUSH-01. The pod is Linux: a Windows teardown line in bootstrap.sh is
+    `( cmd.exe ... ) || true`, a command-not-found in the pod log."""
+    sc = scenario(cleanup={"commands": [
+        "rm -f /tmp/d.sh",
+        'cmd.exe /c if exist "%TEMP%\\cortexsim-x" rd /s /q "%TEMP%\\cortexsim-x"',
+        "schtasks.exe /delete /tn cortexsim-x /f",
+        "Remove-Item -Recurse -Force -Path 'C:\\ProgramData\\cortexsim-x'",
+    ]})
+    body = km.generate_bootstrap(sc)
+    assert "( rm -f /tmp/d.sh ) || true\n" in body
+    assert not _WINDOWS_CLEANUP_HEAD.findall(body), _WINDOWS_CLEANUP_HEAD.findall(body)
+    for needle in ("cmd.exe", "schtasks.exe", "Remove-Item"):
+        assert needle not in body
+
+
+def test_no_corpus_bootstrap_carries_windows_only_teardown(repo_root: Path) -> None:
+    """Corpus-wide: 10 scenarios shipped 25 such lines into bootstrap.sh."""
+    hits: list[str] = []
+    n = 0
+    for p in sorted((repo_root / "scenarios").rglob("*.yml")):
+        if p.name.startswith("_"):
+            continue
+        try:
+            data = yaml.safe_load(p.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(data, dict) or "scenario_id" not in data or "steps" not in data:
+            continue
+        try:
+            body = km.generate_bootstrap(data)
+        except BundleTargetUnsatisfiable:
+            continue
+        n += 1
+        hits += [f"{data['scenario_id']}: {h[:120]}" for h in _WINDOWS_CLEANUP_HEAD.findall(body)]
+    assert n >= 160, f"only {n} bootstraps exercised"
+    assert not hits, f"{len(hits)} Windows teardown line(s) in a Linux pod's bootstrap.sh:\n  " + "\n  ".join(hits)
+
+
 def test_every_step_is_a_subshell_child_of_one_anchor_shell() -> None:
     """The identical shape the Go beacon uses, so pull-mode and k8s-push produce
     the same causality tree — one CGO-rooted spine, not N unrelated per-step

@@ -629,11 +629,10 @@ cleanup:
     - "rm -f /tmp/cortexsim-mp025-github.yml /tmp/cortexsim-mp025-tunnel.yml"
     # Native Windows teardown (CONT-11). The previous single line wrapped pwsh
     # in bash (`command -v pwsh && pwsh -Command ...`), which the Windows bundle
-    # skips, so it never ran on Windows. The bash bundle also runs every line
-    # below (as command-not-found) under set -u, so none carries a `$`, not
-    # even in double quotes: "$env:LOCALAPPDATA" raises `env: unbound variable`
-    # there and ends cleanup() early. Hence %VAR% in cmd lines, which bash
-    # leaves alone, and the POSIX lines first. Each removal stays guarded the
+    # skips, so it never ran on Windows. The bash bundle and the K8s bootstrap
+    # do NOT run the lines below: push_generator withholds a Windows-only
+    # cleanup line from the POSIX target and names it in a `# skipped
+    # (Windows-only)` comment. Each removal stays guarded the
     # way the old line was: only the lab RuntimeBroker path, only a Run value
     # pointing at it, only a directory whose config carries the cortexsim-mp025
     # marker (findstr exits non-zero without it, so `&&` skips the rd).

@@ -324,11 +324,11 @@
     "powershell": null
   },
   "SIM-EDR-003": {
-    "bash": "f3a4aebb887fbd5789d8ac5ce8ef871673a318d53bebbdacaa43d415c6ab182e",
+    "bash": "0fc67083d0c72d88aa0e6326e94d9ba091f582c7dcbd450dce1bfafbf8d147b6",
     "powershell": "85109e32860f6e44d162d02cdb3abe7739afa9c771cd98f5cddae169dfcdc8a2"
   },
   "SIM-EDR-004": {
-    "bash": "86bc85468a88f9c5e30b165b06af86885f8e8b7f6dd1df0a40ec83823ccfa9fb",
+    "bash": "9ad04c252e00fe2988da08d2c961d8068f23b2d522d551087bc477bf1921a0f9",
     "powershell": "3c4fa92c7baf70c0148d1bf752c6599bde8daf0d599e1ee882ce4b38def2b3fb"
   },
   "SIM-EDR-005": {
@@ -444,7 +444,7 @@
     "powershell": null
   },
   "SIM-ITDR-006": {
-    "bash": "2a82329b4377faa9381c8e6e5f37ad19f6102b0f3bc9b84885c25c1dbc20584b",
+    "bash": "76adf1a404adff01043b7c4ab004a7ad0ebee83478be0338c6a595e69f57565f",
     "powershell": "a1649061cd139206f31b4a36b9c9dab6f7cad9c08a97aef943ebb810d96d2876"
   },
   "SIM-ITDR-007": {
@@ -540,7 +540,7 @@
     "powershell": null
   },
   "SIM-MP-001": {
-    "bash": "221fa251e6b2bbdd75c582e02c9527b502e75120a8a9a93fdbe07371f2aba29a",
+    "bash": "8ee53bc43e1c4eb238775d8005782b978d0786025d7b3ca0d078772ddfa392f8",
     "powershell": "c8acacaa8a3f31dde94f2dd647074088857ad1b71ea1fa8b4b1619475b144898"
   },
   "SIM-MP-002": {
@@ -600,7 +600,7 @@
     "powershell": null
   },
   "SIM-MP-016": {
-    "bash": "42089db87c35ec82954d101abbf95aae4ff5be5aa0a9f522162616e3b4e40244",
+    "bash": "291ddb07b001ac4515af80f70a6d10717a99ec5f9ca3b160cbc32a176b97c37a",
     "powershell": null
   },
   "SIM-MP-017": {
@@ -616,7 +616,7 @@
     "powershell": null
   },
   "SIM-MP-020": {
-    "bash": "e8d94abf2325e8c7ad491ee387b4e82356e4a304fcc567cf50260cd74cba4853",
+    "bash": "fcdaaff485731f8db6d146c6b0fb8c476a15e358b67f959d5195375faca0925c",
     "powershell": "cb346538850e4ad0947bb3ee2e78a9a7c95df3aef0d19a01cb494f474cad903b"
   },
   "SIM-MP-021": {
@@ -628,7 +628,7 @@
     "powershell": null
   },
   "SIM-MP-023": {
-    "bash": "7807ee0b09f3064833afd83b6d29b99f1e91bc7daed7d589882315bc0d635641",
+    "bash": "94cdd88b842bcef8b1cfad1e185d024a4af586dc2502db0a34fbd251416d1ee0",
     "powershell": null
   },
   "SIM-MP-024": {
@@ -636,11 +636,11 @@
     "powershell": null
   },
   "SIM-MP-025": {
-    "bash": "d5b39c535fb197d42fa99e787d967ea9f71c8bfed5ca8bfa093d6ffa3ea57439",
+    "bash": "4df4bf7b17ded37134176facdfe20dcc92b6b7c10a58b9c173b78ce11569385b",
     "powershell": null
   },
   "SIM-MP-026": {
-    "bash": "236638bee3637c31801dabde2ad30f289776046c89877a77e36b59ee8e0aba75",
+    "bash": "421aecf1394823f2121e7c579e107c791a3659e945d47f594a151d67169c1f6c",
     "powershell": null
   },
   "SIM-MP-027": {
@@ -652,7 +652,7 @@
     "powershell": null
   },
   "SIM-MP-029": {
-    "bash": "f72f2dd84b3b787c07c170ab37433f1ce9b1d8131d879e2e25f4d58f496a19c5",
+    "bash": "ba8c93577f92e45a22ebc10bdd0b92a3b99dceb60b5087cea00ce09eab9e54d8",
     "powershell": null
   },
   "SIM-MP-030": {

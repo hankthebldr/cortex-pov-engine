@@ -265,6 +265,18 @@ def is_posix_shaped(command: str) -> bool:
     return bool(_POSIX_ANCHOR_RE.search(code))
 
 
+def is_windows_only(command: str) -> bool:
+    """True when ``command`` is text no POSIX shell can run: it carries a strong
+    Windows marker and no POSIX anchor outranks it.
+
+    The exact complement of :func:`is_posix_shaped`, named for the cleanup
+    path: a scenario's ``cleanup.commands`` is one list for every target, so a
+    scenario that also emits a Windows bundle carries ``reg.exe delete …`` and
+    ``Remove-Item …`` lines that a bash bundle must not attempt.
+    """
+    return not is_posix_shaped(command)
+
+
 _NEUTRAL_STMT_RE = re.compile(r"^echo\s+'[^']*'$")
 _NEUTRAL_FORBIDDEN = ("|", "<", ">", "`", "$(", "&", "\\\n")
 
@@ -607,7 +619,18 @@ def _resolve_cleanup(
         if target == "posix":
             # Cleanup never gates emittability — a bundle that runs its steps
             # and warns on cleanup still delivers the signal the POV needs.
-            kept.append((cmd, "bash"))
+            #
+            # A Windows-only line is withheld, not run. On Linux it removes
+            # nothing (what it names exists only on a Windows host), and
+            # running it costs a `command not found` line in the teardown log
+            # a DC shows the customer — or, for a double-quoted `$env:` under
+            # `set -u`, ends the shell and strands every later teardown line.
+            # The bash bundle names each withheld line in a comment; the K8s
+            # bootstrap reads this same resolution.
+            if is_windows_only(cmd):
+                skipped.append(cmd)
+            else:
+                kept.append((cmd, "bash"))
             continue
         if is_shell_neutral(cmd):
             kept.append((cmd, "powershell"))
@@ -819,6 +842,11 @@ cleanup() {{
 trap cleanup EXIT
 """
 
+#: How the bash bundle names a cleanup line it withholds (see
+#: ``_resolve_cleanup``). A comment, never a log line: the point of withholding
+#: is that the teardown log carries no noise about a platform the host is not.
+_BASH_SKIPPED_CLEANUP_PREFIX = "    # skipped (Windows-only): "
+
 _FOOTER = """\
 
 log INFO "CortexSim bundle complete — scenario={scenario_id}"
@@ -972,8 +1000,18 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         script += "\n".join(adapter_lines) + "\n\n"
 
     # --- Cleanup registration ---
-    cleanup_cmds = cleanup_data.get("commands", [])
-    cleanup_lines = "\n".join(f'    {cmd}' for cmd in cleanup_cmds) if cleanup_cmds else "    true  # no cleanup commands defined"
+    # The same rule `_resolve_cleanup(..., "posix")` applies, so what this
+    # bundle runs cannot disagree with `resolve_target(...).cleanup`: a
+    # Windows-only teardown line is named in a comment (flattened to one line,
+    # so it cannot end the comment) and never handed to bash.
+    cleanup_cmds = cleanup_data.get("commands") or []
+    cleanup_rendered = [
+        _BASH_SKIPPED_CLEANUP_PREFIX + _comment_safe(" ".join(cmd.split()))
+        if isinstance(cmd, str) and is_windows_only(cmd)
+        else f"    {cmd}"
+        for cmd in cleanup_cmds
+    ]
+    cleanup_lines = "\n".join(cleanup_rendered) if cleanup_rendered else "    true  # no cleanup commands defined"
     script += _CLEANUP_TMPL.format(
         scenario_id=_safe_token(scenario_id),
         cleanup_commands=cleanup_lines,
