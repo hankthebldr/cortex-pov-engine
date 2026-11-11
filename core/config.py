@@ -167,6 +167,13 @@ class Settings(BaseSettings):
     # no CORS middleware at all: the console is same-origin and needs none.
     # Credentials are never allowed, even when this is set.
     CORTEXSIM_CORS_ORIGINS: str = ""
+    # Comma list of CIDRs whose X-Forwarded-For is believed when an agent's
+    # last_ip (and so a run's stitched src_ip) is recorded. Empty, the default,
+    # trusts no proxy: the socket peer is the address. core/api/agents.py reads
+    # the process environment first and this field second, so a value set only
+    # in a host-run `.env` is honoured. It used to be undeclared, and an
+    # uncommented `.env` line made Settings() refuse to boot.
+    CORTEXSIM_TRUSTED_PROXIES: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

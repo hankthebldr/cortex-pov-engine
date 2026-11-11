@@ -2242,11 +2242,17 @@ def _trusted_proxies() -> Optional[tuple]:
     """The CIDRs whose ``X-Forwarded-For`` is believed, or None if the setting
     is malformed.
 
-    Read from ``os.environ`` on every call (not cached in settings) so an
-    operator can fix it without a code change; parsing is memoised per value.
-    Empty -- the default -- means no proxy is trusted.
+    The process environment first, then ``Settings.CORTEXSIM_TRUSTED_PROXIES``
+    (which is where a host-run ``.env`` lands): the order pydantic-settings
+    itself uses, so an exported value, even an empty one, outranks the file.
+    Read on every call; parsing is memoised per value. Empty -- the default --
+    means no proxy is trusted.
     """
-    raw = os.environ.get("CORTEXSIM_TRUSTED_PROXIES", "")
+    raw = os.environ.get("CORTEXSIM_TRUSTED_PROXIES")
+    if raw is None:
+        from config import settings  # noqa: PLC0415 — avoid an import cycle at module load
+
+        raw = settings.CORTEXSIM_TRUSTED_PROXIES or ""
     if raw in _trusted_proxy_cache:
         return _trusted_proxy_cache[raw]
     try:

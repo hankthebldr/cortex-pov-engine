@@ -29,6 +29,16 @@ from fastapi.testclient import TestClient
 TRUSTED = "10.0.0.0/8, fd00::/8"
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_trusted_proxies(monkeypatch):
+    """With the env var unset the reader falls back to `config.settings`, which
+    was built from whatever `.env` sits in the developer's checkout. Pin that
+    to the shipped default so "ignored by default" tests mean what they say."""
+    import config
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_TRUSTED_PROXIES", "")
+
+
 @pytest.fixture
 def client(make_client):
     from api.agents import router
@@ -256,3 +266,61 @@ def test_a_malformed_trusted_proxy_list_degrades_to_no_observation(monkeypatch):
 def test_client_ip_none_when_no_client_and_no_header():
     from api.agents import _client_ip
     assert _client_ip(_Req(host=None)) is None
+
+
+# ---------------------------------------------------------------------------
+# The setting reaches the reader from a host-run .env too
+# ---------------------------------------------------------------------------
+#
+# CORTEXSIM_TRUSTED_PROXIES was read from os.environ only and was not a field
+# on Settings. A DC running SimCore on the host who put it in `.env` got a
+# boot-time ValidationError (extra_forbidden); had it booted, the value would
+# have been ignored without a word, and every agent behind the proxy would
+# have recorded the proxy's address as its own.
+
+
+def _settings_from_dotenv(tmp_path, monkeypatch, body: str):
+    """A Settings built from a dotenv alone, installed as `config.settings`."""
+    import os
+
+    import config
+
+    for name in [k for k in os.environ if k.startswith("CORTEXSIM_")]:
+        monkeypatch.delenv(name, raising=False)
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(body)
+    built = config.Settings(_env_file=str(dotenv))
+    monkeypatch.setattr(config, "settings", built)
+    return built
+
+
+def test_a_value_supplied_only_through_a_dotenv_is_honoured(tmp_path, monkeypatch):
+    from api.agents import _client_ip
+
+    built = _settings_from_dotenv(tmp_path, monkeypatch, "CORTEXSIM_TRUSTED_PROXIES=10.0.0.0/8\n")
+    assert built.CORTEXSIM_TRUSTED_PROXIES == "10.0.0.0/8"
+    # Behind the proxy named in .env the forwarded client is recorded...
+    assert _client_ip(_Req(host="10.0.0.9", xff="198.51.100.7")) == "198.51.100.7"
+    # ...and a peer outside it still cannot stamp an address.
+    assert _client_ip(_Req(host="203.0.113.5", xff="198.51.100.7")) == "203.0.113.5"
+
+
+def test_the_process_environment_outranks_the_dotenv(tmp_path, monkeypatch):
+    """Environment first, then the Settings field: the order pydantic-settings
+    itself uses. An exported empty value means "no proxy is trusted" and is not
+    overridden by a stale .env line."""
+    from api.agents import _client_ip
+
+    _settings_from_dotenv(tmp_path, monkeypatch, "CORTEXSIM_TRUSTED_PROXIES=10.0.0.0/8\n")
+    monkeypatch.setenv("CORTEXSIM_TRUSTED_PROXIES", "")
+    assert _client_ip(_Req(host="10.0.0.9", xff="198.51.100.7")) == "10.0.0.9"
+    monkeypatch.setenv("CORTEXSIM_TRUSTED_PROXIES", "192.0.2.0/24")
+    assert _client_ip(_Req(host="192.0.2.10", xff="198.51.100.7")) == "198.51.100.7"
+    assert _client_ip(_Req(host="10.0.0.9", xff="198.51.100.7")) == "10.0.0.9"
+
+
+def test_a_malformed_dotenv_value_degrades_exactly_as_a_malformed_env_value(tmp_path, monkeypatch):
+    from api.agents import _client_ip
+
+    _settings_from_dotenv(tmp_path, monkeypatch, "CORTEXSIM_TRUSTED_PROXIES=10.0.0.0/8;172.16.0.0/12\n")
+    assert _client_ip(_Req(host="10.0.0.9", xff="198.51.100.7")) is None

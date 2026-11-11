@@ -119,6 +119,67 @@ def test_settings_constructs_from_shipped_env_example(
     assert settings.CORTEXSIM_ENV == "development"
 
 
+# A commented example line: `# CORTEXSIM_FOO=value` (or `# export CORTEXSIM_...`).
+# `.env.example` documents optional settings this way, and the first thing an
+# operator does with one is delete the `#`.
+_COMMENTED_EXAMPLE = re.compile(r"^(\s*)#\s*((?:export\s+)?CORTEXSIM_[A-Z0-9_]*\s*=.*)$")
+
+
+def _uncomment_examples(text: str) -> tuple[str, set[str]]:
+    """Return ``text`` with every commented CORTEXSIM_*= example uncommented,
+    and the names that were uncommented."""
+    names: set[str] = set()
+    out = []
+    for line in text.splitlines():
+        m = _COMMENTED_EXAMPLE.match(line)
+        if m and (name := _ASSIGNMENT.match(m.group(2))):
+            names.add(name.group(1))
+            line = m.group(1) + m.group(2)
+        out.append(line)
+    return "\n".join(out) + "\n", names
+
+
+def test_the_uncommenter_finds_commented_examples() -> None:
+    """Guard the guard, on a literal: it must not depend on what the shipped
+    file happens to keep commented today."""
+    text, names = _uncomment_examples(
+        "# prose about CORTEXSIM_FOO, not an assignment\n"
+        "# CORTEXSIM_FOO=1\n"
+        "#   export CORTEXSIM_BAR=two\n"
+        "CORTEXSIM_BAZ=3\n"
+        "# OTHER=4\n")
+    assert names == {"CORTEXSIM_FOO", "CORTEXSIM_BAR"}
+    assert text.splitlines() == [
+        "# prose about CORTEXSIM_FOO, not an assignment",
+        "CORTEXSIM_FOO=1", "export CORTEXSIM_BAR=two", "CORTEXSIM_BAZ=3", "# OTHER=4"]
+
+
+def test_settings_constructs_with_every_commented_example_uncommented(
+    env_example: Path, documented_keys: set[str], tmp_path: Path, dotenv_is_sole_source: None
+) -> None:
+    """Uncommenting an example `.env.example` ships must never stop the boot.
+
+    `CORTEXSIM_TRUSTED_PROXIES` was documented as a commented line, read from
+    `os.environ` by `core/api/agents.py`, and not declared on `Settings`. So the
+    file had to carry a warning NOT to uncomment its own example: doing so made
+    a host-run SimCore refuse to boot with `extra_forbidden`.
+    """
+    text, uncommented = _uncomment_examples(env_example.read_text())
+    assert "CORTEXSIM_TRUSTED_PROXIES" in (uncommented | documented_keys), (
+        "CORTEXSIM_TRUSTED_PROXIES is no longer in .env.example at all, commented or not")
+
+    undeclared = sorted(uncommented - set(Settings.model_fields))
+    assert not undeclared, (
+        f"commented examples in .env.example that are not fields on config.Settings: "
+        f"{undeclared}. An operator who uncomments one and runs SimCore on the host gets "
+        "a ValidationError at boot. Declare the field.")
+
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(text)
+    settings = Settings(_env_file=str(dotenv))
+    assert settings.CORTEXSIM_ENV == "development"   # the file was really read
+
+
 def test_unknown_key_in_dotenv_is_still_rejected(
     tmp_path: Path, dotenv_is_sole_source: None
 ) -> None:
