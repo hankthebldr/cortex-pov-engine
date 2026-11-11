@@ -343,6 +343,12 @@ type BeaconClient struct {
 	regOS           string
 	regCapabilities []string
 	regInterpreters []string
+	// registerPending is true while the last Register attempt failed. The run
+	// loop retries it before every poll until it succeeds (INST-16): an
+	// ENROLLED row never answers /tasks with the 404 that triggers
+	// reRegister, so a failed boot Register used to leave the installer's
+	// capability roster on the row for the life of the process.
+	registerPending bool
 
 	// resolveIdentity maps a step's identity USERNAME to something this host can
 	// actually execute. Injectable so the Windows degradation path — which is the
@@ -624,10 +630,25 @@ func (c *BeaconClient) Register(hostname, goos string, capabilities, interpreter
 		"interpreters": interpreters,
 	}
 	_, err := c.post("/api/agents/register", body)
+	c.registerPending = err != nil
 	if err != nil {
 		return fmt.Errorf("register: %w", err)
 	}
 	return nil
+}
+
+// retryPendingRegistration re-sends a registration that has not yet
+// succeeded. Called by the run loop before each poll; a no-op once Register
+// has succeeded (INST-16).
+func (c *BeaconClient) retryPendingRegistration() {
+	if !c.registerPending {
+		return
+	}
+	if err := c.reRegister(); err != nil {
+		log.Printf("[beacon] registration still not accepted (will retry next poll): %v", err)
+		return
+	}
+	log.Printf("[beacon] registration OK (retried) — SimCore now holds this beacon's own capabilities")
 }
 
 // reRegister re-sends this agent's registration using the metadata captured on
@@ -857,6 +878,7 @@ func (c *BeaconClient) Run(ctx context.Context) {
 				log.Printf("[beacon] context cancelled — shutting down cleanly")
 				return
 			}
+			c.retryPendingRegistration()
 			task, err := c.PollTasksWait(c.LongPollTimeout)
 			if err != nil {
 				if ctx.Err() != nil {
@@ -903,6 +925,7 @@ func (c *BeaconClient) Run(ctx context.Context) {
 			return
 
 		case <-ticker.C:
+			c.retryPendingRegistration()
 			task, err := c.PollTasks()
 			if err != nil {
 				if ctx.Err() != nil {
