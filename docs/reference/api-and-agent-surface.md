@@ -1037,6 +1037,30 @@ scenario table only, no outbound call; the scenario route carries
   (default `false`).
 - Route count: this branch adds 3 routes.
 
+### 1.16b Ingestion doors (`core/api/doors.py`, mounted before the scenarios router)
+
+Added 2026-11-11. Read-only: local files and the database only, **zero outbound
+calls**; every response carries `tenant_verified: 0` and `outbound_calls: 0`.
+Errors use the top-level `{"error", "code", "detail"}` shape.
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/doors` | Every ingestion door (one row per agent or target instance for scoped doors) with its state and the count of corpus detections that name it | — | `{doors[], registry_loaded, tenant_verified, outbound_calls}`; each row `{key, door_id, label, scope, state, basis, rung, last_conclusive_at, age_seconds, wizard, detections_needing}`; 500 `DATASET_REGISTRY_MALFORMED`, 500 `DOOR_DERIVATION_FAILED` |
+| GET | `/api/doors/readiness` | Door readiness of every loaded scenario in one fetch (the library list itself is unchanged) | query: `agent_id` (keys agent-scoped doors; without it `agent_scoped_evaluated` is false) | `{scenarios{scenario_id: readiness}, agent_scoped_evaluated, registry_loaded, tenant_verified, outbound_calls}`; 500 as above |
+| GET | `/api/scenarios/{scenario_id}/doors` | One scenario's readiness plus each expected detection's requirement | query: `agent_id` | `{scenario_id, registry_loaded, readiness, detections[{step_id, detection_id, requirement}], tenant_verified, outbound_calls}`; 404 `SCENARIO_NOT_FOUND`, 500 as above |
+
+- A readiness object is `{scenario_id, state, scorable, total, underived, route_blocked,
+  unevaluated, closed[{door_id, detections}], agent_scoped_evaluated}`. `state` is
+  `ready | partial | needs_doors | not_evaluated`. `route_blocked` counts detections whose
+  collector route cannot feed them; `unevaluated` counts agent-scoped OR-sets with no
+  `agent_id` to key them. Both are passed through unchanged from the resolver.
+- A door row `state` is the last conclusive event (`open | closed`), else `configured` when a
+  zero-call fact says so, else `unknown`. Phase 1 writes no events, so nothing reads `open`
+  and no scenario reads `ready`.
+- An absent dataset requirement registry answers 200 with `registry_loaded: false`:
+  `detections_needing` is `null` and every scenario reads `not_evaluated` with
+  `reason: REGISTRY_ABSENT`. A malformed one is a structured 500.
+
 ### 1.17 NGFW (PAN-OS) connection (`core/api/ngfw.py`, prefix `/ngfw`; preflight through `/connectors`)
 
 Added 2026-11-10 (branch `feature/api-ngfw-connection`). Spec:

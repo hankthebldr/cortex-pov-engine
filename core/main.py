@@ -453,6 +453,8 @@ from api.drafts import router as drafts_router          # noqa: E402
 # Dataset prerequisites — registered BEFORE scenarios_router for the same reason as
 # drafts: /api/scenarios/{id}/prerequisites must not be swallowed by /{scenario_id}.
 from api.prerequisites import router as prerequisites_router  # noqa: E402
+# Ingestion doors read API — registered BEFORE scenarios_router (/api/scenarios/{id}/doors).
+from api.doors import router as doors_router  # noqa: E402
 from api.runs import router as runs_router              # noqa: E402
 from api.runs import compat_router as runs_compat_router  # noqa: E402
 from api.results import router as results_router        # noqa: E402
@@ -493,6 +495,7 @@ from api.payloads import shelf_router  # noqa: E402
 
 app.include_router(drafts_router, prefix="/api")
 app.include_router(prerequisites_router, prefix="/api")
+app.include_router(doors_router, prefix="/api")
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
 # GAP-API-008 — backward-compat alias for the historical singular launch path
