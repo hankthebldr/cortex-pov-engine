@@ -585,6 +585,44 @@ class TestGeneratePowerShell:
         # mutating machine policy is not.
         assert "-ExecutionPolicy Bypass -File" in code
 
+    def test_run_instructions_name_what_can_stop_the_bundle_on_a_managed_host(self):
+        """PUSH-16. The header said `-ExecutionPolicy Bypass` and `Unblock-File`
+        and nothing else, so on a host where Group Policy sets AllSigned every
+        PowerShell step failed "not digitally signed" and read as a failed TTP."""
+        scn = _scn([{"id": "step-01", "identity": "root", "command": "echo 'x'"}])
+        header = pg.generate_powershell(scn).split("$ErrorActionPreference", 1)[0]
+        flat = " ".join(header.replace("#", " ").split())
+        # Group Policy precedence, and how to see it.
+        assert "Get-ExecutionPolicy -List" in flat
+        assert "MachinePolicy" in flat and "UserPolicy" in flat
+        assert "outranks -ExecutionPolicy Bypass" in flat
+        assert "not signed" in flat
+        # Every step is its own child script, so policy applies to each one.
+        assert "every PowerShell step" in flat
+        # What a policy refusal looks like in the outcome table.
+        assert "policy refusal, not a detection result" in flat
+        # AMSI / the endpoint agent scan the file as a whole.
+        assert "AMSI" in flat and "as a whole" in flat
+        # Elevation is still stated when a step needs it.
+        assert "from an ELEVATED prompt" in flat
+        # ...and the bundle still never mutates policy itself.
+        code = "\n".join(ln for ln in pg.generate_powershell(scn).split("\n")
+                         if not ln.lstrip().startswith("#"))
+        assert "Set-ExecutionPolicy" not in code
+
+    def test_the_harness_warns_when_group_policy_will_refuse_the_steps(self):
+        """The header can be skipped; the log cannot. At start of run the
+        harness reads Get-ExecutionPolicy -List and names the conflict. It
+        warns, it does not refuse: exit codes are unchanged."""
+        scn = _scn([{"id": "step-01", "command": "echo 'x'"}])
+        out = pg.generate_powershell(scn)
+        code = "\n".join(ln for ln in out.split("\n") if not ln.lstrip().startswith("#"))
+        assert "function Get-CsPolicyConflict" in code
+        assert "Get-ExecutionPolicy -List" in code
+        assert "cortexsim-policy-warning reason=EXECUTION_POLICY_GPO" in code
+        # Read-only: the probe is inside a try and never gates a step.
+        assert "exit" not in code.split("function Get-CsPolicyConflict", 1)[1].split("function ", 1)[0]
+
     def test_no_ps7_only_operators_in_generated_code(self):
         """Server 2016/2019/2022 and Win10/11 ship Windows PowerShell 5.1."""
         scn = _scn([{"id": "step-01", "command": "echo 'x'"}])

@@ -1504,6 +1504,23 @@ _PS_HEADER_TMPL = """\
 # A downloaded file carries Mark-of-the-Web. If your policy requires it, run
 # `Unblock-File .\\cortexsim-@@FILE_ID@@.ps1` first — this bundle never calls
 # Set-ExecutionPolicy (a machine-scope mutation that also fails unelevated).
+#
+# Before you run it on a managed host (documented Windows behaviour; this
+# bundle has not been executed on Windows):
+#  * Group Policy outranks -ExecutionPolicy Bypass. Run
+#    `Get-ExecutionPolicy -List`: if MachinePolicy or UserPolicy reads AllSigned
+#    or Restricted, that policy wins over the command line, for this file and
+#    for every PowerShell step (each runs as its own child script). This bundle
+#    is not signed. A step refused by policy reads ran-nonzero, exactly like a
+#    failed TTP: a column of ran-nonzero rows whose output says "not digitally
+#    signed" or "running scripts is disabled" is a policy refusal, not a
+#    detection result. The run logs `cortexsim-policy-warning` when it sees
+#    such a policy; it does not change the exit code.
+#  * AMSI and the endpoint agent scan this file as a whole before step 1, and
+#    each step's child script again as it starts. One flagged string can
+#    therefore stop the whole bundle (nothing runs, no outcome table) or stop
+#    one step (that row: ran-nonzero or threw). This bundle attributes neither
+#    to a detection; check the endpoint agent's own alert for which it was.
 # =============================================================================
 
 # Warn-and-continue in the HARNESS: a step exiting non-zero is often EXPECTED
@@ -1610,6 +1627,29 @@ function Test-CsElevated {
 }
 
 $CortexSimElevated = Test-CsElevated
+
+# A Group Policy execution policy (MachinePolicy / UserPolicy scope) outranks
+# the -ExecutionPolicy Bypass each step is launched with. AllSigned and
+# Restricted refuse an unsigned script, which every step file is. Returns
+# 'scope=<s> policy=<p>' for the first such row, else ''. Read-only: it names
+# the conflict in the log and gates nothing.
+function Get-CsPolicyConflict {
+    param($Rows)
+    foreach ($row in @($Rows)) {
+        if ($null -eq $row) { continue }
+        $scope = [string]$row.Scope
+        $policy = [string]$row.ExecutionPolicy
+        if (($scope -eq 'MachinePolicy' -or $scope -eq 'UserPolicy') -and ($policy -eq 'AllSigned' -or $policy -eq 'Restricted')) {
+            return ('scope=' + $scope + ' policy=' + $policy)
+        }
+    }
+    return ''
+}
+
+$CortexSimPolicyConflict = ''
+if ($CortexSimIsWindows) {
+    try { $CortexSimPolicyConflict = [string](Get-CsPolicyConflict -Rows (Get-ExecutionPolicy -List -ErrorAction Stop)) } catch { }
+}
 
 function Resolve-CsIdentity {
     param([string]$Identity)
@@ -1922,6 +1962,9 @@ function Test-CsDep {
 
 Write-CsLog INFO ('Step interpreter: ' + $CortexSimPwsh)
 Write-CsLog INFO ('Elevated session: ' + $CortexSimElevated)
+if ($CortexSimPolicyConflict) {
+    Write-CsLog WARN ('cortexsim-policy-warning reason=EXECUTION_POLICY_GPO ' + $CortexSimPolicyConflict + ' - Group Policy outranks -ExecutionPolicy Bypass and this bundle is not signed. Expect every PowerShell step to be refused and to read ran-nonzero: that is a policy refusal, not a detection result.')
+}
 if ((-not $CortexSimElevated) -and ($CortexSimElevatedSteps.Count -gt 0)) {
     Write-CsLog WARN ('Not elevated - these steps declare an elevated identity and will NOT run (reason=NOT_ELEVATED): ' + ($CortexSimElevatedSteps -join ', '))
 }

@@ -513,6 +513,63 @@ def test_a_cmd_for_variable_step_is_refused_before_a_bundle_exists():
     assert exc.value.unresolved == (("step-01", "CMD_PERCENT_CONTEXT"),)
 
 
+# ─── PUSH-16: Group Policy execution policy outranks -ExecutionPolicy ─────
+
+_POLICY_FN_RE = re.compile(r"(?ms)^function Get-CsPolicyConflict \{\n.*?^\}\n")
+
+_POLICY_PROBE = r"""
+function Row($s, $p) { [pscustomobject]@{ Scope = $s; ExecutionPolicy = $p } }
+$cases = [ordered]@{
+  'gpo-allsigned'   = @((Row 'MachinePolicy' 'AllSigned'), (Row 'LocalMachine' 'Unrestricted'))
+  'gpo-restricted'  = @((Row 'MachinePolicy' 'Undefined'), (Row 'UserPolicy' 'Restricted'))
+  'gpo-remotesigned'= @((Row 'MachinePolicy' 'RemoteSigned'), (Row 'UserPolicy' 'Undefined'))
+  'local-allsigned' = @((Row 'MachinePolicy' 'Undefined'), (Row 'UserPolicy' 'Undefined'), (Row 'Process' 'Bypass'), (Row 'LocalMachine' 'AllSigned'))
+  'all-undefined'   = @((Row 'MachinePolicy' 'Undefined'), (Row 'UserPolicy' 'Undefined'))
+  'no-rows'         = @()
+  'this-host'       = @(Get-ExecutionPolicy -List)
+}
+$out = [ordered]@{}
+foreach ($k in $cases.Keys) { $out[$k] = [string](Get-CsPolicyConflict -Rows $cases[$k]) }
+$out | ConvertTo-Json -Compress
+"""
+
+
+def test_the_policy_probe_names_only_a_group_policy_that_refuses_unsigned_scripts(ps_exe, tmp_path):
+    """The bundle's own Get-CsPolicyConflict, lifted out verbatim and fed
+    policy tables. Only MachinePolicy/UserPolicy outrank the command line, and
+    only AllSigned/Restricted refuse an unsigned local script. The Windows
+    branch that calls it with the real table has not been observed on a host
+    where Group Policy sets one."""
+    bundle = pg.generate_powershell(_scenario([_win_step("step-01", "Write-Output 'x'")]))
+    m = _POLICY_FN_RE.search(bundle)
+    assert m, "the bundle carries no Get-CsPolicyConflict function"
+    script = tmp_path / "probe.ps1"
+    script.write_text(m.group(0) + _POLICY_PROBE, encoding="utf-8-sig")
+    args = [ps_exe, "-NoProfile", "-NonInteractive"]
+    if IS_WINDOWS:
+        args += ["-ExecutionPolicy", "Bypass"]
+    proc = subprocess.run(args + ["-File", str(script)], capture_output=True, text=True,
+                          timeout=120, encoding="utf-8", errors="replace")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    got = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert got["gpo-allsigned"] == "scope=MachinePolicy policy=AllSigned"
+    assert got["gpo-restricted"] == "scope=UserPolicy policy=Restricted"
+    assert got["gpo-remotesigned"] == ""
+    assert got["local-allsigned"] == ""
+    assert got["all-undefined"] == ""
+    assert got["no-rows"] == ""
+    if not IS_WINDOWS:
+        assert got["this-host"] == ""
+
+
+def test_a_clean_host_logs_no_policy_warning(ps_exe, tmp_path):
+    scn = _scenario([_win_step("step-01", "Write-Output 'A'")])
+    proc, out, _ = _run_bundle(ps_exe, pg.generate_powershell(scn), tmp_path)
+    if not IS_WINDOWS:
+        assert "cortexsim-policy-warning" not in out, _diag(proc, out)
+    assert _results(out).get("step-01") == ("ran-ok", "0"), _diag(proc, out)
+
+
 # ─── static guards that need the real parser ─────────────────────────────
 
 _PS7_ONLY_AST = r"""
