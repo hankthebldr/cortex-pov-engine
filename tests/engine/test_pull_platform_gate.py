@@ -305,6 +305,18 @@ def test_offline_target_warns_but_still_queues(session_factory):
     assert res.success, res.error
     assert runs == 1 and tasks == 1
     assert any(w.startswith("TARGET_AGENT_OFFLINE") for w in res.warnings), res.warnings
+    # The response spelling is unchanged (no `!!`): the console parses both.
+    assert sum(w.startswith("TARGET_AGENT_OFFLINE") for w in res.warnings) == 1, res.warnings
+
+    # RG-RUNS-06: the reservation is ON the run too, so another browser and the
+    # exported report carry it, not only the tab that launched.
+    async def _output():
+        from models import Run
+        async with session_factory() as db:
+            return (await db.execute(select(Run.output))).scalar_one() or ""
+
+    output = asyncio.run(_output())
+    assert output.count("!! TARGET_AGENT_OFFLINE: agent 'lin-1'") == 1, output
 
 
 def test_unknown_os_is_treated_as_posix_with_a_warning(session_factory):

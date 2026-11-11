@@ -779,6 +779,7 @@ class Orchestrator:
                 run_id, scenario, target_agent_id, identity, db,
                 runtime_install_authorized=runtime_install_authorized,
                 pull_plan=pull_plan,
+                launch_warnings=launch_warnings,
             )
             # Launch-time warnings first (offline target), then whatever the
             # dispatch itself had to say (variants, unknown OS).
@@ -1113,7 +1114,11 @@ class Orchestrator:
         db: AsyncSession,
         runtime_install_authorized: bool = False,
         pull_plan: Optional[_PullPlan] = None,
+        launch_warnings: Optional[list[str]] = None,
     ) -> LaunchResult:
+        """``launch_warnings`` are launch()'s own reservations (an offline
+        target). They are written onto Run.output with the dispatch markers; the
+        caller still returns them in ``warnings``, so they are not added here."""
         from models import Agent, Run  # noqa: PLC0415
 
         if not target_agent_id:
@@ -1400,11 +1405,16 @@ class Orchestrator:
         # The platform markers (CONT-09: a step running a variant whose
         # expectations were authored against the primary; an agent that never
         # said which OS it is) go on the same record, for the same reason.
-        if egress_warnings or output_markers:
+        # An offline target (launch()'s own, and a composed run's other
+        # endpoints) goes on the record too (RG-RUNS-06): the launch response
+        # reaches only the tab that launched, not another browser or the report.
+        reservations = list(launch_warnings or []) + dispatch_warnings
+        if egress_warnings or output_markers or reservations:
             lines = "".join(
                 f"!! TARGET_EGRESS_REQUIRED: {aid} — {text}\n"
                 for aid, text in egress_warnings
-            ) + "".join(f"{m}\n" for m in output_markers)
+            ) + "".join(f"{m}\n" for m in output_markers) + "".join(
+                f"!! {w}\n" for w in reservations)
             await db.execute(
                 update(Run)
                 .where(Run.run_id == run_id)
