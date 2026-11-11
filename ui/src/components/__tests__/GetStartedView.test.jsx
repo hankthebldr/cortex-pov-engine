@@ -89,16 +89,20 @@ const TOKEN = { id: 1, token: 'cxs_GsT0kenAbCdEfGhIjKlMnOpQrStUvWxYz', created_a
 const ORIGIN = window.location.origin
 const TLS = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; '
 
-function healthMissing(missing) {
+// The server's shape: `missing[]` is computed against <goos>/amd64 only;
+// `available[]` is everything on the shelf. An empty dist has neither.
+const MATRIX = ['darwin/amd64', 'darwin/arm64', 'linux/amd64', 'linux/arm64', 'windows/amd64']
+function healthMissing(missing, { alsoAbsent = [] } = {}) {
+  const empty = missing.length === 3
   return buildHealthModel({
     status: 'degraded',
     components: {
       agent_binaries: {
         status: 'degraded',
-        code: missing.length === 3 ? 'AGENT_DIST_EMPTY' : 'AGENT_DIST_INCOMPLETE',
+        code: empty ? 'AGENT_DIST_EMPTY' : 'AGENT_DIST_INCOMPLETE',
         detail: `missing ${missing.join(', ')}`,
         missing,
-        available: [],
+        available: empty ? [] : MATRIX.filter((t) => !missing.includes(t) && !alsoAbsent.includes(t)),
       },
     },
   })
@@ -136,6 +140,24 @@ describe('GetStartedView — agent step reads which beacons ship, per target (UI
     mount({ healthModel: healthMissing(['darwin/amd64', 'linux/amd64', 'windows/amd64']) })
     expect(agentStep().textContent).toMatch(/build from source/)
     expect(agentStep().textContent).toMatch(/Go/)
+  })
+
+  it('macOS on an amd64-only shelf: says Apple-silicon hosts are not served, Intel ones are', () => {
+    mount({ healthModel: healthMissing([], { alsoAbsent: ['darwin/arm64', 'linux/arm64'] }) })
+    pickOs('macOS')
+    const gap = screen.getByTestId('gs-posix-partial')
+    expect(gap.textContent).toContain('darwin/arm64')
+    expect(gap.textContent).toMatch(/Apple silicon/i)
+    expect(gap.textContent).toContain('darwin/amd64')
+    expect(gap.textContent).toMatch(/build from source/)
+    expect(screen.queryByTestId('gs-posix-missing')).toBeNull()
+  })
+
+  it('a full matrix raises no architecture notice', () => {
+    mount({ healthModel: healthMissing([]) })
+    pickOs('macOS')
+    expect(screen.queryByTestId('gs-posix-partial')).toBeNull()
+    expect(screen.queryByTestId('gs-posix-missing')).toBeNull()
   })
 })
 

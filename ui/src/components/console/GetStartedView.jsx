@@ -14,6 +14,7 @@ import {
   CopyLive,
   InstallAttemptsList,
   LatestAttempt,
+  PosixBeaconGap,
   WindowsBeaconMissing,
   WindowsCaveats,
   useCopyFeedback,
@@ -217,16 +218,9 @@ function AgentStep({ step, onNavigate }) {
         <ServerHostWarning verdict={hostVerdict} />
       </label>
 
-      {ship.state === 'missing' && (isWindows
-        ? <WindowsBeaconMissing className="gs-hint gs-hint--warn" testId="gs-windows-missing" />
-        : (
-          <p className="gs-hint gs-hint--warn" data-testid="gs-posix-missing">
-            This POVengine has no prebuilt {os === 'darwin' ? 'macOS' : 'Linux'} agent
-            ({ship.target}), so the installer can only build from source — that needs Go and a CortexSim
-            checkout on the host (<code>CORTEXSIM_SRC</code>). Run <code>make agent-dist</code> on the
-            POVengine host to fix that.
-          </p>
-        ))}
+      {isWindows
+        ? ship.state === 'missing' && <WindowsBeaconMissing className="gs-hint gs-hint--warn" testId="gs-windows-missing" />
+        : <PosixBeaconGap ship={ship} className="gs-hint gs-hint--warn" testIdPrefix="gs" />}
       {isWindows && ship.state !== 'missing' && <WindowsCaveats ship={ship} testId="gs-windows-caveats" />}
 
       {!command ? (

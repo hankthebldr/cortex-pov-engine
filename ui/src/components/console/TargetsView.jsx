@@ -32,6 +32,7 @@ import {
   CopyLive,
   LatestAttempt,
   InstallAttemptsList,
+  PosixBeaconGap,
   WindowsBeaconMissing,
   WindowsCaveats,
 } from './DeployParts.jsx'
@@ -568,9 +569,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 machine is legitimate — so nothing downstream stops the paste.
               </p>
             )}
-            {isWindows && (ship.state === 'missing'
-              ? <WindowsBeaconMissing />
-              : <WindowsCaveats ship={ship} />)}
+            {isWindows
+              ? (ship.state === 'missing' ? <WindowsBeaconMissing /> : <WindowsCaveats ship={ship} />)
+              : <PosixBeaconGap ship={ship} />}
 
             <div className="deploy-field">
               <span className="launch-field__label">Target OS</span>

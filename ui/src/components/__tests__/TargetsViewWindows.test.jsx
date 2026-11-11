@@ -45,10 +45,14 @@ const MINTED = {
 const ORIGIN = window.location.origin
 const TLS = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; '
 
-function healthWith(missing) {
+// The server's shape: `missing[]` speaks for <goos>/amd64 only, `available[]`
+// lists everything on the shelf.
+const MATRIX = ['darwin/amd64', 'darwin/arm64', 'linux/amd64', 'linux/arm64', 'windows/amd64']
+function healthWith(missing, { alsoAbsent = [] } = {}) {
+  const available = MATRIX.filter((t) => !missing.includes(t) && !alsoAbsent.includes(t))
   const comp = missing.length
-    ? { status: 'degraded', code: 'AGENT_DIST_INCOMPLETE', detail: `missing ${missing.join(', ')}`, missing, available: [] }
-    : { status: 'ok', code: 'OK', missing: [], available: ['darwin/amd64', 'linux/amd64', 'windows/amd64'] }
+    ? { status: 'degraded', code: 'AGENT_DIST_INCOMPLETE', detail: `missing ${missing.join(', ')}`, missing, available }
+    : { status: 'ok', code: 'OK', missing: [], available }
   return buildHealthModel({ status: missing.length ? 'degraded' : 'ok', components: { agent_binaries: comp } })
 }
 
@@ -115,6 +119,15 @@ describe('Deploy modal · Windows status is read, not asserted (UI-02 / DOCS-07)
     const dialog = await openDeploy(null, { healthModel: healthWith(['windows/amd64']) })
     expect(within(dialog).queryByTestId('deploy-windows-missing')).toBeNull()
     expect(within(dialog).queryByTestId('deploy-windows-caveats')).toBeNull()
+    expect(within(dialog).queryByTestId('deploy-posix-partial')).toBeNull()
+  })
+
+  it('macOS on an amd64-only shelf names the Apple-silicon gap the modal used to be silent about', async () => {
+    const dialog = await openDeploy('macOS', { healthModel: healthWith([], { alsoAbsent: ['darwin/arm64', 'linux/arm64'] }) })
+    const gap = within(dialog).getByTestId('deploy-posix-partial')
+    expect(gap.textContent).toContain('darwin/arm64 (Apple silicon)')
+    expect(gap.textContent).toContain('darwin/amd64 (Intel)')
+    expect(gap.textContent).toMatch(/build from source/)
   })
 })
 

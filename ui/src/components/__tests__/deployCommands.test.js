@@ -143,10 +143,59 @@ function health(agentBinaries) {
   })
 }
 
+// The matrix is five targets: linux and darwin on amd64 AND arm64, windows on
+// amd64. beaconShipState asked about `<goos>/amd64` only, and SimCore's own
+// `missing[]` is computed against amd64 only too. So a SimCore that ships no
+// darwin/arm64 read "present" for macOS, and the Apple-silicon Mac the DC was
+// about to enrol fell through to a source build nobody warned them about.
+// `available[]` is the complete list of what is on the shelf, so it answers
+// for arm64.
+describe('beaconShipState — every architecture of the target, not only amd64', () => {
+  const ALL = ['darwin/amd64', 'darwin/arm64', 'linux/amd64', 'linux/arm64', 'windows/amd64']
+  const ok = (available) => ({ status: 'ok', code: 'OK', missing: [], available })
+
+  it('a full matrix reads present with nothing missing', () => {
+    for (const os of ['linux', 'darwin', 'windows']) {
+      const s = beaconShipState(health(ok(ALL)), os)
+      expect(s.state, os).toBe('present')
+      expect(s.missingTargets, os).toEqual([])
+    }
+    expect(beaconShipState(health(ok(ALL)), 'darwin').targets).toEqual(['darwin/arm64', 'darwin/amd64'])
+    expect(beaconShipState(health(ok(ALL)), 'windows').targets).toEqual(['windows/amd64'])
+  })
+
+  it('an amd64-only shelf is PARTIAL for linux and macOS, naming the arm64 target it cannot serve', () => {
+    const amd64Only = ok(['darwin/amd64', 'linux/amd64', 'windows/amd64'])
+    expect(beaconShipState(health(amd64Only), 'macos')).toMatchObject({
+      state: 'partial', missingTargets: ['darwin/arm64'], presentTargets: ['darwin/amd64'],
+    })
+    expect(beaconShipState(health(amd64Only), 'linux')).toMatchObject({
+      state: 'partial', missingTargets: ['linux/arm64'], presentTargets: ['linux/amd64'],
+    })
+    // Windows has one architecture; nothing changes for it.
+    expect(beaconShipState(health(amd64Only), 'windows').state).toBe('present')
+  })
+
+  it('missing only when no architecture of the target is served', () => {
+    const noMac = { status: 'degraded', code: 'AGENT_DIST_INCOMPLETE', missing: ['darwin/amd64'], available: ['linux/amd64', 'linux/arm64', 'windows/amd64'] }
+    expect(beaconShipState(health(noMac), 'darwin')).toMatchObject({
+      state: 'missing', missingTargets: ['darwin/arm64', 'darwin/amd64'], presentTargets: [],
+    })
+  })
+
+  it('an older SimCore with no available[] cannot speak for arm64: present, with arm64 unconfirmed', () => {
+    const old = { status: 'ok', code: 'OK', missing: [] }
+    const s = beaconShipState(health(old), 'linux')
+    expect(s.state).toBe('present')
+    expect(s.unconfirmedTargets).toEqual(['linux/arm64'])
+    expect(s.missingTargets).toEqual([])
+  })
+})
+
 describe('beaconShipState — read the per-target missing list, not the component colour (UI-02 / UI-16)', () => {
   const incompleteWin = {
     status: 'degraded', code: 'AGENT_DIST_INCOMPLETE', detail: 'missing windows/amd64',
-    missing: ['windows/amd64'], available: ['darwin/amd64', 'linux/amd64'],
+    missing: ['windows/amd64'], available: ['darwin/amd64', 'darwin/arm64', 'linux/amd64', 'linux/arm64'],
   }
 
   it('Windows missing reads missing; Linux on the same SimCore reads present', () => {

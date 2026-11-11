@@ -210,15 +210,37 @@ export const WINDOWS_CAVEATS = Object.freeze([
  * `missing[]` list is the answer. Absence of the component, or of the list, is
  * `unknown` — never `present`.
  *
+ * EVERY ARCHITECTURE, NOT ONLY amd64. The beacon matrix is five targets
+ * (linux and darwin on amd64 + arm64, windows on amd64). This used to ask about
+ * `<goos>/amd64` alone — and SimCore's `missing[]` is computed against amd64
+ * alone as well — so a shelf with no darwin/arm64 read "present" for macOS and
+ * an Apple-silicon Mac fell through to a source build with no warning.
+ * `available[]` is the complete list of what is on the shelf, so it answers
+ * for arm64; without it (an older SimCore) arm64 is `unconfirmed`, never
+ * assumed present.
+ *
  * @param {Object|null} healthModel  buildHealthModel() output
  * @param {string} os
- * @returns {{state: 'present'|'missing'|'unknown', target: string, os: string,
- *            reason: string|null, code?: string|null}}
+ * @returns {{state: 'present'|'partial'|'missing'|'unknown', target: string, os: string,
+ *            reason: string|null, code?: string|null, targets: string[],
+ *            missingTargets: string[], presentTargets: string[], unconfirmedTargets: string[]}}
+ *   `target` is the amd64 target (the one `missing[]` speaks for). `partial`
+ *   means some architectures of this OS are served and some are not.
  */
+export const BEACON_ARCHES = Object.freeze({
+  linux: ['amd64', 'arm64'],
+  darwin: ['arm64', 'amd64'], // Apple silicon first: it is the Mac a DC is most likely holding
+  windows: ['amd64'],
+})
+
 export function beaconShipState(healthModel, os) {
   const goos = installerOS(os)
   const target = `${goos}/amd64`
-  const out = (state, reason = null, extra = {}) => ({ state, target, os: goos, reason, ...extra })
+  const targets = BEACON_ARCHES[goos].map((arch) => `${goos}/${arch}`)
+  const out = (state, reason = null, extra = {}) => ({
+    state, target, os: goos, reason, targets,
+    missingTargets: [], presentTargets: [], unconfirmedTargets: [], ...extra,
+  })
   if (!healthModel || healthModel.reachable === false) {
     return out('unknown', 'SimCore health has not been read')
   }
@@ -229,7 +251,34 @@ export function beaconShipState(healthModel, os) {
   if (!row || row.status === 'unreported') return out('unknown', 'this SimCore does not report agent_binaries')
   const missing = row.extra && row.extra.missing
   if (!Array.isArray(missing)) return out('unknown', 'agent_binaries carries no missing[] list')
-  return out(missing.includes(target) ? 'missing' : 'present', null, { code: row.code || null })
+  const available = Array.isArray(row.extra.available) ? row.extra.available : null
+
+  const missingTargets = []
+  const presentTargets = []
+  const unconfirmedTargets = []
+  for (const t of targets) {
+    if (t === target) {
+      // `missing[]` is authoritative for the amd64 target.
+      ;(missing.includes(t) ? missingTargets : presentTargets).push(t)
+    } else if (missing.includes(t)) {
+      missingTargets.push(t)
+    } else if (available) {
+      ;(available.includes(t) ? presentTargets : missingTargets).push(t)
+    } else {
+      unconfirmedTargets.push(t)
+    }
+  }
+  const state = missingTargets.length === 0
+    ? 'present'
+    : presentTargets.length === 0 && unconfirmedTargets.length === 0 ? 'missing' : 'partial'
+  return out(state, null, { code: row.code || null, missingTargets, presentTargets, unconfirmedTargets })
+}
+
+/** `darwin/arm64` → "Apple silicon"; the words a DC knows a host by. */
+export function archLabel(target) {
+  const [goos, arch] = String(target || '').split('/')
+  if (goos === 'darwin') return arch === 'arm64' ? 'Apple silicon' : 'Intel'
+  return arch === 'arm64' ? 'ARM64 (aarch64)' : 'x86-64'
 }
 
 // ── Will SimCore answer to this address? ─────────────────────────────────────

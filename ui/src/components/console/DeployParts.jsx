@@ -4,6 +4,7 @@ import { parseServerTime } from '../../api/time.js'
 import {
   CONTINUED_NOTE,
   WINDOWS_CAVEATS,
+  archLabel,
   attemptKind,
   attemptRole,
   copyFailureMessage,
@@ -208,6 +209,40 @@ export function InstallAttemptsList({ state, limit = 5, testId = 'deploy-attempt
       </p>
       {body}
     </section>
+  )
+}
+
+/**
+ * A Linux or macOS target this SimCore cannot fully serve a prebuilt beacon
+ * for. `missing`: no architecture is on the shelf. `partial`: some are — an
+ * amd64-only shelf serves an Intel Mac and not an Apple-silicon one, and the
+ * installer on the unserved host can only build from source. Renders nothing
+ * when every architecture is served, or for Windows (which has its own notice).
+ */
+export function PosixBeaconGap({ ship, className = 'deploy-warn', testIdPrefix = 'deploy' }) {
+  if (!ship || ship.os === 'windows') return null
+  if (ship.state !== 'missing' && ship.state !== 'partial') return null
+  const osName = ship.os === 'darwin' ? 'macOS' : 'Linux'
+  const named = (list) => list.map((t) => `${t} (${archLabel(t)})`).join(', ')
+  const sourceBuild = (
+    <>
+      the installer can only build from source — that needs Go and a CortexSim checkout on the host
+      (<code>CORTEXSIM_SRC</code>). Run <code>make agent-dist</code> on the POVengine host to fix that.
+    </>
+  )
+  if (ship.state === 'missing') {
+    return (
+      <p className={className} role="status" data-testid={`${testIdPrefix}-posix-missing`}>
+        This POVengine has no prebuilt {osName} agent ({ship.targets.join(', ')}), so {sourceBuild}
+      </p>
+    )
+  }
+  return (
+    <p className={className} role="status" data-testid={`${testIdPrefix}-posix-partial`}>
+      This POVengine has no prebuilt {osName} agent for {named(ship.missingTargets)}. On a host of that
+      architecture {sourceBuild}{' '}
+      {ship.presentTargets.length > 0 && <>Hosts on {named(ship.presentTargets)} are served.</>}
+    </p>
   )
 }
 
