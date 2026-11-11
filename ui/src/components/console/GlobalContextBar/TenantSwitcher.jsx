@@ -3,7 +3,12 @@ import SwitcherPill from './SwitcherPill.jsx'
 import { useEnvironment } from '../../../context/EnvironmentContext.jsx'
 
 /**
- * TenantSwitcher — always-visible active-XSIAM-tenant pill in the global bar.
+ * TenantSwitcher — an active-XSIAM-tenant switcher pill for a global bar.
+ *
+ * NOT MOUNTED. Nothing in the console renders this component (checked
+ * 2026-11-10: only tests import it). The header's tenant chip is in
+ * ConsoleHeader.jsx. A change here changes nothing on screen until something
+ * mounts it.
  *
  * Reads the tenant list + active tenant + composed health from the provider;
  * selecting writes through to the provider (which persists + re-scopes health).

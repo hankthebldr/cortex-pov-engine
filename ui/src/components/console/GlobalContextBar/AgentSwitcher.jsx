@@ -5,7 +5,12 @@ import { agentIdOf } from '../../../api/ids.js'
 import { agentLiveness, LIVENESS } from '../setupProgress.js'
 
 /**
- * AgentSwitcher — always-visible active-beacon/agent pill in the global bar.
+ * AgentSwitcher — an active-beacon/agent switcher pill for a global bar.
+ *
+ * NOT MOUNTED. Nothing in the console renders this component (checked
+ * 2026-11-10: only tests import it). The header a DC sees is ConsoleHeader.jsx,
+ * whose agent chip is a read-out, not a switcher, and carries its own liveness
+ * wording. A change here changes nothing on screen until something mounts it.
  *
  * Reads the agent list + active agent from the provider; selecting writes
  * through (persisted). The "Manage agents…" footer deep-links to the Agents

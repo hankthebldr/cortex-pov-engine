@@ -30,10 +30,14 @@ export const STEP_IDS = ['agent', 'tenant', 'collector', 'bvm', 'simulate']
 
 // ── Agent liveness ───────────────────────────────────────────────────────────
 // ONE model for every surface that colours an agent or gates on one: Get
-// started, the Agents cards, the header switcher, and the launch preflight's
-// Target row (readiness/scenarioPreflight.js). Each surface deriving its own
-// answer is how a row SimCore calls offline read "live" on one of them, and how
-// the preflight read PASS "online" for a row the card said not to launch onto.
+// started, the Agents cards, the header's agent chip (ConsoleHeader.jsx), and
+// the launch preflight's Target row (readiness/scenarioPreflight.js). Each
+// surface deriving its own answer is how a row SimCore calls offline read
+// "live" on one of them, how the preflight read PASS "online" for a row the
+// card said not to launch onto, and how the header drew a green dot for a
+// beacon that had stopped polling.
+// (GlobalContextBar/AgentSwitcher.jsx reads this model too, but nothing mounts
+// that component; the header a DC sees is ConsoleHeader.)
 //
 // Precedence, and why:
 //   1. ENROLLED beats everything. `POST /api/agents/enroll` writes the row with

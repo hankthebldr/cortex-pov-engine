@@ -52,10 +52,12 @@ describe('AgentSwitcher liveness', () => {
   })
 })
 
-// UI-22. The header pill is the one place beacon liveness is always on screen,
-// and it said it with dot colour alone: an empty span with a --warn / --bad
-// class, under an aria-label of `Agent: <name>`. A colour-blind DC and a
-// screen-reader user both read "WIN22" whether it was polling or gone.
+// UI-22, as filed: this pill said liveness with dot colour alone — an empty
+// span with a --warn / --bad class, under an aria-label of `Agent: <name>`.
+//
+// NOTE: nothing in the console mounts AgentSwitcher (only this file imports
+// it). These cases keep the component honest for whoever mounts it; the header
+// a DC actually sees is ConsoleHeader, pinned in HeaderAgentLiveness.test.jsx.
 describe('AgentSwitcher — liveness is said in words, not only colour (UI-22)', () => {
   it('the accessible name carries the state, for every state', () => {
     expect(mount([offline], offline).getAttribute('aria-label')).toBe('Agent: jb-off-host — offline')
