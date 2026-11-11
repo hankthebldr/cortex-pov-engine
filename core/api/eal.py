@@ -817,16 +817,25 @@ def _campaign_pipes(steps: list[Any]) -> dict[str, str]:
     """Each plugin's delivery route, read from its steps' ``collector_url``.
 
     Derived, never asked for: the URL a step POSTs to is the route its records
-    take. One plugin used by several steps with different doors is ``mixed``,
-    which judges as unresolved: an aggregate verdict would hide which door
-    cannot feed analytics.
+    take. ``steps`` are the target-resolved steps from ``_load_campaign``, so a
+    collector target's URL is what is judged. A step no target resolved carries
+    the ``.invalid`` stand-in URL, whose ``/logs/v1/event`` path must not read
+    as a real HTTP collector: it is ``undeclared``. One plugin used by several
+    steps with different doors is ``mixed``, which judges as unresolved: an
+    aggregate verdict would hide which door cannot feed analytics.
     """
-    from eal_simulator.ingestion_routes import pipe_for_collector_url  # noqa: PLC0415
+    from eal_simulator.ingestion_routes import (  # noqa: PLC0415
+        COLLECTOR_UNDECLARED,
+        pipe_for_collector_url,
+    )
+    from eal_simulator.targets import UNRESOLVED_COLLECTOR_URL  # noqa: PLC0415
 
     seen: dict[str, set[str]] = {}
     for step in steps:
         url = (step.params or {}).get("collector_url")
-        seen.setdefault(step.plugin, set()).add(pipe_for_collector_url(url))
+        pipe = (COLLECTOR_UNDECLARED if url == UNRESOLVED_COLLECTOR_URL
+                else pipe_for_collector_url(url))
+        seen.setdefault(step.plugin, set()).add(pipe)
     return {
         plugin: next(iter(found)) if len(found) == 1 else "mixed"
         for plugin, found in seen.items()
