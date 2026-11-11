@@ -208,6 +208,21 @@ def test_keygen_422_never_echoes_the_password(client, fw, caplog, body):
     assert rec.requests == []
 
 
+def test_keygen_422_never_echoes_an_extra_key_named_like_the_password(client, fw, caplog):
+    # final-M6(b): the extra key's NAME is caller text too (an operator who pastes the
+    # password into the wrong field of a hand-built body). It must read "(other)".
+    caplog.set_level(logging.DEBUG)
+    rec = fw()
+    r = client.post("/api/ngfw/keygen", json={
+        "name": "fw-a", "host": "192.0.2.1", "username": USER, "password": "x",
+        CANARY: "y"})
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "REQUEST_INVALID"
+    assert CANARY not in r.text and CANARY not in caplog.text
+    assert ["(other)"] in [f["loc"] for f in r.json()["detail"]["fields"]]
+    assert rec.requests == []
+
+
 def test_keygen_non_json_body_is_422_without_echo(client, fw):
     fw()
     r = client.post("/api/ngfw/keygen", content=b"password=" + CANARY.encode(),

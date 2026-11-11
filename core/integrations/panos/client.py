@@ -32,6 +32,8 @@ from .xmlparse import parse_keygen, parse_response, safe_fromstring
 # Each command declares its exact argument structure. There is no prefix matching:
 # an element the schema does not name is a refusal.
 
+# Defence in depth only: the per-command schema below (_COMMANDS) is the
+# structural allowlist that actually decides; this denylist never admits anything.
 _FORBIDDEN_TAGS = frozenset({
     "request", "set", "clear", "delete", "debug", "commit", "load", "save", "edit",
     "move", "rename", "import", "export", "revert", "override", "multi-config",
@@ -235,7 +237,7 @@ class PanosClient:
     async def keygen(self, username: str, password: SecretStr) -> str:
         try:
             result = await self._send({"type": "keygen", "user": username},
-                                      with_key=False, keygen=True, secret=password)
+                                      with_key=False, secret=password)
         except PanosApiError:
             raise PanosTransportError("firewall rejected the credentials",
                                       code=codes.PN_KEYGEN_REJECTED) from None
@@ -248,7 +250,7 @@ class PanosClient:
 
     # ------------------------------------------------------------ transport
 
-    async def _send(self, data: dict, *, with_key: bool, keygen: bool = False,
+    async def _send(self, data: dict, *, with_key: bool,
                     secret: Optional[SecretStr] = None) -> ET.Element:
         if self.calls_issued >= self._max_calls:
             raise PanosTransportError("per-run call budget exhausted",
@@ -281,5 +283,6 @@ class PanosClient:
             msg = exc.message
             if self._api_key and self._api_key in msg:
                 msg = msg.replace(self._api_key, "[redacted]")
-            raise PanosApiError("firewall rejected the request" if keygen else msg,
-                                code=exc.code, panos_code=exc.panos_code) from None
+            # keygen() re-maps every PanosApiError to a fixed PN_KEYGEN_REJECTED message,
+            # so this message never surfaces from a keygen call.
+            raise PanosApiError(msg, code=exc.code, panos_code=exc.panos_code) from None

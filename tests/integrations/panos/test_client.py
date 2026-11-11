@@ -103,6 +103,22 @@ async def test_keygen_rejection_is_fixed_message_and_leaks_nothing():
 
 
 @pytest.mark.asyncio
+async def test_keygen_non_auth_status_error_is_keygen_rejected_and_leaks_nothing():
+    # A well-formed status="error" other than 403 during keygen: keygen() re-maps
+    # every PanosApiError to PN_KEYGEN_REJECTED with a fixed message.
+    body = (b'<response status="error" code="400"><result><msg>bad request for '
+            b'alice pw-secret-1</msg></result></response>')
+    transport, _ = recorder(body)
+    c = PanosClient("192.0.2.1", None, verify_tls=False, transport=transport)
+    with pytest.raises(PanosTransportError) as ei:
+        await c.keygen("alice", SecretStr("pw-secret-1"))
+    assert ei.value.code == codes.PN_KEYGEN_REJECTED
+    assert str(ei.value) == "firewall rejected the credentials"
+    assert ei.value.__suppress_context__ and ei.value.__cause__ is None
+    await c.aclose()
+
+
+@pytest.mark.asyncio
 async def test_connect_error_maps_and_never_echoes_secrets():
     def handler(request):
         raise httpx.ConnectError("boom X-PAN-KEY: secret host", request=request)
