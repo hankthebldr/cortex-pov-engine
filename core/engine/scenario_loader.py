@@ -442,6 +442,21 @@ class StepSchema(BaseModel):
     # agent/beacon/client.go::resolveRuntimeDeps and
     # docs/design/agent-runtime-dependencies.md.
     requires_interpreters: list[str] = Field(default_factory=list)
+    # How long the .ps1 push bundle lets this step run before it kills the
+    # step's process tree (push_generator._step_timeout; default 300 s).
+    # Optional; omitted from the persisted step when unset, so a scenario that
+    # does not declare it persists byte-identically. It used to be dropped
+    # here, so no corpus value could ever reach the generator.
+    timeout_seconds: Optional[int] = None
+
+    @field_validator("timeout_seconds", mode="before")
+    @classmethod
+    def _vt(cls, v: Any) -> Any:
+        if v is None:
+            return v
+        if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 86400:
+            raise ValueError(f"timeout_seconds must be an integer from 1 to 86400, got {v!r}")
+        return v
 
     @field_validator("platforms")
     @classmethod
@@ -516,7 +531,7 @@ def omit_unset_channel_fields(step: dict[str, Any]) -> dict[str, Any]:
     byte-identically to the pre-3a corpus, so all 177 scenarios and every
     Phase-1/2 draft persist unchanged.
     """
-    for key in ("channel", "target", "eal"):
+    for key in ("channel", "target", "eal", "timeout_seconds"):
         if step.get(key) is None:
             step.pop(key, None)
     return step
