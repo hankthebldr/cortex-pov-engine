@@ -668,14 +668,14 @@ get it.
 | POST | `/api/eal/campaigns` | Persist a campaign def (validates each step's plugin+params) | `Campaign` (Pydantic) | `<EalCampaign.to_dict()>` (201); 422 `PLUGIN_NOT_FOUND`/`PARAMS_INVALID`; 409 `DUPLICATE_CAMPAIGN` |
 | GET | `/api/eal/campaigns` | List campaigns (newest first) | — | `{"campaigns":[...],"total":N}` |
 | GET | `/api/eal/campaigns/{campaign_id}` | Single campaign | — | `<EalCampaign.to_dict()>`; 404 `CAMPAIGN_NOT_FOUND` |
-| POST | `/api/eal/campaigns/{campaign_id}/launch` | Launch campaign in background (dry-run default) | `LaunchRequest`: `{dry_run?, operator?}` | `LaunchResponse`: `{run_id, campaign_id, status, dry_run}`; 404; 422 `SPEC_INVALID`/`SAFETY_VIOLATION` |
-| GET | `/api/eal/campaigns/{campaign_id}/collectors` | Resolve every step's collector destination (secret-free) + warnings | — | `{collectors:[{scheme,host,port,path,dataset,auth_header,auth_scheme,token_configured}],destinations:[…],warnings:[…]}` |
+| POST | `/api/eal/campaigns/{campaign_id}/launch` | Launch campaign in background (dry-run default); collector steps resolve against the instance's collector targets | `LaunchRequest`: `{dry_run?, operator?, c2_authorized?}` | `LaunchResponse`: `{run_id, campaign_id, status, dry_run, degraded[]}`; 404; 422 `SPEC_INVALID`/`SAFETY_VIOLATION`; **live only:** 422 `COLLECTOR_TARGET_NOT_CONFIGURED`/`COLLECTOR_TARGET_UNKNOWN`, 409 `COLLECTOR_TARGET_FAILING` |
+| GET | `/api/eal/campaigns/{campaign_id}/collectors` | Resolve every step's collector destination (secret-free) + warnings | — | `{collectors:[{scheme,host,port,path,dataset,auth_header,auth_scheme,has_auth_token,collector_target,resolution_source}],destinations:[…],warnings:[…],resolutions:[…],blocking:[…],failing:[…],degraded:[…]}` |
 | POST | `/api/eal/campaigns/{campaign_id}/collectors/preflight` | Canary-POST one discard-safe record per collector | — | per-collector verdict in the delivery taxonomy; non-allowlisted hosts are `target_not_authorised` and **never contacted** |
 | POST | `/api/eal/campaigns/{campaign_id}/detector-readiness` | Can this campaign's analytics detectors fire at all? **Zero outbound calls** | `{source_onboarded_at: {<source_key>: <ISO-8601 with tz>}}` | `{detectors[], counts{armed,not_armed,unknown,undocumented}, ready, tenant_verified: 0, gate_basis, banner}`; 422 `NO_ANALYTICS_DETECTOR` / `ONBOARDING_TIMESTAMP_NAIVE` / `UNKNOWN_DATA_SOURCE` |
 | POST | `/api/eal/campaigns/{campaign_id}/bundle` | Pre-render records into a self-contained offline bundle | — | `{bundle_id, download_url, records, skipped_steps[]}` (201) |
 | GET | `/api/eal/bundles/{bundle_id}/download` | Download the bundle tar.gz | — | `FileResponse` gzip; 404 |
 | GET | `/api/eal/runs` | List EAL runs | query: `campaign_id?` | `{"runs":[...],"total":N}` |
-| GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>` incl. the campaign-level `delivery` rollup; 404 `RUN_NOT_FOUND` |
+| GET | `/api/eal/runs/{run_id}` | Single EAL run + step results | — | `<EalCampaignRun.to_dict()>` incl. the campaign-level `delivery` rollup and `collector_resolution` (where each collector step went and why, never a key; NULL before collector targets); 404 `RUN_NOT_FOUND` |
 | POST | `/api/eal/runs/{run_id}/abort` | Cooperative abort of a live campaign | — | `AbortResponse` |
 
 - **This is a parallel run/lifecycle subsystem** distinct from the `Run`/agent
@@ -710,6 +710,28 @@ get it.
   the executor) than core Runs. Abort is cooperative and cannot pre-empt an
   in-flight bundle send. Bundle artifacts accumulate under `data/eal_bundles` with
   no retention sweep (same as `infra/blueprints`).
+
+### 1.9.1 Collector targets (`core/api/collector_targets.py`, prefix `/collector-targets`)
+
+The tenant-side ingestion doors this instance's collector emitters POST to. One
+SimCore instance serves one POV, so these are instance configuration, persisted
+in its database; each key is in the encrypted vault (`Secret`
+`collector-target:<name>`, `type_hint: collector_token`). **No response carries a
+key or a key tail** — the operator API is unauthenticated, so that absence is the
+guarantee.
+
+| Method | Path | Purpose | Request | Response / errors |
+|---|---|---|---|---|
+| GET | `/api/collector-targets` | List targets | — | `{targets[], count, default_target, collector_plugins[], unbound_plugins[], status, code}`; zero targets is `status: degraded`, `code: NO_COLLECTOR_TARGETS` |
+| GET | `/api/collector-targets/{name}` | One target | — | `{name, kind, url, dataset, auth_header, auth_scheme, plugins[], is_default, has_key, last_check, warnings[]}`; 404 `TARGET_NOT_FOUND` |
+| PUT | `/api/collector-targets/{name}` | Create or replace | `{kind, url, dataset?, auth_header?, auth_scheme?, plugins[], is_default?, token?, clear_token?}` — `token` write-only, omitted keeps the stored key | target + `previous_default`; 422 `TARGET_NAME_INVALID` / `TARGET_INVALID` / `TARGET_PLUGIN_NOT_COLLECTOR` / `TARGET_PLUGIN_ALREADY_BOUND`. A change to url, kind, header, scheme or key discards `last_check` |
+| DELETE | `/api/collector-targets/{name}` | Remove the target and its key | — | 204; 404 |
+| POST | `/api/collector-targets/{name}/preflight` | configured → reachable → accepted | `{write_canary: false}` | `{verdict, code, rungs[{rung,status,code,detail,proves,does_not_prove}], write_canary, post_attempted, records_written, status_code, remediation, warnings[], tenant_verified: 0}`; stored as `last_check` |
+
+`kind` ∈ `xsiam_http_collector` (key required) · `http_forwarder`. Broker VM
+targets are not modelled yet. **The reachable rung sends no HTTP request**; only
+`write_canary: true` writes, one discard-safe record. Resolution precedence and
+the launch gate: `docs/reference/eal-plugin-catalog.md` § Collector targets.
 
 ### 1.10 Credentials (`core/api/credentials.py`, prefix `/credentials`)
 

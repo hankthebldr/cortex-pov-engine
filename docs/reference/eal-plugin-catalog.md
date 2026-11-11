@@ -131,6 +131,53 @@ of taxonomy codes with per-code `remediation`. Taxonomy:
   `target_allowlist` gates it; a non-allowlisted host is reported as
   `target_not_authorised` and never contacted.
 
+### Collector targets (`targets.py`, `target_preflight.py`) — one set of doors per POV
+
+A SimCore instance serves one POV against one tenant, so the ingestion doors the
+collector emitters POST to are **instance configuration**, entered once at
+`/api/collector-targets` (console: **Tenant › Collector targets**) and persisted in
+the instance database, with each key in the encrypted vault. Kinds:
+`xsiam_http_collector` (the tenant's `/logs/v1/event`, key required) and
+`http_forwarder`. **Broker VM targets are not modelled yet**: they wait on
+confirmation of which applets a POV uses.
+
+One resolver, `targets.apply_targets`, decides where every in-process collector
+step POSTs: an explicit `params.collector_target` name, then the one target
+bound to the step's plugin, then the default target, then the step's own inline
+`collector_url`, else nothing. A resolved target **replaces** an inline URL and
+the resolution records the URL it replaced. The target's exact `host:port` is
+pinned into the campaign's effective `target_allowlist`. Its callers: campaign
+create (a step may omit `collector_url`), `GET …/collectors` (adds
+`resolutions[]`, `blocking[]`, `failing[]`, `degraded[]`), campaign preflight,
+launch, the offline bundle (URL, header and scheme from the target; the key
+never), and the Composer in-process dispatch (dry-run, never keys). The stored
+campaign spec is never rewritten; the key is decrypted only at launch, into the
+in-memory campaign.
+
+Per-target preflight, `POST /api/collector-targets/{name}/preflight`, is a
+ladder: **configured** (URL valid, key present when the kind needs one) →
+**reachable** (DNS + TCP + TLS handshake, **no HTTP request**) → **accepted**
+(only with `write_canary: true`: the discard-safe canary POST, classified by the
+delivery taxonomy). Verdict `not_configured` · `unreachable` · `reachable` ·
+`refused` · `accepted`; `accepted` means a 2xx, not that the record was parsed or
+fired anything (`tenant_verified: 0`). The reachable rung skips certificate
+verification, matching the live run.
+
+A **live** launch refuses a collector step with nothing to send to or an unknown
+target name (422 `COLLECTOR_TARGET_NOT_CONFIGURED` / `_UNKNOWN`), and a target
+whose last check was `not_configured`, `unreachable` or `refused` (409
+`COLLECTOR_TARGET_FAILING`). A target never checked, or only `reachable`, runs
+with `COLLECTOR_TARGET_UNPROVEN` in the launch response's `degraded[]`; an inline
+URL runs with `COLLECTOR_TARGET_INLINE`. The resolution is stored on the run
+(`collector_resolution`, never the key). Dry runs are never refused. The delivery
+ledger still decides green.
+
+**Not covered yet:** the 89 scenario steps that run the EAL CLI on a beacon still
+read `$COLLECTOR_URL` from the beacon's shell. Delivering a target, key included,
+into an identity-wrapped step (`runuser -l` resets the environment) without
+putting the key on a command line is a separate beacon change (spec §10).
+Spec: `docs/superpowers/specs/2026-11-10-collector-targets-design.md`.
+
 ### Detector readiness (`analytics_alerts.py`) — armed before the POV, not during it
 
 Collector preflight answers *"will this record land?"*. It cannot answer the

@@ -8,6 +8,32 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — collector targets: the tenant's ingestion doors, entered once per POV
+
+- **A DC enters the tenant-side collectors once and every in-process consumer
+  uses them.** Before this, a collector destination reached an emitter by four
+  unconnected paths: typed into each campaign step (with the key stored in
+  plaintext in the campaign spec), read from an unset `$COLLECTOR_URL` on the
+  beacon, baked into an offline bundle, or authored on a Composer step. Targets
+  now live at `/api/collector-targets` and on the **Tenant** page, persist across
+  a SimCore restart, and keep each key in the encrypted vault, never in a
+  response. Campaign create, the collector view, campaign preflight, launch, the
+  offline bundle and the Composer EAL dispatch all resolve through one function,
+  `eal_simulator/targets.py`.
+- **Preflight per target, with the write opt-in.** Configured → reachable (TCP
+  and TLS, no HTTP request) → accepted (one discard-safe record, only with
+  `write_canary: true`). Verdicts: not configured, unreachable, reachable,
+  refused, accepted. `accepted` is a 2xx, not proof of ingestion;
+  `tenant_verified` stays 0.
+- **A live launch refuses a missing or failing door.** 422
+  `COLLECTOR_TARGET_NOT_CONFIGURED` / `COLLECTOR_TARGET_UNKNOWN`, 409
+  `COLLECTOR_TARGET_FAILING`; an unproven or inline destination runs and says so
+  in `degraded[]` and on the run (`collector_resolution`). Schema:
+  `eal_campaign_runs.collector_resolution` (added by a `database.py` migration
+  helper) and a new `collector_targets` table.
+- **Not covered yet:** agent-run scenario steps (the EAL CLI on a beacon) and
+  Broker VM targets, which wait on confirmation of the applets in use.
+
 ### Fixed — EAL collector emitters send the XSIAM API key bare
 
 - **The 14 collector emitters defaulted `auth_scheme` to `"Bearer"`,** so a
