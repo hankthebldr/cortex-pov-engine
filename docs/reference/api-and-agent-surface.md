@@ -1127,7 +1127,11 @@ fw_src_provenance (entered | inferred:last_ip | unknown), agent_addresses,
 agent_addr_provenance, nat_verdict (tuple_intact | nat_between | unknown),
 collision_with[], status, stages[], probes[]}`, with stages `address` · `source_seen` ·
 `policy_match` · `rule_profiles` · `nat` · `user_id` · `registered_tags`. With no agent
-selected it is a single degraded `PN_NO_AGENTS` entry, never an empty list. A green
+selected it is a single degraded `PN_NO_AGENTS` entry, never an empty list. Each
+`?agents=` id that matches no enrolled agent is its own degraded `PN_AGENT_UNKNOWN`
+entry `{code, status, requested_agent_id, detail, remediation}` (no `agent_id`: it is
+not an agent row); the known ids are checked as usual, and when none is known these
+entries replace `PN_NO_AGENTS`, so a typo never reads as "nothing selected". A green
 firewall preflight proves firewall configuration, **not** tenant ingestion or stitching:
 ***tenant-verified is 0***.
 
@@ -1153,7 +1157,7 @@ name). Status is what the code carries where it is emitted.
 | `PN_SKIPPED_UNREACHABLE` | skipped | not checked: the firewall stopped answering (unreachable or TLS failure) |
 | `PN_SKIPPED_AUTH` | skipped | not checked: the firewall rejected the key |
 | `PN_UPSTREAM_ERROR` | blocked (that stage only); keygen 502 | the management API answered with a non-2xx HTTP status |
-| `PN_SHAPE_UNRECOGNISED` | blocked (that stage only); keygen 502 | a reply this version does not recognise (the command or xpath is named); never read as empty |
+| `PN_SHAPE_UNRECOGNISED` | blocked (that stage only); keygen 502 | a reply this version does not recognise (the command or xpath is named), or a well-formed PAN-OS `status="error"` reply other than an auth rejection (code 403 is `PN_AUTH_REJECTED`; at keygen every `status="error"` is `PN_KEYGEN_REJECTED`); never read as empty |
 | `PN_INTERNAL_ERROR` | blocked (that stage only) | a CortexSim defect while evaluating the stage; exception type named, message withheld |
 | `PN_WRITE_REFUSED` | blocked | the read-only client refused a request the stage built; nothing was sent (a CortexSim defect) |
 | `PN_CALL_BUDGET` | blocked (firewall-wide) / skipped (per source) | `CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT` reached before this check |
@@ -1181,6 +1185,7 @@ name). Status is what the code carries where it is emitted.
 | `PN_DECRYPTION_OFF` | degraded (`decryption`) | no enabled decryption rule |
 | `PN_REGISTERED_TAGS_PRESENT` | degraded (`registered_ip`) | registered IP tags exist on the firewall |
 | `PN_NO_AGENTS` | degraded (`sources[]`) | no enrolled agent selected; no source path was checked |
+| `PN_AGENT_UNKNOWN` | degraded (`sources[]`) | a requested `?agents=` id matches no enrolled agent; nothing was checked for it (`requested_agent_id` names it) |
 | `PN_SOURCE_UNKNOWN` | degraded (`address`); skipped (that source's network stages) | the firewall-observed source is unknown; nothing was sent for it |
 | `PN_SOURCE_COLLISION` | blocked (`address`) | two or more agents resolve to the same firewall-observed source |
 | `PN_NAT_BETWEEN_AGENT_AND_FW` | blocked (`address`) | agent-side and firewall-observed addresses are disjoint: NAT breaks the 5-tuple stitch |

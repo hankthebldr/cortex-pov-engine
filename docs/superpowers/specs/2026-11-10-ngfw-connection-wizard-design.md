@@ -521,6 +521,13 @@ reference, this list says where it departs from §4–§6.
     existing integration of another kind is 409 `INTEGRATION_KIND_CONFLICT`. A keygen with
     `verify_tls=false` returns `warnings: ["password sent over unverified TLS"]`.
 
+11. **Final-review additions.** `PN_SHAPE_UNRECOGNISED` also covers a well-formed PAN-OS
+    `status="error"` reply other than an auth rejection (403 stays `PN_AUTH_REJECTED`;
+    at keygen every `status="error"` is `PN_KEYGEN_REJECTED`). `PN_AGENT_UNKNOWN`: each
+    `?agents=` id on the preflight that matches no enrolled agent is its own degraded
+    `sources[]` entry naming it (`requested_agent_id`), instead of vanishing into
+    `PN_NO_AGENTS`; known ids in the same request are checked as usual.
+
 **Threat notes.** `POST /api/ngfw/keygen` and `POST /api/connectors/panos_ngfw/preflight`
 are unauthenticated, like the rest of `/api/credentials`: SimCore has no API auth and is
 meant to sit on a DC-controlled network. So anyone who can reach SimCore can use keygen as
