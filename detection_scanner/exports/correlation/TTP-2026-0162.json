@@ -1,15 +1,17 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1609",
     "T1078.004"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when abioc `Unusual exec into a Kubernetes Pod` and abioc `A Kubernetes service account executed an unusual API call` both observe activity attributable to the same service-account principal (user.username) within a 15-minute window, stitching the interactive-exec foothold and the follow-on RBAC-write escalation into one Kubernetes intrusion incident.",
       "name": "SIM-CDR-025 Exec Then Unusual SA API Correlation",
-      "rule_id": "CR-CDR-0025",
-      "severity": "high"
+      "rule_id": "CR-CDR-0025"
     }
   ],
   "ttp_ref": "TTP-2026-0162"

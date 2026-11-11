@@ -15,6 +15,10 @@
  *   - a `cgo` TRIGGER node (the Causality Group Owner) that owns the chain,
  *   - one `step` node per draft step,
  *   - a `proof` TERMINAL node (teardown + the POV readout).
+ * Below the chain sits the TENANT-CONTENT rail: one `rule` node per correlation
+ * rule on a card the chain cites, fed by inert `content` edges from the steps
+ * whose detections it composes. Derived, never persisted, absent in the Run lens
+ * (`composerGraph` / `composerContent`).
  * Edges are typed: a solid `process_lineage` spine, dashed labelled edges for
  * the six non-lineage pivots, and muted derived edges from the CGO to each root
  * and from each leaf to Proof. The graph builder (`composerGraph.buildGraph`) is
@@ -58,14 +62,10 @@ import { COMPOSER_LANES } from './povdata/corpus.js'
 import {
   buildGraph, SNAP, PLANE_TINT, STATE_TINT, CGO_ID, PROOF_ID, GRAPH_LAYOUT,
 } from './composerGraph.js'
-
-// Detection-type → chip tone. Identical mapping to the inspector's `detTone`.
-function detTone(type) {
-  const t = String(type || '').toUpperCase()
-  if (t === 'BIOC') return 'detected'
-  if (t === 'XQL' || t === 'ANALYTICS') return 'signal'
-  return 'pending'
-}
+import {
+  detectionChips, contentHeadline, ruleLines, OWNERSHIP_MEANING,
+} from './composerContent.js'
+import { LANE_COL_X, LANE_COL_PITCH } from './composerLanes.js'
 
 /**
  * What the spine actually is, said in the caption. It used to read "single
@@ -232,13 +232,35 @@ function StepNode({ data, isConnectable }) {
         <span className="chain-node__sub mono">
           {s.technique || 'no technique'} · {s.identity || 'no identity'}
         </span>
+        {/* The step's PROOF CONTRACT, grouped by who owns the work: what the DC
+            runs, what must be deployed in the tenant, what ships built in. One
+            chip per type with a count, so three queries never read as three
+            tags on the TTP. */}
         <span className="chain-node__chips">
           {s.detections.length ? (
-            s.detections.map((d, k) => (
-              <span key={k} className={`chip chip--${detTone(d.type)}`}>
-                {d.type || '?'}
-              </span>
-            ))
+            <>
+              <span className="chain-node__expects">expects</span>
+              {detectionChips(s.detections).map((c) => (
+                <span
+                  key={c.label}
+                  className={'chip ' + (c.error ? 'chip--missed' : `chip--own chip--own-${c.ownership}`)}
+                  title={c.error
+                    ? 'Not one of the seven detection types. This expectation cannot be scored.'
+                    : OWNERSHIP_MEANING[c.ownership]}
+                >
+                  {c.label}
+                </span>
+              ))}
+              {data.unbound > 0 && (
+                <span
+                  className="chip chip--missed"
+                  data-testid={`chain-unbound-${s.id}`}
+                  title="This step expects a correlation alert, and no cited card carries a rule for it."
+                >
+                  {data.unbound > 1 ? `${data.unbound} × ` : ''}no rule on any card
+                </span>
+              )}
+            </>
           ) : (
             <span className="chip chip--missed">no expected detection</span>
           )}
@@ -257,6 +279,58 @@ function StepNode({ data, isConnectable }) {
         </div>
       )}
       {isConnectable && <Handle type="source" id="out" position={Position.Right} />}
+      {/* The port a content edge (step → rule) attaches to. Mounted on EVERY
+          step outside the Run lens, not only once a rule exists: the cited
+          card loads after React Flow has measured this node, and a handle
+          added later is invisible to the edge renderer, so the rule was drawn
+          with no edge to it (seen in Chrome, never in jsdom). Inert and 1px. */}
+      {!data.runLens && (
+        <Handle
+          type="source" id="content" position={Position.Bottom}
+          isConnectable={false} isConnectableStart={false} isConnectableEnd={false}
+          className="chain-node__contentport"
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * A correlation RULE the tenant must hold. Not a step: nothing runs here and
+ * nothing is persisted. It prints its two statuses as words (`ruleLines`), so a
+ * stub can never be mistaken for importable content by its colour.
+ */
+function RuleNode({ data }) {
+  const r = data.rule
+  const lines = ruleLines(r)
+  return (
+    <div
+      className={
+        `chain-node chain-node--rule chain-node--rule-${r.contentStatus}`
+        + (data.selected ? ' chain-node--selected' : '')
+      }
+    >
+      <Handle
+        type="target" id="in" position={Position.Top}
+        isConnectable={false} isConnectableStart={false} isConnectableEnd={false}
+          className="chain-node__contentport"
+      />
+      <button
+        type="button"
+        className="chain-node__body nodrag nopan"
+        onClick={data.onSelectRule}
+        aria-pressed={!!data.selected}
+        data-testid={`chain-rule-${r.ruleId}`}
+      >
+        <span className="chain-node__row">
+          <span className="chain-node__kind">rule · correlation</span>
+        </span>
+        <span className="chain-rule__id mono">{r.ruleId}</span>
+        <span className="chain-node__name">{r.name}</span>
+        <span className="chain-rule__line chain-rule__line--content">{lines.content}</span>
+        <span className="chain-rule__line">{lines.binding}</span>
+        <span className="chain-node__sub mono">{lines.inputs}</span>
+      </button>
     </div>
   )
 }
@@ -279,7 +353,7 @@ function ProofNode({ data }) {
   )
 }
 
-const nodeTypes = { cgo: CgoNode, step: StepNode, proof: ProofNode }
+const nodeTypes = { cgo: CgoNode, step: StepNode, proof: ProofNode, rule: RuleNode }
 
 // ─── Edge components ────────────────────────────────────────────────────────
 
@@ -367,7 +441,45 @@ function DerivedEdge({
   )
 }
 
-const edgeTypes = { causality: CausalityEdge, derived: DerivedEdge }
+/**
+ * A step → rule edge. Inert: it states which detections a rule composes. The
+ * fallback `card` edge (nothing resolved; the step only cites the same card) is
+ * fainter than a `feeds` edge.
+ */
+function ContentEdge({
+  id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data,
+}) {
+  const [path, labelX, labelY] = getBezierPath({
+    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+  })
+  const faint = data?.kind === 'card'
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={path}
+        style={{
+          stroke: 'var(--cortex-steel, #6B7E8E)',
+          strokeWidth: faint ? 1 : 1.25,
+          strokeDasharray: faint ? '1 5' : '3 4',
+          opacity: faint ? 0.7 : 1,
+        }}
+      />
+      {data?.label && (
+        <EdgeLabelRenderer>
+          <div
+            className={'composer-content-label nodrag nopan' + (faint ? ' composer-content-label--faint' : '')}
+            style={{ transform: `translate(-50%,-50%) translate(${labelX}px,${labelY}px)` }}
+          >
+            {data.label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
+}
+
+const edgeTypes = { causality: CausalityEdge, derived: DerivedEdge, content: ContentEdge }
 
 /**
  * Fit the viewport once per `fitKey`, and only after React Flow has MEASURED
@@ -377,15 +489,33 @@ const edgeTypes = { causality: CausalityEdge, derived: DerivedEdge }
  * Rendered as a child of <ReactFlow> so it can read the store. Keyed by lens,
  * so adding or dropping a node never yanks the viewport the DC has panned.
  */
-function FitOnReady({ fitKey, onReady }) {
+function FitOnReady({ fitKey, onReady, softKey = null, canSoftFit = () => false }) {
   const ready = useNodesInitialized()
   const rf = useReactFlow()
   const done = useRef(null)
+  const doneSoft = useRef(null)
   useEffect(() => {
-    if (!ready || done.current === fitKey) return undefined
-    const id = requestAnimationFrame(() => { done.current = fitKey; onReady(rf) })
-    return () => cancelAnimationFrame(id)
-  }, [ready, fitKey, rf, onReady])
+    if (!ready) return undefined
+    if (done.current !== fitKey) {
+      const id = requestAnimationFrame(() => {
+        done.current = fitKey
+        doneSoft.current = softKey
+        onReady(rf)
+      })
+      return () => cancelAnimationFrame(id)
+    }
+    // SOFT refit: the graph's extent changed without a lens change (the tenant-
+    // content rail arrived with its card, or was toggled). Refit so it is not
+    // left below the fold, but only while the DC has not panned or zoomed since
+    // the last fit: their viewport is never yanked.
+    if (doneSoft.current !== softKey) {
+      doneSoft.current = softKey
+      if (!canSoftFit()) return undefined
+      const id = requestAnimationFrame(() => onReady(rf))
+      return () => cancelAnimationFrame(id)
+    }
+    return undefined
+  }, [ready, fitKey, softKey, rf, onReady, canSoftFit])
   return null
 }
 
@@ -400,6 +530,7 @@ const DesignGraph = forwardRef(function DesignGraph({
   onDeleteStepId = () => {}, onEdgeDelete = () => {}, onReparent = () => {},
   onSetPivot = () => {}, onDropCreate = () => {}, onCanvasDrop = () => {},
   stitchModel = null, showStitch = false,
+  content = null, unbound = null, selectedRuleKey = null, onSelectRule = () => {},
   storedLayout = null, onZoomChange = () => {},
   // Pixel insets {top,right,bottom,left} of the stage the drawers and dock
   // cover. Fits frame the graph in the VISIBLE region between them rather
@@ -409,6 +540,8 @@ const DesignGraph = forwardRef(function DesignGraph({
 }, ref) {
   const insetsRef = useRef(viewInsets)
   insetsRef.current = viewInsets
+  // Whether the rail is drawn, for `fitPadding` (set once the graph is built).
+  const hasRailRef = useRef(false)
   const fitPadding = () => {
     const i = insetsRef.current
     if (!i) return 0.2
@@ -420,11 +553,18 @@ const DesignGraph = forwardRef(function DesignGraph({
     // during render), fall back to a small fixed margin, never the uncapped
     // one — the uncapped margins clamped the initial fit to minZoom.
     const h = paneRef.current?.clientHeight || 0
-    const capV = (v) => (h ? Math.max(8, Math.min(v, h * 0.18)) : Math.min(v, 24))
+    const capV = (v, share = 0.18) => (h ? Math.max(8, Math.min(v, h * share)) : Math.min(v, 24))
+    // With the tenant-content rail shown the graph has a second row, and its
+    // bottom edge is where the floating "+ Add step" button sits. Keep that
+    // strip clear (the button is ~34px tall, ~60px above the dock), with a
+    // larger share of a short pane than the plain chain needs.
+    const bottom = hasRailRef.current
+      ? capV((i.bottom || 0) + 32 + 52, 0.3)
+      : capV((i.bottom || 0) + 32)
     return {
       top: `${Math.round(capV((i.top || 0) + 32))}px`,
       right: `${(i.right || 0) + 32}px`,
-      bottom: `${Math.round(capV((i.bottom || 0) + 32))}px`,
+      bottom: `${Math.round(bottom)}px`,
       left: `${(i.left || 0) + 32}px`,
     }
   }
@@ -449,6 +589,11 @@ const DesignGraph = forwardRef(function DesignGraph({
   // in-flight drag / selection state on each keystroke elsewhere).
   const onSelectStep = useCallback((id) => onSelect(id), [onSelect])
 
+  // Measured step-card heights, fed back into the pure graph so the tenant-
+  // content rail clears the real bottom of the lowest card. Only a CHANGE in a
+  // height replaces the object, so a re-measure that agrees is a no-op.
+  const [stepHeights, setStepHeights] = useState(null)
+
   // The pure graph, then callbacks injected into node/edge data.
   const built = useMemo(
     () => buildGraph(draft, steps, {
@@ -456,9 +601,21 @@ const DesignGraph = forwardRef(function DesignGraph({
       // lane override is arrangement on the Lanes lens, and the plane lanes
       // (CC/BVM/ENG) do not change how the step launches.
       selectedId, runLens, causalityStates, laneOverrides: null, layout: storedLayout,
+      content, selectedRuleKey, stepHeights,
     }),
-    [draft, steps, selectedId, runLens, causalityStates, laneOverrides, storedLayout],
+    [draft, steps, selectedId, runLens, causalityStates, laneOverrides, storedLayout,
+      content, selectedRuleKey, stepHeights],
   )
+
+  hasRailRef.current = !!built.rail && !lanesLens
+
+  // Correlation expectations with no rule behind them, per step. A property of
+  // the STEP's chips, so it shows on every lens and whether or not the rail is.
+  const unboundByStep = useMemo(() => {
+    const m = new Map()
+    for (const u of unbound || []) m.set(u.stepId, (m.get(u.stepId) || 0) + 1)
+    return m
+  }, [unbound])
 
   const rfNodes = useMemo(() => {
     // Lanes lens: steps only, positioned by band; no cgo/proof nodes (the
@@ -479,7 +636,17 @@ const DesignGraph = forwardRef(function DesignGraph({
             channelKind: effectiveChannel(s) === 'eal' ? 'eal' : (s.target ? 'target' : null),
           },
         }
-      })
+      }).concat(
+        // Rules sit in the Cortex Engine band, in the columns AFTER the last
+        // step, so a rule can never land on a step that is itself in that band.
+        built.nodes.filter((n) => n.type === 'rule').map((n, k) => ({
+          ...n,
+          position: {
+            x: LANE_COL_X + (steps.length + k) * LANE_COL_PITCH,
+            y: laneLayout?.lanes.find((b) => b.key === 'ENG')?.nodeY ?? n.position.y,
+          },
+        })),
+      )
       : built.nodes
 
     return base.map((n) => {
@@ -492,6 +659,9 @@ const DesignGraph = forwardRef(function DesignGraph({
             onAgent: () => onNavigate('agents'),
           } }
         }
+        if (n.type === 'rule') {
+          return { ...n, selected: false, data: { ...n.data, onSelectRule: () => onSelectRule(n.id) } }
+        }
         return n
       }
       const i = steps.findIndex((s) => s.id === n.id)
@@ -500,6 +670,7 @@ const DesignGraph = forwardRef(function DesignGraph({
         selected: selectedId === n.id && !runLens,
         data: {
           ...n.data,
+          unbound: unboundByStep.get(n.id) || 0,
           onSelectStep: () => onSelectStep(n.id),
           onMoveEarlier: () => onMoveStep(i, -1),
           onMoveLater: () => onMoveStep(i, 1),
@@ -511,13 +682,17 @@ const DesignGraph = forwardRef(function DesignGraph({
   }, [
     built, lanesLens, steps, lanePos, selectedId, runLens, draft, laneOverrides,
     tenantName, agentName, onNavigate, onSelectStep, onMoveStep, onDuplicateStep, onRemoveStep,
+    laneLayout, unboundByStep, onSelectRule,
   ])
 
   const rfEdges = useMemo(() => {
     const base = lanesLens
-      ? built.edges.filter((e) => e.type === 'causality')
+      ? built.edges.filter((e) => e.type === 'causality' || e.type === 'content')
       : built.edges
     return base.map((e) => {
+      if (e.type === 'content') {
+        return { ...e, markerEnd: { type: MarkerType.Arrow, color: 'var(--cortex-steel, #6B7E8E)' } }
+      }
       if (e.type !== 'causality') {
         return { ...e, markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--bd2, #4A4A4A)' } }
       }
@@ -578,6 +753,9 @@ const DesignGraph = forwardRef(function DesignGraph({
           continue
         }
         if (c.id === CGO_ID || c.id === PROOF_ID) continue
+        // Only a STEP has a stored position. A rule node is not draggable, and
+        // this keeps it out of `composer_layout` whatever React Flow reports.
+        if (!steps.some((st) => st.id === c.id)) continue
         onNodeMoved(
           c.id,
           Math.round(c.position.x / SNAP) * SNAP,
@@ -585,7 +763,7 @@ const DesignGraph = forwardRef(function DesignGraph({
         )
       }
     }
-  }, [onNodeMoved, onLaneChange, lanesLens, lanePos])
+  }, [onNodeMoved, onLaneChange, lanesLens, lanePos, steps])
 
   if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
     window.__rfOnNodesChange = onNodesChange
@@ -621,6 +799,18 @@ const DesignGraph = forwardRef(function DesignGraph({
       return rfEdges.map((e) => (selected.has(e.id) ? { ...e, selected: true } : e))
     })
   }, [rfEdges])
+  useEffect(() => {
+    const next = {}
+    for (const n of liveNodes) {
+      if (n.type === 'step' && n.measured?.height) next[n.id] = Math.round(n.measured.height)
+    }
+    setStepHeights((prev) => {
+      const a = prev || {}
+      const same = Object.keys(next).length === Object.keys(a).length
+        && Object.keys(next).every((id) => a[id] === next[id])
+      return same ? prev : next
+    })
+  }, [liveNodes])
   const handleNodesChange = useCallback((changes) => {
     setLiveNodes((nds) => applyNodeChanges(changes.filter((c) => c.type !== 'remove'), nds))
     onNodesChange(changes)
@@ -822,7 +1012,13 @@ const DesignGraph = forwardRef(function DesignGraph({
   const [miniPinned, setMiniPinned] = useState(false)
   const [moving, setMoving] = useState(false)
   const moveTimer = useRef(null)
-  const handleMoveStart = useCallback(() => {
+  // True once the DC pans or zooms by hand. React Flow passes the DOM event
+  // for a user gesture and null for a programmatic move (a fit), so a fit
+  // never counts as the DC's own movement.
+  const userMovedRef = useRef(false)
+  const canSoftFit = useCallback(() => !userMovedRef.current, [])
+  const handleMoveStart = useCallback((event) => {
+    if (event) userMovedRef.current = true
     clearTimeout(moveTimer.current)
     setMoving(true)
   }, [])
@@ -836,14 +1032,19 @@ const DesignGraph = forwardRef(function DesignGraph({
     zoomIn: () => rfRef.current?.zoomIn(),
     zoomOut: () => rfRef.current?.zoomOut(),
     zoomReset: () => rfRef.current?.zoomTo(1),
-    fit: () => rfRef.current?.fitView({ duration: 200, padding: fitPadding(), maxZoom: 1.2 }),
+    fit: () => {
+      userMovedRef.current = false
+      rfRef.current?.fitView({ duration: 200, padding: fitPadding(), maxZoom: 1.2 })
+    },
   }), [])
 
   // Lanes fits the whole band stage (all seven bands, not just the cards);
   // Design/Run fit the nodes into the region the drawers leave visible.
-  const laneStageW = laneLayout ? laneLayout.bounds.width : 0
+  const ruleCols = built.nodes.filter((n) => n.type === 'rule').length
+  const laneStageW = laneLayout ? laneLayout.bounds.width + ruleCols * LANE_COL_PITCH : 0
   const laneStageH = laneLayout ? laneLayout.bounds.height : 0
   const fitForLens = useCallback((rf) => {
+    userMovedRef.current = false
     if (lanesLens) {
       rf.fitBounds({ x: 0, y: 0, width: laneStageW, height: laneStageH }, { padding: 0.04, duration: 0 })
     } else {
@@ -857,6 +1058,7 @@ const DesignGraph = forwardRef(function DesignGraph({
   const miniColor = useCallback((n) => {
     if (n.type === 'cgo') return 'var(--tx2, #C7C7C7)'
     if (n.type === 'proof') return 'var(--cortex-success, #2f9e44)'
+    if (n.type === 'rule') return 'var(--cortex-steel, #6B7E8E)'
     return n.data?.tint || 'var(--cortex-steel, #6B7E8E)'
   }, [])
 
@@ -887,7 +1089,10 @@ const DesignGraph = forwardRef(function DesignGraph({
             elementsSelectable={!runLens}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
-            onNodeClick={(_e, n) => { if (n.type === 'step') onSelect(n.id) }}
+            onNodeClick={(_e, n) => {
+              if (n.type === 'step') onSelect(n.id)
+              else if (n.type === 'rule') onSelectRule(n.id)
+            }}
             onPaneClick={() => onSelect(null)}
             onEdgeClick={() => paneRef.current?.focus({ preventScroll: true })}
             snapToGrid
@@ -912,7 +1117,15 @@ const DesignGraph = forwardRef(function DesignGraph({
             onMoveEnd={handleMoveEnd}
             proOptions={{ hideAttribution: false }}
           >
-            <FitOnReady fitKey={fitKey} onReady={fitForLens} />
+            <FitOnReady
+              fitKey={fitKey}
+              onReady={fitForLens}
+              // Counted from what React Flow has MEASURED, not from the derived
+              // graph: a refit issued the render the rule is derived runs before
+              // the node exists in the store, and frames the chain without it.
+              softKey={`${liveNodes.filter((n) => n.type === 'rule' && n.measured?.height).length}`}
+              canSoftFit={canSoftFit}
+            />
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--bd2, #4A4A4A)" />
             <Controls showInteractive={false}>
               {!lanesLens && (
@@ -950,7 +1163,7 @@ const DesignGraph = forwardRef(function DesignGraph({
                       key={b.key}
                       className={'composer-lane' + (STEP_LANES.includes(b.key) ? '' : ' composer-lane--terminal')}
                       data-lane={b.key}
-                      style={{ top: b.top, height: b.h, width: Math.max(laneLayout.bounds.width, 1200), background: b.fill }}
+                      style={{ top: b.top, height: b.h, width: Math.max(laneStageW, 1200), background: b.fill }}
                     >
                       <span className="composer-lane__label">{b.label}</span>
                       <span className="composer-lane__sub">
@@ -958,6 +1171,27 @@ const DesignGraph = forwardRef(function DesignGraph({
                       </span>
                     </div>
                   ))}
+                </div>
+              </ViewportPortal>
+            )}
+
+            {built.rail && !lanesLens && (
+              <ViewportPortal>
+                <div
+                  className="composer-rail"
+                  data-testid="composer-content-rail"
+                  style={{
+                    position: 'absolute',
+                    left: built.rail.x0,
+                    top: built.rail.y,
+                    width: Math.max(built.rail.x1 - built.rail.x0, 420),
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <span className="composer-rail__label">Cortex Engine · tenant content</span>
+                  <span className="composer-rail__sub">
+                    must exist in the tenant · not part of the chain · nothing here is imported or verified
+                  </span>
                 </div>
               </ViewportPortal>
             )}
@@ -1147,6 +1381,15 @@ export default function ComposerCanvas({
   laneOverrides = null,
   onLaneChange = () => {},
   viewInsets = null,
+  // Tenant content (`composerContent.deriveTenantContent`), or null before the
+  // first derivation. `contentLoading` is true while a cited card is in flight.
+  content = null,
+  contentLoading = false,
+  showContent = true,
+  onToggleContent = () => {},
+  selectedRuleKey = null,
+  onSelectRule = () => {},
+  onExportContent = () => {},
 }) {
   const [zoom, setZoom] = useState(1)
   const runLens = lens === 'run'
@@ -1169,6 +1412,10 @@ export default function ComposerCanvas({
     onDeleteStepId, onEdgeDelete, onReparent, onSetPivot, onDropCreate, onCanvasDrop,
     stitchModel, showStitch,
     storedLayout, viewInsets,
+    // The rail is a toggle; the unbound marker on a step's chips is not.
+    content: showContent ? content : null,
+    unbound: content?.unbound || null,
+    selectedRuleKey, onSelectRule,
   }
 
   return (
@@ -1208,6 +1455,30 @@ export default function ComposerCanvas({
         >
           Stitch overlay
         </button>
+
+        <div className="composer-canvas__content" role="group" aria-label="Tenant content">
+          <button
+            type="button"
+            data-testid="composer-content-toggle"
+            className={'canvas-view' + (showContent ? ' canvas-view--on' : '')}
+            aria-pressed={showContent}
+            title="Show the correlation rules this chain needs in the tenant. Derived from the cited TTP cards; nothing here is imported or verified."
+            onClick={onToggleContent}
+          >
+            <span className="composer-canvas__content-kicker">Tenant content · </span>
+            {contentHeadline(content, { loading: contentLoading || !content })}
+          </button>
+          <button
+            type="button"
+            data-testid="composer-content-export"
+            className="canvas-view"
+            title="Download what this chain needs in the tenant, as JSON. Read-only: nothing is sent to a tenant."
+            disabled={!hasSteps}
+            onClick={onExportContent}
+          >
+            Export
+          </button>
+        </div>
 
         <div className="composer-canvas__views" role="group" aria-label="Canvas view">
           {[['chain', 'Chain'], ['yaml', 'YAML']].map(([id, label]) => (

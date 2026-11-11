@@ -103,11 +103,11 @@
     "by_method": {
       "api_route": 1,
       "delete": 5,
-      "get": 92,
-      "post": 37,
+      "get": 93,
+      "post": 38,
       "put": 6
     },
-    "decorator_count": 141,
+    "decorator_count": 143,
     "router_files": 24
   },
   "iac_modules_aws": 11,

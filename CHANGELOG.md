@@ -33,7 +33,49 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   object at the top level, unlike the older scenario routes. See
   `docs/reference/dataset-requirements.md`.
 
+### Added — Composer: the correlation rules a chain needs are part of its story
+
+- **A step's chips read as its proof contract, not as tags on the TTP.**
+  `SIM-AIACC-003` step-02 showed `XQL XQL XQL`. It now reads
+  `expects  run · 3 queries`. Chips are grouped by who owns the work: `run` (XQL
+  the DC runs to confirm telemetry landed), `deploy` (BIOC, IOC and correlation
+  rules that must exist in the tenant) and `built-in` (ABIOC, Analytics,
+  Prevention, which ship with Cortex). A type outside the seven renders as an
+  error chip instead of taking a default class.
+- **Correlation rules are on the canvas.** Each rule on a card the chain cites is
+  a node on a *Cortex Engine · tenant content* rail below the chain, joined to
+  the steps whose detections it composes. Its status is printed as words on two
+  axes: what the card holds (`INTENT ONLY · nothing to import`) and what the
+  scenario asks for (`scored by this run` or `not declared by this scenario ·
+  not scored`). Selecting a rule opens a read-only Inspector view that shows the
+  card's logic line as an authoring note, not XQL, and where each input
+  resolved. Rule nodes are derived and never persisted, and the Run lens draws
+  none.
+- **Read-only export.** `GET /api/scenarios/{id}/tenant-content` and
+  `POST /api/scenarios/drafts/tenant-content` (an unsaved draft; persists
+  nothing) return the rules, the BIOCs and IOCs to deploy, the queries to run and
+  the built-in detectors a scenario leans on. The Composer's *Tenant content*
+  control shows the rule count and the worst status, toggles the rail and
+  downloads the manifest. Neither route contacts a tenant: `write_path` is
+  `false` and `tenant_verified` is `0` in every response.
+- **What this does not do.** ***No correlation rule in the library is
+  deployable.*** All of them are a name, an id and a logic line such as
+  `XQL(a) OR XQL(b)`; the card schema has no place for a rule body, and a test
+  pins the deployable count at zero. A rule a scenario declares is a scored
+  expectation that nothing CortexSim ships can raise. This release makes that
+  visible. It does not author rule content, check whether a rule exists in a
+  tenant, or change door badges; those are phases 2 to 4 of
+  `docs/superpowers/specs/2026-11-10-composer-correlation-story-design.md`.
+
 ### Fixed
+
+- **The correlation export no longer invents a severity.**
+  `detection_scanner/exports/correlation/*.json` stamped `severity: "high"` and
+  `description: null` on every rule. No card authored either. The files now
+  carry what the card holds plus `content_status`, `deploy: null` and
+  `importable_rules: 0`, and say that nothing in them can be imported as-is.
+  The exporter raises on a rule shape it does not know instead of guessing. 190
+  files regenerated.
 
 - **Catalog › TTP cards can be navigated by use case, test case and FY27
   subdomain.** The page listed 191 cards in authoring-id order with status,

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1078",
     "T1071",
@@ -8,11 +10,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "ABIOC(CDR-014 In-Cluster TTP Chain Behavioral Causality) AND ABIOC(CDR-014 Anomalous Multi-Stage Container Discovery and Exfil) GROUPED BY container_id, causality_id, causality_actor_process_image_name WITHIN 900s \u2014 fuses the two auto-tuned behavioral deviations into one in-cluster behavioral-anomaly incident anchored to the single containerd-shim -> shell process_lineage causality chain (same container_id + causality_id), not two disconnected anomalies.",
       "name": "Multi-Stage In-Cluster TTP Chain \u2014 ABIOC Causality Stitch",
-      "rule_id": "CR-CDR-0014",
-      "severity": "high"
+      "rule_id": "CR-CDR-0014"
     }
   ],
   "ttp_ref": "TTP-2026-0087"

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1613",
     "T1082",
@@ -7,11 +9,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(CDR-001 DEEPCE Container Enumeration Script Execution) OR BIOC(CDR-001 Curl Pipe Bash Download Execute In Container) OR BIOC(CDR-001 Container Capability Mask Read From Proc1 Status) OR BIOC(CDR-001 Container Device Enumeration With Capability Inspection) OR BIOC(CDR-001 Service Account Token Access From Container) OR BIOC(CDR-001 Broad Filesystem Credential Search In Container) OR BIOC(CDR-001 LinPEAS Privilege Escalation Tool In Container) OR BIOC(CDR-001 Automated Discovery Command Burst In Container)",
       "name": "Container Discovery Recon Chain \u2014 Same Container",
-      "rule_id": "CR-CDR-0001",
-      "severity": "high"
+      "rule_id": "CR-CDR-0001"
     }
   ],
   "ttp_ref": "TTP-2026-0022"

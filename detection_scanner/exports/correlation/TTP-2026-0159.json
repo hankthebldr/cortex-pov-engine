@@ -1,15 +1,17 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1535",
     "T1496"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when analytics `Compute Activity in Dormant Cloud Region` and abioc `Suspicious Heavy Allocation of Compute Resources - Possible Mining Activity` both observe RunInstances activity for the same recipientAccountId and userIdentity.arn within a 30-minute window \u2014 stitching the dormant-region landing and the mining-shaped GPU burst into ONE cloud cryptomining incident rather than two isolated alerts.",
       "name": "Dormant-Region Compute Escalating to Mining-Shaped Heavy Allocation",
-      "rule_id": "CR-CDR-0024",
-      "severity": "high"
+      "rule_id": "CR-CDR-0024"
     }
   ],
   "ttp_ref": "TTP-2026-0159"

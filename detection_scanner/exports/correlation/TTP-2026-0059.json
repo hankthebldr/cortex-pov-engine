@@ -1,14 +1,16 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1526"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(AISPM-006 Dashboard Summary Aggregate Across All Risk Categories) AND XQL(AISPM-006 Dashboard Trend Series Per Risk Category)",
       "name": "AI Posture Rollup \u2014 Executive Dashboard Covers All Risk Categories",
-      "rule_id": "CR-AISPM-0006",
-      "severity": "high"
+      "rule_id": "CR-AISPM-0006"
     }
   ],
   "ttp_ref": "TTP-2026-0059"

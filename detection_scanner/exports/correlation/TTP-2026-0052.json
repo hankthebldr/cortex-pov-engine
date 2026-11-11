@@ -1,14 +1,16 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1496"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(NGFW EAL \u2014 repeated short-lived TCP sessions to mining pool port) OR XQL(NGFW App-ID \u2014 Stratum/cryptocurrency-mining identified on outbound TCP) OR IOC(stratum-json-rpc-mining-subscribe)",
       "name": "Cryptojacking \u2014 Stratum Mining Pool Resource Hijacking",
-      "rule_id": "CR-NDR-0003",
-      "severity": "high"
+      "rule_id": "CR-NDR-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0052"

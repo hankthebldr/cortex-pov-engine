@@ -48,6 +48,8 @@ from engine.push_generator import (
     push_not_supported,
     resolve_target,
 )
+from engine import tenant_content
+from engine.ttp_catalog import catalog as ttp_catalog
 from models import Scenario
 from tools.adapter_catalog import catalog as adapter_catalog
 
@@ -212,6 +214,50 @@ async def get_scenario(
 
     logger.info("get_scenario scenario_id=%s", scenario_id)
     return scenario.to_dict()
+
+
+def tenant_content_manifest(scenario_doc: dict[str, Any]) -> dict[str, Any]:
+    """The tenant-content manifest for a scenario document, against the loaded
+    TTP card catalog. Shared by the saved-row route below and the unsaved-draft
+    route in ``api.drafts`` so the two cannot resolve differently.
+
+    READ-ONLY: it reads cards already in memory and contacts nothing. An empty
+    catalog is reported as ``catalog_loaded: false`` (degraded), never as "this
+    scenario needs nothing in the tenant".
+    """
+    cards = ttp_catalog.all_raw()
+    try:
+        return tenant_content.build_manifest(scenario_doc, cards, catalog_loaded=bool(cards))
+    except tenant_content.TenantContentError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "Scenario shape not recognised",
+                "code": "TENANT_CONTENT_UNREADABLE",
+                "detail": str(exc),
+            },
+        )
+
+
+@router.get("/{scenario_id}/tenant-content")
+async def get_tenant_content(
+    scenario_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """What this scenario (or saved draft) needs to EXIST IN THE TENANT.
+
+    Correlation rules with their content status (``intent-only`` |
+    ``deployable`` | ``unreadable``) and binding (``declared`` | ``card-only``),
+    the BIOCs and IOCs to deploy, the queries to run, and the built-in detectors
+    it leans on. Derived from the TTP cards the steps cite.
+
+    Read-only. It never contacts a tenant: ``write_path`` is false and
+    ``tenant_verified`` is 0 in every response. A stub is returned as
+    ``deploy: null``; no severity or description is invented for it.
+    """
+    scenario = await _load_scenario(scenario_id, db)
+    logger.info("get_tenant_content scenario_id=%s", scenario_id)
+    return tenant_content_manifest(scenario.to_dict())
 
 
 @router.get("/{scenario_id}/infra-hints")

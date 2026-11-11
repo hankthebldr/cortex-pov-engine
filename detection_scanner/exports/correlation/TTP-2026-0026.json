@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1105",
     "T1059.004",
@@ -7,11 +9,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(CDR-005 WildFire Known Bad ELF Download In Container) OR BIOC(CDR-005 WildFire ELF Execution In Container) OR BIOC(CDR-005 Downloaded Binary Executed By Service Account In Container) OR BIOC(CDR-005 Periodic Outbound HTTP Beacon From Container) OR BIOC(CDR-005 Post Execution C2 Network Activity In Container) OR BIOC(CDR-005 Mass File Modification Ransomware Pattern In Container) OR BIOC(CDR-005 Bulk Enc Extension Rename After Execution In Container) GROUPED BY container_id, causality_id WITHIN 300s",
       "name": "WildFire Malware Kill Chain \u2014 Download Execute Beacon Encrypt",
-      "rule_id": "CR-CDR-0005",
-      "severity": "high"
+      "rule_id": "CR-CDR-0005"
     }
   ],
   "ttp_ref": "TTP-2026-0026"
