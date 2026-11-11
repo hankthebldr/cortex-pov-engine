@@ -396,8 +396,32 @@ async def test_sls_selected_but_disabled(fake_firewall):
     s = stage(report, "forwarding_sls")
     assert (s.status, s.code) == (BLOCKED, codes.PN_LSF_DISABLED)
     s2 = stage(report, "forwarding_syslog")
-    assert (s2.status, s2.code) == (SKIPPED, codes.PN_PATH_NOT_SELECTED)
+    assert (s2.status, s2.code) == (OK, codes.PN_PATH_NOT_SELECTED)
     assert s2.extra["profiles"]  # still read and reported
+    assert s2.extra["would_report"]["code"] == codes.PN_SYSLOG_DELIVERY_UNVERIFIED
+
+
+@pytest.mark.asyncio
+async def test_explicit_sls_with_syslog_also_configured_can_be_ready(fake_firewall):
+    # final-M1: a configured-but-unselected path is information, not a reason the
+    # overall can never be ready.
+    report, _ = await run(fake_firewall, {SYSLOG_VSYS: "syslog__two_servers_udp.xml"},
+                          config={"forwarding_path": "sls"})
+    assert stage(report, "forwarding_sls").status == OK
+    sy = stage(report, "forwarding_syslog")
+    assert (sy.status, sy.code) == (OK, codes.PN_PATH_NOT_SELECTED)
+    assert sy.extra["would_report"] == {"status": DEGRADED,
+                                        "code": codes.PN_SYSLOG_DELIVERY_UNVERIFIED}
+    assert report.overall == "ready"
+
+
+@pytest.mark.asyncio
+async def test_explicit_syslog_with_sls_also_configured_reports_sls_as_information(fake_firewall):
+    report, _ = await run(fake_firewall, {SYSLOG_VSYS: "syslog__two_servers_udp.xml"},
+                          config={"forwarding_path": "syslog"})
+    sls = stage(report, "forwarding_sls")
+    assert (sls.status, sls.code) == (OK, codes.PN_PATH_NOT_SELECTED)
+    assert sls.extra["would_report"]["status"] == OK
 
 
 @pytest.mark.asyncio

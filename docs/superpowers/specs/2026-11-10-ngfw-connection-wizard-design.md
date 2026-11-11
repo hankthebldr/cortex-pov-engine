@@ -463,7 +463,10 @@ reference, this list says where it departs from §4–§6.
 1. **`auto` path, unused path → `ok / PN_PATH_NOT_SELECTED`** (amends §5.2, which said
    `skipped`). With `forwarding_path=auto` and one path configured, the other stage, once
    confirmed unconfigured, reports `ok` with code `PN_PATH_NOT_SELECTED`. A `skipped`
-   there made a healthy single-path firewall unable ever to read ready.
+   there made a healthy single-path firewall unable ever to read ready. The same holds
+   for an explicit `forwarding_path=sls|syslog` when the other path *is* configured: that
+   side reports `ok / PN_PATH_NOT_SELECTED` with `extra.would_report {status, code}` (what
+   it would have read if selected), never `skipped` (final review M1).
 2. **HTTP non-2xx is stage-local.** A management-API reply with a non-2xx status (not a
    connect, DNS or TLS failure) maps to `PN_UPSTREAM_ERROR` and blocks only the stage
    that made the call. Only `PN_UNREACHABLE`, `PN_TLS_FAILED` and `PN_AUTH_REJECTED`

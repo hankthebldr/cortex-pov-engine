@@ -1168,7 +1168,7 @@ name). Status is what the code carries where it is emitted.
 | `PN_SYSLOG_DELIVERY_UNVERIFIED` | degraded (`forwarding_syslog`) | syslog is configured; PAN-OS keeps no delivery counters, so confirm on the tenant side |
 | `PN_SYSLOG_UDP` | degraded (`forwarding_syslog`) | a syslog server uses UDP (loss is silent) |
 | `PN_NO_FORWARDING_PATH` | blocked (`forwarding_sls`, `forwarding_syslog`) / degraded (`log_forwarding_profiles`) | neither LSF nor syslog is configured, so no profile can be shown to deliver |
-| `PN_PATH_NOT_SELECTED` | ok (unconfigured, another path proven) / skipped (configured, not selected) | this forwarding path is not the one in use; information only |
+| `PN_PATH_NOT_SELECTED` | ok (unconfigured, another path proven; or configured but not the selected `forwarding_path`, with `extra.would_report {status, code}` saying what it would have read) | this forwarding path is not the one in use; information only, so it never keeps the overall from `ready` |
 | `PN_EAL_DEVICE_OFF` | degraded (`eal_device`) | Enhanced Application Logging is off on the device |
 | `PN_NO_LFP` | blocked (`log_forwarding_profiles`) | no log forwarding profile exists |
 | `PN_LFP_MISSING_TYPE` | degraded (`log_forwarding_profiles`, as are the next four) | no profile forwards all of traffic, threat, url, wildfire and data |

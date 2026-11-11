@@ -670,9 +670,12 @@ async def _gather_syslog(ctx: PreflightContext, run: _Run) -> tuple[bool, Stage]
 
 
 def _not_selected(st: Stage, path: str) -> Stage:
-    return Stage(st.id, SKIPPED, codes.PN_PATH_NOT_SELECTED,
+    # Configured, but the operator selected the other path: information, not a gap.
+    # It reads ok (as the auto path's unused side does) so the overall can be ready;
+    # what this path would have said if selected rides along in would_report.
+    return Stage(st.id, OK, codes.PN_PATH_NOT_SELECTED,
                  f"forwarding_path={path}: not the path in use; reported for information "
-                 f"({st.detail})", remediation=REM_PATH_NOT_SELECTED,
+                 f"({st.detail})",
                  extra={**st.extra, "would_report": {"status": st.status, "code": st.code}},
                  ms=st.ms)
 
