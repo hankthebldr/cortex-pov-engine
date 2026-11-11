@@ -112,9 +112,11 @@ kubectl apply -f 'http://<simcore>:8888/api/agents/manifest'
 kubectl -n cortexsim-agent create secret generic cortexsim-enroll --from-literal=server=http://<simcore>:8888 --from-literal=token=cxs_…
 ```
 
-Either order works. The manifest emits the Namespace (with its Pod Security
-labels, as the push path does); a pod applied before the Secret exists waits in
-`CreateContainerConfigError` and starts when the Secret appears.
+Apply the manifest first, then create the Secret. The manifest emits the
+Namespace (with its Pod Security labels, as the push path does), so creating the
+Secret first fails with `NotFound`; a pod applied before the Secret exists waits
+and starts when the Secret appears. (Corrected in build: this section originally
+said either order works; see §13 item 12.)
 
 That is the `baseline` profile. **[Henry]** Gated profiles are the same single
 URL apply, with the profile and its consent keys in the query string (§5):
@@ -573,3 +575,13 @@ been observed through this agent.
 Linux subreaper effect and the anchor rename under bash are not yet asserted in a
 pod; the console tab was not checked in a real browser; the opt-in CI step has not
 run on GitHub.
+
+12. **Secret ordering corrected.** §3 said either order works and that a pod
+    without the Secret waits in `CreateContainerConfigError`. The Namespace comes
+    from the manifest, so the Secret must follow the apply; and because the Secret
+    is a volume mount (`optional: false`), the waiting symptom is `Init:0/2` /
+    `ContainerCreating` with a `FailedMount` event (expected from the pod spec; not
+    observed in a cluster).
+13. **Removal.** Deleting the namespace alone leaves the agent and reaper
+    ClusterRole/ClusterRoleBinding behind (observed in the final kind run); remove
+    them first by label, then the namespace.

@@ -54,14 +54,17 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   covers an absent account.
 - New beacon flags: `--enroll-token-file`, `--state-dir`, `--posture-profile`,
   `--prepare-status-file`, `--expires-at`, `--subreaper`.
-- **Proof so far.** A first run in a real kind pod (2026-11-10) observed enrollment,
-  digest verification, a four-step scenario with output, abort, consent and the
-  gate refusals. It found three product defects, since fixed in code (re-apply
-  rejected, pod with no interpreter could not enroll, `alpine` could not create
-  `www-data`), plus a profile-downgrade hole closed by emptying the wildcard
-  ClusterRole on re-apply. `lab-privileged` has never been run; the Linux
-  subreaper effect and the anchor rename under bash are not yet asserted; the
-  console tab was not checked in a real browser; no Cortex detection has been
+- **Removal.** Deleting the namespace alone leaves the agent and reaper
+  ClusterRole/Binding behind. Remove with `kubectl delete clusterrole,clusterrolebinding
+  -l cortexsim.io/agent=true` and then `kubectl delete namespace cortexsim-agent`.
+  Apply the manifest before creating the Secret.
+- **Proof so far.** A first kind run (2026-11-10) found three product defects
+  (re-apply rejected, pod with no interpreter could not enroll, `alpine` could not
+  create `www-data`) and review found a profile-downgrade hole; all fixed. A final
+  run on arm64 against `cd7601e` passed with zero defect lines: enrollment, abort,
+  re-apply, downgrade, digest mismatch, the anchor rename under bash and
+  `ANCHOR NOT HONOURED` on alpine. `lab-privileged` has never been run; no amd64
+  node, no CI run on GitHub, console tab not browser-checked, no Cortex detection
   observed. `tenant-verified` is still 0.
 
 ### Changed — behaviour that reaches beyond containers

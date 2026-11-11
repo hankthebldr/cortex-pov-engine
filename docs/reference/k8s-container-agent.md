@@ -26,6 +26,8 @@ pull lifecycle: run record, live output, abort, seeded results, reconcile, MTTD.
 
 ## 2 · The two commands
 
+Order matters. **Apply the manifest first, then create the Secret.**
+
 ```bash
 kubectl apply -f 'http://<simcore>:8888/api/agents/manifest'
 ```
@@ -36,15 +38,37 @@ kubectl -n cortexsim-agent create secret generic cortexsim-enroll \
   --from-literal=token=cxs_…
 ```
 
-Either order works. A pod applied before the Secret exists waits in
-`CreateContainerConfigError` and starts when the Secret appears. The manifest
-carries **no token and no Secret object**, so it is static per SimCore build and
+The manifest creates the `cortexsim-agent` Namespace, so creating the Secret
+**before** the apply fails with `NotFound`. The Secret is mounted as a volume
+(`optional: false`), so a pod applied before the Secret exists waits (stuck in
+`Init:0/2` / `ContainerCreating` with a `FailedMount` event) and starts when the
+Secret appears. That symptom is expected from the pod spec; it has **not been
+observed in a cluster**. The manifest carries **no token and no Secret object**, so it is static per SimCore build and
 safe to paste, diff and keep in a GitOps repo. The console's Kubernetes tab
 (Targets, deploy-agent dialog) builds both commands and mints the token
 (label `kubernetes`, 12 h TTL, 50 uses).
 
 Mint a token yourself with `POST /api/agents/enroll/tokens`; for cluster use make
 it multi-use with a TTL, because a pod that is rescheduled enrolls afresh.
+
+### Removal — read this before you apply
+
+Deleting the namespace **alone leaves cluster-scoped objects behind**:
+`clusterrole` and `clusterrolebinding` `cortexsim-agent` and
+`cortexsim-reaper-agent` survive (observed in the final kind run), because the
+reaper that would remove them is deleted with the namespace. If the agent ran as
+`cluster-privilege` or `lab-privileged`, the leftover binding grants cluster-wide
+`*` to any ServiceAccount later created as `cortexsim-agent/cortexsim-agent`.
+
+Full removal is two commands, **in this order**:
+
+```bash
+kubectl delete clusterrole,clusterrolebinding -l cortexsim.io/agent=true
+kubectl delete namespace cortexsim-agent
+```
+
+Letting the pod expire (`ttl_seconds`) lets the reaper run, and it removes
+everything itself.
 
 ## 3 · Query parameters
 
@@ -60,7 +84,7 @@ cortexsim-agent.yaml`).
 | `ttl_seconds` | `43200` | integer 60..43200 (12 h), absolute expiry stamped at generation |
 | `cluster_privilege_authorized` | absent | only the literal string `true` counts |
 | `node_access_authorized` | absent | only the literal string `true` counts |
-| `authorized_by` | absent | 1-120 chars of letters, digits, space and `. _ @ + ' ( ) -` (an allowlist: it is written into a YAML comment header) |
+| `authorized_by` | absent | 1-120 chars of letters, digits, space and `. _ @ + ' ( ) -` (an allowlist: it is written into a YAML comment header). A blank or whitespace-only value is treated as absent |
 
 Validation order, with the first failure winning: `profile`, `prepare`, `arch`,
 `ttl_seconds`, `image`, `authorized_by`, then the consent rules in §5.
@@ -169,7 +193,11 @@ Every object carries `cortexsim.io/agent: "true"`, `cortexsim.io/expires-at` and
 * **Ready means enrolled.** The readiness probe passes only once the beacon has
   stored its assigned id at `/cortexsim/state/agent-id`. There is no liveness or
   startup probe: either would kill a slow package install. A pod that is not
-  Ready has not enrolled yet.
+  Ready has not enrolled yet. Observed in the final kind run: rollout Ready
+  coincided with the beacon storing its id. **Known gap:** the id file lives in
+  the pod's `emptyDir`, so after a *container* restart the pod still reads Ready
+  before the restarted beacon has re-registered. And a pod rescheduled after expiry
+  would enroll afresh, because enrollment happens before the expiry check.
 
 ## 8 · Prepare stage
 
@@ -206,11 +234,17 @@ image and script). It waits to the **absolute** expiry (`EXPIRES_AT_EPOCH` again
 `ClusterRole` and `ClusterRoleBinding` named `cortexsim-agent` — the whole set
 any profile can emit, whatever the current one. If the node clock gives no epoch
 it exits 70 (`REAPER_CLOCK_UNAVAILABLE`) and crash-loops visibly rather than
-restarting its clock. It is a safety net; delete the manifest yourself when done.
+restarting its clock. It is a safety net; remove the agent yourself when done.
+**The reaper dies with the namespace**, so deleting the namespace by hand leaves
+the cluster-scoped objects behind; see "Removal" in §2 for the two-command
+removal, in order. Observed in the final kind run: the reaper is a Deployment
+and no Job exists.
 
 **Why a Deployment and not a Job.** A Job's pod template is immutable and the
 expiry changes it on every generation, so re-applying the agent manifest was
 rejected (found in the first kind run). A Deployment's template is mutable.
+Observed in the final kind run: re-applying with `profile=cluster-privilege`
+over a running agent succeeded.
 
 **Re-apply** is the supported way to upgrade after a SimCore change, to change
 profile, or to extend a POV (a fresh manifest, a fresh expiry). After a SimCore
@@ -227,7 +261,11 @@ until the manifest is re-applied.
   stripped **immediately**. The `ClusterRoleBinding` is **not** removed by the
   apply; it stays, pointing at a role that now grants nothing, and goes away at
   expiry (the reaper) or by hand: `kubectl delete clusterrolebinding
-  cortexsim-agent`.
+  cortexsim-agent`. Observed in the final kind run: after the `baseline`
+  re-apply the ClusterRole's rules were empty, the pod's ServiceAccount answered
+  `no` to `kubectl auth can-i list secrets --all-namespaces`, and the agent
+  re-enrolled as `baseline`. Neither object disappears with a namespace delete
+  (§2, Removal).
 
 ## 10 · The launch gate
 
@@ -271,8 +309,11 @@ Both appear in the run record. Neither is silent and neither is a pass.
   `sh`, the first step's output says so and the completion summary carries
   `ANCHOR NOT HONOURED`. Detections keyed on the anchor process name will not
   match. It appears on images without bash, such as `alpine` with
-  `prepare=none`; with `prepare=packages` bash is installed and the anchor is
-  honoured.
+  `prepare=none`. With `prepare=packages` bash is installed and the anchor is
+  honoured: in the final kind run processes named after the anchor (`apache2`)
+  were observed mid-step on `debian:12-slim`, and on `alpine:3.20` with
+  `prepare=none` `ANCHOR NOT HONOURED` was observed in both the step output and
+  the completion summary.
 
 ## 12 · The beacon
 
@@ -312,23 +353,26 @@ message.
 ## 13 · Removal and troubleshooting
 
 ```bash
-kubectl delete namespace cortexsim-agent
 kubectl delete clusterrole,clusterrolebinding -l cortexsim.io/agent=true
+kubectl delete namespace cortexsim-agent
 ```
 
-Deleting the namespace takes the pod and the reaper with it; the second command
-removes the cluster-scoped objects, which namespace deletion cannot. The agent
-row then reads `offline` after SimCore's 5-minute window.
+In this order. Namespace deletion cannot remove cluster-scoped objects and takes
+the reaper with it; the label delete also catches the reaper's own
+ClusterRole/Binding. After the delete the agent row reads `offline` within
+SimCore's 5-minute window (the final kind run asserted the agent was `online`
+immediately before the delete, then `offline`).
 
 What `kubectl get pods -n cortexsim-agent` and `kubectl describe pod` show:
 
 | You see | Cause | Do |
 |---|---|---|
-| `CreateContainerConfigError` | the `cortexsim-enroll` Secret does not exist yet | create it (§2); the pod starts by itself |
+| `Init:0/2` / `ContainerCreating`, event `FailedMount` for `cortexsim-enroll` | the Secret does not exist yet (expected from the pod spec; **not observed in a cluster**) | create it (§2); the pod starts by itself |
+| `ErrImagePull` / `ImagePullBackOff` on an init or the main container | the registry is unreachable from the node or rate-limiting (`alpine:3.20`, `alpine/kubectl:1.34.1`, your `image`) | fix egress or mirror the image |
 | `Init:Error`, message `BEACON_DIGEST_MISMATCH` | the served beacon differs from the digest baked into the manifest (SimCore rebuilt, or the manifest was edited) | re-apply the manifest from this SimCore |
 | `Init:Error`, `BEACON_FETCH_FAILED` | the pod cannot download the beacon from `server` | check the Secret's `server`, DNS and egress from the node, and that `make agent-dist` or the image shipped `linux/<arch>` |
 | `Init:Error`, `BAD_SERVER_URL` | `server` is empty or lacks `http://` / `https://` | fix the Secret |
-| `Init:Error`, `KUBECTL_COPY_FAILED` | the `kubectl` init could not copy the binary | check the pull of `alpine/kubectl:1.34.1` |
+| `Init:Error`, `KUBECTL_COPY_FAILED` | `mkdir` or `cp` failed inside the `kubectl` init container (the image pulled fine) | `kubectl logs <pod> -c kubectl`; check the init's mounts and the image's `kubectl` path |
 | `Error` / `CrashLoopBackOff`, message `ARCH_MISMATCH` | `arch` does not match the node | re-apply with the right `arch` |
 | `CrashLoopBackOff`, message `FATAL ENROLL_DENIED` | token revoked, expired or used up | mint a new token, update the Secret, `kubectl rollout restart` |
 | `CrashLoopBackOff`, `FATAL SERVER_UNREACHABLE` | the pod cannot reach `server` | as `BEACON_FETCH_FAILED` |
@@ -337,20 +381,10 @@ What `kubectl get pods -n cortexsim-agent` and `kubectl describe pod` show:
 
 ## 14 · What is proven and what is not
 
-**Observed in a real pod, first run, 2026-11-10** (kind on arm64, SimCore on the
-host): the pod schedules, pulls and goes Ready; the `fetch` init downloads and
-verifies the digest; the `kubectl` init copies a working `kubectl` (v1.34.1); the
-beacon enrolls natively and the agent row carries `runtime_facts.container ==
-true`; the prepare stage reaches `PREPARE_OK` on `debian:12-slim` with default
-capabilities; `id -u` of an unknown user exits 1 on both Debian and busybox;
-`start.sh` is PID 1 with the beacon as its child; the baseline agent is refused
-`AGENT_POSTURE_INSUFFICIENT` for `SIM-CDR-015` and `AGENT_TOOL_ABSENT` where a
-tool is missing; `SIM-CDR-010` ran four steps to completion with output; a run
-was aborted mid-step; `cluster-privilege` was accepted with consent; a flipped
-digest made the `fetch` init exit 78 `BEACON_DIGEST_MISMATCH`; deleting the
-namespace took the agent offline.
-
-That run also found three product defects, **all fixed in code after it**:
+**First run, 2026-11-10** (kind on arm64, SimCore on the host) showed that the
+pod schedules, pulls and goes Ready, verifies the beacon digest, enrolls
+natively, prepares, completes a scenario and honours an abort. It also found
+three product defects:
 
 1. re-applying the manifest was rejected (the reaper was a Job with an immutable
    template);
@@ -360,30 +394,57 @@ That run also found three product defects, **all fixed in code after it**:
 
 A review of the first fix then found a fourth, serious: after the reaper became
 re-appliable, a profile **downgrade** left the wildcard ClusterRole and binding in
-place. It is fixed by the neutralised-ClusterRole behaviour in §9.
+place. All four were fixed in code and re-run.
 
-**Fixed in code, cluster confirmation pending.** The three defects above, the
-downgrade neutralisation, the readiness probe, and the reaper's absolute wait and
-exit 70 are covered by unit and API tests but have not yet been seen in a pod. A
-re-run is in progress at the time of writing.
+### Final run — 2026-11-10, kind on arm64, against commit `cd7601e`
 
-<!-- E2E-RERUN-RESULT: to be filled by the controller -->
+`RESULT PASS`, exit 0, **zero `DEFECT` lines**. Observed in a real pod
+(`debian:12-slim` unless noted):
 
-**Not observed, and stated plainly:**
+* rollout Ready coincided with the beacon storing its id; the reaper is a
+  Deployment, Available, and no Job exists;
+* native enrollment with `container=true`; `PREPARE_OK`; `kubectl` delivered by
+  the init container (v1.34.1);
+* the beacon logged "child subreaper enabled", and no zombies were left after
+  `SIM-CDR-010`;
+* the anchor rename under real `bash`: processes with `cmd=apache2` were present
+  mid-step (asserted);
+* baseline refused `AGENT_POSTURE_INSUFFICIENT` (`SIM-CDR-015`) and
+  `AGENT_TOOL_ABSENT`; `SIM-CDR-010` completed 4 steps;
+* abort mid-step, and the step's process group was gone from the pod (asserted);
+* re-apply to `cluster-privilege` worked (no Job immutability), and `SIM-CDR-015`
+  was accepted and completed;
+* **downgrade**: `baseline` re-applied over `cluster-privilege` left the
+  ClusterRole with `rules=null`, the pod's ServiceAccount answered `no` to `can-i
+  list secrets -A`, and the agent re-enrolled as `baseline`;
+* a flipped digest made the new pod's `fetch` init exit 78 `BEACON_DIGEST_MISMATCH`;
+* `alpine:3.20` with `prepare=packages`: `PREPARE_OK` and `id -u www-data` succeeds;
+* `alpine:3.20` with `prepare=none` (no bash): the pod enrolls and `SIM-CDR-011`
+  completes with `ANCHOR NOT HONOURED` in its output and its summary;
+* a garbage token: `FATAL ENROLL_DENIED` visible in the termination message in
+  `kubectl describe pod`;
+* the agent was `online` immediately before the namespace delete and `offline`
+  after it.
+
+**Observed caveat:** deleting the namespace by hand left `clusterrole` and
+`clusterrolebinding` `cortexsim-agent` and `cortexsim-reaper-agent` behind. See
+"Removal" in §2.
+
+**Still not observed, and stated plainly:**
 
 * `lab-privileged` has **never been run anywhere**: not in kind, not on a node.
-* The Linux **subreaper effect** (`PR_SET_CHILD_SUBREAPER` reparenting and the
-  reaper collecting an orphan) is not yet asserted in a pod; the macOS dev host
-  cannot execute it. The Linux unit test that exercises it must run, not skip,
-  in the Linux CI `agent` job.
-* The **anchor rename under bash** (`/proc/<pid>/cmdline`) is not yet asserted in
-  a pod, and `ANCHOR NOT HONOURED` was not reached in the first run.
-* `SIM-CDR-001`'s baseline refusal was not seen in a pod: the payload-shelf gate
+* An **amd64** node was not exercised (the runs were arm64).
+* The opt-in CI step has never run on GitHub.
+* `SIM-CDR-001` in a pod: its payload shelf was not staged, so the shelf gate
   fires before the agent gate. `SIM-CDR-015` stood in; the namespace-rule path is
   proven by unit and API tests only.
+* **Mid-step output streaming in chained execution**: SimCore holds nothing for a
+  step until it ends (`--stream-output` does not stream chained steps). This is
+  pre-existing, not specific to containers.
+* The missing-Secret symptom (`FailedMount`) and the Linux CI `agent` job running
+  the subreaper unit test are likewise not seen.
 * The console's **Kubernetes tab was not checked in a real browser**. Its tests
   run in jsdom, which cannot see layout.
-* The opt-in CI step has never run on GitHub.
 * **No Cortex detection has been observed**, because that needs a cluster whose
   nodes run the Cortex agent DaemonSet reporting to a tenant.
 
