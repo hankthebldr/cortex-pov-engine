@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url" // aliased: several functions here have a local `url`
 	"os"
 	"runtime"
 	"strings"
@@ -384,6 +385,11 @@ type BeaconClient struct {
 	// told to stop" (BindShutdown). Unset = never.
 	shutdown atomic.Pointer[context.Context]
 
+	// The --proxy decision (proxy.go). All zero = Go's default, the environment.
+	proxyTransport *http.Transport
+	proxyURL       *neturl.URL
+	proxyDirect    bool
+
 	// frameScope / frameSeq key every non-streaming /output frame (RG-AGENT-06).
 	frameMu    sync.Mutex
 	frameScope string
@@ -503,6 +509,10 @@ func (c *BeaconClient) artifactClient() *http.Client {
 				// counted as a delivered record.
 				return http.ErrUseLastResponse
 			},
+		}
+		if c.proxyTransport != nil {
+			// The same --proxy decision as the SimCore API client (proxy.go).
+			c.artifactHTTP.Transport = c.proxyTransport
 		}
 	}
 	return c.artifactHTTP

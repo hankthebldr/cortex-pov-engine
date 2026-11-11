@@ -59,7 +59,13 @@ type beaconConfig struct {
 	stepTimeout   time.Duration // 0 = built-in default
 	artifactToken string
 	logFile       string // --log-file as given; see logsink.go for the resolution
+	proxy         string // --proxy as given: "" (environment), "direct", or a proxy URL
 }
+
+// agentProxyEnv is the environment fallback for --proxy. Like
+// CORTEXSIM_AGENT_LOG_FILE it carries AGENT in its name so it cannot be
+// mistaken for a SimCore setting on a box that runs both.
+const agentProxyEnv = "CORTEXSIM_AGENT_PROXY"
 
 // invalidConfigError is a command line that parsed but does not validate.
 type invalidConfigError struct {
@@ -84,9 +90,9 @@ func configExitCode(err error) int {
 }
 
 type rawFlags struct {
-	server, id, artifactToken, logFile *string
-	interval, longPoll, stepTimeout    *int
-	streamOutput                       *bool
+	server, id, artifactToken, logFile, proxy *string
+	interval, longPoll, stepTimeout           *int
+	streamOutput                              *bool
 }
 
 func defineFlags(fs *flag.FlagSet) *rawFlags {
@@ -115,6 +121,14 @@ func defineFlags(fs *flag.FlagSet) *rawFlags {
 	f.stepTimeout = fs.Int("step-timeout", 0,
 		"Per-step execution timeout in seconds (0 = built-in default of 180). A step exceeding it is terminated and reported as exit 124.")
 	f.logFile = registerLogFileFlag(fs)
+	// BEACON-19. Empty keeps Go's default (the HTTP_PROXY / HTTPS_PROXY /
+	// NO_PROXY environment), so an existing deployment is unchanged. The
+	// Windows SYSTEM PROXY is not read by the beacon — see beacon/proxy.go —
+	// which is why a service-mode beacon behind a proxy needs this flag.
+	f.proxy = fs.String("proxy", "",
+		"Proxy for reaching SimCore: an http://, https:// or socks5:// URL, or 'direct' to never use one "+
+			"(env: "+agentProxyEnv+"). Empty uses HTTP_PROXY / HTTPS_PROXY / NO_PROXY. "+
+			"The Windows system proxy (WinINET/WinHTTP, PAC) is NOT read.")
 	return f
 }
 
@@ -149,6 +163,16 @@ func parseConfig(args []string, getenv func(string) string) (beaconConfig, error
 	if token == "" {
 		token = getenv("CORTEXSIM_ARTIFACT_TOKEN")
 	}
+	proxy := *f.proxy
+	if proxy == "" {
+		proxy = getenv(agentProxyEnv)
+	}
+	if _, _, err := beacon.ParseProxySpec(proxy); err != nil {
+		// The value is not echoed: a proxy URL can carry credentials, and this
+		// message reaches the console and the service log.
+		return beaconConfig{}, &invalidConfigError{msg: "--proxy (or " + agentProxyEnv + ") is not usable: " +
+			err.Error() + " — give an http://, https:// or socks5:// proxy URL, or 'direct'"}
+	}
 	return beaconConfig{
 		server:        *f.server,
 		id:            *f.id,
@@ -158,6 +182,7 @@ func parseConfig(args []string, getenv func(string) string) (beaconConfig, error
 		stepTimeout:   time.Duration(*f.stepTimeout) * time.Second,
 		artifactToken: token,
 		logFile:       *f.logFile,
+		proxy:         proxy,
 	}, nil
 }
 
@@ -297,6 +322,16 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 	// runs before client.Run — has to be able to see it, or a stop during a
 	// blocked registration waits out the 30 s HTTP timeout.
 	client.BindShutdown(ctx)
+	// BEACON-19: apply --proxy, then say which route to SimCore this beacon
+	// uses — and, on Windows, that the system proxy is not consulted — where a
+	// DC whose agent never appeared will look: the first lines of the log.
+	if err := client.SetProxy(cfg.proxy); err != nil {
+		log.Printf("ERROR: --proxy is not usable: %v", err)
+		return 1
+	}
+	for _, line := range client.ProxyStartupLines(runtime.GOOS) {
+		log.Print(line)
+	}
 	client.LongPollTimeout = cfg.longPoll
 	client.StreamOutput = cfg.streamOutput
 	if cfg.stepTimeout > 0 {

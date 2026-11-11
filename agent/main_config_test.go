@@ -33,6 +33,7 @@ func TestParseConfigCarriesEveryFlag(t *testing.T) {
 		"--server", "http://simcore:8888", "--id", "h", "--interval", "3",
 		"--long-poll", "25", "--stream-output", "--step-timeout", "600",
 		"--artifact-token", "tok-flag", "--log-file", `C:\logs\b.log`,
+		"--proxy", "http://proxy.corp.example:8080",
 	}, noEnv)
 	if err != nil {
 		t.Fatalf("parseConfig: %v", err)
@@ -41,6 +42,7 @@ func TestParseConfigCarriesEveryFlag(t *testing.T) {
 		server: "http://simcore:8888", id: "h", interval: 3 * time.Second,
 		longPoll: 25, streamOutput: true, stepTimeout: 600 * time.Second,
 		artifactToken: "tok-flag", logFile: `C:\logs\b.log`,
+		proxy: "http://proxy.corp.example:8080",
 	}
 	if cfg != want {
 		t.Errorf("cfg = %+v, want %+v", cfg, want)
@@ -105,6 +107,68 @@ func TestParseConfigHelpExitsZero(t *testing.T) {
 	}
 	if got := configExitCode(err); got != 0 {
 		t.Errorf("-h exit code = %d, want 0", got)
+	}
+}
+
+// BEACON-19. The beacon's HTTP clients took their proxy from HTTP(S)_PROXY
+// alone. A LocalSystem service has no user environment, and the Windows system
+// proxy the installer's Invoke-WebRequest honours is not read — so the only way
+// to give a service-mode beacon a proxy was a machine-wide environment variable.
+// --proxy (and CORTEXSIM_AGENT_PROXY) say it on the command line the installer
+// writes into the service.
+func TestParseConfigAcceptsAProxy(t *testing.T) {
+	for _, args := range [][]string{
+		{"--id", "h", "--proxy", "http://proxy.corp.example:8080"},
+		{"--id", "h", "--proxy", "direct"},
+	} {
+		if _, err := parseConfig(args, noEnv); err != nil {
+			t.Errorf("parseConfig(%v) = %v — the beacon cannot be told which proxy to use", args, err)
+		}
+	}
+}
+
+func TestParseConfigProxyEnvFallbackAndValidation(t *testing.T) {
+	env := func(k string) string {
+		if k == "CORTEXSIM_AGENT_PROXY" {
+			return "http://env-proxy:3128"
+		}
+		return ""
+	}
+	cfg, err := parseConfig([]string{"--id", "h"}, env)
+	if err != nil || cfg.proxy != "http://env-proxy:3128" {
+		t.Errorf("CORTEXSIM_AGENT_PROXY not used: cfg=%+v err=%v", cfg, err)
+	}
+	cfg, err = parseConfig([]string{"--id", "h", "--proxy", "direct"}, env)
+	if err != nil || cfg.proxy != "direct" {
+		t.Errorf("--proxy must beat the env: cfg=%+v err=%v", cfg, err)
+	}
+
+	// A value that cannot be used is a validation error (exit 1) that says what
+	// is accepted and does not repeat the value — it may carry a password.
+	_, err = parseConfig([]string{"--id", "h", "--proxy", "ftp://dc:hunter2@proxy.corp.example"}, noEnv)
+	if err == nil {
+		t.Fatal("an unusable --proxy was accepted")
+	}
+	if got := configExitCode(err); got != 1 {
+		t.Errorf("exit code = %d, want 1", got)
+	}
+	if !strings.Contains(err.Error(), "--proxy") || !strings.Contains(err.Error(), "direct") {
+		t.Errorf("the error does not say what --proxy accepts: %v", err)
+	}
+	if strings.Contains(err.Error(), "hunter2") {
+		t.Errorf("the error repeats the proxy password: %v", err)
+	}
+}
+
+// The usage text is the only documentation on the endpoint: it must say the
+// flag exists and that the Windows system proxy is not read.
+func TestUsageListsProxyFlag(t *testing.T) {
+	var b strings.Builder
+	printUsage(&b)
+	for _, want := range []string{"-proxy", "CORTEXSIM_AGENT_PROXY", "direct", "NOT read"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("usage does not mention %q:\n%s", want, b.String())
+		}
 	}
 }
 

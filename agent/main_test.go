@@ -146,6 +146,76 @@ func TestRunBeaconRegistersThenReturnsOnCancel(t *testing.T) {
 	}
 }
 
+// syncBuffer is a goroutine-safe log sink for the tests below.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// TestRunBeaconLogsItsRouteToSimCore (BEACON-19): the proxy decision is in the
+// startup log — the first place a DC looks when an agent never appears — and
+// --proxy is applied before the first request.
+func TestRunBeaconLogsItsRouteToSimCore(t *testing.T) {
+	t.Setenv("CORTEXSIM_STAGE_ROOT", t.TempDir())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// "SimCore" here is reachable only THROUGH this server acting as a proxy:
+	// the beacon's server URL does not resolve.
+	var viaProxy sync.Map
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		viaProxy.Store(r.Method+" "+r.URL.String(), true)
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/tasks") {
+			cancel()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"task":null}`))
+	}))
+	defer proxy.Close()
+
+	var logged syncBuffer
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	defer log.SetOutput(prev)
+
+	done := make(chan int, 1)
+	go func() {
+		done <- runBeacon(ctx, beaconConfig{server: "http://simcore.lab.invalid:8888", id: "svc-test-03",
+			interval: 20 * time.Millisecond, proxy: proxy.URL})
+	}()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Errorf("runBeacon returned %d, want 0", code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("runBeacon did not return")
+	}
+
+	if _, ok := viaProxy.Load("POST http://simcore.lab.invalid:8888/api/agents/register"); !ok {
+		t.Error("the registration did not go through --proxy")
+	}
+	out := logged.String()
+	if !strings.Contains(out, "proxy: SimCore (http://simcore.lab.invalid:8888) is reached through "+proxy.URL) {
+		t.Errorf("the startup log does not state the route to SimCore:\n%s", out)
+	}
+	if regAt, proxyAt := strings.Index(out, "registering —"), strings.Index(out, "proxy: SimCore"); regAt < 0 || proxyAt < 0 || proxyAt > regAt {
+		t.Errorf("the route must be logged before the first request (proxy line at %d, registering at %d)", proxyAt, regAt)
+	}
+}
+
 // TestRunBeacon_AStopDuringABlockedRegistrationReturnsAtOnce (RG-AGENT-05).
 // SimCore accepts the connection and never answers — an address a firewall
 // silently drops looks the same from here. The stop (SIGTERM on the console
