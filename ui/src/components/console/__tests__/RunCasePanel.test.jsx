@@ -8,7 +8,7 @@
 import React from 'react'
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
-import RunCasePanel, { CASE_DISCLAIMER } from '../RunCasePanel.jsx'
+import RunCasePanel, { CASE_DISCLAIMER, safeXdrUrl } from '../RunCasePanel.jsx'
 
 afterEach(cleanup)
 
@@ -91,5 +91,32 @@ describe('RunCasePanel', () => {
   it('never uses detection-verdict chip classes', () => {
     const { container } = render(<RunCasePanel ledger={LEDGER} />)
     expect(container.querySelector('.chip--detected, .chip--missed')).toBeNull()
+  })
+
+  it.each([
+    'https://a.xdr.paloaltonetworks.com/x) [click](http://evil.example/',
+    'https://a.xdr.paloaltonetworks.com/x\n\n# Injected',
+    'https://evil.example\\@a.xdr.paloaltonetworks.com/x',
+    'https://u:p@a.xdr.paloaltonetworks.com/x',
+    'https://a.xdr.paloaltonetworks.com:8443/x',
+    'https://evilpaloaltonetworks.com/x',
+  ])('withholds hostile xdr_url %j', (url) => {
+    expect(safeXdrUrl(url)).toBeNull()
+    render(<RunCasePanel ledger={{ ...LEDGER, cases: [{ ...LEDGER.cases[0], xdr_url: url }] }} />)
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it.each(['merge_class', 'cases', 'code'])('ledger missing %s renders unreadable', (key) => {
+    const led = { ...LEDGER }
+    delete led[key]
+    render(<RunCasePanel ledger={led} />)
+    expect(screen.getByTestId('run-case-unreadable')).toBeTruthy()
+    expect(screen.getByText(CASE_DISCLAIMER)).toBeTruthy()
+    expect(screen.queryAllByTestId('run-case-row')).toHaveLength(0)
+  })
+
+  it('ledger with wrong-typed cases renders unreadable', () => {
+    render(<RunCasePanel ledger={{ ...LEDGER, cases: 'oops' }} />)
+    expect(screen.getByTestId('run-case-unreadable')).toBeTruthy()
   })
 })

@@ -73,11 +73,13 @@ def test_markdown_case_section_has_disclaimer_verbatim(client, session_factory):
 def test_markdown_lists_each_case_with_closed_by_and_link(client, session_factory):
     _seed(session_factory, LEDGER)
     text = _md(client)
-    assert "socfw_auto_triage" in text and "open" in text
+    row900 = [l for l in text.splitlines() if l.startswith("| 900 |")]
+    row901 = [l for l in text.splitlines() if l.startswith("| 901 |")]
+    assert len(row900) == 1 and "| socfw_auto_triage |" in row900[0]
+    assert len(row901) == 1 and "| open |" in row901[0]
     assert "https://acme.xdr.us.paloaltonetworks.com/incidents/900" in text
     # A tenant-supplied URL that is not https on paloaltonetworks.com is not a link.
     assert "](http://evil.example.com/x)" not in text
-    assert "901" in text
 
 
 def test_markdown_shows_degraded_code_and_failed_issue_read(client, session_factory):
@@ -100,3 +102,54 @@ def test_json_report_includes_case_ledger(client, session_factory):
     _seed(session_factory, LEDGER)
     body = client.get("/api/runs/r1/report?format=json").json()
     assert body["case_ledger"]["merge_class"] == "SPLIT_SEALED"
+
+
+INJECTIONS = [
+    "https://a.xdr.paloaltonetworks.com/x) [click](http://evil.example/",
+    "https://a.xdr.paloaltonetworks.com/x\n\n# Injected",
+    "https://evil.example\\@a.xdr.paloaltonetworks.com/x",
+    "https://u:p@a.xdr.paloaltonetworks.com/x",
+    "https://a.xdr.paloaltonetworks.com:8443/x",
+    "https://a.xdr.paloaltonetworks.com/x`y",
+    "https://evilpaloaltonetworks.com/x",
+]
+
+
+@pytest.mark.parametrize("url", INJECTIONS)
+def test_hostile_xdr_url_is_withheld(client, session_factory, url):
+    led = dict(LEDGER, cases=[dict(LEDGER["cases"][0], xdr_url=url)])
+    _seed(session_factory, led)
+    text = _md(client)
+    assert "[click]" not in text and "\n# Injected" not in text
+    assert "](http" not in text and "[open](" not in text
+    rows = [l for l in text.splitlines() if l.startswith("| 900 |")]
+    assert len(rows) == 1 and rows[0].endswith("(invalid link withheld) |")
+    assert rows[0].count("|") == 7
+
+
+def test_valid_url_is_reserialised_link(client, session_factory):
+    _seed(session_factory, LEDGER)
+    assert "[open](https://acme.xdr.us.paloaltonetworks.com/incidents/900)" in _md(client)
+
+
+def test_hostile_case_id_and_status_cannot_break_row(client, session_factory):
+    c = dict(LEDGER["cases"][0], case_id="9|0`0\n# H", status="a|b\n- x", closed_by="x`y")
+    _seed(session_factory, dict(LEDGER, cases=[c]))
+    text = _md(client)
+    assert "\n# H" not in text and "\n- x" not in text
+    row = [l for l in text.splitlines() if l.startswith("| 9")][0]
+    assert row.replace("\\|", "").count("|") == 7
+
+
+@pytest.mark.parametrize("missing", ["merge_class", "cases", "code"])
+def test_ledger_missing_required_key_is_unreadable(client, session_factory, missing):
+    led = {k: v for k, v in LEDGER.items() if k != missing}
+    _seed(session_factory, led)
+    text = _md(client)
+    assert "Ledger unreadable" in text and CASE_DISCLAIMER in text
+    assert "Case merge" not in text
+
+
+def test_ledger_wrong_type_is_unreadable(client, session_factory):
+    _seed(session_factory, dict(LEDGER, cases="oops"))
+    assert "Ledger unreadable" in _md(client)

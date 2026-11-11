@@ -12,17 +12,34 @@ import React from 'react'
 export const CASE_DISCLAIMER =
   'Tenant disposition is shown for context. It is not detection evidence.'
 
-/** xdr_url comes from the tenant: link only https on *.paloaltonetworks.com. */
+/**
+ * xdr_url comes from the tenant: link only plain https on paloaltonetworks.com.
+ * Mirrors the backend (core/api/runs.py::_safe_xdr_url): whitespace, control
+ * characters, backslash, markup metacharacters, userinfo and a port all reject
+ * (`new URL` alone would accept a backslash and read userinfo past it).
+ */
 export function safeXdrUrl(url) {
-  if (typeof url !== 'string') return null
+  if (typeof url !== 'string' || !url) return null
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0020\u007f\\()<>`|[\]"']/.test(url)) return null
   try {
     const u = new URL(url)
-    return u.protocol === 'https:' && u.hostname.toLowerCase().endsWith('.paloaltonetworks.com')
-      ? url
-      : null
+    const host = u.hostname.toLowerCase()
+    if (u.protocol !== 'https:' || u.port || u.username || u.password) return null
+    if (host !== 'paloaltonetworks.com' && !host.endsWith('.paloaltonetworks.com')) return null
+    return u.href
   } catch {
     return null
   }
+}
+
+/** A stored ledger missing a required key (or with the wrong type) is degraded. */
+export function ledgerUnreadableReason(l) {
+  if (!l || typeof l !== 'object' || Array.isArray(l)) return 'stored ledger is not an object'
+  if (typeof l.merge_class !== 'string' || !l.merge_class) return 'merge_class missing or not a string'
+  if (!Array.isArray(l.cases)) return 'cases missing or not a list'
+  if (typeof l.code !== 'string' || !l.code) return 'code missing or not a string'
+  return null
 }
 
 export default function RunCasePanel({ ledger = null }) {
@@ -35,7 +52,19 @@ export default function RunCasePanel({ ledger = null }) {
       </section>
     )
   }
-  const cases = Array.isArray(ledger.cases) ? ledger.cases : []
+  const unreadable = ledgerUnreadableReason(ledger)
+  if (unreadable) {
+    return (
+      <section className="run-case" aria-label="Case" data-testid="run-case">
+        <h2 className="run-case__h">Case</h2>
+        <p className="run-case__warn" role="alert" data-testid="run-case-unreadable">
+          Ledger unreadable: {unreadable}. Reconcile the run to rebuild it.
+        </p>
+        <p className="run-case__disclaimer">{CASE_DISCLAIMER}</p>
+      </section>
+    )
+  }
+  const cases = ledger.cases
   const sharedOther = cases.reduce((n, c) => n + (Number(c.issues_other) || 0), 0)
   const issueRead = ledger.issue_read
   const issueReadFailed = issueRead && typeof issueRead === 'object' && issueRead.ok === false
@@ -44,14 +73,14 @@ export default function RunCasePanel({ ledger = null }) {
     <section className="run-case" aria-label="Case" data-testid="run-case">
       <h2 className="run-case__h">Case</h2>
       <div className="run-case__merge">
-        <span className="run-case__chip mono">{ledger.merge_class || '—'}</span>
+        <span className="run-case__chip mono">{ledger.merge_class}</span>
         <span className="run-case__reason">{ledger.merge_reason || '—'}</span>
       </div>
       <p className="run-case__meta mono">
         read {ledger.read_at || '—'} · {ledger.integration || '—'} · {ledger.basis || '—'}
       </p>
 
-      {ledger.code && ledger.code !== 'CASE_LEDGER_OK' && (
+      {ledger.code !== 'CASE_LEDGER_OK' && (
         <p className="run-case__warn" role="status">
           Ledger status: <span className="mono">{ledger.code}</span>
         </p>

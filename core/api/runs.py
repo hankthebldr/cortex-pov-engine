@@ -165,19 +165,53 @@ def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
     return rows
 
 
+_XDR_HOST_SUFFIX = ".paloaltonetworks.com"
+_XDR_BAD_CHARS = set('\\()<>`|[]"\'')
+
+
 def _safe_xdr_url(url) -> Optional[str]:
-    """``xdr_url`` comes from the tenant: link it only when it is https on a
-    ``*.paloaltonetworks.com`` host, otherwise it is shown as plain text."""
-    from urllib.parse import urlsplit
-    if not isinstance(url, str):
+    """``xdr_url`` comes from the tenant: link it only when it is plain https on
+    a ``paloaltonetworks.com`` host. Whitespace, control characters, backslash,
+    markdown/HTML metacharacters, userinfo and an explicit port all reject; the
+    emitted string is re-serialised from the validated parts."""
+    from urllib.parse import urlsplit, urlunsplit
+    if not isinstance(url, str) or not url:
+        return None
+    if any(ord(ch) <= 32 or ord(ch) == 127 or ch in _XDR_BAD_CHARS for ch in url):
         return None
     try:
         parts = urlsplit(url)
         host = (parts.hostname or "").lower()
+        port = parts.port
     except ValueError:
         return None
-    if parts.scheme == "https" and host.endswith(".paloaltonetworks.com"):
-        return url
+    if parts.scheme != "https" or port is not None or "@" in parts.netloc:
+        return None
+    if host != _XDR_HOST_SUFFIX[1:] and not host.endswith(_XDR_HOST_SUFFIX):
+        return None
+    if parts.netloc.lower() != host:
+        return None
+    return urlunsplit(parts)
+
+
+def _md_cell(value) -> str:
+    """Escape a tenant-derived value for a markdown table cell / inline text."""
+    text = "" if value is None else str(value)
+    text = "".join(" " if (ord(ch) < 32 or ord(ch) == 127) else ch for ch in text)
+    return text.replace("\\", "\\\\").replace("|", "\\|").replace("`", "'")
+
+
+def ledger_unreadable_reason(led) -> Optional[str]:
+    """A stored ledger missing a required key (or with the wrong type) is
+    degraded, never rendered as a healthy-looking section."""
+    if not isinstance(led, dict):
+        return "stored ledger is not an object"
+    if not isinstance(led.get("merge_class"), str) or not led["merge_class"]:
+        return "merge_class missing or not a string"
+    if not isinstance(led.get("cases"), list):
+        return "cases missing or not a list"
+    if not isinstance(led.get("code"), str) or not led["code"]:
+        return "code missing or not a string"
     return None
 
 
@@ -186,39 +220,51 @@ def _case_section(run: Run) -> list[str]:
 
     Disposition is context, never detection evidence: nothing here is a
     detected/missed claim, and the fixed disclaimer is always rendered.
+    Every tenant-derived string is escaped before it reaches the document.
     """
     out = ["## Case", ""]
-    led = run.case_ledger if isinstance(run.case_ledger, dict) else None
+    led = run.case_ledger
     if led is None:
         out += ["Not read yet — reconcile the run.", "", f"*{CASE_DISCLAIMER}*", ""]
         return out
-    out.append(f"**Case merge:** `{led.get('merge_class') or '—'}` — {led.get('merge_reason') or '—'}")
+    bad = ledger_unreadable_reason(led)
+    if bad:
+        out += [f"> Ledger unreadable: {bad}. Reconcile the run to rebuild it.", "",
+                f"*{CASE_DISCLAIMER}*", ""]
+        return out
+    out.append(f"**Case merge:** `{_md_cell(led['merge_class'])}` — {_md_cell(led.get('merge_reason') or '—')}")
     out.append("")
-    out.append(f"Read at {led.get('read_at') or '—'} from `{led.get('integration') or '—'}` "
-               f"(basis: {led.get('basis') or '—'}).")
+    out.append(f"Read at {_md_cell(led.get('read_at') or '—')} from `{_md_cell(led.get('integration') or '—')}` "
+               f"(basis: {_md_cell(led.get('basis') or '—')}).")
     out.append("")
-    if led.get("code") and led.get("code") != "CASE_LEDGER_OK":
-        out += [f"> Ledger status: `{led['code']}`", ""]
+    if led["code"] != "CASE_LEDGER_OK":
+        out += [f"> Ledger status: `{_md_cell(led['code'])}`", ""]
     ir = led.get("issue_read")
     if isinstance(ir, dict) and not ir.get("ok", True):
-        out += [f"> Issue-status read failed: `{ir.get('code') or '—'}` — "
-                f"{ir.get('remediation') or 'no remediation recorded'}", ""]
-    cases = led.get("cases") or []
+        out += [f"> Issue-status read failed: `{_md_cell(ir.get('code') or '—')}` — "
+                f"{_md_cell(ir.get('remediation') or 'no remediation recorded')}", ""]
+    cases = [c for c in led["cases"] if isinstance(c, dict)]
     if cases:
         out.append("| Case | Status | Closed by | Sealed | Issues (this run / other) | Link |")
         out.append("|------|--------|-----------|--------|---------------------------|------|")
         for c in cases:
             url = c.get("xdr_url")
             safe = _safe_xdr_url(url)
-            link = f"[open]({safe})" if safe else (f"`{url}`" if url else "—")
+            if safe:
+                link = f"[open]({safe})"
+            elif url:
+                link = "(invalid link withheld)"
+            else:
+                link = "—"
             out.append(
-                f"| {c.get('case_id')} | {c.get('status') or '—'} | {c.get('closed_by') or '—'} | "
+                f"| {_md_cell(c.get('case_id'))} | {_md_cell(c.get('status') or '—')} | "
+                f"{_md_cell(c.get('closed_by') or '—')} | "
                 f"{'yes' if c.get('sealed') else 'no'} | "
-                f"{c.get('issues_from_run', 0)} / {c.get('issues_other', 0)} | {link} |"
+                f"{_md_cell(c.get('issues_from_run', 0))} / {_md_cell(c.get('issues_other', 0))} | {link} |"
             )
         out.append("")
     if led.get("shared_with_other_runs"):
-        other = sum(int(c.get("issues_other") or 0) for c in cases)
+        other = sum(c.get("issues_other") or 0 for c in cases if isinstance(c.get("issues_other") or 0, int))
         out += [f"Shared with other runs: {other} issues from other runs sit in these cases.", ""]
     out += [f"*{CASE_DISCLAIMER}*", ""]
     return out
