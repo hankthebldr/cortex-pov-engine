@@ -859,6 +859,39 @@ measured value.
 > The working route for both kinds is `POST /api/connectors/{kind}/preflight`.
 > See `ui/src/components/console/ReadinessView.jsx::TenantRow.runPreflight`.
 
+### 1.16 Dataset prerequisites (`core/api/prerequisites.py`, mounted before the scenarios router)
+
+Added 2026-11-10 (POV content pack, phase 1). Read-only: local files and the
+scenario table only, no outbound call; the scenario route carries
+`tenant_verified: 0`. Full reference:
+[`dataset-requirements.md`](dataset-requirements.md).
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/prerequisites/datasets` | The dataset requirement registry joined to the cards that read each dataset | — | `{registry_loaded, path, count, datasets[], unregistered[]}`, each row with `cards[]` and `read_by[]`; 500 `DATASET_REGISTRY_MALFORMED`, 500 `CARD_SHAPE_UNRECOGNISED` |
+| GET | `/api/scenarios/{scenario_id}/prerequisites` | What one scenario needs on the Cortex and source side, derived from the cards it cites | — | `{scenario_id, registry_loaded, tenant_verified, write_path, cards[], datasets[], summary, notes[]}`, each dataset row with `read_by[]`; 404 `SCENARIO_NOT_FOUND`, 500 `DATASET_REGISTRY_MALFORMED`, 500 `CARD_SHAPE_UNRECOGNISED` |
+| GET | `/api/scenarios/{scenario_id}/query-library` | The cited cards' queries as paste-ready text | query: `purpose` (comma-separated from `hunt`, `investigation`, `validation`, `metric`; default `hunt,investigation`) | `text/plain; charset=utf-8`, non-query lines as `//` comments; 422 `PURPOSE_UNRECOGNISED` (checked first), 404 `SCENARIO_NOT_FOUND`, 500 `CARD_SHAPE_UNRECOGNISED` |
+
+- **Error shape differs from the older scenario routes.** These three return the
+  error object at the top level, `{"error", "code", "detail"}`. The scenario
+  routes in section 1.2 nest it under `"detail"`.
+- An absent registry answers 200 with `registry_loaded: false` (and a
+  `REGISTRY_ABSENT` note on the scenario route). A registry that exists but is
+  malformed answers a structured 500.
+- A card reads a dataset through `xql_queries[].dataset` or a `dataset =` /
+  `preset =` anchor in `biocs[]` / `abiocs[]` / `correlation_rules[]` logic;
+  `read_by` lists which of those four kinds did.
+- Derivation note codes: `NO_CARD_BINDING`, `DETECTION_UNBOUND`, `CARD_NOT_FOUND`,
+  `CARD_DECLARES_NO_QUERY`, `DATASET_UNDECLARED`, `UNREGISTERED_DATASET`,
+  `REGISTRY_ABSENT`. Row states are `confirmed in a tenant` and `from
+  documentation`; the response field for emulation is `can_be_emulated_by`.
+- `/api/health` gains a `dataset_requirements` component (degraded codes
+  `DATASET_REGISTRY_ABSENT`, `DATASET_REGISTRY_MALFORMED`, `DATASETS_UNREGISTERED`,
+  `CARD_SHAPE_UNRECOGNISED`). Boot refuses an absent-or-malformed registry or an
+  unregistered card dataset only when `CORTEXSIM_STRICT_DATASETS=true`
+  (default `false`).
+- Route count: this branch adds 3 routes.
+
 **Still undocumented in this table:** `/api/xsiam` (the ~116-operation read-only
 Cortex operation catalog) and the `/api/runs/*` storyline + causality routes.
 Both are covered by their own design docs.

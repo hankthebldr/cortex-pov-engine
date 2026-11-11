@@ -1,0 +1,436 @@
+# Dataset requirement registry (loaded by core/engine/dataset_requirements.py).
+#
+# One entry per dataset a TTP card reads: detections.xql_queries[].dataset, or a
+# `dataset =` / `preset =` anchor in a biocs[] / abiocs[] / correlation_rules[] logic.
+# For each: the product that emits the records, what must exist on the Cortex
+# side, what the source product must be configured to emit, and which EAL
+# plugins can stand in for the source in a lab.
+#
+# Every cortex_side name is null until someone reads the exact name in a
+# tenant. Do not write a marketplace pack or data-source name from memory.
+# Every verified block is empty: nothing here has been confirmed in a tenant.
+# A verified row needs all three of by/on/how. Quote the "on" key: bare, YAML
+# reads it as the boolean true. Quote the date too ("on": "2026-11-12"), or
+# YAML reads it as a date; the loader rejects both.
+# emulated_by lists a plugin only when its code or Meta names that dataset as
+# the one it posts to.
+
+ad_audit:
+  produced_by: microsoft-windows
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: microsoft-windows
+      requirement: log_forwarding
+      detail: "The cards read domain controller events 4768 and 4662 (event_id, result_code, object_properties); which product emits this dataset and how it is onboarded are not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+ai_spm_findings:
+  produced_by: cortex-cloud
+  cortex_side:
+    - kind: built_in
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cortex-cloud
+      requirement: api_integration
+      detail: "The cloud accounts that host the AI services are onboarded to Cortex Cloud so AI-SPM scans run against them."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+asm_findings:
+  produced_by: cortex-xpanse
+  cortex_side:
+    - kind: built_in
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cortex-xpanse
+      requirement: asset_scope_configured
+      detail: "Findings exist only for assets attributed to the organisation's configured scope, so the lab's public addresses must be in that scope; how attribution is configured is not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+cisco_asa_raw:
+  produced_by: cisco-asa
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cisco-asa
+      requirement: log_forwarding
+      detail: "The Cisco ASA or FTD appliance forwards its syslog to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+cloud_audit:
+  produced_by: cloud-provider-audit
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cloud-provider-audit
+      requirement: audit_log_export
+      detail: "The one card reads AWS control-plane events (cloud_provider, event_source, event_name); whether this is a dataset distinct from cloud_audit_logs, and how it is onboarded, are not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+cloud_audit_logs:
+  produced_by: cloud-provider-audit
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cloud-provider-audit
+      requirement: audit_log_export
+      detail: "The cloud provider's control-plane audit log (AWS CloudTrail, GCP Cloud Audit Logs) is exported to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [cloud_audit_emitter, cloud_storage_compute_emitter]
+
+cortex_cloud_posture:
+  produced_by: cortex-cloud
+  cortex_side:
+    - kind: built_in
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cortex-cloud
+      requirement: api_integration
+      detail: "The cloud accounts and clusters under test are onboarded to Cortex Cloud so posture scans run against them."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+cortexsim_airs_raw:
+  produced_by: cortexsim-synthetic
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cortexsim-synthetic
+      requirement: log_forwarding
+      detail: "The cards read CortexSim AIRS probe records (event_action, owasp_id, outcome); how those records reach the tenant is not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+esxi_syslog:
+  produced_by: vmware-esxi
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: vmware-esxi
+      requirement: log_forwarding
+      detail: "The cards read ESXi syslog sshd logons and vSphere VM-creation events (event_source, event_message, hostname, source_ip, source_address, esxi_host, user_name) in BIOC and ABIOC logic; which product emits this dataset and how it is onboarded are not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+google_workspace_audit:
+  produced_by: google-workspace
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: google-workspace
+      requirement: api_integration
+      detail: "Google Workspace audit and login activity is pulled into the Cortex tenant through an API integration."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [idp_signin_emulator]
+
+ivanti_ics_raw:
+  produced_by: ivanti
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: ivanti
+      requirement: log_forwarding
+      detail: "The Ivanti Connect Secure appliance forwards its syslog to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+koi_code_scan_events:
+  produced_by: koi
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: koi
+      requirement: api_integration
+      detail: "The cards read extension and package scan fields (artifact_type, manifest_host_permissions, signature_valid); how Koi events reach the tenant is not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+kubernetes_audit_logs:
+  produced_by: kubernetes
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: kubernetes
+      requirement: audit_log_export
+      detail: "The Kubernetes API server audit log is enabled and exported to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [k8s_audit_emitter]
+
+msft_azure_ad_signin:
+  produced_by: microsoft-entra
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: microsoft-entra
+      requirement: audit_log_export
+      detail: "Microsoft Entra ID sign-in logs are exported to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [idp_signin_emulator]
+
+msft_azure_audit:
+  produced_by: cloud-provider-audit
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cloud-provider-audit
+      requirement: audit_log_export
+      detail: "The cards read Azure control-plane records (operationName, category, identity claims, including Conditional Access policy writes); how they are onboarded is not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [azure_audit_emitter]
+
+msft_o365:
+  produced_by: microsoft-365
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: microsoft-365
+      requirement: api_integration
+      detail: "Microsoft 365 email and Exchange activity is pulled into the Cortex tenant through an API integration."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [email_emitter]
+
+msft_o365_audit:
+  produced_by: microsoft-365
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: microsoft-365
+      requirement: api_integration
+      detail: "The Microsoft 365 unified audit log is pulled into the Cortex tenant through an API integration."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [m365_activity_emitter]
+
+msft_windows_security:
+  produced_by: microsoft-windows
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: microsoft-windows
+      requirement: log_forwarding
+      detail: "Windows Security event logs from the hosts under test are forwarded to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [ad_windows_emitter]
+
+network_story:
+  produced_by: cortex-xsiam
+  cortex_side:
+    - kind: built_in
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side: []
+  emulated_by: []
+
+okta_sso:
+  produced_by: okta
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: okta
+      requirement: api_integration
+      detail: "The Okta System Log is pulled into the Cortex tenant through an API integration."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [idp_signin_emulator]
+
+pan_dns:
+  produced_by: strata-ngfw
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: strata-ngfw
+      requirement: log_forwarding
+      detail: "The firewall forwards its logs to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+    - product: strata-ngfw
+      requirement: dns_security_logged
+      detail: "DNS Security is enabled on the policy the test traffic matches, so DNS queries are logged."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+pan_ngfw_traffic:
+  produced_by: strata-ngfw
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: strata-ngfw
+      requirement: log_forwarding
+      detail: "The firewall forwards its traffic logs to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+panw_ngfw_globalprotect_raw:
+  produced_by: strata-ngfw
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: strata-ngfw
+      requirement: log_forwarding
+      detail: "The firewall forwards its logs to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+    - product: strata-ngfw
+      requirement: globalprotect_logs
+      detail: "GlobalProtect portal and gateway logs are included in the forwarded log types."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [globalprotect_emitter]
+
+panw_ngfw_threat_raw:
+  produced_by: strata-ngfw
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: strata-ngfw
+      requirement: log_forwarding
+      detail: "The firewall forwards its threat logs to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+    - product: strata-ngfw
+      requirement: threat_profile_attached
+      detail: "A threat prevention profile is attached to the rule the test traffic matches."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [ngfw_threat_emitter]
+
+panw_ngfw_traffic_raw:
+  produced_by: strata-ngfw
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: strata-ngfw
+      requirement: log_forwarding
+      detail: "The firewall forwards its traffic logs to the Cortex tenant."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [ngfw_eal_emitter]
+
+prisma_browser_events:
+  produced_by: prisma-browser
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: prisma-browser
+      requirement: log_forwarding
+      detail: "The cards read browser actions (navigate, paste, download, extension-install, screen-capture); how Prisma Browser events reach the tenant is not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+proofpoint_tap_raw:
+  produced_by: proofpoint
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: proofpoint
+      requirement: api_integration
+      detail: "Proofpoint TAP message and click events are pulled into the Cortex tenant through an API integration."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: [email_emitter]
+
+saas_audit_logs:
+  produced_by: saas-generic
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: saas-generic
+      requirement: api_integration
+      detail: "The cards read dst_host, uri_path and oauth_scopes, an HTTP or proxy shape; which product emits this dataset and how it is onboarded are not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+saas_okta_raw:
+  produced_by: okta
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: okta
+      requirement: api_integration
+      detail: "The Okta System Log is pulled into the Cortex tenant through an API integration."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+threat_intel:
+  produced_by: cortex-xsiam
+  cortex_side:
+    - kind: built_in
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cortex-xsiam
+      requirement: api_integration
+      detail: "The dataset fills only when an indicator feed is connected; the cards read it for indicator matches. Which feed integration supplies it is not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+xdr_data:
+  produced_by: cortex-xdr-agent
+  cortex_side:
+    - kind: built_in
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: cortex-xdr-agent
+      requirement: agent_installed
+      detail: "A Cortex XDR agent is installed and connected on every host the scenario runs on."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+xsiam_incidents:
+  produced_by: cortex-xsiam
+  cortex_side:
+    - kind: built_in
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side: []
+  emulated_by: []

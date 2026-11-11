@@ -206,6 +206,7 @@ first — `make rust-dist` does both phases.
 - **Schema validation is strict.** Scenario loader validates every YAML against the Pydantic schema derived from `scenarios/_schema.yml`. Invalid files are rejected at startup.
 - **All API responses are structured JSON** — including errors: `{"error": "...", "code": "...", "detail": "..."}`.
 - **Push bundles must be self-contained** — execute on clean Ubuntu 22.04 with no SimCore dependency at runtime.
+- **Dataset prerequisites are derived from a registry, not authored per scenario.** `spec/dataset_requirements.yml` (31 datasets, one per dataset a card query reads) states what each needs on the Cortex side and the source side; `core/engine/prerequisites.py` derives a scenario's list through the cards it cites, served at `GET /api/prerequisites/datasets`, `/api/scenarios/{id}/prerequisites` and `/query-library`. An **absent registry is degraded** (200, `registry_loaded: false`, health `DATASET_REGISTRY_ABSENT`), a **malformed one raises** (structured 500; boot refuses only under `CORTEXSIM_STRICT_DATASETS=true`), and a cited card with no entry is `UNREGISTERED_DATASET`, never "no prerequisite". Rows read `from documentation` or `confirmed in a tenant`; none is confirmed, so ***tenant-verified is 0***. Reference: `docs/reference/dataset-requirements.md`.
 
 ## Scenario YAML
 

@@ -134,6 +134,14 @@ async def lifespan(app: FastAPI):
     cards_loaded = ttp_catalog.load(corpus_dir)
     logger.info("TTP catalog ready: %d detection cards", cards_loaded)
 
+    # 2a'. Dataset requirement registry vs the datasets those cards read. Needs the card
+    #      catalog loaded just above. Strict (CORTEXSIM_STRICT_DATASETS) raises on a
+    #      malformed registry or card, or an unregistered dataset; an absent registry
+    #      leaves every card dataset unregistered, so strict refuses that too. Otherwise
+    #      it only logs, and the health component reports it degraded.
+    from engine.dataset_requirements import boot_check_dataset_requirements  # noqa: PLC0415
+    boot_check_dataset_requirements(ttp_catalog.all_raw())
+
     # 2b. Load Tool Adapter catalog (Phase A — tool framework). Same
     #     warn-not-fail pattern: missing adapter packs are advisory and the
     #     scenario loader logs a warning per dangling adapter_ref.
@@ -425,6 +433,9 @@ from api.scenarios import router as scenarios_router  # noqa: E402
 # console. Registered BEFORE scenarios_router so /api/scenarios/drafts resolves
 # to this router rather than being swallowed by scenarios' /{scenario_id}.
 from api.drafts import router as drafts_router          # noqa: E402
+# Dataset prerequisites — registered BEFORE scenarios_router for the same reason as
+# drafts: /api/scenarios/{id}/prerequisites must not be swallowed by /{scenario_id}.
+from api.prerequisites import router as prerequisites_router  # noqa: E402
 from api.runs import router as runs_router              # noqa: E402
 from api.runs import compat_router as runs_compat_router  # noqa: E402
 from api.results import router as results_router        # noqa: E402
@@ -461,6 +472,7 @@ from api.payloads import router as k8s_payloads_router  # noqa: E402
 from api.payloads import shelf_router  # noqa: E402
 
 app.include_router(drafts_router, prefix="/api")
+app.include_router(prerequisites_router, prefix="/api")
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
 # GAP-API-008 — backward-compat alias for the historical singular launch path
