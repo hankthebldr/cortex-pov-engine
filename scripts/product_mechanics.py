@@ -9,7 +9,7 @@ come back as an immutable answer file. Read docs/product-mechanics/README.md.
 Every command previews by default and writes only with ``--apply``::
 
     python3 scripts/product_mechanics.py check
-    python3 scripts/product_mechanics.py render [--apply]
+    python3 scripts/product_mechanics.py render [--apply]          # LEDGER.md + FAQ.md
     python3 scripts/product_mechanics.py packet --priority P0 [--slug p0-seed] [--apply [--vault]]
     python3 scripts/product_mechanics.py ingest <answer-file.md> [--apply]
 
@@ -37,6 +37,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BASE = ROOT / "docs" / "product-mechanics"
 LEDGER = BASE / "ledger.yml"
 RENDERED = BASE / "LEDGER.md"
+RENDERED_FAQ = BASE / "FAQ.md"
 ANSWERS_DIR = BASE / "answers"
 PACKETS_DIR = BASE / "packets"
 
@@ -65,7 +66,20 @@ _Q_KEYS_OPTIONAL = {"decides", "experiment"}
 _ANSWER_KEYS = {"id", "status", "answer", "rule", "sources", "follow_ups"}
 _SOURCE_KEYS_REQUIRED = {"kind", "title", "ref", "date", "distribution"}
 _SOURCE_KEYS_OPTIONAL = {"excerpt"}
+_FAQ_KEYS_REQUIRED = {"id", "mechanism", "question", "answer", "basis", "reviewed", "see"}
+_FAQ_KEYS_OPTIONAL = {"refs"}
+#: How an FAQ answer is held. `documented` must cite a public URL in `refs`;
+#: `working_model` and `unknown` say plainly that nothing has confirmed it.
+FAQ_BASES = ("documented", "lab", "operator", "working_model", "unknown")
+_FAQ_BASIS_LABEL = {
+    "documented": "documented (public source)",
+    "lab": "lab observation",
+    "operator": "operator report",
+    "working_model": "working model, unconfirmed",
+    "unknown": "unknown",
+}
 _QID = re.compile(r"^PM-([A-Z]{3})-(\d{2})$")
+_FAQID = re.compile(r"^FAQ-([A-Z]{3})-(\d{2})$")
 _FENCE = re.compile(r"```ya?ml\s*\n(.*?)\n```", re.S)
 
 
@@ -127,7 +141,7 @@ def check_refs(text: str, where: str, root: Path = ROOT) -> None:
 
 def validate_ledger(data: Any, root: Path = ROOT) -> dict:
     _req(isinstance(data, dict), "ledger: top level must be a mapping")
-    _check_keys(data, {"schema_version", "updated", "mechanisms", "questions"}, set(), "ledger")
+    _check_keys(data, {"schema_version", "updated", "mechanisms", "questions"}, {"faq"}, "ledger")
     _req(data["schema_version"] == 1, "ledger: schema_version must be 1")
     _date(data["updated"], "ledger.updated")
 
@@ -183,6 +197,32 @@ def validate_ledger(data: Any, root: Path = ROOT) -> dict:
             _text(d["then"], f"{q['id']}.decides[{j}].then")
         if "experiment" in q:
             _text(q["experiment"], f"{q['id']}.experiment")
+
+    faq_ids: set[str] = set()
+    for i, f in enumerate(data.get("faq") or []):
+        where = f"faq[{i}]"
+        _check_keys(f, _FAQ_KEYS_REQUIRED, _FAQ_KEYS_OPTIONAL, where)
+        match = _FAQID.match(str(f["id"]))
+        _req(match is not None, f"{where}.id: {f['id']!r} is not FAQ-XXX-NN")
+        _req(f["id"] not in faq_ids, f"{where}.id: duplicate {f['id']}")
+        faq_ids.add(f["id"])
+        _req(f["mechanism"] in mech_ids, f"{f['id']}.mechanism: unknown {f['mechanism']!r}")
+        _req(match.group(1) == f["mechanism"], f"{f['id']}: id prefix disagrees with mechanism {f['mechanism']}")
+        _text(f["question"], f"{f['id']}.question")
+        _text(f["answer"], f"{f['id']}.answer")
+        _req(f["basis"] in FAQ_BASES, f"{f['id']}.basis: one of {FAQ_BASES}")
+        _date(f["reviewed"], f"{f['id']}.reviewed")
+        _req(isinstance(f["see"], list), f"{f['id']}.see: must be a list (empty when nothing would change it)")
+        for qid in f["see"]:
+            _req(qid in q_ids, f"{f['id']}.see: {qid!r} is not a ledger question")
+        refs = f.get("refs") or []
+        _req(isinstance(refs, list), f"{f['id']}.refs: must be a list")
+        for j, r in enumerate(refs):
+            check_refs(_text(r, f"{f['id']}.refs[{j}]"), f"{f['id']}.refs[{j}]", root)
+        # A `documented` answer that cites no public page is a working model
+        # wearing the wrong label, and a reader cannot tell the difference.
+        _req(f["basis"] != "documented" or any(str(r).startswith("https://") for r in refs),
+             f"{f['id']}: basis `documented` needs at least one https:// ref to the public page")
     return data
 
 
@@ -435,6 +475,89 @@ def render_ledger(data: dict, answers: dict[str, list[dict]], asked: dict[str, l
     return "\n".join(out).rstrip() + "\n"
 
 
+def faq_review_flags(entry: dict, answers: dict[str, list[dict]]) -> list[str]:
+    """Why an FAQ answer may be out of date: one line per reason, empty when current.
+
+    An FAQ answer is written against the questions in its ``see`` list. When one of
+    them earns an answer after the entry's ``reviewed`` date, the FAQ may now say
+    something the ledger no longer supports.
+    """
+    reviewed = _date(entry["reviewed"], entry["id"])
+    flags = []
+    for qid in entry["see"]:
+        for rec in answers.get(qid, []):
+            # TODO(henry): the review policy. Today every answer dated after the
+            # review raises a flag, including `unknown` and `internal_only`, which
+            # change nothing a reader could act on. Decide which answer statuses
+            # should flag, and whether a flagged FAQ should fail `check` (CI goes
+            # red each time the work Mac answers) or only render the warning.
+            if rec["_answered"] > reviewed:
+                flags.append(f"{qid} answered {rec['_answered']} ({rec['status']}), after this entry was reviewed")
+    return flags
+
+
+def render_faq(data: dict, answers: dict[str, list[dict]], asked: dict[str, list[str]]) -> str:
+    entries = data.get("faq") or []
+    qs = {q["id"]: q for q in data["questions"]}
+    out: list[str] = []
+    w = out.append
+    w("<!-- GENERATED by scripts/product_mechanics.py render — edit ledger.yml (`faq:`), not this file. -->")
+    w("")
+    w("# Product-mechanics FAQ")
+    w("")
+    w("Short answers to the questions a DC asks when a signal stays dark, drawn from the "
+      "[ledger](LEDGER.md). Each answer carries its **basis**. Only `documented` rests on a "
+      "public page, and a `working model` is what we believe and have not confirmed. Each "
+      "entry lists the open questions whose answers would change it, with their live status.")
+    w("")
+    if not entries:
+        w("No FAQ entries yet. Add them under `faq:` in `ledger.yml`.")
+        return "\n".join(out).rstrip() + "\n"
+    w("| id | question | basis |")
+    w("|---|---|---|")
+    for f in entries:
+        w(f"| [{f['id']}](#{f['id'].lower()}) | {_one_line(f['question']).replace('|', '/')} | "
+          f"{_FAQ_BASIS_LABEL[f['basis']]} |")
+    w("")
+    for m in data["mechanisms"]:
+        mine = [f for f in entries if f["mechanism"] == m["id"]]
+        if not mine:
+            continue
+        w(f"## {m['name']}")
+        w("")
+        for f in mine:
+            w(f"### {f['id']}")
+            w("")
+            w(f"**{_one_line(f['question'])}**")
+            w("")
+            w(f"*Basis: {_FAQ_BASIS_LABEL[f['basis']]} · reviewed {_date(f['reviewed'], f['id'])}*")
+            w("")
+            w(str(f["answer"]).strip())
+            w("")
+            if f["see"]:
+                links = []
+                for qid in f["see"]:
+                    st = effective_status(qs[qid], answers.get(qid, []), asked.get(qid, []))
+                    links.append(f"[{qid}](LEDGER.md#{qid.lower()}) ({qs[qid]['priority']}, {st})")
+                w("- **Would change if answered:** " + " · ".join(links))
+            else:
+                w("- **Would change if answered:** nothing open")
+            if f.get("refs"):
+                w("- **Sources:** " + " · ".join(
+                    r if str(r).startswith("http") else f"`{r}`" for r in f["refs"]))
+            for flag in faq_review_flags(f, answers):
+                w(f"- **Needs review:** {flag}")
+            w("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def rendered_outputs(data: dict, answers: dict[str, list[dict]],
+                     asked: dict[str, list[str]]) -> list[tuple[Path, str]]:
+    """Every generated file, paired with what it should contain right now."""
+    return [(RENDERED, render_ledger(data, answers, asked)),
+            (RENDERED_FAQ, render_faq(data, answers, asked))]
+
+
 # ── packets ─────────────────────────────────────────────────────────────────
 
 ANSWER_INSTRUCTIONS = """\
@@ -623,6 +746,13 @@ def vault_packet_status(vault: Path, packets_dir: Path = PACKETS_DIR) -> list[tu
 
 # ── commands ────────────────────────────────────────────────────────────────
 
+def _rel(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
 def _state() -> tuple[dict, dict, dict]:
     data = load_ledger()
     ids = {q["id"] for q in data["questions"]}
@@ -631,11 +761,12 @@ def _state() -> tuple[dict, dict, dict]:
 
 def cmd_check(args: argparse.Namespace) -> int:
     data, answers, asked = _state()
-    fresh = render_ledger(data, answers, asked)
-    current = RENDERED.read_text(encoding="utf-8") if RENDERED.exists() else ""
-    _req(current == fresh, f"{RENDERED.relative_to(ROOT)} is stale — run `render --apply`")
+    for path, fresh in rendered_outputs(data, answers, asked):
+        current = path.read_text(encoding="utf-8") if path.exists() else ""
+        _req(current == fresh, f"{_rel(path)} is stale — run `render --apply`")
     print(f"OK  {len(data['mechanisms'])} mechanisms · {len(data['questions'])} questions · "
-          f"{sum(len(v) for v in answers.values())} answers · {len(asked)} asked")
+          f"{sum(len(v) for v in answers.values())} answers · {len(asked)} asked · "
+          f"{len(data.get('faq') or [])} faq")
     if getattr(args, "vault", False):
         vault = vault_root()
         status = vault_packet_status(vault)
@@ -650,16 +781,15 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 def cmd_render(args: argparse.Namespace) -> int:
     data, answers, asked = _state()
-    fresh = render_ledger(data, answers, asked)
-    current = RENDERED.read_text(encoding="utf-8") if RENDERED.exists() else ""
-    if current == fresh:
-        print(f"unchanged  {RENDERED.relative_to(ROOT)}")
-        return 0
-    if not args.apply:
-        print(f"would write  {RENDERED.relative_to(ROOT)} ({len(fresh.splitlines())} lines) — rerun with --apply")
-        return 0
-    RENDERED.write_text(fresh, encoding="utf-8")
-    print(f"wrote  {RENDERED.relative_to(ROOT)}")
+    for path, fresh in rendered_outputs(data, answers, asked):
+        current = path.read_text(encoding="utf-8") if path.exists() else ""
+        if current == fresh:
+            print(f"unchanged  {_rel(path)}")
+        elif not args.apply:
+            print(f"would write  {_rel(path)} ({len(fresh.splitlines())} lines) — rerun with --apply")
+        else:
+            path.write_text(fresh, encoding="utf-8")
+            print(f"wrote  {_rel(path)}")
     return 0
 
 
@@ -747,10 +877,10 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    c = sub.add_parser("check", help="validate ledger, answers, packets; fail if LEDGER.md is stale")
+    c = sub.add_parser("check", help="validate ledger, answers, packets; fail if LEDGER.md or FAQ.md is stale")
     c.add_argument("--vault", action="store_true",
                    help="also prove every repo packet sits byte-identical in the vault outbox")
-    r = sub.add_parser("render", help="regenerate LEDGER.md")
+    r = sub.add_parser("render", help="regenerate LEDGER.md and FAQ.md")
     r.add_argument("--apply", action="store_true")
     k = sub.add_parser("packet", help="build a self-contained question packet")
     k.add_argument("--priority", nargs="+", choices=PRIORITIES)

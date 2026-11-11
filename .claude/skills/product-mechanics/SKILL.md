@@ -86,7 +86,8 @@ answer file to make it pass. Fixing it belongs on the work Mac.
 
 After ingest, update the mechanism's `known` list **only** with facts whose source is
 crossable (public doc/KB/blog, lab observation, operator report), citing it. Then turn
-each answer's `follow_ups` into new questions (ask mode).
+each answer's `follow_ups` into new questions (ask mode), and rewrite any FAQ entry that
+now renders **Needs review**.
 
 ### apply: propose generator changes from answers
 
@@ -101,6 +102,25 @@ write a **proposal**, and don't edit code in this mode. Each proposal names:
 `provisional` proposals are labelled as such. For `internal_only` questions, propose the
 lab experiment from the question's `experiment` field. Henry approves before anything is
 built, and the build then follows the repo's normal branch/Gate A flow.
+
+### faq: answer what a DC asks when a signal stays dark
+
+FAQ entries live under `faq:` in `ledger.yml` and render to `docs/product-mechanics/FAQ.md`.
+Write one when a mechanism's facts, answers or assumptions change what a DC should do
+in a POV, e.g. "why didn't my firewall session stitch?" Each entry carries:
+
+- `basis`: `documented` (needs an `https://` ref to the public page; `check` refuses it
+  otherwise) · `lab` · `operator` · `working_model` · `unknown`. Pick the weakest
+  basis that is true. An answer built from our own reading is `working_model`, even
+  when it cites a doc.
+- `see`: the question ids whose answers would change the entry. The FAQ shows their
+  live status, so a reader can tell a settled answer from a guess.
+- `reviewed`: the date you last checked the answer against the ledger. When a `see`
+  question is answered after that date, the entry renders **Needs review**; rewrite
+  it, then bump the date.
+
+Write the answer for the DC: what to check first, what CortexSim does today, and what
+is still unknown. Never more certain than its basis.
 
 ## The quality bar for a question
 
@@ -134,7 +154,7 @@ answer confirms or corrects a contrast, update it and cite the answer id.
 
 ## Done means
 
-`check` passes, `LEDGER.md` is regenerated, `pytest tests/test_product_mechanics.py`
+`check` passes, `LEDGER.md` and `FAQ.md` are regenerated, `pytest tests/test_product_mechanics.py`
 is green, and the change is committed on a topic branch with files staged by name.
 Report counts as `render` prints them, and never call a question settled because it was
 answered.
