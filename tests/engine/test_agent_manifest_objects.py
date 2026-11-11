@@ -460,3 +460,13 @@ def test_image_values_that_could_break_the_header_are_refused(bad):
     from engine.agent_manifest import validate_image
     with pytest.raises(ValueError):
         validate_image(bad)
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_agent_reaper_deletes_its_own_binding_before_its_own_role(profile):
+    """The agent reaper reuses the push script with only the wait rewritten; the
+    own-RBAC order must survive that rewrite."""
+    from tests.engine.test_push_generator_k8s import _assert_reaper_revokes_binding_before_role
+    script = _reaper(objs(profile, authorized_by="henry"))["spec"]["template"]["spec"]["containers"][0]["args"][0]
+    assert "EXPIRES_AT_EPOCH" in script  # the absolute wait replaced the relative one
+    _assert_reaper_revokes_binding_before_role(script, "cortexsim-reaper-agent")

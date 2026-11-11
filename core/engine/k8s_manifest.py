@@ -1874,9 +1874,14 @@ def _workload(
 #
 # So: the scenario's cluster-scoped objects, then the namespace (this is what
 # actually kills the workload), and only then the reaper's own grant — the
-# ClusterRole first, which makes the binding inert the moment it lands, then the
-# binding as tidy-up. If that last delete fails because the reaper just revoked
-# itself, what survives is an unbound ClusterRole that grants nothing to nobody.
+# ClusterRoleBinding FIRST, the ClusterRole LAST. Either own delete revokes the
+# permission the other needs, so at most one of them can be expected to land.
+# Binding-first means what survives is an unbound ClusterRole: it grants nothing
+# to nobody and stays inert until someone deliberately binds it. Role-first (the
+# old order, observed on kind 2026-11-10) left a binding that points at a missing
+# role, which re-arms for the reaper's ServiceAccount the moment anyone creates a
+# ClusterRole of that name. ``set -u`` without ``-e`` keeps the script going past
+# the expected Forbidden on the last line.
 _REAPER_SCRIPT = """\
 set -u
 echo "[cortexsim-reaper] sleeping ${{TTL}}s before reaping ${{NS}}"
@@ -1908,7 +1913,8 @@ def _reaper(
     cluster-wide RBAC deletion primitive.
     """
     name = f"cortexsim-reaper-{sid_lower}"
-    own = [("clusterroles", name), ("clusterrolebindings", name)]
+    # Binding first, role last: see the ORDER note on _REAPER_SCRIPT.
+    own = [("clusterrolebindings", name), ("clusterroles", name)]
     targets = cluster_scoped + own
 
     rules: list[dict[str, Any]] = []
@@ -1946,13 +1952,14 @@ def _reaper(
             "rules": rules,
         },
         {
-            # NOTE: the reaper cannot delete both its own ClusterRole and its own
-            # binding — deleting the role revokes the permission needed for the
-            # next call, so whichever goes second survives. Verified live on
-            # kind: the role went, the binding stayed. That residue is INERT (a
-            # binding referencing a nonexistent role grants nothing), so the
-            # safety goal is met; the header's ownerReferences patch is the
-            # optional way to leave nothing at all.
+            # NOTE: the reaper cannot be relied on to delete both its own
+            # binding and its own ClusterRole — the first delete revokes the
+            # permission the second needs. It deletes this binding first, so the
+            # expected residue is the unbound ClusterRole above (grants nothing).
+            # The old role-first order left this binding instead (observed on
+            # kind 2026-11-10); the new order is not yet observed in a cluster.
+            # The header's ownerReferences patch is the optional way to leave
+            # nothing at all.
             "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
             "metadata": {"name": name, "labels": dict(base)},
             "roleRef": {"apiGroup": "rbac.authorization.k8s.io",
