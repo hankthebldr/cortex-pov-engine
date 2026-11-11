@@ -238,6 +238,7 @@ describe('ComposerCanvas — Lanes lens (swimlanes by ingestion door)', () => {
       onNodesChange([{ id: 'step-01', type: 'position', dragging: false, position: { x: 40, y: BANDS.WIRE.nodeY } }])
     })
     const refusal = screen.getByTestId('canvas-refusal')
+    expect(refusal).toHaveTextContent(/^Lane not changed/)
     expect(refusal).toHaveTextContent(/lane follows what its command does/i)
     expect(refusal).toHaveTextContent(/Inspector/)
     expect(onNodeMoved).not.toHaveBeenCalled()

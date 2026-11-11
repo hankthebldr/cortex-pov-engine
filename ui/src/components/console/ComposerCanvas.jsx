@@ -189,20 +189,6 @@ function StepNode({ data, isConnectable }) {
         <span className="chain-node__row">
           <span className="chain-node__kind">{s.authored ? 'new' : 'step'}</span>
           <span className="chain-node__id mono">{s.id}</span>
-          {data.signal && (
-            <span
-              className={'pov-chip-plane chain-node__doorbadge'
-                + (data.signal.unplaced ? ' chain-node__doorbadge--unplaced' : '')}
-              /* `chain-door-` NOT `chain-step-door-`: the door badge now shows on
-                 every lens, and several tests scan `[data-testid^="chain-step-"]`
-                 to pin step-card DOM order — reusing that prefix would make a
-                 badge read as a spurious extra "step". */
-              data-testid={`chain-door-${s.id}`}
-              title={doorTitle(data.signal)}
-            >
-              {signalBadge(data.signal)}
-            </span>
-          )}
           {data.channelKind === 'eal' ? (
             <span
               className="chip chip--signal chain-node__chanbadge"
@@ -245,6 +231,24 @@ function StepNode({ data, isConnectable }) {
             {String(data.order).padStart(2, '0')}
           </span>
         </span>
+        {/* The door badge has its own line: in the header row the longest path
+            ("AGT → COLLECTOR") needed 208px of a 192px row and covered the id. */}
+        {data.signal && (
+          <span className="chain-node__doorline">
+            <span
+              className={'pov-chip-plane chain-node__doorbadge'
+                + (data.signal.unplaced ? ' chain-node__doorbadge--unplaced' : '')}
+              /* `chain-door-` NOT `chain-step-door-`: the door badge shows on
+                 every lens, and several tests scan `[data-testid^="chain-step-"]`
+                 to pin step-card DOM order — reusing that prefix would make a
+                 badge read as a spurious extra "step". */
+              data-testid={`chain-door-${s.id}`}
+              title={doorTitle(data.signal)}
+            >
+              {signalBadge(data.signal)}
+            </span>
+          </span>
+        )}
         <span className="chain-node__name">{s.name}</span>
         <span className="chain-node__sub mono">
           {s.technique || 'no technique'} · {s.identity || 'no identity'}
@@ -772,7 +776,7 @@ const DesignGraph = forwardRef(function DesignGraph({
           setLiveNodes((nds) => nds.map((n) => (
             n.id === c.id ? { ...n, position: { x: before.x, y: before.y } } : n
           )))
-          if (laneAtY(c.position.y) !== before.lane) setRefusal({ reason: LANE_REFUSAL })
+          if (laneAtY(c.position.y) !== before.lane) setRefusal({ title: 'Lane not changed', reason: LANE_REFUSAL })
           continue
         }
         if (c.id === CGO_ID || c.id === PROOF_ID) continue
@@ -1089,7 +1093,7 @@ const DesignGraph = forwardRef(function DesignGraph({
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
       {refusal && (
         <div className="canvas-refusal" data-testid="canvas-refusal" role="status" aria-live="polite">
-          <strong>Edge refused</strong> — {refusal.reason}
+          <strong>{refusal.title || 'Edge refused'}</strong> — {refusal.reason}
           <button type="button" onClick={() => setRefusal(null)} aria-label="Dismiss">×</button>
         </div>
       )}
