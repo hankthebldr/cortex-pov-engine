@@ -125,6 +125,58 @@ def test_known_fact_with_an_internal_source_kind_raises():
         pm.validate_ledger(data)
 
 
+# ── faq ─────────────────────────────────────────────────────────────────────
+
+def _faq(**over) -> dict:
+    entry = {"id": "FAQ-STI-01", "mechanism": "STI", "question": "Why no stitch?",
+             "answer": "The 5-tuple must agree.", "basis": "operator", "reviewed": "2026-11-05",
+             "see": ["PM-STI-01"]}
+    entry.update(over)
+    return entry
+
+
+def test_faq_renders_each_answer_with_its_basis_and_the_live_status_of_its_questions():
+    data = pm.validate_ledger(dict(_ledger(), faq=[_faq()]))
+    text = pm.render_faq(data, {}, {"PM-STI-01": ["PMQ-x"]})
+    assert "### FAQ-STI-01" in text and "*Basis: operator report" in text
+    assert "[PM-STI-01](LEDGER.md#pm-sti-01) (P0, asked)" in text
+    assert "Needs review" not in text
+
+
+def test_faq_pointing_at_a_question_that_does_not_exist_raises():
+    with pytest.raises(pm.LedgerError, match="not a ledger question"):
+        pm.validate_ledger(dict(_ledger(), faq=[_faq(see=["PM-STI-99"])]))
+
+
+def test_documented_faq_without_a_public_url_raises():
+    with pytest.raises(pm.LedgerError, match="needs at least one https://"):
+        pm.validate_ledger(dict(_ledger(), faq=[_faq(basis="documented", refs=["core"])]))
+    pm.validate_ledger(dict(_ledger(), faq=[_faq(basis="documented",
+                                                 refs=["https://cortex-docs.paloaltonetworks.com/x"])]))
+
+
+def test_faq_id_prefix_must_match_mechanism():
+    with pytest.raises(pm.LedgerError, match="disagrees"):
+        pm.validate_ledger(dict(_ledger(), faq=[_faq(mechanism="INC")]))
+
+
+def test_faq_is_flagged_when_a_question_it_rests_on_is_answered_after_review():
+    data = pm.validate_ledger(dict(_ledger(), faq=[_faq()]))
+    recs = [dict(r, _answered="2026-11-06")
+            for r in pm.parse_answer_file(_answer_file(PUBLIC_ANSWER), IDS)["answers"]]
+    text = pm.render_faq(data, {"PM-STI-01": recs}, {})
+    assert "**Needs review:** PM-STI-01 answered 2026-11-06" in text
+    older = pm.validate_ledger(dict(_ledger(), faq=[_faq(reviewed="2026-11-07")]))
+    assert "Needs review" not in pm.render_faq(older, {"PM-STI-01": recs}, {})
+
+
+def test_stale_faq_fails_check(tmp_path, monkeypatch):
+    stale = tmp_path / "FAQ.md"
+    stale.write_text("hand-edited\n", encoding="utf-8")
+    monkeypatch.setattr(pm, "RENDERED_FAQ", stale)
+    assert pm.main(["check"]) == 1
+
+
 # ── answers: the confidentiality boundary ───────────────────────────────────
 
 def test_public_answer_file_parses():
