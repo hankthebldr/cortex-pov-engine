@@ -983,6 +983,9 @@ class EalCampaignRun(Base):
     operator: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     step_results: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Where each collector step was sent and why (eal_simulator.targets), as
+    # resolved at launch. Never holds a key. NULL on runs from before targets.
+    collector_resolution: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     campaign_rel: Mapped["EalCampaign"] = relationship(
         "EalCampaign", back_populates="runs", foreign_keys=[campaign_id],
@@ -1000,6 +1003,7 @@ class EalCampaignRun(Base):
             "operator": self.operator,
             "step_results": self.step_results,
             "error": self.error,
+            "collector_resolution": self.collector_resolution,
         }
 
 

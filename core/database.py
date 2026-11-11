@@ -176,6 +176,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_composer_channel_columns)
         await conn.run_sync(_migrate_run_delivery_columns)
         await conn.run_sync(_migrate_prevention_columns)
+        await conn.run_sync(_migrate_eal_run_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -399,6 +400,22 @@ def _migrate_run_delivery_columns(connection) -> None:
     existing = {col["name"] for col in inspector.get_columns("runs")}
     if "delivered_at" not in existing:
         connection.execute(text("ALTER TABLE runs ADD COLUMN delivered_at DATETIME"))
+
+
+def _migrate_eal_run_columns(connection) -> None:
+    """Add ``eal_campaign_runs.collector_resolution`` if absent — same
+    ``create_all``-never-adds-a-COLUMN rationale as the helpers above. Nullable:
+    a run from before collector targets existed reads as "no resolution
+    recorded", never as "resolved cleanly"."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "eal_campaign_runs" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("eal_campaign_runs")}
+    if "collector_resolution" not in existing:
+        connection.execute(text(
+            "ALTER TABLE eal_campaign_runs ADD COLUMN collector_resolution JSON"))
 
 
 def _migrate_prevention_columns(connection) -> None:
