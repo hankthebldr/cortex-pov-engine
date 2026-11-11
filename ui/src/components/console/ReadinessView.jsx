@@ -264,9 +264,17 @@ function SocFrameworkRow({ tenant }) {
         </dl>
       )}
       {m.kind === 'read' && m.state === 'ABSENT' && (
-        <div className="rdy-tenant__caveat">
-          The SOC Framework is not installed on this tenant. Read the runbook:{' '}
-          <a href={RUNBOOK_PATH} className="mono">{RUNBOOK_PATH}</a>
+        <div className="rdy-tenant__caveat" data-testid={`socfw-absent-${name}`}>
+          {m.detail.leftoverLists
+            ? 'The SOC Framework is not installed, but its lists were left behind by an earlier uninstall. '
+            : 'The SOC Framework is not installed on this tenant. '}
+          Runbook: <span className="mono">{RUNBOOK_PATH}</span>
+        </div>
+      )}
+      {(m.degraded || m.kind === 'stale') && (m.code || m.readAt) && (
+        <div className="rdy-socfw__facts mono" data-testid={`socfw-code-${name}`}>
+          {m.code && <span>code: {m.code}</span>}
+          {m.readAt && <span>read_at: {m.readAt}</span>}
         </div>
       )}
       {m.proves && (

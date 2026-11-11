@@ -109,12 +109,81 @@ describe('Readiness — SOC Framework row', () => {
     expect(row).toHaveTextContent(`does NOT prove: ${DOES_NOT}`)
   })
 
-  it('ABSENT renders as degraded with the runbook link', async () => {
+  it('ABSENT renders as degraded with the runbook path', async () => {
     const row = await renderRow(block({}, { state: 'ABSENT', code: 'RESPONSE_LAYER_ABSENT', framework_version: null }))
     expect(row).toHaveAttribute('data-degraded', 'true')
     expect(within(row).getByTestId('socfw-state-deathstar')).toHaveTextContent('ABSENT')
-    const link = within(row).getByRole('link', { name: /run-alongside-soc-framework/i })
-    expect(link).toHaveAttribute('href', expect.stringContaining('docs/lab/2026-11-11-run-alongside-soc-framework.md'))
+    expect(within(row).queryByRole('link')).toBeNull()
+    expect(within(row).getByText('docs/lab/2026-11-11-run-alongside-soc-framework.md')).toHaveClass('mono')
+    expect(row).toHaveTextContent('RESPONSE_LAYER_ABSENT')
+    expect(row).toHaveTextContent('read_at: 2026-11-11T10:00:00+00:00')
+    expect(within(row).getByTestId('socfw-absent-deathstar')).not.toHaveTextContent(/left behind/)
+  })
+
+  it('leftover-lists ABSENT is worded differently from a clean ABSENT', async () => {
+    const row = await renderRow(block({}, { state: 'ABSENT', code: 'RESPONSE_LAYER_ABSENT', leftover_lists: true }))
+    expect(within(row).getByTestId('socfw-absent-deathstar')).toHaveTextContent(/lists were left behind/)
+  })
+
+  it('shows the degradation code and read_at on a PRESENT_UNREAD row', async () => {
+    const row = await renderRow(block({}, { state: 'PRESENT_UNREAD', code: 'RESPONSE_LAYER_UNREAD' }))
+    expect(row).toHaveAttribute('data-degraded', 'true')
+    expect(within(row).getByTestId('socfw-code-deathstar')).toHaveTextContent('code: RESPONSE_LAYER_UNREAD')
+  })
+
+  it('UNKNOWN renders degraded with its code', async () => {
+    const row = await renderRow(block({}, { state: 'UNKNOWN', code: 'RESPONSE_LAYER_PACKS_UNREADABLE' }))
+    expect(row).toHaveAttribute('data-degraded', 'true')
+    expect(within(row).getByTestId('socfw-state-deathstar')).toHaveTextContent('UNKNOWN')
+    expect(row).toHaveTextContent('RESPONSE_LAYER_PACKS_UNREADABLE')
+  })
+
+  it('an unrecognised state string renders degraded', async () => {
+    const row = await renderRow(block({}, { state: 'WEIRD', code: 'X' }))
+    expect(row).toHaveAttribute('data-degraded', 'true')
+  })
+
+  it('a missing layer never renders a PRESENT chip', async () => {
+    const row = await renderRow({ state: 'PRESENT', stale: false, read_at: null })
+    expect(row).toHaveAttribute('data-degraded', 'true')
+    expect(within(row).getByTestId('socfw-state-deathstar')).not.toHaveTextContent(/^PRESENT$/)
+    expect(within(row).getByTestId('socfw-state-deathstar')).toHaveTextContent('unknown')
+  })
+
+  it('a rejected /api/readiness leaves the card and ladder and reads "could not be read"', async () => {
+    installRoutes({
+      'GET /api/health': HEALTH_OK,
+      'GET /api/credentials/integrations': {
+        integrations: [{ name: 'deathstar', kind: 'xsiam_tenant', config: {}, last_verified_ok: true }],
+      },
+      'GET /api/connectors': { connectors: [] },
+      'GET /api/assertions/runs': { runs: [] },
+      'GET /api/assertions': { assertions: [], total: 18 },
+    }) // /api/readiness -> 404
+    render(<EnvironmentContext.Provider value={env}><ReadinessView /></EnvironmentContext.Provider>)
+    const row = await screen.findByTestId('socfw-row-deathstar')
+    expect(screen.getByTestId('connector-ladder')).toBeInTheDocument()
+    expect(screen.getByTestId('rdy-tenant-deathstar')).toBeInTheDocument()
+    expect(within(row).getByTestId('socfw-state-deathstar'))
+      .toHaveTextContent('unknown — /api/readiness could not be read')
+  })
+
+  it('a tenant missing from the readiness list reads "could not be read", not "not probed"', async () => {
+    install(block())
+    installRoutes({
+      'GET /api/health': HEALTH_OK,
+      'GET /api/credentials/integrations': {
+        integrations: [{ name: 'deathstar', kind: 'xsiam_tenant', config: {}, last_verified_ok: true }],
+      },
+      'GET /api/connectors': { connectors: [] },
+      'GET /api/assertions/runs': { runs: [] },
+      'GET /api/assertions': { assertions: [], total: 18 },
+      'GET /api/readiness': { integrations: [{ name: 'other', kind: 'xsiam_tenant', response_layer: null }] },
+    })
+    render(<EnvironmentContext.Provider value={env}><ReadinessView /></EnvironmentContext.Provider>)
+    const row = await screen.findByTestId('socfw-row-deathstar')
+    expect(within(row).getByTestId('socfw-state-deathstar'))
+      .toHaveTextContent('unknown — /api/readiness could not be read')
   })
 
   it('stale renders "unknown — run preflight"', async () => {

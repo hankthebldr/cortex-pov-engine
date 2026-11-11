@@ -39,7 +39,15 @@ export function describeResponseLayer(rl) {
   if (rl === null) {
     return { kind: 'not_probed', headline: 'not probed', degraded: false, chip: 'chip', detail: null }
   }
-  const layer = rl.layer && typeof rl.layer === 'object' ? rl.layer : {}
+  if (!rl.layer || typeof rl.layer !== 'object' || Array.isArray(rl.layer)) {
+    // A state with no layer behind it is a claim without evidence: never PRESENT.
+    return {
+      kind: 'malformed', state: rl.state || null, degraded: true, chip: 'chip chip--pending',
+      headline: 'unknown — stored response_layer has no readable layer', detail: null,
+      code: null, readAt: rl.read_at || null,
+    }
+  }
+  const layer = rl.layer
   const state = rl.state || layer.state || 'UNKNOWN'
   const base = {
     proves: rl.proves || SOCFW_PROVES,
@@ -60,9 +68,10 @@ export function describeResponseLayer(rl) {
     aiClose: layer.ai_close || 'unknown',
     leftoverLists: layer.leftover_lists === true,
   }
-  const degraded = state === 'ABSENT' || state === 'UNKNOWN'
+  const degraded = state !== 'PRESENT'
   const chip = state === 'PRESENT' ? 'chip chip--detected'
     : state === 'PRESENT_UNREAD' ? 'chip chip--pending'
       : state === 'ABSENT' ? 'chip chip--missed' : 'chip chip--pending'
+  // chip: PRESENT detected, ABSENT missed, everything else pending
   return { ...base, kind: 'read', state, headline: state, degraded, chip, detail }
 }
