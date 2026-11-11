@@ -15,7 +15,7 @@ from .exceptions import PanosConfigError
 
 _LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _VSYS = re.compile(r"^vsys\d+$")
-FORWARDING_PATHS = ("auto", "lfp", "syslog")
+FORWARDING_PATHS = ("auto", "sls", "syslog", "both")
 
 DEFAULT_PROBES: list[dict[str, Any]] = [
     {"ip": "1.1.1.1", "port": 53, "protocol": "udp", "application": "dns-base"},
@@ -133,14 +133,19 @@ def validate_panos_config(config: dict) -> dict:
     cfg["forwarding_path"] = fp
 
     probes = cfg.get("probe_destinations")
-    cfg["probe_destinations"] = (copy.deepcopy(DEFAULT_PROBES) if probes is None
-                                 else [_probe(p) for p in probes] if isinstance(probes, list)
-                                 else _bad("probe_destinations must be a list"))
+    if probes is None:
+        cfg["probe_destinations"] = copy.deepcopy(DEFAULT_PROBES)
+    elif isinstance(probes, list):
+        cfg["probe_destinations"] = [_probe(p) for p in probes]
+    else:
+        raise PanosConfigError("probe_destinations must be a list")
 
     for key in ("inside_zone", "outside_zone"):
         v = cfg.get(key)
         if v is not None and (not isinstance(v, str) or not v.strip()):
             raise PanosConfigError(f"{key} must be a non-empty string or null")
+        if v is not None:
+            cfg[key] = v.strip()
 
     obs = cfg.get("observed_sources", {})
     if not isinstance(obs, dict):
@@ -158,6 +163,3 @@ def validate_panos_config(config: dict) -> dict:
     cfg["agent_addresses"] = out
     return cfg
 
-
-def _bad(msg: str):
-    raise PanosConfigError(msg)

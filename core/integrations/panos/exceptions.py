@@ -1,8 +1,10 @@
 # core/integrations/panos/exceptions.py
-"""Typed failures for the PAN-OS integration. ``code`` is a ``PN_*`` string."""
+"""Typed failures for the PAN-OS integration. ``code`` is always a ``PN_*`` constant."""
 from __future__ import annotations
 
 from typing import Optional
+
+from . import codes
 
 
 class PanosConfigError(ValueError):
@@ -10,7 +12,7 @@ class PanosConfigError(ValueError):
 
     def __init__(self, message: str, *, code: Optional[str] = None):
         super().__init__(message)
-        self.code = code or "PN_CONFIG_INVALID"
+        self.code = code or codes.PN_CONFIG_INVALID
 
 
 class PanosShapeError(RuntimeError):
@@ -18,15 +20,20 @@ class PanosShapeError(RuntimeError):
 
     def __init__(self, message: str, *, code: Optional[str] = None):
         super().__init__(message)
-        self.code = code or "PN_SHAPE_UNRECOGNISED"
+        self.code = code or codes.PN_SHAPE_UNRECOGNISED
 
 
 class PanosApiError(PanosShapeError):
-    """The firewall returned a well-formed ``status="error"`` reply."""
+    """The firewall returned a well-formed ``status="error"`` reply.
 
-    def __init__(self, message: str, *, code: Optional[str] = None):
+    ``code`` is the PN_* code (default PN_SHAPE_UNRECOGNISED). The firewall's own
+    error code (e.g. "403", "13") is NOT a PN_ code and lives in ``panos_code``.
+    """
+
+    def __init__(self, message: str, *, code: Optional[str] = None,
+                 panos_code: Optional[str] = None):
         super().__init__(message, code=code)
-        self.code = code
+        self.panos_code = panos_code
         self.message = message
 
 
@@ -35,7 +42,7 @@ class PanosWriteRefused(RuntimeError):
 
     def __init__(self, message: str, *, code: Optional[str] = None):
         super().__init__(message)
-        self.code = code or "PN_WRITE_REFUSED"
+        self.code = code or codes.PN_WRITE_REFUSED
 
 
 class PanosTransportError(RuntimeError):
@@ -43,4 +50,4 @@ class PanosTransportError(RuntimeError):
 
     def __init__(self, message: str, *, code: Optional[str] = None):
         super().__init__(message)
-        self.code = code or "PN_UNREACHABLE"
+        self.code = code or codes.PN_UNREACHABLE

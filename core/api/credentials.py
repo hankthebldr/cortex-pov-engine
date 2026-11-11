@@ -216,13 +216,17 @@ async def put_integration(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     config = _validate_integration_config(body.kind, body.config or {})
+    from integrations.panos import PANOS_KIND  # noqa: PLC0415
+
+    # The hint decides redaction of the backing row; never take the caller's.
+    type_hint = "panos_api_key_credential" if body.kind == PANOS_KIND else body.secret_type_hint
     store = CredentialStore(session)
     row = await store.put_integration(
         name=body.name,
         kind=body.kind,
         plaintext_secret=body.plaintext_secret,
         config=config,
-        secret_type_hint=body.secret_type_hint,
+        secret_type_hint=type_hint,
         description=body.description,
     )
     await session.commit()

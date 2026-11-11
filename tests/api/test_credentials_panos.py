@@ -40,3 +40,20 @@ def test_backing_secret_not_listed(cred_client):
     body = cred_client.get("/api/credentials/secrets").json()
     blob = json.dumps(body)
     assert body["secrets"] == [] and "ZZZZ" not in blob and "__integration__" not in blob
+
+
+def test_type_hint_forced_for_panos(cred_client, session_factory):
+    import asyncio
+    r = cred_client.put("/api/credentials/integrations", json={
+        "name": "fw1", "kind": "panos_ngfw", "plaintext_secret": "K" * 40,
+        "secret_type_hint": "generic", "config": {"host": "192.0.2.1"}})
+    assert r.status_code == 200
+
+    async def _hint():
+        from security import CredentialStore
+        async with session_factory() as s:
+            row = await CredentialStore(s)._get_secret_row("__integration__/fw1")
+            return row.type_hint, None
+    hint, tail = asyncio.run(_hint())
+    assert hint == "panos_api_key_credential" and tail is None
+    assert cred_client.get("/api/credentials/secrets/__integration__/fw1").status_code == 404

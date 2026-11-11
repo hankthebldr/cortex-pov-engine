@@ -69,14 +69,39 @@ def test_config_rejects(patch):
         validate_panos_config({"host": "192.0.2.1", **patch})
 
 
+@pytest.mark.parametrize("fp", ["auto", "sls", "syslog", "both"])
+def test_forwarding_path_accepted(fp):
+    assert validate_panos_config({"host": "192.0.2.1", "forwarding_path": fp})["forwarding_path"] == fp
+
+
+@pytest.mark.parametrize("fp", ["lfp", "ftp"])
+def test_forwarding_path_rejected(fp):
+    with pytest.raises(PanosConfigError):
+        validate_panos_config({"host": "192.0.2.1", "forwarding_path": fp})
+
+
+def test_zones_stripped():
+    cfg = validate_panos_config({"host": "192.0.2.1", "inside_zone": " trust ", "outside_zone": "untrust "})
+    assert cfg["inside_zone"] == "trust" and cfg["outside_zone"] == "untrust"
+
+
+def test_exception_default_codes_are_constants():
+    assert PanosWriteRefused("x").code == codes.PN_WRITE_REFUSED
+    assert PanosTransportError("x").code == codes.PN_UNREACHABLE
+    assert PanosConfigError("x").code == codes.PN_CONFIG_INVALID
+    e = PanosApiError("boom", panos_code="403")
+    assert e.code == codes.PN_SHAPE_UNRECOGNISED and e.panos_code == "403" and e.message == "boom"
+    assert codes.PN_WRITE_REFUSED in codes.ALL_CODES
+
+
 def test_exceptions_carry_code():
     assert issubclass(PanosConfigError, ValueError)
     for cls in (PanosShapeError, PanosWriteRefused, PanosTransportError):
         assert issubclass(cls, RuntimeError)
         assert cls("x", code="PN_UNREACHABLE").code == "PN_UNREACHABLE"
     assert issubclass(PanosApiError, PanosShapeError)
-    e = PanosApiError("boom", code="13")
-    assert e.code == "13" and e.message == "boom"
+    e = PanosApiError("boom", code="PN_AUTH_REJECTED", panos_code="13")
+    assert e.code == "PN_AUTH_REJECTED" and e.panos_code == "13" and e.message == "boom"
 
 
 def test_codes():
@@ -88,6 +113,8 @@ def test_codes():
         assert getattr(codes, c) == c
         assert c in codes.ALL_CODES
     assert all(c.startswith("PN_") for c in codes.ALL_CODES)
+    for c in codes.ALL_CODES:
+        assert getattr(codes, c) == c
 
 
 def test_normalize_mgmt_host_defined_once():
