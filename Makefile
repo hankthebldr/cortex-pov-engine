@@ -175,7 +175,10 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth gates
+
+# check-lab-ready is here because the refs job runs it: a gate CI has and this
+# aggregate lacks makes `make validate` green on a tree CI will turn red.
+validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth check-lab-ready ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth + lab-readiness gates
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
