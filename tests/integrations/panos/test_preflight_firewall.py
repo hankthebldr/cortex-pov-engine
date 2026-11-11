@@ -67,6 +67,19 @@ BASE = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _firewall_wide_only(monkeypatch):
+    """These tests are about the firewall-wide stages; the per-source checks have their
+    own module (test_preflight_sources.py). With agents present the source checks are
+    stubbed out here so the firewall fixtures need no per-source routes; the
+    no-agents path still runs the real check_sources."""
+    real = pf.check_sources
+
+    async def only_no_agents(ctx, agents):
+        return await real(ctx, agents) if not agents else []
+    monkeypatch.setattr(pf, "check_sources", only_no_agents)
+
+
 async def run(fake_firewall, overrides=None, *, config=None, now=NOW, agents=(AGENT,), key=KEY,
               max_calls=120):
     fw = fake_firewall({**BASE, **(overrides or {})})
