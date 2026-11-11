@@ -259,6 +259,58 @@ def test_the_agent_row_hint_for_an_https_simcore_carries_the_tls_opt_in(client, 
     }, p.stdout + p.stderr
 
 
+_PROFILES_HARNESS = r"""
+param([string]$ScriptPath, [string]$Root)
+$t = $null; $e = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$t, [ref]$e)
+foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+  . ([scriptblock]::Create($f.Extent.Text))
+}
+$ErrorActionPreference = 'Stop'
+foreach ($d in @(Cs-ProfileInstalls $Root)) { Write-Output ("FOUND " + $d) }
+Write-Output ("MISSING-ROOT " + @(Cs-ProfileInstalls (Join-Path $Root 'no-such-dir')).Count)
+Write-Output ("EMPTY-ROOT " + @(Cs-ProfileInstalls '').Count)
+"""
+
+
+@needs_powershell
+@pytest.mark.parametrize("shell", SHELLS or ["none"])
+def test_an_elevated_uninstall_looks_in_every_profile_for_a_per_user_beacon(client, tmp_path, shell):
+    """A standard user who answers the UAC prompt with an admin's credentials
+    gets an elevated shell running as THAT admin, whose %LOCALAPPDATA% is not
+    theirs. The uninstaller looked for the per-user beacon
+    (CORTEXSIM_ALLOW_UNSUPERVISED) only under %LOCALAPPDATA%, so it killed the
+    process, removed nothing else, and reported "done" with the binary and its
+    logs still in the installing user's profile: the Windows twin of the POSIX
+    `sudo` case. Executed here for the lookup only (pwsh on this host); the
+    removal itself runs on Windows."""
+    profiles = tmp_path / "Users"
+    install = profiles / "dc" / "AppData" / "Local" / "CortexSim"
+    cache = profiles / "dc" / "AppData" / "Local" / "Temp" / "cortexsim-cache"
+    for d in (install, cache, profiles / "bystander" / "AppData" / "Local", profiles / "Public"):
+        d.mkdir(parents=True)
+    (install / "cortexsim-agent.exe").write_bytes(b"MZ")
+
+    path = _write(tmp_path, "u.ps1", _win_uninstaller(client))
+    harness = _write(tmp_path, "profiles.ps1", _PROFILES_HARNESS)
+    p = _ps(shell, "-File", str(harness), "-ScriptPath", str(path), "-Root", str(profiles))
+    found = sorted(os.path.normpath(ln.split(" ", 1)[1]) for ln in p.stdout.splitlines()
+                   if ln.startswith("FOUND "))
+    assert found == sorted(os.path.normpath(str(d)) for d in (install, cache)), p.stdout + p.stderr
+    assert "MISSING-ROOT 0" in p.stdout and "EMPTY-ROOT 0" in p.stdout, p.stdout + p.stderr
+
+
+def test_the_profile_sweep_runs_only_elevated_and_through_the_tracked_remover(client):
+    script = _win_uninstaller(client)
+    sweep = [ln.strip() for ln in script.splitlines()
+             if "Cs-ProfileInstalls " in ln and not ln.startswith("function ")]
+    assert len(sweep) == 1, sweep
+    assert '"$env:SystemDrive\\Users"' in sweep[0], sweep[0]
+    assert sweep[0].startswith("if ($IsAdmin)"), sweep[0]
+    assert "Cs-RemovePath $d 'per-user install'" in sweep[0], (
+        "a per-profile hit must be counted as found and reported if it survives: " + sweep[0])
+
+
 # ---------------------------------------------------------------------------
 # Windows host only
 # ---------------------------------------------------------------------------

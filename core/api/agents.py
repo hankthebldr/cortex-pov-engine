@@ -1958,6 +1958,26 @@ function Cs-DeleteHint([string]$ImagePath) {
   if ($srv -like 'https://*') { $cmd = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; ' + $cmd }
   return $cmd
 }
+function Cs-ProfileInstalls([string]$Root) {
+  # A per-user beacon (CORTEXSIM_ALLOW_UNSUPERVISED) and its temp cache, under
+  # every profile in $Root. Elevated, %LOCALAPPDATA% is the ELEVATING account's:
+  # a standard user who answers the UAC prompt with an admin's credentials is
+  # not the account that installed it. Never throws: an unreadable profile is
+  # skipped, not a reason to stop the uninstall.
+  $out = @()
+  try {
+    if (-not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return $out }
+    foreach ($p in @(Get-ChildItem -LiteralPath $Root -Directory -Force -ErrorAction SilentlyContinue)) {
+      foreach ($rel in @('AppData\Local\CortexSim', 'AppData\Local\Temp\cortexsim-cache')) {
+        try {
+          $d = Join-Path $p.FullName $rel
+          if (Test-Path -LiteralPath $d) { $out += $d }
+        } catch { }
+      }
+    }
+  } catch { }
+  return $out
+}
 function Cs-DeleteNote {
   if ($Cs.Hint) { Cs-Say "the agent row stays in SimCore until you delete it: $($Cs.Hint)" }
   else { Cs-Say 'the agent row stays in SimCore until you delete it: DELETE /api/agents/<agent_id>' }
@@ -2034,6 +2054,8 @@ try {
   Cs-RemovePath $SysDir 'install directory'
   if ($env:LOCALAPPDATA) { Cs-RemovePath "$env:LOCALAPPDATA\CortexSim" 'per-user install' }
   Cs-RemovePath (Join-Path ([IO.Path]::GetTempPath()) 'cortexsim-cache') 'staging cache'
+  # Elevated, the two lines above looked in the elevating account's profile.
+  if ($IsAdmin) { foreach ($d in @(Cs-ProfileInstalls "$env:SystemDrive\Users")) { Cs-RemovePath $d 'per-user install' } }
   if ($env:SystemRoot) {
     Cs-RemovePath "$env:SystemRoot\Temp\cortexsim-cache" 'staging cache'
     Cs-RemovePath "$env:SystemRoot\SystemTemp\cortexsim-cache" 'staging cache'
