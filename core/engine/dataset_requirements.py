@@ -222,6 +222,21 @@ def load() -> dict[str, DatasetRequirement] | None:
     return parse_registry(data, path)
 
 
+def card_datasets(all_raw: dict[str, dict]) -> dict[str, set[str]]:
+    """Map each dataset named by a card's ``detections.xql_queries[].dataset`` to the card ids that read it.
+
+    Blank and missing values are skipped. ``all_raw`` is ``catalog.all_raw()``.
+    """
+    out: dict[str, set[str]] = {}
+    for card_id, raw in all_raw.items():
+        detections = (raw or {}).get("detections") or {}
+        for q in detections.get("xql_queries") or []:
+            ds = q.get("dataset") if isinstance(q, dict) else None
+            if isinstance(ds, str) and ds.strip():
+                out.setdefault(ds.strip(), set()).add(card_id)
+    return out
+
+
 def registry_source() -> dict[str, str]:
     """``{"path", "source"}``; source is ``"file"`` or ``"absent"``, read once per process like ``load()``."""
     return {"path": registry_path(), "source": "absent" if load() is None else "file"}
