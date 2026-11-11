@@ -87,16 +87,6 @@ logger = logging.getLogger("cortexsim.main")
 # Lifespan handler (startup + shutdown)
 # ---------------------------------------------------------------------------
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """FastAPI lifespan: SimCore's startup/shutdown, and inside it the MCP
-    session manager when ``/mcp`` is mounted (so MCP serves only once SimCore
-    is ready, and stops first)."""
-    async with _simcore_lifespan(app):
-        async with _mcp_lifespan(app):
-            yield
-
-
 def _mcp_lifespan(app: FastAPI):
     # Flag off: nothing was mounted and the MCP SDK is never imported.
     if getattr(app.state, "mcp", None) is None:
@@ -109,8 +99,10 @@ def _mcp_lifespan(app: FastAPI):
 
 
 @asynccontextmanager
-async def _simcore_lifespan(app: FastAPI):
-    """SimCore startup logic before yielding, shutdown after."""
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan: SimCore startup before yielding, shutdown after. The
+    MCP session manager runs at the yield point when ``/mcp`` is mounted, so MCP
+    serves only once SimCore is ready and stops before SimCore shuts down."""
     logger.info("CortexSim starting up — env=%s port=%d", settings.CORTEXSIM_ENV, settings.CORTEXSIM_PORT)
 
     # 0. Validate master key before anything else.  Refuses to boot production
@@ -258,7 +250,8 @@ async def _simcore_lifespan(app: FastAPI):
         )
 
     logger.info("CortexSim ready — listening on port %d", settings.CORTEXSIM_PORT)
-    yield
+    async with _mcp_lifespan(app):
+        yield
 
     logger.info("CortexSim shutting down")
     sweep_task.cancel()
