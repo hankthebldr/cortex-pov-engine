@@ -369,20 +369,20 @@ Whether ABIOCs learn a repeated scenario as normal is unknown (PM-ABI-04).
 
 The matcher credits a Result only from fields it can read. Check these four:
 
-1. **Rule id.** *(lab, documented)* The connector reads `matching_service_rule_id`,
-   `detector_id`, `bioc_id` or `rule_id`. Lab alerts carried none of them, so
-   matching fell back to technique plus name. The Issues API documents the
-   identifier as `detection.rule_id`, which the connector does not read (PM-ALR-01).
+1. **Rule id.** *(lab, documented)* Alerts pulled from the lab tenant carried no
+   rule-id key at all, so matching fell back to technique plus name. The Issues API
+   documents the identifier as `detection.rule_id`, which the connector reads as a
+   fallback since PR 179; whether real alerts carry it is still PM-ALR-01.
 2. **Technique.** *(lab)* Built-in detectors carry their own technique: the lab's
    alert on `useradd` carried T1003 where the scenario declared T1136.001
    (PM-ALR-03).
 3. **Source family.** *(checked in code)* The matcher refuses a pair whose families
-   differ. On the Issues API's `detection.method` codes it would misread
-   ANALYTICS_BIOC as `analytics`, so an ABIOC expectation could never match it, and
-   it reads TRAPS (agent prevention) as nothing (PM-ALR-04).
+   differ. Since PR 179 it maps the Issues API's `detection.method` codes
+   (ANALYTICS_BIOC, TRAPS, MAGNIFIER); FW still maps to no family, and the TRAPS
+   and MAGNIFIER pairing is our inference from the docs (PM-ALR-04).
 4. **Time.** *(our code, unknown latency)* The default match window is 3600 s.
    Scheduled correlation rules run on 10-minute boundaries or slower, and which
    alert timestamp is the detection time is PM-ALR-02.
 
 - **Would change if answered:** [PM-ALR-01](LEDGER.md#pm-alr-01) (P0, provisional) · [PM-ALR-03](LEDGER.md#pm-alr-03) (P1, open) · [PM-ALR-04](LEDGER.md#pm-alr-04) (P1, provisional) · [PM-ALR-02](LEDGER.md#pm-alr-02) (P0, provisional) · [PM-ALR-05](LEDGER.md#pm-alr-05) (P1, provisional)
-- **Sources:** https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues · `core/connectors/xsiam.py:400` · `core/connectors/matcher.py:42`
+- **Sources:** https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues · `core/connectors/xsiam.py:409` · `core/connectors/matcher.py:70`

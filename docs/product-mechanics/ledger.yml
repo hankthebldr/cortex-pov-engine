@@ -59,9 +59,9 @@ mechanisms:
           the body can steer dataset routing.
         ref: core/eal_simulator/analytics_emitter.py:354
       - assumption: >-
-          The analytics emitter's default `auth_scheme` is "Bearer", so a campaign
-          that does not override it sends `Authorization: Bearer <key>`, which is not
-          the documented header form.
+          The analytics emitter's `auth_scheme` defaults to empty, so a campaign sends
+          the raw key as `Authorization: <key>`, the documented form. Until PR 178
+          (2026-11-10) the default was "Bearer", which that form does not allow.
         ref: core/eal_simulator/analytics_emitter.py:119
       - assumption: >-
           XDM modeling rules are a normalization substrate, surfaced and exported but
@@ -658,8 +658,8 @@ mechanisms:
           CORRELATION, FW), `detection.rule_id` (a string, undescribed),
           `mitre_techniques`, `_insert_time` ("Issue creation timestamp in epoch
           milliseconds"), `observation_time` (undescribed) and `case_ids`, a list,
-          rather than `case_id` or `incident_id`. The connector reads none of
-          `detection.method`, `detection.rule_id` or `case_ids`.
+          rather than `case_id` or `incident_id`. The connector reads all three as
+          fallbacks since PR 179.
         source:
           kind: public_doc
           ref: https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues
@@ -667,26 +667,29 @@ mechanisms:
     assumes:
       - assumption: >-
           The alert's time is the first present of `detection_timestamp`,
-          `creation_time`, `local_insert_ts`, and MTTD is that time minus the step's
-          `executed_at`.
-        ref: core/connectors/xsiam.py:378
+          `creation_time`, `local_insert_ts`, `_insert_time`, and MTTD is that time
+          minus the step's `executed_at`.
+        ref: core/connectors/xsiam.py:383
       - assumption: >-
           The rule identifier is the first present of `matching_service_rule_id`,
-          `detector_id`, `bioc_id`, `rule_id`; the case is `incident_id` or
-          `case_id`.
-        ref: core/connectors/xsiam.py:400 ; core/connectors/xsiam.py:404
+          `detector_id`, `bioc_id`, `rule_id`, then the Issues API's
+          `detection.rule_id`; the source is `source`, `alert_source`, then
+          `detection.method`; the case is `incident_id`, `case_id`, then `case_ids`
+          (PR 179, 2026-11-10).
+        ref: core/connectors/xsiam.py:409 ; core/connectors/xsiam.py:415
       - assumption: >-
           The alert's `source` string ("XDR BIOC", "XDR Analytics BIOC",
           "Correlation", ...) maps onto one signal family, and a pair whose families
           differ never matches; the default match window is 3600 s.
         ref: core/connectors/matcher.py:32
       - assumption: >-
-          `signal_family` matches substrings of human-readable source strings. On
-          the Issues API's `detection.method` codes it misreads: ANALYTICS_BIOC maps
-          to `analytics`, not `abioc` (the underscore defeats "analytics bioc"), so an
-          ABIOC expectation could never match it; TRAPS, MAGNIFIER and FW map to
-          nothing. Checked by calling the function on 2026-11-10.
-        ref: core/connectors/matcher.py:42
+          `signal_family` maps both human-readable source strings and the Issues
+          API's `detection.method` codes: ANALYTICS_BIOC to `abioc`, TRAPS to
+          `prevention`, MAGNIFIER to `analytics`; FW maps to no family. Before PR 179
+          ANALYTICS_BIOC read as `analytics` and TRAPS as nothing. TRAPS = XDR Agent
+          and MAGNIFIER = XDR Analytics rest on the order of two lists on the docs
+          page, which is an inference.
+        ref: core/connectors/matcher.py:70
     contrasts:
       - vs: INC
         point: >-
@@ -827,8 +830,9 @@ questions:
     context: >-
       The offline bundle and collector preflight treat the two doors as equivalent.
       Neither public Broker VM applet overview read on 2026-11-10 names an HTTP
-      applet, so first confirm that the second door exists at all; if it does not,
-      the delivery REMEDIATION text that points to it is wrong.
+      applet, so first confirm that the second door exists at all. PR 178 already
+      removed the "Broker VM HTTP applet" wording from the delivery REMEDIATION
+      text.
     lever: Per-door preflight expectations.
     affects: ["core/eal_simulator/bundle.py"]
 
@@ -1938,10 +1942,9 @@ questions:
       Lab alerts carried none of the four keys the connector reads (ALR known), so
       matching fell back to technique plus name, the weakest key the matcher has.
     lever: >-
-      The connector's rule-id field list (the Issues API documents
-      `detection.rule_id`, which the connector does not read); card detections
-      record that identifier so the matcher can key on it; preflight stops
-      reporting PARTIAL.
+      The connector's rule-id field list (PR 179 added the Issues API's
+      `detection.rule_id` as a fallback); card detections record that identifier
+      so the matcher can key on it; preflight stops reporting PARTIAL.
     affects: ["core/connectors/xsiam.py", "core/connectors/matcher.py", "core/connectors/preflight.py"]
 
   - id: PM-ALR-02
@@ -1995,8 +1998,9 @@ questions:
     context: >-
       The matcher maps source onto a signal family, and a known-but-different
       family never matches (matcher.py:32). An unmapped source string falls back to
-      technique and name; a renamed one can block a real match. The Issues API's
-      codes already show it: ANALYTICS_BIOC reads as `analytics` (ALR assumes).
+      technique and name; a renamed one can block a real match. PR 179 mapped the
+      Issues API codes; FW still maps to no family, and the TRAPS and MAGNIFIER
+      mappings rest on an inferred pairing (ALR assumes).
     lever: The family map in the matcher; a preflight that lists unmapped source strings.
     affects: ["core/connectors/matcher.py"]
 
@@ -2009,7 +2013,10 @@ questions:
       fields changed (for example `case_id` vs `incident_id`, an issues endpoint vs
       the alerts endpoint), from which platform version, and do the old names keep
       working?
-    context: The connector reads `incident_id or case_id` (xsiam.py:404) and pages the alerts endpoint.
+    context: >-
+      The connector reads `incident_id`, `case_id`, then `case_ids` (xsiam.py:415)
+      and pages the alerts endpoint; which endpoint is current decides which names
+      it will actually see.
     lever: Connector endpoint and field names; a version gate in preflight.
     affects: ["core/connectors/xsiam.py", "core/connectors/preflight.py"]
 
@@ -2376,22 +2383,22 @@ faq:
     answer: |
       The matcher credits a Result only from fields it can read. Check these four:
 
-      1. **Rule id.** *(lab, documented)* The connector reads `matching_service_rule_id`,
-         `detector_id`, `bioc_id` or `rule_id`. Lab alerts carried none of them, so
-         matching fell back to technique plus name. The Issues API documents the
-         identifier as `detection.rule_id`, which the connector does not read (PM-ALR-01).
+      1. **Rule id.** *(lab, documented)* Alerts pulled from the lab tenant carried no
+         rule-id key at all, so matching fell back to technique plus name. The Issues API
+         documents the identifier as `detection.rule_id`, which the connector reads as a
+         fallback since PR 179; whether real alerts carry it is still PM-ALR-01.
       2. **Technique.** *(lab)* Built-in detectors carry their own technique: the lab's
          alert on `useradd` carried T1003 where the scenario declared T1136.001
          (PM-ALR-03).
       3. **Source family.** *(checked in code)* The matcher refuses a pair whose families
-         differ. On the Issues API's `detection.method` codes it would misread
-         ANALYTICS_BIOC as `analytics`, so an ABIOC expectation could never match it, and
-         it reads TRAPS (agent prevention) as nothing (PM-ALR-04).
+         differ. Since PR 179 it maps the Issues API's `detection.method` codes
+         (ANALYTICS_BIOC, TRAPS, MAGNIFIER); FW still maps to no family, and the TRAPS
+         and MAGNIFIER pairing is our inference from the docs (PM-ALR-04).
       4. **Time.** *(our code, unknown latency)* The default match window is 3600 s.
          Scheduled correlation rules run on 10-minute boundaries or slower, and which
          alert timestamp is the detection time is PM-ALR-02.
     see: [PM-ALR-01, PM-ALR-03, PM-ALR-04, PM-ALR-02, PM-ALR-05]
     refs:
       - https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues
-      - core/connectors/xsiam.py:400
-      - core/connectors/matcher.py:42
+      - core/connectors/xsiam.py:409
+      - core/connectors/matcher.py:70

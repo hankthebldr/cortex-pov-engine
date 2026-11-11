@@ -41,7 +41,7 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 - A 2xx from the collector means the record was delivered; delivery is accounted per record and nothing above 2xx counts. — `core/eal_simulator/delivery.py:45`
 - Analytics-family emitters put a top-level `dataset` hint in the body, as if the body can steer dataset routing. — `core/eal_simulator/analytics_emitter.py:354`
-- The analytics emitter's default `auth_scheme` is "Bearer", so a campaign that does not override it sends `Authorization: Bearer <key>`, which is not the documented header form. — `core/eal_simulator/analytics_emitter.py:119`
+- The analytics emitter's `auth_scheme` defaults to empty, so a campaign sends the raw key as `Authorization: <key>`, the documented form. Until PR 178 (2026-11-10) the default was "Bearer", which that form does not allow. — `core/eal_simulator/analytics_emitter.py:119`
 - XDM modeling rules are a normalization substrate, surfaced and exported but counted informationally, not as a detection type. — `detection_scanner/ttps (detections.modeling_rules[], 5 cards)`
 
 **How this differs from**
@@ -133,7 +133,7 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 **P2 · open** — Does the Broker VM HTTP applet behave identically to the cloud HTTP collector (same parsing, dataset routing, latency, limits)?
 
-- **Why we ask:** The offline bundle and collector preflight treat the two doors as equivalent. Neither public Broker VM applet overview read on 2026-11-10 names an HTTP applet, so first confirm that the second door exists at all; if it does not, the delivery REMEDIATION text that points to it is wrong.
+- **Why we ask:** The offline bundle and collector preflight treat the two doors as equivalent. Neither public Broker VM applet overview read on 2026-11-10 names an HTTP applet, so first confirm that the second door exists at all. PR 178 already removed the "Broker VM HTTP applet" wording from the delivery REMEDIATION text.
 - **What the answer moves:** Per-door preflight expectations.
 - **Touches:** `core/eal_simulator/bundle.py`
 
@@ -1157,14 +1157,14 @@ What an alert ("issue") looks like when SimCore pulls it back: which field names
 **Known**
 
 - Alerts pulled from the lab tenant carried none of the four rule-identifier keys the connector reads (`matching_service_rule_id`, `detector_id`, `bioc_id`, `rule_id`); the connector preflight reported PF_ALERT_SHAPE_PARTIAL and matching fell back to technique plus name. — *lab_observation*, Lab tenant, xsiam connector preflight and reconcile, 2026-11-04 (2026-11-04)
-- The Issues API issue object carries `detection.method` ("Detection source or method that created the issue"; filter values such as XDR Agent, XDR Analytics, XDR BIOC, XDR IOC, XDR Analytics BIOC, Correlation, PAN NGFW; response codes such as TRAPS, MAGNIFIER, ANALYTICS_BIOC, BIOC, IOC, CORRELATION, FW), `detection.rule_id` (a string, undescribed), `mitre_techniques`, `_insert_time` ("Issue creation timestamp in epoch milliseconds"), `observation_time` (undescribed) and `case_ids`, a list, rather than `case_id` or `incident_id`. The connector reads none of `detection.method`, `detection.rule_id` or `case_ids`. — *public_doc*, https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues (2026-11-10)
+- The Issues API issue object carries `detection.method` ("Detection source or method that created the issue"; filter values such as XDR Agent, XDR Analytics, XDR BIOC, XDR IOC, XDR Analytics BIOC, Correlation, PAN NGFW; response codes such as TRAPS, MAGNIFIER, ANALYTICS_BIOC, BIOC, IOC, CORRELATION, FW), `detection.rule_id` (a string, undescribed), `mitre_techniques`, `_insert_time` ("Issue creation timestamp in epoch milliseconds"), `observation_time` (undescribed) and `case_ids`, a list, rather than `case_id` or `incident_id`. The connector reads all three as fallbacks since PR 179. — *public_doc*, https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues (2026-11-10)
 
 **What CortexSim assumes today**
 
-- The alert's time is the first present of `detection_timestamp`, `creation_time`, `local_insert_ts`, and MTTD is that time minus the step's `executed_at`. — `core/connectors/xsiam.py:378`
-- The rule identifier is the first present of `matching_service_rule_id`, `detector_id`, `bioc_id`, `rule_id`; the case is `incident_id` or `case_id`. — `core/connectors/xsiam.py:400 ; core/connectors/xsiam.py:404`
+- The alert's time is the first present of `detection_timestamp`, `creation_time`, `local_insert_ts`, `_insert_time`, and MTTD is that time minus the step's `executed_at`. — `core/connectors/xsiam.py:383`
+- The rule identifier is the first present of `matching_service_rule_id`, `detector_id`, `bioc_id`, `rule_id`, then the Issues API's `detection.rule_id`; the source is `source`, `alert_source`, then `detection.method`; the case is `incident_id`, `case_id`, then `case_ids` (PR 179, 2026-11-10). — `core/connectors/xsiam.py:409 ; core/connectors/xsiam.py:415`
 - The alert's `source` string ("XDR BIOC", "XDR Analytics BIOC", "Correlation", ...) maps onto one signal family, and a pair whose families differ never matches; the default match window is 3600 s. — `core/connectors/matcher.py:32`
-- `signal_family` matches substrings of human-readable source strings. On the Issues API's `detection.method` codes it misreads: ANALYTICS_BIOC maps to `analytics`, not `abioc` (the underscore defeats "analytics bioc"), so an ABIOC expectation could never match it; TRAPS, MAGNIFIER and FW map to nothing. Checked by calling the function on 2026-11-10. — `core/connectors/matcher.py:42`
+- `signal_family` maps both human-readable source strings and the Issues API's `detection.method` codes: ANALYTICS_BIOC to `abioc`, TRAPS to `prevention`, MAGNIFIER to `analytics`; FW maps to no family. Before PR 179 ANALYTICS_BIOC read as `analytics` and TRAPS as nothing. TRAPS = XDR Agent and MAGNIFIER = XDR Analytics rest on the order of two lists on the docs page, which is an inference. — `core/connectors/matcher.py:70`
 
 **How this differs from**
 
@@ -1185,7 +1185,7 @@ What an alert ("issue") looks like when SimCore pulls it back: which field names
 **P0 · provisional** — Which field on an alert or issue record carries the identifier of the rule that raised it, for each source: custom BIOC, Analytics BIOC, Analytics, correlation rule, IOC, XDR agent prevention? Is it stable across content updates and tenants?
 
 - **Why we ask:** Lab alerts carried none of the four keys the connector reads (ALR known), so matching fell back to technique plus name, the weakest key the matcher has.
-- **What the answer moves:** The connector's rule-id field list (the Issues API documents `detection.rule_id`, which the connector does not read); card detections record that identifier so the matcher can key on it; preflight stops reporting PARTIAL.
+- **What the answer moves:** The connector's rule-id field list (PR 179 added the Issues API's `detection.rule_id` as a fallback); card detections record that identifier so the matcher can key on it; preflight stops reporting PARTIAL.
 - **Touches:** `core/connectors/xsiam.py`, `core/connectors/matcher.py`, `core/connectors/preflight.py`
 - **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 - **Answer (2026-11-10, partial, public_doc):** On the Issues API the rule identifier is `detection.rule_id`, a string the page does not describe further. The connector reads four other keys and not this one. Whether it is stable across content updates is not stated. **Rule:** Read `detection.rule_id` from the Issues API before falling back to technique and name.
@@ -1215,7 +1215,7 @@ What an alert ("issue") looks like when SimCore pulls it back: which field names
 
 **P1 · provisional** — What is the full vocabulary of the alert `source` field (e.g. "XDR BIOC", "XDR Analytics BIOC", "XDR Analytics", "Correlation", "XDR Agent", "IOC", third-party names), and is it stable across platform versions?
 
-- **Why we ask:** The matcher maps source onto a signal family, and a known-but-different family never matches (matcher.py:32). An unmapped source string falls back to technique and name; a renamed one can block a real match. The Issues API's codes already show it: ANALYTICS_BIOC reads as `analytics` (ALR assumes).
+- **Why we ask:** The matcher maps source onto a signal family, and a known-but-different family never matches (matcher.py:32). An unmapped source string falls back to technique and name; a renamed one can block a real match. PR 179 mapped the Issues API codes; FW still maps to no family, and the TRAPS and MAGNIFIER mappings rest on an inferred pairing (ALR assumes).
 - **What the answer moves:** The family map in the matcher; a preflight that lists unmapped source strings.
 - **Touches:** `core/connectors/matcher.py`
 - **Answer (2026-11-10, partial, public_doc):** The source field is `detection.method`, "detection source or method that created the issue". Filter values include XDR Agent, XDR Analytics, XDR BIOC, XDR IOC, XDR Analytics BIOC, Correlation and PAN NGFW; response codes include TRAPS, MAGNIFIER, ANALYTICS_BIOC, BIOC, IOC, CORRELATION and FW. Stability across versions is not stated. **Rule:** Map the `detection.method` response codes onto the matcher's signal families; an unmapped code is reported, not silently treated as unknown.
@@ -1224,7 +1224,7 @@ What an alert ("issue") looks like when SimCore pulls it back: which field names
 
 **P1 · provisional** — With the docs now saying "issue" and "case", which API endpoints and record fields changed (for example `case_id` vs `incident_id`, an issues endpoint vs the alerts endpoint), from which platform version, and do the old names keep working?
 
-- **Why we ask:** The connector reads `incident_id or case_id` (xsiam.py:404) and pages the alerts endpoint.
+- **Why we ask:** The connector reads `incident_id`, `case_id`, then `case_ids` (xsiam.py:415) and pages the alerts endpoint; which endpoint is current decides which names it will actually see.
 - **What the answer moves:** Connector endpoint and field names; a version gate in preflight.
 - **Touches:** `core/connectors/xsiam.py`, `core/connectors/preflight.py`
 - **Answer (2026-11-10, partial, public_doc):** The Issues API issue object links cases through `case_ids`, a list of the case IDs the issue is associated with; it has no `case_id` or `incident_id` field. When the change happened, and whether the legacy alerts endpoint the connector pages keeps the old names, are not stated.
