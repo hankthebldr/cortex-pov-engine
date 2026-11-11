@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     CORTEXSIM_XSIAM_ALLOW_WRITE: bool = False
     CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE: bool = False
 
+    # PAN-OS NGFW connection is read-only in v1. The write flag is designed in
+    # spec section 7 and has no consumer yet; the budget caps one preflight run.
+    CORTEXSIM_PANOS_ALLOW_WRITE: bool = False
+    CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT: int = 120
+
     # Same posture, different surface: a pull-mode step whose declared
     # `requires_interpreters` is absent on the target may EITHER be reported
     # honestly as an environment gap (the default — nothing is ever installed

@@ -245,6 +245,29 @@ class CredentialStore:
         await self._session.flush()
         return row
 
+    async def update_integration_config(
+        self, name: str, patch: dict[str, Any]
+    ) -> Optional[IntegrationCredential]:
+        """Shallow-merge ``patch`` into an integration's config; ``None`` removes a key.
+
+        Leaves the secret, ``secret_id`` and ``last_verified_*`` untouched (unlike
+        ``put_integration``, which resets verification). Returns ``None`` if absent.
+        """
+        row = await self._get_integration_row(name)
+        if row is None:
+            return None
+        merged = dict(row.config or {})
+        for key, value in patch.items():
+            if value is None:
+                merged.pop(key, None)
+            else:
+                merged[key] = value
+        row.config = merged  # new dict: SQLAlchemy JSON change detection needs reassignment
+        row.updated_at = datetime.utcnow()
+        await self._session.flush()
+        logger.info("integration config updated name=%s", name)
+        return row
+
     async def get_integration(self, name: str) -> Optional[IntegrationCredential]:
         return await self._get_integration_row(name)
 

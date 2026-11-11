@@ -1,0 +1,153 @@
+"""Management-host validation and config defaults for the panos_ngfw kind."""
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import pytest
+
+from integrations.panos import PANOS_KIND
+from integrations.panos import codes
+from integrations.panos.exceptions import (
+    PanosApiError, PanosConfigError, PanosShapeError, PanosTransportError, PanosWriteRefused,
+)
+from integrations.panos.host import DEFAULT_PROBES, normalize_mgmt_host, validate_panos_config
+
+CORE = Path(__file__).resolve().parents[3] / "core"
+
+
+def test_kind_constant():
+    assert PANOS_KIND == "panos_ngfw"
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("192.0.2.1", "192.0.2.1"),
+    ("fw.example.test", "fw.example.test"),
+    ("FW.Example.Test:4443", "fw.example.test:4443"),
+    ("[2001:db8::1]", "[2001:db8::1]"),
+    ("2001:db8::1", "[2001:db8::1]"),
+    ("[2001:db8::1]:8443", "[2001:db8::1]:8443"),
+])
+def test_accepts(raw, expected):
+    assert normalize_mgmt_host(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    "", "https://192.0.2.1", "192.0.2.1/api", "admin@192.0.2.1", "192.0.2.1?x=1",
+    "192.0.2.1:0", "192.0.2.1:70000", "a b",
+])
+def test_rejects(raw):
+    with pytest.raises(PanosConfigError):
+        normalize_mgmt_host(raw)
+
+
+def test_defaults_filled():
+    cfg = validate_panos_config({"host": "192.0.2.1"})
+    assert cfg["verify_tls"] is True
+    assert cfg["vsys"] == "vsys1"
+    assert cfg["device_name"] == "localhost.localdomain"
+    assert cfg["forwarding_path"] == "auto"
+    assert cfg["routing_instance"] == "default"
+    assert cfg["probe_destinations"] == DEFAULT_PROBES
+    assert cfg["observed_sources"] == {} and cfg["agent_addresses"] == {}
+
+
+def test_defaults_not_aliased():
+    a = validate_panos_config({"host": "192.0.2.1"})
+    a["probe_destinations"].append({"x": 1})
+    assert len(DEFAULT_PROBES) == 3
+
+
+@pytest.mark.parametrize("patch", [
+    {"vsys": "vsys"},
+    {"vsys": "vsys\u0663"},
+    {"vsys": "vsys\uff11"},
+    {"vsys": "vsys1\n"},
+    {"device_name": "bad name"},
+    {"device_name": "dev'];x"},
+    {"device_name": "d\u00e9v"},
+    {"forwarding_path": "ftp"},
+    {"probe_destinations": [{"ip": "1.1.1.1", "port": 53, "protocol": "icmp", "application": "dns"}]},
+    {"observed_sources": {"a": "not-an-ip"}},
+])
+def test_config_rejects(patch):
+    with pytest.raises(PanosConfigError):
+        validate_panos_config({"host": "192.0.2.1", **patch})
+
+
+@pytest.mark.parametrize("fp", ["auto", "sls", "syslog", "both"])
+def test_forwarding_path_accepted(fp):
+    assert validate_panos_config({"host": "192.0.2.1", "forwarding_path": fp})["forwarding_path"] == fp
+
+
+@pytest.mark.parametrize("fp", ["lfp", "ftp"])
+def test_forwarding_path_rejected(fp):
+    with pytest.raises(PanosConfigError):
+        validate_panos_config({"host": "192.0.2.1", "forwarding_path": fp})
+
+
+def test_zones_stripped():
+    cfg = validate_panos_config({"host": "192.0.2.1", "inside_zone": " trust ", "outside_zone": "untrust "})
+    assert cfg["inside_zone"] == "trust" and cfg["outside_zone"] == "untrust"
+
+
+def test_exception_default_codes_are_constants():
+    assert PanosWriteRefused("x").code == codes.PN_WRITE_REFUSED
+    assert PanosTransportError("x").code == codes.PN_UNREACHABLE
+    assert PanosConfigError("x").code == codes.PN_CONFIG_INVALID
+    e = PanosApiError("boom", panos_code="403")
+    assert e.code == codes.PN_SHAPE_UNRECOGNISED and e.panos_code == "403" and e.message == "boom"
+    assert codes.PN_WRITE_REFUSED in codes.ALL_CODES
+
+
+def test_exceptions_carry_code():
+    assert issubclass(PanosConfigError, ValueError)
+    for cls in (PanosShapeError, PanosWriteRefused, PanosTransportError):
+        assert issubclass(cls, RuntimeError)
+        assert cls("x", code="PN_UNREACHABLE").code == "PN_UNREACHABLE"
+    assert issubclass(PanosApiError, PanosShapeError)
+    e = PanosApiError("boom", code="PN_AUTH_REJECTED", panos_code="13")
+    assert e.code == "PN_AUTH_REJECTED" and e.panos_code == "13" and e.message == "boom"
+
+
+def test_codes():
+    for c in ("PN_OK", "PN_KEYGEN_REJECTED", "PN_CALL_BUDGET", "PN_SKIPPED_UNREACHABLE",
+              "PN_SKIPPED_AUTH", "PN_PATH_NOT_SELECTED", "PN_NO_FORWARDING_PATH",
+              "PN_LFP_WRONG_TARGET", "PN_SYSLOG_DELIVERY_UNVERIFIED", "PN_SYSLOG_UDP",
+              "PN_SYSLOG_NO_SERVERS", "PN_OBJECT_NOT_FOUND", "PN_PROFILE_SIGNATURE_DEFAULT",
+              "PN_ZONE_UNRESOLVED", "PN_UNREACHABLE", "PN_SHAPE_UNRECOGNISED"):
+        assert getattr(codes, c) == c
+        assert c in codes.ALL_CODES
+    assert all(c.startswith("PN_") for c in codes.ALL_CODES)
+    for c in codes.ALL_CODES:
+        assert getattr(codes, c) == c
+
+
+def test_normalize_mgmt_host_defined_once():
+    hits = []
+    for p in CORE.rglob("*.py"):
+        if ".venv" in p.parts:
+            continue
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        hits += [str(p) for n in ast.walk(tree)
+                 if isinstance(n, ast.FunctionDef) and n.name == "normalize_mgmt_host"]
+    assert len(hits) == 1, hits
+
+
+@pytest.mark.parametrize("host", ["fw.example:\u0663", "fw.example:\uff11\uff11", "fw.example:\u00b2"])
+def test_port_rejects_non_ascii_digits(host):
+    with pytest.raises(PanosConfigError):
+        normalize_mgmt_host(host)
+
+
+def test_device_name_rule_is_the_clients():
+    import integrations.panos.client as client
+    import integrations.panos.host as host
+    assert client.DEVICE_NAME_RE is host.DEVICE_NAME_RE
+
+
+@pytest.mark.parametrize("name", ["fw-1.example_x", "localhost.localdomain", "A"])
+def test_device_name_accepted_is_never_refused_by_client(name):
+    from integrations.panos.client import allowed_xpath
+    cfg = validate_panos_config({"host": "192.0.2.1", "device_name": name})
+    assert allowed_xpath(f"/config/devices/entry[@name='{cfg['device_name']}']/deviceconfig/system/timezone")

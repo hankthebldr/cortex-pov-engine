@@ -31,6 +31,7 @@ from connectors.matcher import DEFAULT_WINDOW_SECONDS
 from connectors.service import credential_kinds_for, resolve_connector_integrations
 from database import get_db
 from models import Result, Run
+from integrations.panos import PANOS_KIND
 from integrations.xsiam.loader import XSIAM_KIND as XSIAM_TENANT_KIND
 from security.credentials import CredentialStore
 
@@ -251,6 +252,11 @@ async def preflight_connector(
         description=("comma-separated datasets to probe (xsiam_tenant only). "
                      "OPT-IN: each one costs the customer a live XQL query."),
     ),
+    agents: Optional[str] = Query(
+        None,
+        description=("comma-separated agent ids to check the policy path for "
+                     "(panos_ngfw only; default: every enrolled agent)"),
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Staged, read-only reachability/scope check for a registered credential.
@@ -263,6 +269,11 @@ async def preflight_connector(
     the tenant refuses — the check itself succeeded, and the DC needs the whole
     stage list, not an exception that hides the six stages after the failure.
     """
+    if kind == PANOS_KIND:
+        # First: the resolution below emits PF_ codes; the firewall owns its own (PN_).
+        from api.ngfw import preflight_panos  # noqa: PLC0415
+        return await preflight_panos(db, integration, agents)
+
     from connectors import preflight as pf
 
     store = CredentialStore(db)

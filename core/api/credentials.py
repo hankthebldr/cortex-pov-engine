@@ -158,8 +158,11 @@ async def list_integrations(
     return {"integrations": [r.to_dict() for r in rows]}
 
 
-def _validate_integration_config(kind: str, config: dict[str, Any]) -> None:
+def _validate_integration_config(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     """Per-kind config validation at WRITE time. Raises HTTPException(400).
+
+    Returns the config to store (``panos_ngfw`` gets its defaults filled; every
+    other kind is returned unchanged).
 
     A bad tenant URL used to be accepted here silently and only became a problem
     at the first ``/reconcile`` — at which point CortexSim had already sent the
@@ -170,9 +173,20 @@ def _validate_integration_config(kind: str, config: dict[str, Any]) -> None:
     from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
     from integrations.xsiam.loader import XSIAM_KIND  # noqa: PLC0415
     from integrations.xsiam.tenant_url import normalize_tenant_base_url  # noqa: PLC0415
+    from integrations.panos import PANOS_KIND  # noqa: PLC0415
+    from integrations.panos.exceptions import PanosConfigError  # noqa: PLC0415
+    from integrations.panos.host import validate_panos_config  # noqa: PLC0415
+
+    if kind == PANOS_KIND:
+        try:
+            return validate_panos_config(config)
+        except PanosConfigError as exc:
+            raise HTTPException(status_code=400, detail={
+                "error": "NGFW config rejected", "code": "INTEGRATION_CONFIG_INVALID",
+                "detail": str(exc)}) from exc
 
     if kind not in ("xsiam", XSIAM_KIND):
-        return
+        return config
     url = config.get("base_url") or config.get("fqdn") or config.get("tenant_url")
     if not url:
         raise HTTPException(status_code=400, detail={
@@ -193,6 +207,7 @@ def _validate_integration_config(kind: str, config: dict[str, Any]) -> None:
             "error": "capabilities must be a list of strings",
             "code": "INTEGRATION_CONFIG_INVALID",
             "detail": "e.g. [\"read_alerts\"] or [\"read_alerts\", \"xql\"]"})
+    return config
 
 
 @router.put("/integrations")
@@ -200,18 +215,70 @@ async def put_integration(
     body: IntegrationPut,
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    _validate_integration_config(body.kind, body.config or {})
+    config = _validate_integration_config(body.kind, body.config or {})
+    from integrations.panos import PANOS_KIND  # noqa: PLC0415
+
+    # The hint decides redaction of the backing row; never take the caller's.
+    type_hint = "panos_api_key_credential" if body.kind == PANOS_KIND else body.secret_type_hint
     store = CredentialStore(session)
+    overrides_cleared: Optional[bool] = None
+    if body.kind == PANOS_KIND:
+        config, overrides_cleared = await _merge_panos_reput(store, body, config)
     row = await store.put_integration(
         name=body.name,
         kind=body.kind,
         plaintext_secret=body.plaintext_secret,
-        config=body.config,
-        secret_type_hint=body.secret_type_hint,
+        config=config,
+        secret_type_hint=type_hint,
         description=body.description,
     )
     await session.commit()
-    return row.to_dict()
+    out = row.to_dict()
+    if overrides_cleared is not None:
+        out["overrides_cleared"] = overrides_cleared
+    return out
+
+
+#: Operator-entered panos_ngfw settings a pasted-key re-registration keeps. The
+#: per-agent pair describes the path through ONE firewall, so it goes when the
+#: host changes; probes and zones are lab intent and stay (same rule as keygen).
+_PANOS_PER_HOST_KEYS = ("observed_sources", "agent_addresses")
+_PANOS_LAB_KEYS = ("probe_destinations", "inside_zone", "outside_zone")
+#: Device settings the operator entered once: kept unless the caller sends them
+#: (keygen keeps them too). The body wins whenever it carries the key.
+_PANOS_DEVICE_KEYS = ("device_name", "routing_instance", "vsys", "forwarding_path")
+
+
+async def _merge_panos_reput(store: CredentialStore, body: IntegrationPut,
+                             config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Carry a registered firewall's operator settings across a re-PUT.
+
+    A key the caller sent wins. Returns the validated config and whether
+    per-agent address overrides were cleared by a host change.
+    """
+    from integrations.panos import PANOS_KIND  # noqa: PLC0415
+
+    existing = await store.get_integration(body.name)
+    if existing is None:
+        return config, False
+    if existing.kind != PANOS_KIND:
+        # Same rule as keygen: never silently turn another kind's row into a firewall.
+        raise HTTPException(status_code=409, detail={
+            "error": "Integration name already in use", "code": "INTEGRATION_KIND_CONFLICT",
+            "detail": f"'{body.name}' is registered as kind '{existing.kind}', not "
+                      f"'{PANOS_KIND}'; choose another name"})
+    stored = dict(existing.config or {})
+    sent = set((body.config or {}).keys())
+    same_host = stored.get("host") == config["host"]
+    carry = (list(_PANOS_LAB_KEYS) + list(_PANOS_DEVICE_KEYS)
+             + (list(_PANOS_PER_HOST_KEYS) if same_host else []))
+    merged = dict(config)
+    for key in carry:
+        if key not in sent and key in stored:
+            merged[key] = stored[key]
+    cleared = (not same_host) and any(
+        stored.get(k) and k not in sent for k in _PANOS_PER_HOST_KEYS)
+    return _validate_integration_config(PANOS_KIND, merged), cleared
 
 
 @router.get("/integrations/{name}")

@@ -1,0 +1,1 @@
+<response status="success"><result total-count="1" count="1"><logging><logging-service-forwarding><enable>yes</enable><enable-duplicate-logging>no</enable-duplicate-logging><logging-service-regions>americas</logging-service-regions></logging-service-forwarding><enhanced-application-logging><enable>yes</enable></enhanced-application-logging></logging></result></response>

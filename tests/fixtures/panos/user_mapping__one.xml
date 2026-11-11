@@ -1,0 +1,1 @@
+<response status="success"><result><entry><ip>192.0.2.10</ip><vsys>vsys1</vsys><type>AD</type><user>lab\analyst</user><idle_timeout>2400</idle_timeout><max_timeout>2400</max_timeout></entry></result></response>
