@@ -58,7 +58,7 @@ def test_missing_case_is_pending_not_one_case():
     al = [A("1", case="A"), A("2", 1, case="A")]
     mc, reason = cl.classify_merge(al, {"B": C("B")}, basis="alert_incident_ids")
     assert mc == "PENDING"
-    assert "A" in reason
+    assert "case A" in reason
 
 
 def test_split_native():
@@ -194,3 +194,37 @@ def test_round_trip():
         (x.external_id, x.observed_at, x.severity, x.case_id) for x in al]
     assert back_c == cases
     assert led["merge_class"] == "SPLIT_SEALED"
+
+
+def test_sealed_case_without_resolve_time_is_pending():
+    al = [A("1", 0, case="A"), A("2", 5, case="B")]
+    cases = {"A": C("A", "resolved_other", resolved_at=None), "B": C("B")}
+    mc, reason = cl.classify_merge(al, cases, basis="alert_incident_ids")
+    assert mc == "PENDING"
+    assert "case A" in reason and "unknown" in reason
+
+
+def test_resolved_without_timestamp_is_null_in_ledger_and_pending():
+    inc = ObservedIncident(incident_id="A", status="resolved_other", raw={})
+    ca = cl.ledger_case_from_incident(inc)
+    assert ca.resolved_at is None
+    al = [A("1", 0, case="A"), A("2", 5, case="B")]
+    led = cl.build_case_ledger(al, {"A": ca, "B": C("B")}, basis="alert_incident_ids", read_at=T0)
+    row = next(c for c in led["cases"] if c["case_id"] == "A")
+    assert row["resolved_at"] is None
+    assert led["merge_class"] == "PENDING"
+
+
+@pytest.mark.parametrize("bad", [["new"], {"x": 1}, 5])
+def test_non_string_status_raises_shape_error(bad):
+    inc = ObservedIncident(incident_id="A", status=None, raw={"status": bad})
+    with pytest.raises(cl.CaseShapeError):
+        cl.ledger_case_from_incident(inc)
+    with pytest.raises(cl.CaseShapeError):
+        cl.issue_closed_by(A("1", status=bad))
+
+
+def test_some_medium_without_case_is_pending():
+    al = [A("1", 0, case="A"), A("2", 1, case=None)]
+    mc, reason = cl.classify_merge(al, {"A": C("A")}, basis="alert_incident_ids")
+    assert mc == "PENDING" and "not in a case" in reason

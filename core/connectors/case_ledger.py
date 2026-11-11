@@ -122,7 +122,7 @@ def ledger_case_from_incident(i: ObservedIncident) -> LedgerCase:
     """
     raw = i.raw or {}
     status = i.status or raw.get("status") or raw.get("status_progress")
-    if status not in CASE_STATUS_MAP:
+    if not isinstance(status, str) or status not in CASE_STATUS_MAP:
         raise CaseShapeError(f"case {i.incident_id}: unrecognised status {status!r}")
     resolved_raw = raw.get("resolved_timestamp")
     resolved_at = None
@@ -145,10 +145,9 @@ def ledger_case_from_incident(i: ObservedIncident) -> LedgerCase:
 # ── disposition ───────────────────────────────────────────────────────────
 
 def case_closed_by(c: LedgerCase) -> str:
-    try:
-        base = CASE_STATUS_MAP[c.status]
-    except KeyError:
-        raise CaseShapeError(f"case {c.case_id}: unrecognised status {c.status!r}") from None
+    if not isinstance(c.status, str) or c.status not in CASE_STATUS_MAP:
+        raise CaseShapeError(f"case {c.case_id}: unrecognised status {c.status!r}")
+    base = CASE_STATUS_MAP[c.status]
     if base == "other_resolved" and (c.resolve_comment or "").startswith(TRIAGE_RESOLVE_COMMENT_PREFIX):
         return "socfw_auto_triage"
     return base
@@ -163,6 +162,8 @@ def issue_closed_by(a: LedgerAlert, *, ai_close_marker: Optional[str] = None) ->
     status = a.issue_status
     if status is None:
         return "unread"  # never "open": not having read it proves nothing
+    if not isinstance(status, str):
+        raise CaseShapeError(f"issue {a.external_id}: unrecognised status {status!r}")
     norm = " ".join(str(status).lower().replace("_", " ").split())
     reason = str(a.issue_reason or "").lower()
     if norm.startswith("resolved") or reason.startswith("resolved"):
@@ -218,14 +219,21 @@ def classify_merge(alerts: Sequence[LedgerAlert], cases: Mapping[str, LedgerCase
     ordered = sorted(first, key=lambda k: (first[k], k))
     for n, early in enumerate(ordered):
         c = cases[early]
-        if not case_sealed(c) or c.resolved_at is None:
+        if not case_sealed(c):
             continue
+        if c.resolved_at is None:
+            # Sealed, but when? Without the time we cannot say whether it was
+            # sealed before the later case began, and only SPLIT_SEALED
+            # withholds a correlation FAIL: do not claim a native split.
+            return "PENDING", f"case {early} was sealed but its resolve time is unknown"
         sealed_at = _t(c.resolved_at)
         for later in ordered[n + 1:]:
             if sealed_at < first[later]:
                 return "SPLIT_SEALED", (
                     f"case {early} was resolved ({case_closed_by(c)}) before case {later} "
                     "received its first alert, so the platform could not reopen it")
+    # Reached only when every earlier sealed case has a known resolve time and
+    # none was sealed before a later case's first alert.
     return "SPLIT_NATIVE", f"alerts spread across cases {', '.join(ordered)} with no earlier case sealed first"
 
 
