@@ -231,3 +231,71 @@ def test_empty_selection_raises():
 def test_vault_root_refuses_to_guess():
     with pytest.raises(pm.LedgerError, match="OBSIDIAN_VAULT_NAME"):
         pm.vault_root({"OBSIDIAN_ROOT": "/tmp"})
+
+
+def _vault(tmp_path, monkeypatch=None):
+    v = tmp_path / "vault"
+    (v / ".obsidian").mkdir(parents=True)
+    if monkeypatch is not None:
+        monkeypatch.setenv("OBSIDIAN_ROOT", str(tmp_path))
+        monkeypatch.setenv("OBSIDIAN_VAULT_NAME", "vault")
+    return v.resolve()
+
+
+def test_vault_root_refuses_a_folder_that_is_not_a_vault(tmp_path):
+    (tmp_path / "notes").mkdir()
+    with pytest.raises(pm.LedgerError, match="not an Obsidian vault"):
+        pm.vault_root({"OBSIDIAN_ROOT": str(tmp_path), "OBSIDIAN_VAULT_NAME": "notes"})
+
+
+def test_vault_root_accepts_a_real_vault(tmp_path):
+    v = _vault(tmp_path)
+    assert pm.vault_root({"OBSIDIAN_ROOT": str(tmp_path), "OBSIDIAN_VAULT_NAME": "vault"}) == v
+
+
+def test_write_into_vault_proves_the_bytes_landed(tmp_path):
+    v = _vault(tmp_path)
+    path, digest = pm.write_into_vault(v, pm.VAULT_OUTBOX / "PMQ-x.md", "hello\n")
+    assert path.read_text(encoding="utf-8") == "hello\n"
+    assert digest == pm._sha256(b"hello\n")
+
+
+def test_write_into_vault_refuses_a_path_that_escapes(tmp_path):
+    v = _vault(tmp_path)
+    with pytest.raises(pm.LedgerError, match="vault-relative"):
+        pm.write_into_vault(v, Path("../elsewhere/PMQ-x.md"), "x")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (v / "github-projects").symlink_to(outside)
+    with pytest.raises(pm.LedgerError, match="resolves outside"):
+        pm.write_into_vault(v, pm.VAULT_OUTBOX / "PMQ-x.md", "x")
+
+
+def test_write_into_vault_raises_when_the_read_back_differs(tmp_path, monkeypatch):
+    v = _vault(tmp_path)
+    monkeypatch.setattr(Path, "read_bytes", lambda self: b"something else")
+    with pytest.raises(pm.LedgerError, match="read-back"):
+        pm.write_into_vault(v, pm.VAULT_OUTBOX / "PMQ-x.md", "hello\n")
+
+
+def test_vault_packet_status_reports_present_missing_and_differs(tmp_path):
+    v = _vault(tmp_path)
+    packets = tmp_path / "packets"
+    packets.mkdir()
+    for name in ("PMQ-a.md", "PMQ-b.md", "PMQ-c.md"):
+        (packets / name).write_text(name, encoding="utf-8")
+    pm.write_into_vault(v, pm.VAULT_OUTBOX / "PMQ-a.md", "PMQ-a.md")
+    pm.write_into_vault(v, pm.VAULT_OUTBOX / "PMQ-c.md", "edited on the other Mac")
+    assert pm.vault_packet_status(v, packets) == [
+        ("PMQ-a.md", "present"), ("PMQ-b.md", "missing"), ("PMQ-c.md", "differs")]
+
+
+def test_check_vault_fails_until_send_writes_the_packets(tmp_path, monkeypatch):
+    v = _vault(tmp_path, monkeypatch)
+    assert sorted(pm.PACKETS_DIR.glob("PMQ-*.md")), "fixture needs at least one real packet"
+    assert pm.main(["check", "--vault"]) == 1          # empty outbox: not "OK"
+    assert pm.main(["send"]) == 0                      # preview writes nothing
+    assert not (v / pm.VAULT_OUTBOX).exists()
+    assert pm.main(["send", "--apply"]) == 0
+    assert pm.main(["check", "--vault"]) == 0
+    assert pm.main(["send", "--apply"]) == 0           # idempotent: nothing left to write
