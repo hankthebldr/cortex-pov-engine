@@ -11,19 +11,19 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 | mechanism | P0 | P1 | P2 | open | asked | internal_only | unknown | provisional | conflicting | settled | retired |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | [ING](#ing) Ingestion, parsing and XDM modeling | 3 | 4 | 2 | 4 | 2 | 0 | 0 | 3 | 0 | 0 | 0 |
-| [STI](#sti) Stitching (data fusion across sources) | 6 | 7 | 1 | 6 | 5 | 0 | 0 | 3 | 0 | 0 | 0 |
-| [CAU](#cau) Causality and the Causality Group Owner (CGO) | 4 | 3 | 1 | 3 | 0 | 0 | 0 | 5 | 0 | 0 | 0 |
+| [STI](#sti) Stitching (data fusion across sources) | 6 | 7 | 1 | 5 | 6 | 0 | 0 | 3 | 0 | 0 | 0 |
+| [CAU](#cau) Causality and the Causality Group Owner (CGO) | 4 | 3 | 1 | 1 | 2 | 0 | 0 | 5 | 0 | 0 | 0 |
 | [BIO](#bio) BIOC matching | 3 | 4 | 0 | 1 | 2 | 0 | 0 | 4 | 0 | 0 | 0 |
 | [ABI](#abi) ABIOC (analytics BIOC) | 2 | 3 | 1 | 3 | 1 | 0 | 0 | 1 | 0 | 0 | 1 |
 | [ANA](#ana) Analytics engine (profiles, baselines, thresholds) | 4 | 5 | 2 | 7 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
-| [COR](#cor) Correlation rules | 3 | 4 | 1 | 4 | 1 | 0 | 0 | 3 | 0 | 0 | 0 |
-| [IOC](#ioc) IOC matching and threat intel | 2 | 3 | 1 | 3 | 0 | 0 | 0 | 3 | 0 | 0 | 0 |
+| [COR](#cor) Correlation rules | 3 | 4 | 1 | 3 | 2 | 0 | 0 | 3 | 0 | 0 | 0 |
+| [IOC](#ioc) IOC matching and threat intel | 2 | 3 | 1 | 2 | 1 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [PRV](#prv) Prevention (agent modules, report vs block) | 1 | 2 | 1 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
 | [INC](#inc) Alert-to-incident grouping | 2 | 5 | 1 | 5 | 0 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 4 | 2 | 0 | 2 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
 | [ALR](#alr) Alert records and read-back | 2 | 3 | 0 | 1 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
-| [IDN](#idn) Identity resolution (CGO ownership, Cloud Identity Engine, Active Directory) | 6 | 3 | 0 | 8 | 0 | 0 | 0 | 1 | 0 | 0 | 0 |
-| **all (101)** | **42** | **48** | **11** | **50** | **18** | **0** | **0** | **32** | **0** | **0** | **1** |
+| [IDN](#idn) Identity resolution (CGO ownership, Cloud Identity Engine, Active Directory) | 6 | 3 | 0 | 0 | 8 | 0 | 0 | 1 | 0 | 0 | 0 |
+| **all (101)** | **42** | **48** | **11** | **37** | **31** | **0** | **0** | **32** | **0** | **0** | **1** |
 
 Priority: **P0** a wrong guess produces a silent miss in a POV today · **P1** it weakens fidelity, attribution or MTTD · **P2** refinement.
 
@@ -185,7 +185,7 @@ The engine that links records from different sensors (agent network events, NGFW
 | [PM-STI-05](#pm-sti-05) | P0 | provisional | Does network-endpoint stitching require a PAN-OS NGFW logging through Strata Logging Service, or are third-party firewall logs (HTTP collector or syslog) stitched to agent data too? If third-party works, which vendors and which fields? |
 | [PM-STI-06](#pm-sti-06) | P1 | open | Does stitching require the agent to have recorded its own network event for the connection, or can a firewall record be linked to a process from other evidence (a DNS query event, the host's IP at that time, an RPC/ETW event)? |
 | [PM-STI-07](#pm-sti-07) | P1 | provisional | What is the observable output of a successful stitch: fields added to the firewall row (e.g. actor process or causality fields), a link in the network story, a joined row in a specific dataset? What XQL proves "this firewall session was stitched to process X"? |
-| [PM-STI-08](#pm-sti-08) | P1 | open | How do identity sources stitch to endpoints: on UPN, sAMAccountName, email, SID, or a normalized user? What normalization does the engine apply (case, domain prefix, @suffix)? When the Cloud Identity Engine is linked, does it do the resolving, so that `CORP\alice` on an agent event, `alice@corp.local` in a 4769 and `alice@corp.com` in an Okta sign-in become one identity, and which field on an event or issue carries that resolved identity? |
+| [PM-STI-08](#pm-sti-08) | P1 | asked | How do identity sources stitch to endpoints: on UPN, sAMAccountName, email, SID, or a normalized user? What normalization does the engine apply (case, domain prefix, @suffix)? When the Cloud Identity Engine is linked, does it do the resolving, so that `CORP\alice` on an agent event, `alice@corp.local` in a 4769 and `alice@corp.com` in an Okta sign-in become one identity, and which field on an event or issue carries that resolved identity? |
 | [PM-STI-09](#pm-sti-09) | P1 | provisional | Is stitching (data fusion) the same mechanism that groups alerts into an incident, or separate? If separate, what does each key on? |
 | [PM-STI-10](#pm-sti-10) | P2 | open | How are protocols without ports keyed for stitching (ICMP), and is DNS over UDP/53 stitched per query or per session? |
 | [PM-STI-11](#pm-sti-11) | P1 | open | Does App-ID or session state gate stitching, e.g. only sessions with an identified application, only allowed sessions, or only sessions that have ended? |
@@ -261,11 +261,12 @@ The engine that links records from different sensors (agent network events, NGFW
 
 #### PM-STI-08
 
-**P1 · open** — How do identity sources stitch to endpoints: on UPN, sAMAccountName, email, SID, or a normalized user? What normalization does the engine apply (case, domain prefix, @suffix)? When the Cloud Identity Engine is linked, does it do the resolving, so that `CORP\alice` on an agent event, `alice@corp.local` in a 4769 and `alice@corp.com` in an Okta sign-in become one identity, and which field on an event or issue carries that resolved identity?
+**P1 · asked** — How do identity sources stitch to endpoints: on UPN, sAMAccountName, email, SID, or a normalized user? What normalization does the engine apply (case, domain prefix, @suffix)? When the Cloud Identity Engine is linked, does it do the resolving, so that `CORP\alice` on an agent event, `alice@corp.local` in a 4769 and `alice@corp.com` in an Okta sign-in become one identity, and which field on an event or issue carries that resolved identity?
 
 - **Why we ask:** 13 scenarios use `stitching_key: user_principal`. canary_token accepts only lowercase alphanumerics and hyphens (stitch_params.py:36), which may not survive the engine's normalization. The lab shows Linux local users as `<hostname>\<user>` (IDN known), a form no IdP record carries.
 - **What the answer moves:** Account formats planted by canary_token and identity emitters; whether cross-source identity scenarios need CIE linked to be satisfiable.
 - **Touches:** `core/eal_simulator/stitch_params.py`, `idp_signin_emulator`, `ad_windows_emitter`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-STI-09
 
@@ -356,8 +357,8 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 | [PM-CAU-04](#pm-cau-04) | P0 | provisional | Does the agent drop, sample, throttle or collapse process-start events: very short-lived processes, known system binaries, or several identical starts (same parent, image and command line) inside a short window? If so, what are the window and the count, and are the children of a dropped process dropped with it? |
 | [PM-CAU-05](#pm-cau-05) | P1 | provisional | For a process launched by cron, a systemd timer or a scheduled task, what becomes the CGO: the scheduler, or the launched process? |
 | [PM-CAU-06](#pm-cau-06) | P2 | open | In containers, is the runtime (containerd-shim, runc) a causality boundary, and is container identity populated on every event type (process, file, network)? |
-| [PM-CAU-07](#pm-cau-07) | P0 | open | On Linux hosts running systemd 255 or later, where services start through `systemd-executor` executed from a file descriptor, the agent records the CGO of every service-started chain as image name `9`, path `/proc/self/fd/9`, the SHA-256 of empty input and a null user (CAU known, 2026-11-11). Is that the intended CGO for these hosts? Do ABIOCs, the causality view and the Causality grouping artifact then treat every service-started chain on the host as owned by the same unnamed process, and does an agent version or setting resolve the executor to the service binary it becomes? |
-| [PM-CAU-08](#pm-cau-08) | P1 | open | Is a CGO's identity frozen at the process start the agent observed (so a process that later execs into another binary keeps its first image name), and is a process that was already running when the agent started recorded under its current image instead? Concretely: a beacon started before the XDR agent was installed was recorded as CGO `cortexsim-agent`; the same beacon re-enrolled after the agent was running was recorded as CGO `9`. |
+| [PM-CAU-07](#pm-cau-07) | P0 | asked | On Linux hosts running systemd 255 or later, where services start through `systemd-executor` executed from a file descriptor, the agent records the CGO of every service-started chain as image name `9`, path `/proc/self/fd/9`, the SHA-256 of empty input and a null user (CAU known, 2026-11-11). Is that the intended CGO for these hosts? Do ABIOCs, the causality view and the Causality grouping artifact then treat every service-started chain on the host as owned by the same unnamed process, and does an agent version or setting resolve the executor to the service binary it becomes? |
+| [PM-CAU-08](#pm-cau-08) | P1 | asked | Is a CGO's identity frozen at the process start the agent observed (so a process that later execs into another binary keeps its first image name), and is a process that was already running when the agent started recorded under its current image instead? Concretely: a beacon started before the XDR agent was installed was recorded as CGO `cortexsim-agent`; the same beacon re-enrolled after the agent was running was recorded as CGO `9`. |
 
 #### PM-CAU-01
 
@@ -421,7 +422,7 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 
 #### PM-CAU-07
 
-**P0 · open** — On Linux hosts running systemd 255 or later, where services start through `systemd-executor` executed from a file descriptor, the agent records the CGO of every service-started chain as image name `9`, path `/proc/self/fd/9`, the SHA-256 of empty input and a null user (CAU known, 2026-11-11). Is that the intended CGO for these hosts? Do ABIOCs, the causality view and the Causality grouping artifact then treat every service-started chain on the host as owned by the same unnamed process, and does an agent version or setting resolve the executor to the service binary it becomes?
+**P0 · asked** — On Linux hosts running systemd 255 or later, where services start through `systemd-executor` executed from a file descriptor, the agent records the CGO of every service-started chain as image name `9`, path `/proc/self/fd/9`, the SHA-256 of empty input and a null user (CAU known, 2026-11-11). Is that the intended CGO for these hosts? Do ABIOCs, the causality view and the Causality grouping artifact then treat every service-started chain on the host as owned by the same unnamed process, and does an agent version or setting resolve the executor to the service binary it becomes?
 
 - **Why we ask:** Every pulled step, every beacon-started transient unit, and 124 of 150 `causality_actor_process_image_name` predicates in the cards assume a named CGO (cortexsim-agent, apache2, nginx, …). On Ubuntu 24.04 none of those names can appear, so each such predicate is unsatisfiable however the step is launched. Ubuntu 24.04 is the default lab image.
 - **What the answer moves:** A Linux target preflight that reads the host's systemd version; whether cards may key on causality_actor_process_image_name for systemd-started chains; whether CGO-anchored scenarios must launch from a non-systemd spawner such as cron (whose chains had CGO `cron`).
@@ -429,15 +430,17 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
   - *if* An agent version or setting names the real binary → Preflight gates CGO-dependent scenarios on that version or setting and records it per run.
 - **Settle it in the lab:** Repeat probe pmqfba025 (beacon step, systemd-run with a renamed ExecStart, cron) on Ubuntu 22.04 (systemd 249) and Ubuntu 24.04 (systemd 255) with the same agent version; compare causality_actor_process_image_name, path and sha256 per case.
 - **Touches:** `agent/executor/platform_unix.go`, `detection_scanner/ttps`, `core/engine/causality_graph.py`, `scenarios (cgo_anchor)`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-CAU-08
 
-**P1 · open** — Is a CGO's identity frozen at the process start the agent observed (so a process that later execs into another binary keeps its first image name), and is a process that was already running when the agent started recorded under its current image instead? Concretely: a beacon started before the XDR agent was installed was recorded as CGO `cortexsim-agent`; the same beacon re-enrolled after the agent was running was recorded as CGO `9`.
+**P1 · asked** — Is a CGO's identity frozen at the process start the agent observed (so a process that later execs into another binary keeps its first image name), and is a process that was already running when the agent started recorded under its current image instead? Concretely: a beacon started before the XDR agent was installed was recorded as CGO `cortexsim-agent`; the same beacon re-enrolled after the agent was running was recorded as CGO `9`.
 
 - **Why we ask:** The two readings come from two lab sessions on pov-target-01 (2026-11-10, beacon installed before the agent; 2026-11-11, re-enrolled after). If start order decides the CGO, the same scenario scores differently depending on when the DC installed the beacon relative to the XDR agent.
 - **What the answer moves:** The install order the onboarding runbook prescribes (beacon before or after the XDR agent, or a beacon restart after agent install), and a run-record field naming the CGO actually observed.
 - **Settle it in the lab:** With the agent running, start the beacon from systemd, then restart the XDR agent and run one step; then restart the beacon and run one step. Compare causality_actor_process_image_name across the three steps.
 - **Touches:** `agent/beacon`, `core/api/agents.py`, `docs/reference/api-and-agent-surface.md`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 ## BIO
 
@@ -791,7 +794,7 @@ Authored, scheduled XQL that produces alerts, can join datasets, and is the mech
 | [PM-COR-05](#pm-cor-05) | P1 | provisional | What suppression or dedup options does a correlation rule have, and what are the defaults? |
 | [PM-COR-06](#pm-cor-06) | P1 | provisional | Is there a per-tenant cap on enabled correlation rules or on their total query compute? |
 | [PM-COR-07](#pm-cor-07) | P2 | open | Can correlation rules be created and validated through the API (dry-run or test against history) without enabling them? |
-| [PM-COR-08](#pm-cor-08) | P0 | open | Can any correlation rule relate two sources within 60 seconds? A Real Time rule may use only dataset, datamodel, filter, alter, fields and config stages (no join), and a Scheduled rule runs at most every 10 minutes. Can a Real Time rule read two sources through one datamodel query without a join, and does its alert then group with the other source's alert? |
+| [PM-COR-08](#pm-cor-08) | P0 | asked | Can any correlation rule relate two sources within 60 seconds? A Real Time rule may use only dataset, datamodel, filter, alter, fields and config stages (no join), and a Scheduled rule runs at most every 10 minutes. Can a Real Time rule read two sources through one datamodel query without a join, and does its alert then group with the other source's alert? |
 
 #### PM-COR-01
 
@@ -856,13 +859,14 @@ Authored, scheduled XQL that produces alerts, can join datasets, and is the mech
 
 #### PM-COR-08
 
-**P0 · open** — Can any correlation rule relate two sources within 60 seconds? A Real Time rule may use only dataset, datamodel, filter, alter, fields and config stages (no join), and a Scheduled rule runs at most every 10 minutes. Can a Real Time rule read two sources through one datamodel query without a join, and does its alert then group with the other source's alert?
+**P0 · asked** — Can any correlation rule relate two sources within 60 seconds? A Real Time rule may use only dataset, datamodel, filter, alter, fields and config stages (no join), and a Scheduled rule runs at most every 10 minutes. Can a Real Time rule read two sources through one datamodel query without a join, and does its alert then group with the other source's alert?
 
 - **Why we ask:** Nine scenarios declare `correlation_window_seconds` of 60 or less with a Correlation expectation (SIM-MP-001 to SIM-MP-006, SIM-EMAIL-003/004, SIM-TIM-001); SIM-MP-006 declares 10 s. No card correlation rule carries a mode, cadence or time frame, and 158 of 214 are written as `BIOC(x) AND BIOC(y)`.
 - **What the answer moves:** Whether `correlation_window_seconds` <= 60 is a valid declaration at all; the card schema for correlation rules (mode, cadence, query time frame, severity).
   - *if* No single rule can relate two sources inside 60 s → The loader rejects windows under 600 s for Correlation expectations and those nine scenarios move to a 10-minute cadence.
   - *if* A Real Time datamodel query can → The card schema gains `mode: real_time` with a stage allowlist the validator enforces.
 - **Touches:** `scenarios/multi_plane/`, `detection_scanner/ttps`, `detection_scanner/scripts/validate.py`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 ## IOC
 
@@ -893,7 +897,7 @@ Indicator-value matching (hash, IP, domain, URL) against agent and network data,
 | [PM-IOC-03](#pm-ioc-03) | P1 | open | How do TIM feed indicators become detection IOCs: automatically, by reputation or verdict, by expiration? Does an indicator need a bad or suspicious verdict to match? |
 | [PM-IOC-04](#pm-ioc-04) | P1 | open | Which hash types are matched (sha256 only, or md5/sha1 too), and at which event is a file's hash computed (write, execute, both)? |
 | [PM-IOC-05](#pm-ioc-05) | P2 | provisional | Do IOC alerts dedupe per host or per indicator, and what is the default indicator expiration? |
-| [PM-IOC-06](#pm-ioc-06) | P1 | open | IOC rules accept Full Path, File Name, Domain, Destination IP, MD5 and SHA256. Can a URL, user-agent, email sender, cloud account id or SHA-1 indicator ever raise an issue against agent or NGFW data, for example as a TIM indicator, or do those types only enrich? |
+| [PM-IOC-06](#pm-ioc-06) | P1 | asked | IOC rules accept Full Path, File Name, Domain, Destination IP, MD5 and SHA256. Can a URL, user-agent, email sender, cloud account id or SHA-1 indicator ever raise an issue against agent or NGFW data, for example as a TIM indicator, or do those types only enrich? |
 
 #### PM-IOC-01
 
@@ -942,11 +946,12 @@ Indicator-value matching (hash, IP, domain, URL) against agent and network data,
 
 #### PM-IOC-06
 
-**P1 · open** — IOC rules accept Full Path, File Name, Domain, Destination IP, MD5 and SHA256. Can a URL, user-agent, email sender, cloud account id or SHA-1 indicator ever raise an issue against agent or NGFW data, for example as a TIM indicator, or do those types only enrich?
+**P1 · asked** — IOC rules accept Full Path, File Name, Domain, Destination IP, MD5 and SHA256. Can a URL, user-agent, email sender, cloud account id or SHA-1 indicator ever raise an issue against agent or NGFW data, for example as a TIM indicator, or do those types only enrich?
 
 - **Why we ask:** 73 of 439 card IOCs use types outside the IOC-rule list (url 32, user-agent 26, email-sender 9, cloud-account-id 4, sha1 1, registry-key 1), and 99 are IPv4, which match only as a destination.
 - **What the answer moves:** Whether those card IOCs move to XQL hunts or TIM-backed expectations, and which IOC types the validator accepts.
 - **Touches:** `detection_scanner/ttps (iocs[])`, `detection_scanner/scripts/validate.py`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 ## PRV
 
@@ -1316,14 +1321,14 @@ How Cortex decides who an event, a chain or an alert belongs to: the user fields
 | id | priority | status | question |
 |---|---|---|---|
 | [PM-IDN-01](#pm-idn-01) | P0 | provisional | Which user does an issue report for a Linux process chain, and which user does the UserName grouping artifact use: the CGO's (causality_actor_effective_username), the parent's (actor_effective_username) or the process the rule matched (action_process_username)? In the lab the CGO had a null user while the matched process ran as `pov-target-01\www-data` (IDN known). Does an issue whose CGO has no user carry a user at all? |
-| [PM-IDN-02](#pm-idn-02) | P0 | open | Do Identity Analytics and ITDR detectors evaluate activity whose acting user is NT AUTHORITY\SYSTEM or the machine account (`WS01$`), for example a Kerberos service-ticket burst requested from a SYSTEM-context PowerShell? Or are machine and system principals excluded, so the attack must run as a domain user to be seen? |
-| [PM-IDN-03](#pm-idn-03) | P0 | open | What does one `pan_dss_raw` row hold: one object per sync (a snapshot), or one row per change? Which field names carry the object type (user, group, computer), sAMAccountName, userPrincipalName, objectSid, memberOf, adminCount, userAccountControl, servicePrincipalName, description and the sync time? |
-| [PM-IDN-04](#pm-idn-04) | P0 | open | Do the Identity Analytics detectors read CIE attributes as inputs, so that a Kerberoast against an account fires only when CIE already shows that account with a servicePrincipalName (or adminCount = 1), and an AS-REP request only when CIE shows DONT_REQ_PREAUTH? Or do they read the DC's events alone and use CIE only to enrich the issue? |
-| [PM-IDN-05](#pm-idn-05) | P1 | open | How long after a change in Active Directory (a new user, a group membership, a description edit) does it appear in `pan_dss_raw`, and does an issue raised in between carry the old or the new attributes? Docs say incremental sync runs every 5 minutes: is that from the agent's last run, and are deletions synced as tombstones or by absence? |
-| [PM-IDN-06](#pm-idn-06) | P0 | open | Where does a domain controller's Kerberos and logon telemetry land when it is collected by the XDR agent with XTH: xdr_data `event_type = EVENT_LOG` with the event id and data fields, or a separate dataset? Which fields carry the 4769 ticket encryption type, service name and client address, and the 4768 pre-authentication type? When the same events come through the Broker VM Windows Event Collector, are they in `microsoft_windows_raw` under different names? |
-| [PM-IDN-07](#pm-idn-07) | P0 | open | Can Windows Security events that arrive through an HTTP log collector (what the AD emitter sends) feed any Identity Analytics or ITDR detector, even with an XDM modeling rule mapping them? Or do those detectors read only events collected by the XDR agent with XTH or by the Broker VM Windows Event Collector, as their Required Data lists suggest? |
-| [PM-IDN-08](#pm-idn-08) | P1 | open | When one CIE instance syncs more than one directory (on-prem AD, Entra ID, Okta), does it merge accounts that belong to one person into one identity, on which attribute, and which field on an issue names the merged identity? |
-| [PM-IDN-09](#pm-idn-09) | P1 | open | Does Cortex have a native decoy or honey-identity feature (an account flagged by a CIE attribute, a group or a tenant setting) that raises an issue on any authentication, or is "honey account touched" only ever a custom rule? |
+| [PM-IDN-02](#pm-idn-02) | P0 | asked | Do Identity Analytics and ITDR detectors evaluate activity whose acting user is NT AUTHORITY\SYSTEM or the machine account (`WS01$`), for example a Kerberos service-ticket burst requested from a SYSTEM-context PowerShell? Or are machine and system principals excluded, so the attack must run as a domain user to be seen? |
+| [PM-IDN-03](#pm-idn-03) | P0 | asked | What does one `pan_dss_raw` row hold: one object per sync (a snapshot), or one row per change? Which field names carry the object type (user, group, computer), sAMAccountName, userPrincipalName, objectSid, memberOf, adminCount, userAccountControl, servicePrincipalName, description and the sync time? |
+| [PM-IDN-04](#pm-idn-04) | P0 | asked | Do the Identity Analytics detectors read CIE attributes as inputs, so that a Kerberoast against an account fires only when CIE already shows that account with a servicePrincipalName (or adminCount = 1), and an AS-REP request only when CIE shows DONT_REQ_PREAUTH? Or do they read the DC's events alone and use CIE only to enrich the issue? |
+| [PM-IDN-05](#pm-idn-05) | P1 | asked | How long after a change in Active Directory (a new user, a group membership, a description edit) does it appear in `pan_dss_raw`, and does an issue raised in between carry the old or the new attributes? Docs say incremental sync runs every 5 minutes: is that from the agent's last run, and are deletions synced as tombstones or by absence? |
+| [PM-IDN-06](#pm-idn-06) | P0 | asked | Where does a domain controller's Kerberos and logon telemetry land when it is collected by the XDR agent with XTH: xdr_data `event_type = EVENT_LOG` with the event id and data fields, or a separate dataset? Which fields carry the 4769 ticket encryption type, service name and client address, and the 4768 pre-authentication type? When the same events come through the Broker VM Windows Event Collector, are they in `microsoft_windows_raw` under different names? |
+| [PM-IDN-07](#pm-idn-07) | P0 | asked | Can Windows Security events that arrive through an HTTP log collector (what the AD emitter sends) feed any Identity Analytics or ITDR detector, even with an XDM modeling rule mapping them? Or do those detectors read only events collected by the XDR agent with XTH or by the Broker VM Windows Event Collector, as their Required Data lists suggest? |
+| [PM-IDN-08](#pm-idn-08) | P1 | asked | When one CIE instance syncs more than one directory (on-prem AD, Entra ID, Okta), does it merge accounts that belong to one person into one identity, on which attribute, and which field on an issue names the merged identity? |
+| [PM-IDN-09](#pm-idn-09) | P1 | asked | Does Cortex have a native decoy or honey-identity feature (an account flagged by a CIE attribute, a group or a tenant setting) that raises an issue on any authentication, or is "honey account touched" only ever a custom rule? |
 
 #### PM-IDN-01
 
@@ -1335,11 +1340,12 @@ How Cortex decides who an event, a chain or an alert belongs to: the user fields
   - *if* The issue's user is the matched process's user → runuser -u is enough; switch the harness from `runuser -l` (needs a login shell) to `runuser -u … --`.
 - **Settle it in the lab:** Fire one Medium custom BIOC on a child of `runuser -u www-data -- /bin/sh -c '<canary>'` launched by the beacon, and one on the same child launched by `systemd-run --uid=www-data`; read the issue's user fields and the case it joins.
 - **Touches:** `agent/identity/harness.go`, `core/connectors/matcher.py`, `scenarios/_schema.yml`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 - **Answer (2026-11-11, partial, lab_observation):** On process events the user fields split by scope: the process run under `runuser -u www-data` or `systemd-run --uid=www-data` carried action_process_username `pov-target-01\www-data`, its children carried actor_effective_username `pov-target-01\www-data`, and the CGO's causality_actor_effective_username was null in every case. Which of these an issue and the UserName grouping artifact use was not tested: no issue was raised. **Rule:** A Linux service-account step attributes the user on the step's own processes only; expect no user on the chain's owner.
 
 #### PM-IDN-02
 
-**P0 · open** — Do Identity Analytics and ITDR detectors evaluate activity whose acting user is NT AUTHORITY\SYSTEM or the machine account (`WS01$`), for example a Kerberos service-ticket burst requested from a SYSTEM-context PowerShell? Or are machine and system principals excluded, so the attack must run as a domain user to be seen?
+**P0 · asked** — Do Identity Analytics and ITDR detectors evaluate activity whose acting user is NT AUTHORITY\SYSTEM or the machine account (`WS01$`), for example a Kerberos service-ticket burst requested from a SYSTEM-context PowerShell? Or are machine and system principals excluded, so the attack must run as a domain user to be seen?
 
 - **Why we ask:** A pulled Windows step runs as the beacon's service account because Windows identities collapse to `direct` (platform.go:212). The identity-lab design plans Kerberoast and AS-REP steps from native PowerShell on a workstation through the beacon. If the detectors skip machine and SYSTEM principals, every such step is a silent miss.
 - **What the answer moves:** How a Windows identity step is launched: through the beacon as SYSTEM, or as a domain user (a scheduled task or a process started with that user's stored credential), and whether the beacon needs a run-as path for Windows.
@@ -1347,38 +1353,42 @@ How Cortex decides who an event, a chain or an alert belongs to: the user fields
   - *if* They are evaluated → Pulled steps as SYSTEM are valid; record the requesting principal per run.
 - **Settle it in the lab:** On the identity lab, request service tickets for 10 SPNs from a SYSTEM-context process and, separately, from a domain user's logon session; compare 4769 events and any Identity Analytics issue after the training clock.
 - **Touches:** `agent/identity/platform.go`, `agent/executor/platform_windows.go`, `scenarios/itdr/`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-IDN-03
 
-**P0 · open** — What does one `pan_dss_raw` row hold: one object per sync (a snapshot), or one row per change? Which field names carry the object type (user, group, computer), sAMAccountName, userPrincipalName, objectSid, memberOf, adminCount, userAccountControl, servicePrincipalName, description and the sync time?
+**P0 · asked** — What does one `pan_dss_raw` row hold: one object per sync (a snapshot), or one row per change? Which field names carry the object type (user, group, computer), sAMAccountName, userPrincipalName, objectSid, memberOf, adminCount, userAccountControl, servicePrincipalName, description and the sync time?
 
 - **Why we ask:** The identity-lab design proves the CIE sync with a canary user whose description carries a nonce, and its day-one detections join DC events to `pan_dss_raw` on these attributes. No card reads `pan_dss_raw` today, and the field names are unverified.
 - **What the answer moves:** The sync-canary query, the join keys of every CIE-context card, and whether a join must take the latest row per object.
 - **Settle it in the lab:** With CIE linked, create a canary user, change its description twice 10 minutes apart, add it to a group; query `pan_dss_raw` for it after each change and record row count and field names.
 - **Touches:** `detection_scanner/ttps`, `core/connectors/preflight.py`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-IDN-04
 
-**P0 · open** — Do the Identity Analytics detectors read CIE attributes as inputs, so that a Kerberoast against an account fires only when CIE already shows that account with a servicePrincipalName (or adminCount = 1), and an AS-REP request only when CIE shows DONT_REQ_PREAUTH? Or do they read the DC's events alone and use CIE only to enrich the issue?
+**P0 · asked** — Do the Identity Analytics detectors read CIE attributes as inputs, so that a Kerberoast against an account fires only when CIE already shows that account with a servicePrincipalName (or adminCount = 1), and an AS-REP request only when CIE shows DONT_REQ_PREAUTH? Or do they read the DC's events alone and use CIE only to enrich the issue?
 
 - **Why we ask:** CIE must be linked to activate the Identity Analytics rules (IDN known), but the docs do not say what the detectors read from it. The lab seeds bait accounts (an SPN-backed `svc-sql`, a no-preauth `helpdesk-admin`) and runs the attack minutes later.
 - **What the answer moves:** Scenario pacing: whether each bait account must be visible in `pan_dss_raw` before the attack step runs, and whether the bait's privilege must be set in AD itself or is irrelevant to the detector.
   - *if* Detectors read CIE attributes → Each identity scenario gains a sync-wait gate between seeding and attack, proven by the canary.
   - *if* Detectors read events only → Seeding can happen at build time; CIE only matters for enrichment and custom joins.
 - **Touches:** `scenarios/itdr/`, `core/eal_simulator/analytics_alerts.py`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-IDN-05
 
-**P1 · open** — How long after a change in Active Directory (a new user, a group membership, a description edit) does it appear in `pan_dss_raw`, and does an issue raised in between carry the old or the new attributes? Docs say incremental sync runs every 5 minutes: is that from the agent's last run, and are deletions synced as tombstones or by absence?
+**P1 · asked** — How long after a change in Active Directory (a new user, a group membership, a description edit) does it appear in `pan_dss_raw`, and does an issue raised in between carry the old or the new attributes? Docs say incremental sync runs every 5 minutes: is that from the agent's last run, and are deletions synced as tombstones or by absence?
 
 - **Why we ask:** Identity scenarios often seed a change and abuse it minutes later ("add user to a privileged group, then use it"). If the issue reads CIE context at alert time, a change that has not synced yet makes the detection describe the user wrongly or not fire.
 - **What the answer moves:** The minimum wait between a seeding step and the attack step; the staleness threshold of the sync canary (the design waits 10 minutes).
 - **Settle it in the lab:** Rewrite the canary's description at T0 and poll `pan_dss_raw` every 30 s for 20 minutes; repeat 5 times and record the delay distribution. Delete a test user and see whether a row says so.
 - **Touches:** `scenarios/itdr/`, `core/connectors/preflight.py`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-IDN-06
 
-**P0 · open** — Where does a domain controller's Kerberos and logon telemetry land when it is collected by the XDR agent with XTH: xdr_data `event_type = EVENT_LOG` with the event id and data fields, or a separate dataset? Which fields carry the 4769 ticket encryption type, service name and client address, and the 4768 pre-authentication type? When the same events come through the Broker VM Windows Event Collector, are they in `microsoft_windows_raw` under different names?
+**P0 · asked** — Where does a domain controller's Kerberos and logon telemetry land when it is collected by the XDR agent with XTH: xdr_data `event_type = EVENT_LOG` with the event id and data fields, or a separate dataset? Which fields carry the 4769 ticket encryption type, service name and client address, and the 4768 pre-authentication type? When the same events come through the Broker VM Windows Event Collector, are they in `microsoft_windows_raw` under different names?
 
 - **Why we ask:** Nine cards read `msft_windows_security`, a dataset name a tenant does not create, and the AD emitter writes records under that name (ad_windows_emitter.py:66). Card queries and emitter fields are both built on an unverified shape.
 - **What the answer moves:** The AD emitter's field names and dataset; the dataset and fields every AD card queries.
@@ -1386,10 +1396,11 @@ How Cortex decides who an event, a chain or an alert belongs to: the user fields
   - *if* Both land in one dataset with one schema → One card variant; the emitter targets that schema.
 - **Settle it in the lab:** On a lab DC with the agent (XTH) and WEC both collecting, request one service ticket with RC4 and one AS-REP for a no-preauth account; query xdr_data, `microsoft_windows_raw` and the dataset list for both events.
 - **Touches:** `core/eal_simulator/plugins/ad_windows_emitter.py`, `detection_scanner/ttps`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-IDN-07
 
-**P0 · open** — Can Windows Security events that arrive through an HTTP log collector (what the AD emitter sends) feed any Identity Analytics or ITDR detector, even with an XDM modeling rule mapping them? Or do those detectors read only events collected by the XDR agent with XTH or by the Broker VM Windows Event Collector, as their Required Data lists suggest?
+**P0 · asked** — Can Windows Security events that arrive through an HTTP log collector (what the AD emitter sends) feed any Identity Analytics or ITDR detector, even with an XDM modeling rule mapping them? Or do those detectors read only events collected by the XDR agent with XTH or by the Broker VM Windows Event Collector, as their Required Data lists suggest?
 
 - **Why we ask:** The AD emitter backs ABIOC and Analytics expectations for Kerberoasting, pass-the-hash and DC logons (ad_windows_emitter.py:27). If those detectors never read collector data, each such expectation is unsatisfiable by construction and would read `missed` on a healthy tenant.
 - **What the answer moves:** Whether AD-emitter steps may declare Analytics or ABIOC expectations, or only XQL and correlation ones; the ingestion route marked for the AD source.
@@ -1397,19 +1408,22 @@ How Cortex decides who an event, a chain or an alert belongs to: the user fields
   - *if* XDM-modeled collector data works → Document the modeling rule as a tenant prerequisite and preflight it.
 - **Settle it in the lab:** With a modeling rule mapping the emitter's records, POST a 4769 burst for 10 SPNs from one account through the collector on a tenant past the training clock; compare with the same burst produced on a real DC.
 - **Touches:** `core/eal_simulator/plugins/ad_windows_emitter.py`, `core/eal_simulator/ingestion_routes.py`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-IDN-08
 
-**P1 · open** — When one CIE instance syncs more than one directory (on-prem AD, Entra ID, Okta), does it merge accounts that belong to one person into one identity, on which attribute, and which field on an issue names the merged identity?
+**P1 · asked** — When one CIE instance syncs more than one directory (on-prem AD, Entra ID, Okta), does it merge accounts that belong to one person into one identity, on which attribute, and which field on an issue names the merged identity?
 
 - **Why we ask:** Cross-source identity scenarios plant one principal in AD, Entra and Okta records and expect one person to resolve across them (analytics_emitter.py canary bindings); nothing says the product merges them.
 - **What the answer moves:** Which attribute the emitters must keep identical across sources (UPN, email, objectSid, an immutable id).
 - **Touches:** `core/eal_simulator/analytics_emitter.py`, `core/eal_simulator/plugins/idp_signin_emulator.py`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
 
 #### PM-IDN-09
 
-**P1 · open** — Does Cortex have a native decoy or honey-identity feature (an account flagged by a CIE attribute, a group or a tenant setting) that raises an issue on any authentication, or is "honey account touched" only ever a custom rule?
+**P1 · asked** — Does Cortex have a native decoy or honey-identity feature (an account flagged by a CIE attribute, a group or a tenant setting) that raises an issue on any authentication, or is "honey account touched" only ever a custom rule?
 
 - **Why we ask:** The identity-lab design seeds a honey account and plans a custom join for it. If a native feature exists, the scenario should exercise that instead and the custom rule is redundant.
 - **What the answer moves:** How the lab marks its honey account and which expectation type the scenario declares.
 - **Touches:** `scenarios/itdr/`, `detection_scanner/ttps`
+- **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad

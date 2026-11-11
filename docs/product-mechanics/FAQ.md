@@ -158,7 +158,7 @@ carry a real agent connection's tuple, but the stitch adapter does not use them 
 Even with them, PM-STI-12 still decides whether a custom-collector record can
 stitch.
 
-- **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, asked) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-08](LEDGER.md#pm-sti-08) (P1, open)
+- **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, asked) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-08](LEDGER.md#pm-sti-08) (P1, asked)
 - **Sources:** `core/eal_simulator/stitch_params.py:7` · `core/eal_simulator/plugins/ngfw_eal_emitter.py:282`
 
 ### FAQ-STI-06
@@ -262,7 +262,7 @@ older systemd versions or another agent version name the real binary is open
 (PM-CAU-07), and so is whether the start order of beacon and agent changes the
 CGO (PM-CAU-08).
 
-- **Would change if answered:** [PM-CAU-01](LEDGER.md#pm-cau-01) (P0, provisional) · [PM-CAU-02](LEDGER.md#pm-cau-02) (P0, provisional) · [PM-CAU-07](LEDGER.md#pm-cau-07) (P0, open) · [PM-CAU-08](LEDGER.md#pm-cau-08) (P1, open)
+- **Would change if answered:** [PM-CAU-01](LEDGER.md#pm-cau-01) (P0, provisional) · [PM-CAU-02](LEDGER.md#pm-cau-02) (P0, provisional) · [PM-CAU-07](LEDGER.md#pm-cau-07) (P0, asked) · [PM-CAU-08](LEDGER.md#pm-cau-08) (P1, asked)
 - **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/insights-and-tips-cortex-xsiam/endpoint-and-agent-management/cortex-xdr-agent-linux-operation-modes
 
 ## BIOC matching
