@@ -15,10 +15,10 @@ Missing data is never read as "nothing needed":
 * ``posture_profile`` absent / None is treated as ``baseline``; a profile string
   outside :data:`agent_manifest.PROFILES` is refused outright.
 
-Posture is compared on findings (``findings_for``) AND on namespace RBAC rules:
-SIM-CDR-001 plants only findings baseline already has, yet needs a namespace
-Role (secrets get/list) that no baseline pod holds, so findings alone cannot
-tell them apart.
+Posture is compared on findings (``findings_for``) AND on RBAC rules, namespaced
+and cluster-scoped: SIM-CDR-001 plants only findings baseline already has, yet
+needs a namespace Role (secrets get/list) that no baseline pod holds, so findings
+alone cannot tell them apart.
 """
 from __future__ import annotations
 
@@ -87,21 +87,39 @@ def _covers(have: list[Any], need: Any) -> bool:
     )
 
 
-def _profile_rules(profile: str) -> list[Any]:
-    sa = am.agent_posture(profile).service_account
-    # A cluster-wide rule is also held inside every namespace.
-    return list(sa.cluster_role_rules) + list(sa.namespace_role_rules)
+def uncovered_rules(
+    posture: km.ClusterPosture, *, cluster_have: list[Any], namespace_have: list[Any]
+) -> list[dict]:
+    """The scenario's RBAC rules that the held rules do not cover, each with its scope.
+
+    A cluster-wide rule is also held inside every namespace, so it covers a
+    namespaced need; a namespaced rule never covers a cluster-scoped need. Cluster
+    needs are compared as rules too: a non-wildcard cluster rule (``nodes list``)
+    maps to no finding of its own, so the finding comparison alone cannot see it.
+    """
+    sa = posture.service_account
+    out = [
+        {"scope": "cluster", **r.model_dump()}
+        for r in sa.cluster_role_rules
+        if not _covers(list(cluster_have), r)
+    ]
+    out += [
+        {"scope": "namespace", **r.model_dump()}
+        for r in sa.namespace_role_rules
+        if not _covers(list(cluster_have) + list(namespace_have), r)
+    ]
+    return out
 
 
 def _missing_rules(posture: Optional[km.ClusterPosture], profile: str) -> list[dict]:
     if posture is None:
         return []
-    have = _profile_rules(profile)
-    return [
-        r.model_dump()
-        for r in posture.service_account.namespace_role_rules
-        if not _covers(have, r)
-    ]
+    sa = am.agent_posture(profile).service_account
+    return uncovered_rules(
+        posture,
+        cluster_have=list(sa.cluster_role_rules),
+        namespace_have=list(sa.namespace_role_rules),
+    )
 
 
 def _satisfying_profile(needed: set[str], posture: Optional[km.ClusterPosture]) -> Optional[str]:
@@ -135,11 +153,11 @@ def _posture_refusal(posture: Optional[km.ClusterPosture], facts: dict) -> Optio
     return GateRefusal(
         CODE_POSTURE,
         f"the scenario needs cluster posture a {profile!r} agent pod does not have "
-        f"(missing findings: {missing or 'none'}; missing namespace RBAC rules: "
+        f"(missing findings: {missing or 'none'}; missing RBAC rules: "
         f"{len(missing_rules)}). Run it from an agent deployed with "
         f"{sat!r}." if sat else
         f"the scenario needs cluster posture a {profile!r} agent pod does not have "
-        f"(missing findings: {missing or 'none'}; missing namespace RBAC rules: "
+        f"(missing findings: {missing or 'none'}; missing RBAC rules: "
         f"{len(missing_rules)}) and no agent profile provides it.",
         {
             "missing_findings": missing,
