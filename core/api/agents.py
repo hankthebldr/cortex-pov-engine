@@ -415,7 +415,9 @@ def _check_baked(server: str, agent_id: str, interval: int, token: Optional[str]
                          + "; ".join(problems))
 
 
-def _resolve_server(request: Request, override: Optional[str]) -> str:
+def _resolve_server(request: Request, override: Optional[str], *,
+                    baked_into: str = "an installer",
+                    override_name: str = "?server=") -> str:
     """Server URL the agent beacons back to. Prefer an explicit override
     (the DC knows the jumpbox's reachable address); else derive from the
     request so `curl <host>/api/agents/install | bash` just works.
@@ -438,15 +440,17 @@ def _resolve_server(request: Request, override: Optional[str]) -> str:
     SERVER fails on the target. See `_loopback_banner`.
     """
     if override:
-        resolved, source = override.strip().rstrip("/"), "?server="
+        resolved, source = override.strip().rstrip("/"), override_name
     else:
         resolved, source = str(request.base_url).rstrip("/"), "the request's Host header"
     problem = _server_problem(resolved)
     if problem:
+        remedy = (f"Pass {override_name}http://<simcore-ip>:8888" if override_name.endswith("=")
+                  else f"Set {override_name} to http://<simcore-ip>:8888")
         raise _bad_request(
             "BAD_SERVER", "Invalid server URL",
-            f"the callback URL from {source} cannot be baked into an installer: {problem}. "
-            "Pass ?server=http://<simcore-ip>:8888")
+            f"the callback URL from {source} cannot be baked into {baked_into}: {problem}. "
+            f"{remedy}")
     return resolved
 
 
