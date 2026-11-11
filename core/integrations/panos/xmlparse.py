@@ -542,6 +542,9 @@ class RuleConfig:
     group: Optional[str]
     profiles: dict[str, str]
     log_setting: Optional[str]
+    #: None when the rule does not say (PAN-OS defaults: log-start no, log-end yes).
+    log_start: Optional[bool] = None
+    log_end: Optional[bool] = None
 
 
 def parse_rule(result: ET.Element) -> RuleConfig:
@@ -561,7 +564,13 @@ def parse_rule(result: ET.Element) -> RuleConfig:
         name=name, action=_req_text(e, "action", f"security rule {name}"),
         disabled=_yesno(_text(e, "disabled"), "rule disabled", default=False),
         group=group_members[0] if group_members else None,
-        profiles=profiles, log_setting=_text(e, "log-setting"))
+        profiles=profiles, log_setting=_text(e, "log-setting"),
+        log_start=_opt_yesno(_text(e, "log-start"), "rule log-start"),
+        log_end=_opt_yesno(_text(e, "log-end"), "rule log-end"))
+
+
+def _opt_yesno(text: Optional[str], what: str) -> Optional[bool]:
+    return None if text is None else _yesno(text, what)
 
 
 def parse_profile_group(result: ET.Element) -> dict[str, str]:
@@ -590,6 +599,10 @@ class ProfileActions:
     scoped_rules: tuple[ScopedRule, ...] = ()
     dns_security: dict[str, str] = field(default_factory=dict)
     by_decoder: dict[str, str] = field(default_factory=dict)
+    #: DNS Security entry -> its log-level text (None when absent).
+    dns_log_level: dict[str, Optional[str]] = field(default_factory=dict)
+    #: spyware only: whether any dns-security-categories entry is configured.
+    dns_categories_configured: Optional[bool] = None
 
 
 def parse_profile_actions(result: ET.Element, ptype: str) -> ProfileActions:
@@ -630,14 +643,19 @@ def parse_profile_actions(result: ET.Element, ptype: str) -> ProfileActions:
                 by_sev.setdefault(s, bucket)
         else:
             scoped.append(ScopedRule(rname, threat, cat, tuple(expanded), bucket))
+    levels: dict[str, Optional[str]] = {}
+    cats_configured: Optional[bool] = None
     if ptype == "spyware":
+        cats_configured = bool(e.findall("botnet-domains/dns-security-categories/entry"))
         for path in ("botnet-domains/lists/entry", "botnet-domains/dns-security-categories/entry"):
             for d in e.findall(path):
                 dname = d.get("name")
                 if not dname:
                     raise PanosShapeError("DNS security entry has no name")
                 dns[dname] = classify_action(_action_value(d.find("action"), f"DNS security {dname}"))
-    return ProfileActions(by_severity=by_sev, scoped_rules=tuple(scoped), dns_security=dns)
+                levels[dname] = _text(d, "log-level")
+    return ProfileActions(by_severity=by_sev, scoped_rules=tuple(scoped), dns_security=dns,
+                          dns_log_level=levels, dns_categories_configured=cats_configured)
 
 
 # ---------------------------------------------------------------- user / session / routing / zones

@@ -391,7 +391,13 @@ def test_nat_match_negative():
 def test_rule_group():
     r = x.parse_rule(res("rule__group_alertall.xml"))
     assert r == x.RuleConfig(name="LAB-POV-AlertAll-Out", action="allow", disabled=False,
-                             group="lab-alertall", profiles={}, log_setting="lab-forward-all")
+                             group="lab-alertall", profiles={}, log_setting="lab-forward-all",
+                             log_start=False, log_end=True)
+
+
+def test_rule_log_end_absent_is_none():
+    r = x.parse_rule(res("rule__profiles.xml"))
+    assert (r.log_start, r.log_end) == (None, None)
 
 
 def test_rule_profiles():

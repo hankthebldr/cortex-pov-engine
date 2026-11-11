@@ -95,7 +95,9 @@ ALERT_SPYWARE = body(
     '<entry name="lab-spyware"><rules><entry name="alert-all"><threat-name>any</threat-name>'
     "<category>any</category><severity><member>any</member></severity><action><alert/></action>"
     '</entry></rules><botnet-domains><lists><entry name="default-paloalto-dns"><action><alert/>'
-    "</action></entry></lists></botnet-domains></entry>")
+    "</action></entry></lists><dns-security-categories>"
+    '<entry name="pan-dns-sec-cc"><log-level>default</log-level><action>alert</action></entry>'
+    "</dns-security-categories></botnet-domains></entry>")
 ALERT_VULN = body(
     '<entry name="lab-vuln"><rules><entry name="alert-all"><threat-name>any</threat-name>'
     "<category>any</category><severity><member>any</member></severity><action><alert/></action>"
@@ -257,7 +259,8 @@ async def test_healthy_source_every_stage_ok(fake_firewall):
     assert probe["log_setting"] == "lab-forward-all"
     assert probe["profiles"]["spyware"]["bucket"] == "alert"
     assert probe["profiles"]["virus"]["bucket"] == "alert"
-    assert probe["dns_security"]["by_category"] == {"default-paloalto-dns": "alert"}
+    assert probe["dns_security"]["by_category"] == {"default-paloalto-dns": "alert",
+                                                    "pan-dns-sec-cc": "alert"}
     assert report.overall == "ready"
 
 
@@ -539,14 +542,16 @@ async def test_fib_no_route_is_zone_unresolved_and_sends_no_match(fake_firewall)
 
 @pytest.mark.asyncio
 async def test_ipv6_source_sent_unmodified(fake_firewall):
-    v6 = "2001:db8::5"
+    v6, dst6 = "2001:db8::5", "2001:db8:100::10"
     agent = AgentRef("a6", "v6-host", v6)
-    over = {session_cmd(v6): "session_count__three.xml", policy_cmd(v6): "policy_match__alertall.xml",
-            nat_cmd(v6): "nat_match__outbound.xml", usermap_cmd(v6): "user_mapping__one.xml",
+    probes = [{"ip": dst6, "port": 443, "protocol": "tcp", "application": "ssl"}]
+    over = {session_cmd(v6): "session_count__three.xml",
+            policy_cmd(v6, dst=dst6): "policy_match__alertall.xml",
+            nat_cmd(v6, dst=dst6): "nat_match__outbound.xml", usermap_cmd(v6): "user_mapping__one.xml",
             regip_cmd(v6): "registered_ip__empty.xml"}
     report, fw = await run(fake_firewall, over, agents=(agent,),
-                           config=base_config(agent_addresses={"a6": [v6]}))
-    assert session_cmd(v6) in fw.keys() and policy_cmd(v6) in fw.keys()
+                           config=base_config(agent_addresses={"a6": [v6]}, probe_destinations=probes))
+    assert session_cmd(v6) in fw.keys() and policy_cmd(v6, dst=dst6) in fw.keys()
     src = report.to_dict()["sources"][0]
     assert src["fw_observed_src"] == v6 and src["nat_verdict"] == "tuple_intact"
     assert sstage(report, "policy_match")["status"] == OK
@@ -604,3 +609,140 @@ async def test_operator_values_are_escaped_not_injected(fake_firewall):
     sent = op_calls(fw, "security-policy-match")
     assert sent and all("&lt;/application&gt;&lt;x&gt;" in k for k in sent)
     assert all("<x>" not in k for k in sent)
+
+
+# --------------------------------------------------------------- review round 1
+
+
+RULE_XML = (FIXTURES / "rule__group_alertall.xml").read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_i1_disabled_matched_rule_is_config_mismatch(fake_firewall):
+    rule = RULE_XML.replace(b"<action>allow</action>", b"<action>allow</action><disabled>yes</disabled>")
+    report, _ = await run(fake_firewall, {RULE_LOCAL: rule})
+    st = sstage(report, "rule_profiles")
+    assert (st["status"], st["code"]) == (DEGRADED, codes.PN_RULE_CONFIG_MISMATCH)
+    assert "disabled" in st["detail"] and "cannot be trusted" in st["detail"]
+
+
+@pytest.mark.asyncio
+async def test_i1_match_action_differs_from_config_action(fake_firewall):
+    m = (FIXTURES / "policy_match__alertall.xml").read_bytes().replace(
+        b"<action>allow</action>", b"<action>deny</action>")
+    report, _ = await run(fake_firewall, {policy_cmd(): m})
+    st = sstage(report, "rule_profiles")
+    assert codes.PN_RULE_CONFIG_MISMATCH in issue_codes(st) and st["status"] != OK
+
+
+def _spyware(rules_xml: str, dns_xml: str = '<entry name="pan-dns-sec-cc"><log-level>default</log-level><action>alert</action></entry>') -> bytes:
+    return body(f'<entry name="lab-spyware"><rules>{rules_xml}<entry name="alert-all">'
+                "<threat-name>any</threat-name><category>any</category><severity><member>any</member>"
+                "</severity><action><alert/></action></entry></rules><botnet-domains>"
+                f"<dns-security-categories>{dns_xml}</dns-security-categories></botnet-domains></entry>")
+
+
+@pytest.mark.asyncio
+async def test_i2_scoped_rules_raise_issues_by_bucket(fake_firewall):
+    scoped = ('<entry name="sc-allow"><threat-name>Lab.Allow</threat-name><severity><member>high</member>'
+              "</severity><action><allow/></action></entry>"
+              '<entry name="sc-block"><category>spyware</category><severity><member>critical</member>'
+              "</severity><action><reset-both/></action></entry>"
+              '<entry name="sc-default"><threat-name>Lab.Default</threat-name><severity><member>low</member>'
+              "</severity><action><default/></action></entry>")
+    report, _ = await run(fake_firewall, {prof("spyware", "lab-spyware"): _spyware(scoped)})
+    st = sstage(report, "rule_profiles")
+    assert st["status"] == DEGRADED
+    assert {codes.PN_NO_PROFILE, codes.PN_PROFILE_BLOCKS,
+            codes.PN_PROFILE_SIGNATURE_DEFAULT} <= issue_codes(st)
+    assert "Lab.Allow" in st["detail"] and "category spyware" in st["detail"]
+    spy = report.to_dict()["sources"][0]["probes"][0]["profiles"]["spyware"]
+    assert set(spy["by_severity"].values()) == {"alert"}  # untouched
+
+
+@pytest.mark.asyncio
+async def test_i3_dns_allow_without_log_level_is_no_profile(fake_firewall):
+    dns = '<entry name="pan-dns-sec-grayware"><action>allow</action></entry>'
+    report, _ = await run(fake_firewall, {prof("spyware", "lab-spyware"): _spyware("", dns)})
+    st = sstage(report, "rule_profiles")
+    assert (st["status"], st["code"]) == (DEGRADED, codes.PN_NO_PROFILE)
+    assert "allows pan-dns-sec-grayware" in st["detail"]
+
+
+@pytest.mark.asyncio
+async def test_i3_dns_allow_with_log_level_none_is_no_profile(fake_firewall):
+    dns = '<entry name="pan-dns-sec-grayware"><log-level>none</log-level><action>allow</action></entry>'
+    report, _ = await run(fake_firewall, {prof("spyware", "lab-spyware"): _spyware("", dns)})
+    assert codes.PN_NO_PROFILE in issue_codes(sstage(report, "rule_profiles"))
+
+
+@pytest.mark.asyncio
+async def test_i3_dns_allow_with_log_level_writes_a_log_so_ok(fake_firewall):
+    dns = '<entry name="pan-dns-sec-grayware"><log-level>informational</log-level><action>allow</action></entry>'
+    report, _ = await run(fake_firewall, {prof("spyware", "lab-spyware"): _spyware("", dns)})
+    st = sstage(report, "rule_profiles")
+    assert st["status"] == OK, (st["code"], st["detail"])
+    d = report.to_dict()["sources"][0]["probes"][0]["dns_security"]
+    assert d["by_category"]["pan-dns-sec-grayware"] == "allow"
+    assert d["effective"]["pan-dns-sec-grayware"] == "alert"
+
+
+@pytest.mark.asyncio
+async def test_m4_log_end_no_is_degraded(fake_firewall):
+    rule = RULE_XML.replace(b"<log-end>yes</log-end>", b"<log-end>no</log-end>")
+    assert rule != RULE_XML
+    report, _ = await run(fake_firewall, {RULE_LOCAL: rule})
+    st = sstage(report, "rule_profiles")
+    assert (st["status"], st["code"]) == (DEGRADED, codes.PN_RULE_NO_LOG_END)
+    assert report.to_dict()["sources"][0]["probes"][0]["log_end"] is False
+
+
+@pytest.mark.asyncio
+async def test_m5_budget_mid_stage_keeps_issues_found_before_the_cap(fake_firewall):
+    _, probe_fw = await run(fake_firewall, agents=())
+    budget = len(probe_fw.calls) + 3  # session, policy match, rule read; group read hits the cap
+    deny = RULE_XML.replace(b"<action>allow</action>", b"<action>deny</action>")
+    m = (FIXTURES / "policy_match__alertall.xml").read_bytes().replace(
+        b"<action>allow</action>", b"<action>deny</action>")
+    report, _ = await run(fake_firewall, {RULE_LOCAL: deny, policy_cmd(): m}, max_calls=budget)
+    st = sstage(report, "rule_profiles")
+    assert st["status"] == BLOCKED and st["code"] == codes.PN_RULE_DENIES
+    assert codes.PN_CALL_BUDGET in issue_codes(st)
+    assert sstage(report, "nat")["code"] == codes.PN_CALL_BUDGET
+
+
+@pytest.mark.asyncio
+async def test_m6_spyware_without_dns_categories_is_unconfigured(fake_firewall):
+    no_cats = body('<entry name="lab-spyware"><rules><entry name="alert-all"><threat-name>any</threat-name>'
+                   "<category>any</category><severity><member>any</member></severity><action><alert/>"
+                   '</action></entry></rules><botnet-domains><lists><entry name="default-paloalto-dns">'
+                   "<action><alert/></action></entry></lists></botnet-domains></entry>")
+    report, _ = await run(fake_firewall, {prof("spyware", "lab-spyware"): no_cats})
+    st = sstage(report, "rule_profiles")
+    assert (st["status"], st["code"]) == (DEGRADED, codes.PN_DNS_SEC_UNCONFIGURED)
+
+
+@pytest.mark.asyncio
+async def test_m7_family_mismatch_every_probe_is_degraded_and_sends_nothing(fake_firewall):
+    v6 = "2001:db8::5"
+    agent = AgentRef("a6", "v6-host", v6)
+    over = {session_cmd(v6): "session_count__three.xml", usermap_cmd(v6): "user_mapping__one.xml",
+            regip_cmd(v6): "registered_ip__empty.xml"}
+    report, fw = await run(fake_firewall, over, agents=(agent,),
+                           config=base_config(agent_addresses={"a6": [v6]}))
+    st = sstage(report, "policy_match")
+    assert (st["status"], st["code"]) == (DEGRADED, codes.PN_PROBE_FAMILY_MISMATCH)
+    assert "address families differ" in st["detail"]
+    assert op_calls(fw, "security-policy-match") == [] and op_calls(fw, "nat-policy-match") == []
+    assert report.to_dict()["sources"][0]["probes"][0]["skipped"] == "address families differ"
+
+
+@pytest.mark.asyncio
+async def test_m7_family_mismatch_on_some_probes_skips_only_those(fake_firewall):
+    probes = ONE_PROBE + [{"ip": "2001:db8:100::10", "port": 443, "protocol": "tcp", "application": "ssl"}]
+    report, fw = await run(fake_firewall, config=base_config(probe_destinations=probes))
+    assert sstage(report, "policy_match")["status"] == OK
+    assert len(op_calls(fw, "security-policy-match")) == 1
+    assert sstage(report, "nat")["status"] == OK
+    rows = report.to_dict()["sources"][0]["probes"]
+    assert rows[1]["skipped"] == "address families differ" and rows[0].get("skipped") is None

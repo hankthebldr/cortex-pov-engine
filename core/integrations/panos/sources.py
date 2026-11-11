@@ -164,6 +164,23 @@ SOURCE_REMEDIATIONS: dict[str, str] = {
         "User-ID is not enabled on this source's zone, so the firewall writes no user "
         "into its logs. User-principal stitches cannot resolve on the firewall side; "
         "enable user identification on the zone."),
+    codes.PN_RULE_CONFIG_MISMATCH: (
+        "The rule the firewall's policy lookup returned disagrees with the running config "
+        "(it is disabled there, or its action differs). The policy-path result cannot be "
+        "trusted, so whether this path is inspected and logged is unknown. Commit pending "
+        "changes or check for a Panorama push in progress, then re-run."),
+    codes.PN_RULE_NO_LOG_END: (
+        "The matching rule does not log at session end, so the firewall writes no traffic "
+        "record for these sessions and there is nothing on the NGFW side for the endpoint "
+        "record to stitch to. Enable log at session end on the rule."),
+    codes.PN_DNS_SEC_UNCONFIGURED: (
+        "The spyware profile configures no DNS Security category, so DNS-layer C2 and "
+        "malware lookups are not classified by DNS Security and DNS-based NGFW detections "
+        "on this path read as missed. Add the DNS Security categories with alert."),
+    codes.PN_PROBE_FAMILY_MISMATCH: (
+        "The agent's source and every probe destination are of different address "
+        "families (IPv4 vs IPv6), so no policy path was looked up for this agent. Add "
+        "probe destinations of the source's family."),
     codes.PN_SOURCE_TAGGED: (
         "This source carries registered IP tags. A tag can place it in a dynamic "
         "address group and so in a different security rule than this check assumes "
@@ -342,6 +359,10 @@ class _Src:
     probes: list[dict] = field(default_factory=list)
     src_zone: Optional[str] = None
     src_zone_why: str = ""
+    #: issues the running stage has collected so far (kept if the budget halts it)
+    pending: list = field(default_factory=list)
+    #: issues of a rule evaluation in progress (same purpose)
+    partial: list = field(default_factory=list)
 
 
 def _issue_stage(sid: str, issues: list[tuple[str, str, str]], extra: dict,
@@ -496,7 +517,15 @@ def _probe_row(probe: dict) -> dict:
     return {"destination": probe["ip"], "port": probe["port"], "protocol": probe["protocol"],
             "application": probe["application"], "from_zone": None, "to_zone": None,
             "rule": None, "rule_index": None, "action": None, "profiles": {},
-            "dns_security": {}, "log_setting": None, "nat_rule": None, "checked": False}
+            "dns_security": {}, "log_setting": None, "log_end": None, "nat_rule": None,
+            "skipped": None, "checked": False}
+
+
+FAMILY_SKIP = "address families differ"
+
+
+def _all_family_skipped(s: _Src) -> bool:
+    return bool(s.probes) and all(r["skipped"] == FAMILY_SKIP for r in s.probes)
 
 
 def _label(row: dict) -> str:
@@ -504,7 +533,8 @@ def _label(row: dict) -> str:
 
 
 async def _stage_policy_match(ctx: PreflightContext, state: SourcesRun, s: _Src) -> Stage:
-    issues: list[tuple[str, str, str]] = []
+    issues: list[tuple[str, str, str]] = s.pending
+    src_family = _ip_key(s.src.fw_observed_src).version
     try:
         await _src_zone(ctx, state, s)
     except (PanosShapeError, PanosWriteRefused) as exc:
@@ -513,6 +543,9 @@ async def _stage_policy_match(ctx: PreflightContext, state: SourcesRun, s: _Src)
     for probe in ctx.config["probe_destinations"]:
         row = _probe_row(probe)
         s.probes.append(row)
+        if _ip_key(probe["ip"]).version != src_family:
+            row["skipped"] = FAMILY_SKIP  # no command is built for a cross-family tuple
+            continue
         try:
             row["from_zone"] = s.src_zone
             dst_zone = ctx.config.get("outside_zone")
@@ -538,6 +571,10 @@ async def _stage_policy_match(ctx: PreflightContext, state: SourcesRun, s: _Src)
         except Exception as exc:  # noqa: BLE001 - one probe's failure is that probe's
             st, c, d = _classify(exc)
             issues.append((st, c, f"{_label(row)}: {d}"))
+    if s.probes and all(r["skipped"] == FAMILY_SKIP for r in s.probes):
+        issues.append((DEGRADED, codes.PN_PROBE_FAMILY_MISMATCH,
+                       f"source {s.src.fw_observed_src} and every probe destination: "
+                       f"{FAMILY_SKIP}; no policy was looked up"))
     matched = [r for r in s.probes if r["rule"]]
     return _issue_stage("policy_match", issues, {},
                         "; ".join(f"{_label(r)} -> rule {r['rule']} (#{r['rule_index']})"
@@ -607,8 +644,17 @@ async def _profile(ctx: PreflightContext, state: SourcesRun, ptype: str,
             summary.update(by_severity=by_sev, scoped_rules=_scoped(acts),
                            bucket=_bucket(list(by_sev.values())))
         if ptype == "spyware":
+            # PANW docs: allow with a log-level other than none still writes a threat
+            # log, so it is alert-equivalent; allow with none/absent writes nothing.
+            effective = {k: ("alert" if v == "allow" and (acts.dns_log_level.get(k) or "none")
+                             != "none" else v) for k, v in acts.dns_security.items()}
             dns = {"profile": name, "source": "config", "by_category": dict(acts.dns_security),
-                   "bucket": _bucket(list(acts.dns_security.values()))}
+                   "log_level": dict(acts.dns_log_level), "effective": effective,
+                   "categories_configured": acts.dns_categories_configured,
+                   "bucket": _bucket(list(effective.values()))}
+            if acts.dns_categories_configured is False:
+                issues.append((DEGRADED, codes.PN_DNS_SEC_UNCONFIGURED,
+                               f"spyware profile {name} configures no DNS Security category"))
     # issues from the classified actions
     where = f"{ptype} profile {name}"
     values = summary.get("by_severity") or summary.get("by_decoder") or {}
@@ -627,7 +673,24 @@ async def _profile(ctx: PreflightContext, state: SourcesRun, ptype: str,
     if summary.get("scoped_rules"):
         summary["note"] = (f"{len(summary['scoped_rules'])} rule(s) scoped to a threat name "
                            "or category are reported apart and not counted per severity")
-    cats = dns.get("by_category") or {}
+    for r in summary.get("scoped_rules") or []:
+        scope = ", ".join(f"{label} {val}" for label, val in (("threat-name", r["threat_name"]),
+                                                              ("category", r["category"]))
+                          if val not in (None, "any")) or "scoped"
+        what = f"{where} rule {r['name']} ({scope}) at {', '.join(r['severities'])}"
+        if r["bucket"] == "allow":
+            issues.append((DEGRADED, codes.PN_NO_PROFILE, f"{what} allows: no threat log"))
+        elif r["bucket"] in ("block", "sinkhole"):
+            issues.append((DEGRADED, codes.PN_PROFILE_BLOCKS, f"{what} blocks"))
+        elif r["bucket"] == _SIG:
+            issues.append((DEGRADED, codes.PN_PROFILE_SIGNATURE_DEFAULT,
+                           f"{what} defers to signature default"))
+    cats = dns.get("effective") or dns.get("by_category") or {}
+    dallow = sorted(k for k, v in cats.items() if v == "allow")
+    if dallow:
+        issues.append((DEGRADED, codes.PN_NO_PROFILE,
+                       f"DNS Security in {name} allows {', '.join(dallow)}: no threat log is "
+                       "written for them"))
     sink = sorted(k for k, v in cats.items() if v == "sinkhole")
     dblock = sorted(k for k, v in cats.items() if v == "block")
     dsig = sorted(k for k, v in cats.items() if v == _SIG)
@@ -669,10 +732,13 @@ def _lfp_view(ctx: PreflightContext, name: str) -> Optional[tuple[str, str, str]
 
 
 async def _evaluate_rule(ctx: PreflightContext, state: SourcesRun, name: str,
-                         match_action: Optional[str]) -> tuple[dict, list]:
+                         match_action: Optional[str],
+                         sink: Optional[list] = None) -> tuple[dict, list]:
+    """``sink`` receives issues as they are found, so a budget halt mid-evaluation
+    keeps them; the result is cached only once the evaluation completes."""
     if name in state.rules:
         return state.rules[name]
-    issues: list[tuple[str, str, str]] = []
+    issues: list[tuple[str, str, str]] = sink if sink is not None else []
     out: dict[str, Any] = {"profiles": {}, "dns_security": {}, "log_setting": None}
     found = await _find(ctx, state, "security-rule", name)
     if found is None:
@@ -688,9 +754,17 @@ async def _evaluate_rule(ctx: PreflightContext, state: SourcesRun, name: str,
         rule = parse_rule(found)
     except PanosShapeError as exc:
         raise _where(f"security rule {name!r}", exc) from None
-    out.update(log_setting=rule.log_setting, rule_disabled=rule.disabled)
+    out.update(log_setting=rule.log_setting, rule_disabled=rule.disabled, log_end=rule.log_end)
     if rule.action not in _ALLOW_ACTIONS:
         issues.append((BLOCKED, codes.PN_RULE_DENIES, f"rule {name} action is {rule.action}"))
+    if rule.disabled:
+        issues.append((DEGRADED, codes.PN_RULE_CONFIG_MISMATCH,
+                       f"policy-match returned {name}, but that rule is disabled in the "
+                       "running config; the match cannot be trusted"))
+    if match_action and match_action != rule.action:
+        issues.append((DEGRADED, codes.PN_RULE_CONFIG_MISMATCH,
+                       f"policy-match returned {name} with action {match_action}, but the "
+                       f"running config says {rule.action}; the match cannot be trusted"))
     slots: dict[str, Optional[str]] = {t: None for t in PROFILE_TYPES}
     if rule.group:
         out["profile_group"] = rule.group
@@ -729,6 +803,10 @@ async def _evaluate_rule(ctx: PreflightContext, state: SourcesRun, name: str,
     if not out["dns_security"]:
         out["dns_security"] = {"profile": None, "by_category": {}, "bucket": "none"}
     if rule.action in _ALLOW_ACTIONS:
+        if rule.log_end is False:
+            issues.append((DEGRADED, codes.PN_RULE_NO_LOG_END,
+                           f"rule {name} does not log at session end: no traffic record to "
+                           "stitch"))
         if not rule.log_setting:
             issues.append((DEGRADED, codes.PN_RULE_NO_LOG_FORWARDING,
                            f"rule {name} has no log forwarding profile"))
@@ -736,7 +814,7 @@ async def _evaluate_rule(ctx: PreflightContext, state: SourcesRun, name: str,
             lf = _lfp_view(ctx, rule.log_setting)
             if lf:
                 issues.append(lf)
-    state.rules[name] = (out, issues)
+    state.rules[name] = (out, list(issues))
     return state.rules[name]
 
 
@@ -749,12 +827,17 @@ async def _stage_rule_profiles(ctx: PreflightContext, state: SourcesRun, s: _Src
                 else codes.PN_ZONE_UNRESOLVED)
         if not s.probes:
             code, why = codes.PN_SHAPE_UNRECOGNISED, "policy_match did not complete"
+        elif _all_family_skipped(s):
+            code, why = codes.PN_PROBE_FAMILY_MISMATCH, FAMILY_SKIP
         return Stage("rule_profiles", SKIPPED, code, f"not checked: {why}",
                      remediation=_rem(code))
-    issues: list[tuple[str, str, str]] = []
+    issues: list[tuple[str, str, str]] = s.pending
     for row in matched:
         try:
-            out, r_issues = await _evaluate_rule(ctx, state, row["rule"], row["action"])
+            s.partial = []
+            out, r_issues = await _evaluate_rule(ctx, state, row["rule"], row["action"],
+                                                 sink=s.partial)
+            s.partial = []
         except PanosTransportError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -762,7 +845,7 @@ async def _stage_rule_profiles(ctx: PreflightContext, state: SourcesRun, s: _Src
             issues.append((st, c, f"rule {row['rule']}: {d}"))
             continue
         row.update(profiles=out["profiles"], dns_security=out["dns_security"],
-                   log_setting=out["log_setting"])
+                   log_setting=out["log_setting"], log_end=out.get("log_end"))
         if out.get("profile_group"):
             row["profile_group"] = out["profile_group"]
         issues.extend(r_issues)
@@ -778,11 +861,14 @@ async def _stage_rule_profiles(ctx: PreflightContext, state: SourcesRun, s: _Src
 
 
 async def _stage_nat(ctx: PreflightContext, state: SourcesRun, s: _Src) -> Stage:
-    ready = [r for r in s.probes if r["from_zone"] and r["to_zone"]]
+    ready = [r for r in s.probes if r["from_zone"] and r["to_zone"] and not r["skipped"]]
+    if not ready and _all_family_skipped(s):
+        return Stage("nat", SKIPPED, codes.PN_PROBE_FAMILY_MISMATCH, f"not checked: {FAMILY_SKIP}",
+                     remediation=_rem(codes.PN_PROBE_FAMILY_MISMATCH))
     if not ready:
         return Stage("nat", SKIPPED, codes.PN_ZONE_UNRESOLVED,
                      "not checked: no probe has resolved zones", remediation=_rem(codes.PN_ZONE_UNRESOLVED))
-    issues: list[tuple[str, str, str]] = []
+    issues: list[tuple[str, str, str]] = s.pending
     notes = []
     probes = {(p["ip"], p["port"], p["protocol"], p["application"]): p
               for p in ctx.config["probe_destinations"]}
@@ -800,7 +886,7 @@ async def _stage_nat(ctx: PreflightContext, state: SourcesRun, s: _Src) -> Stage
         row["nat_rule"] = m.name if m else None
         notes.append(f"{_label(row)}: " + (f"egress NAT rule {m.name} (the pre-NAT source "
                                             "is what the firewall logs)" if m else "no NAT rule"))
-    skipped = len(s.probes) - len(ready)
+    skipped = len([r for r in s.probes if not r["skipped"]]) - len(ready)
     if skipped:
         issues.append((SKIPPED, codes.PN_ZONE_UNRESOLVED,
                        f"{skipped} probe(s) not checked: zones unresolved"))
@@ -812,7 +898,7 @@ async def _stage_nat(ctx: PreflightContext, state: SourcesRun, s: _Src) -> Stage
 
 async def _stage_user_id(ctx: PreflightContext, state: SourcesRun, s: _Src) -> Stage:
     ip = s.src.fw_observed_src
-    issues: list[tuple[str, str, str]] = []
+    issues: list[tuple[str, str, str]] = s.pending
     users = await _op(ctx, cmd_user_mapping(ip), parse_user_mapping)
     extra: dict[str, Any] = {"users": users, "zone": s.src_zone, "zone_user_id": None}
     if not users:
@@ -882,16 +968,25 @@ def _skip(sid: str, code: str, detail: str) -> Stage:
     return Stage(sid, SKIPPED, code, detail, remediation=_rem(code))
 
 
+def _halted(sid: str, code: str, s: _Src) -> Stage:
+    """A stage cut short: what it found before the cap stays, the cap is one more issue."""
+    found = list(s.pending) + list(s.partial)
+    if not found:
+        return _skip(sid, code, _HALT_DETAIL[code])
+    return _issue_stage(sid, found + [(SKIPPED, code, _HALT_DETAIL[code])], {}, "")
+
+
 async def _run_stage(sid: str, fn, ctx: PreflightContext, state: SourcesRun, s: _Src) -> Stage:
+    s.pending, s.partial = [], []
     try:
         return await fn(ctx, state, s)
     except _Halt as h:
-        return _skip(sid, h.code, _HALT_DETAIL[h.code])
+        return _halted(sid, h.code, s)
     except Exception as exc:  # noqa: BLE001 - one stage's defect must not lose the report
         try:
             _maybe_halt(exc, state)
         except _Halt as h:
-            return _skip(sid, h.code, _HALT_DETAIL[h.code])
+            return _halted(sid, h.code, s)
         st, c, d = _classify(exc)
         return Stage(sid, st, c, d, remediation=_rem(c))
 
