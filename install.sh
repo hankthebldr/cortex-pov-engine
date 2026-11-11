@@ -404,7 +404,7 @@ _install_node() {
 # STEP 3 — Git Submodules
 # ==============================================================================
 
-# Two of the ten registered submodules live in repos that may be private/
+# Two of the nine registered submodules live in repos that may be private/
 # org-restricted (hankthebldr/CDR, hankthebldr/xsiam-prisma-cdr-lab). Neither
 # is anyone's tier-2 adapter source_path (only atomic-red-team is — see
 # scripts/check-adapter-sources.sh) and nothing this installer runs depends on

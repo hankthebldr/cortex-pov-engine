@@ -136,7 +136,7 @@ From here: [deploy an agent](#deploy-an-agent) →
 ## Two ways to get CortexSim running
 
 Both paths below start with a plain `git clone` — **do not** pass
-`--recurse-submodules`. Two of the ten registered submodules
+`--recurse-submodules`. Two of the nine registered submodules
 (`sources/CDR`, `sources/xsiam-prisma-cdr-lab`) live in repos that may be
 private/org-restricted; a plain clone sidesteps the question entirely, and
 each script below handles submodules on its own terms.
@@ -171,7 +171,7 @@ cd cortex-pov-engine
 ```
 
 `install.sh` is the developer path: it installs a Go/Rust/Node/Python
-toolchain on the host, initializes all ten submodules, and builds every
+toolchain on the host, initializes all nine submodules, and builds every
 component from source (agent, Rust tools, React UI) before bringing up
 Docker Compose. Use it when you're modifying the toolchain itself, not to
 just run CortexSim. Requires Ubuntu 22.04 LTS+ or Debian 12+.

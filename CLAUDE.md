@@ -303,7 +303,7 @@ The FY27 Use-Case / Test-Case master index is the sales-motion source of truth. 
 
 ## Submodules (`sources/`)
 
-10 git submodules under `sources/` — **do not edit source files in these directories**. Key tools:
+9 git submodules under `sources/` — **do not edit source files in these directories**. `sources/MITRE-Turla-Carbon` was retired 2026-11-10: nothing read it, and `install.sh` fetched its `Binaries/binaries.zip` of compiled Turla implants onto customer jumpboxes. `scripts/check-installer-submodules.py` keeps any such submodule out. Key tools:
 - **signalbench** (Rust) — MITRE-mapped endpoint telemetry generator
 - **mocktaxii** (Python) — STIX/TAXII 2.1 server, port 9000
 - **gocortexbrokenbank** (Python) — vulnerable CI/CD app, port 9001

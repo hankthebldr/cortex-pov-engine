@@ -169,6 +169,33 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   threat catalog, kill chains and correlation exports):
   `docs/superpowers/specs/2026-11-10-logsim-v2-catalog-port-design.md`.
 
+### Removed — `sources/MITRE-Turla-Carbon`: the jumpbox bootstrap no longer fetches compiled implants
+
+- **The submodule is gone (10 → 9).** Nothing in the engine read it. No `.py`,
+  `.yml`, `.sh`, `.json`, `Makefile` or `Dockerfile` referenced it, and the
+  image never copied it. But `install.sh::init_submodules` runs
+  `git submodule update --init --recursive`, so every jumpbox it bootstrapped
+  received `files/turla/Resources/Binaries/binaries.zip`, a password-zipped
+  archive of compiled Turla emulation implants (EPIC, Carbon, keylogger,
+  Mimikatz, Snake, LightNeuron) plus PsExec. CI's `submodules: recursive`
+  checkouts and the session-start hook pulled it too. No tier-2 adapter
+  declared it as a source.
+- **New guard: `scripts/check-installer-submodules.py`**, in `make
+  check-adapters` and the CI `adapters` job. It runs `install.sh`'s real
+  `init_submodules` with real git, in a sandbox that registers the tree's
+  `.gitmodules` byte for byte, never touches the network, and points every URL
+  at one local placeholder repo. It FAILs if a denylisted submodule (matched
+  by URL or path) is registered without `update = none` or gets checked out,
+  or if any checked-out submodule ships a `Binaries/*.zip`. Run against
+  `origin/dev` before this change, it fails on R1 and R2. Run against a checkout
+  that has the Turla submodule populated, it also fails R3 on the real
+  `binaries.zip`.
+  The pytest twin (`tests/installer/test_install_sh_submodule_denylist.py`)
+  carries the negative controls. It skips inside the prod image, which has no
+  git.
+- **Existing clones keep the files.** `git pull` leaves a populated submodule
+  directory in place. `sources/README.md` gives the removal commands.
+
 ### Changed — Composer and Runs: a step's lane is its signal path, not its plane
 
 - **The door badge, the Lanes lens and the Runs topology place a step by what
