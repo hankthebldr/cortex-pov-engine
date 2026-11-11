@@ -1695,6 +1695,60 @@ async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
     await db.flush()
 
 
+async def _record_step_outcomes(db: AsyncSession, run_id: str, steps: list) -> None:
+    """Upsert the beacon's per-step host evidence (caller commits).
+
+    A duplicate ``/complete`` upserts the same rows (idempotent); ``started_at``,
+    set by ``/output``, is deliberately not in the update set.
+    """
+    for st in steps:
+        vals = dict(exit_code=st.exit_code, termination=st.termination,
+                    signal=st.signal or None, reason=st.reason,
+                    recorded_at=datetime.utcnow())
+        stmt = sqlite_insert(StepOutcome).values(run_id=run_id, step_id=st.step_id, **vals)
+        # Another endpoint may report the same step. A host witness (or a lost
+        # beacon) already on the row is never downgraded by a non-witness
+        # termination; a witness may replace anything.
+        guard = None
+        if st.termination not in HOST_WITNESS:
+            col = StepOutcome.__table__.c.termination
+            guard = or_(col.is_(None), col.notin_(_PROTECTED_TERMINATIONS))
+        await db.execute(stmt.on_conflict_do_update(
+            index_elements=["run_id", "step_id"], set_=vals, where=guard))
+
+
+async def _record_late_abort_evidence(db: AsyncSession, run: Run, steps: list) -> int:
+    """Keep ``steps[]`` from a ``/complete`` that arrived after an operator abort.
+
+    RG-RUNS-01. The abort is a guarded UPDATE that wins the race with the
+    beacon by design, so the beacon's own ``/complete`` — the one message that
+    says which steps ran before the kill reached them — always lands on a run
+    that is already terminal. Dropping it left every Result of the aborted run
+    at ``outcome`` NULL ("pending, awaiting reconcile"), and the next alert on
+    that host inside the window was credited, with an MTTD, to a step that
+    never executed.
+
+    Only host evidence is taken, and only for a run that is ``aborted`` AND was
+    delivered: ``not_run`` steps become ``not_reached`` / ``not_executed`` on
+    their Results, which ``apply_verdicts`` never credits. The run's status,
+    ``completed_at``, output, verdict and SSE stream are not touched, and the
+    caller still answers 409. A run aborted before delivery ran nothing and is
+    already stamped ``ABORTED_BEFORE_DELIVERY``; every other terminal state has
+    a closed record (its own ``/complete`` or a classified sweep wrote it).
+
+    Returns how many step records of this request were recorded.
+    """
+    if not steps or run.status != "aborted" or run.mode != "pull" or run.delivered_at is None:
+        return 0
+    await _record_step_outcomes(db, run.run_id, steps)
+    await _apply_host_evidence(db, run.run_id, steps, run.agent_profile_mode)
+    await db.commit()
+    logger.info(
+        "run_complete after abort — host evidence kept run_id=%s steps=%s",
+        run.run_id, ",".join(f"{s.step_id}:{s.termination}" for s in steps))
+    return len(steps)
+
+
 @router.post("/{run_id}/complete")
 async def complete_run(
     run_id: str,
@@ -1760,39 +1814,29 @@ async def complete_run(
         # so the in-memory set stays bounded even on the abort→late-complete path.
         orchestrator.clear_aborted(run_id)
         orchestrator.forget_control_poll(run_id)
+        # The one thing a late /complete may still add: after an operator
+        # abort of a delivered run, which steps the host says ran (RG-RUNS-01).
+        kept = await _record_late_abort_evidence(db, run, body.steps)
         # 409, not 200 (OPS-03). The beacon now RETRIES /complete, so this
         # answer is what tells it to stop: the run was already finished (by an
         # earlier /complete, an operator abort, a staging refusal, or the
-        # beacon-lost / abandoned-task sweep) and NOTHING in this request —
-        # summary, exit code or steps[] — was applied. A 200 here read as
-        # "accepted", which a retrying client cannot tell apart from success.
+        # beacon-lost / abandoned-task sweep). Its summary and exit code are
+        # never applied, and neither is steps[] beyond what
+        # `host_evidence_recorded` counts. A 200 here read as "accepted",
+        # which a retrying client cannot tell apart from success.
         raise HTTPException(
             status_code=409,
             detail={
                 "error": "Run already terminal",
                 "code": "RUN_ALREADY_TERMINAL",
                 "detail": {"run_id": run_id, "status": run.status,
-                           "already_terminal": True},
+                           "already_terminal": True,
+                           "host_evidence_recorded": kept},
             },
         )
 
-    # Host evidence for each step, in the same write transaction. A duplicate
-    # /complete upserts the same rows (idempotent); started_at, set by /output,
-    # is deliberately not in the update set.
-    for st in body.steps:
-        vals = dict(exit_code=st.exit_code, termination=st.termination,
-                    signal=st.signal or None, reason=st.reason,
-                    recorded_at=datetime.utcnow())
-        stmt = sqlite_insert(StepOutcome).values(run_id=run_id, step_id=st.step_id, **vals)
-        # Another endpoint may report the same step. A host witness (or a lost
-        # beacon) already on the row is never downgraded by a non-witness
-        # termination; a witness may replace anything.
-        guard = None
-        if st.termination not in HOST_WITNESS:
-            col = StepOutcome.__table__.c.termination
-            guard = or_(col.is_(None), col.notin_(_PROTECTED_TERMINATIONS))
-        await db.execute(stmt.on_conflict_do_update(
-            index_elements=["run_id", "step_id"], set_=vals, where=guard))
+    # Host evidence for each step, in the same write transaction.
+    await _record_step_outcomes(db, run_id, body.steps)
 
     # Still inside the write transaction that the UPDATE opened, so this read
     # sees exactly the decrement this request made — and the status that goes
@@ -1900,8 +1944,12 @@ async def abort_run(run_id: str, db: AsyncSession = Depends(get_db)):
 
     # OPS-01: a pull run aborted before any beacon collected its task ran
     # nothing on the target — its rows can never be credited an alert. A
-    # delivered run is left alone: the beacon's own /complete steps[] says
-    # which steps ran before the abort reached them.
+    # delivered run is left alone HERE: which of its steps ran is the host's
+    # to say, and the beacon says it on the /complete that follows this abort
+    # (kept by `_record_late_abort_evidence`, RG-RUNS-01). Until that arrives —
+    # and for good if the beacon is gone or predates steps[] — the rows stay
+    # unjudged, and an alert on that host can still be credited to a step
+    # that never ran.
     if aborted is not None and aborted.mode == "pull" and aborted.delivered_at is None:
         from engine.orchestrator import (  # noqa: PLC0415
             REASON_ABORTED_BEFORE_DELIVERY,

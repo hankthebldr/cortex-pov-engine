@@ -102,8 +102,12 @@ def _row(session_factory, run_id: str) -> dict:
 
 
 def _refused(run_id: str, status: str) -> dict:
+    # host_evidence_recorded is 0 for every run in this file: none of them is
+    # an aborted, DELIVERED run whose late /complete carries steps[] — the one
+    # case that keeps anything (tests/api/test_runs_abort_late_host_evidence.py).
     return {"error": "Run already terminal", "code": "RUN_ALREADY_TERMINAL",
-            "detail": {"run_id": run_id, "status": status, "already_terminal": True}}
+            "detail": {"run_id": run_id, "status": status, "already_terminal": True,
+                       "host_evidence_recorded": 0}}
 
 
 def _complete(client, run_id: str, exit_code: int, summary: str):
