@@ -8,6 +8,29 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Fixed — alert read-back reads the Issues API field names
+
+- **An Analytics BIOC issue could never satisfy an ABIOC expectation.** The
+  matcher maps an alert's source onto an engine family by substring, and the
+  Issues API's `detection.method` code `ANALYTICS_BIOC` has an underscore
+  where the "analytics bioc" rule expects a space, so it read as `analytics`
+  and the known-but-different families refused the pair. `TRAPS` and
+  `MAGNIFIER` named no family at all, so an agent prevention issue could
+  credit a BIOC expectation on technique alone. The six codes a family exists
+  for now map exactly. TRAPS = XDR Agent and MAGNIFIER = XDR Analytics are
+  inferred from the order of the docs' two value lists, and the code says so.
+- **The connector reads `detection.rule_id`, `detection.method`, `case_ids`
+  and `_insert_time`,** the names the public Issues API documents. Each is
+  read after the existing keys of its role. `case_ids` gives an incident id
+  only when it lists exactly one case. `_insert_time` dates a record only when
+  no other timestamp is present; the order MTTD uses is unchanged.
+- **Preflight `alert_shape` no longer reports `PF_ALERT_SHAPE_PARTIAL` for an
+  issue that carries `detection.rule_id`.** It reads values through the
+  connector's own `alert_key`, and a new test fails if preflight credits a
+  key the connector does not read. Guard:
+  `tests/connectors/test_issues_api_fields.py` (15 failures before the change).
+  Nothing here ran against a tenant: tenant-verified is still 0.
+
 ### Fixed — EAL collector emitters send the XSIAM API key bare
 
 - **The 14 collector emitters defaulted `auth_scheme` to `"Bearer"`,** so a
