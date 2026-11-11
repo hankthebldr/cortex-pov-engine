@@ -63,9 +63,10 @@ panw_ngfw_traffic_raw:
       detail: "One plain sentence."
       verified: {by: "", "on": "", how: ""}
   emulated_by: [ngfw_eal_emitter]
+  doors: [ngfw_traffic]          # or `doors_unknown: "<what is unconfirmed>"`, never both
 ```
 
-All four top-level keys are required; unknown keys are rejected. `cortex_side`
+Four top-level keys are required, plus exactly one of `doors` / `doors_unknown` (below); unknown keys are rejected. `cortex_side`
 must not be empty. `source_side` may be empty: 2 datasets have none,
 `network_story` and `xsiam_incidents`, which Cortex builds from data it already
 holds. Counted with:
@@ -77,6 +78,21 @@ PYTHONPATH=core CORTEXSIM_BASE_DIR=$(pwd) .venv/bin/python -c "from engine.datas
 `threat_intel` (fills only when an indicator feed is connected) and
 `asm_findings` (covers only assets inside the configured scope) each carry a
 source-side row for that reason.
+
+### Doors
+
+Every row names how its data reaches the tenant, in one of two keys; exactly one
+must be present, and a row with both or neither is rejected.
+
+- `doors` is a non-empty list of door ids from `core/engine/ingestion_doors.py`
+  (`DOORS`). An id that is not in that registry, or a repeated id, is rejected.
+- `doors_unknown` is a sentence saying what is unconfirmed, drawn from the row's
+  own `source_side[].detail`. It is for a dataset with no known real tenant
+  counterpart. Blank text, and `tbd`, `unknown` or `n/a` in any case, are
+  rejected: the reason is the record that a human looked.
+
+Both are served by `to_dict()` as `doors` (a list, empty when unknown) and
+`doors_unknown` (a string or `null`).
 
 ### Vocabularies (from `core/engine/dataset_requirements.py`)
 

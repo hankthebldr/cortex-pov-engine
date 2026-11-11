@@ -12,11 +12,14 @@
 # A verified row needs all three of by/on/how. Quote the "on" key: bare, YAML
 # reads it as the boolean true. Quote the date too ("on": "2026-11-12"), or
 # YAML reads it as a date; the loader rejects both.
+# doors: names the ingestion door(s) (core/engine/ingestion_doors.py) the dataset arrives through;
+# doors_unknown: a reason, when no real tenant counterpart is known. Exactly one per row.
 # emulated_by lists a plugin only when its code or Meta names that dataset as
 # the one it posts to.
 
 ad_audit:
   produced_by: microsoft-windows
+  doors_unknown: "Domain controller events 4768 and 4662 are read, but which product emits this dataset and how it is onboarded are not confirmed."
   cortex_side:
     - kind: data_source
       name: null
@@ -30,6 +33,7 @@ ad_audit:
 
 ai_spm_findings:
   produced_by: cortex-cloud
+  doors: [cloud_aws, cloud_gcp, cloud_azure]
   cortex_side:
     - kind: built_in
       name: null
@@ -43,6 +47,7 @@ ai_spm_findings:
 
 asm_findings:
   produced_by: cortex-xpanse
+  doors: [xpanse]
   cortex_side:
     - kind: built_in
       name: null
@@ -56,6 +61,7 @@ asm_findings:
 
 cisco_asa_raw:
   produced_by: cisco-asa
+  doors: [syslog_cisco_asa]
   cortex_side:
     - kind: data_source
       name: null
@@ -69,6 +75,7 @@ cisco_asa_raw:
 
 cloud_audit:
   produced_by: cloud-provider-audit
+  doors_unknown: "The one card reads AWS control-plane events, but whether this is a dataset distinct from cloud_audit_logs, and how it is onboarded, are not confirmed."
   cortex_side:
     - kind: data_source
       name: null
@@ -82,6 +89,7 @@ cloud_audit:
 
 cloud_audit_logs:
   produced_by: cloud-provider-audit
+  doors: [cloud_aws, cloud_gcp, cloud_azure]
   cortex_side:
     - kind: data_source
       name: null
@@ -95,6 +103,7 @@ cloud_audit_logs:
 
 cortex_cloud_posture:
   produced_by: cortex-cloud
+  doors: [cloud_aws, cloud_gcp, cloud_azure]
   cortex_side:
     - kind: built_in
       name: null
@@ -108,6 +117,7 @@ cortex_cloud_posture:
 
 cortexsim_airs_raw:
   produced_by: cortexsim-synthetic
+  doors_unknown: "The cards read CortexSim AIRS probe records, but how those records reach the tenant is not confirmed."
   cortex_side:
     - kind: data_source
       name: null
@@ -121,6 +131,7 @@ cortexsim_airs_raw:
 
 esxi_syslog:
   produced_by: vmware-esxi
+  doors_unknown: "ESXi syslog sshd logons and vSphere VM-creation events are read, but which product emits this dataset and how it is onboarded are not confirmed."
   cortex_side:
     - kind: data_source
       name: null
@@ -134,6 +145,7 @@ esxi_syslog:
 
 google_workspace_audit:
   produced_by: google-workspace
+  doors: [saas_google_workspace]
   cortex_side:
     - kind: data_source
       name: null
@@ -147,6 +159,7 @@ google_workspace_audit:
 
 ivanti_ics_raw:
   produced_by: ivanti
+  doors: [syslog_ivanti_connect_secure]
   cortex_side:
     - kind: data_source
       name: null
@@ -160,6 +173,7 @@ ivanti_ics_raw:
 
 koi_code_scan_events:
   produced_by: koi
+  doors: [koi_aes]
   cortex_side:
     - kind: data_source
       name: null
@@ -173,6 +187,7 @@ koi_code_scan_events:
 
 kubernetes_audit_logs:
   produced_by: kubernetes
+  doors: [syslog_kubernetes_kubernetes, cloud_aws]
   cortex_side:
     - kind: data_source
       name: null
@@ -186,6 +201,7 @@ kubernetes_audit_logs:
 
 msft_azure_ad_signin:
   produced_by: microsoft-entra
+  doors: [saas_entra]
   cortex_side:
     - kind: data_source
       name: null
@@ -199,6 +215,7 @@ msft_azure_ad_signin:
 
 msft_azure_audit:
   produced_by: cloud-provider-audit
+  doors: [cloud_azure]
   cortex_side:
     - kind: data_source
       name: null
@@ -212,6 +229,7 @@ msft_azure_audit:
 
 msft_o365:
   produced_by: microsoft-365
+  doors: [saas_o365]
   cortex_side:
     - kind: data_source
       name: null
@@ -225,6 +243,7 @@ msft_o365:
 
 msft_o365_audit:
   produced_by: microsoft-365
+  doors: [saas_o365]
   cortex_side:
     - kind: data_source
       name: null
@@ -238,6 +257,7 @@ msft_o365_audit:
 
 msft_windows_security:
   produced_by: microsoft-windows
+  doors: [windows_events, xdr_agent_xth]
   cortex_side:
     - kind: data_source
       name: null
@@ -251,6 +271,7 @@ msft_windows_security:
 
 network_story:
   produced_by: cortex-xsiam
+  doors: [ngfw_stitch]
   cortex_side:
     - kind: built_in
       name: null
@@ -260,6 +281,7 @@ network_story:
 
 okta_sso:
   produced_by: okta
+  doors: [saas_okta]
   cortex_side:
     - kind: data_source
       name: null
@@ -273,6 +295,7 @@ okta_sso:
 
 pan_dns:
   produced_by: strata-ngfw
+  doors_unknown: "The cards read DNS queries the firewall logs when DNS Security is enabled, but whether they arrive through the traffic log door or a distinct DNS log type is not confirmed."
   cortex_side:
     - kind: data_source
       name: null
@@ -290,6 +313,7 @@ pan_dns:
 
 pan_ngfw_traffic:
   produced_by: strata-ngfw
+  doors: [ngfw_traffic]
   cortex_side:
     - kind: data_source
       name: null
@@ -303,6 +327,7 @@ pan_ngfw_traffic:
 
 panw_ngfw_globalprotect_raw:
   produced_by: strata-ngfw
+  doors: [ngfw_globalprotect]
   cortex_side:
     - kind: data_source
       name: null
@@ -320,6 +345,7 @@ panw_ngfw_globalprotect_raw:
 
 panw_ngfw_threat_raw:
   produced_by: strata-ngfw
+  doors: [ngfw_threat]
   cortex_side:
     - kind: data_source
       name: null
@@ -337,6 +363,7 @@ panw_ngfw_threat_raw:
 
 panw_ngfw_traffic_raw:
   produced_by: strata-ngfw
+  doors: [ngfw_traffic]
   cortex_side:
     - kind: data_source
       name: null
@@ -350,6 +377,7 @@ panw_ngfw_traffic_raw:
 
 prisma_browser_events:
   produced_by: prisma-browser
+  doors: [prisma_browser]
   cortex_side:
     - kind: data_source
       name: null
@@ -363,6 +391,7 @@ prisma_browser_events:
 
 proofpoint_tap_raw:
   produced_by: proofpoint
+  doors: [proofpoint_tap]
   cortex_side:
     - kind: data_source
       name: null
@@ -376,6 +405,7 @@ proofpoint_tap_raw:
 
 saas_audit_logs:
   produced_by: saas-generic
+  doors_unknown: "The cards read an HTTP or proxy shape (dst_host, uri_path, oauth_scopes), but which product emits this dataset and how it is onboarded are not confirmed."
   cortex_side:
     - kind: data_source
       name: null
@@ -389,6 +419,7 @@ saas_audit_logs:
 
 saas_okta_raw:
   produced_by: okta
+  doors: [saas_okta]
   cortex_side:
     - kind: data_source
       name: null
@@ -402,6 +433,7 @@ saas_okta_raw:
 
 threat_intel:
   produced_by: cortex-xsiam
+  doors_unknown: "The dataset fills only when an indicator feed is connected, and which feed integration supplies it is not confirmed."
   cortex_side:
     - kind: built_in
       name: null
@@ -415,6 +447,7 @@ threat_intel:
 
 xdr_data:
   produced_by: cortex-xdr-agent
+  doors: [xdr_agent]
   cortex_side:
     - kind: built_in
       name: null
@@ -428,6 +461,7 @@ xdr_data:
 
 xsiam_incidents:
   produced_by: cortex-xsiam
+  doors: [tenant_incidents]
   cortex_side:
     - kind: built_in
       name: null
