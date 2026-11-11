@@ -78,3 +78,20 @@ Counts by plane: AIRS:5, AI_ACCESS:6, AI_SPM:7, ANALYTICS:35, ASM:6, BROWSER:6, 
 - **F5 — grouping works off runtime malware verdicts, not custom BIOCs.** The reliable Medium+ trigger on this VM is the agent's WildFire/Local-Analysis verdict on a real malicious file. Design each chain so a real tool at each stage raises its own runtime verdict (the CDR SIM-CDR-013 DeimosC2 pattern; Oct case 49789 grouped 10+ such HIGH verdicts).
 - **F6 — Detection Accuracy scoring.** XQL `verification_xql` passes do not count toward Detection Accuracy (only alert-backed observations do), so a run can be fully-observed in telemetry yet score `fail`. Expected, but note it when reading verdicts.
 
+
+## Run log
+
+| Run | Scenario | Steps rc | What reached the tenant |
+|---|---|---|---|
+| fac6e8d5 (16:24Z) | SIM-EDR-023 | 4/4 rc 0 | Local Analysis Malware HIGH + WildFire Malware MEDIUM on the cron re-run → **grouped into case 51896** across two causality chains. Real execution. MTTD 46 s. The 3 custom BIOCs did not fire (F4). |
+| 0476f603 (18:36Z) | SIM-EDR-003 | 5/5 rc 0 | Largely SAFE-MODE: steps 1/2/4/5 stage to /tmp ("NOT installed/injected/written"); only step-03 `useradd -G sudo cortexsim_testuser` is real → a Low shadow-file ABIOC. No case (all Low). |
+
+## SAFE-MODE audit (F7 — the central hardening finding)
+
+The existing library EDR/CDR scenarios are predominantly **SAFE-MODE**: they stage an artifact to `/tmp` and print "NOT installed / NOT injected / Simulating", so they never perform the malicious action and the XDR agent's runtime detection has nothing to verdict. Of the 20 endpoint-runnable scenarios:
+
+- **REAL (execute for real):** SIM-CDR-003, -008, -012, -016, -028, SIM-EDR-023, -024 (7)
+- **MIXED:** SIM-CDR-006, -013, -014, SIM-EDR-007, -008 (5)
+- **MOSTLY-SAFE (stage only):** SIM-CDR-010, -018, -019, -020, SIM-EDR-003, -004, -009, -019 (8)
+
+This is why SIM-EDR-023 (built to actually run a real malicious ELF into `/etc/cron.d` with real re-execution) produced HIGH+MEDIUM verdicts and real grouping, while SIM-EDR-003 (stages to `/tmp`) produced one Low ABIOC. **To make the library's endpoint signatures real (Henry, 2026-11-11), the MOSTLY-SAFE and MIXED scenarios need a hardening pass:** execute the staged artifact for real (into real persistence paths), and use a real tool at each stage so the agent raises its own runtime verdict — the SIM-EDR-023 / SIM-CDR-013 pattern. The 8 privesc tools are already shelf-staged for this.
