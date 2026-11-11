@@ -762,6 +762,32 @@ export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token 
   return `/api/agents/install?${q.toString()}`
 }
 
+/**
+ * Relative URL of GET /api/agents/manifest — the Kubernetes manifest that puts
+ * an enrolled beacon into a pod. Parameters equal to their server default are
+ * omitted; a consent key is added only when it is exactly `true`. Never carries
+ * a token (the token lives in the cluster Secret, not in this URL).
+ *
+ * @param {{profile?:string, image?:string, arch?:string, prepare?:string,
+ *          ttlSeconds?:number, consent?:Object<string,boolean>, authorizedBy?:string}} opts
+ */
+export function agentManifestUrl({
+  profile = 'baseline', image, arch, prepare, ttlSeconds, consent = {}, authorizedBy,
+} = {}) {
+  const q = new URLSearchParams()
+  if (profile && profile !== 'baseline') q.set('profile', profile)
+  if (image && image !== 'debian:12-slim') q.set('image', image)
+  if (arch && arch !== 'amd64') q.set('arch', arch)
+  if (prepare && prepare !== 'packages') q.set('prepare', prepare)
+  if (ttlSeconds != null && Number(ttlSeconds) !== 43200) q.set('ttl_seconds', String(ttlSeconds))
+  for (const key of ['cluster_privilege_authorized', 'node_access_authorized']) {
+    if (consent && consent[key] === true) q.set(key, 'true')
+  }
+  if (authorizedBy) q.set('authorized_by', authorizedBy)
+  const qs = q.toString()
+  return `/api/agents/manifest${qs ? `?${qs}` : ''}`
+}
+
 // ─── Agent enrollment tokens ─────────────────────────────────────────────────
 // The documented front door for onboarding: mint a TTL/max-uses/revocable
 // token, hand the jumpbox ONE line, and let SimCore assign the agent id.

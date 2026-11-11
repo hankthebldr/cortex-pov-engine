@@ -7,6 +7,7 @@ import {
 } from '../../api/client.js'
 import { agentIdOf } from '../../api/ids.js'
 import { parseServerTime, serverDate } from '../../api/time.js'
+import DeployAgentKubernetes from './DeployAgentKubernetes.jsx'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 import '../../styles/destinations/agents.css'
 
@@ -303,6 +304,16 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   <p className="target-card__sub">
                     {a.hostname || a.host || 'unknown host'} · {os} · seen {relTime(a.last_seen || a.last_seen_at || a.updated_at)}
                   </p>
+                  {a.runtime_facts?.container === true && (
+                    <p className="target-card__sub mono" data-testid="agent-container-facts">
+                      {[
+                        a.runtime_facts.posture_profile,
+                        a.runtime_facts.node_name && `node ${a.runtime_facts.node_name}`,
+                        String(a.runtime_facts.prepare_status ?? '').startsWith('PREPARE_FAILED')
+                          && a.runtime_facts.prepare_status,
+                      ].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                   {isSel('agent', id) && <span className="target-card__selected">✓ selected · pull mode</span>}
                   {!isSel('agent', id) && isActive && (
                     <span className="target-card__selected">✓ active agent</span>
@@ -465,7 +476,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 {/* macOS is a real target: /api/agents/install accepts it and
                     the darwin beacons ship in the dist matrix. One POSIX script
                     covers Linux and macOS — it branches on `uname -s`. */}
-                {[['linux', '🐧 Linux'], ['macos', '🍎 macOS'], ['windows', '🪟 Windows']].map(([o, label]) => (
+                {[['linux', '🐧 Linux'], ['macos', '🍎 macOS'], ['windows', '🪟 Windows'], ['kubernetes', '☸ Kubernetes']].map(([o, label]) => (
                   <button
                     key={o}
                     type="button"
@@ -477,7 +488,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
               </div>
             </div>
 
-            {!token ? (
+            {deployOS === 'kubernetes' ? (
+              <DeployAgentKubernetes origin={origin} copyText={copyText} />
+            ) : !token ? (
               <>
                 <div className="deploy-token-form">
                   <label className="deploy-field">
@@ -580,6 +593,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
 
             {/* Legacy path — kept because a host that cannot redeem a token
                 (no outbound POST, pre-seeded image) still needs an installer. */}
+            {deployOS !== 'kubernetes' && (
             <div className="deploy-legacy">
               <button
                 type="button"
@@ -613,6 +627,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
       )}
