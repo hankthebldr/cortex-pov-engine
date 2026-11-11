@@ -320,7 +320,12 @@ def card_datasets(all_raw: dict[str, dict]) -> dict[str, set[str]]:
 
 
 def registry_source() -> dict[str, str]:
-    """``{"path", "source"}``; source is ``"file"`` or ``"absent"``, read once per process like ``load()``."""
+    """``{"path", "source"}``; source is ``"file"`` or ``"absent"``, as ``load()`` serves it.
+
+    Follows ``load()``'s cache: a registry that loaded, or was found absent, is read once per
+    process. A malformed one is not cached (``lru_cache`` does not cache exceptions), so it is
+    re-read, and raises again, on every call until it parses.
+    """
     return {"path": registry_path(), "source": "absent" if load() is None else "file"}
 
 

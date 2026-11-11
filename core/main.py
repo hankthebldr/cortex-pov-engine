@@ -135,9 +135,10 @@ async def lifespan(app: FastAPI):
     logger.info("TTP catalog ready: %d detection cards", cards_loaded)
 
     # 2a'. Dataset requirement registry vs the datasets those cards read. Needs the card
-    #      catalog loaded just above. Strict (CORTEXSIM_STRICT_DATASETS) raises on an
-    #      unregistered dataset; otherwise it only warns, and an absent registry never
-    #      stops boot (the health component reports it degraded).
+    #      catalog loaded just above. Strict (CORTEXSIM_STRICT_DATASETS) raises on a
+    #      malformed registry or card, or an unregistered dataset; an absent registry
+    #      leaves every card dataset unregistered, so strict refuses that too. Otherwise
+    #      it only logs, and the health component reports it degraded.
     from engine.dataset_requirements import boot_check_dataset_requirements  # noqa: PLC0415
     boot_check_dataset_requirements(ttp_catalog.all_raw())
 

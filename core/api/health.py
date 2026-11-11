@@ -321,7 +321,8 @@ def probe_dataset_requirements() -> dict[str, Any]:
             "DATASET_REGISTRY_MALFORMED",
             f"{exc} Until it parses, /api/prerequisites/* return a structured 500. "
             f"Fix: restore spec/dataset_requirements.yml from this build's source "
-            f"tree and restart SimCore (it is read once).",
+            f"tree. A malformed registry is not cached: it is re-read on every call, "
+            f"so the fix takes effect without a restart.",
             path=path,
         )
     if registry is None:

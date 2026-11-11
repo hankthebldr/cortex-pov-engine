@@ -11,14 +11,19 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 ### Added
 
 - **Dataset requirement registry and scenario prerequisites.**
-  `spec/dataset_requirements.yml` records, for each of the 31 datasets the 191
-  detection cards query, what must exist on the Cortex side, what the source
-  product must emit, and which EAL plugin can stand in for it. Three read-only
-  routes serve it: `GET /api/prerequisites/datasets`,
+  `spec/dataset_requirements.yml` records, for each of the 32 datasets the 191
+  detection cards read, what must exist on the Cortex side, what the source
+  product must emit, and which EAL plugin can stand in for it. A card reads a
+  dataset through `xql_queries[].dataset` or through a `dataset =` / `preset =`
+  anchor in its BIOC, ABIOC or correlation logic; one walker reads both, and
+  every dataset row says which kinds did (`read_by`). Three read-only routes
+  serve it: `GET /api/prerequisites/datasets`,
   `GET /api/scenarios/{id}/prerequisites` (derived through the cards a scenario
-  cites, with note codes instead of silent gaps) and
-  `GET /api/scenarios/{id}/query-library` (the cards' queries as paste-ready
-  text, `?purpose=` selects hunt, investigation, validation or metric). An
+  cites, with note codes instead of silent gaps, including `DETECTION_UNBOUND`
+  for an expected detection with no `ttp_ref`) and
+  `GET /api/scenarios/{id}/query-library` (the cards' queries as text for XQL
+  Search, every other line a `//` comment whose syntax is not yet confirmed in
+  a tenant; `?purpose=` selects hunt, investigation, validation or metric). An
   absent registry is reported as degraded in `/api/health`, never as "no
   requirements"; a malformed one answers a structured 500;
   `CORTEXSIM_STRICT_DATASETS=true` (default off) refuses boot on either, or on
