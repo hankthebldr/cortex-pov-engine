@@ -608,6 +608,7 @@ async def probe_agents(session_factory) -> dict[str, Any]:
     """
     from sqlalchemy import select  # noqa: PLC0415
 
+    import api.agents as agents_api  # noqa: PLC0415
     from api.agents import _derive_status  # noqa: PLC0415
     from models import Agent  # noqa: PLC0415
 
@@ -623,7 +624,42 @@ async def probe_agents(session_factory) -> dict[str, Any]:
     common = {"registered": len(rows), **buckets,
               "derived_from": "last_seen age; no outbound probe is made"}
 
-    if not rows:
+    # RG-INSTALL-05: is an agent's recorded address really its own? Two signs
+    # it is a proxy's: an X-Forwarded-For SimCore ignored because the peer is
+    # not in CORTEXSIM_TRUSTED_PROXIES, and distinct hosts sharing one address.
+    # last_ip is what scopes a reconcile to a host, so this is not cosmetic.
+    forwarders = list(agents_api.ignored_forwarders())
+    by_ip: dict[str, set] = {}
+    for agent in rows:
+        ip, host = getattr(agent, "last_ip", None), getattr(agent, "hostname", None)
+        if ip and host:
+            by_ip.setdefault(ip, set()).add(host)
+    shared = {ip: sorted(hosts) for ip, hosts in sorted(by_ip.items()) if len(hosts) > 1}
+    if forwarders:
+        common["ignored_forwarders"] = forwarders
+    if shared:
+        common["shared_addresses"] = shared
+    address_fault = None
+    if forwarders:
+        address_fault = (
+            "XFF_FROM_UNTRUSTED_PEER",
+            f"X-Forwarded-For arrived from {', '.join(forwarders)}, which "
+            f"CORTEXSIM_TRUSTED_PROXIES does not list, so the header was ignored and "
+            f"agents behind that peer are recorded with the peer's address, not their "
+            f"own. A reconcile scoped by that address matches the wrong host. Fix: if "
+            f"that peer is your proxy, add it to CORTEXSIM_TRUSTED_PROXIES (CIDRs, "
+            f"passed to the container as an environment variable) and restart SimCore.")
+    elif shared:
+        ip, hosts = next(iter(shared.items()))
+        address_fault = (
+            "AGENT_ADDRESS_SHARED",
+            f"{len(shared)} address(es) are recorded for more than one host (e.g. {ip}: "
+            f"{', '.join(hosts)}), so SimCore sees those agents through one proxy or NAT "
+            f"and an address-scoped reconcile cannot tell them apart. Fix: if a proxy "
+            f"sends X-Forwarded-For, list it in CORTEXSIM_TRUSTED_PROXIES; if the hosts "
+            f"sit behind one NAT, pass ?host= on /reconcile to name the endpoint.")
+
+    if not rows and address_fault is None:
         # Deliberately OK, not degraded. A fresh SimCore, and any push-only
         # deployment, has no agents by design — flagging that amber forever
         # would make the banner background noise, and a banner nobody reads is
@@ -638,7 +674,7 @@ async def probe_agents(session_factory) -> dict[str, Any]:
                    "GET /api/agents/install?os=linux.",
             **common,
         )
-    if buckets["online"] == 0:
+    if rows and buckets["online"] == 0:
         return _degraded(
             "NO_AGENT_ONLINE",
             f"{len(rows)} agent(s) are enrolled but none has checked in within 30s "
@@ -648,6 +684,8 @@ async def probe_agents(session_factory) -> dict[str, Any]:
             f"reach this SimCore's /api/agents/{{id}}/tasks.",
             **common,
         )
+    if address_fault is not None:
+        return _degraded(*address_fault, **common)
     return _ok(**common)
 
 

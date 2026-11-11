@@ -772,3 +772,62 @@ def test_scenario_catalog_drafts_alone_is_still_degraded():
     assert comp["code"] == "SCENARIO_CATALOG_EMPTY"
     assert comp["count"] == 0
     assert comp["drafts"] == 2
+
+
+# ---------------------------------------------------------------------------
+# RG-INSTALL-05: agents recording a proxy's address as their own
+# ---------------------------------------------------------------------------
+
+
+class _AddrAgent:
+    def __init__(self, agent_id, hostname, last_ip, age_s=1):
+        from datetime import datetime, timedelta
+        self.agent_id, self.hostname, self.last_ip = agent_id, hostname, last_ip
+        self.last_seen = datetime.utcnow() - timedelta(seconds=age_s)
+
+
+def test_an_ignored_x_forwarded_for_is_a_named_degradation(monkeypatch):
+    """37dc374 logs the first X-Forwarded-For from each unlisted peer once and
+    keeps the peers in api.agents.ignored_forwarders(). A log line is not seen
+    by a DC; /api/health is the diagnostic surface."""
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: ["10.9.9.9"])
+    comp = asyncio.run(health.probe_agents(lambda: _Rows([_AddrAgent("a1", "h1", "10.9.9.9")])))
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "XFF_FROM_UNTRUSTED_PEER"
+    assert comp["ignored_forwarders"] == ["10.9.9.9"]
+    assert "CORTEXSIM_TRUSTED_PROXIES" in comp["detail"]
+
+
+def test_distinct_hosts_sharing_one_address_is_a_named_degradation(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+    rows = [_AddrAgent("a1", "web-01", "10.0.0.1"), _AddrAgent("a2", "db-01", "10.0.0.1"),
+            _AddrAgent("a3", "app-01", "10.0.0.3")]
+    comp = asyncio.run(health.probe_agents(lambda: _Rows(rows)))
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "AGENT_ADDRESS_SHARED"
+    assert comp["shared_addresses"] == {"10.0.0.1": ["db-01", "web-01"]}
+
+
+def test_one_host_with_two_agent_rows_is_not_shared(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+    rows = [_AddrAgent("a1", "web-01", "10.0.0.1"), _AddrAgent("a2", "web-01", "10.0.0.1")]
+    comp = asyncio.run(health.probe_agents(lambda: _Rows(rows)))
+    assert comp["status"] == "ok", comp
+
+
+def test_an_ignored_forwarder_with_no_agent_enrolled_is_still_named(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: ["10.9.9.9"])
+    comp = asyncio.run(health.probe_agents(lambda: _Rows([])))
+    assert comp["code"] == "XFF_FROM_UNTRUSTED_PEER", comp
