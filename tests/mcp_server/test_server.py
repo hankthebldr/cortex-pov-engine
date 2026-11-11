@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from tests._core_reimport import is_core_module, reimport_core
+from tests._core_reimport import CORE_DIR, is_core_module, reimport_core
 
 # Two pre-existing warnings, each ignored by exact category/message; any other
 # warning is an error under -W error:
@@ -53,6 +53,11 @@ def boot_main(tmp_path, monkeypatch, restore_core_modules):
         monkeypatch.setenv("CORTEXSIM_SECRET", "test-master-key-please-ignore-32+chars-entropy")
         monkeypatch.setenv("CORTEXSIM_MCP_HTTP", "true" if http else "false")
         monkeypatch.setenv("CORTEXSIM_MCP_ALLOWED_HOSTS", allowed_hosts)
+        # Another suite (tests/scripts/test_lab_readiness.py) puts scripts/ at
+        # sys.path[0] during collection, and scripts/eal_simulator/ is a package
+        # of the same name as core/eal_simulator/. The fresh import below must
+        # resolve core/ first; monkeypatch restores sys.path at teardown.
+        monkeypatch.syspath_prepend(str(CORE_DIR))
         reimport_core("main", *[n for n, m in list(sys.modules.items()) if is_core_module(m)])
         import main  # noqa: PLC0415
 
