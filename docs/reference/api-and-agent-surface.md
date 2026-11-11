@@ -1066,7 +1066,7 @@ consumes no call budget. `CORTEXSIM_PANOS_ALLOW_WRITE` exists in `core/config.py
 | GET | `/api/ngfw` | Registered firewalls, metadata only (never the key) | — | `{firewalls: [{name, host, verify_tls, vsys, forwarding_path, last_verified_ok, last_verified_error, last_verified_at}], write_enabled: false, tenant_verified: 0}` |
 | POST | `/api/ngfw/keygen` | Exchange a firewall admin login for an API key and register the firewall (kind `panos_ngfw`) | JSON `{name, host, username, password, verify_tls?=true, vsys?="vsys1"}`, extra keys rejected, body ≤ 16 KiB | `<integration.to_dict()>` + `overrides_cleared` + `warnings[]` (`"password sent over unverified TLS"` when `verify_tls=false`); errors below |
 | PUT | `/api/ngfw/{name}/sources/{agent_id}` | Set or clear one agent's firewall-observed source / agent-side addresses on one firewall | JSON `{observed_source?: ip \| null, agent_addresses?: [ip] \| null}`; an omitted field is unchanged, `null` / `[]` removes the override | `{firewall, agent_id, observed_source, agent_addresses}`; 404 `INTEGRATION_NOT_FOUND`, 400 `INTEGRATION_CONFIG_INVALID`, 422 `REQUEST_INVALID`, 413 `REQUEST_TOO_LARGE` |
-| PUT | `/api/credentials/integrations` | Existing route; with `kind: panos_ngfw` it registers a pasted API key | `IntegrationPut` with `config` per the table below | `<integration.to_dict()>` + `overrides_cleared`; 400 `INTEGRATION_CONFIG_INVALID` |
+| PUT | `/api/credentials/integrations` | Existing route; with `kind: panos_ngfw` it registers a pasted API key | `IntegrationPut` with `config` per the table below | `<integration.to_dict()>` + `overrides_cleared`; 400 `INTEGRATION_CONFIG_INVALID`; 409 `INTEGRATION_KIND_CONFLICT` (the name belongs to another kind; nothing written) |
 | POST | `/api/connectors/panos_ngfw/preflight` | Staged read-only firewall preflight (dispatched at the top of the connectors route, before its `PF_` resolution) | query `integration?` (default: first by name), `agents?` (comma-separated agent ids; default every enrolled agent) | `FirewallPreflightReport` (below); `PN_NO_INTEGRATION` / `PN_CREDENTIAL_UNDECRYPTABLE` arrive as a 200 report with a blocked `config` stage; 404 `INTEGRATION_NOT_FOUND` for an unknown `integration` |
 
 **`panos_ngfw` config** (validated at PUT and keygen time by
@@ -1082,7 +1082,9 @@ no packet is sent) · `inside_zone` / `outside_zone` (null) · `observed_sources
 forced to `panos_api_key_credential`.
 
 **Re-registration rule.** A keygen or `PUT /api/credentials/integrations` for an
-existing `panos_ngfw` name keeps `probe_destinations` and the zones; it keeps
+existing `panos_ngfw` name keeps `probe_destinations`, the zones, `device_name` and
+`routing_instance` (and, on the PUT, `vsys` / `forwarding_path`), each only when the
+caller did not send it, since a sent key always wins; it keeps
 `observed_sources` / `agent_addresses` only when the normalised `host` is unchanged and
 otherwise clears them and returns `overrides_cleared: true`. Per-agent overrides describe
 the path through one firewall; carried to another they give confident, wrong verdicts.

@@ -500,7 +500,10 @@ reference, this list says where it departs from §4–§6.
    carry `observed_sources` / `agent_addresses` over when the normalised `host` is
    unchanged, and clear them (response `overrides_cleared: true`) when it changes. Probes
    and zones are kept either way. A key rotation no longer wipes the overrides; a renamed
-   box no longer inherits another firewall's path.
+   box no longer inherits another firewall's path. The PUT also keeps `device_name`,
+   `routing_instance`, `vsys` and `forwarding_path` when the caller does not send them
+   (a sent key wins), and a `panos_ngfw` PUT onto a name held by another kind is 409
+   `INTEGRATION_KIND_CONFLICT`, as keygen already was (final review M3).
 9. **The keygen body is parsed in the handler.** FastAPI's default 422 echoed the
    password in the error `input` even with `hide_input_in_errors=True` on the model, so
    `POST /api/ngfw/keygen` reads the raw body (capped at 16 KiB, 413 above that), parses

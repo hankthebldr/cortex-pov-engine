@@ -244,6 +244,9 @@ async def put_integration(
 #: host changes; probes and zones are lab intent and stay (same rule as keygen).
 _PANOS_PER_HOST_KEYS = ("observed_sources", "agent_addresses")
 _PANOS_LAB_KEYS = ("probe_destinations", "inside_zone", "outside_zone")
+#: Device settings the operator entered once: kept unless the caller sends them
+#: (keygen keeps them too). The body wins whenever it carries the key.
+_PANOS_DEVICE_KEYS = ("device_name", "routing_instance", "vsys", "forwarding_path")
 
 
 async def _merge_panos_reput(store: CredentialStore, body: IntegrationPut,
@@ -256,12 +259,19 @@ async def _merge_panos_reput(store: CredentialStore, body: IntegrationPut,
     from integrations.panos import PANOS_KIND  # noqa: PLC0415
 
     existing = await store.get_integration(body.name)
-    if existing is None or existing.kind != PANOS_KIND:
+    if existing is None:
         return config, False
+    if existing.kind != PANOS_KIND:
+        # Same rule as keygen: never silently turn another kind's row into a firewall.
+        raise HTTPException(status_code=409, detail={
+            "error": "Integration name already in use", "code": "INTEGRATION_KIND_CONFLICT",
+            "detail": f"'{body.name}' is registered as kind '{existing.kind}', not "
+                      f"'{PANOS_KIND}'; choose another name"})
     stored = dict(existing.config or {})
     sent = set((body.config or {}).keys())
     same_host = stored.get("host") == config["host"]
-    carry = list(_PANOS_LAB_KEYS) + (list(_PANOS_PER_HOST_KEYS) if same_host else [])
+    carry = (list(_PANOS_LAB_KEYS) + list(_PANOS_DEVICE_KEYS)
+             + (list(_PANOS_PER_HOST_KEYS) if same_host else []))
     merged = dict(config)
     for key in carry:
         if key not in sent and key in stored:

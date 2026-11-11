@@ -137,3 +137,49 @@ def test_non_panos_put_is_unchanged(cred_client):
     assert r.status_code == 200
     assert "overrides_cleared" not in r.json()
     assert cred_client.get("/api/credentials/integrations/other").json()["config"] == {"b": 2}
+
+
+# ── final review M3: the whole operator-entered config survives a re-PUT ─────
+
+
+def test_re_put_keeps_device_name_routing_instance_vsys_and_path_when_not_sent(cred_client):
+    assert _put(cred_client, {"host": "192.0.2.1", "device_name": "pa-440.lab",
+                              "routing_instance": "vr-lab", "vsys": "vsys2",
+                              "forwarding_path": "syslog"}).status_code == 200
+    r = _put(cred_client, {"host": "192.0.2.1"})
+    assert r.status_code == 200
+    cfg = cred_client.get("/api/credentials/integrations/fw1").json()["config"]
+    assert cfg["device_name"] == "pa-440.lab"
+    assert cfg["routing_instance"] == "vr-lab"
+    assert cfg["vsys"] == "vsys2"
+    assert cfg["forwarding_path"] == "syslog"
+
+
+def test_re_put_device_name_and_routing_instance_survive_a_host_change(cred_client):
+    assert _put(cred_client, {"host": "192.0.2.1", "device_name": "pa-440.lab",
+                              "routing_instance": "vr-lab"}).status_code == 200
+    assert _put(cred_client, {"host": "192.0.2.99"}).status_code == 200
+    cfg = cred_client.get("/api/credentials/integrations/fw1").json()["config"]
+    assert cfg["device_name"] == "pa-440.lab" and cfg["routing_instance"] == "vr-lab"
+
+
+def test_re_put_sent_vsys_and_path_win_over_stored(cred_client):
+    assert _put(cred_client, {"host": "192.0.2.1", "vsys": "vsys2",
+                              "forwarding_path": "syslog"}).status_code == 200
+    assert _put(cred_client, {"host": "192.0.2.1", "vsys": "vsys1",
+                              "forwarding_path": "auto"}).status_code == 200
+    cfg = cred_client.get("/api/credentials/integrations/fw1").json()["config"]
+    assert cfg["vsys"] == "vsys1" and cfg["forwarding_path"] == "auto"
+
+
+def test_panos_put_onto_another_kind_is_409_and_leaves_the_row(cred_client):
+    other = {"name": "fw1", "kind": "generic_thing", "plaintext_secret": "S" * 20,
+             "config": {"a": 1}}
+    assert cred_client.put("/api/credentials/integrations", json=other).status_code == 200
+    r = _put(cred_client, {"host": "192.0.2.1"})
+    assert r.status_code == 409
+    d = r.json()["detail"]
+    assert d["code"] == "INTEGRATION_KIND_CONFLICT"
+    assert d["error"] and "generic_thing" in d["detail"]
+    got = cred_client.get("/api/credentials/integrations/fw1").json()
+    assert got["kind"] == "generic_thing" and got["config"] == {"a": 1}
