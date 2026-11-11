@@ -15,7 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import hashlib
+import itertools
 import json
+import types
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -23,6 +27,7 @@ import pytest
 
 from eal_simulator import AuditLogger, Campaign, CampaignExecutor
 from eal_simulator.analytics_emitter import AnalyticsEmitterParams
+from eal_simulator.plugins import cloud_audit_emitter as cae
 from eal_simulator.plugins.cloud_audit_emitter import (
     CloudAuditEmitter,
     CloudAuditEmitterParams,
@@ -806,3 +811,281 @@ class TestSourceIpOverride:
     def test_rfc1918_allowed(self):
         p = CloudAuditEmitterParams(collector_url=_DEFAULT_COLLECTOR, source_ip="10.9.9.9")
         assert p.source_ip == "10.9.9.9"
+
+
+# --------------------------------------------------------------------------
+# The eleven pre-existing presets are frozen, field for field
+# --------------------------------------------------------------------------
+#
+# The logging-service presets below extended the record builders (request
+# parameters, a per-call resource name, a log name). That change is ADDITIVE
+# ONLY: a scenario that drives one of the eleven original presets must post the
+# bytes it posted before. This block is the permanent proof.
+#
+# How the table was captured — and how to re-derive it: check out the plugin at
+# origin/dev 8c90739 (blob 888365f, the commit this branch was cut from, i.e.
+# BEFORE any logging-service preset existed), then for every preset x provider
+# render ``build_events`` and the canary-planted ``records_for`` with
+#   * ``datetime.now()`` frozen to 2026-01-01T00:00:00+00:00,
+#   * ``secrets.token_hex(n)`` returning ``"0" * 2n``,
+#   * ``burst_count=3``, ``sim_run_id="cortexsim-golden-i1-0000"``, iteration 1,
+# and take ``sha256(json.dumps(records, separators=(",", ":")))``. Key order is
+# NOT normalised, so a reordered record fails as loudly as a changed value.
+
+_LEGACY_PATTERNS = (
+    "storage_object_download", "secrets_dump", "ssm_parameter_retrieval",
+    "iam_enumeration", "iam_enumeration_non_user", "s3_bucket_enumeration",
+    "bigquery_exfiltration", "service_account_impersonation",
+    "iam_privilege_escalation", "s3_public_exposure", "console_login_anomaly",
+)
+_PROVIDERS = ("aws", "gcp")
+_GOLDEN_RUN_ID = "cortexsim-golden-i1-0000"
+_GOLDEN_CANARY = "csim-golden-0001"
+
+# (pattern, provider) -> (record count, sha256 build_events, sha256 canary-planted)
+_LEGACY_GOLDEN: dict[tuple[str, str], tuple[int, str, str]] = {
+    ("bigquery_exfiltration", "aws"): (
+        2, "3e469f826164a0c447a70aca233f8d27a79596df0836acad061ce33fb95d2021",
+        "98eaabcf27d94c7ee84feef97fb0e48e4bcf91c2c64b46164e616b5f78fb6431"),
+    ("bigquery_exfiltration", "gcp"): (
+        2, "c06a221f1c3e9f9a3cdc9be87b3f03e408fe73a55bef348ec16d0fcf2ecc9dbf",
+        "a47700c4b5529c7346929741d0430f24132a0806e8e38d91527385ad10b91012"),
+    ("console_login_anomaly", "aws"): (
+        4, "ee494cac7d68b71f6e727c7187e6d43d72ed50d8694086b35d94f5e15193c35c",
+        "a87cf1ed2c3e97a4c68ab1bb20fa0e4e3455aeda93e5c3a177865e0a887989fc"),
+    ("console_login_anomaly", "gcp"): (
+        4, "c6d33ffa796009bfdee930b9ed3a1fb667cf392d5663c1cf064d31662c186a22",
+        "6cca814e9bd4249789c4f1fc3828e232d10ca6dd880f325b5bee41370f885558"),
+    ("iam_enumeration", "aws"): (
+        4, "4e9eae920366b78853cef9e521b31276ce3ad9ae239f04647b9e1dd1eda41bbc",
+        "d9a8ad86f89c3805bc45bbff40978c0c6c256753f4aa260f7030f9c5c587f7bb"),
+    ("iam_enumeration", "gcp"): (
+        4, "2d4316bcf1c9aaab7f435f0edb213ece0df58ee160cb294e1833ebc53d9182ce",
+        "f68779ac1f17dc507242bff8ae40b6b5dd4ae079081f240162fb699618cf74e5"),
+    ("iam_enumeration_non_user", "aws"): (
+        4, "87981ac1b42ade5e54f0d9938a066c31fd5803b36c259b25532734e396871617",
+        "66568c7f197b8b932d5a5b4a33781688b4fe934d32509216b9d96efcfb091e5b"),
+    ("iam_enumeration_non_user", "gcp"): (
+        4, "9d164e096f89cb48d11660c73c7133d03826c53ed61ec1681f8de8f5c32dd97a",
+        "a99e6bad3ab1f482174de6e2f157928a24ac5d263ed9a7aeb9a2009109280c17"),
+    ("iam_privilege_escalation", "aws"): (
+        2, "e31f389a58d87a0f76d25b4209dbd0bc0f5b57682dc91a26b66a33230136ddfe",
+        "0b591c49d1a495047f46faa23277619bfbfeb78227c54638dce6056045134ed3"),
+    ("iam_privilege_escalation", "gcp"): (
+        2, "9ce4b2697927683c4c960bc1a0d0739f7b4c10b85167a42f13d54ce2b2436832",
+        "470316352a33635bce1e49647503e52178ac99827f40aece13de7cfbb0b16eb3"),
+    ("s3_bucket_enumeration", "aws"): (
+        4, "5989244c8e58bfcbef2cdfd248dba7364806c04dbdfd98035dc6f9195b7df2bd",
+        "20f1fb76c46c8d132bdd98d1545d0958c1344b8beee3a8e17d046077a657aa7f"),
+    ("s3_bucket_enumeration", "gcp"): (
+        4, "f52aa5a773b5588e4823d3943178964be386413e5d01737f20128222dcf0674f",
+        "5c6dcfb65a1ce92ad523858ab8ed3f62ea8c826b98bf69f924e9cf65efbf02d1"),
+    ("s3_public_exposure", "aws"): (
+        1, "5902bd896b46ea269ab364fd329554493bf7db3d72571ae763c9356441b28dfd",
+        "f286565cf87890cdd92929c1d075b3f0212653810a4a35f000128ea2d627d3cc"),
+    ("s3_public_exposure", "gcp"): (
+        1, "a8bcfb9621cec2be3d0c71f6cd663e50e519ce178dce405d2eec460dc0addd63",
+        "b58fbbc65934778a5e7e907e2b4d03e0e41a15f2b19ca8bd1a3daa1824382873"),
+    ("secrets_dump", "aws"): (
+        3, "98822ec6e243a2e5655f056b3fc09094b9d067351e972b36eb6005f2093d9ab6",
+        "0e93244b90ba814c23f41aa93ec8192bbf59629f261c03ab2c9ff5e09baf80e3"),
+    ("secrets_dump", "gcp"): (
+        3, "dda6a13b8c5985790cd0ca43fd32d7c58aca28213ba878b27af98fe50ab590a3",
+        "395b2f7000719777e2f5b6924b6485b882bfee086a8e47e47c9ac98dc0ba8a29"),
+    ("service_account_impersonation", "aws"): (
+        1, "8881b78c377f4879273b7f566bbefe543e5f9725cd0e8411b9331145751633d7",
+        "10d488146c57c0dad2d840842b0edbfbabb50cd9601f79c46e27bcb12fe1c168"),
+    ("service_account_impersonation", "gcp"): (
+        1, "6447ec2fd6737f33b368776e8f43cefe46f89413d6570ae1285c2bff11ba5400",
+        "834c7bcf99c2b8cb333bc53d529f88fc2e921f403fe6fccd1fb8baba1f238386"),
+    ("ssm_parameter_retrieval", "aws"): (
+        3, "f048618baca0ee505ef03fc1b7acb34439ff2cf9f8d223b60e4b9aa4cfcbfe0e",
+        "62f2da7527c0a3016cbd29e6aa09271641592020d548b0f7f2ee7ab8773c245b"),
+    ("ssm_parameter_retrieval", "gcp"): (
+        3, "f28921385358921a0cb1120185de8fabb83dac0edc1cf6197247e1db8db914e3",
+        "328f2d0f10db89a4d739b086609db1b24a6bf52f72476fc18b46a41670c80dca"),
+    ("storage_object_download", "aws"): (
+        3, "fdce6aa95ece3374c1e34c8a2f984a78c4854c9ede92ae7f30d2bfd4121f4d36",
+        "862360b86ebc770ad062854a1d816e75efeb68ab495287906d09d9c70af87f47"),
+    ("storage_object_download", "gcp"): (
+        3, "b58d73c4f8607dff9932c3f29ee44881d7c1fcb1839ca3e69e5f0cf03a37812e",
+        "04abe6e04b023b3f4ea93da798710739d9b575ca64868d4599b91b1c25dcaa70"),
+}
+
+# Every top-level key any of the eleven original presets wrote at origin/dev.
+_LEGACY_AWS_KEYS = frozenset({
+    "awsRegion", "bigquery_exfiltration_marker", "bucket_name",
+    "console_login_anomaly_marker", "cortexsim_run_id", "dataset",
+    "destination_project_id", "enumeration_scope", "errorCode", "eventName",
+    "eventSource", "eventTime", "eventType", "eventVersion", "foreign_project",
+    "iam_enumeration_marker", "iam_enumeration_non_user_marker", "login_result",
+    "managementEvent", "mfa_used", "non_user_identity", "parameter_path",
+    "privilege_escalation_marker", "public_exposure_marker", "readOnly",
+    "recipientAccountId", "s3_bucket_enumeration_marker", "secret_scope",
+    "secrets_dump_marker", "service_account_impersonation_marker",
+    "sourceIPAddress", "ssm_parameter_retrieval_marker",
+    "storage_object_download_marker", "target_service_account", "userAgent",
+    "userIdentity", "with_decryption",
+})
+_LEGACY_GCP_KEYS = frozenset({
+    "bigquery_exfiltration_marker", "bucket_name", "console_login_anomaly_marker",
+    "cortexsim_run_id", "dataset", "destination_project_id", "enumeration_scope",
+    "foreign_project", "iam_enumeration_marker", "iam_enumeration_non_user_marker",
+    "insertId", "login_result", "mfa_used", "non_user_identity", "parameter_path",
+    "privilege_escalation_marker", "protoPayload", "public_exposure_marker",
+    "resource", "s3_bucket_enumeration_marker", "secret_scope",
+    "secrets_dump_marker", "service_account_impersonation_marker", "severity",
+    "ssm_parameter_retrieval_marker", "storage_object_download_marker",
+    "target_service_account", "timestamp", "with_decryption",
+})
+_LEGACY_GCP_PROTOPAYLOAD_KEYS = frozenset({
+    "@type", "authenticationInfo", "methodName", "requestMetadata",
+    "resourceName", "serviceName", "status",
+})
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):  # noqa: ARG003
+        return datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def _freeze(monkeypatch) -> None:
+    """Pin the two volatile inputs of the record builders (clock + insertId)."""
+    monkeypatch.setattr(cae, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(
+        cae, "secrets", types.SimpleNamespace(token_hex=lambda n: "0" * (2 * n)),
+    )
+
+
+def _frozen_records(monkeypatch, provider, pattern, *, canary=None, burst_count=3):
+    _freeze(monkeypatch)
+    extra = {"canary_token": canary} if canary else {}
+    params = CloudAuditEmitterParams(
+        collector_url=_DEFAULT_COLLECTOR, provider=provider,
+        event_pattern=pattern, burst_count=burst_count, **extra,
+    )
+    emitter = CloudAuditEmitter()
+    build = emitter.records_for if canary else emitter.build_events
+    return build(params, sim_run_id=_GOLDEN_RUN_ID, iteration=1)
+
+
+def _digest(records) -> str:
+    blob = json.dumps(records, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+_LEGACY_COMBOS = sorted(itertools.product(_LEGACY_PATTERNS, _PROVIDERS))
+
+
+class TestLegacyPresetsUnchanged:
+    """The eleven original presets emit the records they emitted at origin/dev."""
+
+    def test_golden_table_covers_every_legacy_preset_and_provider(self):
+        assert set(_LEGACY_GOLDEN) == set(_LEGACY_COMBOS)
+        assert len(_LEGACY_GOLDEN) == 22
+        # None was renamed or dropped to make room for the new ones.
+        assert set(_LEGACY_PATTERNS) <= set(_EVENT_PATTERNS)
+
+    @pytest.mark.parametrize("pattern,provider", _LEGACY_COMBOS)
+    def test_build_events_is_byte_identical(self, monkeypatch, pattern, provider):
+        count, plain_sha, _ = _LEGACY_GOLDEN[(pattern, provider)]
+        records = _frozen_records(monkeypatch, provider, pattern)
+        assert len(records) == count
+        assert _digest(records) == plain_sha, (
+            f"{pattern}/{provider} no longer renders the records it rendered at "
+            f"origin/dev 8c90739:\n{json.dumps(records, indent=1)}"
+        )
+
+    @pytest.mark.parametrize("pattern,provider", _LEGACY_COMBOS)
+    def test_canary_planted_records_are_byte_identical(self, monkeypatch, pattern, provider):
+        count, _, planted_sha = _LEGACY_GOLDEN[(pattern, provider)]
+        records = _frozen_records(monkeypatch, provider, pattern, canary=_GOLDEN_CANARY)
+        assert len(records) == count
+        assert _digest(records) == planted_sha, (
+            f"{pattern}/{provider} canary-planted records changed:\n"
+            f"{json.dumps(records, indent=1)}"
+        )
+
+    @pytest.mark.parametrize("pattern,provider", _LEGACY_COMBOS)
+    def test_records_for_without_canary_is_build_events(self, monkeypatch, pattern, provider):
+        # The wire path and the offline-bundle path both go through
+        # records_for; with no canary it must add nothing to a legacy record.
+        _freeze(monkeypatch)
+        params = CloudAuditEmitterParams(
+            collector_url=_DEFAULT_COLLECTOR, provider=provider,
+            event_pattern=pattern, burst_count=3,
+        )
+        emitter = CloudAuditEmitter()
+        via_seam = emitter.records_for(params, sim_run_id=_GOLDEN_RUN_ID, iteration=1)
+        assert _digest(via_seam) == _LEGACY_GOLDEN[(pattern, provider)][1]
+
+    def test_aws_record_literal(self, monkeypatch):
+        # One fully spelled-out record per provider, so the digest table has a
+        # human-readable anchor: this is the WHOLE record, nothing more.
+        assert _frozen_records(monkeypatch, "aws", "s3_public_exposure") == [{
+            "dataset": "cloud_audit_logs",
+            "eventVersion": "1.08",
+            "eventTime": "2026-01-01T00:00:00+00:00",
+            "eventSource": "s3.amazonaws.com",
+            "eventName": "PutBucketPolicy",
+            "eventType": "AwsApiCall",
+            "awsRegion": "us-east-1",
+            "sourceIPAddress": "203.0.113.201",
+            "userAgent": "aws-cli/2.15.0 Python/3.11",
+            "userIdentity": {
+                "type": "IAMUser",
+                "arn": "arn:aws:iam::123456789012:user/cortexsim-canary",
+                "accountId": "123456789012",
+                "userName": "cortexsim-canary",
+            },
+            "errorCode": None,
+            "readOnly": False,
+            "managementEvent": True,
+            "recipientAccountId": "123456789012",
+            "public_exposure_marker": True,
+            "cortexsim_run_id": "cortexsim-golden-i1-0000",
+        }]
+
+    def test_gcp_record_literal(self, monkeypatch):
+        assert _frozen_records(monkeypatch, "gcp", "s3_public_exposure") == [{
+            "dataset": "cloud_audit_logs",
+            "insertId": "0000000000000000",
+            "timestamp": "2026-01-01T00:00:00+00:00",
+            "severity": "NOTICE",
+            "resource": {
+                "type": "project",
+                "labels": {"project_id": "cortexsim-canary"},
+            },
+            "protoPayload": {
+                "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+                "serviceName": "storage.googleapis.com",
+                "methodName": "storage.setIamPermissions",
+                "resourceName": "projects/cortexsim-canary",
+                "authenticationInfo": {
+                    "principalEmail": "cortexsim-canary@cortexsim-canary.invalid",
+                },
+                "requestMetadata": {
+                    "callerIp": "203.0.113.201",
+                    "callerSuppliedUserAgent": "google-cloud-sdk gcloud/470.0.0",
+                },
+                "status": {},
+            },
+            "public_exposure_marker": True,
+            "cortexsim_run_id": "cortexsim-golden-i1-0000",
+        }]
+
+    @pytest.mark.parametrize("pattern", _LEGACY_PATTERNS)
+    def test_legacy_records_carry_none_of_the_new_fields(self, monkeypatch, pattern):
+        # Readable twin of the digests: no request parameters, no event
+        # category, no log name, no flat logging hints, the fixed project-level
+        # resource name — on any record of any original preset.
+        for rec in _frozen_records(monkeypatch, "aws", pattern):
+            assert set(rec) <= _LEGACY_AWS_KEYS, sorted(set(rec) - _LEGACY_AWS_KEYS)
+        for rec in _frozen_records(monkeypatch, "gcp", pattern):
+            assert set(rec) <= _LEGACY_GCP_KEYS, sorted(set(rec) - _LEGACY_GCP_KEYS)
+            assert set(rec["protoPayload"]) == _LEGACY_GCP_PROTOPAYLOAD_KEYS
+            assert rec["protoPayload"]["resourceName"] == "projects/cortexsim-canary"
+            assert rec["resource"] == {
+                "type": "project", "labels": {"project_id": "cortexsim-canary"},
+            }
