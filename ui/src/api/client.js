@@ -1493,8 +1493,12 @@ export async function listFirewalls() {
 
 /**
  * PUT /api/credentials/integrations with `kind: 'panos_ngfw'` — register a
- * firewall with a pasted API key. This REPLACES the stored config, so a
- * re-registration drops any per-agent address overrides.
+ * firewall with a pasted API key. A re-PUT of a registered name keeps its
+ * per-agent overrides (`observed_sources` / `agent_addresses`) when the
+ * normalised host is unchanged, and clears them when the host changes; the
+ * response's `overrides_cleared` says which happened. Probes, zones and any
+ * setting this body does not send are kept either way. 409
+ * `INTEGRATION_KIND_CONFLICT` when the name belongs to another kind.
  */
 export async function putFirewall({ name, host, verify_tls = true, vsys = 'vsys1', forwarding_path = 'auto', api_key }) {
   return request('/api/credentials/integrations', {
