@@ -191,3 +191,36 @@ def test_an_abort_before_delivery_takes_no_host_evidence(client, session_factory
     got = flow.rows(client, run_id)
     assert {r["outcome_reason"] for r in got.values()} == {"ABORTED_BEFORE_DELIVERY"}
     assert client.get(f"/api/runs/{run_id}").json()["step_outcomes"] == []
+
+
+def test_the_aborted_steps_started_row_takes_the_hosts_termination(client, session_factory):
+    """The lab shape (pov-target-01, SimCore at d7f4f29, before this fix).
+
+    A one-step ``sleep 600`` was aborted after ~6 s; the run record showed
+    ``exit_code=130`` but the step's ``step_outcomes`` row, created at its
+    first ``/output`` (``started_at`` only), kept termination, signal and rc
+    NULL, because the beacon's ``/complete`` met 409 and nothing was applied.
+    The late ``/complete`` now fills that same row; ``started_at`` survives.
+    """
+    from models import StepOutcome
+
+    run_id = _abort_mid_step_two(client, session_factory)  # step-01 has a started row
+    late = client.post(f"/api/runs/{run_id}/complete", json={
+        "exit_code": 130, "summary": "aborted by operator",
+        "steps": [
+            {"step_id": "step-01", "exit_code": 130, "termination": "aborted"},
+            {"step_id": "step-02", "termination": "not_run", "reason": "UPSTREAM_FAILED"},
+            {"step_id": "step-03", "termination": "not_run", "reason": "UPSTREAM_FAILED"},
+        ],
+    })
+    assert late.status_code == 409, late.text
+    assert late.json()["detail"]["detail"]["host_evidence_recorded"] == 3
+
+    async def _go():
+        async with session_factory() as db:
+            return (await db.execute(select(StepOutcome).where(
+                StepOutcome.run_id == run_id, StepOutcome.step_id == "step-01"))).scalar_one()
+
+    row = asyncio.run(_go())
+    assert (row.termination, row.exit_code) == ("aborted", 130), (row.termination, row.exit_code)
+    assert row.started_at is not None
