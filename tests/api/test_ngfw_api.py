@@ -447,3 +447,162 @@ def test_two_firewalls_selection_and_isolated_overrides(client, fw, session_fact
 def test_panos_is_not_a_reconcile_connector(client):
     body = client.get("/api/connectors").json()
     assert "panos_ngfw" not in json.dumps(body.get("connectors", body))
+
+
+# ------------------------------------------------------------------ review fixes
+
+
+def test_rekeygen_to_a_different_host_drops_agent_overrides(client, fw):
+    """Overrides describe the path through ONE firewall; carried to another they
+    produce confident, wrong stitch verdicts."""
+    fw()
+    probes = [{"ip": "203.0.113.9", "port": 443, "protocol": "tcp", "application": "ssl"}]
+    _register(client, "fw-a", "192.0.2.1", config={"probe_destinations": probes,
+                                                    "inside_zone": "trust"})
+    client.put("/api/ngfw/fw-a/sources/a1", json={"observed_source": "192.0.2.77",
+                                                  "agent_addresses": ["10.0.0.5"]})
+    r = _keygen(client, host="192.0.2.99")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["overrides_cleared"] is True
+    cfg = body["config"]
+    assert cfg["host"] == "192.0.2.99"
+    assert cfg["observed_sources"] == {} and cfg["agent_addresses"] == {}
+    assert cfg["probe_destinations"] == probes and cfg["inside_zone"] == "trust"
+
+
+def test_rekeygen_same_normalised_host_keeps_overrides(client, fw):
+    fw()
+    _register(client, "fw-a", "fw1.lab.example")
+    client.put("/api/ngfw/fw-a/sources/a1", json={"observed_source": "192.0.2.77"})
+    r = _keygen(client, host="FW1.Lab.Example.")  # normalises to the same host
+    assert r.status_code == 200, r.text
+    assert r.json()["overrides_cleared"] is False
+    assert r.json()["config"]["observed_sources"] == {"a1": "192.0.2.77"}
+
+
+def test_first_keygen_reports_no_overrides_cleared(client, fw):
+    fw()
+    assert _keygen(client).json()["overrides_cleared"] is False
+
+
+def _assert_clean(r, caplog):
+    assert CANARY not in r.text and CANARY not in caplog.text
+
+
+def test_keygen_deeply_nested_json_is_422_not_500(client, fw, caplog):
+    caplog.set_level(logging.DEBUG)
+    rec = fw()
+    raw = ('{"password": "' + CANARY + '", "x": ' + "[" * 5000 + "]" * 5000 + "}").encode()
+    r = client.post("/api/ngfw/keygen", content=raw,
+                    headers={"content-type": "application/json"})
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "REQUEST_INVALID"
+    _assert_clean(r, caplog)
+    assert rec.requests == []
+
+
+@pytest.mark.parametrize("field", ["name", "host", "username", "vsys", "password"])
+def test_keygen_lone_surrogate_is_422_not_500(client, fw, caplog, field):
+    caplog.set_level(logging.DEBUG)
+    rec = fw()
+    body = {"name": "fw-a", "host": "192.0.2.1", "username": USER, "password": CANARY,
+            field: "a\\ud800b"}
+    raw = json.dumps(body).replace("a\\\\ud800b", "a\\ud800b").encode()
+    assert b"\\ud800" in raw and b"\\\\ud800" not in raw
+    r = client.post("/api/ngfw/keygen", content=raw,
+                    headers={"content-type": "application/json"})
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "REQUEST_INVALID"
+    _assert_clean(r, caplog)
+    assert rec.requests == []
+
+
+def test_keygen_lone_surrogate_extra_key_is_422_and_not_echoed(client, fw, caplog):
+    caplog.set_level(logging.DEBUG)
+    fw()
+    raw = ('{"name": "fw-a", "host": "192.0.2.1", "username": "u", "password": "'
+           + CANARY + '", "\\ud800' + CANARY + '": 1}').encode()
+    r = client.post("/api/ngfw/keygen", content=raw,
+                    headers={"content-type": "application/json"})
+    assert r.status_code == 422
+    _assert_clean(r, caplog)
+
+
+def test_keygen_body_over_16kb_is_413(client, fw, caplog):
+    caplog.set_level(logging.DEBUG)
+    rec = fw()
+    body = {"name": "fw-a", "host": "192.0.2.1", "username": USER, "password": CANARY,
+            "pad": "x" * 17000}
+    r = client.post("/api/ngfw/keygen", json=body)
+    assert r.status_code == 413
+    d = r.json()["detail"]
+    assert d["code"] == "REQUEST_TOO_LARGE" and d["error"] and d["detail"]
+    _assert_clean(r, caplog)
+    assert rec.requests == []
+
+
+def test_sources_put_lone_surrogate_is_4xx_not_500(client):
+    _register(client, "fw-a", "192.0.2.1")
+    r = client.put("/api/ngfw/fw-a/sources/a1", content=b'{"observed_source": "1\\ud800"}',
+                   headers={"content-type": "application/json"})
+    assert r.status_code in (400, 422), r.text
+
+
+class _FakeRequest:
+    def __init__(self, raw: bytes):
+        self._raw = raw
+        self.headers = {"content-length": str(len(raw))}
+
+    async def body(self) -> bytes:
+        return self._raw
+
+    async def stream(self):
+        yield self._raw
+
+
+def _raised(session_factory, raw: bytes):
+    import api.ngfw as ngfw
+    from fastapi import HTTPException
+
+    async def go():
+        async with session_factory() as s:
+            try:
+                await ngfw.keygen(_FakeRequest(raw), db=s)
+            except HTTPException as exc:
+                return exc
+        raise AssertionError("keygen did not raise")
+    return asyncio.run(go())
+
+
+@pytest.mark.parametrize("raw", [
+    b'{"password": "' + CANARY.encode() + b'", ',                  # JSONDecodeError (.doc)
+    b'{"password": "' + CANARY.encode() + b'", "x": ' + b"[" * 5000 + b"]" * 5000 + b"}",
+    json.dumps({"name": "fw-a", "host": "192.0.2.1", "username": USER,
+                "password": CANARY, "verify_tls": "nope"}).encode(),  # ValidationError
+], ids=["json_decode", "recursion", "validation"])
+def test_converted_errors_carry_no_exception_chain(session_factory, raw):
+    exc = _raised(session_factory, raw)
+    assert exc.status_code == 422
+    assert exc.__context__ is None and exc.__cause__ is None
+
+
+def test_keygen_failure_carries_no_exception_chain(session_factory, monkeypatch):
+    import api.ngfw as ngfw
+
+    def handle(request):
+        raise httpx.ConnectError("no route", request=request)
+    monkeypatch.setattr(ngfw, "_transport_override", httpx.MockTransport(handle))
+    raw = json.dumps({"name": "fw-a", "host": "192.0.2.1", "username": USER,
+                      "password": CANARY}).encode()
+    exc = _raised(session_factory, raw)
+    assert exc.status_code == 502
+    assert exc.__context__ is None and exc.__cause__ is None
+
+
+def test_keygen_unverified_tls_warns(client, fw):
+    fw()
+    r = _keygen(client, verify_tls=False)
+    assert r.status_code == 200
+    assert r.json()["warnings"] == ["password sent over unverified TLS"]
+    r = _keygen(client, name="fw-b", verify_tls=True)
+    assert r.json()["warnings"] == []

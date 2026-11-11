@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +32,7 @@ from integrations.panos import PANOS_KIND, codes
 from integrations.panos.client import PanosClient
 from integrations.panos.exceptions import (
     PanosConfigError, PanosShapeError, PanosTransportError, PanosWriteRefused)
-from integrations.panos.host import validate_panos_config
+from integrations.panos.host import normalize_mgmt_host, validate_panos_config
 from integrations.panos.preflight import (
     FIREWALL_STAGE_IDS, REM_SKIPPED_CONFIG, FirewallPreflightReport, run_panos_preflight)
 from integrations.panos.sources import AgentRef
@@ -82,6 +82,26 @@ _KEYGEN_FAIL: dict[str, tuple[int, str, str]] = {
 # ── request models ─────────────────────────────────────────────────────────
 
 
+#: Keygen bodies are tiny; anything larger is refused before it is parsed.
+MAX_KEYGEN_BODY = 16 * 1024
+UNVERIFIED_TLS_WARNING = "password sent over unverified TLS"
+
+
+def _encodable(value: Any) -> Any:
+    """Reject strings that cannot be UTF-8 encoded (lone surrogates from a JSON
+    ``\\ud800`` escape): they would otherwise surface as a 500 when the value is
+    sent, stored or rendered. The error names no value."""
+    text = value.get_secret_value() if isinstance(value, SecretStr) else value
+    items = text if isinstance(text, list) else [text]
+    for item in items:
+        if isinstance(item, str):
+            try:
+                item.encode("utf-8")
+            except UnicodeEncodeError:
+                raise ValueError("value is not valid UTF-8 text") from None
+    return value
+
+
 class KeygenBody(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
@@ -92,6 +112,8 @@ class KeygenBody(BaseModel):
     password: SecretStr = Field(..., min_length=1)
     vsys: str = Field(default="vsys1", max_length=32)
 
+    _utf8 = field_validator("name", "host", "username", "password", "vsys")(_encodable)
+
 
 class SourcesBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -99,15 +121,24 @@ class SourcesBody(BaseModel):
     observed_source: Optional[str] = None
     agent_addresses: Optional[list[str]] = None
 
+    _utf8 = field_validator("observed_source", "agent_addresses")(_encodable)
+
 
 def _err(status: int, error: str, code: str, detail: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"error": error, "code": code,
                                                      "detail": detail})
 
 
-def _invalid_body(errors: list[dict[str, Any]]) -> HTTPException:
-    # loc + type only: msg/input/ctx can carry the submitted value.
-    fields = [{"loc": [str(p) for p in e.get("loc", ())], "type": str(e.get("type", ""))}
+def _invalid_body(errors: list[dict[str, Any]],
+                  model: type[BaseModel] = KeygenBody) -> HTTPException:
+    # loc + type only: msg/input/ctx can carry the submitted value. A loc element that
+    # is not one of the model's own field names (an extra key, a list index) is the
+    # caller's text, so it is replaced rather than echoed.
+    known = set(model.model_fields) | {"body"}
+
+    def part(p: Any) -> str:
+        return p if isinstance(p, str) and p in known else "(other)"
+    fields = [{"loc": [part(p) for p in e.get("loc", ())], "type": str(e.get("type", ""))}
               for e in errors]
     return HTTPException(status_code=422, detail={
         "error": "Request body invalid", "code": "REQUEST_INVALID",
@@ -145,18 +176,36 @@ async def list_firewalls(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
 
 @router.post("/keygen")
 async def keygen(request: Request, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    """Exchange admin credentials for an API key and register the firewall (§4.2)."""
+    """Exchange admin credentials for an API key and register the firewall (§4.2).
+
+    Every converted error is raised OUTSIDE the ``except`` block that caught the
+    original, so no exception carrying the body (``JSONDecodeError.doc``, a
+    ValidationError's input) survives as ``__context__`` for a future handler that
+    renders exception chains.
+    """
+    raw_bytes = await _read_capped(request)
+    if raw_bytes is None:
+        raise _err(413, "Request body too large", "REQUEST_TOO_LARGE",
+                   f"keygen bodies are limited to {MAX_KEYGEN_BODY} bytes")
+    raw: Any = None
+    failure: Optional[list[dict[str, Any]]] = None
     try:
-        raw = json.loads(await request.body())
-    except (ValueError, UnicodeDecodeError):
-        raise _invalid_body([{"loc": ("body",), "type": "json_invalid"}]) from None
+        raw = json.loads(raw_bytes)
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        failure = [{"loc": ("body",), "type": "json_invalid"}]
+    raw_bytes = None
+    if failure is not None:
+        raise _invalid_body(failure)
+    body: Optional[KeygenBody] = None
     try:
         body = KeygenBody.model_validate(raw)
     except ValidationError as exc:
-        raise _invalid_body(exc.errors(include_input=False, include_context=False,
-                                       include_url=False)) from None
-    finally:
-        raw = None  # noqa: F841 — drop the plaintext dict
+        failure = exc.errors(include_input=False, include_context=False, include_url=False)
+    except RecursionError:
+        failure = [{"loc": ("body",), "type": "too_deep"}]
+    raw = None  # drop the plaintext dict
+    if failure is not None or body is None:
+        raise _invalid_body(failure or [])
 
     store = CredentialStore(db)
     existing = await store.get_integration(body.name)
@@ -169,14 +218,31 @@ async def keygen(request: Request, db: AsyncSession = Depends(get_db)) -> dict[s
     # (or on first registration, where the defaults apply), come from here.
     base = dict(existing.config or {}) if existing is not None else {}
     overrides: dict[str, Any] = {"host": body.host}
+    host_error: Optional[str] = None
+    try:
+        new_host = normalize_mgmt_host(body.host)
+    except PanosConfigError as exc:
+        host_error = str(exc)
+    if host_error is not None:
+        raise _err(400, "NGFW config rejected", "INTEGRATION_CONFIG_INVALID", host_error)
+    # Per-agent overrides describe the path through ONE firewall. Carried to another
+    # host they would yield confident, wrong stitch verdicts, so they go; probes and
+    # zones are operator intent about the lab and stay.
+    overrides_cleared = False
+    if existing is not None and base.get("host") != new_host:
+        overrides_cleared = bool(base.get("observed_sources") or base.get("agent_addresses"))
+        base.pop("observed_sources", None)
+        base.pop("agent_addresses", None)
     for key_name in ("verify_tls", "vsys"):
         if existing is None or key_name in body.model_fields_set:
             overrides[key_name] = getattr(body, key_name)
+    cfg_error: Optional[str] = None
     try:
         cfg = validate_panos_config({**base, **overrides})
     except PanosConfigError as exc:
-        raise _err(400, "NGFW config rejected", "INTEGRATION_CONFIG_INVALID",
-                   str(exc)) from None
+        cfg_error = str(exc)
+    if cfg_error is not None:
+        raise _err(400, "NGFW config rejected", "INTEGRATION_CONFIG_INVALID", cfg_error)
 
     name = body.name
     password = body.password
@@ -184,24 +250,64 @@ async def keygen(request: Request, db: AsyncSession = Depends(get_db)) -> dict[s
     body = None  # noqa: F841 — the model holds the password; release it
     client = PanosClient(cfg["host"], None, verify_tls=cfg["verify_tls"],
                          transport=_transport_override, max_calls=1)
+    key: Optional[str] = None
+    fail_code: Optional[str] = None
     try:
         key = await client.keygen(username, password)
     except (PanosTransportError, PanosShapeError, PanosWriteRefused) as exc:
-        code = _keygen_code(exc)
-        status, error, detail = _KEYGEN_FAIL[code]
-        logger.info("ngfw keygen failed name=%s code=%s", name, code)
-        raise _err(status, error, code, detail) from None
+        fail_code = _keygen_code(exc)
     finally:
         password = None  # noqa: F841
         username = None  # noqa: F841
         await client.aclose()
+    if fail_code is not None or key is None:
+        code = fail_code or codes.PN_SHAPE_UNRECOGNISED
+        status, error, detail = _KEYGEN_FAIL[code]
+        logger.info("ngfw keygen failed name=%s code=%s", name, code)
+        raise _err(status, error, code, detail)
 
     row = await store.put_integration(name=name, kind=PANOS_KIND, plaintext_secret=key,
                                       config=cfg, secret_type_hint=_TYPE_HINT)
     key = None  # noqa: F841
     await db.commit()
     logger.info("ngfw keygen stored name=%s host=%s", row.name, cfg["host"])
-    return row.to_dict()
+    out = row.to_dict()
+    out["overrides_cleared"] = overrides_cleared
+    out["warnings"] = [] if cfg["verify_tls"] else [UNVERIFIED_TLS_WARNING]
+    return out
+
+
+async def _parse_sources(request: Request) -> SourcesBody:
+    """Parsed in the handler for the same reason as keygen: FastAPI's 422 echoes the
+    input, and an echoed lone surrogate cannot be encoded (a 500)."""
+    raw_bytes = await _read_capped(request)
+    if raw_bytes is None:
+        raise _err(413, "Request body too large", "REQUEST_TOO_LARGE",
+                   f"request bodies here are limited to {MAX_KEYGEN_BODY} bytes")
+    failure: Optional[list[dict[str, Any]]] = None
+    body: Optional[SourcesBody] = None
+    try:
+        body = SourcesBody.model_validate(json.loads(raw_bytes))
+    except ValidationError as exc:
+        failure = exc.errors(include_input=False, include_context=False, include_url=False)
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        failure = [{"loc": ("body",), "type": "json_invalid"}]
+    if failure is not None or body is None:
+        raise _invalid_body(failure or [], SourcesBody)
+    return body
+
+
+async def _read_capped(request: Request) -> Optional[bytes]:
+    """The body, or ``None`` once it exceeds MAX_KEYGEN_BODY (read no further)."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > MAX_KEYGEN_BODY:
+        return None
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf.extend(chunk)
+        if len(buf) > MAX_KEYGEN_BODY:
+            return None
+    return bytes(buf)
 
 
 def _keygen_code(exc: BaseException) -> str:
@@ -224,7 +330,7 @@ async def _panos_row(store: CredentialStore, name: str):
 
 
 @router.put("/{name}/sources/{agent_id}")
-async def put_sources(name: str, agent_id: str, body: SourcesBody,
+async def put_sources(name: str, agent_id: str, request: Request,
                       db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Set or clear one agent's firewall-observed source / agent-side addresses (§5.4).
 
@@ -232,6 +338,7 @@ async def put_sources(name: str, agent_id: str, body: SourcesBody,
     address list) removes the override. The merged config is validated before it is
     written, and the secret and ``last_verified_*`` are untouched.
     """
+    body = await _parse_sources(request)
     store = CredentialStore(db)
     row = await _panos_row(store, name)
     cfg = dict(row.config or {})
