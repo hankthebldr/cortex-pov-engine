@@ -1196,6 +1196,62 @@
     {
       "c2_tools": [],
       "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "Prevention",
+        "BIOC",
+        "XQL",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Linux Cron Foothold \u2014 WildFire Test ELF Dropper Re-Executed on a Schedule, Grouped Into One Case",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-EDR-023",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 4,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
+      "delivery": "agent",
+      "detection_steps_without_signal": 0,
+      "detection_types": [
+        "ABIOC",
+        "BIOC",
+        "Correlation"
+      ],
+      "egress_tools": [],
+      "name": "Linux Identity Persistence \u2014 Sudo Backdoor Account, SSH Key and a Systemd Timer Re-Executing on a Schedule, Grouped Into One Case",
+      "needs_target_egress": false,
+      "plane": "EDR",
+      "reason": "real signal, all tools stock/shelf-backed \u2014 runs offline on a provisioned target",
+      "requires_interpreters": [],
+      "scenario_id": "SIM-EDR-024",
+      "service_identities": [],
+      "shelf_backed_tools": [],
+      "signal_ratio": 1.0,
+      "status": "active",
+      "steps_real_signal": 4,
+      "steps_total": 4,
+      "steps_with_detections": 4,
+      "tier": "GREEN",
+      "unknown_adapter_refs": []
+    },
+    {
+      "c2_tools": [],
+      "consent_gated": false,
       "delivery": "eal",
       "detection_steps_without_signal": 0,
       "detection_types": [
@@ -5759,7 +5815,7 @@
   ],
   "summary": {
     "by_tier": {
-      "GREEN": 161,
+      "GREEN": 163,
       "RED": 5,
       "YELLOW": 27
     },
@@ -5767,7 +5823,7 @@
     "eal_delivered": 70,
     "scenarios_consent_gated": 4,
     "scenarios_needing_target_egress": 27,
-    "scenarios_total": 193,
+    "scenarios_total": 195,
     "signal_free_scenarios": [
       "SIM-ASM-005",
       "SIM-ASM-006",
@@ -5775,6 +5831,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 796
+    "total_steps": 804
   }
 }

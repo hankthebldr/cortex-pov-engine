@@ -21,14 +21,14 @@
 
 ## Summary
 
-- **Scenarios:** 193  (GREEN 161 · YELLOW 27 · RED 5)
-- **Steps:** 796 total · 142 detection-bearing steps produce no real signal
+- **Scenarios:** 195  (GREEN 163 · YELLOW 27 · RED 5)
+- **Steps:** 804 total · 142 detection-bearing steps produce no real signal
 - **Need target egress for a tool:** 27 scenarios
 - **Consent-gated:** 4 scenarios
 - **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 70 scenarios
 - **RED / signal-free (tabletop):** SIM-ASM-005, SIM-ASM-006, SIM-EDR-019, SIM-ITDR-016, SIM-TIM-005
 
-## GREEN — 161 scenarios
+## GREEN — 163 scenarios
 
 | Scenario | Plane | Types | Signal | Delivery | Notes |
 |---|---|---|---:|---|---|
@@ -74,6 +74,8 @@
 | SIM-EDR-013 | EDR | ABIOC/XQL/Correlation | 3/3 | agent |  |
 | SIM-EDR-017 | EDR | ABIOC/XQL/Correlation | 4/4 | agent |  |
 | SIM-EDR-021 | EDR | BIOC/ABIOC/XQL/Correlation | 7/7 | agent |  |
+| SIM-EDR-023 | EDR | ABIOC/Prevention/BIOC/XQL/Correlation | 4/4 | agent |  |
+| SIM-EDR-024 | EDR | ABIOC/BIOC/Correlation | 4/4 | agent |  |
 | SIM-EMAIL-001 | EMAIL | BIOC/XQL | 3/3 | eal |  |
 | SIM-EMAIL-002 | EMAIL | BIOC/XQL | 3/3 | eal |  |
 | SIM-EMAIL-003 | EMAIL | BIOC/XQL/Correlation | 3/3 | eal |  |
