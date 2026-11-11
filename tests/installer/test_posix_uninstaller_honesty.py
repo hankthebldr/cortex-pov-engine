@@ -15,6 +15,7 @@ signalled or removed — on a developer laptop or in the CI container alike.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -40,6 +41,8 @@ SYSTEM_PATHS = (
 )
 SYSTEM_PREFIXES = ("/etc/systemd", "/usr/local/bin", "/Library/LaunchDaemons", "/var/log",
                    "/opt/cortexsim", "/tmp/.cortexsim")
+# The single line on which the uninstaller names where other users' homes live.
+HOME_ROOTS_LINE = 'HOME_ROOTS=("/home" "/Users")'
 
 
 def _script() -> str:
@@ -81,9 +84,14 @@ def sandbox(tmp_path):
         _stub(fakebin / tool, f'echo "{tool} $*" >> "{calls}"\nexit 1')
     _stub(fakebin / "pgrep", f'echo "pgrep $*" >> "{calls}"\nexit 1')  # no beacon running
 
-    env = {k: v for k, v in os.environ.items() if not k.startswith("CORTEXSIM_")}
+    # Ambient SUDO_* would send the root branch looking in a REAL user's home.
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("CORTEXSIM_", "SUDO_"))}
     env["PATH"] = f"{fakebin}{os.pathsep}{env['PATH']}"
     env["HOME"] = str(home)
+    # Stands in for /home and /Users, which the root branch globs.
+    homes = tmp_path / "homes"
+    homes.mkdir()
     # The uninstaller removes the beacon's ${TMPDIR}/cortexsim-cache and
     # ${XDG_CACHE_HOME}/cortexsim: point both into the sandbox, never the host.
     tmpdir = tmp_path / "tmpdir"
@@ -91,7 +99,7 @@ def sandbox(tmp_path):
     env["TMPDIR"] = str(tmpdir)
     env["XDG_CACHE_HOME"] = str(home / ".cache")
     yield {"paths": paths, "home": home, "fakebin": fakebin, "env": env,
-           "calls": calls, "tmp": tmp_path, "tmpdir": tmpdir}
+           "calls": calls, "tmp": tmp_path, "tmpdir": tmpdir, "homes": homes}
     # chmod 555 dirs must be writable again or tmp_path cleanup fails.
     for dirpath, dirnames, _ in os.walk(tmp_path):
         for d in dirnames:
@@ -102,6 +110,17 @@ def sandbox(tmp_path):
 
 
 def _rewrite(script: str, sandbox) -> str:
+    # The root branch globs other users' homes. Left as written it would read
+    # (and, as real root, remove from) the real /home and /Users, so the one
+    # line that names them is swapped for the sandbox, and any OTHER mention of
+    # either in code (not comments) refuses the run.
+    assert script.count(HOME_ROOTS_LINE) <= 1, "the home roots are declared more than once"
+    script = script.replace(HOME_ROOTS_LINE, 'HOME_ROOTS=("@@SANDBOX_HOMES@@")')
+    code = "\n".join(ln for ln in script.splitlines() if not ln.lstrip().startswith("#"))
+    stray = re.findall(r"(?<![A-Za-z0-9_.$-])/(?:home|Users)\b[^\n]*", code)
+    assert not stray, (
+        f"the uninstaller names a real home root outside {HOME_ROOTS_LINE!r}: {stray} — "
+        "refusing to run it against the real host")
     for old, new in sandbox["paths"].items():
         if old in script:
             script = script.replace(old, str(new))
@@ -109,7 +128,7 @@ def _rewrite(script: str, sandbox) -> str:
         assert prefix not in script, (
             f"the uninstaller still names {prefix} after sandboxing — refusing to run it "
             f"against the real host; add the new path to SYSTEM_PATHS")
-    return script
+    return script.replace("@@SANDBOX_HOMES@@", str(sandbox["homes"]))
 
 
 def _run(script: str, sandbox, extra_env: dict | None = None) -> subprocess.CompletedProcess:
@@ -282,3 +301,180 @@ def test_a_cache_dir_override_is_removed_only_when_it_names_cortexsim(sandbox):
     assert p.returncode == 0, out
     assert not named.exists(), out
     assert unnamed.exists(), "a tree we did not name must never be deleted"
+
+
+# ---------------------------------------------------------------------------
+# Under sudo the user-mode install must still be found
+# ---------------------------------------------------------------------------
+#
+# The console's remove command is `| sudo bash`; its install one-liner has no
+# sudo, so a DC logged in as a normal user gets the user-mode install (a systemd
+# --user unit with Restart=always). sudo resets HOME to root's on Ubuntu >= 19.10,
+# Debian and RHEL, and the uninstaller looked for that install only through
+# $HOME. It killed the process, printed "done -- removed 1 of 1 item(s)", exited
+# 0, and the user's systemd restarted the beacon ten seconds later.
+#
+# `id`, `getent` and `stat` are stubbed, so the root branch runs on a developer
+# laptop and inside the CI image alike. Not run under a real sudo or a real
+# systemd: what `systemctl --user --machine=` does on a real host is unproven.
+
+
+def _fake_id(sandbox, uid: int, name: str, others: dict | None = None) -> None:
+    """`id` as the script sees it. Every file under test belongs to the real
+    user either way, so nothing but the script's own branching changes."""
+    real = shutil.which("id")
+    arms = "".join(f'  "-u {n}") echo {u}; exit 0;;\n' for n, u in (others or {}).items())
+    _stub(sandbox["fakebin"] / "id",
+          f'case "$*" in\n  "-u") echo {uid}; exit 0;;\n  "-un") echo {name}; exit 0;;\n{arms}esac\n'
+          f'exec {real} "$@"')
+
+
+def _user_install(home: Path) -> dict:
+    """What the installer leaves for a non-root user on a systemd host."""
+    unit = home / ".config" / "systemd" / "user" / "cortexsim-agent.service"
+    unit.parent.mkdir(parents=True)
+    unit.write_text("[Service]\nRestart=always\nRestartSec=10\n")
+    wants = unit.parent / "default.target.wants"
+    wants.mkdir()
+    (wants / "cortexsim-agent.service").symlink_to(unit)
+    beacon = home / ".local" / "bin" / "cortexsim-agent"
+    beacon.parent.mkdir(parents=True)
+    beacon.write_text("#!/bin/sh\n")
+    state = home / ".cortexsim"
+    state.mkdir()
+    (state / "cortexsim-agent.log").write_text("log\n")
+    return {"unit": unit, "enable-link": wants / "cortexsim-agent.service",
+            "beacon": beacon, "state": state}
+
+
+def _as_sudo(sandbox, user: str, home: Path, uid: int = 1000) -> dict:
+    """Environment of `sudo bash` run by ``user``: uid 0, HOME reset to root's,
+    SUDO_USER set, the passwd lookup and the home's owner answering ``user``."""
+    _fake_id(sandbox, 0, "root", {user: uid})
+    _stub(sandbox["fakebin"] / "getent",
+          f'[ "$*" = "passwd {user}" ] && {{ echo "{user}:x:{uid}:{uid}::{home}:/bin/bash"; exit 0; }}\n'
+          'exit 2')
+    real_stat = shutil.which("stat")
+    _stub(sandbox["fakebin"] / "stat",
+          f'for a in "$@"; do [ "$a" = "{home}" ] && {{ echo {user}; exit 0; }}; done\n'
+          f'exec {real_stat} "$@"')
+    root_home = sandbox["tmp"] / "roothome"
+    root_home.mkdir(exist_ok=True)
+    return {"HOME": str(root_home), "SUDO_USER": user, "SUDO_UID": str(uid),
+            "XDG_CACHE_HOME": str(root_home / ".cache")}
+
+
+def _systemctl(sandbox, ok: tuple = ()) -> None:
+    """A systemctl that succeeds only for a call containing one of ``ok``."""
+    arms = "".join(f'  *"{frag}"*) exit 0;;\n' for frag in ok)
+    _stub(sandbox["fakebin"] / "systemctl",
+          f'echo "systemctl $*" >> "{sandbox["calls"]}"\ncase "$*" in\n{arms}  *) ;;\nesac\nexit 1')
+
+
+def _running_until_killed(sandbox) -> None:
+    flag = sandbox["tmp"] / "killed"
+    _stub(sandbox["fakebin"] / "pkill",
+          f'echo "pkill $*" >> "{sandbox["calls"]}"\n: > "{flag}"\nexit 0')
+    _stub(sandbox["fakebin"] / "pgrep", f'[ -f "{flag}" ] && exit 1\necho 4242\nexit 0')
+
+
+def _survivors(inst: dict) -> list:
+    return [f"{k}: {v}" for k, v in inst.items() if v.exists() or v.is_symlink()]
+
+
+def test_the_home_roots_are_declared_on_the_one_rewritable_line():
+    """Drift guard for the sandbox: `_rewrite` swaps exactly this line."""
+    assert _script().count(HOME_ROOTS_LINE) == 1
+
+
+def test_under_sudo_the_invoking_users_install_is_found_and_removed(sandbox):
+    """The reported defect. Executed on c852eac: `removed: running beacon
+    process(es)`, `done -- removed 1 of 1 item(s)`, exit 0, with the unit, the
+    binary and the log all still on disk."""
+    dc_home = sandbox["tmp"] / "elsewhere" / "dc"   # outside the globbed roots:
+    dc_home.mkdir(parents=True)                     # only SUDO_USER can find it
+    inst = _user_install(dc_home)
+    env = _as_sudo(sandbox, "dc", dc_home)
+    _systemctl(sandbox, ok=("--user --machine=dc@.host",))
+    _running_until_killed(sandbox)
+
+    p = _run(_rewrite(_script(), sandbox), sandbox, env)
+    out = p.stdout + p.stderr
+    assert not _survivors(inst), f"a user-mode install survived `sudo bash`: {_survivors(inst)}\n{out}"
+    assert p.returncode == 0, out
+    assert "done -- removed 4 of 4 item(s)" in out, out   # unit, process, binary, state dir
+    calls = sandbox["calls"].read_text()
+    assert "systemctl --user --machine=dc@.host disable --now cortexsim-agent" in calls, calls
+
+
+def test_as_root_a_user_install_in_another_home_is_found_without_sudo_user(sandbox):
+    """`sudo -i`, `su -` and a root login carry no SUDO_USER. The beacon is on
+    the host all the same, so a root run sweeps the home roots for it."""
+    dc_home = sandbox["homes"] / "dc"
+    dc_home.mkdir()
+    inst = _user_install(dc_home)
+    env = _as_sudo(sandbox, "dc", dc_home)
+    del env["SUDO_USER"], env["SUDO_UID"]
+    _stub(sandbox["fakebin"] / "getent", "exit 2")
+    _systemctl(sandbox, ok=("--user --machine=dc@.host",))
+
+    p = _run(_rewrite(_script(), sandbox), sandbox, env)
+    out = p.stdout + p.stderr
+    assert not _survivors(inst), f"{_survivors(inst)}\n{out}"
+    assert p.returncode == 0, out
+    assert "nothing to remove" not in out, out
+    assert "done -- removed 3 of 3 item(s)" in out, out
+
+
+def test_under_sudo_a_user_unit_root_cannot_stop_is_never_done(sandbox):
+    """dc's systemd user manager is running and neither `--machine=` nor
+    `runuser` reaches it. Killing the process is then a ten-second fix
+    (Restart=always), so the verdict must be UNINSTALL_INCOMPLETE, never done."""
+    dc_home = sandbox["homes"] / "dc"
+    dc_home.mkdir()
+    inst = _user_install(dc_home)
+    env = _as_sudo(sandbox, "dc", dc_home)
+    _systemctl(sandbox, ok=("is-active --quiet user@1000.service",))
+    _stub(sandbox["fakebin"] / "runuser", f'echo "runuser $*" >> "{sandbox["calls"]}"\nexit 1')
+    _running_until_killed(sandbox)
+
+    p = _run(_rewrite(_script(), sandbox), sandbox, env)
+    out = p.stdout + p.stderr
+    assert p.returncode == 1, out
+    assert "code=UNINSTALL_INCOMPLETE" in out, out
+    assert "done --" not in out, out
+    assert str(inst["unit"]) in out and "as dc" in out, out
+    assert inst["unit"].exists(), "kept, so dc's own run still has a unit to disable"
+    assert not inst["beacon"].exists(), "the binary is taken off the host regardless"
+    assert "runuser -u dc" in sandbox["calls"].read_text()
+
+
+def test_under_sudo_with_no_user_manager_running_the_unit_file_is_the_whole_job(sandbox):
+    """No `user@<uid>.service` means nothing is supervising the unit: an
+    unreachable manager that is not running must not read as a stuck beacon."""
+    dc_home = sandbox["homes"] / "dc"
+    dc_home.mkdir()
+    inst = _user_install(dc_home)
+    env = _as_sudo(sandbox, "dc", dc_home)
+    _systemctl(sandbox)   # every call fails, is-active included
+
+    p = _run(_rewrite(_script(), sandbox), sandbox, env)
+    out = p.stdout + p.stderr
+    assert p.returncode == 0, out
+    assert not _survivors(inst), f"{_survivors(inst)}\n{out}"
+    assert "done -- removed 3 of 3 item(s)" in out, out
+
+
+def test_a_non_root_run_never_looks_in_another_users_home(sandbox):
+    """The sweep is the root branch's alone: a normal user's uninstall stays
+    inside their own HOME even when SUDO_USER leaks in from the environment."""
+    other = sandbox["homes"] / "someone-else"
+    other.mkdir()
+    inst = _user_install(other)
+    _fake_id(sandbox, 501, "dc")
+
+    p = _run(_rewrite(_script(), sandbox), sandbox, {"SUDO_USER": "someone-else"})
+    out = p.stdout + p.stderr
+    assert p.returncode == 0, out
+    assert "nothing to remove" in out, out
+    assert len(_survivors(inst)) == len(inst), out

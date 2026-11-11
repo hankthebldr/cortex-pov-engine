@@ -883,7 +883,13 @@ if [ "$CHECKED_IN" = "1" ]; then
     cs_report install OK "unsupervised on $OS_ID/$ARCH_ID, checked in after ${WAITED}s"
   fi
   cs_say "done — '$AGENT_ID' is live and polling SimCore (confirmed after ${WAITED}s)"
-  cs_say "uninstall: curl -fsSL '$SERVER/api/agents/install?uninstall=1' | bash"
+  # Removed the way it was installed: a root install needs root, a user-mode
+  # install is removed by the user who made it.
+  if [ "$(id -u)" = "0" ]; then
+    cs_say "uninstall: curl -fsSL '$SERVER/api/agents/install?uninstall=1' | sudo bash   # installed as root"
+  else
+    cs_say "uninstall: curl -fsSL '$SERVER/api/agents/install?uninstall=1' | bash   # as $(id -un), who installed it"
+  fi
 else
   STATUS_HINT="systemctl status $SVC"
   [ "$(id -u)" = "0" ] || STATUS_HINT="systemctl --user status $SVC"
@@ -911,8 +917,14 @@ _POSIX_UNINSTALLER = r"""#!/usr/bin/env bash
 # A non-root run that can SEE a root install refuses up front (NEEDS_ROOT)
 # instead of half-removing it and calling the host clean.
 #
+# A root run (sudo) also sweeps the invoking user's home ($SUDO_USER) and every
+# home under /home and /Users that holds a user-mode install. sudo resets HOME
+# to root's, so a user-mode beacon used to survive a run that printed "done",
+# and its systemd --user unit (Restart=always) brought it back ten seconds later.
+#
 # Env: CORTEXSIM_BIN_DIR / CORTEXSIM_LOG -- the same overrides the installer
-# honours, so a relocated install is found too.
+# honours, so a relocated install is found too. sudo drops the environment, so
+# pass them after it:  ... | sudo CORTEXSIM_BIN_DIR=/opt/x bash
 set -uo pipefail
 
 SVC="cortexsim-agent"
@@ -923,10 +935,8 @@ SYS_UNIT="/etc/systemd/system/$SVC.service"
 SYS_PLIST="/Library/LaunchDaemons/$PLIST_LABEL.plist"
 SYS_BIN="/usr/local/bin/cortexsim-agent"
 SYS_LOG="/var/log/cortexsim-agent.log"
-USER_UNIT="$HOME/.config/systemd/user/$SVC.service"
-USER_PLIST="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
-USER_BIN="$HOME/.local/bin/cortexsim-agent"
-USER_STATE="$HOME/.cortexsim"
+# Where other users' homes live. Only a root run looks there.
+HOME_ROOTS=("/home" "/Users")
 # Where the beacon itself caches and stages tools (agent/beacon/artifact.go:
 # getArtifactCacheDir, findExecutableFallback, stageRootFor). The cache holds
 # the staged dual-use tools (linpeas, pspy, ...), so an uninstall that skips it
@@ -936,7 +946,6 @@ SYS_TOOLS="/opt/cortexsim/tools"
 STAGE_ROOT="/tmp/.cortexsim"
 TMP_CACHE="${TMPDIR:-/tmp}"; TMP_CACHE="${TMP_CACHE%/}/cortexsim-cache"
 USER_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/cortexsim"
-USER_CACHE_MAC="$HOME/Library/Caches/cortexsim"
 EXTRA_DIRS=""
 for v in "${CORTEXSIM_CACHE_DIR:-}" "${CORTEXSIM_STAGE_ROOT:-}"; do
   case "$v" in
@@ -993,6 +1002,58 @@ cs_rm_dir() {  # path label
   fi
 }
 
+cs_home_of() {  # login -> its home directory, or nothing
+  local h=""
+  case "$1" in ""|*[!A-Za-z0-9._-]*) return 0 ;; esac   # it reaches eval below
+  if command -v getent >/dev/null 2>&1; then h="$(getent passwd "$1" 2>/dev/null | cut -d: -f6)"; fi
+  if [ -z "$h" ]; then
+    h="$(eval "printf '%s' ~$1" 2>/dev/null)"
+    case "$h" in "~"*) h="" ;; esac
+  fi
+  printf '%s' "$h"
+}
+
+cs_owner_of() {  # path -> the login that owns it, or nothing (GNU stat, then BSD)
+  stat -c %U "$1" 2>/dev/null || stat -f %Su "$1" 2>/dev/null || true
+}
+
+cs_as_user() {  # login uid verb...  -- `systemctl --user <verb>` for another login, from root
+  local u="$1" uid="$2"
+  shift 2
+  systemctl --user --machine="$u@.host" "$@" >/dev/null 2>&1 && return 0
+  if command -v runuser >/dev/null 2>&1; then
+    # systemd older than 248 has no --machine= for --user. stdin is the script.
+    runuser -u "$u" -- env XDG_RUNTIME_DIR="/run/user/$uid" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+      systemctl --user "$@" >/dev/null 2>&1 </dev/null && return 0
+  fi
+  return 1
+}
+
+# -- whose user-mode install to sweep ------------------------------------------
+# This shell's own HOME always. A root run adds the invoking user's and any
+# home that holds a user-mode install, because sudo points HOME at root's.
+HOMES=("$HOME")
+cs_add_home() {  # dir
+  local known
+  [ -n "${1:-}" ] && [ -d "$1" ] || return 0
+  for known in "${HOMES[@]}"; do [ "$known" = "$1" ] && return 0; done
+  HOMES+=("$1")
+}
+if [ "$IS_ROOT" = "1" ]; then
+  if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER:-}" != "root" ]; then
+    cs_add_home "$(cs_home_of "$SUDO_USER")"
+  fi
+  for base in "${HOME_ROOTS[@]}"; do
+    for cand in "$base"/*; do
+      if [ -e "$cand/.config/systemd/user/$SVC.service" ] || [ -e "$cand/Library/LaunchAgents/$PLIST_LABEL.plist" ] \
+         || [ -e "$cand/.local/bin/cortexsim-agent" ] || [ -e "$cand/.cortexsim" ]; then
+        cs_add_home "$cand"
+      fi
+    done
+  done
+fi
+
 # -- preflight: a root install needs root to remove ----------------------------
 if [ "$IS_ROOT" != "1" ]; then
   NEED=""
@@ -1014,23 +1075,62 @@ if [ -e "$SYS_UNIT" ] || [ -L "$SYS_UNIT" ]; then
   cs_rm_file "$SYS_UNIT" "system unit"
   if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload >/dev/null 2>&1 || true; fi
 fi
-if [ -e "$USER_UNIT" ] || [ -L "$USER_UNIT" ]; then
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user disable --now "$SVC" >/dev/null 2>&1 || true
+if [ -e "$SYS_PLIST" ] || [ -L "$SYS_PLIST" ]; then
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "system/$PLIST_LABEL" >/dev/null 2>&1 || true
+    launchctl unload -w "$SYS_PLIST" >/dev/null 2>&1 || true
   fi
-  cs_rm_file "$USER_UNIT" "user unit"
-  if command -v systemctl >/dev/null 2>&1; then systemctl --user daemon-reload >/dev/null 2>&1 || true; fi
+  cs_rm_file "$SYS_PLIST" "launchd job"
 fi
-for p in "$SYS_PLIST" "$USER_PLIST"; do
-  if [ -e "$p" ] || [ -L "$p" ]; then
-    if command -v launchctl >/dev/null 2>&1; then
-      launchctl bootout "system/$PLIST_LABEL" >/dev/null 2>&1 || true
-      launchctl bootout "gui/$(id -u)/$PLIST_LABEL" >/dev/null 2>&1 || true
-      launchctl unload -w "$p" >/dev/null 2>&1 || true
-    fi
-    cs_rm_file "$p" "launchd job"
+
+cs_stop_user_install() {  # home  -- that login's systemd --user unit and launchd agent
+  local home="$1" user="" uid="" unit plist stuck=0
+  if [ "$IS_ROOT" = "1" ]; then
+    # Root acting on another login's home: its user manager is not root's.
+    user="$(cs_owner_of "$home")"
+    case "$user" in ""|root|UNKNOWN|*[!A-Za-z0-9._-]*) user="" ;; esac
+    if [ -n "$user" ]; then uid="$(id -u "$user" 2>/dev/null || true)"; fi
+    [ -n "$uid" ] || user=""
   fi
-done
+  unit="$home/.config/systemd/user/$SVC.service"
+  if [ -e "$unit" ] || [ -L "$unit" ]; then
+    if command -v systemctl >/dev/null 2>&1; then
+      if [ -z "$user" ]; then
+        systemctl --user disable --now "$SVC" >/dev/null 2>&1 || true
+      elif ! cs_as_user "$user" "$uid" disable --now "$SVC"; then
+        # Nobody answered for that login. With no user manager running, nothing
+        # supervises the beacon. With one running that root could not reach,
+        # Restart=always brings back whatever is killed below.
+        if systemctl is-active --quiet "user@$uid.service" >/dev/null 2>&1; then stuck=1; fi
+      fi
+    fi
+    if [ "$stuck" = "1" ]; then
+      # The unit file is kept on purpose: that login's own run needs it there
+      # to disable the unit.
+      cs_found
+      cs_left "user unit $unit" "the systemd user manager of $user is running and root could not reach it, so it restarts the beacon; run this uninstaller as $user, without sudo"
+    else
+      cs_rm_file "$unit" "user unit"
+      rm -f "$home/.config/systemd/user/default.target.wants/$SVC.service" 2>/dev/null || true
+      if command -v systemctl >/dev/null 2>&1; then
+        if [ -z "$user" ]; then systemctl --user daemon-reload >/dev/null 2>&1 || true
+        else cs_as_user "$user" "$uid" daemon-reload || true; fi
+      fi
+    fi
+  fi
+  plist="$home/Library/LaunchAgents/$PLIST_LABEL.plist"
+  if [ -e "$plist" ] || [ -L "$plist" ]; then
+    if command -v launchctl >/dev/null 2>&1; then
+      # gui/<uid> for a desktop session, user/<uid> for one reached over ssh.
+      [ -n "$uid" ] || uid="$(id -u)"
+      launchctl bootout "gui/$uid/$PLIST_LABEL" >/dev/null 2>&1 || true
+      launchctl bootout "user/$uid/$PLIST_LABEL" >/dev/null 2>&1 || true
+      launchctl unload -w "$plist" >/dev/null 2>&1 || true
+    fi
+    cs_rm_file "$plist" "launchd job"
+  fi
+}
+for H in "${HOMES[@]}"; do cs_stop_user_install "$H"; done
 
 # -- any beacon still running (the nohup fallback, or a stale one) -------------
 # Killing is not the same as gone: verify with pgrep, escalate to SIGKILL once,
@@ -1060,7 +1160,10 @@ fi
 
 # -- files ----------------------------------------------------------------------
 SEEN=""
-for b in "$SYS_BIN" "$USER_BIN" "$EXTRA_BIN"; do
+BINS=("$SYS_BIN")
+for H in "${HOMES[@]}"; do BINS+=("$H/.local/bin/cortexsim-agent"); done
+BINS+=("$EXTRA_BIN")
+for b in "${BINS[@]}"; do
   [ -n "$b" ] || continue
   case " $SEEN " in *" $b "*) continue ;; esac
   SEEN="$SEEN $b"
@@ -1070,8 +1173,12 @@ for l in "$SYS_LOG" "$EXTRA_LOG"; do
   [ -n "$l" ] || continue
   cs_rm_file "$l" "log"
 done
-cs_rm_dir "$USER_STATE" "state/log directory"
-for d in "$SYS_CACHE" "$SYS_TOOLS" "$STAGE_ROOT" "$TMP_CACHE" "$USER_CACHE" "$USER_CACHE_MAC" $EXTRA_DIRS; do
+for H in "${HOMES[@]}"; do
+  cs_rm_dir "$H/.cortexsim" "state/log directory"
+  cs_rm_dir "$H/.cache/cortexsim" "staging cache"
+  cs_rm_dir "$H/Library/Caches/cortexsim" "staging cache"
+done
+for d in "$SYS_CACHE" "$SYS_TOOLS" "$STAGE_ROOT" "$TMP_CACHE" "$USER_CACHE" $EXTRA_DIRS; do
   cs_rm_dir "$d" "staging cache"
 done
 rmdir "${SYS_CACHE%/cache}" 2>/dev/null || true   # their parent, only once empty

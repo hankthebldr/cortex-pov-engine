@@ -169,6 +169,31 @@ def _run_installer(script: str, sandbox, timeout: int = 60) -> subprocess.Comple
                           text=True, env=sandbox["env"], timeout=timeout)
 
 
+def _polling_stub(path: Path) -> Path:
+    """A stand-in beacon that really re-polls /tasks for a minute, so the
+    installer's check-in verification has something true to observe."""
+    path.write_text(
+        "#!/bin/sh\n"
+        "echo \"beacon-started $*\"\n"
+        "SERVER=\"\"; ID=\"\"\n"
+        "while [ $# -gt 0 ]; do\n"
+        "  case \"$1\" in\n"
+        "    --server) SERVER=\"$2\"; shift 2 ;;\n"
+        "    --id) ID=\"$2\"; shift 2 ;;\n"
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n"
+        "i=0\n"
+        "while [ \"$i\" -lt 60 ]; do\n"
+        "  curl -sS -m 5 \"$SERVER/api/agents/$ID/tasks\" >/dev/null 2>&1 || true\n"
+        "  sleep 1\n"
+        "  i=$((i + 1))\n"
+        "done\n"
+    )
+    path.chmod(0o755)
+    return path
+
+
 # ---------------------------------------------------------------------------
 # Happy path — a customer endpoint with no compiler
 # ---------------------------------------------------------------------------
@@ -212,27 +237,7 @@ def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox, t
     test_installer_fails_when_agent_never_checks_in) — a one-shot stub would
     correctly be reported as AGENT_NEVER_CHECKED_IN, which is not what this
     test is about."""
-    staged = tmp_path / "polling-agent"
-    staged.write_text(
-        "#!/bin/sh\n"
-        "echo \"beacon-started $*\"\n"
-        "SERVER=\"\"; ID=\"\"\n"
-        "while [ $# -gt 0 ]; do\n"
-        "  case \"$1\" in\n"
-        "    --server) SERVER=\"$2\"; shift 2 ;;\n"
-        "    --id) ID=\"$2\"; shift 2 ;;\n"
-        "    *) shift ;;\n"
-        "  esac\n"
-        "done\n"
-        "i=0\n"
-        "while [ \"$i\" -lt 60 ]; do\n"
-        "  curl -sS -m 5 \"$SERVER/api/agents/$ID/tasks\" >/dev/null 2>&1 || true\n"
-        "  sleep 1\n"
-        "  i=$((i + 1))\n"
-        "done\n"
-    )
-    staged.chmod(0o755)
-    sandbox["env"]["CORTEXSIM_BIN"] = str(staged)
+    sandbox["env"]["CORTEXSIM_BIN"] = str(_polling_stub(tmp_path / "polling-agent"))
 
     token = _post(f"{simcore}/api/agents/enroll/tokens", {})["token"]
     script = _fetch(f"{simcore}/api/agents/install?token={token}&interval=2")  # service is the default
@@ -255,6 +260,45 @@ def test_service_mode_detaches_when_no_supervisor_is_present(simcore, sandbox, t
         codes = [a["code"] for a in attempts]
         assert codes[0] == "OK"
         assert "DEGRADED_NO_SUPERVISOR" in codes
+
+
+@pytest.mark.parametrize("as_root", [True, False], ids=["installed-as-root", "installed-as-user"])
+def test_the_closing_line_names_the_uninstall_that_matches_the_install(
+    simcore, sandbox, tmp_path, as_root
+):
+    """The closing line printed `| bash` for every install while the console
+    printed `| sudo bash` for every uninstall. A root install needs root to
+    remove; a user-mode install is removed by the user who made it.
+
+    Hermetic: systemctl and launchctl are stubs that fail, so the beacon takes
+    the nohup path and no supervisor on this host is touched. Root is simulated
+    with an `id` stub unless the suite really is root (the CI image)."""
+    real_root = os.geteuid() == 0
+    if as_root and real_root and os.uname().sysname.lower() == "darwin":
+        pytest.skip("a real-root macOS run would write /Library/LaunchDaemons")
+    fakebin = Path(sandbox["env"]["PATH"].split(os.pathsep)[0])
+    for tool in ("systemctl", "launchctl"):
+        (fakebin / tool).write_text("#!/bin/sh\nexit 1\n")
+        (fakebin / tool).chmod(0o755)
+    if as_root != real_root:
+        uid, name = (0, "root") if as_root else (1000, "dc")
+        (fakebin / "id").write_text(
+            f'#!/bin/sh\ncase "$*" in "-u") echo {uid}; exit 0;; "-un") echo {name}; exit 0;; esac\n'
+            f'exec {shutil.which("id")} "$@"\n')
+        (fakebin / "id").chmod(0o755)
+    sandbox["env"]["CORTEXSIM_BIN"] = str(_polling_stub(tmp_path / "polling-agent"))
+
+    token = _post(f"{simcore}/api/agents/enroll/tokens", {})["token"]
+    script = _fetch(f"{simcore}/api/agents/install?token={token}&interval=2")
+    p = _run_installer(script, sandbox, timeout=30)
+    assert p.returncode == 0, f"stdout:\n{p.stdout}\nstderr:\n{p.stderr}"
+
+    (line,) = [ln for ln in p.stdout.splitlines() if "uninstall:" in ln]
+    assert f"curl -fsSL '{simcore}/api/agents/install?uninstall=1' | " in line, line
+    if as_root:
+        assert "| sudo bash" in line, line
+    else:
+        assert "| bash" in line and "sudo" not in line, line
 
 
 def test_pre_staged_binary_needs_no_network_fetch(simcore, sandbox, tmp_path):
