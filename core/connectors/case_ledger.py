@@ -20,6 +20,7 @@ as ``open`` or as a default.
 """
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping, Optional, Sequence
@@ -326,3 +327,37 @@ def pair_merge(a: Optional[dict], b: Optional[dict]) -> dict:
             cases[cid] = c
     mc, reason = classify_merge(aa + ba, cases, basis=basis)
     return {"merge_class": mc, "merge_reason": reason, "basis": basis}
+
+
+BRIDGE_CODES = ("BRIDGED", "UNBRIDGED_IP_HOST", "BRIDGE_UNREAD")
+
+
+def _ip_key(v: Any) -> Optional[str]:
+    """Canonical text for an IP, or None when ``v`` is not one (never guessed)."""
+    try:
+        return str(ipaddress.ip_address(str(v).strip()))
+    except ValueError:
+        return None
+
+
+def bridge_diagnosis(*, host: Optional[str], agent_ip: Optional[str],
+                     endpoint_ips: Optional[Sequence[str]]) -> dict:
+    """Did XSIAM have the agent's IP on the endpoint record?
+
+    The commonest lab cause of a native split is a firewall alert that carries
+    only an IP while the endpoint alert carries a hostname: the tenant can only
+    stitch them if the IP is on that host's endpoint record. Context only; it
+    never changes ``merge_class`` or any verdict.
+
+    * ``BRIDGED`` - ``agent_ip`` is one of the endpoint record's IPs;
+    * ``UNBRIDGED_IP_HOST`` - the record was read and does not carry it;
+    * ``BRIDGE_UNREAD`` - anything that prevents the comparison (no host, no
+      agent IP, endpoint not returned or unreadable). Never ``BRIDGED``.
+    """
+    ips = None if endpoint_ips is None else [str(i) for i in endpoint_ips]
+    base = {"host": host, "agent_ip": agent_ip, "endpoint_ips": ips}
+    want = _ip_key(agent_ip) if agent_ip else None
+    if not host or want is None or ips is None:
+        return {**base, "code": "BRIDGE_UNREAD"}
+    have = {k for k in (_ip_key(i) for i in ips) if k is not None}
+    return {**base, "code": "BRIDGED" if want in have else "UNBRIDGED_IP_HOST"}

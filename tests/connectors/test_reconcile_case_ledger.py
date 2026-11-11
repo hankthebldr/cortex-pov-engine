@@ -236,3 +236,118 @@ def test_detection_verdicts_identical_with_and_without_ledger(monkeypatch):
         return {**d, "results": [[o, ob is not None, oc, None if m is None else round(m / 60)]
                                  for o, ob, oc, m in d["results"]]}
     assert norm(states[0]) == norm(states[1])
+
+
+# ── IP-to-host bridge diagnosis ────────────────────────────────────────────
+
+def _ip_only(ext, **kw):
+    a = _alert(ext, **kw)
+    a["host_name"] = None            # a firewall alert: an IP, no hostname
+    return a
+
+
+def _with_endpoint(fetcher, endpoints, *, http=200):
+    """Wrap a tenant fetcher so get_endpoint answers; returns (fetcher, calls)."""
+    calls = []
+
+    def f(method, url, headers, body, timeout):
+        if "endpoints/get_endpoint" in url:
+            calls.append(json.loads(body)["request_data"])
+            if http != 200:
+                return http, "{}"
+            return 200, json.dumps({"reply": {"total_count": len(endpoints),
+                                              "result_count": len(endpoints),
+                                              "endpoints": endpoints}})
+        return fetcher(method, url, headers, body, timeout)
+    return f, calls
+
+
+async def _set_agent_ip(session_factory, ip):
+    from models import Agent
+    from sqlalchemy import select
+    async with session_factory() as db:
+        (await db.execute(select(Agent))).scalars().first().last_ip = ip
+        await db.commit()
+
+
+def _go_ip(session_factory, fetcher, *, agent_ip="10.0.1.20"):
+    _seed(session_factory, results=2, threshold=ACC, primary_kpi="Detection Accuracy")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059")))
+    asyncio.run(_set_agent_ip(session_factory, agent_ip))
+    return asyncio.run(_reconcile(session_factory, fetcher))
+
+
+def _split_tenant(*, second_host=False):
+    second = (_alert if second_host else _ip_only)("b", technique="T1059", case="901", seconds=60)
+    return _tenant([_alert("a", technique="T1003.001"), second],
+                   [_case("900"), _case("901")])
+
+
+def test_bridge_bridged_end_to_end(session_factory):
+    base, _ = _split_tenant()
+    f, calls = _with_endpoint(base, [{"endpoint_name": "web-01", "ip": ["10.0.1.20"]}])
+    summary, run = _go_ip(session_factory, f)
+    led = run.case_ledger
+    assert led["merge_class"] == "SPLIT_NATIVE" and led["code"] == "CASE_LEDGER_OK"
+    assert led["bridge"]["code"] == "BRIDGED"
+    assert led["bridge"]["agent_ip"] == "10.0.1.20"
+    assert "BRIDGED" in led["merge_reason"]
+    assert calls[0]["filters"] == [{"field": "hostname", "operator": "in", "value": ["web-01"]}]
+    # 1 alert page + 1 case read + 1 issue read + 1 endpoint read
+    assert summary["queries_issued"] == 4
+
+
+def test_bridge_unbridged_end_to_end(session_factory):
+    base, _ = _split_tenant()
+    f, _ = _with_endpoint(base, [{"endpoint_name": "web-01", "ip": ["10.9.9.9"]}])
+    _, run = _go_ip(session_factory, f)
+    assert run.case_ledger["bridge"]["code"] == "UNBRIDGED_IP_HOST"
+    assert run.case_ledger["merge_class"] == "SPLIT_NATIVE"
+
+
+@pytest.mark.parametrize("reply", [
+    [],                                                           # not returned
+    [{"endpoint_name": "other-host", "ip": ["10.0.1.20"]}],       # a different host
+    [{"endpoint_name": "web-01"}],                                # no ip field
+    [{"endpoint_name": "web-01", "ip": "10.0.1.20"}],             # ip is not a list
+])
+def test_bridge_unreadable_record_is_unread_never_bridged(session_factory, reply):
+    base, _ = _split_tenant()
+    f, _ = _with_endpoint(base, reply)
+    summary, run = _go_ip(session_factory, f)
+    assert run.case_ledger["bridge"]["code"] == "BRIDGE_UNREAD"
+    assert summary["queries_issued"] == 4          # the read was attempted: counted
+
+
+def test_bridge_read_failure_degrades_and_is_counted(session_factory):
+    base, _ = _split_tenant()
+    f, _ = _with_endpoint(base, [], http=500)
+    summary, run = _go_ip(session_factory, f)
+    assert run.case_ledger["bridge"]["code"] == "BRIDGE_UNREAD"
+    assert run.case_ledger["code"] == "CASE_LEDGER_OK"
+    assert summary["queries_issued"] == 4
+
+
+def test_bridge_only_runs_on_split_native_with_mixed_keys(session_factory, monkeypatch):
+    from connectors.xsiam import XsiamConnector
+    seen = []
+    monkeypatch.setattr(XsiamConnector, "pull_endpoint_ips",
+                        lambda self, cfg, hostname: seen.append(hostname) or ["10.0.1.20"])
+    # ONE_CASE with mixed keys: never read.
+    base, _ = _tenant([_alert("a", technique="T1003.001"),
+                       _ip_only("b", technique="T1059", seconds=60)], [_case("900")])
+    _, run = _go_ip(session_factory, base)
+    assert run.case_ledger["merge_class"] == "ONE_CASE" and "bridge" not in run.case_ledger
+    assert seen == []
+
+
+def test_bridge_not_read_on_split_native_without_mixed_keys(session_factory, monkeypatch):
+    from connectors.xsiam import XsiamConnector
+    seen = []
+    monkeypatch.setattr(XsiamConnector, "pull_endpoint_ips",
+                        lambda self, cfg, hostname: seen.append(hostname) or ["10.0.1.20"])
+    base, _ = _split_tenant(second_host=True)          # both alerts carry a host
+    _, run = _go_ip(session_factory, base)
+    assert run.case_ledger["merge_class"] == "SPLIT_NATIVE" and "bridge" not in run.case_ledger
+    assert seen == []
+

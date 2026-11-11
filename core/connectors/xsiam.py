@@ -115,6 +115,8 @@ class XsiamConnector(Connector):
     #: Issue search (read-only POST). Observed on the lab tenant 2026-11-10: the
     #: envelope is ``reply.DATA`` and the status fields are flat dotted keys.
     _ISSUES_SEARCH_PATH = "/public_api/v1/issue/search/"
+    #: Endpoint detail (read-only POST); overridable via ``config["endpoints_path"]``.
+    _ENDPOINT_PATH = "/public_api/v1/endpoints/get_endpoint"
     #: Ids per request body for the by-id reads (the tenant's page ceiling).
     _ID_CHUNK = 100
 
@@ -384,6 +386,55 @@ class XsiamConnector(Connector):
                 "treat them as absent.", res.detail)
         return IssueStatusMap({iid: row for iid, row in res.observations},
                               pages=int(res.detail.get("pages", 0)), detail=res.detail)
+
+    def pull_endpoint_ips(self, cfg: ConnectorConfig, hostname: str) -> Optional[list[str]]:
+        """IPs on the tenant's endpoint record for ``hostname``, or None.
+
+        ``POST /public_api/v1/endpoints/get_endpoint`` with a ``hostname``
+        ``in`` filter; the reply is ``reply.endpoints[]`` and each record's
+        ``ip`` is a list of strings (field table and sample reply in
+        ``docs/reference/xsiam-platform-apis/05-endpoints-api.md``, itself taken
+        from the vendor's Get Endpoint page,
+        https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/nxq2mf3ia6wrd-get-endpoint
+        -- unverified against a live tenant).
+
+        Exactly ONE request (an explicit ``limit`` is a single page), so the
+        caller counts one query per call whatever the outcome. ``None`` means
+        "do not claim anything": the read failed, no record's ``endpoint_name``
+        matched the host, the result was truncated, or a matching record had no
+        ``ip`` list. It is never ``[]`` for a failure.
+        """
+        want = (hostname or "").strip().lower()
+        if not want:
+            return None
+        conf = cfg.config or {}
+        path = str(conf.get("endpoints_path") or self._ENDPOINT_PATH)
+
+        def body(search_from: int, page_size: int) -> dict:
+            return {"request_data": {
+                "filters": [{"field": "hostname", "operator": "in", "value": [hostname]}],
+                "search_from": 0, "search_to": page_size}}
+
+        def norm(e: dict[str, Any]) -> Optional[dict]:
+            return e
+
+        res = self._harvest(cfg, path, since=None, until=None,
+                            filters={"limit": self._PAGE_SIZE_MAX}, list_key="endpoints",
+                            normalize=norm, kind="endpoints", request_for=body)
+        if not res.ok or res.detail.get("truncated"):
+            return None
+        ips: list[str] = []
+        matched = False
+        for rec in res.observations:
+            name = _s(rec.get("endpoint_name"))
+            if name is None or name.lower() != want:
+                continue
+            raw = rec.get("ip")
+            if not isinstance(raw, list) or not all(isinstance(i, str) for i in raw):
+                return None                         # unrecognised record shape
+            matched = True
+            ips.extend(raw)
+        return list(dict.fromkeys(ips)) if matched else None
 
     def _chunked(self, ids: list[str], one: Callable[[list[str]], PullResult],
                  path: str) -> PullResult:

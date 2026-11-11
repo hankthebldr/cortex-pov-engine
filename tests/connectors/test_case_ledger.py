@@ -228,3 +228,30 @@ def test_some_medium_without_case_is_pending():
     al = [A("1", 0, case="A"), A("2", 1, case=None)]
     mc, reason = cl.classify_merge(al, {"A": C("A")}, basis="alert_incident_ids")
     assert mc == "PENDING" and "not in a case" in reason
+
+
+# ── IP-to-host bridge diagnosis (context only) ─────────────────────────────
+
+def test_bridge_bridged_when_agent_ip_on_endpoint():
+    d = cl.bridge_diagnosis(host="web-01", agent_ip="10.0.1.20",
+                            endpoint_ips=["10.0.1.20", "fe80::1"])
+    assert d == {"host": "web-01", "agent_ip": "10.0.1.20",
+                 "endpoint_ips": ["10.0.1.20", "fe80::1"], "code": "BRIDGED"}
+
+
+def test_bridge_unbridged_when_ip_absent():
+    d = cl.bridge_diagnosis(host="web-01", agent_ip="10.0.1.20", endpoint_ips=["10.9.9.9"])
+    assert d["code"] == "UNBRIDGED_IP_HOST"
+    assert d["endpoint_ips"] == ["10.9.9.9"]
+
+
+def test_bridge_unread_when_endpoint_not_returned():
+    # An endpoint that was not returned (or whose record was unreadable) can
+    # never be read as bridged; and an empty list is "the record carries no
+    # IP", which is unbridged only if the read succeeded -- here it is a list.
+    d = cl.bridge_diagnosis(host="web-01", agent_ip="10.0.1.20", endpoint_ips=None)
+    assert d["code"] == "BRIDGE_UNREAD" and d["endpoint_ips"] is None
+    assert cl.bridge_diagnosis(host="web-01", agent_ip=None,
+                               endpoint_ips=["10.0.1.20"])["code"] == "BRIDGE_UNREAD"
+    assert cl.bridge_diagnosis(host=None, agent_ip="10.0.1.20",
+                               endpoint_ips=["10.0.1.20"])["code"] == "BRIDGE_UNREAD"

@@ -30,6 +30,8 @@ from connectors import ConnectorConfig, get_connector, reconcile
 from connectors.base import HttpFetcher, ObservedAlert, coerce_utc
 from connectors.case_ledger import (
     CaseShapeError,
+    MEDIUM_PLUS,
+    bridge_diagnosis,
     build_case_ledger,
     ledger_alert,
     ledger_case_from_incident,
@@ -424,6 +426,7 @@ async def build_and_store_case_ledger(
             return ledger
 
     ledger = compute()
+    queries += await _add_bridge(db, run, ledger, alerts, conn=conn, cfg=cfg)
     # Case ids are tenant-local: record WHICH integration read them so a refresh
     # asks the same tenant (a second tenant can return another case under the id).
     ledger["integration"] = cfg.integration_name
@@ -431,6 +434,46 @@ async def build_and_store_case_ledger(
     if commit:
         await db.commit()
     return ledger, queries
+
+
+async def _add_bridge(db: AsyncSession, run: Run, ledger: dict,
+                      alerts: list[ObservedAlert], *, conn: Any, cfg: ConnectorConfig) -> int:
+    """Diagnose the IP-to-host bridge on a native split; returns queries spent.
+
+    Only when ``merge_class`` is ``SPLIT_NATIVE`` and the Medium+ alerts mix an
+    IP-only alert (``host is None``, e.g. NGFW) with a host-keyed one. Context
+    only: sets ``ledger["bridge"]`` and appends its code to ``merge_reason``;
+    never touches ``merge_class``, ``code`` or any verdict. A failed or
+    unrecognised endpoint read is ``BRIDGE_UNREAD`` and never raises (the one
+    request it makes is counted either way).
+
+    Not run by :func:`refresh_case_ledger`: the stored ledger keeps no per-alert
+    host, so a refresh cannot re-evaluate the mixed-key condition; it carries
+    the stored diagnosis forward instead.
+    """
+    if ledger.get("merge_class") != "SPLIT_NATIVE" or not hasattr(conn, "pull_endpoint_ips"):
+        return 0
+    mp = [a for a in alerts if (a.severity or "").lower() in MEDIUM_PLUS]
+    if not (any(a.host is None for a in mp) and any(a.host is not None for a in mp)):
+        return 0
+    host = await resolve_run_host(db, run)
+    agent = None
+    if getattr(run, "target", None):
+        agent = (await db.execute(
+            select(Agent).where(Agent.agent_id == run.target))).scalar_one_or_none()
+    agent_ip = getattr(agent, "last_ip", None)
+    ips = None
+    spent = 0
+    if host and agent_ip:
+        spent = 1
+        try:
+            ips = conn.pull_endpoint_ips(cfg, host)
+        except Exception as e:  # noqa: BLE001 - context-only data must never fail reconcile
+            logger.warning("bridge endpoint read failed: %s", type(e).__name__, exc_info=True)
+    diag = bridge_diagnosis(host=host, agent_ip=agent_ip, endpoint_ips=ips)
+    ledger["bridge"] = diag
+    ledger["merge_reason"] = f"{ledger['merge_reason']}; ip-to-host bridge: {diag['code']}"
+    return spent
 
 
 def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
@@ -531,6 +574,11 @@ async def refresh_case_ledger(
         ledger["merge_reason"] = str(e)
     ledger["issue_read"] = stored.get("issue_read", {"ok": None})
     ledger["integration"] = integ.name
+    if stored.get("bridge") and ledger["merge_class"] == "SPLIT_NATIVE":
+        # Carried, not re-read: the stored ledger keeps no per-alert host, so the
+        # mixed-key condition cannot be re-evaluated here (see _add_bridge).
+        ledger["bridge"] = stored["bridge"]
+        ledger["merge_reason"] += f"; ip-to-host bridge: {stored['bridge'].get('code')}"
 
     run.case_ledger = ledger
     try:
