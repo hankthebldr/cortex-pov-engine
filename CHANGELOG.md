@@ -101,8 +101,9 @@ with 409 `PUSH_NOT_SUPPORTED`.
   ABIOC/Analytics scenario (`info`), including when only execution evidence
   proves it live (`PRESENT_UNREAD`). The remediation names the three
   tenant-side options at the pinned framework (star the POV's cases;
-  `!SOCFWConfig command=triage window_hours=<n> apply=yes`; `dry_run=true` on
-  the Auto Triage JOB's close task). It reads the stored probe only; CortexSim
+  `!SOCFWConfig command=triage window_hours=<n> apply=yes`; switch the JOB off
+  for the POV window with `!SOCFWConfig command=job job="Auto Triage V3"
+  value=off apply=yes`, and back on after). It reads the stored probe only; CortexSim
   does not change the tenant. The console holds the launcher only on a warning
   that is not `level: "info"`, and shows each warning's level, tenant and
   remediation.

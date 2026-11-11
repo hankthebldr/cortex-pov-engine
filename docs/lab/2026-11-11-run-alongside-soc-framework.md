@@ -36,9 +36,10 @@ to run.
    - run `!SOCFWConfig command=triage window_hours=<n> apply=yes`, with `<n>`
      longer than the POV, because Auto Triage never closes a case younger than
      the window;
-   - run the Auto Triage JOB (`JOB - Auto Triage V3`) with `dry_run=true` on its
-     `SOCAutoTriageScoreFilter` task. It then reports what it would close and
-     closes nothing. The JOB does not pass `dry_run` by default.
+   - switch the Auto Triage JOB off for the POV window with
+     `!SOCFWConfig command=job job="Auto Triage V3" value=off apply=yes`, and back
+     on afterwards with
+     `!SOCFWConfig command=job job="Auto Triage V3" value=on apply=yes`.
 
    A launch whose case Auto Triage may seal carries the `SOCFW_TRIAGE_MAY_SEAL`
    advisory, at `warn` level on a paired run and `info` level for a scenario

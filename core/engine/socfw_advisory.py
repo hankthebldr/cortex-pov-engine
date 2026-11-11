@@ -37,18 +37,17 @@ _DOC = "docs/lab/2026-11-11-run-alongside-soc-framework.md"
 #      starred case;
 #  (2) SOCFWConfig command=triage takes score_threshold / window_hours / apply,
 #      and every change is a dry run unless apply=yes (SOCFWConfig.yml);
-#  (3) Auto Triage's own dry run is the dry_run argument of
-#      SOCAutoTriageScoreFilter, the close task of JOB - Auto Triage V3
-#      (SOCAutoTriageScoreFilter.yml); the JOB does not pass it by default.
+#  (3) SOCFWConfig command=job turns a framework JOB's schedule on or off
+#      (SOCFWConfig.py:76 JOBS includes "Auto Triage V3"; :684 job()).
 _REMEDIATION = (
     "Tenant-side options, any one is enough: "
     "(1) star the POV's cases (Auto Triage skips starred cases); "
     "(2) run !SOCFWConfig command=triage window_hours=<n> apply=yes with <n> "
     "longer than the POV, since Auto Triage never closes a case younger than "
     "the window; "
-    "(3) run the Auto Triage JOB (JOB - Auto Triage V3) with dry_run=true on its "
-    "SOCAutoTriageScoreFilter task, so it reports what it would close and closes "
-    "nothing. "
+    "(3) switch the Auto Triage JOB off for the POV window with "
+    "!SOCFWConfig command=job job=\"Auto Triage V3\" value=off apply=yes, and back on "
+    "afterwards with value=on. "
     f"See {_DOC}. CortexSim does not change the tenant."
 )
 _RERUN = "Run preflight on this tenant to refresh it."

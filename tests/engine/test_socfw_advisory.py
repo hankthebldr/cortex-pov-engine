@@ -79,14 +79,16 @@ def test_malformed_layer_degrades_never_raises():
 def test_remediation_lists_three_tenant_side_options():
     # Pinned to the framework at d222ba87: SOCFWConfig's triage command takes
     # score_threshold / window_hours / apply and dry-runs unless apply=yes
-    # (SOCFWConfig.yml:16-17,165,169,216); Auto Triage's own dry run is the
-    # dry_run argument of SOCAutoTriageScoreFilter, the JOB's close task
-    # (SOCAutoTriageScoreFilter.yml:65-70). Auto Triage skips starred cases.
+    # (SOCFWConfig.yml:16-17,165,169,216); its job command turns a framework
+    # JOB's schedule on or off (SOCFWConfig.py:76 JOBS, :684 job). Auto Triage
+    # skips starred cases. Ruling 20: option 3 is the JOB switch, not a dry run
+    # (the JOB never passes dry_run to its close task).
     r = _run()[0]["remediation"]
     assert "star the POV's cases (Auto Triage skips starred cases)" in r
     assert "!SOCFWConfig command=triage window_hours=<n> apply=yes" in r
-    assert "dry_run=true" in r and "JOB - Auto Triage V3" in r
-    assert "command=triage (dry_run)" not in r  # an option that does not exist
+    assert '!SOCFWConfig command=job job="Auto Triage V3" value=off apply=yes' in r
+    assert "value=on" in r  # and back on after the POV
+    assert "dry_run" not in r  # neither "command=triage (dry_run)" nor a JOB dry run
     assert "docs/lab/2026-11-11-run-alongside-soc-framework.md" in r
 
 
