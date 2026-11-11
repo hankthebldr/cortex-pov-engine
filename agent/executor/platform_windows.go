@@ -66,9 +66,8 @@ func stderrChunkFilter(emit func(string)) (write func(string), flush func()) {
 // so a Ctrl-C delivered to an interactively-run beacon does not race our own
 // orderly teardown of an in-flight step.
 func newShellCmd(cmdStr string) *exec.Cmd {
-	args := append(append([]string{}, powerShellArgs...),
-		"-EncodedCommand", encodePowerShellCommand(powerShellExitWrapper(cmdStr)))
-	cmd := exec.Command(powerShellExePath(), args...)
+	argv := powerShellArgv(powerShellExePath(), cmdStr)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
 	return cmd
 }
@@ -77,9 +76,17 @@ func newShellCmd(cmdStr string) *exec.Cmd {
 // "powershell" are PowerShell, "cmd" is cmd.exe running the author's batch text
 // from a temp file (PUSH-18). The returned cleanup removes that file and must be
 // called after the command has exited.
+//
+// BEACON-18: a PowerShell step whose command line would not fit in
+// CreateProcess's 32,767 characters is refused here, with the sizes, instead
+// of failing inside Start() as "The filename or extension is too long". (A cmd
+// step runs from a file, so its text never touches the limit.)
 func newShellCmdFor(shell, cmdStr string) (*exec.Cmd, func(), error) {
 	switch shell {
 	case "", ShellPowerShell:
+		if err := checkPowerShellCommandLine(powerShellExePath(), cmdStr); err != nil {
+			return nil, func() {}, err
+		}
 		return newShellCmd(cmdStr), func() {}, nil
 	case ShellCmd:
 		file, cleanup, err := writeCmdScript(cmdStr)
@@ -143,6 +150,12 @@ func chainStepScript(marker, wrappedCmd string) string {
 func chainStepScriptFor(marker, stepID, shell, wrappedCmd string) (string, func(), error) {
 	switch shell {
 	case "", ShellPowerShell:
+		// BEACON-18: the anchor launches the step child with the same argv, so
+		// the same limit applies. Refused here the step is an execution error
+		// that names its cause; let through it was a child "not launched".
+		if err := checkPowerShellCommandLine(powerShellExePath(), wrappedCmd); err != nil {
+			return "", func() {}, err
+		}
 		return powerShellChainStepScriptFor(powerShellExePath(), marker, stepID, wrappedCmd), func() {}, nil
 	case ShellCmd:
 		file, cleanup, err := writeCmdScript(wrappedCmd)

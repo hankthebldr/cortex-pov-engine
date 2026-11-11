@@ -21,6 +21,7 @@ package executor
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf16"
@@ -120,9 +121,10 @@ func powerShellChainStepScript(marker, wrappedCmd string) string {
 // encoded, which sidesteps quoting entirely: a TTP command full of quotes,
 // backticks, `$` and newlines survives verbatim.
 func powerShellChainStepScriptFor(psExe, marker, stepID, wrappedCmd string) string {
-	enc := encodePowerShellCommand(powerShellExitWrapper(wrappedCmd))
-	launch := fmt.Sprintf("& %s %s -EncodedCommand %s",
-		psSingleQuote(psExe), strings.Join(powerShellArgs, " "), enc)
+	// The same argv the per-step path launches, and the one the command-line
+	// length guard measures (powerShellArgv).
+	argv := powerShellArgv(psExe, wrappedCmd)
+	launch := "& " + psSingleQuote(argv[0]) + " " + strings.Join(argv[1:], " ")
 	return powerShellChainLaunch(launch, marker, stepID)
 }
 
@@ -253,6 +255,56 @@ func powerShellExitWrapper(cmd string) string {
 	b.WriteString("if (-not $__cs_ok) { exit 1 }\n")
 	b.WriteString("exit 0\n")
 	return b.String()
+}
+
+// windowsMaxCommandLine is the largest command line CreateProcess accepts, in
+// UTF-16 code units INCLUDING the terminating NUL (lpCommandLine: "The maximum
+// length of this string is 32,767 characters, including the Unicode terminating
+// null character").
+const windowsMaxCommandLine = 32767
+
+// ErrCommandLineTooLong is returned (wrapped) when a Windows step is refused
+// because launching it would exceed windowsMaxCommandLine. Match with errors.Is.
+var ErrCommandLineTooLong = errors.New("COMMAND_LINE_TOO_LONG")
+
+// powerShellArgv is the argv a PowerShell step is launched with: the
+// interpreter, the shared flags, and the step inside the exit wrapper as an
+// -EncodedCommand payload. newShellCmd builds its process from it and the
+// length guard measures it, so the two cannot drift.
+func powerShellArgv(psExe, cmd string) []string {
+	argv := append([]string{psExe}, powerShellArgs...)
+	return append(argv, "-EncodedCommand", encodePowerShellCommand(powerShellExitWrapper(cmd)))
+}
+
+// windowsCommandLineLen is an upper bound, in UTF-16 code units, on the command
+// line Windows receives for argv: every argument is counted with a pair of
+// quotes and a separator. (Go's argv escaper and PowerShell's `&` both quote
+// only when they must; none of the arguments measured here contains a quote or
+// a backslash run that would be escaped longer.)
+func windowsCommandLineLen(argv []string) int {
+	n := 0
+	for _, a := range argv {
+		n += len(utf16.Encode([]rune(a))) + 3
+	}
+	return n
+}
+
+// checkPowerShellCommandLine refuses a PowerShell step whose command line would
+// not fit (BEACON-18). The -EncodedCommand payload is base64 of UTF-16LE, about
+// 2.67 characters per character of step text, so roughly 11,000 characters of
+// text is the ceiling. Past it CreateProcess fails with error 206 — reported on
+// the per-step path as a bare "filename or extension is too long" and on the
+// chained path as a child that could not be launched. Checked here, before any
+// process exists, the run record names the real cause and the sizes.
+func checkPowerShellCommandLine(psExe, cmd string) error {
+	n := windowsCommandLineLen(powerShellArgv(psExe, cmd))
+	if n < windowsMaxCommandLine {
+		return nil
+	}
+	return fmt.Errorf("%w: the step's text is %d characters; inside the exit wrapper and encoded for "+
+		"-EncodedCommand its command line would be %d characters, and Windows CreateProcess accepts %d. "+
+		"The step was NOT launched. Shorten it, or stage its payload as an artifact and have the step read the file",
+		ErrCommandLineTooLong, len([]rune(cmd)), n, windowsMaxCommandLine)
 }
 
 // earlierNativeFailureNote is the stderr line the wrapper writes when it fails

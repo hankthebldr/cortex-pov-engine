@@ -115,6 +115,46 @@ func TestExecuteTask_WindowsFailFastStopsAtFirstNonZero(t *testing.T) {
 	}
 }
 
+// BEACON-18: a step too long for a Windows command line is not launched, the
+// run fails as an execution error, and the run record names the cause — on both
+// execution paths. (Before the guard this was CreateProcess error 206 on one
+// path and "STEP CHILD NOT LAUNCHED" on the other.)
+func TestExecuteTask_WindowsStepTooLongForACommandLineNamesTheCause(t *testing.T) {
+	long := "#" + strings.Repeat("x", 20000) + "\nWrite-Output 'SHOULD_NEVER_RUN'"
+	for _, chained := range []bool{false, true} {
+		rs := newRecordingServer(t, nil)
+		task := &Task{TaskID: "t", RunID: "r", ScenarioID: "S", Steps: []Step{
+			{ID: "step-01", Command: long, Identity: "root"},
+			{ID: "step-02", Command: "Write-Output 'never'", Identity: "root"},
+		}}
+		if chained {
+			task.CgoAnchor = &CgoAnchor{ImageName: "w3wp.exe"}
+		}
+		c := New(rs.URL, "a-1", 0)
+		c.resolveIdentity = directResolver
+		c.executeTask(context.Background(), task)
+
+		named := false
+		for _, o := range rs.find("POST", "/output") {
+			if strings.Contains(o.Body, "SHOULD_NEVER_RUN") {
+				t.Errorf("chained=%v: the over-long step ran", chained)
+			}
+			if strings.Contains(o.Body, "COMMAND_LINE_TOO_LONG") && strings.Contains(o.Body, "NOT launched") {
+				named = true
+			}
+		}
+		if !named {
+			t.Errorf("chained=%v: no /output frame names COMMAND_LINE_TOO_LONG", chained)
+		}
+		b := decodeComplete(t, rs)
+		if b.ExitCode == nil || *b.ExitCode == 0 || !strings.Contains(b.Summary, "COMMAND_LINE_TOO_LONG") {
+			t.Errorf("chained=%v: complete = %+v, want a failed run whose summary names the cause", chained, b)
+		}
+		assertNotRun(t, b.Steps[1], "step-02", ReasonUpstreamFailed)
+		rs.Close()
+	}
+}
+
 // Abort mid-step via Start-Sleep, both execution paths: the step stops well
 // before the sleep would end and the run completes 130.
 func TestExecuteTask_WindowsAbortMidLongRunningStep(t *testing.T) {

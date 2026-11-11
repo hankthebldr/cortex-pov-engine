@@ -233,6 +233,62 @@ func TestChainSession_WindowsCmdStepKeepsItsExitCode(t *testing.T) {
 	}
 }
 
+// longPowerShellStep is n characters of valid PowerShell that prints `done`:
+// comment padding, then one statement.
+func longPowerShellStep(n int) string {
+	tail := "\nWrite-Output 'done'"
+	return "#" + strings.Repeat("x", n-len(tail)-1) + tail
+}
+
+// BEACON-18: a step too long for CreateProcess is refused BEFORE any process is
+// created, on both execution paths, with the cause named.
+func TestRunShell_WindowsRefusesAStepTooLongForCreateProcess(t *testing.T) {
+	long := longPowerShellStep(20000)
+
+	o, err := RunShellCtxStreamOutcome(context.Background(), "", long, nil)
+	if !errors.Is(err, ErrCommandLineTooLong) || o.ExitCode != -1 {
+		t.Fatalf("per-step: outcome=%+v err=%v, want ErrCommandLineTooLong / -1", o, err)
+	}
+
+	s, serr := NewChainSession(context.Background(), "")
+	if serr != nil {
+		t.Fatalf("NewChainSession: %v", serr)
+	}
+	defer s.Close()
+	_, _, rc, err := s.RunStepShell("step-01", "", long)
+	if !errors.Is(err, ErrCommandLineTooLong) || rc != -1 {
+		t.Fatalf("chained: rc=%d err=%v, want ErrCommandLineTooLong / -1", rc, err)
+	}
+	// The anchor was never handed the step, so it is still usable.
+	out, _, rc, err := s.RunStepShell("step-02", "", "Write-Output 'after'")
+	if err != nil || rc != 0 || strings.TrimSpace(stripANSI(out)) != "after" {
+		t.Fatalf("anchor after a refused step: out=%q rc=%d err=%v", out, rc, err)
+	}
+}
+
+// And the guard is not set absurdly low: a step of 10,000 characters — larger
+// than anything in the corpus — really runs, on both paths. (If Windows itself
+// rejects this line, the guard's arithmetic is wrong.)
+func TestRunShell_WindowsRunsAStepJustUnderTheLimit(t *testing.T) {
+	long := longPowerShellStep(10000)
+	if err := checkPowerShellCommandLine(powerShellExePath(), long); err != nil {
+		t.Fatalf("a 10,000-character step is refused by the guard: %v", err)
+	}
+	o, err := RunShellCtxStreamOutcome(context.Background(), "", long, nil)
+	if err != nil || o.ExitCode != 0 || !strings.Contains(o.Stdout, "done") {
+		t.Fatalf("per-step: outcome=%+v err=%v, want exit 0 and `done`", o, err)
+	}
+	s, serr := NewChainSession(context.Background(), "")
+	if serr != nil {
+		t.Fatalf("NewChainSession: %v", serr)
+	}
+	defer s.Close()
+	out, _, rc, err := s.RunStepShell("step-01", "", long)
+	if err != nil || rc != 0 || !strings.Contains(out, "done") {
+		t.Fatalf("chained: out=%q rc=%d err=%v, want 0 and `done`", out, rc, err)
+	}
+}
+
 // BEACON-12: the interpreter really is the %SystemRoot% image.
 func TestPowerShellExePath_IsTheSystemRootImage(t *testing.T) {
 	p := powerShellExePath()
