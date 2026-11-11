@@ -872,6 +872,14 @@ characters.
 
 ## Appendix B · Envelope examples
 
+> **Erratum (corrected during implementation).** The "stdio mode, SimCore down"
+> example below originally showed `tenant_verified: 0`. When SimCore did not
+> answer, readiness was never read, so a stated 0 was a claim nobody measured.
+> `Evidence.tenant_verified` is `null` when readiness could not be read, and the
+> statement ends `tenant-verified: not read`; `queries_issued` is likewise `null`
+> when the request reached SimCore and the count was not reported (not zero).
+> Source of truth: `core/mcp_server/envelope.py`.
+
 **A read that a tenant answered**
 
 ```json
@@ -912,7 +920,7 @@ characters.
  "detail": "GET http://127.0.0.1:8888/api/health: connection refused",
  "remediation": "start SimCore (./scripts/dev-up.sh) or set CORTEXSIM_URL; this is not a tenant error",
  "evidence": {"basis": "simcore", "queries_issued": 0, "http_round_trips": null, "tenant": null, "ledger": null,
-              "tenant_verified": 0, "statement": "No tenant answered this call. SimCore itself was unreachable. tenant-verified: 0",
+              "tenant_verified": null, "statement": "No tenant answered this call. SimCore itself was unreachable. tenant-verified: not read",
               "as_of": null, "truncated": false}}
 ```
 
