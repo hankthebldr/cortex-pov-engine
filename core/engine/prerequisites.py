@@ -7,6 +7,10 @@ and the registry (``dataset_requirements.load()``, ``None`` when absent).
 An unrecognised shape raises ``ValueError``: reading it as "no prerequisites"
 would keep the bug and green the test. Absent evidence is reported as a note,
 never as an empty answer. Nothing here claims a tenant verified anything.
+
+Note codes: NO_CARD_BINDING, CARD_NOT_FOUND, CARD_DECLARES_NO_QUERY (a cited card
+with no xql_queries: its prerequisites cannot be derived), DATASET_UNDECLARED,
+UNREGISTERED_DATASET, REGISTRY_ABSENT.
 """
 from __future__ import annotations
 
@@ -112,7 +116,13 @@ def derive(scenario: dict, cards: dict[str, dict],
         if card_id not in cards:
             notes.append(_note("CARD_NOT_FOUND", f"card {card_id} is cited but not in the catalog"))
             continue
-        for qname, ds in _card_queries(card_id, cards[card_id]):
+        queries = _card_queries(card_id, cards[card_id])
+        if not queries:
+            notes.append(_note("CARD_DECLARES_NO_QUERY",
+                               f"card {card_id} carries no query, so its prerequisites cannot be "
+                               f"derived (a card with only BIOC/IOC content still depends on a "
+                               f"data source)"))
+        for qname, ds in queries:
             if ds is None:
                 notes.append(_note("DATASET_UNDECLARED",
                                    f"card {card_id} query {qname} declares no dataset"))
@@ -127,9 +137,8 @@ def derive(scenario: dict, cards: dict[str, dict],
         if req is None:
             unregistered += 1
             rows.append({"dataset": ds, "registered": False, "cards": ds_cards})
-            if registry is not None:
-                notes.append(_note("UNREGISTERED_DATASET",
-                                   f"dataset {ds} (cards {', '.join(ds_cards)}) has no registry entry"))
+            notes.append(_note("UNREGISTERED_DATASET",
+                               f"dataset {ds} (cards {', '.join(ds_cards)}) has no registry entry"))
             continue
         row = _registered_row(req, ds_cards)
         rows.append(row)

@@ -59,6 +59,8 @@ def test_absent_registry_is_degraded():
     assert out["registry_loaded"] is False and out["datasets"][0]["registered"] is False
     assert out["datasets"][0] == {"dataset": "panw_ngfw_traffic_raw", "registered": False, "cards": ["A"]}
     assert "REGISTRY_ABSENT" in codes(out)
+    assert "UNREGISTERED_DATASET" in codes(out)
+    assert out["summary"]["unregistered"] == 1
 
 
 def test_never_claims_verification():
@@ -129,9 +131,18 @@ def test_blank_and_missing_ttp_refs_are_not_cards():
     assert out["cards"] == [] and codes(out) == ["NO_CARD_BINDING"]
 
 
-def test_card_without_queries_yields_no_datasets_and_no_note():
+def test_card_without_queries_is_flagged_not_silent():
     out = derive(scen("A"), {"A": {"detections": {}}}, REG)
-    assert out["datasets"] == [] and out["notes"] == []
+    assert out["datasets"] == []
+    assert codes(out) == ["CARD_DECLARES_NO_QUERY"]
+    assert "A" in out["notes"][0]["detail"]
+
+
+def test_one_no_query_note_naming_the_right_card():
+    out = derive(scen("A", "B"), {"A": card("panw_ngfw_traffic_raw"), "B": {"detections": {}}}, REG)
+    notes = [n for n in out["notes"] if n["code"] == "CARD_DECLARES_NO_QUERY"]
+    assert len(notes) == 1
+    assert "card B " in notes[0]["detail"] and "card A " not in notes[0]["detail"]
 
 
 def test_does_not_mutate_inputs():
