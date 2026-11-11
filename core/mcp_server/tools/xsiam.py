@@ -539,9 +539,10 @@ def _fields(shape: _Shape) -> str:
 
 
 def specs() -> list[ToolSpec]:
-    def s(id_, model, impl, klass, network, desc, *, scopes=(), idempotent=True):
+    def s(id_, model, impl, klass, network, desc, *, scopes=(), idempotent=True, backed=True):
         return ToolSpec(id=id_, input_model=model, impl=impl, klass=klass, network=network,
-                        scopes=tuple(scopes), description=desc, idempotent=idempotent)
+                        scopes=tuple(scopes), description=desc, idempotent=idempotent,
+                        backed=backed)
 
     def named(id_, key, scopes):
         shape = _SHAPES[key]
@@ -597,7 +598,7 @@ def specs() -> list[ToolSpec]:
           f"{_TENANT}"),
         *(s(tool, TenantIn, _not_backed(tool), "read", "none",
             f"Registered, not backed: always TOOL_NOT_BACKED ({_NOT_BACKED[tool][0]}), never an "
-            "empty list. Makes no call.") for tool in _NOT_BACKED),
+            "empty list. Makes no call.", backed=False) for tool in _NOT_BACKED),
     ]
 
 

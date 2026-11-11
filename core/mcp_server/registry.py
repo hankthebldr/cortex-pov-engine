@@ -60,6 +60,9 @@ class ToolSpec:
     scopes: tuple[str, ...]
     description: str
     idempotent: bool = True
+    #: False for a tool registered on purpose with no backing operation (it
+    #: always answers TOOL_NOT_BACKED); the P-2 manifest publishes it.
+    backed: bool = True
 
 
 class TenantCallError(McpToolError):

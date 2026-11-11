@@ -89,7 +89,28 @@ logger = logging.getLogger("cortexsim.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI lifespan context — runs startup logic before yielding."""
+    """FastAPI lifespan: SimCore's startup/shutdown, and inside it the MCP
+    session manager when ``/mcp`` is mounted (so MCP serves only once SimCore
+    is ready, and stops first)."""
+    async with _simcore_lifespan(app):
+        async with _mcp_lifespan(app):
+            yield
+
+
+def _mcp_lifespan(app: FastAPI):
+    # Flag off: nothing was mounted and the MCP SDK is never imported.
+    if getattr(app.state, "mcp", None) is None:
+        from contextlib import nullcontext  # noqa: PLC0415
+
+        return nullcontext()
+    from mcp_server.server import lifespan_for  # noqa: PLC0415
+
+    return lifespan_for(app)
+
+
+@asynccontextmanager
+async def _simcore_lifespan(app: FastAPI):
+    """SimCore startup logic before yielding, shutdown after."""
     logger.info("CortexSim starting up — env=%s port=%d", settings.CORTEXSIM_ENV, settings.CORTEXSIM_PORT)
 
     # 0. Validate master key before anything else.  Refuses to boot production
@@ -512,6 +533,25 @@ app.include_router(readiness_router, prefix="/api")
 app.include_router(assertions_router, prefix="/api")
 app.include_router(k8s_payloads_router, prefix="/api")
 app.include_router(shelf_router, prefix="/api")
+
+
+# ---------------------------------------------------------------------------
+# MCP streamable-HTTP at /mcp — OPT-IN (CORTEXSIM_MCP_HTTP, default off).
+# Added BEFORE the static catch-all below, which would otherwise answer /mcp.
+# Flag off: the MCP SDK is not imported and the route table is unchanged.
+# The SDK failing to import is logged and leaves /mcp unmounted, which is what
+# /api/health independently reports (mcp: degraded, MCP_SDK_IMPORT_FAILED);
+# any other failure to build the server is a defect and refuses the boot.
+# ---------------------------------------------------------------------------
+
+if settings.CORTEXSIM_MCP_HTTP:
+    try:
+        from mcp_server.server import mount as _mount_mcp  # noqa: E402
+    except ImportError as _mcp_exc:
+        logger.error("CORTEXSIM_MCP_HTTP is set but the MCP server did not import (%s: %s) — "
+                     "/mcp is NOT mounted", type(_mcp_exc).__name__, _mcp_exc)
+    else:
+        _mount_mcp(app, settings=settings)
 
 
 # ---------------------------------------------------------------------------
