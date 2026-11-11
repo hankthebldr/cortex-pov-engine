@@ -124,6 +124,9 @@ MEASURED = "MEASURED"
 # -> pending. The claim is unproven and still owed.
 PENDING_CODES = frozenset({
     "NO_TENANT_INTEGRATION",
+    # A tenant IS registered, for alert read-back only: XQL is a separate,
+    # explicit authorisation (spec §5.6, D-18). Still owed, never red.
+    "XQL_NOT_AUTHORISED",
     "TENANT_UNREACHABLE",
     "PROBE_AUTH_FAILED",
     "PROBE_QUOTA_EXHAUSTED",
@@ -152,6 +155,8 @@ FAIL_CODES = frozenset({
 REMEDIATION: dict[str, str] = {
     "NO_TENANT_INTEGRATION":
         "Register a read-only XSIAM tenant credential (POST /api/credentials/integrations, kind=xsiam_tenant) and re-run.",
+    "XQL_NOT_AUTHORISED":
+        "This tenant is registered for alert read-back only. XQL verification is a separate, explicit authorisation because it spends the customer's query quota — add 'xql' to the tenant's capabilities to enable it.",
     "TENANT_UNREACHABLE":
         "The tenant did not answer. Check network egress and the tenant base URL, then re-run — this says nothing about the platform.",
     "PROBE_AUTH_FAILED":
@@ -1601,6 +1606,7 @@ async def run_assertion(
     entitled_addons: Optional[list[str]] = None,
     dry_run: bool = False,
     scoreable: Optional[bool] = None,
+    refusal: Optional[str] = None,
 ) -> AssertionOutcome:
     """Evaluate one assertion and score it through the existing verifier.
 
@@ -1615,7 +1621,13 @@ async def run_assertion(
 
     ``scoreable`` overrides the index's own is_scoreable verdict for the bound
     test case; leave it None to resolve it from the registry.
+
+    ``refusal`` is a pending taxonomy code that says WHY there is no runner
+    when "no tenant" would be the wrong explanation (``XQL_NOT_AUTHORISED``:
+    the tenant is registered, but not for XQL). It must be a pending code.
     """
+    if refusal is not None and refusal not in PENDING_CODES:
+        raise ValueError(f"refusal {refusal!r} is not a pending taxonomy code")
     ctx = dict(context or {})
     ctx.setdefault("lookback_seconds", "3600")
 
@@ -1623,7 +1635,7 @@ async def run_assertion(
     if dry_run:
         forced = "DRY_RUN"
     elif runner is None:
-        forced = "NO_TENANT_INTEGRATION"
+        forced = refusal or "NO_TENANT_INTEGRATION"
     elif entitled_addons is not None:
         _base, required = entitlements(spec)
         missing = [a for a in required if a not in entitled_addons]

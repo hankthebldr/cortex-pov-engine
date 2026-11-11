@@ -87,9 +87,22 @@ logger = logging.getLogger("cortexsim.main")
 # Lifespan handler (startup + shutdown)
 # ---------------------------------------------------------------------------
 
+def _mcp_lifespan(app: FastAPI):
+    # Flag off: nothing was mounted and the MCP SDK is never imported.
+    if getattr(app.state, "mcp", None) is None:
+        from contextlib import nullcontext  # noqa: PLC0415
+
+        return nullcontext()
+    from mcp_server.server import lifespan_for  # noqa: PLC0415
+
+    return lifespan_for(app)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI lifespan context — runs startup logic before yielding."""
+    """FastAPI lifespan: SimCore startup before yielding, shutdown after. The
+    MCP session manager runs at the yield point when ``/mcp`` is mounted, so MCP
+    serves only once SimCore is ready and stops before SimCore shuts down."""
     logger.info("CortexSim starting up — env=%s port=%d", settings.CORTEXSIM_ENV, settings.CORTEXSIM_PORT)
 
     # 0. Validate master key before anything else.  Refuses to boot production
@@ -237,7 +250,8 @@ async def lifespan(app: FastAPI):
         )
 
     logger.info("CortexSim ready — listening on port %d", settings.CORTEXSIM_PORT)
-    yield
+    async with _mcp_lifespan(app):
+        yield
 
     logger.info("CortexSim shutting down")
     sweep_task.cancel()
@@ -326,7 +340,10 @@ async def xsiam_error_handler(request: Request, exc: XsiamError) -> JSONResponse
     logger.warning("XsiamError on %s %s: %s", request.method, request.url, exc.detail)
     return JSONResponse(
         status_code=exc.http_status,
-        content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail},
+        # upstream_status is additive: the tenant's HTTP status (e.g. 403 on the
+        # license-gated healthcheck), so a caller never reads it out of `detail`.
+        content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail,
+                 "upstream_status": exc.upstream_status},
     )
 
 
@@ -457,6 +474,7 @@ from api.storyline import router as storyline_router    # noqa: E402
 from api.causality import router as causality_router    # noqa: E402
 from api.pov import router as pov_router                # noqa: E402
 from api.uctc import router as uctc_router              # noqa: E402
+from api.readiness import router as readiness_router    # noqa: E402
 # Assertion substrate — the POS/PLT/AUT proof mechanism. The catalog loads
 # lazily on first access, so a deployment with no assertions/ directory boots
 # exactly as it did before.
@@ -504,9 +522,31 @@ app.include_router(storyline_router, prefix="/api")
 app.include_router(causality_router, prefix="/api")
 app.include_router(pov_router, prefix="/api")
 app.include_router(uctc_router, prefix="/api")
+app.include_router(readiness_router, prefix="/api")
 app.include_router(assertions_router, prefix="/api")
 app.include_router(k8s_payloads_router, prefix="/api")
 app.include_router(shelf_router, prefix="/api")
+
+
+# ---------------------------------------------------------------------------
+# MCP streamable-HTTP at /mcp — OPT-IN (CORTEXSIM_MCP_HTTP, default off).
+# Added BEFORE the static catch-all below, which would otherwise answer /mcp.
+# Flag off: the MCP SDK is not imported and the route table is unchanged.
+# The MCP server failing to import is logged and leaves /mcp unmounted; any
+# other failure to build the server is a defect and refuses the boot. Health
+# reads the mount itself (app.state.mcp, set only by mount()), never the flag:
+# an unimportable server is mcp: degraded MCP_SDK_IMPORT_FAILED, and a flag-on
+# app with nothing mounted is MCP_NOT_MOUNTED — never a green "mounted".
+# ---------------------------------------------------------------------------
+
+if settings.CORTEXSIM_MCP_HTTP:
+    try:
+        from mcp_server.server import mount as _mount_mcp  # noqa: E402
+    except ImportError as _mcp_exc:
+        logger.error("CORTEXSIM_MCP_HTTP is set but the MCP server did not import (%s: %s) — "
+                     "/mcp is NOT mounted", type(_mcp_exc).__name__, _mcp_exc)
+    else:
+        _mount_mcp(app, settings=settings)
 
 
 # ---------------------------------------------------------------------------

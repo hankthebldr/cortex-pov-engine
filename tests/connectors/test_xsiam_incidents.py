@@ -81,3 +81,12 @@ def test_api_paths_are_credential_config_not_class_constants():
     # and the default is still the v1 path
     d = conn.pull(_cfg(), since=T0, until=T1)
     assert d.detail["path"] == "/public_api/v1/alerts/get_alerts_multi_events"
+
+
+def test_transport_error_on_incidents_reports_the_page_it_died_on():
+    def fetcher(method, url, headers, body, timeout):
+        raise ConnectionError("reset by peer")
+
+    r = XsiamConnector(fetcher=fetcher).pull_incidents(_cfg(), since=T0, until=T1)
+    assert r.ok is False and r.code == "XSIAM_TRANSPORT_ERROR"
+    assert r.detail["page"] == 1

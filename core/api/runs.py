@@ -810,8 +810,17 @@ async def _detection_aggregates(db: AsyncSession) -> dict[str, tuple[int, int]]:
 
 
 @router.get("")
-async def list_runs(db: AsyncSession = Depends(get_db)):
-    """List all run records.
+async def list_runs(
+    status: Optional[str] = Query(None),
+    scenario_id: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+):
+    """List run records, newest first.
+
+    Filters are optional and additive. ``total`` counts every row matching the
+    filters before ``limit`` is applied; ``runs`` is cut to ``limit``. With no
+    parameters the response is the unfiltered list the console has always read.
 
     Each row carries ``expected_detections`` (seeded Result rows) and
     ``detected_count`` (hits by the one numerator rule) so the Runs list can
@@ -819,16 +828,25 @@ async def list_runs(db: AsyncSession = Depends(get_db)):
     rows reports ``0 / 0`` — the console renders that as a dash, never as a
     measured zero.
     """
-    stmt = select(Run).order_by(Run.started_at.desc())
+    stmt = select(Run)
+    if status is not None:
+        stmt = stmt.where(Run.status == status)
+    if scenario_id is not None:
+        stmt = stmt.where(Run.scenario_id == scenario_id)
+    total = (await db.execute(
+        select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    stmt = stmt.order_by(Run.started_at.desc())
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await db.execute(stmt)
     runs = result.scalars().all()
     agg = await _detection_aggregates(db)
-    logger.info("list_runs count=%d", len(runs))
+    logger.info("list_runs count=%d total=%d", len(runs), total)
     rows = []
     for r in runs:
         expected, detected = agg.get(r.run_id, (0, 0))
         rows.append({**r.to_dict(), "expected_detections": expected, "detected_count": detected})
-    return {"runs": rows, "total": len(runs)}
+    return {"runs": rows, "total": total}
 
 
 async def _step_outcomes_view(db: AsyncSession, run: Run) -> list[dict]:

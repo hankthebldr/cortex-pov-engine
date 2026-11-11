@@ -333,16 +333,15 @@ async def _preflight_tenant(db: AsyncSession, row: Any, datasets: Optional[str])
     """Build the tenant client and run the XQL/dataset/clock stages."""
     from connectors import preflight as pf
     from integrations.xsiam.exceptions import XsiamConfigError
+    from integrations.xsiam.guards import xql_capability_granted
     from integrations.xsiam.loader import load_xsiam_client
 
     names = [d.strip() for d in (datasets or "").split(",") if d.strip()]
     config = row.config or {}
-    caps = config.get("capabilities")
     # Absent capabilities == the legacy default, read-only. Never infer XQL from
     # the mere existence of a registration: that would silently grant a metered
     # authorisation to every credential already in the field.
-    xql_authorised = (not isinstance(caps, list)
-                      or "xql" in {str(c).lower() for c in caps})
+    xql_authorised = xql_capability_granted(config)
     host = str(config.get("base_url", "")).split("://")[-1] or None
 
     try:

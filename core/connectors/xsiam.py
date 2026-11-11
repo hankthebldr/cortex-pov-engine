@@ -176,7 +176,8 @@ class XsiamConnector(Connector):
             except Exception as e:  # noqa: BLE001 — offline-safe boundary
                 logger.warning("xsiam %s pull transport error: %s", kind, e)
                 return PullResult(ok=False, connector=self.kind,
-                                  code=codes.XSIAM_TRANSPORT_ERROR, error=str(e))
+                                  code=codes.XSIAM_TRANSPORT_ERROR, error=str(e),
+                                  detail={"page": pages + 1, "path": path})
 
             if status != 200:
                 # The tenant's response body is attacker-influenceable and

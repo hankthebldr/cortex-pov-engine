@@ -1214,6 +1214,37 @@ as such, no code raised).
 Cortex operation catalog) and the `/api/runs/*` storyline + causality routes.
 Both are covered by their own design docs.
 
+### 1.16 Readiness (`core/api/readiness.py`, prefix `/readiness`)
+
+| method | path | purpose | notable response |
+|---|---|---|---|
+| GET | `/api/readiness` | The connector ladder, stated server-side: the same four rungs (AUTHORED · CONFIGURED · REACHABLE · VERIFIED) and `tenant-verified: N` the console's Readiness page renders, for callers that are not the console | `{server_time, tenant_verified, tenant_verified_names[], integrations[], proves, outbound_calls, statement}` |
+
+**Zero outbound calls**, stated in the body as `outbound_calls: 0`: every field
+is read from the local DB, the vault's metadata or the in-process quota ledger.
+It never returns credential config. Per integration it carries `name`, `kind`,
+`capabilities` (`null` when the credential declares none), `xql_capability_granted`,
+`last_verified_ok` / `last_verified_at` / `last_verified_error`, a `ledger`
+snapshot (kind `xsiam_tenant` with a `base_url` only, otherwise `null`) and the
+four `rungs` booleans. `tenant_verified` is counted in Python by
+`core/connectors/provenance.py::tenant_verified` — runs and assertion runs whose
+verdict detail carries tenant provenance; `pending` and `not_applicable` do not
+count. **Authored is not proven:** today that count is 0 because nothing has run
+against a live tenant, and the `statement` field says so
+(`No tenant call is made by this route. tenant-verified: N`).
+
+**Changes to existing routes on the MCP branch** (all additive unless noted):
+
+| route | change |
+|---|---|
+| `GET /api/runs` | accepts `status` and `scenario_id` (equality filters) and `limit` (1..500, out of range is 422); `total` counts the filtered rows before `limit`; no parameters is unchanged |
+| `POST /api/xsiam/tenants/{name}/operations/{op_id}`, `POST …/xql`, `GET …/xql/{query_id}`, `GET …/metrics` | reply carries `queries_issued` and a `ledger` snapshot (`null` on a preview). The executor reports 1 for a live op (XQL or not) **except** the result polls `OP-XQL-GET-QUERY-RESULTS` / `-STREAM`, which report 0, and 0 for a preview; `POST …/xql` and `GET …/metrics` report 1; `GET …/xql/{query_id}` reports 0. Refusals come in a fixed order and the tenant is not called when any refuses, but the order differs by path: the executor's `OP-XQL-START-XQL-QUERY` — capability (403), request shape (`XQL_REQUEST_SHAPE_INVALID`, 400), write stage (`XQL_WRITE_STAGE_REFUSED`, 400), per-tenant budget (`XSIAM_QUOTA_ERROR`, 429); `POST …/xql` — a malformed body is a pydantic 422 before the handler runs (not `XQL_REQUEST_SHAPE_INVALID`), then capability, write stage, budget; `GET …/metrics` — capability, budget; the polls and `OP-XQL-GET-QUOTA` — capability only, never budgeted. `GET …/xql/{query_id}` gains `limit` (1..1000) |
+| same XQL-class routes | **behaviour change:** a credential whose `config.capabilities` does not list `"xql"` is refused with 403 `XSIAM_CAPABILITY_MISSING`. Preflight and the verify/reconcile runner now agree: an **absent** `capabilities` field means *not granted* (preflight used to authorise XQL when it was absent) |
+| `POST /api/runs/{run_id}/reconcile` | summary reports `queries_issued` in ledger units (pull pages, plus the incidents pages when the correlation fallback read them) |
+| `POST /api/assertions/{id}/run` | reports `queries_issued` (runner calls; 0 for a dry run or no tenant). `GET /api/assertions/runs/{run_id}` does **not** carry it — the persisted row has no such column |
+| global `XsiamError` body | gains an additive `upstream_status` (the tenant's HTTP status); `{error, code, detail}` is unchanged |
+| `GET /api/health` | gains an `mcp` component: `MCP_DISABLED` (ok, opt-in) when the flag is off; with `CORTEXSIM_MCP_HTTP=1` it reads the actual mounted server and reports `MCP_SDK_IMPORT_FAILED`, `MCP_NOT_MOUNTED` or `MCP_NO_TOOLS` (degraded) rather than inferring the mount from the flag |
+
 ---
 
 ## 2. Lifecycle state machines
@@ -1696,3 +1727,218 @@ Most of the lifecycle backlog **shipped** in the multi-wave revamp:
 > Pull mode is now **end-to-end working**: launch → enqueue → beacon polls + executes
 > per-step with agent-side identity resolution → per-step `/output` → `/complete`,
 > with operator abort via `/abort`+`/control` and live updates over SSE.
+
+---
+
+## 9. MCP server (`core/mcp_server/`)
+
+> **Authored is not proven. `tenant-verified: 0`.** The MCP layer is a
+> projection of routes SimCore already serves. No MCP tool has been run against
+> a live Cortex tenant, and no result it returns is tenant evidence until a run
+> or assertion verdict carries tenant provenance. Spec:
+> `docs/superpowers/specs/2026-11-02-cortexsim-mcp-server-design.md`.
+
+An agent reaches SimCore through a Model Context Protocol server instead of
+hand-built REST calls. The package is `core/mcp_server/` (not `core/mcp/`, which
+would shadow the `mcp` SDK under `PYTHONPATH=core`); the SDK is pinned
+`mcp==1.30.0`. There is one implementation of every tool and two transports; the
+only difference between them is the `httpx` transport handed to the client.
+
+The tool count is read from the registry, never typed: `cd core && PYTHONPATH=. python -m mcp_server --list-tools`
+prints one row per tool and ends with `41 tools` (25 `cortexsim.*`, 16 `xsiam.*`
+— 37 backed, 4 registered-but-unbacked). `make check-mcp-boot` runs that command
+inside the built image and fails below 41.
+
+### 9.1 Transports
+
+| | stdio | Streamable HTTP |
+|---|---|---|
+| who launches | the DC's client (`claude mcp add cortexsim -- …`) | SimCore, when `CORTEXSIM_MCP_HTTP=1` |
+| where it runs | the DC's host venv, or `docker exec -i <container> python -m mcp_server` | inside the SimCore process, mounted at `/mcp` |
+| reaches SimCore via | real HTTP to `CORTEXSIM_URL` (default `http://127.0.0.1:8888`) | `httpx.ASGITransport(app)` — in-process, zero sockets |
+| default | — | **off**. A port that answers JSON-RPC is a new surface; it is enabled per lab, not per image |
+| session mode | per process | `stateless_http=True` — SimCore restarts are routine mid-POV, and a stateful session manager would 404 every client after one |
+| DNS-rebinding guard | n/a | the SDK's transport-security allowlist, seeded with `localhost`, `127.0.0.1` and `CORTEXSIM_MCP_ALLOWED_HOSTS` (comma list, default empty) |
+
+Authentication posture is inherited, not widened: SimCore has no API
+authentication layer (`CORTEXSIM_SECRET` protects the vault at rest, not the
+routes), and the MCP surface sits inside that boundary. What the surface adds is
+the removal of the one thing an agent could newly do — writes to a tenant always
+preview (§9.5).
+
+Settings (all in `.env.example`): `CORTEXSIM_MCP_HTTP` (default off),
+`CORTEXSIM_MCP_ALLOWED_HOSTS`, `CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE`
+(default 30, a process-local token bucket over tenant-class tools) and
+`CORTEXSIM_URL`. Never pass a tenant URL or key to the server; it does not read
+them. Other CLI flags: `--server URL`, `--list-tools`, `--manifest` (the P-2
+manifest the consumer vendors) and `--max-tenant-calls-per-minute N` (overrides
+`CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE` for this process).
+
+### 9.2 Client install
+
+Streamable HTTP, when the mount is on (zero install on the laptop):
+
+```bash
+claude mcp add --transport http cortexsim http://localhost:8888/mcp
+```
+
+stdio, from the running container (no Python on the laptop needed; substitute
+the container name of the running image):
+
+```bash
+claude mcp add cortexsim -- docker exec -i cortex-pov-engine-simcore-v1.1.0 python -m mcp_server --server http://127.0.0.1:8888
+```
+
+stdio, from a host venv that has `core/requirements.txt` installed:
+
+```bash
+claude mcp add cortexsim -e CORTEXSIM_URL=http://127.0.0.1:8888 -e PYTHONPATH=<checkout>/core -- python -m mcp_server
+```
+
+`<checkout>` is the absolute path to your clone. `claude mcp add` sets no working
+directory, so without `PYTHONPATH` the server exits with `No module named mcp_server`;
+`python` must be the venv's interpreter (give its absolute path if the venv is not active).
+
+### 9.3 Tools
+
+Canonical id (dotted) is what the manifest, the docs and the tests use; the wire
+name is derived by `core/mcp_server/naming.py` (`.` → `_`, must match
+`^[a-z0-9_]{1,48}$`).
+
+| canonical id | wire name | group | class | network | backing |
+|---|---|---|---|---|---|
+| `cortexsim.health.get` | `cortexsim_health_get` | cortexsim | read | simcore | `GET /api/health` |
+| `cortexsim.readiness.get` | `cortexsim_readiness_get` | cortexsim | read | simcore | composed |
+| `cortexsim.scenario.list` | `cortexsim_scenario_list` | cortexsim | read | simcore | `GET /api/scenarios` |
+| `cortexsim.scenario.get` | `cortexsim_scenario_get` | cortexsim | read | simcore | `GET /api/scenarios/{id}` |
+| `cortexsim.pov.profiles` | `cortexsim_pov_profiles` | cortexsim | read | simcore | `GET /api/pov/profiles` |
+| `cortexsim.pov.scope` | `cortexsim_pov_scope` | cortexsim | read | simcore | `POST /api/pov/scope` |
+| `cortexsim.uctc.summary` | `cortexsim_uctc_summary` | cortexsim | read | simcore | `GET /api/uctc/summary` |
+| `cortexsim.uctc.use_case` | `cortexsim_uctc_use_case` | cortexsim | read | simcore | `GET /api/uctc/use-cases/{id}` |
+| `cortexsim.uctc.test_case` | `cortexsim_uctc_test_case` | cortexsim | read | simcore | `GET /api/uctc/test-cases/{id}` |
+| `cortexsim.uctc.coverage` | `cortexsim_uctc_coverage` | cortexsim | read | simcore | `GET /api/uctc/coverage` |
+| `cortexsim.uctc.gaps` | `cortexsim_uctc_gaps` | cortexsim | read | simcore | `GET /api/uctc/gaps` |
+| `cortexsim.uctc.by_scenario` | `cortexsim_uctc_by_scenario` | cortexsim | read | simcore | `GET /api/uctc/by-scenario/{id}` |
+| `cortexsim.run.launch` | `cortexsim_run_launch` | cortexsim | write | simcore → host | `POST /api/runs` |
+| `cortexsim.run.get` | `cortexsim_run_get` | cortexsim | read | simcore | `GET /api/runs/{id}` |
+| `cortexsim.run.list` | `cortexsim_run_list` | cortexsim | read | simcore | `GET /api/runs` |
+| `cortexsim.run.results` | `cortexsim_run_results` | cortexsim | read | simcore | `GET /api/results/{run_id}` |
+| `cortexsim.run.report` | `cortexsim_run_report` | cortexsim | read | simcore | `GET /api/runs/{id}/report` |
+| `cortexsim.run.pair` | `cortexsim_run_pair` | cortexsim | read | simcore | `GET /api/runs/{id}/pair` |
+| `cortexsim.run.abort` | `cortexsim_run_abort` | cortexsim | destructive | simcore → host | `POST /api/runs/{id}/abort` |
+| `cortexsim.run.reconcile` | `cortexsim_run_reconcile` | cortexsim | write | tenant (`xsiam`) | `POST /api/runs/{id}/reconcile` |
+| `cortexsim.run.verify` | `cortexsim_run_verify` | cortexsim | write | tenant (`xsiam_tenant`) | `POST /api/runs/{id}/verify` |
+| `cortexsim.connector.preflight` | `cortexsim_connector_preflight` | cortexsim | read | tenant | `POST /api/connectors/{kind}/preflight` |
+| `cortexsim.assertion.list` | `cortexsim_assertion_list` | cortexsim | read | simcore | `GET /api/assertions` |
+| `cortexsim.assertion.get` | `cortexsim_assertion_get` | cortexsim | read | simcore | `GET /api/assertions/{id}` |
+| `cortexsim.assertion.run` | `cortexsim_assertion_run` | cortexsim | write | tenant when live | `POST /api/assertions/{id}/run` (`dry_run` default true) |
+| `xsiam.operation.list` | `xsiam_operation_list` | xsiam | read | none | `GET /api/xsiam/operations` |
+| `xsiam.operation.get` | `xsiam_operation_get` | xsiam | read | none | `GET /api/xsiam/operations/{op_id}` |
+| `xsiam.operation.execute` | `xsiam_operation_execute` | xsiam | by op | tenant (read ops) | `POST /api/xsiam/tenants/{name}/operations/{op_id}` |
+| `xsiam.session.index` | `xsiam_session_index` | xsiam | read | none | credentials list + ledger + provenance |
+| `xsiam.dataset.list` | `xsiam_dataset_list` | xsiam | read | tenant | `OP-XQL-GET-DATASETS` |
+| `xsiam.dataset.schema` | `xsiam_dataset_schema` | xsiam | read | tenant | one XQL, derived |
+| `xsiam.alert.list` | `xsiam_alert_list` | xsiam | read | tenant | `OP-ALERTS-GET-ALERTS-MULTI-EVENTS` |
+| `xsiam.correlation_rule.list` | `xsiam_correlation_rule_list` | xsiam | read | tenant | `OP-CORRELATIONS-GET` |
+| `xsiam.xql.query` | `xsiam_xql_query` | xsiam | read | tenant | start + poll, ledger-charged |
+| `xsiam.incident.list` | `xsiam_incident_list` | xsiam | read | tenant | `OP-INCIDENTS-GET-INCIDENTS` |
+| `xsiam.playbook.list` | `xsiam_playbook_list` | xsiam | read | tenant | `OP-PLAYBOOKS-GET` |
+| `xsiam.healthcheck` | `xsiam_healthcheck` | xsiam | read | tenant | `OP-HEALTHCHECK` |
+| `xsiam.modeling_rule.list` | `xsiam_modeling_rule_list` | xsiam | — | none | `TOOL_NOT_BACKED` |
+| `xsiam.parser.list` | `xsiam_parser_list` | xsiam | — | none | `TOOL_NOT_BACKED` |
+| `xsiam.content.list` | `xsiam_content_list` | xsiam | — | none | `TOOL_NOT_BACKED` |
+| `xsiam.ingest.status` | `xsiam_ingest_status` | xsiam | — | none | `TOOL_NOT_BACKED` (v1) |
+
+Four tools are registered so a consumer that expects them gets an honest
+refusal (`TOOL_NOT_BACKED`) instead of a missing tool: the XSIAM public API
+exposes no listing for them, and nothing is queried.
+
+### 9.4 The result envelope
+
+Every tool returns `{data, evidence}` as `structuredContent`, and the same
+evidence as the first line of `content[0].text` for clients without
+structured-output support. The MCP layer computes none of the numbers: it reads
+them off SimCore responses (`queries_issued` from the routes in §1.16,
+`ledger` and `tenant_verified` from `GET /api/readiness`).
+
+| `evidence` field | meaning |
+|---|---|
+| `basis` | `authored` · `configured` · `reachable` · `verified` · `preview` · `simcore` · `derived`. The first four are the readiness ladder; `simcore` is SimCore's own state, `preview` a dry run, `derived` a tenant reply with the transformation stated in `data` |
+| `queries_issued` | metered tenant operations this call caused, in the ledger's unit (one live catalog read is 1, but `OP-XQL-GET-QUERY-RESULTS` run on its own is 0; one XQL query is 1 including its polls; one reconcile pull page is 1). It is a cost, not a contact signal. **`null` = SimCore accepted the request and did not report a count; whether the tenant was called is not known either — this is not zero** |
+| `tenant_answered` | `true` only when the tool got the tenant's reply back through SimCore (a live executor read, an XQL start or poll, the healthcheck's license-gated 403). Independent of `queries_issued`: a results poll answers at a cost of 0 and is `basis: reachable` |
+| `http_round_trips` | HTTP requests to the tenant when the route reports them; `null` otherwise, never a guess |
+| `tenant` | vault name; never the URL or key id |
+| `ledger` | `{key, used_today, budget, remaining, breaker_open, breaker_until}` or `null`; `null` for SimCore-only tools, not `{used: 0}` |
+| `tenant_verified` | counted by SimCore, today 0. **`null` = readiness could not be read — it is never rendered as 0** |
+| `statement` | one sentence in the console's words, below |
+| `as_of` | SimCore's clock, ISO-8601 UTC |
+| `truncated` | a capped list sets this flag; it is not an error |
+
+Statement strings (from `core/mcp_server/envelope.py::statement`, checked in this order; `N` is the count, or `not read` when `tenant_verified` is `null`):
+
+| condition | statement |
+|---|---|
+| SimCore unreachable | `No tenant answered this call. SimCore itself was unreachable. tenant-verified: N` |
+| not backed | `<id> has no backing operation in the XSIAM public API; nothing was queried. tenant-verified: N` |
+| preview | `Preview only. Nothing was sent to the tenant. To execute, a human runs the request in execute_as_human. tenant-verified: N` |
+| tenant answered (`tenant_answered`, or `queries_issued >= 1`) | `Tenant <name> answered; this call cost <n> metered operation(s). This is reachable evidence; a detection is verified only when a run verdict carries tenant provenance. tenant-verified: N` — `<n>` may be 0 (a results poll); with `tenant_answered` and a `null` count it reads `… answered; how many metered operations this call cost is not known — this is not zero. …` |
+| `queries_issued` is `null` | `SimCore accepted the request; whether the tenant was called and how many operations it issued is not known — this is not zero. tenant-verified: N` |
+| `queries_issued == 0` | `No tenant answered this call. This is <basis>, not tenant evidence. tenant-verified: N` |
+
+**A zero is degraded, not ok, and tolerance hides bugs.** A response without the
+fields a tool reads raises `SIMCORE_SHAPE_UNKNOWN`; it is never read as empty. A
+named list whose shape declares a total (alerts, incidents, correlations,
+playbooks) raises `XSIAM_PARSE_ERROR` when the tenant omits it or returns a
+non-integer; only datasets falls back to the row count.
+
+### 9.5 Writes always preview
+
+No tool executes a write or destructive operation against a tenant. A request
+with `dry_run: false` on such an operation returns `MCP_WRITE_NOT_EXECUTABLE`
+with the preview attached; the human runs the previewed request in the console.
+There is no write path to Cortex through this surface, and the two REST flags
+`CORTEXSIM_XSIAM_ALLOW_WRITE` / `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE` stay
+default-off. `xsiam.xql.query` refuses a write-stage query
+(`XQL_WRITE_STAGE_REFUSED`, refused rather than rewritten) and a credential
+without `"xql"` in `config.capabilities` (`XSIAM_CAPABILITY_MISSING`, 403).
+Every tenant-class tool is rate-limited per process
+(`CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE`). Only some of them charge the
+per-tenant daily ledger, one unit per query: an XQL start (`xsiam.xql.query`,
+`xsiam.dataset.schema`, the executor's `OP-XQL-START-XQL-QUERY`), `GET …/metrics`,
+and the verifier's runners behind `cortexsim.run.verify` and the live
+`cortexsim.assertion.run`. **Not charged:** result polls, `OP-XQL-GET-QUOTA`,
+every other catalog read (`OP-XQL-GET-DATASETS`, alerts, incidents,
+correlations, playbooks, healthcheck), reconcile pulls (`cortexsim.run.reconcile`)
+and preflight's scope and dataset XQL (`cortexsim.connector.preflight`).
+Preflight is the one remaining XQL path the ledger does not budget; those reads
+are bounded by the per-process rate limit only.
+
+### 9.6 Error codes
+
+The result carries `isError: true`, `content[0].text = "<code>: <error> — <detail>"`
+and `structuredContent = {error, code, detail, remediation, evidence}`. SimCore's
+own `{error, code, detail}` codes pass through untouched (for example
+`XSIAM_CAPABILITY_MISSING`, `XQL_WRITE_STAGE_REFUSED`, `XSIAM_PARSE_ERROR`,
+`XSIAM_QUOTA_ERROR`, documented where the routes are). The codes this layer
+adds (`core/mcp_server/errors.py` unless noted):
+
+| code | when |
+|---|---|
+| `MCP_WRITE_NOT_EXECUTABLE` | `dry_run: false` on a write or destructive op through MCP (preview attached) |
+| `TOOL_NOT_BACKED` | one of the four registered-but-unbacked tools |
+| `NO_TENANT_CONFIGURED` | no `xsiam_tenant` credential in the vault, or the named tenant is not one |
+| `TENANT_AMBIGUOUS` | more than one tenant is configured and none was named |
+| `MCP_RATE_LIMITED` | the per-process tenant-call bucket is exhausted (`retry_after_seconds`); SimCore-only tools keep working |
+| `SIMCORE_UNREACHABLE` | stdio mode, `CORTEXSIM_URL` did not answer — distinct from any tenant error, so "SimCore is down" never reads as "the tenant is down" |
+| `SIMCORE_SHAPE_UNKNOWN` | a SimCore response without the fields the tool reads |
+| `SIMCORE_TRANSPORT_ERROR` | the request reached SimCore but no complete answer came back |
+| `MCP_INVALID_ARGUMENTS` | arguments rejected against the tool's input schema |
+| `UCTC_INDEX_NOT_LOADED` | `core/mcp_server/tools/cortexsim.py`: a UC/TC tool called on a snapshot-less deploy, rendered as degraded rather than "0 test cases" |
+| `MCP_INTERNAL_ERROR` | `core/mcp_server/registry.py`: any unexpected exception, so the SDK's generic wrapper never drops the code |
+
+### 9.7 Health
+
+`GET /api/health` carries an `mcp` component (§1.16): `MCP_DISABLED` while the
+opt-in is off, and with the flag on the actual mounted server is read — never
+inferred from the flag. `cortexsim.health.get` and `cortexsim.readiness.get`
+expose both over MCP.

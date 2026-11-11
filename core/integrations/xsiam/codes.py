@@ -29,6 +29,9 @@ XSIAM_QUERY_ERROR = "XSIAM_QUERY_ERROR"
 XSIAM_CONFIG_ERROR = "XSIAM_CONFIG_ERROR"
 XSIAM_TRANSPORT_ERROR = "XSIAM_TRANSPORT_ERROR"
 XSIAM_PARSE_ERROR = "XSIAM_PARSE_ERROR"
+XSIAM_CAPABILITY_MISSING = "XSIAM_CAPABILITY_MISSING"
+XQL_WRITE_STAGE_REFUSED = "XQL_WRITE_STAGE_REFUSED"
+XQL_REQUEST_SHAPE_INVALID = "XQL_REQUEST_SHAPE_INVALID"
 
 ALL_CODES = (
     XSIAM_AUTH_ERROR,
@@ -38,6 +41,9 @@ ALL_CODES = (
     XSIAM_CONFIG_ERROR,
     XSIAM_TRANSPORT_ERROR,
     XSIAM_PARSE_ERROR,
+    XSIAM_CAPABILITY_MISSING,
+    XQL_WRITE_STAGE_REFUSED,
+    XQL_REQUEST_SHAPE_INVALID,
 )
 
 #: What the DC should DO, and — critically — what the failure means for the
@@ -79,6 +85,17 @@ REMEDIATION: dict[str, str] = {
         "The tenant replied in a shape CortexSim does not recognise. This is a "
         "CortexSim/tenant-version mismatch, NOT an empty tenant — verdicts stay "
         "`pending` rather than being scored against zero rows."
+    ),
+    XSIAM_CAPABILITY_MISSING: (
+        "add \"xql\" to this credential's config.capabilities via PUT "
+        "/api/credentials/integrations; configuring reconcile does not authorise XQL"
+    ),
+    XQL_WRITE_STAGE_REFUSED: (
+        "remove the `target type = dataset|lookup` stage; XQL through CortexSim "
+        "is read-only"
+    ),
+    XQL_REQUEST_SHAPE_INVALID: (
+        "send body.request_data as an object with a non-empty string `query`"
     ),
 }
 

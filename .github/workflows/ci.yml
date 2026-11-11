@@ -136,6 +136,14 @@ jobs:
       - name: UI image-parity gate (image serves the console this tree builds)
         run: IMAGE=cortexsim:ci scripts/check-ui-shelf.sh
 
+      # The MCP server ships in the image (Gate B parity): the built image must
+      # import core/mcp_server/ and the pinned SDK and register every tool. The
+      # host suite cannot see this; it runs from the checkout. Fails closed — a
+      # --list-tools error leaves the count empty and `test` exits non-zero.
+      - name: MCP boot gate (image registers every MCP tool)
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        run: make check-mcp-boot IMAGE=cortexsim:ci
+
   # ---------------------------------------------------------------------------
   # agent — Go beacon: build + vet + race-tested.
   # ---------------------------------------------------------------------------

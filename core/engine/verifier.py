@@ -24,7 +24,6 @@ nothing — strictly worse than reporting no score at all. Those resolve to
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -567,55 +566,12 @@ def xsiam_rows_runner(client: Any, timeframe: dict[str, Any]) -> ScalarRunner:
     return _run
 
 
-def tenant_ledger_key(base_url: str) -> str:
-    """THE ledger key for a tenant, derived from its base URL.
+from integrations.xsiam.ledger import tenant_ledger_key  # noqa: E402,F401 — re-export
 
-    Public because more than one surface needs it and they MUST agree. The
-    health component used to snapshot the ledger by INTEGRATION NAME while this
-    module charged and tripped it by tenant HOST, so the two looked at different
-    rows: a breaker could be open, every verify degrading to pending, and
-    ``/api/health`` would report ``breaker_open: false`` with a full quota. A
-    diagnostic surface that cannot see the thing it exists to report is worse
-    than not having it.
-    """
-    return str(base_url or "").split("://")[-1].split("/")[0] or "default"
-
-
-def _tenant_name(client: Any) -> str:
-    """A stable ledger key for a client — its tenant host.
-
-    Derived rather than passed so EVERY caller is accounted whether or not it
-    remembered to name the tenant. An unattributed query is an unbudgeted query.
-    """
-    return tenant_ledger_key(str(getattr(client, "_base", "") or ""))
-
-
-@contextlib.asynccontextmanager
-async def _tenant_budget(client: Any):
-    """Charge the process-wide tenant ledger around one XQL call.
-
-    Deliberately HERE rather than only in ``connectors.service._budgeted``:
-    ``_budgeted`` wraps the sweep and the manual verify endpoint, but assertion
-    runs (``/api/assertions/{id}/run``) build a runner directly and would
-    otherwise be entirely unbudgeted — a third path onto the same metered
-    resource with no ceiling and no breaker.
-
-    Both exits resolve ``pending`` upstream: ``verify_results`` and the
-    assertion probes catch any runner exception and never score a budget
-    CortexSim spent as a detection the customer missed.
-    """
-    from integrations.xsiam.exceptions import XsiamQuotaError  # noqa: PLC0415
-    from integrations.xsiam.ledger import ledger  # noqa: PLC0415
-
-    from connectors import tuning  # noqa: PLC0415
-
-    tenant = _tenant_name(client)
-    ledger.charge(tenant, limit=tuning.xsiam_max_queries_per_day())
-    try:
-        yield
-    except XsiamQuotaError:
-        ledger.trip(tenant, cooldown_seconds=tuning.xsiam_breaker_cooldown())
-        raise
+from integrations.xsiam.guards import (  # noqa: E402
+    ledger_key_for as _tenant_name,
+    tenant_budget as _tenant_budget,
+)
 
 
 # ---------------------------------------------------------------------------

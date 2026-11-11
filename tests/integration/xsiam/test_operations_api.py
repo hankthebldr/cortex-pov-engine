@@ -30,6 +30,9 @@ async def _ret(value):
 class _StubClient:
     """Records request() calls so tests can assert a live call did/didn't happen."""
 
+    capabilities = ["xql"]
+    _base = "https://api-stub.xdr.us.paloaltonetworks.com"
+
     def __init__(self):
         self.calls = []
 
@@ -74,7 +77,8 @@ def _build_app(tmp_path, monkeypatch):
     async def _h(request: Request, exc: XsiamError):
         return JSONResponse(status_code=exc.http_status,
                             content={"error": "XSIAM integration error",
-                                     "code": exc.code, "detail": exc.detail})
+                                     "code": exc.code, "detail": exc.detail,
+                                     "upstream_status": exc.upstream_status})
     return TestClient(app), stub, xsiam_api
 
 

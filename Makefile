@@ -25,7 +25,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
 
 .PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-backend-non-utc test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
-        coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
+        coverage-strict check-agent-shelf check-ui-shelf check-mcp-boot rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth \
         wiki wiki-check ci clean launch-preflight
 
@@ -175,7 +175,7 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth gates
+validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-mcp-boot check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + mcp-boot + ground-truth gates
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -223,6 +223,14 @@ check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target (needs `
 # in scripts/check-ui-shelf.sh.
 check-ui-shelf: ## assert the BUILT IMAGE serves the console this tree builds (needs `make build`)
 	IMAGE=$(IMAGE) scripts/check-ui-shelf.sh
+
+# Same argument for the MCP server: assert the IMAGE, never the checkout. The
+# host suite proves `python -m mcp_server --list-tools` works from core/ on a
+# dev box; only this proves the image ships core/mcp_server/ AND the pinned SDK
+# it imports. It fails closed: if --list-tools errors, n is empty and `test`
+# exits non-zero (measured against the pre-MCP 1.1.0 image).
+check-mcp-boot: ## assert the BUILT IMAGE boots the MCP server with every tool (needs `make build`)
+	docker run --rm --entrypoint sh $(IMAGE) -c 'cd /app/core && n=$$(python -m mcp_server --list-tools | tail -1 | cut -d" " -f1); test "$$n" -ge 41 && echo "mcp boot OK: $$n tools"'
 
 check-rust-recipe: ## ~50ms: assert the Rust build recipes still match the submodule trees
 	scripts/build-rust-dist.sh --check-recipe

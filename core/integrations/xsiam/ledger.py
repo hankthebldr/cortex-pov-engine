@@ -33,6 +33,17 @@ from typing import Optional
 logger = logging.getLogger("cortexsim.xsiam.ledger")
 
 
+def tenant_ledger_key(base_url: str) -> str:
+    """THE ledger key for a tenant, derived from its base URL.
+
+    Public because more than one surface needs it and they MUST agree. The
+    health component used to snapshot the ledger by INTEGRATION NAME while the
+    budget charged and tripped it by tenant HOST, so a breaker could be open
+    while ``/api/health`` reported ``breaker_open: false`` with a full quota.
+    """
+    return str(base_url or "").split("://")[-1].split("/")[0] or "default"
+
+
 class QuotaBreakerOpen(RuntimeError):
     """The breaker is open for this tenant; no path may query until it closes.
 

@@ -219,6 +219,7 @@ async def reconcile_run(
         select(Scenario).where(Scenario.scenario_id == run.scenario_id))).scalar_one_or_none()
     family = kpi_family(getattr(scenario, "primary_kpi", None),
                         getattr(scenario, "threshold", None))
+    incidents_queries = 0
     if (family == CORRELATION and host_scope["host"] is not None
             and not any(ctx["alert_incidents"].values())
             and hasattr(conn, "pull_incidents")):
@@ -226,6 +227,7 @@ async def reconcile_run(
         # incident list for the same window, scoped to the run's host. Only
         # for correlation-shaped scenarios — accuracy never needs it.
         ipull = conn.pull_incidents(cfg, since=since, until=until)
+        incidents_queries = _pages_issued(ipull.detail)
         if ipull.ok:
             want = host_scope["host"]
             ctx["incidents"] = [i for i in ipull.incidents
@@ -240,6 +242,9 @@ async def reconcile_run(
                                           pull_context=ctx, observations=eligible,
                                           window_seconds=window_seconds)
     summary["pulled"] = len(pull.observations)
+    # Ledger units: every tenant page read is one query; the incidents read
+    # counts its own pages when it was attempted (ok or not).
+    summary["queries_issued"] = _pages_issued(pull.detail) + incidents_queries
     summary["host_scope"] = host_scope
     if "incidents" in ctx:
         summary["incidents_considered"] = len(ctx["incidents"])
@@ -274,6 +279,16 @@ async def reconcile_run(
         summary["warnings"] = warnings
         summary["warning"] = " ".join(warnings)
     return ReconcileOutcome(summary=summary, newly_matched=newly)
+
+
+def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
+    """Ledger units a harvest spent: ``pages`` on success, the ``page`` a failed read died on."""
+    d = detail or {}
+    # ``is not None``, not ``or``: a reported 0 is a real count, not a missing one.
+    for key in ("pages", "page"):
+        if d.get(key) is not None:
+            return int(d[key])
+    return 1
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
@@ -954,6 +969,7 @@ async def resolve_tenant_runner(
     """
     from engine.verifier import xsiam_query_runner  # noqa: PLC0415
     from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
+    from integrations.xsiam.guards import xql_capability_granted  # noqa: PLC0415
     from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client  # noqa: PLC0415
     from security.crypto import CryptoError  # noqa: PLC0415
 
@@ -972,8 +988,7 @@ async def resolve_tenant_runner(
     # SEPARATE authorisation because it spends a metered resource the customer's
     # own analysts share. An absent list means the legacy default — read only —
     # so migrating an existing record can never silently grant XQL.
-    caps = (integ.config or {}).get("capabilities")
-    if isinstance(caps, list) and "xql" not in {str(c).lower() for c in caps}:
+    if not xql_capability_granted(integ.config or {}):
         return TenantRunner(tenant=integ.name, reason="xql_not_authorised",
                             remediation=TENANT_REMEDIATION["xql_not_authorised"])
 

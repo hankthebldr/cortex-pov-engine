@@ -316,6 +316,7 @@ into real scored passes with **zero** additional engine work.
 |---|---|---|---|
 | dry run | `DRY_RUN` | pending | **pending** |
 | no tenant integration registered | `NO_TENANT_INTEGRATION` | pending | **pending** |
+| tenant registered, `capabilities` lacks `"xql"` (D-18) | `XQL_NOT_AUTHORISED` | pending | **pending** — run `reason: xql_not_authorised`, `queries_issued: 0`, no client built |
 | tenant unreachable | `TENANT_UNREACHABLE` | pending | **pending** |
 | 401 from the tenant | `PROBE_AUTH_FAILED` | pending | **pending** |
 | 429 / XQL quota | `PROBE_QUOTA_EXHAUSTED` | pending | **pending** |
