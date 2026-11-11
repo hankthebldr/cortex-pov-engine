@@ -30,11 +30,13 @@ export default function ScenarioPreflightCard({
   identity = '',
   pushFormat = 'bash',
   doorReadiness = null,
+  doorRows = null,
+  doorAgentId = null,
   onNavigate = null,
 }) {
   const pf = useMemo(() => preflightScenario({
-    scenario, target, agents, shelf, adapterIndex, integrations, identity, pushFormat, doorReadiness,
-  }), [scenario, target, agents, shelf, adapterIndex, integrations, identity, pushFormat, doorReadiness])
+    scenario, target, agents, shelf, adapterIndex, integrations, identity, pushFormat, doorReadiness, doorRows, doorAgentId,
+  }), [scenario, target, agents, shelf, adapterIndex, integrations, identity, pushFormat, doorReadiness, doorRows, doorAgentId])
 
   if (!scenario) return null
 

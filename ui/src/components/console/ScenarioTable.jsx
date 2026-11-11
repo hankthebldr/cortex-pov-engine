@@ -35,6 +35,8 @@ export default function ScenarioTable({
   recentLaunchId = null,
   targetAgentName = '',
   doorReadiness = null,
+  doorRows = null,
+  doorAgentId = null,
   doorError = null,
 }) {
   if (scenarios.length === 0) {
@@ -181,6 +183,8 @@ export default function ScenarioTable({
                   <DoorChip
                     scenarioId={id}
                     readiness={doorReadiness ? doorReadiness[id] : undefined}
+                    doorRows={doorRows}
+                    agentId={doorAgentId}
                     error={doorError}
                   />
                 </td>

@@ -6,7 +6,7 @@ import FilterPalette from './FilterPalette.jsx'
 import useLaunchScenario from './useLaunchScenario.js'
 import useScenarioFilter from './useScenarioFilter.js'
 import useScenarioRunHistory from './useScenarioRunHistory.js'
-import { getScenarios, getScenario, getDoorReadiness } from '../../api/client.js'
+import { getScenarios, getScenario, getDoorReadiness, getDoors } from '../../api/client.js'
 import { agentIdOf } from '../../api/ids.js'
 import { useEnvironment } from '../../context/EnvironmentContext.jsx'
 
@@ -94,13 +94,15 @@ export default function OperationsView({
   // failure leaves the map null and the error visible in each chip's tooltip:
   // an unreachable endpoint must not read as "nothing to check".
   const doorAgentId = agentIdOf(env.agent)
-  const [doorState, setDoorState] = useState({ map: null, error: null })
+  const [doorState, setDoorState] = useState({ map: null, rows: null, error: null })
   useEffect(() => {
     let cancelled = false
-    getDoorReadiness(doorAgentId)
-      .then((data) => { if (!cancelled) setDoorState({ map: data.scenarios, error: null }) })
+    Promise.all([getDoorReadiness(doorAgentId), getDoors()])
+      .then(([ready, doors]) => {
+        if (!cancelled) setDoorState({ map: ready.scenarios, rows: doors.doors, error: null })
+      })
       .catch((err) => {
-        if (!cancelled) setDoorState({ map: null, error: err.message || 'door readiness failed' })
+        if (!cancelled) setDoorState({ map: null, rows: null, error: err.message || 'door readiness failed' })
       })
     return () => { cancelled = true }
   }, [doorAgentId, reloadKey])
@@ -390,6 +392,8 @@ export default function OperationsView({
           onTogglePin={togglePin}
           historyByScenario={historyByScenario}
           doorReadiness={doorState.map}
+          doorRows={doorState.rows}
+          doorAgentId={doorAgentId}
           doorError={doorState.error}
         />
       )}

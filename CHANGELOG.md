@@ -21,6 +21,9 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 - Nothing is excluded from scoring yet, and no door can read `open` until phase
   2 writes door events, so a fresh SimCore reads `NEEDS DOORS` or `NOT CHECKED`
   throughout. `tenant-verified` is still 0.
+- Until door checks land in phase 2, the Data path check reads "doors not checked yet"
+  and the chip reads `NOT CHECKED`: a door nobody has checked is unknown, not closed.
+  Only a door with a recorded `closed` state produces a "will not be scored" warning.
 
 ### Added — two Linux persistence chains built to group into one case
 

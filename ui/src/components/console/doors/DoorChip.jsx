@@ -16,8 +16,8 @@ const TONE_CLASS = {
  * `error` is the fetch failure, shown in the tooltip so a dead endpoint is not
  * indistinguishable from "nothing reported".
  */
-export default function DoorChip({ scenarioId, readiness, error = null }) {
-  const chip = chipFor(readiness)
+export default function DoorChip({ scenarioId, readiness, doorRows = null, agentId = null, error = null }) {
+  const chip = chipFor(readiness, doorRows, agentId)
   const title = error && (readiness === undefined || readiness === null)
     ? `door readiness unavailable: ${error}`
     : chip.title

@@ -17,14 +17,40 @@ describe('chipFor', () => {
     expect(chipFor(r({ state: 'partial', scorable: 3, total: 5 })).label).toBe('PARTIAL 3/5')
   })
 
+  const rows = [
+    { key: 'xdr_agent', door_id: 'xdr_agent', state: 'closed', rung: 'verified' },
+    { key: 'ngfw_traffic', door_id: 'ngfw_traffic', state: 'unknown', rung: 'configured' },
+    { key: 'cloud_audit', door_id: 'cloud_audit', state: 'unknown', rung: 'authored' },
+  ]
+  const closedSet = [{ door_id: 'xdr_agent', detections: 3 }, { door_id: 'ngfw_traffic', detections: 1 }]
+
   it('chip_needs_doors_names_closed', () => {
-    const c = chipFor(r({ closed: [{ door_id: 'xdr_agent', detections: 3 }, { door_id: 'ngfw', detections: 1 }] }))
+    const c = chipFor(r({ closed: closedSet }), rows)
     expect(c.label).toBe('NEEDS DOORS')
-    expect(c.title).toContain('xdr_agent')
-    expect(c.title).toContain('ngfw')
+    expect(c.title).toContain('xdr_agent: closed')
+    expect(c.title).toContain('ngfw_traffic: configured')
   })
 
   it('chip_not_checked_when_all_unknown', () => {
+    const c = chipFor(r({ closed: [{ door_id: 'ngfw_traffic', detections: 2 }, { door_id: 'cloud_audit', detections: 1 }] }), rows)
+    expect(c.label).toBe('NOT CHECKED')
+    expect(c.title).toContain('ngfw_traffic: configured')
+    expect(c.title).toContain('cloud_audit: authored')
+    expect(c.title).not.toMatch(/closed/)
+  })
+
+  it('chip_not_checked_when_no_door_rows_were_fetched', () => {
+    expect(chipFor(r({ closed: closedSet }), null).label).toBe('NOT CHECKED')
+  })
+
+  it('chip_agent_scoped_key_is_door_id_colon_agent_id', () => {
+    const scoped = [{ key: 'xdr_agent:a1', door_id: 'xdr_agent', state: 'closed', rung: 'verified' }]
+    const c = r({ closed: [{ door_id: 'xdr_agent', detections: 2 }] })
+    expect(chipFor(c, scoped, 'a1').label).toBe('NEEDS DOORS')
+    expect(chipFor(c, scoped, 'other').label).toBe('NOT CHECKED')
+  })
+
+  it('chip_not_checked_when_not_evaluated', () => {
     expect(chipFor(r({ state: 'not_evaluated', scorable: 0 })).label).toBe('NOT CHECKED')
   })
 
