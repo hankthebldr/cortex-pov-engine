@@ -26,22 +26,29 @@ step-detections (was 1377: the Windows content now declares only detections a
 lab run can fire; round 2 changed none) · 137 route decorators · 28 assertion
 artifacts.
 
-> **What has run on Windows: one CI job, once.** The `windows` job ran green
-> in run 42933820773 at `d7f4f29` (2026-11-10). That is a GitHub-hosted
-> `windows-2022` runner with Windows PowerShell 5.1 Desktop, an elevated admin,
-> code page 1252 and Defender real-time protection off. It ran the beacon's
-> native `go test`, a 5.1 parse and a PSScriptAnalyzer pass over every
-> PowerShell file the repo ships, and SimCore on the runner. It then ran the
-> console's install one-liner (the service was still Running 75 s later), a
-> pull run, an abort, a `.ps1` push run and the uninstaller, all against CI
-> probe scenarios. The two runs before it were red and found the CLIXML defect
-> fixed below. **It does not cover:** any shipped scenario (none of the 13
-> Windows bundles has executed on any OS), reboot survival, the non-elevated
-> install, a host with a Cortex XDR agent or AV in prevent mode, an https
-> SimCore, Server Core, other code pages, AppLocker/WDAC/Constrained Language
-> Mode, or any change made after `d7f4f29`. Items below marked *not yet run on
-> Windows* are such changes: they are compiled for Windows and parsed or run
-> under pwsh 7 only. The job is not a required check (decision DOCS-12).
+> **What has run on Windows: one CI job, on a hosted runner.** The `windows`
+> job ran green at `d7f4f29` (run 42933820773, 2026-11-10) and on the round-2
+> code at `fb0f646` and `e434efa` (run 43037077022, 2026-11-11, all nine CI
+> jobs green). That is a GitHub-hosted `windows-2022` runner with Windows
+> PowerShell 5.1 Desktop, an elevated admin, code page 1252 and Defender
+> real-time protection off. At `e434efa` it ran the beacon's native `go test`
+> (409 passed, every one of the 43 Windows-only test functions among them), a
+> 5.1 parse and a PSScriptAnalyzer pass over every PowerShell file the repo
+> ships, and SimCore on the runner. It then ran the console's install
+> one-liner (the service was still Running 75 s later), a pull run whose
+> frames named `NT AUTHORITY\SYSTEM`, an abort whose row read
+> `termination=aborted rc=130`, a `.ps1` push run with the IDENTITY table and
+> the uninstaller, all against CI probe scenarios. The two runs before the
+> first green were red and found the CLIXML defect fixed below; the run at
+> `fb0f646` was red on `backend` only and found the Compose `host_ip` defect.
+> **It does not cover:** any shipped scenario (none of the 13 Windows bundles
+> has executed on any OS), reboot survival, the non-elevated install, a host
+> with a Cortex XDR agent or AV in prevent mode, an https SimCore, Server Core,
+> other code pages, AppLocker/WDAC/Constrained Language Mode, or any change
+> after `e434efa`. Items below marked *not yet run on Windows* were written
+> after `d7f4f29`; their native tests passed at `e434efa`, but no end-to-end
+> Windows run has reached them. The job is not a required check (decision
+> DOCS-12).
 > **`tenant-verified` is still 0.**
 
 ### Upgrading from 1.1.0 (read before you re-run `dev-up.sh` on a jumpbox)
@@ -294,7 +301,8 @@ artifacts.
   5 of the 13 bundles read DEGRADED: `SIM-EDR-005` 5, `SIM-MP-001` 4,
   `SIM-MP-020` 6, `SIM-EDR-013` 1, `SIM-EDR-017` 3. A detection keyed on the
   declared account will not match those steps. Exit codes are unchanged.
-  *Not yet run on Windows.*
+  *Ran in the `windows` job's push phase at `e434efa` with a probe bundle
+  (`degraded=0 ran=4`); no shipped bundle with a DEGRADED step has run.*
 - **A cmd step whose `%` reads two ways is refused (PUSH-11, round 2).** The
   bundle runs single-line cmd text on the command line, the beacon always from
   a `.cmd` file, and cmd reads a FOR variable, `%%` and a lone `%` differently
@@ -467,7 +475,9 @@ artifacts.
   so write `exit $LASTEXITCODE`; an earlier failed native fails the step unless
   you reset `$global:LASTEXITCODE`. Every step frame now ends with a newline,
   so each `=== STEP` header starts a line; 4 of 5 frames used to be glued to
-  the line before. *The Windows rows are not yet run on Windows.*
+  the line before. *Run 43037077022 at `e434efa` ran these on Windows: every
+  frame named `NT AUTHORITY\SYSTEM (elevated token)` and none was glued; the
+  bare-exit, earlier-native and length-guard rows passed as native tests.*
 - **Privileged identities on Windows need an elevated token (CONT-14/07).**
   `root`, `container-runtime` and `administrator` on a non-elevated token used to
   be recorded as honoured. They are now recorded as `!! IDENTITY NOT HONOURED: …
@@ -507,8 +517,8 @@ artifacts.
   check-in), not a measured range. `?os=windows&uninstall=1` now returns a PowerShell
   uninstaller; it used to return the bash one. Both uninstallers now also
   remove the beacon's cache and staging roots, which hold staged dual-use
-  tools. *Both ran once in the green `windows` job, elevated (install exit 0,
-  uninstall "removed 2 of 2 item(s)"). The non-elevated and per-user paths have
+  tools. *Both ran in each green `windows` job, elevated (install exit 0,
+  uninstall "removed 2 of 2 item(s)"), most recently at `e434efa`. The non-elevated and per-user paths have
   not run on Windows.*
 - **Windows installer and uninstaller, round 2.** The installer adds TLS 1.2
   only to an explicit protocol list and restores the session's setting when it
@@ -723,12 +733,13 @@ artifacts.
 
 ### Added
 
-- **`windows` CI job on `windows-2022` — ran green once, at `d7f4f29`.**
-  This is the only job that executes anything on Windows. It ran three times
-  on 2026-11-10: red at `c852eac` (CLIXML on stderr, POSIX file modes asserted
-  on Windows, 13 analyzer findings), red at `3a9dc82` (a cmdlet error still
-  arrived as CLIXML), then green at `d7f4f29` in run 42933820773, which is
-  the run the summary at the top of this section describes. One step per phase
+- **`windows` CI job on `windows-2022` — green at `d7f4f29`, then on the
+  round-2 code at `e434efa`.** This is the only job that executes anything on
+  Windows. It ran three times on 2026-11-10: red at `c852eac` (CLIXML on
+  stderr, POSIX file modes asserted on Windows, 13 analyzer findings), red at
+  `3a9dc82` (a cmdlet error still arrived as CLIXML), then green at `d7f4f29`
+  in run 42933820773. On 2026-11-11 it was green at `fb0f646` and at `e434efa`
+  (run 43037077022, the run the summary at the top of this section describes). One step per phase
   of `scripts/ci/windows-native-e2e.ps1`: `floor` (PSEdition Desktop 5.1) ·
   `go` (native vet + test) · `build` (the shipped recipe, PE32+ / SHA256SUMS /
   Authenticode) · `render` · `parse` (5.1 `ParseFile` + `ParseInput`) · `pssa` ·
@@ -765,7 +776,7 @@ artifacts.
   `make check-agent-shelf`, which now reads each served beacon's magic bytes:
   ELF / Mach-O machine, and MZ/PE `0x8664`. Before, a Linux ELF named `.exe`
   passed. It was written without an image run and first observed green in the
-  backend job at `d7f4f29`.
+  backend job at `d7f4f29`; it was green again at `e434efa`.
 - **CI and `make` changes (round 2).** `make validate` builds the image first,
   then runs every gate including `check-lab-ready` and `check-powershell`, so
   it needs docker, pwsh 7, Go and the Python requirements. The `refs` job runs

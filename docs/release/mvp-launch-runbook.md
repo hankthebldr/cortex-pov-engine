@@ -15,9 +15,10 @@ that script checks or what it deliberately cannot.
 > onboarding procedure for beta DCs, and §8 lists known issues, open
 > decisions and deferred findings; §8.5 is the upgrade, backup and rollback
 > procedure. Read them **before** the first customer endpoint. The Windows
-> side has run in exactly one place: the `windows-2022` CI job, green once, in
-> run 42933820773 at `d7f4f29`, on a GitHub-hosted runner with Defender
-> real-time protection off and no XDR agent. No shipped scenario and no
+> side has run in exactly one place: the `windows-2022` CI job, on a
+> GitHub-hosted runner with Defender real-time protection off and no XDR
+> agent. It was green at `d7f4f29` and, on the round-2 code, at `fb0f646` and
+> `e434efa` (run 43037077022, all nine jobs green). No shipped scenario and no
 > customer endpoint has run it (§8.4). `tenant-verified` is 0.
 
 ---
@@ -349,12 +350,13 @@ says the same:
   executed against a live Cortex tenant. Every green above comes from an
   injected transport. **Authored is not proven** — do not report the two as one
   number. The console's Readiness surface states this verbatim.
-- **Windows pull has run once, on a CI runner; it is not proven on a customer
-  host.** The image serves a correct `PE32+` and a PowerShell installer. On
-  2026-11-10 the `windows-2022` CI job ran green once: the beacon's tests, the
+- **Windows pull has run only on a CI runner; it is not proven on a customer
+  host.** The image serves a correct `PE32+` and a PowerShell installer. The
+  `windows-2022` CI job ran green at `d7f4f29` (2026-11-10) and on the round-2
+  code at `e434efa` (2026-11-11, run 43037077022): the beacon's tests, the
   installer, the service handler's start, a pull run, an abort and the
   uninstaller, on a hosted runner, against CI probe scenarios. None of the 13
-  shipped `.ps1` bundles has executed on any OS. Write "ran green once in CI",
+  shipped `.ps1` bundles has executed on any OS. Write "ran green in CI",
   never "works on Windows" (§7, §8.4).
 - **The Rust tool matrix is baked, not servable.** There is no
   `/api/tools/binary/{tool}` route; `docker cp` is still the only way off the
@@ -364,15 +366,17 @@ says the same:
 
 ## 7 · Beta: onboarding a Windows endpoint (read before the first one)
 
-> **Run once in CI; not proven on a customer host.** The install, verify,
-> pull, abort and uninstall steps below ran once, green, in the `windows-2022`
-> CI job (run 42933820773 at `d7f4f29`). That runner was a GitHub-hosted
+> **Run in CI; not proven on a customer host.** The install, verify,
+> pull, abort and uninstall steps below ran green in the `windows-2022`
+> CI job, most recently on the round-2 code (run 43037077022 at `e434efa`;
+> first at `d7f4f29`). That runner was a GitHub-hosted
 > Server 2022 with Windows PowerShell 5.1, an elevated admin, code page 1252,
 > Defender real-time protection off and no XDR agent, and it reached SimCore
 > as `http://127.0.0.1:8888`. Everything else here is read from the source:
 > the non-elevated path, a host with XDR, a SimCore reached by name or over
 > https, reboot, and every shipped `.ps1` bundle. Lines marked *(round 2)*
-> changed after that run and have not run on Windows. If something here
+> changed after `d7f4f29`; run 43037077022 ran the ones its phases reach, and
+> each one it did not reach says so. If something here
 > disagrees with what you see on a real host, the host wins. File it (§8.4)
 > with the `stage=` / `code=` line it printed.
 
@@ -562,8 +566,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\cortexsim-SIM-EDR-013.
   AllSigned or Restricted. AMSI or the endpoint agent can block the whole file
   before step 1, with no per-step attribution *(round 2)*.
 - **Not run on Windows.** None of the 13 shipped bundles has executed on any
-  OS. CI parsed all 13 under 5.1 at `d7f4f29` and ran a probe bundle; the
-  round-2 header, table and policy check have been run under pwsh 7 only.
+  OS. CI parsed all 13 under 5.1, the round-2 header and IDENTITY table
+  included, at `e434efa` (run 43037077022), and ran a probe bundle whose table
+  carried the IDENTITY column. The GPO policy warning has not fired on Windows:
+  the runner's MachinePolicy and UserPolicy are Undefined.
 - **Scoping.** A push run has no host, so reconcile leaves its matches
   `pending / UNSCOPED_MATCH`, never `detected`. Pass the endpoint:
   `POST /api/runs/{id}/reconcile?host=<name>`, or `host` in the
@@ -582,8 +588,8 @@ are the beta-readiness review's; quote them when you report.
 |---|---|---|
 | **API is unauthenticated** (SEC-01) | `/api/health` is `degraded`, with `api_auth: API_UNAUTHENTICATED` on every deployment | By design until auth lands. Any **other** degraded component is a real fault. Keep SimCore on an isolated lab segment; `CORTEXSIM_BIND=127.0.0.1` for a console-only host. |
 | **Installer checksum is corruption-only** (SEC-12) | `CHECKSUM_MISMATCH` / `verify` stage | SimCore serves plain HTTP, so the digest proves integrity in transit, not authenticity. |
-| **Windows: one green CI run, no customer host** | — | The `windows-2022` job ran green once (run 42933820773 at `d7f4f29`) on a hosted runner with no XDR and Defender real-time off. It is not a required check (DOCS-12). Round-2 changes after `d7f4f29` have not run on Windows; none of the 13 shipped bundles has run anywhere (§8.4). |
-| **Abort evidence before round 2** | An aborted step's `step_outcomes` read `termination` / `rc` empty, on the Linux lab VM and in the `windows` job | Fixed on the server in round 2 (RG-RUNS-01): a late `/complete` on an aborted, delivered pull run now records `steps[]`. Pinned by a host test; not re-run on the lab VM or on Windows. A beacon that dies before its `/complete` still leaves the row unjudged. |
+| **Windows: green in CI only, no customer host** | — | The `windows-2022` job ran green at `d7f4f29` and on the round-2 code at `fb0f646` and `e434efa` (run 43037077022) on a hosted runner with no XDR and Defender real-time off. It is not a required check (DOCS-12). None of the 13 shipped bundles has run anywhere (§8.4). |
+| **Abort evidence before round 2** | An aborted step's `step_outcomes` read `termination` / `rc` empty, on the Linux lab VM and in the `windows` job | Fixed on the server in round 2 (RG-RUNS-01): a late `/complete` on an aborted, delivered pull run now records `steps[]`. Pinned by a host test, and observed on Windows in run 43037077022 (`termination=aborted rc=130`); not re-run on the lab VM. A beacon that dies before its `/complete` still leaves the row unjudged. |
 | **Glued step frames before round 2** | `--- exit_code=0 duration=10ms ---=== STEP 2/4 …`, so anything matching `^=== STEP` saw only the first step | Fixed in the beacon (every frame ends with a newline). Runs recorded by an older beacon keep the glued text. |
 | **`docker ps` healthy is liveness only** | `healthy` while `/api/health` reads degraded | The image `HEALTHCHECK` checks that the process answers, and Docker does not restart an unhealthy container. Read `/api/health` for faults. *(Authored; no container ran in this pass.)* |
 | **Rollback is not symmetric** (OPS-17) | After a rollback to 1.1.0 or older, every launch is a 500 | Back up the volume before upgrading; roll back by restoring it (§8.5). |
@@ -621,7 +627,7 @@ knows the behaviour regardless of the outcome.
 | PUSH-18 | Infer the Windows dialect, or author `shell:`? | Shared structural inference; `MIXED_DIALECT` refused | Inference; authored `shell:` only where ambiguous |
 | CONT-07, CONT-14 | Model elevation for Windows steps? | Beacon advertises `elevated`; `IDENTITY NOT HONOURED` for root/container-runtime/administrator unelevated; bundle `NOT_ELEVATED`; failed-step scoring unchanged | `requires_elevation` + score failed steps pending/not_executed |
 | CONT-11 | Should pull run `cleanup.commands`? | No; the report lists what it did not run; in-step teardown in EDR-003/006, ITDR-006, MP-030 | Beacon runs per-OS cleanup for beta; in-step teardown for new content |
-| CI-02, DOCS-02, UI-01 | Keep the stdlib SCM handler (vs a SYSTEM scheduled task)? | SCM handler; its start path ran once in CI (Running 75 s after install, no SCM error events) | Keep; say "started and ran once in CI", not "service works", until reboot and stop are observed |
+| CI-02, DOCS-02, UI-01 | Keep the stdlib SCM handler (vs a SYSTEM scheduled task)? | SCM handler; its start path ran in three green CI runs (Running 75 s after install, no SCM error events) | Keep; say "started and ran in CI", not "service works", until reboot and stop are observed |
 | CI-06 | Authenticode-sign the Windows beacon before GA? | Unsigned; hashes + buildinfo published | Sign before GA |
 | CI-11 | One Go toolchain for CI, Dockerfile and `go.mod`? | Mixed (1.21 / 1.22) | Pin a supported toolchain everywhere after a SHA-1 cert test |
 | SEC-01 | Operator API authentication? | None; `api_auth` degraded, Host guard, CORS off, CIDR floor | Bearer token + split listeners |
@@ -633,7 +639,7 @@ knows the behaviour regardless of the outcome.
 | OPS-08 | Expire undelivered queued tasks? | No TTL; launch at a not-enrolled target refused; deleting an agent with work owed or in flight refused `409 AGENT_HAS_OPEN_RUNS` (round 2). Alternative not built: auto-cancel never-delivered runs on delete | TTL 30 min → `TASK_EXPIRED_UNDELIVERED` |
 | DOCS-03 | Scope push-run reconcile to a host? | Unscoped → `pending / UNSCOPED_MATCH`; `?host=` / `host` override (ce9ed13); the alternative is reverting it to a docs-only note | Optional `target_host` at push launch + (c) |
 | DOCS-04 | Should click-to-validate produce MTTD? | Yes (records click latency) | Exclude attested-only rows from MTTD |
-| DOCS-12 | Gate B requires Windows evidence? | Job green once (run 42933820773 at `d7f4f29`); not a required check | Checkbox; require the job once first green (met at `d7f4f29`; the round-2 head has not run it yet) |
+| DOCS-12 | Gate B requires Windows evidence? | Job green three times (latest run 43037077022 at `e434efa`, the round-2 head); not a required check | Checkbox; require the job once first green (met at `d7f4f29`, and again at the round-2 head) |
 | DOCS-15 | Publish beta scope, known issues and a feedback channel? | This section | `docs/release/BETA.md` + issue form, linked from README |
 | UI-08 | Platform check keyed on server truth? | Both: `bundle_targets` consumed, 100 steps relabelled | Done |
 | UI-11 | Elevation guidance in the console? | Honest trade-off text | Recommend elevation: the elevated path is the one the green job ran |
@@ -665,45 +671,52 @@ knows the behaviour regardless of the outcome.
   - `tests/tools/test_check_adapter_wiring.py::test_real_corpus_passes`
     shells out to `python3` and fails on a host whose system `python3` lacks
     PyYAML; put the repo venv first on `PATH`. It passed in the image in the
-    backend job at `d7f4f29`.
+    backend job at `d7f4f29` and `e434efa`.
   - `scripts/check-adapter-sources.sh` reports `FAIL=2` in any worktree whose
     tier-2 submodules are not initialised (re-observed at `0b7a482`).
 
-### 8.4 What the green `windows` run proved, and what stays unproven
+### 8.4 What the green `windows` runs proved, and what stays unproven
 
-Run 42933820773 at `d7f4f29` (2026-11-10) ran all 13 phases green on a
-GitHub-hosted `windows-2022` runner: build 20348, Windows PowerShell 5.1
-Desktop, FullLanguage, ANSI code page 1252 (OEM 65001), elevated
-`runneradmin`, execution policy unset at MachinePolicy/UserPolicy, Defender
-real-time protection off. Quoted from its log:
+Run 43037077022 at `e434efa` (2026-11-11), the round-2 head, ran all 13 phases
+green on a GitHub-hosted `windows-2022` runner: Windows Server 2022 Datacenter
+build 20348, Windows PowerShell 5.1.20348 Desktop, FullLanguage, ANSI code page
+1252 (OEM 65001), elevated `runneradmin`, execution policy unset at
+MachinePolicy/UserPolicy, Defender antivirus on with real-time protection and
+behaviour monitoring off. All nine CI jobs were green. Run 42933820773 at
+`d7f4f29` had done the same on round 1's code. Quoted from the `e434efa` log and
+its `windows-proof` artifact:
 
-| Item | Observed in that run |
+| Item | Observed in run 43037077022 |
 |---|---|
-| SimCore booting natively on Windows | yes: `boot` phase, health components ok except `api_auth` and `payload_shelf` (expected) |
-| Beacon tests on 5.1 | "go vet ./... && go test ./... -count=1 exit 0 on native windows/amd64"; `pass=326 fail=0 skip=4`; "no TestPowerShell* test skipped on Windows" |
-| 5.1 parse of every rendered `.ps1` | `ParseFile` and `ParseInput` on all 13 bundles, 35 steps, 4 installers, the uninstaller and the tracked scripts |
-| PSScriptAnalyzer, 5.1 profiles | "62 file(s), 707 record(s), 0 failing" (1.25.0, two waivers) |
-| Installer one-liner, elevated, under `iwr \| iex` | exit 0; "service CortexSimAgent is Running 75 s after install"; "no SCM 7000/7009/7011/7031/7034 events"; "last_seen advanced between the samples" |
+| SimCore booting natively on Windows | yes: `boot` phase, degraded components `api_auth` and `payload_shelf` only (expected) |
+| Beacon tests on 5.1 | "go vet ./... && go test ./... -count=1 exit 0 on native windows/amd64"; `pass=409 fail=0 skip=5`; "no TestPowerShell* test skipped on Windows"; all 43 distinct Windows-only test functions passed (round 2's teardown, step-length, `TOOL_ABSENT`, cache, shutdown and wrapper-note tests among them) |
+| 5.1 parse of every rendered `.ps1` | `ParseFile` and `ParseInput` on 61 files: 13 bundles, 35 steps, 4 installers, the uninstaller, 5 beacon wrappers, 3 tracked scripts; the three control fixtures accepted or rejected as designed |
+| PSScriptAnalyzer, 5.1 profiles | "62 file(s), 744 record(s), 0 failing" (1.25.0, two waivers, no `STALE WAIVER`) |
+| Installer one-liner, elevated, under `iwr \| iex` | exit 0; "service CortexSimAgent is Running 75 s after install"; "no SCM 7000/7009/7011/7031/7034 events"; "last_seen advanced between the samples"; the beacon logged `mode=service` and its proxy route |
 | Pull, exit codes and stderr | probe draft: rc 0, 0 with stderr, 3, then `not_run` `UPSTREAM_FAILED`; "stderr is plain text, not PowerShell CLIXML"; a cmdlet error rc 1, as text |
-| Job Object tree-kill on abort | "within 15 s of POST /abort no ping.exe / powershell.exe remains in the beacon tree (0.7 s)"; a bystander `ping` survived |
-| `.ps1` push with `-File` | probe bundle exit 1; step-02 (exit 3) and step-03 (cmdlet error) not logged as successful |
+| The account a step runs as | every frame: `[cortexsim] executed as NT AUTHORITY\SYSTEM (elevated token)` |
+| Step frames | every `=== STEP` header starts a line; none glued |
+| Job Object tree-kill on abort | "within 15 s of POST /abort no ping.exe / powershell.exe remains in the beacon tree (1.3 s)"; a bystander `ping` survived; the aborted row read `termination=aborted rc=130` |
+| `.ps1` push with `-File` | probe bundle exit 1; step-02 (exit 3) and step-03 (cmdlet error) not logged as successful; the table carried the IDENTITY column; `cortexsim-identity-summary degraded=0 ran=4` |
 | Uninstaller, elevated | exit 0; "removed 2 of 2 item(s)"; service, `C:\ProgramData\CortexSim` and the process gone |
 | cmd-dialect steps | the probe's two cmd steps ran on pull and push |
 
 **Still unproven**, so attach evidence when you are the first to see one on a
 real host: every **shipped** `.ps1` bundle (none of the 13 has executed on any
 OS); every shipped scenario on Windows pull; reboot survival; the 60 s stop
-deadline and `SERVICE_EXIT_CODE` readings; `taskkill /T` on a step timeout;
-the non-elevated refusal and the per-user install; the account steps run as
-(round 2's "executed as" line will show it); the Host guard admitting a
-Windows jumpbox's own (uppercase, NetBIOS-style) name, since CI used
-`127.0.0.1`; an https SimCore under 5.1 TLS defaults; a host with Cortex XDR or
-Defender in prevent mode (the unsigned beacon, the `iwr | iex` cradle, AMSI);
-Server Core; code pages other than 1252, including an OEM code page other
-than 65001; AppLocker / WDAC / Constrained Language Mode; a domain-joined host;
-and **every round-2 change after `d7f4f29`** until the job runs again. Attach
-the installer's `stage=` / `code=` line, `agent.log`, `sc.exe qc` /
-`queryex` output and the bundle's outcome table to your report.
+deadline and `SERVICE_EXIT_CODE` readings; a real SCM stop during a run;
+`taskkill /T` on a step timeout; the non-elevated refusal and the per-user
+install; the uninstaller's other-profile sweep; the GPO execution-policy
+warning; the Host guard admitting a Windows jumpbox's own (uppercase,
+NetBIOS-style) name, since CI used `127.0.0.1`; an https SimCore under 5.1 TLS
+defaults; a host with Cortex XDR or Defender in prevent mode (the unsigned
+beacon, the `iwr | iex` cradle, AMSI); Server Core; code pages other than 1252,
+including an OEM code page other than 65001; AppLocker / WDAC / Constrained
+Language Mode; a domain-joined host; and any change after `e434efa` until the
+job runs on it. Round-2 rows the phases do not reach (Windows teardown on
+abandon, `TOOL_ABSENT`, the step-length guard) have run only as native unit
+tests. Attach the installer's `stage=` / `code=` line, `agent.log`, `sc.exe qc`
+/ `queryex` output and the bundle's outcome table to your report.
 `tenant-verified` is still 0.
 
 ### 8.5 Upgrade, backup and rollback
@@ -743,8 +756,9 @@ backup and restore commands were not run in this pass.*
 ### 8.6 Round 2: what closed, what stays open
 
 Round 2 ran from `c852eac` to `0b7a482`. **Closed** (each commit body says
-how it was verified; a Windows row is compiled only unless it says
-otherwise): the CLIXML stderr on 5.1 (observed fixed in CI at `d7f4f29`); chain teardown on POSIX and the Windows abandon
+how it was verified; every Windows row's native tests passed in run
+43037077022 at `e434efa`, and §8.4 says which ones its end-to-end phases also
+reached): the CLIXML stderr on 5.1 (observed fixed in CI at `d7f4f29`); chain teardown on POSIX and the Windows abandon
 sweep; a beacon stop that waited up to 62 s; the boot-registration retry; the
 abort-evidence and duplicate `/complete` / `/output` defects; glued step
 frames; the staging-refusal, orphan-delivery, un-crediting and retraction

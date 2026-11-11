@@ -84,13 +84,13 @@ not free text.
 
 > [!CAUTION]
 > **Windows targets: read first.** The Windows path has run in one place: the
-> `windows-2022` CI job, **green once** (run 42933820773 at `d7f4f29`,
-> 2026-11-10), on a GitHub-hosted runner with Defender real-time protection
-> off and no XDR agent. It ran the beacon's tests, the elevated install
+> `windows-2022` CI job, **green** at `d7f4f29` (2026-11-10) and on the
+> round-2 code at `e434efa` (run 43037077022, 2026-11-11), on a GitHub-hosted
+> runner with Defender real-time protection off and no XDR agent. It ran the beacon's tests, the elevated install
 > one-liner, a pull run, an abort and the uninstaller against CI probe
 > scenarios. **No shipped scenario, no `.ps1` push bundle and no customer
-> endpoint has run it.** Changes made after that commit have not run on
-> Windows.
+> endpoint has run it.** Changes made after `e434efa` have not run on
+> Windows until the job runs on them.
 > - **Product floor:** Windows PowerShell **5.1** (Server 2016+ / Windows 10+).
 >   CI parsed every shipped `.ps1` under 5.1 itself; the local gate uses
 >   pwsh 7, which is not 5.1.
@@ -813,9 +813,9 @@ first.
 ### Windows targets — read first
 
 > [!WARNING]
-> **Run once in CI, not on a customer host.** The `windows-2022` CI job ran
-> the elevated path below green once (run 42933820773 at `d7f4f29`) on a
-> GitHub-hosted runner with no XDR agent. Floor: Windows PowerShell 5.1.
+> **Run in CI, not on a customer host.** The `windows-2022` CI job ran
+> the elevated path below green, most recently at `e434efa` (run 43037077022),
+> on a GitHub-hosted runner with no XDR agent. Floor: Windows PowerShell 5.1.
 
 From **Windows PowerShell opened as Administrator** (the console emits this
 line, TLS 1.2 opt-in included):
@@ -1119,7 +1119,7 @@ without evidence**.
 | `adapters` | tier-2 source trees exist; de-hand-rolling gate (a scenario naming a tool that *has* an adapter must wire it); the generated payload-shelf source list matches the packs |
 | `rust-dist` | static-musl build **+ exec proof** — the binary runs, not just compiles |
 | `e2e-isolated` | Tier-C isolated-execution assertion suite |
-| `windows` | **green once** (run 42933820773 at `d7f4f29`, after two red runs). Windows PowerShell 5.1 on `windows-2022`: native `go test`, 5.1 parse + PSScriptAnalyzer, a real SimCore boot, the console's install one-liner, then pull / abort / push / uninstall against the beacon as a Windows service, all with CI probe scenarios. It is the only job that executes anything on Windows. It is not a required check (decision DOCS-12), and it covers no shipped scenario, no XDR agent, no reboot and no tenant. |
+| `windows` | **green three times** after two red runs: `d7f4f29` (42933820773), then the round-2 code at `fb0f646` and `e434efa` (43037077022, all nine jobs green). Windows PowerShell 5.1 on `windows-2022`: native `go test`, 5.1 parse + PSScriptAnalyzer, a real SimCore boot, the console's install one-liner, then pull / abort / push / uninstall against the beacon as a Windows service, all with CI probe scenarios. It is the only job that executes anything on Windows. It is not a required check (decision DOCS-12), and it covers no shipped scenario, no XDR agent, no reboot and no tenant. |
 
 Two of these are load-bearing in a non-obvious way:
 

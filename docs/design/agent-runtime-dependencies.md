@@ -185,7 +185,8 @@ surface area to get exactly right.
   genuinely installed from the Microsoft Store sits at the same path and is not counted
   either. Still true: no corpus scenario declares either field on a Windows-runnable step.
   The rules are proven from macOS through the `runtimeDepsGOOS` / `interpreterGOOS` seams;
-  everything a real Windows host decides is compiled, not run.
+  on a real Windows host the native tests passed in CI run 43037077022 (`e434efa`), and no
+  step declaring either field has run there end to end.
 - **The package→interpreter mapping is small and hand-maintained**
   (`agent/executor/interpreter.go`'s `interpreterPackage`, currently `python`, `perl`,
   `ruby`, `node`). A wrong guess there would silently install the wrong thing under real

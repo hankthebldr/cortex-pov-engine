@@ -668,8 +668,8 @@ get it.
   fails closed if either parser matches nothing) and `make check-agent-shelf`
   (runs `sha256sum -c` against the **built image** with no host mount, so source
   drift cannot fake it).
-  <br>**Run once in CI, not on a customer host.** The `windows-2022` CI job ran
-  green once (run 42933820773 at `d7f4f29`): the beacon built by the job and
+  <br>**Run in CI, not on a customer host.** The `windows-2022` CI job ran
+  green at `d7f4f29` and on the round-2 code at `e434efa` (run 43037077022): the beacon built by the job and
   served by a host-run SimCore, the PowerShell installer under 5.1's
   `iwr | iex` (service Running 75 s after install, no SCM error events), a pull
   run, an abort and the uninstaller, against CI probe scenarios. Push mode (§1.2
@@ -679,16 +679,17 @@ get it.
   XDR agent, or after a reboot (§1.6.1). `check-agent-shelf` now also
   checks each served binary's magic bytes (ELF `e_machine`, Mach-O `cputype`,
   MZ/PE machine `0x8664`): `test -s` plus SHA256SUMS used to pass a Linux ELF
-  named `.exe`. It was observed green once, in the backend job at `d7f4f29`.
+  named `.exe`. It was observed green in the backend job at `d7f4f29` and again at `e434efa`.
   Since round 2, `/api/health`'s `agent_binaries` wants all five shipped
   targets, arm64 included; an amd64-only shelf used to read ok.
 - The Go beacon treats **SIGHUP** as a graceful shutdown; previously a hangup hit
   the default disposition and killed the beacon when the terminal went away.
 
-#### 1.6.1 Windows onboarding — authored 2026-11; the elevated path ran once in CI
+#### 1.6.1 Windows onboarding — authored 2026-11; the elevated path ran in CI
 
-> The elevated install, verify, pull, abort and uninstall paths below ran once,
-> green, in the `windows-2022` CI job (run 42933820773 at `d7f4f29`): a
+> The elevated install, verify, pull, abort and uninstall paths below ran
+> green in the `windows-2022` CI job, most recently on the round-2 code (run
+> 43037077022 at `e434efa`; first at `d7f4f29`): a
 > GitHub-hosted Server 2022 runner with Windows PowerShell 5.1, an elevated
 > admin, code page 1252, Defender real-time protection off, no XDR agent, and
 > SimCore at `http://127.0.0.1:8888`. Everything else here comes from the
@@ -1636,7 +1637,7 @@ ctx cancelled → return (clean exit)
   `sh` itself cannot be started or the wait fails with a non-exit error. A step that declares `required_binaries` is
   preflighted before it runs — a missing binary yields the `!! TOOL_ABSENT:` marker, a
   `not_run` / `TOOL_ABSENT` step record and a run completed with `127` (§1.3.1).
-- **Windows step selection (2026-11, BEACON-01; ran once in CI with probe
+- **Windows step selection (2026-11, BEACON-01; ran in CI with probe
   steps, never with a shipped scenario).** A task step carries `shell` (`powershell` | `cmd`),
   `resolved_from` and `platform_variants`, and `planStep` decides per host.
   On Windows: if `shell` is set, `Command` runs under it (an unknown shell is
@@ -1657,8 +1658,9 @@ ctx cancelled → return (clean exit)
   leaving any shape it does not recognise unchanged; the green run read
   stderr and a cmdlet error as plain text. The tree-kill is a Job Object
   (`TerminateJobObject` on abort, no `KILL_ON_JOB_CLOSE`), observed in CI to
-  stop the step's tree in 0.7 s and spare a bystander. **Round 2 (compiled for
-  Windows, not run there):** `required_binaries` yields `TOOL_ABSENT` on
+  stop the step's tree (0.7 s at `d7f4f29`, 1.3 s at `e434efa`) and spare a
+  bystander. **Round 2 (native tests passed on Windows in run 43037077022; not
+  run end to end):** `required_binaries` yields `TOOL_ABSENT` on
   Windows (LookPath with PATHEXT and full paths), and `requires_interpreters`
   blocks with `RUNTIME_DEPENDENCY_MISSING` (127) when an interpreter is absent
   or alias-only, with no PATH shim and no runtime install; a match inside
@@ -1849,8 +1851,8 @@ Most of the lifecycle backlog **shipped** in the multi-wave revamp:
 
 One index of every code this pass introduced or changed, with where it surfaces.
 **None of the Windows-side failure codes has been observed on a Windows host.**
-The one green `windows` CI run (42933820773 at `d7f4f29`) took the success
-path (install `OK`, uninstall complete) and saw only `UPSTREAM_FAILED` from
+The green `windows` CI runs (42933820773 at `d7f4f29`, 43037077022 at
+`e434efa`) took the success path (install `OK`, uninstall complete) and saw only `UPSTREAM_FAILED` from
 its probe's fail-fast step. The rest are read from source and exercised under
 pwsh 7 / injected transports only. Round 2's additions are in §10.
 
@@ -1901,10 +1903,11 @@ pwsh 7 / injected transports only. Round 2's additions are in §10.
 
 ## 10. Wire and behaviour changes in round 2 (`c852eac` → `0b7a482`, 2026-11-10)
 
-The `windows` CI job ran green at `d7f4f29`, inside this range. **Every beacon
-or installer row below marked Windows was written after that run** and is
-compiled for Windows (or parsed and run under pwsh 7) but has not run on
-Windows. Server rows are verified by host tests through the real routes.
+The `windows` CI job ran green at `d7f4f29`, inside this range, and again at
+`e434efa` (run 43037077022), which includes every row below. **Every beacon
+row below marked Windows** passed as a native Windows test in that run; the
+rows its end-to-end phases also reached say so. Installer rows ran through the
+elevated install and uninstall phases only. Server rows are verified by host tests through the real routes.
 `tenant-verified` is 0.
 
 ### 10.1 Run record and lifecycle
@@ -1951,9 +1954,9 @@ Windows. Server rows are verified by host tests through the real routes.
 | Proxy | `--proxy`, `CORTEXSIM_AGENT_PROXY` | §5.1. Not yet written into the Windows service by the installer. |
 | Shutdown | — | §5.1, §5.4. |
 | Boot registration retried | — | §5.1. |
-| Chain end | — | POSIX group teardown; Windows Job Object sweep on a non-clean end only (§5.3). *(Windows half not run there.)* |
-| Tools and interpreters on Windows | `TOOL_ABSENT`, `RUNTIME_DEPENDENCY_MISSING` | §5.3. *(Windows; not run there.)* |
-| Step too long | `COMMAND_LINE_TOO_LONG` | Windows PowerShell steps over 11,361 characters, refused before any process exists, stating the sizes and "The step was NOT launched". *(Windows; not run there.)* |
-| Executing account | `[cortexsim] executed as <account> (elevated token \| token NOT elevated)` | Second line of every Windows step frame. *(Windows; not run there.)* |
+| Chain end | — | POSIX group teardown; Windows Job Object sweep on a non-clean end only (§5.3). *(Windows half: native tests passed in run 43037077022; not run end to end.)* |
+| Tools and interpreters on Windows | `TOOL_ABSENT`, `RUNTIME_DEPENDENCY_MISSING` | §5.3. *(Windows: native tests passed in run 43037077022; no step declares either field.)* |
+| Step too long | `COMMAND_LINE_TOO_LONG` | Windows PowerShell steps over 11,361 characters, refused before any process exists, stating the sizes and "The step was NOT launched". *(Windows: native tests passed in run 43037077022.)* |
+| Executing account | `[cortexsim] executed as <account> (elevated token \| token NOT elevated)` | Second line of every Windows step frame. *(Observed in run 43037077022: `NT AUTHORITY\SYSTEM (elevated token)`.)* |
 | Exit-wrapper notes | `[cortexsim] step exit code N: …`; "exit-code caveat" | §5.3. Codes unchanged. |
 | Artifact cache | `CORTEXSIM_CACHE_DIR` | A cache hit is copied and hashed in one read and compared against its name; a mismatch is discarded and refetched. On Windows the cache is `cache` next to the beacon binary (none for a binary at a drive root). |

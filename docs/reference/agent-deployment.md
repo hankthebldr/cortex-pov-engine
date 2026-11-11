@@ -333,9 +333,10 @@ technique."
 
 ## 7. Windows: service install, identity, and what is unproven
 
-> **Run once in CI; not on a customer host.** The elevated install, a pull
-> run, an abort and the uninstaller ran green once in the `windows-2022` CI job
-> (run 42933820773 at `d7f4f29`): a GitHub-hosted Server 2022 runner with
+> **Run in CI; not on a customer host.** The elevated install, a pull
+> run, an abort and the uninstaller ran green in the `windows-2022` CI job,
+> most recently on the round-2 code (run 43037077022 at `e434efa`; first at
+> `d7f4f29`): a GitHub-hosted Server 2022 runner with
 > Windows PowerShell 5.1, an elevated admin, Defender real-time protection off,
 > no XDR agent, SimCore at `127.0.0.1`, and CI probe scenarios. The rest is
 > read from the installer and beacon source and run under pwsh 7.6 on macOS:

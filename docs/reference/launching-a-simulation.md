@@ -324,11 +324,12 @@ docker exec cortexsim-tier-d-target bash /root/cortexsim-SIM-EDR-001.sh
 ### 4a. Push mode on Windows — the `.ps1` bundle (authored 2026-11; no shipped bundle executed)
 
 > None of the 13 shipped `.ps1` bundles has executed on Windows, or on any OS.
-> At `d7f4f29` the `windows-2022` CI job parsed all 13 under Windows
-> PowerShell 5.1 itself and ran them past PSScriptAnalyzer's 5.1 profiles,
-> and it ran one CI **probe** bundle end to end with `-File` (run 42933820773,
-> green). The round-2 header, IDENTITY column and policy check have been
-> parsed only under pwsh 7 by `make check-powershell`.
+> At `e434efa` (run 43037077022, green; first at `d7f4f29`) the
+> `windows-2022` CI job parsed all 13, round-2 header and IDENTITY column
+> included, under Windows PowerShell 5.1 itself and ran them past
+> PSScriptAnalyzer's 5.1 profiles, and it ran one CI **probe** bundle end to
+> end with `-File`. The GPO policy warning has not fired on Windows: the
+> runner's MachinePolicy and UserPolicy are Undefined.
 
 Thirteen scenarios emit a Windows bundle: `SIM-ASM-005`, `SIM-EDR-003/004/005`,
 `SIM-ITDR-006`, `SIM-MP-001/020` and `SIM-NDR-005/007` emit both targets, and

@@ -119,7 +119,7 @@ This is the substantive gate. Everything below is required.
 
 ### A1 · Automated (CI, blocking)
 
-`ci.yml` runs on every PR. All eight `ubuntu-22.04` jobs must be green. The ninth, `windows`, must run, but it is **not yet a required check**. It has been observed green once (run 42933820773 at `d7f4f29`, 2026-11-10, after two red runs). Making it required, and asking Gate B for Windows evidence, is an open decision (DOCS-12). A green run covers the commit it ran on, not later ones.
+`ci.yml` runs on every PR. All eight `ubuntu-22.04` jobs must be green. The ninth, `windows`, must run, but it is **not yet a required check**. It has been observed green three times, after two red runs: at `d7f4f29` (run 42933820773, 2026-11-10) and on the round-2 code at `fb0f646` and `e434efa` (run 43037077022, 2026-11-11). Making it required, and asking Gate B for Windows evidence, is an open decision (DOCS-12). A green run covers the commit it ran on, not later ones.
 
 | Job | Proves |
 |---|---|
@@ -131,7 +131,7 @@ This is the substantive gate. Everything below is required.
 | `adapters` | tier-2 source trees present; adapter wiring check; payload-shelf drift (`python3 -m engine.payload_shelf --check`, `PAYLOAD_ALLOW_UNPINNED=0`) |
 | `rust-dist` | static-musl builds of the three Rust tools |
 | `e2e-isolated` | Tier-C pure assertion suite |
-| `windows` | `windows-2022`, Windows PowerShell 5.1: native `go test`, 5.1 parse + PSScriptAnalyzer, SimCore boot, the install one-liner, pull / abort / push / uninstall against the beacon service, with CI probe scenarios. **Green once, at `d7f4f29`; not yet required.** |
+| `windows` | `windows-2022`, Windows PowerShell 5.1: native `go test`, 5.1 parse + PSScriptAnalyzer, SimCore boot, the install one-liner, pull / abort / push / uninstall against the beacon service, with CI probe scenarios. **Green at `d7f4f29`, `fb0f646` and `e434efa`; not yet required.** |
 
 A red job is never merged around. A **skipped** job reads exactly like a passing
 one — if you add a gate, it must run on the PR, not behind a label.

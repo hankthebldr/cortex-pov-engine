@@ -521,8 +521,9 @@ macOS: iteration 5 of 40). Where the cache lives, from
 - **POSIX:** `/opt/cortexsim/cache` if writable, else the user cache directory
   plus `cortexsim`, else `$TMPDIR/cortexsim-cache`.
 
-The Windows rows are compiled for Windows and have not run there; nothing
-asserts the inherited DACL.
+The Windows rows' native tests (`TestWindowsArtifactCacheDir` and the cache
+digest tests) passed on Windows in run 43037077022 at `e434efa`; no end-to-end
+run has staged an artifact on Windows, and nothing asserts the inherited DACL.
 
 ---
 
