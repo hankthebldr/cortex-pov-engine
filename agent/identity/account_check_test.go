@@ -76,7 +76,8 @@ func TestAccountChecker_NonPortableNameIsInconclusiveAndUnprobed(t *testing.T) {
 // injection), and a control character or NUL is no account on any host (Go's
 // exec refuses a NUL argument, which would read as a failed TTP).
 func TestAccountChecker_OptionOrControlCharNameIsAbsentWithoutProbe(t *testing.T) {
-	for _, name := range []string{"-c", "--session-command=id", "a\nb", "a\x00b", "a\tb", ""} {
+	// A leading '#' is sudo's uid form: `sudo -u '#0'` is root.
+	for _, name := range []string{"-c", "--session-command=id", "#0", "#1000", "a\nb", "a\x00b", "a\tb", ""} {
 		chk := NewAccountChecker(
 			func(string) error { t.Fatalf("lookup called for %q", name); return nil },
 			func(string) ProbeResult { t.Fatalf("probe called for %q", name); return ProbePresent })

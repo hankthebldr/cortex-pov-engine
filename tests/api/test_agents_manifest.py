@@ -158,9 +158,11 @@ def test_digest_pinned_registry_image_is_accepted(client, fake_agent_dist):
 @pytest.mark.parametrize("profile,extra", [
     ("baseline", ""),
     ("cluster-privilege", "&cluster_privilege_authorized=true&authorized_by=henry"),
+    ("lab-privileged", "&cluster_privilege_authorized=true&node_access_authorized=true&authorized_by=henry"),
 ])
-def test_response_yaml_holds_exactly_the_built_objects(client, fake_agent_dist, profile, extra):
+def test_response_yaml_holds_exactly_the_built_objects(client, fake_agent_dist, monkeypatch, profile, extra):
     import yaml
+    monkeypatch.setenv("CORTEXSIM_ALLOW_PRIVILEGED_K8S", "true")
     from datetime import datetime, timezone
     from engine.agent_manifest import build_agent_objects
     r = client.get(f"{BASE}?profile={profile}{extra}")
@@ -171,6 +173,8 @@ def test_response_yaml_holds_exactly_the_built_objects(client, fake_agent_dist, 
         ttl_seconds=43200, beacon_sha256=fake_agent_dist.sha256("linux", "amd64"),
         now=datetime.now(timezone.utc), authorized_by=None)
     assert got == sorted((o["kind"], o["metadata"]["name"]) for o in built)
+    # Every profile serves the agent ClusterRole, so a downgrade overwrites it.
+    assert ("ClusterRole", "cortexsim-agent") in got
 
 
 def test_lab_privileged_with_switch_off_and_no_keys_is_403_not_409(client, fake_agent_dist):

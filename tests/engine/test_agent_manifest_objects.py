@@ -1,9 +1,12 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import subprocess
+
+import pytest
 
 import yaml
 
-from engine.agent_manifest import build_agent_objects, generate_agent_manifest
+from engine import k8s_manifest as km
+from engine.agent_manifest import PROFILES, build_agent_objects, generate_agent_manifest
 
 NOW = datetime(2026, 11, 10, tzinfo=timezone.utc)
 
@@ -24,12 +27,21 @@ def pod(o):
 
 
 def test_baseline_has_no_privileged_field_anywhere():
-    # The reaper always emits its own ClusterRole/Binding; every other object must be clean.
-    rest = [o for o in objs("baseline") if "reaper" not in o["metadata"]["name"]]
+    # Baseline still emits the agent ClusterRole, but empty: re-applying it over a
+    # cluster-privilege deployment overwrites the wildcard role in place. It
+    # grants nothing, and no ClusterRoleBinding to the agent SA is emitted.
+    o = objs("baseline")
+    rest = [x for x in o if "reaper" not in x["metadata"]["name"]
+            and x["kind"] not in ("ClusterRole", "ClusterRoleBinding")]
     text = yaml.safe_dump(rest)
     for needle in ("privileged: true", "hostPID", "hostPath", "ClusterRoleBinding", "ClusterRole"):
         assert needle not in text
-    assert not [c for c in by_kind(objs("baseline"), "ClusterRole") if "reaper" not in c["metadata"]["name"]]
+    (role,) = [c for c in by_kind(o, "ClusterRole") if "reaper" not in c["metadata"]["name"]]
+    assert role["metadata"]["name"] == "cortexsim-agent" and role["rules"] == []
+    assert role["metadata"]["annotations"]["cortexsim.io/neutralised"] == "true"
+    to_agent_sa = [b for b in by_kind(o, "ClusterRoleBinding")
+                   if any(s.get("name") == "cortexsim-agent" for s in b["subjects"])]
+    assert to_agent_sa == []
 
 
 def test_lab_privileged_matches_the_lab_shape():
@@ -73,12 +85,50 @@ def test_no_secret_object_and_no_token_in_the_manifest():
     assert list(yaml.safe_load_all(text))   # parses
 
 
-def test_reaper_is_pinned_to_exactly_what_was_emitted():
-    o = objs("cluster-privilege")
-    emitted = {x["metadata"]["name"] for x in by_kind(o, "ClusterRole") + by_kind(o, "ClusterRoleBinding")}
-    reaper_role = [r for r in by_kind(o, "ClusterRole") if "reaper" in r["metadata"]["name"]][0]
-    names = {n for rule in reaper_role["rules"] for n in rule.get("resourceNames", [])}
-    assert names == emitted
+_REAPER_OWN = {"cortexsim-reaper-agent"}
+_FIXED_CLUSTER_NAMES = {("clusterroles", "cortexsim-agent"), ("clusterrolebindings", "cortexsim-agent")}
+
+
+def _reaper_pins(o):
+    role = [r for r in by_kind(o, "ClusterRole") if "reaper" in r["metadata"]["name"]][0]
+    return {(rule["resources"][0], n) for rule in role["rules"]
+            if rule["resources"][0] in ("clusterroles", "clusterrolebindings")
+            for n in rule.get("resourceNames", [])}
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_reaper_pins_the_union_of_every_profiles_cluster_objects(profile):
+    union = set()
+    for p in PROFILES:
+        for x in objs(p, authorized_by="henry"):
+            if x["kind"] in ("ClusterRole", "ClusterRoleBinding"):
+                union.add((x["kind"].lower() + "s", x["metadata"]["name"]))
+    assert {n for _, n in union} == {"cortexsim-agent"} | _REAPER_OWN
+    pins = _reaper_pins(objs(profile, authorized_by="henry"))
+    assert pins == union
+    assert pins == _reaper_pins(objs("baseline"))  # identical for every profile
+    script = _reaper(objs(profile, authorized_by="henry"))["spec"]["template"]["spec"]["containers"][0]["args"][0]
+    for resource, name in _FIXED_CLUSTER_NAMES:
+        assert f"kubectl delete {resource} {name} --ignore-not-found" in script
+
+
+def test_downgrade_reapply_neutralises_the_wildcard_role():
+    first = objs("cluster-privilege", authorized_by="henry")
+    (wild,) = [c for c in by_kind(first, "ClusterRole") if c["metadata"]["name"] == "cortexsim-agent"]
+    assert wild["rules"]  # the role a downgrade must overwrite
+    later = objs("baseline", now=NOW + timedelta(hours=1))
+    (role,) = [c for c in by_kind(later, "ClusterRole") if c["metadata"]["name"] == "cortexsim-agent"]
+    assert role["rules"] == []
+    assert role["apiVersion"] == wild["apiVersion"]  # same object, overwritten in place
+
+
+def test_header_states_the_profile_change_behaviour():
+    text = generate_agent_manifest(profile="baseline", image="debian:12-slim", arch="amd64", prepare="packages",
+                                   ttl_seconds=43200, beacon_sha256="a" * 64, now=NOW, authorized_by=None,
+                                   consent={}, allow_privileged_k8s=True)
+    header = text.split("\n---\n")[0]
+    assert "kubectl delete clusterrolebinding cortexsim-agent" in header
+    assert "downgrade" in header
 
 
 def test_gated_profiles_refuse_without_consent():
@@ -224,6 +274,26 @@ def test_two_generations_differ_only_in_objects_that_can_be_reapplied(profile):
     changed = {k for k in first if first[k] != later[k]}
     assert changed, "the expiry moved, so something must change"
     assert {kind for kind, _ in changed} <= _MUTABLE_ON_APPLY
+    # The fields apply cannot change are byte-equal across generations.
+    for k in first:
+        if k[0] == "Deployment":
+            assert yaml.safe_dump(first[k]["spec"]["selector"]) == yaml.safe_dump(later[k]["spec"]["selector"])
+        if k[0] == "ClusterRoleBinding":
+            assert yaml.safe_dump(first[k]["roleRef"]) == yaml.safe_dump(later[k]["roleRef"])
+
+
+def test_immutable_fields_are_byte_equal_across_profiles():
+    sel, ref = {}, {}
+    for p in PROFILES:
+        for x in objs(p, authorized_by="henry"):
+            key = x["metadata"]["name"]
+            if x["kind"] == "Deployment":
+                sel.setdefault(key, set()).add(yaml.safe_dump(x["spec"]["selector"]))
+            if x["kind"] == "ClusterRoleBinding":
+                ref.setdefault(key, set()).add(yaml.safe_dump(x["roleRef"]))
+    assert set(sel) == {"cortexsim-agent", "cortexsim-reaper-agent"}
+    assert all(len(v) == 1 for v in sel.values()), sel
+    assert "cortexsim-agent" in ref and all(len(v) == 1 for v in ref.values()), ref
 
 
 def _reaper(o):
@@ -323,8 +393,16 @@ def test_agent_readiness_needs_a_stored_agent_id_and_nothing_kills_a_slow_prepar
     assert "livenessProbe" not in c and "startupProbe" not in c
 
 
-def test_a_reaper_without_a_usable_clock_falls_back_to_the_relative_wait(tmp_path):
+def test_a_reaper_without_a_usable_clock_exits_non_zero_and_never_waits_relative(tmp_path):
+    # A relative fallback restarts on every pod restart: an unbounded deferral.
+    # A visible CrashLoop is better.
     log, rc, out = _run_reaper_wait(tmp_path, epoch_now=1, expires_epoch=10, clock_works=False)
-    assert [line for line in log.splitlines() if line.startswith("sleep ")] == ["sleep 43200"], (log, out)
+    assert rc != 0
     assert "REAPER_CLOCK_UNAVAILABLE" in out
-    assert "kubectl delete namespace cortexsim-agent" in log, (log, out)
+    assert not [line for line in log.splitlines() if line.startswith("sleep ")], (log, out)
+    assert "kubectl delete" not in log, (log, out)
+
+
+def test_reaper_pod_has_a_short_grace_period():
+    # A Recreate rollout must not leave the old-expiry pod alive for 30 s.
+    assert _reaper(objs("baseline"))["spec"]["template"]["spec"]["terminationGracePeriodSeconds"] == 1
