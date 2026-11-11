@@ -221,6 +221,9 @@ async def put_integration(
     # The hint decides redaction of the backing row; never take the caller's.
     type_hint = "panos_api_key_credential" if body.kind == PANOS_KIND else body.secret_type_hint
     store = CredentialStore(session)
+    overrides_cleared: Optional[bool] = None
+    if body.kind == PANOS_KIND:
+        config, overrides_cleared = await _merge_panos_reput(store, body, config)
     row = await store.put_integration(
         name=body.name,
         kind=body.kind,
@@ -230,7 +233,42 @@ async def put_integration(
         description=body.description,
     )
     await session.commit()
-    return row.to_dict()
+    out = row.to_dict()
+    if overrides_cleared is not None:
+        out["overrides_cleared"] = overrides_cleared
+    return out
+
+
+#: Operator-entered panos_ngfw settings a pasted-key re-registration keeps. The
+#: per-agent pair describes the path through ONE firewall, so it goes when the
+#: host changes; probes and zones are lab intent and stay (same rule as keygen).
+_PANOS_PER_HOST_KEYS = ("observed_sources", "agent_addresses")
+_PANOS_LAB_KEYS = ("probe_destinations", "inside_zone", "outside_zone")
+
+
+async def _merge_panos_reput(store: CredentialStore, body: IntegrationPut,
+                             config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Carry a registered firewall's operator settings across a re-PUT.
+
+    A key the caller sent wins. Returns the validated config and whether
+    per-agent address overrides were cleared by a host change.
+    """
+    from integrations.panos import PANOS_KIND  # noqa: PLC0415
+
+    existing = await store.get_integration(body.name)
+    if existing is None or existing.kind != PANOS_KIND:
+        return config, False
+    stored = dict(existing.config or {})
+    sent = set((body.config or {}).keys())
+    same_host = stored.get("host") == config["host"]
+    carry = list(_PANOS_LAB_KEYS) + (list(_PANOS_PER_HOST_KEYS) if same_host else [])
+    merged = dict(config)
+    for key in carry:
+        if key not in sent and key in stored:
+            merged[key] = stored[key]
+    cleared = (not same_host) and any(
+        stored.get(k) and k not in sent for k in _PANOS_PER_HOST_KEYS)
+    return _validate_integration_config(PANOS_KIND, merged), cleared
 
 
 @router.get("/integrations/{name}")

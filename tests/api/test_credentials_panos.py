@@ -57,3 +57,83 @@ def test_type_hint_forced_for_panos(cred_client, session_factory):
     hint, tail = asyncio.run(_hint())
     assert hint == "panos_api_key_credential" and tail is None
     assert cred_client.get("/api/credentials/secrets/__integration__/fw1").status_code == 404
+
+
+# ── re-registration by pasted key (controller ruling, Task 8 review) ─────────
+# Same rule as keygen: per-agent overrides describe the path through ONE
+# firewall, so they survive a re-PUT to the same host and are cleared (and
+# reported) when the host changes. Probes and zones are lab intent and stay.
+
+_OVERRIDES = {
+    "observed_sources": {"agent-a": "10.0.0.5"},
+    "agent_addresses": {"agent-a": ["10.0.0.5"]},
+    "probe_destinations": [{"ip": "203.0.113.9", "port": 443, "protocol": "tcp",
+                            "application": "ssl"}],
+    "inside_zone": "trust",
+    "outside_zone": "untrust",
+}
+
+
+def test_first_panos_put_reports_overrides_not_cleared(cred_client):
+    r = _put(cred_client, {"host": "192.0.2.1"})
+    assert r.status_code == 200
+    assert r.json()["overrides_cleared"] is False
+
+
+def test_re_put_same_host_keeps_overrides(cred_client):
+    assert _put(cred_client, {"host": "192.0.2.1", **_OVERRIDES}).status_code == 200
+    r = _put(cred_client, {"host": "192.0.2.1", "forwarding_path": "syslog"})
+    assert r.status_code == 200
+    assert r.json()["overrides_cleared"] is False
+    cfg = cred_client.get("/api/credentials/integrations/fw1").json()["config"]
+    assert cfg["observed_sources"] == {"agent-a": "10.0.0.5"}
+    assert cfg["agent_addresses"] == {"agent-a": ["10.0.0.5"]}
+    assert cfg["probe_destinations"][0]["ip"] == "203.0.113.9"
+    assert cfg["inside_zone"] == "trust" and cfg["outside_zone"] == "untrust"
+    assert cfg["forwarding_path"] == "syslog"
+
+
+def test_re_put_same_host_after_normalisation_keeps_overrides(cred_client):
+    assert _put(cred_client, {"host": "fw.lab.example", **_OVERRIDES}).status_code == 200
+    r = _put(cred_client, {"host": "FW.LAB.EXAMPLE"})
+    assert r.status_code == 200
+    assert r.json()["overrides_cleared"] is False
+    cfg = cred_client.get("/api/credentials/integrations/fw1").json()["config"]
+    assert cfg["observed_sources"] == {"agent-a": "10.0.0.5"}
+
+
+def test_re_put_new_host_clears_source_overrides_keeps_probes(cred_client):
+    assert _put(cred_client, {"host": "192.0.2.1", **_OVERRIDES}).status_code == 200
+    r = _put(cred_client, {"host": "192.0.2.99"})
+    assert r.status_code == 200
+    assert r.json()["overrides_cleared"] is True
+    cfg = cred_client.get("/api/credentials/integrations/fw1").json()["config"]
+    assert cfg["observed_sources"] == {} and cfg["agent_addresses"] == {}
+    assert cfg["probe_destinations"][0]["ip"] == "203.0.113.9"
+    assert cfg["inside_zone"] == "trust"
+
+
+def test_re_put_new_host_without_overrides_reports_false(cred_client):
+    assert _put(cred_client, {"host": "192.0.2.1"}).status_code == 200
+    r = _put(cred_client, {"host": "192.0.2.99"})
+    assert r.json()["overrides_cleared"] is False
+
+
+def test_explicit_config_in_body_wins_over_stored(cred_client):
+    assert _put(cred_client, {"host": "192.0.2.1", **_OVERRIDES}).status_code == 200
+    r = _put(cred_client, {"host": "192.0.2.1", "observed_sources": {}})
+    assert r.status_code == 200
+    cfg = cred_client.get("/api/credentials/integrations/fw1").json()["config"]
+    assert cfg["observed_sources"] == {}
+    assert cfg["agent_addresses"] == {"agent-a": ["10.0.0.5"]}
+
+
+def test_non_panos_put_is_unchanged(cred_client):
+    body = {"name": "other", "kind": "generic_thing", "plaintext_secret": "S" * 20,
+            "config": {"a": 1}}
+    assert cred_client.put("/api/credentials/integrations", json=body).status_code == 200
+    body["config"] = {"b": 2}
+    r = cred_client.put("/api/credentials/integrations", json=body)
+    assert r.status_code == 200
+    assert "overrides_cleared" not in r.json()
+    assert cred_client.get("/api/credentials/integrations/other").json()["config"] == {"b": 2}
