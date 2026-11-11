@@ -314,22 +314,30 @@ async def reconcile_run(
 async def build_and_store_case_ledger(
     db: AsyncSession, run: Run, *, conn: Any, cfg: ConnectorConfig,
     alerts: list[ObservedAlert], basis: str, now: Optional[datetime] = None,
+    commit: bool = False,
 ) -> tuple[dict, int]:
     """Read the cases (and issue statuses) of ``alerts``, build the run's case
-    ledger and store it on ``run.case_ledger``. Returns ``(ledger, queries)``.
+    ledger and set it on ``run.case_ledger``. Returns ``(ledger, queries)``.
 
-    Never raises on a tenant failure; ``queries`` counts the pages of every read
-    ATTEMPTED, success or failure. Degradation, always with the ledger stored:
+    Transaction: by default this does NOT commit. On the reconcile path the
+    ledger rides ``apply_verdicts``'s commit, so it persists atomically with the
+    verdicts (a scoring failure rolls both back). A standalone caller (e.g. a
+    refresh) passes ``commit=True`` or commits itself.
+
+    Never raises on a tenant failure (``asyncio.CancelledError`` and other
+    ``BaseException`` still propagate); ``queries`` counts the pages of every
+    read ATTEMPTED, success or failure. Degradation, always with the ledger set:
 
     * case read fails        -> ``code="CASE_READ_FAILED"``, ``merge_class="PENDING"``
+    * any unexpected exception from a read or from building -> logged with
+      traceback, same ``CASE_READ_FAILED`` / ``PENDING``
     * unrecognised case/issue shape (:class:`CaseShapeError`)
                              -> ``code="CASE_STATUS_UNRECOGNIZED"``, ``PENDING``
     * issue read fails (the cases were read fine) -> the merge claim stands and
       ``code`` stays ``CASE_LEDGER_OK``, but every issue reads ``unread`` (never
       ``open``) and ``ledger["issue_read"] = {"ok": False, "code": <tenant
-      code>, "pages": n}``. ``issue_read`` is present on every ledger that got
-      as far as deciding whether to read issues (``{"ok": True, "pages": n}`` on
-      success, ``{"ok": None}`` when skipped).
+      code>, "pages": n}``. ``issue_read`` is ``{"ok": True, "pages": n}`` on
+      success and ``{"ok": None}`` when the issue read was skipped.
 
     The issue read is skipped once the case read has failed: the tenant is
     already failing, and issue context cannot repair a PENDING merge.
@@ -337,63 +345,67 @@ async def build_and_store_case_ledger(
     read_at = now or datetime.now(timezone.utc)
     queries = 0
     bare = [ledger_alert(a, None) for a in alerts]
+    skipped: dict[str, Any] = {"ok": None}
 
-    def degraded(code: str, reason: str, issue_read: dict) -> tuple[dict, int]:
+    def degraded(code: str, reason: str, issue_read: dict) -> dict:
         ledger = build_case_ledger(bare, {}, basis=basis, read_at=read_at, code=code)
         ledger["merge_class"] = "PENDING"
         ledger["merge_reason"] = reason
         ledger["issue_read"] = issue_read
+        return ledger
+
+    async def finish(ledger: dict) -> tuple[dict, int]:
+        run.case_ledger = ledger
+        if commit:
+            await db.commit()
         return ledger, queries
 
-    case_ids = sorted({str(a.incident_id) for a in alerts if a.incident_id not in (None, "")})
-    skipped = {"ok": None}
-    cpull = conn.pull_cases(cfg, case_ids)
-    queries += _pages_issued(cpull.detail)
-    if not cpull.ok:
-        ledger, _ = degraded("CASE_READ_FAILED",
-                             f"the case read failed ({cpull.code}); no merge claim is made",
-                             skipped)
-        ledger["case_read"] = {"code": cpull.code, "remediation": remediation_for(cpull.code)}
-        run.case_ledger = ledger
-        await db.commit()
-        return ledger, queries
     try:
-        cases = {}
-        for inc in cpull.incidents:
-            c = ledger_case_from_incident(inc)
-            cases[c.case_id] = c
-    except CaseShapeError as e:
-        ledger, _ = degraded("CASE_STATUS_UNRECOGNIZED", str(e), skipped)
-        run.case_ledger = ledger
-        await db.commit()
-        return ledger, queries
+        case_ids = sorted({str(a.incident_id) for a in alerts
+                           if a.incident_id not in (None, "")})
+        cpull = conn.pull_cases(cfg, case_ids)
+        queries += _pages_issued(cpull.detail)
+        if not cpull.ok:
+            ledger = degraded("CASE_READ_FAILED",
+                              f"the case read failed ({cpull.code}); no merge claim is made",
+                              skipped)
+            ledger["case_read"] = {"code": cpull.code,
+                                   "remediation": remediation_for(cpull.code)}
+            return await finish(ledger)
+        try:
+            cases = {}
+            for inc in cpull.incidents:
+                c = ledger_case_from_incident(inc)
+                cases[c.case_id] = c
+        except CaseShapeError as e:
+            return await finish(degraded("CASE_STATUS_UNRECOGNIZED", str(e), skipped))
 
-    issue_read: dict[str, Any]
-    status_map: dict = {}
-    issue_ids = sorted({a.external_id for a in alerts if a.external_id})
-    try:
-        smap = conn.pull_issue_status(cfg, issue_ids)
-        queries += int(smap.pages)  # before the copy: a dict() copy drops .pages
-        status_map = dict(smap)
-        issue_read = {"ok": True, "pages": int(smap.pages)}
-    except IssueReadError as e:
-        pages = _pages_issued(e.detail)
-        queries += pages
-        issue_read = {"ok": False, "code": e.code, "pages": pages,
-                      "remediation": remediation_for(e.code)}
-    try:
-        ledger = build_case_ledger(
-            [ledger_alert(a, status_map.get(str(a.external_id))) for a in alerts],
-            cases, basis=basis, read_at=read_at)
-    except CaseShapeError as e:
-        ledger, _ = degraded("CASE_STATUS_UNRECOGNIZED", str(e), issue_read)
-        run.case_ledger = ledger
-        await db.commit()
-        return ledger, queries
-    ledger["issue_read"] = issue_read
-    run.case_ledger = ledger
-    await db.commit()
-    return ledger, queries
+        status_map: dict = {}
+        issue_ids = sorted({a.external_id for a in alerts if a.external_id})
+        try:
+            smap = conn.pull_issue_status(cfg, issue_ids)
+            queries += int(smap.pages)  # before the copy: a dict() copy drops .pages
+            status_map = dict(smap)
+            issue_read: dict[str, Any] = {"ok": True, "pages": int(smap.pages)}
+        except IssueReadError as e:
+            pages = _pages_issued(e.detail)
+            queries += pages
+            issue_read = {"ok": False, "code": e.code, "pages": pages,
+                          "remediation": remediation_for(e.code)}
+        try:
+            ledger = build_case_ledger(
+                [ledger_alert(a, status_map.get(str(a.external_id))) for a in alerts],
+                cases, basis=basis, read_at=read_at)
+        except CaseShapeError as e:
+            return await finish(degraded("CASE_STATUS_UNRECOGNIZED", str(e), issue_read))
+        ledger["issue_read"] = issue_read
+        return await finish(ledger)
+    except Exception as e:  # noqa: BLE001 - context-only data must never fail reconcile
+        logger.warning("case ledger degraded on unexpected %s", type(e).__name__, exc_info=True)
+        ledger = degraded("CASE_READ_FAILED",
+                          f"the case ledger could not be built ({type(e).__name__}); "
+                          "no merge claim is made", skipped)
+        return await finish(ledger)
 
 
 def _pages_issued(detail: Optional[dict[str, Any]]) -> int:

@@ -122,6 +122,53 @@ def test_issue_read_failure_is_recorded_never_open(session_factory):
     assert summary["queries_issued"] == 1 + 1 + led["issue_read"]["pages"]
 
 
+def test_unexpected_exception_degrades_not_fails(session_factory, monkeypatch):
+    from connectors.xsiam import XsiamConnector
+
+    def boom(self, cfg, ids):
+        raise RuntimeError("kaboom")
+    monkeypatch.setattr(XsiamConnector, "pull_cases", boom)
+    fetcher, _ = _tenant(_alerts(), [_case()])
+    summary, run = _go(session_factory, fetcher)
+    assert run.case_ledger["code"] == "CASE_READ_FAILED"
+    assert run.case_ledger["merge_class"] == "PENDING"
+    assert summary["queries_issued"] == 1  # the failed read never reported pages
+    assert run.tc_verdict  # scoring still ran
+
+
+def test_issue_ids_join_alert_external_ids(session_factory):
+    issues = [{"id": "a", "status.progress": "Resolved",
+               "status.resolution_reason": "RESOLVED_OTHER", "status.resolution_comment": "done"},
+              {"id": "b", "status.progress": "In Progress"}]
+    fetcher, _ = _tenant(_alerts(), [_case()], issues=issues)
+    _, run = _go(session_factory, fetcher)
+    by = {a["external_id"]: a["issue_closed_by"] for a in run.case_ledger["alerts"]}
+    assert by == {"a": "other_resolved", "b": "open"}
+    assert run.case_ledger["issue_read"]["ok"] is True
+
+
+def test_ledger_rolls_back_with_verdicts(session_factory, monkeypatch):
+    """No commit inside the helper: if scoring/persisting verdicts raises, the
+    ledger is not persisted either."""
+    import connectors.service as svc
+    from models import Run
+    from sqlalchemy import select
+
+    async def boom(*a, **k):
+        raise RuntimeError("scoring failed")
+    monkeypatch.setattr(svc, "apply_verdicts", boom)
+    fetcher, _ = _tenant(_alerts(), [_case()])
+    _seed(session_factory, results=2, threshold=ACC, primary_kpi="Detection Accuracy")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059")))
+    with pytest.raises(RuntimeError):
+        asyncio.run(_reconcile(session_factory, fetcher))
+
+    async def _read():
+        async with session_factory() as db:
+            return (await db.execute(select(Run))).scalars().first().case_ledger
+    assert asyncio.run(_read()) is None
+
+
 def _verdict_state(session_factory):
     from models import Result, Run
     from sqlalchemy import select
