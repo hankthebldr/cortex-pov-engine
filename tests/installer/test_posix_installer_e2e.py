@@ -342,6 +342,35 @@ def test_enroll_denial_surfaces_the_servers_own_structured_detail(simcore, sandb
     assert attempts[0]["stage"] == "enroll"
 
 
+def test_a_failure_before_enrollment_is_not_reported_under_the_default_agent_id(
+    simcore, sandbox, dist_dir
+):
+    """The route's default id is 'jumpbox-01' and the console's token URL carries
+    no id, so every host that failed before enrolling reported itself as
+    'jumpbox-01'. With a token in effect the id is SimCore's to assign."""
+    def _latest() -> dict:
+        return json.loads(_fetch(f"{simcore}/api/agents/install/attempts"))["attempts"][0]
+
+    bad = "cxs_not_a_real_token_but_well_formed"
+    p = _run_installer(_fetch(f"{simcore}/api/agents/install?token={bad}&mode=foreground"), sandbox)
+    assert p.returncode == 1 and "code=ENROLL_DENIED" in p.stderr
+    assert _latest()["agent_id"] is None, _latest()
+
+    # The console's own flow: the token rides in the environment, not the URL.
+    sandbox["env"]["CORTEXSIM_TOKEN"] = bad
+    p = _run_installer(_fetch(f"{simcore}/api/agents/install?mode=foreground"), sandbox)
+    assert p.returncode == 1 and "code=ENROLL_DENIED" in p.stderr
+    assert _latest()["agent_id"] is None, _latest()
+    del sandbox["env"]["CORTEXSIM_TOKEN"]
+
+    # Negative control: a self-asserted id IS the id, and is still reported.
+    for f in dist_dir.iterdir():
+        f.unlink()
+    p = _run_installer(_fetch(f"{simcore}/api/agents/install?id=box-1&mode=foreground"), sandbox)
+    assert p.returncode == 1 and "code=BINARY_UNAVAILABLE" in p.stderr
+    assert _latest()["agent_id"] == "box-1", _latest()
+
+
 def test_empty_shelf_fails_with_the_command_that_fixes_it(simcore, sandbox, dist_dir):
     for f in dist_dir.iterdir():
         f.unlink()

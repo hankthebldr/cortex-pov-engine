@@ -487,6 +487,9 @@ AGENT_ID="${CORTEXSIM_AGENT_ID:-@@AGENT_ID@@}"
 INTERVAL="${CORTEXSIM_INTERVAL:-@@INTERVAL@@}"
 MODE="${CORTEXSIM_MODE:-@@MODE@@}"
 TOKEN="${CORTEXSIM_TOKEN:-@@TOKEN@@}"
+# With a token SimCore assigns the id at enrollment, so until then there is
+# none. The baked default must not be what a pre-enrollment failure reports as.
+if [ -n "$TOKEN" ]; then AGENT_ID=""; fi
 HOSTN="$(hostname 2>/dev/null || echo unknown)"
 # Non-empty only when the baked SERVER is a loopback address. Appended to the
 # unreachable-server remediation: on the SimCore host loopback is correct and
@@ -1508,6 +1511,9 @@ try {
   $AgentId  = if ($env:CORTEXSIM_AGENT_ID) { "$env:CORTEXSIM_AGENT_ID" } else { '@@AGENT_ID@@' }
   $Interval = if ($env:CORTEXSIM_INTERVAL) { "$env:CORTEXSIM_INTERVAL" } else { '@@INTERVAL@@' }
   $Token    = if ($env:CORTEXSIM_TOKEN)    { "$env:CORTEXSIM_TOKEN" }    else { '@@TOKEN@@' }
+  # With a token SimCore assigns the id at enrollment, so until then there is
+  # none. The baked default must not be what a pre-enrollment failure reports as.
+  if ($Token) { $AgentId = '' }
   $Server   = $Server.Trim().TrimEnd('/')
   $LoopbackHint = '@@LOOPBACK_HINT@@'
   $HostN    = "$env:COMPUTERNAME"
@@ -1522,7 +1528,7 @@ try {
   if ($Server -notmatch $UrlPattern) {
     Cs-Fail 'detect' 'BAD_SERVER' "CORTEXSIM_SERVER / baked server '$Server' is not http(s)://host[:port][/path]" 'set CORTEXSIM_SERVER=http://<simcore-ip>:8888, or clear it to use the server this script came from'
   }
-  if ($AgentId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') {
+  if (-not $Token -and $AgentId -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$') {
     Cs-Fail 'detect' 'BAD_AGENT_ID' "agent id '$AgentId' is not 1-64 letters, digits, '.', '_' or '-'" 'fix or clear CORTEXSIM_AGENT_ID (with a token, SimCore assigns the id)'
   }
   if ($Interval -notmatch '^[0-9]{1,4}$' -or [int]$Interval -lt 1 -or [int]$Interval -gt 3600) {

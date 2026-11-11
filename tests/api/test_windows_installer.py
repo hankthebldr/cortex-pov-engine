@@ -993,6 +993,33 @@ def test_unelevated_without_opt_in_refuses_and_enrols_nothing(live_simcore, tmp_
 
 
 @off_windows_pwsh
+def test_a_failure_before_enrollment_is_not_reported_under_the_default_agent_id(live_simcore, tmp_path):
+    """The route's default id is 'jumpbox-01' and the console's token URL carries
+    no id, so every host that failed BEFORE enrolling reported itself as
+    'jumpbox-01': unrelated hosts' NOT_ELEVATED / ENROLL_DENIED rows piled up
+    under one agent id, a real one if a legacy agent has that name. With a token
+    in effect the id is SimCore's to assign, so until it does there is none."""
+    base, dist = live_simcore
+    (dist / "cortexsim-agent-windows-amd64.exe").write_text(_POLLING_STUB)
+
+    def _attempt(url: str, env: dict) -> dict:
+        path = _write(tmp_path, "inst.ps1", _get_text(url))
+        p = _ps(PWSH, "-File", str(path), env={"OS": "Windows_NT", **env})
+        assert "code=NOT_ELEVATED" in p.stdout + p.stderr, p.stdout + p.stderr
+        return _get_json(f"{base}/api/agents/install/attempts")["attempts"][0]
+
+    token = _mint(base)
+    in_url = _attempt(f"{base}/api/agents/install?os=windows&token={token}", {})
+    assert in_url["code"] == "NOT_ELEVATED" and in_url["agent_id"] is None, in_url
+    # The console's own flow: the token rides in the environment, not the URL.
+    in_env = _attempt(f"{base}/api/agents/install?os=windows", {"CORTEXSIM_TOKEN": token})
+    assert in_env["code"] == "NOT_ELEVATED" and in_env["agent_id"] is None, in_env
+    # Negative control: a self-asserted id IS the id, and is still reported.
+    legacy = _attempt(f"{base}/api/agents/install?os=windows&id=win-legacy", {})
+    assert legacy["agent_id"] == "win-legacy", legacy
+
+
+@off_windows_pwsh
 def test_opted_in_unelevated_install_checks_in_and_is_reported_degraded_never_ok(live_simcore, tmp_path):
     """The whole per-user flow against a real SimCore: validate -> enrol ->
     pre-staged digest check -> copy -> start -> check-in proof -> telemetry.
