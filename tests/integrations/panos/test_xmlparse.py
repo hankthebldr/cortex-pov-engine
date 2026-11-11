@@ -146,12 +146,15 @@ def test_parse_system_info_negative():
 # ---- clock / timezone ----------------------------------------------------
 
 def test_parse_clock_and_timezone():
-    assert x.parse_clock(res("clock__ok.xml")) == "Tue Nov 10 22:00:20 2026"
-    assert x.parse_timezone(res("timezone__central.xml")) == "US/Central"
+    assert x.parse_clock(res("clock__ok.xml")) == "Tue Nov 10 22:42:46 EST 2026"
+    assert x.parse_timezone(res("timezone__eastern.xml")) == "US/Eastern"
     assert x.parse_timezone(res("config__empty.xml")) is None
 
 
 def test_clock_to_utc():
+    real = x.parse_clock(res("clock__ok.xml"))      # carries the EST abbreviation
+    assert x.clock_to_utc(real, "US/Eastern") == datetime(2026, 11, 11, 3, 42, 46, tzinfo=timezone.utc)
+    # the no-zone text form is the second accepted case
     got = x.clock_to_utc("Tue Nov 10 22:00:20 2026", "US/Central")
     assert got == datetime(2026, 11, 11, 4, 0, 20, tzinfo=timezone.utc)
     # a zone abbreviation in the text and a padded day are both tolerated
@@ -222,6 +225,10 @@ def test_logging_status_negative():
     with pytest.raises(PanosShapeError):   # a row that is not the known layout
         x.parse_logging_status(_ls(
             "\nLog Collector : C1\nConnection Status : lr - Active\n\n  traffic   garbage here\n"))
+    with pytest.raises(PanosShapeError):   # type row before any Log Collector line
+        x.parse_logging_status(_ls(
+            "\n      traffic   2026/11/10 22:00:00   2026/11/10 22:00:00      1 1      5\n"
+            "Log Collector : C1\nConnection Status : lr - Active\n"))
     with pytest.raises(PanosShapeError):   # text before any collector
         x.parse_logging_status(_ls("\nstray line\nLog Collector : C1\nConnection Status : lr - Active\n"))
 
@@ -355,13 +362,20 @@ def test_policy_match_negative():
 
 
 def test_nat_match():
-    assert x.parse_nat_match(res("nat_match__outbound.xml")) == x.NatMatch(name="LAB-Outbound-NAT", index=2)
+    assert x.parse_nat_match(res("nat_match__outbound.xml")) == x.NatMatch(name="LAB-Outbound-NAT", index=None)
     assert x.parse_nat_match(res("nat_match__nomatch.xml")) is None
+
+
+def test_nat_match_name_attribute_fallback():
+    r = ET.fromstring('<result><rules><entry name="ByAttr"/></rules></result>')
+    assert x.parse_nat_match(r) == x.NatMatch(name="ByAttr", index=None)
 
 
 def test_nat_match_negative():
     with pytest.raises(PanosShapeError):
         x.parse_nat_match(wrong())
+    with pytest.raises(PanosShapeError):   # neither text nor name
+        x.parse_nat_match(ET.fromstring("<result><rules><entry/></rules></result>"))
 
 
 # ---- rule ----------------------------------------------------------------
@@ -412,6 +426,9 @@ def test_spyware_actions_and_dns_security():
     pa = x.parse_profile_actions(res("profile_spyware__dns_sinkhole.xml"), "spyware")
     assert pa.by_severity == {"critical": "block", "high": "block", "medium": "alert",
                               "low": "alert", "informational": "alert"}   # first rule wins
+    assert pa.scoped_rules == (x.ScopedRule(
+        name="scoped-allow", threat_name="Specific.Threat", category="spyware",
+        severities=("critical", "high"), bucket="allow"),)
     assert pa.dns_security == {
         "default-paloalto-dns": "sinkhole", "pan-dns-sec-cc": "sinkhole",
         "pan-dns-sec-malware": "signature-default", "pan-dns-sec-phishing": "block"}
@@ -422,6 +439,14 @@ def test_vulnerability_any_expands_and_default_is_signature_default():
     assert set(pa.by_severity) == {"critical", "high", "medium", "low", "informational"}
     assert set(pa.by_severity.values()) == {"signature-default"}
     assert pa.dns_security == {}
+
+
+def test_scoped_rules_never_fill_by_severity():
+    pa = x.parse_profile_actions(res("profile_vulnerability__scoped.xml"), "vulnerability")
+    assert pa.by_severity == {"critical": "block", "high": "block"}   # low/medium/info not invented
+    assert [(s.name, s.threat_name, s.category, s.severities, s.bucket) for s in pa.scoped_rules] == [
+        ("scoped-low", "CVE-2099-0001", "any", ("low", "medium"), "allow"),
+        ("cat-scoped", None, "code-execution", ("informational",), "alert")]
 
 
 def test_virus_decoders():
@@ -476,8 +501,11 @@ def test_session_count():
 def test_session_count_negative():
     with pytest.raises(PanosShapeError):
         x.parse_session_count(wrong())
-    with pytest.raises(PanosShapeError):
-        x.parse_session_count(ET.fromstring("<result>lots</result>"))
+    for bad in ("<result>3</result>", "<result><member>lots</member></result>",
+                "<result><member>1</member><member>2</member></result>",
+                "<result><member>1</member><x/></result>", "<result><x>3</x></result>"):
+        with pytest.raises(PanosShapeError):
+            x.parse_session_count(ET.fromstring(bad))
     with pytest.raises(PanosShapeError):
         x.parse_session_count(ET.fromstring("<result/>"))
 

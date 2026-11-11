@@ -490,18 +490,15 @@ def _first_rule_entry(result: ET.Element) -> Optional[ET.Element]:
     rules = _config_child(result, "rules")
     if rules is None:
         return None
-    entry = rules.find("entry")
-    if entry is None:
-        return None
-    if not entry.get("name"):
-        raise PanosShapeError("matched rule <entry> has no name")
-    return entry
+    return rules.find("entry")
 
 
 def parse_policy_match(result: ET.Element) -> Optional[PolicyMatch]:
     entry = _first_rule_entry(result)
     if entry is None:
         return None
+    if not entry.get("name"):
+        raise PanosShapeError("matched rule <entry> has no name")
     idx = _req_text(entry, "index", "policy match")
     if not idx.isdigit():
         raise PanosShapeError(f"policy match index {idx!r} is not a number")
@@ -510,13 +507,15 @@ def parse_policy_match(result: ET.Element) -> Optional[PolicyMatch]:
 
 
 def parse_nat_match(result: ET.Element) -> Optional[NatMatch]:
+    """PAN-OS 10.2 replies ``<entry>RuleName</entry>``: the name is the entry text and
+    there is no index. An ``@name`` attribute is accepted as a fallback."""
     entry = _first_rule_entry(result)
     if entry is None:
         return None
-    idx = _text(entry, "index")
-    if idx is not None and not idx.isdigit():
-        raise PanosShapeError(f"NAT match index {idx!r} is not a number")
-    return NatMatch(name=entry.get("name"), index=int(idx) if idx is not None else None)
+    name = (entry.text or "").strip() or (entry.get("name") or "").strip()
+    if not name:
+        raise PanosShapeError("matched NAT rule <entry> has neither text nor name")
+    return NatMatch(name=name, index=None)
 
 
 # ---------------------------------------------------------------- rule / profiles
@@ -562,8 +561,19 @@ def parse_profile_group(result: ET.Element) -> dict[str, str]:
 
 
 @dataclass(frozen=True)
+class ScopedRule:
+    """A signature rule limited to a threat name or category; it cannot speak for a severity."""
+    name: str
+    threat_name: Optional[str]
+    category: Optional[str]
+    severities: tuple[str, ...]
+    bucket: str
+
+
+@dataclass(frozen=True)
 class ProfileActions:
     by_severity: dict[str, str] = field(default_factory=dict)
+    scoped_rules: tuple[ScopedRule, ...] = ()
     dns_security: dict[str, str] = field(default_factory=dict)
     by_decoder: dict[str, str] = field(default_factory=dict)
 
@@ -577,6 +587,7 @@ def parse_profile_actions(result: ET.Element, ptype: str) -> ProfileActions:
     by_sev: dict[str, str] = {}
     dns: dict[str, str] = {}
     by_dec: dict[str, str] = {}
+    scoped: list[ScopedRule] = []
     if ptype == "virus":
         for d in e.findall("decoder/entry"):
             dname = d.get("name")
@@ -598,8 +609,13 @@ def parse_profile_actions(result: ET.Element, ptype: str) -> ProfileActions:
                 expanded.append(s)
             else:
                 raise PanosShapeError(f"{ptype} rule {rname}: unknown severity {s!r}")
-        for s in expanded:
-            by_sev.setdefault(s, bucket)
+        threat = _text(r, "threat-name")
+        cat = _text(r, "category")
+        if threat in (None, "any") and cat in (None, "any"):
+            for s in expanded:
+                by_sev.setdefault(s, bucket)
+        else:
+            scoped.append(ScopedRule(rname, threat, cat, tuple(expanded), bucket))
     if ptype == "spyware":
         for path in ("botnet-domains/lists/entry", "botnet-domains/dns-security-categories/entry"):
             for d in e.findall(path):
@@ -607,7 +623,7 @@ def parse_profile_actions(result: ET.Element, ptype: str) -> ProfileActions:
                 if not dname:
                     raise PanosShapeError("DNS security entry has no name")
                 dns[dname] = classify_action(_action_value(d.find("action"), f"DNS security {dname}"))
-    return ProfileActions(by_severity=by_sev, dns_security=dns)
+    return ProfileActions(by_severity=by_sev, scoped_rules=tuple(scoped), dns_security=dns)
 
 
 # ---------------------------------------------------------------- user / session / routing / zones
@@ -626,9 +642,11 @@ def parse_user_mapping(result: ET.Element) -> list[str]:
 
 
 def parse_session_count(result: ET.Element) -> int:
-    if len(result):
-        raise PanosShapeError("session count reply carries child elements; expected a number")
-    t = (result.text or "").strip()
+    """PAN-OS replies ``<result><member>N</member></result>``; anything else raises."""
+    kids = list(result)
+    if len(kids) != 1 or kids[0].tag != "member" or (result.text or "").strip():
+        raise PanosShapeError("session count reply is not exactly one <member>")
+    t = (kids[0].text or "").strip()
     if not t.isdigit():
         raise PanosShapeError(f"session count {t!r} is not a number")
     return int(t)
