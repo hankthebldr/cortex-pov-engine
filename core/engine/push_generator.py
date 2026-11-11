@@ -1382,6 +1382,9 @@ class _PsStepPlan:
     optional_inputs: tuple[str, ...]
     timeout: int
     needs_elevation: bool
+    #: The step declares an account Windows cannot impersonate, so it runs as
+    #: the invoking user. Mirrors the harness's ``Resolve-CsIdentity`` exactly.
+    identity_degraded: bool
     network_fetch: bool
 
 
@@ -1410,6 +1413,7 @@ _PS_HEADER_TMPL = """\
 # Preflight — checked before EACH step. A step that fails a check is NOT run
 # and is reported `not-executed` with the reason in brackets:
 @@PREFLIGHT_COMMENT@@#
+@@IDENTITY_COMMENT@@#
 @@RESIDUE_COMMENT@@#
 # Exit codes (this script's process exit code):
 #   0  every step ran and exited 0, and every cleanup command ran clean
@@ -1417,8 +1421,14 @@ _PS_HEADER_TMPL = """\
 #   2  refused before any step ran: RESIDUE not acknowledged (see above)
 #   3  a step was NOT executed (prerequisite, operator input or elevation missing)
 #   4  every step ran clean but a cleanup command failed (artifacts may remain)
+# An identity-DEGRADED step does not change the exit code: 0 says every step
+# ran and exited 0, NOT that every step ran as the identity it declares.
 # Every run ends with a per-step outcome table:
-#   ran-ok / ran-nonzero / not-executed / threw / timed-out.
+#   OUTCOME          ran-ok / ran-nonzero / not-executed / threw / timed-out
+#   IDENTITY column  direct / elevated / DEGRADED (ran as the invoking user,
+#                    not as the declared account) / - (the step was not executed)
+# and a `cortexsim-identity-summary degraded=N ran=M` line naming every
+# DEGRADED step.
 #
 # IMPORTANT: Self-contained — no SimCore dependency at runtime.
 #            Windows PowerShell 5.1 floor (Server 2016+ / Windows 10+): no
@@ -1462,6 +1472,7 @@ $CortexSimCleanupFailed = $false
 $CortexSimExitCode      = 1
 $CortexSimPlannedSteps  = @@PLANNED_STEPS@@
 $CortexSimElevatedSteps = @@ELEVATED_STEPS@@
+$CortexSimDegradedSteps = @@DEGRADED_STEPS@@
 $CortexSimResidue       = @@RESIDUE_ITEMS@@
 
 function Write-CsLine {
@@ -1499,10 +1510,13 @@ _PS_HARNESS_TMPL = """\
 # impersonation. `runas` prompts for a password; `Start-Process -Credential`
 # needs a credential a self-contained bundle must never carry. So a step that
 # declares a POSIX service account (www-data, postgres, …) CANNOT achieve that
-# identity here — it runs as the invoking user and says so, loudly, via a
-# `cortexsim-identity-degraded` marker line. Never silently pretend: that
-# marker is what keeps the POV's causality story honest about which steps did
-# not reach their declared identity.
+# identity here — it runs as the invoking user and says so, loudly: a
+# `cortexsim-identity-degraded` marker line before the step, DEGRADED in the
+# IDENTITY column of the closing outcome table, and a closing
+# `cortexsim-identity-summary` line. Never silently pretend: `ran-ok` on such
+# a row says the command exited 0, not that the identity was achieved, and
+# those markers are what keep the POV's causality story honest about which
+# steps did not reach their declared identity. The exit code is unaffected.
 #
 # A step that declares an ELEVATED identity (root, container-runtime,
 # administrator, SYSTEM) is a different case: it needs an elevated session,
@@ -1688,15 +1702,15 @@ function Invoke-CsProcess {
 }
 
 function Add-CsOutcome {
-    param([string]$StepId, [string]$Outcome, $Code, [string]$Detail)
+    param([string]$StepId, [string]$Outcome, $Code, [string]$Detail, [string]$Identity = '-', [string]$Declared = '')
     $exitText = '-'
     if ($null -ne $Code) { $exitText = [string]$Code }
-    [void]$CortexSimOutcomes.Add([pscustomobject]@{ Step = $StepId; Outcome = $Outcome; Exit = $exitText; Detail = $Detail })
-    Write-CsLog INFO ('cortexsim-step-result step=' + $StepId + ' outcome=' + $Outcome + ' exit=' + $exitText)
+    [void]$CortexSimOutcomes.Add([pscustomobject]@{ Step = $StepId; Outcome = $Outcome; Exit = $exitText; Identity = $Identity; Declared = $Declared; Detail = $Detail })
+    Write-CsLog INFO ('cortexsim-step-result step=' + $StepId + ' outcome=' + $Outcome + ' exit=' + $exitText + ' identity=' + $Identity)
 }
 
 function Complete-CsStep {
-    param([string]$StepId, $Result)
+    param([string]$StepId, $Result, [string]$Mode = '-', [string]$Declared = '')
     $outcome = [string]$Result.Outcome
     $code = $Result.Code
     $detail = [string]$Result.Detail
@@ -1712,7 +1726,15 @@ function Complete-CsStep {
         $outcome = 'threw'
         Write-CsLog WARN ('Step ' + $StepId + ' threw: ' + $detail)
     }
-    Add-CsOutcome -StepId $StepId -Outcome $outcome -Code $code -Detail $detail
+    # The identity a step ACHIEVED sits beside its outcome. A step that was not
+    # executed achieved none, so it is never counted as degraded.
+    $identity = '-'
+    if ($outcome -ne 'not-executed') { $identity = $Mode }
+    if ($identity -eq 'degraded') {
+        $note = 'declared=' + $Declared + ' actual=' + [Environment]::UserName
+        if ([string]::IsNullOrEmpty($detail)) { $detail = $note } else { $detail = $note + ' ' + $detail }
+    }
+    Add-CsOutcome -StepId $StepId -Outcome $outcome -Code $code -Detail $detail -Identity $identity -Declared $Declared
 }
 
 function Skip-CsStep {
@@ -1764,7 +1786,7 @@ function Invoke-CsStep {
     } catch {
         $result = @{ Outcome = 'threw'; Code = $null; Detail = [string]$_.Exception.Message }
     }
-    Complete-CsStep -StepId $StepId -Result $result
+    Complete-CsStep -StepId $StepId -Result $result -Mode $mode -Declared $Identity
 }
 
 function Invoke-CsCleanupCommand {
@@ -1792,9 +1814,23 @@ function Write-CsSummary {
         }
     }
     Write-CsLog INFO 'Step outcome summary:'
-    Write-CsLine ('    ' + 'STEP'.PadRight(28) + 'OUTCOME'.PadRight(14) + 'EXIT'.PadRight(7) + 'DETAIL')
+    Write-CsLine ('    ' + 'STEP'.PadRight(28) + 'OUTCOME'.PadRight(14) + 'EXIT'.PadRight(7) + 'IDENTITY'.PadRight(10) + 'DETAIL')
+    $ran = 0
+    $degraded = New-Object System.Collections.ArrayList
     foreach ($o in $CortexSimOutcomes) {
-        Write-CsLine ('    ' + ([string]$o.Step).PadRight(28) + ([string]$o.Outcome).PadRight(14) + ([string]$o.Exit).PadRight(7) + [string]$o.Detail)
+        $identityText = [string]$o.Identity
+        if ($o.Outcome -ne 'not-executed') { $ran++ }
+        if ($identityText -eq 'degraded') {
+            $identityText = 'DEGRADED'
+            [void]$degraded.Add(([string]$o.Step) + ' (' + ([string]$o.Declared) + ')')
+        }
+        Write-CsLine ('    ' + ([string]$o.Step).PadRight(28) + ([string]$o.Outcome).PadRight(14) + ([string]$o.Exit).PadRight(7) + $identityText.PadRight(10) + [string]$o.Detail)
+    }
+    # Said again after the table, because the exit code does not carry it.
+    if ($degraded.Count -gt 0) {
+        Write-CsLog WARN ('cortexsim-identity-summary degraded=' + $degraded.Count + ' ran=' + $ran + ' - ran as ' + [Environment]::UserName + ', NOT as the identity they declare: ' + ($degraded -join ', ') + '. On these rows ran-ok means the command exited 0, not that the identity was achieved; a detection keyed on the declared account will not match them.')
+    } else {
+        Write-CsLog INFO ('cortexsim-identity-summary degraded=0 ran=' + $ran + ' - no executed step ran under a degraded identity')
     }
 }
 
@@ -1829,6 +1865,9 @@ Write-CsLog INFO ('Step interpreter: ' + $CortexSimPwsh)
 Write-CsLog INFO ('Elevated session: ' + $CortexSimElevated)
 if ((-not $CortexSimElevated) -and ($CortexSimElevatedSteps.Count -gt 0)) {
     Write-CsLog WARN ('Not elevated - these steps declare an elevated identity and will NOT run (reason=NOT_ELEVATED): ' + ($CortexSimElevatedSteps -join ', '))
+}
+if ($CortexSimDegradedSteps.Count -gt 0) {
+    Write-CsLog WARN ('Identity DEGRADED - these steps declare an account Windows cannot impersonate without a credential. Each one that runs does so as ' + [Environment]::UserName + ' and is marked DEGRADED in the outcome table: ' + ($CortexSimDegradedSteps -join ', '))
 }
 
 # ---------------------------------------------------------------------------
@@ -1870,6 +1909,10 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
       beacon's exit-code semantics, a timeout and a killed process tree;
     * a step whose tool, operator input or elevation is missing is not run and
       is reported ``not-executed`` with a stable reason;
+    * a step that declares an account Windows cannot impersonate still runs,
+      as the invoking user, and says so in three places: the header, the
+      IDENTITY column of the closing table (``DEGRADED``) and the closing
+      ``cortexsim-identity-summary`` line. The exit code does not carry it;
     * teardown the bundle cannot perform is named in the header and refused at
       run time until ``CORTEXSIM_ACCEPT_RESIDUE=1``; "Cleanup complete" is
       printed only when it is true;
@@ -1910,6 +1953,15 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
     external_tools = scenario.get("external_tools") or []
     adapter_bins = _adapter_binaries(external_tools)
 
+    def _degraded(identity: Any) -> bool:
+        # The same three branches as the harness's Resolve-CsIdentity: blank or
+        # `direct` runs as-is; an elevation claim is elevated or not run; every
+        # other name is an account this bundle cannot become.
+        text = str(identity)
+        if not text.strip() or text.lower() == "direct":
+            return False
+        return text.lower() not in elevated_ids
+
     # emittable ⇒ exactly one resolution per scenario step, in order.
     plans: list[_PsStepPlan] = []
     for idx, (res, raw) in enumerate(zip(resolution.steps, raw_steps), start=1):
@@ -1924,6 +1976,7 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
             optional_inputs=tuple(optional),
             timeout=_step_timeout(raw if isinstance(raw, dict) else {}),
             needs_elevation=str(res.identity).lower() in elevated_ids,
+            identity_degraded=_degraded(res.identity),
             network_fetch=bool(_GET_PREREQS_RE.search(code_only(res.command))),
         ))
 
@@ -1982,6 +2035,24 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
         )
     )
 
+    # Known at generation time, so the operator reads it BEFORE running: Windows
+    # has no impersonation primitive, so these steps are degraded on every host.
+    degraded_plans = [p for p in plans if p.identity_degraded]
+    identity_comment = (
+        "# Identity DEGRADED — Windows has no credential-free impersonation, so a step\n"
+        "# that declares a service account cannot run as it. Such a step is not\n"
+        "# refused: it runs as the user who launches this bundle and is marked\n"
+        "# DEGRADED in the closing outcome table. A detection keyed on the declared\n"
+        "# account will not match it:\n"
+        + (
+            "".join(
+                f"#     {_comment_safe(p.res.step_id)} (identity {_comment_safe(p.res.identity)})\n"
+                for p in degraded_plans
+            )
+            if degraded_plans else "#     (none)\n"
+        )
+    )
+
     residue = list(resolution.skipped_cleanup)
     if residue:
         residue_comment = (
@@ -2021,6 +2092,7 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
             "AUTHOR": _comment_safe(scenario.get("author") or "CortexSim"),
             "STEP_PLAN_COMMENT": step_plan_comment,
             "PREFLIGHT_COMMENT": preflight_comment,
+            "IDENTITY_COMMENT": identity_comment,
             "RESIDUE_COMMENT": residue_comment,
             "DEFAULT_TIMEOUT": _PS_DEFAULT_TIMEOUT,
             "RUN_ELEVATED_NOTE": (
@@ -2030,6 +2102,9 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
             "RUN_WITH_COMMENT": run_with,
             "PLANNED_STEPS": _ps_array([p.res.step_id for p in plans]),
             "ELEVATED_STEPS": _ps_array([p.res.step_id for p in plans if p.needs_elevation]),
+            "DEGRADED_STEPS": "@(" + ", ".join(
+                _ps_inline(f"{p.res.step_id} ({p.res.identity})") for p in degraded_plans
+            ) + ")",
             "RESIDUE_ITEMS": "@(" + ", ".join(_ps_inline(c, limit=240) for c in residue) + ")",
         },
     )

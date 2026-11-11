@@ -345,6 +345,141 @@ def test_unacknowledged_residue_refuses_before_any_step_runs(ps_exe, tmp_path):
     assert proc.returncode == 0, diag
 
 
+# ─── identity degradation: visible in the table and the closing summary ───
+#
+# Windows has no credential-free impersonation, so a step that declares
+# `www-data` runs as whoever launched the bundle. The harness logged one WARN
+# line before the step and then reported the step `ran-ok` in the outcome
+# table with nothing beside it, so the table a DC reads at the end said five
+# clean steps for SIM-EDR-005 when none ran as the account its detections key on.
+
+_TABLE_HEADER_RE = re.compile(r"(?m)^\s+STEP\s+OUTCOME\s+EXIT\s+IDENTITY\s+DETAIL\s*$")
+_IDENTITY_SUMMARY_RE = re.compile(r"cortexsim-identity-summary degraded=(\d+) ran=(\d+)")
+
+
+def _table_rows(out: str) -> dict[str, str]:
+    """The outcome-table rows, keyed by step id (text after the step id)."""
+    tail = out.split("Step outcome summary:", 1)
+    if len(tail) != 2:
+        return {}
+    rows: dict[str, str] = {}
+    for line in tail[1].splitlines():
+        m = re.match(r"^\s{4}(step-\d+)\s+(.*)$", line)
+        if m:
+            rows.setdefault(m.group(1), m.group(2).rstrip())
+    return rows
+
+
+def _identity_of(out: str) -> dict[str, str]:
+    return {
+        m.group(1): m.group(2)
+        for m in re.finditer(r"cortexsim-step-result step=(\S+) outcome=\S+ exit=\S+ identity=(\S+)", out)
+    }
+
+
+def test_an_identity_degraded_step_is_marked_in_the_outcome_table(ps_exe, tmp_path):
+    scn = _scenario([
+        _win_step("step-01", "Write-Output 'DIRECT-RAN'"),
+        _win_step("step-02", "Write-Output 'DEGRADED-RAN'", identity="www-data"),
+        _win_step("step-03", "Write-Output 'DEGRADED-FAILS'; " + _native_exit(3), identity="postgres"),
+        _win_step("step-04", "cortexsim-no-such-tool-xyz --flag", identity="www-data"),
+    ])
+    proc, out, _ = _run_bundle(ps_exe, pg.generate_powershell(scn), tmp_path)
+    diag = _diag(proc, out)
+
+    # The steps still RUN: degradation is reported, never a refusal.
+    assert "DEGRADED-RAN" in out and "DEGRADED-FAILS" in out, diag
+
+    # 1. Outcomes are what they were. A degraded step is not a new outcome.
+    results = _results(out)
+    assert results.get("step-01") == ("ran-ok", "0"), diag
+    assert results.get("step-02") == ("ran-ok", "0"), diag
+    assert results.get("step-03") == ("ran-nonzero", "3"), diag
+    assert results.get("step-04", ("",))[0] == "not-executed", diag
+
+    # 2. The machine line carries the identity mode of every step.
+    assert _identity_of(out) == {
+        "step-01": "direct", "step-02": "degraded", "step-03": "degraded", "step-04": "-",
+    }, diag
+
+    # 3. The table has an IDENTITY column and the degraded rows say so.
+    assert _TABLE_HEADER_RE.search(out), "the outcome table has no IDENTITY column\n" + diag
+    rows = _table_rows(out)
+    assert set(rows) == {"step-01", "step-02", "step-03", "step-04"}, diag
+    assert re.match(r"^ran-ok\s+0\s+direct\b", rows["step-01"]), rows["step-01"]
+    assert re.match(r"^ran-ok\s+0\s+DEGRADED\s+declared=www-data actual=\S+", rows["step-02"]), rows["step-02"]
+    assert re.match(r"^ran-nonzero\s+3\s+DEGRADED\s+declared=postgres actual=\S+", rows["step-03"]), rows["step-03"]
+    # A step that never ran achieved no identity at all: not counted as degraded.
+    assert re.match(r"^not-executed\s+-\s+-\s+reason=PREREQ_MISSING", rows["step-04"]), rows["step-04"]
+    assert "DEGRADED" not in rows["step-01"] and "DEGRADED" not in rows["step-04"], diag
+
+    # 4. The closing summary counts them and names step and declared identity.
+    m = _IDENTITY_SUMMARY_RE.search(out)
+    assert m, "no cortexsim-identity-summary line closes the run\n" + diag
+    assert (m.group(1), m.group(2)) == ("2", "3"), diag
+    summary = next(ln for ln in out.splitlines() if "cortexsim-identity-summary" in ln)
+    assert "[WARN]" in summary, summary
+    assert "step-02 (www-data)" in summary and "step-03 (postgres)" in summary, summary
+    assert "step-04" not in summary and "step-01" not in summary, summary
+
+    # 5. Exit code: a step was not executed -> 3, exactly as before.
+    assert proc.returncode == 3, diag
+
+
+def test_identity_degradation_does_not_change_the_exit_code(ps_exe, tmp_path):
+    """Exit 0 still means every step ran and exited 0. Degradation is reported
+    beside it, loudly, and is not folded into the code."""
+    scn = _scenario([
+        _win_step("step-01", "Write-Output 'A'", identity="www-data"),
+        _win_step("step-02", "Write-Output 'B'"),
+    ])
+    proc, out, _ = _run_bundle(ps_exe, pg.generate_powershell(scn), tmp_path)
+    diag = _diag(proc, out)
+    assert proc.returncode == 0, diag
+    m = _IDENTITY_SUMMARY_RE.search(out)
+    assert m and (m.group(1), m.group(2)) == ("1", "2"), diag
+    assert re.match(r"^ran-ok\s+0\s+DEGRADED\s+declared=www-data", _table_rows(out)["step-01"]), diag
+    # Told before the first step too, not only at the end.
+    start = out.split("STEP step-01", 1)[0]
+    assert "Identity DEGRADED" in start and "step-01 (www-data)" in start, diag
+
+    scn = _scenario([
+        _win_step("step-01", "Write-Output 'A'", identity="www-data"),
+        _win_step("step-02", _native_exit(3)),
+    ])
+    proc, out, _ = _run_bundle(ps_exe, pg.generate_powershell(scn), tmp_path)
+    assert proc.returncode == 1, _diag(proc, out)
+
+
+def test_a_run_with_no_degraded_step_says_zero(ps_exe, tmp_path):
+    scn = _scenario([_win_step("step-01", "Write-Output 'A'"), _win_step("step-02", "Write-Output 'B'")])
+    proc, out, _ = _run_bundle(ps_exe, pg.generate_powershell(scn), tmp_path)
+    diag = _diag(proc, out)
+    m = _IDENTITY_SUMMARY_RE.search(out)
+    assert m and (m.group(1), m.group(2)) == ("0", "2"), diag
+    summary = next(ln for ln in out.splitlines() if "cortexsim-identity-summary" in ln)
+    assert "[INFO]" in summary, summary
+    assert "DEGRADED" not in out.split("Step outcome summary:", 1)[1], diag
+    assert proc.returncode == 0, diag
+
+
+def test_an_elevated_identity_step_is_never_counted_as_degraded(ps_exe, tmp_path):
+    """`root` is an elevation claim, not an impersonation claim: unelevated the
+    step is not run (NOT_ELEVATED, exit 3); elevated it runs and reads
+    `elevated`. Either way it is not a DEGRADED row."""
+    scn = _scenario([_win_step("step-01", "Write-Output 'ROOT-STEP'", identity="root")])
+    proc, out, _ = _run_bundle(ps_exe, pg.generate_powershell(scn), tmp_path)
+    diag = _diag(proc, out)
+    m = _IDENTITY_SUMMARY_RE.search(out)
+    assert m and m.group(1) == "0", diag
+    mode = _identity_of(out).get("step-01")
+    if "ROOT-STEP" in out:
+        assert mode == "elevated" and proc.returncode == 0, diag
+    else:
+        assert mode == "-" and proc.returncode == 3, diag
+        assert "reason=NOT_ELEVATED" in _table_rows(out)["step-01"], diag
+
+
 @pytest.mark.skipif(not IS_WINDOWS, reason="cmd.exe command-line context exists only on Windows")
 def test_cmd_dialect_steps_run_in_command_line_context(ps_exe, tmp_path):
     """Windows-only: cmd steps keep interactive-cmd semantics (``%i`` loop

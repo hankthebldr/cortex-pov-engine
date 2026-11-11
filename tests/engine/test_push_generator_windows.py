@@ -402,6 +402,57 @@ class TestGeneratePowerShell:
         assert "cortexsim-identity-degraded" in out
         assert "-Identity 'www-data'" in out
 
+    def test_degraded_identities_are_listed_in_the_header_before_anything_runs(self):
+        """A DC reading the .ps1 learns which steps cannot reach their declared
+        identity, and that the exit code will not say so."""
+        scn = _scn([
+            {"id": "step-01", "identity": "www-data", "command": "echo 'x'"},
+            {"id": "step-02", "identity": "root", "command": "echo 'x'"},
+            {"id": "step-03", "identity": "direct", "command": "echo 'x'"},
+            {"id": "step-04", "command": "echo 'x'"},
+            {"id": "step-05", "identity": "Administrator", "command": "echo 'x'"},
+            {"id": "step-06", "identity": "svc-backup", "command": "echo 'x'"},
+        ])
+        out = pg.generate_powershell(scn)
+        header = out.split("$ErrorActionPreference", 1)[0]
+        block = header.split("# Identity DEGRADED", 1)[1].split("# RESIDUE", 1)[0]
+        listed = [ln.strip("# \n") for ln in block.splitlines() if ln.startswith("#     ")]
+        assert listed == ["step-01 (identity www-data)", "step-06 (identity svc-backup)"]
+        assert "does not change the exit code" in " ".join(header.replace("#", " ").split())
+        assert "IDENTITY column" in header
+        assert "$CortexSimDegradedSteps = @('step-01 (www-data)', 'step-06 (svc-backup)')" in out
+
+    def test_a_bundle_with_no_degraded_identity_says_none(self):
+        scn = _scn([{"id": "step-01", "identity": "root", "command": "echo 'x'"},
+                    {"id": "step-02", "command": "echo 'x'"}])
+        out = pg.generate_powershell(scn)
+        header = out.split("$ErrorActionPreference", 1)[0]
+        block = header.split("# Identity DEGRADED", 1)[1].split("# RESIDUE", 1)[0]
+        assert "#     (none)\n" in block
+        assert "$CortexSimDegradedSteps = @()" in out
+
+    def test_the_header_and_the_harness_classify_identity_the_same_way(self):
+        """The header list is computed in Python, the run-time mode in
+        PowerShell (Resolve-CsIdentity). Both must read the same allowlist, or
+        the header promises one thing and the table shows another."""
+        from engine.identity_spec import direct_identities  # noqa: PLC0415
+
+        ids = ["", "direct", "DIRECT", "root", "Root", "container-runtime", "administrator",
+               "SYSTEM", "www-data", "user", "svc-backup", "postgres"]
+        scn = _scn([{"id": f"step-{i:02d}", "identity": ident, "command": "echo 'x'"}
+                    for i, ident in enumerate(ids, start=1)])
+        out = pg.generate_powershell(scn)
+        elevated = ({d.lower() for d in direct_identities()} | {"administrator", "system"}) - {"direct"}
+        want = [
+            f"step-{i:02d} ({ident})" for i, ident in enumerate(ids, start=1)
+            if ident.strip() and ident.lower() != "direct" and ident.lower() not in elevated
+        ]
+        assert want == ["step-09 (www-data)", "step-10 (user)", "step-11 (svc-backup)", "step-12 (postgres)"]
+        literal = "@(" + ", ".join("'" + w + "'" for w in want) + ")"
+        assert f"$CortexSimDegradedSteps = {literal}" in out
+        # ...and the PowerShell side still branches on exactly those names.
+        assert "$CortexSimDirectIdentities -contains $lower -or $lower -eq 'administrator' -or $lower -eq 'system'" in out
+
     def test_direct_identity_allowlist_comes_from_the_canonical_spec(self):
         """Push-bash, push-PowerShell and the Go beacon must not grow three
         copies of the allowlist (GAP-PUSH-001)."""
