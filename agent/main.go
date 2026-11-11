@@ -97,6 +97,10 @@ func main() {
 		"Posture profile this pod was deployed with, reported to SimCore as a runtime fact")
 	prepareStatusFileFlag := flag.String("prepare-status-file", "",
 		"File whose first line is the pod's tool-preparation status, reported to SimCore as a runtime fact")
+	expiresAtFlag := flag.String("expires-at", "",
+		"RFC3339 time after which the beacon takes no further tasks and exits 0 (empty = never)")
+	subreaperFlag := flag.Bool("subreaper", false,
+		"Become a child subreaper (linux) and reap orphaned processes left by finished steps")
 	flag.Parse()
 
 	// Validate required flag.
@@ -118,6 +122,11 @@ func main() {
 	}
 	if *stepTimeoutFlag < 0 {
 		fmt.Fprintln(os.Stderr, "ERROR: --step-timeout must be >= 0 (0 selects the built-in default)")
+		os.Exit(1)
+	}
+	expiresAt, err := parseExpiresAt(*expiresAtFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: BAD_EXPIRES_AT: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -172,6 +181,7 @@ func main() {
 	client.SetRuntimeFacts(&facts)
 	client.LongPollTimeout = *longPollFlag
 	client.StreamOutput = *streamOutputFlag
+	client.ExpiresAt = expiresAt
 	if *stepTimeoutFlag > 0 {
 		client.StepTimeout = time.Duration(*stepTimeoutFlag) * time.Second
 	}
@@ -216,16 +226,23 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, shutdownSignals...)
 
-	go func() {
-		sig := <-sigCh
-		log.Printf("received signal %s — initiating graceful shutdown", sig)
-		cancel()
-	}()
+	if *subreaperFlag {
+		if err := setChildSubreaper(); err != nil {
+			log.Printf("WARNING SUBREAPER_UNAVAILABLE: %v — orphans of finished steps reparent to PID 1", err)
+		} else {
+			log.Printf("child subreaper enabled — orphans of finished steps are reaped here")
+		}
+		startChildReaper(ctx)
+	}
 
 	// ----------------------------------------------------------------
-	// Main poll loop (blocks until context is cancelled)
+	// Main poll loop: returns on lifetime expiry, or within shutdownGrace of
+	// a shutdown signal. Both paths exit 0.
 	// ----------------------------------------------------------------
-	client.Run(ctx)
+	if runUntilShutdown(ctx, cancel, client.Run, sigCh, shutdownGrace) {
+		log.Printf("SHUTDOWN_TIMEOUT: poll loop still running %s after the signal — exiting", shutdownGrace)
+		return
+	}
 
 	log.Printf("agent exited cleanly")
 }

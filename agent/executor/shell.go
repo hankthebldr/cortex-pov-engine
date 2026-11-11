@@ -91,7 +91,10 @@ func RunCommandCtxStreamOutcome(ctx context.Context, cmdStr string, onChunk Outp
 		cmd.Stderr = &errBuf
 	}
 
-	if startErr := cmd.Start(); startErr != nil {
+	// Started through the child gate so an orphan reaper cannot collect this
+	// child before cmd.Wait does (see childgate.go).
+	release, startErr := StartTracked(cmd)
+	if startErr != nil {
 		return Outcome{Stdout: outBuf.String(), Stderr: errBuf.String(), ExitCode: -1, Termination: TerminationExited}, startErr
 	}
 
@@ -111,6 +114,7 @@ func RunCommandCtxStreamOutcome(ctx context.Context, cmdStr string, onChunk Outp
 	}()
 
 	runErr := cmd.Wait()
+	release()
 	close(waitDone)
 
 	stdout := outBuf.String()

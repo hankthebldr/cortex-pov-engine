@@ -84,7 +84,10 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 		return nil, fmt.Errorf("chain session stderr: %w", err)
 	}
 
-	if startErr := cmd.Start(); startErr != nil {
+	// The anchor is a direct child that lives across every step of the run, so
+	// it holds the child gate (childgate.go) until its Wait returns.
+	release, startErr := StartTracked(cmd)
+	if startErr != nil {
 		cancel()
 		return nil, fmt.Errorf("chain session start: %w", startErr)
 	}
@@ -101,6 +104,7 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 	}
 	go func() {
 		s.waitErr = cmd.Wait()
+		release()
 		close(s.exited)
 	}()
 

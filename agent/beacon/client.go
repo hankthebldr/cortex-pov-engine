@@ -213,6 +213,21 @@ type BeaconClient struct {
 	// StreamOutput enables real-time line-by-line output streaming to SimCore
 	// during command execution.
 	StreamOutput bool
+
+	// ExpiresAt, when non-zero, is the absolute end of this beacon's lifetime
+	// (--expires-at). Run takes no task once it has passed; a task already
+	// executing finishes first.
+	ExpiresAt time.Time
+}
+
+// lifetimeExpired reports, and logs, that ExpiresAt has passed.
+func (c *BeaconClient) lifetimeExpired() bool {
+	if c.ExpiresAt.IsZero() || time.Now().Before(c.ExpiresAt) {
+		return false
+	}
+	log.Printf("[beacon] LIFETIME_EXPIRED — expires-at %s has passed; taking no further tasks",
+		c.ExpiresAt.UTC().Format(time.RFC3339))
+	return true
 }
 
 // stepTimeout returns the effective execution timeout for a step.
@@ -507,11 +522,17 @@ func (c *BeaconClient) Complete(runID string, exitCode int, summary string, step
 // and reports the final exit code.  It exits cleanly when ctx is cancelled
 // (SIGINT / SIGTERM).
 func (c *BeaconClient) Run(ctx context.Context) {
+	if c.lifetimeExpired() {
+		return
+	}
 	if c.LongPollTimeout > 0 {
 		log.Printf("[beacon] agent %q started — long-polling %s (wait=%ds)", c.AgentID, c.ServerURL, c.LongPollTimeout)
 		for {
 			if ctx.Err() != nil {
 				log.Printf("[beacon] context cancelled — shutting down cleanly")
+				return
+			}
+			if c.lifetimeExpired() {
 				return
 			}
 			task, err := c.PollTasksWait(c.LongPollTimeout)
@@ -555,6 +576,9 @@ func (c *BeaconClient) Run(ctx context.Context) {
 			return
 
 		case <-ticker.C:
+			if c.lifetimeExpired() {
+				return
+			}
 			task, err := c.PollTasks()
 			if err != nil {
 				// An unknown-agent 404 means SimCore lost (or never had) our
