@@ -7,7 +7,7 @@ caller owns the commit.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from engine.outcome import (
     HOST_WITNESS,
@@ -18,7 +18,9 @@ from engine.outcome import (
     RUN_ABORTED,
     TERMINATION_ABORTED,
     TERMINATION_BEACON_LOST,
+    grades_as_prevention,
     host_outcome_for_step,
+    resolve_module_mode,
 )
 
 
@@ -31,7 +33,8 @@ def severed_step(steps: Iterable[Any]) -> Optional[str]:
 
 
 def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
-                        agent_profile_mode: str) -> int:
+                        agent_profile_mode: str,
+                        module_modes: Optional[Mapping[str, str]] = None) -> int:
     """Set host-derived ``outcome`` on Results; return the number touched.
 
     * Only Results whose ``outcome`` is None/pending are touched -- except that
@@ -44,7 +47,9 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
       ``detected`` / ``prevented`` row is not.
     * A ``prevent`` Result on a step the host witnessed being killed, in block
       mode, is seeded ``pending`` -- the host saw a kill but the alert (the
-      second witness) may still arrive.
+      second witness) may still arrive. "Block mode" is per row: a module the
+      operator attested Report or Disabled (``module_modes``) is not graded as
+      a block, so a kill on its step is not its prevention.
     """
     by_step = {s.step_id: s for s in steps}
     touched = 0
@@ -78,14 +83,17 @@ def apply_host_outcomes(results: Sequence[Any], steps: Iterable[Any], *,
             r.outcome = host_outcome
             r.outcome_reason = s.reason
             touched += 1
-        elif (r.expected_outcome == "prevent" and agent_profile_mode == "block"
-              and s.termination in HOST_WITNESS):
+            continue
+        as_block = r.expected_outcome == "prevent" and grades_as_prevention(
+            agent_profile_mode, resolve_module_mode(
+                agent_profile_mode=agent_profile_mode, module_modes=module_modes,
+                prevention_module=getattr(r, "prevention_module", None)))
+        if as_block and s.termination in HOST_WITNESS:
             r.outcome = OUTCOME_PENDING
             r.outcome_reason = PREVENTION_UNCONFIRMED_NO_ALERT
             r.kpi_verdict = "pending"
             touched += 1
-        elif (r.expected_outcome == "prevent" and agent_profile_mode == "block"
-              and s.termination == TERMINATION_BEACON_LOST):
+        elif as_block and s.termination == TERMINATION_BEACON_LOST:
             # A lost beacon is a witness of nothing: hold the prevention open.
             r.outcome = OUTCOME_PENDING
             r.outcome_reason = PREVENTION_UNCONFIRMED_BEACON_LOST

@@ -142,6 +142,7 @@ MCP_LAUNCH_EXCLUDED: dict[str, str] = {
     "bas_mode_attested": "operator attestation about the agent profile; a human states it, an agent does not",
     "soakless_attested": "operator attestation about the agent profile; a human states it, an agent does not",
     "attested_by": "operator attestation about the agent profile; a human states it, an agent does not",
+    "module_modes": "operator attestation about the agent profile; a human states it, an agent does not",
     "allow_missing_tools": "accepts a run whose steps call tools the pod lacks (TOOL_ABSENT); an operator decides to run degraded, an agent does not",
 }
 

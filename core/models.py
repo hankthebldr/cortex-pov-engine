@@ -279,6 +279,10 @@ class Run(Base):
     canary_run_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     severed_at_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     block_mode_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Per-module Action Mode, operator-attested: {"btp": "block", ...}. XDR sets
+    # Block / Report / Disabled per module, so a block-mode run says nothing
+    # about any one module (review F1). NULL = nothing attested per module.
+    module_modes: Mapped[Optional[dict[str, str]]] = mapped_column(JSON, nullable=True)
 
     # Relationships
     scenario_rel: Mapped["Scenario"] = relationship("Scenario", back_populates="runs", foreign_keys=[scenario_id])
@@ -310,6 +314,7 @@ class Run(Base):
             "canary_run_id": self.canary_run_id,
             "severed_at_step": self.severed_at_step,
             "block_mode_status": self.block_mode_status,
+            "module_modes": self.module_modes,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "output": self.output,

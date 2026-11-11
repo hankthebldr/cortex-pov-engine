@@ -440,6 +440,7 @@ def _migrate_prevention_columns(connection) -> None:
             ("canary_run_id", "VARCHAR"),
             ("severed_at_step", "VARCHAR"),
             ("block_mode_status", "VARCHAR"),
+            ("module_modes", "JSON"),
         ],
         "results": [
             ("expected_outcome", "VARCHAR NOT NULL DEFAULT 'detect'"),
