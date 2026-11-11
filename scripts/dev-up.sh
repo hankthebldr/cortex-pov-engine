@@ -264,6 +264,7 @@ tree_version() {
 }
 
 # The version docker-compose.yml falls back to when nothing sets CORTEXSIM_VERSION.
+# shellcheck disable=SC2016  # the ${...} is literal text matched in the compose file
 compose_default_version() {
   sed -n 's/.*image:.*\${CORTEXSIM_VERSION:-\([^}]*\)}.*/\1/p' \
     "${REPO_ROOT}/docker-compose.yml" 2>/dev/null | head -n1
