@@ -209,13 +209,37 @@ A scenario's door readiness is derived, never authored:
 - **partial**: some are, with the count of scorable detections.
 - **needs doors**: none are, naming each closed door.
 
-### 6. Launch and scoring (Henry's decision: launch, exclude)
+### 6. Launch and scoring
 
-At launch the orchestrator writes a snapshot of the door states onto the run
-(state, rung, checked_at, attested_by), and the scenario's required doors per
-expected detection onto each seeded result. The snapshot is what scoring reads.
-A door verified after launch does not bring rows back, because it does not
-prove data flowed during the run.
+Henry's decisions (2026-11-11): a scenario with a closed door **launches, and
+the detections behind that door are excluded**; a run with exclusions **can
+FAIL but never PASS**; and a door **stays open as long as it is online**, with
+no expiry timer, so a data stream can run for a month.
+
+**Door state is a timeline, not a timestamp.** Every check appends a state
+change (`opened`, `closed`, `unknown`, with time and evidence) to a per-door
+log; a door's state at any moment is the last change before it. Nothing
+expires on a timer. Two ways keep the timeline current:
+
+- **On demand.** `POST /api/doors/{id}/check`, the console's check buttons and
+  the launch preflight's "Re-check doors". The launch itself never calls the
+  tenant.
+- **The door watcher**, opt-in behind `CORTEXSIM_DOOR_WATCH` (off by default,
+  like `CORTEXSIM_AUTO_RECONCILE`, because it makes outbound tenant calls). It
+  re-runs every open door's check on a cadence (default 30 minutes), under the
+  quota ledger, and records the moment a door stops delivering. This is what
+  makes "open as long as it is online" true for a month-long stream.
+
+With the watcher off, the last check stands until another check changes it,
+and the console shows its age ("last confirmed 9 days ago") wherever the door
+appears, so a persisted state is never mistaken for a fresh one.
+
+At launch the orchestrator writes each expected detection's required doors onto
+its seeded result. Scoring reads the door timeline **at the result's own
+`executed_at`**, so a month-long stream is judged record by record: a
+detection whose door was closed when its step ran is excluded, and one whose
+door was open is scored. A door opened after a step ran does not bring that
+row back, because it does not prove data flowed when the step did.
 
 In the silent-row sweep (`connectors/service.py::_judge_silent_results`),
 before the soak rule: a silent row whose door was not open at launch becomes
@@ -225,10 +249,18 @@ the denominator exclusions in `engine/outcome.py::is_in_denominator`, and
 `measures.py` counts them under `door_not_verified`. A row with an observed
 alert is credited as today, because the alert is proof the door delivered.
 
+**Run verdict.** `verifier.score_run` keeps a FAIL computed on the scored rows:
+a scorable detection that was missed is a real miss. A run that would PASS
+while any row is excluded for a door reason reads `pending` with reason
+`PASS_WITHHELD_DOOR_CLOSED`, naming how many detections were not tested and
+behind which doors, in the style of `PASS_WITHHELD_UNSCOPED`. A run with every
+row excluded reads `pending`, never `not_applicable`: those detections are
+still owed, not unscoreable.
+
 The launch preflight gains a sixth check, `data path`: `pass` when every
-derived door is open, `warn` with the excluded count otherwise. A scenario
-whose every detection would be excluded launches with a warning that says
-"this run scores nothing", but is not blocked.
+derived door is open, `warn` with the excluded count otherwise, plus the
+"Re-check doors" button. A scenario whose every detection would be excluded
+launches with a warning that says "this run scores nothing", but is not blocked.
 
 The run report and `/api/runs/{id}` list the excluded detections grouped by
 closed door, with the door's remediation and the wizard that opens it.
@@ -257,16 +289,19 @@ closed door, with the door's remediation and the wizard that opens it.
 | Phase | Delivers |
 |---|---|
 | 1 | Door registry, `doors:` / `doors_unknown:` on every dataset row, scenario derivation, `GET /api/doors` (states read CONFIGURED from existing rows), library chip showing each door's rung ("configured", "not checked"), launch preflight check (advisory). Nothing is excluded from scoring in phase 1. Zero outbound |
-| 2 | Door checks and attestation, the launch snapshot, `DOOR_NOT_VERIFIED` exclusion in scoring, report readout |
+| 2 | Door checks and attestation, the door timeline, the opt-in door watcher, `DOOR_NOT_VERIFIED` / `DOOR_ROUTE_CANNOT_FEED` exclusion in scoring, `PASS_WITHHELD_DOOR_CLOSED`, report readout |
 | 3 | Get Started rebuilt around doors, XDR agent step, wizard links |
 | Later | XDR Collector and Broker VM WEC as named producers; syslog and Cribl transports from the LogSimv2 port as producers |
 
 ### 9. Validation
 
 Offline: the corpus join pinned (counts in §1, one test), every dataset row
-carrying `doors:`, the exclusion rule (silent closed-door row excluded,
-observed row credited, door verified after launch does not re-include), a
-check that could not run reads `unknown`. Each new guard is shown failing
+carrying exactly one of `doors:` / `doors_unknown:`, the exclusion rule (silent
+closed-door row excluded, observed row credited, a door opened after the step
+ran does not re-include it), the run verdict (a miss still fails; an otherwise
+passing run with an exclusion reads `pending`), the timeline (a watcher-recorded
+outage excludes only the rows that ran inside it), and a check that could not
+run reads `unknown`. Each new guard is shown failing
 without its fix. Browser: the library chip and the Get Started door steps in a
 real browser. Tenant: one door check per door on deathstar through the
 read-only oracle; until then `tenant-verified` is 0.
@@ -285,11 +320,13 @@ read-only oracle; until then `tenant-verified` is 0.
 - A detection reading two datasets needs both doors open.
 - Push runs open agent-scoped doors only by an attestation naming the host.
 - Phase 1 excludes nothing; the chip shows each door's rung.
-- The launch snapshot decides scoring; checking a door after launch does not
-  re-include rows.
+- "Open as long as it is online" is read as: no expiry timer, and an opt-in
+  watcher (off by default, cadence 30 minutes) that records when a door stops
+  delivering. With the watcher off, the last check stands and shows its age.
+- Scoring reads the door timeline at each result's `executed_at`; a door opened
+  after a step ran does not re-include that row.
 - A run whose every detection is excluded warns and launches.
-- The freshness window is 60 minutes and a door check result is trusted for
-  4 hours before it reads stale, then `unknown`.
+- A check's freshness window is 60 minutes of rows.
 - Cloud and SaaS doors are tenant-scoped; agent and stitch doors are per beacon.
 - `xdr_agent_xth` needs an attestation because the endpoint record does not
   show the XTH add-on.
