@@ -1,6 +1,6 @@
 # Ingestion doors: setup state decides what the library can score
 
-Status: design. Nothing built. `tenant-verified` is 0.
+Status: phase 1 built (read API, Library chip, advisory launch check). Phases 2 onward not built. `tenant-verified` is 0.
 
 ## Executive summary
 

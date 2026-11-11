@@ -8,6 +8,20 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
+
+- **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
+  `/api/scenarios/{id}/doors`): for each scenario, which of its detections can
+  be scored given which data doors are open. Read-only, zero outbound calls.
+- **Library chip** on every scenario card: `READY`, `PARTIAL k/n`, `NEEDS DOORS`
+  or `NOT CHECKED`, plus an opt-in **Runnable here** filter that is off by
+  default, so nothing is hidden.
+- **Data path** as a sixth launch preflight check. Advisory only: it warns, it
+  never blocks, and a missing or unreadable answer reads `unknown`, not `pass`.
+- Nothing is excluded from scoring yet, and no door can read `open` until phase
+  2 writes door events, so a fresh SimCore reads `NEEDS DOORS` or `NOT CHECKED`
+  throughout. `tenant-verified` is still 0.
+
 ### Added — two Linux persistence chains built to group into one case
 
 - **SIM-EDR-023 and SIM-EDR-024**, with cards TTP-2026-0198/0199. SIM-EDR-023
