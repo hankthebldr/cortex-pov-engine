@@ -74,10 +74,19 @@
   font-size: 11px; line-height: 1.55; color: var(--c-text-secondary);
 }
 .theme-console .install-attempt--fail { border-left-color: var(--c-missed); background: var(--c-missed-soft); }
-.theme-console .install-attempt--ok { border-left-color: var(--c-pending); }
+/* Reported-and-continued (CHECKSUM_SKIPPED, SERVICE_START_FAILED, …): not a
+   stop, and not a clean pass. The lead sentence carries the meaning; the tint
+   only repeats it. */
+.theme-console .install-attempt--warn { border-left-color: var(--c-pending); background: var(--c-pending-soft); }
+.theme-console .install-attempt--ok { border-left-color: var(--c-hairline-strong); }
 .theme-console .install-attempt code { color: var(--c-text); font-family: var(--font-mono); }
 .theme-console .install-attempt__lead { color: var(--c-text); }
 .theme-console .install-attempt__meta { color: var(--c-text-muted); font-size: 10px; }
+/* The ticking age lives OUTSIDE the live region (see DeployParts.jsx). */
+.theme-console .install-attempt__ago {
+  display: block; margin-top: 2px;
+  color: var(--c-text-muted); font-size: 10px;
+}
 
 .theme-console .install-attempts {
   margin-top: 14px; padding-top: 10px;
@@ -99,7 +108,15 @@
   font-size: 11px; color: var(--c-text-secondary);
 }
 .theme-console .install-attempts__row { overflow-wrap: anywhere; }
-.theme-console .install-attempts__row--fail .mono:first-child { color: var(--c-missed); }
+.theme-console .install-attempts__row--fail .mono { color: var(--c-missed); }
+.theme-console .install-attempts__row--warn .mono { color: var(--c-pending); }
+.theme-console .install-attempts__kind {
+  font-family: var(--font-mono); font-size: 9px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--c-text-muted);
+}
+.theme-console .install-attempts__row--fail .install-attempts__kind { color: var(--c-missed); }
+.theme-console .install-attempts__row--warn .install-attempts__kind { color: var(--c-pending); }
 .theme-console .install-attempts__meta { color: var(--c-text-muted); font-size: 10px; }
 
 /* ── Get started: the same parts, in that page's type scale ─────────── */

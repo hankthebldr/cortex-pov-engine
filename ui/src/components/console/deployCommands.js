@@ -269,12 +269,43 @@ export function serverHostVerdict(healthModel, serverUrl, consoleHost = '') {
 
 // ── Install telemetry ────────────────────────────────────────────────────────
 
-const STATUS_CODES = new Set(['OK', 'DEGRADED_NO_SUPERVISOR'])
+// Codes the installers REPORT and then carry on from (`cs_report` / `Cs-Report`
+// in core/api/agents.py, as opposed to `cs_fail` / `Cs-Fail`, which exit). Each
+// one is a degraded install, not a stopped one. A code not listed here is
+// treated as a stop — an unknown code is never read as progress.
+const CONTINUED_CODES = new Set(['DEGRADED_NO_SUPERVISOR', 'CHECKSUM_SKIPPED', 'SERVICE_START_FAILED'])
 
-/** OK and DEGRADED_NO_SUPERVISOR are progress; every other code is a failure. */
-export function attemptRole(code) {
-  return STATUS_CODES.has(String(code ?? '').trim().toUpperCase()) ? 'status' : 'alert'
+/**
+ * What an installer report MEANS for the install.
+ *   ok        — the stage succeeded
+ *   continued — the installer said this and carried on, degraded
+ *   failed    — the installer exited here
+ * @returns {'ok'|'continued'|'failed'}
+ */
+export function attemptKind(code) {
+  const c = String(code ?? '').trim().toUpperCase()
+  if (c === 'OK') return 'ok'
+  return CONTINUED_CODES.has(c) ? 'continued' : 'failed'
 }
+
+/** Only a stop is an alert; ok and continued reports are status. */
+export function attemptRole(code) {
+  return attemptKind(code) === 'failed' ? 'alert' : 'status'
+}
+
+/** What a reported-and-continued code leaves the DC with. */
+export const CONTINUED_NOTE = Object.freeze({
+  CHECKSUM_SKIPPED:
+    'The beacon binary was NOT verified: the host had no digest tool, or SimCore served no digest to compare '
+    + 'with. The installer carried on with that binary, so its integrity is unchecked. A later report says '
+    + 'whether the install finished.',
+  SERVICE_START_FAILED:
+    'The service did not start, so the installer carried on without a supervisor. The beacon will not '
+    + 'survive a logoff or a reboot. A later report says whether it checked in.',
+  DEGRADED_NO_SUPERVISOR:
+    'The installer carried on without a supervisor: the beacon is running, and it will not survive a logoff '
+    + 'or a reboot. The agent counts as online only after the beacon polls.',
+})
 
 /**
  * Attempts reported strictly after `sinceMs`, newest first. Both sides are

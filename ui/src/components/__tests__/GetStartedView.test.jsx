@@ -175,6 +175,18 @@ describe('GetStartedView — installer failures replace the endless wait (UI-06)
     expect(screen.queryByText(/Waiting for the agent to check in/)).toBeNull()
   })
 
+  it('a report the installer carried on from (CHECKSUM_SKIPPED) is not a stop: it still waits', async () => {
+    agentRoutes([{ stage: 'verify', code: 'CHECKSUM_SKIPPED', detail: "expect='' actual_tool_present=no", hostname: 'jb', os: 'linux', arch: 'amd64', reported_at: '2026-11-05T10:00:06' }])
+    mount()
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    await screen.findByTestId('gs-agent-command')
+    const live = await screen.findByTestId('gs-attempt-latest')
+    expect(live.getAttribute('role')).toBe('status')
+    expect(live.textContent).toMatch(/not verified/i)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText(/Waiting for the agent to check in/)).toBeInTheDocument()
+  })
+
   it('with nothing reported yet it still waits, and says where failures would appear', async () => {
     agentRoutes([])
     mount()

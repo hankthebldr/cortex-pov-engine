@@ -227,7 +227,7 @@ describe('copyToClipboard — success only when something really copied (UI-14)'
 })
 
 describe('install attempts (UI-06)', () => {
-  it('OK and DEGRADED_NO_SUPERVISOR are status; every other code is an alert', () => {
+  it('OK and DEGRADED_NO_SUPERVISOR are status; a code the installer exits on is an alert', () => {
     expect(attemptRole('OK')).toBe('status')
     expect(attemptRole('DEGRADED_NO_SUPERVISOR')).toBe('status')
     expect(attemptRole('ENROLL_DENIED')).toBe('alert')

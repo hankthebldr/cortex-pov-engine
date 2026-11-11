@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { getInstallAttempts } from '../../api/client.js'
 import { parseServerTime } from '../../api/time.js'
 import {
+  CONTINUED_NOTE,
   WINDOWS_CAVEATS,
+  attemptKind,
   attemptRole,
   copyFailureMessage,
   copyToClipboard,
@@ -107,29 +109,59 @@ function where(a) {
   return [a.hostname, plat].filter(Boolean).join(' · ')
 }
 
+/** `10:00:07 UTC` — a report time that does not change between renders. */
+function reportedAt(iso) {
+  const ms = parseServerTime(iso)
+  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(11, 19)} UTC` : 'time unknown'
+}
+
+const KIND_CLASS = { ok: 'ok', continued: 'warn', failed: 'fail' }
+const KIND_WORD = { ok: 'ok', continued: 'warning', failed: 'stopped' }
+const KIND_LEAD = {
+  ok: 'The installer reported ',
+  continued: 'The installer carried on past a warning: ',
+  failed: 'The installer stopped: ',
+}
+
 /**
- * The newest attempt reported after this token was minted: role=alert for a
- * failure, role=status for OK / DEGRADED_NO_SUPERVISOR. Renders nothing when
- * nothing has reported yet — the caller keeps its "waiting" line then.
+ * The newest attempt reported after this token was minted: role=alert when the
+ * installer stopped, role=status when it reported and carried on. Renders
+ * nothing when nothing has reported yet — the caller keeps its "waiting" line.
+ *
+ * The live node holds only text that is fixed for one attempt. The attempts
+ * poll re-renders this every 5 s, and role=alert is assertive and atomic: a
+ * ticking "12s ago" inside it made a screen reader re-read the whole failure
+ * every five seconds. The ticking age sits outside, aria-hidden; the node
+ * carries a fixed report time instead, and is keyed on the attempt so a NEW
+ * attempt is a new node and is announced once.
  */
 export function LatestAttempt({ attempt, testId = 'deploy-attempt-latest' }) {
   if (!attempt) return null
-  const role = attemptRole(attempt.code)
-  const failed = role === 'alert'
+  const kind = attemptKind(attempt.code)
+  const code = String(attempt.code ?? '').trim().toUpperCase()
+  const next = kind === 'failed'
+    ? 'The target printed the fix line next to this code; re-run once it is fixed.'
+    : kind === 'continued'
+      ? CONTINUED_NOTE[code]
+      : 'The agent counts as online only after the beacon polls.'
   return (
-    <div className={`install-attempt install-attempt--${failed ? 'fail' : 'ok'}`} role={role} data-testid={testId}>
-      <span className="install-attempt__lead">
-        {failed ? 'The installer stopped: ' : 'The installer reported '}
-      </span>
-      <code className="mono">{attempt.stage || '?'} · {attempt.code || '(no code)'}</code>
-      {attempt.detail ? <span className="install-attempt__detail"> — {attempt.detail}</span> : null}
-      <span className="install-attempt__meta mono">
-        {' '}({[where(attempt), relAgo(attempt.reported_at)].filter(Boolean).join(' · ')})
-      </span>
-      <span className="install-attempt__next">
-        {failed
-          ? ' The target printed the fix line next to this code; re-run once it is fixed.'
-          : ' The agent counts as online only after the beacon polls.'}
+    <div className={`install-attempt install-attempt--${KIND_CLASS[kind]}`}>
+      <div
+        key={`${attempt.reported_at || ''}|${attempt.stage || ''}|${attempt.code || ''}`}
+        className="install-attempt__live"
+        role={attemptRole(attempt.code)}
+        data-testid={testId}
+      >
+        <span className="install-attempt__lead">{KIND_LEAD[kind]}</span>
+        <code className="mono">{attempt.stage || '?'} · {attempt.code || '(no code)'}</code>
+        {attempt.detail ? <span className="install-attempt__detail"> — {attempt.detail}</span> : null}
+        <span className="install-attempt__meta mono">
+          {' '}({[where(attempt), `reported ${reportedAt(attempt.reported_at)}`].filter(Boolean).join(' · ')})
+        </span>
+        <span className="install-attempt__next">{' '}{next}</span>
+      </div>
+      <span className="install-attempt__ago mono" aria-hidden="true" data-testid={`${testId}-ago`}>
+        {relAgo(attempt.reported_at)}
       </span>
     </div>
   )
@@ -156,7 +188,9 @@ export function InstallAttemptsList({ state, limit = 5, testId = 'deploy-attempt
     body = (
       <ul className="install-attempts__list" data-testid={`${testId}-list`}>
         {attempts.slice(0, limit).map((a, i) => (
-          <li key={`${a.reported_at || ''}-${i}`} className={`install-attempts__row install-attempts__row--${attemptRole(a.code) === 'alert' ? 'fail' : 'ok'}`}>
+          <li key={`${a.reported_at || ''}-${i}`} className={`install-attempts__row install-attempts__row--${KIND_CLASS[attemptKind(a.code)]}`}>
+            {/* The word, not only the colour, says which rows stopped an install. */}
+            <span className="install-attempts__kind">{KIND_WORD[attemptKind(a.code)]}</span>{' '}
             <span className="mono">{a.stage || '?'} · {a.code || '(no code)'}</span>
             {a.detail ? <span className="install-attempts__detail"> — {a.detail}</span> : null}
             <span className="install-attempts__meta mono"> {[where(a), relAgo(a.reported_at)].filter(Boolean).join(' · ')}</span>
