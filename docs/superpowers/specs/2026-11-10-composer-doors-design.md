@@ -160,7 +160,7 @@ drag would either rewrite the command or lie about it.
 | Composer Lanes lens | new bands (§3); rules stay in CORTEX ENGINE; drag no longer retargets |
 | Execution timeline (`ExecutionTimeline.jsx`) | lane chip from the new keys |
 | Runs topology (`runTopology.js`, `RunTopologyView.jsx`) | bands become signal paths; "N of 5 doors used" becomes "N of 5 paths used"; the Engine stays a view onto Correlation / Analytics / ABIOC rows |
-| Runs topology without the scenario | today lanes are rebuilt from each Result's `plane`. A path needs the command, so those steps become `unplaced` with the reason "scenario not loaded: the signal path is read from the step's command" |
+| Runs topology without the scenario | today lanes are rebuilt from each Result's `plane`. A path needs the command, so those steps become `unplaced` with the reason "scenario not loaded: the signal path is read from the step's command". This applies only once the scenario request has failed; while it is in flight the tab shows "loading topology…", never "not loaded" |
 | `/api/eal/plugins` | gains `delivery` |
 
 Tests that pin the old keys (`composerLanes.test.js`, `ComposerCanvas.test.jsx`,

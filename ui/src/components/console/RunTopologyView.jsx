@@ -78,9 +78,19 @@ export default function RunTopologyView({
     return () => { cancelled = true }
   }, [runId, tail.terminal])
 
+  // Is a scenario answer still on the way? Without the scenario no step can be
+  // placed, so a board drawn now would say "scenario not loaded" and list
+  // every step unplaced about a request that has not come back yet. Loading
+  // is not failure: hold the board until the request settles. The id comes
+  // from the run record, so with no id yet the answer is pending until the
+  // run lands or its fetch fails.
+  const scenarioPending = scenarioId
+    ? !scenario && !scenarioError
+    : !run && !tail.error
+
   const model = useMemo(
-    () => (results ? buildTopologyModel({ scenario, run, results, stepRows: tail.rows }) : null),
-    [scenario, run, results, tail.rows],
+    () => (results && !scenarioPending ? buildTopologyModel({ scenario, run, results, stepRows: tail.rows }) : null),
+    [scenario, scenarioPending, run, results, tail.rows],
   )
 
   if (!runId) return <div className="run-topo__empty mono">no run selected</div>
