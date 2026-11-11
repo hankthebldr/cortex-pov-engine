@@ -144,3 +144,15 @@ def test_incidents_read_failing_on_page_two_counts_two(session_factory):
     summary, _ = asyncio.run(_reconcile(session_factory, fetcher))
     assert summary["incidents_error"]["code"]
     assert summary["queries_issued"] == 1 + 2
+
+
+def test_pages_issued_keeps_a_reported_zero_as_zero():
+    """M-6: a harvest that reports ``pages: 0`` spent 0 ledger units. Reading it
+    with ``or`` turned the 0 into a fallback 1 — an over-count of one."""
+    from connectors.service import _pages_issued
+
+    assert _pages_issued({"pages": 0}) == 0
+    assert _pages_issued({"pages": 0, "page": 3}) == 0
+    assert _pages_issued({"page": 0}) == 0
+    assert _pages_issued({"pages": 2}) == 2
+    assert _pages_issued({"page": 3}) == 3

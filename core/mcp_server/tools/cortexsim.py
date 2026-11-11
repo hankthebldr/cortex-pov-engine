@@ -305,6 +305,13 @@ async def assertion_run(ctx: ToolContext, args: AssertionRunIn) -> Envelope:
     if args.dry_run:
         body = await ctx.client.post(path, json={**_params(integration=args.tenant),
                                                  "dry_run": True, "context": args.context})
+        # The 0 is the route's, read and checked — never a constant here, so a
+        # route that started querying on a dry run could not hide behind "preview".
+        queries = _int(body, f"POST {path}", "queries_issued")
+        if queries != 0:
+            raise SimCoreShapeUnknown(
+                200, f"POST {path} answered a dry run with queries_issued={queries}; a preview "
+                "sends nothing to the tenant, so this is refused rather than reported as a preview")
         return await _simcore(ctx, body, "preview")
     tenant = await resolve_tenant(ctx, args.tenant, kind="xsiam_tenant", required=False)
     coro = ctx.client.post(path, json={**_params(integration=tenant),

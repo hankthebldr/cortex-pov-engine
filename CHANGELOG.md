@@ -447,9 +447,14 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   `reason: xql_not_authorised` and `queries_issued: 0` (each check carries the
   new pending code `XQL_NOT_AUTHORISED`); it builds no client and runs no XQL.
   It used to run metered XQL for such a credential.
-- **Behaviour change you may veto: preflight treats absent `capabilities` as
-  not granted.** It used to authorise XQL when the field was absent. Preflight
-  and the verify/reconcile runner now share one rule (`integrations/xsiam/guards.py`).
+- **Behaviour change you may veto: an absent `capabilities` field means not
+  granted, on preflight and on the verify runner.** Preflight used to authorise
+  XQL when the field was absent, and so did the Tier-2 verify runner
+  (`resolve_tenant_runner`). Both now share one rule
+  (`integrations/xsiam/guards.py`). **After upgrade, `POST /api/runs/{id}/verify`
+  and the `CORTEXSIM_AUTO_VERIFY` sweep resolve `pending` with
+  `reason: xql_not_authorised` for every legacy credential without the field**,
+  until `"xql"` is added to its `config.capabilities`.
 - XQL start refuses a malformed body (`XQL_REQUEST_SHAPE_INVALID`, 400) and a
   write-stage query (`XQL_WRITE_STAGE_REFUSED`, 400) before any tenant call;
   `OP-XQL-GET-QUOTA` and the results stream are gated like the other XQL ops.

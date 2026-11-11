@@ -1238,7 +1238,7 @@ against a live tenant, and the `statement` field says so
 | route | change |
 |---|---|
 | `GET /api/runs` | accepts `status` and `scenario_id` (equality filters) and `limit` (1..500, out of range is 422); `total` counts the filtered rows before `limit`; no parameters is unchanged |
-| `POST /api/xsiam/tenants/{name}/operations/{op_id}`, `POST …/xql`, `GET …/xql/{query_id}`, `GET …/metrics` | reply carries `queries_issued` (1 live read or XQL start, 0 for a result poll or preview) and a `ledger` snapshot (`null` on a preview); XQL-class paths refuse in a fixed order — capability, request shape (`XQL_REQUEST_SHAPE_INVALID`, 400), write stage (`XQL_WRITE_STAGE_REFUSED`, 400), then the per-tenant budget (`XSIAM_QUOTA_ERROR`, 429) — and the tenant is not called when any refuses. `GET …/xql/{query_id}` gains `limit` (1..1000) |
+| `POST /api/xsiam/tenants/{name}/operations/{op_id}`, `POST …/xql`, `GET …/xql/{query_id}`, `GET …/metrics` | reply carries `queries_issued` and a `ledger` snapshot (`null` on a preview). The executor reports 1 for a live op (XQL or not) **except** the result polls `OP-XQL-GET-QUERY-RESULTS` / `-STREAM`, which report 0, and 0 for a preview; `POST …/xql` and `GET …/metrics` report 1; `GET …/xql/{query_id}` reports 0. Refusals come in a fixed order and the tenant is not called when any refuses, but the order differs by path: the executor's `OP-XQL-START-XQL-QUERY` — capability (403), request shape (`XQL_REQUEST_SHAPE_INVALID`, 400), write stage (`XQL_WRITE_STAGE_REFUSED`, 400), per-tenant budget (`XSIAM_QUOTA_ERROR`, 429); `POST …/xql` — a malformed body is a pydantic 422 before the handler runs (not `XQL_REQUEST_SHAPE_INVALID`), then capability, write stage, budget; `GET …/metrics` — capability, budget; the polls and `OP-XQL-GET-QUOTA` — capability only, never budgeted. `GET …/xql/{query_id}` gains `limit` (1..1000) |
 | same XQL-class routes | **behaviour change:** a credential whose `config.capabilities` does not list `"xql"` is refused with 403 `XSIAM_CAPABILITY_MISSING`. Preflight and the verify/reconcile runner now agree: an **absent** `capabilities` field means *not granted* (preflight used to authorise XQL when it was absent) |
 | `POST /api/runs/{run_id}/reconcile` | summary reports `queries_issued` in ledger units (pull pages, plus the incidents pages when the correlation fallback read them) |
 | `POST /api/assertions/{id}/run` | reports `queries_issued` (runner calls; 0 for a dry run or no tenant). `GET /api/assertions/runs/{run_id}` does **not** carry it — the persisted row has no such column |
@@ -1771,7 +1771,8 @@ Settings (all in `.env.example`): `CORTEXSIM_MCP_HTTP` (default off),
 (default 30, a process-local token bucket over tenant-class tools) and
 `CORTEXSIM_URL`. Never pass a tenant URL or key to the server; it does not read
 them. Other CLI flags: `--server URL`, `--list-tools`, `--manifest` (the P-2
-manifest the consumer vendors).
+manifest the consumer vendors) and `--max-tenant-calls-per-minute N` (overrides
+`CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE` for this process).
 
 ### 9.2 Client install
 
@@ -1900,8 +1901,17 @@ There is no write path to Cortex through this surface, and the two REST flags
 default-off. `xsiam.xql.query` refuses a write-stage query
 (`XQL_WRITE_STAGE_REFUSED`, refused rather than rewritten) and a credential
 without `"xql"` in `config.capabilities` (`XSIAM_CAPABILITY_MISSING`, 403).
-Tenant-class tools are rate-limited per process and charge the same per-tenant
-daily ledger the verifier respects.
+Every tenant-class tool is rate-limited per process
+(`CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE`). Only some of them charge the
+per-tenant daily ledger, one unit per query: an XQL start (`xsiam.xql.query`,
+`xsiam.dataset.schema`, the executor's `OP-XQL-START-XQL-QUERY`), `GET …/metrics`,
+and the verifier's runners behind `cortexsim.run.verify` and the live
+`cortexsim.assertion.run`. **Not charged:** result polls, `OP-XQL-GET-QUOTA`,
+every other catalog read (`OP-XQL-GET-DATASETS`, alerts, incidents,
+correlations, playbooks, healthcheck), reconcile pulls (`cortexsim.run.reconcile`)
+and preflight's scope and dataset XQL (`cortexsim.connector.preflight`).
+Preflight is the one remaining XQL path the ledger does not budget; those reads
+are bounded by the per-process rate limit only.
 
 ### 9.6 Error codes
 

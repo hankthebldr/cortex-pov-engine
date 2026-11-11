@@ -209,7 +209,7 @@ async def test_json_string_list_and_dict_arguments_are_pre_parsed_like_stock_fas
 
     def run(request):
         seen["run"] = json.loads(request.content)
-        return {"assertion_id": "A-1", "dry_run": True}
+        return {"assertion_id": "A-1", "dry_run": True, "queries_issued": 0}
 
     mcp, calls, _ = _mcp({("POST", "/api/pov/scope"): scope,
                           ("POST", "/api/assertions/A-1/run"): run,

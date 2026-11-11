@@ -204,12 +204,29 @@ async def test_preflight_reads_queries_issued_off_the_report_and_leaves_round_tr
 @pytest.mark.asyncio
 async def test_assertion_run_defaults_to_a_preview():
     out = {"assertion_id": "A-1", "tc_verdict": "pending", "reason": "dry_run", "dry_run": True,
-           "tenant": None, "checks": []}
+           "tenant": None, "checks": [], "queries_issued": 0}
     mcp, calls = _mcp({("POST", "/api/assertions/A-1/run"): out})
     res = await call(mcp, "cortexsim.assertion.run", id="A-1")
     ev = res.structuredContent["evidence"]
     assert ev["basis"] == "preview" and ev["queries_issued"] == 0
     assert json.loads(_sent_json(calls, "POST", "/api/assertions/A-1/run").content)["dry_run"] is True
+
+
+@pytest.mark.asyncio
+async def test_assertion_run_preview_reads_the_route_count_and_never_assumes_it():
+    """M-5: the dry run's 0 is the route's, not a constant here. A missing count
+    is SIMCORE_SHAPE_UNKNOWN; a non-zero count on a preview contradicts
+    "Nothing was sent" and is refused, not restated as 0."""
+    base = {"assertion_id": "A-1", "tc_verdict": "pending", "reason": "dry_run", "dry_run": True,
+            "tenant": None, "checks": []}
+    mcp, _ = _mcp({("POST", "/api/assertions/A-1/run"): base})
+    res = await call(mcp, "cortexsim.assertion.run", id="A-1")
+    assert res.isError and res.structuredContent["code"] == "SIMCORE_SHAPE_UNKNOWN"
+    assert "queries_issued" in res.structuredContent["detail"]
+
+    mcp, _ = _mcp({("POST", "/api/assertions/A-1/run"): {**base, "queries_issued": 2}})
+    res = await call(mcp, "cortexsim.assertion.run", id="A-1")
+    assert res.isError and res.structuredContent["code"] == "SIMCORE_SHAPE_UNKNOWN"
 
 
 @pytest.mark.asyncio
@@ -279,7 +296,8 @@ def _every_tool_routes():
         ("POST", "/api/connectors/xsiam_tenant/preflight"): {"queries_issued": 0, "stages": []},
         ("GET", "/api/assertions"): {"assertions": [], "count": 0, "total": 0, "rejected": []},
         ("GET", "/api/assertions/A-1"): {"id": "A-1"},
-        ("POST", "/api/assertions/A-1/run"): {"assertion_id": "A-1", "dry_run": True},
+        ("POST", "/api/assertions/A-1/run"): {"assertion_id": "A-1", "dry_run": True,
+                                              "queries_issued": 0},
     }
 
 

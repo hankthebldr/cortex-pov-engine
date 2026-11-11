@@ -284,7 +284,11 @@ async def reconcile_run(
 def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
     """Ledger units a harvest spent: ``pages`` on success, the ``page`` a failed read died on."""
     d = detail or {}
-    return int(d.get("pages") or d.get("page") or 1)
+    # ``is not None``, not ``or``: a reported 0 is a real count, not a missing one.
+    for key in ("pages", "page"):
+        if d.get(key) is not None:
+            return int(d[key])
+    return 1
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
