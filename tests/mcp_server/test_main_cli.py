@@ -46,3 +46,34 @@ def test_tenant_call_ceiling_defaults_from_the_same_setting_as_the_mount():
     proc = _run("--help", CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE="7")
     assert proc.returncode == 0, proc.stderr
     assert "(default: 7)" in " ".join(proc.stdout.split())
+
+
+REPO = CORE.parent
+_INSTALL_DOCS = (
+    REPO / "README.md",
+    REPO / "docs" / "reference" / "api-and-agent-surface.md",
+    REPO / "docs" / "superpowers" / "specs" / "2026-11-02-cortexsim-mcp-server-design.md",
+)
+
+
+def test_list_tools_starts_from_the_repo_root_with_the_documented_pythonpath():
+    """The host-venv install line as documented: cwd is wherever the client
+    starts it (``claude mcp add`` sets none), so only PYTHONPATH=<checkout>/core
+    makes ``mcp_server`` importable. From the repo root without it the server
+    dies with "No module named mcp_server"."""
+    env = {**os.environ, "PYTHONPATH": str(CORE)}
+    env.pop("CORTEXSIM_URL", None)
+    proc = subprocess.run([sys.executable, "-m", "mcp_server", "--list-tools"], cwd=REPO, env=env,
+                          capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().splitlines()[-1] == f"{len(CANONICAL_IDS)} tools"
+
+
+def test_every_documented_host_venv_install_line_sets_pythonpath_to_core():
+    lines = [(doc.name, line) for doc in _INSTALL_DOCS
+             for line in doc.read_text(encoding="utf-8").splitlines()
+             if line.startswith("claude mcp add") and "-- python -m mcp_server" in line]
+    assert len(lines) >= 3, lines  # README, surface doc §9.2, spec Appendix C
+    for name, line in lines:
+        assert "-e PYTHONPATH=" in line and "/core" in line.split("-e PYTHONPATH=", 1)[1].split()[0], (
+            f"{name}: {line}")

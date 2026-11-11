@@ -949,8 +949,12 @@ claude mcp add cortexsim -- docker exec -i cortex-pov-engine-simcore-v1.1.0 pyth
 stdio, from a host venv that has `core/requirements.txt` installed:
 
 ```bash
-claude mcp add cortexsim -e CORTEXSIM_URL=http://127.0.0.1:8888 -- python -m mcp_server
+claude mcp add cortexsim -e CORTEXSIM_URL=http://127.0.0.1:8888 -e PYTHONPATH=<checkout>/core -- python -m mcp_server
 ```
+
+`<checkout>` is the absolute path to your clone. `claude mcp add` sets no working
+directory, so without `PYTHONPATH` the server exits with `No module named mcp_server`;
+`python` must be the venv's interpreter (give its absolute path if the venv is not active).
 
 Never pass a tenant URL or key in `-e`; the server does not read them.
 
