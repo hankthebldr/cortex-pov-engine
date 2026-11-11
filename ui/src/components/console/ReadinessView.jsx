@@ -271,10 +271,11 @@ function SocFrameworkRow({ tenant }) {
           Runbook: <span className="mono">{RUNBOOK_PATH}</span>
         </div>
       )}
-      {(m.degraded || m.kind === 'stale') && (m.code || m.readAt) && (
+      {(m.degraded || m.kind === 'stale') && (m.code || m.readAt || m.stageDetail) && (
         <div className="rdy-socfw__facts mono" data-testid={`socfw-code-${name}`}>
           {m.code && <span>code: {m.code}</span>}
           {m.readAt && <span>read_at: {m.readAt}</span>}
+          {m.stageDetail && <span>{m.stageDetail}</span>}
         </div>
       )}
       {m.proves && (

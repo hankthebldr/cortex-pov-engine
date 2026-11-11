@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { installRoutes } from '../../../test/mockFetch.js'
@@ -27,14 +27,18 @@ const layer = (over = {}, atOver = {}) => ({
   packs: {}, mode: 'pov',
   auto_triage: {
     live: true, window_hours: 6, score_threshold: 40, score_off: false,
-    source: 'tenant_config', ...atOver,
+    live_source: 'xql_evidence', window_source: 'tenant_config',
+    threshold_source: 'tenant_config', ...atOver,
   },
   ai_close: 'shadow', leftover_lists: false, sources_used: ['tenant_config'],
   read_at: '2026-11-11T10:00:00+00:00', ...over,
 })
 
+const STAGE_OK = { status: 'ok', code: 'PF_OK', detail: 'SOC Framework 3.31.4 present' }
+
 const block = (over = {}, layerOver = {}, atOver = {}) => ({
   layer: layer(layerOver, atOver), state: layerOver.state || 'PRESENT',
+  stage: STAGE_OK,
   read_at: '2026-11-11T10:00:00+00:00', stale: false,
   proves: PROVES, does_not_prove: DOES_NOT, ...over,
 })
@@ -62,7 +66,6 @@ const renderRow = async (responseLayer) => {
   return screen.findByTestId('socfw-row-deathstar')
 }
 
-beforeEach(() => {})
 afterEach(() => { vi.restoreAllMocks() })
 
 describe('Readiness — SOC Framework row', () => {
@@ -78,22 +81,88 @@ describe('Readiness — SOC Framework row', () => {
     expect(screen.getByTestId('connector-ladder').querySelectorAll('li')).toHaveLength(4)
   })
 
-  it('renders Auto Triage as "live · 6 h · score ≤ 40"', async () => {
+  it('renders Auto Triage read values with their source and no "not read" caveat', async () => {
     const row = await renderRow(block())
+    const at = within(row).getByTestId('socfw-auto-triage-deathstar')
+    expect(at).toHaveTextContent('live (seen in the execution log, last 24 h) · 6 h · score ≤ 40')
+    expect(at).not.toHaveTextContent('not read')
+    expect(row).not.toHaveAttribute('data-degraded', 'true')
+    expect(within(row).getByTestId('socfw-state-deathstar')).toHaveClass('chip--detected')
+  })
+
+  it('the canonical pov config says live is inferred and 6 h / 40 are shipped defaults', async () => {
+    const row = await renderRow(block({}, {}, {
+      live_source: 'mode_inferred', window_source: 'shipped_default',
+      threshold_source: 'shipped_default',
+    }))
+    const at = within(row).getByTestId('socfw-auto-triage-deathstar')
+    expect(at).toHaveTextContent('live (inferred from mode, not read)')
+    expect(at).toHaveTextContent('6 h (shipped default, not read)')
+    expect(at).toHaveTextContent('score ≤ 40 (shipped default, not read)')
+  })
+
+  it('a value with no recorded source is never shown as read', async () => {
+    const row = await renderRow(block({}, {}, {
+      live_source: undefined, window_source: undefined, threshold_source: undefined,
+    }))
     expect(within(row).getByTestId('socfw-auto-triage-deathstar'))
-      .toHaveTextContent('live · 6 h · score ≤ 40')
+      .toHaveTextContent('live (source not recorded) · 6 h (source not recorded)')
+  })
+
+  it('Auto Triage that is not live reads "off", never "shadow"', async () => {
+    const row = await renderRow(block({}, {}, { live: false, live_source: 'mode_inferred' }))
+    const at = within(row).getByTestId('socfw-auto-triage-deathstar')
+    expect(at).toHaveTextContent(/^off \(inferred from mode, not read\)/)
+    expect(at).not.toHaveTextContent('shadow')
+  })
+
+  it('a null window or threshold reads "not read", never silently omitted', async () => {
+    const row = await renderRow(block({}, { state: 'PRESENT_UNREAD', code: 'RESPONSE_LAYER_UNREAD' }, {
+      window_hours: null, score_threshold: null, score_off: false,
+      window_source: 'unknown', threshold_source: 'unknown',
+    }))
+    expect(within(row).getByTestId('socfw-auto-triage-deathstar'))
+      .toHaveTextContent('live (seen in the execution log, last 24 h) · window not read · threshold not read')
+  })
+
+  it('a degraded stage behind a PRESENT layer is never green', async () => {
+    const row = await renderRow(block({
+      stage: { status: 'degraded', code: 'PF_RESPONSE_LAYER_UNREAD', detail: 'XQL read failed: boom' },
+    }))
+    expect(row).toHaveAttribute('data-degraded', 'true')
+    const chip = within(row).getByTestId('socfw-state-deathstar')
+    expect(chip).not.toHaveClass('chip--detected')
+    expect(chip).toHaveTextContent('PRESENT — stage degraded')
+    const code = within(row).getByTestId('socfw-code-deathstar')
+    expect(code).toHaveTextContent('code: PF_RESPONSE_LAYER_UNREAD')
+    expect(code).toHaveTextContent('XQL read failed: boom')
+  })
+
+  it('a stored layer with no stage verdict is unknown, not green', async () => {
+    const row = await renderRow(block({ stage: null }))
+    expect(row).toHaveAttribute('data-degraded', 'true')
+    expect(within(row).getByTestId('socfw-state-deathstar')).not.toHaveClass('chip--detected')
+    expect(within(row).getByTestId('socfw-state-deathstar'))
+      .toHaveTextContent('PRESENT — stage verdict not stored')
+  })
+
+  it('a missing stale flag reads as stale, never fresh', async () => {
+    const { stale, ...noStale } = block()
+    void stale
+    const row = await renderRow(noStale)
+    expect(within(row).getByTestId('socfw-state-deathstar')).toHaveTextContent('unknown — run preflight')
   })
 
   it('uses the stored window and threshold, not hard-coded ones', async () => {
     const row = await renderRow(block({}, {}, { window_hours: 12, score_threshold: 25 }))
     expect(within(row).getByTestId('socfw-auto-triage-deathstar'))
-      .toHaveTextContent('live · 12 h · score ≤ 25')
+      .toHaveTextContent('· 12 h · score ≤ 25')
   })
 
   it('renders "every aged case" when the score is off', async () => {
     const row = await renderRow(block({}, {}, { score_off: true, score_threshold: null }))
     expect(within(row).getByTestId('socfw-auto-triage-deathstar'))
-      .toHaveTextContent('live · 6 h · every aged case')
+      .toHaveTextContent('· 6 h · every aged case')
   })
 
   it('never labels a no-shadow mode as "default"', async () => {
