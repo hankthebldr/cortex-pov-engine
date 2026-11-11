@@ -34,7 +34,7 @@ import os
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from config import settings
 from engine.dataset_requirements import load as dataset_requirements_load
@@ -759,16 +759,18 @@ async def probe_eal_collectors(session_factory) -> dict[str, Any]:
     return _ok(**common)
 
 
-def probe_mcp() -> dict[str, Any]:
+def probe_mcp(app: Any = None) -> dict[str, Any]:
     """The opt-in streamable-HTTP MCP mount at ``/mcp``.
 
     Checked here, without leaving the process: whether the flag is on, whether
-    the MCP SDK and ``mcp_server`` package import, and how many tools the mount
-    would register (``len(CANONICAL_IDS)``). Checked here, NOT here: whether a
-    client can actually reach ``/mcp`` or whether the mount survived SimCore's
-    lifespan — that needs an inbound request, which this endpoint never makes.
-    A flag that is OFF is ``ok`` with ``MCP_DISABLED``: an opt-in feature that
-    was never asked for is not a fault. Zero outbound calls.
+    the MCP SDK and ``mcp_server.server`` import, whether ``app`` actually
+    carries a mounted server (``app.state.mcp``, set only by
+    ``mcp_server.server.mount``), and how many tools that server registered —
+    read back from it, never inferred from the flag. Checked here, NOT here:
+    whether a client can actually reach ``/mcp`` — that needs an inbound
+    request, which this endpoint never makes. A flag that is OFF is ``ok`` with
+    ``MCP_DISABLED``: an opt-in feature that was never asked for is not a
+    fault. Zero outbound calls.
     """
     import importlib.metadata  # noqa: PLC0415
 
@@ -776,53 +778,59 @@ def probe_mcp() -> dict[str, Any]:
         sdk = f"mcp=={importlib.metadata.version('mcp')}"
     except Exception:  # noqa: BLE001 — the SDK version is reported, never fatal
         sdk = "unavailable"
+    common = {"path": "/mcp", "transport": "streamable-http", "sdk": sdk}
 
     if not settings.CORTEXSIM_MCP_HTTP:
         return _ok(
             code="MCP_DISABLED",
             mounted=False,
-            path="/mcp",
-            transport="streamable-http",
             tools=0,
-            sdk=sdk,
             detail="opt-in; set CORTEXSIM_MCP_HTTP=1 to mount",
+            **common,
         )
 
     try:
-        from mcp_server.naming import CANONICAL_IDS  # noqa: PLC0415
+        from mcp_server.server import registered_ids  # noqa: PLC0415
     except ImportError as exc:
         return _degraded(
             "MCP_SDK_IMPORT_FAILED",
-            f"CORTEXSIM_MCP_HTTP is set but the mcp_server package did not import "
-            f"({type(exc).__name__}: {exc}). Fix: pip install -r core/requirements.txt "
-            f"(mcp==1.30.0) and confirm core/mcp_server/ is in the image.",
+            f"CORTEXSIM_MCP_HTTP is set but the MCP server did not import "
+            f"({type(exc).__name__}: {exc}), so /mcp is not mounted. Fix: pip install -r "
+            f"core/requirements.txt (mcp==1.30.0) and confirm core/mcp_server/ is in the image.",
             mounted=False,
-            path="/mcp",
-            transport="streamable-http",
             tools=0,
-            sdk=sdk,
+            **common,
         )
 
-    if len(CANONICAL_IDS) == 0:
+    mcp = getattr(getattr(app, "state", None), "mcp", None)
+    if mcp is None:
+        return _degraded(
+            "MCP_NOT_MOUNTED",
+            "CORTEXSIM_MCP_HTTP is set but this SimCore has no server mounted at /mcp, so a "
+            "client configured for it gets the console instead. Fix: read the boot log for the "
+            "'/mcp is NOT mounted' line and restart SimCore once its cause is resolved.",
+            mounted=False,
+            tools=0,
+            **common,
+        )
+
+    tools = len(registered_ids(mcp))
+    if tools == 0:
         return _degraded(
             "MCP_NO_TOOLS",
-            "CORTEXSIM_MCP_HTTP is set and the mount would register zero tools, so a "
-            "connected client would see an empty surface. Fix: populate the "
-            "core/mcp_server/naming.py::CANONICAL_IDS table, the one the mount registers from.",
-            mounted=False,
-            path="/mcp",
-            transport="streamable-http",
+            "/mcp is mounted but its server registered zero tools, so a connected client "
+            "sees an empty surface. Fix: mcp_server.server.build must register "
+            "cortexsim.specs() + xsiam.specs() through registry.register.",
+            mounted=True,
             tools=0,
-            sdk=sdk,
+            **common,
         )
 
     return _ok(
         mounted=True,
-        path="/mcp",
-        transport="streamable-http",
-        tools=len(CANONICAL_IDS),
-        sdk=sdk,
-        detail=f"mounted at /mcp with {len(CANONICAL_IDS)} tools",
+        tools=tools,
+        detail=f"mounted at /mcp with {tools} tools",
+        **common,
     )
 
 
@@ -871,7 +879,7 @@ async def _scenario_tool_rows(session_factory) -> list[dict[str, Any]]:
     return [{"scenario_id": sid, "external_tools": tools or []} for sid, tools in rows]
 
 
-async def component_health() -> dict[str, dict[str, Any]]:
+async def component_health(app: Any = None) -> dict[str, dict[str, Any]]:
     """Every component probe, each independently guarded.
 
     Ordered by ``COMPONENT_KEYS`` so the response reads top-down from "can this
@@ -930,12 +938,12 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["task_queue"] = await _aguard("task_queue", probe_task_queue)
     components["integrations"] = await _aguard("integrations", probe_integrations)
     components["eal_collectors"] = await _aguard("eal_collectors", probe_eal_collectors)
-    components["mcp"] = _guard("mcp", probe_mcp)
+    components["mcp"] = _guard("mcp", lambda: probe_mcp(app))
     return components
 
 
-async def health_payload() -> dict[str, Any]:
-    components = await component_health()
+async def health_payload(app: Any = None) -> dict[str, Any]:
+    components = await component_health(app)
     degraded = sorted(
         name for name, comp in components.items() if comp.get("status") != OK
     )
@@ -952,7 +960,7 @@ async def health_payload() -> dict[str, Any]:
 
 
 @router.get("/health")
-async def health_check():
+async def health_check(request: Request):
     """Liveness + readiness (GAP-API-007).
 
     Always HTTP 200 — a probe has to be able to READ the detail, and a 503 that
@@ -961,4 +969,4 @@ async def health_check():
     not, and ``not_checked`` names what this endpoint deliberately did not
     verify so a green result is never over-read.
     """
-    return await health_payload()
+    return await health_payload(app=request.app)

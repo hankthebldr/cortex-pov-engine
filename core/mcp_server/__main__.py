@@ -19,6 +19,17 @@ import sys
 DEFAULT_URL = "http://127.0.0.1:8888"
 
 
+def _default_tenant_calls_per_minute() -> int:
+    """The same knob the /mcp mount reads: the env var, else ``config.settings``,
+    so the stdio CLI and the mount cannot drift apart."""
+    raw = os.environ.get("CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE")
+    if raw is not None and raw.strip():
+        return int(raw)
+    from config import settings  # noqa: PLC0415
+
+    return int(settings.CORTEXSIM_MCP_MAX_TENANT_CALLS_PER_MINUTE)
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m mcp_server",
                                 description="CortexSim MCP server over SimCore's REST API")
@@ -27,7 +38,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--list-tools", action="store_true",
                    help="print canonical\\twire\\tclass\\tnetwork per registered tool, then 'N tools'")
     p.add_argument("--manifest", action="store_true", help="print the P-2 manifest as YAML")
-    p.add_argument("--max-tenant-calls-per-minute", type=int, default=30, metavar="N",
+    p.add_argument("--max-tenant-calls-per-minute", type=int,
+                   default=_default_tenant_calls_per_minute(), metavar="N",
                    help="tenant-class call ceiling for this process (default: %(default)s)")
     return p
 

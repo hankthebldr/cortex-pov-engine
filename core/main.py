@@ -539,9 +539,11 @@ app.include_router(shelf_router, prefix="/api")
 # MCP streamable-HTTP at /mcp — OPT-IN (CORTEXSIM_MCP_HTTP, default off).
 # Added BEFORE the static catch-all below, which would otherwise answer /mcp.
 # Flag off: the MCP SDK is not imported and the route table is unchanged.
-# The SDK failing to import is logged and leaves /mcp unmounted, which is what
-# /api/health independently reports (mcp: degraded, MCP_SDK_IMPORT_FAILED);
-# any other failure to build the server is a defect and refuses the boot.
+# The MCP server failing to import is logged and leaves /mcp unmounted; any
+# other failure to build the server is a defect and refuses the boot. Health
+# reads the mount itself (app.state.mcp, set only by mount()), never the flag:
+# an unimportable server is mcp: degraded MCP_SDK_IMPORT_FAILED, and a flag-on
+# app with nothing mounted is MCP_NOT_MOUNTED — never a green "mounted".
 # ---------------------------------------------------------------------------
 
 if settings.CORTEXSIM_MCP_HTTP:

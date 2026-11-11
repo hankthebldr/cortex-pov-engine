@@ -140,16 +140,23 @@ def mount(app: Any, *, settings: Any) -> Optional[FastMCP]:
                            f"{[getattr(r, 'path', r) for r in sub.routes]}")
     app.router.routes.append(routes[0])
     app.state.mcp = mcp
+    app.state.mcp_client = client
     logger.info("MCP streamable-HTTP mounted at %s with %d tools", MCP_PATH, len(registered_ids(mcp)))
     return mcp
 
 
 @asynccontextmanager
 async def lifespan_for(app: Any) -> AsyncIterator[None]:
-    """Run the mounted session manager for the app's lifetime; a no-op when unmounted."""
+    """Run the mounted session manager for the app's lifetime and close the
+    in-process SimCore client on the way out; a no-op when unmounted."""
     mcp = getattr(app.state, "mcp", None)
     if mcp is None:
         yield
         return
-    async with mcp.session_manager.run():
-        yield
+    try:
+        async with mcp.session_manager.run():
+            yield
+    finally:
+        client = getattr(app.state, "mcp_client", None)
+        if client is not None:
+            await client.aclose()

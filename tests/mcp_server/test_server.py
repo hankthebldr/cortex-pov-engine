@@ -21,10 +21,13 @@ from tests._core_reimport import is_core_module, reimport_core
 # * starlette.testclient warns at import that httpx should be httpx2;
 # * core/engine/k8s_manifest.py:1235-1236 carries `\$` in a non-raw string, and a
 #   fresh compile of it (main imports it via the k8s router) is a
-#   DeprecationWarning on 3.11 — a SyntaxError under -W error. Not this task's file.
+#   DeprecationWarning on 3.11 (SyntaxWarning on 3.12+) — a SyntaxError under
+#   -W error. Not this task's file.
 pytestmark = [
     pytest.mark.filterwarnings("ignore::starlette.exceptions.StarletteDeprecationWarning"),
     pytest.mark.filterwarnings(r"ignore:invalid escape sequence '\\\$':DeprecationWarning"),
+    # Python >= 3.12 raises the same compile warning as SyntaxWarning.
+    pytest.mark.filterwarnings(r"ignore:invalid escape sequence '\\\$':SyntaxWarning"),
 ]
 
 MCP_HEADERS = {"Host": "localhost", "Accept": "application/json, text/event-stream",
@@ -138,6 +141,33 @@ def test_unlisted_host_header_is_refused(boot_main):
     assert evil.status_code == 421
     assert listed.status_code == 200, listed.text
     assert loop.status_code == 200, loop.text
+
+
+def test_flag_on_with_the_sdk_unimportable_health_is_degraded_not_mounted(boot_main, monkeypatch):
+    from starlette.testclient import TestClient
+
+    # A None entry makes `import mcp_server.server` raise ImportError, which is
+    # what a missing/broken SDK does; monkeypatch puts sys.modules back.
+    monkeypatch.setitem(sys.modules, "mcp_server.server", None)
+    main = boot_main(http=True)
+    assert _mcp_route_index(main.app) is None
+    with TestClient(main.app) as client:
+        body = client.get("/api/health").json()
+    comp = body["components"]["mcp"]
+    assert comp["mounted"] is False
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "MCP_SDK_IMPORT_FAILED"
+    assert "mcp" in body["degraded_components"]
+
+
+def test_lifespan_closes_the_in_process_client(boot_main):
+    from starlette.testclient import TestClient
+
+    main = boot_main(http=True)
+    client = main.app.state.mcp_client
+    with TestClient(main.app):
+        assert client._http.is_closed is False
+    assert client._http.is_closed is True
 
 
 def test_lifespan_runs_the_session_manager_only_when_mounted(boot_main):

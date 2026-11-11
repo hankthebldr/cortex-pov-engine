@@ -790,13 +790,52 @@ def test_mcp_on_but_sdk_missing_is_degraded(monkeypatch):
     assert "Fix:" in comp["detail"]
 
 
+def _app_with_mcp(mcp):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(state=SimpleNamespace(mcp=mcp))
+
+
 def test_mcp_on_reports_tool_count(monkeypatch):
     import config
     from api import health
+    from mcp_server.client import SimCoreClient
     from mcp_server.naming import CANONICAL_IDS
+    from mcp_server.ratelimit import TokenBucket
+    from mcp_server.registry import ToolContext
+    from mcp_server.server import build
 
     monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
-    comp = health.probe_mcp()
+    mcp = build(ToolContext(client=SimCoreClient("http://simcore.test"), bucket=TokenBucket(30)))
+    comp = health.probe_mcp(_app_with_mcp(mcp))
     assert comp["status"] == "ok"
     assert comp["mounted"] is True
     assert comp["tools"] == len(CANONICAL_IDS)
+
+
+def test_mcp_on_but_not_mounted_is_degraded(monkeypatch):
+    """Flag on, nothing mounted (main.py swallowed an SDK ImportError): the
+    probe must not infer a mount from the flag."""
+    import config
+    from api import health
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    for app in (None, _app_with_mcp(None)):
+        comp = health.probe_mcp(app)
+        assert comp["status"] == "degraded"
+        assert comp["code"] == "MCP_NOT_MOUNTED"
+        assert comp["mounted"] is False
+        assert comp["tools"] == 0
+        assert "Fix:" in comp["detail"]
+
+
+def test_mcp_on_with_zero_registered_tools_is_degraded(monkeypatch):
+    import config
+    from api import health
+    from mcp.server.fastmcp import FastMCP
+
+    monkeypatch.setattr(config.settings, "CORTEXSIM_MCP_HTTP", True)
+    comp = health.probe_mcp(_app_with_mcp(FastMCP("empty")))
+    assert comp["status"] == "degraded"
+    assert comp["code"] == "MCP_NO_TOOLS"
+    assert comp["mounted"] is True
