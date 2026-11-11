@@ -101,6 +101,7 @@ async def lifespan(app: FastAPI):
     # 0b. Say, loudly, what this deployment exposes (SEC-01/SEC-10). Always
     #     fires: there is no API authentication to configure yet.
     warn_unauthenticated()
+    warn_unusable_allowed_hosts()
 
     # 1. Initialize database (create tables).
     #    A storage fault here is a DEPLOYMENT problem, not a defect, so it gets
@@ -307,7 +308,11 @@ app = FastAPI(
 # delivered without a preflight, so body-less POST routes remain forgeable.
 # ---------------------------------------------------------------------------
 
-from security.host_guard import HostGuardMiddleware, parse_allowed_hosts  # noqa: E402
+from security.host_guard import (  # noqa: E402
+    HostGuardMiddleware,
+    parse_allowed_hosts,
+    unusable_allowed_hosts,
+)
 
 
 def parse_cors_origins(raw: str | None) -> list[str]:
@@ -343,29 +348,56 @@ install_http_security(
 )
 
 
-def exposed_bind() -> str:
-    """The host address the API is published on, for messages. Unset -> compose's default."""
-    return (settings.CORTEXSIM_BIND or "").strip() or "0.0.0.0"
-
-
 def warn_unauthenticated() -> None:
-    """The loud boot line. It always fires today: no authentication exists."""
-    bind = exposed_bind()
+    """The loud boot line. It always fires today: no authentication exists.
+
+    ``CORTEXSIM_BIND`` is quoted as a SETTING, never as where SimCore listens
+    (RG-GUARD-06): it is the address docker-compose publishes the port on.
+    This process binds nothing from it and cannot see the address uvicorn was
+    started on, so "Published on 127.0.0.1 only" was false under a host-run
+    launcher that binds every interface.
+    """
+    raw_bind = (settings.CORTEXSIM_BIND or "").strip()
     hosts = parse_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS)
     logger.warning(
         "SECURITY: SimCore's operator and agent APIs are UNAUTHENTICATED (SEC-01). "
-        "Anyone who can reach %s:%d can launch runs, start tools, read the "
-        "credential inventory and impersonate agents. %s Host guard: %s. CORS: %s. "
+        "Anyone who can reach this SimCore on port %d can launch runs, start "
+        "tools, read the credential inventory and impersonate agents. %s A "
+        "host-run SimCore (scripts/dev-up-native.sh, a bare uvicorn) binds "
+        "whatever --host uvicorn was given, which this process cannot see. "
+        "Host guard: %s. CORS: %s. "
         "Restrict the port to the DC's address (security group / host firewall) "
-        "or publish on one interface with CORTEXSIM_BIND. GET /api/health reports "
+        "and publish on one interface (CORTEXSIM_BIND under compose, --host for "
+        "a host-run uvicorn). GET /api/health reports "
         "this as api_auth: API_UNAUTHENTICATED.",
-        bind, settings.CORTEXSIM_PORT,
-        ("CORTEXSIM_BIND is unset, so compose publishes on every interface."
-         if bind == "0.0.0.0" else f"Published on {bind} only."),
+        settings.CORTEXSIM_PORT,
+        (f"CORTEXSIM_BIND={raw_bind}: docker-compose is configured to publish on "
+         f"that address (not verified by this process)." if raw_bind else
+         "CORTEXSIM_BIND is unset, so docker-compose publishes on every "
+         "interface (0.0.0.0)."),
         ("disabled (CORTEXSIM_ALLOWED_HOSTS='*')" if "*" in hosts else
          "localhost, IP literals, this host's names" + (f", {', '.join(hosts)}" if hosts else "")),
         ", ".join(parse_cors_origins(settings.CORTEXSIM_CORS_ORIGINS)) or "off (same-origin only)",
     )
+
+
+def warn_unusable_allowed_hosts() -> None:
+    """Say at boot which ``CORTEXSIM_ALLOWED_HOSTS`` entries can never match.
+
+    An entry such as ``lab*.example`` or ``jump box`` admits nothing, and the
+    beacon or browser it was meant for is refused ``HOST_NOT_ALLOWED`` with the
+    setting apparently in place. ``/api/health`` lists the same entries as
+    ``api_auth.ignored_allowed_hosts``.
+    """
+    ignored = unusable_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS)
+    if ignored:
+        logger.warning(
+            "CORTEXSIM_ALLOWED_HOSTS: %d entr%s can never match a Host header and "
+            "%s ignored: %s. Write the host name only ('jumpbox.lab'; a scheme "
+            "or port is accepted and dropped) or '*.lab' for subdomains.",
+            len(ignored), "y" if len(ignored) == 1 else "ies",
+            "is" if len(ignored) == 1 else "are",
+            ", ".join(repr(e) for e in ignored))
 
 
 # ---------------------------------------------------------------------------

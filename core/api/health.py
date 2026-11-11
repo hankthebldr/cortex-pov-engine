@@ -458,37 +458,75 @@ def probe_api_auth() -> dict[str, Any]:
     because a bind address or firewall rule *looks* narrow, which this process
     cannot verify (a 127.0.0.1 publish behind a port-forward is still exposed).
     """
-    from security.host_guard import parse_allowed_hosts  # noqa: PLC0415
+    from security import host_guard  # noqa: PLC0415
 
     raw_bind = (getattr(settings, "CORTEXSIM_BIND", "") or "").strip()
     bind = raw_bind or "0.0.0.0"
     port = settings.CORTEXSIM_PORT
-    allowed = parse_allowed_hosts(getattr(settings, "CORTEXSIM_ALLOWED_HOSTS", ""))
+    raw_allowed = getattr(settings, "CORTEXSIM_ALLOWED_HOSTS", "")
+    allowed = host_guard.parse_allowed_hosts(raw_allowed)
+    ignored = host_guard.unusable_allowed_hosts(raw_allowed)
     cors = [o.strip() for o in (getattr(settings, "CORTEXSIM_CORS_ORIGINS", "") or "").split(",")
             if o.strip()]
-    where = (
-        f"{bind}:{port} (CORTEXSIM_BIND unset — docker-compose publishes on every "
-        f"interface of the host)" if not raw_bind else f"{bind}:{port}"
+    # CORTEXSIM_BIND is a SETTING — the address docker-compose publishes the
+    # port on. This process does not bind a socket from it and cannot see the
+    # address it is actually reachable on, so it is reported as configuration,
+    # never as "SimCore is published on X" (RG-GUARD-06): under a host-run
+    # uvicorn that statement was simply false.
+    published = (
+        f"CORTEXSIM_BIND={raw_bind} is the address docker-compose is configured "
+        f"to publish port {port} on" if raw_bind else
+        f"CORTEXSIM_BIND is unset, so docker-compose publishes port {port} on "
+        f"every interface of the host ({bind})"
     )
+    refused = host_guard.refusals.snapshot()
+    guard_notes = ""
+    if ignored:
+        guard_notes += (
+            f" CORTEXSIM_ALLOWED_HOSTS has {len(ignored)} entr"
+            f"{'y' if len(ignored) == 1 else 'ies'} that can never match a Host "
+            f"header and {'is' if len(ignored) == 1 else 'are'} ignored: "
+            f"{', '.join(repr(e) for e in ignored)} — write the name only "
+            f"('jumpbox.lab' or '*.lab')."
+        )
+    if refused["total"]:
+        names = ", ".join(repr(e["host"]) for e in refused["hosts"][:5])
+        guard_notes += (
+            f" The Host guard has refused {refused['total']} request(s) since "
+            f"boot (HOST_NOT_ALLOWED), most recently for {names}. If one of those "
+            f"names is yours — the console URL, or a beacon's or installer's "
+            f"--server — add it to CORTEXSIM_ALLOWED_HOSTS and restart SimCore; "
+            f"until then that endpoint cannot poll, download or report."
+        )
     return _degraded(
         "API_UNAUTHENTICATED",
         f"The operator and agent APIs are unauthenticated: anyone who can reach "
-        f"{where} can launch runs, start tools, read the credential inventory, "
-        f"enroll or impersonate agents and post their output. The Host guard "
+        f"this SimCore's port can launch runs, start tools, read the credential "
+        f"inventory, enroll or impersonate agents and post their output. Where it "
+        f"listens is not verified here: {published}, and a host-run SimCore "
+        f"(scripts/dev-up-native.sh, a bare uvicorn) binds whatever --host uvicorn "
+        f"was started with, which this process cannot see. The Host guard "
         f"blocks DNS-rebinding pages and CORS is "
         f"{'limited to ' + ', '.join(cors) if cors else 'off (same-origin only)'}, "
         f"but neither stops a direct network client, and a body-less cross-site "
-        f"POST to an IP address is still delivered. "
-        f"Fix: publish SimCore only where the DC needs it — CORTEXSIM_BIND=127.0.0.1 "
-        f"for a console-only host, or the lab NIC's address — and restrict the "
+        f"POST to an IP address is still delivered.{guard_notes} "
+        f"Fix: publish SimCore only where the DC needs it — 127.0.0.1 for a "
+        f"console-only host, or the lab NIC's address; set it as CORTEXSIM_BIND "
+        f"under compose, or pass it as uvicorn's --host when host-run — and "
+        f"restrict the "
         f"port to the DC's and the enrolled endpoints' addresses with a security "
         f"group or host firewall. API authentication itself is not implemented "
         f"yet (SEC-01); this component stays degraded until it is.",
         authenticated=False,
         bind=bind,
+        bind_source="CORTEXSIM_BIND" if raw_bind else "default",
+        bind_verified=False,
         port=port,
         host_guard="disabled" if "*" in allowed else "enforced",
         allowed_hosts=allowed,
+        ignored_allowed_hosts=ignored,
+        host_guard_refusals=refused["total"],
+        last_refused_hosts=refused["hosts"],
         cors_origins=cors,
     )
 
