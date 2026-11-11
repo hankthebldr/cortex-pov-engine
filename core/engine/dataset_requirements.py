@@ -125,6 +125,7 @@ def _bad(path: str, where: str, problem: str) -> DatasetRequirementsError:
 def _keys(obj: object, where: str, path: str, required: set[str]) -> dict:
     if not isinstance(obj, dict):
         raise _bad(path, where, f"expected a mapping, got {type(obj).__name__}")
+    _string_keys(obj, where, path)
     unknown = set(obj) - required
     if unknown:
         raise _bad(path, where, f"unknown key(s) {sorted(unknown, key=str)}")
@@ -132,6 +133,13 @@ def _keys(obj: object, where: str, path: str, required: set[str]) -> dict:
     if missing:
         raise _bad(path, where, f"missing key(s) {sorted(missing)}")
     return obj
+
+
+def _string_keys(obj: dict, where: str, path: str) -> None:
+    for k in obj:
+        if not isinstance(k, str):
+            raise _bad(path, where, f"key {k!r} is not a string — quote it "
+                                    f"(a bare `on:` is read as a boolean)")
 
 
 def _text(val: object, where: str, path: str) -> str:
@@ -157,6 +165,7 @@ def _list(obj: object, where: str, path: str) -> list:
 def parse_registry(data: object, path: str) -> dict[str, DatasetRequirement]:
     if not isinstance(data, dict) or not data:
         raise _bad(path, "root", f"must be a non-empty mapping of dataset to entry, got {data!r}")
+    _string_keys(data, "root", path)
     out: dict[str, DatasetRequirement] = {}
     for name, entry in data.items():
         w = f"{name}"
@@ -225,14 +234,38 @@ def load() -> dict[str, DatasetRequirement] | None:
 def card_datasets(all_raw: dict[str, dict]) -> dict[str, set[str]]:
     """Map each dataset named by a card's ``detections.xql_queries[].dataset`` to the card ids that read it.
 
-    Blank and missing values are skipped. ``all_raw`` is ``catalog.all_raw()``.
+    ``all_raw`` is ``catalog.all_raw()``. A missing, ``None``, blank or
+    whitespace-only ``dataset`` is skipped. Any other unrecognised shape
+    (``detections`` not a mapping, ``xql_queries`` not a list, an item not a
+    mapping, a non-string ``dataset``) raises :class:`DatasetRequirementsError`:
+    skipping it would drop that card's prerequisites without a trace.
     """
     out: dict[str, set[str]] = {}
     for card_id, raw in all_raw.items():
-        detections = (raw or {}).get("detections") or {}
-        for q in detections.get("xql_queries") or []:
-            ds = q.get("dataset") if isinstance(q, dict) else None
-            if isinstance(ds, str) and ds.strip():
+        detections = raw.get("detections")
+        if detections is None:
+            continue
+        if not isinstance(detections, dict):
+            raise DatasetRequirementsError(
+                f"card {card_id}: detections must be a mapping, got {type(detections).__name__}")
+        queries = detections.get("xql_queries")
+        if queries is None:
+            continue
+        if not isinstance(queries, list):
+            raise DatasetRequirementsError(
+                f"card {card_id}: detections.xql_queries must be a list, got {type(queries).__name__}")
+        for i, q in enumerate(queries):
+            if not isinstance(q, dict):
+                raise DatasetRequirementsError(
+                    f"card {card_id}: detections.xql_queries[{i}] must be a mapping, got {type(q).__name__}")
+            ds = q.get("dataset")
+            if ds is None:
+                continue
+            if not isinstance(ds, str):
+                raise DatasetRequirementsError(
+                    f"card {card_id}: detections.xql_queries[{i}].dataset must be a string, "
+                    f"got {type(ds).__name__}")
+            if ds.strip():
                 out.setdefault(ds.strip(), set()).add(card_id)
     return out
 

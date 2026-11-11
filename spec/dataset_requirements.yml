@@ -11,8 +11,8 @@
 # A verified row needs all three of by/on/how. Quote the "on" key: bare, YAML
 # reads it as the boolean true. Quote the date too ("on": "2026-11-12"), or
 # YAML reads it as a date; the loader rejects both.
-# emulated_by lists only plugins docs/reference/eal-plugin-catalog.md documents
-# for that data source.
+# emulated_by lists a plugin only when its code or Meta names that dataset as
+# the one it posts to.
 
 ad_audit:
   produced_by: microsoft-windows
@@ -23,7 +23,7 @@ ad_audit:
   source_side:
     - product: microsoft-windows
       requirement: log_forwarding
-      detail: "Domain controller Security event logs (Kerberos and directory-service auditing) are forwarded to the Cortex tenant."
+      detail: "The cards read domain controller events 4768 and 4662 (event_id, result_code, object_properties); which product emits this dataset and how it is onboarded are not confirmed."
       verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
@@ -71,7 +71,7 @@ cloud_audit:
   source_side:
     - product: cloud-provider-audit
       requirement: audit_log_export
-      detail: "The cloud provider's control-plane audit log (for AWS, CloudTrail) is exported to the Cortex tenant."
+      detail: "The one card reads AWS control-plane events (cloud_provider, event_source, event_name); whether this is a dataset distinct from cloud_audit_logs, and how it is onboarded, are not confirmed."
       verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
@@ -86,7 +86,7 @@ cloud_audit_logs:
       requirement: audit_log_export
       detail: "The cloud provider's control-plane audit log (AWS CloudTrail, GCP Cloud Audit Logs) is exported to the Cortex tenant."
       verified: {by: "", "on": "", how: ""}
-  emulated_by: []
+  emulated_by: [cloud_audit_emitter, cloud_storage_compute_emitter]
 
 cortex_cloud_posture:
   produced_by: cortex-cloud
@@ -110,7 +110,7 @@ cortexsim_airs_raw:
   source_side:
     - product: cortexsim-synthetic
       requirement: log_forwarding
-      detail: "The CortexSim AIRS prompt-attack driver output is posted to an HTTP log collector in the Cortex tenant."
+      detail: "The cards read CortexSim AIRS probe records (event_action, owasp_id, outcome); how those records reach the tenant is not confirmed."
       verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
@@ -149,7 +149,7 @@ koi_code_scan_events:
   source_side:
     - product: koi
       requirement: api_integration
-      detail: "Koi code and extension scan events are sent to the Cortex tenant through an API integration."
+      detail: "The cards read extension and package scan fields (artifact_type, manifest_host_permissions, signature_valid); how Koi events reach the tenant is not confirmed."
       verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
@@ -164,7 +164,7 @@ kubernetes_audit_logs:
       requirement: audit_log_export
       detail: "The Kubernetes API server audit log is enabled and exported to the Cortex tenant."
       verified: {by: "", "on": "", how: ""}
-  emulated_by: []
+  emulated_by: [k8s_audit_emitter]
 
 msft_azure_ad_signin:
   produced_by: microsoft-entra
@@ -188,9 +188,9 @@ msft_azure_audit:
   source_side:
     - product: cloud-provider-audit
       requirement: audit_log_export
-      detail: "The Azure Activity and directory audit logs are exported to the Cortex tenant."
+      detail: "The cards read Azure control-plane records (operationName, category, identity claims, including Conditional Access policy writes); how they are onboarded is not confirmed."
       verified: {by: "", "on": "", how: ""}
-  emulated_by: []
+  emulated_by: [azure_audit_emitter]
 
 msft_o365:
   produced_by: microsoft-365
@@ -216,7 +216,7 @@ msft_o365_audit:
       requirement: api_integration
       detail: "The Microsoft 365 unified audit log is pulled into the Cortex tenant through an API integration."
       verified: {by: "", "on": "", how: ""}
-  emulated_by: []
+  emulated_by: [m365_activity_emitter]
 
 msft_windows_security:
   produced_by: microsoft-windows
@@ -229,7 +229,7 @@ msft_windows_security:
       requirement: log_forwarding
       detail: "Windows Security event logs from the hosts under test are forwarded to the Cortex tenant."
       verified: {by: "", "on": "", how: ""}
-  emulated_by: []
+  emulated_by: [ad_windows_emitter]
 
 network_story:
   produced_by: cortex-xsiam
@@ -339,7 +339,7 @@ prisma_browser_events:
   source_side:
     - product: prisma-browser
       requirement: log_forwarding
-      detail: "Prisma Browser event logs are forwarded to the Cortex tenant."
+      detail: "The cards read browser actions (navigate, paste, download, extension-install, screen-capture); how Prisma Browser events reach the tenant is not confirmed."
       verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
@@ -365,7 +365,7 @@ saas_audit_logs:
   source_side:
     - product: saas-generic
       requirement: api_integration
-      detail: "The SaaS application's audit log is pulled into the Cortex tenant through an API integration."
+      detail: "The cards read dst_host, uri_path and oauth_scopes, an HTTP or proxy shape; which product emits this dataset and how it is onboarded are not confirmed."
       verified: {by: "", "on": "", how: ""}
   emulated_by: []
 

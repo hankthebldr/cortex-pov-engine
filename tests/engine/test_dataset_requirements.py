@@ -105,3 +105,32 @@ def test_source_follows_cached_load_not_disk(tmp_path, monkeypatch):
     (tmp_path / "spec" / "dataset_requirements.yml").write_text(yaml.safe_dump(GOOD))
     assert registry_source()["source"] == "absent"  # what is served, not what is on disk now
     load.cache_clear()
+
+
+_UNQUOTED_ON = """\
+panw_ngfw_traffic_raw:
+  produced_by: strata-ngfw
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", on: "", how: ""}
+  source_side: []
+  emulated_by: []
+"""
+
+
+def test_unquoted_on_key_names_the_cause(tmp_path, monkeypatch):
+    (tmp_path / "spec").mkdir()
+    (tmp_path / "spec" / "dataset_requirements.yml").write_text(_UNQUOTED_ON)
+    monkeypatch.setattr(settings, "CORTEXSIM_BASE_DIR", str(tmp_path))
+    load.cache_clear()
+    with pytest.raises(DatasetRequirementsError,
+                       match=r"key True is not a string .*quote it .*a bare `on:` is read as a boolean"):
+        load()
+    load.cache_clear()
+
+
+def test_non_string_dataset_name_at_root_raises():
+    data = {1: copy.deepcopy(GOOD["panw_ngfw_traffic_raw"])}
+    with pytest.raises(DatasetRequirementsError, match="key 1 is not a string"):
+        parse_registry(data, "p")

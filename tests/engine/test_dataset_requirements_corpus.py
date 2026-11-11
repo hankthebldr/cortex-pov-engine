@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from config import settings
-from engine.dataset_requirements import card_datasets, load
+from engine.dataset_requirements import DatasetRequirementsError, card_datasets, load
 from engine.ttp_catalog import catalog, default_corpus_dir
 
 _VALIDATE = Path(__file__).resolve().parents[2] / "detection_scanner" / "scripts" / "validate.py"
@@ -57,6 +57,28 @@ def test_card_datasets_skips_blank_and_missing():
     assert card_datasets(raw) == {"xdr_data": {"A", "B"}}
 
 
+def test_card_datasets_skips_none_and_whitespace():
+    raw = {"A": {"detections": {"xql_queries": [{"dataset": None}, {"dataset": "\t "}]}},
+           "B": {"detections": {}}, "C": {"detections": None}}
+    assert card_datasets(raw) == {}
+
+
+@pytest.mark.parametrize("card, needle", [
+    ({"detections": []}, r"card X: detections must be a mapping"),
+    ({"detections": {"xql_queries": {"dataset": "xdr_data"}}}, r"card X: detections\.xql_queries must be a list"),
+    ({"detections": {"xql_queries": [{"dataset": "xdr_data"}, "xdr_data"]}}, r"card X: detections\.xql_queries\[1\] must be a mapping"),
+    ({"detections": {"xql_queries": [{"dataset": ["xdr_data"]}]}}, r"card X: detections\.xql_queries\[0\]\.dataset must be a string"),
+    ({"detections": {"xql_queries": [{"dataset": 7}]}}, r"card X: detections\.xql_queries\[0\]\.dataset must be a string"),
+])
+def test_card_datasets_raises_on_unrecognised_shape(card, needle):
+    with pytest.raises(DatasetRequirementsError, match=needle):
+        card_datasets({"X": card})
+
+
+def test_real_corpus_reads_without_raising():
+    assert len(card_datasets(catalog.all_raw())) > 0
+
+
 def test_every_card_dataset_is_registered():
     missing = sorted(set(card_datasets(catalog.all_raw())) - set(load()))
     assert missing == [], f"datasets read by cards with no requirement entry: {missing}"
@@ -88,3 +110,18 @@ def test_ngfw_datasets_require_log_forwarding():
     for k, r in load().items():
         if r.produced_by == "strata-ngfw":
             assert "log_forwarding" in {s.requirement for s in r.source_side}, k
+
+
+@pytest.mark.parametrize("dataset, requirement", [
+    ("panw_ngfw_threat_raw", "threat_profile_attached"),
+    ("pan_dns", "dns_security_logged"),
+    ("panw_ngfw_globalprotect_raw", "globalprotect_logs"),
+])
+def test_ngfw_specific_requirements_sit_on_their_datasets(dataset, requirement):
+    assert requirement in {s.requirement for s in load()[dataset].source_side}
+
+
+def test_xdr_data_requires_an_installed_agent():
+    row = load()["xdr_data"]
+    assert row.produced_by == "cortex-xdr-agent"
+    assert "agent_installed" in {s.requirement for s in row.source_side}
