@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   getInfraBundles,
   deleteAgent,
+  abortRun,
   agentInstallUrl,
   mintEnrollmentToken,
 } from '../../api/client.js'
@@ -125,17 +126,50 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   const [pendingDelete, setPendingDelete] = useState(null) // agent_id awaiting confirm
   const [busyDelete, setBusyDelete] = useState(null)       // agent_id mid-delete
 
+  // A refused delete, per agent: {message, code, runIds, aborted: {runId: text}}.
+  // The list does not change on a refusal, so swallowing the error (as this
+  // used to: "surfaced via list refresh") made Delete row a button that did
+  // nothing. SimCore refuses with 409 AGENT_HAS_OPEN_RUNS while a run is owed
+  // to the agent or in flight on it; ending such a run is the operator's call.
+  const [deleteRefusal, setDeleteRefusal] = useState({})
+
   const removeAgent = useCallback(async (agentId) => {
     setBusyDelete(agentId)
+    setDeleteRefusal((m) => { const n = { ...m }; delete n[agentId]; return n })
     try {
       await deleteAgent(agentId)
       // The provider owns the agent list; re-pull so the header switcher and
       // this surface both reflect the removal (its stale-pointer guard clears
       // the active pointer + falls back if the deleted agent was active).
       await refreshAgents()
-    } catch { /* surfaced via list refresh */ }
+    } catch (err) {
+      const p = err?.payload || {}
+      const detail = typeof err?.detail === 'string' ? err.detail : null
+      setDeleteRefusal((m) => ({
+        ...m,
+        [agentId]: {
+          code: err?.code || null,
+          message: detail || err?.message || 'SimCore refused the delete.',
+          runIds: Array.isArray(p.run_ids) ? p.run_ids : [],
+          aborted: {},
+        },
+      }))
+    }
     finally { setBusyDelete(null); setPendingDelete(null) }
   }, [refreshAgents])
+
+  const abortOpenRun = useCallback(async (agentId, runId) => {
+    let text
+    try {
+      await abortRun(runId)
+      text = `${runId} aborted. Delete the agent again once no run is left.`
+    } catch (err) {
+      text = `Abort of ${runId} failed: ${err?.message || 'unknown error'}`
+    }
+    setDeleteRefusal((m) => (m[agentId]
+      ? { ...m, [agentId]: { ...m[agentId], aborted: { ...m[agentId].aborted, [runId]: text } } }
+      : m))
+  }, [])
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   // The one-liner is only as good as the address it carries. A DC on the
@@ -419,6 +453,34 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     </div>
                   </>
                 ) : (
+                  <>
+                  {deleteRefusal[id] && (
+                    <div className="target-card__remove" role="alert" data-testid="agent-delete-refused">
+                      <p>
+                        <strong>Not deleted{deleteRefusal[id].code ? ` (${deleteRefusal[id].code})` : ''}.</strong>{' '}
+                        {deleteRefusal[id].message}
+                      </p>
+                      {deleteRefusal[id].runIds.length > 0 && (
+                        <ul>
+                          {deleteRefusal[id].runIds.map((rid) => (
+                            <li key={rid}>
+                              <a className="mono" href={`#/runs?run=${encodeURIComponent(rid)}`}>{rid}</a>{' '}
+                              {deleteRefusal[id].aborted[rid] ? (
+                                <span>{deleteRefusal[id].aborted[rid]}</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn--xs btn--danger"
+                                  onClick={() => abortOpenRun(id, rid)}
+                                  aria-label={`Abort ${rid}`}
+                                >Abort</button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                   <div className="target-card__actions">
                     {!isActive && (
                       <button
@@ -452,6 +514,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                       title="Delete this agent"
                     >✕ delete</button>
                   </div>
+                  </>
                 )}
               </div>
             )

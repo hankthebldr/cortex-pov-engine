@@ -281,3 +281,67 @@ describe('Agent cards · delete says what it does and how to really remove a bea
       .toBe(WINDOWS_MANUAL_UNINSTALL)
   })
 })
+
+describe('Agent cards · a refused delete says why and offers the abort (OPS-08)', () => {
+  // DELETE /api/agents/{id} answers 409 AGENT_HAS_OPEN_RUNS while a run is
+  // owed to the agent or in flight on it. removeAgent used to swallow every
+  // error ("surfaced via list refresh"), and the list does not change on a
+  // refusal, so Delete row looked like a button that did nothing.
+  const REFUSAL = {
+    detail: {
+      error: 'Agent has runs that are not finished',
+      code: 'AGENT_HAS_OPEN_RUNS',
+      detail: "agent 'jb-stuck' is still owed, or is running, 1 run(s): run-abc. Deleting it now would leave them running with no agent to deliver to and nothing to time them out. Let each one finish or abort it (POST /api/runs/run-abc/abort), then delete the agent.",
+      run_ids: ['run-abc'],
+    },
+  }
+
+  function mountWith(routes) {
+    installRoutes({
+      'GET /api/infra/bundles': { bundles: [] },
+      'GET /api/agents/install/attempts': { attempts: [], total: 0, retained_max: 100 },
+      ...routes,
+    })
+    const refreshAgents = vi.fn()
+    render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, refreshAgents, agents: [
+        { agent_id: 'jb-stuck', hostname: 'h', os: 'linux', status: 'offline', last_seen_age_seconds: 900 },
+      ] }}>
+        <TargetsView />
+      </EnvironmentContext.Provider>,
+    )
+    const c = screen.getByText('jb-stuck').closest('.target-card')
+    fireEvent.click(within(c).getByRole('button', { name: /delete/i }))
+    fireEvent.click(within(c).getByRole('button', { name: /Delete row/i }))
+    return { c, refreshAgents }
+  }
+
+  it('renders the server detail and each open run, with an abort control', async () => {
+    let aborted = null
+    mountWith({
+      'DELETE /api/agents/jb-stuck': () => new Response(JSON.stringify(REFUSAL), {
+        status: 409, headers: { 'content-type': 'application/json' },
+      }),
+      'POST /api/runs/run-abc/abort': (url) => { aborted = url; return { status: 'aborted', run_id: 'run-abc' } },
+    })
+    const alert = await screen.findByTestId('agent-delete-refused')
+    expect(alert.getAttribute('role')).toBe('alert')
+    expect(alert.textContent).toContain('AGENT_HAS_OPEN_RUNS')
+    expect(alert.textContent).toMatch(/still owed, or is running, 1 run/)
+    const link = within(alert).getByRole('link', { name: 'run-abc' })
+    expect(link.getAttribute('href')).toBe('#/runs?run=run-abc')
+    fireEvent.click(within(alert).getByRole('button', { name: /Abort run-abc/i }))
+    await within(alert).findByText(/run-abc aborted/i)
+    expect(aborted).toMatch(/\/api\/runs\/run-abc\/abort$/)
+  })
+
+  it('any other refusal is shown, not swallowed', async () => {
+    mountWith({
+      'DELETE /api/agents/jb-stuck': () => new Response(JSON.stringify({ error: 'boom', code: 'INTERNAL' }), {
+        status: 500, headers: { 'content-type': 'application/json' },
+      }),
+    })
+    const alert = await screen.findByTestId('agent-delete-refused')
+    expect(alert.textContent).toMatch(/boom/)
+  })
+})

@@ -39,11 +39,14 @@ function formatValidationDetail(detail) {
  * `err.detail` / `err.status` ride along so a caller that wants to explain the
  * failure precisely (the launch panel) can, without re-parsing prose.
  */
-function apiError(message, { code = null, detail = null, status = null } = {}) {
+function apiError(message, { code = null, detail = null, status = null, payload = null } = {}) {
   const err = new Error(message)
   err.code = code
   err.detail = detail
   err.status = status
+  // The whole structured body, so a field beside {error, code, detail} (for
+  // example run_ids on 409 AGENT_HAS_OPEN_RUNS) is not lost.
+  err.payload = payload
   return err
 }
 
@@ -135,6 +138,7 @@ export async function request(path, options = {}) {
     let errorMessage = fallback
     let code = null
     let detail = null
+    let payload = null
     try {
       const errorBody = await response.json()
       // FastAPI returns errors as { detail: ... } where detail is one of:
@@ -160,21 +164,24 @@ export async function request(path, options = {}) {
         // reached the operator as "HTTP 422 — Unprocessable Entity", code null.
         code = errorBody.code || null
         detail = errorBody.detail
+        payload = errorBody
         errorMessage = errorBody.error || fallback
       } else if (errorBody.detail && typeof errorBody.detail === 'object') {
         const d = errorBody.detail
+        payload = d
         code = d.code || null
         detail = d.detail ?? null
         errorMessage = `${d.error || d.detail || fallback}${d.code ? ` [${d.code}]` : ''}`
       } else {
         code = errorBody.code || null
         detail = errorBody.detail ?? null
+        payload = errorBody
         errorMessage = errorBody.detail || errorBody.error || errorBody.message || fallback
       }
     } catch {
       // Response body was not JSON — keep the HTTP status message
     }
-    throw apiError(errorMessage, { code, detail, status: response.status })
+    throw apiError(errorMessage, { code, detail, status: response.status, payload })
   }
 
   // For blob responses (downloads), return raw Response
@@ -828,6 +835,14 @@ export async function getAgents() {
  */
 export async function deleteAgent(agentId) {
   return request(`/api/agents/${encodeURIComponent(agentId)}`, { method: 'DELETE' })
+}
+
+/**
+ * POST /api/runs/:runId/abort — end a run the operator chose to stop.
+ * @param {string} runId
+ */
+export async function abortRun(runId) {
+  return request(`/api/runs/${encodeURIComponent(runId)}/abort`, { method: 'POST' })
 }
 
 /**
