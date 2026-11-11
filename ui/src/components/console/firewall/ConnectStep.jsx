@@ -242,7 +242,11 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
 }
 
 function lastResult(fw) {
-  if (fw.last_verified_ok === true) return { label: 'last preflight: not blocked', cls: 'chip chip--detected' }
+  // "Not blocked" is not "ready": the overall may still be degraded, so it is
+  // never painted green here. The full verdict lives in the Check step.
+  if (fw.last_verified_ok === true) {
+    return { label: 'last preflight: not blocked (open Check for detail)', cls: 'chip chip--pending' }
+  }
   if (fw.last_verified_ok === false) {
     return { label: `last preflight: blocked${fw.last_verified_error ? ` (${fw.last_verified_error})` : ''}`, cls: 'chip chip--missed' }
   }

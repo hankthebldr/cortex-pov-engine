@@ -299,6 +299,17 @@ describe('FirewallView', () => {
     expect(screen.getByRole('button', { name: /remove firewall fw-b/i })).toBeInTheDocument()
   })
 
+  it('final-I1: a last preflight that was not blocked never renders green in the list', async () => {
+    client.listFirewalls.mockResolvedValue({ firewalls: [
+      { ...FW, last_verified_ok: true, last_verified_at: '2026-11-10T10:00:00+00:00' },
+    ], write_enabled: false, tenant_verified: 0 })
+    mount()
+    const row = await screen.findByTestId('fw-registered-pa-440')
+    expect(row.textContent).toMatch(/last preflight: not blocked \(open Check for detail\)/)
+    expect(row.querySelector('.chip--detected')).toBeNull()
+    expect(row.querySelector('.chip--pending')).not.toBeNull()
+  })
+
   it('with no firewall registered, Check is degraded and offers no run', async () => {
     client.listFirewalls.mockResolvedValue({ firewalls: [], write_enabled: false, tenant_verified: 0 })
     mount()
