@@ -112,6 +112,43 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 - Not changed: `email_emitter` has no auth parameters at all, so it cannot
   authenticate to an XSIAM collector. Tracked separately.
 
+### Changed — detector readiness judges the delivery route and soakless mode
+
+- **A detector no longer reads armed on a route analytics never reads.**
+  `POST /api/eal/campaigns/{id}/detector-readiness` derives each step's route
+  from its `collector_url` and judges it before training time. The vendor says
+  Analytics runs only on normalised logs, a custom HTTP collector dataset is
+  normalised only once an XDM rule maps it, and the Cribl generic UUID gets no
+  out-of-the-box analytics. Every streamer here delivers through a custom HTTP
+  collector, so a campaign that used to read `armed` now reads `unknown`
+  (`DETECTOR_ROUTE_REQUIRES_XDM`) until the DC attests the rule in
+  `xdm_modeled_sources`. A generic-UUID route reads `not_armable`.
+- **Soakless mode reaches the readiness gate.** `soakless_attested: true` (with
+  `attested_by`) arms a detector whose route feeds analytics, with
+  `armed_basis: "attested:soakless"`. Run outcomes already honoured the flag;
+  the gate did not, so a soakless tenant was told its detectors were not armed.
+  Soakless never overrides a route that cannot feed analytics.
+
+### Added — ingestion routes in the Data Streams catalogue (LogSimv2 port, phase 1)
+
+- `core/eal_simulator/ingestion_routes.py`: for every catalogue source, each
+  documented route into the tenant, with pipe, tenant dataset, Cribl source UUID,
+  vendor/product and whether out-of-the-box analytics run on it. Dataset and
+  analytics claims carry separate evidence. Facts come from
+  [LogSimv2](https://github.com/phreezone/LogSimv2), re-checked against the
+  vendor's Cribl UUID and NGFW ingest pages and content packs. No LogSimv2 code
+  is copied, since it ships no licence. A fact only LogSimv2 states is marked
+  `reported`.
+- `GET /api/eal/data-streams` rows gain `routes[]` and `dataset_check[]`, plus
+  top-level `generic_routes[]` and `ingestion_only[]` (Proofpoint TAP, Infoblox,
+  Apache, ESXi: real data, no published analytics, outside the coverage figure).
+  Counted: 21 of 31 addressable sources have a documented route, and 12
+  emitter-to-source pairs name a dataset the tenant never creates
+  (`counts.emitter_dataset_mismatch`). Measured, not renamed.
+- Design for the remaining four phases (transports, wire-format generators,
+  threat catalog, kill chains and correlation exports):
+  `docs/superpowers/specs/2026-11-10-logsim-v2-catalog-port-design.md`.
+
 ### Changed — Composer and Runs: a step's lane is its signal path, not its plane
 
 - **The door badge, the Lanes lens and the Runs topology place a step by what

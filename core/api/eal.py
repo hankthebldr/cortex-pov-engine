@@ -181,6 +181,15 @@ class DetectorReadinessRequest(BaseModel):
     # tenant, and this endpoint deliberately makes no outbound call. An omitted
     # source yields `unknown`, never `armed`.
     source_onboarded_at: dict[str, str] = Field(default_factory=dict)
+    # Operator attests the tenant runs soakless (no activation, training or
+    # dedup period). Same meaning as the run launch field of the same name;
+    # recorded, never checked.
+    soakless_attested: Optional[bool] = None
+    attested_by: Optional[str] = None
+    # Data-source keys whose custom-collector dataset the operator attests an
+    # XDM modeling rule maps. Without it, an HTTP-collector route is `unknown`:
+    # built-in analytics read a custom dataset only once XDM maps it.
+    xdm_modeled_sources: list[str] = Field(default_factory=list)
 
 
 class AbortResponse(BaseModel):
@@ -316,6 +325,8 @@ async def data_streams(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
         "catalogue_version": coverage["catalogue_version"],
         "counts": coverage["counts"],
         "sources": coverage["sources"],
+        "generic_routes": coverage["generic_routes"],
+        "ingestion_only": coverage["ingestion_only"],
         "emitters": emitters,
         "detectors": detectors,
         "detector_counts": {
@@ -762,9 +773,22 @@ async def campaign_detector_readiness(
             })
         declared[key] = parsed
 
+    for key in body.xdm_modeled_sources:
+        try:
+            get_source(key)
+        except UnknownDataSourceError as exc:
+            raise HTTPException(status_code=422, detail={
+                "error": "Unknown data source",
+                "code": "UNKNOWN_DATA_SOURCE",
+                "detail": str(exc),
+            }) from exc
+
     plugins = {step.plugin for step in campaign.steps}
+    pipes = _campaign_pipes(campaign.steps)
     report = readiness_report(
         _get_executor().registry, plugins=plugins, onboarded_at=declared,
+        soakless_attested=body.soakless_attested, pipes=pipes,
+        xdm_modeled=set(body.xdm_modeled_sources),
     )
 
     if report["counts"]["total"] == 0:
@@ -782,7 +806,39 @@ async def campaign_detector_readiness(
         "campaign_id": campaign.campaign_id,
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
         "sources_declared": sorted(declared),
+        "routes": pipes,
+        "attested_by": body.attested_by,
+        "xdm_modeled_sources": sorted(set(body.xdm_modeled_sources)),
         **report,
+    }
+
+
+def _campaign_pipes(steps: list[Any]) -> dict[str, str]:
+    """Each plugin's delivery route, read from its steps' ``collector_url``.
+
+    Derived, never asked for: the URL a step POSTs to is the route its records
+    take. ``steps`` are the target-resolved steps from ``_load_campaign``, so a
+    collector target's URL is what is judged. A step no target resolved carries
+    the ``.invalid`` stand-in URL, whose ``/logs/v1/event`` path must not read
+    as a real HTTP collector: it is ``undeclared``. One plugin used by several
+    steps with different doors is ``mixed``, which judges as unresolved: an
+    aggregate verdict would hide which door cannot feed analytics.
+    """
+    from eal_simulator.ingestion_routes import (  # noqa: PLC0415
+        COLLECTOR_UNDECLARED,
+        pipe_for_collector_url,
+    )
+    from eal_simulator.targets import UNRESOLVED_COLLECTOR_URL  # noqa: PLC0415
+
+    seen: dict[str, set[str]] = {}
+    for step in steps:
+        url = (step.params or {}).get("collector_url")
+        pipe = (COLLECTOR_UNDECLARED if url == UNRESOLVED_COLLECTOR_URL
+                else pipe_for_collector_url(url))
+        seen.setdefault(step.plugin, set()).add(pipe)
+    return {
+        plugin: next(iter(found)) if len(found) == 1 else "mixed"
+        for plugin, found in seen.items()
     }
 
 

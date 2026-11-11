@@ -255,3 +255,45 @@ def test_bundle_with_nothing_to_send_to_is_refused(env):
     r = c.post("/api/eal/campaigns/CMP-TGT-001/bundle")
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "COLLECTOR_TARGET_NOT_CONFIGURED"
+
+
+# -- detector readiness reads the resolved route (LogSimv2 port, phase 1) -----
+
+def _fw_campaign(cid):
+    return {
+        "campaign_id": cid, "name": "firewall via target",
+        "authorized_by": "tester", "simulation_authorized": True,
+        "target_allowlist": [], "dry_run": True,
+        "steps": [{"step_id": "step-01", "plugin": "third_party_firewall_emitter",
+                   "params": {}}],
+    }
+
+
+def test_readiness_judges_the_route_of_the_resolved_target(env):
+    # The step carries no collector_url; the instance target supplies it, and
+    # readiness must judge that URL, as launch would send to it.
+    c, _, _ = env
+    _target(c, name="fw-hec", plugins=["third_party_firewall_emitter"])
+    assert c.post("/api/eal/campaigns", json=_fw_campaign("CMP-RDY-001")).status_code == 201
+    body = c.post("/api/eal/campaigns/CMP-RDY-001/detector-readiness",
+                  json={"soakless_attested": True}).json()
+    assert body["routes"] == {"third_party_firewall_emitter": "http_collector"}
+    assert {d["readiness"]["code"] for d in body["detectors"]} == {
+        "DETECTOR_ROUTE_REQUIRES_XDM",
+    }
+
+
+def test_readiness_never_reads_the_unresolved_stand_in_as_a_collector(env):
+    # No target and no inline URL: the resolver stands in an .invalid URL whose
+    # path ends /logs/v1/event. Judging it as a real HTTP collector would be a
+    # route claim about a door that does not exist.
+    c, _, _ = env
+    assert c.post("/api/eal/campaigns", json=_fw_campaign("CMP-RDY-002")).status_code == 201
+    body = c.post("/api/eal/campaigns/CMP-RDY-002/detector-readiness",
+                  json={"soakless_attested": True,
+                        "xdm_modeled_sources": ["third_party_firewalls"]}).json()
+    assert body["routes"] == {"third_party_firewall_emitter": "undeclared"}
+    assert body["counts"]["armed"] == 0
+    assert {d["readiness"]["code"] for d in body["detectors"]} == {
+        "DETECTOR_ROUTE_UNRESOLVED",
+    }
