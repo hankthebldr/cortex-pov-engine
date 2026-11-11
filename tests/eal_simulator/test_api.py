@@ -86,6 +86,22 @@ class TestPluginsAPI:
         assert data["name"] == "c2_http_beacon"
         assert "params_schema" in data
 
+    def test_list_plugins_says_how_each_delivers(self, api_client: TestClient):
+        """`delivery` is the signal-path class the Composer lanes read: a
+        collector plugin POSTs records, a wire plugin generates traffic. It
+        follows the console family and agrees with engine.signal_path."""
+        from engine.signal_path import COLLECTOR_PLUGINS, WIRE_PLUGINS  # noqa: PLC0415
+
+        data = api_client.get("/api/eal/plugins").json()
+        delivery = {p["name"]: p["delivery"] for p in data["plugins"]}
+        assert delivery["ngfw_eal_emitter"] == "collector"
+        assert delivery["llm_provider_egress"] == "wire"
+        for p in data["plugins"]:
+            expected = "collector" if p["family"] == "analytics_log_streamer" else "wire"
+            assert p["delivery"] == expected, p["name"]
+        assert {n for n, d in delivery.items() if d == "collector"} == set(COLLECTOR_PLUGINS)
+        assert {n for n, d in delivery.items() if d == "wire"} == set(WIRE_PLUGINS)
+
     def test_get_plugin_unknown_returns_404(self, api_client: TestClient):
         resp = api_client.get("/api/eal/plugins/does_not_exist")
         assert resp.status_code == 404

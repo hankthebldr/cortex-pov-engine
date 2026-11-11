@@ -191,6 +191,10 @@ async def list_plugins() -> dict[str, Any]:
     plugins = reg.manifest()
     for m in plugins:
         m["family"] = _plugin_family(m)
+        # The signal-path class the Composer lanes read (engine.signal_path):
+        # a log streamer POSTs records to a collector; every other plugin
+        # generates traffic. tests/engine/test_signal_path.py pins the split.
+        m["delivery"] = "collector" if m["family"] == "analytics_log_streamer" else "wire"
     return {"plugins": plugins, "total": len(plugins)}
 
 
