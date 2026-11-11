@@ -2677,7 +2677,17 @@ async def delete_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
     """Remove a registered agent. Idempotent-friendly: 404 if it never existed.
 
     Used by the Targets management UI to prune stale/old beacons. Does not touch
-    run history — only the agent registry row."""
+    run history — only the agent registry row.
+
+    Refused with **409 ``AGENT_HAS_OPEN_RUNS``** while a run is still owed to
+    the agent or in flight on it. The row is what ends such a run: the
+    beacon-lost sweep walks ``Agent`` rows, and a queued task stays keyed on
+    the agent id, so deleting the row left the run ``running`` for good and
+    handed its task to the next beacon to register under that id. Nothing is
+    cancelled here: ending a run is the operator's call
+    (``POST /api/runs/{id}/abort``), and this adds no expiry of its own."""
+    from models import QueuedTask, Run  # noqa: PLC0415
+
     result = await db.execute(select(Agent).where(Agent.agent_id == agent_id))
     agent: Optional[Agent] = result.scalar_one_or_none()
     if agent is None:
@@ -2686,6 +2696,34 @@ async def delete_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
             detail={"error": "Agent not found", "code": "AGENT_NOT_FOUND",
                     "detail": f"agent_id='{agent_id}'"},
         )
+    # Owed: a task queued for this agent (durable row, or the in-memory queue).
+    # In flight: an unfinished run launched at it, or one whose routing ledger
+    # sent a partition to it.
+    owed = set((await db.execute(
+        select(QueuedTask.run_id).where(QueuedTask.agent_id == agent_id))).scalars().all())
+    owed.update(t.run_id for t in orchestrator.peek_queue(agent_id))
+    from api.runs import _in_flight_clause  # noqa: PLC0415
+
+    # Three columns, not the row: Run.output can be megabytes per run.
+    unfinished = (await db.execute(
+        select(Run.run_id, Run.target, Run.channel_dispatch).where(_in_flight_clause()))).all()
+    open_runs = sorted(owed | {
+        run_id for run_id, target, ledger in unfinished
+        if target == agent_id or any(
+            isinstance(e, dict) and e.get("target") == agent_id for e in (ledger or []))})
+    if open_runs:
+        shown = ", ".join(open_runs[:10]) + (f" (+{len(open_runs) - 10} more)"
+                                             if len(open_runs) > 10 else "")
+        raise HTTPException(status_code=409, detail={
+            "error": "Agent has runs that are not finished",
+            "code": "AGENT_HAS_OPEN_RUNS",
+            "detail": (
+                f"agent '{agent_id}' is still owed, or is running, {len(open_runs)} run(s): "
+                f"{shown}. Deleting it now would leave them running with no agent to "
+                "deliver to and nothing to time them out. Let each one finish or abort it "
+                f"(POST /api/runs/{open_runs[0]}/abort), then delete the agent."),
+            "run_ids": open_runs,
+        })
     await db.delete(agent)
     await db.commit()
     logger.info("delete_agent agent_id=%s", agent_id)
