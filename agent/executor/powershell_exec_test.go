@@ -159,12 +159,21 @@ func TestPowerShellExitWrapper_NonASCIIOutputIsUTF8(t *testing.T) {
 	}
 }
 
-// BEACON-06. An error record must reach the run record as text. Without
-// -OutputFormat Text, a powershell whose stderr is a pipe frames it as
-// `#< CLIXML <Objs ...>` — observed on pwsh 7.6 and on Windows PowerShell 5.1.
+// BEACON-06. An error record must reach the run record as text. A powershell
+// whose stderr is a pipe frames it as `#< CLIXML <Objs ...>`. -OutputFormat Text
+// stops that on PowerShell 7 (observed on pwsh 7.6). It does NOT on Windows
+// PowerShell 5.1 for an encoded command (observed on the windows-2022 CI job,
+// where this test failed on the raw process stderr), so the beacon decodes the
+// envelope after capture. This asserts what the beacon reports: the process's
+// stderr as passed through normalizeStepStderr, which is the identity off
+// Windows and the decoder on it.
 func TestPowerShellExitWrapper_StderrIsTextNotCLIXML(t *testing.T) {
 	psExe := requirePowerShell(t)
-	_, stderr, _ := runEncodedFull(t, psExe, "Write-Error 'cortexsim-boom'")
+	_, raw, _ := runEncodedFull(t, psExe, "Write-Error 'cortexsim-boom'")
+	stderr := normalizeStepStderr(raw)
+	if strings.Contains(stderr, "<Objs ") {
+		t.Fatalf("stderr still carries a CLIXML document:\n%s", stderr)
+	}
 	if strings.HasPrefix(strings.TrimSpace(stderr), "#< CLIXML") {
 		t.Fatalf("stderr is CLIXML, not text:\n%s", stderr)
 	}

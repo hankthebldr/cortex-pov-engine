@@ -46,6 +46,19 @@ func powerShellExePath() string { return windowsPowerShellPath(hostSystemRoot())
 // cmdExePath is the absolute path of cmd.exe, resolved the same way.
 func cmdExePath() string { return windowsCmdPath(hostSystemRoot()) }
 
+// normalizeStepStderr turns the CLIXML that Windows PowerShell 5.1 writes to a
+// redirected stderr back into text (see clixml.go). Applied to every step's
+// captured stderr on this host; bytes that are not that envelope are unchanged.
+func normalizeStepStderr(s string) string { return decodeCLIXMLStderr(s) }
+
+// stderrChunkFilter is normalizeStepStderr for the live-streamed path: it
+// returns the callback to hand stderr chunks to, and a flush to call once the
+// process has exited.
+func stderrChunkFilter(emit func(string)) (write func(string), flush func()) {
+	f := newCLIXMLChunkFilter(emit)
+	return f.Write, f.Flush
+}
+
 // newShellCmd builds the per-step command: a PowerShell process carrying the
 // exit-code wrapper, base64-encoded so no quoting layer can corrupt the TTP.
 //

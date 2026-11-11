@@ -270,10 +270,10 @@ func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, s
 	wg.Wait()
 
 	if s.cancelled.Load() || s.ctx.Err() != nil {
-		return outB.String(), errB.String(), 130, context.Canceled
+		return outB.String(), normalizeStepStderr(errB.String()), 130, context.Canceled
 	}
 	if rcErr != nil {
-		return outB.String(), errB.String(), -1, fmt.Errorf("chain sentinel parse: %w", rcErr)
+		return outB.String(), normalizeStepStderr(errB.String()), -1, fmt.Errorf("chain sentinel parse: %w", rcErr)
 	}
 	if !sawRC.Load() {
 		// The anchor closed its pipes before emitting this step's exit-code
@@ -283,10 +283,10 @@ func (s *ChainSession) RunStepShell(stepID, shell, wrappedCmd string) (stdout, s
 		// step that never completed — the exact false-green the engine exists to
 		// eliminate. Surface it as an execution error with a non-zero exit so
 		// executeTaskChained fails the run instead of recording a passing step.
-		return outB.String(), errB.String(), -1,
+		return outB.String(), normalizeStepStderr(errB.String()), -1,
 			fmt.Errorf("%w before step completed — step result unknown", ErrAnchorTerminated)
 	}
-	return outB.String(), errB.String(), rc, nil
+	return outB.String(), normalizeStepStderr(errB.String()), rc, nil
 }
 
 // Close ends the anchor shell cleanly (EOF on stdin) and waits for it to exit.

@@ -96,9 +96,12 @@ func RunShellCtxStreamOutcome(ctx context.Context, shell, cmdStr string, onChunk
 	defer cleanup()
 
 	var outBuf, errBuf bytes.Buffer
+	flushStderr := func() {}
 	if onChunk != nil {
 		cmd.Stdout = &streamWriter{buf: &outBuf, onChunk: func(s string) { onChunk(s, false) }}
-		cmd.Stderr = &streamWriter{buf: &errBuf, onChunk: func(s string) { onChunk(s, true) }}
+		errChunk, flush := stderrChunkFilter(func(s string) { onChunk(s, true) })
+		flushStderr = flush
+		cmd.Stderr = &streamWriter{buf: &errBuf, onChunk: errChunk}
 	} else {
 		cmd.Stdout = &outBuf
 		cmd.Stderr = &errBuf
@@ -136,7 +139,11 @@ func RunShellCtxStreamOutcome(ctx context.Context, shell, cmdStr string, onChunk
 	killer.Release()
 
 	stdout := outBuf.String()
-	stderr := errBuf.String()
+	// Wait has returned, so os/exec has finished copying the pipes: release
+	// whatever the live stderr filter was holding back, then normalise the
+	// buffered copy the same way (a no-op off Windows).
+	flushStderr()
+	stderr := normalizeStepStderr(errBuf.String())
 
 	if cancelled.Load() {
 		// Operator/abort-driven termination. Surface a stable, non-fatal signal.

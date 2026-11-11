@@ -36,3 +36,22 @@ func TestRunCommand_WindowsSelfTerminationIsExitedNotSignaled(t *testing.T) {
 		t.Fatalf("got exit=%d term=%q sig=%d, want non-zero/exited/0", out.ExitCode, out.Termination, out.Signal)
 	}
 }
+
+// The single-step seam on the real interpreter: a failing cmdlet's error must
+// be reported as text. Windows PowerShell 5.1 writes it to the pipe as CLIXML
+// whatever -OutputFormat says; RunCommand decodes it (clixml.go).
+func TestRunCommand_WindowsCmdletErrorIsTextNotCLIXML(t *testing.T) {
+	_, stderr, code, err := RunCommand("Write-Error 'cortexsim-boom'")
+	if err != nil {
+		t.Fatalf("RunCommand: %v", err)
+	}
+	if code != 1 {
+		t.Errorf("exit = %d, want 1 (a failing cmdlet as the last statement)", code)
+	}
+	if strings.Contains(stderr, "#< CLIXML") || strings.Contains(stderr, "<Objs ") {
+		t.Fatalf("stderr is CLIXML, not text:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "cortexsim-boom") {
+		t.Fatalf("stderr does not carry the error text: %q", stderr)
+	}
+}

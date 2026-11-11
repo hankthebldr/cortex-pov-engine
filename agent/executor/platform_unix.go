@@ -60,6 +60,15 @@ func newAnchorCmd(cgoImage string) *exec.Cmd {
 // anchorExitScript is what Close() writes to end the anchor cleanly.
 const anchorExitScript = "exit\n"
 
+// normalizeStepStderr is the identity on POSIX: a step's stderr is reported
+// byte-for-byte. Only a Windows host decodes PowerShell's CLIXML (clixml.go).
+func normalizeStepStderr(s string) string { return s }
+
+// stderrChunkFilter is the identity on POSIX; see the Windows twin.
+func stderrChunkFilter(emit func(string)) (write func(string), flush func()) {
+	return emit, func() {}
+}
+
 // chainStepScript renders one step for the anchor shell.
 func chainStepScript(marker, wrappedCmd string) string {
 	return posixChainStepScript(marker, wrappedCmd)

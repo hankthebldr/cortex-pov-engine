@@ -44,7 +44,11 @@ const powerShellExe = "powershell.exe"
 //	                  every error record as `#< CLIXML <Objs ...>` (observed on
 //	                  pwsh 7.6), so the run record carried XML instead of the
 //	                  error a DC must read. The nested chained child inherits
-//	                  these args verbatim.
+//	                  these args verbatim. PowerShell 7 honours the flag.
+//	                  Windows PowerShell 5.1 does NOT for an encoded command
+//	                  (observed on the windows-2022 CI job): it still writes
+//	                  CLIXML, so the beacon decodes it after capture
+//	                  (clixml.go, normalizeStepStderr).
 var powerShellArgs = []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-OutputFormat", "Text"}
 
 // windowsPowerShellPath is the absolute path of Windows PowerShell 5.1 under

@@ -129,3 +129,31 @@ func TestChainSession_WindowsAnchorDiesMidStep(t *testing.T) {
 		t.Fatalf("anchor died mid-step: rc=%d err=%v, want -1/ErrAnchorTerminated", rc, err)
 	}
 }
+
+// The chained seam on the real interpreter: a failing cmdlet inside a chain
+// step reports its error as text. Windows PowerShell 5.1 hands the anchor's
+// pipe CLIXML whatever -OutputFormat says; RunStep decodes it (clixml.go).
+func TestChainSession_WindowsCmdletErrorIsTextNotCLIXML(t *testing.T) {
+	s, err := NewChainSession(context.Background(), "nginx")
+	if err != nil {
+		t.Fatalf("NewChainSession: %v", err)
+	}
+	defer s.Close()
+
+	_, errOut, rc, err := s.RunStep("Write-Error 'cortexsim-boom'")
+	if err != nil || rc != 1 {
+		t.Fatalf("rc=%d err=%v, want 1/nil (a failing cmdlet as the last statement)", rc, err)
+	}
+	if strings.Contains(errOut, "#< CLIXML") || strings.Contains(errOut, "<Objs ") {
+		t.Fatalf("stderr is CLIXML, not text:\n%s", errOut)
+	}
+	if !strings.Contains(errOut, "cortexsim-boom") {
+		t.Fatalf("stderr does not carry the error text: %q", errOut)
+	}
+
+	// The next step starts clean: nothing of the previous step's envelope leaks.
+	_, errOut, rc, err = s.RunStep("Write-Output 'after'")
+	if err != nil || rc != 0 || psClean(errOut) != "" {
+		t.Fatalf("step after the error: err-out=%q rc=%d err=%v, want empty/0", errOut, rc, err)
+	}
+}
