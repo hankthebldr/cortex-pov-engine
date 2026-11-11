@@ -103,7 +103,12 @@
 
 .theme-console .library-layout .ops-toolbar {
   gap: 8px;
+  /* Wrap rather than overflow: at narrow widths the buttons drop to a second
+     line inside the row. A single line at wide widths is unchanged. */
+  flex-wrap: wrap;
+  max-width: 100%;
 }
+.theme-console .library-layout .ops-toolbar .btn { flex-shrink: 0; white-space: nowrap; }
 
 .theme-console .library-layout .ops-search {
   height: 32px;

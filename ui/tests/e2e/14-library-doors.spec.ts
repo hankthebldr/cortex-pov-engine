@@ -84,3 +84,18 @@ test('a failed readiness fetch leaves every card NOT CHECKED, not hidden and not
   await expect(chip).toHaveText('NOT CHECKED')
   await expect(chip).toHaveAttribute('title', /door readiness unavailable/)
 })
+
+test('the toolbar row keeps every button inside the viewport at 800x600', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 600 })
+  await page.goto('/#/library')
+  await page.waitForSelector('.scenario-card', { timeout: 20_000 })
+  await expect(page.getByTestId('filter-runnable')).toBeVisible()
+  const rights = await page.evaluate(() =>
+    [...document.querySelectorAll('.ops-toolbar button')].map((b) => ({
+      text: (b.textContent || '').trim(),
+      right: b.getBoundingClientRect().right,
+      inner: window.innerWidth,
+    })))
+  expect(rights.length).toBeGreaterThanOrEqual(3)
+  for (const r of rights) expect(r.right, `${r.text} overflows`).toBeLessThanOrEqual(r.inner)
+})
