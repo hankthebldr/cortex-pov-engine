@@ -16,6 +16,15 @@ from engine.dataset_requirements import (
 from tests.engine._dataset_requirements_fixtures import GOOD
 
 
+@pytest.fixture(autouse=True)
+def _fresh_registry_cache():
+    """Clear load()'s cache around every test, so a failing assertion in a test that points
+    CORTEXSIM_BASE_DIR at a tmp path cannot leave that registry cached for other files."""
+    load.cache_clear()
+    yield
+    load.cache_clear()
+
+
 def test_parses_a_valid_entry():
     reg = parse_registry(GOOD, "p")
     row = reg["panw_ngfw_traffic_raw"]
@@ -70,20 +79,16 @@ def test_rejects_non_mapping_or_empty_root(root):
 
 def test_absent_file_is_none_not_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "CORTEXSIM_BASE_DIR", str(tmp_path))
-    load.cache_clear()
     assert load() is None
     assert registry_source()["source"] == "absent"
-    load.cache_clear()
 
 
 def test_present_but_unparseable_raises(tmp_path, monkeypatch):
     (tmp_path / "spec").mkdir()
     (tmp_path / "spec" / "dataset_requirements.yml").write_text(": [")
     monkeypatch.setattr(settings, "CORTEXSIM_BASE_DIR", str(tmp_path))
-    load.cache_clear()
     with pytest.raises(DatasetRequirementsError):
         load()
-    load.cache_clear()
 
 
 def test_source_is_file_when_valid_file_present(tmp_path, monkeypatch):
@@ -91,20 +96,16 @@ def test_source_is_file_when_valid_file_present(tmp_path, monkeypatch):
     (tmp_path / "spec").mkdir()
     (tmp_path / "spec" / "dataset_requirements.yml").write_text(yaml.safe_dump(GOOD))
     monkeypatch.setattr(settings, "CORTEXSIM_BASE_DIR", str(tmp_path))
-    load.cache_clear()
     assert registry_source()["source"] == "file"
-    load.cache_clear()
 
 
 def test_source_follows_cached_load_not_disk(tmp_path, monkeypatch):
     import yaml
     monkeypatch.setattr(settings, "CORTEXSIM_BASE_DIR", str(tmp_path))
-    load.cache_clear()
     assert load() is None
     (tmp_path / "spec").mkdir()
     (tmp_path / "spec" / "dataset_requirements.yml").write_text(yaml.safe_dump(GOOD))
     assert registry_source()["source"] == "absent"  # what is served, not what is on disk now
-    load.cache_clear()
 
 
 _UNQUOTED_ON = """\
@@ -123,11 +124,9 @@ def test_unquoted_on_key_names_the_cause(tmp_path, monkeypatch):
     (tmp_path / "spec").mkdir()
     (tmp_path / "spec" / "dataset_requirements.yml").write_text(_UNQUOTED_ON)
     monkeypatch.setattr(settings, "CORTEXSIM_BASE_DIR", str(tmp_path))
-    load.cache_clear()
     with pytest.raises(DatasetRequirementsError,
                        match=r"key True is not a string .*quote it .*a bare `on:` is read as a boolean"):
         load()
-    load.cache_clear()
 
 
 def test_non_string_dataset_name_at_root_raises():

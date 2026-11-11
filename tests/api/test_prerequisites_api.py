@@ -311,11 +311,27 @@ def test_query_library_real_corpus_validation(client):
     assert "// ---- " in r.text
 
 
-def test_query_library_default_header_and_pointer(client):
+def test_query_library_default_header_and_pointer(client, monkeypatch):
+    """Synthetic card: the pointer line must not depend on the real card never gaining a hunt query."""
+    from engine.ttp_catalog import catalog
+    only_validation = {"TTP-2026-0047": {"detections": {"xql_queries": [
+        {"name": "v", "purpose": "validation", "dataset": "xdr_data", "query": "dataset = xdr_data"}]}}}
+    monkeypatch.setattr(catalog, "all_raw", lambda: only_validation)
     r = client.get(f"/api/scenarios/{SCENARIO}/query-library")
     assert r.headers["content-type"] == "text/plain; charset=utf-8"
     assert r.text.splitlines()[0].endswith("query library (hunt, investigation)")
-    assert "// The cited cards carry" in r.text and "add ?purpose=" in r.text
+    assert "// No hunt or investigation query on this scenario's cards." in r.text
+    assert "// The cited cards carry 1 validation queries: add ?purpose=validation" in r.text
+
+
+def test_query_library_real_corpus_default_structure(client):
+    """Real corpus smoke: structure only, whatever the cards carry today."""
+    r = client.get(f"/api/scenarios/{SCENARIO}/query-library")
+    assert r.status_code == 200 and r.headers["content-type"] == "text/plain; charset=utf-8"
+    lines = r.text.splitlines()
+    assert lines[0] == f"// {SCENARIO} — query library (hunt, investigation)"
+    assert lines[1].startswith("// Authored, not run against any tenant.")
+    assert r.text.endswith("\n") and not any(l.startswith("#") for l in lines)
 
 
 def test_query_library_purpose_is_stripped(client):
@@ -347,3 +363,15 @@ def test_listing_rows_carry_read_by(client):
 def test_scenario_rows_carry_read_by(client):
     body = client.get(f"/api/scenarios/{SCENARIO}/prerequisites").json()
     assert body["datasets"] and all(d["read_by"] for d in body["datasets"])
+
+
+def test_lifespan_calls_the_boot_check():
+    """Static: deleting the lifespan call would leave the strict flag doing nothing at boot."""
+    import ast
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "core" / "main.py").read_text(encoding="utf-8")
+    (lifespan,) = [n for n in ast.walk(ast.parse(src))
+                   if isinstance(n, ast.AsyncFunctionDef) and n.name == "lifespan"]
+    calls = [n for n in ast.walk(lifespan) if isinstance(n, ast.Call)
+             and isinstance(n.func, ast.Name) and n.func.id == "boot_check_dataset_requirements"]
+    assert len(calls) == 1, "core/main.py lifespan must call boot_check_dataset_requirements once"
