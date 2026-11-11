@@ -250,8 +250,10 @@ export default function EalCampaignBuilder({ onCreated, onError, family = null }
               <SchemaField
                 key={key}
                 name={key}
-                schema={prop}
-                required={required.has(key)}
+                schema={key === 'collector_url' ? { ...prop, description: COLLECTOR_URL_HELP } : prop}
+                // A blank collector_url is filled from the instance's collector
+                // targets on the server, so it is not required here.
+                required={required.has(key) && key !== 'collector_url'}
                 value={params[key]}
                 onChange={(v) => setParams(p => ({ ...p, [key]: v }))}
               />
@@ -281,6 +283,10 @@ export default function EalCampaignBuilder({ onCreated, onError, family = null }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+const COLLECTOR_URL_HELP =
+  'Leave blank to use the collector target this POV configured for this emitter '
+  + '(Tenant → Collector targets). A URL typed here is replaced by that target when one exists.'
 
 function Field({ label, required, help, full, children }) {
   return (

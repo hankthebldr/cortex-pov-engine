@@ -1438,3 +1438,40 @@ export async function getInstallAttempts() {
     throw err
   }
 }
+
+// ── Collector targets (/api/collector-targets) ────────────────────────────────
+// The tenant-side ingestion doors this instance's emitters POST to. Keys are
+// write-only: no response carries one, so nothing here can display one.
+
+/** GET /api/collector-targets — list + collector_plugins[] + unbound_plugins[]. */
+export async function listCollectorTargets() {
+  return request('/api/collector-targets')
+}
+
+/**
+ * PUT /api/collector-targets/:name — create or replace.
+ * Omit `token` to keep the stored key; `clear_token: true` removes it.
+ */
+export async function putCollectorTarget(name, body) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+/** DELETE /api/collector-targets/:name — the target and its key. */
+export async function deleteCollectorTarget(name) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+/**
+ * POST /api/collector-targets/:name/preflight.
+ * `writeCanary: false` (the default) never writes to the tenant; `true` POSTs
+ * one discard-safe record and is the only way to prove the collector accepts.
+ */
+export async function preflightCollectorTarget(name, { writeCanary = false } = {}) {
+  return request(`/api/collector-targets/${encodeURIComponent(name)}/preflight`, {
+    method: 'POST',
+    body: JSON.stringify({ write_canary: Boolean(writeCanary) }),
+  })
+}
