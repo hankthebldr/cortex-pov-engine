@@ -461,13 +461,17 @@ def _resolve_server(request: Request, override: Optional[str]) -> str:
 _POSIX_INSTALLER = r"""#!/usr/bin/env bash
 # ─── CortexSim beacon installer (Linux / macOS) ─────────────────────────────
 #
-#   curl -fsSL '<server>/api/agents/install?token=<tok>' | bash
+#   curl -fsSL '<server>/api/agents/install' | CORTEXSIM_TOKEN='<tok>' bash
+#
+# The token goes in the environment, not the URL, so it stays out of proxy logs
+# and shell history.
 #
 # No compiler, no public-internet egress: the only host this talks to is the
 # SimCore that served it. It detects os/arch, enrols for a server-assigned agent
-# id, downloads the prebuilt beacon and verifies its sha256, then installs it as
-# a SUPERVISED service (systemd on Linux, launchd on macOS) so it survives your
-# SSH session and a reboot — a POV runs for weeks, not for one terminal.
+# id, downloads the prebuilt beacon and compares its sha256 with the digest the
+# same SimCore serves (that catches corruption, not tampering), then installs it
+# as a SUPERVISED service (systemd on Linux, launchd on macOS) so it survives
+# your SSH session and a reboot — a POV runs for weeks, not for one terminal.
 #
 # Every failure exits with a stable CODE and is reported back to SimCore
 # (GET /api/agents/install/attempts) so the operator sees why onboarding failed
@@ -579,10 +583,10 @@ if [ -n "$TOKEN" ]; then
   fi
   cs_say "enrolled as   : $AGENT_ID"
 else
-  cs_say "agent id      : $AGENT_ID (self-asserted — prefer ?token= so SimCore assigns it)"
+  cs_say "agent id      : $AGENT_ID (self-asserted — prefer an enrollment token in CORTEXSIM_TOKEN, so SimCore assigns it)"
 fi
 if [ -z "$AGENT_ID" ]; then
-  cs_fail enroll NO_AGENT_ID "no agent id resolved" "pass ?token=<tok> (recommended) or ?id=<name>"
+  cs_fail enroll NO_AGENT_ID "no agent id resolved" "set CORTEXSIM_TOKEN to an enrollment token (recommended), or pass ?id=<name>"
 fi
 
 # ── stage: download ─────────────────────────────────────────────────────────
@@ -620,10 +624,12 @@ cs_try_download() {
     cs_say "WARN: integrity NOT verified (no digest tool on host, or none served)"
     cs_report verify CHECKSUM_SKIPPED "expect='$EXPECT' actual_tool_present=$([ -n "$ACTUAL" ] && echo yes || echo no)"
   elif [ "$EXPECT" != "$ACTUAL" ]; then
+    # Digest and binary come from the same server over the same channel, so
+    # this proves the transfer, not the origin. Say so on both branches.
     cs_fail verify CHECKSUM_MISMATCH "expected $EXPECT, got $ACTUAL" \
-      "do NOT run this binary — re-fetch, and look for an intercepting TLS proxy"
+      "do NOT run this binary — re-fetch; a proxy or middlebox that altered or truncated the download looks like this. This check catches corruption, not tampering: it compares against the digest the same SimCore serves"
   else
-    cs_say "checksum OK   : ${ACTUAL:0:16}…"
+    cs_say "checksum OK   : ${ACTUAL:0:16}… (matches the digest this SimCore serves; that catches corruption, not tampering)"
   fi
   chmod +x "$DL"
   BIN_SRC="$DL"
@@ -1273,14 +1279,21 @@ function Cs-Exec([string]$Exe, [string[]]$Argv) {
 _WINDOWS_INSTALLER = r"""# --- CortexSim beacon installer (Windows / PowerShell 5.1+) ----------------
 #
 #   From an ELEVATED Windows PowerShell (Run as administrator):
-#   iwr '<server>/api/agents/install?os=windows&token=<tok>' -UseBasicParsing | iex
+#   $env:CORTEXSIM_TOKEN='<tok>'; iwr '<server>/api/agents/install?os=windows' -UseBasicParsing | iex
 #
 #   or save it and run:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\install-cortexsim-agent.ps1
 #
-# Same contract as the POSIX installer: no compiler on the endpoint; the beacon
-# comes prebuilt and sha256-verified from the SimCore that served this script;
-# it is registered as the Windows service CortexSimAgent (LocalSystem,
+# The token goes in the environment, not the URL, so it stays out of proxy logs.
+#
+# What the POSIX installer has and this one does not: a foreground mode
+# (?mode=foreground is refused for Windows), a source build (CORTEXSIM_SRC),
+# and the install-prefix and log overrides (CORTEXSIM_BIN_DIR / CORTEXSIM_LOG).
+# Otherwise the contract is the same: no compiler on the endpoint; the beacon
+# comes prebuilt from the SimCore that served this script, and its sha256 is
+# compared with the digest that same SimCore serves (that catches corruption,
+# not tampering; the beacon is unsigned). It is registered as the Windows
+# service CortexSimAgent (LocalSystem,
 # automatic start, restart on failure). OK is reported only after the service
 # is still Running past the Service Control Manager's start window AND the
 # beacon has polled SimCore on its own. Every failure prints a stable code with
@@ -1577,7 +1590,7 @@ try {
     $AgentId = Cs-Enroll
     Cs-Say "enrolled as   : $AgentId"
   } else {
-    Cs-Say "agent id      : $AgentId (self-asserted -- prefer ?token= so SimCore assigns it)"
+    Cs-Say "agent id      : $AgentId (self-asserted -- prefer an enrollment token in `$env:CORTEXSIM_TOKEN, so SimCore assigns it)"
   }
 
   # -- stage: download + verify ---------------------------------------------------
@@ -1594,7 +1607,7 @@ try {
       if ($Expect -ne $Actual) {
         Cs-Fail 'verify' 'CHECKSUM_MISMATCH' "CORTEXSIM_BIN has sha256 $Actual but SimCore serves $Expect" 'do NOT run this binary: copy the beacon from this SimCore again (or clear CORTEXSIM_BIN to download it)'
       }
-      Cs-Say "checksum OK   : $($Actual.Substring(0, 16))... (matches SimCore)"
+      Cs-Say "checksum OK   : $($Actual.Substring(0, 16))... (matches SimCore; that catches corruption, not tampering)"
     } elseif ($dr.Status -eq 200) {
       Cs-Fail 'verify' 'DIGEST_FETCH_FAILED' "SimCore answered the digest request with something that is not a sha256: '$(Cs-Detail $dr.Body)'" 'a proxy or captive portal is answering for SimCore; set CORTEXSIM_NO_PROXY=1 or fix routing, then re-run'
     } else {
@@ -1609,9 +1622,11 @@ try {
     $Cs.Stage = 'verify'
     $Expect = Cs-FetchDigest
     if ($Expect -ne $Actual) {
-      Cs-Fail 'verify' 'CHECKSUM_MISMATCH' "expected $Expect, got $Actual" 'do NOT run this binary: re-fetch, and look for an intercepting TLS proxy'
+      # Digest and binary come from the same server over the same channel, so
+      # this proves the transfer, not the origin. Say so on both branches.
+      Cs-Fail 'verify' 'CHECKSUM_MISMATCH' "expected $Expect, got $Actual" 'do NOT run this binary: re-fetch; a proxy or middlebox that altered or truncated the download looks like this (CORTEXSIM_NO_PROXY=1 skips the system proxy). This check catches corruption, not tampering: it compares against the digest the same SimCore serves'
     }
-    Cs-Say "checksum OK   : $($Actual.Substring(0, 16))..."
+    Cs-Say "checksum OK   : $($Actual.Substring(0, 16))... (matches the digest this SimCore serves; that catches corruption, not tampering)"
     $Src = $Dl
   }
 
@@ -2166,18 +2181,24 @@ async def agent_installer(
 ):
     """Generate a ready-to-run beacon installer (or uninstaller) for the chosen OS.
 
-    Linux/macOS -> bash  (`curl -fsSL '<server>/api/agents/install?token=<tok>' | bash`)
-    Windows     -> PowerShell 5.1+ (`iwr '<server>/api/agents/install?os=windows&token=<tok>'
-                   -UseBasicParsing | iex` from an ELEVATED shell)
+    Linux/macOS -> bash  (`curl -fsSL '<server>/api/agents/install' |
+                   CORTEXSIM_TOKEN='<tok>' bash`)
+    Windows     -> PowerShell 5.1+ (`$env:CORTEXSIM_TOKEN='<tok>'; iwr
+                   '<server>/api/agents/install?os=windows' -UseBasicParsing | iex`
+                   from an ELEVATED shell)
 
-    Recommended flow: mint a token (`POST /api/agents/enroll/tokens`) and pass
-    `?token=`. The script then ENROLLS to obtain a server-assigned agent id -- the
-    DC never invents one. Without a token it falls back to the explicit `?id=`
-    (legacy self-asserted path).
+    Recommended flow: mint a token (`POST /api/agents/enroll/tokens`) and hand it
+    to the script in `CORTEXSIM_TOKEN`. `?token=` is still accepted and baked in,
+    but a token in a URL lands in proxy logs and shell history. The script then
+    ENROLLS to obtain a server-assigned agent id -- the DC never invents one.
+    Without a token it falls back to the explicit `?id=` (legacy self-asserted
+    path).
 
     The script needs **no compiler and no public-internet egress**: it downloads
-    the prebuilt beacon from this SimCore (`GET /api/agents/binary`) and verifies
-    its sha256. `?mode=service` (default) installs a supervised service
+    the prebuilt beacon from this SimCore (`GET /api/agents/binary`) and compares
+    its sha256 with the digest this same SimCore serves. That catches corruption,
+    not tampering: both come from one origin, over plain HTTP by default, and the
+    beacon is unsigned. `?mode=service` (default) installs a supervised service
     (systemd / launchd / the Windows SCM); `?mode=foreground` keeps the babysat
     behaviour on Linux/macOS and is refused on Windows (400 `BAD_MODE`), which has
     no foreground mode. `?uninstall=1` returns the removal script for the OS:
@@ -2515,7 +2536,7 @@ async def mint_enrollment_token(
 ):
     """Mint an enrollment token. The full token value is returned EXACTLY once
     here; afterwards only its tail is shown. Hand this to a jumpbox via the
-    one-line installer (``/api/agents/install?token=...``)."""
+    one-line installer, in the ``CORTEXSIM_TOKEN`` environment variable."""
     now = datetime.utcnow()
     token_value = "cxs_" + secrets.token_urlsafe(32)
     row = EnrollmentToken(

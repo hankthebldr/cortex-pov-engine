@@ -546,6 +546,57 @@ def test_every_step_has_its_own_failure_code(shelf):
     assert "check Cortex XDR/Defender alerts for cortexsim-agent.exe" in script
 
 
+CORRUPTION_ONLY = "catches corruption, not tampering"
+
+
+def _posix(token: str | None = TOKEN) -> str:
+    from api.agents import _posix_installer
+
+    return _posix_installer("http://10.0.0.5:8888", "jumpbox-01", 10, token, "service")
+
+
+@pytest.mark.parametrize("which", ["windows", "posix"])
+def test_the_checksum_is_described_as_what_it_is(shelf, which):
+    """The binary and its digest come from the same SimCore over the same
+    channel (plain HTTP by default), so whoever can alter one can alter both.
+    The check proves the transfer was not corrupted. The scripts told the DC to
+    "look for an intercepting TLS proxy" on a mismatch and printed a bare
+    "checksum OK" on a match, which reads as authenticity for a binary that
+    then runs as SYSTEM or root."""
+    script = _render(shelf, "token+binary") if which == "windows" else _posix()
+    assert "intercepting TLS proxy" not in script
+    ok_lines = [ln for ln in script.splitlines() if "checksum OK" in ln]
+    assert ok_lines, "no checksum OK line found"
+    for ln in ok_lines:
+        assert CORRUPTION_ONLY in ln, f"a match is reported without saying what it proves: {ln.strip()}"
+    mismatch = [ln for ln in script.splitlines()
+                if "CHECKSUM_MISMATCH" in ln and "CORTEXSIM_BIN" not in ln]
+    assert mismatch
+    fix = "\n".join(script.splitlines()[script.splitlines().index(mismatch[0]):][:3])
+    assert CORRUPTION_ONLY in fix and "do NOT run this binary" in fix, fix
+
+
+@pytest.mark.parametrize("which", ["windows", "posix"])
+def test_no_script_tells_the_dc_to_put_the_token_in_the_url(shelf, which):
+    """The served script's own header recommended `...install?os=windows&token=<tok>`,
+    against the console and the docs: a token in the URL lands in proxy logs and
+    shell history. `?token=` still WORKS; the scripts just stop advising it."""
+    script = _render(shelf, "no-token+binary") if which == "windows" else _posix(None)
+    assert "token=<tok>" not in script and "?token=" not in script and "&token=" not in script
+    usage = "\n".join(script.splitlines()[:12])
+    assert "CORTEXSIM_TOKEN='<tok>'" in usage, usage
+
+
+def test_the_windows_header_names_its_differences_from_the_posix_installer(shelf):
+    """It said "Same contract as the POSIX installer". It is not: no foreground
+    mode, no source build, no install-prefix or log overrides."""
+    script = _render(shelf, "token+binary")
+    header = script[:script.index("& {")]
+    assert "Same contract as the POSIX installer" not in header
+    for difference in ("foreground", "CORTEXSIM_SRC", "CORTEXSIM_BIN_DIR", "CORTEXSIM_LOG"):
+        assert difference in header, f"the header does not say {difference} is POSIX-only"
+
+
 def test_install_dir_is_locked_down_by_sid_not_by_localised_name(shelf):
     script = _render(shelf, "token+binary")
     assert "'/inheritance:r'" in script and "'/grant:r'" in script
@@ -1073,7 +1124,7 @@ def test_downloaded_beacon_is_verified_before_it_is_installed(live_simcore, tmp_
             env={"OS": "Windows_NT", "CORTEXSIM_ALLOW_UNSUPERVISED": "1", "LOCALAPPDATA": str(lad)})
     out = p.stdout + p.stderr
     assert "fetching prebuilt beacon (windows/amd64)" in out, out
-    assert "checksum OK" in out, out
+    assert "checksum OK" in out and CORRUPTION_ONLY in out, out
     assert (lad / "CortexSim" / "cortexsim-agent.exe").read_text() == _POLLING_STUB
     assert p.returncode == 1 and "code=PROCESS_START_BLOCKED" in out, out
     codes = [a["code"] for a in _get_json(f"{base}/api/agents/install/attempts")["attempts"]]
@@ -1081,8 +1132,10 @@ def test_downloaded_beacon_is_verified_before_it_is_installed(live_simcore, tmp_
 
 
 @off_windows_pwsh
-def test_a_tampered_download_is_never_installed(live_simcore, tmp_path):
-    """Integrity, executed: SimCore's digest no longer matches the bytes served."""
+def test_a_download_that_does_not_match_its_digest_is_never_installed(live_simcore, tmp_path):
+    """Integrity, executed: SimCore's digest no longer matches the bytes served.
+    That is all the check can see. Someone able to rewrite the binary can
+    rewrite the digest too, so the script must not call a match authentic."""
     import hashlib
 
     base, dist = live_simcore
@@ -1103,6 +1156,7 @@ def test_a_tampered_download_is_never_installed(live_simcore, tmp_path):
     out = p.stdout + p.stderr
     assert p.returncode == 1 and "code=CHECKSUM_MISMATCH" in out, out
     assert "do NOT run this binary" in out
+    assert CORRUPTION_ONLY in out and "intercepting TLS proxy" not in out, out
     assert not (lad / "CortexSim" / "cortexsim-agent.exe").exists(), "a mismatched binary was installed"
 
 

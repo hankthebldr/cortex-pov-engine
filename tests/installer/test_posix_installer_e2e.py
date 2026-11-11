@@ -208,7 +208,8 @@ def test_install_succeeds_with_no_go_toolchain_on_the_target(simcore, sandbox):
 
     # Downloaded, verified, installed, and launched — without a compiler.
     assert not sandbox["tripwire"].exists(), "the installer shelled out to `go`"
-    assert "checksum OK" in p.stdout
+    (ok_line,) = [ln for ln in p.stdout.splitlines() if "checksum OK" in ln]
+    assert "catches corruption, not tampering" in ok_line, ok_line
     assert sandbox["bin"].exists() and os.access(sandbox["bin"], os.X_OK)
     assert "beacon-started" in p.stdout
     assert f"--server {simcore}" in p.stdout
@@ -401,8 +402,12 @@ def test_unreachable_server_is_distinguished_from_a_rejected_token(sandbox, simc
 
 
 # ---------------------------------------------------------------------------
-# Integrity — a tampered binary must never be executed
+# Integrity — a download that does not match its digest is never executed
 # ---------------------------------------------------------------------------
+#
+# That is all the check sees: the binary and the digest come from the same
+# server, so someone able to rewrite one can rewrite both. The scripts say
+# "catches corruption, not tampering" on both the match and the mismatch.
 
 
 class _TamperingHandler(http.server.BaseHTTPRequestHandler):
@@ -452,6 +457,8 @@ def test_checksum_mismatch_aborts_before_the_binary_is_installed(simcore, sandbo
     assert p.returncode == 1
     assert "code=CHECKSUM_MISMATCH" in p.stderr
     assert "do NOT run this binary" in p.stderr
+    assert "catches corruption, not tampering" in p.stderr
+    assert "intercepting TLS proxy" not in p.stderr
     assert "TAMPERED" not in p.stdout                  # it was never executed
     assert not sandbox["bin"].exists()                 # nor installed
     assert any(r["code"] == "CHECKSUM_MISMATCH" for r in _TamperingHandler.reports)
