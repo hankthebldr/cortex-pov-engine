@@ -18,7 +18,7 @@ export const PROVES_FOOTER =
 export const NOT_EVALUATED_LINE =
   'url-filtering and wildfire-analysis profile actions are not evaluated in this version; a rule that attaches them reads "not evaluated", not alert or block.'
 
-export default function CheckStep({ firewall, agents = [], report, onReport }) {
+export default function CheckStep({ firewall, agents = [], report, onReport, onRan }) {
   const uid = useId()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -50,6 +50,9 @@ export default function CheckStep({ firewall, agents = [], report, onReport }) {
       setError({ message: err?.message || 'preflight failed', code: err?.code || null })
     } finally {
       setBusy(false)
+      // The backend records the verdict on the integration row either way;
+      // re-read it so the registered list stops saying "never checked".
+      onRan?.()
     }
   }
 

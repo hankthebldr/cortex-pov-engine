@@ -70,7 +70,7 @@ export default function FirewallView() {
       <section className="readiness__section fw-step" aria-labelledby="fw-step-check">
         <h2 id="fw-step-check" className="readiness__h">2 · Check</h2>
         <CheckStep firewall={selected} agents={env?.agents || []} report={reportFor}
-          onReport={setReport} />
+          onReport={setReport} onRan={refresh} />
       </section>
 
       <section className="readiness__section fw-step" aria-labelledby="fw-step-sources">

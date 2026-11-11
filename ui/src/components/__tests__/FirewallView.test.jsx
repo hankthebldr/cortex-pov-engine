@@ -406,4 +406,24 @@ describe('FirewallView', () => {
     await waitFor(() => expect(client.firewallPreflight).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByText(/run the check again/i)).toBeNull())
   })
+
+  it('refreshes the registered list after a preflight, so the row shows its verdict', async () => {
+    client.listFirewalls
+      .mockResolvedValueOnce({ firewalls: [FW], write_enabled: false, tenant_verified: 0 })
+      .mockResolvedValue({ firewalls: [{ ...FW, last_verified_ok: false,
+        last_verified_error: 'PN_UNREACHABLE', last_verified_at: '2026-11-10T23:00:00+00:00' }],
+        write_enabled: false, tenant_verified: 0 })
+    await runCheck(report())
+    await waitFor(() => expect(client.listFirewalls).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByTestId('fw-registered-pa-440').textContent)
+      .toContain('last preflight: blocked (PN_UNREACHABLE)'))
+  })
+
+  it('refreshes the registered list after a failed preflight too', async () => {
+    client.firewallPreflight.mockRejectedValue(Object.assign(new Error('boom'), { code: 'X' }))
+    mount()
+    await screen.findByText('192.168.1.1')
+    fireEvent.click(screen.getByRole('button', { name: /run preflight/i }))
+    await waitFor(() => expect(client.listFirewalls).toHaveBeenCalledTimes(2))
+  })
 })
