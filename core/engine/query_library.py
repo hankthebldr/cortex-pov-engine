@@ -54,6 +54,12 @@ def _items(card_id: str, raw: object) -> list[dict]:
     return queries
 
 
+def validate_card(card_id: str, raw: object) -> None:
+    """Raise ``ValueError`` if :func:`render` would refuse this card. Used by the corpus test."""
+    _one_line(card_id, "card id")
+    _items(card_id, raw)
+
+
 def render(scenario: dict, cards: dict[str, dict],
            purposes: tuple[str, ...] = ("hunt", "investigation")) -> str:
     if (not purposes or len(set(purposes)) != len(purposes)
