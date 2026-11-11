@@ -927,6 +927,45 @@ naming the consequence *in verdict terms*: `config` → `dns_tls` → `auth` →
 reported explicitly as `SKIPPED` / `PF_SKIPPED_UNREACHABLE` — an absent stage
 would read as "fine". Only an unreachable host short-circuits.
 
+**`response_layer` (2026-11-11)** — the last stage of the `xsiam_tenant` ladder
+(after `clock`), enabled by the query parameter `response_layer` (bool, default
+`true`; pass `false` to omit it). It answers "is the Palo-Cortex SOC Framework
+(`soc-optimization-unified`, pinned to 3.31.4) running on this tenant, and what
+would its Auto Triage do to a CortexSim case?" with **read-only** calls, every
+one counted in `queries_issued`: installed packs
+(`GET /xsoar/contentpacks/metadata/installed`), list names
+(`GET /xsoar/lists/names`), the two config lists `SOCFWTenantConfig` and
+`SOCFWConfigModes` (`GET /xsoar/lists/download/{name}`, only when the core pack
+and both lists are present) and one XQL over the framework's execution dataset
+(`timeframe` argument `{"relativeTime": 86400000}`, never XQL time arithmetic).
+The stage carries the parsed layer under `extra.response_layer`:
+`state` ∈ `PRESENT | ABSENT | UNKNOWN`, `framework_version`, `leftover_lists`
+(a framework uninstalled with its lists left behind reads `ABSENT`, never
+`PRESENT`), `auto_triage` (including `score_off`), per-source `sources_used`
+and `read_at`. All framework strings and shapes live in
+`core/connectors/socfw.py`.
+
+| code | status | meaning |
+|---|---|---|
+| `PF_RESPONSE_LAYER_ABSENT` | degraded | core pack not installed (list names alone never make it `PRESENT`). Every POV tenant is expected to run the framework, so absence degrades preflight |
+| `PF_RESPONSE_LAYER_UNREAD` | degraded | installed-packs read refused/failed (`state: UNKNOWN`), or the framework is present but part of its state (list content, XQL) could not be read. Neither present nor absent is claimed for the former |
+| `PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED` | degraded | a reply arrived in a shape `socfw.py` does not recognise. It raises internally and surfaces here with `state: UNKNOWN`; it is never read as defaults, `open` or `ABSENT` |
+
+A stage skipped because an earlier stage blocked the ladder is reported
+`SKIPPED` and **does not** overwrite the last stored read. A stage that read
+something is persisted on the integration row (`IntegrationCredential.
+response_layer` and `response_layer_read_at`) and surfaced by
+`GET /api/readiness` (§1.16) and the launch advisories on `POST /api/runs`
+(`warnings[]`: `SOCFW_TRIAGE_MAY_SEAL`, `SOCFW_RESPONSE_LAYER_UNKNOWN`; never a
+refusal, no tenant call). **Open:** the list-content path
+`GET /xsoar/lists/download/{name}` is **unverified against a live tenant** (no
+documented source; povkit reads list names only). A 404/405 on it yields
+`PF_RESPONSE_LAYER_UNREAD`, never `ABSENT`. The three reads are catalogued as
+`OP-SOCFW-PACKS-INSTALLED`, `OP-SOCFW-LIST-NAMES` and `OP-SOCFW-LIST-GET`
+(`core/integrations/xsiam/operations/packs/socfw.yml`, 151 operations; the
+operation schema now accepts the `/xsoar/` gateway prefix). Tenant disposition
+is context, not detection evidence, and `tenant-verified` stays 0.
+
 **`alert_shape` (2026-09-20)** answers "will matching work on *this* tenant's
 alert objects?" — the question a POV used to answer with zero matches. It
 reuses the scope probe's alert or issues one more 1-row call over a 7-day
@@ -1264,8 +1303,13 @@ is read from the local DB, the vault's metadata or the in-process quota ledger.
 It never returns credential config. Per integration it carries `name`, `kind`,
 `capabilities` (`null` when the credential declares none), `xql_capability_granted`,
 `last_verified_ok` / `last_verified_at` / `last_verified_error`, a `ledger`
-snapshot (kind `xsiam_tenant` with a `base_url` only, otherwise `null`) and the
-four `rungs` booleans. `tenant_verified` is counted in Python by
+snapshot (kind `xsiam_tenant` with a `base_url` only, otherwise `null`), a
+`response_layer` block (`null` until a preflight has stored one; otherwise
+`{layer, state, read_at, stale, proves, does_not_prove}`, where `stale` is true
+past 24 h or when the timestamp is unreadable, and `does_not_prove` says the
+framework handled no CortexSim case) and the four `rungs` booleans.
+`GET /api/health` lists `socfw_response_layer` in `not_checked[]`, naming the
+preflight stage that does check it. `tenant_verified` is counted in Python by
 `core/connectors/provenance.py::tenant_verified` — runs and assertion runs whose
 verdict detail carries tenant provenance; `pending` and `not_applicable` do not
 count. **Authored is not proven:** today that count is 0 because nothing has run

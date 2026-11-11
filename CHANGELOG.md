@@ -64,6 +64,34 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
   stitched chain either way.
 
+### Added — CortexSim alongside the SOC Framework: the response layer, read-only (Part A)
+
+- **A `response_layer` stage on `POST /api/connectors/xsiam_tenant/preflight`**
+  detects whether the Palo-Cortex SOC Framework (`soc-optimization-unified`,
+  pinned to 3.31.4) runs on the tenant and what its Auto Triage settings are:
+  installed packs, list names, the two config lists and one XQL over the
+  framework's execution dataset. All reads are read-only and counted in
+  `queries_issued`. Pass `response_layer=false` to omit it. Codes
+  `PF_RESPONSE_LAYER_ABSENT`, `PF_RESPONSE_LAYER_UNREAD` and
+  `PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED`; an unrecognised shape raises and
+  reads `UNKNOWN`, never defaults or `ABSENT`. `ABSENT` degrades preflight.
+  Every framework string lives in `core/connectors/socfw.py`.
+- **Readiness shows it.** The result is stored on the integration
+  (`response_layer`, `response_layer_read_at`; migration added), returned as a
+  `response_layer` block by `GET /api/readiness` with a 24 h staleness flag, and
+  rendered as a SOC Framework row on the console Readiness page. `GET
+  /api/health` lists `socfw_response_layer` under `not_checked`.
+- **Launch advisories, never a refusal.** `POST /api/runs` adds
+  `SOCFW_TRIAGE_MAY_SEAL` or `SOCFW_RESPONSE_LAYER_UNKNOWN` to `warnings` when
+  Auto Triage may close a case during a paired run or an ABIOC/Analytics
+  scenario. It reads the stored probe only; CortexSim does not change the tenant.
+- **Three read-only operations** (`packs/socfw.yml`; catalog now 151) and the
+  operation schema accepts the `/xsoar/` gateway prefix.
+- **Honesty.** `tenant-verified` is still 0: none of this has run against a live
+  tenant. The list-content read path (`GET /xsoar/lists/download/{name}`) is
+  **unverified against a live tenant**; a refusal on it reads as unread, not
+  absent. Tenant disposition is context, not detection evidence.
+
 ### Added — two Linux persistence chains built to group into one case
 
 - **SIM-EDR-023 and SIM-EDR-024**, with cards TTP-2026-0198/0199. SIM-EDR-023
