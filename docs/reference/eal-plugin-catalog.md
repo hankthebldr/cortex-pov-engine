@@ -920,6 +920,143 @@ partial); their additions are recorded here. No plugin-count change (27).
   `10.20.0.x`), `machine_name` (`DESKTOP-CORTEXSIM`), `endpoint_mac`
   (`02:00:00:00:00:07`).
 
+#### `cloud_audit_emitter` (CDR / Analytics) — logging-service presets (v1.2.0, 2026-11-11)
+
+`cloud_audit_emitter` has no row in §2.1 (the table is partial); this is its
+entry. No plugin-count change (27). It is an analytics log-streamer on the
+shared `analytics_emitter` spine: it POSTs shape-true AWS CloudTrail
+(`provider: aws`) or GCP Cloud Audit Log (`provider: gcp`) records to an operator
+`collector_url`, and `event_pattern` selects the preset. Nothing in it calls a
+cloud API; every record is synthetic JSON built in-process.
+
+**Eleven original presets, unchanged.** `storage_object_download`,
+`secrets_dump`, `ssm_parameter_retrieval`, `iam_enumeration`,
+`iam_enumeration_non_user`, `s3_bucket_enumeration`, `bigquery_exfiltration`,
+`service_account_impersonation`, `iam_privilege_escalation`, `s3_public_exposure`,
+`console_login_anomaly`. `TestLegacyPresetsUnchanged` pins the rendered records
+of all eleven, for both providers, with and without a canary token, byte for
+byte against the plugin at `origin/dev` `8c90739`.
+
+**Eight logging-service presets, added in 1.2.0.** Cloud log tampering and log
+re-routing against CloudTrail and Cloud Logging. Each emits the *victim-side*
+audit events of one technique. Event names, event sources and request field
+names are the providers' documented ones, not CLI spellings (`stop-logging`) or
+IAM permission names (`logging.sinks.update`).
+
+| `event_pattern` | `aws` records | `gcp` records | MITRE |
+|---|---|---|---|
+| `log_stop` | 1 × `StopLogging` (`cloudtrail.amazonaws.com`), `requestParameters {name: <trail ARN>}` | 1 × `google.logging.v2.ConfigServiceV2.UpdateSink` (`logging.googleapis.com`), request `sinkName`, `sink {name, destination, disabled: true}`, `updateMask: "disabled"` | T1562.008 |
+| `log_destination_delete` | `burst_count` × `DeleteObject` (`s3.amazonaws.com`, data event, `{bucketName, key}`, a different key per record), then 1 × `DeleteBucket` (management event, `{bucketName}`) on the trail's bucket | 1 × `…ConfigServiceV2.DeleteBucket`, request `name: <log bucket>`. One call whatever `burst_count` is: a Cloud Logging log bucket has no object-level API | T1485 |
+| `log_router_delete` | 1 × `DeleteTrail`, `{name: <trail ARN>}` | 1 × `…ConfigServiceV2.DeleteSink`, request `sinkName` | T1562.008 |
+| `log_key_swap` | 1 × `UpdateTrail`, `{name, kmsKeyId: <key in another account>}` | 1 × `…ConfigServiceV2.UpdateBucket`, request `name`, `bucket.cmekSettings.kmsKeyName: <key in another project>`, `updateMask: "cmekSettings"` | T1562.008 |
+| `log_object_overwrite` | `GetObject` (`readOnly: true`) then `PutObject`, both data events on the same `{bucketName, key}` | `storage.objects.get` then `storage.objects.create` (`storage.googleapis.com`, Data Access) on the same object | T1565.001 |
+| `log_router_create` | 1 × `CreateTrail`, `{name, s3BucketName: <attacker bucket>, isMultiRegionTrail: true}` | 1 × `…ConfigServiceV2.CreateSink`, request `parent`, `sink {name, destination: <attacker bucket>}`, `uniqueWriterIdentity: true` | T1537 |
+| `log_router_redirect` | 1 × `UpdateTrail`, `{name, s3BucketName: <attacker bucket>}` | 1 × `…ConfigServiceV2.UpdateSink`, request `sinkName`, `sink {name, destination: <attacker bucket>}`, `updateMask: "destination"`, `uniqueWriterIdentity: true` | T1562.008 |
+| `stream_bucket_delete` | `burst_count` × `DeleteObject`, then 1 × `DeleteBucket`, on a data stream's destination bucket | `burst_count` × `storage.objects.delete` (Data Access), then 1 × `storage.buckets.delete` (Admin Activity), on the sink's Cloud Storage bucket | T1485 |
+
+Each record carries the marker `<event_pattern>_marker: true` and
+`cortexsim_run_id`. All calls are made by one identity per provider
+(`arn:aws:iam::123456789012:user/cortexsim-canary`;
+`cortexsim-canary@cortexsim-canary.invalid`), so a rule can group on the caller.
+
+| Param | Type / default | Notes |
+|-------|----------------|-------|
+| `collector_url` | str (required) | http/https + hostname |
+| `provider` | str = `aws` | `aws` / `gcp` |
+| `event_pattern` | str = `iam_privilege_escalation` | one of the nineteen presets; anything else raises `event_pattern must be one of […]` |
+| `burst_count` | int = 8 | 2–200. Sizes the object-delete burst of `log_destination_delete` (`aws`) and `stream_bucket_delete`; the bucket delete after it is always one record. Ignored by the other six |
+| `iterations` | int = 1 | 1–200; the whole preset is emitted once per iteration |
+| `source_ip` | str? | dotted quad; overrides `sourceIPAddress` / `requestMetadata.callerIp` (default `203.0.113.201`) |
+| `request_timeout` | float = 15.0 | 1–300 |
+| `auth_token` | SecretStr? | collector key, sent as the bare `Authorization` value; never written into a record |
+| `canary_token`, `batch`, `compress`, `sleep_seconds` | — | shared spine fields |
+
+**What the logging-service records carry beyond the original presets.**
+
+- `aws`: `requestParameters` (lower-camel keys, as CloudTrail records them) and
+  `eventCategory` (`Management` for trail and bucket calls, `Data` for S3 object
+  calls), next to the existing `readOnly` / `managementEvent`.
+- `gcp`: `protoPayload.request` (the `google.logging.v2` request message, `@type`
+  first; absent on Cloud Storage calls, which log a request only under detailed
+  audit logging mode), a per-call `protoPayload.resourceName`
+  (`projects/cortexsim-canary/sinks/…`, `…/locations/global/buckets/…`,
+  `projects/_/buckets/<bucket>[/objects/<object>]`), `logName` ending
+  `cloudaudit.googleapis.com%2Factivity` or `%2Fdata_access`, and for Cloud
+  Storage calls the `gcs_bucket` monitored-resource block.
+- Both: flat top-level hint keys, so a query needs no nested-JSON access. Each
+  restates a provider-true field of the same record.
+
+| Hint key | On | Value |
+|---|---|---|
+| `cloud_provider` | every record | `aws` / `gcp` |
+| `api_operation` | every record | the `eventName` / `methodName` |
+| `principal_id` | every record | the caller ARN / `principalEmail` (follows a planted canary principal) |
+| `log_resource_name` | every record | the trail ARN, sink, log bucket, or storage bucket acted on (`arn:aws:s3:::<bucket>` / `projects/_/buckets/<bucket>` for object calls too) |
+| `log_object_key` | object calls only | the S3 key / Cloud Storage object name |
+| `log_destination` | `log_router_create`, `log_router_redirect` | `cortexsim-canary-attacker-logs-999` (`aws`) / `storage.googleapis.com/cortexsim-canary-attacker-log-drop` (`gcp`) |
+| `kms_key_id` | `log_key_swap` | `arn:aws:kms:us-east-1:444455556666:alias/cortexsim-canary-external-key` (`aws`) / `projects/attacker-project-999/locations/global/keyRings/cortexsim-canary-ring/cryptoKeys/cortexsim-canary-key` (`gcp`) |
+| `log_disabled` | `log_stop` (`gcp`) | `true` |
+
+**Not emitted, on purpose.** Anything the attacker does in their own account or
+project: creating the external key, changing or deleting its policy, re-creating
+a deleted bucket name. A victim's audit log does not contain those events.
+`PutEventSelectors` and Azure are out too (not in the source research; no Azure
+provider).
+
+**Honest limits.**
+
+- *Dataset.* Every record carries the body key `dataset: cloud_audit_logs`. That
+  is a hint, not a route: on an XSIAM HTTP collector the tenant dataset is
+  `<Vendor>_<Product>_raw` from the collector's own settings, and
+  `cloud_audit_logs` is filled by platform normalisation of natively onboarded
+  audit data, which a POST does not pass through. A scored query has to name the
+  collector's dataset. No collector dataset is registered for this plugin yet
+  (`KNOWN_DATASETS`, `spec/dataset_requirements.yml`); that is an open decision.
+- *Vendor analytics alerts.* The Cortex alerts these calls correspond to on a
+  natively onboarded account — "AWS CloudTrail has been stopped", "AWS CloudTrail
+  modification", "CloudTrail logging deletion", "Suspicious activity on logging
+  bucket", "Logging was impaired via external encryption key", "GCP logging sink
+  modification", "GCP logging sink deletion", "GCP Logging Bucket Deletion", "GCP
+  Storage Bucket deletion" — each document a 14-day activation and 30-day
+  training period over the AWS / GCP Audit Log source. Collector records do not
+  arm them, so the plugin declares no `Meta.detectors` for them and its
+  `eal_targets` name XQL / Correlation only.
+- *Field literals not seen on a provider page.* The CloudTrail request keys
+  `s3BucketName` and `kmsKeyId` follow the lower-camel convention AWS's own
+  UpdateTrail example record shows for `name` and `isMultiRegionTrail`; no AWS
+  page was found printing those two literals in a record. Cloud Logging
+  configuration records keep the project-level `resource` block because the
+  monitored-resource type of those audit entries was not confirmed.
+  `responseElements` and the S3 `resources` list are not written. Prefer the flat
+  hints in scored queries.
+- *tenant-verified is 0.* No record of these presets has been ingested by a live
+  tenant.
+
+Sample campaign step (the form the CDR emitter scenarios use):
+
+```yaml
+steps:
+  - step_id: log-stop-aws
+    plugin: cloud_audit_emitter
+    params:
+      collector_url: "$COLLECTOR_URL"
+      provider: aws
+      event_pattern: log_stop
+      iterations: 1
+  - step_id: stream-bucket-delete-gcp
+    plugin: cloud_audit_emitter
+    params:
+      collector_url: "$COLLECTOR_URL"
+      provider: gcp
+      event_pattern: stream_bucket_delete
+      burst_count: 25
+      iterations: 1
+```
+
+Supports no negative control. The collector-POST transport, authorisation,
+delivery accounting and offline-bundle rendering are the shared
+`analytics_emitter` spine's, unchanged.
+
 ## 3. Safety model — exhaustive
 
 The simulator emits **real** traffic indistinguishable from malicious activity
