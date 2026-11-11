@@ -1109,8 +1109,7 @@
       "detection_steps_without_signal": 0,
       "detection_types": [
         "ABIOC",
-        "XQL",
-        "Correlation"
+        "XQL"
       ],
       "egress_tools": [],
       "name": "UUID-String Shellcode Staging with Enum-Callback Fileless Execution (Bookworm / ToneShell)",
@@ -1126,9 +1125,9 @@
       "shelf_backed_tools": [],
       "signal_ratio": 1.0,
       "status": "active",
-      "steps_real_signal": 3,
-      "steps_total": 3,
-      "steps_with_detections": 3,
+      "steps_real_signal": 1,
+      "steps_total": 1,
+      "steps_with_detections": 1,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -1156,9 +1155,9 @@
       "shelf_backed_tools": [],
       "signal_ratio": 1.0,
       "status": "active",
-      "steps_real_signal": 4,
-      "steps_total": 4,
-      "steps_with_detections": 4,
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -1169,9 +1168,7 @@
       "detection_steps_without_signal": 0,
       "detection_types": [
         "BIOC",
-        "ABIOC",
-        "XQL",
-        "Correlation"
+        "XQL"
       ],
       "egress_tools": [],
       "name": "The Gentlemen GentleKiller \u2014 ThrottleStop.sys BYOVD EDR-Kill Behavioral Anomaly (Cortex EDR ABIOC)",
@@ -1187,9 +1184,9 @@
       "shelf_backed_tools": [],
       "signal_ratio": 1.0,
       "status": "active",
-      "steps_real_signal": 7,
-      "steps_total": 7,
-      "steps_with_detections": 7,
+      "steps_real_signal": 3,
+      "steps_total": 3,
+      "steps_with_detections": 3,
       "tier": "GREEN",
       "unknown_adapter_refs": []
     },
@@ -5775,6 +5772,6 @@
       "SIM-ITDR-016",
       "SIM-TIM-005"
     ],
-    "total_steps": 796
+    "total_steps": 789
   }
 }
