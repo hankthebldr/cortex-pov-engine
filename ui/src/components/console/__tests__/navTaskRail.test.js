@@ -22,11 +22,11 @@ describe('task rail', () => {
   const rail = DESTINATIONS.filter((d) => !d.hidden && d.group)
   const railIds = new Set(rail.map((d) => d.id))
 
-  it('is the five tasks, then the Manage pair', () => {
+  it('is the five tasks, then the Manage group', () => {
     const groups = navGroups()
     expect(groups.map((g) => g.label)).toEqual(['', 'Manage'])
     expect(groups[0].items.map((i) => i.label)).toEqual(['Get started', 'Simulate', 'Runs', 'Results', 'Catalog'])
-    expect(groups[1].items.map((i) => i.label)).toEqual(['Agents', 'Tenant'])
+    expect(groups[1].items.map((i) => i.label)).toEqual(['Agents', 'Tenant', 'Firewall'])
   })
 
   it('every off-rail page names a parent that is on the rail', () => {

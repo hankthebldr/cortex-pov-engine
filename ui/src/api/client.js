@@ -1475,3 +1475,76 @@ export async function preflightCollectorTarget(name, { writeCanary = false } = {
     body: JSON.stringify({ write_canary: Boolean(writeCanary) }),
   })
 }
+
+// ─── NGFW (PAN-OS) connection ────────────────────────────────────────────────
+//
+// Read-only toward the firewall in every path. Registration rides the generic
+// integrations surface (kind `panos_ngfw`); keygen, per-agent source overrides
+// and the listing live under /api/ngfw; the staged check is the connector
+// preflight every other kind uses. Spec: 2026-11-10-ngfw-connection-wizard §4–§6.
+
+/**
+ * GET /api/ngfw — registered firewalls, metadata only (never the key).
+ * @returns {Promise<{firewalls: Array, write_enabled: false, tenant_verified: 0}>}
+ */
+export async function listFirewalls() {
+  return request('/api/ngfw')
+}
+
+/**
+ * PUT /api/credentials/integrations with `kind: 'panos_ngfw'` — register a
+ * firewall with a pasted API key. This REPLACES the stored config, so a
+ * re-registration drops any per-agent address overrides.
+ */
+export async function putFirewall({ name, host, verify_tls = true, vsys = 'vsys1', forwarding_path = 'auto', api_key }) {
+  return request('/api/credentials/integrations', {
+    method: 'PUT',
+    body: JSON.stringify({
+      name,
+      kind: 'panos_ngfw',
+      plaintext_secret: api_key,
+      config: { host, verify_tls, vsys, forwarding_path },
+      description: `PAN-OS NGFW: ${name}`,
+    }),
+  })
+}
+
+/**
+ * POST /api/ngfw/keygen — exchange admin credentials for an API key and register
+ * the firewall. The password is sent once in this body and nowhere else.
+ * @param {{name, host, verify_tls, username, password, vsys?}} body
+ * @returns {Promise<Object>} integration metadata + `overrides_cleared` + `warnings[]`
+ */
+export async function firewallKeygen(body) {
+  return request('/api/ngfw/keygen', { method: 'POST', body: JSON.stringify(body) })
+}
+
+/**
+ * POST /api/connectors/panos_ngfw/preflight?integration=<name>[&agents=a,b]
+ * Staged, read-only check. Returns 200 with `overall: blocked` rather than an
+ * HTTP error when the firewall refuses, so the whole ladder is always shown.
+ */
+export async function firewallPreflight(name, agentIds = null) {
+  const qs = new URLSearchParams()
+  if (name) qs.set('integration', name)
+  if (Array.isArray(agentIds) && agentIds.length) qs.set('agents', agentIds.join(','))
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  return request(`/api/connectors/panos_ngfw/preflight${suffix}`, { method: 'POST', _timeoutMs: 120_000 })
+}
+
+/**
+ * PUT /api/ngfw/{name}/sources/{agent_id} — set or clear one agent's
+ * firewall-observed source and agent-side addresses. A key left out is
+ * unchanged; `null` / `[]` clears the override.
+ */
+export async function putFirewallSource(name, agentId, body) {
+  return request(
+    `/api/ngfw/${encodeURIComponent(name)}/sources/${encodeURIComponent(agentId)}`,
+    { method: 'PUT', body: JSON.stringify(body) },
+  )
+}
+
+/** DELETE /api/credentials/integrations/{name} — remove a firewall and its key. */
+export async function deleteFirewall(name) {
+  return request(`/api/credentials/integrations/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
