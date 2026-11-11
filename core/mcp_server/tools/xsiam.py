@@ -93,6 +93,8 @@ class Executed(NamedTuple):
     queries_issued: int
     ledger: Optional[dict]
     preview: bool
+    #: True when the tenant's reply came back (the live path); a preview is False.
+    answered: bool = False
 
 
 async def _operation(ctx: ToolContext, op_id: str) -> dict:
@@ -180,7 +182,7 @@ async def execute(ctx: ToolContext, *, tenant: Optional[str], op_id: str, path_p
     route, queries = await tenant_call(
         ctx, tenant=tenant, read=read,
         coro=ctx.client.post(path, json={**sent, "dry_run": None, "consent": {}}))
-    return Executed(tenant, op, route, queries, route["ledger"], False)
+    return Executed(tenant, op, route, queries, route["ledger"], False, answered=True)
 
 
 def _parse_error(ex: Executed, where: str, detail: str) -> TenantCallError:
@@ -192,9 +194,9 @@ def _parse_error(ex: Executed, where: str, detail: str) -> TenantCallError:
 
 async def _tenant_env(ctx: ToolContext, data: Any, *, tenant: str, queries: Optional[int],
                       ledger: Optional[dict], truncated: bool = False,
-                      basis: Optional[str] = None) -> Envelope:
+                      basis: Optional[str] = None, answered: bool = False) -> Envelope:
     ev = await evidence_for_tenant(ctx, tenant=tenant, queries_issued=queries,
-                                   ledger_snapshot=ledger, basis=basis)
+                                   ledger_snapshot=ledger, basis=basis, tenant_answered=answered)
     return Envelope(data=data, evidence=ev.model_copy(update={"truncated": truncated}))
 
 
@@ -227,7 +229,7 @@ async def operation_execute(ctx: ToolContext, args: OperationExecuteIn) -> Envel
     data = {"op_id": ex.op["op_id"], "access_class": ex.op["access_class"], "dry_run": False,
             "reply": text, "truncated": truncated, "bytes": total}
     return await _tenant_env(ctx, data, tenant=ex.tenant, queries=ex.queries_issued,
-                             ledger=ex.ledger, truncated=truncated)
+                             ledger=ex.ledger, truncated=truncated, answered=ex.answered)
 
 
 # --- (b) named tools: allowlisted shapers over one catalog op -------------------
@@ -316,7 +318,7 @@ async def _named_list(ctx: ToolContext, args: TenantListIn, shape: _Shape) -> En
     data = {shape.out_key: [_project(r, shape, ex, where) for r in page], "total": total,
             "truncated": truncated}
     return await _tenant_env(ctx, data, tenant=ex.tenant, queries=ex.queries_issued,
-                             ledger=ex.ledger, truncated=truncated)
+                             ledger=ex.ledger, truncated=truncated, answered=ex.answered)
 
 
 async def dataset_list(ctx, args):
@@ -351,14 +353,15 @@ async def healthcheck(ctx: ToolContext, args: TenantIn) -> Envelope:
         if err.code == "XSIAM_API_ERROR" and upstream == 403 and not isinstance(upstream, bool):
             return await _tenant_env(
                 ctx, {"license_gated": True, "status": _LICENSE_GATED_STATUS}, tenant=err.tenant,
-                queries=err.queries_issued, ledger=err.ledger_snapshot, basis="reachable")
+                queries=err.queries_issued, ledger=err.ledger_snapshot, basis="reachable",
+                answered=True)
         raise
     reply = ex.body["reply"]
     status = reply.get("status") if isinstance(reply, dict) else reply
     if not isinstance(status, str):
         raise _parse_error(ex, "OP-HEALTHCHECK reply", f"no string status in {str(reply)[:200]}")
     return await _tenant_env(ctx, {"license_gated": False, "status": status}, tenant=ex.tenant,
-                             queries=ex.queries_issued, ledger=ex.ledger)
+                             queries=ex.queries_issued, ledger=ex.ledger, answered=ex.answered)
 
 
 # --- XQL: start + poll ---------------------------------------------------------
@@ -418,8 +421,9 @@ async def xql_query(ctx: ToolContext, args: XqlQueryIn) -> Envelope:
     data, queries, ledger, tenant = await _xql(
         ctx, tenant=args.tenant, query=args.query, timeframe=args.timeframe, limit=args.limit,
         max_wait=args.max_wait_seconds, interval=args.poll_interval_seconds)
+    # _xql returns only after the start came back with a query_id: the tenant answered.
     return await _tenant_env(ctx, data, tenant=tenant, queries=queries, ledger=ledger,
-                             truncated=data["truncated"])
+                             truncated=data["truncated"], answered=True)
 
 
 async def dataset_schema(ctx: ToolContext, args: DatasetSchemaIn) -> Envelope:
@@ -439,7 +443,8 @@ async def dataset_schema(ctx: ToolContext, args: DatasetSchemaIn) -> Envelope:
     data = {"dataset": args.dataset, "fields": fields, "reason": reason, "query_id": xql["query_id"],
             "derivation": f"the column names of the first row returned by `{query}` over "
                           f"{json.dumps(defaults.timeframe)}; a column absent from that row is not listed"}
-    return await _tenant_env(ctx, data, tenant=tenant, queries=queries, ledger=ledger, basis="derived")
+    return await _tenant_env(ctx, data, tenant=tenant, queries=queries, ledger=ledger, basis="derived",
+                             answered=True)
 
 
 # --- session index (readiness only, no tenant call) ----------------------------
@@ -559,7 +564,8 @@ def specs() -> list[ToolSpec]:
           f"access_class, consent, path_params, doc_link, tags). {_NO_TENANT}"),
         s("xsiam.operation.execute", OperationExecuteIn, operation_execute, "write", "tenant",
           "POST /api/xsiam/tenants/{tenant}/operations/{op_id}. Takes no consent. A read op runs live "
-          "(queries_issued 1) and returns the upstream reply as JSON text capped at 256 KiB with "
+          "(queries_issued 1; 0 for the OP-XQL-GET-QUERY-RESULTS poll, which still sets "
+          "evidence.tenant_answered) and returns the upstream reply as JSON text capped at 256 KiB with "
           "truncated + bytes; dry_run: true previews it. A write or destructive op ALWAYS previews "
           "(queries_issued 0): dry_run, op_id, access_class, request, consent_required, "
           "execute_as_human — a human runs it; dry_run: false on one is MCP_WRITE_NOT_EXECUTABLE "

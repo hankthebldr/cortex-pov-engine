@@ -96,7 +96,13 @@ async def test_queries_issued_sums_ledger_units(stubbed_app, fast_polls):
                      body={"request_data": {"query_id": "qid-1"}})
     assert not res.isError
     assert len(stubbed_app.stub.calls) == 1
-    assert res.structuredContent["evidence"]["queries_issued"] == 0
+    ev = res.structuredContent["evidence"]
+    assert ev["queries_issued"] == 0
+    # The poll reached the tenant and its reply is in data: reachable, at 0 cost.
+    assert ev["basis"] == "reachable" and ev["tenant_answered"] is True
+    assert ev["statement"] == (
+        "Tenant deathstar answered; this call cost 0 metered operations. This is reachable evidence; "
+        "a detection is verified only when a run verdict carries tenant provenance. tenant-verified: 0")
 
 
 @pytest.mark.asyncio

@@ -51,8 +51,13 @@ def ledger_from_snapshot(snap: Optional[dict]) -> Optional[Ledger]:
 
 class Evidence(BaseModel):
     basis: Basis
-    #: ``None`` = the tenant was called via SimCore and the count was not reported.
+    #: ``None`` = SimCore accepted the request and did not report a count; whether
+    #: the tenant was called is then not known either. Never read as 0.
     queries_issued: Optional[int] = 0
+    #: ``True`` only when the tool got the tenant's reply back through SimCore (a
+    #: live executor read, an XQL start/poll). It is independent of
+    #: ``queries_issued``: a results poll answers at a metered cost of 0.
+    tenant_answered: bool = False
     http_round_trips: Optional[int] = None
     tenant: Optional[str] = None
     ledger: Optional[Ledger] = None
@@ -79,6 +84,7 @@ def statement(
     tool_id: Optional[str] = None,
     not_backed: bool = False,
     simcore_unreachable: bool = False,
+    tenant_answered: bool = False,
 ) -> str:
     """The section 7 sentence for the call's condition (checked in this order)."""
     tail = "tenant-verified: not read" if tenant_verified is None else f"tenant-verified: {tenant_verified}"
@@ -94,18 +100,23 @@ def statement(
             "Preview only. Nothing was sent to the tenant. To execute, a human runs "
             f"the request in execute_as_human. {tail}"
         )
+    reachable = ("This is reachable evidence; a detection is verified only when a run "
+                 f"verdict carries tenant provenance. {tail}")
+    if tenant_answered or (queries_issued is not None and queries_issued >= 1):
+        # Metered operations are the ledger's unit, not "was the tenant contacted":
+        # a results poll answers and costs 0, and the sentence says exactly that.
+        if queries_issued is None:
+            return (f"Tenant {tenant or '(unnamed)'} answered; how many metered operations this "
+                    f"call cost is not known — this is not zero. {reachable}")
+        noun = "operation" if queries_issued == 1 else "operations"
+        return (f"Tenant {tenant or '(unnamed)'} answered; this call cost {queries_issued} "
+                f"metered {noun}. {reachable}")
     if queries_issued is None:
         return (
-            f"Tenant {tenant or '(unnamed)'} was called via SimCore; the number of tenant "
-            f"operations is not known — this is not zero. {tail}"
+            "SimCore accepted the request; whether the tenant was called and how many "
+            f"operations it issued is not known — this is not zero. {tail}"
         )
-    if queries_issued == 0:
-        return f"No tenant answered this call. This is {basis}, not tenant evidence. {tail}"
-    noun = "operation" if queries_issued == 1 else "operations"
-    return (
-        f"Tenant {tenant} answered {queries_issued} {noun}. This is reachable evidence; "
-        f"a detection is verified only when a run verdict carries tenant provenance. {tail}"
-    )
+    return f"No tenant answered this call. This is {basis}, not tenant evidence. {tail}"
 
 
 def as_of_from_date_header(value: Optional[str], *, now: Optional[datetime] = None) -> str:

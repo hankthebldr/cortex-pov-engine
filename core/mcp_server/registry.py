@@ -186,19 +186,26 @@ async def evidence_for_tenant(
     ledger_snapshot: Optional[dict],
     http_round_trips: Optional[int] = None,
     basis: Optional[str] = None,
+    tenant_answered: bool = False,
 ) -> Evidence:
-    """``reachable`` when the route reports ``queries_issued >= 1``; otherwise
-    ``configured`` (a credential was named, nothing answered) or ``simcore``."""
+    """``reachable`` when the tool got the tenant's reply back (``tenant_answered``)
+    or the route reports ``queries_issued >= 1``; otherwise ``configured`` (a
+    credential was named, nothing answered) or ``simcore``. ``queries_issued`` is
+    the ledger's unit and says nothing on its own about contact: a poll is 0."""
     if basis is None:
-        if queries_issued is None:
+        if tenant_answered:
+            basis = "reachable"
+        elif queries_issued is None:
             basis = "simcore"
         else:
             basis = "reachable" if queries_issued >= 1 else ("configured" if tenant else "simcore")
     tv = await _tenant_verified(ctx)
     return Evidence(
-        basis=basis, queries_issued=queries_issued, http_round_trips=http_round_trips,
+        basis=basis, queries_issued=queries_issued, tenant_answered=tenant_answered,
+        http_round_trips=http_round_trips,
         tenant=tenant, ledger=ledger_from_snapshot(ledger_snapshot), tenant_verified=tv,
-        statement=statement(basis=basis, queries_issued=queries_issued, tenant=tenant, tenant_verified=tv),
+        statement=statement(basis=basis, queries_issued=queries_issued, tenant=tenant,
+                            tenant_verified=tv, tenant_answered=tenant_answered),
         as_of=_as_of(ctx), truncated=False,
     )
 

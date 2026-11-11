@@ -417,7 +417,9 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   opt-in Streamable HTTP mount at `/mcp` behind `CORTEXSIM_MCP_HTTP=1`
   (default off), plus the P-2 manifest (`--manifest`). Every result carries an
   evidence envelope; `queries_issued` and `tenant_verified` may be `null`,
-  meaning *not known*, never zero. **Authored is not proven:** no MCP tool has
+  meaning *not known*, never zero, and `tenant_answered` says whether the
+  tenant's reply came back, apart from the metered count (a results poll
+  answers at a cost of 0). **Authored is not proven:** no MCP tool has
   run against a live tenant; `tenant-verified` is still 0. Reference:
   `docs/reference/api-and-agent-surface.md` §9.
 - `GET /api/readiness`: the connector ladder and `tenant_verified`, counted in

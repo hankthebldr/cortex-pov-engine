@@ -20,11 +20,11 @@ def test_statement_sentences_match_the_spec_table():
         "execute_as_human. tenant-verified: 0"
     )
     assert statement(basis="reachable", queries_issued=1, tenant="deathstar", tenant_verified=0) == (
-        "Tenant deathstar answered 1 operation. This is reachable evidence; a detection is "
-        "verified only when a run verdict carries tenant provenance. tenant-verified: 0"
+        "Tenant deathstar answered; this call cost 1 metered operation. This is reachable evidence; "
+        "a detection is verified only when a run verdict carries tenant provenance. tenant-verified: 0"
     )
     assert statement(basis="reachable", queries_issued=3, tenant="deathstar", tenant_verified=0).startswith(
-        "Tenant deathstar answered 3 operations. "
+        "Tenant deathstar answered; this call cost 3 metered operations. "
     )
     assert statement(
         basis="authored", queries_issued=0, tenant=None, tenant_verified=0,
@@ -95,8 +95,10 @@ def test_error_structured_content_validates_as_envelope():
 
 def test_unknown_count_is_stated_as_not_known_and_not_zero():
     text = statement(basis="simcore", queries_issued=None, tenant="deathstar", tenant_verified=0)
-    assert text == ("Tenant deathstar was called via SimCore; the number of tenant operations is not "
-                    "known — this is not zero. tenant-verified: 0")
+    assert text == ("SimCore accepted the request; whether the tenant was called and how many "
+                    "operations it issued is not known — this is not zero. tenant-verified: 0")
+    # True in both directions: it never claims the tenant was called.
+    assert "Tenant deathstar was called" not in text
     ev = Evidence(basis="simcore", queries_issued=None, tenant="deathstar", statement=text)
     assert ev.model_dump()["queries_issued"] is None
 
@@ -107,3 +109,22 @@ def test_unread_tenant_verified_is_never_a_stated_zero():
     assert "tenant-verified: 0" not in text
     ev = Evidence(basis="simcore", tenant_verified=None, statement=text)
     assert ev.tenant_verified is None
+
+
+def test_a_tenant_that_answered_at_zero_metered_cost_says_so():
+    """A results poll reaches the tenant and costs 0 ledger units: the sentence
+    says the tenant answered and that the call cost 0, never "No tenant answered"."""
+    text = statement(basis="reachable", queries_issued=0, tenant="deathstar", tenant_verified=0,
+                     tenant_answered=True)
+    assert text == (
+        "Tenant deathstar answered; this call cost 0 metered operations. This is reachable evidence; "
+        "a detection is verified only when a run verdict carries tenant provenance. tenant-verified: 0")
+    assert "No tenant answered" not in text
+    unknown = statement(basis="reachable", queries_issued=None, tenant="deathstar", tenant_verified=0,
+                        tenant_answered=True)
+    assert unknown.startswith("Tenant deathstar answered; how many metered operations this call cost "
+                              "is not known — this is not zero. ")
+    ev = Evidence(basis="reachable", queries_issued=0, tenant="deathstar", tenant_answered=True,
+                  statement=text)
+    assert ev.model_dump()["tenant_answered"] is True
+    assert Evidence(basis="authored", statement="x").tenant_answered is False

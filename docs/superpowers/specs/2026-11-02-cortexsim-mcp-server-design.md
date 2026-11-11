@@ -489,7 +489,8 @@ Every tool returns `Envelope[T] = {data: T, evidence: Evidence}` as
 ```
 Evidence
   basis           authored | configured | reachable | verified | preview | simcore | derived
-  queries_issued  int        # tenant OPERATIONS this call caused — the ledger's unit, summed over REST calls
+  queries_issued  int|null   # tenant OPERATIONS this call caused — the ledger's unit, summed over REST calls; null = not reported, never 0
+  tenant_answered bool       # the tool got the tenant's reply back; independent of queries_issued (a poll answers at 0)
   http_round_trips int|null  # HTTP requests to the tenant, when the route reports them; null otherwise
   tenant          str|null   # vault name; never URL, never key id
   ledger          {key, used_today, budget, remaining, breaker_open, breaker_until}|null
@@ -514,7 +515,8 @@ paraphrased:
 |---|---|
 | `queries_issued == 0`, basis not preview | "No tenant answered this call. This is `<basis>`, not tenant evidence. tenant-verified: N" |
 | preview | "Preview only. Nothing was sent to the tenant. To execute, a human runs the request in `execute_as_human`. tenant-verified: N" |
-| tenant answered | "Tenant `<name>` answered `<queries_issued>` operation(s). This is *reachable* evidence; a detection is *verified* only when a run verdict carries tenant provenance. tenant-verified: N" |
+| tenant answered (`tenant_answered`, or `queries_issued >= 1`) | "Tenant `<name>` answered; this call cost `<queries_issued>` metered operation(s). This is *reachable* evidence; a detection is *verified* only when a run verdict carries tenant provenance. tenant-verified: N" — `<queries_issued>` may be 0 (a results poll), stated as such |
+| `queries_issued` is null | "SimCore accepted the request; whether the tenant was called and how many operations it issued is not known — this is not zero. tenant-verified: N" |
 | not backed | "`<id>` has no backing operation in the XSIAM public API; nothing was queried. tenant-verified: N" |
 
 **Where the numbers come from.** The MCP layer computes none of them:
@@ -878,17 +880,23 @@ characters.
 > `Evidence.tenant_verified` is `null` when readiness could not be read, and the
 > statement ends `tenant-verified: not read`; `queries_issued` is likewise `null`
 > when the request reached SimCore and the count was not reported (not zero).
+> *(Final fix wave, 2026-11-10.)* "Tenant answered" is its own field,
+> `tenant_answered`, set by the tool when the tenant's reply came back; it no
+> longer rides on `queries_issued >= 1`, because a results poll answers at a
+> metered cost of 0. The null-count sentence no longer claims the tenant was
+> called: "SimCore accepted the request; whether the tenant was called and how
+> many operations it issued is not known — this is not zero".
 > Source of truth: `core/mcp_server/envelope.py`.
 
 **A read that a tenant answered**
 
 ```json
 {"data": {"datasets": [{"name": "xdr_data", "kind": "system"}], "truncated": false, "total": 1},
- "evidence": {"basis": "reachable", "queries_issued": 1, "http_round_trips": null, "tenant": "deathstar",
+ "evidence": {"basis": "reachable", "queries_issued": 1, "tenant_answered": true, "http_round_trips": null, "tenant": "deathstar",
               "ledger": {"key": "api-deathstar.xdr.us.paloaltonetworks.com", "used_today": 7,
                          "budget": 500, "remaining": 493, "breaker_open": false, "breaker_until": null},
               "tenant_verified": 0,
-              "statement": "Tenant deathstar answered 1 operation. This is reachable evidence; a detection is verified only when a run verdict carries tenant provenance. tenant-verified: 0",
+              "statement": "Tenant deathstar answered; this call cost 1 metered operation. This is reachable evidence; a detection is verified only when a run verdict carries tenant provenance. tenant-verified: 0",
               "as_of": "2026-11-02T18:04:11+00:00", "truncated": false}}
 ```
 

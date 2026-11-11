@@ -1859,7 +1859,8 @@ them off SimCore responses (`queries_issued` from the routes in §1.16,
 | `evidence` field | meaning |
 |---|---|
 | `basis` | `authored` · `configured` · `reachable` · `verified` · `preview` · `simcore` · `derived`. The first four are the readiness ladder; `simcore` is SimCore's own state, `preview` a dry run, `derived` a tenant reply with the transformation stated in `data` |
-| `queries_issued` | tenant operations this call caused, in the ledger's unit (one catalog op is 1; one XQL query is 1 including its polls; one reconcile pull page is 1). **`null` = the request reached SimCore and the count was not reported — this is not zero** |
+| `queries_issued` | metered tenant operations this call caused, in the ledger's unit (one live catalog read is 1, but `OP-XQL-GET-QUERY-RESULTS` run on its own is 0; one XQL query is 1 including its polls; one reconcile pull page is 1). It is a cost, not a contact signal. **`null` = SimCore accepted the request and did not report a count; whether the tenant was called is not known either — this is not zero** |
+| `tenant_answered` | `true` only when the tool got the tenant's reply back through SimCore (a live executor read, an XQL start or poll, the healthcheck's license-gated 403). Independent of `queries_issued`: a results poll answers at a cost of 0 and is `basis: reachable` |
 | `http_round_trips` | HTTP requests to the tenant when the route reports them; `null` otherwise, never a guess |
 | `tenant` | vault name; never the URL or key id |
 | `ledger` | `{key, used_today, budget, remaining, breaker_open, breaker_until}` or `null`; `null` for SimCore-only tools, not `{used: 0}` |
@@ -1875,9 +1876,9 @@ Statement strings (from `core/mcp_server/envelope.py::statement`, checked in thi
 | SimCore unreachable | `No tenant answered this call. SimCore itself was unreachable. tenant-verified: N` |
 | not backed | `<id> has no backing operation in the XSIAM public API; nothing was queried. tenant-verified: N` |
 | preview | `Preview only. Nothing was sent to the tenant. To execute, a human runs the request in execute_as_human. tenant-verified: N` |
-| `queries_issued` is `null` | `Tenant <name> was called via SimCore; the number of tenant operations is not known — this is not zero. tenant-verified: N` |
+| tenant answered (`tenant_answered`, or `queries_issued >= 1`) | `Tenant <name> answered; this call cost <n> metered operation(s). This is reachable evidence; a detection is verified only when a run verdict carries tenant provenance. tenant-verified: N` — `<n>` may be 0 (a results poll); with `tenant_answered` and a `null` count it reads `… answered; how many metered operations this call cost is not known — this is not zero. …` |
+| `queries_issued` is `null` | `SimCore accepted the request; whether the tenant was called and how many operations it issued is not known — this is not zero. tenant-verified: N` |
 | `queries_issued == 0` | `No tenant answered this call. This is <basis>, not tenant evidence. tenant-verified: N` |
-| tenant answered | `Tenant <name> answered <n> operation(s). This is reachable evidence; a detection is verified only when a run verdict carries tenant provenance. tenant-verified: N` |
 
 **A zero is degraded, not ok, and tolerance hides bugs.** A response without the
 fields a tool reads raises `SIMCORE_SHAPE_UNKNOWN`; it is never read as empty. A
