@@ -18,13 +18,13 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 | [ANA](#ana) Analytics engine (profiles, baselines, thresholds) | 4 | 5 | 2 | 7 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
 | [COR](#cor) Correlation rules | 3 | 4 | 1 | 3 | 2 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [IOC](#ioc) IOC matching and threat intel | 2 | 3 | 1 | 2 | 1 | 0 | 0 | 3 | 0 | 0 | 0 |
-| [PRV](#prv) Prevention (agent modules, report vs block) | 1 | 2 | 1 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [PRV](#prv) Prevention (agent modules, report vs block) | 2 | 2 | 1 | 4 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
 | [INC](#inc) Alert-to-incident grouping | 2 | 5 | 1 | 5 | 0 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 4 | 2 | 0 | 2 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
 | [ALR](#alr) Alert records and read-back | 2 | 3 | 0 | 1 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
 | [IDN](#idn) Identity resolution (CGO ownership, Cloud Identity Engine, Active Directory) | 6 | 3 | 0 | 0 | 8 | 0 | 0 | 1 | 0 | 0 | 0 |
 | [NGF](#ngf) NGFW sensor configuration (what the firewall must be set to emit) | 2 | 1 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **all (104)** | **44** | **49** | **11** | **40** | **31** | **0** | **0** | **32** | **0** | **0** | **1** |
+| **all (105)** | **45** | **49** | **11** | **41** | **31** | **0** | **0** | **32** | **0** | **0** | **1** |
 
 Priority: **P0** a wrong guess produces a silent miss in a POV today · **P1** it weakens fidelity, attribution or MTTD · **P2** refinement.
 
@@ -962,7 +962,7 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 
 **Known**
 
-- Nothing with a crossable source yet.
+- On a Linux agent, the four public WildFire test samples (PE, APK, macOS, ELF) downloaded to /var/tmp and marked executable, but never run, raised no agent issue. The tenant showed nothing for that host after the run. — *operator_report*, Henry, tenant deathstar after SIM-CDR-012 pull run on the lab VM (02:58Z), 2026-11-10 21:27 CST (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -981,6 +981,7 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 | [PM-PRV-02](#pm-prv-02) | P1 | open | Which Linux and macOS prevention modules exist, and which are on in a default profile (e.g. behavioral threat protection, local analysis, reverse shell protection, exploit protection)? |
 | [PM-PRV-03](#pm-prv-03) | P1 | open | When a step is blocked, does downstream telemetry still occur for later steps, and should their expected detections read `not_reached`? |
 | [PM-PRV-04](#pm-prv-04) | P2 | open | Do agent profile exceptions suppress both prevention and detection alerts, or prevention only? |
+| [PM-PRV-05](#pm-prv-05) | P0 | open | On Linux, does the agent's malware protection (local analysis / WildFire verdict) evaluate an ELF when it is written or chmod'd, or only when it is executed? In report mode, does executing the public WildFire test ELF raise an agent issue, and how long after exec? |
 
 #### PM-PRV-01
 
@@ -1014,6 +1015,17 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 - **Why we ask:** Customer tenants often carry broad exceptions.
 - **What the answer moves:** Preflight guidance for exception review.
 - **Touches:** `docs/operator-runbook.md`
+
+#### PM-PRV-05
+
+**P0 · open** — On Linux, does the agent's malware protection (local analysis / WildFire verdict) evaluate an ELF when it is written or chmod'd, or only when it is executed? In report mode, does executing the public WildFire test ELF raise an agent issue, and how long after exec?
+
+- **Why we ask:** SIM-CDR-012 stages the WildFire test samples and stubs execution (step-02); on a lab Linux agent that produced no issue, so the endpoint half of every NGFW+agent stitch test built on it is empty. A stitch test needs an endpoint trigger that is known to fire.
+- **What the answer moves:** Whether endpoint-trigger steps must execute their artifact, and which benign artifact CortexSim uses as the canonical agent trigger for stitch pairing.
+  - *if* scan on write → Keep staging-only steps; investigate why the lab profile did not alert (module off, exception).
+  - *if* exec only → Endpoint-trigger steps execute the WildFire test ELF under report mode; record the exec in step_outcomes.
+- **Settle it in the lab:** On the lab VM in report mode, execute /var/tmp/.hidden_wildfire_samples/test_elf once and query the tenant for an agent issue on that host for 15 minutes.
+- **Touches:** `scenarios/cdr/cdr-012-wildfire-in-container-misconfig.yml`
 
 ## INC
 

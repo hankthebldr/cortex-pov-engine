@@ -536,7 +536,15 @@ mechanisms:
       Agent-side modules that block in block mode and alert in report mode. Our
       outcome axis credits `prevented` only with two witnesses: a tenant alert
       saying Prevented AND a host-recorded kill of the step.
-    known: []
+    known:
+      - fact: >-
+          On a Linux agent, the four public WildFire test samples (PE, APK, macOS,
+          ELF) downloaded to /var/tmp and marked executable, but never run, raised
+          no agent issue. The tenant showed nothing for that host after the run.
+        source:
+          kind: operator_report
+          ref: Henry, tenant deathstar after SIM-CDR-012 pull run on the lab VM (02:58Z), 2026-11-10 21:27 CST
+          date: "2026-11-10"
     assumes:
       - assumption: >-
           `prevented` requires a tenant alert whose action reads prevented AND a
@@ -2088,6 +2096,34 @@ questions:
     context: Customer tenants often carry broad exceptions.
     lever: Preflight guidance for exception review.
     affects: ["docs/operator-runbook.md"]
+
+  - id: PM-PRV-05
+    mechanism: PRV
+    priority: P0
+    status: open
+    question: >-
+      On Linux, does the agent's malware protection (local analysis / WildFire
+      verdict) evaluate an ELF when it is written or chmod'd, or only when it is
+      executed? In report mode, does executing the public WildFire test ELF raise
+      an agent issue, and how long after exec?
+    context: >-
+      SIM-CDR-012 stages the WildFire test samples and stubs execution
+      (step-02); on a lab Linux agent that produced no issue, so the endpoint
+      half of every NGFW+agent stitch test built on it is empty. A stitch test
+      needs an endpoint trigger that is known to fire.
+    lever: >-
+      Whether endpoint-trigger steps must execute their artifact, and which
+      benign artifact CortexSim uses as the canonical agent trigger for stitch
+      pairing.
+    decides:
+      - if: scan on write
+        then: Keep staging-only steps; investigate why the lab profile did not alert (module off, exception).
+      - if: exec only
+        then: Endpoint-trigger steps execute the WildFire test ELF under report mode; record the exec in step_outcomes.
+    experiment: >-
+      On the lab VM in report mode, execute /var/tmp/.hidden_wildfire_samples/test_elf
+      once and query the tenant for an agent issue on that host for 15 minutes.
+    affects: ["scenarios/cdr/cdr-012-wildfire-in-container-misconfig.yml"]
 
   # ── INC — incident grouping ──────────────────────────────────────────────────
   - id: PM-INC-01
