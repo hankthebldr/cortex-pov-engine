@@ -99,10 +99,12 @@ Anti-goals, any of which makes this a failure even if it runs:
   credential and the read-only `endpoints/get_endpoints`, `xql/get_datasets` and
   XQL operations. Nothing polls without the operator asking. Each check reports
   `queries_issued`, like connector preflight.
-- **Quota.** One query per door per check, capped per call, under the existing
-  per-tenant ledger. Quota exhaustion makes a door `unknown`, never closed or open.
-- **Depends on PR #183.** Door producers reuse its pipe vocabulary
-  (`core/eal_simulator/ingestion_routes.py`). Build after it merges, or stack on it.
+- **Quota.** At most two calls per door per check, capped per call, under the
+  existing per-tenant ledger. Quota exhaustion makes a door `unknown`, never
+  closed or open.
+- **Builds on PR #183** (merged into `dev` as 30b10cc on 2026-11-11). Door
+  producers reuse its pipe vocabulary (`core/eal_simulator/ingestion_routes.py`)
+  and its route gate (`analytics_alerts._route_gate`).
 - **One instance per POV.** Door state lives in the instance database, like
   collector targets.
 
@@ -110,19 +112,25 @@ Anti-goals, any of which makes this a failure even if it runs:
 
 A door is one way data reaches the tenant, named by what it delivers:
 
-| Door id | Checked by (real tenant dataset or call) | Scope |
-|---|---|---|
-| `xdr_agent` | `get_endpoints` finds an agent on the beacon's host, status connected | per beacon |
-| `xdr_agent_xth` | the `xdr_agent` check plus an operator attestation of the XTH add-on (the endpoint record does not show it) | per beacon |
-| `ngfw_native` | NGFW preflight forwarding stages ok, then recent rows in `panw_ngfw_traffic_raw` | per firewall |
-| `ngfw_stitch` | `ngfw_native` open, plus the NGFW wizard's source status ready for the beacon | per beacon |
-| `cloud_aws`, `cloud_gcp`, `cloud_azure` | recent rows in `cloud_audit_logs` for that provider | per tenant |
-| `saas_okta`, `saas_entra`, `saas_o365`, `saas_google_workspace` | recent rows in `okta_sso_raw`, `msft_azure_ad_raw`, `msft_o365_*_raw`, the Google Workspace datasets | per tenant |
-| `windows_events` | recent rows in `microsoft_windows_raw`; the producer (WEC, agent+XTH, XDR Collector) is recorded because built-in Kerberos detectors need WEC or agent+XTH | per tenant |
-| `syslog_<vendor>_<product>` | recent rows in that vendor's dataset (`cisco_asa_raw`, `vmware_esxi_raw`, `ivanti_connect_secure_raw`) | per tenant |
-| `http_collector:<target>` | the collector target's preflight `accepted`, then recent rows in its `<vendor>_<product>_raw` | per collector target |
-| `proofpoint_tap` | recent rows in `proofpoint_tap_raw` | per tenant |
-| `prisma_browser`, `xpanse`, `tim_feed`, `prisma_airs`, `koi_aes`, `tenant_incidents` | recent rows in their documented dataset where one is documented; `unknown` otherwise | per tenant |
+| Door id | REACHABLE when | VERIFIED when (recent rows in) | Scope |
+|---|---|---|---|
+| `xdr_agent` | `get_endpoints` finds an agent on the beacon's host, status connected | `xdr_data` rows from that host | per beacon |
+| `xdr_agent_xth` | `xdr_agent` reachable, plus an operator attestation of the XTH add-on (the endpoint record does not show it) | as `xdr_agent` | per beacon |
+| `ngfw_traffic`, `ngfw_threat`, `ngfw_url`, `ngfw_globalprotect` | NGFW preflight forwarding stages ok for that log type | `panw_ngfw_traffic_raw`, `_threat_raw`, `_url_raw`, `_globalprotect_raw` respectively | per firewall |
+| `ngfw_stitch` | the NGFW wizard's source status is ready for the beacon | `network_story` rows for the beacon's host | per beacon |
+| `cloud_aws`, `cloud_gcp`, `cloud_azure` | a tenant credential with XQL exists | `cloud_audit_logs` rows for that provider | per tenant |
+| `saas_okta`, `saas_entra`, `saas_o365`, `saas_google_workspace` | as above | `okta_sso_raw`, `msft_azure_ad_raw`, `msft_o365_*_raw`, the Google Workspace datasets | per tenant |
+| `windows_events` | as above | `microsoft_windows_raw` | per tenant |
+| `syslog_<vendor>_<product>` | as above | that vendor's dataset (`cisco_asa_raw`, `vmware_esxi_raw`, `ivanti_connect_secure_raw`) | per tenant |
+| `http_collector:<target>` | the collector target's preflight `accepted` | the target's `<vendor>_<product>_raw` | per collector target |
+| `proofpoint_tap` | as cloud | `proofpoint_tap_raw` | per tenant |
+| `prisma_browser`, `xpanse`, `tim_feed`, `prisma_airs`, `koi_aes`, `tenant_incidents` | as cloud | their documented dataset where one is documented; `unknown` otherwise | per tenant |
+
+`windows_events` records its producer (Broker VM WEC, agent with XTH, or XDR
+Collector), as the operator declares it. Analytics and ABIOC detections on
+Windows events open only when the producer is WEC or agent with XTH: the
+vendor's Kerberos and DCSync detectors name those two. An XDR Collector
+producer opens XQL and correlation only.
 
 "Recent rows" means at least one row in the last 60 minutes (§10). A dataset
 that exists but received nothing reads closed: connector preflight's
@@ -140,20 +148,60 @@ Each door uses the Readiness ladder's four rungs:
 
 The door is open for scoring at VERIFIED, or when the operator attests it
 (`attested_by`, recorded, shown as attested, never as verified). An attestation
-exists so a tenant key without XQL does not make every door closed.
+exists so a tenant key without XQL does not make every door closed. A check
+that completes with a closed verdict after an attestation overrides it; a check
+that could not run (`unknown`) does not.
 
 ### 5. Joining detections to doors
 
-Each row of `spec/dataset_requirements.yml` gains `doors:`, an OR-set of door
-ids (any one open satisfies it). Examples: `xdr_data: [xdr_agent]`;
-`msft_windows_security: [windows_events, xdr_agent_xth]`;
-`panw_ngfw_traffic_raw: [ngfw_native]`; `network_story: [ngfw_stitch]`. The
-loader rejects an unknown door id and a row with no `doors:`.
+Each row of `spec/dataset_requirements.yml` gains **exactly one** of:
 
-A detection's door is its dataset's OR-set. Agent-scoped doors resolve against
-the beacon the run targets. A detection whose dataset cannot be derived (no
-dataset, unresolved card object) gets `door: underived`. It is scored as today
-and counted, so the gap is visible.
+- `doors:`, an OR-set of door ids (any one open satisfies it). Examples:
+  `xdr_data: [xdr_agent]`; `msft_windows_security: [windows_events, xdr_agent_xth]`;
+  `panw_ngfw_traffic_raw: [ngfw_traffic]`; `network_story: [ngfw_stitch]`;
+  `kubernetes_audit_logs: [syslog_kubernetes_kubernetes, cloud_aws]`.
+- `doors_unknown: <reason>`, for a row whose producer is not confirmed
+  (`saas_audit_logs`, `cloud_audit`, `ad_audit`, `cortexsim_airs_raw`,
+  `esxi_syslog`, `threat_intel`, `pan_dns`). The registry forbids writing a
+  name from memory, and this keeps that rule.
+
+The loader rejects an unknown door id, a row with neither key, a row with both,
+and a placeholder reason, as `TA-13`..`TA-16` do for payload exemptions.
+
+How a detection gets its door, in order:
+
+1. **A step that POSTs to a collector is judged by its route, not by the card's
+   dataset.** The synthetic records land in the collector target's
+   `<vendor>_<product>_raw` whatever the card claims, so a real firewall or a
+   real CloudTrail must not open them. The door is `http_collector:<target>`,
+   taken from the collector-target resolution the run already stores. The
+   detection is scorable only when the card's dataset equals the target's
+   dataset, and the route can feed the detection type: BIOC and IOC never
+   (the data is not stitched); Analytics and ABIOC only with the XDM rule
+   attested (`analytics_alerts._route_gate`); XQL and correlation yes. A
+   collector step SimCore did not resolve (an agent-run step reading
+   `$COLLECTOR_URL`) has an unknown route and is excluded.
+2. **Otherwise the card's datasets decide.** Every dataset a detection reads
+   (`walk_card` returns all anchors) must have an open door: a join with an
+   empty side returns nothing, so this is AND across datasets and OR within
+   each dataset's doors.
+3. **`cloud_audit_logs` is split by provider.** A detection's provider is read
+   from a `cloud_provider` filter in its query, else from the card's provider
+   tag (`aws`, `gcp`, `azure`). A detection naming none is `underived`, never
+   admitted by whichever provider happens to be open.
+4. **Agent-scoped doors resolve against the step's own target**, since a
+   fan-out runs steps on different beacons. A k8s pod beacon matches by the node
+   name in its runtime facts; without one it is `unknown`. A push run has no
+   beacon, so its agent-scoped doors open only by an attestation naming the host.
+5. A detection with no derivable dataset (unresolved card object, no anchor, a
+   `doors_unknown` row) is `underived`. It is scored as today and counted, so
+   the gap is visible.
+
+On today's corpus rule 1 excludes nearly every collector-delivered detection,
+because the card datasets (`okta_sso`, `cloud_audit_logs`, `panw_ngfw_traffic_raw`)
+are not names a custom collector creates. They come back as the card datasets
+are corrected (LogSimv2 port decision D-2), or as the native-shaped transports
+in that port's phase 2 make them real.
 
 A scenario's door readiness is derived, never authored:
 
@@ -170,11 +218,12 @@ A door verified after launch does not bring rows back, because it does not
 prove data flowed during the run.
 
 In the silent-row sweep (`connectors/service.py::_judge_silent_results`),
-before the soak rule: a silent row whose doors were all closed at launch
-becomes `pending` with reason `DOOR_NOT_VERIFIED`. That reason joins the
-denominator exclusions in `engine/outcome.py::is_in_denominator`, and
-`measures.py` counts it under `door_not_verified`. A row with an observed alert
-is credited as today, because the alert is proof the door delivered.
+before the soak rule: a silent row whose door was not open at launch becomes
+`pending` with reason `DOOR_NOT_VERIFIED`, and a silent row its route cannot
+feed (§5 rule 1) becomes `pending` with `DOOR_ROUTE_CANNOT_FEED`. Both join
+the denominator exclusions in `engine/outcome.py::is_in_denominator`, and
+`measures.py` counts them under `door_not_verified`. A row with an observed
+alert is credited as today, because the alert is proof the door delivered.
 
 The launch preflight gains a sixth check, `data path`: `pass` when every
 derived door is open, `warn` with the excluded count otherwise. A scenario
@@ -192,7 +241,9 @@ closed door, with the door's remediation and the wizard that opens it.
   `GET /api/scenarios/{id}/doors` gives the derived readiness. The library list
   carries `door_readiness` per scenario.
 - **Library.** A chip per scenario (ready / partial k of n / needs doors) and a
-  "runnable here" filter. Nothing is hidden. Each closed door links to its setup step.
+  "runnable here" filter. Nothing is hidden. Each closed door links to its setup
+  step. Agent-scoped doors are judged against the console's selected target;
+  with no target selected the chip covers tenant-scoped doors only and says so.
 - **Get Started.** Steps become doors: the CortexSim beacon, then the XDR agent
   on that host, then the tenant, then optional doors. The localStorage
   confirmations and the Broker VM port-514 copy go. Each door step's primary
@@ -205,7 +256,7 @@ closed door, with the door's remediation and the wizard that opens it.
 
 | Phase | Delivers |
 |---|---|
-| 1 | Door registry, `doors:` on every dataset row, scenario derivation, `GET /api/doors` (states read CONFIGURED from existing rows), library chip, launch preflight check (advisory). Zero outbound |
+| 1 | Door registry, `doors:` / `doors_unknown:` on every dataset row, scenario derivation, `GET /api/doors` (states read CONFIGURED from existing rows), library chip showing each door's rung ("configured", "not checked"), launch preflight check (advisory). Nothing is excluded from scoring in phase 1. Zero outbound |
 | 2 | Door checks and attestation, the launch snapshot, `DOOR_NOT_VERIFIED` exclusion in scoring, report readout |
 | 3 | Get Started rebuilt around doors, XDR agent step, wizard links |
 | Later | XDR Collector and Broker VM WEC as named producers; syslog and Cribl transports from the LogSimv2 port as producers |
@@ -222,8 +273,18 @@ read-only oracle; until then `tenant-verified` is 0.
 
 ### 10. Calls made without Henry (check these)
 
-- An attestation opens a door for scoring, labelled attested.
+- An attestation opens a door for scoring, labelled attested; a later completed
+  check that reads closed overrides it.
 - A detection with no derivable door is scored as today and counted as `underived`.
+- Collector-delivered detections are judged by their route, not the card's
+  dataset (§5 rule 1), which excludes most of them on today's corpus.
+- `xdr_agent` is VERIFIED only by `xdr_data` rows from the host; a connected
+  endpoint is REACHABLE. pov-target-01 was connected with steps missing from
+  telemetry.
+- NGFW is four doors, one per log type; cloud audit is split by provider.
+- A detection reading two datasets needs both doors open.
+- Push runs open agent-scoped doors only by an attestation naming the host.
+- Phase 1 excludes nothing; the chip shows each door's rung.
 - The launch snapshot decides scoring; checking a door after launch does not
   re-include rows.
 - A run whose every detection is excluded warns and launches.
@@ -244,4 +305,6 @@ the 147 that do not are 119 IOC, 9 XQL, 9 Analytics, 5 BIOC, 2 correlation,
 2 Prevention and 1 ABIOC. A further 146 resolve to an object with no dataset
 (139 correlation, 7 XQL). Kubernetes audit (`SIM-CDR-025`, `SIM-CDR-026`) is
 counted under Broker VM Syslog; EKS audit through CloudWatch lands in
-`cloud_audit_logs` instead, so its door is an OR-set in §5.
+`cloud_audit_logs` instead, so its door is an OR-set in §5. `pan_dns` (17
+detections) is counted under NGFW in §1, but it is not a documented dataset,
+so §5 marks it `doors_unknown`.
