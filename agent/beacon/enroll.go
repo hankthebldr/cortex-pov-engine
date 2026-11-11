@@ -225,28 +225,54 @@ func LoadOrEnroll(stateDir string, enroll func() (string, error)) (agentID strin
 	if err != nil {
 		return "", false, err
 	}
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return id, false, &StateDirError{Op: "store agent id", Err: err}
-	}
-	// OpenFile's mode is masked by umask and ignored for a pre-existing file.
-	if err := f.Chmod(0o600); err == nil {
-		_, err = f.WriteString(id + "\n")
-		if cerr := f.Close(); err == nil {
-			err = cerr
-		}
-	} else {
-		f.Close()
-	}
-	if err == nil {
-		err = os.Rename(tmp, path)
-	}
-	if err != nil {
-		os.Remove(tmp)
+	if err := writeIDFile(stateDir, id); err != nil {
 		return id, false, &StateDirError{Op: "store agent id", Err: err}
 	}
 	return id, false, nil
+}
+
+// writeIDData is the data-writing step of writeIDFile; tests replace it to force
+// a write failure.
+var writeIDData = func(f *os.File, id string) error {
+	_, err := f.WriteString(id + "\n")
+	return err
+}
+
+// writeIDFile stores id as <dir>/agent-id: temp file, chmod 0600, write, sync,
+// close, rename. On any error the temp file is removed and nothing is renamed,
+// so a failure can never leave an empty or partial agent-id behind (which the
+// next restart would read as "no id" and re-enroll).
+func writeIDFile(dir, id string) error {
+	path := filepath.Join(dir, agentIDFile)
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	fail := func(err error) error {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	// OpenFile's mode is masked by umask and ignored for a pre-existing file.
+	if err := f.Chmod(0o600); err != nil {
+		return fail(err)
+	}
+	if err := writeIDData(f, id); err != nil {
+		return fail(err)
+	}
+	if err := f.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // EnrollWithRetry calls fn up to attempts times, sleeping delay between tries,

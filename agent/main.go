@@ -280,6 +280,8 @@ func enrollFailureCode(err error) string {
 		return "ENROLL_TOKEN_EMPTY"
 	case errors.Is(err, beacon.ErrEnrollTokenUnreadable):
 		return "ENROLL_TOKEN_UNREADABLE"
+	case errors.As(err, &ee) && ee.Status >= 300 && ee.Status < 400:
+		return "ENROLL_REDIRECTED"
 	case errors.As(err, &ee) && ee.Code != "":
 		return ee.Code
 	}

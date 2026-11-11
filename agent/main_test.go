@@ -97,6 +97,15 @@ func TestEnrollAgentFailureCodes(t *testing.T) {
 			t.Errorf("code=%q err=%v", code, err)
 		}
 	})
+	t.Run("redirect", func(t *testing.T) {
+		u, tf, sd := enrollFixture(t, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "http://127.0.0.1:1/x", 307)
+		})
+		_, code, err := enrollAgent(u, tf, sd, "h", nil, nil, nil)
+		if err == nil || code != "ENROLL_REDIRECTED" {
+			t.Errorf("code=%q err=%v", code, err)
+		}
+	})
 	t.Run("empty token", func(t *testing.T) {
 		u, tf, sd := enrollFixture(t, ok)
 		os.WriteFile(tf, []byte(" \n"), 0o600)

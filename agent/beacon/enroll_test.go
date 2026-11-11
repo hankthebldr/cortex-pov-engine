@@ -398,3 +398,59 @@ func TestRegisterIncludesRuntimeFactsWhenSet(t *testing.T) {
 		t.Error("reRegister dropped runtime_facts")
 	}
 }
+
+func TestWriteIDFileFailureLeavesNothingBehind(t *testing.T) {
+	old := writeIDData
+	writeIDData = func(*os.File, string) error { return errors.New("disk full") }
+	defer func() { writeIDData = old }()
+
+	state := t.TempDir()
+	if err := writeIDFile(state, "pod-1"); err == nil {
+		t.Fatal("writeIDFile must return the write error")
+	}
+	if entries, _ := os.ReadDir(state); len(entries) != 0 {
+		t.Errorf("state dir must be empty after a failed write, has %v", entries)
+	}
+
+	// A pre-existing good id must survive a failed rewrite.
+	os.WriteFile(filepath.Join(state, "agent-id"), []byte("old\n"), 0o600)
+	if err := writeIDFile(state, "pod-2"); err == nil {
+		t.Fatal("expected error")
+	}
+	if b, _ := os.ReadFile(filepath.Join(state, "agent-id")); string(b) != "old\n" {
+		t.Errorf("existing agent-id was clobbered: %q", b)
+	}
+}
+
+func TestLoadOrEnrollSurfacesWriteFailureAsStateDirError(t *testing.T) {
+	old := writeIDData
+	writeIDData = func(*os.File, string) error { return errors.New("disk full") }
+	defer func() { writeIDData = old }()
+
+	state := t.TempDir()
+	_, _, err := LoadOrEnroll(state, func() (string, error) { return "pod-1", nil })
+	var se *StateDirError
+	if !errors.As(err, &se) {
+		t.Fatalf("err = %v, want *StateDirError", err)
+	}
+	if entries, _ := os.ReadDir(state); len(entries) != 0 {
+		t.Errorf("no agent-id or temp file may remain, got %v", entries)
+	}
+}
+
+func TestWriteIDFileSuccessContentAndMode(t *testing.T) {
+	state := t.TempDir()
+	if err := writeIDFile(state, "pod-9"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(state, "agent-id"))
+	if string(b) != "pod-9\n" {
+		t.Errorf("content = %q", b)
+	}
+	if fi, _ := os.Stat(filepath.Join(state, "agent-id")); fi.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v", fi.Mode().Perm())
+	}
+	if entries, _ := os.ReadDir(state); len(entries) != 1 {
+		t.Errorf("stale temp file: %v", entries)
+	}
+}
