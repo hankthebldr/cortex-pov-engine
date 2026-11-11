@@ -33,6 +33,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -279,14 +280,28 @@ func (c *BeaconClient) stageOne(ctx context.Context, a Artifact, set *stagedSet)
 	var digest string
 
 	if !c.DisableArtifactCache && cacheDir != "" {
-		if valid, size := verifyFileSHA256(cachedPath, a.SHA256); valid {
-			if _, err := copyFile(cachedPath, part, openFlags(), 0o644); err == nil {
-				fromCache = true
-				wrote = size
-				digest = strings.ToLower(a.SHA256)
-			} else {
-				_ = os.Remove(part)
-			}
+		// BEACON-15: the digest is taken over the bytes that were WRITTEN to
+		// part, in the same pass that writes them. Hashing the cache file and
+		// then reopening it to copy let whoever can write the cache directory
+		// swap the file in between: the swapped bytes were staged under the
+		// pinned digest's name and a step executed them. Nothing is trusted
+		// about the cache entry except what this copy just read.
+		n, got, err := copyFileHashing(cachedPath, part, openFlags(), 0o644)
+		switch {
+		case err == nil && got == strings.ToLower(a.SHA256):
+			fromCache = true
+			wrote = n
+			digest = got
+		case err == nil:
+			_ = os.Remove(part)
+			// A cache entry is named after its digest. One that does not hash
+			// to its name is corrupt or planted: drop it and fetch from SimCore,
+			// which is verified the same way.
+			log.Printf("[beacon] artifact cache entry %s does not hash to its name (got %s) — discarded; "+
+				"fetching %s from SimCore", cachedPath, shortDigest(got), a.Name)
+			_ = os.Remove(cachedPath)
+		default:
+			_ = os.Remove(part) // a miss (no entry) or an unreadable one
 		}
 	}
 
@@ -473,7 +488,49 @@ func (c *BeaconClient) fetchArtifactOnce(ctx context.Context, a Artifact, part s
 	return nil, false, wrote, digest
 }
 
-// getArtifactCacheDir resolves the local content-addressable cache directory.
+// windowsArtifactCacheDir is where a Windows beacon keeps its artifact cache:
+// a `cache` directory NEXT TO THE BEACON'S OWN BINARY, or "" (no cache) when
+// that cannot be named safely.
+//
+// BEACON-15: Windows used to take the POSIX chain below, whose first candidate
+// is the literal /opt/cortexsim/cache. On Windows that is drive-rooted —
+// C:\opt\cortexsim\cache for a service whose working directory is on C: — a
+// SYSTEM beacon can create it, and a new folder under C:\ inherits
+// "Authenticated Users: Modify". Any local user could then plant or swap what a
+// SYSTEM step executes, or turn the beacon's cache write into a write somewhere
+// else through a junction.
+//
+// Next to the binary, the cache is exactly as trustworthy as the beacon itself:
+// whoever can write there can already replace cortexsim-agent.exe. For the
+// service install that is %ProgramData%\CortexSim, which the installer strips of
+// inheritance and grants to SYSTEM and Administrators (Users: read/execute); for
+// the per-user install it is %LOCALAPPDATA%\CortexSim, inside the user's
+// profile. The beacon sets no ACL of its own — it creates one directory under a
+// parent whose ACL it inherits.
+//
+// A binary sitting at a drive root (C:\cortexsim-agent.exe) gets NO cache:
+// C:\cache would inherit the same root ACL this exists to avoid. So does a
+// relative or UNC path. Pure string logic, so the rule is testable off Windows.
+func windowsArtifactCacheDir(exePath string) string {
+	p := strings.ReplaceAll(strings.TrimSpace(exePath), "/", `\`)
+	if !winDriveRE.MatchString(p) {
+		return ""
+	}
+	dir := cleanWindows(p)
+	i := strings.LastIndex(dir, `\`)
+	if i <= 2 { // "C:\beacon.exe": the directory is the drive root
+		return ""
+	}
+	return dir[:i] + `\cache`
+}
+
+// executablePath is os.Executable. A var only so a test can place the "binary".
+var executablePath = os.Executable
+
+var cacheDisabledOnce sync.Once
+
+// getArtifactCacheDir resolves the local content-addressable cache directory,
+// creating it. "" means this host has no cache; every artifact is then fetched.
 func (c *BeaconClient) getArtifactCacheDir() string {
 	if c.artifactCacheDirFunc != nil {
 		return c.artifactCacheDirFunc()
@@ -481,6 +538,25 @@ func (c *BeaconClient) getArtifactCacheDir() string {
 	if env := c.getenv("CORTEXSIM_CACHE_DIR"); env != "" {
 		_ = os.MkdirAll(env, 0o755)
 		return env
+	}
+	if hostGOOS() == "windows" {
+		// Never the POSIX chain: its candidates are drive-rooted or %TEMP%.
+		exe, err := executablePath()
+		dir := ""
+		if err == nil {
+			dir = windowsArtifactCacheDir(exe)
+		}
+		if dir != "" {
+			if err = os.MkdirAll(dir, 0o755); err == nil {
+				return dir
+			}
+		}
+		cacheDisabledOnce.Do(func() {
+			log.Printf("[beacon] artifact cache disabled on this host (binary=%q err=%v): it is kept next to the "+
+				"beacon binary, never in a drive-rooted or temp directory; every artifact will be fetched. "+
+				"Set CORTEXSIM_CACHE_DIR to a directory only administrators can write to enable it.", exe, err)
+		})
+		return ""
 	}
 	// Try /opt/cortexsim/cache if writable
 	optCache := "/opt/cortexsim/cache"
@@ -525,21 +601,29 @@ func copyFile(src, dst string, flags int, mode os.FileMode) (int64, error) {
 	return n, out.Close()
 }
 
-// verifyFileSHA256 reads path and reports whether its sha256 digest matches expected.
-func verifyFileSHA256(path, expectedSHA256 string) (bool, int64) {
-	f, err := os.Open(path)
+// copyFileHashing copies src to dst and returns the lowercase-hex sha256 of the
+// bytes it WROTE. The hash and the copy are one read of src, so the digest is a
+// statement about dst, not about whatever src held a moment earlier.
+func copyFileHashing(src, dst string, flags int, mode os.FileMode) (int64, string, error) {
+	in, err := os.Open(src)
 	if err != nil {
-		return false, 0
+		return 0, "", err
 	}
-	defer f.Close()
+	defer in.Close()
 
-	h := sha256.New()
-	n, err := io.Copy(h, f)
+	out, err := os.OpenFile(dst, flags, mode)
 	if err != nil {
-		return false, 0
+		return 0, "", err
 	}
-	digest := hex.EncodeToString(h.Sum(nil))
-	return strings.EqualFold(digest, expectedSHA256), n
+	h := sha256.New()
+	n, err := io.Copy(io.MultiWriter(out, h), io.LimitReader(in, maxArtifactBytes+1))
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return n, "", err
+	}
+	return n, hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // findExecutableFallback identifies an alternative staging directory when a noexec mount is detected.
