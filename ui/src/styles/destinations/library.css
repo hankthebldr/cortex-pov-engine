@@ -779,3 +779,7 @@
   font-size: 10px;
   letter-spacing: normal;
 }
+
+/* Door readiness chip — NOT CHECKED stays quiet; the error tone reuses chip--missed. */
+.theme-console .door-chip { white-space: nowrap; font-family: var(--font-mono, 'JetBrains Mono', monospace); }
+.theme-console .door-chip--unknown { opacity: 0.75; }

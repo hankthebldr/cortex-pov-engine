@@ -3,6 +3,7 @@ import PinButton from './PinButton.jsx'
 import { formatAgo } from './useScenarioRunHistory.js'
 import { isRunComplete } from './runStatus.js'
 import { collectPlanes, collectTechniques } from './ScenarioGrid.jsx'
+import DoorChip from './doors/DoorChip.jsx'
 
 const PLANE_CHIP_CLASS = {
   EDR:        'chip--plane-edr',
@@ -33,6 +34,8 @@ export default function ScenarioTable({
   launchingId = null,
   recentLaunchId = null,
   targetAgentName = '',
+  doorReadiness = null,
+  doorError = null,
 }) {
   if (scenarios.length === 0) {
     return (
@@ -59,6 +62,7 @@ export default function ScenarioTable({
             <th className="th-plane" scope="col">Plane</th>
             <th className="th-techniques" scope="col">Techniques</th>
             <th className="th-actor" scope="col">Anchor / Actor</th>
+            <th className="th-doors" scope="col">Doors</th>
             <th className="th-history" scope="col">History</th>
             <th className="th-actions" scope="col">Actions</th>
           </tr>
@@ -170,6 +174,15 @@ export default function ScenarioTable({
                   <span className="sc-table-actor" title={scenario.threat_report || actor}>
                     {actor}
                   </span>
+                </td>
+
+                {/* Door readiness */}
+                <td className="td-doors">
+                  <DoorChip
+                    scenarioId={id}
+                    readiness={doorReadiness ? doorReadiness[id] : undefined}
+                    error={doorError}
+                  />
                 </td>
 
                 {/* History */}

@@ -194,6 +194,42 @@ export async function getHealth() {
   return request('/api/health')
 }
 
+// ─── Ingestion doors (read-only, zero outbound calls) ────────────────────────
+
+function doorsShapeError(path, why) {
+  return apiError(`${path} returned an unrecognised shape: ${why}`, { code: 'DOORS_SHAPE_UNRECOGNISED', detail: { path } })
+}
+
+/** GET /api/doors → {doors[], registry_loaded, tenant_verified, outbound_calls} */
+export async function getDoors() {
+  const data = await request('/api/doors')
+  if (!data || !Array.isArray(data.doors)) throw doorsShapeError('/api/doors', 'doors is not a list')
+  return data
+}
+
+/**
+ * GET /api/doors/readiness[?agent_id=] → {scenarios: {scenario_id: readiness}, ...}
+ * An unrecognised envelope raises: an empty map would read as "nothing to check".
+ */
+export async function getDoorReadiness(agentId = null) {
+  const qs = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ''
+  const data = await request(`/api/doors/readiness${qs}`)
+  if (!data || typeof data.scenarios !== 'object' || data.scenarios === null || Array.isArray(data.scenarios)) {
+    throw doorsShapeError('/api/doors/readiness', 'scenarios is not an object')
+  }
+  return data
+}
+
+/** GET /api/scenarios/{id}/doors[?agent_id=] → {readiness, detections[], ...} */
+export async function getScenarioDoors(scenarioId, agentId = null) {
+  const qs = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ''
+  const data = await request(`/api/scenarios/${encodeURIComponent(scenarioId)}/doors${qs}`)
+  if (!data || typeof data.readiness !== 'object' || data.readiness === null) {
+    throw doorsShapeError(`/api/scenarios/${scenarioId}/doors`, 'readiness is missing')
+  }
+  return data
+}
+
 // ─── Scenarios ───────────────────────────────────────────────────────────────
 
 /**

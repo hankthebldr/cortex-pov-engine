@@ -30,6 +30,7 @@
  */
 
 import { SUPPLY, supplyOf } from '../supplyState.js'
+import { readinessKind, closedDoorIds } from '../doors/doorModel.js'
 
 export const PF = { PASS: 'pass', WARN: 'warn', BLOCK: 'block', UNKNOWN: 'unknown' }
 
@@ -67,6 +68,7 @@ const NO_WRAPPER_IDENTITIES = new Set(['direct', 'root', 'container-runtime', ''
  * @param {Array|null}  input.integrations  /api/credentials/integrations rows
  * @param {string}      input.identity      the identity the operator selected
  * @param {string}      input.pushFormat    'bash' | 'k8s'
+ * @param {object|null} input.doorReadiness this scenario's door readiness (GET /api/scenarios/{id}/doors → readiness)
  * @returns {{verdict, checks, blocking, warnings, unknowns}}
  */
 export function preflightScenario({
@@ -78,6 +80,7 @@ export function preflightScenario({
   integrations = null,
   identity = '',
   pushFormat = 'bash',
+  doorReadiness = null,
 } = {}) {
   const checks = []
   if (!scenario) {
@@ -89,6 +92,7 @@ export function preflightScenario({
   checks.push(platformCheck(scenario, target, agents, pushFormat))
   checks.push(identityCheck(scenario, target, agents, identity))
   checks.push(measurementCheck(scenario, integrations))
+  checks.push(dataPathCheck(scenario, doorReadiness))
 
   const verdict = checks.reduce(
     (acc, c) => (SEVERITY[c.status] > SEVERITY[acc] ? c.status : acc),
@@ -468,6 +472,50 @@ function isMttdShaped(kpi, threshold) {
     || hay.includes('mean time to detect')
     || hay.includes('time to detect')
     || hay.includes('detection latency')
+}
+
+// ─── 6 · Data path (advisory) ────────────────────────────────────────────────
+
+/**
+ * Which of this scenario's detections can be scored, given which ingestion
+ * doors are open. ADVISORY ONLY: never `block` — a door check disapproves, it
+ * is not SimCore's guard, and a gate that stops legitimate work in front of a
+ * customer is worse than the gap it flags. Absent or unreadable input is
+ * `unknown`, never `pass`. Phase 1 excludes nothing from scoring; the warning
+ * says what WILL NOT be scored once exclusion lands, and today it is advice.
+ */
+export function dataPathCheck(scenario, doorReadiness) {
+  const label = 'Data path'
+  const kind = readinessKind(doorReadiness)
+  if (kind === 'absent' || kind === 'not_evaluated') {
+    return mk('data-path', label, PF.UNKNOWN, 'not reported', 'door readiness not reported',
+      'Open Data streams to see which ingestion doors are open.')
+  }
+  if (kind === 'unrecognised') {
+    const shown = doorReadiness && typeof doorReadiness === 'object'
+      ? JSON.stringify(doorReadiness.state) : typeof doorReadiness
+    return mk('data-path', label, PF.UNKNOWN, 'unrecognised readiness',
+      `unrecognised door readiness state ${shown}`,
+      'This console and SimCore disagree on the readiness vocabulary; upgrade the older of the two.')
+  }
+  if (kind === 'ready') {
+    return mk('data-path', label, PF.PASS, 'all doors open',
+      'every door this scenario needs is open')
+  }
+  const { scorable, total } = doorReadiness
+  if (scorable === 0) {
+    return mk('data-path', label, PF.WARN, `0 of ${total} detections can be scored`,
+      'this run scores nothing',
+      'Open the doors this scenario reads from, or run it as evidence only.')
+  }
+  const excluded = total - scorable
+  const doors = closedDoorIds(doorReadiness)
+  if (doorReadiness.route_blocked > 0) doors.push('collector route')
+  if (doorReadiness.underived > 0) doors.push('underived dataset')
+  if (doorReadiness.unevaluated > 0) doors.push('agent-scoped (no agent selected)')
+  return mk('data-path', label, PF.WARN, `${scorable} of ${total} detections can be scored`,
+    `${excluded} of ${total} detections will not be scored: ${doors.length ? doors.join(', ') : 'unknown door'}`,
+    'Open the closed doors, or accept a partial score.')
 }
 
 // ─── helper ──────────────────────────────────────────────────────────────────
