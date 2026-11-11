@@ -194,6 +194,79 @@ export function beaconShipState(healthModel, os) {
   return out(missing.includes(target) ? 'missing' : 'present', null, { code: row.code || null })
 }
 
+// ── Will SimCore answer to this address? ─────────────────────────────────────
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
+const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/
+
+const normHost = (h) => String(h ?? '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+
+/** The server's own rule (security/host_guard.py::_matches): `*.x` is subdomains only. */
+function hostMatches(host, patterns) {
+  return patterns.some((raw) => {
+    const p = normHost(raw)
+    if (p.startsWith('*.')) return host.endsWith(p.slice(1)) && host !== p.slice(2)
+    return host === p
+  })
+}
+
+/**
+ * Would SimCore's Host guard answer a request addressed to `serverUrl`?
+ *
+ * SimCore answers 400 HOST_NOT_ALLOWED unless `Host` is localhost, an IP
+ * literal, the machine's own host name / FQDN, or a name in
+ * CORTEXSIM_ALLOWED_HOSTS. A DC who types a DNS name into an install line gets
+ * `curl: (22) ... error: 400` on the target, before the installer body is
+ * served — so nothing is reported back and the console keeps waiting.
+ *
+ * `/api/health` publishes the guard's configuration on `api_auth`
+ * (`host_guard`, `allowed_hosts`). It does NOT publish the machine's own host
+ * name, and inside a container that is the container id anyway. So the honest
+ * states are:
+ *   admitted   — loopback, an IP literal, the name THIS console was reached by
+ *                (the page loading proves SimCore answers to it), a listed
+ *                name, or a disabled guard
+ *   not_listed — a name the published allowlist does not carry; SimCore refuses
+ *                it unless it is the machine's own name
+ *   unknown    — SimCore did not report the guard in a shape this reads; never
+ *                collapsed into admitted
+ *   invalid    — not an http(s) URL at all
+ *
+ * @param {Object|null} healthModel  buildHealthModel() output
+ * @param {string} serverUrl         what the DC typed
+ * @param {string} [consoleHost]     window.location.hostname
+ * @returns {{state: 'admitted'|'not_listed'|'unknown'|'invalid', host: string|null,
+ *            why: string|null, allowed: string[]|null}}
+ */
+export function serverHostVerdict(healthModel, serverUrl, consoleHost = '') {
+  const out = (state, host, why = null, allowed = null) => ({ state, host, why, allowed })
+  let parsed
+  try { parsed = new URL(String(serverUrl ?? '').trim()) } catch { return out('invalid', null, 'not a URL') }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return out('invalid', null, 'not http(s)')
+  const host = normHost(parsed.hostname)
+  if (!host) return out('invalid', null, 'no host')
+
+  if (LOOPBACK_HOSTS.has(host)) return out('admitted', host, 'loopback')
+  if (IPV4.test(host) || host.includes(':')) return out('admitted', host, 'ip')
+  if (consoleHost && host === normHost(consoleHost)) return out('admitted', host, 'console-host')
+
+  const comps = healthModel && healthModel.reachable !== false ? healthModel.components : null
+  const row = Array.isArray(comps)
+    ? comps.find((c) => c && c.key === 'api_auth')
+    : comps && typeof comps === 'object' ? comps.api_auth : null
+  const extra = row && row.status !== 'unreported' ? row.extra : null
+  if (!extra) return out('unknown', host, 'this SimCore does not report its Host guard')
+  if (extra.host_guard === 'disabled') return out('admitted', host, 'guard-disabled')
+  if (extra.host_guard !== 'enforced' || !Array.isArray(extra.allowed_hosts)) {
+    return out('unknown', host, 'this SimCore reported its Host guard in a shape this console does not read')
+  }
+  const allowed = extra.allowed_hosts.map(String)
+  if (allowed.includes('*')) return out('admitted', host, 'guard-disabled', allowed)
+  return hostMatches(host, allowed)
+    ? out('admitted', host, 'listed', allowed)
+    : out('not_listed', host, 'not in CORTEXSIM_ALLOWED_HOSTS', allowed)
+}
+
 // ── Install telemetry ────────────────────────────────────────────────────────
 
 const STATUS_CODES = new Set(['OK', 'DEGRADED_NO_SUPERVISOR'])

@@ -6,7 +6,10 @@ import { parseServerTime } from '../../api/time.js'
 import TenantManager from './TenantManager.jsx'
 import useSetupProgress from './useSetupProgress.js'
 import { agentIsOnline } from './setupProgress.js'
-import { attemptRole, attemptsSince, beaconShipState, installerOS, pullOneLiner, WINDOWS_ELEVATION_LABEL } from './deployCommands.js'
+import {
+  attemptRole, attemptsSince, beaconShipState, installerOS, pullOneLiner, serverHostVerdict,
+  WINDOWS_ELEVATION_LABEL,
+} from './deployCommands.js'
 import {
   CopyLive,
   InstallAttemptsList,
@@ -159,6 +162,11 @@ function AgentStep({ step, onNavigate }) {
   }, [])
 
   const base = server.replace(/\/+$/, '')
+  // The install line is only as good as the address in it, and SimCore's Host
+  // guard refuses names it was not told about — before the installer is served.
+  const hostVerdict = serverHostVerdict(
+    healthModel, base, typeof window !== 'undefined' ? window.location.hostname : '',
+  )
   const installUrl = `${base}${agentInstallUrl({ os })}`
   const command = token ? pullOneLiner({ os, url: installUrl, token: token.token }) : null
 
@@ -200,10 +208,13 @@ function AgentStep({ step, onNavigate }) {
         <span className="gs-label">POVengine address the host can reach</span>
         <input className="gs-input mono" value={server} onChange={(e) => { setServer(e.target.value); resetToken() }} />
         {LOOPBACK.test(base) && (
-          <span className="gs-hint gs-hint--warn">
-            This is a loopback address. It only works if the agent runs on this same machine — for another host, use this machine&apos;s LAN IP or DNS name.
+          <span className="gs-hint gs-hint--warn" data-testid="gs-server-loopback">
+            This is a loopback address. It only works if the agent runs on this same machine — for another host, use this
+            machine&apos;s LAN IP. A DNS name works only if POVengine is set to answer to it
+            (<code>CORTEXSIM_ALLOWED_HOSTS</code>).
           </span>
         )}
+        <ServerHostWarning verdict={hostVerdict} />
       </label>
 
       {ship.state === 'missing' && (isWindows
@@ -243,6 +254,52 @@ function AgentStep({ step, onNavigate }) {
       {error && <p className="gs-hint gs-hint--err">{error}</p>}
       {command && <InstallAttemptsList state={attemptsState} limit={3} />}
     </div>
+  )
+}
+
+/**
+ * What the Host guard will make of the typed address. Renders nothing for an
+ * address SimCore is known to answer to. The refusal happens before the
+ * installer body is served, so it can never show up as an install attempt —
+ * this line is the only place the console can say it.
+ */
+function ServerHostWarning({ verdict }) {
+  if (!verdict || verdict.state === 'admitted') return null
+  const common = { className: 'gs-hint gs-hint--warn', 'data-testid': 'gs-server-host-warn', 'data-state': verdict.state }
+  if (verdict.state === 'invalid') {
+    return (
+      <span {...common}>
+        This is not an http:// or https:// address, so the install command built from it cannot work. Use the form{' '}
+        <code>http://&lt;ip-address&gt;:8888</code>.
+      </span>
+    )
+  }
+  const symptom = (
+    <>
+      A refused name fails on the host as <code>curl: (22) … error: 400</code> (an HTTP 400 from <code>iwr</code> on
+      Windows) before the installer is served, so no install attempt is reported here and this step keeps waiting.
+    </>
+  )
+  if (verdict.state === 'unknown') {
+    return (
+      <span {...common}>
+        This console cannot confirm that POVengine answers to <b className="mono">{verdict.host}</b> ({verdict.why}).
+        A current POVengine refuses host names it was not told about with <code>400 HOST_NOT_ALLOWED</code>. {symptom}{' '}
+        An IP address always works.
+      </span>
+    )
+  }
+  return (
+    <span {...common}>
+      POVengine may refuse <b className="mono">{verdict.host}</b> with <code>400 HOST_NOT_ALLOWED</code>. It answers
+      only to localhost, an IP address, its own host name, and names in <code>CORTEXSIM_ALLOWED_HOSTS</code>
+      {verdict.allowed && verdict.allowed.length
+        ? <> (currently <span className="mono">{verdict.allowed.join(', ')}</span>)</>
+        : <> — and <code>CORTEXSIM_ALLOWED_HOSTS is empty</code></>}
+      . This console cannot see the machine&apos;s own host name, and inside a container that is the container id.{' '}
+      {symptom} Use the machine&apos;s IP address, or add this name to <code>CORTEXSIM_ALLOWED_HOSTS</code> and restart
+      POVengine.
+    </span>
   )
 }
 
