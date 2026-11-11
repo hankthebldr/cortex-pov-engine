@@ -63,6 +63,12 @@ def triage_advisories(
             return []
         level = "warn" if paired else "info"
 
+        # Staleness comes before every state-based return: a weeks-old ABSENT or
+        # live=False says nothing about the tenant today (spec 4.1).
+        seen = coerce_utc(read_at)
+        if seen is None or (coerce_utc(now) - seen) > STALE_AFTER:
+            return [_unknown(tenant, "the stored probe is older than 24 hours")]
+
         if not isinstance(response_layer, dict):
             return [_unknown(tenant, "no response-layer probe is stored")]
         state = response_layer.get("state")
@@ -70,10 +76,6 @@ def triage_advisories(
             return []
         if state != "PRESENT":
             return [_unknown(tenant, f"the stored probe state is {state!r}")]
-
-        seen = coerce_utc(read_at)
-        if seen is None or (coerce_utc(now) - seen) > STALE_AFTER:
-            return [_unknown(tenant, "the stored probe is older than 24 hours")]
 
         at = response_layer.get("auto_triage")
         if not isinstance(at, dict):

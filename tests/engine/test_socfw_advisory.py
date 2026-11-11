@@ -91,3 +91,19 @@ def test_aware_times_compare_the_same_as_naive():
     assert [a["code"] for a in _run(read_at=aware, now=aware)] == [SOCFW_TRIAGE_MAY_SEAL]
     assert _run(read_at=aware - timedelta(hours=25), now=aware)[0]["code"] == \
         SOCFW_RESPONSE_LAYER_UNKNOWN
+
+
+def test_stale_absent_is_unknown_not_silent():
+    old = NOW - STALE_AFTER - timedelta(minutes=1)
+    out = _run(layer={"state": "ABSENT"}, read_at=old)
+    assert out[0]["code"] == SOCFW_RESPONSE_LAYER_UNKNOWN
+
+
+def test_stale_triage_not_live_is_unknown_not_silent():
+    old = NOW - STALE_AFTER - timedelta(minutes=1)
+    out = _run(layer=_layer(live=False), read_at=old)
+    assert out[0]["code"] == SOCFW_RESPONSE_LAYER_UNKNOWN
+
+
+def test_fresh_absent_stays_silent():
+    assert _run(layer={"state": "ABSENT"}, read_at=NOW - timedelta(hours=1)) == []
