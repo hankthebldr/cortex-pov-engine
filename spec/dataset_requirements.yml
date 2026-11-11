@@ -295,7 +295,7 @@ okta_sso:
 
 pan_dns:
   produced_by: strata-ngfw
-  doors_unknown: "The cards read DNS queries the firewall logs when DNS Security is enabled, but whether they arrive through the traffic log door or a distinct DNS log type is not confirmed."
+  doors_unknown: "pan_dns is not a documented tenant dataset: the 2026-11-10 tenant-setup research found no dataset by this name, and the docs place DNS in firewall threat and EAL records. No door is assigned until the card dataset is corrected."
   cortex_side:
     - kind: data_source
       name: null
