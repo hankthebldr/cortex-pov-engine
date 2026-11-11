@@ -647,7 +647,9 @@ async def _gather_sls(ctx: PreflightContext, run: _Run) -> tuple[bool, Stage]:
 async def _gather_syslog(ctx: PreflightContext, run: _Run) -> tuple[bool, Stage]:
     found = []
     for scope, xpath in (("vsys", xp(ctx, "log-settings/syslog")),
-                         ("shared", "/config/shared/log-settings/syslog")):
+                         ("shared", "/config/shared/log-settings/syslog"),
+                         ("panorama-vsys", _pvsys(ctx) + "/log-settings/syslog"),
+                         ("panorama-shared", "/config/panorama/shared/log-settings/syslog")):
         for p in await _config(ctx, run, xpath, parse_syslog_profiles):
             found.append((scope, p))
     run.syslog_profile_names = {p.name for _, p in found if p.servers}
@@ -768,6 +770,11 @@ async def _stage_log_forwarding_profiles(ctx: PreflightContext, run: _Run) -> St
                      remediation=REM_NO_LFP,
                      extra={"profiles": [], "selected_paths": sorted(selected)})
     known_syslog = run.syslog_profile_names
+    # A type counts as forwarded only if it reaches a path that is both required and
+    # proven. With forwarding_path=both and one path dead, a match-list sending a type
+    # only down the dead path delivers nothing. With no usable path at all, profiles are
+    # still compared with the selected path(s) so the detail stays specific.
+    basis = usable or selected
     summaries, issues, complete = [], [], []
     for scope, p in found:
         label = f"profile {p.name} ({scope})"
@@ -786,7 +793,7 @@ async def _stage_log_forwarding_profiles(ctx: PreflightContext, run: _Run) -> St
             if m.syslog_profiles and (known_syslog is None
                                       or any(n in known_syslog for n in m.syslog_profiles)):
                 t.add("syslog")
-        on_path = {k for k, tg in targets.items() if (tg & selected if selected else tg)}
+        on_path = {k for k, tg in targets.items() if (tg & basis if basis else tg)}
         missing = [k for k in REQUIRED_LFP_TYPES if k not in on_path]
         wrong = [k for k in missing if targets.get(k)]
         narrowed = [k for k in missing if k not in wrong and k in filtered]
@@ -795,7 +802,8 @@ async def _stage_log_forwarding_profiles(ctx: PreflightContext, run: _Run) -> St
         if wrong:
             mine.append((codes.PN_LFP_WRONG_TARGET,
                          f"{label} forwards {', '.join(wrong)} only to a path not in use "
-                         f"(selected: {', '.join(sorted(selected)) or 'none'})"))
+                         f"(selected: {', '.join(sorted(selected)) or 'none'}; proven: "
+                         f"{', '.join(sorted(usable)) or 'none'})"))
         if narrowed:
             mine.append((codes.PN_LFP_FILTERED, f"{label} forwards " + ", ".join(
                 f"{k} only through filter {' / '.join(filtered[k])}" for k in narrowed)))

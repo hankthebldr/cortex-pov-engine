@@ -272,7 +272,14 @@ _LABEL_RE = re.compile(
 
 
 def _ts(s: str) -> Optional[datetime]:
-    return None if s == "Not Available" else datetime.strptime(s, "%Y/%m/%d %H:%M:%S")
+    if s == "Not Available":
+        return None
+    try:
+        return datetime.strptime(s, "%Y/%m/%d %H:%M:%S")
+    except ValueError:
+        # The row regex admits 2026/13/40: a well-formed-looking but impossible date is
+        # an unrecognised reply, not a CortexSim defect.
+        raise PanosShapeError(f"logging-status timestamp {s!r} is not a real date") from None
 
 
 def _status_token(status: str) -> str:

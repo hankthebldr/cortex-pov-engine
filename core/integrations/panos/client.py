@@ -169,6 +169,8 @@ CONFIG_XPATH_ALLOWLIST: tuple[re.Pattern, ...] = tuple(re.compile(p) for p in (
     _VSYS + "/rulebase/decryption/rules",
     _PVSYS + "/log-settings/profiles",
     _PSHARED + "/log-settings/profiles",
+    _PVSYS + "/log-settings/syslog",
+    _PSHARED + "/log-settings/syslog",
     _PVSYS + "/(?:pre|post)-rulebase/decryption/rules",
     _VSYS + rf"/rulebase/security/rules/{_ENT}",
     _VSYS + "/zone",

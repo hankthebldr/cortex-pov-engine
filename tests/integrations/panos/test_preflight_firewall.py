@@ -30,6 +30,7 @@ TZ = DEV + "/deviceconfig/system/timezone"
 LOGGING = DEV + "/deviceconfig/setting/logging"
 SYSLOG_VSYS = VSYS + "/log-settings/syslog"
 SYSLOG_SHARED = "/config/shared/log-settings/syslog"
+SYSLOG_PSHARED = "/config/panorama/shared/log-settings/syslog"
 LFP_VSYS = VSYS + "/log-settings/profiles"
 LFP_SHARED = "/config/shared/log-settings/profiles"
 DECRYPT = VSYS + "/rulebase/decryption/rules"
@@ -38,6 +39,7 @@ LFP_PVSYS = PVSYS + "/log-settings/profiles"
 LFP_PSHARED = "/config/panorama/shared/log-settings/profiles"
 DECRYPT_PRE = PVSYS + "/pre-rulebase/decryption/rules"
 DECRYPT_POST = PVSYS + "/post-rulebase/decryption/rules"
+SYSLOG_PVSYS = PVSYS + "/log-settings/syslog"
 
 # show clock in clock__fresh.xml is 22:05:00 US/Eastern (EST) = 03:05:00 UTC.
 NOW = datetime(2026, 11, 11, 3, 5, 10, tzinfo=timezone.utc)
@@ -52,6 +54,8 @@ BASE = {
     LOGSTATUS: "logging_status__active.xml",
     SYSLOG_VSYS: "config__empty.xml",
     SYSLOG_SHARED: "config__empty.xml",
+    SYSLOG_PVSYS: "config__empty.xml",
+    SYSLOG_PSHARED: "config__empty.xml",
     LFP_VSYS: "lfp__complete.xml",
     LFP_SHARED: "config__empty.xml",
     DECRYPT: "decryption__rules.xml",
@@ -691,12 +695,25 @@ async def test_auto_sls_read_failed_syslog_unconfigured(fake_firewall):
 
 
 @pytest.mark.asyncio
-async def test_unexpected_exception_blocks_only_its_stage(fake_firewall):
+async def test_impossible_log_date_is_shape_unrecognised_not_internal(fake_firewall):
     bad = b"2026/13/40 22:00:00   2026/13/40 22:00:00"
     report, fw = await run(fake_firewall, {LOGSTATUS: _logstatus(bad, bad)})
     s = stage(report, "forwarding_sls")
+    assert (s.status, s.code) == (BLOCKED, codes.PN_SHAPE_UNRECOGNISED)
+    assert "2026/13/40" in s.detail and pf.CMD_LOGGING_STATUS in s.detail
+    assert stage(report, "registered_ip").status == OK
+    assert KEY not in json.dumps(report.to_dict())
+
+
+@pytest.mark.asyncio
+async def test_unexpected_exception_blocks_only_its_stage(fake_firewall, monkeypatch):
+    def boom(_result):
+        raise ZeroDivisionError("carries " + KEY)
+    monkeypatch.setattr(pf, "parse_logging_status", boom)
+    report, fw = await run(fake_firewall)
+    s = stage(report, "forwarding_sls")
     assert (s.status, s.code) == (BLOCKED, codes.PN_INTERNAL_ERROR)
-    assert s.detail == "internal error (ValueError)"
+    assert s.detail == "internal error (ZeroDivisionError)"
     assert stage(report, "registered_ip").status == OK
     assert KEY not in json.dumps(report.to_dict())
 
@@ -745,3 +762,49 @@ async def test_lfp_filtered_match_does_not_count_as_full_forwarding(fake_firewal
     assert (s.status, s.code) == (DEGRADED, codes.PN_LFP_FILTERED)
     assert "(verdict eq malicious)" in s.detail and "wildfire" in s.detail
     assert s.extra["profiles"][0]["filters"]["wildfire"] == ["(verdict eq malicious)"]
+
+
+# carried fixes (Task 6 pre-step)
+
+
+@pytest.mark.asyncio
+async def test_syslog_only_in_panorama_is_read_with_provenance(fake_firewall):
+    report, fw = await run(fake_firewall, {LOGGING: "device_logging__lsf_off_eal_off.xml",
+                                           SYSLOG_PSHARED: "syslog__two_servers_udp.xml"})
+    s = stage(report, "forwarding_syslog")
+    assert s.code != codes.PN_SYSLOG_NO_SERVERS
+    assert (s.status, s.code) == (DEGRADED, codes.PN_SYSLOG_DELIVERY_UNVERIFIED)
+    assert {p["scope"] for p in s.extra["profiles"]} == {"panorama-shared"}
+    assert SYSLOG_PVSYS in fw.keys() and SYSLOG_PSHARED in fw.keys()
+    lfp = stage(report, "log_forwarding_profiles")
+    assert codes.PN_LFP_WRONG_TARGET not in {i["code"] for i in lfp.extra.get("issues", [])}
+    assert lfp.status == OK
+
+
+@pytest.mark.asyncio
+async def test_syslog_in_panorama_vsys_scope(fake_firewall):
+    report, _ = await run(fake_firewall, {SYSLOG_PVSYS: "syslog__two_servers_udp.xml"},
+                          config={"forwarding_path": "syslog"})
+    s = stage(report, "forwarding_syslog")
+    assert s.code == codes.PN_SYSLOG_DELIVERY_UNVERIFIED
+    assert s.extra["profiles"][0]["scope"] == "panorama-vsys"
+
+
+@pytest.mark.asyncio
+async def test_both_path_lfp_counts_only_proven_paths(fake_firewall):
+    # forwarding_path=both, SLS disabled (unproven), syslog proven. wildfire goes to
+    # Panorama/SLS only: it reaches no usable path and must not count as forwarded.
+    wf_sls_only = pf_fixture("lfp__complete.xml").replace(
+        b"<log-type>wildfire</log-type><filter>All Logs</filter><send-to-panorama>yes</send-to-panorama>"
+        b"<send-syslog><member>lab-syslog</member></send-syslog>",
+        b"<log-type>wildfire</log-type><filter>All Logs</filter><send-to-panorama>yes</send-to-panorama>")
+    assert wf_sls_only != pf_fixture("lfp__complete.xml")
+    report, _ = await run(fake_firewall, {LOGGING: "device_logging__lsf_off_eal_off.xml",
+                                          SYSLOG_VSYS: "syslog__two_servers_udp.xml",
+                                          LFP_VSYS: wf_sls_only},
+                          config={"forwarding_path": "both"})
+    s = stage(report, "log_forwarding_profiles")
+    assert s.status == DEGRADED
+    assert s.code == codes.PN_LFP_WRONG_TARGET
+    assert "wildfire" in s.detail
+    assert s.extra["profiles"][0]["complete"] is False

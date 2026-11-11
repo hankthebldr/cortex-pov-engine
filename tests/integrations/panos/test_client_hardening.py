@@ -16,6 +16,8 @@ PV = "/config/panorama/vsys/entry[@name='vsys1']"
 N = "entry[@name='My Rule_1:a/b+c-d']"
 
 XPATH_ALLOWED = [
+    "/config/panorama/shared/log-settings/syslog",
+    PV + "/log-settings/syslog",
     DEV + "/deviceconfig/setting/logging",
     DEV + "/deviceconfig/system/timezone",
     VS + "/log-settings/profiles",
@@ -72,7 +74,8 @@ XPATH_REFUSED = [
     PV + "/pre-rulebase/decryption",                    # not the rules leaf
     PV + "/pre-rulebase/decryption/rules/" + N,         # not a whole-rules read
     "/config/panorama/vsys/entry[@name='vsys\u0663']/log-settings/profiles",
-    "/config/panorama/shared/log-settings/syslog",
+    "/config/panorama/vsys/entry[@name='vsys\u0663']/log-settings/syslog",
+    "/config/panorama/shared/log-settings/syslog/entry",
 ]
 
 
