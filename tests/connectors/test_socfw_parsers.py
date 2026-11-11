@@ -95,9 +95,9 @@ def test_non_object_config_raises():
         socfw.parse_tenant_config([], load("config_modes.json"))
 
 
-def test_empty_config_is_default_mode_not_pov():
+def test_no_shadow_overrides_is_not_asserted_as_framework_default():
     v = socfw.parse_tenant_config({}, load("config_modes.json"))
-    assert v.mode == "default" and v.ai_close_live is None
+    assert v.mode == socfw.MODE_NO_SHADOW != "default" and v.ai_close_live is None
 
 
 def test_ai_close_back_in_shadow_is_star_and_triage():
@@ -149,3 +149,37 @@ def test_round_trip_dict():
         evidence=None, sources_used=["packs", "lists"], read_at=NOW)
     assert socfw.ResponseLayer.from_dict(rl.to_dict()) == rl
     json.dumps(rl.to_dict())
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf", float("nan"), float("inf")])
+@pytest.mark.parametrize("key", ["score_threshold", "window_hours"])
+def test_non_finite_triage_raises(key, bad):
+    doc = load("tenant_config.json"); doc["triage"] = {key: bad}
+    with pytest.raises(socfw.ResponseLayerShapeError, match=key):
+        socfw.parse_tenant_config(doc, load("config_modes.json"))
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", float("inf")])
+def test_non_finite_execution_count_raises(bad):
+    with pytest.raises(socfw.ResponseLayerShapeError):
+        socfw.summarize_execution_rows(
+            [{"action_taken": "auto_triage_closed", "execution_mode": "production", "n": bad}])
+
+
+@pytest.mark.parametrize("blank", ["", None])
+def test_blank_override_is_not_overridden(blank):
+    doc = load("tenant_config.json"); doc["triage"] = {"score_threshold": blank}
+    v = socfw.parse_tenant_config(doc, load("config_modes.json"))
+    assert v.triage_overridden is False
+    doc2 = {"triage": {"score_threshold": blank}}  # no job switch known: source must be job_default
+    v2 = socfw.parse_tenant_config(doc2, load("config_modes.json"))
+    rl = socfw.assemble_response_layer(packs={socfw.CORE_PACK_ID: "3.31.4"},
+        list_names=frozenset(), tenant_config=v2, evidence=None, sources_used=["packs"], read_at=NOW)
+    assert rl.auto_triage.source == "job_default"
+
+
+def test_real_override_sets_tenant_config_source():
+    v = socfw.parse_tenant_config({"triage": {"window_hours": 12}}, load("config_modes.json"))
+    rl = socfw.assemble_response_layer(packs={socfw.CORE_PACK_ID: "3.31.4"},
+        list_names=frozenset(), tenant_config=v, evidence=None, sources_used=["packs"], read_at=NOW)
+    assert v.triage_overridden is True and rl.auto_triage.source == "tenant_config"

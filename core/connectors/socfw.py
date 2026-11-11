@@ -20,6 +20,7 @@ Where the facts come from (all under ``Packs/soc-optimization-unified``):
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
@@ -40,8 +41,11 @@ TRIAGE_CLOSED_ACTION = "auto_triage_closed"
 AI_CLOSE_ACTION = "soc-close-issue"
 AI_ACTOR = "ai"
 PRODUCTION_MODE = "production"
-# SOCFWConfig.py: the mode name reported when the shadow section matches nothing / nothing is set.
-MODE_DEFAULT = "default"
+# The mode is inferred from the ``shadow`` section ONLY; job schedules are not read.
+# The framework's own ``matching_mode`` also checks them and answers "default" only when
+# no job is scheduled either, so "default" is never asserted here. With no shadow switch
+# set, the value is MODE_NO_SHADOW (distinct, cannot be mistaken for the framework's "default").
+MODE_NO_SHADOW = "no_shadow_overrides"
 MODE_CUSTOM = "custom"
 
 STATES = ("ABSENT", "PRESENT_UNREAD", "PRESENT", "UNKNOWN")
@@ -54,6 +58,8 @@ class ResponseLayerShapeError(ValueError):
 
 @dataclass(frozen=True)
 class TenantConfigView:
+    # Shadow-section inference only: a named mode (exact shadow match; the framework might
+    # still reject it on job schedules, which are not read), MODE_CUSTOM, or MODE_NO_SHADOW.
     mode: Optional[str]
     triage_window_hours: Optional[float]
     triage_score_threshold: Optional[int]
@@ -87,6 +93,7 @@ class ResponseLayer:
     code: str
     framework_version: Optional[str]
     packs: dict
+    # Inferred from the tenant's shadow section only (see TenantConfigView.mode).
     mode: Optional[str]
     auto_triage: AutoTriage
     ai_close: str
@@ -181,9 +188,12 @@ def _to_number(path: str, value: Any) -> float:
     if isinstance(value, bool):
         raise ResponseLayerShapeError(f"{path}: expected a number, got {value!r}")
     try:
-        return float(str(value).strip())
+        n = float(str(value).strip())
     except ValueError as exc:
         raise ResponseLayerShapeError(f"{path}: expected a number, got {value!r}") from exc
+    if not math.isfinite(n):
+        raise ResponseLayerShapeError(f"{path}: expected a finite number, got {value!r}")
+    return n
 
 
 def _tenant_shadow(doc: dict) -> dict:
@@ -222,14 +232,17 @@ def _modes(modes_doc: Any) -> dict:
 
 
 def _infer_mode(tenant: dict, modes: dict) -> str:
-    """SOCFWConfig.matching_mode over the shadow switches (the jobs are not in the list)."""
+    """SOCFWConfig.matching_mode over the shadow switches ONLY (job schedules are not read).
+
+    Never returns the framework's "default": that needs "no job scheduled" too.
+    """
     switches = []
     for m in modes.values():
         for key in m["shadow"]:
             if key not in switches:
                 switches.append(key)
     if all(tenant.get(k) is None for k in switches):
-        return MODE_DEFAULT
+        return MODE_NO_SHADOW
     for name, m in modes.items():
         if all(tenant.get(k) == m["shadow"].get(k) for k in switches):
             return name
@@ -274,7 +287,7 @@ def parse_tenant_config(doc: Any, modes_doc: Any) -> TenantConfigView:
             n = _to_number("SOCFWTenantConfig.triage.score_threshold", raw_t)
             if n < 0:
                 raise ResponseLayerShapeError("SOCFWTenantConfig.triage.score_threshold: must be 0 or more")
-            threshold = int(n) if n.is_integer() else n  # type: ignore[assignment]
+            threshold = int(n) if n.is_integer() else n
     raw_w = triage.get("window_hours")
     if raw_w not in (None, ""):
         window = _to_number("SOCFWTenantConfig.triage.window_hours", raw_w)
@@ -288,7 +301,7 @@ def parse_tenant_config(doc: Any, modes_doc: Any) -> TenantConfigView:
         triage_score_off=off,
         ai_close_live=ai_close_live,
         triage_job_on=job_on,
-        triage_overridden=bool(triage),
+        triage_overridden=off or threshold is not None or window is not None,
     )
 
 
@@ -309,8 +322,8 @@ def summarize_execution_rows(rows: list) -> ExecutionEvidence:
             if key not in row:
                 raise ResponseLayerShapeError(f"execution rows[{i}]: missing '{key}'")
         try:
-            n = int(float(str(row["n"])))
-        except ValueError as exc:
+            n = int(_to_number(f"execution rows[{i}].n", row["n"]))
+        except (ValueError, OverflowError) as exc:
             raise ResponseLayerShapeError(f"execution rows[{i}].n: got {row['n']!r}") from exc
         if row["execution_mode"] != PRODUCTION_MODE:
             continue
