@@ -814,6 +814,9 @@ class Agent(Base):
     # lab-range address, never a made-up real one. See
     # engine.stitch_context.from_agent and docs/superpowers/specs §8.1(2).
     last_ip: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # What a beacon inside a pod reports (pod, node, posture, tools, accounts).
+    # NULL = not a container agent / facts unknown — never "no tools".
+    runtime_facts: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -827,6 +830,7 @@ class Agent(Base):
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "status": self.status,
             "last_ip": self.last_ip,
+            "runtime_facts": self.runtime_facts,
         }
 
 

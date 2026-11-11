@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"runtime"
 	"syscall"
+
+	"github.com/hankthebldr/cortexsim/agent/executor"
 )
 
 // openFlags creates the .part file.
@@ -45,7 +47,7 @@ func execProbeSupported() bool { return true }
 // BeaconClient.artifactProbeExec so the failure branch is testable from CI,
 // which cannot mount a noexec filesystem unprivileged.
 func defaultExecProbe(probePath string) error {
-	return exec.Command(probePath).Run()
+	return executor.RunTracked(exec.Command(probePath))
 }
 
 func hostGOOS() string { return runtime.GOOS }

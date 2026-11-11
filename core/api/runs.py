@@ -411,6 +411,10 @@ class LaunchRequest(BaseModel):
     # Links this launch (the block-mode run) to its completed report-mode run.
     paired_with_run_id: Optional[str] = None
     canary_run_id: Optional[str] = None
+    # Container agents only: run even though a step calls a tool the pod's
+    # roster lacks (the beacon still reports that step TOOL_ABSENT). Never
+    # overrides a posture refusal.
+    allow_missing_tools: bool = False
 
     @field_validator("agent_profile_mode")
     @classmethod
@@ -520,6 +524,10 @@ async def _reload_run(db: AsyncSession, run_id: str) -> Optional[Run]:
 #: says the body was malformed and sends the operator looking at their JSON.
 _LAUNCH_PRECONDITION_CODES = frozenset({
     "CONSENT_REQUIRED",
+    # Container-agent launch gate: the pod's fixed posture / tool roster cannot
+    # run this scenario. A valid body against an unmet precondition: 409.
+    "AGENT_POSTURE_INSUFFICIENT",
+    "AGENT_TOOL_ABSENT",
     "ADAPTER_MISSING_CLEANUP",
     # A composed multi-channel run named a per-step `target` agent that is not
     # enrolled. The request body is well-formed; the precondition (the second
@@ -661,6 +669,7 @@ async def _launch_run_impl(
         attested_by=body.attested_by,
         paired_with_run_id=body.paired_with_run_id,
         canary_run_id=body.canary_run_id,
+        allow_missing_tools=body.allow_missing_tools,
     )
 
     if not result.success:
@@ -699,6 +708,8 @@ async def _launch_run_impl(
     }
     if result.download_url:
         response["download_url"] = result.download_url
+    if result.warnings:
+        response["warnings"] = result.warnings
 
     return response
 

@@ -20,6 +20,7 @@ import (
 
 	"github.com/hankthebldr/cortexsim/agent/executor"
 	"github.com/hankthebldr/cortexsim/agent/identity"
+	"github.com/hankthebldr/cortexsim/agent/runtimefacts"
 )
 
 // ErrUnknownAgent is returned by PollTasks when SimCore responds 404 — i.e. the
@@ -51,13 +52,16 @@ var ErrUnknownAgent = errors.New("agent not registered with SimCore")
 
 // Task is one pull-mode work item: an ordered list of steps to execute.
 type Task struct {
-	TaskID          string `json:"task_id"`
-	RunID           string `json:"run_id"`
-	ScenarioID      string `json:"scenario_id"`
-	Steps           []Step `json:"steps"`
-	IdentityContext string `json:"identity_context"` // launch-time username override; "" if null
-	IdentityDefault string `json:"identity_default"` // scenario execution_identity.default
-	CreatedAt       string `json:"created_at"`
+	TaskID     string `json:"task_id"`
+	RunID      string `json:"run_id"`
+	ScenarioID string `json:"scenario_id"`
+	Steps      []Step `json:"steps"`
+	// anchorNotHonoured is set by the chained path when the requested cgo_anchor
+	// could not be applied; buildSummary reports it.
+	anchorNotHonoured bool
+	IdentityContext   string `json:"identity_context"` // launch-time username override; "" if null
+	IdentityDefault   string `json:"identity_default"` // scenario execution_identity.default
+	CreatedAt         string `json:"created_at"`
 	// CgoAnchor is the scenario's declared Causality Group Owner (a realistic
 	// initial-access process). Present only for scenarios that declare the
 	// causality contract; nil (and ignored on the wire) otherwise.
@@ -179,6 +183,7 @@ type BeaconClient struct {
 	regOS           string
 	regCapabilities []string
 	regInterpreters []string
+	regFacts        *runtimefacts.Facts
 
 	// resolveIdentity maps a step's identity USERNAME to something this host can
 	// actually execute. Injectable so the Windows degradation path — which is the
@@ -211,6 +216,21 @@ type BeaconClient struct {
 	// StreamOutput enables real-time line-by-line output streaming to SimCore
 	// during command execution.
 	StreamOutput bool
+
+	// ExpiresAt, when non-zero, is the absolute end of this beacon's lifetime
+	// (--expires-at). Run takes no task once it has passed; a task already
+	// executing finishes first.
+	ExpiresAt time.Time
+}
+
+// lifetimeExpired reports, and logs, that ExpiresAt has passed.
+func (c *BeaconClient) lifetimeExpired() bool {
+	if c.ExpiresAt.IsZero() || time.Now().Before(c.ExpiresAt) {
+		return false
+	}
+	log.Printf("[beacon] LIFETIME_EXPIRED — expires-at %s has passed; taking no further tasks",
+		c.ExpiresAt.UTC().Format(time.RFC3339))
+	return true
 }
 
 // stepTimeout returns the effective execution timeout for a step.
@@ -242,6 +262,9 @@ func New(serverURL, agentID string, interval time.Duration) *BeaconClient {
 // into the systemd unit at install time — deliberately NOT from the task body,
 // because queued_tasks.payload is plaintext JSON in SQLite.
 func (c *BeaconClient) SetArtifactToken(token string) { c.artifactToken = strings.TrimSpace(token) }
+
+// SetRuntimeFacts supplies the runtime facts Register (and so reRegister) sends.
+func (c *BeaconClient) SetRuntimeFacts(f *runtimefacts.Facts) { c.regFacts = f }
 
 // artifactClient returns the artifact-fetch HTTP client, building it on first
 // use so a zero-value BeaconClient built by a test with a struct literal works.
@@ -330,6 +353,9 @@ func (c *BeaconClient) Register(hostname, goos string, capabilities, interpreter
 		"os":           goos,
 		"capabilities": capabilities,
 		"interpreters": interpreters,
+	}
+	if c.regFacts != nil {
+		body["runtime_facts"] = c.regFacts
 	}
 	_, err := c.post("/api/agents/register", body)
 	if err != nil {
@@ -499,11 +525,17 @@ func (c *BeaconClient) Complete(runID string, exitCode int, summary string, step
 // and reports the final exit code.  It exits cleanly when ctx is cancelled
 // (SIGINT / SIGTERM).
 func (c *BeaconClient) Run(ctx context.Context) {
+	if c.lifetimeExpired() {
+		return
+	}
 	if c.LongPollTimeout > 0 {
 		log.Printf("[beacon] agent %q started — long-polling %s (wait=%ds)", c.AgentID, c.ServerURL, c.LongPollTimeout)
 		for {
 			if ctx.Err() != nil {
 				log.Printf("[beacon] context cancelled — shutting down cleanly")
+				return
+			}
+			if c.lifetimeExpired() {
 				return
 			}
 			task, err := c.PollTasksWait(c.LongPollTimeout)
@@ -547,6 +579,9 @@ func (c *BeaconClient) Run(ctx context.Context) {
 			return
 
 		case <-ticker.C:
+			if c.lifetimeExpired() {
+				return
+			}
 			task, err := c.PollTasks()
 			if err != nil {
 				// An unknown-agent 404 means SimCore lost (or never had) our
@@ -765,6 +800,13 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 // the start failure that makes executeTaskChained degrade to executeTaskPerStep.
 var newChainSession = executor.NewChainSession
 
+// anchorNotHonouredLine is the run-record notice for a cgo_anchor the host's
+// shell could not carry (no bash: a multi-call sh cannot be renamed).
+func anchorNotHonouredLine(image string) string {
+	return fmt.Sprintf("ANCHOR NOT HONOURED: requested %s; this image has no shell that can be started under another name (no bash on PATH), "+
+		"so the chain runs under 'sh'. Detections keyed on the anchor process name will not match.", image)
+}
+
 // executeTaskChained runs the task through a single persistent anchor shell so
 // every step is a child of the same Causality Group Owner — a connected process
 // chain, not a star of independent `sh -c` invocations. It preserves the exact
@@ -793,6 +835,16 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		return
 	}
 	defer session.Close()
+
+	// A requested cgo_anchor the host could not honour must say so in the run
+	// record, once, before any step: otherwise anchor-keyed detections read as
+	// "Cortex missed it".
+	if cgoImage != "" && !session.AnchorRenamed() && len(task.Steps) > 0 {
+		task.anchorNotHonoured = true
+		if err := c.SendOutput(task.RunID, task.Steps[0].ID, anchorNotHonouredLine(cgoImage)); err != nil {
+			log.Printf("[beacon] sendOutput (anchor notice, run_id=%s) error: %v", task.RunID, err)
+		}
+	}
 
 	log.Printf("[beacon] causality-chained execution run_id=%s cgo=%q steps=%d",
 		task.RunID, cgoImage, totalSteps)
@@ -1423,6 +1475,10 @@ func buildSummary(task *Task, exitCode, degradedSteps int, steps []StepOutcome) 
 		summary += fmt.Sprintf(" | IDENTITY DEGRADED: %d step(s) ran as the beacon account "+
 			"instead of their declared identity — actor attribution is UNVALIDATED (see step output)",
 			degradedSteps)
+	}
+	if task.anchorNotHonoured {
+		summary += " | ANCHOR NOT HONOURED: the chain ran under 'sh', not the requested cgo_anchor " +
+			"name — detections keyed on the anchor process name will not match (see first step output)"
 	}
 	if id, term, ok := severedAt(steps); ok {
 		summary += fmt.Sprintf(" | SEVERED at %s (%s)", id, term)

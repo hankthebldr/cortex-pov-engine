@@ -23,12 +23,12 @@ import secrets
 from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +46,28 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 # ---------------------------------------------------------------------------
 
 
+class RuntimeFacts(BaseModel):
+    """What a beacon running inside a pod reports about itself.
+
+    The beacon is unauthenticated and the value is later rendered in the
+    console and read by a launch gate, so it is validated here: known keys
+    only (unknown keys are ignored so a newer beacon still enrolls against an
+    older SimCore), wrong types are a 422.
+    """
+    container: Optional[StrictBool] = None
+    pod_name: Optional[str] = Field(default=None, max_length=253)
+    pod_namespace: Optional[str] = Field(default=None, max_length=253)
+    node_name: Optional[str] = Field(default=None, max_length=253)
+    posture_profile: Optional[str] = Field(default=None, max_length=253)
+    prepare_status: Optional[str] = Field(default=None, max_length=253)
+    tools: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
+    accounts: Optional[list[Annotated[str, Field(max_length=64)]]] = Field(default=None, max_length=200)
+    anchor_rename: Optional[StrictBool] = None
+
+    def stored(self) -> dict:
+        return self.model_dump(exclude_unset=True)
+
+
 class RegisterRequest(BaseModel):
     agent_id: str
     hostname: str
@@ -57,6 +79,8 @@ class RegisterRequest(BaseModel):
     # exactly as before, with an empty roster (advisory-only — see
     # engine.runtime_preflight and docs/design/agent-runtime-dependencies.md).
     interpreters: list[str] = []
+    # NULL (omitted) = not a container agent / facts unknown; see RuntimeFacts.
+    runtime_facts: Optional[RuntimeFacts] = None
 
 
 class MintTokenRequest(BaseModel):
@@ -78,6 +102,7 @@ class EnrollRequest(BaseModel):
     interpreters: list[str] = []
     # Optional client-suggested name; sanitised + suffixed for uniqueness.
     desired_name: Optional[str] = Field(default=None, max_length=60)
+    runtime_facts: Optional[RuntimeFacts] = None
 
 
 # ---------------------------------------------------------------------------
@@ -1083,6 +1108,128 @@ _ONLINE_WINDOW_S = 30
 _STALE_WINDOW_S = 300  # 5 minutes
 
 
+_MANIFEST_DOCS = "docs/reference/k8s-delivery.md"
+_MANIFEST_CONSENT_KEYS = ("cluster_privilege_authorized", "node_access_authorized")
+
+
+def _consent_true(v: Optional[str]) -> bool:
+    """Only the literal string ``true`` is consent. ``1``/``yes``/``True`` are not."""
+    return v == "true"
+
+
+def _manifest_400(code: str, error: str, detail: str) -> HTTPException:
+    return HTTPException(status_code=400, detail={"error": error, "code": code, "detail": detail})
+
+
+@router.get("/manifest")
+async def agent_manifest(
+    request: Request,
+    profile: str = "baseline",
+    image: str = "debian:12-slim",
+    prepare: str = "packages",
+    arch: str = "amd64",
+    ttl_seconds: str = "43200",
+    cluster_privilege_authorized: Optional[str] = None,
+    node_access_authorized: Optional[str] = None,
+    authorized_by: Optional[str] = None,
+):
+    """Serve the container-agent manifest as ``text/yaml``.
+
+    Gated profiles are served on the GET (spec section 5): consent rides the query
+    string, the kill switch is the deployment's, and a refusal never downgrades
+    to a weaker profile.
+    """
+    from datetime import timezone  # noqa: PLC0415
+
+    from engine import k8s_manifest as km  # noqa: PLC0415
+    from engine.agent_manifest import (  # noqa: PLC0415
+        AGENT_SCENARIO_ID, PREPARE_MODES, PROFILES, agent_posture,
+        generate_agent_manifest, validate_authorized_by, validate_image,
+    )
+    from engine.orchestrator import allow_privileged_k8s  # noqa: PLC0415
+
+    if profile not in PROFILES:
+        raise _manifest_400("BAD_PROFILE", "Unknown profile",
+                            f"profile must be one of {list(PROFILES)}")
+    if prepare not in PREPARE_MODES:
+        raise _manifest_400("BAD_PREPARE", "Unknown prepare mode",
+                            f"prepare must be one of {list(PREPARE_MODES)}")
+    _, goarch = _normalize_target("linux", arch)
+    try:
+        ttl = int(ttl_seconds)
+    except (TypeError, ValueError):
+        ttl = -1
+    if not 60 <= ttl <= 43200:
+        raise _manifest_400("BAD_TTL", "ttl_seconds out of range",
+                            "ttl_seconds must be an integer between 60 and 43200")
+    try:
+        validate_image(image)
+    except ValueError as exc:
+        raise _manifest_400("BAD_IMAGE", "Invalid image reference", str(exc)) from exc
+
+    # authorized_by lands in a YAML comment header and an annotation: allowlist
+    # it (engine.agent_manifest owns the one definition), supplied or not.
+    who = ""
+    if authorized_by is not None and authorized_by.strip():
+        try:
+            who = validate_authorized_by(authorized_by)
+        except ValueError as exc:
+            raise _manifest_400("BAD_AUTHORIZED_BY", "Invalid authorized_by", str(exc)) from exc
+    keys_present = [k for k, v in (
+        ("cluster_privilege_authorized", cluster_privilege_authorized),
+        ("node_access_authorized", node_access_authorized)) if v is not None]
+    if keys_present and not who:
+        raise _manifest_400(
+            "AUTHORIZED_BY_REQUIRED", "A named operator is required with consent",
+            "authorized_by must name the operator who obtained the customer's approval")
+
+    consent = {
+        "cluster_privilege_authorized": _consent_true(cluster_privilege_authorized),
+        "node_access_authorized": _consent_true(node_access_authorized),
+    }
+    # The builder defaults the kill switch to open, so it is applied here, first,
+    # with the deployment's real answer. This is what makes 403 (the owner of this
+    # SimCore must change a flag) distinct from 409 (the caller must send a key).
+    posture = agent_posture(profile, image=image, ttl_seconds=ttl)
+    try:
+        km.check_cluster_consent(
+            AGENT_SCENARIO_ID, posture, consent,
+            allow_privileged_k8s=allow_privileged_k8s(),
+        )
+    except km.ClusterConsentRequired as exc:
+        body = exc.to_error()
+        body["docs"] = _MANIFEST_DOCS
+        if exc.disabled_by_deployment:
+            body["code"] = "CLUSTER_PRIVILEGE_DISABLED"
+            body["remedy"] = (
+                "Set CORTEXSIM_ALLOW_PRIVILEGED_K8S=true on the SimCore deployment "
+                "and restart it. This is owned by whoever runs this SimCore, not by "
+                "the caller; no consent key will change it.")
+            raise HTTPException(status_code=403, detail=body) from exc
+        body["code"] = "CLUSTER_CONSENT_REQUIRED"
+        body["remedy"] = (
+            "Re-request with " + " and ".join(f"{k}=true" for k in exc.missing)
+            + " and authorized_by set to the operator who obtained the customer's approval.")
+        raise HTTPException(status_code=409, detail=body) from exc
+
+    beacon_sha256 = _sha256_of(_resolve_binary_or_404("linux", goarch))
+    manifest = generate_agent_manifest(
+        profile=profile, image=image, arch=goarch, prepare=prepare,
+        ttl_seconds=ttl, beacon_sha256=beacon_sha256,
+        now=datetime.now(timezone.utc),
+        authorized_by=who or None, consent=consent,
+        allow_privileged_k8s=allow_privileged_k8s(),
+    )
+    if posture.tiers():
+        logger.warning(
+            "gated agent manifest served profile=%s consent=%s authorized_by=%s client_ip=%s",
+            profile, [k for k in _MANIFEST_CONSENT_KEYS if consent[k]], who,
+            _client_ip(request))
+    return PlainTextResponse(
+        manifest, media_type="text/yaml",
+        headers={"Content-Disposition": 'attachment; filename="cortexsim-agent.yaml"'})
+
+
 def _client_ip(request: Request) -> Optional[str]:
     """The request source IP, honestly derived — NEVER invented.
 
@@ -1168,6 +1315,7 @@ async def register_agent(
             last_seen=now,
             status="online",
             last_ip=src_ip,
+            runtime_facts=body.runtime_facts.stored() if body.runtime_facts else None,
         )
         db.add(agent)
         logger.info("register_agent NEW agent_id=%s hostname=%s os=%s interpreters=%s",
@@ -1183,6 +1331,10 @@ async def register_agent(
         # not clobber a good address captured on a prior call.
         if src_ip is not None:
             existing.last_ip = src_ip
+        # The beacon re-registers to refresh its facts; an omitted field must
+        # not wipe what is stored.
+        if body.runtime_facts is not None:
+            existing.runtime_facts = body.runtime_facts.stored()
         logger.info("register_agent UPDATED agent_id=%s interpreters=%s", body.agent_id, body.interpreters)
 
     await db.commit()
@@ -1358,6 +1510,7 @@ async def enroll_agent(body: EnrollRequest, request: Request, db: AsyncSession =
         registered_at=now, last_seen=now, status="online",
         # The installer runs ON the jumpbox, so the request source IS the target.
         last_ip=_client_ip(request),
+        runtime_facts=body.runtime_facts.stored() if body.runtime_facts else None,
     ))
     await db.commit()
     logger.info("enroll_agent assigned agent_id=%s (token tail=...%s, use %d/%d)",

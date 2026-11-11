@@ -148,6 +148,9 @@ class LaunchResult:
     # the two routes disagree about the same exception. None = let the API
     # decide from `error_code`, which is the historical behaviour.
     http_status: Optional[int] = None
+    # Advisory, non-refusing notices (e.g. the container-agent launch gate's
+    # AGENT_NO_RBAC_FOR_KUBECTL). The API surfaces them under `warnings`.
+    warnings: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -200,9 +203,13 @@ class Orchestrator:
         attested_by: Optional[str] = None,
         paired_with_run_id: Optional[str] = None,
         canary_run_id: Optional[str] = None,
+        allow_missing_tools: bool = False,
     ) -> LaunchResult:
         """
         Create a Run record and route to pull or push path.
+
+        ``allow_missing_tools`` turns off ONLY the container-agent tool refusal
+        (``AGENT_TOOL_ABSENT``); a posture gap is never overridable.
 
         ``consent`` carries launch-time authorizations. Honoured keys:
 
@@ -443,6 +450,7 @@ class Orchestrator:
             return await self._handle_pull(
                 run_id, scenario, target_agent_id, identity, db,
                 runtime_install_authorized=runtime_install_authorized,
+                allow_missing_tools=allow_missing_tools,
             )
         elif mode == "push":
             return await self._handle_push(run_id, scenario, db)
@@ -652,6 +660,7 @@ class Orchestrator:
         identity: Optional[str],
         db: AsyncSession,
         runtime_install_authorized: bool = False,
+        allow_missing_tools: bool = False,
     ) -> LaunchResult:
         from models import Agent, Run  # noqa: PLC0415
 
@@ -739,6 +748,16 @@ class Orchestrator:
             req = required_binaries.get(s_.get("id"))
             if req:
                 s_["required_binaries"] = list(req)
+
+        # Container-agent launch gate (engine/agent_launch_gate.py). A pod has one
+        # fixed posture and tool roster; refuse HERE rather than let a step fail
+        # for lack of privilege/tooling and read as a Cortex miss. A host / VM /
+        # legacy agent (runtime_facts None or container false) is a no-op.
+        gate_warnings = await self._container_agent_gate(
+            db, run_id, scenario, steps, target_agent_id, allow_missing_tools
+        )
+        if isinstance(gate_warnings, LaunchResult):
+            return gate_warnings
 
         # ── Channel dispatch (Phase 3a skeleton) ────────────────────────────
         # A run is "multichannel" the moment ANY step carries a non-agent
@@ -940,7 +959,63 @@ class Orchestrator:
             run_id=run_id,
             mode="pull",
             message=queued_message,
+            warnings=gate_warnings,
         )
+
+    async def _container_agent_gate(
+        self,
+        db: AsyncSession,
+        run_id: str,
+        scenario: Any,
+        steps: list[dict[str, Any]],
+        target_agent_id: str,
+        allow_missing_tools: bool,
+    ) -> "list[dict[str, Any]] | LaunchResult":
+        """Run the container-agent gate for the launch target.
+
+        Returns the advisory warnings, or a refused ``LaunchResult`` (run row
+        already ``failed``). Also unions each step's ``required_binaries`` with
+        the binaries its command calls, so the beacon's preflight stops a step
+        whose tool vanished after the roster was taken (``TOOL_ABSENT``).
+        """
+        from models import Agent  # noqa: PLC0415
+        from engine import agent_launch_gate as gate  # noqa: PLC0415
+
+        agent = (await db.execute(
+            select(Agent).where(Agent.agent_id == target_agent_id)
+        )).scalar_one_or_none()
+        facts = getattr(agent, "runtime_facts", None) if agent is not None else None
+        if not facts or not facts.get("container"):
+            return []
+
+        # Only the steps this agent will run: a composed step aimed at another
+        # endpoint, or at a non-agent channel, is that target's concern.
+        mine = [
+            s for s in steps
+            if (s.get("channel") or "agent") == "agent"
+            and (s.get("target") or target_agent_id) == target_agent_id
+        ]
+        result = gate.evaluate(
+            gate.scenario_view(scenario, mine), facts,
+            allow_missing_tools=allow_missing_tools,
+        )
+        if result.refusal is not None:
+            r = result.refusal
+            return await self._refuse_after_seed(
+                db, run_id,
+                error=f"{r.code}: {r.error}",
+                error_code=r.code,
+                error_detail=r.detail,
+                http_status=409,
+            )
+        for s_ in mine:
+            union = list(s_.get("required_binaries") or [])
+            for b in gate.step_required_binaries(s_.get("command") or ""):
+                if b not in union:
+                    union.append(b)
+            if union:
+                s_["required_binaries"] = union
+        return result.warnings
 
     # ------------------------------------------------------------------
     # push path

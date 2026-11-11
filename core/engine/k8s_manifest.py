@@ -1620,12 +1620,10 @@ def _anchor_name(scenario: dict[str, Any]) -> str:
     return "cortexsim-runner"
 
 
-def _pod_spec(
-    *, scenario_id: str, app: str, ns: str, posture: ClusterPosture, image: str,
-    delivery: str, simcore_url: str, fetch_image: str, kind: str,
-) -> dict[str, Any]:
-    sc = posture.security_context
-    security_context: dict[str, Any] = {
+def _container_security_context(sc: SecurityContextSpec) -> dict[str, Any]:
+    """The container ``securityContext`` for a posture. Shared by the push
+    manifests and the container agent so the two cannot translate it differently."""
+    out: dict[str, Any] = {
         "privileged": sc.privileged,
         "runAsUser": sc.run_as_user,
         "allowPrivilegeEscalation": sc.allow_privilege_escalation,
@@ -1635,8 +1633,81 @@ def _pod_spec(
             **({"drop": list(sc.capabilities_drop)} if sc.capabilities_drop else {}),
         },
     }
-    if not security_context["capabilities"]:
-        security_context.pop("capabilities")
+    if not out["capabilities"]:
+        out.pop("capabilities")
+    return out
+
+
+def _host_path_volumes(
+    posture: ClusterPosture,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """``(volumes, volumeMounts)`` for the posture's hostPath entries."""
+    volumes: list[dict[str, Any]] = []
+    mounts: list[dict[str, Any]] = []
+    for hp in posture.host_access.host_paths:
+        volumes.append({
+            "name": hp.name,
+            "hostPath": {"path": hp.host_path, **({"type": hp.type} if hp.type else {})},
+        })
+        mounts.append({
+            "name": hp.name, "mountPath": hp.mount_path, "readOnly": hp.read_only,
+        })
+    return volumes, mounts
+
+
+def _resources_block(posture: ClusterPosture) -> dict[str, Any]:
+    if not posture.resources:
+        return {}
+    return {
+        "limits": {
+            "cpu": posture.resources.cpu_limit,
+            "memory": posture.resources.memory_limit,
+        },
+        "requests": {
+            "cpu": posture.resources.cpu_request,
+            "memory": posture.resources.memory_request,
+        },
+    }
+
+
+def _host_namespace_flags(posture: ClusterPosture) -> dict[str, Any]:
+    """``hostPID`` / ``hostNetwork`` / ``hostIPC`` pod-spec fields, in that order."""
+    out: dict[str, Any] = {}
+    if posture.host_access.host_pid:
+        out["hostPID"] = True
+    if posture.host_access.host_network:
+        out["hostNetwork"] = True
+    if posture.host_access.host_ipc:
+        out["hostIPC"] = True
+    return out
+
+
+def _node_access_affinity(posture: ClusterPosture) -> Optional[dict[str, Any]]:
+    """Positive control-plane anti-affinity, only for node-access postures."""
+    if TIER_NODE not in posture.tiers():
+        return None
+    return {
+        "nodeAffinity": {
+            "requiredDuringSchedulingIgnoredDuringExecution": {
+                "nodeSelectorTerms": [{
+                    "matchExpressions": [
+                        {"key": "node-role.kubernetes.io/control-plane",
+                         "operator": "DoesNotExist"},
+                        {"key": "node-role.kubernetes.io/master",
+                         "operator": "DoesNotExist"},
+                    ],
+                }],
+            },
+        },
+    }
+
+
+def _pod_spec(
+    *, scenario_id: str, app: str, ns: str, posture: ClusterPosture, image: str,
+    delivery: str, simcore_url: str, fetch_image: str, kind: str,
+) -> dict[str, Any]:
+    sc = posture.security_context
+    security_context = _container_security_context(sc)
 
     volumes: list[dict[str, Any]] = [
         {"name": "cortexsim-payload", "emptyDir": {}},
@@ -1659,14 +1730,9 @@ def _pod_spec(
         volumes.append({"name": "cortexsim-bin", "emptyDir": {}})
         mounts.append({"name": "cortexsim-bin", "mountPath": "/usr/local/bin"})
 
-    for hp in posture.host_access.host_paths:
-        volumes.append({
-            "name": hp.name,
-            "hostPath": {"path": hp.host_path, **({"type": hp.type} if hp.type else {})},
-        })
-        mounts.append({
-            "name": hp.name, "mountPath": hp.mount_path, "readOnly": hp.read_only,
-        })
+    hp_volumes, hp_mounts = _host_path_volumes(posture)
+    volumes.extend(hp_volumes)
+    mounts.extend(hp_mounts)
 
     env = [
         {"name": "CORTEXSIM_SCENARIO", "value": scenario_id},
@@ -1680,19 +1746,7 @@ def _pod_spec(
         {"name": "CORTEXSIM_HOLD", "value": "0" if kind == "job" else "1"},
     ]
 
-    resources = (
-        {
-            "limits": {
-                "cpu": posture.resources.cpu_limit,
-                "memory": posture.resources.memory_limit,
-            },
-            "requests": {
-                "cpu": posture.resources.cpu_request,
-                "memory": posture.resources.memory_request,
-            },
-        }
-        if posture.resources else {}
-    )
+    resources = _resources_block(posture)
 
     spec: dict[str, Any] = {
         "serviceAccountName": app,
@@ -1702,12 +1756,7 @@ def _pod_spec(
         "enableServiceLinks": False,
         "volumes": volumes,
     }
-    if posture.host_access.host_pid:
-        spec["hostPID"] = True
-    if posture.host_access.host_network:
-        spec["hostNetwork"] = True
-    if posture.host_access.host_ipc:
-        spec["hostIPC"] = True
+    spec.update(_host_namespace_flags(posture))
 
     # Verified on a real 3-node k3s cluster: the control-plane node carries NO
     # taints and `default` carries NO PSA labels, so a privileged pod with no
@@ -1716,21 +1765,9 @@ def _pod_spec(
     # access needs a POSITIVE anti-affinity. A privileged pod on a control-plane
     # node owns etcd, the cluster CA and every secret in the cluster; the escape
     # scenario is exactly as valid on a worker.
-    if TIER_NODE in posture.tiers():
-        spec["affinity"] = {
-            "nodeAffinity": {
-                "requiredDuringSchedulingIgnoredDuringExecution": {
-                    "nodeSelectorTerms": [{
-                        "matchExpressions": [
-                            {"key": "node-role.kubernetes.io/control-plane",
-                             "operator": "DoesNotExist"},
-                            {"key": "node-role.kubernetes.io/master",
-                             "operator": "DoesNotExist"},
-                        ],
-                    }],
-                },
-            },
-        }
+    affinity = _node_access_affinity(posture)
+    if affinity:
+        spec["affinity"] = affinity
 
     container: dict[str, Any] = {
         "name": app,

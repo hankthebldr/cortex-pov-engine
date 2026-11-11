@@ -372,6 +372,8 @@ def _migrate_composer_channel_columns(connection) -> None:
         existing = {col["name"] for col in inspector.get_columns("agents")}
         if "last_ip" not in existing:
             connection.execute(text("ALTER TABLE agents ADD COLUMN last_ip VARCHAR"))
+        if "runtime_facts" not in existing:
+            connection.execute(text("ALTER TABLE agents ADD COLUMN runtime_facts JSON"))
 
     if "runs" in tables:
         existing = {col["name"] for col in inspector.get_columns("runs")}
