@@ -18,6 +18,7 @@ import gzip
 import hashlib
 import itertools
 import json
+import re
 import types
 from datetime import datetime, timezone
 from typing import Any
@@ -1089,3 +1090,752 @@ class TestLegacyPresetsUnchanged:
             assert rec["resource"] == {
                 "type": "project", "labels": {"project_id": "cortexsim-canary"},
             }
+
+
+# --------------------------------------------------------------------------
+# Logging-service presets (cloud log tampering / log re-routing)
+# --------------------------------------------------------------------------
+#
+# Every literal below is written out here rather than imported from the plugin,
+# so this is a specification the plugin has to meet, not a mirror of it. Event
+# names, event sources, request field names and the management/data split come
+# from the provider documentation cited in the plugin's module docstring — not
+# from CLI spellings (``stop-logging``) or IAM permission names
+# (``logging.sinks.update``).
+
+_NEW_PATTERNS = (
+    "log_stop", "log_destination_delete", "log_router_delete", "log_key_swap",
+    "log_object_overwrite", "log_router_create", "log_router_redirect",
+    "stream_bucket_delete",
+)
+_NEW_COMBOS = sorted(itertools.product(_NEW_PATTERNS, _PROVIDERS))
+# (pattern, provider) pairs that fan out: burst_count object deletes, then ONE
+# bucket delete. GCP log_destination_delete is a single Cloud Logging call.
+_BURST_COMBOS = (
+    ("log_destination_delete", "aws"),
+    ("stream_bucket_delete", "aws"),
+    ("stream_bucket_delete", "gcp"),
+)
+
+_RUN_ID = "cortexsim-x-i1-aa"
+_AWS_PRINCIPAL = "arn:aws:iam::123456789012:user/cortexsim-canary"
+_GCP_PRINCIPAL = "cortexsim-canary@cortexsim-canary.invalid"
+
+_S3 = "s3.amazonaws.com"
+_CLOUDTRAIL = "cloudtrail.amazonaws.com"
+_LOGGING = "logging.googleapis.com"
+_GCS = "storage.googleapis.com"
+_CFG = "google.logging.v2.ConfigServiceV2."
+_REQ = "type.googleapis.com/google.logging.v2."
+
+_TRAIL = "cortexsim-canary-trail"
+_TRAIL_ARN = "arn:aws:cloudtrail:us-east-1:123456789012:trail/cortexsim-canary-trail"
+_SHADOW_TRAIL = "cortexsim-canary-shadow-trail"
+_SHADOW_TRAIL_ARN = (
+    "arn:aws:cloudtrail:us-east-1:123456789012:trail/cortexsim-canary-shadow-trail"
+)
+_TRAIL_BUCKET = "cortexsim-canary-cloudtrail-logs"
+_STREAM_BUCKET = "cortexsim-canary-stream-archive"
+_ATTACKER_S3_BUCKET = "cortexsim-canary-attacker-logs-999"
+_EXTERNAL_KMS_KEY = "arn:aws:kms:us-east-1:444455556666:alias/cortexsim-canary-external-key"
+
+_SINK = "projects/cortexsim-canary/sinks/cortexsim-canary-sink"
+_SHADOW_SINK = "projects/cortexsim-canary/sinks/cortexsim-canary-shadow-sink"
+_SINK_DESTINATION = "storage.googleapis.com/cortexsim-canary-log-archive"
+_ATTACKER_SINK_DESTINATION = "storage.googleapis.com/cortexsim-canary-attacker-log-drop"
+_LOG_BUCKET = (
+    "projects/cortexsim-canary/locations/global/buckets/cortexsim-canary-log-bucket"
+)
+_EXTERNAL_CMEK_KEY = (
+    "projects/attacker-project-999/locations/global/keyRings/"
+    "cortexsim-canary-ring/cryptoKeys/cortexsim-canary-key"
+)
+_GCS_BUCKET = "cortexsim-canary-log-archive"
+_GCS_BUCKET_RESOURCE = "projects/_/buckets/cortexsim-canary-log-archive"
+
+_PROJECT_RESOURCE = {"type": "project", "labels": {"project_id": "cortexsim-canary"}}
+_GCS_RESOURCE = {
+    "type": "gcs_bucket",
+    "labels": {
+        "project_id": "cortexsim-canary",
+        "bucket_name": "cortexsim-canary-log-archive",
+        "location": "us",
+    },
+}
+
+# Flat hint keys that only SOME calls carry; a record must not carry one it has
+# no value for (a null hint reads as a value in XQL).
+_OPTIONAL_HINTS = ("log_object_key", "log_destination", "kms_key_id", "log_disabled")
+
+
+def _trail_log_key(n: int) -> str:
+    return (
+        "AWSLogs/123456789012/CloudTrail/us-east-1/2026/01/01/"
+        f"cortexsim-canary-{n:04d}.json.gz"
+    )
+
+
+def _stream_key(n: int) -> str:
+    return f"replica/2026/01/01/cortexsim-canary-{n:04d}.json.gz"
+
+
+def _gcs_object(n: int) -> str:
+    return f"cloudaudit.googleapis.com/activity/2026/01/01/cortexsim-canary-{n:04d}.json"
+
+
+def _aws_call(name, source, request, *, read_only=False, management=True, **hints):
+    return {
+        "name": name, "source": source, "request": request,
+        "read_only": read_only, "management": management, "hints": hints,
+    }
+
+
+def _gcp_call(method, service, resource_name, request=None, *,
+              admin_activity=True, resource=None, **hints):
+    return {
+        "name": method, "source": service, "resource_name": resource_name,
+        "request": request, "admin_activity": admin_activity,
+        "resource": resource or _PROJECT_RESOURCE, "hints": hints,
+    }
+
+
+def _s3_empty_then_delete(bucket, key_fn, burst):
+    arn = f"arn:aws:s3:::{bucket}"
+    return [
+        _aws_call("DeleteObject", _S3, {"bucketName": bucket, "key": key_fn(n)},
+                  management=False, log_resource_name=arn, log_object_key=key_fn(n))
+        for n in range(1, burst + 1)
+    ] + [
+        _aws_call("DeleteBucket", _S3, {"bucketName": bucket}, log_resource_name=arn),
+    ]
+
+
+def _gcs_object_call(method, n):
+    # Object reads and writes are Data Access entries (DATA_READ / DATA_WRITE).
+    return _gcp_call(
+        method, _GCS, f"{_GCS_BUCKET_RESOURCE}/objects/{_gcs_object(n)}",
+        admin_activity=False, resource=_GCS_RESOURCE,
+        log_resource_name=_GCS_BUCKET_RESOURCE, log_object_key=_gcs_object(n),
+    )
+
+
+def _expected(pattern: str, provider: str, burst: int) -> list[dict[str, Any]]:
+    """The calls a preset must emit, in order, for one provider."""
+    trail_bucket_arn = f"arn:aws:s3:::{_TRAIL_BUCKET}"
+    table = {
+        # -- 1. stop logging ------------------------------------------------
+        ("log_stop", "aws"): [
+            _aws_call("StopLogging", _CLOUDTRAIL, {"name": _TRAIL_ARN},
+                      log_resource_name=_TRAIL_ARN),
+        ],
+        ("log_stop", "gcp"): [
+            _gcp_call(_CFG + "UpdateSink", _LOGGING, _SINK, {
+                "@type": _REQ + "UpdateSinkRequest",
+                "sinkName": _SINK,
+                "sink": {
+                    "name": "cortexsim-canary-sink",
+                    "destination": _SINK_DESTINATION,
+                    "disabled": True,
+                },
+                "updateMask": "disabled",
+            }, log_resource_name=_SINK, log_disabled=True),
+        ],
+        # -- 2. delete the log storage destination --------------------------
+        ("log_destination_delete", "aws"): _s3_empty_then_delete(
+            _TRAIL_BUCKET, _trail_log_key, burst),
+        ("log_destination_delete", "gcp"): [
+            _gcp_call(_CFG + "DeleteBucket", _LOGGING, _LOG_BUCKET, {
+                "@type": _REQ + "DeleteBucketRequest",
+                "name": _LOG_BUCKET,
+            }, log_resource_name=_LOG_BUCKET),
+        ],
+        # -- 3. delete the log router ---------------------------------------
+        ("log_router_delete", "aws"): [
+            _aws_call("DeleteTrail", _CLOUDTRAIL, {"name": _TRAIL_ARN},
+                      log_resource_name=_TRAIL_ARN),
+        ],
+        ("log_router_delete", "gcp"): [
+            _gcp_call(_CFG + "DeleteSink", _LOGGING, _SINK, {
+                "@type": _REQ + "DeleteSinkRequest",
+                "sinkName": _SINK,
+            }, log_resource_name=_SINK),
+        ],
+        # -- 4. swap the encryption key for an external one -----------------
+        ("log_key_swap", "aws"): [
+            _aws_call("UpdateTrail", _CLOUDTRAIL,
+                      {"name": _TRAIL, "kmsKeyId": _EXTERNAL_KMS_KEY},
+                      log_resource_name=_TRAIL_ARN, kms_key_id=_EXTERNAL_KMS_KEY),
+        ],
+        ("log_key_swap", "gcp"): [
+            _gcp_call(_CFG + "UpdateBucket", _LOGGING, _LOG_BUCKET, {
+                "@type": _REQ + "UpdateBucketRequest",
+                "name": _LOG_BUCKET,
+                "bucket": {"cmekSettings": {"kmsKeyName": _EXTERNAL_CMEK_KEY}},
+                "updateMask": "cmekSettings",
+            }, log_resource_name=_LOG_BUCKET, kms_key_id=_EXTERNAL_CMEK_KEY),
+        ],
+        # -- 5. log poisoning: read a stored log object, overwrite it -------
+        ("log_object_overwrite", "aws"): [
+            _aws_call("GetObject", _S3,
+                      {"bucketName": _TRAIL_BUCKET, "key": _trail_log_key(1)},
+                      read_only=True, management=False,
+                      log_resource_name=trail_bucket_arn,
+                      log_object_key=_trail_log_key(1)),
+            _aws_call("PutObject", _S3,
+                      {"bucketName": _TRAIL_BUCKET, "key": _trail_log_key(1)},
+                      read_only=False, management=False,
+                      log_resource_name=trail_bucket_arn,
+                      log_object_key=_trail_log_key(1)),
+        ],
+        ("log_object_overwrite", "gcp"): [
+            _gcs_object_call("storage.objects.get", 1),
+            _gcs_object_call("storage.objects.create", 1),
+        ],
+        # -- 6. a second log route to attacker storage ----------------------
+        ("log_router_create", "aws"): [
+            _aws_call("CreateTrail", _CLOUDTRAIL, {
+                "name": _SHADOW_TRAIL,
+                "s3BucketName": _ATTACKER_S3_BUCKET,
+                "isMultiRegionTrail": True,
+            }, log_resource_name=_SHADOW_TRAIL_ARN, log_destination=_ATTACKER_S3_BUCKET),
+        ],
+        ("log_router_create", "gcp"): [
+            _gcp_call(_CFG + "CreateSink", _LOGGING, _SHADOW_SINK, {
+                "@type": _REQ + "CreateSinkRequest",
+                "parent": "projects/cortexsim-canary",
+                "sink": {
+                    "name": "cortexsim-canary-shadow-sink",
+                    "destination": _ATTACKER_SINK_DESTINATION,
+                },
+                "uniqueWriterIdentity": True,
+            }, log_resource_name=_SHADOW_SINK, log_destination=_ATTACKER_SINK_DESTINATION),
+        ],
+        # -- 7. redirect the existing route ---------------------------------
+        ("log_router_redirect", "aws"): [
+            _aws_call("UpdateTrail", _CLOUDTRAIL,
+                      {"name": _TRAIL, "s3BucketName": _ATTACKER_S3_BUCKET},
+                      log_resource_name=_TRAIL_ARN, log_destination=_ATTACKER_S3_BUCKET),
+        ],
+        ("log_router_redirect", "gcp"): [
+            _gcp_call(_CFG + "UpdateSink", _LOGGING, _SINK, {
+                "@type": _REQ + "UpdateSinkRequest",
+                "sinkName": _SINK,
+                "sink": {
+                    "name": "cortexsim-canary-sink",
+                    "destination": _ATTACKER_SINK_DESTINATION,
+                },
+                "updateMask": "destination",
+                "uniqueWriterIdentity": True,
+            }, log_resource_name=_SINK, log_destination=_ATTACKER_SINK_DESTINATION),
+        ],
+        # -- 8. empty and delete the bucket a data stream writes to ---------
+        ("stream_bucket_delete", "aws"): _s3_empty_then_delete(
+            _STREAM_BUCKET, _stream_key, burst),
+        ("stream_bucket_delete", "gcp"): [
+            _gcs_object_call("storage.objects.delete", n) for n in range(1, burst + 1)
+        ] + [
+            _gcp_call("storage.buckets.delete", _GCS, _GCS_BUCKET_RESOURCE,
+                      admin_activity=True, resource=_GCS_RESOURCE,
+                      log_resource_name=_GCS_BUCKET_RESOURCE),
+        ],
+    }
+    return table[(pattern, provider)]
+
+
+def _render(provider, pattern, *, burst_count=4, via_seam=False, **kw):
+    params = CloudAuditEmitterParams(
+        collector_url=_DEFAULT_COLLECTOR, provider=provider,
+        event_pattern=pattern, burst_count=burst_count, **kw,
+    )
+    emitter = CloudAuditEmitter()
+    build = emitter.records_for if via_seam else emitter.build_events
+    return build(params, sim_run_id=_RUN_ID, iteration=1)
+
+
+def _assert_hints(rec, provider, exp, principal):
+    assert rec["cloud_provider"] == provider
+    assert rec["api_operation"] == exp["name"]
+    assert rec["principal_id"] == principal
+    for key, value in exp["hints"].items():
+        assert rec[key] == value, key
+        assert type(rec[key]) is type(value), key
+    for key in _OPTIONAL_HINTS:
+        if key not in exp["hints"]:
+            assert key not in rec, f"{key} must be absent on {exp['name']}"
+
+
+def _assert_aws_record(rec, exp, marker):
+    assert rec["dataset"] == "cloud_audit_logs"
+    assert rec["eventName"] == exp["name"]
+    assert rec["eventSource"] == exp["source"]
+    assert rec["eventType"] == "AwsApiCall"
+    # Exact request parameters: keys AND values, nothing extra.
+    assert rec["requestParameters"] == exp["request"]
+    assert rec["readOnly"] is exp["read_only"]
+    assert rec["managementEvent"] is exp["management"]
+    assert rec["eventCategory"] == ("Management" if exp["management"] else "Data")
+    assert rec["errorCode"] is None
+    assert rec["userIdentity"]["type"] == "IAMUser"
+    assert rec["userIdentity"]["arn"] == _AWS_PRINCIPAL
+    assert rec["recipientAccountId"] == "123456789012"
+    assert rec[marker] is True
+    assert rec["cortexsim_run_id"] == _RUN_ID
+    _assert_hints(rec, "aws", exp, _AWS_PRINCIPAL)
+
+
+def _assert_gcp_record(rec, exp, marker):
+    payload = rec["protoPayload"]
+    assert rec["dataset"] == "cloud_audit_logs"
+    assert payload["@type"] == "type.googleapis.com/google.cloud.audit.AuditLog"
+    assert payload["methodName"] == exp["name"]
+    assert payload["serviceName"] == exp["source"]
+    assert payload["resourceName"] == exp["resource_name"]
+    if exp["request"] is None:
+        # Cloud Storage writes request/response only under detailed audit
+        # logging mode, which is off by default — so no request block.
+        assert "request" not in payload
+    else:
+        assert payload["request"] == exp["request"]
+    # Admin Activity vs Data Access is the GCP management/data split.
+    log_id = "activity" if exp["admin_activity"] else "data_access"
+    assert rec["logName"] == (
+        f"projects/cortexsim-canary/logs/cloudaudit.googleapis.com%2F{log_id}"
+    )
+    assert rec["resource"] == exp["resource"]
+    assert payload["authenticationInfo"]["principalEmail"] == _GCP_PRINCIPAL
+    assert payload["status"] == {}
+    assert rec["severity"] == "NOTICE"
+    assert rec[marker] is True
+    assert rec["cortexsim_run_id"] == _RUN_ID
+    _assert_hints(rec, "gcp", exp, _GCP_PRINCIPAL)
+
+
+_ASSERT_RECORD = {"aws": _assert_aws_record, "gcp": _assert_gcp_record}
+
+
+def _op(provider, rec):
+    return rec["eventName"] if provider == "aws" else rec["protoPayload"]["methodName"]
+
+
+def _walk(obj, path=""):
+    """Yield (path, key, value) for every key in a nested record."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield path, k, v
+            yield from _walk(v, f"{path}.{k}" if path else k)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from _walk(v, f"{path}[{i}]")
+
+
+# Value shapes that would mean a credential leaked into a record.
+_CREDENTIAL_SHAPES = (
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),                    # AWS access key id
+    re.compile(r"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])"),  # AWS secret key
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),               # PEM private key
+    re.compile(r"\bya29\.[0-9A-Za-z_-]+"),                           # Google OAuth token
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),                        # Google API key
+    re.compile(r"\beyJ[0-9A-Za-z_-]{8,}\.[0-9A-Za-z_-]{8,}\."),      # JWT
+    re.compile(r"\b(?:ghp|gho|ghs|github_pat)_[0-9A-Za-z_]{20,}"),   # GitHub token
+    re.compile(r"\bxox[abprs]-[0-9A-Za-z-]{10,}"),                   # Slack token
+    re.compile(r"(?i)\bbearer\s+[0-9a-z._~+/-]{16,}"),               # bearer header
+)
+# Key names (lower-cased, separators dropped) that would hold a credential.
+_CREDENTIAL_KEY_SUFFIXES = (
+    "accesskeyid", "secretaccesskey", "sessiontoken", "token", "password",
+    "passwd", "secret", "privatekey", "apikey", "authorization", "credential",
+    "credentials",
+)
+# Researcher lab values that appear in the two posts' figures. They are not
+# indicators and must never surface as attributes of an emitted record.
+_POST_LAB_VALUES = (
+    "sink-blog-simulation", "log-bucket-blog-simulation",
+    "kubernetes-training-project", "victim-sink", "victim-bucket-for-logging",
+    "sensitive-bucket-for-backup-purposes", "modified-to-being-undetected",
+    "1.1.1.1",
+)
+
+
+class TestLoggingServicePresets:
+    """Eight presets for cloud log tampering and log re-routing."""
+
+    def _run_with_stub(self, monkeypatch, *, status_code=202, **campaign_kw):
+        stub = _RecordingClient(status_code=status_code)
+        monkeypatch.setattr(
+            CloudAuditEmitter, "_build_client", lambda self, params: stub,
+        )
+        campaign = _campaign(**campaign_kw)
+        executor = CampaignExecutor(audit=AuditLogger(file_path=None))
+        state = _run(executor.execute(campaign))
+        return state, stub
+
+    # -- registration -----------------------------------------------------
+
+    def test_all_eight_presets_registered(self):
+        assert set(_NEW_PATTERNS) <= set(_EVENT_PATTERNS)
+        # Exactly the eleven originals plus these eight — nothing slipped in.
+        assert set(_EVENT_PATTERNS) == set(_LEGACY_PATTERNS) | set(_NEW_PATTERNS)
+        assert len(_EVENT_PATTERNS) == 19
+
+    @pytest.mark.parametrize("bad", [
+        "log_blind",                # not a preset
+        "stop-logging",             # AWS CLI spelling
+        "delete-trail",             # AWS CLI spelling
+        "StopLogging",              # an API event name is not a preset name
+        "logging.sinks.update",     # an IAM permission is not a preset name
+        "put_event_selectors",      # not in either post; deliberately not built
+        "azure_diagnostic_delete",  # no Azure provider
+    ])
+    def test_unknown_event_pattern_still_raises(self, bad):
+        with pytest.raises(Exception, match="event_pattern must be one of"):
+            CloudAuditEmitterParams.model_validate({
+                "collector_url": _DEFAULT_COLLECTOR, "event_pattern": bad,
+            })
+
+    @pytest.mark.parametrize("pattern", _NEW_PATTERNS)
+    def test_new_preset_refuses_unknown_provider(self, pattern):
+        with pytest.raises(Exception, match="provider must be one of"):
+            CloudAuditEmitterParams.model_validate({
+                "collector_url": _DEFAULT_COLLECTOR, "provider": "azure",
+                "event_pattern": pattern,
+            })
+
+    # -- the records, call by call ----------------------------------------
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_records_match_provider_documentation(self, pattern, provider):
+        # Exact event name, event source, request-parameter keys and values,
+        # read-only flag, management/data class, resource name and flat hints
+        # for every record, in order.
+        burst = 4
+        records = _render(provider, pattern, burst_count=burst)
+        expected = _expected(pattern, provider, burst)
+        assert [_op(provider, r) for r in records] == [e["name"] for e in expected]
+        for rec, exp in zip(records, expected, strict=True):
+            _ASSERT_RECORD[provider](rec, exp, f"{pattern}_marker")
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_records_carry_only_their_own_marker(self, pattern, provider):
+        for rec in _render(provider, pattern):
+            markers = {k for k in rec if k.endswith("_marker")}
+            assert markers == {f"{pattern}_marker"}
+
+    # -- burst behaviour --------------------------------------------------
+
+    @pytest.mark.parametrize("pattern,provider", _BURST_COMBOS)
+    @pytest.mark.parametrize("burst", [2, 7, 25])
+    def test_burst_presets_empty_the_bucket_then_delete_it(self, pattern, provider, burst):
+        records = _render(provider, pattern, burst_count=burst)
+        # burst_count object deletes, then exactly ONE bucket delete, last.
+        assert len(records) == burst + 1
+        object_op = "DeleteObject" if provider == "aws" else "storage.objects.delete"
+        bucket_op = "DeleteBucket" if provider == "aws" else "storage.buckets.delete"
+        assert [_op(provider, r) for r in records] == [object_op] * burst + [bucket_op]
+        # Every delete names a DIFFERENT object — a burst of one key repeated is
+        # one delete seen N times, not a bucket being emptied.
+        keys = [r["log_object_key"] for r in records[:-1]]
+        assert len(set(keys)) == burst
+        assert "log_object_key" not in records[-1]
+        # ... and they all sit in the one bucket the terminal call deletes.
+        assert len({r["log_resource_name"] for r in records}) == 1
+        if provider == "aws":
+            assert [r["requestParameters"]["key"] for r in records[:-1]] == keys
+            assert {r["requestParameters"]["bucketName"] for r in records} == {
+                records[-1]["requestParameters"]["bucketName"]
+            }
+            # Object deletes are data events; the bucket delete is management.
+            assert [r["managementEvent"] for r in records] == [False] * burst + [True]
+            assert [r["eventCategory"] for r in records] == ["Data"] * burst + ["Management"]
+        else:
+            bucket = records[-1]["protoPayload"]["resourceName"]
+            assert [r["protoPayload"]["resourceName"] for r in records[:-1]] == [
+                f"{bucket}/objects/{k}" for k in keys
+            ]
+            assert [r["logName"].rsplit("%2F", 1)[1] for r in records] == (
+                ["data_access"] * burst + ["activity"]
+            )
+
+    @pytest.mark.parametrize(
+        "pattern,provider",
+        [c for c in _NEW_COMBOS if c not in _BURST_COMBOS],
+    )
+    def test_non_burst_presets_ignore_burst_count(self, pattern, provider):
+        small = _render(provider, pattern, burst_count=2)
+        large = _render(provider, pattern, burst_count=50)
+        assert len(small) == len(large) == len(_expected(pattern, provider, 2))
+        assert [_op(provider, r) for r in small] == [_op(provider, r) for r in large]
+
+    def test_gcp_log_bucket_delete_is_one_call_not_a_burst(self):
+        # A Cloud Logging log bucket has no object-level API: deleting it is a
+        # single DeleteBucket (the bucket then sits in DELETE_REQUESTED).
+        records = _render("gcp", "log_destination_delete", burst_count=25)
+        assert len(records) == 1
+        assert records[0]["protoPayload"]["serviceName"] == "logging.googleapis.com"
+
+    @pytest.mark.parametrize("provider", _PROVIDERS)
+    def test_object_overwrite_reads_then_writes_the_same_object_as_one_identity(self, provider):
+        read, write = _render(provider, "log_object_overwrite")
+        assert read["log_object_key"] == write["log_object_key"]
+        assert read["log_resource_name"] == write["log_resource_name"]
+        assert read["principal_id"] == write["principal_id"]
+        if provider == "aws":
+            assert (read["eventName"], write["eventName"]) == ("GetObject", "PutObject")
+            assert read["requestParameters"] == write["requestParameters"]
+            assert (read["readOnly"], write["readOnly"]) == (True, False)
+            assert read["userIdentity"] == write["userIdentity"]
+        else:
+            assert (
+                read["protoPayload"]["methodName"], write["protoPayload"]["methodName"],
+            ) == ("storage.objects.get", "storage.objects.create")
+            assert read["protoPayload"]["resourceName"] == write["protoPayload"]["resourceName"]
+            assert (
+                read["protoPayload"]["authenticationInfo"]
+                == write["protoPayload"]["authenticationInfo"]
+            )
+
+    # -- what must NOT be in a record --------------------------------------
+
+    def test_operation_inventory_is_exactly_the_victim_side_calls(self):
+        # The whole vocabulary of the eight presets, per provider. Anything an
+        # attacker does in their OWN account (creating the KMS key, editing its
+        # policy, deleting it, re-creating the bucket name) is absent from a
+        # victim's audit log and must be absent here.
+        seen: dict[str, set[tuple[str, str]]] = {"aws": set(), "gcp": set()}
+        for pattern, provider in _NEW_COMBOS:
+            for rec in _render(provider, pattern):
+                source = (rec["eventSource"] if provider == "aws"
+                          else rec["protoPayload"]["serviceName"])
+                seen[provider].add((source, _op(provider, rec)))
+        assert seen["aws"] == {
+            (_CLOUDTRAIL, "StopLogging"), (_CLOUDTRAIL, "DeleteTrail"),
+            (_CLOUDTRAIL, "UpdateTrail"), (_CLOUDTRAIL, "CreateTrail"),
+            (_S3, "GetObject"), (_S3, "PutObject"),
+            (_S3, "DeleteObject"), (_S3, "DeleteBucket"),
+        }
+        assert seen["gcp"] == {
+            (_LOGGING, _CFG + "UpdateSink"), (_LOGGING, _CFG + "DeleteSink"),
+            (_LOGGING, _CFG + "CreateSink"), (_LOGGING, _CFG + "UpdateBucket"),
+            (_LOGGING, _CFG + "DeleteBucket"),
+            (_GCS, "storage.objects.get"), (_GCS, "storage.objects.create"),
+            (_GCS, "storage.objects.delete"), (_GCS, "storage.buckets.delete"),
+        }
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_no_credential_shaped_value_in_any_record(self, pattern, provider):
+        token = "super-secret-hec-token-0123456789"
+        records = _render(provider, pattern, via_seam=True, auth_token=token)
+        blob = json.dumps(records)
+        assert token not in blob
+        for shape in _CREDENTIAL_SHAPES:
+            assert not shape.search(blob), f"{shape.pattern} matched in {pattern}/{provider}"
+        for rec in records:
+            for path, key, _ in _walk(rec):
+                flat = re.sub(r"[^a-z0-9]", "", key.lower())
+                assert not flat.endswith(_CREDENTIAL_KEY_SUFFIXES), (
+                    f"credential-named key {path}.{key} in {pattern}/{provider}"
+                )
+
+    def test_attacker_destinations_are_synthetic_canary_names(self):
+        # Every place a record names something the ATTACKER controls: the
+        # bucket a new/redirected trail delivers to, the sink destination, the
+        # external encryption key.
+        destinations: dict[tuple[str, str, str], str] = {}
+        for pattern in ("log_router_create", "log_router_redirect", "log_key_swap"):
+            for provider in _PROVIDERS:
+                for rec in _render(provider, pattern):
+                    for hint in ("log_destination", "kms_key_id"):
+                        if hint in rec:
+                            destinations[(pattern, provider, hint)] = rec[hint]
+        assert set(destinations) == {
+            ("log_router_create", "aws", "log_destination"),
+            ("log_router_create", "gcp", "log_destination"),
+            ("log_router_redirect", "aws", "log_destination"),
+            ("log_router_redirect", "gcp", "log_destination"),
+            ("log_key_swap", "aws", "kms_key_id"),
+            ("log_key_swap", "gcp", "kms_key_id"),
+        }
+        for where, value in destinations.items():
+            assert "cortexsim-canary" in value, (where, value)
+        assert set(destinations.values()) == {
+            _ATTACKER_S3_BUCKET, _ATTACKER_SINK_DESTINATION,
+            _EXTERNAL_KMS_KEY, _EXTERNAL_CMEK_KEY,
+        }
+        # "External" has to be visible in the value: the key lives outside the
+        # victim account / project the trail and log bucket belong to.
+        assert ":123456789012:" not in _EXTERNAL_KMS_KEY
+        assert not _EXTERNAL_CMEK_KEY.startswith("projects/cortexsim-canary/")
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_hints_restate_the_provider_true_fields(self, pattern, provider):
+        # A flat hint is a projection of a nested value, never a second opinion.
+        for rec in _render(provider, pattern):
+            if provider == "aws":
+                req = rec["requestParameters"]
+                assert rec["principal_id"] == rec["userIdentity"]["arn"]
+                if "log_destination" in rec:
+                    assert rec["log_destination"] == req["s3BucketName"]
+                if "kms_key_id" in rec:
+                    assert rec["kms_key_id"] == req["kmsKeyId"]
+                if "log_object_key" in rec:
+                    assert rec["log_object_key"] == req["key"]
+                    assert rec["log_resource_name"] == f"arn:aws:s3:::{req['bucketName']}"
+            else:
+                payload = rec["protoPayload"]
+                req = payload.get("request", {})
+                assert rec["principal_id"] == payload["authenticationInfo"]["principalEmail"]
+                if "log_destination" in rec:
+                    assert rec["log_destination"] == req["sink"]["destination"]
+                if "kms_key_id" in rec:
+                    assert rec["kms_key_id"] == req["bucket"]["cmekSettings"]["kmsKeyName"]
+                if "log_disabled" in rec:
+                    assert rec["log_disabled"] is req["sink"]["disabled"] is True
+                if "log_object_key" in rec:
+                    assert payload["resourceName"] == (
+                        f"{rec['log_resource_name']}/objects/{rec['log_object_key']}"
+                    )
+                else:
+                    assert payload["resourceName"] == rec["log_resource_name"]
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_no_researcher_lab_value_from_the_posts(self, pattern, provider):
+        blob = json.dumps(_render(provider, pattern, burst_count=3))
+        for value in _POST_LAB_VALUES:
+            assert value not in blob
+
+    # -- seams the records pass through ------------------------------------
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_principal_hint_follows_the_canary_planted_principal(self, pattern, provider):
+        # The canary plant rewrites the GCP principalEmail in place; the flat
+        # principal_id must not be left pointing at the pre-plant identity.
+        token = "csim-9f2a41c0d3e7"
+        for rec in _render(provider, pattern, via_seam=True, canary_token=token):
+            assert rec["cortexsim_canary"] == token
+            if provider == "aws":
+                assert rec["userIdentity"]["userName"] == f"cortexsim-canary-{token}"
+                assert rec["principal_id"] == rec["userIdentity"]["arn"]
+            else:
+                planted = f"{token}@cortexsim-canary.invalid"
+                assert rec["protoPayload"]["authenticationInfo"]["principalEmail"] == planted
+                assert rec["principal_id"] == planted
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_source_ip_override_applies(self, pattern, provider):
+        events = _render(provider, pattern, source_ip=_OVR_IP)
+        assert {_caller_ip(provider, e) for e in events} == {_OVR_IP}
+        assert {_caller_ip(provider, e) for e in _render(provider, pattern)} == {_ANOMALOUS_IP}
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_records_do_not_alias_the_preset_templates(self, pattern, provider):
+        # plant_canary and downstream consumers mutate records in place; one
+        # record's edit must never bleed into the next render.
+        before = json.dumps(_render(provider, pattern), sort_keys=True)
+        for rec in _render(provider, pattern):
+            for _, _, value in list(_walk(rec)):
+                if isinstance(value, dict):
+                    value["tampered"] = True
+        after = json.dumps(_render(provider, pattern), sort_keys=True)
+        assert _strip_volatile(before) == _strip_volatile(after)
+
+    # -- through the executor (stubbed transport, no network) ---------------
+
+    def test_live_run_posts_object_deletes_then_the_bucket_delete(self, monkeypatch):
+        state, stub = self._run_with_stub(
+            monkeypatch, provider="gcp", event_pattern="stream_bucket_delete",
+            burst_count=3,
+        )
+        sr = state.step_results[0]
+        assert sr.status == "success"
+        bodies = _bodies(stub)
+        assert [b["protoPayload"]["methodName"] for b in bodies] == (
+            ["storage.objects.delete"] * 3 + ["storage.buckets.delete"]
+        )
+        assert sr.detail["events_posted"] == 4
+        assert sr.detail["event_pattern"] == "stream_bucket_delete"
+        assert all(r["url"] == _DEFAULT_COLLECTOR for r in stub.requests)
+
+    def test_live_run_aws_router_redirect_single_record(self, monkeypatch):
+        state, stub = self._run_with_stub(
+            monkeypatch, provider="aws", event_pattern="log_router_redirect",
+            iterations=2,
+        )
+        bodies = _bodies(stub)
+        assert [b["eventName"] for b in bodies] == ["UpdateTrail", "UpdateTrail"]
+        assert all(
+            b["requestParameters"] == {"name": _TRAIL, "s3BucketName": _ATTACKER_S3_BUCKET}
+            for b in bodies
+        )
+        # One simulation run id per iteration, carried in the body.
+        assert len({b["cortexsim_run_id"] for b in bodies}) == 2
+
+    @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
+    def test_dry_run_builds_no_client(self, monkeypatch, pattern, provider):
+        def _boom(self, params):  # noqa: ARG001
+            raise AssertionError("client should not be built in dry-run")
+        monkeypatch.setattr(CloudAuditEmitter, "_build_client", _boom)
+        campaign = _campaign(dry_run=True, event_pattern=pattern, provider=provider)
+        state = _run(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
+        sr = state.step_results[0]
+        assert sr.status == "success"
+        assert sr.detail["dry_run"] is True
+        assert sr.bytes_sent == 0
+
+    def test_offline_bundle_hook_renders_the_same_calls(self):
+        params = CloudAuditEmitterParams(
+            collector_url=_DEFAULT_COLLECTOR, provider="aws",
+            event_pattern="log_destination_delete", burst_count=3,
+        )
+        planned = CloudAuditEmitter().plan_offline_records(
+            params, sim_run_id=_RUN_ID, iteration=1,
+        )
+        assert [r["eventName"] for r in planned] == ["DeleteObject"] * 3 + ["DeleteBucket"]
+
+    # -- metadata ----------------------------------------------------------
+
+    def test_meta_declares_the_new_techniques_and_version(self):
+        meta = CloudAuditEmitter.Meta
+        assert meta.version == "1.2.0"
+        for technique in ("T1562.008", "T1485", "T1565.001", "T1537"):
+            assert technique in meta.mitre_techniques
+        # The originals are all still declared.
+        for technique in ("T1098", "T1530", "T1078.004", "T1552.001", "T1555.006",
+                          "T1087.004", "T1069.003", "T1580", "T1619"):
+            assert technique in meta.mitre_techniques
+        assert len(meta.mitre_techniques) == len(set(meta.mitre_techniques))
+
+    def test_new_techniques_do_not_trip_the_c2_gate(self):
+        from eal_simulator.safety import is_c2_plugin
+        assert is_c2_plugin(
+            "cloud_audit_emitter", CloudAuditEmitter.Meta.mitre_techniques,
+        ) is False
+
+    def test_event_pattern_field_and_docstring_name_every_preset(self):
+        described = CloudAuditEmitterParams.model_fields["event_pattern"].description
+        for pattern in _EVENT_PATTERNS:
+            assert pattern in described, f"{pattern} missing from the field description"
+            assert pattern in cae.__doc__, f"{pattern} missing from the module docstring"
+
+    def test_meta_description_and_targets_cover_log_tampering(self):
+        meta = CloudAuditEmitter.Meta
+        assert "log" in meta.description.lower()
+        targets = " | ".join(meta.eal_targets)
+        for needle in ("StopLogging", "DeleteTrail", "UpdateTrail", "CreateTrail",
+                       "UpdateSink", "DeleteSink", "CreateSink"):
+            assert needle in targets, needle
+
+    def test_no_detector_is_presented_as_armable(self):
+        # The vendor alerts these records correspond to need a natively
+        # onboarded audit source plus a 14-day activation / 30-day training
+        # period. Records POSTed to an HTTP collector do not arm them, so the
+        # plugin must not declare them as detectors it can fire.
+        manifest = CloudAuditEmitter.analytics_manifest()
+        assert manifest["detectors"] == []
+        assert manifest["datasets"] == ["cloud_audit_logs"]
+        assert manifest["data_sources"] == ["aws_audit_log", "gcp_audit_log"]
+        assert manifest["supports_negative_control"] is False
+
+
+def _strip_volatile(blob: str) -> str:
+    """Drop the per-record clock and insertId so two renders compare equal."""
+    blob = re.sub(r'"(eventTime|timestamp)": "[^"]+"', r'"\1": "T"', blob)
+    return re.sub(r'"insertId": "[0-9a-f]+"', '"insertId": "I"', blob)
