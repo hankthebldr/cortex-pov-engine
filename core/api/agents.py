@@ -2532,10 +2532,12 @@ async def _refuse_unstageable_task(
     same vocabulary the beacon itself uses — a run that could not execute must
     never be mistaken for a run that executed and found nothing.
     """
-    from models import Run  # noqa: PLC0415
+    from models import Result, Run  # noqa: PLC0415
     from engine.orchestrator import (  # noqa: PLC0415
         ARTIFACT_FETCH_CAPABILITY,
+        REASON_AGENT_CANNOT_STAGE_ARTIFACTS,
         _publish_run_status,
+        stamp_not_executed,
     )
 
     caps = list(agent.capabilities or [])
@@ -2573,6 +2575,17 @@ async def _refuse_unstageable_task(
         )
         .execution_options(synchronize_session=False)
     )
+    # Never executed is never matched (OPS-01). The dequeue above already
+    # stamped delivered_at, so without this the refused steps stayed pending
+    # and the next alert from the host was credited to them, with an MTTD.
+    # Scoped to THIS task's steps and independent of the UPDATE's rowcount:
+    # another endpoint's partition (or a composed run's EAL steps) may really
+    # have run, and a second refused endpoint finds the run already failed.
+    refused = {s.get("id") for s in task.steps if isinstance(s, dict)}
+    seeded = set((await db.execute(
+        select(Result.step_id).where(Result.run_id == task.run_id))).scalars().all())
+    await stamp_not_executed(db, task.run_id, REASON_AGENT_CANNOT_STAGE_ARTIFACTS,
+                             commit=False, exclude_steps=seeded - refused)
     await db.commit()
     # Only the request that failed the run announces it; a run that was
     # already terminal (or is missing) keeps the verdict it has.
