@@ -12,6 +12,7 @@ from integrations.panos.client import PanosClient
 from integrations.panos.exceptions import (
     PanosApiError, PanosShapeError, PanosTransportError)
 
+TZ = "/config/devices/entry[@name='localhost.localdomain']/deviceconfig/system/timezone"
 OK = b'<response status="success"><result><system><hostname>fw</hostname></system></result></response>'
 SYSINFO = "<show><system><info/></system></show>"
 
@@ -42,7 +43,7 @@ async def test_op_request_shape():
     assert req.headers["X-PAN-KEY"] == "KEY123"
     assert "key=" not in str(req.url) and "KEY123" not in str(req.url)
     f = form(req)
-    assert f["type"] == ["op"] and f["cmd"] == [SYSINFO]
+    assert f["type"] == ["op"] and f["cmd"] == ["<show><system><info /></system></show>"]
     assert "key" not in f
 
 
@@ -50,12 +51,12 @@ async def test_op_request_shape():
 async def test_config_show_request_shape():
     transport, seen = recorder()
     async with PanosClient("fw.example:8443", "K", verify_tls=True, transport=transport) as c:
-        await c.config_show("/config/devices/entry/deviceconfig/system/timezone")
+        await c.config_show(TZ)
     (req,) = seen
     assert str(req.url) == "https://fw.example:8443/api/"
     f = form(req)
     assert f["type"] == ["config"] and f["action"] == ["show"]
-    assert f["xpath"] == ["/config/devices/entry/deviceconfig/system/timezone"]
+    assert f["xpath"] == [TZ]
 
 
 @pytest.mark.asyncio

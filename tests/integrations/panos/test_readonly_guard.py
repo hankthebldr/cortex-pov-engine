@@ -35,7 +35,7 @@ ALLOWED = [
     "<show><system><info/></system></show>",
     "<show><logging-status/></show>",
     "<show><clock/></show>",
-    "<show><session><all/></session></show>",
+    "<show><session><all><filter><count>yes</count></filter></all></session></show>",
     "<show><object><registered-ip><all/></registered-ip></object></show>",
     "<show><user><ip-user-mapping><all/></ip-user-mapping></user></show>",
     "<test><security-policy-match><from>a</from><to>b</to><source>1.1.1.1</source>"

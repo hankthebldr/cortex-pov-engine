@@ -13,6 +13,7 @@ exception message; transport errors carry fixed text only.
 """
 from __future__ import annotations
 
+import re
 import ssl
 import xml.etree.ElementTree as ET
 from typing import Optional
@@ -23,24 +24,14 @@ from pydantic import SecretStr
 from . import codes
 from .exceptions import (
     PanosApiError, PanosShapeError, PanosTransportError, PanosWriteRefused)
+from .host import normalize_mgmt_host
 from .xmlparse import parse_keygen, parse_response, safe_fromstring
 
-# Element paths (root -> command) of the read-only operational commands we may run.
-OP_ALLOWLIST: frozenset[tuple[str, ...]] = frozenset({
-    ("show", "system", "info"),
-    ("show", "logging-status"),
-    ("show", "clock"),
-    ("show", "session", "all"),
-    ("show", "user", "ip-user-mapping"),
-    ("show", "object", "registered-ip"),
-    ("test", "security-policy-match"),
-    ("test", "nat-policy-match"),
-    ("test", "routing", "fib-lookup"),
-    ("test", "advanced-routing", "fib-lookup"),
-})
+# ---------------------------------------------------------------- op allowlist
+#
+# Each command declares its exact argument structure. There is no prefix matching:
+# an element the schema does not name is a refusal.
 
-# Defence in depth: these tags may not appear ANYWHERE in an allowed command, so a
-# write verb cannot ride along as an argument or a nested child.
 _FORBIDDEN_TAGS = frozenset({
     "request", "set", "clear", "delete", "debug", "commit", "load", "save", "edit",
     "move", "rename", "import", "export", "revert", "override", "multi-config",
@@ -48,28 +39,145 @@ _FORBIDDEN_TAGS = frozenset({
 })
 
 _REFUSED = "operational command is not on the read-only allowlist; refused"
+_MAX_LEAF = 256
 
 
-def _check_op_allowed(cmd_xml: str) -> None:
+def _refuse() -> PanosWriteRefused:
+    return PanosWriteRefused(_REFUSED)
+
+
+def _leaf_ok(el: ET.Element) -> bool:
+    text = (el.text or "").strip()
+    return len(el) == 0 and 0 < len(text) <= _MAX_LEAF
+
+
+def _only_leaves(node: ET.Element, allowed: frozenset[str], *, required: frozenset[str] = frozenset()) -> bool:
+    tags = [c.tag for c in node]
+    if len(set(tags)) != len(tags) or not set(tags) <= allowed or not required <= set(tags):
+        return False
+    return all(_leaf_ok(c) for c in node)
+
+
+def _no_args(node: ET.Element) -> bool:
+    return len(node) == 0 and not (node.text or "").strip()
+
+
+def _all_or_ip(node: ET.Element) -> bool:
+    if len(node) != 1:
+        return False
+    child = node[0]
+    if child.tag == "all":
+        return len(child) == 0 and not (child.text or "").strip()
+    return child.tag == "ip" and _leaf_ok(child)
+
+
+def _session_all(node: ET.Element) -> bool:
+    # Unfiltered "show session all" dumps every session; only the counted form is allowed.
+    if len(node) != 1 or node[0].tag != "filter" or (node[0].text or "").strip():
+        return False
+    flt = node[0]
+    if not _only_leaves(flt, frozenset({"source", "destination", "count"}),
+                        required=frozenset({"count"})):
+        return False
+    return flt.find("count").text.strip() == "yes"
+
+
+_POLICY_LEAVES = frozenset({"from", "to", "source", "destination", "destination-port",
+                            "protocol", "application", "source-user"})
+
+_COMMANDS = {
+    ("show", "system", "info"): _no_args,
+    ("show", "clock"): _no_args,
+    ("show", "logging-status"): _no_args,
+    ("show", "session", "all"): _session_all,
+    ("show", "user", "ip-user-mapping"): _all_or_ip,
+    ("show", "object", "registered-ip"): _all_or_ip,
+    ("test", "security-policy-match"): lambda n: _only_leaves(n, _POLICY_LEAVES),
+    ("test", "nat-policy-match"): lambda n: _only_leaves(n, _POLICY_LEAVES),
+    ("test", "routing", "fib-lookup"):
+        lambda n: _only_leaves(n, frozenset({"virtual-router", "ip"})),
+    ("test", "advanced-routing", "fib-lookup"):
+        lambda n: _only_leaves(n, frozenset({"logical-router", "ip"})),
+}
+
+# Kept for introspection/tests: the set of allowlisted command paths.
+OP_ALLOWLIST: frozenset[tuple[str, ...]] = frozenset(_COMMANDS)
+
+
+def _check_op_allowed(cmd_xml: str) -> str:
+    """Validate ``cmd_xml`` and return the canonical re-serialisation that is SENT.
+
+    The bytes we check are the bytes we send: anything a different XML reader could
+    interpret differently (comments, PIs, CDATA, namespaces, attributes, stray text)
+    is refused outright rather than normalised away.
+    """
+    low = cmd_xml.lower() if isinstance(cmd_xml, str) else ""
+    if not low or "<!--" in low or "<?" in low or "<![cdata[" in low:
+        raise _refuse()
     try:
         root = safe_fromstring(cmd_xml)
     except PanosShapeError:
-        raise PanosWriteRefused(_REFUSED) from None
-    if any(el.tag in _FORBIDDEN_TAGS for el in root.iter()):
-        raise PanosWriteRefused(_REFUSED)
-    # Walk the single-child chain; the command path is the prefix before the first
-    # element that branches (siblings at any level) or carries text (an argument).
-    path: list[str] = []
+        raise _refuse() from None
+    for el in root.iter():
+        tag = el.tag
+        if not isinstance(tag, str) or "{" in tag or ":" in tag or el.attrib:
+            raise _refuse()
+        if tag.lower() in _FORBIDDEN_TAGS:
+            raise _refuse()
+        if len(el):  # container: no text, no tails between children
+            if (el.text or "").strip() or any((c.tail or "").strip() for c in el):
+                raise _refuse()
+        elif (el.tail or "").strip() and el is not root:
+            raise _refuse()
+    if (root.tail or "").strip():
+        raise _refuse()
+    # Descend the single-child chain to a declared command, then apply its schema.
+    path = [root.tag]
     node = root
-    while True:
-        path.append(node.tag)
-        if (node.text or "").strip() or len(node) != 1:
-            break
+    while tuple(path) not in _COMMANDS:
+        if len(node) != 1 or (node.text or "").strip():
+            raise _refuse()
         node = node[0]
-    for n in range(1, len(path) + 1):
-        if tuple(path[:n]) in OP_ALLOWLIST:
-            return
-    raise PanosWriteRefused(_REFUSED)
+        path.append(node.tag)
+    if not _COMMANDS[tuple(path)](node):
+        raise _refuse()
+    return ET.tostring(root, encoding="unicode")
+
+
+# ---------------------------------------------------------------- config xpath allowlist
+
+_NAME = r"[A-Za-z0-9 ._:/+-]{1,63}"
+_ENT = rf"entry\[@name='{_NAME}'\]"
+_DEV = r"/config/devices/entry\[@name='[A-Za-z0-9._-]+'\]"
+_VSYS = _DEV + r"/vsys/entry\[@name='vsys\d+'\]"
+_PVSYS = r"/config/panorama/vsys/entry\[@name='vsys\d+'\]"
+_SHARED = "/config/shared"
+_PSHARED = "/config/panorama/shared"
+_PTYPES = "(?:virus|spyware|vulnerability|url-filtering|wildfire-analysis)"
+_PROFILES = rf"/(?:profile-group/{_ENT}|profiles/{_PTYPES}/{_ENT})"
+
+CONFIG_XPATH_ALLOWLIST: tuple[re.Pattern, ...] = tuple(re.compile(p) for p in (
+    _DEV + "/deviceconfig/setting/logging",
+    _DEV + "/deviceconfig/system/timezone",
+    _VSYS + "/log-settings/profiles",
+    _VSYS + "/log-settings/syslog",
+    _SHARED + "/log-settings/syslog",
+    _VSYS + "/rulebase/decryption/rules",
+    _VSYS + rf"/rulebase/security/rules/{_ENT}",
+    _VSYS + "/zone",
+    _VSYS + rf"/zone/{_ENT}",
+    _VSYS + _PROFILES,
+    _SHARED + _PROFILES,
+    _PVSYS + rf"/(?:pre|post)-rulebase/security/rules/{_ENT}",
+    _PVSYS + _PROFILES,
+    _PSHARED + _PROFILES,
+))
+
+
+def allowed_xpath(xpath: str) -> bool:
+    if not isinstance(xpath, str) or "|" in xpath or "//" in xpath or ".." in xpath:
+        return False
+    return any(p.fullmatch(xpath) for p in CONFIG_XPATH_ALLOWLIST)
 
 
 def _is_tls_failure(exc: BaseException) -> bool:
@@ -87,7 +195,7 @@ class PanosClient:
     def __init__(self, host: str, api_key: Optional[str], *, verify_tls: bool,
                  transport: Optional[httpx.AsyncBaseTransport] = None,
                  max_calls: int = 120, timeout: float = 10.0):
-        self._url = f"https://{host}/api/"
+        self._url = f"https://{normalize_mgmt_host(host)}/api/"
         self._api_key = api_key
         self._max_calls = max_calls
         self.calls_issued = 0
@@ -106,20 +214,19 @@ class PanosClient:
     # ------------------------------------------------------------ public reads
 
     async def op(self, cmd_xml: str) -> ET.Element:
-        _check_op_allowed(cmd_xml)
-        return await self._send({"type": "op", "cmd": cmd_xml}, with_key=True)
+        canonical = _check_op_allowed(cmd_xml)
+        return await self._send({"type": "op", "cmd": canonical}, with_key=True)
 
     async def config_show(self, xpath: str) -> ET.Element:
-        if not xpath or not xpath.startswith("/"):
-            raise PanosWriteRefused("config_show requires an absolute xpath; refused")
+        if not allowed_xpath(xpath):
+            raise PanosWriteRefused("xpath not in read allowlist")
         return await self._send({"type": "config", "action": "show", "xpath": xpath},
                                 with_key=True)
 
     async def keygen(self, username: str, password: SecretStr) -> str:
-        data = {"type": "keygen", "user": username,
-                "password": password.get_secret_value()}
         try:
-            result = await self._send(data, with_key=False, keygen=True)
+            result = await self._send({"type": "keygen", "user": username},
+                                      with_key=False, keygen=True, secret=password)
         except PanosApiError:
             raise PanosTransportError("firewall rejected the credentials",
                                       code=codes.PN_KEYGEN_REJECTED) from None
@@ -132,14 +239,17 @@ class PanosClient:
 
     # ------------------------------------------------------------ transport
 
-    async def _send(self, data: dict, *, with_key: bool, keygen: bool = False) -> ET.Element:
+    async def _send(self, data: dict, *, with_key: bool, keygen: bool = False,
+                    secret: Optional[SecretStr] = None) -> ET.Element:
         if self.calls_issued >= self._max_calls:
             raise PanosTransportError("per-run call budget exhausted",
                                       code=codes.PN_CALL_BUDGET)
         headers = {"X-PAN-KEY": self._api_key} if (with_key and self._api_key) else {}
         self.calls_issued += 1
         try:
-            resp = await self._http.post(self._url, data=data, headers=headers)
+            resp = await self._http.post(
+                self._url, headers=headers,
+                data={**data, **({"password": secret.get_secret_value()} if secret else {})})
         except httpx.HTTPError as exc:
             if _is_tls_failure(exc):
                 raise PanosTransportError("TLS verification of the management certificate failed",
@@ -158,7 +268,8 @@ class PanosClient:
             if exc.code == codes.PN_AUTH_REJECTED:
                 raise PanosTransportError("management API rejected the credentials",
                                           code=codes.PN_AUTH_REJECTED) from None
-            if keygen:
-                raise PanosApiError("firewall rejected the request", code=exc.code,
-                                    panos_code=exc.panos_code) from None
-            raise
+            msg = exc.message
+            if self._api_key and self._api_key in msg:
+                msg = msg.replace(self._api_key, "[redacted]")
+            raise PanosApiError("firewall rejected the request" if keygen else msg,
+                                code=exc.code, panos_code=exc.panos_code) from None
