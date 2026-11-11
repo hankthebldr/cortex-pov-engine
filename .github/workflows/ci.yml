@@ -33,6 +33,8 @@ name: CI
 #               ALSO check-adapter-wiring.py: the de-hand-rolling gate, FAIL if a
 #               scenario names a tool with a non-reference-only adapter pack but
 #               never wires it via external_tools[].adapter_ref.
+#               ALSO check-installer-submodules.py: FAIL if install.sh would
+#               check out a denylisted submodule or one shipping Binaries/*.zip.
 #   rust-dist — static-musl build of signalbench/ackbarx/xdrtop, then EXECUTE
 #               each on clean ubuntu:22.04 AND alpine:3 with --network none.
 #               Change-filtered (gitlink / recipe / registry only) and NOT a
@@ -351,6 +353,17 @@ jobs:
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
         run: python3 scripts/check-adapter-wiring.py --list
+      - name: Installer submodule denylist (no compiled implants on a jumpbox)
+        # Runs install.sh's real init_submodules with real git in a sandbox and
+        # FAILs if it checks out a denylisted submodule (sources/MITRE-Turla-
+        # Carbon shipped compiled Turla implants until 2026-11-10), or any
+        # checked-out submodule that ships a Binaries/*.zip. This job checks
+        # submodules out, so the content rule scans every one of them. It lives
+        # here, not in backend: the prod image has no git, so the pytest twin
+        # (tests/installer/test_install_sh_submodule_denylist.py) skips there.
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+        run: python3 scripts/check-installer-submodules.py
 
   # ---------------------------------------------------------------------------
   # rust-dist — static musl build of the three tier-2 Rust tools, then EXECUTE
