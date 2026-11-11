@@ -1285,6 +1285,9 @@ _WINDOWS_INSTALLER = r"""# --- CortexSim beacon installer (Windows / PowerShell 
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\install-cortexsim-agent.ps1
 #
 # The token goes in the environment, not the URL, so it stays out of proxy logs.
+# For an https SimCore, a 5.1 host with old TLS defaults needs this first, or
+# iwr cannot connect to fetch the script at all:
+#   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
 #
 # What the POSIX installer has and this one does not: a foreground mode
 # (?mode=foreground is refused for Windows), a source build (CORTEXSIM_SRC),
@@ -1293,15 +1296,15 @@ _WINDOWS_INSTALLER = r"""# --- CortexSim beacon installer (Windows / PowerShell 
 # comes prebuilt from the SimCore that served this script, and its sha256 is
 # compared with the digest that same SimCore serves (that catches corruption,
 # not tampering; the beacon is unsigned). It is registered as the Windows
-# service CortexSimAgent (LocalSystem,
-# automatic start, restart on failure). OK is reported only after the service
-# is still Running past the Service Control Manager's start window AND the
-# beacon has polled SimCore on its own. Every failure prints a stable code with
-# a fix line and is reported to SimCore (GET /api/agents/install/attempts).
+# service CortexSimAgent (LocalSystem, automatic start, restart on failure).
+# OK is reported only after the service is still Running past the Service
+# Control Manager's start window AND the beacon has polled SimCore on its own.
+# Every failure prints a stable code with a fix line and is reported to SimCore
+# (GET /api/agents/install/attempts).
 #
 # Pure ASCII, and the body runs inside "& { ... }" with no bare `exit`: a
-# failure under "iwr | iex" leaves your shell, its $ErrorActionPreference and
-# its variables exactly as they were.
+# failure under "iwr | iex" leaves your shell, its $ErrorActionPreference, its
+# TLS protocol list and its variables exactly as they were.
 #
 # Env overrides:
 #   CORTEXSIM_SERVER / CORTEXSIM_TOKEN / CORTEXSIM_AGENT_ID / CORTEXSIM_INTERVAL
