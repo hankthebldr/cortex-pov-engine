@@ -4,12 +4,13 @@
  * Pins: five lane bands, one per signal path; cells sit in the lane `laneOf`
  * derives from what each step does; an empty lane is dimmed and says so; the
  * Engine terminal is always present and carries the verdict; a missing
- * scenario places no step and says why; a failed run never shows a miss; a
- * failed results fetch says "could not load", never 0.
+ * scenario places no step and says why, but a scenario still loading draws no
+ * board at all; a failed run never shows a miss; a failed results fetch says
+ * "could not load", never 0.
  */
 import React from 'react'
 import { describe, it, expect, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup, within } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, within, act } from '@testing-library/react'
 import { installRoutes } from '../../../test/mockFetch.js'
 import RunTopologyView from '../RunTopologyView.jsx'
 import { STEP_LANES } from '../composerLanes.js'
@@ -129,6 +130,30 @@ describe('RunTopologyView', () => {
     expect(screen.getAllByTestId('topo-lane').some((l) => l.dataset.tone === 'miss')).toBe(false)
     expect(screen.getByTestId('topo-engine').dataset.tone).not.toBe('miss')
     expect(screen.getByTestId('topo-verdict')).toHaveTextContent('not scored')
+  })
+
+  it('holds the board while the scenario request is in flight — loading is never drawn as "not loaded"', async () => {
+    let releaseScenario
+    const scenarioGate = new Promise((resolve) => { releaseScenario = resolve })
+    let scenarioAsked = false
+    routes('failed', {
+      'GET /api/scenarios/SIM-MP-001': async () => { scenarioAsked = true; await scenarioGate; return SCENARIO },
+    })
+    render(<RunTopologyView runId="r1" />)
+    // The run record named its scenario and that request is out. Give the run
+    // and results responses time to land while the scenario has not.
+    await waitFor(() => expect(scenarioAsked).toBe(true))
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
+    expect(screen.queryByTestId('topo-scenario-note')).toBeNull()
+    expect(screen.queryByTestId('topo-unplaced')).toBeNull()
+    expect(screen.queryByTestId('run-topology')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('loading topology')
+    // The scenario lands: every step is placed, and on a failed run none is a miss.
+    releaseScenario()
+    await waitFor(() => expect(screen.getByTestId('run-topology')).toHaveAttribute('data-steps-from', 'scenario'))
+    expect(screen.getAllByTestId('topo-cell')).toHaveLength(3)
+    expect(screen.getAllByTestId('topo-cell').some((c) => c.dataset.tone === 'miss')).toBe(false)
+    expect(screen.getByTestId('topo-unproven')).toBeInTheDocument()
   })
 
   it('says "could not load" on a failed results fetch — never 0', async () => {

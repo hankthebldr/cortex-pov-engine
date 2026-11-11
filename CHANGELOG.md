@@ -34,6 +34,20 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 - **Not covered yet:** agent-run scenario steps (the EAL CLI on a beacon) and
   Broker VM targets, which wait on confirmation of the applets in use.
 
+### Fixed — a run's Topology tab no longer says "scenario not loaded" while it is loading
+
+- **The tab drew its board before the scenario request came back.** The
+  results and the run record usually land first, and the scenario id is read
+  from the run record, so for a moment the page said "scenario … not loaded",
+  placed no step and listed every step as unplaced, about a request still in
+  flight. Since lanes became signal paths (read from each step's command),
+  that moment has no cells at all, and `ci.yml`'s `ui (build + vitest)` job
+  went red on `dev` whenever the FAILED-run test read the board inside it
+  (about 1 run in 8). The board now waits until the scenario request
+  succeeds or fails; a failed request still places no step and says why.
+  Guard: the "holds the board while the scenario request is in flight" case
+  in `RunTopologyView.test.jsx`, which failed on every run before the change.
+
 ### Fixed — alert read-back reads the Issues API field names
 
 - **An Analytics BIOC issue could never satisfy an ABIOC expectation.** The
