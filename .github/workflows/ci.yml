@@ -482,11 +482,9 @@ jobs:
           for i in $(seq 1 30); do
             curl -sf http://localhost:8888/api/health && break || sleep 2
           done
-          if ! command -v kind >/dev/null 2>&1; then
-            curl -fsSLo "$RUNNER_TEMP/kind" https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
-            chmod +x "$RUNNER_TEMP/kind"
-          fi
-          PATH="$RUNNER_TEMP:$PATH" \
-            SIMCORE_URL=http://host.docker.internal:8888 \
+          # Uses the runner image's own kind; nothing is downloaded unpinned.
+          command -v kind >/dev/null 2>&1 || { echo "kind is not on this runner image"; exit 1; }
+          kind version
+          SIMCORE_URL=http://host.docker.internal:8888 \
             SIMCORE_API=http://localhost:8888 \
             deploy/kind/run-agent-e2e.sh
