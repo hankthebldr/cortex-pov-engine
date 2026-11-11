@@ -200,6 +200,13 @@ func powerShellChainLaunch(launch, marker, stepID string) string {
 // writes to stderr and exits 0 -> 0.
 func powerShellExitWrapper(cmd string) string {
 	var b strings.Builder
+	// First, and before any cmdlet: Windows PowerShell 5.1 raises a "Preparing
+	// modules for first use" progress record on the first cmdlet lookup and, with
+	// stderr redirected, serialises it there as CLIXML ("#< CLIXML" + <Objs>),
+	// -OutputFormat Text notwithstanding. Observed on the first windows-2022 CI
+	// run: every step's stderr carried the envelope. The .ps1 bundle and the
+	// installers already set this; the beacon wrapper did not.
+	b.WriteString("$ProgressPreference = 'SilentlyContinue'\n")
 	b.WriteString("try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch {}\n")
 	b.WriteString("$OutputEncoding = New-Object System.Text.UTF8Encoding $false\n")
 	// Continue (not Stop) so a step behaves like `sh -c`: a non-fatal error does

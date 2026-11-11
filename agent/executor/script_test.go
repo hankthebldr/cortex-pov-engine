@@ -330,3 +330,28 @@ func TestPowerShellExitWrapper_NativeStderrAtExitZeroIsNotAFailure(t *testing.T)
 		t.Fatalf("NativeCommandError clause missing or after the generic failure:\n%s", w)
 	}
 }
+
+// The windows-2022 CI job's first run (2026-11-10, run 42927561143) showed
+// Windows PowerShell 5.1 serialising its "Preparing modules for first use"
+// progress record to a redirected stderr as CLIXML, -OutputFormat Text
+// notwithstanding: a step's stderr began "#< CLIXML" and carried an <Objs>
+// envelope, so a clean step reported noise and a failing one buried its error.
+// The record is raised by the first cmdlet lookup, so the preference must be
+// set before the prologue's own New-Object. The behaviour itself can only be
+// proven on Windows (TestPowerShellExitWrapper_StderrIsTextNotCLIXML and the
+// CI job's pull phase); this pins the ordering on every host.
+func TestPowerShellExitWrapper_SilencesProgressBeforeAnyCmdlet(t *testing.T) {
+	w := powerShellExitWrapper("Write-Output ok")
+	pp := strings.Index(w, "$ProgressPreference = 'SilentlyContinue'")
+	if pp < 0 {
+		t.Fatalf("wrapper never sets $ProgressPreference; 5.1 writes progress to stderr as CLIXML:\n%s", w)
+	}
+	firstCmdlet := strings.Index(w, "New-Object")
+	if firstCmdlet < 0 {
+		t.Fatalf("prologue no longer calls New-Object; re-anchor this test on its first cmdlet:\n%s", w)
+	}
+	if pp > firstCmdlet {
+		t.Errorf("$ProgressPreference is set at offset %d, after the first cmdlet at %d; "+
+			"the progress record is raised by that lookup", pp, firstCmdlet)
+	}
+}
