@@ -101,7 +101,7 @@ export function preflightScenario({
   const platform = platformChecks(scenario, target, agents, pushFormat)
   checks.push(platform.primary)
   if (platform.labels) checks.push(platform.labels)
-  checks.push(identityCheck(scenario, target, agents, identity))
+  checks.push(identityCheck(scenario, target, agents, identity, pushFormat))
   checks.push(measurementCheck(scenario, integrations))
 
   const verdict = checks.reduce(
@@ -618,7 +618,7 @@ function matchesOs(platform, os) {
 
 // ─── 4 · Execution identity ──────────────────────────────────────────────────
 
-function identityCheck(scenario, target, agents, identity) {
+function identityCheck(scenario, target, agents, identity, pushFormat = 'bash') {
   const chosen = identity || (scenario.execution_identity && scenario.execution_identity.default) || ''
   const stepIdentities = Array.from(new Set(
     (Array.isArray(scenario.steps) ? scenario.steps : [])
@@ -634,6 +634,23 @@ function identityCheck(scenario, target, agents, identity) {
   const uniq = Array.from(new Set(wrapped))
 
   if (!target || target.kind !== 'agent') {
+    // A .ps1 bundle has no account wrapper to fail: it cannot switch accounts
+    // at all. The POSIX advice below (getent, nologin) is wrong for it.
+    const bundleTarget = target
+      ? requiredTarget(target, [], pushFormat, serverTargets(scenario).targets)
+      : null
+    if (bundleTarget === 'windows') {
+      return mk('identity', 'Execution identity', PF.WARN,
+        `${uniq.join(' · ')} will NOT be honoured by a .ps1 bundle`,
+        'Windows has no credential-free impersonation, so a PowerShell bundle cannot switch accounts. '
+        + `A step that declares ${uniq.join(' / ')} runs as whoever runs the bundle and logs `
+        + '`cortexsim-identity-degraded`; a step that declares root or administrator is not run at all '
+        + 'from a non-elevated session (NOT_ELEVATED in the bundle\'s outcome table). The '
+        + 'process-ancestry chain will show the operator\'s account, not the one the scenario authored. '
+        + 'Read from the bundle generator: no bundle has run on a Windows host.',
+        'Run the bundle from Windows PowerShell as Administrator, and do not report lineage keyed on '
+        + 'the authored account as the customer\'s.')
+    }
     return mk('identity', 'Execution identity', PF.WARN, `${uniq.join(' · ')} on an unknown host`,
       `The bundle wraps steps as ${uniq.join(', ')}. If those accounts do not exist on the target, `
       + 'or their shell is /usr/sbin/nologin (the stock Debian/Ubuntu default for www-data), the '

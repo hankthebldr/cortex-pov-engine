@@ -584,6 +584,37 @@ describe('target — an enrolled-only row is not a beacon (RG-UI-04)', () => {
   })
 })
 
+// ── A .ps1 bundle is not told about getent and nologin (UI-19) ──────────────
+// The push identity row described a POSIX wrapper for every bundle. A .ps1
+// bundle cannot switch accounts at all: a service-account step runs as whoever
+// runs the bundle (logged `cortexsim-identity-degraded`), and a root /
+// administrator step is skipped NOT_ELEVATED from a non-elevated session.
+describe('execution identity — a PowerShell bundle gets Windows words (UI-19)', () => {
+  const WIN = {
+    ...SCENARIO,
+    steps: [{ id: 'step-01', identity: 'www-data', platforms: ['windows'] }],
+    bundle_targets: ['windows'],
+  }
+
+  it('says the account will not be honoured, and names the bundle\'s own markers', () => {
+    for (const fmt of ['powershell', 'auto']) {
+      const i = check(base({ scenario: WIN, target: PUSH_TARGET, pushFormat: fmt }), 'identity')
+      expect(i.status, fmt).toBe(PF.WARN)
+      expect(i.summary, fmt).toMatch(/will NOT be honoured by a \.ps1 bundle/)
+      expect(i.detail, fmt).toContain('cortexsim-identity-degraded')
+      expect(i.detail, fmt).toContain('NOT_ELEVATED')
+      expect(`${i.detail} ${i.remediation}`, fmt).not.toMatch(/getent|nologin|runuser/)
+      expect(i.detail, fmt).toMatch(/no bundle has run on a Windows host/i)
+    }
+  })
+
+  it('a bash bundle keeps the POSIX account advice', () => {
+    const i = check(base({ target: PUSH_TARGET, pushFormat: 'bash' }), 'identity')
+    expect(i.status).toBe(PF.WARN)
+    expect(i.remediation).toMatch(/getent passwd www-data/)
+  })
+})
+
 // ── Remediation names the target's own supervisor (UI-19) ───────────────────
 describe('target — the fix line matches the beacon OS (UI-19)', () => {
   it('an offline Windows beacon is not told to run systemctl', () => {
