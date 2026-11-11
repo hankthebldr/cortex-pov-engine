@@ -21,7 +21,7 @@ def _note(code: str, detail: str) -> dict:
     return {"code": code, "detail": detail}
 
 
-def _cited_cards(scenario: dict) -> list[str]:
+def cited_cards(scenario: dict) -> list[str]:
     steps = scenario.get("steps")
     if not isinstance(steps, list):
         raise ValueError(f"scenario steps must be a list, got {type(steps).__name__}")
@@ -49,7 +49,7 @@ def _cited_cards(scenario: dict) -> list[str]:
     return sorted(cited)
 
 
-def _card_queries(card_id: str, raw: object) -> list[tuple[str, str | None]]:
+def card_queries(card_id: str, raw: object) -> list[tuple[str, str | None]]:
     """``[(query name, dataset or None)]`` for one card; ``None`` means undeclared."""
     if not isinstance(raw, dict):
         raise ValueError(f"card {card_id} must be a mapping, got {type(raw).__name__}")
@@ -103,7 +103,7 @@ def derive(scenario: dict, cards: dict[str, dict],
     if not isinstance(sid, str) or not sid.strip():
         # ``id`` is the integer primary key on Scenario.to_dict(); never the scenario's name.
         raise ValueError(f"scenario must carry a non-blank string scenario_id, got {sid!r}")
-    cited = _cited_cards(scenario)
+    cited = cited_cards(scenario)
 
     notes: list[dict] = []
     if registry is None:
@@ -120,7 +120,7 @@ def derive(scenario: dict, cards: dict[str, dict],
         if card_id not in cards:
             notes.append(_note("CARD_NOT_FOUND", f"card {card_id} is cited but not in the catalog"))
             continue
-        queries = _card_queries(card_id, cards[card_id])
+        queries = card_queries(card_id, cards[card_id])
         if not queries:
             notes.append(_note("CARD_DECLARES_NO_QUERY",
                                f"card {card_id} carries no query, so its prerequisites cannot be "

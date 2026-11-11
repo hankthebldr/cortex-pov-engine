@@ -309,3 +309,26 @@ def test_query_library_real_corpus_validation(client):
     assert r.text.startswith(f"# {SCENARIO}")
     assert "(validation)" in r.text.splitlines()[0]
     assert "## " in r.text
+
+
+def test_query_library_default_header_and_pointer(client):
+    r = client.get(f"/api/scenarios/{SCENARIO}/query-library")
+    assert r.headers["content-type"] == "text/plain; charset=utf-8"
+    assert r.text.splitlines()[0].endswith("query library (hunt, investigation)")
+    assert "# The cited cards carry" in r.text and "add ?purpose=" in r.text
+
+
+def test_query_library_purpose_is_stripped(client):
+    r = client.get(f"/api/scenarios/{SCENARIO}/query-library", params={"purpose": " hunt , validation "})
+    assert r.status_code == 200
+    assert "(hunt, validation)" in r.text.splitlines()[0]
+
+
+def test_query_library_malformed_card_is_structured_500(client, monkeypatch):
+    from engine.ttp_catalog import catalog
+    raw = dict(catalog.all_raw())
+    for k in raw:
+        raw[k] = {"detections": "broken"}
+    monkeypatch.setattr(catalog, "all_raw", lambda: raw)
+    r = client.get(f"/api/scenarios/{SCENARIO}/query-library")
+    assert r.status_code == 500 and r.json()["code"] == "CARD_SHAPE_UNRECOGNISED"

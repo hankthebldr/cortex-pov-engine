@@ -10,9 +10,14 @@ as "no query".
 """
 from __future__ import annotations
 
-from engine.prerequisites import _cited_cards
+import re
+
+from engine.prerequisites import card_queries, cited_cards
 
 ALLOWED_PURPOSES = ("hunt", "investigation", "validation", "metric")
+
+# Every character str.splitlines() (and common editors) treat as a line break.
+_LINE_BREAK = re.compile("[\n\r\v\f\x1c\x1d\x1e\x85  ]")
 
 
 def _join(purposes: tuple[str, ...]) -> str:
@@ -21,52 +26,55 @@ def _join(purposes: tuple[str, ...]) -> str:
     return ", ".join(purposes[:-1]) + " or " + purposes[-1]
 
 
-def _queries(card_id: str, raw: object) -> list[dict]:
-    if not isinstance(raw, dict):
-        raise ValueError(f"card {card_id} must be a mapping, got {type(raw).__name__}")
-    detections = raw.get("detections")
-    if detections is None:
-        return []
-    if not isinstance(detections, dict):
-        raise ValueError(f"card {card_id}: detections must be a mapping, got {type(detections).__name__}")
-    queries = detections.get("xql_queries")
-    if queries is None:
-        return []
-    if not isinstance(queries, list):
-        raise ValueError(
-            f"card {card_id}: detections.xql_queries must be a list, got {type(queries).__name__}")
+def _one_line(value: object, what: str) -> None:
+    if isinstance(value, str) and _LINE_BREAK.search(value):
+        raise ValueError(f"{what} contains a line-break character: {value!r}")
+
+
+def _items(card_id: str, raw: object) -> list[dict]:
+    """Validated query dicts for one card. Base shape rules live in ``card_queries``."""
+    card_queries(card_id, raw)  # raises ValueError on a malformed card
+    queries = (raw.get("detections") or {}).get("xql_queries") or []
     for i, q in enumerate(queries):
-        if not isinstance(q, dict):
-            raise ValueError(
-                f"card {card_id}: detections.xql_queries[{i}] must be a mapping, got {type(q).__name__}")
-        for field in ("name", "purpose", "dataset", "query"):
+        where = f"card {card_id} query #{i}"
+        for field in ("name", "purpose", "query"):
             v = q.get(field)
             if v is not None and not isinstance(v, str):
-                raise ValueError(
-                    f"card {card_id}: detections.xql_queries[{i}].{field} must be a string, "
-                    f"got {type(v).__name__}")
+                raise ValueError(f"{where}: {field} must be a string, got {type(v).__name__}")
+        if q.get("purpose") not in ALLOWED_PURPOSES:
+            raise ValueError(
+                f"{where}: purpose must be one of {list(ALLOWED_PURPOSES)}, got {q.get('purpose')!r}")
+        _one_line(q.get("name"), f"{where}: name")
+        _one_line(q.get("dataset"), f"{where}: dataset")
     return queries
 
 
 def render(scenario: dict, cards: dict[str, dict],
            purposes: tuple[str, ...] = ("hunt", "investigation")) -> str:
-    bad = [p for p in purposes if p not in ALLOWED_PURPOSES]
-    if bad or not purposes:
-        raise ValueError(f"purposes must be drawn from {list(ALLOWED_PURPOSES)}, got {list(purposes)}")
+    if (not purposes or len(set(purposes)) != len(purposes)
+            or any(p not in ALLOWED_PURPOSES for p in purposes)):
+        raise ValueError(
+            f"purposes must be distinct and drawn from {list(ALLOWED_PURPOSES)}, got {list(purposes)}")
     sid = scenario.get("scenario_id")
+    _one_line(sid, "scenario_id")
     lines = [
         f"# {sid} — query library ({', '.join(purposes)})",
         "# Paste into XQL Search. Authored, not run against any tenant.",
     ]
     wanted = set(purposes)
     blocks: list[str] = []
-    for card_id in _cited_cards(scenario):
+    matched = 0
+    others: dict[str, int] = {}
+    for card_id in cited_cards(scenario):
+        _one_line(card_id, "card id")
         if card_id not in cards:
             blocks.append(f"# card {card_id}: not found in the card catalog\n")
             continue
-        for q in _queries(card_id, cards[card_id]):
-            if q.get("purpose") not in wanted:
+        for q in _items(card_id, cards[card_id]):
+            if q["purpose"] not in wanted:
+                others[q["purpose"]] = others.get(q["purpose"], 0) + 1
                 continue
+            matched += 1
             name = q.get("name")
             title = name if name and name.strip() else "(unnamed query)"
             dataset = q.get("dataset")
@@ -78,8 +86,12 @@ def render(scenario: dict, cards: dict[str, dict],
             else:
                 body = text if text.endswith("\n") else text + "\n"
             blocks.append(head + body)
-    if not any(b.startswith("## ") for b in blocks):
+    if not matched:
         lines.append(f"# No {_join(purposes)} query on this scenario's cards.")
+        if others:
+            present = [p for p in ALLOWED_PURPOSES if p in others]
+            counts = ", ".join(f"{others[p]} {p}" for p in present)
+            lines.append(f"# The cited cards carry {counts} queries: add ?purpose={','.join(present)}")
     out = "\n".join(lines) + "\n"
     if blocks:
         out += "\n" + "\n".join(blocks)
