@@ -1,7 +1,7 @@
 # Kubernetes container agent — design
 
 **Date:** 2026-11-10
-**Status:** draft for review. Nothing is built.
+**Status:** Phase 1 built (branch `feature/agent-k8s-container-agent`, PR #171). Not tenant-verified. See "As built" at the end.
 **Branch:** `docs/agent-k8s-container-agent` (from `dev`)
 
 Decisions are marked **[Henry]** where Henry made them in the design
@@ -518,3 +518,58 @@ is *authored, not proven*, and `tenant-verified` stays **0**.
 2. Real miners and real malware samples carry over, and realism is the governing
    rule for all content (§6). The safeguards listed there are the author's calls
    and are Henry's to veto.
+
+---
+
+## 13 · As built (2026-11-10)
+
+Operator reference: `docs/reference/k8s-container-agent.md`. This section records
+only where the build differs from, or settled a **[call]** in, the text above.
+**Authored is not proven:** `tenant-verified` is 0, and no Cortex detection has
+been observed through this agent.
+
+**Plan-level decisions that refine the design.**
+
+1. **`kubectl` reaches the pod from a second init container**, not a package
+   manager: `alpine/kubectl:1.34.1` copies the binary to `/cortexsim/bin`.
+2. **`start.sh` is PID 1 and supervises the beacon as a child.** §7 item 3 said
+   the beacon is PID 1. The supervisor is needed so a pod can idle after expiry
+   (`LIFETIME_EXPIRED`) instead of crash-looping; the beacon is therefore a child
+   subreaper (`--subreaper`) that reaps orphans of finished steps. `start.sh`
+   idles only on a clean exit 0 with no TERM received, so a SIGTERM-driven exit 0
+   is a shutdown, not an expiry.
+
+**Settled during build and the first real-pod run.**
+
+3. **The agent manifest's reaper is a Deployment, not a Job.** A Job's pod template
+   is immutable and the expiry changes it per generation, so re-apply was rejected.
+   It waits to the absolute expiry and exits 70 if the clock is unusable (see §7
+   item 4).
+4. **Profile downgrade neutralises immediately.** Every profile emits ClusterRole
+   `cortexsim-agent`; one with no cluster rules is emitted with `rules: []` and
+   `cortexsim.io/neutralised`, so re-applying a lower profile strips the wildcard
+   grant at once. The ClusterRoleBinding is removed at expiry or by hand. The
+   reaper always targets the union of agent cluster-scoped names.
+5. **All profiles use the runtime's default capability set** (no `drop: ALL`),
+   because `apt-get` and `useradd`/`runuser` need it. Measured: no change to
+   findings or consent keys.
+6. **The pod is Ready only once enrolled** (readiness probe on the stored id);
+   there is no liveness or startup probe.
+7. **Absent-account degradation applies to every POSIX beacon**, not only
+   containers: one mechanism, visible as `IDENTITY NOT HONOURED`. An account is
+   absent only if `user.Lookup` fails **and** `id -u -- <name>` exits 1; an
+   inconclusive probe means present, and a non-portable name is not probed.
+   **[Henry may veto]** to restrict it to container facts.
+8. **Container agent with no `tools` key = roster unknown**, not empty: the tool
+   check is skipped and `AGENT_TOOL_ROSTER_UNKNOWN` warns.
+9. **The server coerces `null` `capabilities` / `interpreters` to `[]`** and the
+   beacon no longer sends null (a pod with no interpreter could not enroll).
+10. **The Secret's `artifact-token` key is reserved and not read** by the phase-1
+    pod.
+11. **`SIM-CDR-015` stood in for `SIM-CDR-001`** in the real-pod posture stage,
+    because the payload-shelf gate fires before the agent gate for `SIM-CDR-001`.
+
+**Not in phase 1 / not proven:** `lab-privileged` has never been run anywhere; the
+Linux subreaper effect and the anchor rename under bash are not yet asserted in a
+pod; the console tab was not checked in a real browser; the opt-in CI step has not
+run on GitHub.
