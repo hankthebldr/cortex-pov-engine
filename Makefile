@@ -26,7 +26,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
 .PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-backend-non-utc test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
-        check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
+        check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth \
         wiki wiki-check ci clean launch-preflight
 
 help: ## Show this help
@@ -326,6 +326,13 @@ check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate (CI 'ad
 e2e-tierc: ## Tier-C isolated-execution assertion suite (CI 'e2e-isolated' job, no docker)
 	python3 -m pytest tests/e2e_isolated/test_tier_c_assets.py \
 		tests/e2e_isolated/test_tier_c_isolated_exec.py -v --tb=short
+
+# Real-pod proof for the container agent: a throwaway kind cluster
+# (`cortexsim-e2e`, deleted on exit) running the manifest a live SimCore serves.
+# Needs kind + docker + a SimCore listening on 0.0.0.0. Proves the pod runs and
+# reports, never that a detection fires. See deploy/kind/README.md.
+agent-k8s-e2e: ## container agent real-pod proof on kind (needs kind, docker, a running SimCore)
+	deploy/kind/run-agent-e2e.sh
 
 check-streamer: ## analytics-streamer emitter↔card dataset reconcile (fails on a dataset mismatch)
 	python3 scripts/check-streamer-fidelity.py

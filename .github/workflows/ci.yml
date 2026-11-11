@@ -468,3 +468,25 @@ jobs:
           done
           deploy/tier-c/run-tier-c.sh --scenario SIM-EDR-001 \
             --simcore http://localhost:8888 --results "$RUNNER_TEMP/tierc-out"
+      - name: Container agent on kind (opt-in — label 'agent-k8s-e2e')
+        # Real-pod proof: a kind cluster pulls the manifest from a SimCore built
+        # from this tree. Proves the pod runs and reports, never that a Cortex
+        # detection fires (tenant-verified stays 0). deploy/kind/README.md.
+        if: contains(toJson(github.event.pull_request.labels.*.name), 'agent-k8s-e2e')
+        run: |
+          docker build -f core/Dockerfile -t cortexsim:agentk8s .
+          docker run -d --name simcore-k8s -p 8888:8888 \
+            -e CORTEXSIM_ENV=development \
+            -e CORTEXSIM_SECRET="$(openssl rand -hex 32)" \
+            cortexsim:agentk8s
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8888/api/health && break || sleep 2
+          done
+          if ! command -v kind >/dev/null 2>&1; then
+            curl -fsSLo "$RUNNER_TEMP/kind" https://kind.sigs.k8s.io/dl/v0.29.0/kind-linux-amd64
+            chmod +x "$RUNNER_TEMP/kind"
+          fi
+          PATH="$RUNNER_TEMP:$PATH" \
+            SIMCORE_URL=http://host.docker.internal:8888 \
+            SIMCORE_API=http://localhost:8888 \
+            deploy/kind/run-agent-e2e.sh
