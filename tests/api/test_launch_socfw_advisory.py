@@ -9,7 +9,8 @@ import pytest
 _URL = "https://api-secret-tenant.xdr.us.paloaltonetworks.com"
 LIVE = {"state": "PRESENT", "auto_triage": {
     "live": True, "window_hours": 6, "score_threshold": 30,
-    "score_off": False, "source": "tenant_config"}}
+    "score_off": False, "live_source": "xql_evidence",
+    "window_source": "tenant_config", "threshold_source": "tenant_config"}}
 
 
 @pytest.fixture
