@@ -663,13 +663,22 @@ describe('ComposerCanvas — drawing causality edges (Task 10, direct-manipulati
     const { container } = render(<ComposerCanvas {...baseProps({ lens: 'design' })} />)
     // Two steps in the default fixture, each with a target (left, `in`) and a
     // source (right, `out`) port — the flow now runs left-to-right.
-    const stepHandles = container.querySelectorAll('.react-flow__node-step .react-flow__handle')
+    const stepHandles = container.querySelectorAll(
+      '.react-flow__node-step .react-flow__handle:not(.chain-node__contentport)',
+    )
     expect(stepHandles.length).toBe(4)
     expect(container.querySelectorAll('.react-flow__node-step .react-flow__handle-left').length).toBe(2)
     expect(container.querySelectorAll('.react-flow__node-step .react-flow__handle-right').length).toBe(2)
+    // Each step also carries ONE inert bottom port, which a tenant-content edge
+    // (step → rule) attaches to. It is mounted from the first render, because
+    // the card that produces the rule loads after React Flow measures the node.
+    const contentPorts = container.querySelectorAll('.react-flow__node-step .chain-node__contentport')
+    expect(contentPorts.length).toBe(2)
+    // Inert: nothing can be connected to or from it.
+    for (const port of contentPorts) expect(port.className).not.toMatch(/connectable/)
     // Plus one inert port each on the CGO (out) and Proof (in) anchors, which
-    // the derived edges attach to: 6 in total.
-    expect(container.querySelectorAll('.react-flow__handle').length).toBe(6)
+    // the derived edges attach to: 8 in total.
+    expect(container.querySelectorAll('.react-flow__handle').length).toBe(8)
   })
 })
 

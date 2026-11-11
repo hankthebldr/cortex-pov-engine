@@ -1739,7 +1739,14 @@
 .theme-console .composer--mode .chain-node--rule:hover { border-color: var(--tx3); }
 .theme-console .composer--mode .chain-node--rule .chain-node__body { padding-top: 9px; }
 .theme-console .composer--mode .chain-node--rule .chain-node__kind { color: var(--tx3); }
-.theme-console .composer--mode .chain-node--rule .chain-node__id { font-size: 10px; color: var(--tx2); }
+.theme-console .chain-rule__id {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--tx2);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
 /* A deployable rule is solid: there is content on the card. It still says
    "not imported into any tenant" in words. */
 .theme-console .composer--mode .chain-node--rule-deployable { border-style: solid; border-color: var(--bd2); }
@@ -1805,6 +1812,50 @@
   white-space: nowrap;
 }
 .theme-console .composer-content-label--faint { color: var(--tx3); }
+
+/* The Inspector's read-only view of a rule. No inputs: every line is a status
+   in words or the card's own text. */
+.theme-console .rule-insp__id { margin: 2px 0 8px; font-size: 11px; color: var(--tx2); }
+.theme-console .rule-insp__name { font-weight: 600; color: var(--tx); }
+.theme-console .rule-insp__status {
+  margin: 4px 0;
+  font: 700 12px/1.35 var(--font-ui);
+  color: var(--tx);
+}
+.theme-console .rule-insp__status--unreadable { color: var(--crit); }
+.theme-console .rule-insp__warn {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--warn-str);
+  color: var(--tx);
+}
+.theme-console .rule-insp__reason { color: var(--crit); }
+.theme-console .rule-insp__logic { white-space: pre-wrap; overflow-wrap: anywhere; }
+.theme-console .rule-insp__inputs { list-style: none; margin: 6px 0 0; padding: 0; }
+.theme-console .rule-insp__inputs li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  row-gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid var(--bd);
+  font: 400 11px/1.35 var(--font-ui);
+}
+.theme-console .rule-insp__state {
+  grid-row: span 2;
+  align-self: start;
+  padding: 1px 5px;
+  border: 1px solid var(--bd2);
+  border-radius: 4px;
+  font: 600 9px/1.5 var(--font-mono);
+  color: var(--tx2);
+}
+/* An input that is not on the card is the one a DC must chase. */
+.theme-console .rule-insp__state--unknown { border-color: var(--crit); color: var(--crit); }
+.theme-console .rule-insp__state--card-only { border-style: dashed; }
+.theme-console .rule-insp__input-name { color: var(--tx); overflow-wrap: anywhere; }
+.theme-console .rule-insp__input-where { color: var(--tx3); }
+.theme-console .rule-insp__foot { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--bd); }
 
 /* Chrome control: the rule count and the worst status, plus the export. */
 .theme-console .composer-canvas__content { display: flex; gap: 3px; flex: none; }

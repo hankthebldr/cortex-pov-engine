@@ -279,10 +279,16 @@ function StepNode({ data, isConnectable }) {
         </div>
       )}
       {isConnectable && <Handle type="source" id="out" position={Position.Right} />}
-      {data.feedsContent && (
+      {/* The port a content edge (step → rule) attaches to. Mounted on EVERY
+          step outside the Run lens, not only once a rule exists: the cited
+          card loads after React Flow has measured this node, and a handle
+          added later is invisible to the edge renderer, so the rule was drawn
+          with no edge to it (seen in Chrome, never in jsdom). Inert and 1px. */}
+      {!data.runLens && (
         <Handle
           type="source" id="content" position={Position.Bottom}
-          isConnectable={false} className="chain-node__contentport"
+          isConnectable={false} isConnectableStart={false} isConnectableEnd={false}
+          className="chain-node__contentport"
         />
       )}
     </div>
@@ -306,7 +312,8 @@ function RuleNode({ data }) {
     >
       <Handle
         type="target" id="in" position={Position.Top}
-        isConnectable={false} className="chain-node__contentport"
+        isConnectable={false} isConnectableStart={false} isConnectableEnd={false}
+          className="chain-node__contentport"
       />
       <button
         type="button"
@@ -317,9 +324,8 @@ function RuleNode({ data }) {
       >
         <span className="chain-node__row">
           <span className="chain-node__kind">rule · correlation</span>
-          <span className="composer__spacer" />
-          <span className="chain-node__id mono">{r.ruleId}</span>
         </span>
+        <span className="chain-rule__id mono">{r.ruleId}</span>
         <span className="chain-node__name">{r.name}</span>
         <span className="chain-rule__line chain-rule__line--content">{lines.content}</span>
         <span className="chain-rule__line">{lines.binding}</span>
@@ -483,15 +489,33 @@ const edgeTypes = { causality: CausalityEdge, derived: DerivedEdge, content: Con
  * Rendered as a child of <ReactFlow> so it can read the store. Keyed by lens,
  * so adding or dropping a node never yanks the viewport the DC has panned.
  */
-function FitOnReady({ fitKey, onReady }) {
+function FitOnReady({ fitKey, onReady, softKey = null, canSoftFit = () => false }) {
   const ready = useNodesInitialized()
   const rf = useReactFlow()
   const done = useRef(null)
+  const doneSoft = useRef(null)
   useEffect(() => {
-    if (!ready || done.current === fitKey) return undefined
-    const id = requestAnimationFrame(() => { done.current = fitKey; onReady(rf) })
-    return () => cancelAnimationFrame(id)
-  }, [ready, fitKey, rf, onReady])
+    if (!ready) return undefined
+    if (done.current !== fitKey) {
+      const id = requestAnimationFrame(() => {
+        done.current = fitKey
+        doneSoft.current = softKey
+        onReady(rf)
+      })
+      return () => cancelAnimationFrame(id)
+    }
+    // SOFT refit: the graph's extent changed without a lens change (the tenant-
+    // content rail arrived with its card, or was toggled). Refit so it is not
+    // left below the fold, but only while the DC has not panned or zoomed since
+    // the last fit: their viewport is never yanked.
+    if (doneSoft.current !== softKey) {
+      doneSoft.current = softKey
+      if (!canSoftFit()) return undefined
+      const id = requestAnimationFrame(() => onReady(rf))
+      return () => cancelAnimationFrame(id)
+    }
+    return undefined
+  }, [ready, fitKey, softKey, rf, onReady, canSoftFit])
   return null
 }
 
@@ -516,6 +540,8 @@ const DesignGraph = forwardRef(function DesignGraph({
 }, ref) {
   const insetsRef = useRef(viewInsets)
   insetsRef.current = viewInsets
+  // Whether the rail is drawn, for `fitPadding` (set once the graph is built).
+  const hasRailRef = useRef(false)
   const fitPadding = () => {
     const i = insetsRef.current
     if (!i) return 0.2
@@ -527,11 +553,18 @@ const DesignGraph = forwardRef(function DesignGraph({
     // during render), fall back to a small fixed margin, never the uncapped
     // one — the uncapped margins clamped the initial fit to minZoom.
     const h = paneRef.current?.clientHeight || 0
-    const capV = (v) => (h ? Math.max(8, Math.min(v, h * 0.18)) : Math.min(v, 24))
+    const capV = (v, share = 0.18) => (h ? Math.max(8, Math.min(v, h * share)) : Math.min(v, 24))
+    // With the tenant-content rail shown the graph has a second row, and its
+    // bottom edge is where the floating "+ Add step" button sits. Keep that
+    // strip clear (the button is ~34px tall, ~60px above the dock), with a
+    // larger share of a short pane than the plain chain needs.
+    const bottom = hasRailRef.current
+      ? capV((i.bottom || 0) + 32 + 52, 0.3)
+      : capV((i.bottom || 0) + 32)
     return {
       top: `${Math.round(capV((i.top || 0) + 32))}px`,
       right: `${(i.right || 0) + 32}px`,
-      bottom: `${Math.round(capV((i.bottom || 0) + 32))}px`,
+      bottom: `${Math.round(bottom)}px`,
       left: `${(i.left || 0) + 32}px`,
     }
   }
@@ -556,6 +589,11 @@ const DesignGraph = forwardRef(function DesignGraph({
   // in-flight drag / selection state on each keystroke elsewhere).
   const onSelectStep = useCallback((id) => onSelect(id), [onSelect])
 
+  // Measured step-card heights, fed back into the pure graph so the tenant-
+  // content rail clears the real bottom of the lowest card. Only a CHANGE in a
+  // height replaces the object, so a re-measure that agrees is a no-op.
+  const [stepHeights, setStepHeights] = useState(null)
+
   // The pure graph, then callbacks injected into node/edge data.
   const built = useMemo(
     () => buildGraph(draft, steps, {
@@ -563,11 +601,13 @@ const DesignGraph = forwardRef(function DesignGraph({
       // lane override is arrangement on the Lanes lens, and the plane lanes
       // (CC/BVM/ENG) do not change how the step launches.
       selectedId, runLens, causalityStates, laneOverrides: null, layout: storedLayout,
-      content, selectedRuleKey,
+      content, selectedRuleKey, stepHeights,
     }),
     [draft, steps, selectedId, runLens, causalityStates, laneOverrides, storedLayout,
-      content, selectedRuleKey],
+      content, selectedRuleKey, stepHeights],
   )
+
+  hasRailRef.current = !!built.rail && !lanesLens
 
   // Correlation expectations with no rule behind them, per step. A property of
   // the STEP's chips, so it shows on every lens and whether or not the rail is.
@@ -594,7 +634,6 @@ const DesignGraph = forwardRef(function DesignGraph({
             runState: null, runLens: false,
             door: ln ? ln.lane : laneOf(s, laneOverrides, draft.plane),
             channelKind: effectiveChannel(s) === 'eal' ? 'eal' : (s.target ? 'target' : null),
-            feedsContent: !!built.nodes.find((n) => n.id === s.id)?.data.feedsContent,
           },
         }
       }).concat(
@@ -760,6 +799,18 @@ const DesignGraph = forwardRef(function DesignGraph({
       return rfEdges.map((e) => (selected.has(e.id) ? { ...e, selected: true } : e))
     })
   }, [rfEdges])
+  useEffect(() => {
+    const next = {}
+    for (const n of liveNodes) {
+      if (n.type === 'step' && n.measured?.height) next[n.id] = Math.round(n.measured.height)
+    }
+    setStepHeights((prev) => {
+      const a = prev || {}
+      const same = Object.keys(next).length === Object.keys(a).length
+        && Object.keys(next).every((id) => a[id] === next[id])
+      return same ? prev : next
+    })
+  }, [liveNodes])
   const handleNodesChange = useCallback((changes) => {
     setLiveNodes((nds) => applyNodeChanges(changes.filter((c) => c.type !== 'remove'), nds))
     onNodesChange(changes)
@@ -961,7 +1012,13 @@ const DesignGraph = forwardRef(function DesignGraph({
   const [miniPinned, setMiniPinned] = useState(false)
   const [moving, setMoving] = useState(false)
   const moveTimer = useRef(null)
-  const handleMoveStart = useCallback(() => {
+  // True once the DC pans or zooms by hand. React Flow passes the DOM event
+  // for a user gesture and null for a programmatic move (a fit), so a fit
+  // never counts as the DC's own movement.
+  const userMovedRef = useRef(false)
+  const canSoftFit = useCallback(() => !userMovedRef.current, [])
+  const handleMoveStart = useCallback((event) => {
+    if (event) userMovedRef.current = true
     clearTimeout(moveTimer.current)
     setMoving(true)
   }, [])
@@ -975,7 +1032,10 @@ const DesignGraph = forwardRef(function DesignGraph({
     zoomIn: () => rfRef.current?.zoomIn(),
     zoomOut: () => rfRef.current?.zoomOut(),
     zoomReset: () => rfRef.current?.zoomTo(1),
-    fit: () => rfRef.current?.fitView({ duration: 200, padding: fitPadding(), maxZoom: 1.2 }),
+    fit: () => {
+      userMovedRef.current = false
+      rfRef.current?.fitView({ duration: 200, padding: fitPadding(), maxZoom: 1.2 })
+    },
   }), [])
 
   // Lanes fits the whole band stage (all seven bands, not just the cards);
@@ -984,6 +1044,7 @@ const DesignGraph = forwardRef(function DesignGraph({
   const laneStageW = laneLayout ? laneLayout.bounds.width + ruleCols * LANE_COL_PITCH : 0
   const laneStageH = laneLayout ? laneLayout.bounds.height : 0
   const fitForLens = useCallback((rf) => {
+    userMovedRef.current = false
     if (lanesLens) {
       rf.fitBounds({ x: 0, y: 0, width: laneStageW, height: laneStageH }, { padding: 0.04, duration: 0 })
     } else {
@@ -1056,7 +1117,15 @@ const DesignGraph = forwardRef(function DesignGraph({
             onMoveEnd={handleMoveEnd}
             proOptions={{ hideAttribution: false }}
           >
-            <FitOnReady fitKey={fitKey} onReady={fitForLens} />
+            <FitOnReady
+              fitKey={fitKey}
+              onReady={fitForLens}
+              // Counted from what React Flow has MEASURED, not from the derived
+              // graph: a refit issued the render the rule is derived runs before
+              // the node exists in the store, and frames the chain without it.
+              softKey={`${liveNodes.filter((n) => n.type === 'rule' && n.measured?.height).length}`}
+              canSoftFit={canSoftFit}
+            />
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--bd2, #4A4A4A)" />
             <Controls showInteractive={false}>
               {!lanesLens && (

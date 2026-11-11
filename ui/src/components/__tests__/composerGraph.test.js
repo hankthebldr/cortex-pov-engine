@@ -373,15 +373,6 @@ describe('buildGraph — tenant-content rule nodes', () => {
     }
   })
 
-  it('flags the steps that need a content port', () => {
-    const g = build(chain())
-    const flag = (id) => g.nodes.find((n) => n.id === id).data.feedsContent
-    expect(flag('step-01')).toBe(true)
-    expect(flag('step-03')).toBe(true)
-    const none = buildGraph(draft(chain()), chain())
-    expect(none.nodes.find((n) => n.id === 'step-01').data.feedsContent).toBe(false)
-  })
-
   it('places every rule on a rail below the lowest step', () => {
     const g = build(chain())
     const lowest = Math.max(...g.nodes.filter((n) => n.type === 'step').map((n) => n.position.y))
@@ -409,6 +400,23 @@ describe('buildGraph — tenant-content rule nodes', () => {
     const dragged = build(steps, { layout: { 'step-02': { x: 400, y: 900 } } })
     expect(dragged.rail.y).toBeGreaterThan(plain.rail.y)
     expect(dragged.rail.y).toBeGreaterThanOrEqual(900 + GRAPH_LAYOUT.rowH)
+  })
+
+  it('clears the real height of a tall step card, not a nominal row', () => {
+    // A card's height is only known once the browser has measured it: a long
+    // name and a second chip row make it taller than the row pitch, and a rail
+    // placed by the pitch alone was drawn THROUGH the card (seen in Chrome).
+    const steps = chain()
+    const y = build(steps).nodes.find((n) => n.id === 'step-02').position.y
+    const tall = build(steps, { stepHeights: { 'step-02': 260 } })
+    expect(tall.rail.y).toBeGreaterThanOrEqual(y + 260)
+    for (const n of rules(tall)) expect(n.position.y).toBeGreaterThan(tall.rail.y)
+  })
+
+  it('assumes a full-height card until one is measured', () => {
+    const g = build(chain())
+    const lowest = Math.max(...g.nodes.filter((n) => n.type === 'step').map((n) => n.position.y))
+    expect(g.rail.y).toBeGreaterThanOrEqual(lowest + GRAPH_LAYOUT.cardH)
   })
 
   it('grows the bounds to hold the rail', () => {

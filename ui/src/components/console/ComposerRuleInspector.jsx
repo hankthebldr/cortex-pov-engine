@@ -58,9 +58,8 @@ export default function ComposerRuleInspector({
     >
       <div className="composer-inspector__head">
         <span className="composer-inspector__title">Correlation rule · tenant content</span>
-        <span className="composer__spacer" />
-        <span className="mono composer-inspector__id">{rule.ruleId}</span>
       </div>
+      <div className="mono rule-insp__id">{rule.ruleId}</div>
 
       <div className="field-value rule-insp__name">{rule.name}</div>
 

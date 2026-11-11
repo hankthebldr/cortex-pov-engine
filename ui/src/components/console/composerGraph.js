@@ -71,8 +71,9 @@ export const GRAPH_LAYOUT = Object.freeze({
   padX: 56,
   padY: 48,
   anchorW: 180, // cgo / proof are a touch narrower than a step card
-  railGap: 44,  // room under the lowest step row for the rail line and its label
-  ruleRowH: 132, // vertical pitch between rule cards stacked under one anchor
+  cardH: 184,   // a full step card (two-line name, chips, tools) before it is measured
+  railGap: 44,  // room under the lowest step card for the rail line and its label
+  ruleRowH: 148, // vertical pitch between rule cards stacked under one anchor
 })
 
 /** Snap grid (flow px) for a dropped node. Shared by the visual `snapGrid`
@@ -196,6 +197,8 @@ export function reparentOnDelete(steps, removedId) {
  * @param {Object} [opts.geometry]    defaults to GRAPH_LAYOUT
  * @param {Object} [opts.content]    `deriveTenantContent` result → rule nodes + content edges
  * @param {string} [opts.selectedRuleKey] the selected rule's key (→ node.data.selected)
+ * @param {Object} [opts.stepHeights] {stepId: px} measured card heights, so the rail
+ *                                    clears the real bottom of the lowest card
  * @returns {{nodes:Array, edges:Array, bounds:{width:number,height:number},
  *            rail:{y:number,x0:number,x1:number}|null}}
  */
@@ -212,13 +215,7 @@ export function buildGraph(draft = {}, steps = [], opts = {}) {
   const content = !runLens && opts.content && Array.isArray(opts.content.rules)
     ? opts.content
     : null
-  const contentSources = new Set()
-  if (content) {
-    for (const r of content.rules) {
-      if (r.feeders.length) for (const f of r.feeders) contentSources.add(f.stepId)
-      else if (r.anchorStep) contentSources.add(r.anchorStep)
-    }
-  }
+
   const layout = opts.layout !== undefined ? opts.layout : (draft.layout || null)
   const G = geometry || GRAPH_LAYOUT
   const list = Array.isArray(steps) ? steps : []
@@ -306,9 +303,6 @@ export function buildGraph(draft = {}, steps = [], opts = {}) {
         door: laneOf(s, laneOverrides, draft.plane),
         channelKind: channel === 'eal' ? 'eal' : (s.target ? 'target' : null),
         offChain: flagged.has(s.id),
-        // True when a content edge leaves this card, so the canvas mounts the
-        // (inert) port that edge attaches to.
-        feedsContent: contentSources.has(s.id),
       },
     })
   }
@@ -404,9 +398,16 @@ export function buildGraph(draft = {}, steps = [], opts = {}) {
   let rail = null
   if (content && content.rules.length && list.length) {
     const stepPos = new Map(list.map((s) => [s.id, posOf(s)]))
-    let lowest = G.padY
-    for (const p of stepPos.values()) if (p.y > lowest) lowest = p.y
-    const railY = lowest + G.rowH
+    // The rail clears the BOTTOM of the lowest card. A card's height is known
+    // only once the browser has measured it (`opts.stepHeights`); until then a
+    // full-height card is assumed, so the rail never starts inside one.
+    const heights = opts.stepHeights || null
+    let railY = G.padY + G.cardH
+    for (const [id, p] of stepPos) {
+      const h = heights && typeof heights[id] === 'number' ? heights[id] : G.cardH
+      if (p.y + h > railY) railY = p.y + h
+    }
+    railY += 20
     const firstRow = railY + G.railGap
     const placed = [] // {x, row} — a card never overlaps another in its row
     let minX = Infinity
