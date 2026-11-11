@@ -46,7 +46,7 @@ export default function DeployAgentKubernetes({ origin = '', copyText = () => {}
   const manifestUrl = ready
     ? `${origin}${agentManifestUrl({
         profile,
-        consent,
+        consent: Object.fromEntries(required.map((k) => [k, consent[k] === true])),
         authorizedBy: gated ? name : undefined,
       })}`
     : null
@@ -77,7 +77,7 @@ export default function DeployAgentKubernetes({ origin = '', copyText = () => {}
             className="launch-select"
             aria-label="Profile"
             value={profile}
-            onChange={(e) => setProfile(e.target.value)}
+            onChange={(e) => { setProfile(e.target.value); setConsent({}) }}
           >
             {PROFILES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>

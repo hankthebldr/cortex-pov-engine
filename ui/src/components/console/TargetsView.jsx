@@ -58,6 +58,15 @@ function installerOS(os) {
 
 const AGENT_STALE_MS = 60_000 // beacon considered stale after 60s of silence
 
+// Profile · node · failed prepare, or '' when every member is missing.
+function containerFactsLine(f) {
+  return [
+    f.posture_profile,
+    f.node_name && `node ${f.node_name}`,
+    String(f.prepare_status ?? '').startsWith('PREPARE_FAILED') && f.prepare_status,
+  ].filter(Boolean).join(' · ')
+}
+
 export default function TargetsView({ selectedTarget = null, onSelectTarget = () => {}, onGoToLab = () => {} }) {
   // ── Global scope from the provider (agents + active agent are ambient) ─────
   const { agents, agent: activeAgent, setAgent, tenant, refreshAgents, errors } = useEnvironment()
@@ -304,14 +313,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   <p className="target-card__sub">
                     {a.hostname || a.host || 'unknown host'} · {os} · seen {relTime(a.last_seen || a.last_seen_at || a.updated_at)}
                   </p>
-                  {a.runtime_facts?.container === true && (
+                  {a.runtime_facts?.container === true && containerFactsLine(a.runtime_facts) && (
                     <p className="target-card__sub mono" data-testid="agent-container-facts">
-                      {[
-                        a.runtime_facts.posture_profile,
-                        a.runtime_facts.node_name && `node ${a.runtime_facts.node_name}`,
-                        String(a.runtime_facts.prepare_status ?? '').startsWith('PREPARE_FAILED')
-                          && a.runtime_facts.prepare_status,
-                      ].filter(Boolean).join(' · ')}
+                      {containerFactsLine(a.runtime_facts)}
                     </p>
                   )}
                   {isSel('agent', id) && <span className="target-card__selected">✓ selected · pull mode</span>}

@@ -118,6 +118,32 @@ describe('TargetsView — Kubernetes tab', () => {
     expect(cmd).toContain('authorized_by=henry')
   })
 
+  it('drops stale consent when the profile changes back to baseline', async () => {
+    await openK8s()
+    fireEvent.change(screen.getByLabelText('Profile'), { target: { value: 'cluster-privilege' } })
+    fireEvent.click(screen.getByLabelText(/Bind a wildcard ClusterRole/))
+    fireEvent.change(screen.getByLabelText('Authorized by'), { target: { value: 'henry' } })
+    expect(screen.getByTestId('deploy-k8s-manifest').textContent).toContain('cluster_privilege_authorized=true')
+    fireEvent.change(screen.getByLabelText('Profile'), { target: { value: 'baseline' } })
+    const cmd = screen.getByTestId('deploy-k8s-manifest').textContent
+    expect(cmd).not.toContain('authorized')
+  })
+
+  it('unticks every box on a profile change and never asserts consent the profile does not need', async () => {
+    await openK8s()
+    fireEvent.change(screen.getByLabelText('Profile'), { target: { value: 'lab-privileged' } })
+    fireEvent.click(screen.getByLabelText(/Bind a wildcard ClusterRole/))
+    fireEvent.click(screen.getByLabelText(/host PID and the node's root/))
+    fireEvent.change(screen.getByLabelText('Authorized by'), { target: { value: 'henry' } })
+    fireEvent.change(screen.getByLabelText('Profile'), { target: { value: 'cluster-privilege' } })
+    expect(screen.getByLabelText(/Bind a wildcard ClusterRole/).checked).toBe(false)
+    expect(screen.queryByTestId('deploy-k8s-manifest')).toBeNull()
+    fireEvent.click(screen.getByLabelText(/Bind a wildcard ClusterRole/))
+    const cmd = screen.getByTestId('deploy-k8s-manifest').textContent
+    expect(cmd).toContain('cluster_privilege_authorized=true')
+    expect(cmd).not.toContain('node_access_authorized')
+  })
+
   it('shows an inline message and no command for an authorized_by the server would reject', async () => {
     await openK8s()
     fireEvent.change(screen.getByLabelText('Profile'), { target: { value: 'cluster-privilege' } })
@@ -140,9 +166,10 @@ describe('TargetsView — container facts on agent rows', () => {
   it('renders profile, node and a failed prepare; nothing for missing members', async () => {
     mountTargets(AGENTS)
     await screen.findByText('k8s-1')
-    await waitFor(() => expect(screen.getAllByTestId('agent-container-facts').length).toBe(2))
-    const [first, second] = screen.getAllByTestId('agent-container-facts')
+    await waitFor(() => expect(screen.getAllByTestId('agent-container-facts').length).toBe(1))
+    const [first] = screen.getAllByTestId('agent-container-facts')
     expect(first.textContent).toBe('cluster-privilege · node node-a · PREPARE_FAILED: apt')
-    expect(second.textContent).toBe('')
+    // every member missing -> no paragraph at all
+    expect(screen.getAllByTestId('agent-container-facts').length).toBe(1)
   })
 })
