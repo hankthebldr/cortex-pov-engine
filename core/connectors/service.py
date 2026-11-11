@@ -471,6 +471,7 @@ async def _add_bridge(db: AsyncSession, run: Run, ledger: dict,
         except Exception as e:  # noqa: BLE001 - context-only data must never fail reconcile
             logger.warning("bridge endpoint read failed: %s", type(e).__name__, exc_info=True)
     diag = bridge_diagnosis(host=host, agent_ip=agent_ip, endpoint_ips=ips)
+    diag["read_at"] = ledger["read_at"]   # when this was computed; a refresh may carry it
     ledger["bridge"] = diag
     ledger["merge_reason"] = f"{ledger['merge_reason']}; ip-to-host bridge: {diag['code']}"
     return spent
@@ -577,7 +578,8 @@ async def refresh_case_ledger(
     if stored.get("bridge") and ledger["merge_class"] == "SPLIT_NATIVE":
         # Carried, not re-read: the stored ledger keeps no per-alert host, so the
         # mixed-key condition cannot be re-evaluated here (see _add_bridge).
-        ledger["bridge"] = stored["bridge"]
+        # Marked ``carried`` with its ORIGINAL ``read_at``: a snapshot, not a fresh read.
+        ledger["bridge"] = {**stored["bridge"], "carried": True}
         ledger["merge_reason"] += f"; ip-to-host bridge: {stored['bridge'].get('code')}"
 
     run.case_ledger = ledger

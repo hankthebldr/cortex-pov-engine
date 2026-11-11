@@ -335,3 +335,73 @@ def test_loop_runs_the_refresh_phase(monkeypatch):
 
 def test_loop_skips_the_refresh_phase_when_the_breaker_tripped(monkeypatch):
     assert _run_loop_once(monkeypatch, {"newly_matched": 0, "quota_tripped": True}) == 0
+
+
+# ── the IP-to-host bridge across a refresh ─────────────────────────────────
+
+def _split_with_bridge(read_at):
+    now = datetime.now(timezone.utc)
+    alerts = [LedgerAlert("a", now, "high", "900", "New", None, None),
+              LedgerAlert("b", now + timedelta(seconds=30), "high", "901", "New", None, None)]
+    cases = {c: LedgerCase(c, "new", None, None, False, False, None, 2) for c in ("900", "901")}
+    led = build_case_ledger(alerts, cases, basis="alert_incident_ids", read_at=now)
+    assert led["merge_class"] == "SPLIT_NATIVE"
+    led["integration"] = "acme"
+    led["bridge"] = {"host": "web-01", "agent_ip": "10.0.1.20", "endpoint_ips": ["10.0.1.20"],
+                     "code": "BRIDGED", "read_at": read_at}
+    led["merge_reason"] += "; ip-to-host bridge: BRIDGED"
+    return led
+
+
+def _refresh(SessionLocal, fetcher):
+    from connectors.service import refresh_case_ledger
+    from models import Run
+    from sqlalchemy import select
+
+    async def go():
+        async with SessionLocal() as db:
+            run = (await db.execute(select(Run))).scalar_one()
+            return await refresh_case_ledger(db, run, fetcher=fetcher)
+    return asyncio.run(go())
+
+
+def _tenant_returning(ids):
+    fetcher, calls = tenant()
+
+    def f(method, url, headers, body, timeout):
+        code, text = fetcher(method, url, headers, body, timeout)
+        doc = json.loads(text)
+        doc["reply"]["incidents"] = [r for r in doc["reply"]["incidents"]
+                                     if r["incident_id"] in ids]
+        return code, json.dumps(doc)
+    return f
+
+
+def test_refresh_carries_bridge_marked_carried_with_original_read_at(session_factory):
+    orig = "2026-11-11T10:00:00+00:00"
+    seed(session_factory, [("r1", datetime.utcnow(), _split_with_bridge(orig))])
+    out = _refresh(session_factory, tenant()[0])
+    b = out["ledger"]["bridge"]
+    assert out["merge_class"] == "SPLIT_NATIVE"
+    assert b["carried"] is True and b["read_at"] == orig and b["code"] == "BRIDGED"
+    assert out["ledger"]["read_at"] != orig       # the ledger itself is fresh
+
+
+def test_refresh_drops_bridge_when_class_changes(session_factory):
+    seed(session_factory, [("r1", datetime.utcnow(),
+                            _split_with_bridge("2026-11-11T10:00:00+00:00"))])
+    out = _refresh(session_factory, _tenant_returning({"900"}))   # case 901 no longer returned
+    assert out["merge_class"] == "PENDING"
+    assert "bridge" not in out["ledger"]
+    assert "bridge" not in ledger_of(session_factory, "r1")
+    assert "ip-to-host bridge" not in out["ledger"]["merge_reason"]
+
+
+def test_repeated_refresh_does_not_duplicate_bridge_suffix(session_factory):
+    seed(session_factory, [("r1", datetime.utcnow(),
+                            _split_with_bridge("2026-11-11T10:00:00+00:00"))])
+    f = tenant()[0]
+    for _ in range(3):
+        out = _refresh(session_factory, f)
+    assert out["ledger"]["merge_reason"].count("ip-to-host bridge") == 1
+    assert out["ledger"]["bridge"]["read_at"] == "2026-11-11T10:00:00+00:00"

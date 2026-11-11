@@ -292,6 +292,7 @@ def test_bridge_bridged_end_to_end(session_factory):
     assert led["bridge"]["code"] == "BRIDGED"
     assert led["bridge"]["agent_ip"] == "10.0.1.20"
     assert "BRIDGED" in led["merge_reason"]
+    assert led["bridge"]["read_at"] == led["read_at"] and "carried" not in led["bridge"]
     assert calls[0]["filters"] == [{"field": "hostname", "operator": "in", "value": ["web-01"]}]
     # 1 alert page + 1 case read + 1 issue read + 1 endpoint read
     assert summary["queries_issued"] == 4

@@ -255,3 +255,16 @@ def test_bridge_unread_when_endpoint_not_returned():
                                endpoint_ips=["10.0.1.20"])["code"] == "BRIDGE_UNREAD"
     assert cl.bridge_diagnosis(host=None, agent_ip="10.0.1.20",
                                endpoint_ips=["10.0.1.20"])["code"] == "BRIDGE_UNREAD"
+
+
+@pytest.mark.parametrize("agent_ip,eps,code", [
+    ("2001:DB8::1", ["2001:db8:0:0:0:0:0:1"], "BRIDGED"),       # case + zero-compression
+    ("2001:db8::1", ["2001:0DB8:0000::0001"], "BRIDGED"),
+    ("  10.0.1.20 ", ["10.0.1.20"], "BRIDGED"),                 # whitespace, agent side
+    ("10.0.1.20", ["  10.0.1.20\t"], "BRIDGED"),                # whitespace, endpoint side
+    ("not-an-ip", ["10.0.1.20"], "BRIDGE_UNREAD"),              # unparseable agent ip
+    ("::ffff:10.0.1.20", ["10.0.1.20"], "UNBRIDGED_IP_HOST"),   # mapped v6 is not v4
+    ("10.0.1.20", ["::ffff:10.0.1.20"], "UNBRIDGED_IP_HOST"),
+])
+def test_bridge_ip_canonicalisation(agent_ip, eps, code):
+    assert cl.bridge_diagnosis(host="h", agent_ip=agent_ip, endpoint_ips=eps)["code"] == code
