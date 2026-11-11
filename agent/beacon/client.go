@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -377,6 +378,11 @@ type BeaconClient struct {
 	// shutdown is the context whose cancellation means "this beacon has been
 	// told to stop" (BindShutdown). Unset = never.
 	shutdown atomic.Pointer[context.Context]
+
+	// frameScope / frameSeq key every non-streaming /output frame (RG-AGENT-06).
+	frameMu    sync.Mutex
+	frameScope string
+	frameSeq   uint64
 }
 
 // shutdownPostGrace is how long a step's /output or the run's /complete may
@@ -408,6 +414,34 @@ func (c *BeaconClient) stopCtx() context.Context {
 		return *p
 	}
 	return context.Background()
+}
+
+// beginFrames starts a new frame-id scope for a task (see nextFrameID).
+func (c *BeaconClient) beginFrames(taskID string) {
+	c.frameMu.Lock()
+	c.frameScope = taskID
+	c.frameSeq = 0
+	c.frameMu.Unlock()
+}
+
+// nextFrameID returns the idempotency key for the next non-streaming /output
+// frame: "<task_id>:<n>", n counting from 1 within the task ("<agent_id>:<n>"
+// when no task is in flight). It is assigned ONCE per frame, before the first
+// attempt, so every retry of that frame carries the same key.
+//
+// RG-AGENT-06: postRetry re-sends a frame whose reply was lost, and SimCore's
+// append is unconditional, so without a key the frame is stored twice. The key
+// travels as an extra body field; a SimCore that does not read it ignores it
+// (OutputRequest tolerates unknown fields — it already ignores `run_id`).
+func (c *BeaconClient) nextFrameID() string {
+	c.frameMu.Lock()
+	defer c.frameMu.Unlock()
+	c.frameSeq++
+	scope := c.frameScope
+	if scope == "" {
+		scope = c.AgentID
+	}
+	return fmt.Sprintf("%s:%d", scope, c.frameSeq)
 }
 
 // beaconGOOS is the host OS for step-shape decisions. A package var only so a
@@ -691,6 +725,8 @@ func (c *BeaconClient) sendOutput(runID, stepID, output string, retry bool) erro
 	path := fmt.Sprintf("/api/runs/%s/output", runID)
 	var err error
 	if retry {
+		// Assigned once, before the first attempt: a retry is the same frame.
+		body["frame_id"] = c.nextFrameID()
 		_, err = c.postRetry(path, body)
 	} else {
 		_, err = c.post(path, body)
@@ -836,6 +872,7 @@ func (c *BeaconClient) Run(ctx context.Context) {
 //     the run is reported complete with exit code 130.
 func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 	c.BindShutdown(ctx)
+	c.beginFrames(task.TaskID)
 	totalSteps := len(task.Steps)
 	led := newOutcomeLedger(task)
 	if totalSteps == 0 {
