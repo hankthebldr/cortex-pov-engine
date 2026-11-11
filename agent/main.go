@@ -127,6 +127,7 @@ func main() {
 	expiresAt, err := parseExpiresAt(*expiresAtFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: BAD_EXPIRES_AT: %v\n", err)
+		writeTerminationLog(terminationLogPath(), fatalLine("BAD_EXPIRES_AT", err.Error()))
 		os.Exit(1)
 	}
 
@@ -311,8 +312,7 @@ func enrollOrExit(serverURL, tokenFile, stateDir, hostname string,
 	capabilities, interpreters []string, facts *runtimefacts.Facts) string {
 	id, code, err := enrollAgent(serverURL, tokenFile, stateDir, hostname, capabilities, interpreters, facts)
 	if err != nil {
-		log.Printf("FATAL %s: %v", code, err)
-		os.Exit(1)
+		exitFatal(code, err)
 	}
 	return id
 }

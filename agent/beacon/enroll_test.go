@@ -3,6 +3,7 @@ package beacon
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -452,5 +453,46 @@ func TestWriteIDFileSuccessContentAndMode(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(state); len(entries) != 1 {
 		t.Errorf("stale temp file: %v", entries)
+	}
+}
+
+// A pod with no detectable interpreter sent "interpreters": null (a nil Go
+// slice) and SimCore answered 422 (kind run, D2). Both lists go on the wire as
+// [] on Enroll and on Register, asserted on the raw JSON.
+func TestEnrollAndRegisterSendEmptyListsNotNull(t *testing.T) {
+	var raws []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		raws = append(raws, string(b))
+		w.Write([]byte(`{"agent_id":"a"}`))
+	}))
+	defer srv.Close()
+
+	if _, err := Enroll(srv.URL, "cxs_x", "h", "linux", "p", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	c := New(srv.URL, "a1", time.Second)
+	if err := c.Register("h", "linux", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.reRegister(); err != nil {
+		t.Fatal(err)
+	}
+	if len(raws) != 3 {
+		t.Fatalf("requests = %d", len(raws))
+	}
+	for i, raw := range raws {
+		wants := []string{`"capabilities":[]`, `"interpreters":[]`}
+		if i == 2 { // reRegister substitutes its default capabilities for an empty list
+			wants = wants[1:]
+		}
+		for _, want := range wants {
+			if !strings.Contains(raw, want) {
+				t.Errorf("request %d: %s missing from %s", i, want, raw)
+			}
+		}
+		if strings.Contains(raw, "null") {
+			t.Errorf("request %d carries a null: %s", i, raw)
+		}
 	}
 }
