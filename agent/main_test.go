@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -95,6 +96,12 @@ func TestRunAsServiceIsNotHandledOffWindows(t *testing.T) {
 func TestRunBeaconRegistersThenReturnsOnCancel(t *testing.T) {
 	t.Setenv("CORTEXSIM_STAGE_ROOT", t.TempDir())
 
+	// The stop arrives once the beacon is polling, i.e. after registration has
+	// completed. (A context cancelled BEFORE runBeacon would now cancel the
+	// registration itself — RG-AGENT-05, see the test below.)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	var mu sync.Mutex
 	var reg map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -103,6 +110,9 @@ func TestRunBeaconRegistersThenReturnsOnCancel(t *testing.T) {
 			mu.Lock()
 			_ = json.Unmarshal(body, &reg)
 			mu.Unlock()
+		}
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/tasks") {
+			cancel()
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("{}"))
@@ -113,12 +123,9 @@ func TestRunBeaconRegistersThenReturnsOnCancel(t *testing.T) {
 	log.SetOutput(io.Discard)
 	defer log.SetOutput(prev)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already stopping: Run must return without polling
-
 	done := make(chan int, 1)
 	go func() {
-		done <- runBeacon(ctx, beaconConfig{server: srv.URL, id: "svc-test-01", interval: time.Second})
+		done <- runBeacon(ctx, beaconConfig{server: srv.URL, id: "svc-test-01", interval: 20 * time.Millisecond})
 	}()
 	select {
 	case code := <-done:
@@ -136,5 +143,54 @@ func TestRunBeaconRegistersThenReturnsOnCancel(t *testing.T) {
 	}
 	if reg["agent_id"] != "svc-test-01" || reg["os"] != runtime.GOOS {
 		t.Errorf("registration body = %v, want agent_id=svc-test-01 os=%s", reg, runtime.GOOS)
+	}
+}
+
+// TestRunBeacon_AStopDuringABlockedRegistrationReturnsAtOnce (RG-AGENT-05).
+// SimCore accepts the connection and never answers — an address a firewall
+// silently drops looks the same from here. The stop (SIGTERM on the console
+// path, an SCM STOP under the service: both only cancel ctx) arrives while
+// Register is blocked. runBeacon must return at once; at head it waited out the
+// 30 s HTTP timeout, past launchd's 20 s kill timer.
+func TestRunBeacon_AStopDuringABlockedRegistrationReturnsAtOnce(t *testing.T) {
+	t.Setenv("CORTEXSIM_STAGE_ROOT", t.TempDir())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	release := make(chan struct{})
+	var once sync.Once
+	stopped := make(chan time.Time, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		once.Do(func() {
+			stopped <- time.Now()
+			cancel()
+		})
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	defer log.SetOutput(prev)
+
+	done := make(chan int, 1)
+	go func() {
+		done <- runBeacon(ctx, beaconConfig{server: srv.URL, id: "svc-test-02", interval: time.Second})
+	}()
+	select {
+	case code := <-done:
+		if code != 0 {
+			t.Errorf("runBeacon returned %d, want 0", code)
+		}
+		if took := time.Since(<-stopped); took > 2*time.Second {
+			t.Errorf("runBeacon returned %s after the stop", took.Round(10*time.Millisecond))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("runBeacon had not returned 5 s after a stop that arrived during a blocked registration " +
+			"(it is waiting out the 30 s HTTP timeout)")
 	}
 }

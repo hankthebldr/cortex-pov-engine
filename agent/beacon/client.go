@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hankthebldr/cortexsim/agent/executor"
@@ -372,6 +373,41 @@ type BeaconClient struct {
 	// Injectable so the Windows step-selection path is observable from a POSIX
 	// runner: the test records what WOULD reach the executor.
 	execStep func(context.Context, identity.ExecutionIdentity, executor.OutputChunkFunc) (identity.ExecResult, error)
+
+	// shutdown is the context whose cancellation means "this beacon has been
+	// told to stop" (BindShutdown). Unset = never.
+	shutdown atomic.Pointer[context.Context]
+}
+
+// shutdownPostGrace is how long a step's /output or the run's /complete may
+// still take once the beacon has been told to stop: long enough for the
+// "agent shutdown — task interrupted" record to land on a healthy SimCore,
+// short enough that a stop is honoured well inside launchd's 20 s and systemd's
+// 90 s kill timers. A var only so tests can shrink it.
+var shutdownPostGrace = 3 * time.Second
+
+// BindShutdown tells the client which context means "the beacon is stopping"
+// (RG-AGENT-04 / RG-AGENT-05). From its cancellation on:
+//
+//   - a blocked Register, task poll or live output chunk is cancelled at once —
+//     nothing of evidential value is in flight;
+//   - a step's /output and the run's /complete get shutdownPostGrace to land,
+//     and the retry ladder is not climbed.
+//
+// Run and executeTask bind their own ctx; main binds before Register, which
+// runs before Run does.
+func (c *BeaconClient) BindShutdown(ctx context.Context) {
+	if ctx != nil {
+		c.shutdown.Store(&ctx)
+	}
+}
+
+// stopCtx is the bound shutdown context, or one that is never cancelled.
+func (c *BeaconClient) stopCtx() context.Context {
+	if p := c.shutdown.Load(); p != nil {
+		return *p
+	}
+	return context.Background()
 }
 
 // beaconGOOS is the host OS for step-shape decisions. A package var only so a
@@ -563,7 +599,14 @@ func (c *BeaconClient) PollTasksWait(waitSec int) (*Task, error) {
 		httpClient = &cloned
 	}
 
-	resp, err := httpClient.Get(url)
+	// Bound to the shutdown context (RG-AGENT-05): an idle poll against a
+	// SimCore that silently drops packets must not hold a stop for the whole
+	// HTTP timeout (30 s, or wait+10 s when long-polling).
+	req, err := http.NewRequestWithContext(c.stopCtx(), http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("pollTasks GET: %w", err)
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("pollTasks GET: %w", err)
 	}
@@ -686,6 +729,7 @@ func (c *BeaconClient) Complete(runID string, exitCode int, summary string, step
 // and reports the final exit code.  It exits cleanly when ctx is cancelled
 // (SIGINT / SIGTERM).
 func (c *BeaconClient) Run(ctx context.Context) {
+	c.BindShutdown(ctx)
 	if c.LongPollTimeout > 0 {
 		log.Printf("[beacon] agent %q started — long-polling %s (wait=%ds)", c.AgentID, c.ServerURL, c.LongPollTimeout)
 		for {
@@ -695,6 +739,11 @@ func (c *BeaconClient) Run(ctx context.Context) {
 			}
 			task, err := c.PollTasksWait(c.LongPollTimeout)
 			if err != nil {
+				if ctx.Err() != nil {
+					// The poll was cut by the shutdown itself, not by SimCore.
+					log.Printf("[beacon] context cancelled — shutting down cleanly")
+					return
+				}
 				if errors.Is(err, ErrUnknownAgent) {
 					log.Printf("[beacon] SimCore reports agent %q unknown — re-registering", c.AgentID)
 					if rerr := c.reRegister(); rerr != nil {
@@ -736,6 +785,11 @@ func (c *BeaconClient) Run(ctx context.Context) {
 		case <-ticker.C:
 			task, err := c.PollTasks()
 			if err != nil {
+				if ctx.Err() != nil {
+					// The poll was cut by the shutdown itself, not by SimCore.
+					log.Printf("[beacon] context cancelled — shutting down cleanly")
+					return
+				}
 				// An unknown-agent 404 means SimCore lost (or never had) our
 				// registration — re-register and retry on the next tick rather
 				// than idling forever (GAP-AGENT-003).
@@ -781,6 +835,7 @@ func (c *BeaconClient) Run(ctx context.Context) {
 //     SIGTERM'd (→SIGKILL after a grace period), remaining steps are skipped, and
 //     the run is reported complete with exit code 130.
 func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
+	c.BindShutdown(ctx)
 	totalSteps := len(task.Steps)
 	led := newOutcomeLedger(task)
 	if totalSteps == 0 {
@@ -1436,13 +1491,15 @@ func (c *BeaconClient) resolveStepUsername(task *Task, step *Step) string {
 // -------------------------------------------------------------------------
 
 // post marshals body as JSON and POSTs it to path on the SimCore server, once.
-// Returns the raw response body on success (2xx).
+// Returns the raw response body on success (2xx). It carries nothing whose loss
+// costs evidence (registration, a live output chunk), so a shutdown cancels it
+// at once.
 func (c *BeaconClient) post(path string, body interface{}) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
-	respBody, status, err := c.postOnce(path, data)
+	respBody, status, err := c.postOnce(path, data, 0)
 	if err != nil {
 		return nil, fmt.Errorf("POST %s: %w", path, err)
 	}
@@ -1452,9 +1509,47 @@ func (c *BeaconClient) post(path string, body interface{}) ([]byte, error) {
 	return respBody, nil
 }
 
-func (c *BeaconClient) postOnce(path string, data []byte) ([]byte, int, error) {
-	resp, err := c.http.Post(c.ServerURL+path, "application/json", bytes.NewReader(data))
+// postOnce makes one POST attempt. Once the beacon has been told to stop
+// (BindShutdown) the attempt is cancelled: at once when grace is 0, otherwise
+// grace after the stop — whether the stop arrived before the attempt or during
+// it. Without this an attempt against a SimCore that drops packets holds the
+// stop for the client's whole 30 s timeout.
+func (c *BeaconClient) postOnce(path string, data []byte, grace time.Duration) ([]byte, int, error) {
+	stop := c.stopCtx()
+	reqCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if stop.Done() != nil {
+		finished := make(chan struct{})
+		defer close(finished)
+		go func() {
+			select {
+			case <-finished:
+				return
+			case <-stop.Done():
+			}
+			if grace > 0 {
+				t := time.NewTimer(grace)
+				defer t.Stop()
+				select {
+				case <-finished:
+					return
+				case <-t.C:
+				}
+			}
+			cancel()
+		}()
+	}
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, c.ServerURL+path, bytes.NewReader(data))
 	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		if stop.Err() != nil && reqCtx.Err() != nil {
+			return nil, 0, fmt.Errorf("%w (cut short: the beacon is shutting down)", err)
+		}
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
@@ -1471,13 +1566,22 @@ func (c *BeaconClient) postOnce(path string, data []byte) ([]byte, int, error) {
 // retry i (1+2+4+8+16 s: up to 5 retries, 6 attempts, ~31 s). 409 means the run
 // is already terminal on SimCore — nothing a retry can change — and is treated
 // as success. 404 (unknown run) and every other 4xx stop at once.
+//
+// RG-AGENT-04: the ladder yields to a shutdown. A stop that arrives during a
+// backoff wait ends the wait and buys ONE final attempt; an attempt in flight
+// when the stop arrives, or started after it, is cut shutdownPostGrace later;
+// and no attempt that fails after the stop is retried. So a stopping beacon
+// spends at most shutdownPostGrace per POST here — the ladder used to hold
+// SIGTERM for 62 s with SimCore down (measured), past launchd's kill timer, and
+// a SIGKILL skips the staged-artifact cleanup.
 func (c *BeaconClient) postRetry(path string, body interface{}) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
+	stop := c.stopCtx()
 	for attempt := 0; ; attempt++ {
-		respBody, status, err := c.postOnce(path, data)
+		respBody, status, err := c.postOnce(path, data, shutdownPostGrace)
 		var retryErr error
 		switch {
 		case err != nil:
@@ -1495,9 +1599,19 @@ func (c *BeaconClient) postRetry(path string, body interface{}) ([]byte, error) 
 		if attempt >= len(postRetryBackoff) {
 			return nil, retryErr
 		}
+		if stop.Err() != nil {
+			return nil, fmt.Errorf("%w — not retried: the beacon is shutting down", retryErr)
+		}
 		wait := postRetryBackoff[attempt]
 		log.Printf("[beacon] %v — retry %d/%d in %s", retryErr, attempt+1, len(postRetryBackoff), wait)
-		time.Sleep(wait)
+		timer := time.NewTimer(wait)
+		select {
+		case <-timer.C:
+		case <-stop.Done():
+			timer.Stop()
+			log.Printf("[beacon] shutdown during the retry wait for POST %s — one final attempt (up to %s)",
+				path, shutdownPostGrace)
+		}
 	}
 }
 

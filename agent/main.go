@@ -292,6 +292,11 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 	// Build beacon client
 	// ----------------------------------------------------------------
 	client := beacon.New(cfg.server, cfg.id, cfg.interval)
+	// RG-AGENT-05: before anything that touches the network. The console signal
+	// handler (and the SCM STOP handler) only cancel ctx, so Register — which
+	// runs before client.Run — has to be able to see it, or a stop during a
+	// blocked registration waits out the 30 s HTTP timeout.
+	client.BindShutdown(ctx)
 	client.LongPollTimeout = cfg.longPoll
 	client.StreamOutput = cfg.streamOutput
 	if cfg.stepTimeout > 0 {
@@ -335,9 +340,14 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 		hostname, runtime.GOOS, capabilities, interpreters)
 
 	if err := client.Register(hostname, runtime.GOOS, capabilities, interpreters); err != nil {
-		// Registration failure is logged as a warning but does not abort startup —
-		// SimCore may be momentarily unavailable and the first poll can re-register.
-		log.Printf("WARNING: registration failed (will retry on next poll cycle): %v", err)
+		if ctx.Err() != nil {
+			// The stop cancelled the registration; there is no next poll cycle.
+			log.Printf("registration interrupted — the beacon was told to stop before SimCore answered: %v", err)
+		} else {
+			// Registration failure is logged as a warning but does not abort startup —
+			// SimCore may be momentarily unavailable and the first poll can re-register.
+			log.Printf("WARNING: registration failed (will retry on next poll cycle): %v", err)
+		}
 	} else {
 		log.Printf("registration OK")
 	}

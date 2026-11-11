@@ -209,3 +209,29 @@ func TestSignalHandlingIsConsoleOnly(t *testing.T) {
 			"subscribe the service to CTRL_LOGOFF_EVENT")
 	}
 }
+
+// TestRunBeaconBindsShutdownBeforeRegister (RG-AGENT-05). The console path
+// installs its signal handler BEFORE runBeacon (the Windows service ordering
+// above needs that), so a SIGTERM that arrives while Register is blocked — a
+// SimCore address a firewall silently drops, the common first-install mistake
+// — only cancels ctx. Register must therefore be able to SEE that ctx: without
+// it the stop waits out the 30 s HTTP timeout (28 s measured), and launchd
+// SIGKILLs the job at 20 s. The client learns the shutdown context through
+// BindShutdown, which has to come before anything that touches the network.
+func TestRunBeaconBindsShutdownBeforeRegister(t *testing.T) {
+	rb := parseMainFuncs(t)["runBeacon"]
+	if rb == nil {
+		t.Fatal("main.go has no func runBeacon")
+	}
+	calls := callsIn(rb)
+	bind := firstPos(calls, "client.BindShutdown")
+	if bind == token.NoPos {
+		t.Fatal("runBeacon never calls client.BindShutdown(ctx) — a stop signal during a blocked " +
+			"registration cannot cancel it")
+	}
+	for _, network := range []string{"client.Register", "client.Run"} {
+		if p := firstPos(calls, network); p != token.NoPos && p < bind {
+			t.Errorf("runBeacon calls %s before client.BindShutdown — that call cannot be cancelled by a stop signal", network)
+		}
+	}
+}
