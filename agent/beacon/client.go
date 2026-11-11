@@ -989,7 +989,25 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		c.executeTaskPerStep(ctx, task)
 		return
 	}
-	defer session.Close()
+	// RG-AGENT-01 / RG-AGENT-02: pull mode runs no scenario cleanup, so ending
+	// the session is the only teardown this run's background helpers get. Every
+	// exit below that is not a clean finish — abort or control loss before or
+	// during a step, timeout, a refused tool, an execution error, fail-fast —
+	// leaves chainClean false and the session is Abandoned: everything the chain
+	// started is stopped. A clean finish Closes it (POSIX still tears the
+	// anchor's process group down; Windows leaves a successful chain's children
+	// alone — see ChainSession.Close).
+	chainClean := false
+	defer func() {
+		if chainClean {
+			_ = session.Close()
+		} else {
+			_ = session.Abandon()
+		}
+		if how := session.Teardown(); how != "" {
+			log.Printf("[beacon] chain end run_id=%s clean=%t: %s", task.RunID, chainClean, how)
+		}
+	}()
 
 	log.Printf("[beacon] causality-chained execution run_id=%s cgo=%q steps=%d",
 		task.RunID, cgoImage, totalSteps)
@@ -1124,6 +1142,9 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		// that executed no TTP at all.
 		finalExitCode = platformUnsatisfiableExitCode
 	}
+	// Only a chain whose every executed step exited 0 ended cleanly; a fail-fast
+	// or signal-severed break arrives here with a non-zero code.
+	chainClean = finalExitCode == 0
 	summary := buildSummary(task, finalExitCode, degradedSteps, led.steps)
 	if err := c.Complete(task.RunID, finalExitCode, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)

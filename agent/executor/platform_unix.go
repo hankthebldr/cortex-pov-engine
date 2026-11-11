@@ -133,3 +133,71 @@ func (k *treeKiller) Release() {
 	k.released = true
 	k.mu.Unlock()
 }
+
+// sysKill is syscall.Kill. A var only so a test can record what is signalled.
+var sysKill = syscall.Kill
+
+// survivorPoll is how often reapSurvivors re-probes the group while it waits
+// for SIGTERM to land.
+const survivorPoll = 25 * time.Millisecond
+
+// Outcomes reapSurvivors reports (stable text: the beacon logs it).
+const (
+	teardownTERM      = "process group stopped with SIGTERM"
+	teardownKILL      = "process group stopped with SIGTERM, then SIGKILL after the grace period"
+	teardownForbidden = "processes owned by another user could not be signalled (EPERM) and are still running"
+)
+
+// reapSurvivors is the end-of-chain teardown (RG-AGENT-01 / RG-AGENT-02): once
+// the chain's anchor has exited and been reaped, stop whatever its steps left
+// running in the anchor's process group. Pull mode runs no scenario cleanup, so
+// this is the only teardown a chained run's background helpers ever get; without
+// it a helper left by run N answers run N+1.
+//
+// POSIX tears the group down however the chain ended, so failed is unused here
+// (it selects the Windows behaviour).
+//
+// The group is PROBED first (signal 0) and nothing is sent to an empty one. A
+// pgid cannot be reused while any member is alive, so a non-empty group is
+// still exactly our descendants; an empty group's number is free for the kernel
+// to hand out again, and from the first ESRCH on this never signals it. SIGKILL
+// is sent only if the group never read empty for the whole grace period.
+//
+// It returns "" when there was nothing to stop, else what was done.
+func (k *treeKiller) reapSurvivors(failed bool) string {
+	_ = failed
+	k.mu.Lock()
+	if k.released {
+		k.mu.Unlock()
+		return ""
+	}
+	k.killing++
+	k.mu.Unlock()
+	defer func() {
+		k.mu.Lock()
+		k.killing--
+		k.mu.Unlock()
+	}()
+
+	switch sysKill(-k.pid, 0) {
+	case nil:
+	case syscall.EPERM:
+		return teardownForbidden
+	default: // ESRCH: nobody left
+		return ""
+	}
+	_ = sysKill(-k.pid, syscall.SIGTERM)
+	for deadline := time.Now().Add(killGrace); time.Now().Before(deadline); {
+		time.Sleep(survivorPoll)
+		switch sysKill(-k.pid, 0) {
+		case nil:
+			continue
+		case syscall.EPERM:
+			return teardownForbidden
+		default:
+			return teardownTERM
+		}
+	}
+	_ = sysKill(-k.pid, syscall.SIGKILL)
+	return teardownKILL
+}

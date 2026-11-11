@@ -136,6 +136,50 @@ func (k *treeKiller) Release() {
 	}
 }
 
+// What reapSurvivors reports (stable text: the beacon logs it). Windows cannot
+// say whether the sweep found anything, so neither line claims it did.
+const (
+	teardownJob      = "the chain's Job Object was terminated (any process its steps left running is stopped)"
+	teardownSnapshot = "no Job Object: the chain's process tree was swept from the anchor's held handle"
+)
+
+// reapSurvivors is the end-of-chain teardown, called once the anchor has exited
+// and before Release (RG-AGENT-01 / RG-AGENT-02).
+//
+// failed=false — the chain finished cleanly: NOTHING is terminated. A successful
+// step's background children survive, the rule BEACON-04 set for Windows
+// (KILL_ON_JOB_CLOSE is deliberately not set either).
+//
+// failed=true — the chain was aborted, lost its control channel, timed out,
+// failed fast or hit an execution error: the tree is swept once. An abort that
+// reports "aborted" while an earlier step's tooling keeps running is worse than
+// no abort, and an abort caught DURING a step already terminates the whole job
+// (the session's ctx watcher), so one caught BETWEEN steps must not do less.
+// This is safe after the anchor has exited: the sweep names the Job Object (or,
+// in the no-job fallback, a tree rooted at OUR still-open handle, which pins the
+// root's pid) — never a pid os/exec has released.
+//
+// It returns "" when nothing was done.
+func (k *treeKiller) reapSurvivors(failed bool) string {
+	if !failed {
+		return ""
+	}
+	k.mu.Lock()
+	if k.releasing || k.closed {
+		k.mu.Unlock()
+		return ""
+	}
+	k.killing++
+	k.mu.Unlock()
+	defer k.endKill()
+
+	k.sweep()
+	if k.job == 0 {
+		return teardownSnapshot
+	}
+	return teardownJob
+}
+
 func (k *treeKiller) closeLocked() {
 	if k.closed {
 		return

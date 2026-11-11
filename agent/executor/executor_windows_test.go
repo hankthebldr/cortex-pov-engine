@@ -151,9 +151,12 @@ func TestChainSession_WindowsAbortKillsTheStepTreeAndSparesABystander(t *testing
 	}
 }
 
-// Windows twin of TestChainSession_CloseDoesNotKillAfterTheAnchorExited: a
-// successful step's detached child survives Close(), as it does on POSIX and
-// in the per-step path (KILL_ON_JOB_CLOSE is deliberately not set).
+// BEACON-04, the Windows no-kill rule: a successful step's detached child
+// survives a clean Close(), as it does in the per-step path (KILL_ON_JOB_CLOSE
+// is deliberately not set). POSIX no longer shares this row — there a finished
+// chain's process group is torn down (RG-AGENT-01, chained_teardown_unix_test.go)
+// — and a chain that did NOT finish cleanly is Abandon()ed, which does terminate
+// the job (chained_teardown_windows_test.go).
 func TestChainSession_WindowsCloseDoesNotKillAfterTheAnchorExited(t *testing.T) {
 	s, err := NewChainSession(context.Background(), "")
 	if err != nil {
