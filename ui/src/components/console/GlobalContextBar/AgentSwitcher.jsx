@@ -21,11 +21,6 @@ const DOT = {
   [LIVENESS.UNKNOWN]: 'bad',
 }
 
-function agentStatus(agent) {
-  if (!agent) return null
-  return DOT[agentLiveness(agent).state] || 'bad'
-}
-
 export default function AgentSwitcher({ onManage = () => {} }) {
   const { agent, agents, setAgent } = useEnvironment()
 
@@ -37,16 +32,20 @@ export default function AgentSwitcher({ onManage = () => {} }) {
       label: a.hostname || id,
       meta: [a.os, id, live.state === LIVENESS.ONLINE ? null : live.label].filter(Boolean).join(' · '),
       status: DOT[live.state] || 'bad',
+      // The state in words: the dot's colour is not the only signal (UI-22).
+      statusLabel: live.label,
     }
   })
 
   const label = agent ? (agent.hostname || agentIdOf(agent)) : 'no agent'
+  const live = agent ? agentLiveness(agent) : null
 
   return (
     <SwitcherPill
       kind="agent"
       label={label}
-      status={agentStatus(agent)}
+      status={live ? (DOT[live.state] || 'bad') : null}
+      statusLabel={live ? live.label : null}
       empty={!agent}
       options={options}
       activeId={agentIdOf(agent)}

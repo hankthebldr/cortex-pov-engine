@@ -9,33 +9,53 @@ import { useEnvironment } from '../../../context/EnvironmentContext.jsx'
  * selecting writes through to the provider (which persists + re-scopes health).
  * The "Manage tenants…" footer deep-links to the Tenants destination.
  */
-function tenantStatus(tenant, health) {
+function rawStatus(tenant, health) {
   const raw =
     (health && health.tenantHealth && health.tenantHealth.status) ||
     tenant?.status ||
     null
+  return raw ? String(raw) : null
+}
+
+function tenantStatus(tenant, health) {
+  const raw = rawStatus(tenant, health)
   if (!raw) return null
-  const s = String(raw).toLowerCase()
+  const s = raw.toLowerCase()
   if (s.includes('ok') || s.includes('connect') || s.includes('healthy') || s.includes('verified')) return 'healthy'
   if (s.includes('degrad') || s.includes('warn') || s.includes('stale')) return 'warn'
   return 'bad'
 }
 
+/**
+ * The status in words, for the pill's accessible name and the word beside the
+ * dot (UI-22). SimCore's own word is shown as it came. A tenant with no
+ * reported status says so: it is not healthy, it is unreported.
+ */
+function tenantStatusLabel(tenant, health) {
+  const raw = rawStatus(tenant, health)
+  return raw ? raw.toLowerCase() : 'status not reported'
+}
+
 export default function TenantSwitcher({ onManage = () => {} }) {
   const { tenant, tenants, setTenant, health } = useEnvironment()
 
-  const options = tenants.map((t) => ({
-    id: t.name || t.id,
-    label: t.name || t.id,
-    meta: t.config?.region || t.region || t.base_url || t.config?.base_url || '',
-    status: tenantStatus(t, tenant && (t.name || t.id) === (tenant.name || tenant.id) ? health : null),
-  }))
+  const options = tenants.map((t) => {
+    const scoped = tenant && (t.name || t.id) === (tenant.name || tenant.id) ? health : null
+    return {
+      id: t.name || t.id,
+      label: t.name || t.id,
+      meta: t.config?.region || t.region || t.base_url || t.config?.base_url || '',
+      status: tenantStatus(t, scoped),
+      statusLabel: tenantStatusLabel(t, scoped),
+    }
+  })
 
   return (
     <SwitcherPill
       kind="tenant"
       label={tenant ? (tenant.name || tenant.id) : 'no tenant'}
       status={tenantStatus(tenant, health)}
+      statusLabel={tenant ? tenantStatusLabel(tenant, health) : null}
       empty={!tenant}
       options={options}
       activeId={tenant ? (tenant.name || tenant.id) : null}
