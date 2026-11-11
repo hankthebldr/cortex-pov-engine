@@ -338,6 +338,11 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 
 	log.Printf("registering — hostname=%s os=%s capabilities=%v interpreters=%v",
 		hostname, runtime.GOOS, capabilities, interpreters)
+	// BEACON-13: say why an interpreter a DC can see on the host is not in that
+	// list (the Microsoft Store stub; an alias Windows cannot shim).
+	for _, note := range executor.InterpreterAdvisories() {
+		log.Printf("interpreter not advertised: %s", note)
+	}
 
 	if err := client.Register(hostname, runtime.GOOS, capabilities, interpreters); err != nil {
 		if ctx.Err() != nil {

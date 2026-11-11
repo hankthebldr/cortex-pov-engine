@@ -24,11 +24,18 @@ func TestCheckRequiredBinaries(t *testing.T) {
 	}
 }
 
-func TestCheckRequiredBinaries_SkippedOnWindows(t *testing.T) {
+// BEACON-13: the check is NOT skipped on Windows. (This test used to pin the
+// skip, under which a step wired to an absent tool ran untooled.)
+func TestCheckRequiredBinaries_IsTheSameCheckOnWindows(t *testing.T) {
 	old := runtimeDepsGOOS
 	runtimeDepsGOOS = "windows"
 	defer func() { runtimeDepsGOOS = old }()
-	if got := checkRequiredBinaries(&Step{RequiredBinaries: []string{"cortexsim-no-such-tool"}}); got != nil {
-		t.Errorf("must be skipped on windows, got %v", got)
+	present, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := checkRequiredBinaries(&Step{RequiredBinaries: []string{present, "cortexsim-no-such-tool"}})
+	if len(got) != 1 || got[0] != "cortexsim-no-such-tool" {
+		t.Errorf("missing = %v, want [cortexsim-no-such-tool]", got)
 	}
 }

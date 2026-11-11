@@ -48,6 +48,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -88,26 +89,86 @@ type InterpreterCheck struct {
 	Exact    bool   // the literal logical name itself resolved (no shim needed)
 	Resolved string // the concrete binary name that was found (e.g. "python3")
 	Path     string // absolute path to that binary
+
+	// AppExecAlias is the first Windows App Execution Alias PATH resolved for
+	// this interpreter and that was NOT counted (see IsAppExecutionAlias). It
+	// is set whether or not something else was then found, so a caller can say
+	// "the only python on PATH is the Store alias" instead of plain "absent".
+	AppExecAlias string
 }
+
+// interpreterGOOS is this file's view of the host OS. A package var only so a
+// test can drive the Windows rules from a POSIX runner (the runtimeDepsGOOS
+// idiom in agent/beacon).
+var interpreterGOOS = runtime.GOOS
+
+// IsAppExecutionAlias reports whether path is a file directly inside a
+// `...\Microsoft\WindowsApps\` directory — where Windows keeps per-user App
+// Execution Aliases (%LOCALAPPDATA%\Microsoft\WindowsApps).
+//
+// BEACON-13: on a stock Windows 10/11 that directory is on the user's PATH and
+// holds `python.exe` and `python3.exe` even when no Python is installed. Those
+// are the Microsoft Store stub: run with arguments it prints "Python was not
+// found" and exits 9009; run with none it opens the Store. LookPath finds it
+// like any other executable, so a beacon running as that user advertised
+// "python available" and SimCore's interpreter preflight passed on a host that
+// has no Python.
+//
+// The same directory also holds the working alias of a Python that WAS
+// installed from the Store, and the two cannot be told apart by path. Neither
+// is counted: an interpreter the beacon cannot show to be real is not
+// advertised. (Telling them apart needs the alias's reparse data; that is not
+// done here.) Pure string logic on purpose, so the rule is testable off
+// Windows.
+func IsAppExecutionAlias(path string) bool {
+	p := strings.ToLower(strings.ReplaceAll(path, "/", `\`))
+	i := strings.LastIndex(p, `\`)
+	if i < 0 {
+		return false
+	}
+	return strings.HasSuffix(p[:i], `\microsoft\windowsapps`)
+}
+
+// PathShimSupported reports whether NewInterpreterShim can expose an
+// interpreter found under an alias (python3) under its logical name (python) on
+// this host. The shim is a symlink in a directory prepended to PATH; on Windows
+// that is neither creatable without a privilege nor what PATHEXT resolution
+// would find, so there an alias-only interpreter is NOT a satisfied dependency.
+func PathShimSupported() bool { return interpreterGOOS != "windows" }
 
 // ResolveInterpreter looks for `logical` on PATH, first under its own name and
 // then under its known aliases (preference order in interpreterAliases). An
 // unknown logical name with no alias table entry still checks its own literal
 // name — this keeps the function usable for a name the alias table hasn't
-// been taught about yet.
+// been taught about yet. On Windows a match that is an App Execution Alias is
+// skipped and recorded in AppExecAlias.
 func ResolveInterpreter(logical string) InterpreterCheck {
-	if p, err := exec.LookPath(logical); err == nil {
-		return InterpreterCheck{Logical: logical, Found: true, Exact: true, Resolved: logical, Path: p}
+	skipped := ""
+	look := func(name string) (string, bool) {
+		p, err := exec.LookPath(name)
+		if err != nil {
+			return "", false
+		}
+		if interpreterGOOS == "windows" && IsAppExecutionAlias(p) {
+			if skipped == "" {
+				skipped = p
+			}
+			return "", false
+		}
+		return p, true
+	}
+	if p, ok := look(logical); ok {
+		return InterpreterCheck{Logical: logical, Found: true, Exact: true, Resolved: logical, Path: p, AppExecAlias: skipped}
 	}
 	for _, alias := range interpreterAliases[logical] {
 		if alias == logical {
 			continue
 		}
-		if p, err := exec.LookPath(alias); err == nil {
-			return InterpreterCheck{Logical: logical, Found: true, Exact: false, Resolved: alias, Path: p}
+		if p, ok := look(alias); ok {
+			return InterpreterCheck{Logical: logical, Found: true, Exact: false, Resolved: alias, Path: p, AppExecAlias: skipped}
 		}
 	}
-	return InterpreterCheck{Logical: logical}
+	return InterpreterCheck{Logical: logical, AppExecAlias: skipped}
 }
 
 // DetectInterpreters probes the fixed logical-interpreter roster this beacon
@@ -125,13 +186,39 @@ func DetectInterpreters() []InterpreterCheck {
 }
 
 // AvailableLogicalNames filters DetectInterpreters down to the logical names
-// that resolved to something (exact or aliased) — the shape SimCore's agent
-// registration record actually stores.
+// this beacon can actually satisfy — the shape SimCore's agent registration
+// record stores, and what its `requires_interpreters` preflight trusts. Where
+// the PATH shim exists (POSIX) that is "resolved, exactly or under an alias";
+// where it does not (Windows) only an exact match counts, because a step that
+// calls `python` on a host that only has `python3` will not find it.
 func AvailableLogicalNames() []string {
 	var out []string
 	for _, c := range DetectInterpreters() {
-		if c.Found {
+		if c.Found && (c.Exact || PathShimSupported()) {
 			out = append(out, c.Logical)
+		}
+	}
+	return out
+}
+
+// InterpreterAdvisories returns one human-readable line per logical interpreter
+// that is on PATH in some form but is NOT advertised, saying why — so the
+// beacon's startup log explains a "python missing" that a DC can see is
+// installed. Empty on a host with nothing to explain.
+func InterpreterAdvisories() []string {
+	var out []string
+	for _, c := range DetectInterpreters() {
+		switch {
+		case c.Found && (c.Exact || PathShimSupported()):
+			// advertised
+		case c.Found:
+			out = append(out, fmt.Sprintf(
+				"%s is on PATH only as %s (%s); steps that require %q are refused on this host — "+
+					"the alias PATH shim is POSIX-only", c.Logical, c.Resolved, c.Path, c.Logical))
+		case c.AppExecAlias != "":
+			out = append(out, fmt.Sprintf(
+				"%s resolves only to the App Execution Alias %s — the Microsoft Store stub unless Python "+
+					"was installed from the Store; it is not counted as an interpreter", c.Logical, c.AppExecAlias))
 		}
 	}
 	return out

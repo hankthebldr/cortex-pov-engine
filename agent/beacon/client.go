@@ -1725,26 +1725,28 @@ func (o runtimeDepOutcome) cleanup() {
 // exists on THIS host right now and returns how the step should proceed. It
 // mutates step.Command in place for the two paths that keep going (PATH-shim,
 // authorized install) and leaves step.Command untouched when nothing is
-// declared or on the windows GOOS (out of scope for this pass — see
-// docs/design/agent-runtime-dependencies.md).
+// declared, and always on Windows (see resolveRuntimeDepsWindows).
 //
 // THE GUARANTEE: when a required interpreter is absent and no authorized
 // install can supply it, this function returns blocked=true and the caller
 // MUST use the synthetic result instead of executing step.Command. This is
 // what makes "a missing runtime dependency must never present as success"
 // true by construction rather than by scenario authors remembering not to
-// write `|| echo done`.
-// runtimeDepsGOOS is resolveRuntimeDeps' view of the host OS. It defaults to
-// runtime.GOOS and exists as a package var — rather than a bare runtime.GOOS
-// reference — solely so a test can flip it to "windows" and prove the
-// no-op-on-windows guard actually fires, without needing to cross-compile or
-// run on a real Windows host. See TestResolveRuntimeDeps_WindowsGOOSIsANoOp
-// in runtime_deps_test.go.
+// write `|| echo done`. It holds on Windows as well (BEACON-13).
+//
+// runtimeDepsGOOS is the runtime-dependency and tool-presence checks' view of
+// the host OS. It defaults to runtime.GOOS and exists as a package var — rather
+// than a bare runtime.GOOS reference — solely so a test can flip it to "windows"
+// and drive the Windows rule without a Windows host. See
+// runtime_deps_winrule_test.go.
 var runtimeDepsGOOS = runtime.GOOS
 
 func (c *BeaconClient) resolveRuntimeDeps(task *Task, step *Step) runtimeDepOutcome {
-	if len(step.RequiresInterpreters) == 0 || runtimeDepsGOOS == "windows" {
+	if len(step.RequiresInterpreters) == 0 {
 		return runtimeDepOutcome{}
+	}
+	if runtimeDepsGOOS == "windows" {
+		return resolveRuntimeDepsWindows(task, step)
 	}
 
 	var notes []string
@@ -1843,6 +1845,62 @@ func (c *BeaconClient) resolveRuntimeDeps(task *Task, step *Step) runtimeDepOutc
 	step.Command = cmd
 
 	return runtimeDepOutcome{note: strings.Join(notes, "\n"), shims: shims}
+}
+
+// resolveRuntimeDepsWindows is resolveRuntimeDeps for a Windows host (BEACON-13).
+// Until it existed the check was skipped there without a word: a step whose
+// interpreter was missing ran, and under PowerShell a command that is not found
+// does not fail the step — `python tool.py; Write-Output done` exits 0 — so a
+// run that executed nothing reported a PASS.
+//
+// Windows gets the guarantee, not the two repairs:
+//   - resolvable under its OWN logical name: the step runs, unmodified.
+//   - absent: blocked.
+//   - present only under an alias (python3, not python): blocked as well. The
+//     repair for that on POSIX is a symlink shim on PATH, which Windows cannot
+//     use, and the step's own text would not find the interpreter by the name
+//     it declared.
+//   - an authorised runtime install is never composed: InstallPackageCommand
+//     and PostInstallVerifyShim emit POSIX sh, which must not reach PowerShell.
+//
+// It never rewrites step.Command.
+func resolveRuntimeDepsWindows(task *Task, step *Step) runtimeDepOutcome {
+	for _, logical := range step.RequiresInterpreters {
+		check := executor.ResolveInterpreter(logical)
+		if check.Found && check.Exact {
+			continue
+		}
+		var why, short string
+		switch {
+		case check.Found:
+			why = fmt.Sprintf("it is on PATH only as %s (%s), and the PATH shim that exposes an alias under "+
+				"its logical name is POSIX-only, so a step that calls %q would not find it",
+				check.Resolved, check.Path, logical)
+			short = fmt.Sprintf("only %s is on PATH and Windows has no alias shim", check.Resolved)
+		case check.AppExecAlias != "":
+			why = fmt.Sprintf("the only match on PATH is the App Execution Alias %s — the Microsoft Store "+
+				"stub unless Python was installed from the Store — which is not counted as an interpreter",
+				check.AppExecAlias)
+			short = "only a Microsoft Store App Execution Alias is on PATH"
+		default:
+			why = "no interpreter of that name is on this host's PATH"
+			short = "no interpreter path"
+		}
+		note := fmt.Sprintf("%s %s — %s. This step's command was NOT executed, so it produced no signal. "+
+			"This is an ENVIRONMENT gap, not a detection result.", runtimeDepMissingMarker, logical, why)
+		if task.RuntimeInstallAuthorized {
+			note += " An authorised runtime install is not supported on Windows and was not attempted."
+		}
+		return runtimeDepOutcome{
+			blocked: true,
+			note:    note,
+			synthetic: identity.ExecResult{
+				ExitCode: 127,
+				Stderr:   fmt.Sprintf("%s %s (%s)", runtimeDepMissingMarker, logical, short),
+			},
+		}
+	}
+	return runtimeDepOutcome{}
 }
 
 // combineOutput merges stdout and stderr into a single log-friendly string.

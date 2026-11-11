@@ -2,12 +2,11 @@
 
 package beacon
 
-// Runtime-dependency tests that exercise the REAL host (CI-04). resolveRuntimeDeps
-// is a no-op on Windows (out of scope for that feature — see
-// docs/design/agent-runtime-dependencies.md), so on a Windows host these
-// contracts do not hold and these tests do not run there. The Windows twin,
-// TestResolveRuntimeDeps_WindowsHostIsANoOp (runtime_deps_windows_test.go),
-// pins that behaviour so it cannot change silently.
+// Runtime-dependency tests that exercise the REAL host (CI-04): the PATH shim
+// and the authorised install, which are POSIX mechanisms. Windows keeps the
+// guarantee (an absent interpreter blocks the step) without those two repairs —
+// see resolveRuntimeDepsWindows; its tests are runtime_deps_winrule_test.go and
+// runtime_deps_windows_test.go.
 
 import (
 	"context"

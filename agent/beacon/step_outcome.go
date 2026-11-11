@@ -175,10 +175,19 @@ func severedAt(steps []StepOutcome) (id, termination string, ok bool) {
 }
 
 // checkRequiredBinaries returns the step's declared required binaries that are
-// not on PATH. A step that declares none is not checked. The check is skipped on
-// Windows, exactly as resolveRuntimeDeps is.
+// not on PATH. A step that declares none is not checked.
+//
+// BEACON-13: this runs on Windows too. It used to be skipped there, so a step
+// wired to a tool the host did not have RAN and its absent detection read as a
+// miss. exec.LookPath is the right probe on both families: on Windows it
+// resolves a bare name through PATH and PATHEXT (`nmap` finds nmap.exe) and
+// accepts a full path (`C:\tools\Rubeus\Rubeus.exe`). It does NOT see a
+// PowerShell function, alias or module command — a pack whose `install.binary`
+// names one of those reads TOOL_ABSENT, which is at least visible; running
+// untooled was not. SimCore fills required_binaries from the command it
+// resolved for THIS host's OS, so the names checked are the ones the step uses.
 func checkRequiredBinaries(step *Step) (missing []string) {
-	if len(step.RequiredBinaries) == 0 || runtimeDepsGOOS == "windows" {
+	if len(step.RequiredBinaries) == 0 {
 		return nil
 	}
 	for _, name := range step.RequiredBinaries {

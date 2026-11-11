@@ -3,9 +3,9 @@
 package beacon
 
 // POSIX-dialect beacon tests (CI-04): `&&`, `kill -9 $$`, and the tool-presence
-// / runtime-dependency preflights, which only run on POSIX hosts (on Windows
-// checkRequiredBinaries and resolveRuntimeDeps are no-ops — a stated scope gap,
-// see runtime_deps_test.go). PowerShell-dialect twins: client_windows_test.go.
+// / runtime-dependency preflights as a POSIX host runs them. (Both preflights
+// run on Windows too since BEACON-13 — runtime_deps_winrule_test.go,
+// runtime_deps_windows_test.go.) PowerShell-dialect twins: client_windows_test.go.
 
 import (
 	"context"
