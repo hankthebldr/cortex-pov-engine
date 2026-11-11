@@ -47,7 +47,7 @@ readiness gate, a scoring rule.
 | [`LEDGER.md`](LEDGER.md) | Rendered read view, with derived statuses | `render --apply` — never edit |
 | `packets/PMQ-<date>-<slug>.md` | Outbound question packet, self-contained, immutable | `packet --apply` |
 | `answers/PMA-<date>-<slug>.md` | Inbound answer file, validated, immutable | `ingest --apply` |
-| vault `github-projects/cortex-pov-engine/product-mechanics/questions/` | Packet copy the work Mac reads | `packet --apply --vault` |
+| vault `github-projects/cortex-pov-engine/product-mechanics/questions/` | Packet copy the work Mac reads (Obsidian Sync carries it; the vault's git ignores it) | `packet --apply --vault` or `send --apply`, each read back and hash-checked |
 | vault `_RoB/product-mechanics/answers/` | Where the work-Mac agent writes its answer file | work Mac (its working area) |
 
 The vault is resolved from `$OBSIDIAN_ROOT/$OBSIDIAN_VAULT_NAME` on each Mac, never a
@@ -94,8 +94,17 @@ Every command previews by default and writes only with `--apply`.
 .venv/bin/python scripts/product_mechanics.py render --apply             # regenerate LEDGER.md
 .venv/bin/python scripts/product_mechanics.py packet --priority P0 --slug p0-seed            # preview
 .venv/bin/python scripts/product_mechanics.py packet --priority P0 --slug p0-seed --apply --vault
+.venv/bin/python scripts/product_mechanics.py check --vault              # prove every packet is in the vault outbox, byte-identical
+.venv/bin/python scripts/product_mechanics.py send --apply               # write any packet missing from the vault outbox
 .venv/bin/python scripts/product_mechanics.py ingest "$OBSIDIAN_ROOT/$OBSIDIAN_VAULT_NAME/_RoB/product-mechanics/answers/PMA-….md"
 ```
+
+A vault write is never reported on faith. The vault must be an Obsidian vault (it must
+have `.obsidian/`, so a mistyped vault name or a sibling vault is refused before anything is
+written), the target must resolve inside it, and the file is read back and its sha256
+compared before the command prints `wrote + verified`. `check --vault` reports each packet as
+`present`, `missing` or `differs` and fails on anything but `present`. `send` never
+overwrites a copy that `differs`, because packets are immutable.
 
 `check` also fails if a ref in `assumes` or `affects` names a repo path that no longer
 exists, so a renamed module cannot leave the ledger citing a ghost.

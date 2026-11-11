@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import glob
+import hashlib
 import os
 import re
 import sys
@@ -579,7 +580,45 @@ def vault_root(env: Optional[dict] = None) -> Path:
     _req(not missing, f"vault: set {' and '.join(missing)} (per-host, in ~/.zshenv); not guessing")
     root = Path(env["OBSIDIAN_ROOT"]) / env["OBSIDIAN_VAULT_NAME"]
     _req(root.is_dir(), f"vault: {root} does not exist")
-    return root
+    # An existing folder is not proof of a vault: a typo'd name or a sibling vault
+    # would take the write and the work Mac would never see it.
+    _req((root / ".obsidian").is_dir(), f"vault: {root} is not an Obsidian vault (no .obsidian/)")
+    return root.resolve()
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def write_into_vault(vault: Path, rel: Path, text: str) -> tuple[Path, str]:
+    """Write ``text`` at ``vault/rel`` and prove it landed: inside the vault, byte-identical.
+
+    Returns (path, sha256). Raises LedgerError rather than report a write it did not see.
+    """
+    _req(not rel.is_absolute() and ".." not in rel.parts, f"vault: {rel} must be vault-relative")
+    path = vault / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _req(path.parent.resolve().is_relative_to(vault),
+         f"vault: {path.parent} resolves outside {vault} (symlink?)")
+    data = text.encode("utf-8")
+    path.write_bytes(data)
+    got = path.read_bytes()
+    _req(_sha256(got) == _sha256(data), f"vault: read-back of {path} does not match what was written")
+    return path, _sha256(got)
+
+
+def vault_packet_status(vault: Path, packets_dir: Path = PACKETS_DIR) -> list[tuple[str, str]]:
+    """Per repo packet: ``present`` (vault copy byte-identical), ``missing`` or ``differs``."""
+    out = []
+    for p in sorted(packets_dir.glob("PMQ-*.md")):
+        v = vault / VAULT_OUTBOX / p.name
+        if not v.is_file():
+            out.append((p.name, "missing"))
+        elif _sha256(v.read_bytes()) != _sha256(p.read_bytes()):
+            out.append((p.name, "differs"))
+        else:
+            out.append((p.name, "present"))
+    return out
 
 
 # ── commands ────────────────────────────────────────────────────────────────
@@ -590,13 +629,22 @@ def _state() -> tuple[dict, dict, dict]:
     return data, load_answers(ids), load_asked(ids)
 
 
-def cmd_check(_: argparse.Namespace) -> int:
+def cmd_check(args: argparse.Namespace) -> int:
     data, answers, asked = _state()
     fresh = render_ledger(data, answers, asked)
     current = RENDERED.read_text(encoding="utf-8") if RENDERED.exists() else ""
     _req(current == fresh, f"{RENDERED.relative_to(ROOT)} is stale — run `render --apply`")
     print(f"OK  {len(data['mechanisms'])} mechanisms · {len(data['questions'])} questions · "
           f"{sum(len(v) for v in answers.values())} answers · {len(asked)} asked")
+    if getattr(args, "vault", False):
+        vault = vault_root()
+        status = vault_packet_status(vault)
+        for name, state in status:
+            print(f"vault  {state:<8} {VAULT_OUTBOX / name}")
+        bad = [n for n, s in status if s != "present"]
+        _req(not bad, f"{len(bad)} packet(s) not in the vault outbox as sent: {', '.join(bad)} — "
+                      "`send --apply` writes a missing one")
+        print(f"OK  vault {vault}: {len(status)} packet(s) present and byte-identical")
     return 0
 
 
@@ -632,14 +680,41 @@ def cmd_packet(args: argparse.Namespace) -> int:
               + (" and the vault outbox" if args.vault else ""), file=sys.stderr)
         return 0
     _req(not repo_path.exists(), f"{repo_path.relative_to(ROOT)} exists — packets are immutable, pick a new --slug")
-    targets = [repo_path]
-    if args.vault:
-        targets.append(vault_root() / VAULT_OUTBOX / f"{packet_id}.md")
-    for path in targets:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-        print(f"wrote  {path}")
-    print("next: render --apply (marks these questions `asked`)")
+    vault = vault_root() if args.vault else None   # resolve before any write, so a bad vault writes nothing
+    PACKETS_DIR.mkdir(parents=True, exist_ok=True)
+    repo_path.write_text(text, encoding="utf-8")
+    print(f"wrote  {repo_path.relative_to(ROOT)}")
+    if vault is not None:
+        path, digest = write_into_vault(vault, VAULT_OUTBOX / repo_path.name, text)
+        print(f"wrote + verified in vault  {path}  sha256={digest[:12]}")
+    print("next: render --apply (marks these questions `asked`)"
+          + ("" if vault else "; send --apply copies it to the vault outbox"))
+    return 0
+
+
+def cmd_send(args: argparse.Namespace) -> int:
+    vault = vault_root()
+    status = dict(vault_packet_status(vault))
+    wanted = [f"{i}.md" if not i.endswith(".md") else i for i in (args.ids or [])] or sorted(status)
+    unknown = [w for w in wanted if w not in status]
+    _req(not unknown, f"not a packet under {PACKETS_DIR.relative_to(ROOT)}: {', '.join(unknown)}")
+    differs = [w for w in wanted if status[w] == "differs"]
+    _req(not differs, f"vault copy differs from the repo for {', '.join(differs)} — "
+                      "packets are immutable; find out who changed it before overwriting")
+    todo = [w for w in wanted if status[w] == "missing"]
+    for name in wanted:
+        if status[name] == "present":
+            print(f"present  {VAULT_OUTBOX / name}")
+    if not todo:
+        return 0
+    if not args.apply:
+        for name in todo:
+            print(f"would write  {vault / VAULT_OUTBOX / name} — rerun with --apply")
+        return 0
+    for name in todo:
+        path, digest = write_into_vault(vault, VAULT_OUTBOX / name,
+                                        (PACKETS_DIR / name).read_text(encoding="utf-8"))
+        print(f"wrote + verified in vault  {path}  sha256={digest[:12]}")
     return 0
 
 
@@ -672,7 +747,9 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("check", help="validate ledger, answers, packets; fail if LEDGER.md is stale")
+    c = sub.add_parser("check", help="validate ledger, answers, packets; fail if LEDGER.md is stale")
+    c.add_argument("--vault", action="store_true",
+                   help="also prove every repo packet sits byte-identical in the vault outbox")
     r = sub.add_parser("render", help="regenerate LEDGER.md")
     r.add_argument("--apply", action="store_true")
     k = sub.add_parser("packet", help="build a self-contained question packet")
@@ -684,6 +761,9 @@ def build_parser() -> argparse.ArgumentParser:
     k.add_argument("--date", help="YYYY-MM-DD (default today)")
     k.add_argument("--apply", action="store_true")
     k.add_argument("--vault", action="store_true", help="with --apply, also write the vault outbox")
+    s = sub.add_parser("send", help="copy repo packets missing from the vault outbox; --apply writes + verifies")
+    s.add_argument("ids", nargs="*", help="packet ids (default: every packet)")
+    s.add_argument("--apply", action="store_true")
     i = sub.add_parser("ingest", help="validate an answer file; --apply copies it into answers/")
     i.add_argument("path")
     i.add_argument("--apply", action="store_true")
@@ -692,7 +772,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    handler = {"check": cmd_check, "render": cmd_render, "packet": cmd_packet, "ingest": cmd_ingest}[args.cmd]
+    handler = {"check": cmd_check, "render": cmd_render, "packet": cmd_packet, "send": cmd_send,
+               "ingest": cmd_ingest}[args.cmd]
     try:
         return handler(args)
     except ConfidentialityError as exc:

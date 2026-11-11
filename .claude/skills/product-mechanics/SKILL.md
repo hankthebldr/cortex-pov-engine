@@ -61,7 +61,12 @@ Pick the mode from what Henry asked. If it's ambiguous, ask one sharp question.
 .venv/bin/python scripts/product_mechanics.py packet --priority P0 --slug <slug>           # preview
 .venv/bin/python scripts/product_mechanics.py packet --priority P0 --slug <slug> --apply --vault
 .venv/bin/python scripts/product_mechanics.py render --apply                                # marks them `asked`
+.venv/bin/python scripts/product_mechanics.py check --vault                                 # proves the vault copy landed
 ```
+
+Report the packet as sent only after `check --vault` prints `present` for it. If it says
+`missing`, run `send --apply`. If it says `differs`, stop and tell Henry: someone changed
+the packet after it was sent.
 
 Select with `--priority`, `--mechanism` or `--ids`. The packet is self-contained: it embeds
 the answer instructions, the confidentiality rule and the reply format, so the existing
