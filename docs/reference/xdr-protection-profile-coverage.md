@@ -87,6 +87,11 @@ mode. *Fix:* attest per module
 (`{module_key: block|report|disabled}` + `attested_by/at`), have the
 expectation's module look up its own attested mode, and resolve a non-Block
 module to `detected` with reason `MODULE_NOT_IN_BLOCK`, never to `fail`.
+*Status (2026-11-11): fixed on `fix/api-prevent-per-module-attestation`
+(530bebb, unpushed).* A launch takes `module_modes`; Report reads
+`MODULE_NOT_IN_BLOCK`, Disabled holds a silent row `pending` /
+`MODULE_DISABLED`, and an unattested module trusts the run-level block, so
+legacy runs grade unchanged.
 
 **F2 · HIGH · `anti_ransomware` is keyed on Linux, where the documentation
 lists no Ransomware Protection module.**
@@ -107,6 +112,11 @@ On Linux, mass-encryption prevention can come only from **Global Behavioral
 Threat Protection Rules**. *Fix:* re-key SIM-EDR-025 to `btp`, drop the
 `Ransomware*` name pattern (see F5), and correct the TTP-2026-0073 remediation
 text. SIM-EDR-025 uses `outcome: detect`, so no false grade is live today.
+*Status (2026-11-11): fixed on `fix/scenarios-linux-ransomware-btp-key`
+(6091687, unpushed).* TTP-2026-0200 is keyed `btp` with
+`"Behavioral Threat*"` (still authored, not observed; F5 still applies);
+TTP-2026-0073 and TTP-2026-0026 remediation names the BTP rule setting. The
+`anti_ransomware` enum value and spec line 500 are left for the F3 decision.
 
 **F3 · HIGH · The 8-value enum is too coarse, and two values name the wrong
 kind of thing.**
