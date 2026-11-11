@@ -90,9 +90,11 @@ steps:
     mitre_technique: "T1102.002"
     platforms: ["linux", "windows"]
     platform_variants:
-      # CONT-13: the bundle runs cmd text from a .cmd FILE, where a loop
-      # variable must be %%i — the single-% form only works typed at a prompt.
-      # A PowerShell loop has neither trap, and Start-Sleep (unlike timeout.exe)
+      # CONT-13 / PUSH-11: a cmd FOR variable is %%i in a .cmd file (how the
+      # beacon, and a multi-line push step, run cmd text) and %i on the command
+      # line (a single-line push step), so the resolver refuses it either way
+      # (CMD_PERCENT_CONTEXT). A PowerShell loop has neither trap, and
+      # Start-Sleep (unlike timeout.exe)
       # works with redirected stdin. curl exits non-zero when nothing listens;
       # the polling is the signal, so the exit code is reset.
       windows: |

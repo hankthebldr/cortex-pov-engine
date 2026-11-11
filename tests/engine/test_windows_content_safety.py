@@ -655,3 +655,27 @@ def test_the_destructive_detector_catches_each_base_defect(text):
 ])
 def test_the_destructive_detector_accepts_the_safe_forms(text):
     assert _destructive(text) == []
+
+
+# ---------------------------------------------------------------------------
+# PUSH-11: cmd text must mean one thing wherever cmd.exe reads it
+# ---------------------------------------------------------------------------
+
+def test_no_cmd_text_in_the_corpus_reads_percent_two_ways():
+    """A FOR variable, a `%%` or a lone `%` is read differently from a .cmd
+    file (the beacon, and a multi-line push step) than from the command line
+    (a single-line push step). The resolver refuses such a step, but in a
+    scenario another step already withholds from Windows that refusal is
+    invisible, so the text is linted here, corpus-wide."""
+    bad: list[str] = []
+    seen = 0
+    for sid, d in sorted(CORPUS.items()):
+        steps, cleanup = _windows_shaped(d)
+        for where, text in [*steps, *(("cleanup", c) for c in cleanup)]:
+            if pg.infer_windows_shell(text) != "cmd":
+                continue
+            seen += 1
+            if pg.cmd_percent_is_context_dependent(text):
+                bad.append(f"{sid} {where}: {' '.join(text.split())[:150]}")
+    assert seen >= 20, f"only {seen} cmd-dialect texts found; the walk is not covering the corpus"
+    assert not bad, "\n  ".join(["cmd text whose `%` depends on how cmd.exe is handed it:"] + bad)

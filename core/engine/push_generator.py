@@ -49,6 +49,12 @@ REASON_WINDOWS_UNAVAILABLE = "WINDOWS_COMMAND_UNAVAILABLE"
 #: rather than guessed: handed to cmd, the PowerShell half fails; handed to
 #: Windows PowerShell 5.1, the cmd ``&`` is a parse error and nothing runs.
 REASON_MIXED_DIALECT = "MIXED_DIALECT"
+#: The step's cmd text carries a ``%`` that cmd.exe reads differently from a
+#: .cmd file than from the command line (a FOR variable, ``%%``, a lone ``%``).
+#: cmd text reaches cmd.exe both ways — the beacon always writes a file, the
+#: push bundle passes a single line on the command line — so the same text
+#: would run on one path and fail on the other. Refused by name (PUSH-11).
+REASON_CMD_PERCENT_CONTEXT = "CMD_PERCENT_CONTEXT"
 
 # ---------------------------------------------------------------------------
 # Interpolation safety — every scenario-sourced value that lands in a bundle
@@ -391,6 +397,40 @@ _CMD_STRUCTURE = (
 )
 
 
+#: A FOR loop variable in either spelling: ``%i`` (command line) or ``%%i``
+#: (batch file). Each form is an error in the other context.
+_CMD_FOR_VAR_RE = re.compile(
+    r"(?i)(?<![\w-])for\s+(?:/[LFDR]\s+)?(?:\"[^\"\n]*\"\s+)?%%?[A-Za-z]\s+in\b"
+)
+
+
+def cmd_percent_is_context_dependent(command: str) -> bool:
+    """True when cmd text carries a ``%`` whose meaning depends on HOW cmd.exe
+    is handed the text.
+
+    ============================  ==========================  ==================
+    text                          .cmd file                   command line
+    ============================  ==========================  ==================
+    ``for /L %i in (…) do …``     "i was unexpected"          runs
+    ``for /L %%i in (…) do …``    runs                        "%%i was unexpected"
+    ``a%20b``, ``1..3|%{…}``      the lone ``%`` is dropped   kept
+    ``100%% done``                one ``%``                   two
+    ============================  ==========================  ==================
+
+    Everything else is the same in both: a well-formed ``%NAME%`` reference to
+    a variable that is defined expands identically. (An UNDEFINED ``%NAME%``
+    is empty in a file and literal on the command line; that is a property of
+    the host, not of the text, and the bundle's operator-input preflight is
+    what covers it.)
+
+    Judged on the RAW text, not :func:`code_only`: cmd expands ``%`` inside
+    quotes too. These are documented cmd.exe rules; none was executed here.
+    """
+    if _CMD_FOR_VAR_RE.search(command):
+        return True
+    return "%" in _CMD_ENVVAR_RE.sub("", command)
+
+
 def _has_ps_hash_comment(command: str) -> bool:
     """True when ``command`` carries a ``#`` comment outside string literals."""
     text = _strip_heredocs(command)
@@ -492,7 +532,7 @@ class BundleTargetUnsatisfiable(Exception):
         steps = ", ".join(f"{sid} ({reason})" for sid, reason in self.unresolved)
         reasons = {reason for _, reason in self.unresolved}
         hints: list[str] = []
-        if reasons - {REASON_MIXED_DIALECT} or not reasons:
+        if reasons - {REASON_MIXED_DIALECT, REASON_CMD_PERCENT_CONTEXT} or not reasons:
             hints.append(
                 "declare platform_variants.windows on those steps"
                 if self.target == "windows"
@@ -503,6 +543,14 @@ class BundleTargetUnsatisfiable(Exception):
                 "rewrite each MIXED_DIALECT step's Windows command in ONE dialect "
                 "(cmd or PowerShell) — cmd `&`/%VAR% mixed with PowerShell syntax "
                 "runs correctly under neither interpreter"
+            )
+        if REASON_CMD_PERCENT_CONTEXT in reasons:
+            hints.append(
+                "each CMD_PERCENT_CONTEXT step is cmd text with a FOR variable, a "
+                "`%%` or a lone `%`, which cmd.exe reads differently from a .cmd "
+                "file than from the command line — write the loop in PowerShell "
+                "(`1..N | ForEach-Object { … }`, `ForEach-Object` instead of the "
+                "`%` alias) and keep every remaining `%` inside a `%NAME%` reference"
             )
         hint = "; ".join(hints)
         return {
@@ -590,6 +638,8 @@ def _resolve_step_windows(step: dict[str, Any]) -> StepResolution | tuple[str, s
         shell = infer_windows_shell(variant)
         if shell == "mixed":
             return (step_id, REASON_MIXED_DIALECT)
+        if shell == "cmd" and cmd_percent_is_context_dependent(variant):
+            return (step_id, REASON_CMD_PERCENT_CONTEXT)
         return StepResolution(
             step_id, identity, shell, variant, "variant:windows",
             note=f"dialect inferred: {shell}",
@@ -598,6 +648,8 @@ def _resolve_step_windows(step: dict[str, Any]) -> StepResolution | tuple[str, s
         shell = infer_windows_shell(command)
         if shell == "mixed":
             return (step_id, REASON_MIXED_DIALECT)
+        if shell == "cmd" and cmd_percent_is_context_dependent(command):
+            return (step_id, REASON_CMD_PERCENT_CONTEXT)
         return StepResolution(
             step_id, identity, shell, command, "primary",
             note=f"dialect inferred: {shell}",
@@ -639,6 +691,10 @@ def _resolve_cleanup(
             if dialect == "mixed":
                 # Runnable under neither interpreter — named as residue, never
                 # run and silently failed.
+                skipped.append(cmd)
+            elif dialect == "cmd" and cmd_percent_is_context_dependent(cmd):
+                # Reads differently from a file than from the command line —
+                # residue for the same reason a step like it is refused.
                 skipped.append(cmd)
             else:
                 kept.append((cmd, dialect))
@@ -1630,14 +1686,17 @@ function Invoke-CsProcess {
         }
         $exe = $env:ComSpec
         $encoding = 'Oem'
+        # cmd reads a FOR variable, a doubled or a lone percent sign differently
+        # in these two branches, so the generator refuses a step that carries
+        # one (CMD_PERCENT_CONTEXT): what reaches here means the same in both.
         if ($Text.Contains([string][char]10)) {
-            # Multi-line cmd text runs as a batch file: batch-file rules apply.
+            # Multi-line cmd text runs as a batch file.
             $file = Join-Path $CortexSimStage ($Name + '.cmd')
             Set-Content -LiteralPath $file -Value $Text -Encoding Oem -Force
             $argLine = '/d /v:off /c "' + $file + '"'
         } else {
-            # One line runs in command-line context, exactly as typed at a
-            # prompt: a for-loop %i and an undefined %VAR% behave as authored.
+            # One line runs in command-line context, as typed at a prompt. An
+            # UNDEFINED %NAME% stays literal here and is empty in a batch file.
             $argLine = '/d /v:off /s /c "' + $Text + '"'
         }
     } else {

@@ -481,19 +481,36 @@ def test_an_elevated_identity_step_is_never_counted_as_degraded(ps_exe, tmp_path
 
 
 @pytest.mark.skipif(not IS_WINDOWS, reason="cmd.exe command-line context exists only on Windows")
-def test_cmd_dialect_steps_run_in_command_line_context(ps_exe, tmp_path):
-    """Windows-only: cmd steps keep interactive-cmd semantics (``%i`` loop
-    variables, exit codes) and an exit code from cmd propagates."""
+def test_cmd_dialect_steps_run_under_cmd_and_propagate_their_exit_code(ps_exe, tmp_path):
+    """Windows-only, and NOT yet observed: no Windows host has run this file.
+
+    A single-line cmd step runs on the command line, a multi-line one from a
+    .cmd file. Both must run every statement, expand a defined ``%NAME%`` and
+    hand cmd's exit code back. (A FOR variable is no longer exercised here:
+    the resolver refuses it, see TestCmdPercentContext.)"""
     scn = _scenario(
         [
-            _win_step("step-01", "for /L %i in (1,1,2) do @echo cs-loop-%i"),
-            _win_step("step-02", "exit /b 5"),
+            _win_step("step-01", "echo cs-one-%CORTEXSIM_CMD_PROBE% & echo cs-two"),
+            _win_step("step-02", "echo cs-file-a-%CORTEXSIM_CMD_PROBE%\necho cs-file-b\n"),
+            _win_step("step-03", "exit /b 5"),
         ],
     )
-    proc, out, _ = _run_bundle(ps_exe, pg.generate_powershell(scn), tmp_path)
+    proc, out, _ = _run_bundle(
+        ps_exe, pg.generate_powershell(scn), tmp_path, extra_env={"CORTEXSIM_CMD_PROBE": "set"},
+    )
     diag = _diag(proc, out)
-    assert "cs-loop-1" in out and "cs-loop-2" in out, diag
-    assert _results(out).get("step-02") == ("ran-nonzero", "5"), diag
+    assert "cs-one-set" in out and "cs-two" in out, diag
+    assert "cs-file-a-set" in out and "cs-file-b" in out, diag
+    assert _results(out).get("step-03") == ("ran-nonzero", "5"), diag
+
+
+def test_a_cmd_for_variable_step_is_refused_before_a_bundle_exists():
+    """PUSH-11, on every OS: the shape that ran on push and died on pull (or
+    the reverse) never reaches a bundle."""
+    scn = _scenario([_win_step("step-01", "for /L %i in (1,1,2) do @echo cs-loop-%i")])
+    with pytest.raises(pg.BundleTargetUnsatisfiable) as exc:
+        pg.generate_powershell(scn)
+    assert exc.value.unresolved == (("step-01", "CMD_PERCENT_CONTEXT"),)
 
 
 # ─── static guards that need the real parser ─────────────────────────────
