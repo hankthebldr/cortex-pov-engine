@@ -404,39 +404,83 @@ export function serverHostVerdict(healthModel, serverUrl, consoleHost = '') {
 
 // ── Install telemetry ────────────────────────────────────────────────────────
 
-// Codes the installers REPORT and then carry on from (`cs_report` / `Cs-Report`
+// Codes an installer REPORTS and then carries on from (`cs_report` / `Cs-Report`
 // in core/api/agents.py, as opposed to `cs_fail` / `Cs-Fail`, which exit). Each
 // one is a degraded install, not a stopped one. A code not listed here is
 // treated as a stop — an unknown code is never read as progress.
-const CONTINUED_CODES = new Set(['DEGRADED_NO_SUPERVISOR', 'CHECKSUM_SKIPPED', 'SERVICE_START_FAILED'])
+//
+// The two installers do NOT agree on every code, so the verdict is read from
+// the telemetry ROW (its `os` is the installer's own word: `linux` | `darwin`
+// from the bash script, `windows` from the PowerShell one), never from the bare
+// code:
+//
+//   code                    POSIX installer            Windows installer
+//   CHECKSUM_SKIPPED        cs_report, carries on      Cs-Report, carries on
+//   DEGRADED_NO_SUPERVISOR  cs_report, carries on      Cs-Report (its verdict)
+//   SERVICE_START_FAILED    cs_report, then degrades   Cs-Fail — EXITS: the
+//                           to nohup                   service never reached
+//                                                      Running, or the SCM
+//                                                      killed it within 35 s
+//                                                      (error 1053)
+//
+// SERVICE_START_FAILED used to sit in one set for every OS. On Windows that
+// rendered a dead install as "carried on past a warning … a later report says
+// whether it checked in", and no later report ever comes.
+const CONTINUED_BY_BOTH = new Set(['DEGRADED_NO_SUPERVISOR', 'CHECKSUM_SKIPPED'])
+const CONTINUED_BY_POSIX_ONLY = new Set(['SERVICE_START_FAILED'])
+
+/**
+ * Which installer wrote a telemetry row, from the row's own `os`. Exact words
+ * only: a row with a missing or unrecognised OS is `unknown`, and an
+ * OS-dependent code on it is a stop — a stop read as progress never corrects
+ * itself, while a warning read as a stop is replaced by the next report.
+ * (installerOS() is not used here: it maps everything unrecognised to linux.)
+ * @returns {'posix'|'windows'|'unknown'}
+ */
+function reportingInstaller(os) {
+  const v = String(os ?? '').trim().toLowerCase()
+  if (v === 'windows') return 'windows'
+  if (v === 'linux' || v === 'darwin') return 'posix'
+  return 'unknown'
+}
 
 /**
  * What an installer report MEANS for the install.
  *   ok        — the stage succeeded
  *   continued — the installer said this and carried on, degraded
  *   failed    — the installer exited here
+ * @param {{code?: string, os?: string}|null|undefined} attempt  the telemetry
+ *   row. A bare code string is read as a row with no OS.
  * @returns {'ok'|'continued'|'failed'}
  */
-export function attemptKind(code) {
-  const c = String(code ?? '').trim().toUpperCase()
+export function attemptKind(attempt) {
+  const row = attempt && typeof attempt === 'object' ? attempt : { code: attempt }
+  const c = String(row.code ?? '').trim().toUpperCase()
   if (c === 'OK') return 'ok'
-  return CONTINUED_CODES.has(c) ? 'continued' : 'failed'
+  if (CONTINUED_BY_BOTH.has(c)) return 'continued'
+  if (CONTINUED_BY_POSIX_ONLY.has(c) && reportingInstaller(row.os) === 'posix') return 'continued'
+  return 'failed'
 }
 
 /** Only a stop is an alert; ok and continued reports are status. */
-export function attemptRole(code) {
-  return attemptKind(code) === 'failed' ? 'alert' : 'status'
+export function attemptRole(attempt) {
+  return attemptKind(attempt) === 'failed' ? 'alert' : 'status'
 }
 
-/** What a reported-and-continued code leaves the DC with. */
+/**
+ * What a reported-and-continued code leaves the DC with. Looked up only when
+ * attemptKind() said `continued`, so the SERVICE_START_FAILED line is reached
+ * for a POSIX row alone — it describes the bash installer's nohup fallback,
+ * which the Windows installer does not have.
+ */
 export const CONTINUED_NOTE = Object.freeze({
   CHECKSUM_SKIPPED:
     'The beacon binary was NOT verified: the host had no digest tool, or SimCore served no digest to compare '
     + 'with. The installer carried on with that binary, so its integrity is unchecked. A later report says '
     + 'whether the install finished.',
   SERVICE_START_FAILED:
-    'The service did not start, so the installer carried on without a supervisor. The beacon will not '
-    + 'survive a logoff or a reboot. A later report says whether it checked in.',
+    'systemd would not start the service, so the installer carried on without a supervisor (nohup). The beacon '
+    + 'will not survive a logoff or a reboot. A later report says whether it checked in.',
   DEGRADED_NO_SUPERVISOR:
     'The installer carried on without a supervisor: the beacon is running, and it will not survive a logoff '
     + 'or a reboot. The agent counts as online only after the beacon polls.',

@@ -190,6 +190,34 @@ describe('TargetsView — install attempts while the deploy modal is open', () =
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  // The Windows installer raises SERVICE_START_FAILED with Cs-Fail and exits;
+  // only the POSIX installer reports it and carries on. A Windows row must not
+  // read "carried on past a warning … a later report says": none is coming.
+  it('a Windows SERVICE_START_FAILED is the installer stopping, as an alert', async () => {
+    withAttempts([attempt({
+      os: 'windows', hostname: 'WIN22', stage: 'install', code: 'SERVICE_START_FAILED',
+      detail: 'CortexSimAgent did not reach Running: error 1053', reported_at: '2026-11-05T10:01:12',
+    })])
+    await openAndMint()
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/The installer stopped/)
+    expect(alert.textContent).toContain('SERVICE_START_FAILED')
+    expect(alert.textContent).not.toMatch(/carried on|later report/i)
+    expect(screen.queryByText(/appears in this list within one poll interval/)).toBeNull()
+  })
+
+  it('the same code from the POSIX installer is a warning it carried on from', async () => {
+    withAttempts([attempt({
+      os: 'linux', stage: 'install', code: 'SERVICE_START_FAILED',
+      detail: 'systemctl enable --now cortexsim-agent failed; degrading to nohup', reported_at: '2026-11-05T10:00:09',
+    })])
+    await openAndMint()
+    const live = await screen.findByTestId('deploy-attempt-latest')
+    expect(live.getAttribute('role')).toBe('status')
+    expect(live.textContent).toMatch(/carried on/i)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('a failure from BEFORE this token was minted is not presented as its outcome', async () => {
     withAttempts([attempt({ stage: 'verify', code: 'CHECKSUM_MISMATCH', reported_at: '2026-11-05T09:58:00' })])
     await openAndMint()

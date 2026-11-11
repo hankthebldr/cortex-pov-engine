@@ -176,7 +176,9 @@ function AgentStep({ step, onNavigate }) {
     ? (Number.isFinite(parseServerTime(token.created_at)) ? parseServerTime(token.created_at) : mintedAtMs)
     : NaN
   const latest = token ? attemptsSince(attemptsState.attempts, sinceMs)[0] || null : null
-  const latestFailed = !!latest && attemptRole(latest.code) === 'alert'
+  // From the whole row: the same code can end one installer and only warn
+  // from the other (SERVICE_START_FAILED exits on Windows).
+  const latestFailed = !!latest && attemptRole(latest) === 'alert'
 
   const resetToken = () => { setToken(null); setMintedAtMs(null) }
 

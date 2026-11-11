@@ -82,9 +82,10 @@
   font-size: 11px; line-height: 1.55; color: var(--c-text-secondary);
 }
 .theme-console .install-attempt--fail { border-left-color: var(--c-missed); background: var(--c-missed-soft); }
-/* Reported-and-continued (CHECKSUM_SKIPPED, SERVICE_START_FAILED, …): not a
-   stop, and not a clean pass. The lead sentence carries the meaning; the tint
-   only repeats it. */
+/* Reported-and-continued (CHECKSUM_SKIPPED, DEGRADED_NO_SUPERVISOR, and
+   SERVICE_START_FAILED from the POSIX installer only — on Windows that code is
+   a stop): not a stop, and not a clean pass. The lead sentence carries the
+   meaning; the tint only repeats it. */
 .theme-console .install-attempt--warn { border-left-color: var(--c-pending); background: var(--c-pending-soft); }
 .theme-console .install-attempt--ok { border-left-color: var(--c-hairline-strong); }
 .theme-console .install-attempt code { color: var(--c-text); font-family: var(--font-mono); }

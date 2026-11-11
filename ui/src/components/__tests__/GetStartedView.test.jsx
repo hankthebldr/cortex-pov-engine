@@ -209,6 +209,43 @@ describe('GetStartedView — installer failures replace the endless wait (UI-06)
     expect(screen.getByText(/Waiting for the agent to check in/)).toBeInTheDocument()
   })
 
+  // The Windows installer raises SERVICE_START_FAILED with Cs-Fail and exits
+  // (the service never reached Running, or the SCM killed it: error 1053). No
+  // later report follows, so "waiting" here would be waiting for nothing.
+  it('a Windows SERVICE_START_FAILED is a stop: an alert, and the waiting line goes away', async () => {
+    agentRoutes([{
+      stage: 'install', code: 'SERVICE_START_FAILED',
+      detail: "CortexSimAgent was Running but is 'Stopped' 35 s later: it is crashing or being stopped",
+      hostname: 'WIN22', os: 'windows', arch: 'amd64', reported_at: '2026-11-05T10:01:10',
+    }])
+    mount()
+    pickOs('Windows')
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    await screen.findByTestId('gs-agent-command')
+    const live = await screen.findByTestId('gs-attempt-latest')
+    expect(live.getAttribute('role')).toBe('alert')
+    expect(live.textContent).toMatch(/The installer stopped/)
+    expect(live.textContent).toContain('SERVICE_START_FAILED')
+    expect(live.textContent).not.toMatch(/later report/i)
+    expect(screen.queryByText(/Waiting for the agent to check in/)).toBeNull()
+  })
+
+  // The POSIX installer reports the same code with cs_report and degrades to
+  // nohup; a DEGRADED_NO_SUPERVISOR and an OK (or a failure) follow.
+  it('a Linux SERVICE_START_FAILED is a warning the installer carried on from: it still waits', async () => {
+    agentRoutes([{
+      stage: 'install', code: 'SERVICE_START_FAILED', detail: 'systemctl enable --now cortexsim-agent failed; degrading to nohup',
+      hostname: 'jb', os: 'linux', arch: 'amd64', reported_at: '2026-11-05T10:00:06',
+    }])
+    mount()
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    await screen.findByTestId('gs-agent-command')
+    const live = await screen.findByTestId('gs-attempt-latest')
+    expect(live.getAttribute('role')).toBe('status')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText(/Waiting for the agent to check in/)).toBeInTheDocument()
+  })
+
   it('with nothing reported yet it still waits, and says where failures would appear', async () => {
     agentRoutes([])
     mount()

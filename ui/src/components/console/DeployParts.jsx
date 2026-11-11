@@ -134,6 +134,10 @@ const KIND_LEAD = {
  * installer stopped, role=status when it reported and carried on. Renders
  * nothing when nothing has reported yet — the caller keeps its "waiting" line.
  *
+ * Stop or carry-on is read from the whole row (attemptKind(attempt)), not its
+ * code alone: SERVICE_START_FAILED ends the Windows installer and only warns
+ * from the POSIX one.
+ *
  * The live node holds only text that is fixed for one attempt. The attempts
  * poll re-renders this every 5 s, and role=alert is assertive and atomic: a
  * ticking "12s ago" inside it made a screen reader re-read the whole failure
@@ -143,7 +147,7 @@ const KIND_LEAD = {
  */
 export function LatestAttempt({ attempt, testId = 'deploy-attempt-latest' }) {
   if (!attempt) return null
-  const kind = attemptKind(attempt.code)
+  const kind = attemptKind(attempt)
   const code = String(attempt.code ?? '').trim().toUpperCase()
   const next = kind === 'failed'
     ? 'The target printed the fix line next to this code; re-run once it is fixed.'
@@ -155,7 +159,7 @@ export function LatestAttempt({ attempt, testId = 'deploy-attempt-latest' }) {
       <div
         key={`${attempt.reported_at || ''}|${attempt.stage || ''}|${attempt.code || ''}`}
         className="install-attempt__live"
-        role={attemptRole(attempt.code)}
+        role={attemptRole(attempt)}
         data-testid={testId}
       >
         <span className="install-attempt__lead">{KIND_LEAD[kind]}</span>
@@ -194,9 +198,9 @@ export function InstallAttemptsList({ state, limit = 5, testId = 'deploy-attempt
     body = (
       <ul className="install-attempts__list" data-testid={`${testId}-list`}>
         {attempts.slice(0, limit).map((a, i) => (
-          <li key={`${a.reported_at || ''}-${i}`} className={`install-attempts__row install-attempts__row--${KIND_CLASS[attemptKind(a.code)]}`}>
+          <li key={`${a.reported_at || ''}-${i}`} className={`install-attempts__row install-attempts__row--${KIND_CLASS[attemptKind(a)]}`}>
             {/* The word, not only the colour, says which rows stopped an install. */}
-            <span className="install-attempts__kind">{KIND_WORD[attemptKind(a.code)]}</span>{' '}
+            <span className="install-attempts__kind">{KIND_WORD[attemptKind(a)]}</span>{' '}
             <span className="mono">{a.stage || '?'} · {a.code || '(no code)'}</span>
             {a.detail ? <span className="install-attempts__detail"> — {a.detail}</span> : null}
             <span className="install-attempts__meta mono"> {[where(a), relAgo(a.reported_at)].filter(Boolean).join(' · ')}</span>

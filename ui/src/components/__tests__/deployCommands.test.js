@@ -277,12 +277,24 @@ describe('copyToClipboard — success only when something really copied (UI-14)'
 
 describe('install attempts (UI-06)', () => {
   it('OK and DEGRADED_NO_SUPERVISOR are status; a code the installer exits on is an alert', () => {
-    expect(attemptRole('OK')).toBe('status')
-    expect(attemptRole('DEGRADED_NO_SUPERVISOR')).toBe('status')
-    expect(attemptRole('ENROLL_DENIED')).toBe('alert')
-    expect(attemptRole('WINDOWS_AGENT_UNAVAILABLE')).toBe('alert')
-    expect(attemptRole('')).toBe('alert')
+    const row = (code, os = 'linux') => ({ stage: 'install', code, os })
+    expect(attemptRole(row('OK'))).toBe('status')
+    expect(attemptRole(row('DEGRADED_NO_SUPERVISOR'))).toBe('status')
+    expect(attemptRole(row('DEGRADED_NO_SUPERVISOR', 'windows'))).toBe('status')
+    expect(attemptRole(row('ENROLL_DENIED'))).toBe('alert')
+    expect(attemptRole(row('WINDOWS_AGENT_UNAVAILABLE', 'windows'))).toBe('alert')
+    expect(attemptRole(row(''))).toBe('alert')
+    expect(attemptRole(row(undefined))).toBe('alert')
     expect(attemptRole(undefined)).toBe('alert')
+  })
+
+  // The verdict is read from the ROW, not the bare code: the same code is a
+  // stop from one installer and a warning from the other (DeployParts.test.jsx).
+  it('SERVICE_START_FAILED is an alert from the Windows installer and status from the POSIX one', () => {
+    expect(attemptRole({ os: 'windows', code: 'SERVICE_START_FAILED' })).toBe('alert')
+    expect(attemptRole({ os: 'linux', code: 'SERVICE_START_FAILED' })).toBe('status')
+    expect(attemptRole({ os: 'darwin', code: 'SERVICE_START_FAILED' })).toBe('status')
+    expect(attemptRole({ code: 'SERVICE_START_FAILED' })).toBe('alert')
   })
 
   it('keeps only reports after the mint time, newest first, and drops unplaceable ones', () => {
