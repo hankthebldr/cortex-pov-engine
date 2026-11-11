@@ -885,6 +885,27 @@ mechanisms:
           ref: https://www.eicar.org/download-anti-malware-testfile/ (download area offered over HTTPS)
           date: "2026-11-10"
       - fact: >-
+          Downloading the four public WildFire test samples
+          (wildfire.paloaltonetworks.com/publicapi/test/{pe,apk,macos,elf}) over HTTPS
+          through a firewall that does not decrypt produced only traffic logs:
+          four sessions to one destination on 443, App-ID paloalto-wildfire-cloud,
+          s_encrypted=1, 19 KB to 1.5 MB received each, and no threat or WildFire log.
+        source:
+          kind: lab_observation
+          ref: SIM-CDR-012 pull run from a lab beacon through the PA-440, 2026-11-11 02:58:52Z
+          date: "2026-11-10"
+      - fact: >-
+          Subdomains of testmynids.org resolved through a DNS Security-enabled
+          anti-spyware profile raise threat id `new:testmynids.org`
+          (thr_category dns-new-domain, severity low to informational). Under a
+          profile whose newly-registered-domain action is alert, each distinct
+          query name produced one threat log carrying the full 5-tuple; under a
+          sinkhole profile the query was answered with sinkhole.paloaltonetworks.com.
+        source:
+          kind: lab_observation
+          ref: SIM-NDR-009 pull run from a lab beacon, 15 distinct *.exfil.testmynids.org names, 2026-11-11 02:59Z
+          date: "2026-11-10"
+      - fact: >-
           Traffic from a libvirt NAT guest is logged with the hypervisor's LAN IP as
           its source; the guest's own address (192.168.122.0/24) never appears in
           firewall logs. The guest's XDR agent reports the guest address, so its
