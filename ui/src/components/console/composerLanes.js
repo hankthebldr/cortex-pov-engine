@@ -2,86 +2,49 @@
  * composerLanes.js — the Composer's swimlane model. Pure; no React.
  *
  * WHAT A LANE IS
- * A lane is the ingestion DOOR a step launches through — the same five doors
- * the Runs topology bands by (`LANE_CATALOG`), plus a LAUNCH band above and a
- * PROOF band below. Where a node sits on the design canvas therefore means the
- * same thing as where it will appear in the live topology, and the Composer,
- * the execution timeline and the Runs surface stop disagreeing about which
- * door a step is behind.
+ * A lane is a step's SIGNAL PATH: the mechanism that produces its evidence
+ * (`composerSignal.signalOf`). ENDPOINT RUNTIME, LOG INJECTION, LIVE TRAFFIC,
+ * CLOUD CONTROL PLANE and NO ACTION, plus a LAUNCH band above, the CORTEX
+ * ENGINE band (tenant content, never a step) and a PROOF band below. The
+ * Composer, the execution timeline and the Runs topology band by these keys,
+ * so a step sits in the same lane on the design canvas and in the live view.
  *
- * ONE `laneOf()` FOR EVERY CONSUMER.
- * The execution timeline used to carry its own inline heuristic for this, and
- * the canvas was about to grow a second one. Two derivations of "which lane is
- * this step in" is exactly the class of drift this console has been removing
- * everywhere else, so it is one function here and nowhere else.
+ * It used to be derived from the PLANE (NDR → "Broker VM relay", CDR →
+ * "Cloud"). The plane names the product that observes the signal, not how the
+ * step produces it, and on the 2026-11-10 corpus that put 427 of 796 steps
+ * behind a door they are not launched through.
  *
- * WHAT DRAGGING INTO ANOTHER LANE ACTUALLY CHANGES
- * The design describes the lane as the retargeting control: drag a node into
- * NETWORK and its door badge changes to BVM. The repo's step model has two
- * fields that decide a door — `channel` ('agent' | 'eal') and `plane` — and
- * they map onto lanes unevenly:
+ * ONE `laneOf()` FOR EVERY CONSUMER, and it takes no override. A lane is read
+ * from what the step does, so a drag cannot move a step to another lane: the
+ * canvas snaps the card back and says why. Change the command, or the channel
+ * in the Inspector.
  *
- *   DATA STREAMS  ⇄  channel 'eal'      — a real, honest data change
- *   ENDPOINT      ⇄  channel 'agent'    — likewise
- *   CLOUD / NETWORK / ANALYTICS          — derived from plane
- *
- * Silently rewriting a step's PLANE on a drag would be wrong: the plane is
- * what its expected detections were authored against, and a NDR step does not
- * become a CDR step because someone moved a card. So a lane override is stored
- * as its own presentation-tier field on the draft (`laneOverrides`, beside
- * `layout`), the door badge follows it, and ONLY the two channel-backed lanes
- * write through to the step. That is the retargeting the data model actually
- * supports, done honestly; the rest is recorded intent the inspector shows.
+ * Spec: docs/superpowers/specs/2026-11-10-composer-doors-design.md
  */
 import { COMPOSER_LANES, LANE_BANDS } from './povdata/corpus.js'
-import { effectiveChannel } from './composerDraft.js'
+import { signalOf, SIGNAL_PATHS } from './composerSignal.js'
 import { LAYOUT } from './composerLayout.js'
 
 /** Lane keys, in band order. */
 export const LANE_KEYS = COMPOSER_LANES.map((l) => l[0])
 
-/** Lanes a STEP may occupy — LAUNCH and PROOF are the chain's own terminals. */
-export const STEP_LANES = LANE_KEYS.filter((k) => k !== 'LAUNCH' && k !== 'PROOF')
+/** Lanes a STEP may occupy: the five signal paths. Not LAUNCH or PROOF (the
+ *  chain's own terminals) and not ENG (tenant content). */
+export const STEP_LANES = [...SIGNAL_PATHS]
 
 /** The band geometry, keyed. `top`/`h` are flow-space pixels. */
 export const BANDS = Object.fromEntries(LANE_BANDS.map((b) => [b.key, b]))
 
-/** Plane → door, for the lanes that are plane-derived. */
-const PLANE_LANE = {
-  CDR: 'CC', CSPM: 'CC', CLOUD_APP: 'CC', ASM: 'CC',
-  NDR: 'BVM',
-  ANALYTICS: 'ENG', TIM: 'ENG',
-  EMAIL: 'DC', DLP: 'DC',
-}
-
 /**
- * Which lane a step launches through.
+ * Which lane a step sits in: its signal path. A step whose path cannot be read
+ * is ENDPOINT (so it stays visible) and its badge says why; see `signalOf`.
+ * Takes no override and ignores any further argument.
  *
- * Precedence — an override may never contradict what will actually run:
- *   1. An eal-channel step is DATA STREAMS, always. It IS a data-stream
- *      emitter regardless of the plane it targets, and any other override is
- *      ignored.
- *   2. On an agent step, an override applies — except 'DC', which only the
- *      channel can put a step in.
- *   3. Otherwise the door is derived from the plane.
- *
- * The override map is written by a drag, but the channel can change after it
- * (the inspector's channel picker, a re-drag): a stale 'DC' left on a step
- * that now runs on the beacon, or an 'AGT'/'CC' left on one that is now an
- * EAL emitter, would put the badge behind a door the step does not use.
- *
- * @param {Object} step
- * @param {Object} [overrides]  `{ [stepId]: laneKey }` from the draft
- * @param {string|null} [draftPlane]  the draft's plane, used when the step has none
+ * @param {Object} step  Composer step model or corpus/API step
  * @returns {string} a key from STEP_LANES
  */
-export function laneOf(step, overrides = null, draftPlane = null) {
-  if (!step) return 'AGT'
-  if (effectiveChannel(step) === 'eal') return 'DC'
-  const o = overrides && overrides[step.id]
-  if (o && o !== 'DC' && STEP_LANES.includes(o)) return o
-  const plane = step.plane || (step.detections && step.detections[0] && step.detections[0].plane) || draftPlane
-  return PLANE_LANE[plane] || 'AGT'
+export function laneOf(step) {
+  return signalOf(step).path
 }
 
 /**
@@ -100,7 +63,7 @@ export function laneAtY(y) {
     const d = Math.min(Math.abs(cy - b.top), Math.abs(cy - (b.top + b.h)))
     if (d < bestDist) { bestDist = d; best = key }
   }
-  return best || 'AGT'
+  return best || 'ENDPOINT'
 }
 
 // Column geometry: wide enough for the node plus the edge run between them.
@@ -120,10 +83,11 @@ export const LANE_COL_PITCH = LAYOUT.nodeW + 72
  * @param {Object} [overrides]
  * @param {string|null} [draftPlane]
  */
-export function layoutLanes(steps = [], overrides = null, draftPlane = null) {
+export function layoutLanes(steps = []) {
   const nodes = steps.map((step, i) => {
-    const lane = laneOf(step, overrides, draftPlane)
-    const band = BANDS[lane] || BANDS.AGT
+    const signal = signalOf(step)
+    const lane = signal.path
+    const band = BANDS[lane] || BANDS.ENDPOINT
     return {
       id: step.id,
       kind: 'step',
@@ -133,6 +97,7 @@ export function layoutLanes(steps = [], overrides = null, draftPlane = null) {
       w: LAYOUT.nodeW,
       h: LAYOUT.nodeH,
       step,
+      signal,
     }
   })
   const cols = Math.max(1, steps.length)

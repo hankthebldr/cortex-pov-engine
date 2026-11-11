@@ -16,6 +16,8 @@ from datetime import datetime
 from typing import Any, Optional
 
 import yaml
+
+from engine.signal_path import COLLECTOR_PLUGINS, eal_run_problem
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -201,13 +203,10 @@ _URL_HOST_RE = re.compile(r"^https?://(?:[^/@\s]*@)?(\[[^\]\s]+\]|[^/:?#\s]+)", 
 # ... whose every plugin is a collector-POST log streamer (records POSTed to an
 # operator-supplied collector, so an indicator is a field value, not a peer).
 # Mirrored in the hook; parity asserted in tests/engine/test_lint_scenario_hook.py.
-COLLECTOR_POST_PLUGINS = frozenset({
-    "ngfw_eal_emitter", "ngfw_threat_emitter", "cloud_audit_emitter",
-    "cloud_storage_compute_emitter", "azure_audit_emitter", "k8s_audit_emitter",
-    "m365_activity_emitter", "ad_windows_emitter", "idp_signin_emulator", "email_emitter",
-    "duo_auth_emitter", "globalprotect_emitter", "third_party_alert_emitter",
-    "third_party_firewall_emitter", "third_party_vpn_emitter",
-})
+# One definition, in engine.signal_path, which a test pins to the live EAL
+# registry. The lint hook (.claude/hooks/lint-scenario.py) keeps a stdlib copy
+# that tests/engine/test_lint_scenario_hook.py holds equal to this.
+COLLECTOR_POST_PLUGINS = COLLECTOR_PLUGINS
 
 
 def _ipv4_is_routable(value: str) -> bool:
@@ -481,6 +480,12 @@ class StepSchema(BaseModel):
                 raise ValueError(
                     "target is only permitted on an agent-channel step"
                 )
+        # (e) S-28: a command that runs the EAL simulator must name plugins the
+        # registry knows, all of one class, or its signal path cannot be read
+        # (engine.signal_path). Structural: not gated by CORTEXSIM_STRICT_REFS.
+        problem = eal_run_problem(self.command)
+        if problem:
+            raise ValueError(f"step {self.id}: {problem}")
         return self
 
     @model_validator(mode="after")

@@ -57,7 +57,8 @@ import { layoutCausalityGraph } from './composerLayout.js'
 import { effectiveChannel, PIVOTS } from './composerDraft.js'
 import { plantedKeys, stitchPlaceholdersIn } from './stitchContext.js'
 import { canConnect } from './composerSpine.js'
-import { laneOf, layoutLanes, laneAtY, STEP_LANES } from './composerLanes.js'
+import { layoutLanes, laneAtY, STEP_LANES } from './composerLanes.js'
+import { signalBadge } from './composerSignal.js'
 import { COMPOSER_LANES } from './povdata/corpus.js'
 import {
   buildGraph, SNAP, PLANE_TINT, STATE_TINT, CGO_ID, PROOF_ID, GRAPH_LAYOUT,
@@ -96,8 +97,23 @@ const KIND_TINT = {
   alert: 'var(--cortex-success, #2f9e44)',
 }
 
-/** Lane key → the band label the canvas prints ('AGT' → 'ENDPOINT'). */
+/** Lane key → the band label and sub-label ('WIRE' → 'LIVE TRAFFIC'). */
 const LANE_LABEL = Object.fromEntries(COMPOSER_LANES.map(([key, label]) => [key, label]))
+const LANE_SUB = Object.fromEntries(COMPOSER_LANES.map(([key, , sub]) => [key, sub]))
+
+/** Why a lane cannot be changed by dragging. Shown when a card is dropped in
+ *  another lane; the card snaps back. */
+const LANE_REFUSAL = 'A step\'s lane follows what its command does. Change the command, or the channel in the Inspector.'
+
+/** The door badge's title: the path in words, the plugin, where it runs; or
+ *  why the path could not be read. */
+function doorTitle(sig) {
+  if (!sig) return ''
+  if (sig.unplaced) return `signal path not read: ${sig.reason}`
+  const where = sig.runsOn === 'SIM' ? 'runs in SimCore\'s own process' : 'runs on the beacon'
+  const plugin = sig.plugins?.length ? ` · plugin ${sig.plugins.join(', ')}` : ''
+  return `${LANE_LABEL[sig.path] || sig.path} · ${LANE_SUB[sig.path] || ''}${plugin} · ${where}`
+}
 
 /** Curved connector between two resolved ports (Run-lens SVG only). */
 function edgePath(from, to) {
@@ -173,19 +189,6 @@ function StepNode({ data, isConnectable }) {
         <span className="chain-node__row">
           <span className="chain-node__kind">{s.authored ? 'new' : 'step'}</span>
           <span className="chain-node__id mono">{s.id}</span>
-          {data.door && (
-            <span
-              className="pov-chip-plane chain-node__doorbadge"
-              /* `chain-door-` NOT `chain-step-door-`: the door badge now shows on
-                 every lens, and several tests scan `[data-testid^="chain-step-"]`
-                 to pin step-card DOM order — reusing that prefix would make a
-                 badge read as a spurious extra "step". */
-              data-testid={`chain-door-${s.id}`}
-              title={`launches through ${LANE_LABEL[data.door] || data.door} — drag into another lane to retarget`}
-            >
-              {data.door}
-            </span>
-          )}
           {data.channelKind === 'eal' ? (
             <span
               className="chip chip--signal chain-node__chanbadge"
@@ -228,6 +231,24 @@ function StepNode({ data, isConnectable }) {
             {String(data.order).padStart(2, '0')}
           </span>
         </span>
+        {/* The door badge has its own line: in the header row the longest path
+            ("AGT → COLLECTOR") needed 208px of a 192px row and covered the id. */}
+        {data.signal && (
+          <span className="chain-node__doorline">
+            <span
+              className={'pov-chip-plane chain-node__doorbadge'
+                + (data.signal.unplaced ? ' chain-node__doorbadge--unplaced' : '')}
+              /* `chain-door-` NOT `chain-step-door-`: the door badge shows on
+                 every lens, and several tests scan `[data-testid^="chain-step-"]`
+                 to pin step-card DOM order — reusing that prefix would make a
+                 badge read as a spurious extra "step". */
+              data-testid={`chain-door-${s.id}`}
+              title={doorTitle(data.signal)}
+            >
+              {signalBadge(data.signal)}
+            </span>
+          </span>
+        )}
         <span className="chain-node__name">{s.name}</span>
         <span className="chain-node__sub mono">
           {s.technique || 'no technique'} · {s.identity || 'no identity'}
@@ -525,7 +546,6 @@ const DesignGraph = forwardRef(function DesignGraph({
   draft, steps, selectedId, onSelect, lens, causalityStates,
   tenantName, agentName, onNavigate,
   onMoveStep, onDuplicateStep, onRemoveStep, onNodeMoved = () => {},
-  laneOverrides = null, onLaneChange = () => {},
   onConnectSteps = () => {},
   onDeleteStepId = () => {}, onEdgeDelete = () => {}, onReparent = () => {},
   onSetPivot = () => {}, onDropCreate = () => {}, onCanvasDrop = () => {},
@@ -575,8 +595,8 @@ const DesignGraph = forwardRef(function DesignGraph({
 
   // Lane layout (Lanes lens only) — steps at x=order, y=door band.
   const laneLayout = useMemo(
-    () => (lanesLens ? layoutLanes(steps, laneOverrides, draft.plane) : null),
-    [lanesLens, steps, laneOverrides, draft.plane],
+    () => (lanesLens ? layoutLanes(steps) : null),
+    [lanesLens, steps],
   )
   const lanePos = useMemo(() => {
     const m = new Map()
@@ -600,10 +620,10 @@ const DesignGraph = forwardRef(function DesignGraph({
       // The door badge on Design/Run reads the step's own channel/plane: a
       // lane override is arrangement on the Lanes lens, and the plane lanes
       // (CC/BVM/ENG) do not change how the step launches.
-      selectedId, runLens, causalityStates, laneOverrides: null, layout: storedLayout,
+      selectedId, runLens, causalityStates, layout: storedLayout,
       content, selectedRuleKey, stepHeights,
     }),
-    [draft, steps, selectedId, runLens, causalityStates, laneOverrides, storedLayout,
+    [draft, steps, selectedId, runLens, causalityStates, storedLayout,
       content, selectedRuleKey, stepHeights],
   )
 
@@ -632,7 +652,7 @@ const DesignGraph = forwardRef(function DesignGraph({
             kind: 'step', step: s, order: i + 1, selected: selectedId === s.id,
             tint: PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)',
             runState: null, runLens: false,
-            door: ln ? ln.lane : laneOf(s, laneOverrides, draft.plane),
+            signal: ln ? ln.signal : null,
             channelKind: effectiveChannel(s) === 'eal' ? 'eal' : (s.target ? 'target' : null),
           },
         }
@@ -680,7 +700,7 @@ const DesignGraph = forwardRef(function DesignGraph({
       }
     })
   }, [
-    built, lanesLens, steps, lanePos, selectedId, runLens, draft, laneOverrides,
+    built, lanesLens, steps, lanePos, selectedId, runLens, draft,
     tenantName, agentName, onNavigate, onSelectStep, onMoveStep, onDuplicateStep, onRemoveStep,
     laneLayout, unboundByStep, onSelectRule,
   ])
@@ -747,9 +767,16 @@ const DesignGraph = forwardRef(function DesignGraph({
     for (const c of changes) {
       if (c.type === 'position' && c.dragging === false && c.position) {
         if (lanesLens) {
+          // A lane is read from what the step does, so a drop cannot change
+          // it: the card snaps back to its slot, and a drop in ANOTHER lane
+          // says why instead of silently retargeting (the old behaviour wrote
+          // the channel or a presentation-only override).
           const before = lanePos.get(c.id)
-          const lane = laneAtY(c.position.y)
-          if (!before || before.lane !== lane) onLaneChange(c.id, lane)
+          if (!before) continue
+          setLiveNodes((nds) => nds.map((n) => (
+            n.id === c.id ? { ...n, position: { x: before.x, y: before.y } } : n
+          )))
+          if (laneAtY(c.position.y) !== before.lane) setRefusal({ title: 'Lane not changed', reason: LANE_REFUSAL })
           continue
         }
         if (c.id === CGO_ID || c.id === PROOF_ID) continue
@@ -763,7 +790,7 @@ const DesignGraph = forwardRef(function DesignGraph({
         )
       }
     }
-  }, [onNodeMoved, onLaneChange, lanesLens, lanePos, steps])
+  }, [onNodeMoved, lanesLens, lanePos, steps])
 
   if (typeof window !== 'undefined' && import.meta.env.MODE !== 'production') {
     window.__rfOnNodesChange = onNodesChange
@@ -1066,7 +1093,7 @@ const DesignGraph = forwardRef(function DesignGraph({
     <div className="chain composer-canvas__graph" data-testid="composer-chain">
       {refusal && (
         <div className="canvas-refusal" data-testid="canvas-refusal" role="status" aria-live="polite">
-          <strong>Edge refused</strong> — {refusal.reason}
+          <strong>{refusal.title || 'Edge refused'}</strong> — {refusal.reason}
           <button type="button" onClick={() => setRefusal(null)} aria-label="Dismiss">×</button>
         </div>
       )}
@@ -1378,8 +1405,6 @@ export default function ComposerCanvas({
   showStitch = false,
   onToggleStitch = () => {},
   storedLayout = null,
-  laneOverrides = null,
-  onLaneChange = () => {},
   viewInsets = null,
   // Tenant content (`composerContent.deriveTenantContent`), or null before the
   // first derivation. `contentLoading` is true while a cited card is in flight.
@@ -1408,7 +1433,7 @@ export default function ComposerCanvas({
     draft, steps, selectedId, onSelect, lens, causalityStates,
     tenantName, agentName, onNavigate,
     onMoveStep, onDuplicateStep, onRemoveStep, onNodeMoved,
-    laneOverrides, onLaneChange, onConnectSteps,
+    onConnectSteps,
     onDeleteStepId, onEdgeDelete, onReparent, onSetPivot, onDropCreate, onCanvasDrop,
     stitchModel, showStitch,
     storedLayout, viewInsets,

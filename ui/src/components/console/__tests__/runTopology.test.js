@@ -1,27 +1,36 @@
 /**
  * runTopology — the model behind the run Topology tab.
  *
- * Pins: lanes come from `composerLanes.laneOf` and nothing else; a step with
- * no derivable door is unplaced, never defaulted to ENDPOINT; lanes can be
- * rebuilt from Result rows when the scenario is gone; the Engine terminal is
- * a view onto rows, not a second count; a failed run never yields a miss.
+ * Pins: lanes come from `composerLanes.laneOf` and nothing else, and a lane
+ * is a SIGNAL PATH read from what the step does, never its plane; a step whose
+ * path cannot be read is unplaced with the reason, never defaulted; without
+ * the scenario there is no command to read, so every step is unplaced and the
+ * page says why; the Engine terminal is a view onto rows, not a second count;
+ * a failed run never yields a miss.
  */
 import { describe, it, expect } from 'vitest'
-import { buildTopologyModel, toLaneStep, doorKnown, isEngineRow } from '../runTopology.js'
+import { buildTopologyModel, toLaneStep, isEngineRow } from '../runTopology.js'
 import { laneOf, STEP_LANES } from '../composerLanes.js'
+
+const campaign = (plugin) => "cat > /tmp/c.yml <<'YML'\nsteps:\n  - step_id: s1\n"
+  + `    plugin: ${plugin}\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c.yml --live`
 
 const SCENARIO = {
   scenario_id: 'SIM-MP-001',
   plane: 'ANALYTICS',
   steps: [
     { id: 'step-01', name: 'beacon', identity: 'www-data', mitre_technique: 'T1071.001',
+      command: 'curl -s http://c2.lab.test/beacon',
       expected_detections: [{ plane: 'EDR', type: 'BIOC', ttp_ref: 'TTP-1' }] },
     { id: 'step-02', name: 'ngfw session', mitre_technique: 'T1071.001',
+      command: campaign('ngfw_eal_emitter'),
       expected_detections: [{ plane: 'NDR', type: 'XQL', ttp_ref: 'TTP-1' }] },
-    { id: 'step-03', name: 'cloud', expected_detections: [{ plane: 'CDR', type: 'XQL' }] },
-    { id: 'step-04', name: 'emit', channel: 'eal', expected_detections: [{ plane: 'EDR', type: 'XQL' }] },
-    { id: 'step-05', name: 'stitch', expected_detections: [{ plane: 'ANALYTICS', type: 'Correlation' }] },
-    { id: 'step-06', name: 'no detections', expected_detections: [] },
+    { id: 'step-03', name: 'cloud', command: 'aws s3 ls', expected_detections: [{ plane: 'CDR', type: 'XQL' }] },
+    { id: 'step-04', name: 'emit', channel: 'eal', eal: { plugin: 'dns_tunnel_exfil', params: {} },
+      command: '', expected_detections: [{ plane: 'EDR', type: 'XQL' }] },
+    { id: 'step-05', name: 'stitch', command: 'echo stitch marker',
+      expected_detections: [{ plane: 'ANALYTICS', type: 'Correlation' }] },
+    { id: 'step-06', name: 'no detections', command: 'cat /etc/hostname', expected_detections: [] },
   ],
 }
 
@@ -42,18 +51,11 @@ const RUN = {
   ],
 }
 
-describe('toLaneStep / doorKnown', () => {
+describe('toLaneStep', () => {
   it('maps expected_detections onto the Composer name laneOf reads', () => {
     expect(toLaneStep({ id: 'a', expected_detections: [{ plane: 'NDR' }] }).detections).toEqual([{ plane: 'NDR' }])
     expect(toLaneStep({ id: 'a', detections: [{ plane: 'CDR' }] }).detections).toEqual([{ plane: 'CDR' }])
     expect(toLaneStep(null)).toBeNull()
-  })
-  it('knows a door from channel, plane, a detection plane, or the scenario plane — nothing else', () => {
-    expect(doorKnown({ channel: 'eal' })).toBe(true)
-    expect(doorKnown({ plane: 'EDR' })).toBe(true)
-    expect(doorKnown({ detections: [{ plane: 'NDR' }] })).toBe(true)
-    expect(doorKnown({ id: 'x', detections: [] }, 'EDR')).toBe(true)
-    expect(doorKnown({ id: 'x', detections: [] })).toBe(false)
   })
 })
 
@@ -73,12 +75,13 @@ describe('buildTopologyModel', () => {
     const laneById = Object.fromEntries(m.columns.map((c) => [c.id, c.lane]))
     // the oracle IS laneOf — the model may not disagree with it
     for (const s of SCENARIO.steps) {
-      expect(laneById[s.id]).toBe(laneOf(toLaneStep(s), null, SCENARIO.plane))
+      expect(laneById[s.id]).toBe(laneOf(toLaneStep(s)))
     }
     expect(laneById).toEqual({
-      'step-01': 'AGT', 'step-02': 'BVM', 'step-03': 'CC', 'step-04': 'DC', 'step-05': 'ENG',
-      // no detections of its own → the scenario's plane (ANALYTICS) → ENG
-      'step-06': 'ENG',
+      // An EDR-plane curl beacon runs on the host; an NDR-plane step POSTs
+      // records; the planes would have said ENDPOINT / Broker VM / Cloud / Engine.
+      'step-01': 'ENDPOINT', 'step-02': 'COLLECTOR', 'step-03': 'CLOUD', 'step-04': 'WIRE',
+      'step-05': 'NONE', 'step-06': 'ENDPOINT',
     })
     expect(m.lanes.map((l) => l.key)).toEqual(STEP_LANES)
     expect(m.lanes.every((l) => !l.empty)).toBe(true)
@@ -89,32 +92,39 @@ describe('buildTopologyModel', () => {
     const sc = { ...SCENARIO, plane: 'EDR', steps: SCENARIO.steps.slice(0, 1) }
     const m = buildTopologyModel({ scenario: sc, run: RUN, results: RESULTS.slice(0, 1) })
     const by = Object.fromEntries(m.lanes.map((l) => [l.key, l]))
-    expect(by.AGT.empty).toBe(false)
-    expect(by.AGT.tone).toBe('hit')
-    for (const k of ['CC', 'BVM', 'DC', 'ENG']) {
+    expect(by.ENDPOINT.empty).toBe(false)
+    expect(by.ENDPOINT.tone).toBe('hit')
+    expect(by.ENG).toBeUndefined()
+    for (const k of ['COLLECTOR', 'WIRE', 'CLOUD', 'NONE']) {
       expect(by[k].empty).toBe(true)
       expect(by[k].tone).toBe('empty')
     }
   })
 
-  it('never defaults an unknowable door into ENDPOINT — it is unplaced with a reason', () => {
-    const sc = { scenario_id: 'X', plane: null, steps: [{ id: 'step-01', name: 'mystery', expected_detections: [] }] }
+  it('never guesses a path it cannot read — the step is unplaced with the reason', () => {
+    const sc = { scenario_id: 'X', plane: 'NDR', steps: [
+      { id: 'step-01', name: 'mystery', command: campaign('made_up_emitter'), expected_detections: [{ plane: 'NDR' }] },
+    ] }
     const m = buildTopologyModel({ scenario: sc, run: { status: 'complete' }, results: [] })
     expect(m.columns).toEqual([])
     expect(m.unplaced).toHaveLength(1)
-    expect(m.unplaced[0]).toMatchObject({ id: 'step-01', lane: null, reason: expect.stringMatching(/no channel and no plane/) })
+    expect(m.unplaced[0]).toMatchObject({ id: 'step-01', lane: null, reason: expect.stringMatching(/made_up_emitter/) })
     expect(m.lanes.every((l) => l.empty)).toBe(true)
   })
 
-  it('rebuilds lanes from the Result rows when the scenario is gone', () => {
+  // A Result row knows each expected detection's PLANE, which is the observer.
+  // The path is read from the step's command, and a row does not carry one.
+  it('without the scenario, places no step and says why, in transcript order', () => {
     const m = buildTopologyModel({ scenario: null, run: RUN, results: RESULTS })
     expect(m.stepsFrom).toBe('run')
-    const laneById = Object.fromEntries(m.columns.map((c) => [c.id, c.lane]))
-    // step-04 was an EAL step in the scenario, but a Result row only knows its
-    // plane (EDR): without the scenario the honest answer is the plane's door.
-    expect(laneById).toEqual({ 'step-01': 'AGT', 'step-02': 'BVM', 'step-03': 'CC', 'step-04': 'AGT', 'step-05': 'ENG' })
-    // transcript order first, then outcomes, then rows
-    expect(m.columns.map((c) => c.id)).toEqual(['step-01', 'step-02', 'step-03', 'step-04', 'step-05'])
+    expect(m.columns).toEqual([])
+    expect(m.unplaced.map((u) => u.id)).toEqual(['step-01', 'step-02', 'step-03', 'step-04', 'step-05'])
+    for (const u of m.unplaced) {
+      expect(u.lane).toBeNull()
+      expect(u.reason).toMatch(/scenario not loaded/)
+    }
+    // the rows are still counted: the page does not lose the run's results
+    expect(m.totals.rows).toBe(5)
   })
 
   it('joins the host record onto each cell: rc, severed, identity from the transcript', () => {
@@ -133,7 +143,7 @@ describe('buildTopologyModel', () => {
     expect(by['step-03'].tone).toBe('pending')
     expect(by['step-04']).toMatchObject({ tone: 'excluded', denominator: 0 })
     expect(by['step-06']).toMatchObject({ tone: 'none', rows: [] })
-    expect(m.lanes.find((l) => l.key === 'BVM').tone).toBe('miss')
+    expect(m.lanes.find((l) => l.key === 'COLLECTOR').tone).toBe('miss')
   })
 
   it('on a FAILED run no cell and no lane reads miss', () => {
@@ -155,13 +165,14 @@ describe('buildTopologyModel', () => {
     expect(m2.engine).toMatchObject({ empty: true, tcVerdict: null, tone: 'empty' })
   })
 
-  it('lists where the chain crossed between doors, in execution order', () => {
+  it('lists where the chain changed path, in execution order', () => {
     const m = buildTopologyModel({ scenario: SCENARIO, run: RUN, results: RESULTS })
     expect(m.crossings).toEqual([
-      { from: 'AGT', to: 'BVM', at: 'step-02' },
-      { from: 'BVM', to: 'CC', at: 'step-03' },
-      { from: 'CC', to: 'DC', at: 'step-04' },
-      { from: 'DC', to: 'ENG', at: 'step-05' },
+      { from: 'ENDPOINT', to: 'COLLECTOR', at: 'step-02' },
+      { from: 'COLLECTOR', to: 'CLOUD', at: 'step-03' },
+      { from: 'CLOUD', to: 'WIRE', at: 'step-04' },
+      { from: 'WIRE', to: 'NONE', at: 'step-05' },
+      { from: 'NONE', to: 'ENDPOINT', at: 'step-06' },
     ])
   })
 

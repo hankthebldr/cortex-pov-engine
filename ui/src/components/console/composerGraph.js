@@ -56,7 +56,7 @@
  */
 
 import { effectiveChannel, spineProblems } from './composerDraft.js'
-import { laneOf } from './composerLanes.js'
+import { signalOf } from './composerSignal.js'
 
 /** Reserved node ids for the two derived anchors. A real step can never take
  *  these (step ids are `step-NN`), so they cannot collide. */
@@ -192,7 +192,6 @@ export function reparentOnDelete(steps, removedId) {
  * @param {string} [opts.selectedId]  the selected step id (→ node.selected)
  * @param {boolean}[opts.runLens]     true in the Run lens (badges + read-only)
  * @param {Object} [opts.causalityStates] {stepId:{state}} from the real graph
- * @param {Object} [opts.laneOverrides]   {stepId:lane} for the door badge
  * @param {Object} [opts.layout]      {stepId:{x,y}} stored positions (default draft.layout)
  * @param {Object} [opts.geometry]    defaults to GRAPH_LAYOUT
  * @param {Object} [opts.content]    `deriveTenantContent` result → rule nodes + content edges
@@ -207,7 +206,6 @@ export function buildGraph(draft = {}, steps = [], opts = {}) {
     selectedId = null,
     runLens = false,
     causalityStates = null,
-    laneOverrides = null,
     geometry = GRAPH_LAYOUT,
     selectedRuleKey = null,
   } = opts
@@ -297,10 +295,10 @@ export function buildGraph(draft = {}, steps = [], opts = {}) {
         tint: PLANE_TINT[plane] || 'var(--cortex-steel, #6B7E8E)',
         runState: runLens ? (causalityStates?.[s.id]?.state || 'EXPECTED') : null,
         runLens,
-        // Door badge — the ingestion lane this step launches through. Shown on
-        // every lens now (the windowed canvas only showed it on the Lanes
-        // lens); it is a real, honest property of the step either way.
-        door: laneOf(s, laneOverrides, draft.plane),
+        // Door badge — the step's SIGNAL PATH (where it runs, and the
+        // mechanism that produces its evidence), read from its command and
+        // channel, never its plane. Shown on every lens.
+        signal: signalOf(s),
         channelKind: channel === 'eal' ? 'eal' : (s.target ? 'target' : null),
         offChain: flagged.has(s.id),
       },

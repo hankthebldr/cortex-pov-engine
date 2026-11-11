@@ -24,15 +24,12 @@ import { laneOf } from './composerLanes.js'
  * single selection rather than two parallel ones.
  *
  * THE LANE COMES FROM `laneOf()`, NOT FROM A LOCAL RULE.
- * This file used to derive a step's lane inline (channel eal → DC, plane NDR →
- * BVM, …). The canvas now needs the same derivation, and two copies of "which
- * door is this step behind" would drift the moment one of them learned a new
- * plane. `composerLanes.laneOf` is the one source; the timeline accepts raw
- * steps and the draft's overrides and asks it.
+ * A lane is the step's signal path, read from its command and channel by
+ * `composerLanes.laneOf` (through `composerSignal.signalOf`), the one source
+ * the canvas and the Runs topology also ask. It takes no override.
  *
  * Props:
  *   steps         — draft steps in execution order
- *   laneOverrides — `{ [stepId]: laneKey }` from the draft (Lanes-lens drags)
  *   draftPlane    — the draft's plane, for steps that carry none
  *   selectedId — currently selected step id
  *   onSelect   — (id) => void
@@ -40,7 +37,6 @@ import { laneOf } from './composerLanes.js'
  */
 export default function ExecutionTimeline({
   steps = [],
-  laneOverrides = null,
   draftPlane = null,
   selectedId = null,
   onSelect = () => {},
@@ -51,8 +47,8 @@ export default function ExecutionTimeline({
       <div className="pov-panel" data-testid="execution-timeline">
         <div className="pov-panel__body">
           <p style={{ font: '400 11.5px/1.6 var(--font-ui)', color: 'var(--tx3)', margin: 0 }}>
-            No steps yet. Click an item in the palette to drop it as the next node, then
-            drag it into the lane it should launch through.
+            No steps yet. Click an item in the palette to drop it as the next node. Its
+            lane follows what its command does.
           </p>
         </div>
       </div>
@@ -76,7 +72,7 @@ export default function ExecutionTimeline({
           const s = {
             id: raw.id,
             label: raw.name || raw.label || raw.id,
-            lane: laneOf(raw, laneOverrides, draftPlane),
+            lane: laneOf(raw),
             plane: raw.plane || draftPlane,
             state: raw.state,
           }

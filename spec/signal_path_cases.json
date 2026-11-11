@@ -1,0 +1,504 @@
+{
+  "_comment": "Shared cases for a step's signal path: the mechanism that produces its evidence. Two implementations read steps: the Composer, Lanes lens, execution timeline and Runs topology derive it in the browser (ui/src/components/console/composerSignal.js) and the scenario loader's S-28 lint and the corpus tripwire derive it in Python (core/engine/signal_path.py). Both suites assert every case here. `plugins` is the EAL registry split into collector-class (records POSTed to a collector) and wire-class (traffic generators); a Python test pins it to the live registry. Design: docs/superpowers/specs/2026-11-10-composer-doors-design.md.",
+  "version": 1,
+  "plugins": {
+    "collector": [
+      "ad_windows_emitter",
+      "azure_audit_emitter",
+      "cloud_audit_emitter",
+      "cloud_storage_compute_emitter",
+      "duo_auth_emitter",
+      "email_emitter",
+      "globalprotect_emitter",
+      "idp_signin_emulator",
+      "k8s_audit_emitter",
+      "m365_activity_emitter",
+      "ngfw_eal_emitter",
+      "ngfw_threat_emitter",
+      "third_party_alert_emitter",
+      "third_party_firewall_emitter",
+      "third_party_vpn_emitter"
+    ],
+    "wire": [
+      "agentic_egress",
+      "airs_prompt_attack",
+      "browser_attack_runner",
+      "bulk_https_exfil",
+      "c2_http_beacon",
+      "dns_tunnel_exfil",
+      "ftp_egress",
+      "llm_provider_egress",
+      "oauth_grant_emulator",
+      "smb_rpc_sweep",
+      "ssh_egress",
+      "stratum_tcp_connect"
+    ]
+  },
+  "paths": [
+    "ENDPOINT",
+    "COLLECTOR",
+    "WIRE",
+    "CLOUD",
+    "NONE"
+  ],
+  "cases": [
+    {
+      "label": "collector-class plugin run from the beacon",
+      "step": {
+        "command": "cat > /tmp/c.yml <<'YML'\ncampaign_id: CMP-T\nsteps:\n  - step_id: step-01\n    plugin: ngfw_eal_emitter\n    params: {}\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c.yml --live"
+      },
+      "expected": {
+        "path": "COLLECTOR",
+        "runs_on": "AGT",
+        "plugins": [
+          "ngfw_eal_emitter"
+        ],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "wire-class plugin run from the beacon (the SIM-AIACC-003 burst)",
+      "step": {
+        "command": "cat > /tmp/c.yml <<'YML'\ncampaign_id: CMP-T\nsteps:\n  - step_id: step-01\n    plugin: llm_provider_egress\n    params: {}\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c.yml --live"
+      },
+      "expected": {
+        "path": "WIRE",
+        "runs_on": "AGT",
+        "plugins": [
+          "llm_provider_egress"
+        ],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "two plugins of one class, names sorted and unique",
+      "step": {
+        "command": "cat > /tmp/c.yml <<'YML'\ncampaign_id: CMP-T\nsteps:\n  - step_id: step-01\n    plugin: idp_signin_emulator\n    params: {}\n  - step_id: step-02\n    plugin: email_emitter\n    params: {}\n  - step_id: step-03\n    plugin: idp_signin_emulator\n    params: {}\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c.yml --live"
+      },
+      "expected": {
+        "path": "COLLECTOR",
+        "runs_on": "AGT",
+        "plugins": [
+          "email_emitter",
+          "idp_signin_emulator"
+        ],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "plugins of both classes are not guessed",
+      "step": {
+        "command": "cat > /tmp/c.yml <<'YML'\ncampaign_id: CMP-T\nsteps:\n  - step_id: step-01\n    plugin: ngfw_eal_emitter\n    params: {}\n  - step_id: step-02\n    plugin: c2_http_beacon\n    params: {}\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c.yml --live"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [
+          "c2_http_beacon",
+          "ngfw_eal_emitter"
+        ],
+        "unplaced": "mixed-plugins"
+      }
+    },
+    {
+      "label": "a plugin the registry does not know",
+      "step": {
+        "command": "cat > /tmp/c.yml <<'YML'\ncampaign_id: CMP-T\nsteps:\n  - step_id: step-01\n    plugin: made_up_emitter\n    params: {}\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c.yml --live"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [
+          "made_up_emitter"
+        ],
+        "unplaced": "unknown-plugin"
+      }
+    },
+    {
+      "label": "an EAL run that names no plugin",
+      "step": {
+        "command": "python3 -m scripts.eal_simulator.cli run /tmp/c.yml --live"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": "no-plugin-named"
+      }
+    },
+    {
+      "label": "describing a plugin emits nothing: a preflight on the host",
+      "step": {
+        "command": "python3 -m scripts.eal_simulator.cli describe llm_provider_egress | jq -e '.eal_targets | length > 0'"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "an eal-channel step runs in SimCore's process",
+      "step": {
+        "channel": "eal",
+        "eal": {
+          "plugin": "k8s_audit_emitter",
+          "params": {}
+        },
+        "command": null
+      },
+      "expected": {
+        "path": "COLLECTOR",
+        "runs_on": "SIM",
+        "plugins": [
+          "k8s_audit_emitter"
+        ],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "an eal-channel wire plugin",
+      "step": {
+        "channel": "eal",
+        "eal": {
+          "plugin": "dns_tunnel_exfil",
+          "params": {}
+        },
+        "command": null
+      },
+      "expected": {
+        "path": "WIRE",
+        "runs_on": "SIM",
+        "plugins": [
+          "dns_tunnel_exfil"
+        ],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "an eal-channel step with no plugin yet (a draft in progress)",
+      "step": {
+        "channel": "eal",
+        "eal": {
+          "plugin": "",
+          "params": {}
+        },
+        "command": null
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "SIM",
+        "plugins": [],
+        "unplaced": "no-plugin-named"
+      }
+    },
+    {
+      "label": "a direct AWS API call",
+      "step": {
+        "command": "aws sts get-caller-identity\naws s3 ls"
+      },
+      "expected": {
+        "path": "CLOUD",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "kubectl inside a command substitution",
+      "step": {
+        "command": "POD=$(kubectl get pods -o name | head -1)\necho \"$POD\""
+      },
+      "expected": {
+        "path": "CLOUD",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "a provider subcommand of a scanner still calls the provider",
+      "step": {
+        "command": "prowler aws --region us-east-1"
+      },
+      "expected": {
+        "path": "CLOUD",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "a cloud CLI named only inside quotes is not a call",
+      "step": {
+        "command": "echo 'maps to: aws sts get-caller-identity'\nsleep 2"
+      },
+      "expected": {
+        "path": "NONE",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "a cloud CLI named only in a comment is not a call",
+      "step": {
+        "command": "# aws s3 cp would go here\nsleep 5"
+      },
+      "expected": {
+        "path": "NONE",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "a longer word containing a CLI name is not a call",
+      "step": {
+        "command": "/usr/bin/awslogs-agent --check\nkubectl-plugin-x"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "echo and sleep only: the step produces nothing itself",
+      "step": {
+        "command": "echo '[CortexSim] waiting for the AI-SPM scan'\nsleep \"${WAIT_SECONDS:-900}\""
+      },
+      "expected": {
+        "path": "NONE",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "separators split quiet commands",
+      "step": {
+        "command": "echo start; sleep 3 && true || :"
+      },
+      "expected": {
+        "path": "NONE",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "echo redirected to a file is an action",
+      "step": {
+        "command": "echo marker > /tmp/cortexsim.flag"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "echo piped to another program is an action",
+      "step": {
+        "command": "echo ping | nc 10.0.0.5 4444"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "command substitution inside double quotes runs",
+      "step": {
+        "command": "echo \"t1 = $(cat /tmp/t1.txt)\""
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "a redirect inside quotes is text, not an action",
+      "step": {
+        "command": "echo 'a > b | c'"
+      },
+      "expected": {
+        "path": "NONE",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "an empty command does nothing",
+      "step": {
+        "command": ""
+      },
+      "expected": {
+        "path": "NONE",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "the Composer's blank-step placeholder does nothing",
+      "step": {
+        "command": "# configure the command for this step"
+      },
+      "expected": {
+        "path": "NONE",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "a command the beacon runs on the host",
+      "step": {
+        "command": "cat /etc/shadow"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "a plain curl C2 beacon is endpoint runtime: the lane names the mechanism, not the observer",
+      "step": {
+        "command": "curl -s http://c2.lab.test/beacon -o /dev/null"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    },
+    {
+      "label": "a step whose command is not known (the list projection, or a run whose scenario did not load)",
+      "step": {
+        "command": null
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": "no-command"
+      }
+    },
+    {
+      "label": "a second-endpoint step still runs on a beacon",
+      "step": {
+        "command": "whoami",
+        "target": "agent-2"
+      },
+      "expected": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "plugins": [],
+        "unplaced": null
+      }
+    }
+  ],
+  "badges": [
+    {
+      "signal": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "unplaced": null
+      },
+      "badge": "AGT"
+    },
+    {
+      "signal": {
+        "path": "COLLECTOR",
+        "runs_on": "AGT",
+        "unplaced": null
+      },
+      "badge": "AGT → COLLECTOR"
+    },
+    {
+      "signal": {
+        "path": "WIRE",
+        "runs_on": "AGT",
+        "unplaced": null
+      },
+      "badge": "AGT → WIRE"
+    },
+    {
+      "signal": {
+        "path": "COLLECTOR",
+        "runs_on": "SIM",
+        "unplaced": null
+      },
+      "badge": "SIM → COLLECTOR"
+    },
+    {
+      "signal": {
+        "path": "CLOUD",
+        "runs_on": "AGT",
+        "unplaced": null
+      },
+      "badge": "AGT → CLOUD"
+    },
+    {
+      "signal": {
+        "path": "NONE",
+        "runs_on": "AGT",
+        "unplaced": null
+      },
+      "badge": "AGT · no action"
+    },
+    {
+      "signal": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "unplaced": "unknown-plugin"
+      },
+      "badge": "AGT → EAL ?"
+    },
+    {
+      "signal": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "unplaced": "mixed-plugins"
+      },
+      "badge": "AGT → EAL ?"
+    },
+    {
+      "signal": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "unplaced": "no-plugin-named"
+      },
+      "badge": "AGT → EAL ?"
+    },
+    {
+      "signal": {
+        "path": "ENDPOINT",
+        "runs_on": "SIM",
+        "unplaced": "no-plugin-named"
+      },
+      "badge": "SIM → EAL ?"
+    },
+    {
+      "signal": {
+        "path": "ENDPOINT",
+        "runs_on": "AGT",
+        "unplaced": "no-command"
+      },
+      "badge": "AGT ?"
+    }
+  ]
+}
