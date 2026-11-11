@@ -43,6 +43,20 @@ logger = logging.getLogger("cortexsim.orchestrator")
 ARTIFACT_FETCH_CAPABILITY = "artifact-fetch"
 
 
+@dataclass(eq=False)
+class _TaskWaiter:
+    """One parked ``GET /api/agents/{id}/tasks?wait=N`` (see ``wait_for_task``).
+
+    ``eq=False``: waiters are told apart by identity, never by value.
+    """
+
+    loop: asyncio.AbstractEventLoop
+    event: asyncio.Event
+    #: A newer poll for the same agent arrived; this one is never woken by an
+    #: enqueue and its caller should not dequeue.
+    superseded: bool = False
+
+
 @dataclass
 class Task:
     task_id: str
@@ -355,13 +369,19 @@ class Orchestrator:
         # signal and prevents a queued-but-undelivered task from executing.
         # Unbounded in principle but runs are few/short; pruned on /complete.
         self._aborted: set[str] = set()
-        # agent_id -> (loop, asyncio.Event) for sub-second long-polling wakeup.
-        # The loop is stored alongside because asyncio.Event binds itself to the
-        # first loop that awaits it and raises "bound to a different event loop"
-        # on any other. uvicorn runs one loop per process so a bare Event
-        # survives in production, but it makes the whole path unreachable from
-        # TestClient — which is precisely why no Python test covered it.
-        self._events: dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Event]] = {}
+        # agent_id -> the long-polls parked for that agent, oldest first, for
+        # sub-second wakeup. ONE entry per waiter (OPS-09): all waiters used to
+        # share a single asyncio.Event, which wakes first-in first-out, so the
+        # next task went to the OLDEST poll — after a beacon restart that is
+        # the handler whose socket is closed. The durable row was deleted, the
+        # run read delivered, and no host received it. Now a newer poll
+        # supersedes the older ones and an enqueue wakes only the current one.
+        #
+        # Each entry carries its own loop: an asyncio.Event binds to the loop
+        # that first awaits it and raises "bound to a different event loop" on
+        # any other. uvicorn runs one loop per process, but TestClient does not
+        # — which is precisely why no Python test covered this path at first.
+        self._waiters: dict[str, list[_TaskWaiter]] = {}
         # run_id -> when a beacon last polled GET /api/runs/{id}/control. The
         # beacon polls it before every step and every 2 s while one runs, so
         # it is the one signal that says "a beacon is executing THIS run" —
@@ -1541,40 +1561,82 @@ class Orchestrator:
         if agent_id not in self._queue:
             self._queue[agent_id] = []
         self._queue[agent_id].append(task)
-        entry = self._events.get(agent_id)
-        if entry is not None:
-            bound_loop, event = entry
-            try:
-                running = asyncio.get_running_loop()
-            except RuntimeError:
-                running = None
-            if running is bound_loop:
-                event.set()
+        self._wake_current_waiter(agent_id)
+
+    def _wake_current_waiter(self, agent_id: str) -> None:
+        """Wake the newest non-superseded long-poll for ``agent_id``, if any.
+
+        Only that one: a superseded waiter belongs to a connection its beacon
+        has since replaced, and waking it hands the task to a closed socket.
+        A waiter whose loop is gone is dropped instead of raising.
+        """
+        waiters = self._waiters.get(agent_id)
+        if not waiters:
+            return
+        try:
+            running: Optional[asyncio.AbstractEventLoop] = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        for waiter in reversed(list(waiters)):
+            if waiter.superseded:
+                continue
+            if waiter.loop.is_closed():
+                self._forget_waiter(agent_id, waiter)
+                continue
+            if running is waiter.loop:
+                waiter.event.set()
             else:
                 # Enqueued from outside the waiter's loop (or from no loop at
                 # all): hand the wakeup to the owning loop rather than touching
                 # its futures from here.
-                bound_loop.call_soon_threadsafe(event.set)
+                try:
+                    waiter.loop.call_soon_threadsafe(waiter.event.set)
+                except RuntimeError:  # closed between the check and the call
+                    self._forget_waiter(agent_id, waiter)
+                    continue
+            return
 
-    async def wait_for_task(self, agent_id: str, timeout: float) -> None:
-        """Wait up to timeout seconds for a task to be enqueued for agent_id."""
-        loop = asyncio.get_running_loop()
-        entry = self._events.get(agent_id)
-        if entry is None or entry[0] is not loop:
-            # First wait for this agent, or a different loop from the one the
-            # cached Event bound to. Reusing the stale Event raises
-            # RuntimeError("... is bound to a different event loop").
-            event = asyncio.Event()
-            self._events[agent_id] = (loop, event)
-        else:
-            event = entry[1]
-        event.clear()
-        if self._queue.get(agent_id):
+    def _forget_waiter(self, agent_id: str, waiter: "_TaskWaiter") -> None:
+        waiters = self._waiters.get(agent_id)
+        if not waiters:
             return
         try:
-            await asyncio.wait_for(event.wait(), timeout=timeout)
-        except asyncio.TimeoutError:
+            waiters.remove(waiter)
+        except ValueError:
             pass
+        if not waiters:
+            self._waiters.pop(agent_id, None)
+
+    async def wait_for_task(self, agent_id: str, timeout: float) -> bool:
+        """Wait up to ``timeout`` seconds for a task to be enqueued for ``agent_id``.
+
+        Returns ``True`` when this waiter is still the agent's CURRENT poll and
+        ``False`` when a newer poll for the same agent superseded it while it
+        waited (OPS-09). A beacon holds one long-poll at a time, so a second
+        one means the first belongs to a connection the beacon has abandoned —
+        a restart inside the wait window. The caller should not dequeue for a
+        superseded waiter; if it does anyway, it finds the queue as the current
+        waiter left it, because an enqueue never wakes a superseded one.
+
+        A superseded waiter is NOT woken early: it runs out its own timeout.
+        Waking it would make two beacons that share an agent id spin against
+        each other.
+        """
+        loop = asyncio.get_running_loop()
+        waiter = _TaskWaiter(loop=loop, event=asyncio.Event())
+        waiters = self._waiters.setdefault(agent_id, [])
+        for older in waiters:
+            older.superseded = True
+        waiters.append(waiter)
+        try:
+            if not self._queue.get(agent_id):
+                try:
+                    await asyncio.wait_for(waiter.event.wait(), timeout=timeout)
+                except asyncio.TimeoutError:
+                    pass
+            return not waiter.superseded
+        finally:
+            self._forget_waiter(agent_id, waiter)
 
     def dequeue(self, agent_id: str) -> Optional[Task]:
         """Pop the next deliverable task for an agent from the in-memory queue.
