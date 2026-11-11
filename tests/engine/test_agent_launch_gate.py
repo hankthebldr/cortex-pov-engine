@@ -133,3 +133,47 @@ def test_quoted_tool_names_do_not_trip_the_gate():
 def test_step_required_binaries_is_the_manifest_scan():
     assert step_required_binaries("jq . x | curl -s y") == ["jq", "curl"]
     assert step_required_binaries("") == []
+
+
+# ── cluster-scoped RBAC needs are compared as rules, not only as findings ────
+
+_NODES_LIST = {"api_groups": [""], "resources": ["nodes"], "verbs": ["list"]}
+
+
+def _needs_cluster_rule():
+    return {"steps": [{"id": "s1", "command": "ls"}],
+            "cluster_posture": {"service_account": {"cluster_role_rules": [_NODES_LIST]}}}
+
+
+def test_cluster_rule_need_on_baseline_is_refused_and_named():
+    r = evaluate(_needs_cluster_rule(), BASE)
+    assert r.refusal and r.refusal.code == "AGENT_POSTURE_INSUFFICIENT"
+    assert r.refusal.detail["satisfying_profile"] == "cluster-privilege"
+    assert {"scope": "cluster", **_NODES_LIST} in r.refusal.detail["missing_rbac_rules"]
+
+
+def test_cluster_rule_need_on_cluster_privilege_passes():
+    r = evaluate(_needs_cluster_rule(), dict(BASE, posture_profile="cluster-privilege"))
+    assert r.refusal is None
+
+
+def test_a_namespaced_rule_never_covers_a_cluster_scoped_need():
+    from engine import k8s_manifest as km
+    from engine.agent_launch_gate import uncovered_rules
+    need = km.parse_posture(_needs_cluster_rule())
+    ns_only = [km.RbacRule(api_groups=["*"], resources=["*"], verbs=["*"])]
+    missing = uncovered_rules(need, cluster_have=[], namespace_have=ns_only)
+    assert missing == [{"scope": "cluster", **_NODES_LIST}]
+    # The same rule held cluster-wide does cover it.
+    assert uncovered_rules(need, cluster_have=ns_only, namespace_have=[]) == []
+
+
+def test_a_cluster_rule_still_covers_a_namespaced_need(load_scenario):
+    from engine import k8s_manifest as km
+    from engine.agent_launch_gate import uncovered_rules
+    need = km.parse_posture(load_scenario("SIM-CDR-001"))
+    wild = [km.RbacRule(api_groups=["*"], resources=["*"], verbs=["*"])]
+    assert need.service_account.namespace_role_rules
+    assert uncovered_rules(need, cluster_have=wild, namespace_have=[]) == []
+    assert all(m["scope"] == "namespace"
+               for m in uncovered_rules(need, cluster_have=[], namespace_have=[]))
