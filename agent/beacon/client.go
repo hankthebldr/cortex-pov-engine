@@ -797,6 +797,13 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 // the start failure that makes executeTaskChained degrade to executeTaskPerStep.
 var newChainSession = executor.NewChainSession
 
+// anchorNotHonouredLine is the run-record notice for a cgo_anchor the host's
+// shell could not carry (no bash: a multi-call sh cannot be renamed).
+func anchorNotHonouredLine(image string) string {
+	return fmt.Sprintf("ANCHOR NOT HONOURED: requested %s; this image has only a multi-call shell, "+
+		"so the chain runs under 'sh'. Detections keyed on the anchor process name will not match.", image)
+}
+
 // executeTaskChained runs the task through a single persistent anchor shell so
 // every step is a child of the same Causality Group Owner — a connected process
 // chain, not a star of independent `sh -c` invocations. It preserves the exact
@@ -825,6 +832,13 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		return
 	}
 	defer session.Close()
+
+	// A requested cgo_anchor the host could not honour must say so in the run
+	// record, once, before any step: otherwise anchor-keyed detections read as
+	// "Cortex missed it".
+	if cgoImage != "" && !session.AnchorRenamed() && len(task.Steps) > 0 {
+		_ = c.SendOutput(task.RunID, task.Steps[0].ID, anchorNotHonouredLine(cgoImage))
+	}
 
 	log.Printf("[beacon] causality-chained execution run_id=%s cgo=%q steps=%d",
 		task.RunID, cgoImage, totalSteps)

@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/hankthebldr/cortexsim/agent/executor"
 )
 
 // The server's limits (core/api/agents.py::RuntimeFacts). Over any of them the
@@ -163,8 +165,7 @@ func Collect(opts Options) Facts {
 	f.Tools = clampList(f.Tools)
 	f.Accounts = clampList(f.Accounts)
 
-	// Same rule Task 9's anchor rename uses: it execs through bash.
-	_, err := lookPath("bash")
-	f.AnchorRename = err == nil
+	// The executor's own rule, over this probe's injected LookPath.
+	f.AnchorRename = executor.AnchorRenameSupportedWith(lookPath)
 	return f
 }

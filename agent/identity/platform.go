@@ -58,7 +58,43 @@ func (r Resolution) Degraded() bool { return r.Degradation != "" }
 
 // Resolve maps a requested identity username to a Resolution for THIS host.
 func Resolve(requested string) Resolution {
-	return ResolveFor(runtime.GOOS, requested, CurrentUsername())
+	return ResolveWith(runtime.GOOS, requested, CurrentUsername(), lookupAccount)
+}
+
+// lookupAccount reports an error when the OS does not know the account.
+func lookupAccount(name string) error {
+	_, err := user.Lookup(name)
+	return err
+}
+
+// ResolveWith is ResolveFor plus a second reason to degrade: an impersonation
+// mode whose account does not exist on this host. runuser would fail inside the
+// step ("user does not exist") and read as a failed TTP, so the step is run
+// direct instead and the Resolution says so. lookup is injectable for tests.
+// Windows is left to ResolveFor, whose text is unchanged.
+func ResolveWith(goos, requested, currentUser string, lookup func(string) error) Resolution {
+	res := ResolveFor(goos, requested, currentUser)
+	if goos == "windows" || res.Mode == "direct" || res.Username == "" || lookup == nil {
+		return res
+	}
+	if err := lookup(res.Username); err == nil {
+		return res
+	}
+	who := currentUser
+	if who == "" {
+		who = "the beacon account"
+	}
+	return Resolution{
+		Mode:     "direct",
+		Unknown:  res.Unknown,
+		Honoured: false,
+		Degradation: fmt.Sprintf(
+			"identity %q could NOT be honoured: account %q does not exist on this host, so the "+
+				"impersonation wrapper was not invoked. The step executed as %s instead — "+
+				"endpoint telemetry will attribute this activity to %s, NOT to %q. Treat any "+
+				"detection keyed on the actor account as UNVALIDATED for this step.",
+			requested, res.Username, who, who, requested),
+	}
 }
 
 // ResolveFor is the pure, host-independent form of Resolve. goos is a

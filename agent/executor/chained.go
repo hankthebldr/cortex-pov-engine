@@ -45,6 +45,10 @@ type ChainSession struct {
 	cancel context.CancelFunc
 	ctx    context.Context
 
+	// anchorRenamed is true when the anchor's argv[0] carries the requested
+	// cgo_anchor image name.
+	anchorRenamed bool
+
 	// exited is closed when the anchor process has exited; waitErr is its Wait
 	// result. One goroutine calls cmd.Wait() (it may be called exactly once) so
 	// RunStep can notice the anchor's death directly instead of on pipe EOF,
@@ -66,7 +70,7 @@ type ChainSession struct {
 func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error) {
 	sctx, cancel := context.WithCancel(ctx)
 
-	cmd := newAnchorCmd(strings.TrimSpace(cgoImage))
+	cmd, renamed := newAnchorCmd(strings.TrimSpace(cgoImage))
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -101,6 +105,8 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 		cancel: cancel,
 		ctx:    sctx,
 		exited: make(chan struct{}),
+
+		anchorRenamed: renamed,
 	}
 	go func() {
 		s.waitErr = cmd.Wait()
@@ -125,6 +131,10 @@ func NewChainSession(ctx context.Context, cgoImage string) (*ChainSession, error
 
 	return s, nil
 }
+
+// AnchorRenamed reports whether the anchor process carries the requested
+// cgo_anchor name. False when none was requested or the host cannot honour it.
+func (s *ChainSession) AnchorRenamed() bool { return s.anchorRenamed }
 
 func (s *ChainSession) scan(r io.Reader, ch chan<- string) {
 	defer s.wg.Done()
