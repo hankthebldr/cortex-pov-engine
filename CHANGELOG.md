@@ -74,7 +74,7 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `CASE_STATUS_UNRECOGNIZED`, never `open`. The ledger records its tenant
   integration and its reads are counted in `queries_issued`.
 - **`POST /api/runs/{id}/case-ledger/refresh`** re-reads the cases (read-only);
-  the auto-reconcile loop refreshes recent ledgers behind
+  the auto-reconcile loop refreshes recent ledgers (a ledger is terminal when every case in it is sealed, i.e. resolved and not auto-resolved, and is skipped; an open or auto-resolved case can still change, so its ledger keeps being refreshed) behind
   `CORTEXSIM_CASE_LEDGER_{WINDOW_HOURS,MAX_RUNS_PER_SWEEP,MIN_INTERVAL_MINUTES}`.
   `GET /api/runs/{id}/pair` gains a pair-level `merge`; the markdown report gains
   a `## Case` section and the json report `case_ledger`; the console run view

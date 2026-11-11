@@ -61,13 +61,15 @@ to run.
      or `PENDING` (a case could not be read; never `ONE_CASE`).
    - Disposition (`open`, `socfw_auto_triage`, `auto_resolved`,
      `other_resolved`; an issue can also be `socfw_ai_close` or `unread`)
-     drifts after the run: Auto Triage seals cases about 6 h later. Re-read it
+     drifts after the run: by default Auto Triage seals cases about 6 h later (tenant-configurable; shown as a shipped default on Readiness). Re-read it
      with `POST /api/runs/{id}/case-ledger/refresh` (cases only, read-only,
      409 `NO_CASE_LEDGER` before the first reconcile). With
      `CORTEXSIM_AUTO_RECONCILE` on, the auto-reconcile loop also refreshes
      recent ledgers (`CORTEXSIM_CASE_LEDGER_WINDOW_HOURS` 24,
-     `..._MAX_RUNS_PER_SWEEP` 20, `..._MIN_INTERVAL_MINUTES` 60; terminal
-     ledgers are skipped).
+     `..._MAX_RUNS_PER_SWEEP` 20, `..._MIN_INTERVAL_MINUTES` 60). A ledger is
+     terminal when every case in it is sealed (resolved and not
+     auto-resolved) and is skipped; a case that is open or auto-resolved can
+     still change, so its ledger keeps being refreshed.
    - Tenant disposition is shown for context. It is not detection evidence.
      It never changes `detected`, `missed`, MTTD or a detection verdict. The
      one effect: a `SPLIT_SEALED` run withholds a Cross-Source Correlation

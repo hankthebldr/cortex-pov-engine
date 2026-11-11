@@ -229,7 +229,7 @@ stamp `severity: "high"` on every rule.
 | GET | `/api/runs` | List all runs (newest first) | — | `{"runs":[<run.to_dict()>],"total":N}` |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
 | GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}, merge:{merge_class, basis, code, merge_reason}}`; 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
-| POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | — | the rebuilt ledger; 404 `RUN_NOT_FOUND`; 409 `NO_CASE_LEDGER` / `CASE_LEDGER_UNREADABLE` / `CASE_LEDGER_TENANT_UNKNOWN` |
+| POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | — | the rebuilt ledger; 404 `RUN_NOT_FOUND` (no such run); 409 `NO_CASE_LEDGER` (run never reconciled, no stored ledger); 409 `CASE_LEDGER_UNREADABLE` (stored ledger corrupt); 409 `CASE_LEDGER_TENANT_UNKNOWN` (legacy ledger records no integration and more than one could have read it); 404 `CONNECTOR_NOT_FOUND` (no such connector kind); 404 `INTEGRATION_NOT_FOUND` (the integration the ledger recorded no longer exists); 400 `NO_INTEGRATION` (no credential may serve the connector); 500 `CREDENTIAL_ERROR` (credential could not be loaded); 502 `CONNECTOR_PULL_FAILED` (the tenant case read failed); any other code 500 |
 | GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used, case_ledger}` (markdown gains a `## Case` section); 404 |
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
@@ -457,12 +457,10 @@ case status raises and the ledger reports `CASE_STATUS_UNRECOGNIZED` with merge 
 the cases; with `CORTEXSIM_AUTO_RECONCILE` on, the auto-reconcile loop refreshes ledgers
 of runs started within `CORTEXSIM_CASE_LEDGER_WINDOW_HOURS` (24), at most
 `CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP` (20) per sweep, skipping any read newer than
-`CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES` (60) and terminal ledgers.
-**Disposition is context, not detection evidence** (`Tenant disposition is shown for
-context. It is not detection evidence.`): it never feeds `detected`/`missed`, MTTD or a
+`CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES` (60) and terminal ledgers. A ledger is terminal when every case in it is sealed (resolved and not auto-resolved); a case that is open or auto-resolved can still change, so its ledger keeps being refreshed.
+**Disposition is context, not detection evidence** (`Tenant disposition is shown for context. It is not detection evidence.`): it never feeds `detected`/`missed`, MTTD or a
 detection verdict. The single exception: `SPLIT_SEALED` withholds a Cross-Source
-Correlation Rate FAIL as `pending` (reason: `fail withheld: a case was sealed by the
-response layer before the chain finished — the split is not the detection engine's`); a
+Correlation Rate FAIL as `pending` (reason: `fail withheld: a case was sealed by the response layer before the chain finished — the split is not the detection engine's`); a
 PASS is never touched. The endpoint reply fields used by the bridge diagnosis come from
 `docs/reference/xsiam-platform-apis/05-endpoints-api.md` and are unverified against a live
 tenant. `tenant-verified` is 0.
