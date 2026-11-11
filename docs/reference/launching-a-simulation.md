@@ -246,6 +246,57 @@ construction, not by luck. **This is the part of the mission that is already
 solid: a stranger reading the live console for this run cannot mistake
 step-05's absent detections for a Cortex miss.**
 
+### 3a. From a completed run to a scored verdict
+
+*(Added 2026-11-10, DOCS-20. Read from `core/api/connectors.py` and
+`core/connectors/base.py`; not run against a tenant, because
+`tenant-verified` is 0.)*
+
+A run that completed has executed steps, not measured detections: every
+seeded Result stays `pending` until an alert is matched to it. Both ways in go
+through the same matcher (`apply_verdicts`), so MTTD and the test-case
+verdict come out the same way.
+
+**Offline, from alerts you exported from the Cortex console.** Each alert
+needs its own time (`observed_at`, `timestamp` or `time`; ISO-8601 or epoch).
+A row without a readable time is dropped and counted, never stamped "now",
+because that would turn an export format change into a slow-MTTD finding.
+`techniques` (or `technique` / `mitre_technique`), `detection_id` (or
+`rule_id`), `name`, `host`, `alert_source` and `external_id` are what the
+matcher reads. A batch is capped at 5000 alerts.
+
+```bash
+curl -s -X POST "http://localhost:8888/api/runs/<run_id>/observations" \
+  -H 'Content-Type: application/json' -d '{
+  "host": "<endpoint hostname>",
+  "observations": [
+    {"observed_at": "2026-11-10T21:04:12Z", "name": "<alert name>",
+     "host": "<endpoint hostname>", "techniques": ["T1003.001"],
+     "detection_id": "<rule or BIOC id>", "alert_source": "XDR BIOC",
+     "external_id": "<alert id>"}
+  ]}'
+```
+
+**Credential-backed**, once an `xsiam` (or `xsiam_tenant`) integration is
+registered and its preflight is green:
+
+```bash
+curl -s -X POST "http://localhost:8888/api/runs/<run_id>/reconcile?connector=xsiam&host=<endpoint hostname>"
+```
+
+`host` names the endpoint the run executed on. A pull run resolves it from its
+target, but a push run has none, so without `host` its matches stay
+`pending` / `UNSCOPED_MATCH` with no MTTD. The reply's summary says what was
+matched, what was withheld and why (`host_scope`, `host_source`, `truncated`).
+Then export the report:
+
+```bash
+curl -s "http://localhost:8888/api/runs/<run_id>/report?format=markdown" -o pov-<run_id>.md
+```
+
+MTTD is launch-to-alert: it includes queue wait and earlier steps (OPS-07).
+`PUT /api/results/{id}/validate` records a click, and its latency is not MTTD.
+
 ## 4. Launch push mode
 
 ```bash
@@ -255,6 +306,13 @@ curl -s "http://localhost:8888/api/scenarios/SIM-EDR-001/download?format=auto" \
 #                   x-cortexsim-bundle-selfcontained: true
 ```
 
+`format=auto` prefers POSIX but serves a `.ps1` for a Windows-only scenario,
+so read `X-CortexSim-Bundle-Target` (or save with `curl -OJ` to keep the
+server's filename) rather than naming the file `.sh` by habit. **A raw
+download creates no Run and no Result rows**, so nothing can be scored
+against it; launch with `"mode":"push"` through `POST /api/runs` when you want
+a run that §3a can score.
+
 Copy it to the (provisioned) target and run it — no SimCore dependency at
 runtime:
 
@@ -263,12 +321,14 @@ docker cp cortexsim-SIM-EDR-001.sh cortexsim-tier-d-target:/root/
 docker exec cortexsim-tier-d-target bash /root/cortexsim-SIM-EDR-001.sh
 ```
 
-### 4a. Push mode on Windows — the `.ps1` bundle (authored 2026-11; not executed on Windows)
+### 4a. Push mode on Windows — the `.ps1` bundle (authored 2026-11; no shipped bundle executed)
 
-> No `.ps1` bundle has executed on Windows, or on any OS: each one is parsed
-> under pwsh 7 and passed by `make check-powershell`. Windows PowerShell 5.1 is
-> the floor, and the `windows-2022` CI job is the first place a bundle can run.
-> That job is authored and has not yet run on GitHub.
+> None of the 13 shipped `.ps1` bundles has executed on Windows, or on any OS.
+> At `d7f4f29` the `windows-2022` CI job parsed all 13 under Windows
+> PowerShell 5.1 itself and ran them past PSScriptAnalyzer's 5.1 profiles,
+> and it ran one CI **probe** bundle end to end with `-File` (run 42933820773,
+> green). The round-2 header, IDENTITY column and policy check have been
+> parsed only under pwsh 7 by `make check-powershell`.
 
 Thirteen scenarios emit a Windows bundle: `SIM-ASM-005`, `SIM-EDR-003/004/005`,
 `SIM-ITDR-006`, `SIM-MP-001/020` and `SIM-NDR-005/007` emit both targets, and
