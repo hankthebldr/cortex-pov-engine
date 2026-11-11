@@ -427,6 +427,34 @@ def test_preflight_agents_filter(client, fw, session_factory):
     assert sorted(s["agent_id"] for s in body["sources"]) == ["a1", "a2", "a3"]
 
 
+def test_preflight_unknown_agent_ids_are_listed_not_swallowed(client, fw, session_factory):
+    # final-M5: ?agents= naming ids that do not exist used to read as PN_NO_AGENTS,
+    # i.e. "you selected nothing" when the operator selected something wrong.
+    fw()
+    _register(client, "fw-a", "192.0.2.1")
+    _seed_agents(session_factory, ("a1", "h1", "192.0.2.50"))
+    body = client.post("/api/connectors/panos_ngfw/preflight?agents=ghost,zz-typo").json()
+    codes_ = [s.get("code") for s in body["sources"]]
+    assert codes_ == ["PN_AGENT_UNKNOWN", "PN_AGENT_UNKNOWN"]
+    assert [s["requested_agent_id"] for s in body["sources"]] == ["ghost", "zz-typo"]
+    for s in body["sources"]:
+        assert s["status"] == "degraded" and s["requested_agent_id"] in s["detail"]
+        assert "agent_id" not in s  # not an agent row: nothing to edit
+    assert body["overall"] != "ready"
+
+
+def test_preflight_mixed_known_and_unknown_agent_ids(client, fw, session_factory):
+    fw()
+    _register(client, "fw-a", "192.0.2.1")
+    _seed_agents(session_factory, ("a1", "h1", "192.0.2.50"), ("a2", "h2", "192.0.2.51"))
+    body = client.post("/api/connectors/panos_ngfw/preflight?agents=a1,ghost").json()
+    assert [s["agent_id"] for s in body["sources"] if "agent_id" in s] == ["a1"]
+    unknown = [s for s in body["sources"] if s.get("code") == "PN_AGENT_UNKNOWN"]
+    assert [s["requested_agent_id"] for s in unknown] == ["ghost"]
+    assert "PN_NO_AGENTS" not in {s.get("code") for s in body["sources"]}
+    assert body["overall"] != "ready"
+
+
 def test_preflight_no_agents_is_degraded_entry(client, fw):
     fw()
     _register(client, "fw-a", "192.0.2.1")

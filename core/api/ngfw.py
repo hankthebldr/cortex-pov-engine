@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, f
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from connectors.preflight import BLOCKED, SKIPPED, Stage
+from connectors.preflight import BLOCKED, DEGRADED, SKIPPED, Stage
 from database import get_db
 from integrations.panos import PANOS_KIND, codes
 from integrations.panos.client import PanosClient
@@ -53,6 +53,10 @@ REM_NO_INTEGRATION = (
     "Register the firewall first (keygen in the wizard, or PUT "
     "/api/credentials/integrations with kind panos_ngfw). With none registered nothing "
     "about the firewall's logging or policy path has been checked.")
+REM_AGENT_UNKNOWN = (
+    "This agent id matches no enrolled agent, so no path through the firewall was "
+    "checked for it. Check the id against the Agents list (GET /api/agents) and run "
+    "the check again; until then this host's stitch readiness is unknown.")
 REM_CREDENTIAL_UNDECRYPTABLE = (
     "CORTEXSIM_SECRET was rotated or the ciphertext is corrupt. Generate a new API key "
     "for this firewall (keygen) or re-enter it.")
@@ -398,11 +402,36 @@ def _first_blocked_code(report: FirewallPreflightReport) -> Optional[str]:
     return None
 
 
-async def _agent_refs(db: AsyncSession, agents: Optional[str]) -> list[AgentRef]:
+async def _agent_refs(db: AsyncSession,
+                      agents: Optional[str]) -> tuple[list[AgentRef], list[str]]:
+    """The selected enrolled agents, and the requested ids that match none.
+
+    An id that does not exist is reported, never dropped: dropped, a typo in
+    ``?agents=`` read as "no agent selected" (``PN_NO_AGENTS``).
+    """
     rows = (await db.execute(select(Agent).order_by(Agent.agent_id))).scalars().all()
-    wanted = {a.strip() for a in (agents or "").split(",") if a.strip()} if agents else None
-    return [AgentRef(agent_id=r.agent_id, hostname=r.hostname, last_ip=r.last_ip)
+    requested = list(dict.fromkeys(a.strip() for a in (agents or "").split(",") if a.strip()))
+    wanted = set(requested) if agents else None
+    refs = [AgentRef(agent_id=r.agent_id, hostname=r.hostname, last_ip=r.last_ip)
             for r in rows if wanted is None or r.agent_id in wanted]
+    known = {r.agent_id for r in rows}
+    return refs, [a for a in requested if a not in known]
+
+
+def _with_unknown_agents(report: FirewallPreflightReport, unknown: list[str]) -> None:
+    """Append one degraded ``PN_AGENT_UNKNOWN`` entry per requested id that matches no
+    enrolled agent. With no known agent left, they replace the ``PN_NO_AGENTS`` entry."""
+    if not unknown:
+        return
+    sources = [s for s in report.sources if s.get("code") != codes.PN_NO_AGENTS]
+    for agent_id in unknown:
+        sources.append({
+            "code": codes.PN_AGENT_UNKNOWN, "status": DEGRADED,
+            "requested_agent_id": agent_id,
+            "detail": f"requested agent '{agent_id}' is not enrolled on this SimCore; "
+                      "nothing was checked for it",
+            "remediation": REM_AGENT_UNKNOWN})
+    report.sources = sources
 
 
 async def preflight_panos(db: AsyncSession, integration: Optional[str],
@@ -422,6 +451,7 @@ async def preflight_panos(db: AsyncSession, integration: Optional[str],
         raise _err(404, "Integration not found", "INTEGRATION_NOT_FOUND",
                    f"kind={PANOS_KIND} name={integration}")
     credential = {"name": row.name, "kind": row.kind}
+    refs, unknown_agents = await _agent_refs(db, agents)
 
     try:
         secret = await store.get_integration_secret(row.name)
@@ -432,9 +462,10 @@ async def preflight_panos(db: AsyncSession, integration: Optional[str],
     else:
         report = await run_panos_preflight(
             row.config or {}, secret, firewall=row.name,
-            agents=await _agent_refs(db, agents), transport=_transport_override,
+            agents=refs, transport=_transport_override,
             max_calls=settings.CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT)
         secret = None  # noqa: F841
+    _with_unknown_agents(report, unknown_agents)
 
     overall = report.overall
     await store.mark_integration_verified(
