@@ -11,8 +11,8 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 | mechanism | P0 | P1 | P2 | open | asked | internal_only | unknown | provisional | conflicting | settled | retired |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | [ING](#ing) Ingestion, parsing and XDM modeling | 3 | 4 | 2 | 4 | 2 | 0 | 0 | 3 | 0 | 0 | 0 |
-| [STI](#sti) Stitching (data fusion across sources) | 6 | 7 | 1 | 7 | 4 | 0 | 0 | 3 | 0 | 0 | 0 |
-| [CAU](#cau) Causality and the Causality Group Owner (CGO) | 3 | 2 | 1 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [STI](#sti) Stitching (data fusion across sources) | 6 | 7 | 1 | 6 | 5 | 0 | 0 | 3 | 0 | 0 | 0 |
+| [CAU](#cau) Causality and the Causality Group Owner (CGO) | 3 | 2 | 1 | 3 | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
 | [BIO](#bio) BIOC matching | 3 | 4 | 0 | 1 | 2 | 0 | 0 | 4 | 0 | 0 | 0 |
 | [ABI](#abi) ABIOC (analytics BIOC) | 2 | 3 | 1 | 3 | 1 | 0 | 0 | 1 | 0 | 0 | 1 |
 | [ANA](#ana) Analytics engine (profiles, baselines, thresholds) | 4 | 5 | 2 | 7 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
@@ -20,9 +20,9 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 | [IOC](#ioc) IOC matching and threat intel | 2 | 2 | 1 | 2 | 0 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [PRV](#prv) Prevention (agent modules, report vs block) | 1 | 2 | 1 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
 | [INC](#inc) Alert-to-incident grouping | 2 | 5 | 1 | 5 | 0 | 0 | 0 | 3 | 0 | 0 | 0 |
-| [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 4 | 2 | 0 | 4 | 1 | 0 | 0 | 1 | 0 | 0 | 0 |
+| [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 4 | 2 | 0 | 2 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
 | [ALR](#alr) Alert records and read-back | 2 | 3 | 0 | 1 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
-| **all (88)** | **34** | **43** | **11** | **44** | **17** | **0** | **0** | **26** | **0** | **0** | **1** |
+| **all (88)** | **34** | **43** | **11** | **40** | **21** | **0** | **0** | **26** | **0** | **0** | **1** |
 
 Priority: **P0** a wrong guess produces a silent miss in a POV today · **P1** it weakens fidelity, attribution or MTTD · **P2** refinement.
 
@@ -188,7 +188,7 @@ The engine that links records from different sensors (agent network events, NGFW
 | [PM-STI-09](#pm-sti-09) | P1 | provisional | Is stitching (data fusion) the same mechanism that groups alerts into an incident, or separate? If separate, what does each key on? |
 | [PM-STI-10](#pm-sti-10) | P2 | open | How are protocols without ports keyed for stitching (ICMP), and is DNS over UDP/53 stitched per query or per session? |
 | [PM-STI-11](#pm-sti-11) | P1 | open | Does App-ID or session state gate stitching, e.g. only sessions with an identified application, only allowed sessions, or only sessions that have ended? |
-| [PM-STI-12](#pm-sti-12) | P0 | open | Do firewall-shaped records that arrive through a custom HTTP log collector ever enter stitching, or does only the native NGFW integration produce stitched stories? If a custom-collector dataset can be stitched, what does it take: a specific Vendor/Product pair, a modeling rule onto XDM network fields, or something else? |
+| [PM-STI-12](#pm-sti-12) | P0 | asked | Do firewall-shaped records that arrive through a custom HTTP log collector ever enter stitching, or does only the native NGFW integration produce stitched stories? If a custom-collector dataset can be stitched, what does it take: a specific Vendor/Product pair, a modeling rule onto XDM network fields, or something else? |
 | [PM-STI-13](#pm-sti-13) | P1 | open | Does any part of data stitching (records into stories, the network story, the causality view's network legs) depend on alert severity, or is the Medium floor purely a rule for grouping issues into cases? |
 | [PM-STI-14](#pm-sti-14) | P1 | open | Stitched rows carry `story_publish_timestamp`, `story_version` and `is_disintegrated`. How long after both records are ingested is a story published? Is it re-published as a new version when a later record (a session-end traffic log, an agent disconnect) arrives? What makes a story "disintegrated", and does that undo a stitch? |
 
@@ -293,7 +293,7 @@ The engine that links records from different sensors (agent network events, NGFW
 
 #### PM-STI-12
 
-**P0 · open** — Do firewall-shaped records that arrive through a custom HTTP log collector ever enter stitching, or does only the native NGFW integration produce stitched stories? If a custom-collector dataset can be stitched, what does it take: a specific Vendor/Product pair, a modeling rule onto XDM network fields, or something else?
+**P0 · asked** — Do firewall-shaped records that arrive through a custom HTTP log collector ever enter stitching, or does only the native NGFW integration produce stitched stories? If a custom-collector dataset can be stitched, what does it take: a specific Vendor/Product pair, a modeling rule onto XDM network fields, or something else?
 
 - **Why we ask:** The docs tie stitching to the native NGFW integration and say IOC and BIOC issues exist only on stitched data (STI known). 62 of 87 EAL plugin references in the multi-plane and NDR scenarios use ngfw_eal_emitter or ngfw_threat_emitter, which POST to a custom collector. If those records are never stitched, every stitched expectation on them is unsatisfiable.
 - **What the answer moves:** Which detection types NGFW-emitter scenarios may declare (XQL and correlation only, or also stitched BIOC/IOC); whether the emitters need a modeling rule; MOAT claims on those scenarios.
@@ -301,6 +301,7 @@ The engine that links records from different sensors (agent network events, NGFW
   - *if* a modeled custom dataset can stitch → Ship the modeling rule with the emitter and add a stitch-proof probe to the collector preflight.
 - **Settle it in the lab:** Make one real agent connection, then POST a firewall record carrying the same 5-tuple through a custom collector; query `network_story` for a stitched row.
 - **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `core/eal_simulator/plugins/ngfw_threat_emitter.py`, `scenarios/multi_plane/`, `scenarios/ndr/`
+- **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 
 #### PM-STI-13
 
@@ -345,7 +346,7 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 | [PM-CAU-01](#pm-cau-01) | P0 | asked | How does the causality engine choose the CGO? Which processes count as causality boundaries (services, shells spawned by services, remote sessions, the agent's own children)? When our beacon, running as a systemd service, spawns `sh -c`, which process becomes the CGO of the chain? |
 | [PM-CAU-02](#pm-cau-02) | P0 | asked | Does the agent record process image name from the executable (/proc/pid/exe, comm) or from argv[0]? Confirm whether an argv[0] rewrite changes causality_actor_process_image_name or action_process_image_name. |
 | [PM-CAU-03](#pm-cau-03) | P1 | open | Do privilege-transition wrappers (runuser, sudo, su, setpriv) continue a causality chain or start a new one? Do they appear as nodes, and does the user change alter the causality actor's primary username? |
-| [PM-CAU-04](#pm-cau-04) | P0 | open | Does the agent drop, sample, throttle or collapse process-start events: very short-lived processes, known system binaries, or several identical starts (same parent, image and command line) inside a short window? If so, what are the window and the count, and are the children of a dropped process dropped with it? |
+| [PM-CAU-04](#pm-cau-04) | P0 | asked | Does the agent drop, sample, throttle or collapse process-start events: very short-lived processes, known system binaries, or several identical starts (same parent, image and command line) inside a short window? If so, what are the window and the count, and are the children of a dropped process dropped with it? |
 | [PM-CAU-05](#pm-cau-05) | P1 | open | For a process launched by cron, a systemd timer or a scheduled task, what becomes the CGO: the scheduler, or the launched process? |
 | [PM-CAU-06](#pm-cau-06) | P2 | open | In containers, is the runtime (containerd-shim, runc) a causality boundary, and is container identity populated on every event type (process, file, network)? |
 
@@ -378,7 +379,7 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 
 #### PM-CAU-04
 
-**P0 · open** — Does the agent drop, sample, throttle or collapse process-start events: very short-lived processes, known system binaries, or several identical starts (same parent, image and command line) inside a short window? If so, what are the window and the count, and are the children of a dropped process dropped with it?
+**P0 · asked** — Does the agent drop, sample, throttle or collapse process-start events: very short-lived processes, known system binaries, or several identical starts (same parent, image and command line) inside a short window? If so, what are the window and the count, and are the children of a dropped process dropped with it?
 
 - **Why we ask:** Raised from P1 on lab evidence (CAU known, 2026-11-10): three identical `sh` starts from the beacon within about 100 ms vanished with all their children, taking steps 3–5 of SIM-EDR-003 with them, while the same commands spaced 2 s apart in one shell were all recorded. Each step is a fresh `sh` with the same argv[0] (`apache2`, the CGO masquerade), so every multi-step scenario looks like a burst of identical starts.
 - **What the answer moves:** Inter-step pacing in the beacon (a minimum gap between step launches), or giving each step a distinct parent or command line; whether a missing step is scored `missed` or `not_recorded`.
@@ -386,6 +387,7 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
   - *if* nothing is dropped by design → Treat the lab loss as a collection fault; check agent mode and resource limits before relaunching.
 - **Settle it in the lab:** Launch 5 identical `sh -c 'id'` from one parent at 0, 50, 200, 500 and 1000 ms spacing; count the process events per spacing in xdr_data.
 - **Touches:** `agent/beacon`, `agent/executor/script.go`, `scenarios (step commands)`, `core/engine/outcome.py`
+- **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 
 #### PM-CAU-05
 
@@ -505,6 +507,7 @@ Behavioral IOC rules: a predicate over agent event fields (process image, comman
   - *if* BIOCs address agent event types only → Move the nine to `correlation_rules[]` and add the lint rule.
   - *if* stitched NGFW fields are BIOC-addressable → Retarget the nine to those fields and document which.
 - **Touches:** `detection_scanner/ttps/TTP-2026-0050-sim-ndr-001.json`, `detection_scanner/ttps/TTP-2026-0106-sim-ndr-010.json`, `detection_scanner/scripts/validate.py`
+- **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 - **Answer (2026-11-10, partial, public_doc):** A BIOC rule may query only `xdr_data` or `cloud_audit_log`, so a predicate on `panw_ngfw_traffic_raw` or `cisco_asa_raw` is not a valid BIOC. Firewall context is addressable through `event_type = STORY`, which covers events combining firewall and endpoint logs. Which STORY fields a predicate may use is not listed. **Rule:** A BIOC that needs firewall context targets `xdr_data` with `event_type = STORY`; a predicate on a `*_raw` firewall dataset belongs in a correlation rule.
 
 ## ABI
@@ -1036,6 +1039,7 @@ The logic that groups alerts into incidents. Our correlation-rate KPI asserts ">
   - *if* it applies to correlation issues only → Record the per-source rule and enforce it only for Correlation detections.
 - **Settle it in the lab:** On one host, raise a custom BIOC at Low, the same BIOC cloned at Medium, and a Medium correlation issue sharing the host; see which issues the case holds.
 - **Touches:** `core/connectors/measures.py`, `core/engine/scenario_loader.py`, `scenarios/multi_plane/`, `detection_scanner/ttps (biocs[].severity)`
+- **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 - **Answer (2026-11-10, conflicting, operator_report, public_blog, public_doc):** The current case-grouping page states the Medium floor in general, not only for correlation issues: an issue qualifies when it is in the Security or Posture domain with Medium severity or higher. A May 2024 PANW blog says low severity alerts may be grouped in identity, cloud and SaaS areas. Henry reports that grouping starts at Medium. The docs are newer than the blog, but the blog's exception is not contradicted explicitly. **Rule:** Treat Medium as the floor for every source; treat Low identity, cloud or SaaS alerts joining a case as possible but unproven.
 
 #### PM-INC-06
@@ -1086,8 +1090,8 @@ The state of the tenant that decides whether a detector can fire at all: which c
 | [PM-TEN-02](#pm-ten-02) | P0 | provisional | Which agent profile settings change what telemetry is collected (network event collection, file monitoring scope, command-line capture), and is there a maximum captured command-line length? |
 | [PM-TEN-03](#pm-ten-03) | P1 | open | Can the detection-content version and agent version be read through the API, so each run records the content it was scored against? |
 | [PM-TEN-04](#pm-ten-04) | P1 | open | Which licences or add-ons gate which detection engines (identity analytics, cloud detection, third-party ingestion volume)? |
-| [PM-TEN-05](#pm-ten-05) | P0 | open | After an XDR agent is installed, restarted or upgraded, how long until it collects events, and which tenant-readable field says collection is running (endpoint status, operational status, a per-module state)? Is CONNECTED reported before collection starts? |
-| [PM-TEN-06](#pm-ten-06) | P0 | open | Can an endpoint's Linux operation mode (Kernel, User Space, asynchronous) be read from the endpoint record through the API, so a preflight can refuse a host that collects nothing? |
+| [PM-TEN-05](#pm-ten-05) | P0 | asked | After an XDR agent is installed, restarted or upgraded, how long until it collects events, and which tenant-readable field says collection is running (endpoint status, operational status, a per-module state)? Is CONNECTED reported before collection starts? |
+| [PM-TEN-06](#pm-ten-06) | P0 | asked | Can an endpoint's Linux operation mode (Kernel, User Space, asynchronous) be read from the endpoint record through the API, so a preflight can refuse a host that collects nothing? |
 
 #### PM-TEN-01
 
@@ -1126,21 +1130,23 @@ The state of the tenant that decides whether a detector can fire at all: which c
 
 #### PM-TEN-05
 
-**P0 · open** — After an XDR agent is installed, restarted or upgraded, how long until it collects events, and which tenant-readable field says collection is running (endpoint status, operational status, a per-module state)? Is CONNECTED reported before collection starts?
+**P0 · asked** — After an XDR agent is installed, restarted or upgraded, how long until it collects events, and which tenant-readable field says collection is running (endpoint status, operational status, a per-module state)? Is CONNECTED reported before collection starts?
 
 - **Why we ask:** In the lab a run 15 s after CONNECTED left no events at all because the collectors had not started (TEN known). A run against a just-connected agent scores every expectation as missed.
 - **What the answer moves:** An agent-ready gate before launch: refuse or delay a run until the endpoint reports collection running, and read it from the endpoint record rather than guessing a delay.
 - **Settle it in the lab:** Restart the agent, then every 5 s record the endpoint's status fields from the API while a 1 Hz canary process runs; note when the first canary event lands.
 - **Touches:** `core/api/runs.py`, `core/connectors/preflight.py`, `agent/beacon`
+- **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 
 #### PM-TEN-06
 
-**P0 · open** — Can an endpoint's Linux operation mode (Kernel, User Space, asynchronous) be read from the endpoint record through the API, so a preflight can refuse a host that collects nothing?
+**P0 · asked** — Can an endpoint's Linux operation mode (Kernel, User Space, asynchronous) be read from the endpoint record through the API, so a preflight can refuse a host that collects nothing?
 
 - **Why we ask:** In asynchronous mode the agent collects no events at all (TEN known), so every BIOC, ABIOC, causality and stitch expectation on that host reads as missed while the endpoint shows CONNECTED.
 - **What the answer moves:** An agent-mode rung in the launch preflight; refuse or label runs on an asynchronous host.
 - **Settle it in the lab:** Read the endpoint record of one Kernel-mode host and one installed with `--no-km`; find the field that differs.
 - **Touches:** `core/connectors/preflight.py`, `core/api/runs.py`
+- **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 
 ## ALR
 
@@ -1181,6 +1187,7 @@ What an alert ("issue") looks like when SimCore pulls it back: which field names
 - **Why we ask:** Lab alerts carried none of the four keys the connector reads (ALR known), so matching fell back to technique plus name, the weakest key the matcher has.
 - **What the answer moves:** The connector's rule-id field list (the Issues API documents `detection.rule_id`, which the connector does not read); card detections record that identifier so the matcher can key on it; preflight stops reporting PARTIAL.
 - **Touches:** `core/connectors/xsiam.py`, `core/connectors/matcher.py`, `core/connectors/preflight.py`
+- **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 - **Answer (2026-11-10, partial, public_doc):** On the Issues API the rule identifier is `detection.rule_id`, a string the page does not describe further. The connector reads four other keys and not this one. Whether it is stable across content updates is not stated. **Rule:** Read `detection.rule_id` from the Issues API before falling back to technique and name.
 
 #### PM-ALR-02
@@ -1193,6 +1200,7 @@ What an alert ("issue") looks like when SimCore pulls it back: which field names
   - *if* detection_timestamp is raise time → Keep the order and document it as proven.
 - **Settle it in the lab:** Fire a scheduled correlation rule (10-minute grid) on a canary event; compare each timestamp field with the canary's `_time` and the rule's run time.
 - **Touches:** `core/connectors/xsiam.py`, `core/connectors/service.py`
+- **Asked in:** PMQ-2026-11-10-p0-detections-stitching
 - **Answer (2026-11-10, partial, public_doc):** On the Issues API, `_insert_time` is the issue creation timestamp in epoch milliseconds. `observation_time` exists with no description. The fields the connector reads first (`detection_timestamp`, `creation_time`) are not on that object.
 
 #### PM-ALR-03

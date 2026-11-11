@@ -82,7 +82,7 @@ are of it.
 6. **Is it another third-party firewall?** *(unknown)* Only the vendors in item 1
    were checked; PM-STI-05 stays partial.
 
-- **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, open) · [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, open) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-01](LEDGER.md#pm-sti-01) (P0, asked) · [PM-STI-03](LEDGER.md#pm-sti-03) (P0, asked) · [PM-STI-04](LEDGER.md#pm-sti-04) (P0, asked) · [PM-STI-14](LEDGER.md#pm-sti-14) (P1, open) · [PM-STI-02](LEDGER.md#pm-sti-02) (P0, asked) · [PM-STI-05](LEDGER.md#pm-sti-05) (P0, provisional)
+- **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, asked) · [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, asked) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-01](LEDGER.md#pm-sti-01) (P0, asked) · [PM-STI-03](LEDGER.md#pm-sti-03) (P0, asked) · [PM-STI-04](LEDGER.md#pm-sti-04) (P0, asked) · [PM-STI-14](LEDGER.md#pm-sti-14) (P1, open) · [PM-STI-02](LEDGER.md#pm-sti-02) (P0, asked) · [PM-STI-05](LEDGER.md#pm-sti-05) (P0, provisional)
 - **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/check-point-fw1-vpn1/ingest-logs-from-check-point-firewalls · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/cisco-asa-firewalls-and-anyconnect/ingest-logs-from-cisco-asa-firewalls-and-anyconnect · `core/eal_simulator/plugins/ngfw_eal_emitter.py`
 
 ### FAQ-STI-03
@@ -133,7 +133,7 @@ correlation rule on the raw dataset, which can read raw data. Until then, use th
 card's XQL query as the proof for those steps. Which STORY fields a BIOC may use is
 still PM-BIO-07.
 
-- **Would change if answered:** [PM-BIO-07](LEDGER.md#pm-bio-07) (P0, provisional) · [PM-STI-12](LEDGER.md#pm-sti-12) (P0, open)
+- **Would change if answered:** [PM-BIO-07](LEDGER.md#pm-bio-07) (P0, provisional) · [PM-STI-12](LEDGER.md#pm-sti-12) (P0, asked)
 - **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule · `detection_scanner/ttps/TTP-2026-0050-sim-ndr-001.json`
 
 ### FAQ-STI-05
@@ -157,7 +157,7 @@ carry a real agent connection's tuple, but the stitch adapter does not use them 
 Even with them, PM-STI-12 still decides whether a custom-collector record can
 stitch.
 
-- **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, open) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-08](LEDGER.md#pm-sti-08) (P1, open)
+- **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, asked) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-08](LEDGER.md#pm-sti-08) (P1, open)
 - **Sources:** `core/eal_simulator/stitch_params.py:7` · `core/eal_simulator/plugins/ngfw_eal_emitter.py:282`
 
 ### FAQ-STI-06
@@ -226,7 +226,7 @@ Three causes, the first documented and the other two seen in the lab:
 A step the agent never recorded can fire nothing, stitch to nothing and group with
 nothing, so its expectations read as misses.
 
-- **Would change if answered:** [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, open) · [PM-TEN-05](LEDGER.md#pm-ten-05) (P0, open) · [PM-CAU-04](LEDGER.md#pm-cau-04) (P0, open)
+- **Would change if answered:** [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, asked) · [PM-TEN-05](LEDGER.md#pm-ten-05) (P0, asked) · [PM-CAU-04](LEDGER.md#pm-cau-04) (P0, asked)
 - **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/insights-and-tips-cortex-xsiam/endpoint-and-agent-management/cortex-xdr-agent-linux-operation-modes
 
 ## BIOC matching
