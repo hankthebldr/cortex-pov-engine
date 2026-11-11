@@ -44,7 +44,7 @@ def test_refresh_rereads_cases_keeps_alerts(client, session_factory, inject):
     r = client.post("/api/runs/r1/case-ledger/refresh")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["queries_issued"] == 1 and calls == {"cases": 1, "other": 0}
+    assert body["queries_issued"] == 1 and (calls["cases"], calls["other"]) == (1, 0)
     led = _get(session_factory, "r1").case_ledger
     assert led["cases"][0]["status"] == "resolved_other"
     assert led["cases"][0]["sealed"] is True
@@ -143,3 +143,31 @@ def test_pair_merge_corrupt_ledger_degrades_with_code(client, session_factory):
     _pair_seed(session_factory, stored_ledger(), {"basis": "alert_incident_ids", "cases": "x"})
     merge = client.get("/api/runs/rep/pair").json()["merge"]
     assert merge["merge_class"] == "PENDING" and merge["code"] == "CASE_LEDGER_UNREADABLE"
+
+
+def test_refresh_tenant_unknown_is_409(client, session_factory, inject):
+    seed(session_factory, [("r1", datetime.utcnow(), stored_ledger())], names=("alpha", "beta"))
+    fetcher, calls = tenant()
+    inject(fetcher)
+    r = client.post("/api/runs/r1/case-ledger/refresh")
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "CASE_LEDGER_TENANT_UNKNOWN"
+    assert calls["cases"] == 0
+
+
+def test_refresh_recorded_integration_gone_is_404(client, session_factory, inject):
+    seed(session_factory, [("r1", datetime.utcnow(), stored_ledger(integration="gone"))])
+    fetcher, calls = tenant()
+    inject(fetcher)
+    r = client.post("/api/runs/r1/case-ledger/refresh")
+    assert r.status_code == 404 and r.json()["detail"]["code"] == "INTEGRATION_NOT_FOUND"
+    assert _get(session_factory, "r1").case_ledger["cases"][0]["status"] == "new"
+
+
+def test_pair_merge_wrong_typed_field_degrades_not_500(client, session_factory):
+    bad = stored_ledger()
+    bad["read_at"] = 12345  # compared with the other run's str read_at
+    _pair_seed(session_factory, stored_ledger(), bad)
+    r = client.get("/api/runs/rep/pair")
+    assert r.status_code == 200, r.text
+    m = r.json()["merge"]
+    assert m["merge_class"] == "PENDING" and m["code"] == "CASE_LEDGER_UNREADABLE"

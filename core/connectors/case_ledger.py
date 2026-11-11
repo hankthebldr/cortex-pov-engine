@@ -61,6 +61,11 @@ class CaseShapeError(ValueError):
     """A tenant case/issue value outside the vocabulary this module pins."""
 
 
+# Everything a corrupt STORED ledger can raise while it is read back. Both the
+# refresh and the pair endpoint catch exactly this set and degrade with a code.
+LEDGER_READ_ERRORS = (CaseShapeError, KeyError, TypeError, AttributeError)
+
+
 @dataclass(frozen=True)
 class LedgerAlert:
     external_id: str

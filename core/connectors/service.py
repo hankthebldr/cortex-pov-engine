@@ -27,12 +27,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from connectors import ConnectorConfig, get_connector, reconcile
-from connectors.base import HttpFetcher, ObservedAlert
+from connectors.base import HttpFetcher, ObservedAlert, coerce_utc
 from connectors.case_ledger import (
     CaseShapeError,
     build_case_ledger,
     ledger_alert,
     ledger_case_from_incident,
+    LEDGER_READ_ERRORS,
     ledger_from_dict,
 )
 from connectors.matcher import DEFAULT_WINDOW_SECONDS, scope_to_host
@@ -423,6 +424,9 @@ async def build_and_store_case_ledger(
             return ledger
 
     ledger = compute()
+    # Case ids are tenant-local: record WHICH integration read them so a refresh
+    # asks the same tenant (a second tenant can return another case under the id).
+    ledger["integration"] = cfg.integration_name
     run.case_ledger = ledger
     if commit:
         await db.commit()
@@ -479,7 +483,7 @@ async def refresh_case_ledger(
         alerts, old_cases = ledger_from_dict(stored)
         carried = {a["external_id"]: a["issue_closed_by"] for a in stored["alerts"]}
         basis = stored["basis"]
-    except (CaseShapeError, KeyError, TypeError) as e:
+    except LEDGER_READ_ERRORS as e:
         raise ReconcileError("CASE_LEDGER_UNREADABLE", f"stored case ledger is unreadable: {e}")
 
     case_ids = sorted({a.case_id for a in alerts if a.case_id} | set(old_cases))
@@ -489,8 +493,20 @@ async def refresh_case_ledger(
                 "read_at": stored.get("read_at"), "ledger": stored,
                 "reason": "the ledger names no case to re-read"}
 
-    conn, cfg, _store, _integ = await _resolve_connector(
-        db, CASE_LEDGER_CONNECTOR, None, fetcher)
+    recorded = stored.get("integration")
+    if not recorded:
+        # Legacy ledger: the tenant was not recorded. Only unambiguous when
+        # exactly one integration may serve the connector.
+        rows = await resolve_connector_integrations(CredentialStore(db), CASE_LEDGER_CONNECTOR)
+        if len(rows) > 1:
+            raise ReconcileError(
+                "CASE_LEDGER_TENANT_UNKNOWN",
+                "this ledger does not record which integration read it and more than one "
+                "could have; case ids are tenant-local, so it is not refreshed",
+                detail={"available": [r.name for r in rows]})
+    # A recorded name that no longer exists raises INTEGRATION_NOT_FOUND (stored ledger kept).
+    conn, cfg, _store, integ = await _resolve_connector(
+        db, CASE_LEDGER_CONNECTOR, recorded, fetcher)
     cpull = conn.pull_cases(cfg, case_ids)
     pages = _pages_issued(cpull.detail)
     if not cpull.ok:
@@ -514,6 +530,7 @@ async def refresh_case_ledger(
         ledger["merge_class"] = "PENDING"
         ledger["merge_reason"] = str(e)
     ledger["issue_read"] = stored.get("issue_read", {"ok": None})
+    ledger["integration"] = integ.name
 
     run.case_ledger = ledger
     try:
@@ -527,33 +544,66 @@ async def refresh_case_ledger(
             "previous_merge_class": stored.get("merge_class")}
 
 
+def _ledger_terminal(ledger: dict) -> bool:
+    """Every case sealed (resolved and not ``auto_resolved``): nothing can change.
+    An ``auto_resolved`` case can still reopen, so it is NOT terminal."""
+    cases = ledger.get("cases")
+    return bool(cases) and all(c.get("sealed") is True for c in cases)
+
+
+def _read_at_of(ledger: dict) -> Optional[datetime]:
+    try:
+        return coerce_utc(ledger.get("read_at"))
+    except Exception:  # noqa: BLE001 - unreadable read_at: treat as stale
+        return None
+
+
+def _read_age_ok(ledger: dict, now: datetime, min_interval: timedelta) -> bool:
+    read_at = _read_at_of(ledger)
+    return read_at is None or now - read_at >= min_interval
+
+
 async def refresh_case_ledgers_once(
     db: AsyncSession, *, window_hours: int, max_runs: int,
+    min_interval_minutes: Optional[int] = None,
     fetcher: Optional[HttpFetcher] = None,
 ) -> dict[str, int]:
     """One bounded sweep over stored case ledgers (opt-in: called only from
     ``auto_reconcile_loop``, i.e. only with ``CORTEXSIM_AUTO_RECONCILE`` on).
 
     Candidates are runs with a stored ``case_ledger`` whose ``Run.started_at``
-    (the run's own timestamp, naive UTC) is within ``window_hours``, newest
-    first. At most ``max_runs`` are attempted per sweep; every tenant page is
-    counted in ``queries_issued``; a quota error (HTTP 429) stops the whole
-    sweep, exactly like the reconcile sweep. Returns
+    (the run's own timestamp, naive UTC) is within ``window_hours``. A run is
+    skipped (no tenant call) when its ledger's ``read_at`` is younger than
+    ``min_interval_minutes`` or when every case in it is sealed (terminal).
+    Eligible runs are ordered least-recently-read first, so a window larger than
+    ``max_runs`` rotates instead of starving older runs. At most ``max_runs``
+    are attempted per sweep; every tenant page is counted in ``queries_issued``;
+    a quota error (HTTP 429) stops the whole sweep. Returns
     ``{"refreshed", "skipped", "queries_issued", "quota_tripped"}``.
     """
+    if min_interval_minutes is None:
+        min_interval_minutes = settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES
+    min_interval = timedelta(minutes=min_interval_minutes)
     cutoff = datetime.utcnow() - timedelta(hours=window_hours)
-    rows = (await db.execute(
-        select(Run).where(Run.started_at >= cutoff).order_by(Run.started_at.desc())
-    )).scalars().all()
-    refreshed = skipped = queries = attempted = 0
-    tripped = False
-    for run in rows:
-        if not run.case_ledger:
+    now = datetime.utcnow()  # coerce_utc yields naive UTC
+    rows = (await db.execute(select(Run.run_id, Run.case_ledger).where(Run.started_at >= cutoff)
+                             )).all()
+    # Plain-data snapshot: a rollback in one refresh expires every ORM instance
+    # in this session, so the loop must not touch instances loaded before it.
+    eligible = []
+    for run_id, ledger in rows:
+        if not ledger or not isinstance(ledger, dict):
             continue
-        if attempted >= max_runs:
-            break
-        attempted += 1
+        if _ledger_terminal(ledger) or not _read_age_ok(ledger, now, min_interval):
+            continue
+        eligible.append((_read_at_of(ledger) or datetime.min,
+                         run_id))
+    eligible.sort()
+    refreshed = skipped = queries = 0
+    tripped = False
+    for _read_at, run_id in eligible[:max_runs]:
         try:
+            run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
             out = await refresh_case_ledger(db, run, fetcher=fetcher)
         except ReconcileError as e:
             skipped += 1
@@ -564,11 +614,15 @@ async def refresh_case_ledgers_once(
                 logger.warning("case-ledger refresh: tenant reported quota exhaustion (%s) "
                                "- sweep circuit-broken", e.code)
                 break
-            logger.debug("case-ledger refresh skip run=%s: %s", run.run_id, e.code)
+            logger.debug("case-ledger refresh skip run=%s: %s", run_id, e.code)
             continue
         except Exception:  # noqa: BLE001 - e.g. a failed commit; the session was rolled back
             skipped += 1
-            logger.warning("case-ledger refresh failed run=%s", run.run_id, exc_info=True)
+            logger.warning("case-ledger refresh failed run=%s", run_id, exc_info=True)
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
             continue
         queries += int(out["queries_issued"])
         if out["refreshed"]:
@@ -1859,7 +1913,8 @@ async def _refresh_ledgers_phase() -> None:
         async with AsyncSessionLocal() as db:
             out = await refresh_case_ledgers_once(
                 db, window_hours=settings.CORTEXSIM_CASE_LEDGER_WINDOW_HOURS,
-                max_runs=settings.CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP)
+                max_runs=settings.CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP,
+                min_interval_minutes=settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES)
         if out["refreshed"] or out["skipped"]:
             logger.info("case-ledger refresh: %s", out)
     except Exception:  # pragma: no cover - defensive

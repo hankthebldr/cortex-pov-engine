@@ -49,7 +49,7 @@ from engine.outcome import (
     UPSTREAM_SEVERED,
 )
 from engine.pairing import build_pair_delta
-from connectors.case_ledger import CaseShapeError, pair_merge
+from connectors.case_ledger import LEDGER_READ_ERRORS, pair_merge
 from engine.orchestrator import orchestrator
 from events import event_bus
 from models import Agent, Result, Run, Scenario, StepOutcome
@@ -913,7 +913,7 @@ async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
     a, b = run.to_dict(), partner.to_dict()
     try:
         merge = pair_merge(run.case_ledger, partner.case_ledger)
-    except CaseShapeError as e:
+    except LEDGER_READ_ERRORS as e:
         # A corrupt stored ledger is degraded with a code, never read as a merge.
         merge = {"merge_class": "PENDING", "basis": None, "code": "CASE_LEDGER_UNREADABLE",
                  "merge_reason": str(e)}
@@ -1668,7 +1668,7 @@ async def refresh_case_ledger_endpoint(run_id: str, db: AsyncSession = Depends(g
         out = await refresh_case_ledger(db, run)
     except ReconcileError as e:
         status = {**_RECONCILE_ERROR_STATUS, "NO_CASE_LEDGER": 409,
-                  "CASE_LEDGER_UNREADABLE": 409}.get(e.code, 500)
+                  "CASE_LEDGER_UNREADABLE": 409, "CASE_LEDGER_TENANT_UNKNOWN": 409}.get(e.code, 500)
         raise HTTPException(status_code=status, detail={
             "error": str(e), "code": e.code, "detail": e.detail})
     return out

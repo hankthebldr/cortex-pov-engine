@@ -23,9 +23,10 @@ def _epoch_ms(naive_utc: datetime) -> int:
     return int(naive_utc.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def tenant(rows_by_status=None, *, http=200):
-    """Fetcher answering only ``get_incidents``; counts calls per endpoint."""
-    calls = {"cases": 0, "other": 0}
+def tenant(rows_by_status=None, *, http=200, http_for_ids=None):
+    """Fetcher answering only ``get_incidents``; counts calls per endpoint and
+    records the host of each call (``calls["hosts"]``)."""
+    calls = {"cases": 0, "other": 0, "hosts": []}
     status = rows_by_status or {}
 
     def fetcher(method, url, headers, body, timeout):
@@ -34,9 +35,10 @@ def tenant(rows_by_status=None, *, http=200):
             calls["other"] += 1
             return 200, json.dumps({"reply": {}})
         calls["cases"] += 1
-        if http != 200:
-            return http, "{}"
+        calls["hosts"].append(url.split("/")[2])
         ids = rd["filters"][0]["value"]
+        if http != 200 or (http_for_ids and set(ids) & set(http_for_ids)):
+            return (http if http != 200 else 500), "{}"
         rows = []
         for cid in ids:
             st = status.get(cid, "new")
@@ -52,18 +54,22 @@ def tenant(rows_by_status=None, *, http=200):
     return fetcher, calls
 
 
-def stored_ledger(*, case_id="900", status="new", closed_by="other_resolved"):
+def stored_ledger(*, case_id="900", status="new", closed_by="other_resolved",
+                  read_age=timedelta(hours=2), integration=None):
     now = datetime.now(timezone.utc)
+    resolved_at = now if status != "new" else None
     alerts = [LedgerAlert("a", now, "high", case_id, "Resolved", None, None),
               LedgerAlert("b", now + timedelta(seconds=30), "high", case_id, "Resolved", None, None)]
-    cases = {case_id: LedgerCase(case_id, status, None, None, False, False, None, 2)}
-    led = build_case_ledger(alerts, cases, basis="alert_incident_ids", read_at=now)
+    cases = {case_id: LedgerCase(case_id, status, None, resolved_at, False, False, None, 2)}
+    led = build_case_ledger(alerts, cases, basis="alert_incident_ids", read_at=now - read_age)
+    if integration:
+        led["integration"] = integration
     for a in led["alerts"]:
         a["issue_closed_by"] = closed_by  # distinguishable from anything a refresh could recompute
     return led
 
 
-def seed(SessionLocal, runs, *, integration=True):
+def seed(SessionLocal, runs, *, integration=True, names=("acme",)):
     """runs: [(run_id, started_at, ledger-or-None)]."""
     from models import Run
     from security.credentials import CredentialStore
@@ -75,20 +81,23 @@ def seed(SessionLocal, runs, *, integration=True):
                            started_at=started, case_ledger=led))
             await db.commit()
             if integration:
-                await CredentialStore(db).put_integration(
-                    name="acme", kind="xsiam", plaintext_secret="k" * 40,
-                    config={"fqdn": "api-t.xdr.us.paloaltonetworks.com", "api_key_id": "1"})
+                for name in names:
+                    await CredentialStore(db).put_integration(
+                        name=name, kind="xsiam", plaintext_secret="k" * 40,
+                        config={"fqdn": f"api-{name}.xdr.us.paloaltonetworks.com",
+                                "api_key_id": "1"})
                 await db.commit()
     asyncio.run(go())
 
 
-def sweep(SessionLocal, fetcher, *, window_hours=24, max_runs=20):
+def sweep(SessionLocal, fetcher, *, window_hours=24, max_runs=20, min_interval_minutes=60):
     from connectors.service import refresh_case_ledgers_once
 
     async def go():
         async with SessionLocal() as db:
             return await refresh_case_ledgers_once(
-                db, window_hours=window_hours, max_runs=max_runs, fetcher=fetcher)
+                db, window_hours=window_hours, max_runs=max_runs,
+                min_interval_minutes=min_interval_minutes, fetcher=fetcher)
     return asyncio.run(go())
 
 
@@ -184,3 +193,145 @@ def test_standalone_commit_failure_surfaces_without_a_second_commit(session_fact
                                                   basis="alert_incident_ids", commit=True)
             return commits["n"]
     assert asyncio.run(go()) == 1
+
+
+# ── fix round 1 ───────────────────────────────────────────────────────────
+
+def test_fresh_read_at_is_skipped_without_a_call(session_factory):
+    seed(session_factory, [("r0", datetime.utcnow(),
+                            stored_ledger(read_age=timedelta(minutes=5)))])
+    fetcher, calls = tenant()
+    out = sweep(session_factory, fetcher, min_interval_minutes=60)
+    assert calls["cases"] == 0 and out["refreshed"] == 0 and out["queries_issued"] == 0
+
+
+def test_all_sealed_ledger_is_skipped(session_factory):
+    seed(session_factory, [("r0", datetime.utcnow(), stored_ledger(status="resolved_other"))])
+    fetcher, calls = tenant()
+    out = sweep(session_factory, fetcher)
+    assert calls["cases"] == 0 and out["refreshed"] == 0
+
+
+def test_auto_resolved_only_ledger_is_still_refreshed(session_factory):
+    """An auto_resolved case can still reopen: not terminal."""
+    seed(session_factory, [("r0", datetime.utcnow(),
+                            stored_ledger(status="resolved_auto_resolve"))])
+    fetcher, calls = tenant({"900": "new"})
+    out = sweep(session_factory, fetcher)
+    assert calls["cases"] == 1 and out["refreshed"] == 1
+
+
+def test_sweep_rotates_least_recently_read_first(session_factory):
+    now = datetime.utcnow()
+    seed(session_factory, [
+        ("newer", now, stored_ledger(case_id="901", read_age=timedelta(hours=2))),
+        ("older", now, stored_ledger(case_id="902", read_age=timedelta(hours=5)))])
+    fetcher, calls = tenant()
+    # Each refresh stamps read_at=now, so with min interval 60 the refreshed run
+    # drops out and the other one is next.
+    first = sweep(session_factory, fetcher, max_runs=1)
+    assert first["refreshed"] == 1
+    assert ledger_of(session_factory, "older")["read_at"] > ledger_of(session_factory, "newer")["read_at"]
+    second = sweep(session_factory, fetcher, max_runs=1)
+    assert second["refreshed"] == 1 and calls["cases"] == 2
+    third = sweep(session_factory, fetcher, max_runs=1)
+    assert third["refreshed"] == 0 and calls["cases"] == 2
+
+
+def test_sweep_continues_after_a_failed_refresh_expires_the_session(session_factory, monkeypatch):
+    """A rollback expires every instance in the shared session; the next run must
+    still be refreshed in the same sweep."""
+    import connectors.service as svc
+    now = datetime.utcnow()
+    seed(session_factory, [
+        ("r0", now, stored_ledger(case_id="901", read_age=timedelta(hours=5))),
+        ("r1", now, stored_ledger(case_id="902", read_age=timedelta(hours=3)))])
+    fetcher, calls = tenant({"902": "resolved_other"})
+    real = svc.refresh_case_ledger
+
+    async def flaky(db, run, **kw):
+        if run.run_id == "r0":
+            await db.rollback()  # what a failed commit does
+            raise RuntimeError("commit failed")
+        return await real(db, run, **kw)
+    monkeypatch.setattr(svc, "refresh_case_ledger", flaky)
+    out = sweep(session_factory, fetcher)
+    assert out["skipped"] == 1 and out["refreshed"] == 1
+    assert ledger_of(session_factory, "r1")["cases"][0]["status"] == "resolved_other"
+
+
+def test_read_error_on_first_run_does_not_stop_the_second(session_factory):
+    now = datetime.utcnow()
+    seed(session_factory, [
+        ("r0", now, stored_ledger(case_id="901", read_age=timedelta(hours=5))),
+        ("r1", now, stored_ledger(case_id="902", read_age=timedelta(hours=3)))])
+    fetcher, calls = tenant(http_for_ids=["901"])
+    out = sweep(session_factory, fetcher)
+    assert calls["cases"] == 2 and out["refreshed"] == 1 and out["skipped"] == 1
+
+
+def test_refresh_uses_the_recorded_integration(session_factory):
+    seed(session_factory, [("r0", datetime.utcnow(), stored_ledger(integration="beta"))],
+         names=("alpha", "beta"))
+    fetcher, calls = tenant()
+    out = sweep(session_factory, fetcher)
+    assert out["refreshed"] == 1
+    assert calls["hosts"] == ["api-beta.xdr.us.paloaltonetworks.com"]
+    assert ledger_of(session_factory, "r0")["integration"] == "beta"
+
+
+def test_missing_integration_field_with_two_integrations_is_refused(session_factory):
+    seed(session_factory, [("r0", datetime.utcnow(), stored_ledger())], names=("alpha", "beta"))
+    fetcher, calls = tenant()
+    out = sweep(session_factory, fetcher)
+    assert calls["cases"] == 0 and out["refreshed"] == 0 and out["skipped"] == 1
+    assert "integration" not in ledger_of(session_factory, "r0")
+
+
+def test_missing_integration_field_with_one_integration_proceeds(session_factory):
+    seed(session_factory, [("r0", datetime.utcnow(), stored_ledger())], names=("alpha",))
+    fetcher, calls = tenant()
+    out = sweep(session_factory, fetcher)
+    assert out["refreshed"] == 1
+    assert ledger_of(session_factory, "r0")["integration"] == "alpha"
+
+
+def test_recorded_integration_gone_keeps_the_stored_ledger(session_factory):
+    seed(session_factory, [("r0", datetime.utcnow(), stored_ledger(integration="deleted"))],
+         names=("alpha",))
+    fetcher, calls = tenant()
+    out = sweep(session_factory, fetcher)
+    assert calls["cases"] == 0 and out["refreshed"] == 0
+    assert ledger_of(session_factory, "r0")["cases"][0]["status"] == "new"
+
+
+def _run_loop_once(monkeypatch, stats):
+    import asyncio as aio
+    import connectors.service as svc
+    phase = {"n": 0}
+
+    async def fake_once(db, **kw):
+        return stats
+
+    async def fake_phase():
+        phase["n"] += 1
+    sleeps = {"n": 0}
+
+    async def fake_sleep(_):
+        sleeps["n"] += 1
+        if sleeps["n"] > 1:
+            raise aio.CancelledError
+    monkeypatch.setattr(svc, "auto_reconcile_once", fake_once)
+    monkeypatch.setattr(svc, "_refresh_ledgers_phase", fake_phase)
+    monkeypatch.setattr(aio, "sleep", fake_sleep)
+    with pytest.raises(aio.CancelledError):
+        aio.run(svc.auto_reconcile_loop(1, 60, 60))
+    return phase["n"]
+
+
+def test_loop_runs_the_refresh_phase(monkeypatch):
+    assert _run_loop_once(monkeypatch, {"newly_matched": 0, "quota_tripped": False}) == 1
+
+
+def test_loop_skips_the_refresh_phase_when_the_breaker_tripped(monkeypatch):
+    assert _run_loop_once(monkeypatch, {"newly_matched": 0, "quota_tripped": True}) == 0
