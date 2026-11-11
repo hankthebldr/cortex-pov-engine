@@ -1,6 +1,7 @@
 # Dataset requirement registry (loaded by core/engine/dataset_requirements.py).
 #
-# One entry per dataset a TTP card queries (detections.xql_queries[].dataset).
+# One entry per dataset a TTP card reads: detections.xql_queries[].dataset, or a
+# `dataset =` / `preset =` anchor in a biocs[] / abiocs[] / correlation_rules[] logic.
 # For each: the product that emits the records, what must exist on the Cortex
 # side, what the source product must be configured to emit, and which EAL
 # plugins can stand in for the source in a lab.
@@ -46,7 +47,11 @@ asm_findings:
     - kind: built_in
       name: null
       verified: {by: "", "on": "", how: ""}
-  source_side: []
+  source_side:
+    - product: cortex-xpanse
+      requirement: asset_scope_configured
+      detail: "Findings exist only for assets attributed to the organisation's configured scope, so the lab's public addresses must be in that scope; how attribution is configured is not confirmed."
+      verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
 cisco_asa_raw:
@@ -111,6 +116,19 @@ cortexsim_airs_raw:
     - product: cortexsim-synthetic
       requirement: log_forwarding
       detail: "The cards read CortexSim AIRS probe records (event_action, owasp_id, outcome); how those records reach the tenant is not confirmed."
+      verified: {by: "", "on": "", how: ""}
+  emulated_by: []
+
+esxi_syslog:
+  produced_by: vmware-esxi
+  cortex_side:
+    - kind: data_source
+      name: null
+      verified: {by: "", "on": "", how: ""}
+  source_side:
+    - product: vmware-esxi
+      requirement: log_forwarding
+      detail: "The cards read ESXi syslog sshd logons and vSphere VM-creation events (event_source, event_message, hostname, source_ip, source_address, esxi_host, user_name) in BIOC and ABIOC logic; which product emits this dataset and how it is onboarded are not confirmed."
       verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
@@ -388,7 +406,11 @@ threat_intel:
     - kind: built_in
       name: null
       verified: {by: "", "on": "", how: ""}
-  source_side: []
+  source_side:
+    - product: cortex-xsiam
+      requirement: api_integration
+      detail: "The dataset fills only when an indicator feed is connected; the cards read it for indicator matches. Which feed integration supplies it is not confirmed."
+      verified: {by: "", "on": "", how: ""}
   emulated_by: []
 
 xdr_data:

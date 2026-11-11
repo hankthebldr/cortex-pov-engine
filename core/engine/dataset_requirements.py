@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -31,6 +32,7 @@ PRODUCED_BY: frozenset[str] = frozenset({
     "prisma-browser", "prisma-airs", "idira", "okta", "microsoft-entra", "microsoft-365",
     "microsoft-windows", "google-workspace", "cloud-provider-audit", "kubernetes",
     "proofpoint", "cisco-asa", "ivanti", "koi", "saas-generic", "cortexsim-synthetic",
+    "vmware-esxi",
 })
 
 CORTEX_SIDE_KINDS: frozenset[str] = frozenset({
@@ -45,8 +47,12 @@ _NGFW_REQUIREMENTS = frozenset({
 _GENERIC_REQUIREMENTS = frozenset({
     "audit_log_export", "api_integration", "agent_installed", "log_forwarding",
 })
+# Cortex Xpanse attributes findings only to assets inside the organisation's configured scope.
+_XPANSE_REQUIREMENTS = _GENERIC_REQUIREMENTS | {"asset_scope_configured"}
 SOURCE_REQUIREMENTS: dict[str, frozenset[str]] = {
-    product: (_NGFW_REQUIREMENTS if product == "strata-ngfw" else _GENERIC_REQUIREMENTS)
+    product: (_NGFW_REQUIREMENTS if product == "strata-ngfw"
+              else _XPANSE_REQUIREMENTS if product == "cortex-xpanse"
+              else _GENERIC_REQUIREMENTS)
     for product in sorted(PRODUCED_BY)
 }
 
@@ -231,43 +237,86 @@ def load() -> dict[str, DatasetRequirement] | None:
     return parse_registry(data, path)
 
 
-def card_datasets(all_raw: dict[str, dict]) -> dict[str, set[str]]:
-    """Map each dataset named by a card's ``detections.xql_queries[].dataset`` to the card ids that read it.
+# Detection kinds whose content names a dataset. ``xql_queries`` declare it in a ``dataset``
+# field; the other three name it in ``logic`` through a ``dataset =`` / ``preset =`` anchor.
+QUERY_KIND = "xql_queries"
+LOGIC_KINDS: tuple[str, ...] = ("biocs", "abiocs", "correlation_rules")
+DETECTION_KINDS: tuple[str, ...] = (QUERY_KIND, *LOGIC_KINDS)
 
-    ``all_raw`` is ``catalog.all_raw()``. A missing, ``None``, blank or
-    whitespace-only ``dataset`` is skipped. Any other unrecognised shape
-    (``detections`` not a mapping, ``xql_queries`` not a list, an item not a
-    mapping, a non-string ``dataset``) raises :class:`DatasetRequirementsError`:
-    skipping it would drop that card's prerequisites without a trace.
+# Same semantics as detection_scanner/scripts/validate.py ``_DATASET_SOURCE_RE``: the keyword
+# matches case-insensitively and the name is lowercased. Unlike validate.py (which lints only
+# the first anchor), every anchor is read: a union or join sub-source is a dataset too.
+_ANCHOR = re.compile(r"(?:preset|dataset)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class DatasetRead:
+    """One place a card names a dataset. ``dataset`` is ``None`` only for an xql query that
+    declares none (a missing, ``None``, blank or whitespace-only ``dataset`` field)."""
+    kind: str
+    label: str
+    dataset: str | None
+
+
+def walk_card(card_id: str, raw: object) -> list[DatasetRead]:
+    """Every dataset one card reads, in kind order then item order. The single implementation.
+
+    One ``DatasetRead`` per xql query (dataset or ``None``) and one per anchor in a BIOC, ABIOC
+    or correlation ``logic``. An unrecognised shape (card or ``detections`` not a mapping, a kind
+    not a list, an item not a mapping, a non-string ``dataset``, a missing or non-string
+    ``logic``) raises :class:`DatasetRequirementsError`: skipping it would drop that card's
+    prerequisites without a trace.
     """
-    out: dict[str, set[str]] = {}
-    for card_id, raw in all_raw.items():
-        detections = raw.get("detections")
-        if detections is None:
+    if not isinstance(raw, dict):
+        raise DatasetRequirementsError(f"card {card_id} must be a mapping, got {type(raw).__name__}")
+    detections = raw.get("detections")
+    if detections is None:
+        return []
+    if not isinstance(detections, dict):
+        raise DatasetRequirementsError(
+            f"card {card_id}: detections must be a mapping, got {type(detections).__name__}")
+    out: list[DatasetRead] = []
+    for kind in DETECTION_KINDS:
+        items = detections.get(kind)
+        if items is None:
             continue
-        if not isinstance(detections, dict):
+        if not isinstance(items, list):
             raise DatasetRequirementsError(
-                f"card {card_id}: detections must be a mapping, got {type(detections).__name__}")
-        queries = detections.get("xql_queries")
-        if queries is None:
-            continue
-        if not isinstance(queries, list):
-            raise DatasetRequirementsError(
-                f"card {card_id}: detections.xql_queries must be a list, got {type(queries).__name__}")
-        for i, q in enumerate(queries):
-            if not isinstance(q, dict):
-                raise DatasetRequirementsError(
-                    f"card {card_id}: detections.xql_queries[{i}] must be a mapping, got {type(q).__name__}")
-            ds = q.get("dataset")
-            if ds is None:
+                f"card {card_id}: detections.{kind} must be a list, got {type(items).__name__}")
+        for i, item in enumerate(items):
+            where = f"card {card_id}: detections.{kind}[{i}]"
+            if not isinstance(item, dict):
+                raise DatasetRequirementsError(f"{where} must be a mapping, got {type(item).__name__}")
+            name = item.get("name")
+            label = name if isinstance(name, str) and name.strip() else f"#{i}"
+            if kind == QUERY_KIND:
+                ds = item.get("dataset")
+                if ds is not None and not isinstance(ds, str):
+                    raise DatasetRequirementsError(
+                        f"{where}.dataset must be a string, got {type(ds).__name__}")
+                out.append(DatasetRead(kind, label, ds.strip() if ds and ds.strip() else None))
                 continue
-            if not isinstance(ds, str):
+            logic = item.get("logic")
+            if not isinstance(logic, str):
                 raise DatasetRequirementsError(
-                    f"card {card_id}: detections.xql_queries[{i}].dataset must be a string, "
-                    f"got {type(ds).__name__}")
-            if ds.strip():
-                out.setdefault(ds.strip(), set()).add(card_id)
+                    f"{where}.logic must be a string, got {type(logic).__name__}")
+            out.extend(DatasetRead(kind, label, m.group(1).lower()) for m in _ANCHOR.finditer(logic))
     return out
+
+
+def card_dataset_index(all_raw: dict[str, dict]) -> dict[str, dict[str, set[str]]]:
+    """``{dataset: {card id: {detection kinds}}}`` over ``catalog.all_raw()``, via :func:`walk_card`."""
+    out: dict[str, dict[str, set[str]]] = {}
+    for card_id, raw in all_raw.items():
+        for read in walk_card(card_id, raw):
+            if read.dataset is not None:
+                out.setdefault(read.dataset, {}).setdefault(card_id, set()).add(read.kind)
+    return out
+
+
+def card_datasets(all_raw: dict[str, dict]) -> dict[str, set[str]]:
+    """Map each dataset any card reads (see :func:`walk_card`) to the card ids that read it."""
+    return {ds: set(cards) for ds, cards in card_dataset_index(all_raw).items()}
 
 
 def registry_source() -> dict[str, str]:

@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from engine.dataset_requirements import (
     DatasetRequirementsError,
-    card_datasets,
+    card_dataset_index,
     load,
     registry_source,
 )
@@ -67,13 +67,15 @@ async def list_dataset_requirements():
     except DatasetRequirementsError as exc:
         return _malformed(exc)
     try:
-        by_card = card_datasets(catalog.all_raw())
+        index = card_dataset_index(catalog.all_raw())
     except DatasetRequirementsError as exc:
         return _card_shape(exc)
     rows = []
     for name in sorted(registry or {}):
         row = registry[name].to_dict()
-        row["cards"] = sorted(by_card.get(name, ()))
+        readers = index.get(name, {})
+        row["cards"] = sorted(readers)
+        row["read_by"] = sorted(set().union(*readers.values())) if readers else []
         rows.append(row)
     return {
         "registry_loaded": registry is not None,
@@ -82,7 +84,7 @@ async def list_dataset_requirements():
         "datasets": rows,
         # Computed here, not via check_datasets_registered: that one raises under the strict
         # flag, which is a boot decision, not something a read route may turn into a 500.
-        "unregistered": sorted(n for n in by_card if registry is None or n not in registry),
+        "unregistered": sorted(n for n in index if registry is None or n not in registry),
     }
 
 

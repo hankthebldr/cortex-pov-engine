@@ -332,3 +332,18 @@ def test_query_library_malformed_card_is_structured_500(client, monkeypatch):
     monkeypatch.setattr(catalog, "all_raw", lambda: raw)
     r = client.get(f"/api/scenarios/{SCENARIO}/query-library")
     assert r.status_code == 500 and r.json()["code"] == "CARD_SHAPE_UNRECOGNISED"
+
+
+# --- item A: read_by on both routes -------------------------------------------------
+
+def test_listing_rows_carry_read_by(client):
+    body = client.get("/api/prerequisites/datasets").json()
+    rows = {d["dataset"]: d for d in body["datasets"]}
+    assert all(d["read_by"] == sorted(d["read_by"]) for d in body["datasets"])
+    assert "biocs" in rows["xdr_data"]["read_by"] and "xql_queries" in rows["xdr_data"]["read_by"]
+    assert rows["esxi_syslog"]["cards"] and "xql_queries" not in rows["esxi_syslog"]["read_by"]
+
+
+def test_scenario_rows_carry_read_by(client):
+    body = client.get(f"/api/scenarios/{SCENARIO}/prerequisites").json()
+    assert body["datasets"] and all(d["read_by"] for d in body["datasets"])

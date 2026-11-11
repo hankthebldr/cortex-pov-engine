@@ -340,7 +340,7 @@ def probe_dataset_requirements() -> dict[str, Any]:
             "CARD_SHAPE_UNRECOGNISED",
             f"{exc} Until the card is fixed, its datasets cannot be checked against the "
             f"registry and /api/prerequisites/* return a structured 500. "
-            f"Fix: correct detections.xql_queries on that card in detection_scanner/ttps/ "
+            f"Fix: correct the detections block on that card in detection_scanner/ttps/ "
             f"and restart SimCore.",
             path=path,
         )

@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import re
 
-from engine.prerequisites import card_queries, cited_cards
+from engine.dataset_requirements import walk_card
+from engine.prerequisites import cited_cards
 
 ALLOWED_PURPOSES = ("hunt", "investigation", "validation", "metric")
 
@@ -32,8 +33,8 @@ def _one_line(value: object, what: str) -> None:
 
 
 def _items(card_id: str, raw: object) -> list[dict]:
-    """Validated query dicts for one card. Base shape rules live in ``card_queries``."""
-    card_queries(card_id, raw)  # raises ValueError on a malformed card
+    """Validated query dicts for one card. Base shape rules live in ``walk_card``."""
+    walk_card(card_id, raw)  # raises a ValueError subclass on a malformed card
     queries = (raw.get("detections") or {}).get("xql_queries") or []
     for i, q in enumerate(queries):
         where = f"card {card_id} query #{i}"
