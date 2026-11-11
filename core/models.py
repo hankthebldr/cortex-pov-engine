@@ -266,6 +266,15 @@ class Run(Base):
     # _migrate_run_delivery_columns in database.py.
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # ── Case ledger (disposition CONTEXT, never detection evidence) ──────────
+    # Built by connectors.service.build_and_store_case_ledger during reconcile
+    # from the run's matched alerts: which case each landed in, how that case
+    # and each issue were closed, and the merge_class. NULL until a reconcile
+    # that matched alerts carrying case ids has run. Nothing here feeds
+    # observed_at, outcome, MTTD or a detection-family tc_verdict. Added by
+    # _migrate_case_ledger_columns in database.py.
+    case_ledger: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+
     # ── Runtime-dependency posture (docs/design/agent-runtime-dependencies.md) ─
     # runtime_install_authorized mirrors CORTEXSIM_XSIAM_ALLOW_WRITE's posture:
     # an explicit, per-run, off-by-default record of whether THIS run was
@@ -317,6 +326,7 @@ class Run(Base):
             "channel_dispatch": self.channel_dispatch,
             "open_tasks": self.open_tasks,
             "delivered_at": self.delivered_at.isoformat() if self.delivered_at else None,
+            "case_ledger": self.case_ledger,
             "runtime_install_authorized": self.runtime_install_authorized,
             "runtime_dependency_gaps": self.runtime_dependency_gaps,
             "agent_profile_mode": self.agent_profile_mode,
