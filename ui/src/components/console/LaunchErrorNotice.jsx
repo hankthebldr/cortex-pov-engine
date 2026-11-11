@@ -82,6 +82,48 @@ export function DownloadOutcome({
 }
 
 /**
+ * LaunchSuccessNotice — an accepted launch, with whatever SimCore said about it.
+ *
+ * A 200 is not always a clean start. `warnings[]` on the launch response names
+ * an offline target, an agent with no registered OS, or a step running its
+ * platform variant. With warnings the notice is amber, not green, and lists
+ * each one under its code: "queued" for a beacon that is not polling is not
+ * the same news as "started".
+ *
+ * Props:
+ *   result    — {status:'success', message, warnings: [{code, text}]}
+ *   testId    — data-testid
+ *   className — base class (the Launch step and the inspector style it differently)
+ */
+export function LaunchSuccessNotice({ result, testId = undefined, className = 'launch-result' }) {
+  if (!result || result.status === 'error') return null
+  const warnings = Array.isArray(result.warnings) ? result.warnings : []
+  const tone = warnings.length ? 'pending' : result.status
+  return (
+    <div className={`${className} ${className}--${tone}`} role="status" data-testid={testId}>
+      <div className="launch-result__message">
+        {result.message}
+        {result.code && <span className="launch-result__code mono"> [{result.code}]</span>}
+      </div>
+      {warnings.length > 0 && (
+        <>
+          <div className="launch-result__warn-head">
+            SimCore warned about this launch — read before waiting on the run:
+          </div>
+          <ul className="launch-result__detail mono">
+            {warnings.map((w, i) => (
+              <li key={`${i}-${w.code || ''}`}>
+                {w.code ? <strong>{w.code}</strong> : null}{w.code ? ' — ' : ''}{w.text}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
  * LaunchErrorNotice — a refused launch or download, rendered where the operator
  * clicked: message, code, and every line of the structured detail.
  *

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import InflightView from './InflightView.jsx'
+import InflightView, { runCaveatLines } from './InflightView.jsx'
 import EvidenceView from './EvidenceView.jsx'
 import DetectionStoryline, { isRunUnproven } from '../DetectionStoryline.jsx'
 import CausalityGraph from '../CausalityGraph.jsx'
@@ -11,6 +11,7 @@ import { scenarioIdOf, idMatches } from '../../api/ids.js'
 import { getRun } from '../../api/client.js'
 import { hasAttestations, attestationLines } from '../../outcomes.js'
 import { parseStepTranscript } from './useRunStepTail.js'
+import { launchWarningsFor } from './launchWarnings.js'
 import '../../styles/destinations/run-detail.css'
 
 // Launch/host markers that change what a missing detection MEANS. Both carry
@@ -20,6 +21,11 @@ import '../../styles/destinations/run-detail.css'
 // the per-step grammar (identity, exit code, duration).
 const VARIANT_MARKER = /^!! PLATFORM VARIANT:\s*step=(\S+)\s*(.*)$/
 const NOT_RUN_MARKER = /^!! STEP NOT RUN: PLATFORM_UNSATISFIABLE\s+step=(\S+)\s*(.*)$/
+// Launch-time reservations about the TARGET, not about one step. SimCore writes
+// TARGET_AGENT_OS_UNKNOWN into the transcript with the `!!` prefix; it returns
+// TARGET_AGENT_OFFLINE on the launch response without one. Both spellings are
+// read, so the day the offline marker is written to Run.output it shows here.
+const LAUNCH_MARKER = /^(?:!!\s*)?(TARGET_AGENT_[A-Z0-9_]+):\s*(.*)$/
 
 /**
  * What in this run's transcript says its steps did not run as authored.
@@ -36,7 +42,8 @@ export function runDegradations(output) {
 
   const variant = []
   const notRun = []
-  const seen = { variant: new Set(), notRun: new Set() }
+  const launch = []
+  const seen = { variant: new Set(), notRun: new Set(), launch: new Set() }
   if (typeof output === 'string') {
     for (const raw of output.split('\n')) {
       const line = raw.replace(/\r$/, '').trim()
@@ -50,10 +57,33 @@ export function runDegradations(output) {
       if (m && !seen.notRun.has(m[1])) {
         seen.notRun.add(m[1])
         notRun.push({ id: m[1], note: m[2] || '' })
+        continue
+      }
+      m = LAUNCH_MARKER.exec(line)
+      if (m && !seen.launch.has(m[1])) {
+        seen.launch.add(m[1])
+        launch.push({ code: m[1], text: m[2] || '', source: 'record' })
       }
     }
   }
-  return { identity, total, variant, notRun }
+  return { identity, total, variant, notRun, launch }
+}
+
+/**
+ * The launch warnings to show for a run: what the run RECORD carries, then
+ * anything this browser session heard on the launch response that the record
+ * does not (`source: 'session'`). One row per code. Step-level markers
+ * (PLATFORM VARIANT) are left to their own banner.
+ */
+export function mergeLaunchWarnings(fromRecord, fromSession) {
+  const out = [...(fromRecord || [])]
+  const have = new Set(out.map((w) => w.code))
+  for (const w of fromSession || []) {
+    if (!w || !w.code || !/^TARGET_AGENT_/.test(w.code) || have.has(w.code)) continue
+    have.add(w.code)
+    out.push({ code: w.code, text: w.text || '', source: 'session' })
+  }
+  return out
 }
 
 /**
@@ -108,17 +138,41 @@ function tailOutput(output, lines = 8) {
  * `partial`: only the summary row's output tail was readable, so a step named
  * early in the transcript may be missing from these counts — said, not hidden.
  */
-function RunDegradationBanners({ degraded, partial = false }) {
+function RunDegradationBanners({ degraded, launchWarnings = [], partial = false }) {
   const { identity, total, variant, notRun } = degraded
-  if (!identity.length && !variant.length && !notRun.length) return null
+  if (!identity.length && !variant.length && !notRun.length && !launchWarnings.length) return null
   const partialNote = partial && (
     <p className="run-attest__lede">
       Read from the last 2 KB of this run&apos;s output only — the full transcript could not be
       loaded, so these counts may be low.
     </p>
   )
+  const sessionOnly = launchWarnings.some((w) => w.source === 'session')
   return (
     <>
+      {launchWarnings.length > 0 && (
+        <div className="run-severed run-degraded" role="status" data-testid="run-launch-warnings-banner">
+          <div>
+            {`SimCore accepted this launch with ${launchWarnings.length === 1 ? 'a warning' : `${launchWarnings.length} warnings`} `
+              + 'about the target — read before treating a silent run as missed detections'}
+          </div>
+          <ul className="run-attest__list">
+            {launchWarnings.map((w) => (
+              <li key={w.code}>
+                <span className="mono">{w.code}</span>{w.text ? ` — ${w.text}` : ''}
+                {w.source === 'session' ? ' (from the launch response)' : ''}
+              </li>
+            ))}
+          </ul>
+          {sessionOnly && (
+            <p className="run-attest__lede">
+              A warning marked “from the launch response” is not in the run record: this browser
+              session kept it from the launch. Another browser, or an export of this run, will not show it.
+            </p>
+          )}
+          {partialNote}
+        </div>
+      )}
       {identity.length > 0 && (
         <div className="run-severed run-degraded" role="status" data-testid="run-identity-banner">
           <div>
@@ -255,6 +309,13 @@ export default function RunDetailView({
     return { output: null, outputFrom: null }
   }, [detail, run])
   const degraded = useMemo(() => runDegradations(output), [output])
+  const launchWarnings = useMemo(
+    () => mergeLaunchWarnings(degraded.launch, launchWarningsFor(runId)),
+    [degraded.launch, runId],
+  )
+  // The Live tab's Screenshot captures only its own region, so the same
+  // degradations ride inside it as short lines (UI-09).
+  const caveats = useMemo(() => runCaveatLines(degraded, launchWarnings), [degraded, launchWarnings])
   const partial = outputFrom === 'tail'
 
   const isThisActive = !!(activeRun && activeRun.runId === runId)
@@ -349,7 +410,7 @@ export default function RunDetailView({
         </div>
       )}
 
-      <RunDegradationBanners degraded={degraded} partial={partial} />
+      <RunDegradationBanners degraded={degraded} launchWarnings={launchWarnings} partial={partial} />
 
       {attest && (
         <section className="run-attest" aria-label="Attestations" data-testid="run-attestations">
@@ -390,6 +451,7 @@ export default function RunDetailView({
           <InflightView
             activeRun={isThisActive ? activeRun : null}
             lastRun={isThisActive ? null : descriptor}
+            caveats={caveats}
             onError={onError}
           />
         )}

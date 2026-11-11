@@ -5503,6 +5503,12 @@
 }
 .theme-console .launch-result--success { color: var(--c-detected); background: var(--c-detected-soft); }
 .theme-console .launch-result--error { color: var(--c-missed); background: var(--c-missed-soft); }
+/* Accepted, with a reservation: a launch SimCore warned about, and the polite
+   surface notice. Amber, never the success green. */
+.theme-console .launch-result--pending { color: var(--c-pending); background: var(--c-pending-soft); }
+.theme-console .launch-result__warn-head { margin-top: 6px; color: var(--c-text); }
+.theme-console .launch-result--pending .launch-result__detail { margin: 4px 0 0; padding-left: 16px; color: var(--c-text-secondary); }
+.theme-console .launch-result--pending .launch-result__detail strong { color: var(--c-pending); font-weight: 600; }
 .theme-console .launch--empty { display: grid; place-items: center; min-height: 60vh; }
 .theme-console .launch-gate { text-align: center; max-width: 360px; }
 .theme-console .launch-gate__num {

@@ -8,7 +8,7 @@ import useShelf from './useShelf.js'
 import { parseServerTime } from '../../api/time.js'
 import { SUPPLY, supplyOf } from './supplyState.js'
 import { PUSH_FORMATS } from './useLaunchScenario.js'
-import LaunchErrorNotice, { DownloadOutcome } from './LaunchErrorNotice.jsx'
+import LaunchErrorNotice, { DownloadOutcome, LaunchSuccessNotice } from './LaunchErrorNotice.jsx'
 
 /**
  * ScenarioInspector — right-side 420px drawer with pinned launch CTA at top,
@@ -109,11 +109,17 @@ export default function ScenarioInspector({
           <button type="button" className="btn" onClick={onClose}>Close</button>
         </div>
 
+        {/* A launch SimCore accepted WITH a warning (offline target, unknown
+            agent OS, platform variant) is not a tick: it lists the warnings. */}
         {launch.lastRun && launch.lastRun.status !== 'error' && (
-          <div className="mono insp-launch__status insp-launch__status--success" role="status">
-            {'\u2713 '}
-            {launch.lastRun.message}
-          </div>
+          launch.lastRun.warnings?.length ? (
+            <LaunchSuccessNotice result={launch.lastRun} testId="insp-launch-success" />
+          ) : (
+            <div className="mono insp-launch__status insp-launch__status--success" role="status">
+              {'\u2713 '}
+              {launch.lastRun.message}
+            </div>
+          )
         )}
         {/* A refused launch keeps its code and structured detail (unresolved
             steps, missing agents) \u2014 the same rendering the Launch step uses. */}

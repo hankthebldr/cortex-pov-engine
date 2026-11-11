@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import useLaunchScenario, { PUSH_FORMATS, bundleIsWindows } from './useLaunchScenario.js'
-import LaunchErrorNotice, { DownloadOutcome, WindowsBundleNote } from './LaunchErrorNotice.jsx'
+import LaunchErrorNotice, { DownloadOutcome, LaunchSuccessNotice, WindowsBundleNote } from './LaunchErrorNotice.jsx'
 import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
 import { getToolAdapters, listIntegrations } from '../../api/client.js'
 import useShelf from './useShelf.js'
@@ -405,14 +405,7 @@ export default function LaunchView({
             </ul>
           )}
 
-          {launch.lastRun && launch.lastRun.status !== 'error' && (
-            <div className={`launch-result launch-result--${launch.lastRun.status}`} role="status">
-              {launch.lastRun.message}
-              {launch.lastRun.code && (
-                <span className="launch-result__code mono"> [{launch.lastRun.code}]</span>
-              )}
-            </div>
-          )}
+          <LaunchSuccessNotice result={launch.lastRun} testId="launch-success" />
           {launch.lastRun?.status === 'error'
             && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
             <LaunchErrorNotice result={launch.lastRun} testId="launch-error" />

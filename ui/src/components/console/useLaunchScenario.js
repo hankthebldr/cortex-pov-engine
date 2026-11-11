@@ -4,6 +4,7 @@ import { getLaunchCapability } from '../../api/payloads.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { triStateFromValue } from '../../outcomes.js'
 import { AGENT_REFRESH_HINT_S } from './readiness/scenarioPreflight.js'
+import { normalizeLaunchWarnings, rememberLaunchWarnings } from './launchWarnings.js'
 
 /**
  * Push-bundle formats GET /api/scenarios/{id}/download serves. One list, so the
@@ -376,7 +377,15 @@ export default function useLaunchScenario(scenario, {
         body.payload_plan = payloadPlan.artifacts
       }
       const run = await postRun(body)
-      setLastRun({ status: 'success', message: `Run ${runIdOf(run) || ''} started` })
+      // A 200 can still carry a reservation: the target is offline, registered
+      // no OS, or a step runs its platform variant. The response's `warnings`
+      // used to be dropped here, so a launch at a beacon that had stopped
+      // polling read "Run … started" and nothing else. Kept on the result for
+      // the surfaces that stay, and remembered for the run view, because every
+      // surface navigates there on success.
+      const warnings = normalizeLaunchWarnings(run)
+      rememberLaunchWarnings(runIdOf(run), warnings)
+      setLastRun({ status: 'success', message: `Run ${runIdOf(run) || ''} started`, warnings })
       if (onRunComplete) onRunComplete(run)
       return run
     } catch (err) {

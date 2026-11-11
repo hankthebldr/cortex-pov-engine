@@ -833,6 +833,24 @@
   font-style: normal;
 }
 
+/* The run's "did not execute as authored" lines, INSIDE the capture region so
+   the Screenshot PNG carries them (UI-09). A warning rule, not decoration: the
+   words carry the meaning, the amber only repeats it. */
+.theme-console .narrative__caveats {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--warn);
+  border-radius: 3px;
+  background: var(--s1);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tx2);
+  text-align: left;
+}
+.theme-console .narrative__caveats strong { color: var(--tx); font-weight: 600; }
+.theme-console .narrative__caveats ul { margin: 4px 0 0; padding-left: 18px; }
+
 .theme-console .inflight-loading-note {
   border: 1px solid var(--bd);
   border-radius: 8px;
