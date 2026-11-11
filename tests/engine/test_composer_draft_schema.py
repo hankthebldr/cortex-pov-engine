@@ -398,7 +398,7 @@ def test_fork_of_push_refusing_origin_stays_push_refused():
     assert doc["push_supported"] is False, (
         "SIM-MP-031 no longer declares push_supported: false — pick another origin"
     )
-    body = fork_body_like_the_ui(doc)
+    body = fork_body_like_the_ui("SIM-MP-031")
 
     kwargs = draft_to_orm_kwargs(DraftScenarioSchema(**body))
 
@@ -467,7 +467,7 @@ def test_fork_carries_threat_report_provenance():
 
     doc = load_corpus_doc("SIM-MP-031")
     assert doc["threat_report_url"], "SIM-MP-031 lost its Unit 42 citation"
-    kwargs = draft_to_orm_kwargs(DraftScenarioSchema(**fork_body_like_the_ui(doc)))
+    kwargs = draft_to_orm_kwargs(DraftScenarioSchema(**fork_body_like_the_ui("SIM-MP-031")))
     assert kwargs["threat_report"] == doc["threat_report"]
     assert kwargs["threat_report_url"] == doc["threat_report_url"]
 

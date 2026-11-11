@@ -1110,7 +1110,7 @@ describe('spineProblems / validateDraft — off-chain roots and dangling parents
 // floor, so the draft reads `push_supported_declared` — never the derived
 // `push_supported`, which on a reloaded draft row cannot say whether its false
 // was authored or derived — and emits it only when it is false. The backend
-// mirror of this fork lives in tests/_composer_fork.py; keep the two in step.
+// tests POST the fork body from the golden pair composerForkGolden.test.js pins.
 
 describe('fork carries the origin push refusal', () => {
   const REFUSING = {

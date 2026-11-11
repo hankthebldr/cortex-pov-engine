@@ -558,7 +558,7 @@ def test_fork_of_push_refusing_origin_is_refused_a_bundle(client_with_library):
     doc = load_corpus_doc("SIM-MP-031")
     assert doc["push_supported"] is False
 
-    created = c.post("/api/scenarios/drafts", json=fork_body_like_the_ui(doc))
+    created = c.post("/api/scenarios/drafts", json=fork_body_like_the_ui("SIM-MP-031"))
     assert created.status_code == 201, created.text
     draft = created.json()
     assert draft["push_supported"] is False, "the fork was stored push-capable"

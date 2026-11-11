@@ -1,32 +1,51 @@
-"""Test-side mirror of the Composer's fork path (console → drafts-API body).
+"""The Composer's fork, as the drafts-API tests see it — from a golden pair.
 
 When a DC opens a corpus scenario in the Composer and saves it, the console
-runs ``draftFromScenario`` and then ``draftToApi`` (both in
-``ui/src/components/console/composerDraft.js``) over the detail document
-``GET /api/scenarios/{id}`` returned, and POSTs the result to
-``/api/scenarios/drafts``. The backend suite cannot execute that JavaScript
-(the CI ``backend`` job runs inside the prod image, which ships no node), so
-this module mirrors the two functions field for field and the drafts-API tests
-fork through it. A key the JS starts emitting that this mirror omits is a key
-the backend tests never exercise — keep the two in step, and say so in
-``ui/src/components/__tests__/composerDraft.test.js`` when either changes.
+runs ``draftFromScenario`` then ``draftToApi``
+(``ui/src/components/console/composerDraft.js``) over the detail document
+``GET /api/scenarios/{id}`` returned, and POSTs the result. The backend suite
+cannot run that JavaScript (the CI ``backend`` job runs in the prod image,
+which ships no node), and a hand-written Python mirror of it drifted silently
+once already: by 2026-11-11 it omitted sixteen fields the console had started
+carrying. So nothing here re-implements the fork. Instead a golden pair is
+committed under ``tests/fixtures/composer_fork/`` and pinned from both sides:
 
-Fields the console fork does NOT carry today are deliberately not invented
-here: ``execution_identity``, ``external_tools``, ``tc_refs[]``,
-``pov_scenario_id``, the scenario-level MITRE block, per-step
-``platform_variants`` and per-detection ``verification_xql`` all fall away in
-``draftFromScenario`` / ``normalizeStep`` and the server sentinel-fills them.
-That is a fidelity gap of its own, outside this mirror's remit; mirroring it
-faithfully is what keeps these tests honest about what the console really
-sends.
+* ``SIM-MP-031.doc.json`` — the detail document, i.e. the real YAML through
+  the real strict loader into a ``Scenario`` row and ``to_dict()`` (minus the
+  keys in ``_VOLATILE``, which the fork never reads). ``fork_body_like_the_ui``
+  refuses to return the body unless this still equals the live corpus.
+* ``SIM-MP-031.body.json`` — ``draftToApi(draftFromScenario(doc))`` computed
+  by the real JS. ``ui/src/components/__tests__/composerForkGolden.test.js``
+  fails if the JS stops producing exactly this.
+
+Either side changing turns one suite red and names the regeneration command,
+so the body the drafts-API tests POST is always the body the console sends.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCENARIOS_DIR = REPO_ROOT / "scenarios"
+FIXTURES = REPO_ROOT / "tests" / "fixtures" / "composer_fork"
+
+#: Keys of the detail document the fork never reads, excluded from the fixture
+#: because they would make the drift check flaky rather than meaningful:
+#: ``created_at`` changes every run, and the two entitlement lists are derived
+#: from the UC/TC registry, a process-wide singleton that is empty or loaded
+#: depending on which tests ran first. ``draftToApi`` omits both lists; the
+#: server derives them.
+_VOLATILE = ("created_at", "required_addons", "required_base_platform")
+
+REGENERATE = """\
+  # 1. the document, from the live corpus
+  PYTHONPATH=core .venv/bin/python -c "import json; from tests._composer_fork import \\
+    corpus_doc_for_fixture as d; json.dump(d('{sid}'), open('tests/fixtures/composer_fork/{sid}.doc.json','w'), \\
+    indent=2, sort_keys=True, ensure_ascii=False)"
+  # 2. the body, from the real JS — see the header of composerForkGolden.test.js
+"""
 
 
 def load_corpus_doc(scenario_id: str) -> dict[str, Any]:
@@ -52,175 +71,36 @@ def load_corpus_doc(scenario_id: str) -> dict[str, Any]:
     raise LookupError(f"{scenario_id} is not in the corpus under {SCENARIOS_DIR}")
 
 
-# ---------------------------------------------------------------------------
-# draftFromScenario
-# ---------------------------------------------------------------------------
+def corpus_doc_for_fixture(scenario_id: str) -> dict[str, Any]:
+    """``load_corpus_doc`` minus the volatile keys, JSON-normalised — the exact
+    form committed as ``<id>.doc.json``."""
+    doc = load_corpus_doc(scenario_id)
+    for key in _VOLATILE:
+        doc.pop(key, None)
+    return json.loads(json.dumps(doc, sort_keys=True, ensure_ascii=False))
 
 
-def _normalize_step(raw: dict[str, Any]) -> dict[str, Any]:
-    """Mirrors ``normalizeStep``: one scenario step as a camelCase draft step."""
-    dets = raw["expected_detections"] if isinstance(raw.get("expected_detections"), list) else []
-    causality = raw.get("causality") or {}
-    eal = raw["eal"] if isinstance(raw.get("eal"), dict) else None
-    return {
-        "id": raw.get("id"),
-        "name": raw.get("name") or "(unnamed step)",
-        "command": raw["command"] if isinstance(raw.get("command"), str) else None,
-        "identity": raw.get("identity") or None,
-        "technique": raw.get("mitre_technique") or None,
-        "platforms": list(raw["platforms"]) if isinstance(raw.get("platforms"), list) else [],
-        "channel": raw["channel"] if isinstance(raw.get("channel"), str) else None,
-        "target": raw["target"] if isinstance(raw.get("target"), str) else None,
-        "eal": (
-            {
-                "plugin": eal["plugin"] if isinstance(eal.get("plugin"), str) else None,
-                "params": dict(eal["params"]) if isinstance(eal.get("params"), dict) else {},
-            }
-            if eal is not None
-            else None
-        ),
-        "causalityParent": causality.get("parent_step") or None,
-        "causalityPivot": causality.get("pivot") or None,
-        "detections": [
-            {
-                "plane": d.get("plane") or None,
-                "type": d.get("type") or None,
-                "description": d.get("description") or None,
-                "ttpRef": d.get("ttp_ref") or None,
-                "detectionId": d.get("detection_id") or None,
-            }
-            for d in dets
-            if isinstance(d, dict)
-        ],
-        "authored": False,
-    }
+def fork_body_like_the_ui(scenario_id: str) -> dict[str, Any]:
+    """The body the console POSTs when a DC forks ``scenario_id``.
 
-
-def draft_from_scenario(doc: dict[str, Any]) -> dict[str, Any]:
-    """Mirrors ``draftFromScenario`` over a detail document."""
-    cgo = doc.get("cgo_anchor") or None
-    cleanup = doc.get("cleanup") or {}
-    cgo_display: Optional[str] = None
-    if cgo:
-        cgo_display = " / ".join(
-            p for p in (cgo.get("image_name"), cgo.get("primary_username")) if p
-        ) or None
-    return {
-        "originId": doc.get("scenario_id") or None,
-        "name": doc.get("name") or None,
-        "plane": doc.get("plane") or None,
-        "ucRef": doc.get("uc_ref") or None,
-        "tcRef": doc.get("tc_ref") or None,
-        "moatTier": doc.get("moat_tier") or None,
-        "cgo": cgo_display,
-        "teardown": list(cleanup["commands"]) if isinstance(cleanup.get("commands"), list) else [],
-        # parseStitchContext → emitStitchContext round-trips byte-identically
-        # (pinned by the vitest), so the wire form is carried verbatim here.
-        "stitchContext": doc.get("stitch_context") or None,
-        "layout": doc.get("composer_layout") or None,
-        "laneOverrides": doc.get("composer_lanes") or None,
-        # Only an AUTHORED refusal is a floor, so only `false` is ever carried;
-        # a derived value, a declared `true` and "nothing declared" all read as
-        # null and leave the server to its own derivation.
-        "pushSupported": False if doc.get("push_supported_declared") is False else None,
-        "threatReport": doc.get("threat_report") or None,
-        "threatReportUrl": doc.get("threat_report_url") or None,
-        "steps": [
-            _normalize_step(s) for s in (doc.get("steps") or []) if isinstance(s, dict)
-        ],
-        "scenarioId": None,
-        "status": None,
-        "author": None,
-        "tags": [],
-    }
-
-
-# ---------------------------------------------------------------------------
-# draftToApi
-# ---------------------------------------------------------------------------
-
-
-def _cgo_anchor_from_display(cgo: Optional[str]) -> Optional[dict[str, str]]:
-    """Mirrors ``_cgoAnchorFromDisplay``: "image / user" back to the anchor."""
-    if not cgo:
-        return None
-    image_name, _, primary_username = (p.strip() for p in cgo.partition(" / "))
-    if not image_name:
-        return None
-    anchor = {"image_name": image_name}
-    if primary_username:
-        anchor["primary_username"] = primary_username
-    return anchor
-
-
-def draft_to_api(draft: dict[str, Any], *, author: str = "composer") -> dict[str, Any]:
-    """Mirrors ``draftToApi``: the frozen snake_case ``DraftCreateRequest``."""
-    steps: list[dict[str, Any]] = []
-    for s in draft["steps"]:
-        step: dict[str, Any] = {
-            "id": s["id"],
-            "name": s["name"],
-            "command": s["command"] if s["command"] is not None else "",
-            "identity": s["identity"] if s["identity"] is not None else "",
-            "mitre_technique": s["technique"] if s["technique"] is not None else "",
-            "expected_detections": [],
-        }
-        for d in s["detections"]:
-            det = {"plane": d["plane"], "type": d["type"], "description": d["description"]}
-            if d["ttpRef"]:
-                det["ttp_ref"] = d["ttpRef"]
-            if d["detectionId"]:
-                det["detection_id"] = d["detectionId"]
-            step["expected_detections"].append(det)
-        if s["causalityParent"]:
-            step["causality"] = {
-                "parent_step": s["causalityParent"],
-                "pivot": s["causalityPivot"] or "process_lineage",
-            }
-        if s["platforms"]:
-            step["platforms"] = s["platforms"]
-        # Phase-3a channel routing is OMIT-WHEN-DEFAULT.
-        eff = s["channel"] or "agent"
-        if eff != "agent":
-            step["channel"] = eff
-        if eff == "agent" and s["target"]:
-            step["target"] = s["target"]
-        if eff == "eal":
-            eal = s["eal"] or {}
-            step["eal"] = {"plugin": eal.get("plugin") or "", "params": eal.get("params") or {}}
-        steps.append(step)
-
-    body: dict[str, Any] = {
-        "name": draft["name"] or "",
-        "plane": draft["plane"] or "",
-        "author": draft["author"] or author,
-        "tags": list(draft["tags"]) if isinstance(draft.get("tags"), list) else [],
-        "steps": steps,
-    }
-    if draft["ucRef"]:
-        body["uc_ref"] = draft["ucRef"]
-    if draft["tcRef"]:
-        body["tc_ref"] = draft["tcRef"]
-    if draft["stitchContext"]:
-        body["stitch_context"] = draft["stitchContext"]
-    if draft["layout"]:
-        body["composer_layout"] = draft["layout"]
-    if draft["laneOverrides"]:
-        body["composer_lanes"] = draft["laneOverrides"]
-    anchor = _cgo_anchor_from_display(draft["cgo"])
-    if anchor:
-        body["cgo_anchor"] = anchor
-    if draft["teardown"]:
-        body["cleanup"] = {"commands": list(draft["teardown"])}
-    if draft.get("pushSupported") is False:
-        body["push_supported"] = False
-    if draft.get("threatReport"):
-        body["threat_report"] = draft["threatReport"]
-    if draft.get("threatReportUrl"):
-        body["threat_report_url"] = draft["threatReportUrl"]
-    return body
-
-
-def fork_body_like_the_ui(doc: dict[str, Any], *, author: str = "composer") -> dict[str, Any]:
-    """``draftToApi(draftFromScenario(doc))`` — the body the console POSTs."""
-    return draft_to_api(draft_from_scenario(doc), author=author)
+    Read from the golden pair, after proving its document half still matches
+    the live corpus — a stale fixture fails loudly instead of testing a
+    scenario that no longer exists in that form."""
+    doc_path = FIXTURES / f"{scenario_id}.doc.json"
+    body_path = FIXTURES / f"{scenario_id}.body.json"
+    if not doc_path.exists() or not body_path.exists():
+        raise FileNotFoundError(
+            f"no golden fork pair for {scenario_id} under {FIXTURES}; create it:\n"
+            + REGENERATE.format(sid=scenario_id)
+        )
+    committed = json.loads(doc_path.read_text(encoding="utf-8"))
+    live = corpus_doc_for_fixture(scenario_id)
+    if committed != live:
+        drift = sorted(k for k in set(committed) | set(live) if committed.get(k) != live.get(k))
+        raise AssertionError(
+            f"{doc_path.name} no longer matches the live corpus (keys {drift}). "
+            "The scenario or the loader changed, so the committed fork body may "
+            "not be what the console sends today. Regenerate both halves:\n"
+            + REGENERATE.format(sid=scenario_id)
+        )
+    return json.loads(body_path.read_text(encoding="utf-8"))

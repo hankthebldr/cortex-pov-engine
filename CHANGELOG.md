@@ -52,6 +52,12 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `draftToApi` sends `push_supported: false` only for a carried refusal. The
   fork now also carries `threat_report` / `threat_report_url`, which the POV
   report and the bundle header cite and the fork used to drop.
+- **Guard:** the drafts-API tests fork SIM-MP-031 from a golden pair under
+  `tests/fixtures/composer_fork/`, pinned from both sides — pytest refuses it
+  unless its document still equals the live corpus, and
+  `composerForkGolden.test.js` fails unless the real console fork still
+  produces its body. Both new guards were observed red against the unfixed
+  code.
 - `indicators[]` is deliberately **not** carried: the Composer has no
   indicator editor, so `S-24` would wedge a draft the moment a referenced step
   is removed; nothing in the run path reads the column; and
