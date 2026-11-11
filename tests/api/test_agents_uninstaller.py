@@ -222,6 +222,43 @@ def test_windows_uninstaller_names_the_server_side_cleanup(client):
     assert "DELETE" in script and "/api/agents/" in script
 
 
+_HINT_HARNESS = r"""
+param([string]$ScriptPath)
+$t = $null; $e = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$t, [ref]$e)
+foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+  . ([scriptblock]::Create($f.Extent.Text))
+}
+$exe = '"C:\ProgramData\CortexSim\cortexsim-agent.exe"'
+Write-Output ("HINT http  | " + (Cs-DeleteHint "$exe --server http://10.0.0.5:8888 --id win-01-a1b2c3 --interval 10"))
+Write-Output ("HINT https | " + (Cs-DeleteHint "$exe --server https://simcore.corp.local --id win-01-a1b2c3 --interval 10"))
+Write-Output ("HINT none  | " + (Cs-DeleteHint "$exe --interval 10"))
+"""
+
+
+@needs_powershell
+@pytest.mark.parametrize("shell", SHELLS or ["none"])
+def test_the_agent_row_hint_for_an_https_simcore_carries_the_tls_opt_in(client, tmp_path, shell):
+    """The uninstaller prints the command that deletes the agent row, read from
+    the service's own command line. On a 5.1 host with old TLS defaults that
+    command cannot reach an https SimCore without the TLS 1.2 opt-in, so the
+    hint carries it; for http it is left out; and a command line it cannot read
+    yields no hint at all, never a half-built one."""
+    path = _write(tmp_path, "u.ps1", _win_uninstaller(client))
+    harness = _write(tmp_path, "hint.ps1", _HINT_HARNESS)
+    p = _ps(shell, "-File", str(harness), "-ScriptPath", str(path))
+    got = {ln.split("|", 1)[0].split()[1]: ln.split("|", 1)[1].strip()
+           for ln in p.stdout.splitlines() if ln.startswith("HINT ")}
+    delete = "Invoke-RestMethod -Method Delete '{}/api/agents/win-01-a1b2c3'"
+    tls = ("[Net.ServicePointManager]::SecurityProtocol = "
+           "[Net.ServicePointManager]::SecurityProtocol -bor 3072; ")
+    assert got == {
+        "http": delete.format("http://10.0.0.5:8888"),
+        "https": tls + delete.format("https://simcore.corp.local"),
+        "none": "",
+    }, p.stdout + p.stderr
+
+
 # ---------------------------------------------------------------------------
 # Windows host only
 # ---------------------------------------------------------------------------

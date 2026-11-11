@@ -226,12 +226,20 @@ def test_installer_uses_no_powershell_7_only_syntax(shelf, tmp_path, variant):
 # ---------------------------------------------------------------------------
 
 
-def _iex_caller(path: Path) -> str:
+def _iex_caller(path: Path, proto: int | None = None) -> str:
+    """Run the script the way `iwr | iex` does, then print what it left behind.
+    ``proto`` pre-sets the session's [Net.ServicePointManager]::SecurityProtocol
+    (192 = Tls only, the shape of a 5.1 host with old defaults; 0 = SystemDefault)."""
+    preset = ("" if proto is None else
+              f"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]{proto}; ")
     return (
         "$env:CORTEXSIM_TELEMETRY='0'; "
+        f"{preset}"
         f"Invoke-Expression (Get-Content -Raw -LiteralPath '{path}'); "
         "Write-Host CALLER-STILL-ALIVE; "
         "Write-Host \"EAP=$ErrorActionPreference\"; "
+        "Write-Host \"PP=$ProgressPreference\"; "
+        "Write-Host \"SP=$([int][Net.ServicePointManager]::SecurityProtocol)\"; "
         "if ($Token) {'LEAK-Token'}; if ($Server) {'LEAK-Server'}; "
         "if (Get-Command Cs-Fail -ErrorAction SilentlyContinue) {'LEAK-Cs-Fail'}"
     )
@@ -260,8 +268,117 @@ def test_a_failed_install_under_iex_leaves_the_callers_shell_alive(shelf, tmp_pa
     assert "CALLER-STILL-ALIVE" in p.stdout, (
         "the installer killed the caller's session (a bare `exit` under iex):\n" + out)
     assert "EAP=Continue" in p.stdout, "ErrorActionPreference leaked into the caller:\n" + out
+    assert "PP=Continue" in p.stdout, "ProgressPreference leaked into the caller:\n" + out
     assert "LEAK" not in p.stdout, "installer variables/functions leaked into the caller:\n" + out
     assert p.returncode == 0, out
+
+
+@needs_powershell
+@pytest.mark.parametrize("shell", SHELLS or ["none"])
+@pytest.mark.parametrize("proto", [192, 0], ids=["legacy-Tls-only", "SystemDefault"])
+def test_the_tls_opt_in_does_not_outlive_the_script(shelf, tmp_path, shell, proto):
+    """Under `iwr | iex` the script runs in the operator's own session, and
+    [Net.ServicePointManager]::SecurityProtocol is process-wide. The script set
+    it to `current -bor 3072` and left it: a session on SystemDefault (0, where
+    the OS negotiates TLS 1.2 and 1.3) came back pinned to Tls12 alone (3072),
+    and one on a legacy list came back changed. The header promises the shell is
+    left exactly as it was."""
+    script = _render(shelf, "token+no-binary", server=f"http://127.0.0.1:{_free_port()}")
+    path = _write(tmp_path, "inst.ps1", script)
+    p = _ps(shell, "-Command", _iex_caller(path, proto=proto))
+    out = p.stdout + p.stderr
+    assert "[cortexsim] FAILED" in out and "CALLER-STILL-ALIVE" in p.stdout, out
+    assert f"SP={proto}" in p.stdout, f"the session's SecurityProtocol was {proto} and is now:\n{out}"
+
+
+_TLS_HARNESS = r"""
+param([string]$ScriptPath)
+$t = $null; $e = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$t, [ref]$e)
+foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+  . ([scriptblock]::Create($f.Extent.Text))
+}
+foreach ($start in 192, 0, 3072, 3264) {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]$start
+  $prev = Cs-Tls12
+  Write-Output ("TLS start=$start prev=$([int]$prev) now=$([int][Net.ServicePointManager]::SecurityProtocol)")
+}
+"""
+
+
+@needs_powershell
+@pytest.mark.parametrize("shell", SHELLS or ["none"])
+def test_tls12_is_added_to_a_legacy_list_and_system_default_is_left_alone(shelf, tmp_path, shell):
+    """5.1 on a .NET that predates TLS 1.2-by-default lists Ssl3|Tls, which an
+    https SimCore refuses: Tls12 is ADDED to an explicit list. SystemDefault (0)
+    is left alone: OR-ing 3072 into it would restrict the session to TLS 1.2.
+    Enum arithmetic only; whether a real 5.1 host then reaches an https SimCore
+    is for the windows job."""
+    path = _write(tmp_path, "inst.ps1", _render(shelf, "token+binary"))
+    harness = _write(tmp_path, "tls.ps1", _TLS_HARNESS)
+    p = _ps(shell, "-File", str(harness), "-ScriptPath", str(path))
+    lines = [ln for ln in p.stdout.splitlines() if ln.startswith("TLS ")]
+    assert lines == [
+        "TLS start=192 prev=192 now=3264",     # Tls -> Tls + Tls12
+        "TLS start=0 prev=0 now=0",            # SystemDefault untouched
+        "TLS start=3072 prev=3072 now=3072",
+        "TLS start=3264 prev=3264 now=3264",
+    ], p.stdout + p.stderr
+
+
+_PROGRESS_HARNESS = r"""
+param([string]$Path)
+$t = $null; $e = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$t, [ref]$e)
+$web = 'Invoke-WebRequest','iwr','Invoke-RestMethod','irm','curl','wget','Start-BitsTransfer'
+$hits = @($ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.CommandAst] }, $true) |
+  ForEach-Object { $_.GetCommandName() } | Where-Object { $web -contains $_ })
+Write-Output ("web_cmdlets=" + $hits.Count + " " + ($hits -join ','))
+$pp = @($ast.FindAll({ param($x) $x -is [System.Management.Automation.Language.AssignmentStatementAst] -and $x.Left.Extent.Text -eq '$ProgressPreference' }, $true))
+foreach ($a in $pp) {
+  $scoped = $false; $p = $a.Parent
+  while ($p) { if ($p -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) { $scoped = $true }; $p = $p.Parent }
+  Write-Output ("pp " + $a.Right.Extent.Text + " scoped=" + $scoped)
+}
+"""
+
+
+@needs_pwsh
+@pytest.mark.parametrize("which", ["installer", "uninstaller"])
+def test_progress_rendering_is_off_inside_the_body_and_no_web_cmdlet_is_used(shelf, tmp_path, which):
+    """Windows PowerShell 5.1 renders Invoke-WebRequest's progress bar per
+    chunk, which slows a ~5 MB download many times over on a VDI or RDP console.
+    The scripts fetch with [Net.HttpWebRequest] and set $ProgressPreference
+    inside the `& { }` body, where it cannot leak into the operator's session
+    (the iex test checks the caller still reads Continue). Read from the AST, so
+    a command a message merely names does not count."""
+    if which == "installer":
+        text = _render(shelf, "token+binary")
+    else:
+        from api.agents import _WINDOWS_UNINSTALLER as text
+    path = _write(tmp_path, "s.ps1", text)
+    harness = _write(tmp_path, "pp.ps1", _PROGRESS_HARNESS)
+    p = _ps(PWSH, "-File", str(harness), "-Path", str(path))
+    lines = p.stdout.splitlines()
+    assert "web_cmdlets=0 " in lines, p.stdout + p.stderr
+    assert [ln for ln in lines if ln.startswith("pp ")] == ["pp 'SilentlyContinue' scoped=True"], p.stdout
+
+
+def test_follow_up_commands_for_an_https_simcore_carry_the_tls_opt_in(shelf):
+    """The script prints commands to paste later, into a fresh shell: the
+    uninstall one-liner above all. On a 5.1 host with old defaults `iwr` cannot
+    reach an https SimCore without the opt-in, so the command it prints must
+    carry it. For plain http it is left out."""
+    prefix = ("[Net.ServicePointManager]::SecurityProtocol = "
+              "[Net.ServicePointManager]::SecurityProtocol -bor 3072; ")
+    script = _render(shelf, "token+binary", server="https://simcore.corp.local")
+    assert ("$IwrPrefix = '" + prefix + "'") in script
+    printed = [ln for ln in script.splitlines()
+               if "uninstall=1" in ln and "iex" in ln and not ln.lstrip().startswith("#")]
+    assert len(printed) >= 3, printed     # final line, INSTALL_DIR_UNTRUSTED fix, service description
+    for ln in printed:
+        assert "$IwrPrefix" in ln or "$($IwrPrefix)" in ln, f"no TLS opt-in on: {ln.strip()}"
+    assert "if ($Server -like 'https://*')" in script
 
 
 @needs_powershell
@@ -526,10 +643,17 @@ def test_the_body_is_scoped_and_never_calls_a_bare_exit(shelf):
 
 
 def test_tls12_is_enabled_for_5_1(shelf):
-    """5.1 on .NET 4.x defaults to TLS 1.0/1.1, which an https SimCore refuses."""
+    """5.1 on .NET 4.x defaults to TLS 1.0/1.1, which an https SimCore refuses.
+    The opt-in is the first thing the body does and the last thing it undoes;
+    what it does to each starting value is executed in
+    test_tls12_is_added_to_a_legacy_list_and_system_default_is_left_alone."""
     script = _render(shelf, "token+binary")
-    assert ("[Net.ServicePointManager]::SecurityProtocol = "
-            "[Net.ServicePointManager]::SecurityProtocol -bor 3072") in script
+    body = script[script.index("\ntry {\n") + len("\ntry {\n"):]
+    first = next(ln.strip() for ln in body.splitlines()
+                 if ln.strip() and not ln.strip().startswith("#"))
+    assert first == "try { $Cs.Tls = Cs-Tls12 } catch { }", first
+    final = body[body.rindex("} finally {"):]
+    assert "[Net.ServicePointManager]::SecurityProtocol = $Cs.Tls" in final, final
 
 
 def test_every_step_has_its_own_failure_code(shelf):

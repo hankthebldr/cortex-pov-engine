@@ -1314,7 +1314,7 @@ _WINDOWS_INSTALLER = r"""# --- CortexSim beacon installer (Windows / PowerShell 
 Set-StrictMode -Off
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$Cs = @{ Stage = 'detect'; Code = ''; What = ''; Fix = ''; Work = '' }
+$Cs = @{ Stage = 'detect'; Code = ''; What = ''; Fix = ''; Work = ''; Tls = $null }
 $UrlPattern = '^https?://[A-Za-z0-9.\[\]:_~-]+(/[A-Za-z0-9.:/\[\]_~-]*)?$'
 
 @@COMMON@@
@@ -1334,6 +1334,20 @@ function Cs-Fail([string]$Stage, [string]$Code, [string]$What, [string]$Fix) {
   $Cs.Stage = $Stage; $Cs.Code = $Code; $Cs.What = $What; $Cs.Fix = $Fix
   Cs-Report $Stage $Code $What
   throw "CORTEXSIM_FAILED:$Code"
+}
+
+function Cs-Tls12 {
+  # Windows PowerShell 5.1 on a .NET that predates TLS 1.2-by-default lists
+  # Ssl3|Tls, which an https SimCore refuses: ADD Tls12 to an explicit list.
+  # SystemDefault (0) is left alone: the OS already negotiates 1.2 and 1.3
+  # there, and OR-ing 3072 in would pin the session to 1.2. Returns the value
+  # it found, for the caller to put back: the setting is process-wide, and
+  # under iex this process is the operator's own shell.
+  $prev = [Net.ServicePointManager]::SecurityProtocol
+  if ([int]$prev -ne 0 -and -not ([int]$prev -band 3072)) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]([int]$prev -bor 3072)
+  }
+  return $prev
 }
 
 function Cs-Http([string]$Method, [string]$Uri, [string]$Body, [int]$TimeoutMs, [string]$OutFile) {
@@ -1519,7 +1533,7 @@ function Cs-LastSeen {
 
 try {
   # -- stage: detect ------------------------------------------------------------
-  try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch { }
+  try { $Cs.Tls = Cs-Tls12 } catch { }
   $Server   = if ($env:CORTEXSIM_SERVER)   { "$env:CORTEXSIM_SERVER" }   else { '@@SERVER@@' }
   $AgentId  = if ($env:CORTEXSIM_AGENT_ID) { "$env:CORTEXSIM_AGENT_ID" } else { '@@AGENT_ID@@' }
   $Interval = if ($env:CORTEXSIM_INTERVAL) { "$env:CORTEXSIM_INTERVAL" } else { '@@INTERVAL@@' }
@@ -1528,6 +1542,10 @@ try {
   # none. The baked default must not be what a pre-enrollment failure reports as.
   if ($Token) { $AgentId = '' }
   $Server   = $Server.Trim().TrimEnd('/')
+  # A command this script prints is pasted later, into a fresh shell. For an
+  # https SimCore that shell needs the TLS 1.2 opt-in before iwr can connect.
+  $IwrPrefix = ''
+  if ($Server -like 'https://*') { $IwrPrefix = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; ' }
   $LoopbackHint = '@@LOOPBACK_HINT@@'
   $HostN    = "$env:COMPUTERNAME"
   if (-not $HostN) { $HostN = [Environment]::MachineName }
@@ -1669,7 +1687,7 @@ try {
         }
       } catch { $dirErr = "its owner could not be read: $($_.Exception.Message)" }
       if ($dirErr) {
-        Cs-Fail 'install' 'INSTALL_DIR_UNTRUSTED' "$InstallDir already exists and $dirErr; a SYSTEM service will not be installed into a directory another account may control" "inspect it; if it is an earlier CortexSim install, remove it from an elevated shell (iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex), then re-run"
+        Cs-Fail 'install' 'INSTALL_DIR_UNTRUSTED' "$InstallDir already exists and $dirErr; a SYSTEM service will not be installed into a directory another account may control" "inspect it; if it is an earlier CortexSim install, remove it from an elevated shell ($($IwrPrefix)iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex), then re-run"
       }
     } else {
       # Created WITH its final DACL and owner, in one call. New-Item would give
@@ -1749,7 +1767,7 @@ try {
     $BinPath = '"' + $Bin + '" --server ' + $Server + ' --id ' + $AgentId + ' --interval ' + $IntervalN
     $svcErr = ''
     try {
-      New-Service -Name $Svc -BinaryPathName $BinPath -DisplayName 'CortexSim beacon agent' -Description "CortexSim detection-simulation beacon for $Server. Remove: iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex" -StartupType Automatic -ErrorAction Stop | Out-Null
+      New-Service -Name $Svc -BinaryPathName $BinPath -DisplayName 'CortexSim beacon agent' -Description "CortexSim detection-simulation beacon for $Server. Remove: $($IwrPrefix)iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex" -StartupType Automatic -ErrorAction Stop | Out-Null
     } catch { $svcErr = "$($_.Exception.Message)" }
     if ($svcErr) {
       Cs-Fail 'install' 'SERVICE_CREATE_FAILED' "New-Service $Svc failed: $svcErr" 'run from an elevated Windows PowerShell; if a policy blocks service creation, use PUSH mode from the console instead'
@@ -1856,7 +1874,7 @@ try {
     Cs-Say "  status   : Get-Service $Svc"
     Cs-Say "  logs     : $SvcLog"
   }
-  Cs-Say "  uninstall: iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex"
+  Cs-Say "  uninstall: $($IwrPrefix)iwr '$Server/api/agents/install?os=windows&uninstall=1' -UseBasicParsing | iex"
 } catch {
   $msg = "$($_.Exception.Message)"
   if ($msg -notlike 'CORTEXSIM_FAILED:*') {
@@ -1876,6 +1894,7 @@ try {
   if ($Cs.Work -and (Test-Path -LiteralPath $Cs.Work)) {
     Remove-Item -LiteralPath $Cs.Work -Recurse -Force -ErrorAction SilentlyContinue
   }
+  if ($null -ne $Cs.Tls) { try { [Net.ServicePointManager]::SecurityProtocol = $Cs.Tls } catch { } }
 }
 }
 """.replace("@@COMMON@@", _WINDOWS_COMMON_FUNCTIONS)
@@ -1924,6 +1943,18 @@ function Cs-RemovePath([string]$Path, [string]$Label) {
     Cs-Gone "$Label $Path"
   }
 }
+function Cs-DeleteHint([string]$ImagePath) {
+  # The command that removes this beacon's agent row, from the service's own
+  # command line. Empty when the server or the id cannot be read from it.
+  $srv = ''; $aid = ''
+  if ($ImagePath -match '--server\s+(\S+)') { $srv = $Matches[1] }
+  if ($ImagePath -match '--id\s+(\S+)') { $aid = $Matches[1] }
+  if (-not ($srv -and $aid)) { return '' }
+  $cmd = "Invoke-RestMethod -Method Delete '$srv/api/agents/$aid'"
+  # A 5.1 host with old TLS defaults cannot reach an https SimCore without this.
+  if ($srv -like 'https://*') { $cmd = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; ' + $cmd }
+  return $cmd
+}
 function Cs-DeleteNote {
   if ($Cs.Hint) { Cs-Say "the agent row stays in SimCore until you delete it: $($Cs.Hint)" }
   else { Cs-Say 'the agent row stays in SimCore until you delete it: DELETE /api/agents/<agent_id>' }
@@ -1946,11 +1977,7 @@ try {
   # Read the registration before deleting it, so the agent row can be named.
   if ($SvcObj) {
     try {
-      $img = "$((Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$Svc" -ErrorAction Stop).ImagePath)"
-      $srv = ''; $aid = ''
-      if ($img -match '--server\s+(\S+)') { $srv = $Matches[1] }
-      if ($img -match '--id\s+(\S+)') { $aid = $Matches[1] }
-      if ($srv -and $aid) { $Cs.Hint = "Invoke-RestMethod -Method Delete '$srv/api/agents/$aid'" }
+      $Cs.Hint = Cs-DeleteHint "$((Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$Svc" -ErrorAction Stop).ImagePath)"
     } catch { }
   }
 
