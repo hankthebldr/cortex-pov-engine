@@ -410,9 +410,15 @@ ground-truth: ## Regenerate docs/reference/ground-truth.{json,md} from the corpu
 check-ground-truth: ground-truth ## Ground-truth determinism gate (CI step): regenerate and diff against committed files
 	git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
 
-check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate (CI 'adapters' job)
+# The shelf drift check goes through the REAL pack loader (pydantic + pyyaml),
+# so it runs under the same interpreter as the other loader-backed gates here
+# ($(WIKI_PY): the repo venv when there is one). payloads/sources.json is
+# GENERATED from the packs; on drift this prints the diff and exits 1. Fix with
+# `python3 -m engine.payload_shelf --write`.
+check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate + payload-shelf drift check (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
 	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-adapter-wiring.py --list
+	CORTEXSIM_BASE_DIR=$(CURDIR) PYTHONPATH=$(CURDIR)/core $(WIKI_PY) -m engine.payload_shelf --check
 
 e2e-tierc: ## Tier-C isolated-execution assertion suite (CI 'e2e-isolated' job, no docker)
 	python3 -m pytest tests/e2e_isolated/test_tier_c_assets.py \

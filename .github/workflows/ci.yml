@@ -35,6 +35,8 @@ name: CI
 #               ALSO check-adapter-wiring.py: the de-hand-rolling gate, FAIL if a
 #               scenario names a tool with a non-reference-only adapter pack but
 #               never wires it via external_tools[].adapter_ref.
+#               ALSO `python3 -m engine.payload_shelf --check`: the generated
+#               payloads/sources.json must match the packs it is derived from.
 #   refs      — every scenario through the real loader under
 #               CORTEXSIM_STRICT_REFS, the PowerShell 5.1 floor gate (pwsh 7:
 #               necessary, not sufficient), and the ground-truth and
@@ -415,6 +417,13 @@ jobs:
   adapters:
     name: adapters (tier-2 source + rust recipe preflight)
     runs-on: ubuntu-22.04
+    env:
+      # scripts/build-payloads.sh records whatever it downloaded for an artifact
+      # that carries no digest pin, unless this is 0. No step stages the shelf
+      # today (it fetches from the public internet), so this is the default
+      # for the day one does: an unpinned artifact fails the build here.
+      # tests/ci/test_payload_shelf_gate.py holds every workflow to the same rule.
+      PAYLOAD_ALLOW_UNPINNED: '0'
     steps:
       - uses: actions/checkout@v4
         # Tier-2 adapter sources are git submodules; the check FAILs if any
@@ -431,7 +440,11 @@ jobs:
           python-version: '3.11'
           cache: pip
       - name: Install lint deps
-        run: pip install pyyaml
+        # pyyaml for the wiring lint; pydantic because the shelf drift check
+        # goes through the REAL pack loader. Both at the versions
+        # core/requirements.txt pins, so packs are validated here the way the
+        # image validates them at boot.
+        run: pip install $(grep -E '^(pyyaml|pydantic)==' core/requirements.txt)
       - name: Adapter-wiring lint (de-hand-rolling gate)
         # FAILs if a scenario names a tool that HAS an adapter pack but never
         # wires it via external_tools[].adapter_ref — the case that silently
@@ -440,6 +453,16 @@ jobs:
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
         run: python3 scripts/check-adapter-wiring.py --list
+      - name: Payload shelf drift check (payloads/sources.json is derived from the packs)
+        # payloads/sources.json is GENERATED from every pack's install.artifact
+        # (`python3 -m engine.payload_shelf --write`). The hand-kept list had
+        # already drifted once: it named an adapter that never existed. A stale
+        # copy stages the wrong bytes, or none, for a tool a scenario declares.
+        # Exit 1 prints the diff; regenerate and commit.
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+          PYTHONPATH: ${{ github.workspace }}/core
+        run: python3 -m engine.payload_shelf --check
 
   # ---------------------------------------------------------------------------
   # rust-dist — static musl build of the three tier-2 Rust tools, then EXECUTE
