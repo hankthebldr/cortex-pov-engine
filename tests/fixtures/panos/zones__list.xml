@@ -1,0 +1,1 @@
+<response status="success"><result total-count="1" count="2"><zone><entry name="outside"><network><layer3><member>ethernet1/1</member></layer3></network></entry><entry name="inside"><network><layer3><member>ethernet1/2</member><member>ethernet1/3.10</member></layer3></network><enable-user-identification>yes</enable-user-identification></entry></zone></result></response>
