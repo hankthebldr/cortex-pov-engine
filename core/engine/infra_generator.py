@@ -29,6 +29,7 @@ from engine.infra_models import (
     InfraBundleSummary,
     InfraGenerateRequest,
     InfraGenerateResponse,
+    hcl_param_problems,
 )
 from tools.adapter_catalog import catalog as adapter_catalog
 
@@ -115,6 +116,17 @@ class InfraGenerator:
                 f"(Phase C/D); available providers: "
                 f"{', '.join(PROVIDERS_WITH_MODULES)}"
             )
+
+        # 0b. SEC-17 — nothing that is not shaped like a region, an instance
+        #     type or a tag is rendered between HCL quotes. The route refuses
+        #     first (400 BAD_INFRA_PARAM); this is the same check for a caller
+        #     that built the request model itself. Before any directory exists.
+        problems = hcl_param_problems(request)
+        if problems:
+            raise GenerationError(
+                "refusing to render request values into Terraform: " + "; ".join(
+                    f"{p['field']}={p['value']} (expected {p['expected']})"
+                    for p in problems))
 
         # 1. Resolve adapter_refs[] → IaC modules + remember provenance so
         #    we can surface what the auto-pull did (and write ADAPTERS.md).

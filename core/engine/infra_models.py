@@ -11,6 +11,7 @@ Public catalog shape:
 from __future__ import annotations
 
 import ipaddress
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -132,6 +133,84 @@ class InfraGenerateRequest(BaseModel):
                 out.append(m)
                 seen.add(m)
         return out
+
+
+# -----------------------------------------------------------------------------
+# SEC-17 — what may be written between two double quotes in generated HCL
+# -----------------------------------------------------------------------------
+#
+# infra/templates/variables.tf.j2 and terraform.tfvars.j2 render
+# `default = "{{ region }}"` / `"{{ jumpbox_size }}"` with Jinja autoescape off
+# (it is HCL, not HTML), and `{{ tags | tojson }}`, whose JSON strings Terraform
+# still reads as templates. A value with a double quote closed the string and
+# the rest of it became HCL — a `local-exec` provisioner parsed and planned.
+#
+# The check is an ALLOW-list per field, applied before anything is rendered,
+# never an attempt to escape: a region or an instance type has a known shape,
+# and a value outside it is refused, not repaired.
+
+#: Per-provider shapes. Only AWS ships modules; the generic shapes cover the
+#: providers the request model already accepts but the generator refuses.
+_HCL_PARAM_SHAPES: dict[str, dict[str, tuple[re.Pattern[str], str]]] = {
+    "aws": {
+        # us-east-1 · eu-central-1 · ap-southeast-2 · us-gov-west-1
+        "region": (re.compile(r"^[a-z]{2}(?:-[a-z]{2,12}){1,3}-[0-9]{1,2}$"),
+                   "an AWS region such as us-east-1 or us-gov-west-1"),
+        # t3.medium · c6i.2xlarge · m7i-flex.large · u-6tb1.metal
+        "jumpbox_size": (re.compile(r"^[a-z][a-z0-9-]{0,22}\.[a-z0-9]{2,12}$"),
+                         "an AWS instance type such as t3.medium or m7i-flex.large"),
+    },
+}
+_HCL_GENERIC_SHAPES: dict[str, tuple[re.Pattern[str], str]] = {
+    "region": (re.compile(r"^[a-z][a-z0-9-]{1,30}[a-z0-9]$"),
+               "lowercase letters, digits and hyphens (3-32 characters)"),
+    "jumpbox_size": (re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{1,62}$"),
+                     "letters, digits, '.', '_' and '-' (2-63 characters)"),
+}
+
+#: AWS's own tag limits, and the characters it allows in a key or value. `$`,
+#: `%`, `{`, `"`, `\` and control characters are all outside the set, so no
+#: tag can open an HCL template sequence (`${` / `%{`) or close a string.
+_TAG_MAX_COUNT = 50
+_TAG_KEY_RE = re.compile(r"^[A-Za-z0-9 _.:/=+@-]{1,128}$")
+_TAG_VALUE_RE = re.compile(r"^[A-Za-z0-9 _.:/=+@-]{0,256}$")
+_TAG_EXPECTED = "letters, digits, space and _ . : / = + - @ (key 1-128, value 0-256)"
+
+
+def _shown(value: object) -> str:
+    """A refused value, for an error body: bounded and repr-escaped."""
+    text = repr(value)
+    return text if len(text) <= 64 else text[:61] + "..."
+
+
+def hcl_param_problems(request: "InfraGenerateRequest") -> list[dict[str, str]]:
+    """Every request value that must not be rendered into Terraform, or ``[]``.
+
+    One entry per refused value: ``{"field", "value", "expected"}``. Pure, and
+    the single place the rule lives — the route turns a non-empty answer into
+    ``400 BAD_INFRA_PARAM`` and the generator into a ``GenerationError``, so a
+    caller that builds the request model itself is refused the same way.
+    """
+    shapes = {**_HCL_GENERIC_SHAPES, **_HCL_PARAM_SHAPES.get(request.provider, {})}
+    problems: list[dict[str, str]] = []
+    for field, value in (("region", request.region),
+                         ("params.jumpbox_size", request.params.jumpbox_size)):
+        pattern, expected = shapes[field.rsplit(".", 1)[-1]]
+        if not isinstance(value, str) or not pattern.fullmatch(value):
+            problems.append({"field": field, "value": _shown(value), "expected": expected})
+
+    tags = request.params.tags or {}
+    if len(tags) > _TAG_MAX_COUNT:
+        problems.append({"field": "params.tags", "value": f"{len(tags)} tags",
+                         "expected": f"at most {_TAG_MAX_COUNT} tags"})
+    for key, value in tags.items():
+        if not isinstance(key, str) or not _TAG_KEY_RE.fullmatch(key):
+            problems.append({"field": "params.tags (key)", "value": _shown(key),
+                             "expected": _TAG_EXPECTED})
+        elif not isinstance(value, str) or not _TAG_VALUE_RE.fullmatch(value):
+            problems.append({"field": f"params.tags[{key}]", "value": _shown(value),
+                             "expected": _TAG_EXPECTED})
+    return problems
 
 
 class InfraGenerateResponse(BaseModel):
