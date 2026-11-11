@@ -26,9 +26,13 @@ export function describeError(err) {
  * @param {object} callbacks
  * @param {(run) => void} callbacks.onRunComplete
  * @param {(message: string) => void} callbacks.onError
+ * @param {boolean} [callbacks.holdOnWarnings] — when the launch response carries
+ *   container-agent gate `warnings[]`, do NOT call onRunComplete (which usually
+ *   navigates away); keep them on `lastRun.warnings` until `continueToRun()`.
+ *   Only a consumer that renders the warnings should set it.
  */
 export default function useLaunchScenario(scenario, {
-  onRunComplete, onError, payloadPlan = null,
+  onRunComplete, onError, payloadPlan = null, holdOnWarnings = false,
   // True only while a `?plan=` deep link's payload plan is still being
   // decoded (destinations.jsx::useDecodedPlan). MUST NOT be treated as
   // "no plan" — see the I-1 guard in `launch()` below.
@@ -151,8 +155,12 @@ export default function useLaunchScenario(scenario, {
     return () => { cancelled = true }
   }, [payloadPlan])
 
-  const launch = useCallback(async () => {
+  // `opts.allowMissingTools` re-sends the same launch with the container-agent
+  // gate's tool override (AGENT_TOOL_ABSENT). Read strictly: an onClick handler
+  // passing its event must never switch the override on.
+  const launch = useCallback(async (opts) => {
     if (!scenario) return null
+    const allowMissingTools = opts?.allowMissingTools === true
     // I-1 guard: a `?plan=` deep link's chunk can still be in flight when
     // Launch fires. Refusing here (not just disabling the button) means no
     // caller of `launch()` — including a race that slips past the disabled
@@ -188,9 +196,13 @@ export default function useLaunchScenario(scenario, {
       if (payloadPlanAccepted === true && payloadPlan?.artifacts?.length) {
         body.payload_plan = payloadPlan.artifacts
       }
+      if (allowMissingTools) body.allow_missing_tools = true
       const run = await postRun(body)
-      setLastRun({ status: 'success', message: `Run ${runIdOf(run) || ''} started` })
-      if (onRunComplete) onRunComplete(run)
+      const warnings = Array.isArray(run?.warnings) ? run.warnings : []
+      setLastRun({
+        status: 'success', message: `Run ${runIdOf(run) || ''} started`, warnings, run,
+      })
+      if (onRunComplete && !(holdOnWarnings && warnings.length)) onRunComplete(run)
       return run
     } catch (err) {
       const msg = err.message || 'Launch failed'
@@ -199,6 +211,10 @@ export default function useLaunchScenario(scenario, {
       setLastRun({
         status: 'error', message: msg, code: err.code || null,
         detail: typeof err.detail === 'string' ? err.detail : null,
+        // The structured detail of a container-agent gate refusal (missing
+        // tools per step, missing findings/rules, satisfying profile).
+        gate: err.detail && typeof err.detail === 'object' && !Array.isArray(err.detail)
+          ? err.detail : null,
       })
       if (onError) onError(msg)
       return null
@@ -206,8 +222,13 @@ export default function useLaunchScenario(scenario, {
       setLaunching(false)
     }
   }, [scenario, mode, identity, selectedAgent, consent, payloadPlan, payloadPlanAccepted,
-      payloadPlanResolving, onRunComplete, onError,
+      payloadPlanResolving, onRunComplete, onError, holdOnWarnings,
       profileMode, basMode, soaklessMode, attestedBy, pairedWith, canaryRunId])
+
+  // Leave a launch whose warnings were held (holdOnWarnings) for its run.
+  const continueToRun = useCallback(() => {
+    if (lastRun?.status === 'success' && lastRun.run && onRunComplete) onRunComplete(lastRun.run)
+  }, [lastRun, onRunComplete])
 
   const downloadPushBundle = useCallback(async () => {
     if (!scenario) return
@@ -277,6 +298,7 @@ export default function useLaunchScenario(scenario, {
     blockers,
     // actions
     launch,
+    continueToRun,
     downloadPushBundle,
   }
 }
