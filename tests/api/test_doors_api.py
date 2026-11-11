@@ -97,7 +97,8 @@ def test_scenario_doors_404(client):
 
 def test_phase1_nothing_open(client):
     doors = client.get("/api/doors").json()["doors"]
-    assert {d["state"] for d in doors} <= {"unknown", "configured"}
+    assert {d["state"] for d in doors} == {"unknown"}
+    assert {d["rung"] for d in doors} <= {"authored", "configured"}
     scen = client.get("/api/doors/readiness").json()["scenarios"]
     assert {v["state"] for v in scen.values()} <= {"needs_doors", "not_evaluated"}
 
@@ -116,7 +117,8 @@ def test_absent_registry_is_degraded_not_empty(client, monkeypatch):
     assert r["registry_loaded"] is False
     assert {v["state"] for v in r["scenarios"].values()} == {"not_evaluated"}
     s = client.get("/api/scenarios/SIM-MP-001/doors").json()
-    assert s["registry_loaded"] is False and s["readiness"] is None
+    assert s["registry_loaded"] is False and s["code"] == "REGISTRY_ABSENT"
+    assert s["readiness"]["state"] == "not_evaluated" and s["detections"] == []
 
 
 def test_malformed_registry_is_a_structured_500(client, monkeypatch):
@@ -134,3 +136,23 @@ def test_bulk_endpoints_are_fast(client):
     client.get("/api/doors")
     client.get("/api/doors/readiness")
     assert time.monotonic() - t < 2.0
+
+
+def test_configured_unchecked_door_is_unknown_state_configured_rung(client, monkeypatch):
+    async def facts(db):
+        return {"saas_okta": "configured"}
+    monkeypatch.setattr("api.doors.door_state.configured_facts", facts)
+    row = next(d for d in client.get("/api/doors").json()["doors"] if d["door_id"] == "saas_okta")
+    assert row["state"] == "unknown" and row["rung"] == "configured"
+
+
+def test_open_event_without_configured_fact_reads_open(client, session_factory):
+    from engine import door_state
+
+    async def _rec():
+        async with session_factory() as s:
+            await door_state.record(s, door_key="saas_okta", door_id="saas_okta", state="open",
+                                    basis="attested", rung="reachable", evidence={}, attested_by="t")
+    asyncio.run(_rec())
+    row = next(d for d in client.get("/api/doors").json()["doors"] if d["door_id"] == "saas_okta")
+    assert row["state"] == "open" and row["basis"] == "attested"

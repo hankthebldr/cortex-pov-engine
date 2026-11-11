@@ -1054,12 +1054,15 @@ Errors use the top-level `{"error", "code", "detail"}` shape.
   `ready | partial | needs_doors | not_evaluated`. `route_blocked` counts detections whose
   collector route cannot feed them; `unevaluated` counts agent-scoped OR-sets with no
   `agent_id` to key them. Both are passed through unchanged from the resolver.
-- A door row `state` is the last conclusive event (`open | closed`), else `configured` when a
-  zero-call fact says so, else `unknown`. Phase 1 writes no events, so nothing reads `open`
-  and no scenario reads `ready`.
+- A door row `state` is the last conclusive event (`open | closed`), else `unknown`; the
+  `rung` axis separately carries `configured` when a zero-call fact says so (else `authored`).
+  Phase 1 writes no events, so nothing reads `open` and no scenario reads `ready`.
+- `detections_needing` counts a detection once for each door in its OR-sets, so the per-door
+  counts can sum to more than the number of detections.
 - An absent dataset requirement registry answers 200 with `registry_loaded: false`:
   `detections_needing` is `null` and every scenario reads `not_evaluated` with
-  `reason: REGISTRY_ABSENT`. A malformed one is a structured 500.
+  `reason: REGISTRY_ABSENT`; the per-scenario route returns `registry_loaded: false`,
+  `code`/`reason: REGISTRY_ABSENT`, `detections: []` and a `not_evaluated` readiness. A malformed one is a structured 500.
 
 ### 1.17 NGFW (PAN-OS) connection (`core/api/ngfw.py`, prefix `/ngfw`; preflight through `/connectors`)
 

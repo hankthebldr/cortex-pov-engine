@@ -98,7 +98,7 @@ def _door_rows(state: dict[str, dict], facts: dict[str, str]) -> list[dict[str, 
             if ev is not None and ev["state"] != "unknown":
                 st, basis, rung = ev["state"], ev["basis"], ev["rung"]
             else:
-                st = "configured" if fact == "configured" else "unknown"
+                st = "unknown"
                 basis, rung = None, fact
             rows.append({
                 "key": key, "door_id": door.id, "label": door.label, "scope": door.scope,
@@ -170,7 +170,10 @@ async def scenario_doors(scenario_id: str, agent_id: Optional[str] = Query(None)
     except DatasetRequirementsError as exc:
         return _malformed(exc)
     if registry is None:
-        return {"scenario_id": scenario_id, "registry_loaded": False, "readiness": None,
+        return {"scenario_id": scenario_id, "registry_loaded": False,
+                "code": "REGISTRY_ABSENT", "reason": "REGISTRY_ABSENT",
+                "readiness": {"scenario_id": scenario_id, "state": "not_evaluated",
+                              "reason": "REGISTRY_ABSENT"},
                 "detections": [], "tenant_verified": 0, "outbound_calls": 0}
     open_keys = await _open_keys(db)
     data = sc.to_dict()
