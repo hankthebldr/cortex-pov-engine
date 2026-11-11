@@ -122,8 +122,8 @@
 .fw-registered__actions { margin-left: auto; display: inline-flex; gap: 6px; }
 
 /* ── Check ──────────────────────────────────────────────────────────── */
-.fw-check__controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-.fw-check__agents {
+.fw-checkstep__controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.fw-checkstep__agents {
   border: 1px solid var(--bd);
   border-radius: 6px;
   padding: 8px 12px;
@@ -132,7 +132,19 @@
   flex-wrap: wrap;
   gap: 6px 16px;
 }
-.fw-report { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.fw-report__live { margin-top: 14px; font-size: 11.5px; color: var(--tx2); }
+.fw-report__live:empty { display: none; }
+.fw-sr-alert {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.fw-sources__live { font-size: 11.5px; color: var(--tx2); }
+.fw-report { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
 .fw-report__head {
   display: flex;
   flex-wrap: wrap;

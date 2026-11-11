@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { putFirewallSource } from '../../../api/client.js'
 import {
   chipFor, statusLabel, sourceStatus, srcProvenanceLabel, addrProvenanceLabel,
@@ -19,21 +19,38 @@ import {
 export const SOURCES_FOOTER =
   'Proves: what this firewall\'s running config does to these sources and probe destinations. Does not prove: that any session was logged, ingested or stitched; url-filtering or wildfire-analysis actions (not evaluated) — tenant-verified: 0'
 
+function summary(report) {
+  if (!report) return 'Run the check to see each enrolled agent\'s path through the firewall.'
+  const rows = (Array.isArray(report.sources) ? report.sources : []).filter((x) => x && x.agent_id)
+  if (rows.length === 0) return 'No agent source rows in this report.'
+  const count = (st) => rows.filter((r) => sourceStatus(r) === st).length
+  return `${rows.length} source${rows.length === 1 ? '' : 's'}: ${count('blocked')} blocked, `
+    + `${count('degraded')} degraded, ${count('ok')} ok.`
+}
+
 export default function SourcesStep({ firewall, report }) {
-  if (!report) {
-    return <p className="fw-note">Run the check to see each enrolled agent&apos;s path through the firewall.</p>
-  }
+  // Mounted before any report, so the arrival of source rows is announced.
+  const live = (
+    <p className="fw-sources__live" role="status" aria-live="polite" data-testid="fw-sources-live">
+      {summary(report)}
+    </p>
+  )
+  if (!report) return live
   const sources = Array.isArray(report.sources) ? report.sources : []
   if (sources.length === 0) {
     return (
-      <div className="fw-empty" data-status="degraded" data-testid="fw-sources-entry">
-        <span className="chip chip--pending">DEGRADED</span> the report carried no sources
-        section, so no agent&apos;s path was checked.
-      </div>
+      <>
+        {live}
+        <div className="fw-empty" data-status="degraded" data-testid="fw-sources-entry">
+          <span className="chip chip--pending">DEGRADED</span> the report carried no sources
+          section, so no agent&apos;s path was checked.
+        </div>
+      </>
     )
   }
   return (
     <div className="fw-sources">
+      {live}
       {sources.map((src, i) => (src && src.agent_id
         ? <SourceRow key={src.agent_id} firewall={firewall} src={src} />
         : <SourceEntry key={`entry-${i}`} entry={src || {}} />))}
@@ -210,6 +227,26 @@ function SourceEditor({ firewall, src, host }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [saved, setSaved] = useState(null)
+  const editRef = useRef(null)
+  const firstRef = useRef(null)
+  const returnFocus = useRef(false)
+
+  // A new report is a new source object: the old "Saved" note no longer applies.
+  useEffect(() => { setSaved(null) }, [src])
+
+  useEffect(() => {
+    if (open) {
+      firstRef.current?.focus()
+    } else if (returnFocus.current) {
+      returnFocus.current = false
+      editRef.current?.focus()
+    }
+  }, [open])
+
+  const close = () => {
+    returnFocus.current = true
+    setOpen(false)
+  }
 
   const start = () => {
     setObserved(src.fw_src_provenance === 'entered' ? (src.fw_observed_src || '') : '')
@@ -228,8 +265,8 @@ function SourceEditor({ firewall, src, host }) {
         observed_source: observed.trim() || null,
         agent_addresses: parseList(addrs),
       })
-      setSaved(res)
-      setOpen(false)
+      setSaved(res || {})
+      close()
     } catch (err) {
       setError({ message: err?.message || 'save failed', detail: typeof err?.detail === 'string' ? err.detail : null })
     } finally {
@@ -240,7 +277,7 @@ function SourceEditor({ firewall, src, host }) {
   if (!open) {
     return (
       <div className="fw-edit">
-        <button type="button" className="btn btn--xs" onClick={start}
+        <button type="button" className="btn btn--xs" onClick={start} ref={editRef}
           aria-label={`Edit addresses for ${host}`}>
           Edit addresses
         </button>
@@ -256,7 +293,7 @@ function SourceEditor({ firewall, src, host }) {
     <form className="fw-edit fw-edit--open" onSubmit={save} aria-label={`Addresses for ${host}`}>
       <div className="pov-field">
         <label className="pov-field__k" htmlFor={`${uid}-obs`}>Firewall-observed source for {host}</label>
-        <input id={`${uid}-obs`} className="pov-field__input" type="text" value={observed}
+        <input id={`${uid}-obs`} ref={firstRef} className="pov-field__input" type="text" value={observed}
           onChange={(e) => setObserved(e.target.value)}
           placeholder={src.fw_observed_src || 'blank = infer from last_ip'} autoComplete="off" />
       </div>
@@ -272,7 +309,7 @@ function SourceEditor({ firewall, src, host }) {
           aria-label={`Save addresses for ${host}`}>
           {busy ? 'Saving…' : 'Save'}
         </button>
-        <button type="button" className="btn btn--xs btn--ghost" onClick={() => setOpen(false)}
+        <button type="button" className="btn btn--xs btn--ghost" onClick={close}
           aria-label={`Cancel editing addresses for ${host}`}>
           Cancel
         </button>

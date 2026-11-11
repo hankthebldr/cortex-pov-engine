@@ -40,6 +40,8 @@ export default function CheckStep({ firewall, agents = [], report, onReport }) {
   const run = async () => {
     setBusy(true)
     setError(null)
+    // Drop the previous verdict: a stale ladder under "Checking…" reads as current.
+    onReport?.(null)
     try {
       const body = await firewallPreflight(firewall, picked.length ? picked : null)
       onReport?.(body)
@@ -52,10 +54,10 @@ export default function CheckStep({ firewall, agents = [], report, onReport }) {
   }
 
   return (
-    <div className="fw-check">
-      <div className="fw-check__controls">
+    <div className="fw-checkstep">
+      <div className="fw-checkstep__controls">
         {agentIds.length > 0 && (
-          <fieldset className="fw-check__agents">
+          <fieldset className="fw-checkstep__agents">
             <legend className="pov-field__k">Agents to check (none ticked = every enrolled agent)</legend>
             {agentIds.map((id) => (
               <label key={id} className="fw-check" htmlFor={`${uid}-${id}`}>
@@ -82,29 +84,48 @@ export default function CheckStep({ firewall, agents = [], report, onReport }) {
         </div>
       )}
 
+      {/* Mounted before any report so assistive tech is already listening when
+          the verdict lands; it holds the busy state, then the verdict line. */}
+      <div className="fw-report__live" role="status" aria-live="polite" data-testid="fw-check-live">
+        {busy ? 'Checking the firewall…' : (report ? <ReportHead report={report} /> : null)}
+      </div>
+      {!busy && report && report.overall === 'blocked' && (
+        <div className="fw-sr-alert" role="alert">Preflight result: blocked.</div>
+      )}
+
       {report && <Ladder report={report} />}
+    </div>
+  )
+}
+
+/** A report nobody answered never reads green, whatever `overall` says. */
+function unanswered(report) {
+  return typeof report.queries_issued !== 'number' || report.queries_issued === 0
+}
+
+function ReportHead({ report }) {
+  const n = report.queries_issued
+  const chip = unanswered(report) ? 'chip chip--pending' : chipFor(report.overall)
+  return (
+    <div className="fw-report__head">
+      <span className={chip} data-testid="fw-overall">{statusLabel(report.overall)}</span>
+      <span className="mono">
+        {typeof n === 'number' ? `queries issued: ${n}` : 'queries issued: not reported'}
+      </span>
+      {unanswered(report) && (
+        <span className="fw-report__unanswered">this report was not answered by a firewall</span>
+      )}
+      {report.mgmt_host && <span className="mono">host {report.mgmt_host}</span>}
+      {report.panos_version && <span className="mono">PAN-OS {report.panos_version}</span>}
+      {report.config_source && <span className="mono">config: {report.config_source}</span>}
     </div>
   )
 }
 
 function Ladder({ report }) {
   const stages = Array.isArray(report.stages) ? report.stages : []
-  const n = report.queries_issued
   return (
     <div className="fw-report">
-      <div className="fw-report__head">
-        <span className={chipFor(report.overall)} data-testid="fw-overall">{statusLabel(report.overall)}</span>
-        <span className="mono">
-          {typeof n === 'number' ? `queries issued: ${n}` : 'queries issued: not reported'}
-        </span>
-        {(n === 0 || typeof n !== 'number') && (
-          <span className="fw-report__unanswered">this report was not answered by a firewall</span>
-        )}
-        {report.mgmt_host && <span className="mono">host {report.mgmt_host}</span>}
-        {report.panos_version && <span className="mono">PAN-OS {report.panos_version}</span>}
-        {report.config_source && <span className="mono">config: {report.config_source}</span>}
-      </div>
-
       {stages.length === 0 ? (
         <div className="fw-empty" data-status="degraded">
           <span className="chip chip--pending">DEGRADED</span> the report carried no stages, so

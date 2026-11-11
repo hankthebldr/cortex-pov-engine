@@ -16,6 +16,8 @@ export const KEYGEN_NOTE =
   "Your password is used once to generate an API key and is not stored. Generating a key does not revoke this admin's other keys. Use a read-only API admin role."
 export const TLS_OFF_NOTE =
   'Self-signed management certificates are common in labs. Every preflight will report this connection as unverified.'
+export const TLS_UNVERIFIED_NOTE =
+  'TLS unverified: every preflight will report this connection as unverified.'
 export const OVERRIDES_CLEARED_NOTE =
   'address overrides from the previous firewall were cleared'
 
@@ -50,12 +52,27 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
   const [error, setError] = useState(null)
   const [outcome, setOutcome] = useState(null)
 
-  const existing = (firewalls || []).find((f) => f.name === name.trim()) || null
   const ready = name.trim() && host.trim()
     && (mode === 'key' ? apiKey.length > 0 : username.trim() && password.length > 0)
 
-  const submit = async (e) => {
-    e.preventDefault()
+  // Switching mode drops whatever secret was typed for the other mode, so a
+  // password never sits in state behind a hidden field.
+  const switchMode = (next) => {
+    setPassword('')
+    setApiKey('')
+    setMode(next)
+  }
+
+  // No <form>: a form submit carrying a password field is what prompts the
+  // browser to offer saving the admin credential. Enter still submits.
+  const onEnter = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      submit()
+    }
+  }
+
+  const submit = async () => {
     if (!ready || busy) return
     setBusy(true)
     setError(null)
@@ -84,7 +101,13 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
             name: fwName, host: host.trim(), verify_tls: verifyTls,
             vsys: vsys.trim() || 'vsys1', forwarding_path: forwardingPath, api_key: apiKey,
           })
-          setOutcome({ name: res?.name || fwName, warnings: [], overridesCleared: false })
+          setOutcome({
+            name: res?.name || fwName,
+            // The server warns about an unverified keygen; the paste path has no
+            // password to warn about, but the connection is still unverified.
+            warnings: verifyTls ? [] : [TLS_UNVERIFIED_NOTE],
+            overridesCleared: res?.overrides_cleared === true,
+          })
         } finally {
           setApiKey('')
         }
@@ -100,7 +123,7 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
 
   return (
     <div className="fw-connect">
-      <form className="fw-form" onSubmit={submit} aria-label="Register a firewall">
+      <div className="fw-form" role="group" aria-label="Register a firewall">
         <div className="fw-form__grid">
           <div className="pov-field">
             <label className="pov-field__k" htmlFor={`${uid}-name`}>Name</label>
@@ -132,12 +155,12 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
           <legend className="pov-field__k">Credential</legend>
           <label className="fw-check">
             <input type="radio" name={`${uid}-mode`} value="key" checked={mode === 'key'}
-              onChange={() => setMode('key')} />
+              onChange={() => switchMode('key')} />
             Paste API key
           </label>
           <label className="fw-check">
             <input type="radio" name={`${uid}-mode`} value="keygen" checked={mode === 'keygen'}
-              onChange={() => setMode('keygen')} />
+              onChange={() => switchMode('keygen')} />
             Generate key from admin login
           </label>
         </fieldset>
@@ -147,7 +170,8 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
             <div className="pov-field">
               <label className="pov-field__k" htmlFor={`${uid}-key`}>API key</label>
               <input id={`${uid}-key`} className="pov-field__input" type="password" value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)} autoComplete="off" />
+                onChange={(e) => setApiKey(e.target.value)} onKeyDown={onEnter}
+                autoComplete="new-password" data-lpignore="true" data-1p-ignore="" />
             </div>
             <div className="pov-field">
               <label className="pov-field__k" htmlFor={`${uid}-path`}>Forwarding path</label>
@@ -156,12 +180,10 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
                 {PATHS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
-            {existing && (
-              <p className="fw-note fw-note--warn fw-form__full">
-                <span className="mono">{existing.name}</span> is already registered. Pasting a key
-                replaces its stored settings, including per-agent address overrides.
-              </p>
-            )}
+            <p className="fw-note fw-form__full">
+              Re-registering a firewall keeps its per-agent address overrides when the host is
+              unchanged, and clears them when it changes.
+            </p>
           </div>
         ) : (
           <div className="fw-form__grid">
@@ -173,7 +195,8 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
             <div className="pov-field">
               <label className="pov-field__k" htmlFor={`${uid}-pw`}>Admin password</label>
               <input id={`${uid}-pw`} className="pov-field__input" type="password" value={password}
-                onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+                onChange={(e) => setPassword(e.target.value)} onKeyDown={onEnter}
+                autoComplete="new-password" data-lpignore="true" data-1p-ignore="" />
             </div>
             <p className="fw-note fw-form__full">{KEYGEN_NOTE}</p>
             <p className="fw-note fw-form__full">
@@ -184,7 +207,7 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
         )}
 
         <div className="fw-form__actions">
-          <button type="submit" className="btn btn--primary" disabled={!ready || busy}>
+          <button type="button" className="btn btn--primary" disabled={!ready || busy} onClick={submit}>
             {busy
               ? (mode === 'keygen' ? 'Generating…' : 'Registering…')
               : (mode === 'keygen' ? 'Generate key and register' : 'Register firewall')}
@@ -199,7 +222,7 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
           </div>
         )}
         {outcome && (
-          <div className="fw-outcome" role="status">
+          <div className="fw-outcome" role="status" data-testid="fw-outcome">
             Registered <span className="mono">{outcome.name}</span>. Nothing about its logging or
             policy path has been checked yet; run the check below.
             {outcome.warnings.map((w) => (
@@ -210,7 +233,7 @@ export default function ConnectStep({ firewalls, loadError, selected, onSelect, 
             )}
           </div>
         )}
-      </form>
+      </div>
 
       <RegisteredList firewalls={firewalls} loadError={loadError} selected={selected}
         onSelect={onSelect} onChanged={onChanged} />
