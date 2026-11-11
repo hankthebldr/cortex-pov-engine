@@ -357,6 +357,27 @@ def test_cmd_shaped_windows_lines_are_withheld_and_posix_lines_still_run():
     assert "[CortexSim] cleanup complete" in proc.stdout
 
 
+#: POSIX teardown whose ARGUMENT happens to look like a cmdlet (review finding
+#: on 198198c). is_windows_only() fires on a Verb-Noun token anywhere in the
+#: line, so each of these was withheld from bash and dropped from the K8s
+#: bootstrap while the run still logged "Cleanup complete".
+POSIX_LINES_WITH_A_VERB_NOUN_ARGUMENT = [
+    "kubectl delete pod Test-Runner --ignore-not-found",
+    "pkill -f New-Relic",
+    "docker rm -f Get-Started",
+    "aws s3 rm s3://bucket/Export-Data",
+]
+
+
+@pytest.mark.parametrize("cmd", POSIX_LINES_WITH_A_VERB_NOUN_ARGUMENT)
+def test_a_posix_line_with_a_cmdlet_shaped_argument_is_kept(cmd):
+    r = pg.resolve_target(_synthetic([cmd, "Remove-Item -Force C:\\x"]), "posix")
+    assert [c for c, _ in r.cleanup] == [cmd], (r.cleanup, r.skipped_cleanup)
+    assert r.skipped_cleanup == ("Remove-Item -Force C:\\x",)
+    body = _cleanup_body(_cleanup_function(pg.generate_bash(_synthetic([cmd]))))
+    assert f"    {cmd}\n" in body, body
+
+
 @pytest.mark.skipif(BASH is None, reason="no bash >= 4 on this host")
 def test_the_windows_command_detector_can_fail():
     """`sc.exe delete X`, `Clear-History` and a bare `del` carry no marker the

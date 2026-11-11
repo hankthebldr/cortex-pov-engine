@@ -285,6 +285,42 @@ def is_windows_only(command: str) -> bool:
     return not is_posix_shaped(command)
 
 
+#: A plain lowercase command name at the head of a line: what a POSIX teardown
+#: line starts with (``kubectl``, ``pkill``, ``docker``, ``rm``, ``aws``).
+_POSIX_HEAD_RE = re.compile(r"^[a-z][a-z0-9._+-]*$")
+#: Lowercase heads that are Windows commands, or PowerShell / cmd keywords, so
+#: a line they start is still Windows teardown.
+_WINDOWS_HEADS = frozenset({
+    "del", "erase", "rd", "rmdir", "copy", "move", "ren", "set", "start", "reg",
+    "sc", "net", "netsh", "schtasks", "taskkill", "wevtutil", "vssadmin", "bcdedit",
+    "wmic", "certutil", "icacls", "attrib", "takeown", "cscript", "wscript", "mshta",
+    "rundll32", "regsvr32", "msiexec", "setx", "powershell", "pwsh", "cmd",
+    "if", "for", "foreach", "while", "do", "try", "function", "param", "switch",
+})
+
+
+def is_windows_teardown(command: str) -> bool:
+    """True when a ``cleanup.commands`` line is Windows teardown a POSIX target
+    must not run.
+
+    :func:`is_windows_only` alone fires on a Verb-Noun token ANYWHERE in the
+    line, so ``kubectl delete pod Test-Runner``, ``pkill -f New-Relic`` and
+    ``aws s3 rm s3://bucket/Export-Data`` read as Windows and were withheld
+    from bash and the K8s bootstrap while the run still logged
+    "Cleanup complete". A line whose HEAD is a plain lowercase command name
+    that is not a Windows command or keyword is POSIX teardown and is kept.
+    Every Windows-only line in the corpus starts with a cmdlet, a ``$``
+    assignment, an ``.exe`` or ``del``, so the corpus resolution is unchanged.
+    """
+    if not is_windows_only(command):
+        return False
+    head = command.strip().split(None, 1)[0] if command.strip() else ""
+    if _POSIX_HEAD_RE.match(head) and head not in _WINDOWS_HEADS \
+            and not re.search(r"\.(?:exe|cmd|bat|ps1|com)$", head):
+        return False
+    return True
+
+
 _NEUTRAL_STMT_RE = re.compile(r"^echo\s+'[^']*'$")
 _NEUTRAL_FORBIDDEN = ("|", "<", ">", "`", "$(", "&", "\\\n")
 
@@ -685,7 +721,7 @@ def _resolve_cleanup(
             # `set -u`, ends the shell and strands every later teardown line.
             # The bash bundle names each withheld line in a comment; the K8s
             # bootstrap reads this same resolution.
-            if is_windows_only(cmd):
+            if is_windows_teardown(cmd):
                 skipped.append(cmd)
             else:
                 kept.append((cmd, "bash"))
@@ -1085,14 +1121,14 @@ def generate_bash(scenario: dict[str, Any]) -> str:
         script += "\n".join(adapter_lines) + "\n\n"
 
     # --- Cleanup registration ---
-    # The same rule `_resolve_cleanup(..., "posix")` applies, so what this
+    # The same rule (`is_windows_teardown`) `_resolve_cleanup(..., "posix")` applies, so what this
     # bundle runs cannot disagree with `resolve_target(...).cleanup`: a
     # Windows-only teardown line is named in a comment (flattened to one line,
     # so it cannot end the comment) and never handed to bash.
     cleanup_cmds = cleanup_data.get("commands") or []
     cleanup_rendered = [
         _BASH_SKIPPED_CLEANUP_PREFIX + _comment_safe(" ".join(cmd.split()))
-        if isinstance(cmd, str) and is_windows_only(cmd)
+        if isinstance(cmd, str) and is_windows_teardown(cmd)
         else f"    {cmd}"
         for cmd in cleanup_cmds
     ]
