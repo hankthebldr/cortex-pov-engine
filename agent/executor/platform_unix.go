@@ -163,6 +163,12 @@ const (
 // to hand out again, and from the first ESRCH on this never signals it. SIGKILL
 // is sent only if the group never read empty for the whole grace period.
 //
+// What is left, stated: between the anchor's reap and the first probe (and
+// between two probes) a group that had ALREADY emptied could have its number
+// recycled into an unrelated group, which would then probe as alive. That needs
+// the pid space to wrap inside microseconds. Base had no probe at all — it sent
+// SIGTERM to the number unconditionally and SIGKILL three seconds later.
+//
 // It returns "" when there was nothing to stop, else what was done.
 func (k *treeKiller) reapSurvivors(failed bool) string {
 	_ = failed
