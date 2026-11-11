@@ -590,6 +590,12 @@ get it.
   `SERVICE_CONFIG_FAILED` · `PROCESS_START_BLOCKED` (the per-user beacon could
   not start or exited at once, typically application control or AV) ·
   `SERVER_UNREACHABLE` (now with the `CORTEXSIM_NO_PROXY=1` hint).
+  **POSIX only:** `HOST_NOT_ALLOWED` (the enroll or binary request met SimCore's
+  Host guard; the fix names `CORTEXSIM_ALLOWED_HOSTS`. It used to read
+  `ENROLL_DENIED` / "mint a fresh token" or `BINARY_FETCH_FAILED`). The
+  installer route itself refuses `?server=<name>` with **400
+  `SERVER_HOST_NOT_ALLOWED`** when the guard would refuse that name, so a
+  script is never rendered for a server the beacon cannot reach.
   **Uninstallers:** `NEEDS_ROOT` (POSIX: a root install seen from a non-root
   shell, so `… | sudo bash`) · `NOT_ELEVATED` (Windows) ·
   `UNINSTALL_INCOMPLETE` (both: something found survived removal). Install

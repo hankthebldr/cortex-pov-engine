@@ -605,3 +605,60 @@ def test_reinstall_restarts_the_stale_unit_so_the_new_id_takes_over(
     assert "installed system unit:" in p2.stdout, f"stdout:\n{p2.stdout}\nstderr:\n{p2.stderr}"
     assert "unit already existed — restarting" in p2.stdout
     assert "restart cortexsim-agent" in syslog.read_text()
+
+
+# ---------------------------------------------------------------------------
+# RG-INSTALL-03: a Host-guard refusal is named, not read as a bad token.
+#
+# A beacon --server that is a DNS name SimCore's guard does not admit gets
+# 400 HOST_NOT_ALLOWED on every request. The installer reported that at the
+# enroll stage as ENROLL_DENIED / "mint a fresh token", which sends the DC to
+# the token, and at the download stage as BINARY_FETCH_FAILED.
+# ---------------------------------------------------------------------------
+
+
+class _HostRefusingHandler(http.server.BaseHTTPRequestHandler):
+    """Answers every request the way core/security/host_guard.py does."""
+
+    BODY = json.dumps({
+        "error": "Host not allowed", "code": "HOST_NOT_ALLOWED",
+        "detail": "Host 'jumpbox.lab' is not one SimCore answers to. Fix: set "
+                  "CORTEXSIM_ALLOWED_HOSTS=jumpbox.lab and restart SimCore.",
+    }).encode()
+
+    def log_message(self, *args):
+        pass
+
+    def _refuse(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length:
+            self.rfile.read(length)
+        self.send_response(400)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(self.BODY)))
+        self.end_headers()
+        self.wfile.write(self.BODY)
+
+    do_GET = _refuse
+    do_POST = _refuse
+
+
+@pytest.mark.parametrize("with_token, stage", [(True, "enroll"), (False, "download")])
+def test_a_host_guard_refusal_is_named_not_read_as_a_bad_token(simcore, sandbox, with_token, stage):
+    port = _free_port()
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), _HostRefusingHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        q = "token=cxs_host_refused_but_well_formed_token" if with_token else "id=box-1"
+        script = _fetch(f"{simcore}/api/agents/install?{q}&mode=foreground")
+        sandbox["env"]["CORTEXSIM_SERVER"] = f"http://127.0.0.1:{port}"
+        sandbox["env"]["CORTEXSIM_TELEMETRY"] = "0"
+        p = _run_installer(script, sandbox)
+    finally:
+        httpd.shutdown()
+
+    assert p.returncode == 1
+    assert f"stage={stage}  code=HOST_NOT_ALLOWED" in p.stderr, p.stderr
+    assert "CORTEXSIM_ALLOWED_HOSTS" in p.stderr
+    assert "mint a fresh token" not in p.stderr
+    assert "ENROLL_DENIED" not in p.stderr and "BINARY_FETCH_FAILED" not in p.stderr

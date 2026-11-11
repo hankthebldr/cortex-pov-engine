@@ -531,6 +531,15 @@ cs_fail() {  # stage code what fix
   exit 1
 }
 
+cs_host_refused() {  # stage bodyfile — SimCore's Host guard said no (RG-INSTALL-03)
+  if grep -q '"code"[[:space:]]*:[[:space:]]*"HOST_NOT_ALLOWED"' "$2" 2>/dev/null; then
+    CS_HOST="${SERVER#*://}"; CS_HOST="${CS_HOST%%/*}"; CS_HOST="${CS_HOST%:*}"
+    cs_fail "$1" HOST_NOT_ALLOWED \
+      "SimCore refused the name '$CS_HOST' this host calls it by (400 HOST_NOT_ALLOWED) — $(head -c 300 "$2" 2>/dev/null || true)" \
+      "on SimCore add $CS_HOST to CORTEXSIM_ALLOWED_HOSTS and restart it, or re-run with CORTEXSIM_SERVER=http://<simcore-ip>:8888"
+  fi
+}
+
 # ── stage: detect ───────────────────────────────────────────────────────────
 UNAME_S="$(uname -s 2>/dev/null || echo unknown)"
 case "$UNAME_S" in
@@ -569,6 +578,7 @@ if [ -n "$TOKEN" ]; then
       "check routing / proxy / firewall from this host to SimCore, then re-run$CS_LOOPBACK_HINT"
   fi
   if [ "$ECODE" != "200" ]; then
+    cs_host_refused enroll "$EBODY"
     # Surface the server's own structured {error,code,detail} body verbatim —
     # the old installer used `curl -f`, which threw it away and guessed.
     cs_fail enroll ENROLL_DENIED \
@@ -613,6 +623,7 @@ cs_try_download() {
     return 1
   fi
   if [ "$DCODE" != "200" ]; then
+    cs_host_refused download "$DL"
     cs_fail download BINARY_FETCH_FAILED \
       "HTTP $DCODE — $(head -c 300 "$DL" 2>/dev/null || true)" \
       "GET '$URL' by hand to read the structured error"
