@@ -189,7 +189,7 @@ class TestParamValidation:
         })
         assert p.auth_token is None
         assert p.auth_header == "Authorization"
-        assert p.auth_scheme == "Bearer"
+        assert p.auth_scheme == ""  # XSIAM HTTP collector wants the bare key
         assert p.compress is False
         assert p.batch is False
 

@@ -3,7 +3,7 @@ Delivery accounting + error taxonomy for the collector-POST plugin families.
 
 A POV lives or dies on one question: *did the signal actually land in the
 collector?* Before this module the emitters answered "yes" for any POST that
-did not raise — a 401 from a Broker VM with the wrong ingestion token, a 404
+did not raise — a 401 from a collector given the wrong ingestion token, a 404
 from a mistyped ``/logs/v1/event`` path, or a 302 to a login page (the clients
 run with ``follow_redirects=False``) all counted as delivered records and the
 step returned ``status="success"``. A DC would demo a green campaign against a
@@ -124,12 +124,14 @@ REMEDIATION: dict[str, str] = {
         "response is JSON."
     ),
     COLLECTOR_ERROR: (
-        "Collector returned a server error — inspect the Broker VM / collector "
-        "logs; the records were not ingested."
+        "Collector returned a server error — the records were not ingested. For "
+        "the XSIAM HTTP log collector a 500 means the body does not match the "
+        "collector's Log Format (JSON vs Raw/CEF/LEEF); otherwise inspect the "
+        "forwarder's logs."
     ),
     COLLECTOR_UNAVAILABLE: (
-        "Collector reported itself unavailable — confirm the Broker VM HTTP "
-        "applet is running and accepting the configured port."
+        "Collector reported itself unavailable — confirm the HTTP log collector "
+        "instance (or the forwarder in front of it) is enabled and reachable."
     ),
     COLLECTOR_UNREACHABLE: (
         "Nothing answered at the collector address — check DNS, routing and "

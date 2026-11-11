@@ -690,4 +690,5 @@ class TestCampaignSecretsAreNotReturned:
         resp = api_client.post("/api/eal/campaigns/CMP-SECRET-001/launch",
                                json={"operator": "tester", "dry_run": False})
         assert resp.status_code == 200, resp.text
-        assert seen.get("authorization") == f"Bearer {self._TOKEN}"
+        # The XSIAM HTTP log collector takes the bare API key, no scheme.
+        assert seen.get("authorization") == self._TOKEN

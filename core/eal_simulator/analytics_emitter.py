@@ -4,9 +4,8 @@ EAL plugin family.
 
 This module is the framework spine for a family of *analytics log-streamer*
 plugins: emitters that POST **shape-true** JSON log records to an
-operator-supplied collector (an HTTP log collector / XSIAM Broker VM HTTP
-applet / Cribl-or-nginx forwarder — all of which speak the same POST-JSON
-contract) so a customer can validate that their Cortex XSIAM **Analytics /
+operator-supplied collector (the XSIAM HTTP log collector, or a Cribl/nginx
+forwarder in front of it — both speak the same POST-JSON contract) so a customer can validate that their Cortex XSIAM **Analytics /
 ABIOC** detections fire on the data source. It extends the proven
 ``idp_signin_emulator`` / ``email_emitter`` pattern with one reusable
 transport driver so each per-data-source plugin only has to describe *its*
@@ -84,10 +83,10 @@ class AnalyticsEmitterParams(BaseModel):
         ...,
         description="HTTP collector endpoint to POST shape-true log records to. "
                     "The operator supplies the FULL URL — this fronts any of the "
-                    "three real XSIAM HTTP doors (native /logs/v1/event cloud "
-                    "collector, Broker VM HTTP applet localhost:8088/logs/v1/event, "
-                    "or a Cribl/nginx forwarder). The plugin never invents a "
-                    "tenant path.",
+                    "XSIAM HTTP log collector (https://api-<tenant>/logs/v1/event; "
+                    "the dataset is named <Vendor>_<Product>_raw from the "
+                    "collector's own settings) or a Cribl/nginx forwarder in "
+                    "front of it. The plugin never invents a tenant path.",
     )
     iterations: int = Field(default=1, ge=1, le=200)
     sleep_seconds: float = Field(default=0.0, ge=0.0, le=600.0)
@@ -112,15 +111,17 @@ class AnalyticsEmitterParams(BaseModel):
     )
     auth_header: str = Field(
         default="Authorization",
-        description="Header name the auth token is presented under (e.g. "
-                    "Authorization for Bearer, or a custom X-... header for a "
-                    "raw HEC-style token).",
+        description="Header name the auth token is presented under. The XSIAM "
+                    "HTTP log collector reads 'Authorization'; a forwarder may "
+                    "want a custom X-... header.",
     )
     auth_scheme: str = Field(
-        default="Bearer",
-        description="Scheme prefix prepended to the token (e.g. 'Bearer' or "
-                    "'Splunk'). Empty string is allowed for collectors that want "
-                    "the raw token with no scheme prefix.",
+        default="",
+        description="Scheme prefix prepended to the token. Empty by default, "
+                    "because the XSIAM HTTP log collector expects the bare API "
+                    "key ('Authorization: <api_key>') and refuses 'Bearer <key>' "
+                    "with a 401. Set 'Bearer' or 'Splunk' only for a forwarder "
+                    "that asks for one.",
     )
 
     # -- net-new transport toggles ---------------------------------------
