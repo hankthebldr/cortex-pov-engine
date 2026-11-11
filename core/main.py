@@ -134,6 +134,22 @@ async def lifespan(app: FastAPI):
     cards_loaded = ttp_catalog.load(corpus_dir)
     logger.info("TTP catalog ready: %d detection cards", cards_loaded)
 
+    # 2a'. Dataset requirement registry vs the datasets those cards read. Needs the card
+    #      catalog loaded just above. Strict (CORTEXSIM_STRICT_DATASETS) raises on an
+    #      unregistered dataset; otherwise it only warns, and an absent registry never
+    #      stops boot (the health component reports it degraded).
+    from engine.dataset_requirements import (  # noqa: PLC0415
+        card_datasets, check_datasets_registered, load as load_dataset_requirements,
+    )
+    _ds_registry = load_dataset_requirements()
+    _unregistered = check_datasets_registered(card_datasets(ttp_catalog.all_raw()), _ds_registry)
+    if _unregistered:
+        logger.warning(
+            "dataset requirement registry %s: %d card dataset(s) unregistered: %s",
+            "absent" if _ds_registry is None else "loaded", len(_unregistered),
+            ", ".join(_unregistered),
+        )
+
     # 2b. Load Tool Adapter catalog (Phase A — tool framework). Same
     #     warn-not-fail pattern: missing adapter packs are advisory and the
     #     scenario loader logs a warning per dangling adapter_ref.
@@ -425,6 +441,9 @@ from api.scenarios import router as scenarios_router  # noqa: E402
 # console. Registered BEFORE scenarios_router so /api/scenarios/drafts resolves
 # to this router rather than being swallowed by scenarios' /{scenario_id}.
 from api.drafts import router as drafts_router          # noqa: E402
+# Dataset prerequisites — registered BEFORE scenarios_router for the same reason as
+# drafts: /api/scenarios/{id}/prerequisites must not be swallowed by /{scenario_id}.
+from api.prerequisites import router as prerequisites_router  # noqa: E402
 from api.runs import router as runs_router              # noqa: E402
 from api.runs import compat_router as runs_compat_router  # noqa: E402
 from api.results import router as results_router        # noqa: E402
@@ -461,6 +480,7 @@ from api.payloads import router as k8s_payloads_router  # noqa: E402
 from api.payloads import shelf_router  # noqa: E402
 
 app.include_router(drafts_router, prefix="/api")
+app.include_router(prerequisites_router, prefix="/api")
 app.include_router(scenarios_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
 # GAP-API-008 — backward-compat alias for the historical singular launch path

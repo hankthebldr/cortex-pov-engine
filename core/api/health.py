@@ -37,6 +37,7 @@ from typing import Any, Callable, Optional
 from fastapi import APIRouter
 
 from config import settings
+from engine.dataset_requirements import load as dataset_requirements_load
 
 logger = logging.getLogger("cortexsim.api.health")
 
@@ -300,6 +301,47 @@ def probe_identity_spec() -> dict[str, Any]:
             **source,
         )
     return _ok(**source)
+
+
+def probe_dataset_requirements() -> dict[str, Any]:
+    """spec/dataset_requirements.yml — what each dataset needs on the Cortex and source side.
+
+    ``ok`` only when the registry loaded AND every dataset a card queries has an entry.
+    An absent registry is degraded, never "no requirements": every card dataset is then
+    unregistered. Reads local files only; no outbound call.
+    """
+    from engine import dataset_requirements as dr  # noqa: PLC0415
+    from engine.ttp_catalog import catalog  # noqa: PLC0415
+
+    path = dr.registry_path()
+    try:
+        registry = dataset_requirements_load()
+    except dr.DatasetRequirementsError as exc:
+        return _degraded(
+            "DATASET_REGISTRY_MALFORMED",
+            f"{exc} Until it parses, /api/prerequisites/* return a structured 500. "
+            f"Fix: restore spec/dataset_requirements.yml from this build's source "
+            f"tree and restart SimCore (it is read once).",
+            path=path,
+        )
+    if registry is None:
+        return _degraded(
+            "DATASET_REGISTRY_ABSENT",
+            f"no dataset requirement registry at {path} — scenario prerequisites "
+            f"cannot be derived, and every card dataset reads as unregistered. "
+            f"Fix: confirm core/Dockerfile COPYs spec/, or set CORTEXSIM_BASE_DIR to "
+            f"the checkout root, then restart SimCore.",
+            path=path,
+        )
+    unregistered = sorted(set(dr.card_datasets(catalog.all_raw())) - set(registry))
+    if unregistered:
+        return _degraded(
+            "DATASETS_UNREGISTERED",
+            f"{len(unregistered)} dataset(s) read by detection cards have no registry "
+            f"entry: {', '.join(unregistered)}. Fix: add them to {path}.",
+            path=path, count=len(registry), unregistered=unregistered,
+        )
+    return _ok(path=path, count=len(registry), unregistered=[])
 
 
 def probe_eal() -> dict[str, Any]:
@@ -721,6 +763,7 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "adapter_catalog",
     "uctc_registry",
     "identity_spec",
+    "dataset_requirements",
     "eal",
     "xsiam_operation_catalog",
     "payload_shelf",
@@ -786,6 +829,7 @@ async def component_health() -> dict[str, dict[str, Any]]:
     components["adapter_catalog"] = _guard("adapter_catalog", probe_adapter_catalog)
     components["uctc_registry"] = _guard("uctc_registry", probe_uctc_registry)
     components["identity_spec"] = _guard("identity_spec", probe_identity_spec)
+    components["dataset_requirements"] = _guard("dataset_requirements", probe_dataset_requirements)
     components["eal"] = _guard("eal", probe_eal)
     components["xsiam_operation_catalog"] = _guard(
         "xsiam_operation_catalog", probe_xsiam_operation_catalog

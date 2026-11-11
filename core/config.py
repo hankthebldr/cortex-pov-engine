@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     # inflating the coverage number. Set false to load a corpus mid-re-key.
     CORTEXSIM_STRICT_REFS: bool = True
 
+    # Dataset requirement registry strictness (spec/dataset_requirements.yml).
+    # When true, boot raises DatasetRequirementsError if any dataset a detection
+    # card's xql_queries reads has no registry entry. Off by default: an
+    # unregistered dataset logs a warning and /api/health reports it degraded.
+    CORTEXSIM_STRICT_DATASETS: bool = False
+
 
     # XSIAM API harness — master safety switches for the operation executor.
     # Both OFF by default: the harness pulls freely from a configured tenant

@@ -273,3 +273,20 @@ def card_datasets(all_raw: dict[str, dict]) -> dict[str, set[str]]:
 def registry_source() -> dict[str, str]:
     """``{"path", "source"}``; source is ``"file"`` or ``"absent"``, read once per process like ``load()``."""
     return {"path": registry_path(), "source": "absent" if load() is None else "file"}
+
+
+def check_datasets_registered(card_ds: dict[str, set[str]],
+                              registry: dict[str, DatasetRequirement] | None) -> list[str]:
+    """Sorted names of card datasets with no registry entry (all of them when ``registry`` is ``None``).
+
+    Raises :class:`DatasetRequirementsError` when ``CORTEXSIM_STRICT_DATASETS`` is on and the
+    list is non-empty, so a corpus dataset nobody documented cannot boot silently.
+    """
+    unregistered = sorted(name for name in card_ds if registry is None or name not in registry)
+    if unregistered and settings.CORTEXSIM_STRICT_DATASETS:
+        raise DatasetRequirementsError(
+            f"{len(unregistered)} card dataset(s) have no entry in {registry_path()}: "
+            f"{', '.join(unregistered)}. Add them to the registry, or unset "
+            f"CORTEXSIM_STRICT_DATASETS to boot with a warning."
+        )
+    return unregistered
