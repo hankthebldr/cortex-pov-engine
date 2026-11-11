@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1587.003",
     "T1583.001",
@@ -8,11 +10,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "GATE XQL(SIM-TIM-004 Cert-Fingerprint Indicator Ingested) \u2014 a feed-presence precondition confirming the self-signed certificate fingerprint is armed in threat_intel (it is not a join participant). JOIN BIOC(SIM-TIM-004 Estate Handshake to a TIM-Armed Self-Signed Certificate) with XQL(SIM-TIM-004 Shared Self-Signed Cert Fingerprint Fan-Out Across IPs) on the shared tls_cert_fingerprint_sha1 entity within the correlation window \u2014 both carry that key. Together they fuse the certificate-fingerprint IOC match with the multi-IP fingerprint fan-out into one Resource-Development adversary-infrastructure incident scoped to the shared certificate. The incident rolls up every co-fingerprinted IP the estate touched under that one fingerprint.",
       "name": "SIM-TIM-004 Certificate-Fingerprint Infrastructure-Cluster Incident",
-      "rule_id": "CR-TIM-0004",
-      "severity": "high"
+      "rule_id": "CR-TIM-0004"
     }
   ],
   "ttp_ref": "TTP-2026-0146"

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1486",
     "T1490",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(EDR-008 Rapid Mass File Rewrite With Uniform New Extension) AND (BIOC(EDR-008 Ransom Note Written Across Multiple Directories) OR BIOC(EDR-008 Local Recovery Inhibition \u2014 Snapshot Or Backup Deletion)) \u2014 fuses the encryption, ransom-note, and recovery-inhibition stages from one host into a single critical Impact incident.",
       "name": "Ransomware \u2014 Linux Host Mass-Encryption + Recovery Inhibition (Same Host)",
-      "rule_id": "CR-EDR-0008",
-      "severity": "high"
+      "rule_id": "CR-EDR-0008"
     }
   ],
   "ttp_ref": "TTP-2026-0073"

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1566.003",
     "T1204.002",
@@ -13,11 +15,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(MP-025 Build Engine Drops and Executes RuntimeBroker from User App-Data) AND (BIOC(MP-025 RuntimeBroker.exe Executed Outside System32) OR BIOC(MP-025 AppDomainManager Config with ETW Disabled Beside User-Writable EXE)) AND ABIOC(MP-025 Recurring Fixed-Cadence GitHub API Sessions from a Non-Developer-Pattern Host) AND (ABIOC(MP-025 Recurring Tunnel Sessions to a Rare IP-Literal Destination) OR IOC(91.107.156.29) OR IOC(WildFire Blackwood sha256)) within 900s on the same src_host (xdr_data agent_hostname = panw_ngfw endpoint_device_name) -> ONE incident, severity critical",
       "name": "Blinder Tunnel (CL-STA-1178) \u2014 Developer Lure to GitHub C2 and Chisel Tunnel on One Host",
-      "rule_id": "CR-MP-0025",
-      "severity": "high"
+      "rule_id": "CR-MP-0025"
     }
   ],
   "ttp_ref": "TTP-2026-0184"

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1562.001",
     "T1543.003",
@@ -11,11 +13,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when, on the same agent_hostname within the run window, the BIOC `GentleKiller Vulnerable Driver Service Created (ThrottleStop.sys BYOVD)`, the terminal ABIOC `BYOVD EDR-Kill Behavioral Anomaly \u2014 Anomalous Signed Vulnerable Driver Load (GentleKiller)`, the ABIOC `Post-BYOVD Hands-on-Keyboard Burst on a Blinded Host \u2014 Recon and SystemBC C2`, and the BIOC `Volume Shadow Copy Deletion via vssadmin/wmic (Pre-Encryption)` observe activity. It fuses driver-service-create -> vulnerable-driver-load -> sensor-telemetry-gap -> scheduled-task persistence -> recon + SystemBC C2 -> shadow-copy deletion into ONE Gentlemen-BYOVD-ransomware incident whose ordered evidence graph is exported verbatim as the POV forensic packet.",
       "name": "The Gentlemen BYOVD Ransomware Chain \u2014 Full Causality Stitch",
-      "rule_id": "CR-EDR-0021",
-      "severity": "high"
+      "rule_id": "CR-EDR-0021"
     }
   ],
   "ttp_ref": "TTP-2026-0144"
