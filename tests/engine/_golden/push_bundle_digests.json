@@ -404,11 +404,11 @@
     "powershell": null
   },
   "SIM-EDR-023": {
-    "bash": "890cdc643ee720307f35f5a475bc642c8f6ff4112b6ee36333019c1f28888c10",
+    "bash": "beb32e7d77918187e99d01de1aa70b9a08c11c6bde665ddd6fc3c7e91cc8ed84",
     "powershell": null
   },
   "SIM-EDR-024": {
-    "bash": "17cf91f31952b295615564955b5ae9f6b874ed44c86203e58611bd75e886466e",
+    "bash": "84387030ef3a7f61d0fea93c660d6a52a98f53eeb66d4d58728be54338dc5ef3",
     "powershell": null
   },
   "SIM-EMAIL-001": {

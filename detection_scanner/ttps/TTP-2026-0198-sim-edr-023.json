@@ -237,7 +237,7 @@
     "abiocs": [
       {
         "name": "UNIX LOLBIN process connected to a rare external host",
-        "description": "PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 as issue 1500447 on exactly this curl. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code.",
+        "description": "PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 as issue 1500447, raised by SIM-CDR-012's curl of the same WildFire URL. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code.",
         "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_external_hostname != null",
         "severity": "low",
         "mitre_technique_ids": [
@@ -264,7 +264,7 @@
           "linux"
         ],
         "alert_name_pattern": "Local Analysis Malware*",
-        "description": "The agent's Local Analysis verdict on executing the WildFire test ELF. Observed in this lab 2026-11-11: HIGH, action REPORTED under a report-mode policy, grouped as case 51877. Issues named Local Analysis are deduplicated over one hour, so do not run this within an hour of another execution of the same file on the host.",
+        "description": "The agent's Local Analysis verdict on executing the WildFire test ELF. Observed in this lab 2026-11-11: HIGH, action REPORTED under a report-mode policy, grouped as case 51877. Issues named Local Analysis are deduplicated over one hour, so do not run this within an hour of another execution of the same file on the host. SIM-EDR-023 declares it with outcome: prevent: report mode scores it as detected, and a block-mode paired run grades the kill.",
         "severity": "high",
         "mitre_techniques": [
           "T1204.002"

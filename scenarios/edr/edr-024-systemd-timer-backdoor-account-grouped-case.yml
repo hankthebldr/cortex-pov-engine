@@ -56,7 +56,9 @@ execution_identity:
   options:
     - root
 
-push_supported: true
+# Pull only. A push bundle runs the scenario cleanup on exit (`trap cleanup
+# EXIT`), which would remove the timer before its first run.
+push_supported: false
 pull_supported: true
 
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
@@ -80,9 +82,10 @@ success_criteria: |
   beacon chain, the timer-run re-executions from the systemd chain, and
   CR-EDR-0024.
   The shadow-file ABIOC is a built-in Low "XDR Analytics BIOC". It is scored
-  for detection, never expected inside the case, and judges rarity, so a
-  re-run on the same host inside 30 days can read missed while the tenant is
-  healthy.
+  for detection and never expected inside the case. It judges rarity, and it
+  already fired on this host's useradd/chpasswd on 2026-11-11, so it may read
+  missed while the tenant is healthy. The 80% bar allows that one miss (6 of
+  7).
   The backdoor account is created already expired (-e 1970-01-02) with a
   random, never-printed password. It produces the account-creation telemetry
   without leaving a usable login on the lab endpoint.
@@ -104,6 +107,9 @@ steps:
     command: |
       set -eu
       U=cortexsim-svc
+      # Pull mode never runs cleanup.commands, so a re-run can meet the
+      # previous run's immutable key: clear it before removing the account.
+      chattr -i "/home/$U/.ssh/authorized_keys" 2>/dev/null || true
       if id "$U" >/dev/null 2>&1; then userdel -r "$U" >/dev/null 2>&1 || true; fi
       useradd -m -s /bin/bash -G sudo -e 1970-01-02 "$U"
       P=$(head -c 18 /dev/urandom | base64)
@@ -165,9 +171,9 @@ steps:
     # .timer under /etc/systemd/system by the step shell. Then, starting one
     # minute later and every five minutes after that, a PROCESS_START of
     # `/bin/sh /var/tmp/.cortexsim-sshd/sync.sh` whose parent is the systemd
-    # executor (actor "9" in this tenant). The timer has Persistent=true and
-    # OnBootSec, so it survives a reboot. The payload disables its own timer
-    # 45 minutes after install.
+    # executor (actor "9" in this tenant). The timer is enabled under
+    # timers.target with OnBootSec, so it re-arms after a reboot. The payload
+    # disables its own timer 45 minutes after install.
     command: |
       set -eu
       sleep 40   # dwell
@@ -201,7 +207,6 @@ steps:
       OnBootSec=2min
       OnActiveSec=1min
       OnUnitActiveSec=5min
-      Persistent=true
       [Install]
       WantedBy=timers.target
       EOF

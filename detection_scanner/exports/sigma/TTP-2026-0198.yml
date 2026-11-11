@@ -88,7 +88,7 @@ title: "Linux Cron Foothold \u2014 WildFire Test ELF Dropper Re-Executed on a Sc
 id: ttp-2026-0198-abioc-04
 status: experimental
 description: |
-  PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 as issue 1500447 on exactly this curl. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code.
+  PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 as issue 1500447, raised by SIM-CDR-012's curl of the same WildFire URL. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code.
   Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
   ----
     dataset = xdr_data

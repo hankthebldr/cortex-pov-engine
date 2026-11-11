@@ -33,7 +33,7 @@ dataset = xdr_data
 # severity: low
 # behavioral_profile: statistical
 # causality_anchor: The process making the connection (curl) and its causality chain; rarity of the destination across the tenant decides whether it fires.
-# PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 as issue 1500447 on exactly this curl. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code.
+# PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 as issue 1500447, raised by SIM-CDR-012's curl of the same WildFire URL. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code.
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT

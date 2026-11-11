@@ -57,7 +57,10 @@ execution_identity:
   options:
     - root
 
-push_supported: true
+# Pull only. A push bundle runs the scenario cleanup on exit (`trap cleanup
+# EXIT`), which would delete the cron foothold ~40 s after step-03 plants it,
+# before the re-executions this scenario exists to show.
+push_supported: false
 pull_supported: true
 
 # ── v2.0 KPI / Methodology Metadata ─────────────────────────────────────────
@@ -82,13 +85,18 @@ success_criteria: |
   every Medium+ issue the run raises on the endpoint carries ONE case_id. The
   case is the beacon-chain issues (Local Analysis, cron drop-in, timestomp)
   plus the cron-chain re-executions plus CR-EDR-0023.
-  The two ABIOCs are built-in Low "XDR Analytics BIOC" alerts. They are scored
-  for detection but never expected inside the case.
-  Rarity caveat: the built-in ABIOC judges rarity, so a re-run on the same
-  host inside 30 days can read missed while the tenant is healthy.
+  The ABIOC is a built-in Low "XDR Analytics BIOC" alert. It is scored for
+  detection but never expected inside the case.
+  Rarity caveat: the built-in ABIOC judges rarity, and this host already
+  reached wildfire.paloaltonetworks.com on 2026-11-11, so it may read missed
+  while the tenant is healthy. The 80% bar allows that one miss (7 of 8).
+  The two XQL rows are scored only by Tier-2 verify
+  (`POST /api/runs/{id}/verify`), which looks back one hour from when it runs:
+  verify within the hour.
   Dedup caveat: Local Analysis issues are deduplicated over one hour. Do not
   run this within an hour of any other execution of the same test ELF on the
-  host.
+  host. The cron job re-runs the ELF for 45 minutes, so a block-mode paired
+  run needs about 1h45m after launch.
   tenant-verified: 0 — no run of this scenario has executed against a live
   Cortex tenant; authored is not proven.
 moat_tier: "MOAT"
@@ -130,6 +138,12 @@ steps:
         description: "Validation — curl retrieves the WildFire test ELF into a hidden /var/tmp directory"
         ttp_ref: "TTP-2026-0198"
         detection_id: xql-edr-023-wildfire-test-elf-retrieved-into-hidden-var-tmp-directory
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_name = "curl" and action_process_image_command_line contains "wildfire.paloaltonetworks.com/publicapi/test/elf"
+          | filter action_process_image_command_line contains "/var/tmp/.cortexsim-ice/kworker-ice"
+          | fields _time, agent_hostname, actor_causality_id, action_process_image_command_line
 
   - id: step-02
     name: "Execute the dropped ELF from the hidden directory"
@@ -138,15 +152,24 @@ steps:
     # Local Analysis verdict — "Local Analysis Malware", HIGH, action
     # REPORTED under the endpoint's report-mode policy, grouped as case
     # 51877. This is the run's case seed.
-    # The exec is deliberately unmasked: under a block-mode profile the kill
-    # makes this step exit non-zero, which is the host witness a paired
-    # block-mode run needs.
+    # Exit code: 0 when the ELF ran (report mode; the lab ELF prints "Sample
+    # Executed Successfully." and exits 0). Non-zero only when the exec did
+    # not happen (126/127: blocked or noexec) or the agent killed it (>= 129,
+    # a signal). The kill is the host witness a block-mode paired run needs,
+    # so it is never masked.
     command: |
       set -eu
       sleep 40   # dwell: back-to-back steps lost telemetry in this lab (2026-11-11)
       D=/var/tmp/.cortexsim-ice
       echo "[CortexSim] SIM-EDR-023 step-02: executing $D/kworker-ice at $(date -u +%FT%TZ)"
-      timeout 20 "$D/kworker-ice"
+      rc=0
+      timeout 20 "$D/kworker-ice" || rc=$?
+      echo "[CortexSim] exec rc=$rc"
+      case "$rc" in
+        126|127) echo "[CortexSim] the ELF did not execute (rc=$rc): blocked or noexec" >&2; exit "$rc" ;;
+      esac
+      [ "$rc" -lt 129 ] || exit "$rc"
+      exit 0
     identity: root
     mitre_technique: "T1036.005"
     platforms: ["linux"]
@@ -156,8 +179,10 @@ steps:
     expected_detections:
       - plane: EDR
         type: Prevention
-        outcome: detect
-        description: "Agent Local Analysis verdict on the dropped test ELF — HIGH, reported (report-mode policy); the case seed"
+        # prevent: a block-mode paired run grades the kill (two witnesses);
+        # under the lab's report-mode policy it is scored as a detect.
+        outcome: prevent
+        description: "Agent Local Analysis verdict on the dropped test ELF — HIGH; reported under report mode (scored as detected), prevented under block mode; the case seed"
         ttp_ref: "TTP-2026-0198"
         detection_id: prevention-local-analysis-malware
       - plane: EDR
@@ -165,6 +190,11 @@ steps:
         description: "Validation — a binary executes from a hidden directory under /var/tmp"
         ttp_ref: "TTP-2026-0198"
         detection_id: xql-edr-023-dropped-elf-executed-from-hidden-var-tmp-directory
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+          | filter action_process_image_path = "/var/tmp/.cortexsim-ice/kworker-ice"
+          | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_path, action_process_image_sha256
 
   - id: step-03
     name: "Plant a self-expiring cron drop-in that re-runs the payload every five minutes"
