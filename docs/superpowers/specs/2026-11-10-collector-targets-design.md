@@ -179,9 +179,13 @@ replace; `token` write-only, omitted = keep, `clear_token: true` = remove),
 The API is unauthenticated until the hardening work lands, so the guarantee is the
 absence of the key from every response, not access control.
 
-`/api/health` `eal_collectors` gains `collector_targets` and `unbound_plugins`;
-zero targets reads **degraded** (`NO_COLLECTOR_TARGETS`), because a fresh instance
-cannot deliver collector signal. Reachability stays under `not_checked`.
+`GET /api/collector-targets` itself reads **degraded** (`NO_COLLECTOR_TARGETS`) with
+zero targets, because a fresh instance cannot deliver collector signal.
+**Deferred [my call]:** surfacing the same count in `/api/health` `eal_collectors`.
+`core/api/health.py` is being rewritten on the in-flight hardening branch, so that
+change waits for it to land. Until then the health probe's allowlist check can
+read degraded for a campaign whose inline URL a target replaces: a false
+degraded, never a false ok.
 
 ## 9. Console
 
