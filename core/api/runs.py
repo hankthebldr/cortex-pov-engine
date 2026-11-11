@@ -55,7 +55,7 @@ from engine.outcome import (
 from engine.pairing import build_pair_delta
 from engine.orchestrator import orchestrator
 from events import event_bus
-from models import Agent, Result, Run, RunTaskCompletion, Scenario, StepOutcome
+from models import Agent, Result, Run, RunOutputFrame, RunTaskCompletion, Scenario, StepOutcome
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.runs")
@@ -622,6 +622,11 @@ class OutputRequest(BaseModel):
     # Optional step id (e.g. "step-02") so per-step output can be grouped in
     # the live SSE stream. Backward compatible — older agents omit it.
     step_id: Optional[str] = None
+    # The beacon's key for a retried frame (RG-AGENT-06): "<task_id>:<n>",
+    # the same on every attempt. A frame already stored for this run is not
+    # appended again. Absent from an older beacon and from live streaming
+    # chunks, which append every time exactly as before.
+    frame_id: Optional[str] = Field(default=None, max_length=128)
 
 
 _PROTECTED_TERMINATIONS = tuple(HOST_WITNESS | {TERMINATION_BEACON_LOST})
@@ -1560,6 +1565,22 @@ async def append_output(
     in SQL too). The step-start record below is host evidence, not output,
     and is written either way.
     """
+    frame_id = (body.frame_id or "").strip()
+    if frame_id:
+        # Claimed FIRST, in the same transaction as the append: a conflict
+        # means this frame was stored by an earlier attempt whose reply was
+        # lost, so nothing below runs. A refusal further down (run not found)
+        # rolls the claim back with everything else.
+        claimed = await db.execute(
+            sqlite_insert(RunOutputFrame)
+            .values(run_id=run_id, frame_id=frame_id, recorded_at=datetime.utcnow())
+            .on_conflict_do_nothing(index_elements=["run_id", "frame_id"])
+        )
+        if claimed.rowcount == 0:
+            await db.rollback()
+            logger.info("output duplicate frame skipped run_id=%s frame_id=%s step=%s",
+                        run_id, frame_id, body.step_id)
+            return {"status": "ok", "run_id": run_id, "duplicate": True}
     if len(body.output.encode("utf-8")) > RUN_OUTPUT_CHUNK_MAX_BYTES:
         # Off the event loop: cutting a tens-of-MiB chunk is CPU work every
         # other request (other beacons' /control polls included) would wait on.

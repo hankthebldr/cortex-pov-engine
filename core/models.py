@@ -495,6 +495,31 @@ class RunTaskCompletion(Base):
                                                    default=datetime.utcnow)
 
 
+class RunOutputFrame(Base):
+    """One beacon ``/output`` frame already stored, so a retry is stored once.
+
+    The beacon retries a step's ``/output`` when the reply is lost, and the
+    append is unconditional, so a stored-but-unacknowledged frame used to land
+    twice (RG-AGENT-06). Since 661047c the beacon keys every non-streaming
+    frame with ``frame_id`` (``<task_id>:<n>``); this row is inserted in the
+    same transaction as the append and the unique key makes a repeat a no-op.
+    A body without ``frame_id`` writes no row and appends as before.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "run_output_frames"
+    __table_args__ = (UniqueConstraint("run_id", "frame_id",
+                                       name="uq_run_output_frames_run_frame"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    frame_id: Mapped[str] = mapped_column(String, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                  default=datetime.utcnow)
+
+
 class Observation(Base):
     """Tenant evidence: one raw alert pulled back for a run."""
 
