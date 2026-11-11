@@ -1090,7 +1090,13 @@ async def resolve_tenant_runner(
     db: AsyncSession, *, integration: Optional[str] = None,
     timeframe_seconds: int = 3600,
 ) -> TenantRunner:
-    """Build a read-only XQL row-count runner from a registered tenant credential.
+    """Build an XQL row-count runner from a registered tenant credential.
+
+    It issues each query verbatim. It is not read-only by construction: what
+    keeps it from writing is the one guard inside
+    ``XsiamClient.start_xql_query``, which refuses a ``target`` stage with
+    ``XQL_WRITE_STAGE_REFUSED`` on every path (SEC-05; wording corrected for
+    SEC-18).
 
     Never raises for a missing/unusable tenant — the caller resolves ``pending``
     and "no tenant wired" is an honest verdict, not a server error. Only an

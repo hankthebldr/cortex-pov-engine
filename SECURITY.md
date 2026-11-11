@@ -47,10 +47,16 @@ is built to run on a customer-lab jumpbox where the operating consultant already
 has full administrative access to the host. Adding auth would secure the API
 against an attacker who, by construction, already owns the box. **The
 assumption that carries this is that SimCore is never exposed to an untrusted
-network.** `docker-compose.yml` publishes on `${CORTEXSIM_BIND:-0.0.0.0}`,
-every interface, because beacons on the lab network must reach the port. Set
+network.** `docker-compose.yml` publishes the port with `host_ip` taken from
+`CORTEXSIM_BIND` (long-form mapping, `"${CORTEXSIM_BIND:-}"`). Unset or empty
+means every host address, IPv4 and IPv6, because beacons on the lab network
+must reach the port; `0.0.0.0` means every IPv4 address. Set
 `CORTEXSIM_BIND=127.0.0.1` for a console-only host, and keep the jumpbox on a
-private lab segment. `/api/health` states the exposure on every deployment: its
+private lab segment. (The long-form mapping is authored and has not yet been
+brought up under Docker.) The Helm chart's `api.bindAddress` is rendered into
+the ConfigMap as `CORTEXSIM_BIND_ADDRESS`, which nothing in SimCore reads, so
+it does **not** restrict where the pod listens; restrict exposure with the
+Service type, a NetworkPolicy or the Tailscale ingress instead. `/api/health` states the exposure on every deployment: its
 `api_auth` component is permanently `degraded` with `API_UNAUTHENTICATED`
 until authentication lands (SEC-01, open). If you find a path that exposes it
 beyond that, or a deploy artifact in this repo that binds it to a public
@@ -111,10 +117,25 @@ vulnerability:
 - **Push bundles are self-contained.** A generated bash bundle runs on a clean
   Ubuntu 22.04 host, and a `.ps1` targets Windows PowerShell 5.1, with no
   SimCore dependency at runtime. A CI guard asserts no bundle references a
-  SimCore endpoint. The `.ps1` has not executed on Windows yet.
+  SimCore endpoint. None of the 13 shipped `.ps1` bundles has executed on
+  Windows; CI has parsed them under Windows PowerShell 5.1 and run one probe
+  bundle.
 - **C2 frameworks are never auto-staged.** Gated adapters require explicit
   launch consent (`consent.simulation_authorized` / `c2_authorized`).
-- **Enrollment tokens are TTL-bounded, max-use-capped, and revocable.**
+- **Enrollment tokens are TTL-bounded, max-use-capped, and revocable**, but
+  today they do **not** bound who may onboard. `POST /api/agents/register`
+  still onboards, and overwrites, an agent row without a token, and minting a
+  token is itself unauthenticated. Treat tokens as a convenience for the
+  installer flow, not as access control, until operator and agent-plane
+  authentication land (SEC-01, SEC-04). Tokens are stored in plaintext in
+  SimCore's SQLite database, and a mint allows up to 1000 uses and 30 days
+  (decision SEC-16 open);
+  `scripts/lab/publish-agent.sh` refuses to bake one into a served installer.
+- **The beacon digest proves integrity, not authenticity.** The installer
+  fetches the beacon and its sha256 from the same SimCore over the same, by
+  default plain-HTTP, channel, so an on-path attacker who can alter one can
+  alter both. Both installers say so ("catches corruption, not tampering").
+  The beacon is unsigned and runs as LocalSystem or root (SEC-12, CI-06 open).
 
 ## Operating boundary
 

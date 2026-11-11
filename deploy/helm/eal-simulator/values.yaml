@@ -43,7 +43,10 @@ masterSecret:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API gateway — control plane the operator interacts with.
-# Binds to the Tailscale interface only (see service.bindAddress).
+# It listens on every pod interface. api.bindAddress below does NOT change
+# that: it is rendered into the ConfigMap as CORTEXSIM_BIND_ADDRESS, which
+# nothing in SimCore reads (SEC-18). Restrict who reaches the API with the
+# Service type, a NetworkPolicy or the Tailscale ingress.
 # ─────────────────────────────────────────────────────────────────────────────
 api:
   enabled: true
@@ -61,10 +64,11 @@ api:
   env:
     CORTEXSIM_ENV: production
     CORTEXSIM_PORT: "8888"
-  # The API gateway should NEVER bind to 0.0.0.0 in production.
-  # On a K3s cluster running Tailscale as a daemonset, override this to the
-  # Tailscale-issued 100.x.y.z address per node and front it with the Tailscale
-  # ingress controller.
+  # INERT today: rendered as CORTEXSIM_BIND_ADDRESS, which no SimCore code
+  # reads, so overriding it to a Tailscale 100.x.y.z address does not stop the
+  # pod listening on 0.0.0.0. Keep the API off untrusted networks with the
+  # Service type, a NetworkPolicy or the Tailscale ingress controller.
+  # Wiring it into the container's uvicorn --host is a code change (SEC-18).
   bindAddress: "0.0.0.0"
 
   # Host names SimCore answers to (CORTEXSIM_ALLOWED_HOSTS). SimCore refuses any

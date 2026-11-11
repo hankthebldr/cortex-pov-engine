@@ -2699,8 +2699,11 @@ async def enroll_agent(body: EnrollRequest, request: Request, db: AsyncSession =
 
     This is the front door for the rethought deployment UX: the operator never
     invents an agent id (the source of duplicate/typo'd ids in the old
-    self-asserted ``/register`` flow) and the token bounds who may onboard.
-    Returns the assigned ``agent_id`` and the ``server`` URL to beacon.
+    self-asserted ``/register`` flow). The token does NOT bound who may
+    onboard today: the token-less ``/register`` still onboards (and
+    overwrites) an agent row, and minting a token is unauthenticated, until
+    SEC-01 / SEC-04 land (SEC-18). Returns the assigned ``agent_id`` and the
+    ``server`` URL to beacon.
     """
     now = datetime.utcnow()
     # Claim one use ATOMICALLY: the validity predicate (EnrollmentToken.is_valid)
