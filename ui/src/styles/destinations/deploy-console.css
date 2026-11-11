@@ -22,6 +22,14 @@
   font-size: 11px; line-height: 1.5; color: var(--c-text-secondary);
 }
 
+/* An action the card deliberately does not offer (no installer for an id
+   SimCore refuses). Text, not a control: muted, dashed, no hover. */
+.theme-console .card-action--off,
+.theme-console .card-action--off:hover {
+  color: var(--c-text-muted); border-style: dashed; border-color: var(--c-hairline);
+  cursor: help;
+}
+
 /* ── Removal help in the delete confirm ─────────────────────────────── */
 .theme-console .target-card__remove {
   padding: 10px 12px 0;

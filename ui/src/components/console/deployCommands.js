@@ -30,6 +30,32 @@ export function installerOS(os) {
   return 'linux'
 }
 
+// ── Agent id ─────────────────────────────────────────────────────────────────
+
+/**
+ * SimCore's rule for an id it will bake into an installer: `_AGENT_ID_RE` in
+ * core/api/agents.py. A COPY — the server is the authority; this exists so the
+ * console does not hand a DC a command that is certain to answer
+ * 400 BAD_AGENT_ID, which `curl -f` reduces to "error: 400" on the target.
+ */
+const AGENT_ID_RULE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+/**
+ * Why SimCore would refuse `id` as an installer agent id, or null when it
+ * would accept it.
+ * @returns {string|null}
+ */
+export function agentIdProblem(id) {
+  const v = String(id ?? '')
+  if (AGENT_ID_RULE.test(v)) return null
+  if (v === '') return 'the id is empty'
+  if (v.length > 64) return `it is ${v.length} characters; the limit is 64`
+  if (!/^[A-Za-z0-9]/.test(v)) return 'it must start with a letter or digit'
+  const bad = Array.from(new Set(v.replace(/[A-Za-z0-9._-]/g, '')))
+  const named = bad.map((c) => (c === ' ' ? 'a space' : `"${c}"`)).join(', ')
+  return `it contains ${named}; only letters, digits, ".", "_" and "-" are allowed`
+}
+
 // ── Pull one-liners ──────────────────────────────────────────────────────────
 
 /**

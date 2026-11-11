@@ -22,6 +22,7 @@ import {
   POSIX_INSTALLER_FILE,
   WINDOWS_BUNDLE_UNPROVEN,
   TOKEN_HISTORY_NOTE,
+  agentIdProblem,
   legacyRunHint,
   beaconShipState,
   attemptsSince,
@@ -171,6 +172,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   // Windows PowerShell 5.1).
   const isWindows = installerOS(deployOS) === 'windows'
   const installUrl = `${origin}${agentInstallUrl({ os: deployOS })}`
+  // An empty field falls back to the documented default; anything typed is
+  // held to SimCore's own id rule before it is put into a command.
+  const legacyIdProblem = deployId ? agentIdProblem(deployId) : null
   const legacyInstallUrl = `${origin}${agentInstallUrl({ os: deployOS, id: deployId || 'jumpbox-01' })}`
   const oneLiner = token ? pullOneLiner({ os: deployOS, url: installUrl, token: token.token }) : null
   const legacyOneLiner = pullOneLiner({ os: deployOS, url: legacyInstallUrl })
@@ -440,12 +444,23 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                         title="Make this the active agent"
                       >◉ set active</button>
                     )}
-                    <a
-                      className="card-action"
-                      href={agentInstallUrl({ os: targetOs, id })}
-                      download={targetOs === 'windows' ? WINDOWS_INSTALLER_FILE : POSIX_INSTALLER_FILE}
-                      title="Re-download this agent's installer"
-                    >↓ installer</a>
+                    {agentIdProblem(id) ? (
+                      // A beacon may have REGISTERED with an id the installer
+                      // route refuses (register does not apply the id rule). A
+                      // download link for it would save a 400 as a script.
+                      <span
+                        className="card-action card-action--off"
+                        data-testid="agent-installer-unavailable"
+                        title={`SimCore refuses to build an installer for this id (400 BAD_AGENT_ID): ${agentIdProblem(id)}. Deploy a fresh agent with an enrollment token instead.`}
+                      >no installer for this id</span>
+                    ) : (
+                      <a
+                        className="card-action"
+                        href={agentInstallUrl({ os: targetOs, id })}
+                        download={targetOs === 'windows' ? WINDOWS_INSTALLER_FILE : POSIX_INSTALLER_FILE}
+                        title="Re-download this agent's installer"
+                      >↓ installer</a>
+                    )}
                     <button
                       type="button"
                       className="card-action card-action--danger"
@@ -741,15 +756,30 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                       onChange={(e) => setDeployId(e.target.value)}
                       placeholder="jumpbox-01"
                       spellCheck={false}
+                      maxLength={64}
+                      aria-invalid={legacyIdProblem ? 'true' : 'false'}
+                      aria-describedby={legacyIdProblem ? 'deploy-legacy-id-error' : undefined}
                     />
                   </label>
-                  <div className="deploy-snippet">
-                    <code data-testid="deploy-legacy-one-liner" ref={legacyRef}>{legacyOneLiner}</code>
-                    <CopyButton copier={deployCopy} id="legacy" text={legacyOneLiner} selectRef={legacyRef} what="legacy install command" />
-                  </div>
-                  <span className="deploy-hint mono" data-testid="deploy-legacy-run-hint">
-                    or, once installed: <code>{legacyRunHint({ os: deployOS, origin, id: deployId })}</code>
-                  </span>
+                  {legacyIdProblem ? (
+                    // No command is offered for an id SimCore will refuse: on the
+                    // target the refusal is only "error: 400", with the code gone.
+                    <p className="deploy-error" role="alert" id="deploy-legacy-id-error" data-testid="deploy-legacy-id-error">
+                      SimCore will not build an installer for this id (<code className="mono">400 BAD_AGENT_ID</code>):{' '}
+                      {legacyIdProblem}. On the target that refusal shows only as{' '}
+                      <code className="mono">curl: (22) … error: 400</code>, so no command is offered until the id is valid.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="deploy-snippet">
+                        <code data-testid="deploy-legacy-one-liner" ref={legacyRef}>{legacyOneLiner}</code>
+                        <CopyButton copier={deployCopy} id="legacy" text={legacyOneLiner} selectRef={legacyRef} what="legacy install command" />
+                      </div>
+                      <span className="deploy-hint mono" data-testid="deploy-legacy-run-hint">
+                        or, once installed: <code>{legacyRunHint({ os: deployOS, origin, id: deployId })}</code>
+                      </span>
+                    </>
+                  )}
                 </div>
               )}
             </div>
