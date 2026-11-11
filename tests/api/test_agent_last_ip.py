@@ -324,3 +324,64 @@ def test_a_malformed_dotenv_value_degrades_exactly_as_a_malformed_env_value(tmp_
 
     _settings_from_dotenv(tmp_path, monkeypatch, "CORTEXSIM_TRUSTED_PROXIES=10.0.0.0/8;172.16.0.0/12\n")
     assert _client_ip(_Req(host="10.0.0.9", xff="198.51.100.7")) is None
+
+
+# ---------------------------------------------------------------------------
+# An ignored X-Forwarded-For is said out loud, once per peer
+# ---------------------------------------------------------------------------
+#
+# Behind a reverse proxy that is not listed, every agent's last_ip is the
+# proxy's address, and the stitch resolver carries it as a REAL observed
+# src_ip. That is the documented default, and it was silent: the only log line
+# in _client_ip was for a malformed setting. A deployment that sat behind nginx
+# before the header stopped being believed got a wrong address labelled real,
+# with nothing pointing at CORTEXSIM_TRUSTED_PROXIES.
+
+
+@pytest.fixture
+def forwarders(monkeypatch):
+    from api import agents
+
+    monkeypatch.setattr(agents, "_ignored_forwarders", {})
+    monkeypatch.delenv("CORTEXSIM_TRUSTED_PROXIES", raising=False)
+    return agents
+
+
+def _warnings(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records
+            if r.name == "cortexsim.api.agents" and r.levelname == "WARNING"]
+
+
+def test_a_forwarded_header_from_an_unlisted_peer_warns_once_per_peer(forwarders, caplog):
+    caplog.set_level("WARNING", logger="cortexsim.api.agents")
+    for xff in ("10.20.30.41", "10.20.30.42", "10.20.30.41"):
+        # The answer does not change: the header is still not believed.
+        assert forwarders._client_ip(_Req(host="10.42.0.7", xff=xff)) == "10.42.0.7"
+
+    (line,) = _warnings(caplog)
+    assert "10.42.0.7" in line and "CORTEXSIM_TRUSTED_PROXIES" in line
+    assert "10.20.30.4" not in line, "the caller-controlled header value must not reach the log"
+
+    assert forwarders._client_ip(_Req(host="10.42.0.8", xff="10.20.30.43")) == "10.42.0.8"
+    assert len(_warnings(caplog)) == 2
+    assert forwarders.ignored_forwarders() == ["10.42.0.7", "10.42.0.8"]
+
+
+def test_no_warning_without_the_header_or_from_a_listed_proxy(forwarders, caplog, monkeypatch):
+    caplog.set_level("WARNING", logger="cortexsim.api.agents")
+    assert forwarders._client_ip(_Req(host="10.42.0.7")) == "10.42.0.7"
+    monkeypatch.setenv("CORTEXSIM_TRUSTED_PROXIES", "10.42.0.0/16")
+    assert forwarders._client_ip(_Req(host="10.42.0.7", xff="10.20.30.41")) == "10.20.30.41"
+    assert _warnings(caplog) == []
+    assert forwarders.ignored_forwarders() == []
+
+
+def test_the_record_of_ignored_forwarders_is_bounded(forwarders, caplog):
+    """Any host that can reach SimCore can send the header; the record of who
+    did must not grow with them."""
+    caplog.set_level("WARNING", logger="cortexsim.api.agents")
+    cap = forwarders._IGNORED_FORWARDERS_MAX
+    for i in range(cap + 40):
+        forwarders._client_ip(_Req(host=f"10.9.{i // 250}.{i % 250 + 1}", xff="198.51.100.7"))
+    assert len(forwarders.ignored_forwarders()) == cap
+    assert len(_warnings(caplog)) == cap

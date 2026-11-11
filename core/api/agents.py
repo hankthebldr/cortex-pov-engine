@@ -2269,6 +2269,21 @@ def _trusted_proxies() -> Optional[tuple]:
     return parsed
 
 
+# Socket peers that sent X-Forwarded-For and were not believed, in first-seen
+# order. Bounded: any host that can reach SimCore can send the header.
+_IGNORED_FORWARDERS_MAX = 64
+_ignored_forwarders: dict[str, None] = {}
+
+
+def ignored_forwarders() -> list[str]:
+    """Peers whose ``X-Forwarded-For`` was ignored since boot (this process).
+
+    Non-empty means a proxy in front of SimCore is probably not listed in
+    ``CORTEXSIM_TRUSTED_PROXIES``, so agents record the PROXY's address as
+    their own. For a diagnostic surface (``/api/health``) to report."""
+    return list(_ignored_forwarders)
+
+
 def _as_ip(value: Optional[str]):
     if not value:
         return None
@@ -2311,6 +2326,20 @@ def _client_ip(request: Request) -> Optional[str]:
         return ip is not None and any(ip in net for net in nets)
 
     if not nets or not trusted(_as_ip(peer)):
+        # Still not believed. But say so, once per peer: behind an unlisted
+        # proxy this peer IS the proxy, and its address is about to be stored
+        # as every agent's. The header's own value is caller-controlled and
+        # stays out of the log.
+        if peer and peer not in _ignored_forwarders \
+                and len(_ignored_forwarders) < _IGNORED_FORWARDERS_MAX:
+            _ignored_forwarders[peer] = None
+            logger.warning(
+                "X-Forwarded-For from %s was ignored: that peer is not in "
+                "CORTEXSIM_TRUSTED_PROXIES. If %s is a reverse proxy in front of SimCore, "
+                "every agent behind it is recording %s as its own address (last_ip, and the "
+                "run's stitched src_ip). List its CIDR in CORTEXSIM_TRUSTED_PROXIES. If it is "
+                "not a proxy, a client is sending the header and ignoring it is correct.",
+                peer, peer, peer)
         return peer
     hops = [h.strip() for h in xff.split(",") if h.strip()]
     for hop in reversed(hops):
