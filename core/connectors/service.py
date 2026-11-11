@@ -18,6 +18,7 @@ maps them to HTTP; the loop logs and moves on).
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -313,6 +314,27 @@ NEVER_DELIVERED_WARNING = (
 )
 
 
+#: Text only a beacon puts into ``Run.output``: its per-step frame
+#: (``=== STEP n/N · <step-id> · ...``, posted on ``/output``; the same shape
+#: ``api.runs._STEP_HEADER_RE`` reads, unchanged since v1.0.0) and the summary
+#: line ``/complete`` appends. SimCore's own markers (``--- RUN ABORTED BY
+#: OPERATOR ---``, ``RUN FAILED ON RESTART``, the ``!! PLATFORM VARIANT``
+#: launch notes) match neither.
+_BEACON_TRACE_RE = re.compile(r"=== STEP \d+/\d+ · |^--- COMPLETION SUMMARY ---",
+                              re.MULTILINE)
+
+
+def beacon_reported(run: Any) -> bool:
+    """Does the run's own output show that a beacon executed it?
+
+    True when ``Run.output`` holds a beacon step frame or a ``/complete``
+    summary line. Both arrive only on the run's agent callbacks, which a
+    beacon makes only after collecting the task.
+    """
+    output = getattr(run, "output", None)
+    return bool(output) and _BEACON_TRACE_RE.search(output) is not None
+
+
 def reconcile_candidates(run: Any, results: list) -> tuple[list, bool]:
     """``(candidates, never_delivered)`` — the rows an alert may be credited to.
 
@@ -330,10 +352,20 @@ def reconcile_candidates(run: Any, results: list) -> tuple[list, bool]:
     classified beacon-lost path or an in-process dispatch — each proof that it
     executed — so such a row predates the ``delivered_at`` migration. Excluding
     it would make every historical run unreconcilable for no honesty gain.
+
+    So is one whose own record carries a beacon's trace
+    (:func:`beacon_reported`), whatever its status (RG-RUNS-05). ``delivered_at``
+    first shipped in v1.1.0 and is added by ALTER TABLE on boot, so an in-place
+    upgrade leaves every older run with it NULL; one that executed and ended
+    ``failed`` or ``aborted`` was told "nothing ran on the target", which is
+    false. Status alone cannot decide that — a legacy ``failed`` row may as
+    well be a pre-delivery orphan — but a step frame or a completion summary in
+    the run's output can only have been posted by a beacon that had the task.
     """
     if (getattr(run, "mode", None) != "pull"
             or getattr(run, "delivered_at", None) is not None
-            or getattr(run, "status", None) == "complete"):
+            or getattr(run, "status", None) == "complete"
+            or beacon_reported(run)):
         return list(results), False
     from engine.orchestrator import in_process_steps  # noqa: PLC0415
 
@@ -484,6 +516,15 @@ async def apply_verdicts(
             # from something else. Never observed, never MTTD, never re-judged.
             continue
         if host_unresolved and result.expected_outcome != "prevent":
+            if result.observed or result.outcome in (OUTCOME_DETECTED, OUTCOME_PREVENTED):
+                # RG-RUNS-02: the row is ALREADY credited — by an earlier
+                # host-scoped match or an operator attestation. An alert that
+                # cannot be attributed to a host is not evidence against that
+                # credit. Rewriting the outcome here left `observed`,
+                # `observed_at` and the MTTD on a row that read pending: 0 %
+                # coverage beside an average MTTD. The alert stays on record
+                # (the Observation above); the row is not touched.
+                continue
             # DOCS-03 (option c): with no host to scope against, the alert
             # could be ANY endpoint's. A detect expectation is not met by it:
             # the row stays pending, unobserved, with no observed_at and so no
