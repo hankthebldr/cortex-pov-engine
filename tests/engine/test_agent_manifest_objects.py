@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import subprocess
 
 import yaml
 
@@ -98,8 +99,8 @@ def test_expiry_in_start_script_matches_the_annotation_and_reaper_removes_the_na
     start = by_kind(o, "ConfigMap")[0]["data"]["start.sh"]
     expires = by_kind(o, "Deployment")[0]["metadata"]["annotations"]["cortexsim.io/expires-at"]
     assert f"--expires-at {expires}" in start
-    job = by_kind(o, "Job")[0]
-    assert 'kubectl delete namespace "${NS}"' in job["spec"]["template"]["spec"]["containers"][0]["args"][0]
+    reaper = [d for d in by_kind(o, "Deployment") if "reaper" in d["metadata"]["name"]][0]
+    assert 'kubectl delete namespace "${NS}"' in reaper["spec"]["template"]["spec"]["containers"][0]["args"][0]
 
 
 def test_header_names_the_agents_objects_not_the_reapers():
@@ -108,7 +109,7 @@ def test_header_names_the_agents_objects_not_the_reapers():
         ttl_seconds=43200, beacon_sha256="a" * 64, now=NOW, authorized_by="henry",
         consent={"cluster_privilege_authorized": True}, allow_privileged_k8s=True)
     header = text.split("\n---\n")[0]
-    assert "-> ClusterRole/cortexsim-agent" in header and "reaper" not in header.replace("A reaper Job", "")
+    assert "-> ClusterRole/cortexsim-agent" in header and "reaper" not in header.replace("A reaper Deployment", "")
 
 
 import pytest
@@ -196,3 +197,134 @@ def test_kill_switch_is_enforced_inside_the_builder():
             consent={"cluster_privilege_authorized": True, "node_access_authorized": True},
             allow_privileged_k8s=False, **_KW)
     assert ei.value.disabled_by_deployment is True
+
+
+# --- re-apply: every generation must be applicable over the previous one -----
+
+from datetime import timedelta
+
+#: Kinds whose changed fields in this manifest are all mutable on apply. A Job is
+#: absent on purpose: its spec.template is immutable, so a re-applied manifest
+#: whose reaper template changed was rejected (kind run, D1).
+_MUTABLE_ON_APPLY = {"ConfigMap", "Deployment", "Namespace", "ServiceAccount",
+                     "ClusterRole", "ClusterRoleBinding"}
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_agent_manifest_has_no_job(profile):
+    assert by_kind(objs(profile, authorized_by="henry"), "Job") == []
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_two_generations_differ_only_in_objects_that_can_be_reapplied(profile):
+    first = {(o["kind"], o["metadata"]["name"]): o for o in objs(profile, authorized_by="henry")}
+    later = {(o["kind"], o["metadata"]["name"]): o
+             for o in objs(profile, authorized_by="henry", now=NOW + timedelta(hours=3))}
+    assert first.keys() == later.keys()
+    changed = {k for k in first if first[k] != later[k]}
+    assert changed, "the expiry moved, so something must change"
+    assert {kind for kind, _ in changed} <= _MUTABLE_ON_APPLY
+
+
+def _reaper(o):
+    return [d for d in by_kind(o, "Deployment") if "reaper" in d["metadata"]["name"]][0]
+
+
+def test_reaper_is_a_single_recreate_deployment_on_its_pinned_service_account():
+    o = objs("cluster-privilege", authorized_by="henry")
+    r = _reaper(o)
+    assert r["metadata"]["name"] == "cortexsim-reaper-agent"
+    assert r["metadata"]["namespace"] == "cortexsim-agent"
+    spec = r["spec"]
+    assert spec["replicas"] == 1 and spec["strategy"] == {"type": "Recreate"}
+    sel = spec["selector"]["matchLabels"]
+    tmpl_labels = spec["template"]["metadata"]["labels"]
+    assert sel and all(tmpl_labels.get(k) == v for k, v in sel.items())
+    # The agent Deployment must not select the reaper's pod, nor the reverse.
+    agent = [d for d in by_kind(o, "Deployment") if d["metadata"]["name"] == "cortexsim-agent"][0]
+    agent_sel = agent["spec"]["selector"]["matchLabels"]
+    assert not all(tmpl_labels.get(k) == v for k, v in agent_sel.items())
+    agent_tmpl = agent["spec"]["template"]["metadata"]["labels"]
+    assert not all(agent_tmpl.get(k) == v for k, v in sel.items())
+    pod_spec = spec["template"]["spec"]
+    assert pod_spec["restartPolicy"] == "Always"
+    assert pod_spec["serviceAccountName"] == "cortexsim-reaper-agent"
+    sas = {s["metadata"]["name"] for s in by_kind(o, "ServiceAccount")}
+    assert "cortexsim-reaper-agent" in sas
+    (c,) = pod_spec["containers"]
+    assert c["image"] == km.DEFAULT_REAPER_IMAGE
+    for job_only in ("activeDeadlineSeconds", "backoffLimit", "ttlSecondsAfterFinished"):
+        assert job_only not in spec
+
+
+def test_reaper_waits_to_the_absolute_expiry_not_a_relative_ttl():
+    o = objs("baseline")
+    c = _reaper(o)["spec"]["template"]["spec"]["containers"][0]
+    script = c["args"][0]
+    env = {e["name"]: e["value"] for e in c["env"]}
+    expires = _reaper(o)["metadata"]["annotations"]["cortexsim.io/expires-at"]
+    want = int(datetime.strptime(expires, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+    assert env["EXPIRES_AT_EPOCH"] == str(want)
+    # The unconditional relative wait is gone; it survives only as the
+    # clock-unavailable fallback (indented, inside the loop).
+    assert '\nsleep "${TTL}"\n' not in script
+    assert "date +%s" in script and "EXPIRES_AT_EPOCH" in script
+    assert subprocess.run(["sh", "-n"], input=script, text=True).returncode == 0
+
+
+def _run_reaper_wait(tmp_path, epoch_now, expires_epoch, clock_works=True):
+    """Run the reaper script with stub date/sleep/kubectl; return (log, rc)."""
+    o = objs("baseline")
+    c = _reaper(o)["spec"]["template"]["spec"]["containers"][0]
+    script = c["args"][0]
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    clock = tmp_path / "clock"
+    clock.write_text(str(epoch_now))
+    log = tmp_path / "log"
+    stubs = {
+        # date +%s reads the fake clock; any other use fails loudly.
+        "date": (f'[ "$1" = "+%s" ] || exit 9; cat "{clock}"\n' if clock_works
+                 else 'echo "date: invalid format"; exit 1\n'),
+        # sleep advances the fake clock instead of waiting.
+        "sleep": f'echo "sleep $1" >> "{log}"; n=$(cat "{clock}"); echo $((n + $1)) > "{clock}"\n',
+        "kubectl": f'echo "kubectl $*" >> "{log}"\n',
+    }
+    for name, body in stubs.items():
+        p = bin_dir / name
+        p.write_text("#!/bin/sh\n" + body)
+        p.chmod(0o755)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "NS": "cortexsim-agent",
+           "TTL": "43200", "EXPIRES_AT_EPOCH": str(expires_epoch)}
+    p = subprocess.run(["sh", "-c", script], env=env, capture_output=True, text=True, timeout=20)
+    return (log.read_text() if log.exists() else ""), p.returncode, p.stdout + p.stderr
+
+
+def test_a_restarted_reaper_sleeps_only_the_remaining_time(tmp_path):
+    # Restarted 100s before expiry: it must reap after ~100s, not after a fresh TTL.
+    log, rc, out = _run_reaper_wait(tmp_path, epoch_now=1_000_000, expires_epoch=1_000_100)
+    sleeps = [int(line.split()[1]) for line in log.splitlines() if line.startswith("sleep ")]
+    assert sum(sleeps) == 100, (log, out)
+    assert "kubectl delete namespace cortexsim-agent" in log, (log, out)
+
+
+def test_a_reaper_started_after_expiry_reaps_at_once(tmp_path):
+    log, rc, out = _run_reaper_wait(tmp_path, epoch_now=2_000_000, expires_epoch=1_000_000)
+    assert not [line for line in log.splitlines() if line.startswith("sleep ")], (log, out)
+    assert "kubectl delete namespace cortexsim-agent" in log, (log, out)
+
+
+def test_agent_readiness_needs_a_stored_agent_id_and_nothing_kills_a_slow_prepare():
+    c = pod(objs("baseline"))["containers"][0]
+    probe = c["readinessProbe"]
+    assert probe["exec"]["command"] == ["/bin/sh", "-c", "test -s /cortexsim/state/agent-id"]
+    assert probe["periodSeconds"] == 5
+    # A failing liveness or startup probe restarts the container mid package install.
+    assert "livenessProbe" not in c and "startupProbe" not in c
+
+
+def test_a_reaper_without_a_usable_clock_falls_back_to_the_relative_wait(tmp_path):
+    log, rc, out = _run_reaper_wait(tmp_path, epoch_now=1, expires_epoch=10, clock_works=False)
+    assert [line for line in log.splitlines() if line.startswith("sleep ")] == ["sleep 43200"], (log, out)
+    assert "REAPER_CLOCK_UNAVAILABLE" in out
+    assert "kubectl delete namespace cortexsim-agent" in log, (log, out)

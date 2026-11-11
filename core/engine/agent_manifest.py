@@ -174,18 +174,48 @@ elif command -v apk >/dev/null 2>&1; then
 else
   pf "no supported package manager (apt-get or apk)"
 fi
+@@ACCOUNT_LOOP@@
+if [ "$PREP_BAD" = 0 ]; then echo PREPARE_OK >> "$STATUS"; fi
+"""
+
+# alpine ships some of these names as a GROUP with no user (www-data, gid 82), and
+# useradd refuses to create a user whose name is an existing group unless told to
+# join it; so join the group when it exists, otherwise create both.
+_ACCOUNT_LOOP = """has_group() {
+  if command -v getent >/dev/null 2>&1; then
+    getent group "$1" >/dev/null 2>&1
+  else
+    grep -q "^$1:" /etc/group 2>/dev/null
+  fi
+}
 for u in @@ACCOUNTS@@; do
   id "$u" >/dev/null 2>&1 && continue
   if command -v useradd >/dev/null 2>&1; then
-    useradd -m -s /bin/sh "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    if has_group "$u"; then
+      useradd -m -s /bin/sh -g "$u" "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    else
+      useradd -m -s /bin/sh -U "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    fi
   elif command -v adduser >/dev/null 2>&1; then
-    adduser -D -s /bin/sh "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    if has_group "$u"; then
+      adduser -D -s /bin/sh -G "$u" "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    else
+      adduser -D -s /bin/sh "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    fi
   else
     pf "could not create account $u"
   fi
 done
-if [ "$PREP_BAD" = 0 ]; then echo PREPARE_OK >> "$STATUS"; fi
 """
+
+
+def account_creation_fragment(accounts: list[str]) -> str:
+    """The prepare stage's account loop; expects ``pf`` to be defined."""
+    for name in accounts:
+        if not _SAFE_WORD.match(name):
+            raise ValueError(f"service account {name!r} is not shell-safe")
+    return _render(_ACCOUNT_LOOP, ACCOUNTS=" ".join(accounts))
+
 
 _PREPARE_NONE = """STATUS=/cortexsim/prepare.status
 echo PREPARE_SKIPPED > "$STATUS"
@@ -246,11 +276,8 @@ def start_script(*, arch: str, prepare: str, expires_at: str, profile: str) -> s
     if not _SAFE_WORD.match(expires_at):
         raise ValueError(f"expires_at {expires_at!r} is not shell-safe")
     if prepare == "packages":
-        accounts = identity_spec.service_accounts()
-        for name in accounts:
-            if not _SAFE_WORD.match(name):
-                raise ValueError(f"service account {name!r} is not shell-safe")
-        block = _render(_PREPARE_PACKAGES, ACCOUNTS=" ".join(accounts))
+        loop = account_creation_fragment(identity_spec.service_accounts())
+        block = _render(_PREPARE_PACKAGES, ACCOUNT_LOOP=loop.rstrip("\n"))
     else:
         block = _PREPARE_NONE
     return _render(
@@ -442,10 +469,14 @@ def build_agent_objects(
     })
 
     # The reaper deletes the agent namespace itself (the push path relies on the
-    # same call), plus exactly the cluster-scoped objects emitted above.
-    objects.extend(km._reaper(
-        scenario_id=AGENT_SCENARIO_ID, sid_lower="agent", ns=ns, base=base,
-        ttl=ttl_seconds, image=km.DEFAULT_REAPER_IMAGE, cluster_scoped=cluster_scoped,
+    # same call), plus exactly the cluster-scoped objects emitted above. Here it
+    # runs as a Deployment, not the push path's Job: see _reaper_as_deployment.
+    objects.extend(_reaper_as_deployment(
+        km._reaper(
+            scenario_id=AGENT_SCENARIO_ID, sid_lower="agent", ns=ns, base=base,
+            ttl=ttl_seconds, image=km.DEFAULT_REAPER_IMAGE, cluster_scoped=cluster_scoped,
+        ),
+        expires_epoch=int(now.timestamp()) + ttl_seconds,
     ))
 
     # Every object expires and names who authorised it, reaper objects included.
@@ -453,6 +484,88 @@ def build_agent_objects(
         meta = obj["metadata"]
         meta["annotations"] = {**common, **meta.get("annotations", {})}
     return objects
+
+
+# The push path's reaper waits a RELATIVE ttl. In a Job that ran once that was the
+# expiry; in a Deployment a restarted reaper would start the clock again. This
+# replaces exactly that wait with one to the absolute expiry, using only what the
+# pinned busybox image is known to carry (sh, date +%s, sleep).
+_REAPER_RELATIVE_WAIT = (
+    'echo "[cortexsim-reaper] sleeping ${TTL}s before reaping ${NS}"\n'
+    'sleep "${TTL}"\n'
+)
+_REAPER_ABSOLUTE_WAIT = """\
+echo "[cortexsim-reaper] waiting until epoch ${EXPIRES_AT_EPOCH} before reaping ${NS}"
+while :; do
+  NOW_S=$(date +%s 2>/dev/null)
+  case "$NOW_S" in
+    ''|*[!0-9]*)
+      # Never worse than the Job it replaces: fall back to the relative wait.
+      echo "[cortexsim-reaper] REAPER_CLOCK_UNAVAILABLE: sleeping ${TTL}s instead"
+      sleep "${TTL}"
+      break ;;
+  esac
+  LEFT=$((EXPIRES_AT_EPOCH - NOW_S))
+  if [ "$LEFT" -le 0 ]; then break; fi
+  # Short naps, so a clock step or a long suspend cannot overshoot by hours.
+  if [ "$LEFT" -gt 300 ]; then sleep 300; else sleep "$LEFT"; fi
+done
+"""
+
+
+def _reaper_as_deployment(reaper: list[dict[str, Any]], *, expires_epoch: int) -> list[dict[str, Any]]:
+    """The push path's reaper objects, with its Job turned into a Deployment.
+
+    A Job's ``spec.template`` is immutable and the reaper's template changes with
+    every generation (the expiry), so re-applying the agent manifest — the path
+    after a SimCore upgrade or a profile change — was rejected (kind run, D1).
+    A Deployment's template is mutable. Name, ServiceAccount, pinned RBAC, image
+    and script are kept; only the wait becomes absolute, because a Deployment
+    restarts its pod where a ``backoffLimit: 0`` Job did not.
+    """
+    jobs = [o for o in reaper if o["kind"] == "Job"]
+    if len(jobs) != 1:
+        raise RuntimeError(f"expected exactly one reaper Job from km._reaper, got {len(jobs)}")
+    job = jobs[0]
+    name = job["metadata"]["name"]
+    pod_spec = {**job["spec"]["template"]["spec"], "restartPolicy": "Always"}
+    (container,) = pod_spec["containers"]
+    (script,) = container["args"]
+    if script.count(_REAPER_RELATIVE_WAIT) != 1:
+        raise RuntimeError("the reaper script no longer has the relative wait this replaces")
+    container = {
+        **container,
+        "args": [script.replace(_REAPER_RELATIVE_WAIT, _REAPER_ABSOLUTE_WAIT)],
+        "env": [*container["env"], {"name": "EXPIRES_AT_EPOCH", "value": str(expires_epoch)}],
+    }
+    pod_spec["containers"] = [container]
+    selector = {"app.kubernetes.io/name": name, _AGENT_LABEL: "true"}
+    deployment = {
+        "apiVersion": "apps/v1", "kind": "Deployment",
+        "metadata": dict(job["metadata"]),
+        "spec": {
+            "replicas": 1,
+            # Never two reapers at once, never a gap filled by a stale one.
+            "strategy": {"type": "Recreate"},
+            "selector": {"matchLabels": selector},
+            "template": {
+                "metadata": {"labels": {**job["spec"]["template"]["metadata"]["labels"], **selector}},
+                "spec": pod_spec,
+            },
+        },
+    }
+    return [deployment if o is job else o for o in reaper]
+
+
+#: Ready means enrolled: the beacon writes its id only after SimCore assigned it,
+#: so a pod still installing packages or retrying enrollment is not Ready. No
+#: liveness or startup probe: either would kill a slow package install.
+_READINESS_PROBE = {
+    "exec": {"command": ["/bin/sh", "-c", "test -s /cortexsim/state/agent-id"]},
+    "periodSeconds": 5,
+    "timeoutSeconds": 2,
+    "failureThreshold": 3,
+}
 
 
 def _agent_pod_spec(posture: ClusterPosture, *, image: str) -> dict[str, Any]:
@@ -518,6 +631,7 @@ def _agent_pod_spec(posture: ClusterPosture, *, image: str) -> dict[str, Any]:
         ],
         "securityContext": km._container_security_context(posture.security_context),
         "volumeMounts": [dict(state), dict(boot), dict(secret), *hp_mounts],
+        "readinessProbe": _READINESS_PROBE,
         **termination,
     }
     resources = km._resources_block(posture)
@@ -563,7 +677,7 @@ def _agent_header(
         out.append("# PLANTED POSTURE FINDINGS: none beyond Kubernetes defaults\n")
     out.append("#\n")
     out.append(
-        f"# A reaper Job deletes namespace {AGENT_NAMESPACE} and the cluster-scoped objects\n"
+        f"# A reaper Deployment deletes namespace {AGENT_NAMESPACE} and the cluster-scoped objects\n"
         "# above at expiry. It is a safety net: delete the manifest yourself when done.\n"
     )
     out.append(rule)

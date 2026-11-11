@@ -186,3 +186,69 @@ def test_unprompted_beacon_exit_zero_idles_until_termed(tmp_path):
     finally:
         if proc.poll() is None:
             proc.kill()
+
+
+# ── account creation, executed under sh with recording stubs (kind run, D3) ──
+# alpine ships a www-data GROUP (gid 82) with no user, and `useradd www-data`
+# refuses ("group www-data exists - ... use -g").
+
+from engine.agent_manifest import account_creation_fragment
+
+
+def _run_accounts(tmp_path, *, users, groups, tool):
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    calls = tmp_path / "calls"
+    stubs = {
+        "id": 'for u in $KNOWN_USERS; do [ "$u" = "$1" ] && exit 0; done; exit 1\n',
+        "getent": '[ "$1" = group ] || exit 2\n'
+                  'for g in $KNOWN_GROUPS; do [ "$g" = "$2" ] && exit 0; done; exit 2\n',
+        tool: f'echo "{tool} $*" >> "{calls}"\n',
+    }
+    for name, body in stubs.items():
+        p = bindir / name
+        p.write_text("#!/bin/sh\n" + body)
+        p.chmod(0o755)
+    status = tmp_path / "status"
+    script = (
+        f'STATUS="{status}"\n: > "$STATUS"\nPREP_BAD=0\n'
+        'pf() { echo "PREPARE_FAILED $*" >> "$STATUS"; PREP_BAD=1; }\n'
+        + account_creation_fragment(["www-data"])
+        + 'echo "bad=$PREP_BAD"\n'
+    )
+    env = {"PATH": str(bindir), "KNOWN_USERS": " ".join(users), "KNOWN_GROUPS": " ".join(groups)}
+    p = subprocess.run(["/bin/sh", "-c", script], env=env, capture_output=True, text=True)
+    assert p.returncode == 0, p.stderr
+    return (calls.read_text().splitlines() if calls.exists() else []), p.stdout, status.read_text()
+
+
+@pytest.mark.parametrize("tool,want", [
+    ("useradd", "useradd -m -s /bin/sh -g www-data www-data"),
+    ("adduser", "adduser -D -s /bin/sh -G www-data www-data"),
+])
+def test_existing_group_without_user_gets_the_user_created_in_that_group(tmp_path, tool, want):
+    calls, out, status = _run_accounts(tmp_path, users=[], groups=["www-data"], tool=tool)
+    assert calls == [want]
+    assert "bad=0" in out and status == ""
+
+
+@pytest.mark.parametrize("tool,want", [
+    ("useradd", "useradd -m -s /bin/sh -U www-data"),
+    ("adduser", "adduser -D -s /bin/sh www-data"),
+])
+def test_absent_user_and_group_are_both_created(tmp_path, tool, want):
+    calls, out, status = _run_accounts(tmp_path, users=[], groups=[], tool=tool)
+    assert calls == [want]
+    assert "bad=0" in out
+
+
+@pytest.mark.parametrize("tool", ["useradd", "adduser"])
+def test_existing_user_runs_nothing(tmp_path, tool):
+    calls, out, _ = _run_accounts(tmp_path, users=["www-data"], groups=["www-data"], tool=tool)
+    assert calls == []
+    assert "bad=0" in out
+
+
+def test_start_script_uses_the_account_fragment():
+    s = start_script(arch="amd64", prepare="packages", expires_at=EXP, profile="baseline")
+    assert account_creation_fragment(identity_spec.service_accounts()).strip() in s
