@@ -5529,15 +5529,32 @@
   display: grid; place-items: center;
   backdrop-filter: blur(2px);
 }
+/* The modal is capped to the viewport and scrolls ITSELF. It had no max-height
+   and no overflow inside a fixed, centring backdrop: with Windows selected and
+   a token minted it was ~1500px tall, and on a 900px viewport everything below
+   the fold (the installer download, the legacy path, the install attempts) was
+   simply unreachable — nothing on the page scrolled. Guarded by
+   styles/__tests__/deploy-modal-scroll.test.jsx. */
 .theme-console .deploy-modal {
   width: min(560px, 92vw);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--c-surface-modal);
   border: 1px solid var(--c-hairline-strong);
   border-radius: var(--r-modal);
   box-shadow: var(--shadow-modal);
   padding: 22px 24px 24px;
 }
-.theme-console .deploy-modal__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+/* Sticky, so the title and Close stay reachable while the body scrolls. The
+   negative margin and matching padding let it cover the modal's own padding;
+   the background is opaque so scrolled text does not show through. */
+.theme-console .deploy-modal__head {
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: -22px; z-index: 2;
+  margin: -22px -24px 8px; padding: 22px 24px 8px;
+  background: var(--c-surface-modal);
+}
 .theme-console .deploy-modal__close {
   background: transparent; border: 0; color: var(--c-text-muted);
   font-size: 22px; line-height: 1; cursor: pointer;
