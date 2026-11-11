@@ -545,13 +545,51 @@ func (c *BeaconClient) resolve(username string) identity.Resolution {
 // degradation ALSO goes into the run record via formatStepOutput — a log line on
 // the customer's jumpbox is not evidence anybody reading the POV report sees.
 func logIdentity(stepID, username string, res identity.Resolution) {
-	if res.Unknown {
-		log.Printf("[beacon] WARN unknown identity %q for step %s — mapping to runuser (best-effort)",
-			username, stepID)
+	// BEACON-20: this line names the impersonation mechanism the step is about
+	// to use, so it is only written where there is one. It used to say "mapping
+	// to runuser" on Windows too — for `administrator` and `user` — where
+	// nothing is mapped and runuser does not exist; a DC reading the endpoint's
+	// log would conclude the beacon tried to impersonate, against the run
+	// record's IDENTITY NOT HONOURED. On Windows an unknown identity is always
+	// a degradation, and the line below says exactly what happened.
+	if res.Unknown && beaconGOOS != "windows" {
+		log.Printf("[beacon] WARN unknown identity %q for step %s — mapping to %s (best-effort)",
+			username, stepID, res.Mode)
 	}
 	if res.Degraded() {
 		log.Printf("[beacon] WARN identity NOT honoured for step %s: %s", stepID, res.Degradation)
 	}
+}
+
+// Seams for windowsExecutionAccount: the beacon's own account and whether its
+// token is elevated. Package vars only so the line is testable off Windows.
+var (
+	beaconAccountName   = identity.CurrentUsername
+	beaconTokenElevated = identity.ProcessElevated
+)
+
+// windowsExecutionAccount is the line every Windows step frame carries, naming
+// what the step actually executed as (BEACON-20).
+//
+// The header's `identity=` is what the SCENARIO declared. Windows has no
+// unattended impersonation, so every step runs as the beacon's own account —
+// NT AUTHORITY\SYSTEM under the service, the installing user otherwise — and
+// whether that token is elevated decides what a privileged TTP can do. A step
+// whose declared identity is "honoured" (root on an elevated beacon) carried no
+// account at all before this, so a run record could not tell SYSTEM from an
+// elevated administrator from a standard user. Informational, not a marker:
+// the unhonoured case still gets its own `!! IDENTITY NOT HONOURED` line.
+func windowsExecutionAccount() string {
+	who := strings.TrimSpace(beaconAccountName())
+	if who == "" {
+		who = "the beacon's account (name unavailable)"
+	}
+	token := "token NOT elevated"
+	if beaconTokenElevated() {
+		token = "elevated token"
+	}
+	return fmt.Sprintf("[cortexsim] executed as %s (%s) — a Windows step always runs as the beacon's own "+
+		"account; identity= above is what the scenario declared", who, token)
 }
 
 // -------------------------------------------------------------------------
@@ -1694,6 +1732,9 @@ func (c *BeaconClient) formatStepOutput(n, total int, step *Step, username strin
 	var b strings.Builder
 	fmt.Fprintf(&b, "=== STEP %d/%d · %s · %s · identity=%s ===\n",
 		n, total, step.ID, step.MitreTechnique, username)
+	if beaconGOOS == "windows" {
+		fmt.Fprintf(&b, "%s\n", windowsExecutionAccount())
+	}
 	if idRes.Degraded() {
 		fmt.Fprintf(&b, "%s %s\n", identityDegradedMarker, idRes.Degradation)
 	}

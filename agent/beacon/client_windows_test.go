@@ -115,6 +115,40 @@ func TestExecuteTask_WindowsFailFastStopsAtFirstNonZero(t *testing.T) {
 	}
 }
 
+// BEACON-20 on a real Windows host: the step frame names the account this test
+// process (the "beacon") really runs as, and whether its token is elevated.
+func TestExecuteTask_WindowsHostStepFrameNamesTheRealAccount(t *testing.T) {
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+	c := New(rs.URL, "a-1", 0)
+	c.executeTask(context.Background(), &Task{TaskID: "t", RunID: "r", ScenarioID: "S",
+		Steps: []Step{{ID: "step-01", Command: "Write-Output (whoami)", Identity: "root"}}})
+
+	outs := rs.find("POST", "/output")
+	if len(outs) != 1 {
+		t.Fatalf("want 1 step frame, got %d", len(outs))
+	}
+	me := identity.CurrentUsername()
+	if me == "" {
+		t.Fatal("identity.CurrentUsername() is empty on this host")
+	}
+	// The frame is JSON-encoded in the request body: a backslash is doubled.
+	wantName := strings.ReplaceAll(me, `\`, `\\`)
+	token := "token NOT elevated"
+	if identity.ProcessElevated() {
+		token = "elevated token"
+	}
+	if want := "executed as " + wantName + " (" + token + ")"; !strings.Contains(outs[0].Body, want) {
+		t.Fatalf("the step frame does not carry %q:\n%s", want, outs[0].Body)
+	}
+	// And it agrees with what the step itself saw: `whoami`, in the step's
+	// STDOUT, prints the same account (lower-cased by whoami).
+	_, stdout, found := strings.Cut(outs[0].Body, "--- STDOUT ---")
+	if !found || !strings.Contains(strings.ToLower(stdout), strings.ToLower(wantName)) {
+		t.Errorf("whoami inside the step does not print the named account %q:\n%s", me, outs[0].Body)
+	}
+}
+
 // BEACON-18: a step too long for a Windows command line is not launched, the
 // run fails as an execution error, and the run record names the cause — on both
 // execution paths. (Before the guard this was CreateProcess error 206 on one
