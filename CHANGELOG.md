@@ -315,6 +315,41 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   tenant, or change door badges; those are phases 2 to 4 of
   `docs/superpowers/specs/2026-11-10-composer-correlation-story-design.md`.
 
+- **Read-only NGFW (PAN-OS) connection and a Firewall wizard under Manage.** A
+  firewall is registered as integration kind `panos_ngfw`, by pasting an API key
+  (`PUT /api/credentials/integrations`) or with `POST /api/ngfw/keygen`, which
+  exchanges an admin login for a key. `POST /api/connectors/panos_ngfw/preflight`
+  then answers, before the POV, whether this firewall will write and forward the
+  records the NGFW-dataset detections need: 11 firewall-wide stages (management
+  reachability and TLS, API key, system, clock skew, Logging Service and/or syslog
+  forwarding, Enhanced Application Logging, log-forwarding profiles, decryption,
+  registered tags) and 7 stages per enrolled agent (observed source, current
+  sessions, security-policy match per probe destination, the matched rule's profiles
+  and log settings, NAT, User-ID, registered tags). NAT between an agent and the
+  firewall, and two agents behind one observed address, are **blocked**, because
+  the 5-tuple stitch cannot form; an unknown agent-side address is degraded, and no
+  agents is degraded `PN_NO_AGENTS`, never an empty list. Every stage reports, a
+  shape the parser does not know blocks its own stage (`PN_SHAPE_UNRECOGNISED`)
+  rather than reading as empty, and `queries_issued` counts the calls actually sent.
+  `PUT /api/ngfw/{name}/sources/{agent_id}` sets the per-agent addresses, and
+  `GET /api/ngfw` lists firewalls. The console destination is **Firewall**
+  (`#/firewall`): connect, check, sources. Parsers are proven against PAN-OS 10.2.8
+  fixtures only. A green firewall preflight proves firewall configuration, not
+  ingestion or stitching: **`tenant-verified` is still 0**. Every `PN_` code is in
+  `docs/reference/api-and-agent-surface.md` §1.17. New settings:
+  `CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT` (default 120) and
+  `CORTEXSIM_PANOS_ALLOW_WRITE` (default false, consumed by nothing). Security: the
+  client cannot write to a firewall. It sends only allowlisted `show`/`test`
+  commands, re-serialised in its own canonical form, and `config action=show` reads
+  whose xpath fully matches an anchored allowlist; a refused request raises before
+  anything is sent. The API key travels in the `X-PAN-KEY` header and is scrubbed
+  from every report string. The keygen body is parsed in the handler because
+  FastAPI's default 422 echoed the password even with `hide_input_in_errors`; the
+  password is never logged, stored or returned. Known exposure: keygen and preflight
+  are unauthenticated, like the rest of `/api/credentials`, so anyone who reaches
+  SimCore can use keygen to probe which internal hosts and ports answer (four
+  distinct 502 codes). No stored secret leaks through it.
+
 ### Fixed
 
 - **The correlation export no longer invents a severity.**

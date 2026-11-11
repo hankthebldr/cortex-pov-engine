@@ -453,3 +453,74 @@ Candidates already seen: URL/WildFire/data logs have no own row in `show logging
     route logic.
 12. Syslog delivery is always reported "unverified from the firewall side" (degraded),
     because PAN-OS keeps no forwarded/acked counters for it.
+
+## 12. Build-time amendments
+
+The build (branch `feature/api-ngfw-connection`, 2026-11-10) changed the behaviour above
+in these places. Each was a controller ruling during the build; the code is the
+reference, this list says where it departs from §4–§6.
+
+1. **`auto` path, unused path → `ok / PN_PATH_NOT_SELECTED`** (amends §5.2, which said
+   `skipped`). With `forwarding_path=auto` and one path configured, the other stage, once
+   confirmed unconfigured, reports `ok` with code `PN_PATH_NOT_SELECTED`. A `skipped`
+   there made a healthy single-path firewall unable ever to read ready.
+2. **HTTP non-2xx is stage-local.** A management-API reply with a non-2xx status (not a
+   connect, DNS or TLS failure) maps to `PN_UPSTREAM_ERROR` and blocks only the stage
+   that made the call. Only `PN_UNREACHABLE`, `PN_TLS_FAILED` and `PN_AUTH_REJECTED`
+   short-circuit the rest (§5.1 named two of the three; TLS failure joins them). The call
+   budget bounds the extra calls against a sick firewall.
+3. **Multi-vsys is always degraded.** Multi-vsys on → `PN_MULTI_VSYS` degraded every
+   time, with the detail naming the vsys checked and saying the others were not. The
+   config always carries a defaulted `vsys`, so §5.2's "not set explicitly" cannot be
+   observed.
+4. **Config reads are allowlisted too, and re-serialised.** §5.5 allowlisted `op` only.
+   `config_show` now accepts only xpaths that fully match one of the anchored regexes in
+   `client.py::CONFIG_XPATH_ALLOWLIST` (exactly the preflight's reads), and every `op`
+   command is parsed, checked against a per-command argument schema and sent as the
+   client's own canonical serialisation, never the caller's string. This closes both
+   config exfiltration through an arbitrary xpath and a parser differential between the
+   check and the firewall. There is no `config_get` (§5.5 listed one): running config
+   only (§5.1) made it dead.
+5. **DNS Security `allow` with a log level counts as alert.** A DNS Security category
+   with action `allow` and a `log-level` other than `none` still writes a threat log
+   (lab 2026-11-10 and PANW docs), so it reads ok, not `PN_NO_PROFILE`. A spyware
+   profile that configures no DNS Security category is degraded `PN_DNS_SEC_UNCONFIGURED`.
+6. **`log-end no` is degraded `PN_RULE_NO_LOG_END`** (extends the §5.3 field list). No
+   session-end traffic log means no record to stitch.
+7. **URL filtering and WildFire analysis are not evaluated in v1.** Their profile actions
+   are not classified (no parser); `rule_profiles` reports them as "not evaluated", no
+   issue is raised, and the console's proves text lists them as not covered. Degrading
+   them would have made ready unreachable. Cost: a URL-filtering block that cuts a test
+   is not flagged.
+8. **Re-registration keeps per-agent overrides only on the same host.** Both
+   `POST /api/ngfw/keygen` and `PUT /api/credentials/integrations` (kind `panos_ngfw`)
+   carry `observed_sources` / `agent_addresses` over when the normalised `host` is
+   unchanged, and clear them (response `overrides_cleared: true`) when it changes. Probes
+   and zones are kept either way. A key rotation no longer wipes the overrides; a renamed
+   box no longer inherits another firewall's path.
+9. **The keygen body is parsed in the handler.** FastAPI's default 422 echoed the
+   password in the error `input` even with `hide_input_in_errors=True` on the model, so
+   `POST /api/ngfw/keygen` reads the raw body (capped at 16 KiB, 413 above that), parses
+   JSON itself and returns a 422 naming only field locations and error types.
+   `PUT /api/ngfw/{name}/sources/{agent_id}` does the same (an echoed lone surrogate was
+   a 500). A non-UTF-8-encodable string is a 422.
+10. **Other additions.** `PN_LFP_FILTERED` (a log-forwarding match-list with a filter
+    other than "All Logs" does not count as full forwarding), `PN_INTERNAL_ERROR` (a
+    CortexSim defect in one stage blocks that stage only, exception type named, message
+    withheld), `PN_SOURCE_UNKNOWN`, `PN_NO_RULE_MATCH`, `PN_RULE_CONFIG_MISMATCH`,
+    `PN_PROBE_FAMILY_MISMATCH`, `PN_CLOCK_TZ_UNKNOWN`, `PN_LOG_TYPE_AGE_UNKNOWN`,
+    `PN_SKIPPED_CONFIG`. Scoped spyware/vulnerability rules (a specific threat name or
+    category) are reported in `scoped_rules`, never folded into the per-severity verdict.
+    Panorama-pushed syslog profiles are read as well as vsys and shared. Keygen against an
+    existing integration of another kind is 409 `INTEGRATION_KIND_CONFLICT`. A keygen with
+    `verify_tls=false` returns `warnings: ["password sent over unverified TLS"]`.
+
+**Threat notes.** `POST /api/ngfw/keygen` and `POST /api/connectors/panos_ngfw/preflight`
+are unauthenticated, like the rest of `/api/credentials`: SimCore has no API auth and is
+meant to sit on a DC-controlled network. So anyone who can reach SimCore can use keygen as
+a reachability and port oracle toward internal hosts: a `host` of their choosing answers
+with one of four distinct 502 codes (`PN_UNREACHABLE`, `PN_TLS_FAILED`,
+`PN_UPSTREAM_ERROR`, `PN_SHAPE_UNRECOGNISED`) or a 401 (`PN_KEYGEN_REJECTED`). No stored
+secret leaks through it: keygen sends only the credentials in the request and has no
+stored key to send, and preflight sends a stored key only to that integration's own
+validated host. The fix belongs with SimCore API authentication, not in this surface.

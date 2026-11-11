@@ -1042,6 +1042,172 @@ scenario table only, no outbound call; the scenario route carries
   (default `false`).
 - Route count: this branch adds 3 routes.
 
+### 1.17 NGFW (PAN-OS) connection (`core/api/ngfw.py`, prefix `/ngfw`; preflight through `/connectors`)
+
+Added 2026-11-10 (branch `feature/api-ngfw-connection`). Spec:
+[`2026-11-10-ngfw-connection-wizard-design.md`](../superpowers/specs/2026-11-10-ngfw-connection-wizard-design.md)
+(§12 lists where the build departs from it). Console: **Firewall** under *Manage*
+(`#/firewall`, `ui/src/components/console/FirewallView.jsx` + `firewall/*`).
+
+**Opt-in and read-only toward the firewall.** Nothing here is polled; every call to a
+firewall is an operator action. `core/integrations/panos/client.py::PanosClient` builds
+three request types only: `op` (each command parsed and checked against a per-command
+argument schema in `OP_ALLOWLIST`, then sent as the client's own canonical
+serialisation, never the caller's string), `config` with `action=show` (running config,
+xpath must fully match one of the anchored regexes in `CONFIG_XPATH_ALLOWLIST`), and
+`keygen`. A refused request raises `PanosWriteRefused` before anything is sent and
+consumes no call budget. `CORTEXSIM_PANOS_ALLOW_WRITE` exists in `core/config.py`
+(default `false`) and **nothing consumes it**: v1 has no write path, and
+`GET /api/ngfw` reports `write_enabled: false` as a constant. The API key travels in the
+`X-PAN-KEY` header, never the URL, and is scrubbed from every string in a report.
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/ngfw` | Registered firewalls, metadata only (never the key) | — | `{firewalls: [{name, host, verify_tls, vsys, forwarding_path, last_verified_ok, last_verified_error, last_verified_at}], write_enabled: false, tenant_verified: 0}` |
+| POST | `/api/ngfw/keygen` | Exchange a firewall admin login for an API key and register the firewall (kind `panos_ngfw`) | JSON `{name, host, username, password, verify_tls?=true, vsys?="vsys1"}`, extra keys rejected, body ≤ 16 KiB | `<integration.to_dict()>` + `overrides_cleared` + `warnings[]` (`"password sent over unverified TLS"` when `verify_tls=false`); errors below |
+| PUT | `/api/ngfw/{name}/sources/{agent_id}` | Set or clear one agent's firewall-observed source / agent-side addresses on one firewall | JSON `{observed_source?: ip \| null, agent_addresses?: [ip] \| null}`; an omitted field is unchanged, `null` / `[]` removes the override | `{firewall, agent_id, observed_source, agent_addresses}`; 404 `INTEGRATION_NOT_FOUND`, 400 `INTEGRATION_CONFIG_INVALID`, 422 `REQUEST_INVALID`, 413 `REQUEST_TOO_LARGE` |
+| PUT | `/api/credentials/integrations` | Existing route; with `kind: panos_ngfw` it registers a pasted API key | `IntegrationPut` with `config` per the table below | `<integration.to_dict()>` + `overrides_cleared`; 400 `INTEGRATION_CONFIG_INVALID` |
+| POST | `/api/connectors/panos_ngfw/preflight` | Staged read-only firewall preflight (dispatched at the top of the connectors route, before its `PF_` resolution) | query `integration?` (default: first by name), `agents?` (comma-separated agent ids; default every enrolled agent) | `FirewallPreflightReport` (below); `PN_NO_INTEGRATION` / `PN_CREDENTIAL_UNDECRYPTABLE` arrive as a 200 report with a blocked `config` stage; 404 `INTEGRATION_NOT_FOUND` for an unknown `integration` |
+
+**`panos_ngfw` config** (validated at PUT and keygen time by
+`core/integrations/panos/host.py::validate_panos_config`, so a key is never sent to a
+malformed host): `host` (IP literal or DNS name, optional `:port`, no scheme, path,
+query or userinfo; required) · `verify_tls` (bool, `true`) · `vsys` (`vsys<digits>`,
+`vsys1`) · `device_name` (`localhost.localdomain`) · `routing_instance` (`default`) ·
+`forwarding_path` (`auto` \| `sls` \| `syslog` \| `both`, `auto`) · `probe_destinations`
+(`[{ip, port, protocol: tcp|udp, application}]`, default `1.1.1.1 udp/53 dns-base`,
+`198.51.100.10 tcp/80 web-browsing`, `198.51.100.10 tcp/443 ssl`; policy lookups only,
+no packet is sent) · `inside_zone` / `outside_zone` (null) · `observed_sources`
+(`{agent_id: ip}`) · `agent_addresses` (`{agent_id: [ip]}`). The secret type hint is
+forced to `panos_api_key_credential`.
+
+**Re-registration rule.** A keygen or `PUT /api/credentials/integrations` for an
+existing `panos_ngfw` name keeps `probe_destinations` and the zones; it keeps
+`observed_sources` / `agent_addresses` only when the normalised `host` is unchanged and
+otherwise clears them and returns `overrides_cleared: true`. Per-agent overrides describe
+the path through one firewall; carried to another they give confident, wrong verdicts.
+
+**Keygen errors.** The body is parsed in the handler, not by FastAPI binding, because
+FastAPI's default 422 echoed the password in `input` even with `hide_input_in_errors`. A
+422 here is `{error, code: "REQUEST_INVALID", detail, fields: [{loc, type}]}` and a `loc`
+part that is not a model field name reads `"(other)"`. Failures map to fixed text:
+401 `PN_KEYGEN_REJECTED`; 502 `PN_UNREACHABLE`, `PN_TLS_FAILED`, `PN_UPSTREAM_ERROR`,
+`PN_SHAPE_UNRECOGNISED`; 409 `INTEGRATION_KIND_CONFLICT` (the name belongs to another
+kind; checked before anything is sent); 400 `INTEGRATION_CONFIG_INVALID`; 413
+`REQUEST_TOO_LARGE`. The password is never logged, stored or returned. Generating a key
+does not invalidate the admin's earlier keys (PAN-OS 9.0+).
+
+**Threat note.** Keygen and preflight are unauthenticated, like the rest of
+`/api/credentials`. Anyone who reaches SimCore can use keygen as a reachability and port
+oracle toward internal hosts (the four distinct 502 codes, or a 401). No stored secret
+leaks through it: keygen holds no stored key, and preflight sends a stored key only to
+that integration's own validated host.
+
+**`FirewallPreflightReport`.** `{firewall, kind: "panos_ngfw", mgmt_host, overall,
+stages[], sources[], queries_issued, panos_version, config_source: "running", proves,
+tenant_verified: 0, credential: {name, kind}}`. Each stage is `{id, status, code,
+detail, remediation?, ms?, …extra}` with status `ok | degraded | blocked | skipped`;
+`overall` is the worst. `queries_issued` is the client's own count of requests sent, so a
+report from an injected transport says `0` and `proves` reads *"Firewall configuration
+as read by N live call(s). It does not show that the tenant ingested or stitched
+anything. A report with queries_issued=0 was not answered by a firewall."* The verdict is
+stored in the integration's `last_verified_ok` (`overall != blocked`) and
+`last_verified_error` (first blocked code).
+
+Firewall-wide stages, every id exactly once and in order: `config` · `dns_tls` · `auth` ·
+`system` · `clock` · `forwarding_sls` · `forwarding_syslog` · `eal_device` ·
+`log_forwarding_profiles` · `decryption` · `registered_ip`. Only `PN_UNREACHABLE`,
+`PN_TLS_FAILED` and `PN_AUTH_REJECTED` short-circuit the rest (to `skipped /
+PN_SKIPPED_UNREACHABLE | PN_SKIPPED_AUTH`); any other failure blocks its own stage.
+
+`sources[]` has one entry per agent: `{agent_id, hostname, fw_observed_src,
+fw_src_provenance (entered | inferred:last_ip | unknown), agent_addresses,
+agent_addr_provenance, nat_verdict (tuple_intact | nat_between | unknown),
+collision_with[], status, stages[], probes[]}`, with stages `address` · `source_seen` ·
+`policy_match` · `rule_profiles` · `nat` · `user_id` · `registered_tags`. With no agent
+selected it is a single degraded `PN_NO_AGENTS` entry, never an empty list. A green
+firewall preflight proves firewall configuration, **not** tenant ingestion or stitching:
+***tenant-verified is 0***.
+
+Call budget: at most `CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT` (default 120) requests;
+past it, the remaining stages report `PN_CALL_BUDGET` and work done before the cap is
+kept. Timeout 10 s per call.
+
+**Every `PN_` code** (`core/integrations/panos/codes.py`, one vocabulary, value equals
+name). Status is what the code carries where it is emitted.
+
+| code | status | meaning |
+|---|---|---|
+| `PN_OK` | ok | the stage's check passed |
+| `PN_CONFIG_INVALID` | blocked (`config`) | the stored registration does not validate; nothing was read |
+| `PN_NO_INTEGRATION` | blocked (`config`) | no `panos_ngfw` integration is registered |
+| `PN_CREDENTIAL_UNDECRYPTABLE` | blocked (`config`) | the stored API key cannot be decrypted (rotated `CORTEXSIM_SECRET`) |
+| `PN_SKIPPED_CONFIG` | skipped | not checked because the `config` stage is blocked |
+| `PN_UNREACHABLE` | blocked (`dns_tls`); keygen 502 | no answer from the management host (DNS, routing, port, HTTPS off) |
+| `PN_TLS_FAILED` | blocked (`dns_tls`); keygen 502 | the management certificate did not verify |
+| `PN_TLS_UNVERIFIED` | degraded (`dns_tls`) | answered with `verify_tls=false`; the peer is not proven |
+| `PN_AUTH_REJECTED` | blocked (`auth`) | the firewall rejected the API key (HTTP 403 or `status="error"` code 403) |
+| `PN_KEYGEN_REJECTED` | keygen 401 | the firewall issued no key for the submitted login |
+| `PN_SKIPPED_UNREACHABLE` | skipped | not checked: the firewall stopped answering (unreachable or TLS failure) |
+| `PN_SKIPPED_AUTH` | skipped | not checked: the firewall rejected the key |
+| `PN_UPSTREAM_ERROR` | blocked (that stage only); keygen 502 | the management API answered with a non-2xx HTTP status |
+| `PN_SHAPE_UNRECOGNISED` | blocked (that stage only); keygen 502 | a reply this version does not recognise (the command or xpath is named); never read as empty |
+| `PN_INTERNAL_ERROR` | blocked (that stage only) | a CortexSim defect while evaluating the stage; exception type named, message withheld |
+| `PN_WRITE_REFUSED` | blocked | the read-only client refused a request the stage built; nothing was sent (a CortexSim defect) |
+| `PN_CALL_BUDGET` | blocked (firewall-wide) / skipped (per source) | `CORTEXSIM_PANOS_MAX_CALLS_PER_PREFLIGHT` reached before this check |
+| `PN_MULTI_VSYS` | degraded (`system`) | multi-vsys is on; only the configured vsys was checked |
+| `PN_NOT_NORMAL_MODE` | degraded (`system`) | operational mode is not normal (e.g. FIPS-CC) |
+| `PN_CLOCK_SKEW` | degraded (`clock`) | firewall clock differs from SimCore UTC by more than 30 s |
+| `PN_CLOCK_TZ_UNKNOWN` | degraded (`clock`) | the firewall clock could not be converted to UTC (no or unknown timezone) |
+| `PN_LSF_DISABLED` | blocked (`forwarding_sls`) | Logging Service forwarding is off but the selected path needs it |
+| `PN_COLLECTOR_INACTIVE` | blocked (`forwarding_sls`) | LSF is on but no log collector connection is Active |
+| `PN_LOG_TYPE_STALE` | degraded (`forwarding_sls`) | traffic or threat last forwarded more than 15 min ago |
+| `PN_LOG_TYPE_NEVER` | degraded (`forwarding_sls`) | traffic or threat has never been forwarded |
+| `PN_LOG_TYPE_AGE_UNKNOWN` | degraded (`forwarding_sls`) | the last-forwarded age cannot be computed (clock unread, or a time in the future) |
+| `PN_SYSLOG_NO_SERVERS` | blocked (`forwarding_syslog`) | no syslog server profile has a server, and syslog is required |
+| `PN_SYSLOG_DELIVERY_UNVERIFIED` | degraded (`forwarding_syslog`) | syslog is configured; PAN-OS keeps no delivery counters, so confirm on the tenant side |
+| `PN_SYSLOG_UDP` | degraded (`forwarding_syslog`) | a syslog server uses UDP (loss is silent) |
+| `PN_NO_FORWARDING_PATH` | blocked (`forwarding_sls`, `forwarding_syslog`) / degraded (`log_forwarding_profiles`) | neither LSF nor syslog is configured, so no profile can be shown to deliver |
+| `PN_PATH_NOT_SELECTED` | ok (unconfigured, another path proven) / skipped (configured, not selected) | this forwarding path is not the one in use; information only |
+| `PN_EAL_DEVICE_OFF` | degraded (`eal_device`) | Enhanced Application Logging is off on the device |
+| `PN_NO_LFP` | blocked (`log_forwarding_profiles`) | no log forwarding profile exists |
+| `PN_LFP_MISSING_TYPE` | degraded (`log_forwarding_profiles`, as are the next four) | no profile forwards all of traffic, threat, url, wildfire and data |
+| `PN_LFP_EAL_OFF` | degraded | a profile has Enhanced Application Logging off |
+| `PN_LFP_TAG_ACTION` | degraded | a profile has a tagging action that can move a test host mid-run |
+| `PN_LFP_WRONG_TARGET` | degraded | a log type is forwarded only on a path that is not in use |
+| `PN_LFP_FILTERED` | degraded | a log type is forwarded only through a filter narrower than "All Logs" |
+| `PN_DECRYPTION_OFF` | degraded (`decryption`) | no enabled decryption rule |
+| `PN_REGISTERED_TAGS_PRESENT` | degraded (`registered_ip`) | registered IP tags exist on the firewall |
+| `PN_NO_AGENTS` | degraded (`sources[]`) | no enrolled agent selected; no source path was checked |
+| `PN_SOURCE_UNKNOWN` | degraded (`address`); skipped (that source's network stages) | the firewall-observed source is unknown; nothing was sent for it |
+| `PN_SOURCE_COLLISION` | blocked (`address`) | two or more agents resolve to the same firewall-observed source |
+| `PN_NAT_BETWEEN_AGENT_AND_FW` | blocked (`address`) | agent-side and firewall-observed addresses are disjoint: NAT breaks the 5-tuple stitch |
+| `PN_AGENT_ADDRESS_UNKNOWN` | degraded (`address`) | the agent-side address is unknown, so the NAT verdict is unknown |
+| `PN_SOURCE_NOT_SEEN` | degraded (`source_seen`) | the firewall has no current session from this source |
+| `PN_ZONE_UNRESOLVED` | degraded (`policy_match`, `user_id`) / skipped (`nat`) | source or destination zone could not be resolved |
+| `PN_NO_RULE_MATCH` | degraded (`policy_match`) | no configured security rule matches the probe (default rule, no log) |
+| `PN_PROBE_FAMILY_MISMATCH` | degraded / skipped | the source and every probe are of different address families |
+| `PN_RULE_DENIES` | blocked (`rule_profiles`) | the matching rule does not allow the traffic |
+| `PN_RULE_CONFIG_MISMATCH` | degraded (`rule_profiles`) | the policy lookup's rule disagrees with running config (disabled, or another action) |
+| `PN_NO_PROFILE` | degraded (`rule_profiles`) | an allow with no inspection or logging for some threat types or severities |
+| `PN_PROFILE_BLOCKS` | degraded (`rule_profiles`) | a profile blocks some threats: threat log written, artefact never reaches the endpoint |
+| `PN_PROFILE_SIGNATURE_DEFAULT` | degraded (`rule_profiles`) | a profile action is `default` (defers to the signature; likely blocks critical/high) |
+| `PN_DNS_SEC_SINKHOLE` | degraded (`rule_profiles`) | DNS Security sinkholes some categories on this path |
+| `PN_DNS_SEC_UNCONFIGURED` | degraded (`rule_profiles`) | the spyware profile configures no DNS Security category |
+| `PN_RULE_NO_LOG_FORWARDING` | degraded (`rule_profiles`) | the matching rule has no log forwarding profile |
+| `PN_RULE_LOG_PROFILE_INCOMPLETE` | degraded (`rule_profiles`) | the rule's log forwarding profile was not complete in `log_forwarding_profiles` |
+| `PN_RULE_NO_LOG_END` | degraded (`rule_profiles`) | the rule does not log at session end: no traffic record to stitch |
+| `PN_OBJECT_NOT_FOUND` | degraded | a referenced rule, profile, group or zone is in no scope read and is not predefined |
+| `PN_NO_USER_MAPPING` | degraded (`user_id`) | no user mapping for this source |
+| `PN_ZONE_USERID_OFF` | degraded (`user_id`) | User-ID is off on the source's zone |
+| `PN_SOURCE_TAGGED` | degraded (`registered_tags`) | this source carries registered IP tags |
+
+URL-filtering and WildFire-analysis profile actions are **not evaluated** in v1 (reported
+as such, no code raised).
+
+- Route count: this branch adds 3 routes (`/api/ngfw` ×3; the preflight reuses
+  `/api/connectors/{kind}/preflight`).
+
 **Still undocumented in this table:** `/api/xsiam` (the ~116-operation read-only
 Cortex operation catalog) and the `/api/runs/*` storyline + causality routes.
 Both are covered by their own design docs.
