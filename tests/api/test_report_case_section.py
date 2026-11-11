@@ -75,7 +75,7 @@ def test_markdown_lists_each_case_with_closed_by_and_link(client, session_factor
     text = _md(client)
     row900 = [l for l in text.splitlines() if l.startswith("| 900 |")]
     row901 = [l for l in text.splitlines() if l.startswith("| 901 |")]
-    assert len(row900) == 1 and "| socfw_auto_triage |" in row900[0]
+    assert len(row900) == 1 and "| socfw\\_auto\\_triage |" in row900[0]
     assert len(row901) == 1 and "| open |" in row901[0]
     assert "https://acme.xdr.us.paloaltonetworks.com/incidents/900" in text
     # A tenant-supplied URL that is not https on paloaltonetworks.com is not a link.
@@ -153,3 +153,33 @@ def test_ledger_missing_required_key_is_unreadable(client, session_factory, miss
 def test_ledger_wrong_type_is_unreadable(client, session_factory):
     _seed(session_factory, dict(LEDGER, cases="oops"))
     assert "Ledger unreadable" in _md(client)
+
+
+INLINE = [
+    ("[click](http://evil.example)", r"\[click\]\(http://evil.example\)"),
+    ("<img src=x onerror=alert(1)>", r"\<img src=x onerror=alert\(1\)\>"),
+    ("**bold**", r"\*\*bold\*\*"),
+]
+
+
+@pytest.mark.parametrize("case_id,escaped", INLINE)
+def test_inline_markdown_and_html_in_case_id_is_neutralised(
+        client, session_factory, case_id, escaped):
+    c = dict(LEDGER["cases"][0], case_id=case_id)
+    _seed(session_factory, dict(LEDGER, cases=[c], merge_reason=f"case {case_id} sealed"))
+    text = _md(client)
+    row = [l for l in text.splitlines() if escaped in l and l.startswith("| ")]
+    assert len(row) == 1
+    assert row[0].replace("\\|", "").count("|") == 7
+    # every metacharacter is backslash-escaped, so no unescaped link/tag/emphasis remains
+    assert "<img" not in text.replace("\\<img", "")
+    assert "](" not in text.replace("\\]\\(", "").replace("[open](", "")
+    assert "**bold**" not in text.replace("\\*\\*bold\\*\\*", "")
+    # the merge_reason (inline text, not a table) is escaped too
+    assert any(escaped in l and l.startswith("**Case merge:**") for l in text.splitlines())
+
+
+def test_code_span_values_carry_no_visible_backslashes(client, session_factory):
+    _seed(session_factory, dict(LEDGER, integration="a|b", code="CASE_READ_FAILED"))
+    text = _md(client)
+    assert "`a|b`" in text and "\\|" not in text.split("| Case |")[0]

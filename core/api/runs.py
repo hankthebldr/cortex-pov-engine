@@ -194,11 +194,25 @@ def _safe_xdr_url(url) -> Optional[str]:
     return urlunsplit(parts)
 
 
-def _md_cell(value) -> str:
-    """Escape a tenant-derived value for a markdown table cell / inline text."""
+_MD_ESCAPE = set("\\|[]()<>*_#!~&")
+
+
+def _md_cell(value, *, code: bool = False) -> str:
+    """Neutralise a tenant-derived value for the markdown report.
+
+    Control characters and newlines are flattened to spaces and backticks become
+    apostrophes (so nothing can break out of a code span or open one). Outside a
+    code span (``code=False``) every markdown/HTML metacharacter
+    ``\\ | [ ] ( ) < > * _ # ! ~ &`` is backslash-escaped, so no link, tag,
+    heading or emphasis is interpreted. Inside a code span (``code=True``)
+    backslashes would show literally, so nothing more is added.
+    """
     text = "" if value is None else str(value)
     text = "".join(" " if (ord(ch) < 32 or ord(ch) == 127) else ch for ch in text)
-    return text.replace("\\", "\\\\").replace("|", "\\|").replace("`", "'")
+    text = text.replace("`", "'")
+    if code:
+        return text
+    return "".join("\\" + ch if ch in _MD_ESCAPE else ch for ch in text)
 
 
 def ledger_unreadable_reason(led) -> Optional[str]:
@@ -232,16 +246,16 @@ def _case_section(run: Run) -> list[str]:
         out += [f"> Ledger unreadable: {bad}. Reconcile the run to rebuild it.", "",
                 f"*{CASE_DISCLAIMER}*", ""]
         return out
-    out.append(f"**Case merge:** `{_md_cell(led['merge_class'])}` — {_md_cell(led.get('merge_reason') or '—')}")
+    out.append(f"**Case merge:** `{_md_cell(led['merge_class'], code=True)}` — {_md_cell(led.get('merge_reason') or '—')}")
     out.append("")
-    out.append(f"Read at {_md_cell(led.get('read_at') or '—')} from `{_md_cell(led.get('integration') or '—')}` "
+    out.append(f"Read at {_md_cell(led.get('read_at') or '—')} from `{_md_cell(led.get('integration') or '—', code=True)}` "
                f"(basis: {_md_cell(led.get('basis') or '—')}).")
     out.append("")
     if led["code"] != "CASE_LEDGER_OK":
-        out += [f"> Ledger status: `{_md_cell(led['code'])}`", ""]
+        out += [f"> Ledger status: `{_md_cell(led['code'], code=True)}`", ""]
     ir = led.get("issue_read")
     if isinstance(ir, dict) and not ir.get("ok", True):
-        out += [f"> Issue-status read failed: `{_md_cell(ir.get('code') or '—')}` — "
+        out += [f"> Issue-status read failed: `{_md_cell(ir.get('code') or '—', code=True)}` — "
                 f"{_md_cell(ir.get('remediation') or 'no remediation recorded')}", ""]
     cases = [c for c in led["cases"] if isinstance(c, dict)]
     if cases:
