@@ -35,7 +35,7 @@ dataset = xdr_data
 dataset = xdr_data
 | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
 | filter (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_DIR_CREATE, ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains "/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js")
-   or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_command_line contains "/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js/setup.js")
+   or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name ~= "^python" and action_process_image_command_line contains "/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js/setup.js")
 | fields _time, agent_hostname, actor_causality_id, actor_process_image_name, event_sub_type, action_file_path, action_process_image_command_line
 
 ## VALIDATION — KOI-012 First Stage Fetch And RAT Script Written At Mirrored Tmp Ld Py
@@ -55,7 +55,7 @@ dataset = xdr_data
 dataset = xdr_data
 | filter timestamp_diff(current_time(), _time, "SECOND") < 3600
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-| filter action_process_image_command_line contains "/var/tmp/.cortexsim-axios/tmp/ld.py" and action_process_image_command_line contains ":8000/6202033"
+| filter action_process_image_command_line ~= "/var/tmp/[.]cortexsim-axios/tmp/ld[.]py +https?://" and action_process_image_command_line contains ":8000/6202033"
 | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_name, action_process_image_command_line
 
 ## VALIDATION — KOI-012 Decoy Manifest Renamed Over Package Json

