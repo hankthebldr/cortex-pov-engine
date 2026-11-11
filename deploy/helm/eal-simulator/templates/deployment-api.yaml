@@ -18,6 +18,11 @@ spec:
       labels:
         {{- include "eal-simulator.selectorLabels" . | nindent 8 }}
         cortexsim.paloaltonetworks.com/role: api
+      annotations:
+        # envFrom is resolved once, at pod start. Without this a `helm upgrade`
+        # that changes the ConfigMap (the Host allowlist, say) restarts nothing
+        # and the running pods keep the old environment.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:

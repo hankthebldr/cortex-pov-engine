@@ -6,6 +6,10 @@
 namespace: eal-simulator
 createNamespace: true
 
+# The cluster's DNS domain. Only used to spell the Service's fully qualified
+# name (<service>.<namespace>.svc.<clusterDomain>) in the Host allowlist below.
+clusterDomain: cluster.local
+
 image:
   repository: ghcr.io/hankthebldr/cortex-pov-engine
   tag: latest
@@ -55,6 +59,41 @@ api:
   # Tailscale-issued 100.x.y.z address per node and front it with the Tailscale
   # ingress controller.
   bindAddress: "0.0.0.0"
+
+  # Host names SimCore answers to (CORTEXSIM_ALLOWED_HOSTS). SimCore refuses any
+  # request whose Host header is not localhost, an IP address, the pod's own
+  # hostname, or a name in that list, with 400 HOST_NOT_ALLOWED. This is its
+  # DNS-rebinding guard, and the API has no authentication behind it. A pod's
+  # hostname is the pod name, so none of the names clients actually use would
+  # be admitted on their own.
+  #
+  # The chart always admits the names it creates itself:
+  #   <release>-eal-simulator-api
+  #   <release>-eal-simulator-api.<namespace>
+  #   <release>-eal-simulator-api.<namespace>.svc
+  #   <release>-eal-simulator-api.<namespace>.svc.<clusterDomain>
+  #   every ingress.hosts[].host            (when ingress.enabled)
+  #   tailscale.hostname                    (when tailscale.enabled)
+  # List here every OTHER name a browser, a beacon's --server or a runbook's
+  # BASE= uses: the Tailscale MagicDNS FQDN (cortexsim-eal.<tailnet>.ts.net), a
+  # CNAME, a LoadBalancer DNS name, an Ingress rule with no host. '*.x' matches
+  # subdomains of x. '*' disables the guard; do not use it.
+  # kubectl port-forward (Host: localhost) and the kubelet probes (pod IP) need
+  # nothing here.
+  allowedHosts: []
+
+  # CIDRs whose X-Forwarded-For SimCore believes when it records an agent's
+  # address (CORTEXSIM_TRUSTED_PROXIES). Empty: the header is ignored and the
+  # socket peer is recorded, so behind an Ingress every agent reads as the
+  # ingress controller. List the controller's pod CIDR or address to fix that;
+  # list nothing you do not control, because a listed peer can claim any address.
+  trustedProxies: []
+
+  # Any other environment variable for the API and worker pods, rendered into
+  # the chart's ConfigMap as-is (for example CORTEXSIM_CORS_ORIGINS). Not for
+  # secrets: a ConfigMap is not one. The chart refuses a key it already manages
+  # (use the value named in the error instead) and refuses CORTEXSIM_SECRET.
+  extraEnv: {}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Worker pods — actually emit the simulation traffic. These pods need direct
