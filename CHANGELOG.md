@@ -8,6 +8,56 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Added — Kubernetes container agent (phase 1; authored, not tenant-verified)
+
+- **The Linux beacon can run inside a pod and enroll with SimCore**, so cluster
+  scenarios are dispatched from the console with the normal pull lifecycle (live
+  output, abort, run record, MTTD). `GET /api/agents/manifest` serves the manifest
+  (`profile` `baseline` | `cluster-privilege` | `lab-privileged`, `image`,
+  `prepare`, `arch`, `ttl_seconds` 60..43200, consent keys, `authorized_by`); the
+  pod reads a `cortexsim-enroll` Secret holding `server` and `token`. Gated
+  profiles are served on the GET with consent in the query string; the push path's
+  `GATED_FORMAT_REQUIRES_POST` on `download?format=k8s` is unchanged. A Kubernetes
+  tab in the deploy-agent dialog builds both commands. Operator reference:
+  `docs/reference/k8s-container-agent.md`.
+- **Launch gate for container agents.** `409 AGENT_POSTURE_INSUFFICIENT` and `409
+  AGENT_TOOL_ABSENT` (`allow_missing_tools` overrides tools only) before dispatch,
+  and warnings `AGENT_NO_RBAC_FOR_KUBECTL` / `AGENT_TOOL_ROSTER_UNKNOWN`, so a step
+  the pod could never run is not scored as a detection Cortex missed.
+- **Honest degradations.** `ANCHOR NOT HONOURED` when the image has no `bash` to
+  carry a renamed `cgo_anchor`; `IDENTITY NOT HONOURED` (existing text) now also
+  covers an absent account.
+- New beacon flags: `--enroll-token-file`, `--state-dir`, `--posture-profile`,
+  `--prepare-status-file`, `--expires-at`, `--subreaper`.
+- **Proof so far.** A first run in a real kind pod (2026-11-10) observed enrollment,
+  digest verification, a four-step scenario with output, abort, consent and the
+  gate refusals. It found three product defects, since fixed in code (re-apply
+  rejected, pod with no interpreter could not enroll, `alpine` could not create
+  `www-data`), plus a profile-downgrade hole closed by emptying the wildcard
+  ClusterRole on re-apply. `lab-privileged` has never been run; the Linux
+  subreaper effect and the anchor rename under bash are not yet asserted; the
+  console tab was not checked in a real browser; no Cortex detection has been
+  observed. `tenant-verified` is still 0.
+
+### Changed — behaviour that reaches beyond containers
+
+- **Absent-account degradation now applies on every POSIX beacon** (VM and macOS
+  too), not only inside a failing `runuser`. A step whose declared service account
+  does not exist runs as the beacon's own account with a visible `IDENTITY NOT
+  HONOURED` note and a count in the run summary, instead of failing inside the
+  wrapper. An account is absent only when `user.Lookup` fails **and** `id -u --
+  <name>` exits 1; an inconclusive probe, or a name outside the portable account
+  shape (uppercase, `user@domain`, `DOMAIN\user`), is read as present so a
+  directory-joined host behaves as before.
+- **Every beacon sends `runtime_facts` on register and enroll**, including legacy
+  VM beacons (`container: false`). Stored on a new nullable `agents.runtime_facts`
+  JSON column, returned in the agent row.
+- **The server accepts `null` for `capabilities` and `interpreters`** on register
+  and enroll and reads it as `[]`; the beacon no longer sends null. A shipped
+  beacon on a host with no detectable interpreter would otherwise 422.
+- **Migration.** `agents.runtime_facts` is added automatically at boot. By hand:
+  `ALTER TABLE agents ADD COLUMN runtime_facts JSON`.
+
 ### Fixed
 
 - **An `xsiam_tenant` credential now serves alert read-back everywhere the

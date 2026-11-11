@@ -422,14 +422,15 @@ get it.
 | GET | `/api/agents/binaries` | Inventory the prebuilt beacon shelf | — | `{"binaries":[{os,arch,filename,size_bytes,sha256,modified_at}],"total":N}` |
 | GET | `/api/agents/binary` | Download a prebuilt beacon | query: `os`, `arch` (`uname` spellings accepted) | `FileResponse` + `X-CortexSim-Agent-SHA256`; 400 `BAD_OS`/`BAD_ARCH`; 404 `AGENT_BINARY_UNAVAILABLE` |
 | GET | `/api/agents/binary/sha256` | Expected digest for a target | query: `os`, `arch` | `PlainTextResponse` hex digest; same 400/404 |
+| GET | `/api/agents/manifest` | Kubernetes container-agent manifest (multi-doc YAML) | query: `profile`, `image`, `prepare`, `arch`, `ttl_seconds`, `cluster_privilege_authorized?`, `node_access_authorized?`, `authorized_by?` | `text/yaml`; 400 `BAD_PROFILE`/`BAD_PREPARE`/`BAD_ARCH`/`BAD_TTL`/`BAD_IMAGE`/`BAD_AUTHORIZED_BY`/`AUTHORIZED_BY_REQUIRED`; 403 `CLUSTER_PRIVILEGE_DISABLED`; 409 `CLUSTER_CONSENT_REQUIRED`; 404 `AGENT_BINARY_UNAVAILABLE`. Full reference: `docs/reference/k8s-container-agent.md` |
 | POST | `/api/agents/install/telemetry` | Installer reports its terminal stage/code | `InstallTelemetry` (length-capped, control chars stripped) | `{"status":"recorded"}`; also an `agent.install` SSE frame |
 | GET | `/api/agents/install/attempts` | Read recent install attempts | query: `limit` (default 25) | `{"attempts":[…],"total":N}` — in-memory deque (100), lost on restart |
 | POST | `/api/agents/enroll/tokens` | Mint a TTL / max-uses / revocable enrollment token | `{label?, ttl_seconds?, max_uses?}` (`ttl_seconds` default 3600, `ge=60`, `le=2_592_000`) | token (revealed once) |
 | GET | `/api/agents/enroll/tokens` | List token metadata (never the secret) | — | `{"tokens":[…]}` |
 | DELETE | `/api/agents/enroll/tokens/{token_id}` | Revoke a token | — | `{"status":"revoked"}` |
-| POST | `/api/agents/enroll` | Redeem a token; SimCore **assigns** the agent id | `EnrollRequest`: `{token, hostname, os, capabilities[], desired_name?}` | `{"status":"enrolled","agent_id"}`; 4xx `ENROLL_DENIED` |
+| POST | `/api/agents/enroll` | Redeem a token; SimCore **assigns** the agent id | `EnrollRequest`: `{token, hostname, os, capabilities[], desired_name?, runtime_facts?}` | `{"status":"enrolled","agent_id"}`; 4xx `ENROLL_DENIED` |
 | GET | `/api/agents` | List registered agents (newest `last_seen` first) | — | `{"agents":[<agent.to_dict()>],"total":N}` |
-| POST | `/api/agents/register` | Register/re-register a beacon (idempotent, legacy self-asserted id) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[]}` | `{"status":"registered","agent_id","message"}` |
+| POST | `/api/agents/register` | Register/re-register a beacon (idempotent, legacy self-asserted id) | `RegisterRequest`: `{agent_id, hostname, os, capabilities[], runtime_facts?}` | `{"status":"registered","agent_id","message"}` |
 | DELETE | `/api/agents/{agent_id}` | Prune a beacon row (does not touch run history) | — | `{"status":"deleted","agent_id"}`; 404 `AGENT_NOT_FOUND` |
 | GET | `/api/agents/{agent_id}/tasks` | Beacon polls for next task; bumps `last_seen` | — | `{"task":<task.to_dict()>}` or `{"task":null}`; 404 if agent unknown |
 
@@ -511,6 +512,25 @@ get it.
   `format=powershell`) remains the path with end-to-end evidence behind it.
 - The Go beacon treats **SIGHUP** as a graceful shutdown; previously a hangup hit
   the default disposition and killed the beacon when the terminal went away.
+
+- **Kubernetes container agent (2026-11-10, authored, not tenant-verified).**
+  `GET /api/agents/manifest` serves gated profiles on the GET with consent in the
+  query string; the push path's `GET /api/scenarios/{id}/download?format=k8s` still
+  returns `409 GATED_FORMAT_REQUIRES_POST` unchanged. `authorized_by` is required
+  whenever either consent key is present. The pod enrolls natively with new beacon
+  flags `--enroll-token-file`, `--state-dir`, `--posture-profile`,
+  `--prepare-status-file`, `--expires-at`, `--subreaper`.
+- **`runtime_facts`.** `register` and `enroll` accept an optional `runtime_facts`
+  object (`container`, `pod_name`, `pod_namespace`, `node_name`, `posture_profile`,
+  `prepare_status`, `tools[]`, `accounts[]`, `anchor_rename`; unknown keys ignored,
+  wrong types 422), stored on `agents.runtime_facts` and returned in
+  `agent.to_dict()`. Every beacon now sends it (`container: false` off a pod).
+  `capabilities` and `interpreters` accept `null` as `[]`.
+- **Launch gate for container agents** (`POST /api/runs`): `409
+  AGENT_POSTURE_INSUFFICIENT` and `409 AGENT_TOOL_ABSENT` (override with
+  `allow_missing_tools: true`, tools only), and `warnings[]` codes
+  `AGENT_NO_RBAC_FOR_KUBECTL` and `AGENT_TOOL_ROSTER_UNKNOWN`. Host and VM agents
+  are not gated.
 
 ### 1.7 MITRE (`core/api/mitre.py`, prefix `/mitre`)
 
