@@ -248,10 +248,11 @@ vendor/product, and whether out-of-the-box analytics run on it (`yes` / `no` /
 (`documented` / `inferred` / `reported`). `reported` means only LogSimv2 states
 it, and it is never quoted as a vendor statement.
 
-The endpoint reads each step's route from its own `collector_url`
+The endpoint reads each step's route from the URL launch would send to: its
+resolved collector target's, else its inline `collector_url`
 (`/logs/v1/event` is the HTTP collector; `/logs/v1/integrated/cribl/data` is the
 Cribl receiver, whose UUID is in a header and so unresolved; anything else is an
-unknown forwarder). Then, in order:
+unknown forwarder; a step no target resolves is `undeclared`). Then, in order:
 
 | Gate | Result |
 |---|---|

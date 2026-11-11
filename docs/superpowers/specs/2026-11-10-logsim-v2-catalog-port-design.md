@@ -67,8 +67,9 @@ Anti-goals, any of which makes this a failure even if it runs:
   any of its code needs the author's permission (open decision D-1).
 - **No write path to Cortex.** `CORTEXSIM_XSIAM_ALLOW_WRITE` stays default-off.
 - **Overlapping lanes.** `harden/eal-connectors` has unmerged edits to
-  `analytics_emitter.py`, `collector.py` and `bundle.py`, and the collector auth
-  fix branches are in flight. Phase 1 does not touch those files.
+  `analytics_emitter.py`, `collector.py` and `bundle.py`; phase 1 does not touch
+  those files. The bare-key collector auth fix and collector targets (#180)
+  are on `dev`, and phase 1 is built on them.
 - **Open rename decision.** The tenant-setup research found 22 of 32 registry
   dataset names are not tenant datasets. Whether cards are renamed or each row
   carries a `tenant_dataset` is Henry's call (D-2). Phase 1 only measures the
@@ -79,7 +80,7 @@ Anti-goals, any of which makes this a failure even if it runs:
 | Phase | Delivers | Depends on |
 |---|---|---|
 | 1 Catalog substrate | Ingestion routes per source; ingestion-only sources; soakless- and route-aware readiness; the emitter-vs-tenant dataset mismatch, measured | nothing |
-| 2 Transports | Cribl receiver sender (Source-Identifier, Vendor/Product headers, gzip NDJSON, empty-batch preflight); Broker syslog TCP sender; WEC (WS-Management over mutual TLS) last. S3 and Pub/Sub are deferred because the Cribl dedicated UUIDs reach the same datasets. | 1, and the collector auth fix landing |
+| 2 Transports | Cribl receiver sender (Source-Identifier, Vendor/Product headers, gzip NDJSON, empty-batch preflight); Broker syslog TCP sender; WEC (WS-Management over mutual TLS) last. S3 and Pub/Sub are deferred because the Cribl dedicated UUIDs reach the same datasets. | 1 (the collector auth fix has landed) |
 | 3 Wire-format generators | Vendor-native records per source: ASA, Firepower, FortiGate, Check Point, Zscaler and PAN-OS syslog/CEF; Okta System Log; Entra Graph sign-in and audit; O365 Management Activity; CloudTrail; GCP LogEntry; Windows Event XML; ESXi; Infoblox; Proofpoint TAP; Apache. One shared identity model so a user is the same person across feeds; generated high-cardinality values. | 2 |
 | 4 Threat catalog | Each on-demand threat binds an `alert_ref` (a profile transcribed from the vendor page) or an `undocumented_reason`, with a negative control. Background-only threats feed the benign baseline. | 3 |
 | 5 Kill chains and correlations | Single-pivot kill chains as scenarios; correlation rules as importable export files; card `correlation_rules` gain deployable bodies; seeded training packs (backfill, then live) | 4 |
@@ -118,10 +119,13 @@ this order:
    (`DETECTOR_ARMED_SOAKLESS`). The documented periods stay in the verdict.
 3. Otherwise the existing onboarding-date gate.
 
-The campaign readiness endpoint derives each step's route from its own
-`collector_url`: a `/logs/v1/event` path is the custom HTTP collector, a
+The campaign readiness endpoint derives each step's route from the collector URL
+launch would send to: the resolved collector target's, else the step's inline
+`collector_url`. A `/logs/v1/event` path is the custom HTTP collector, a
 `/logs/v1/integrated/cribl/data` path is the Cribl receiver, and anything else is
-an unknown forwarder. A route that cannot be derived gives `unknown`, never `armed`.
+an unknown forwarder. A step no target resolves is `undeclared`, not the
+resolver's `.invalid` stand-in URL. A route that cannot be derived gives
+`unknown`, never `armed`.
 
 **Measured, not fixed.** Each coverage row reports whether its emitters' declared
 datasets are datasets the tenant creates on a documented route
