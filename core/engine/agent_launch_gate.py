@@ -8,12 +8,18 @@ detection the customer's Cortex missed — a false negative we manufactured.
 Pure and side-effect free; the orchestrator calls :func:`evaluate` and owns the
 refusal / warning plumbing. Host and VM beacons are untouched (rule 1).
 
-Missing data is never read as "nothing needed":
+The gate applies ONLY to an agent the manifest deployed, recognised by a
+non-empty ``posture_profile`` string (the manifest's start script always passes
+``--posture-profile``). A beacon in Docker/Podman or a foreign pod reports
+``container: true`` but no profile; it is not ours to gate, so ``""``,
+whitespace, ``None`` or a missing key is a strict no-op — no refusal, no
+warning, no ``required_binaries`` stamping — exactly as for ``container: false``.
 
-* ``tools`` absent / None on a container agent means the roster is UNKNOWN, not
-  empty — the tool check is skipped and ``AGENT_TOOL_ROSTER_UNKNOWN`` warns.
-* ``posture_profile`` absent / None is treated as ``baseline``; a profile string
-  outside :data:`agent_manifest.PROFILES` is refused outright.
+Within a gated agent, missing data is never read as "nothing needed":
+
+* ``tools`` absent / None means the roster is UNKNOWN, not empty — the tool
+  check is skipped and ``AGENT_TOOL_ROSTER_UNKNOWN`` warns.
+* a profile string outside :data:`agent_manifest.PROFILES` is refused outright.
 
 Posture is compared on findings (``findings_for``) AND on RBAC rules, namespaced
 and cluster-scoped: SIM-CDR-001 plants only findings baseline already has, yet
@@ -129,10 +135,18 @@ def _satisfying_profile(needed: set[str], posture: Optional[km.ClusterPosture]) 
     return None
 
 
+def is_gated(facts: Optional[dict]) -> bool:
+    """True only for a container agent the manifest deployed (non-empty profile)."""
+    if not facts or not facts.get("container"):
+        return False
+    profile = facts.get("posture_profile")
+    return isinstance(profile, str) and bool(profile.strip())
+
+
 def _posture_refusal(posture: Optional[km.ClusterPosture], facts: dict) -> Optional[GateRefusal]:
     raw = facts.get("posture_profile")
     needed = {f.slug for f in km.findings_for(posture)} if posture is not None else set()
-    profile = raw if raw is not None else "baseline"
+    profile = raw
     if profile not in am.PROFILES:
         return GateRefusal(
             CODE_POSTURE,
@@ -178,7 +192,7 @@ def evaluate(
     allow_missing_tools: bool = False,
 ) -> GateResult:
     facts = agent_runtime_facts
-    if not facts or not facts.get("container"):
+    if not is_gated(facts):
         return GateResult(None, [])
 
     posture = km.parse_posture(scenario)
@@ -220,8 +234,81 @@ def evaluate(
                 warnings,
             )
 
-    profile = facts.get("posture_profile") or "baseline"
+    profile = facts["posture_profile"]
     kubectl_steps = [sid for sid, bins in per_step if "kubectl" in bins]
     if kubectl_steps and profile == "baseline":
         warnings.append({"code": WARN_NO_RBAC_FOR_KUBECTL, "steps": kubectl_steps})
+    return GateResult(None, warnings)
+
+
+# ── launch-level: every agent target, each on its own facts ──────────────────
+
+
+def agent_step_targets(steps: Iterable[dict], launch_target: str) -> dict[str, list[dict]]:
+    """Agent-channel steps grouped by EFFECTIVE target (step ``target`` or the launch target).
+
+    The same partition rule as ``orchestrator._partition_channels``: a step whose
+    channel is ``eal`` runs in SimCore's process and reaches no beacon.
+    """
+    from engine.scenario_loader import effective_channel  # noqa: PLC0415
+
+    out: dict[str, list[dict]] = {}
+    for s in steps:
+        if effective_channel(s) == "eal":
+            continue
+        out.setdefault(s.get("target") or launch_target, []).append(s)
+    return out
+
+
+def stamp_required_binaries(steps: Iterable[dict]) -> None:
+    """Union each step's ``required_binaries`` with the binaries its command calls.
+
+    The beacon's preflight then stops a step whose tool vanished after the roster
+    was taken (``TOOL_ABSENT``). Mutates the steps in place.
+    """
+    for s in steps:
+        union = list(s.get("required_binaries") or [])
+        for b in step_required_binaries(s.get("command") or ""):
+            if b not in union:
+                union.append(b)
+        if union:
+            s["required_binaries"] = union
+
+
+def evaluate_launch(
+    cluster_posture: Any,
+    steps: list[dict],
+    launch_target: str,
+    facts_by_agent: dict[str, Optional[dict]],
+    *,
+    allow_missing_tools: bool = False,
+) -> GateResult:
+    """Gate every agent target that receives agent-channel steps.
+
+    Each target is judged on ITS OWN ``runtime_facts`` and only the steps routed
+    to it. The first refusal wins and names the agent (``detail.agent_id``);
+    every warning carries the ``agent_id`` it is about. Steps of gated targets
+    are stamped with ``required_binaries``; ungated targets are left untouched.
+    """
+    warnings: list[dict] = []
+    gated: list[list[dict]] = []
+    for agent_id, mine in agent_step_targets(steps, launch_target).items():
+        facts = facts_by_agent.get(agent_id)
+        if not is_gated(facts):
+            continue
+        result = evaluate(
+            {"steps": mine, "cluster_posture": cluster_posture}, facts,
+            allow_missing_tools=allow_missing_tools,
+        )
+        if result.refusal is not None:
+            r = result.refusal
+            return GateResult(
+                GateRefusal(r.code, f"agent {agent_id!r}: {r.error}",
+                            {**r.detail, "agent_id": agent_id}),
+                [],
+            )
+        warnings += [{**w, "agent_id": agent_id} for w in result.warnings]
+        gated.append(mine)
+    for mine in gated:
+        stamp_required_binaries(mine)
     return GateResult(None, warnings)

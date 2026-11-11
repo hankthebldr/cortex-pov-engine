@@ -751,8 +751,10 @@ class Orchestrator:
 
         # Container-agent launch gate (engine/agent_launch_gate.py). A pod has one
         # fixed posture and tool roster; refuse HERE rather than let a step fail
-        # for lack of privilege/tooling and read as a Cortex miss. A host / VM /
-        # legacy agent (runtime_facts None or container false) is a no-op.
+        # for lack of privilege/tooling and read as a Cortex miss. Every agent
+        # target of a composed run is gated on its own facts. A host / VM /
+        # legacy agent, or a container beacon the manifest did not deploy (no
+        # posture profile), is a no-op.
         gate_warnings = await self._container_agent_gate(
             db, run_id, scenario, steps, target_agent_id, allow_missing_tools
         )
@@ -971,32 +973,29 @@ class Orchestrator:
         target_agent_id: str,
         allow_missing_tools: bool,
     ) -> "list[dict[str, Any]] | LaunchResult":
-        """Run the container-agent gate for the launch target.
+        """Run the container-agent gate for every agent target of the run.
 
-        Returns the advisory warnings, or a refused ``LaunchResult`` (run row
-        already ``failed``). Also unions each step's ``required_binaries`` with
-        the binaries its command calls, so the beacon's preflight stops a step
-        whose tool vanished after the roster was taken (``TOOL_ABSENT``).
+        Thin: loads each target's ``runtime_facts`` and hands off to
+        :func:`agent_launch_gate.evaluate_launch`, which judges each target on its
+        own facts and steps and stamps ``required_binaries``. Returns the advisory
+        warnings, or a refused ``LaunchResult`` (run row already ``failed``).
         """
         from models import Agent  # noqa: PLC0415
         from engine import agent_launch_gate as gate  # noqa: PLC0415
 
-        agent = (await db.execute(
-            select(Agent).where(Agent.agent_id == target_agent_id)
-        )).scalar_one_or_none()
-        facts = getattr(agent, "runtime_facts", None) if agent is not None else None
-        if not facts or not facts.get("container"):
+        targets = gate.agent_step_targets(steps, target_agent_id)
+        facts_by_agent: dict[str, Any] = {}
+        for agent_id in targets:
+            agent = (await db.execute(
+                select(Agent).where(Agent.agent_id == agent_id)
+            )).scalar_one_or_none()
+            facts_by_agent[agent_id] = getattr(agent, "runtime_facts", None) if agent else None
+        if not any(gate.is_gated(f) for f in facts_by_agent.values()):
             return []
 
-        # Only the steps this agent will run: a composed step aimed at another
-        # endpoint, or at a non-agent channel, is that target's concern.
-        mine = [
-            s for s in steps
-            if (s.get("channel") or "agent") == "agent"
-            and (s.get("target") or target_agent_id) == target_agent_id
-        ]
-        result = gate.evaluate(
-            gate.scenario_view(scenario, mine), facts,
+        posture = gate.scenario_view(scenario, [])["cluster_posture"]
+        result = gate.evaluate_launch(
+            posture, steps, target_agent_id, facts_by_agent,
             allow_missing_tools=allow_missing_tools,
         )
         if result.refusal is not None:
@@ -1008,13 +1007,6 @@ class Orchestrator:
                 error_detail=r.detail,
                 http_status=409,
             )
-        for s_ in mine:
-            union = list(s_.get("required_binaries") or [])
-            for b in gate.step_required_binaries(s_.get("command") or ""):
-                if b not in union:
-                    union.append(b)
-            if union:
-                s_["required_binaries"] = union
         return result.warnings
 
     # ------------------------------------------------------------------
