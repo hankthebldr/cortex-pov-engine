@@ -79,8 +79,13 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   run on arm64 against `cd7601e` passed with zero defect lines: enrollment, abort,
   re-apply, downgrade, digest mismatch, the anchor rename (then via bash) and
   `ANCHOR NOT HONOURED` on alpine. That run predates the anchor-shell fix below,
-  so the debian rename via `sh` needs re-confirmation in a pod. `lab-privileged`
-  has never been run; no amd64 node, no CI run on GitHub, console tab not
+  so a re-run on the PR head `2762d22` (arm64) passed with zero defect lines and
+  observed the debian rename via `sh` (dash), the alpine `bash` anchor and the
+  60 s expiry (namespace and both `cortexsim-agent` objects plus the reaper's
+  ClusterRole deleted within 150 s). It also found the reaper leaves its own
+  ClusterRoleBinding `cortexsim-reaper-agent` behind (inert; not fixed), and the
+  hard-linked busybox detection postdates it, unexercised in a pod.
+  `lab-privileged` has never been run; no amd64 node, no CI run on GitHub, console tab not
   browser-checked, no Cortex detection observed. `tenant-verified` is still 0.
 - **Delivery.** PR #171 merged Tasks 1-11 at ef71c30; the fixes for re-apply,
   interpreter-less enrollment, alpine accounts and downgrade neutralisation are in
