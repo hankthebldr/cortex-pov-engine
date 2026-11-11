@@ -2691,7 +2691,8 @@ async def poll_tasks(
     # never handed to an agent that cannot stage them: the run is failed LOUDLY
     # here rather than executing and looking green.
     if task.requires_artifact_fetch():
-        gate = await _refuse_unstageable_task(agent, task, db)
+        gate = await _refuse_unstageable_task(
+            agent, task, db, server=str(request.base_url).rstrip("/"))
         if gate is not None:
             raise gate
 
@@ -2700,11 +2701,12 @@ async def poll_tasks(
 
 
 async def _refuse_unstageable_task(
-    agent: Agent, task, db: AsyncSession
+    agent: Agent, task, db: AsyncSession, server: Optional[str] = None,
 ) -> Optional[HTTPException]:
     """Refuse to deliver an artifact-carrying task to a beacon that cannot stage.
 
     Returns the HTTPException to raise, or ``None`` when the agent is capable.
+    ``server`` is the address the beacon polled; it only fills the fix line.
 
     The task has already been dequeued (its durable row is gone), so the run
     would otherwise hang in ``running`` forever. It is marked **failed** with the
@@ -2724,12 +2726,30 @@ async def _refuse_unstageable_task(
         return None
 
     names = ", ".join(str(a.get("name", "?")) for a in task.artifacts)
+    # The roster is the beacon's own only once its Register has landed. Until
+    # then an enrolled row carries what the INSTALLER sent, and the beacon
+    # re-registers only on a 404. So this names both causes, and a fix the
+    # agent's own OS can run.
+    base = server if server and _server_problem(server) is None else "<server>"
+    agent_os = (agent.os or "").strip().lower()
+    if agent_os.startswith("win"):
+        restart = "Restart-Service CortexSimAgent"
+        reinstall = (f"$env:CORTEXSIM_TOKEN='<token>'; iwr -useb "
+                     f"'{base}/api/agents/install?os=windows' | iex   (elevated Windows PowerShell)")
+    else:
+        restart = "restart the cortexsim-agent service on the endpoint"
+        target = "darwin" if agent_os in {"darwin", "macos"} else "linux"
+        reinstall = (f"curl -fsSL '{base}/api/agents/install?os={target}' | "
+                     "CORTEXSIM_TOKEN='<token>' bash")
     detail = (
         f"{task.scenario_id} requires {len(task.artifacts)} staged artifact(s) "
-        f"({names}) but agent '{agent.agent_id}' advertises [{', '.join(caps) or 'none'}] — "
-        "it predates artifact staging and would run every step WITHOUT its tooling, "
-        "producing a run that looks green and proves nothing. Re-install the beacon: "
-        "curl -fsSL '<server>/api/agents/install?os=linux' | CORTEXSIM_TOKEN='cxs_…' bash"
+        f"({names}) but agent '{agent.agent_id}' advertises [{', '.join(caps) or 'none'}], "
+        "which does not include artifact-fetch. It would run every step WITHOUT its "
+        "tooling, producing a run that looks green and proves nothing, so the task was "
+        "refused. Either this beacon build predates artifact staging, or the beacon has "
+        "not registered since it was enrolled and the roster above is still the "
+        f"installer's. A beacon registers when it starts: {restart}. If the roster still "
+        f"lacks artifact-fetch, re-install the beacon: {reinstall}"
     )
 
     from api.runs import _in_flight_clause  # noqa: PLC0415
