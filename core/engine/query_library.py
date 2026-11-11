@@ -4,9 +4,11 @@ A scenario's hunt queries as paste-ready plain text.
 Pure: no file, network, settings or catalog access. The caller hands in the scenario dict and the
 card catalog. Nothing here claims a query was run anywhere; the header says so.
 
-Cards come in id order, queries in card order, query text verbatim. A malformed card or step
-raises ``ValueError`` (the route turns it into ``CARD_SHAPE_UNRECOGNISED``) rather than reading
-as "no query".
+Cards come in id order, queries in card order, query text verbatim. Every other line is an XQL
+line comment starting with ``//`` (``#`` is not an XQL comment). A line break in a name, dataset,
+card id or scenario id is refused, because it would end the ``//`` comment and turn the rest of
+the line into query text. A malformed card or step raises ``ValueError`` (the route turns it into
+``CARD_SHAPE_UNRECOGNISED``) rather than reading as "no query".
 """
 from __future__ import annotations
 
@@ -16,6 +18,8 @@ from engine.dataset_requirements import walk_card
 from engine.prerequisites import cited_cards
 
 ALLOWED_PURPOSES = ("hunt", "investigation", "validation", "metric")
+
+COMMENT = "//"
 
 # Every character str.splitlines() (and common editors) treat as a line break.
 _LINE_BREAK = re.compile("[\n\r\v\f\x1c\x1d\x1e\x85  ]")
@@ -59,8 +63,9 @@ def render(scenario: dict, cards: dict[str, dict],
     sid = scenario.get("scenario_id")
     _one_line(sid, "scenario_id")
     lines = [
-        f"# {sid} — query library ({', '.join(purposes)})",
-        "# Paste into XQL Search. Authored, not run against any tenant.",
+        f"{COMMENT} {sid} — query library ({', '.join(purposes)})",
+        f"{COMMENT} Authored, not run against any tenant. "
+        f"Comment syntax ({COMMENT}) not yet confirmed in a tenant.",
     ]
     wanted = set(purposes)
     blocks: list[str] = []
@@ -69,7 +74,7 @@ def render(scenario: dict, cards: dict[str, dict],
     for card_id in cited_cards(scenario):
         _one_line(card_id, "card id")
         if card_id not in cards:
-            blocks.append(f"# card {card_id}: not found in the card catalog\n")
+            blocks.append(f"{COMMENT} card {card_id}: not found in the card catalog\n")
             continue
         for q in _items(card_id, cards[card_id]):
             if q["purpose"] not in wanted:
@@ -80,20 +85,22 @@ def render(scenario: dict, cards: dict[str, dict],
             title = name if name and name.strip() else "(unnamed query)"
             dataset = q.get("dataset")
             text = q.get("query")
-            head = (f"## {title}\n# card: {card_id}   purpose: {q['purpose']}   "
+            head = (f"{COMMENT} ---- {title}\n{COMMENT} card: {card_id}   purpose: {q['purpose']}   "
                     f"dataset: {dataset if dataset and dataset.strip() else '(undeclared)'}\n")
             if text is None or not text.strip():
-                body = "# (query text is empty on the card)\n"
+                body = f"{COMMENT} (query text is empty on the card)\n"
             else:
                 body = text if text.endswith("\n") else text + "\n"
             blocks.append(head + body)
     if not matched:
-        lines.append(f"# No {_join(purposes)} query on this scenario's cards.")
+        lines.append(f"{COMMENT} No {_join(purposes)} query on this scenario's cards.")
         if others:
             present = [p for p in ALLOWED_PURPOSES if p in others]
             counts = ", ".join(f"{others[p]} {p}" for p in present)
-            lines.append(f"# The cited cards carry {counts} queries: add ?purpose={','.join(present)}")
+            lines.append(
+                f"{COMMENT} The cited cards carry {counts} queries: add ?purpose={','.join(present)}")
     out = "\n".join(lines) + "\n"
-    if blocks:
-        out += "\n" + "\n".join(blocks)
+    # A bare "//" separates blocks: still a comment, unlike a blank line pasted mid-query.
+    for block in blocks:
+        out += f"{COMMENT}\n" + block
     return out
