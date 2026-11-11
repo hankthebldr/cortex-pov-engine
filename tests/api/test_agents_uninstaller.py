@@ -260,55 +260,145 @@ def test_the_agent_row_hint_for_an_https_simcore_carries_the_tls_opt_in(client, 
 
 
 _PROFILES_HARNESS = r"""
-param([string]$ScriptPath, [string]$Root)
+param([string]$ScriptPath, [string]$Root, [string]$Mine)
 $t = $null; $e = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$t, [ref]$e)
 foreach ($f in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
   . ([scriptblock]::Create($f.Extent.Text))
 }
 $ErrorActionPreference = 'Stop'
-foreach ($d in @(Cs-ProfileInstalls $Root)) { Write-Output ("FOUND " + $d) }
-Write-Output ("MISSING-ROOT " + @(Cs-ProfileInstalls (Join-Path $Root 'no-such-dir')).Count)
-Write-Output ("EMPTY-ROOT " + @(Cs-ProfileInstalls '').Count)
+$Found = New-Object System.Collections.ArrayList
+$Removed = New-Object System.Collections.ArrayList
+$Left = New-Object System.Collections.ArrayList
+$Cs = @{ Code = ''; What = ''; Fix = ''; Hint = ''; Foreign = 0 }
+$env:USERPROFILE = $Mine
+Write-Output ("MISSING-ROOT " + @(Cs-OtherProfiles (Join-Path $Root 'no-such-dir')).Count)
+Write-Output ("EMPTY-ROOT " + @(Cs-OtherProfiles '').Count)
+Cs-ReportOtherProfiles $Root
+foreach ($i in $Found) { Write-Output ("FOUND " + $i) }
+foreach ($i in $Left) { Write-Output ("LEFT " + $i) }
+Write-Output ("REMOVED " + $Removed.Count)
+Write-Output ("FOREIGN " + $Cs.Foreign)
+Write-Output ("FIX none | " + (Cs-IncompleteFix 2 0))
+Write-Output ("FIX all  | " + (Cs-IncompleteFix 2 2))
+Write-Output ("FIX some | " + (Cs-IncompleteFix 3 1))
+Write-Output ("FIX live | " + (Cs-IncompleteFix $Left.Count $Cs.Foreign))
 """
+
+
+def _tree(root) -> list[str]:
+    """Every path under `root`; a link is listed and never followed."""
+    out = []
+    for base, dirs, files in os.walk(root, followlinks=False):
+        out += [os.path.join(base, n) for n in dirs + files]
+    return sorted(out)
 
 
 @needs_powershell
 @pytest.mark.parametrize("shell", SHELLS or ["none"])
-def test_an_elevated_uninstall_looks_in_every_profile_for_a_per_user_beacon(client, tmp_path, shell):
+def test_an_elevated_uninstall_reports_another_accounts_beacon_and_deletes_nothing(client, tmp_path, shell):
     """A standard user who answers the UAC prompt with an admin's credentials
     gets an elevated shell running as THAT admin, whose %LOCALAPPDATA% is not
     theirs. The uninstaller looked for the per-user beacon
     (CORTEXSIM_ALLOW_UNSUPERVISED) only under %LOCALAPPDATA%, so it killed the
-    process, removed nothing else, and reported "done" with the binary and its
-    logs still in the installing user's profile: the Windows twin of the POSIX
-    `sudo` case. Executed here for the lookup only (pwsh on this host); the
-    removal itself runs on Windows."""
+    process and reported "done" with the binary, its logs and its staged cache
+    still in the installing user's profile.
+
+    It now looks in every other profile, and what it finds there it REPORTS and
+    leaves. Those paths are writable by their own standard user and the session
+    is elevated: a recursive delete there could be steered out of the profile
+    by a junction that user planted. Executed here under PowerShell against a
+    temp tree with a planted link: nothing in the tree and nothing behind the
+    link may change. NOT executed on Windows, where the link would be a
+    junction and the session really elevated."""
     profiles = tmp_path / "Users"
     install = profiles / "dc" / "AppData" / "Local" / "CortexSim"
     cache = profiles / "dc" / "AppData" / "Local" / "Temp" / "cortexsim-cache"
-    for d in (install, cache, profiles / "bystander" / "AppData" / "Local", profiles / "Public"):
+    mine = profiles / "admin"
+    own = mine / "AppData" / "Local" / "CortexSim"
+    for d in (install, cache, own, profiles / "bystander" / "AppData" / "Local", profiles / "Public"):
         d.mkdir(parents=True)
     (install / "cortexsim-agent.exe").write_bytes(b"MZ")
+    (cache / "staged-tool.bin").write_bytes(b"\x7fELF")
+    (own / "cortexsim-agent.exe").write_bytes(b"MZ")
 
+    # The hostile case: the "install directory" is a link out of the profile.
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "keep.txt").write_text("must survive")
+    planted = profiles / "mallory" / "AppData" / "Local" / "CortexSim"
+    planted.parent.mkdir(parents=True)
+    try:
+        os.symlink(victim, planted, target_is_directory=True)
+    except OSError:  # Windows without the symlink privilege
+        planted = None
+
+    before = _tree(profiles) + _tree(victim)
     path = _write(tmp_path, "u.ps1", _win_uninstaller(client))
     harness = _write(tmp_path, "profiles.ps1", _PROFILES_HARNESS)
-    p = _ps(shell, "-File", str(harness), "-ScriptPath", str(path), "-Root", str(profiles))
-    found = sorted(os.path.normpath(ln.split(" ", 1)[1]) for ln in p.stdout.splitlines()
-                   if ln.startswith("FOUND "))
-    assert found == sorted(os.path.normpath(str(d)) for d in (install, cache)), p.stdout + p.stderr
-    assert "MISSING-ROOT 0" in p.stdout and "EMPTY-ROOT 0" in p.stdout, p.stdout + p.stderr
+    p = _ps(shell, "-File", str(harness), "-ScriptPath", str(path),
+            "-Root", str(profiles), "-Mine", str(mine))
+    out = p.stdout + p.stderr
+
+    assert _tree(profiles) + _tree(victim) == before, "the sweep changed the disk:\n" + out
+    assert (victim / "keep.txt").read_text() == "must survive", out
+    if planted is not None:
+        assert os.path.islink(planted), "the planted link itself was removed:\n" + out
+
+    def lines(prefix: str) -> list[str]:
+        return sorted(ln[len(prefix):] for ln in p.stdout.splitlines() if ln.startswith(prefix))
+
+    expected = [f"per-user install {install}", f"per-user staging cache {cache}"]
+    if planted is not None:
+        expected.append(f"per-user install {planted}")
+    why = " (in the profile of another account, where an elevated session does not delete)"
+    assert lines("FOUND ") == sorted(expected), out
+    assert lines("LEFT ") == sorted(e + why for e in expected), out
+    assert "REMOVED 0" in p.stdout and f"FOREIGN {len(expected)}" in p.stdout, out
+    # This session's own profile is handled above the sweep, as this account.
+    assert str(own) not in p.stdout, "the elevating account's own profile was reported as another's:\n" + out
+    assert "MISSING-ROOT 0" in p.stdout and "EMPTY-ROOT 0" in p.stdout, out
+
+    # The fix line must not send the DC back to the one step that cannot work.
+    fix = {ln.split("|", 1)[0].split()[1]: ln.split("|", 1)[1].strip()
+           for ln in p.stdout.splitlines() if ln.startswith("FIX ")}
+    assert fix["none"].startswith("re-run from an elevated Windows PowerShell"), fix
+    assert "another account" not in fix["none"], fix
+    assert "re-run from an elevated" not in fix["all"], fix
+    assert "normal (not elevated) Windows PowerShell" in fix["all"] and "by hand" in fix["all"], fix
+    assert fix["some"] == fix["none"] + "; " + fix["all"], fix
+    # The verdict's own call, with the counters the sweep above just filled:
+    # everything left is in another profile, so only that advice is given.
+    assert fix["live"] == fix["all"], fix
 
 
-def test_the_profile_sweep_runs_only_elevated_and_through_the_tracked_remover(client):
+def _ps_function(script: str, name: str) -> str:
+    m = re.search(r"^function " + re.escape(name) + r"\b.*?^}\n", script, re.S | re.M)
+    assert m, f"{name} is not defined in the uninstaller"
+    return m.group(0)
+
+
+def test_the_profile_sweep_is_elevated_only_and_has_no_way_to_delete(client):
+    """Structure, for the part only a Windows host can run: one call site, only
+    when elevated, and neither function it reaches can remove anything. An
+    elevated recursive delete inside another account's profile is the thing
+    this must never grow back into."""
     script = _win_uninstaller(client)
-    sweep = [ln.strip() for ln in script.splitlines()
-             if "Cs-ProfileInstalls " in ln and not ln.startswith("function ")]
-    assert len(sweep) == 1, sweep
-    assert '"$env:SystemDrive\\Users"' in sweep[0], sweep[0]
-    assert sweep[0].startswith("if ($IsAdmin)"), sweep[0]
-    assert "Cs-RemovePath $d 'per-user install'" in sweep[0], (
-        "a per-profile hit must be counted as found and reported if it survives: " + sweep[0])
+    calls = [ln.strip() for ln in script.splitlines()
+             if re.search(r"Cs-(Report)?OtherProfiles\b", ln)
+             and not ln.startswith("function ") and not ln.lstrip().startswith("#")]
+    assert calls == ["foreach ($d in @(Cs-OtherProfiles $Root)) {",
+                     'if ($IsAdmin) { Cs-ReportOtherProfiles "$env:SystemDrive\\Users" }'], calls
+    for name in ("Cs-OtherProfiles", "Cs-ReportOtherProfiles"):
+        body = "\n".join(t for _, t in _code_lines(_ps_function(script, name)))
+        for verb in ("Remove-Item", "Cs-RemovePath", "Delete(", "rmdir", "Move-Item",
+                     "Clear-Content", "Set-Content", "Out-File", "cmd.exe"):
+            assert verb not in body, f"{name} can change the disk ({verb}):\n{body}"
+    report = _ps_function(script, "Cs-ReportOtherProfiles")
+    assert "Cs-Found " in report and "Cs-Left " in report, (
+        "a hit in another profile must be counted as found AND as left, so the run "
+        "ends UNINSTALL_INCOMPLETE and never 'done':\n" + report)
+    assert "(Cs-IncompleteFix $Left.Count $Cs.Foreign)" in script
 
 
 # ---------------------------------------------------------------------------

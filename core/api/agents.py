@@ -1913,6 +1913,10 @@ _WINDOWS_UNINSTALLER = r"""# --- CortexSim beacon uninstaller (Windows / PowerSh
 #   - nothing found              -> "nothing to remove"
 #   - everything found removed   -> "done"
 #   - anything found but kept    -> FAILED code=UNINSTALL_INCOMPLETE naming each item
+# A per-user beacon (CORTEXSIM_ALLOW_UNSUPERVISED) is removed by the account
+# that installed it, from a normal PowerShell. An elevated run under another
+# account stops its process, then REPORTS its files and leaves them: it does
+# not delete inside a profile that another account can write to.
 # Same rules as the installer: pure ASCII, the body inside "& { ... }", no bare
 # `exit`, every native exit code checked.
 & {
@@ -1923,7 +1927,7 @@ $Svc = 'CortexSimAgent'
 $Found = New-Object System.Collections.ArrayList
 $Removed = New-Object System.Collections.ArrayList
 $Left = New-Object System.Collections.ArrayList
-$Cs = @{ Code = ''; What = ''; Fix = ''; Hint = '' }
+$Cs = @{ Code = ''; What = ''; Fix = ''; Hint = ''; Foreign = 0 }
 
 @@COMMON@@
 function Cs-Fail([string]$Code, [string]$What, [string]$Fix) {
@@ -1958,16 +1962,19 @@ function Cs-DeleteHint([string]$ImagePath) {
   if ($srv -like 'https://*') { $cmd = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; ' + $cmd }
   return $cmd
 }
-function Cs-ProfileInstalls([string]$Root) {
-  # A per-user beacon (CORTEXSIM_ALLOW_UNSUPERVISED) and its temp cache, under
-  # every profile in $Root. Elevated, %LOCALAPPDATA% is the ELEVATING account's:
-  # a standard user who answers the UAC prompt with an admin's credentials is
-  # not the account that installed it. Never throws: an unreadable profile is
-  # skipped, not a reason to stop the uninstall.
+function Cs-OtherProfiles([string]$Root) {
+  # A per-user beacon (CORTEXSIM_ALLOW_UNSUPERVISED) and its temp cache under
+  # every profile in $Root except this session's own. Elevated, %LOCALAPPDATA%
+  # is the ELEVATING account's: a standard user who answers the UAC prompt with
+  # an admin's credentials is not the account that installed it. It only LOOKS
+  # (Test-Path). Never throws: an unreadable profile is skipped, not a reason
+  # to stop the uninstall.
   $out = @()
   try {
     if (-not $Root -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return $out }
+    $mine = "$env:USERPROFILE".TrimEnd('\', '/')
     foreach ($p in @(Get-ChildItem -LiteralPath $Root -Directory -Force -ErrorAction SilentlyContinue)) {
+      if ($mine -and ($p.FullName.TrimEnd('\', '/') -ieq $mine)) { continue }  # removed above, as this account
       foreach ($rel in @('AppData\Local\CortexSim', 'AppData\Local\Temp\cortexsim-cache')) {
         try {
           $d = Join-Path $p.FullName $rel
@@ -1977,6 +1984,26 @@ function Cs-ProfileInstalls([string]$Root) {
     }
   } catch { }
   return $out
+}
+function Cs-ReportOtherProfiles([string]$Root) {
+  # REPORTED, never removed. Each of these paths is writable by its own
+  # standard user and this session is elevated: a recursive delete here could
+  # be steered out of the profile by a junction that user planted. So the item
+  # is counted as found and left, and the run ends UNINSTALL_INCOMPLETE.
+  foreach ($d in @(Cs-OtherProfiles $Root)) {
+    $label = 'per-user install'
+    if ($d -like '*cortexsim-cache') { $label = 'per-user staging cache' }
+    Cs-Found "$label $d"
+    Cs-Left "$label $d" 'in the profile of another account, where an elevated session does not delete'
+    $Cs.Foreign = $Cs.Foreign + 1
+  }
+}
+function Cs-IncompleteFix([int]$LeftCount, [int]$Foreign) {
+  $again = 're-run from an elevated Windows PowerShell; for a service marked for deletion close services.msc / Event Viewer or reboot, then re-run'
+  $theirs = 'an item in the profile of another account is removed by that account: sign in as it and re-run the one-liner from a normal (not elevated) Windows PowerShell, or delete that folder by hand'
+  if ($Foreign -le 0) { return $again }
+  if ($Foreign -ge $LeftCount) { return $theirs }
+  return "$again; $theirs"
 }
 function Cs-DeleteNote {
   if ($Cs.Hint) { Cs-Say "the agent row stays in SimCore until you delete it: $($Cs.Hint)" }
@@ -2055,7 +2082,8 @@ try {
   if ($env:LOCALAPPDATA) { Cs-RemovePath "$env:LOCALAPPDATA\CortexSim" 'per-user install' }
   Cs-RemovePath (Join-Path ([IO.Path]::GetTempPath()) 'cortexsim-cache') 'staging cache'
   # Elevated, the two lines above looked in the elevating account's profile.
-  if ($IsAdmin) { foreach ($d in @(Cs-ProfileInstalls "$env:SystemDrive\Users")) { Cs-RemovePath $d 'per-user install' } }
+  # Another account's per-user beacon is reported and left, never deleted.
+  if ($IsAdmin) { Cs-ReportOtherProfiles "$env:SystemDrive\Users" }
   if ($env:SystemRoot) {
     Cs-RemovePath "$env:SystemRoot\Temp\cortexsim-cache" 'staging cache'
     Cs-RemovePath "$env:SystemRoot\SystemTemp\cortexsim-cache" 'staging cache'
@@ -2082,7 +2110,7 @@ try {
   # -- verdict ---------------------------------------------------------------------
   Cs-Say ''
   if ($Left.Count -gt 0) {
-    Cs-Fail 'UNINSTALL_INCOMPLETE' ("found $($Found.Count) item(s), removed $($Removed.Count); still present: " + ($Left -join '; ')) 're-run from an elevated Windows PowerShell; for a service marked for deletion close services.msc / Event Viewer or reboot, then re-run'
+    Cs-Fail 'UNINSTALL_INCOMPLETE' ("found $($Found.Count) item(s), removed $($Removed.Count); still present: " + ($Left -join '; ')) (Cs-IncompleteFix $Left.Count $Cs.Foreign)
   } elseif ($Found.Count -eq 0) {
     Cs-Say 'nothing to remove -- no CortexSim beacon found on this host'
   } else {
