@@ -176,7 +176,11 @@ describe('downloadScenario (client)', () => {
     expect(formatOf(downloadUrls[0])).toBe('auto')
     expect(res.target).toBe('windows')
     expect(res.filename).toBe('cortexsim-SIM-EDR-013.ps1')
-    expect(res.blob).toBeInstanceOf(Blob)
+    // Not toBeInstanceOf(Blob): under Node 20 (CI) fetch's Response.blob() returns
+    // undici's Blob while the test file sees jsdom's, so the instanceof check
+    // compares two realms and failed on the first CI run. The brand is the same.
+    expect(Object.prototype.toString.call(res.blob)).toBe('[object Blob]')
+    expect(res.blob.size).toBeGreaterThan(0)
   })
 })
 
