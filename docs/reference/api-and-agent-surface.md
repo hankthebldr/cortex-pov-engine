@@ -44,21 +44,38 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **133 HTTP routes total** (counted 2026-08-06 against the built image, see
-  below). Routers under `/api`, plus the app-level `GET /api/health` and a static
-  file mount at `/`. Per-prefix: `runs` 17 · `agents` 14 · `eal` 13 ·
-  `credentials` 10 · `uctc` 9 · `tools` 8 · `ttps` 8 · `xsiam` 8 · `shelf` 7 ·
-  `k8s` 6 · `assertions` 6 · `scenarios` 5 · `infra` 4 · `results` 4 · `pov` 3 ·
-  `connectors` 2 · `mitre` 2 · `run` 1 · `events` 1 · `health` 1, plus 5
-  FastAPI-owned docs/openapi routes.
+- **149 HTTP routes total** (counted 2026-11-10 on the host venv, FastAPI
+  0.141.1 as pinned in `core/requirements.txt`; not re-counted against a built
+  image). Routers under `/api`, plus the app-level `GET /api/health` and a static
+  file mount at `/`. Per-prefix: `runs` 19 · `agents` 15 · `eal` 15 ·
+  `scenarios` 13 (7 of them under `/scenarios/drafts`) · `tools` 11 ·
+  `credentials` 10 · `uctc` 9 · `ttps` 8 · `xsiam` 8 · `shelf` 7 · `k8s` 6 ·
+  `assertions` 6 · `infra` 4 · `results` 4 · `pov` 3 · `connectors` 2 ·
+  `mitre` 2 · `run` 1 · `events` 1 · `health` 1, plus 4 FastAPI-owned
+  docs/openapi routes. The previous figure here was 133 (2026-08-06); 14 routes
+  landed since without this line moving, and 2 more are the tenant-content
+  routes in §1.2.1.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
-> here was two content passes stale. The command is the ground truth:
+> here was two content passes stale, and the 133 after it was 16 stale. The
+> command is the ground truth. The one-liner this section used to carry
+> (`len([r for r in app.routes if getattr(r,'methods',None)])`) returns **4** on
+> FastAPI 0.141: `include_router` now keeps each router behind a wrapper, so the
+> count has to descend into it.
 >
 > ```bash
-> docker run --rm -v "$PWD:/app" -w /app -e CORTEXSIM_BASE_DIR=/app cortexsim:dev \
->   python -c "import sys;sys.path.insert(0,'core');from main import app;\
-> print(len([r for r in app.routes if getattr(r,'methods',None)]))"
+> cd core && CORTEXSIM_ENV=development CORTEXSIM_BASE_DIR=$PWD/.. \
+>   CORTEXSIM_SECRET=count-only-not-a-real-key python - <<'PY'
+> from main import app
+> def leaves(routes):
+>     for r in routes:
+>         sub = getattr(r, "original_router", None)
+>         if sub is not None and not getattr(r, "methods", None):
+>             yield from leaves(sub.routes)
+>         else:
+>             yield r
+> print(len([r for r in leaves(app.routes) if getattr(r, "methods", None)]))
+> PY
 > ```
 
 ---
@@ -89,6 +106,7 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
 |--------|-----------|---------|---------|----------|
 | GET | `/api/scenarios` | List scenarios (**summary projection**); optional filters | query: `plane`, `uc_ref`, `ttp_ref`, `entitlement` | `{"scenarios":[<summary>],"total":N,"projection":"summary"}` |
 | GET | `/api/scenarios/{scenario_id}` | Single scenario detail (**full document**) | — | `<scenario.to_dict()>` or 404 `SCENARIO_NOT_FOUND` |
+| GET | `/api/scenarios/{scenario_id}/tenant-content` | What the scenario (or saved draft) needs to exist in the tenant. Read-only; see §1.2.1 | — | the tenant-content manifest, 404 `SCENARIO_NOT_FOUND`, 422 `TENANT_CONTENT_UNREADABLE` |
 | GET | `/api/scenarios/{scenario_id}/infra-hints` | Resolve `external_tools[].adapter_ref` → IaC module suggestions | — | `{scenario_id, plane, adapter_refs[], resolved_adapters[], unresolved_refs[], suggested_modules[]}` |
 | GET | `/api/scenarios/{scenario_id}/download` | Self-contained execution bundle | query: `format=bash\|k8s\|powershell\|auto` (default `auto`) | `PlainTextResponse` shell/`.ps1`/yaml w/ `Content-Disposition`; 400 `INVALID_FORMAT`; 409 `BUNDLE_TARGET_UNSATISFIABLE` |
 
@@ -127,6 +145,73 @@ errors). Unhandled exceptions → `500 {"error":"Internal server error","code":"
   and the fix. `k8s` is gated on the POSIX resolution (its Job runs `/bin/bash -c`
   in `ubuntu:22.04`). `X-CortexSim-Bundle-Target` is always set;
   `X-CortexSim-Bundle-Alternates` appears when both targets are emittable.
+
+### 1.2.1 Tenant content (read-only)
+
+A scenario's expected detections are three different kinds of work, and until
+2026-11-10 the console rendered them as one row of type tags:
+
+| Ownership | Types | What it asks of a DC |
+|---|---|---|
+| `run` | XQL | a query to run after the step, to confirm the telemetry landed |
+| `deploy` | BIOC · IOC · Correlation | must exist in the tenant before the run; this is what raises the alert |
+| `built-in` | ABIOC · Analytics · Prevention | ships with Cortex; needs the module licensed and enabled, nothing to import |
+
+| Method | Full path | Input | Notes |
+|--------|-----------|-------|-------|
+| GET | `/api/scenarios/{scenario_id}/tenant-content` | a corpus scenario or a saved draft row | `core/api/scenarios.py` |
+| POST | `/api/scenarios/drafts/tenant-content` | an UNSAVED draft: the body `POST /api/scenarios/drafts` takes | `core/api/drafts.py`; validates the same way (422 `DRAFT_SCHEMA_INVALID`) and **persists nothing** |
+
+One resolver backs both: `core/engine/tenant_content.py::build_manifest`, over
+the raw cards in `engine.ttp_catalog`. The Composer derives the same facts in
+the browser (`ui/src/components/console/composerContent.js`) so its canvas
+follows each edit without a round trip; `spec/tenant_content_cases.json` is
+asserted by both test suites so the two cannot disagree.
+
+```json
+{
+  "scenario_id": "SIM-AIACC-003", "name": "...",
+  "catalog_loaded": true, "tenant_verified": 0, "write_path": false,
+  "summary": {"correlation": {"total": 1, "deployable": 0, "intent_only": 1,
+                              "unreadable": 0, "declared": 0, "card_only": 1, "unbound": 0}},
+  "rules": [{"rule_id": "CR-AIACC-0003", "ttp_ref": "TTP-2026-0009", "name": "...",
+             "content_status": "intent-only", "binding": "card-only",
+             "logic": "XQL(...) OR XQL(...) OR XQL(...)", "logic_kind": "composition",
+             "inputs": [{"kind": "xql", "name": "...", "state": "step",
+                         "resolved_kind": "xql", "steps": ["step-02"]}],
+             "declared_by": [], "deploy": null}],
+  "unbound": [], "queries": [], "biocs": [], "iocs": [], "built_in": [], "notes": []
+}
+```
+
+- **Two axes per rule.** `content_status` is what the CARD holds: `intent-only`
+  (a name, an id and a logic line), `deployable` (a complete `deploy` block) or
+  `unreadable` (a shape the resolver does not know, with `content_error`).
+  `binding` is what the SCENARIO asks for: `declared` (a step expects the rule,
+  so a run scores it) or `card-only` (on a cited card, expected by no step).
+- **No correlation rule in the corpus is deployable.** Every one is
+  `intent-only`: the card schema allows only `name`, `rule_id` and `logic`, and
+  `logic` is an authoring note such as `XQL(a) OR XQL(b)`, not XQL a tenant can
+  run. A test pins the count at zero (`tests/engine/test_tenant_content.py`).
+  The `deploy` field names the classifier recognises are candidates until they
+  are pinned to a rule exported from a real tenant.
+- **Nothing is invented.** A stub is `deploy: null`. There is no default
+  severity and no synthesised description.
+- **A zero is degraded.** No card corpus → 200 with `catalog_loaded: false`,
+  null counts and a single `CATALOG_NOT_LOADED` note; render it as degraded,
+  never as "nothing needed". Other `notes[].code` values: `NO_CARD_BINDING`,
+  `CARD_NOT_FOUND`, `RULE_UNREADABLE`, `RULE_LOGIC_UNPARSED`,
+  `UNBOUND_CORRELATION`, `UNKNOWN_DETECTION_TYPE`, `NO_CARD_REFERENCE`,
+  `DETECTION_NOT_ON_CARD`.
+- **No write path, no tenant contact.** `write_path` is `false` and
+  `tenant_verified` is `0` in every response. Neither route makes an outbound
+  call (a test refuses any socket connect), and nothing here reaches
+  `OP-CORRELATIONS-INSERT`. Creating a rule is the DC's own action in the XSIAM
+  console.
+
+The on-disk `detection_scanner/exports/correlation/*.json` files carry the same
+status (`content_status`, `deploy: null`, `importable_rules: 0`) and no longer
+stamp `severity: "high"` on every rule.
 
 ### 1.3 Runs (`core/api/runs.py`, prefix `/runs`)
 

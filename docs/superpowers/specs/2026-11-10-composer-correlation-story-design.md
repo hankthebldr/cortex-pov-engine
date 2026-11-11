@@ -1,9 +1,10 @@
 # Composer: correlation rules in the chain story (2026-11-10)
 
-Status: **proposed, awaiting approval.** Nothing is built. Branch
-`feature/ui-composer-correlation-story`, cut from `dev` @ eeafe9f. Phase 1
-(§9) starts only after this is approved. Builds on the 2026-10-21 composer-mode
-spec; its graph model, gestures and honesty rules are unchanged.
+Status: **approved 2026-11-10; phase 1 built** on
+`feature/ui-composer-correlation-story` (cut from `dev` @ eeafe9f). Phases 2 to
+4 (§9) are not built. Builds on the 2026-10-21 composer-mode spec; its graph
+model, gestures and honesty rules are unchanged. What phase 1 did differently
+from this text is listed in §13.
 
 ## 1. Problem
 
@@ -378,3 +379,69 @@ answer; phase 2 does.
   nothing. Phase 1 shows them truthfully and changes none.
 * **BIOC proof.** BIOC bodies are real and lint-clean, and none has been
   imported into a tenant. The same ladder applies; this spec does not climb it.
+
+
+## 13. Phase 1 as built
+
+Verified: `cd ui && npx vitest run` (138 files, 1758 tests), the Python suites
+for the resolver, routes and exporter, and
+`ui/tests/e2e/12-composer-correlation-story.spec.ts` through installed Chrome
+against a host-run SimCore and the Vite dev server. **Not verified:** the
+bundle baked into a Docker image (no image was built), and anything against a
+tenant.
+
+Where the build differs from the text above:
+
+* **Rail placement (§3).** "One row below the lowest step" drew the rail
+  through the cards: a step card is taller than the row pitch. The rail now
+  clears the measured bottom of the lowest card (`opts.stepHeights`), and the
+  canvas refits once when a rule node is first measured, unless the DC has
+  already panned or zoomed.
+* **Content port (§3).** Every step outside the Run lens mounts one inert bottom
+  port. Mounting it only when a rule exists left the rule with no edge, because
+  the card loads after React Flow measures the node.
+* **`declared` (§4).** A step declares a rule when ANY of its expectations
+  resolves to the rule's id, not only one typed `Correlation`. On today's
+  corpus the two readings give the same answer.
+* **`unbound` (§4).** Three reasons are reported: `no-reference`, `no-rule` and
+  `not-a-rule` (the id resolves to a query or BIOC, not a rule). A step citing
+  a card that has not loaded is not judged.
+* **Inputs (§3).** A `KIND(name)` term is looked up under its own kind, then
+  under every other kind on the card, and reports the kind it resolved to. The
+  cards write `Analytics(name)` for detections they hold as queries.
+* **Logic (§3).** A fourth `logic_kind`, `unparsed`, covers a term that never
+  closes. The corpus has none (a test pins that).
+* **Exporter (§7).** The on-disk exporter is strict: it renders the intent-only
+  shape and raises on any other, rather than classifying. A test pins its
+  status to the engine classifier for every corpus rule.
+* **Lanes lens (§3).** Rules sit in the ENG band in the columns after the last
+  step, so a rule cannot land on a step that is itself in that band.
+* **Not done from §5.** The Inspector's per-detection rows still show the bare
+  type. The query `purpose` from the card and both statuses for a Correlation
+  expectation are shown on the rule node and the rule Inspector, not on the
+  step's detection rows.
+* **Not done from §6.** `validate.py` V1 (the info count line) and the second
+  coverage share. Both report numbers the manifest and the tripwire test
+  already carry; they move with V2 to V4 in phase 3.
+* **Route count (§7).** The count was 133 in the docs and is 149 measured; the
+  documented counting one-liner returns 4 on FastAPI 0.141. Both are corrected
+  in `docs/reference/api-and-agent-surface.md` §0.
+
+**Counted by the phase-1 resolver** (`engine.tenant_content.build_manifest`
+over all 193 scenarios and 191 cards, 2026-11-10). The §1 table came from a
+throwaway script; these replace it.
+
+| Fact | Count |
+|---|---|
+| (scenario, rule) pairs | 212, from 209 card rules. 191 scenarios carry at least one; 175 carry exactly one, 12 two, 3 three, 1 four |
+| Content status | **0 deployable** · 212 intent-only · 0 unreadable |
+| Binding | 137 declared · 75 card-only |
+| Declared and intent-only | **137**: scored expectations with no importable rule behind them |
+| Logic line | 192 composition · 20 prose · 0 unparsed |
+| Edge into the rule | 204 `feeds` · 8 `card` |
+| Inputs named by a logic line | 627 on a step · 12 on the card only · 34 not on the card under that name |
+| `Correlation` expectations with no rule | 2 (1 `no-rule`, 1 `no-reference`) |
+| Other content the manifests list | 529 queries · 358 BIOCs · 117 IOCs · 215 built-in detectors (per scenario, de-duplicated) |
+
+The 34 unresolved inputs are down from the 59 the script reported: names now
+resolve across kinds and may carry their own parentheses.
