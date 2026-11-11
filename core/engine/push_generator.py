@@ -12,7 +12,9 @@ A scenario is not a single artifact — it is a set of steps, each of which may
 carry a POSIX command, a ``platform_variants['windows']`` command, both, or
 neither.  ``resolve_target()`` decides, per target, whether the scenario can
 produce a bundle that will actually RUN, and which command text each step
-contributes.  ``emittable_targets()`` is the caller-facing summary.
+contributes.  ``emittable_targets()`` summarises that for the CONTENT;
+``pushable_targets()`` is the caller-facing answer to "what will a push
+download serve" (it also honours ``push_supported: false``).
 
 The rule is per-TARGET refusal, never per-scenario refusal: a scenario whose
 steps span both platforms still emits a POSIX bundle if every step has a POSIX
@@ -736,8 +738,31 @@ def resolve_target(scenario: dict[str, Any], target: Target) -> TargetResolution
 
 
 def emittable_targets(scenario: dict[str, Any]) -> tuple[Target, ...]:
-    """Targets this scenario can emit a runnable bundle for, POSIX first."""
+    """Targets this scenario's CONTENT resolves for, POSIX first.
+
+    Content only. It deliberately does NOT read ``push_supported``: pull
+    dispatch resolves the same steps whatever the push flag says, and the
+    composer calls this to DERIVE ``push_supported``, so reading the flag here
+    would make that derivation circular. The consequence is that a scenario
+    which withdrew push delivery (SIM-MP-031, SIM-MP-034) still reads
+    ``("posix",)`` here. To ask "what will a push download serve", call
+    :func:`pushable_targets`.
+    """
     return tuple(t for t in ("posix", "windows") if resolve_target(scenario, t).emittable)
+
+
+def pushable_targets(scenario: dict[str, Any]) -> tuple[Target, ...]:
+    """Targets a push DOWNLOAD will serve for this scenario, POSIX first.
+
+    ``()`` when the scenario declares ``push_supported: false`` (the download
+    route refuses those with ``PUSH_NOT_SUPPORTED`` whatever the content could
+    emit), else :func:`emittable_targets`. An absent flag is unknown, not
+    withdrawn. This is the answer a console, a count or a report should read;
+    ``emittable_targets`` alone over-states it (PUSH-17).
+    """
+    if push_not_supported(scenario):
+        return ()
+    return emittable_targets(scenario)
 
 
 # ---------------------------------------------------------------------------

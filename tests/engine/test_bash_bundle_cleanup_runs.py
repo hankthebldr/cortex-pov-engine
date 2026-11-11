@@ -82,8 +82,7 @@ def _load_corpus() -> dict[str, dict]:
 
 CORPUS = _load_corpus()
 POSIX_BUNDLES = sorted(
-    sid for sid, d in CORPUS.items()
-    if not pg.push_not_supported(d) and "posix" in pg.emittable_targets(d)
+    sid for sid, d in CORPUS.items() if "posix" in pg.pushable_targets(d)
 )
 
 
