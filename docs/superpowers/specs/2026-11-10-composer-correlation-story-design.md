@@ -310,8 +310,8 @@ it. So:
 
 That gives three signal paths: **endpoint runtime**, **log injection through a
 collector (the Broker VM path)** and **live traffic past a sensor**. The third
-is real in the corpus and is not one of the two named in the requirement; see
-§11.
+is real in the corpus and was not one of the two named in the requirement;
+Henry decided on 2026-11-10 that it is a path of its own (§11).
 
 This is phase 2. It touches `LANE_CATALOG`, which the Runs topology shares, so
 it lands as its own change and gets its own short spec.
@@ -352,14 +352,15 @@ Every new guard is observed failing with its change reverted.
 
 ## 11. Decisions
 
-**One question.** The requirement names two injection paths: endpoint runtime,
-or fired in through the Broker VM. The corpus has a third. 49 steps, the
-`SIM-AIACC-003` burst among them, send live traffic that a firewall or SaaS
-sensor observes; nothing reaches a collector. Name it as a third path
-(recommended), or fold it under one of the two? Phase 1 does not depend on the
-answer; phase 2 does.
+**Decided (Henry, 2026-11-10): live traffic past a sensor is a third injection
+path.** The requirement named two: endpoint runtime, and fired in through the
+Broker VM. The corpus has a third: 49 steps, the `SIM-AIACC-003` burst among
+them, send live traffic that a firewall or SaaS sensor observes, and nothing
+reaches a collector. Phase 2 names it as its own path rather than folding it
+under either of the other two, so its badge reads `AGT → WIRE · <plugin>` and
+never claims the Broker VM.
 
-**Defaults I take unless struck.**
+**Defaults taken** (none was struck).
 
 1. No "declare" action for an intent-only rule (§4).
 2. `coverage-strict` keeps gating on the declared share until phase 3 (§6).
