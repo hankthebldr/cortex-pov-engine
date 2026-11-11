@@ -24,7 +24,7 @@ from pydantic import SecretStr
 from . import codes
 from .exceptions import (
     PanosApiError, PanosShapeError, PanosTransportError, PanosWriteRefused)
-from .host import normalize_mgmt_host
+from .host import DEVICE_NAME_PATTERN, DEVICE_NAME_RE, normalize_mgmt_host
 from .xmlparse import parse_keygen, parse_response, safe_fromstring
 
 # ---------------------------------------------------------------- op allowlist
@@ -47,8 +47,11 @@ def _refuse() -> PanosWriteRefused:
 
 
 def _leaf_ok(el: ET.Element) -> bool:
-    text = (el.text or "").strip()
-    return len(el) == 0 and 0 < len(text) <= _MAX_LEAF
+    # What is sent is what was checked: no stripping. Leading/trailing whitespace and
+    # control characters (incl. newline, tab) are refused, not normalised away.
+    text = el.text or ""
+    return (len(el) == 0 and 0 < len(text) <= _MAX_LEAF and text == text.strip()
+            and not any(ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F for c in text))
 
 
 def _only_leaves(node: ET.Element, allowed: frozenset[str], *, required: frozenset[str] = frozenset()) -> bool:
@@ -79,7 +82,7 @@ def _session_all(node: ET.Element) -> bool:
     if not _only_leaves(flt, frozenset({"source", "destination", "count"}),
                         required=frozenset({"count"})):
         return False
-    return flt.find("count").text.strip() == "yes"
+    return flt.find("count").text == "yes"
 
 
 _POLICY_LEAVES = frozenset({"from", "to", "source", "destination", "destination-port",
@@ -148,9 +151,9 @@ def _check_op_allowed(cmd_xml: str) -> str:
 
 _NAME = r"[A-Za-z0-9 ._:/+-]{1,63}"
 _ENT = rf"entry\[@name='{_NAME}'\]"
-_DEV = r"/config/devices/entry\[@name='[A-Za-z0-9._-]+'\]"
-_VSYS = _DEV + r"/vsys/entry\[@name='vsys\d+'\]"
-_PVSYS = r"/config/panorama/vsys/entry\[@name='vsys\d+'\]"
+_DEV = rf"/config/devices/entry\[@name='{DEVICE_NAME_PATTERN}'\]"
+_VSYS = _DEV + r"/vsys/entry\[@name='vsys[0-9]+'\]"
+_PVSYS = r"/config/panorama/vsys/entry\[@name='vsys[0-9]+'\]"
 _SHARED = "/config/shared"
 _PSHARED = "/config/panorama/shared"
 _PTYPES = "(?:virus|spyware|vulnerability|url-filtering|wildfire-analysis)"
@@ -162,6 +165,7 @@ CONFIG_XPATH_ALLOWLIST: tuple[re.Pattern, ...] = tuple(re.compile(p) for p in (
     _VSYS + "/log-settings/profiles",
     _VSYS + "/log-settings/syslog",
     _SHARED + "/log-settings/syslog",
+    _SHARED + "/log-settings/profiles",
     _VSYS + "/rulebase/decryption/rules",
     _VSYS + rf"/rulebase/security/rules/{_ENT}",
     _VSYS + "/zone",

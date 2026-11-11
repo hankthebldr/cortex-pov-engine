@@ -13,8 +13,13 @@ from typing import Any
 
 from .exceptions import PanosConfigError
 
-_LABEL = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
-_VSYS = re.compile(r"^vsys\d+$")
+_LABEL = re.compile(r"(?!-)[a-z0-9-]{1,63}(?<!-)")
+_PORT = re.compile(r"[0-9]{1,5}")
+VSYS_RE = re.compile(r"vsys[0-9]+")
+# THE device-name rule: config validation and the client's xpath allowlist both use it,
+# so a value that validates is never refused at read time. ASCII only.
+DEVICE_NAME_PATTERN = r"[A-Za-z0-9._-]+"
+DEVICE_NAME_RE = re.compile(DEVICE_NAME_PATTERN)
 FORWARDING_PATHS = ("auto", "sls", "syslog", "both")
 
 DEFAULT_PROBES: list[dict[str, Any]] = [
@@ -25,7 +30,7 @@ DEFAULT_PROBES: list[dict[str, Any]] = [
 
 
 def _port(text: str, raw: str) -> int:
-    if not text.isdigit() or not (1 <= int(text) <= 65535):
+    if not _PORT.fullmatch(text) or not (1 <= int(text) <= 65535):
         raise PanosConfigError(f"management host port must be 1-65535 (got {_safe(raw)})")
     return int(text)
 
@@ -69,7 +74,7 @@ def normalize_mgmt_host(raw: str) -> str:
             except ValueError:
                 host = host.lower().rstrip(".")
                 if (not host or len(host) > 253
-                        or not all(_LABEL.match(lbl) for lbl in host.split("."))):
+                        or not all(_LABEL.fullmatch(lbl) for lbl in host.split("."))):
                     raise PanosConfigError(
                         f"invalid management host name (got {_safe(value)})") from None
                 out = host
@@ -117,15 +122,19 @@ def validate_panos_config(config: dict) -> dict:
     cfg["verify_tls"] = verify
 
     vsys = cfg.get("vsys", "vsys1")
-    if not isinstance(vsys, str) or not _VSYS.match(vsys):
-        raise PanosConfigError("vsys must match ^vsys\\d+$ (e.g. vsys1)")
+    if not isinstance(vsys, str) or not VSYS_RE.fullmatch(vsys):
+        raise PanosConfigError("vsys must be 'vsys' followed by ASCII digits (e.g. vsys1)")
     cfg["vsys"] = vsys
 
     for key, default in (("device_name", "localhost.localdomain"), ("routing_instance", "default")):
         v = cfg.get(key, default)
         if not isinstance(v, str) or not v.strip():
             raise PanosConfigError(f"{key} must be a non-empty string")
-        cfg[key] = v.strip()
+        v = v.strip()
+        if key == "device_name" and not DEVICE_NAME_RE.fullmatch(v):
+            raise PanosConfigError(
+                f"device_name must match {DEVICE_NAME_PATTERN} (ASCII letters, digits, . _ -)")
+        cfg[key] = v
 
     fp = cfg.get("forwarding_path", "auto")
     if fp not in FORWARDING_PATHS:

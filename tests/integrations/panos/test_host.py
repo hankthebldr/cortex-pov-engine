@@ -60,6 +60,12 @@ def test_defaults_not_aliased():
 
 @pytest.mark.parametrize("patch", [
     {"vsys": "vsys"},
+    {"vsys": "vsys\u0663"},
+    {"vsys": "vsys\uff11"},
+    {"vsys": "vsys1\n"},
+    {"device_name": "bad name"},
+    {"device_name": "dev'];x"},
+    {"device_name": "d\u00e9v"},
     {"forwarding_path": "ftp"},
     {"probe_destinations": [{"ip": "1.1.1.1", "port": 53, "protocol": "icmp", "application": "dns"}]},
     {"observed_sources": {"a": "not-an-ip"}},
@@ -126,3 +132,22 @@ def test_normalize_mgmt_host_defined_once():
         hits += [str(p) for n in ast.walk(tree)
                  if isinstance(n, ast.FunctionDef) and n.name == "normalize_mgmt_host"]
     assert len(hits) == 1, hits
+
+
+@pytest.mark.parametrize("host", ["fw.example:\u0663", "fw.example:\uff11\uff11", "fw.example:\u00b2"])
+def test_port_rejects_non_ascii_digits(host):
+    with pytest.raises(PanosConfigError):
+        normalize_mgmt_host(host)
+
+
+def test_device_name_rule_is_the_clients():
+    import integrations.panos.client as client
+    import integrations.panos.host as host
+    assert client.DEVICE_NAME_RE is host.DEVICE_NAME_RE
+
+
+@pytest.mark.parametrize("name", ["fw-1.example_x", "localhost.localdomain", "A"])
+def test_device_name_accepted_is_never_refused_by_client(name):
+    from integrations.panos.client import allowed_xpath
+    cfg = validate_panos_config({"host": "192.0.2.1", "device_name": name})
+    assert allowed_xpath(f"/config/devices/entry[@name='{cfg['device_name']}']/deviceconfig/system/timezone")

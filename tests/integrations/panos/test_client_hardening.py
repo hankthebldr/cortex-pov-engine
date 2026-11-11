@@ -21,6 +21,7 @@ XPATH_ALLOWED = [
     VS + "/log-settings/profiles",
     VS + "/log-settings/syslog",
     "/config/shared/log-settings/syslog",
+    "/config/shared/log-settings/profiles",
     VS + "/rulebase/decryption/rules",
     VS + "/rulebase/security/rules/" + N,
     VS + "/profile-group/" + N,
@@ -56,6 +57,13 @@ XPATH_REFUSED = [
     "/config/devices/entry/deviceconfig/system/timezone",
     "/config/panorama/vsys/entry[@name='vsys1']/pre-rulebase/security/rules",
     "",
+    # non-ASCII / newline-terminated digits must not satisfy vsys\d+
+    DEV + "/vsys/entry[@name='vsys\u0663']/zone",
+    DEV + "/vsys/entry[@name='vsys\uff11']/zone",
+    DEV + "/vsys/entry[@name='vsys1\n']/zone",
+    PV + "/profile-group/" + N.replace("My", "My") + "\n",
+    "/config/panorama/vsys/entry[@name='vsys\u0663']/profile-group/" + N,
+    "/config/shared/log-settings/profiles\n",
 ]
 
 
@@ -180,6 +188,14 @@ FAIL = [
     "<test><security-policy-match><from><deep/></from></security-policy-match></test>",
     "<test><nat-policy-match><anything><deep><deeper/></deep></anything></nat-policy-match></test>",
     "<test><routing><fib-lookup><ip>1.1.1.1</ip><source>x</source></fib-lookup></routing></test>",
+    # leaves must be canonical: sent text == checked text
+    "<show><session><all><filter><count> yes </count></filter></all></session></show>",
+    "<show><session><all><filter><count>yes\n</count></filter></all></session></show>",
+    "<show><session><all><filter><count>\n</count></filter></all></session></show>",
+    "<show><user><ip-user-mapping><ip> 1.1.1.1</ip></ip-user-mapping></user></show>",
+    "<test><nat-policy-match><from>a\tb</from></nat-policy-match></test>",
+    "<test><nat-policy-match><from>a\rb</from></nat-policy-match></test>",
+    "<test><nat-policy-match><from>a\x01b</from></nat-policy-match></test>",
     "<test><advanced-routing><fib-lookup><virtual-router>d</virtual-router></fib-lookup></advanced-routing></test>",
 ]
 
