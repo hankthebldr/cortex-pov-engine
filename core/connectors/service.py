@@ -47,6 +47,7 @@ from engine.outcome import (
     PASS_WITHHELD_UNSCOPED,
     PreventVerdict,
     evaluate_prevent,
+    resolve_module_mode,
     silent_detect_verdict,
     is_hit,
     soak_pending_reason,
@@ -58,6 +59,14 @@ from models import Agent, Observation, Result, Run, Scenario, StepOutcome
 from security.credentials import CredentialStore
 
 logger = logging.getLogger("cortexsim.connectors.service")
+
+
+def _row_module_mode(run: Any, result: Any) -> Optional[str]:
+    """The Action Mode one prevent row is graded against (review F1)."""
+    return resolve_module_mode(
+        agent_profile_mode=run.agent_profile_mode,
+        module_modes=getattr(run, "module_modes", None),
+        prevention_module=getattr(result, "prevention_module", None))
 
 
 class ReconcileError(Exception):
@@ -433,7 +442,8 @@ async def apply_verdicts(
                     alert_outcome=v.alert_outcome,
                     termination=terminations.get(result.step_id),
                     window_closed=False,
-                    block_mode_status=run.block_mode_status)
+                    block_mode_status=run.block_mode_status,
+                    module_mode=_row_module_mode(run, result))
                 if pv.outcome == OUTCOME_PREVENTED and unscoped:
                     # Any endpoint's alert could have been credited.
                     pv = PreventVerdict(OUTCOME_PENDING, "pending", PASS_WITHHELD_UNSCOPED)
@@ -589,7 +599,8 @@ async def _judge_silent_results(
             pv = evaluate_prevent(
                 agent_profile_mode=run.agent_profile_mode, alert_outcome=None,
                 termination=terminations.get(r.step_id), window_closed=True,
-                block_mode_status=run.block_mode_status)
+                block_mode_status=run.block_mode_status,
+                module_mode=_row_module_mode(run, r))
             if pv.outcome == OUTCOME_MISSED and not evidence_complete:
                 # Only a would-be fail softens to pending; a report-mode None
                 # stays None (and so is not written).
@@ -1224,7 +1235,8 @@ async def verify_run_now(
     before = budget["issued"]
     counts = await verifier.verify_results(
         results, _budgeted(runner, budget),
-        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown")
+        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown",
+        module_modes=getattr(run, "module_modes", None))
     issued = budget["issued"] - before
 
     book = _bookkeeping(run)

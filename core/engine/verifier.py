@@ -27,9 +27,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Mapping, Optional
 
-from engine.outcome import is_in_denominator
+from engine.outcome import grades_as_prevention, is_in_denominator, resolve_module_mode
 
 logger = logging.getLogger("cortexsim.verifier")
 
@@ -312,6 +312,7 @@ async def verify_results(
     *,
     expected_rows_min: Callable[[Any], int] | None = None,
     agent_profile_mode: str = "unknown",
+    module_modes: Optional[Mapping[str, str]] = None,
 ) -> dict[str, int]:
     """Run each result's ``verification_xql`` and record its verdict.
 
@@ -340,7 +341,9 @@ async def verify_results(
             counts["skipped"] += 1
             continue
         if (getattr(r, "expected_outcome", None) == "prevent"
-                and agent_profile_mode == "block"):
+                and grades_as_prevention(agent_profile_mode, resolve_module_mode(
+                    agent_profile_mode=agent_profile_mode, module_modes=module_modes,
+                    prevention_module=getattr(r, "prevention_module", None)))):
             # A row count proves an alert exists, never that the agent blocked
             # anything; a block-mode prevent row is judged only by two witnesses.
             counts["skipped"] += 1
@@ -454,7 +457,8 @@ async def verify_run(
     """
     counts = await verify_results(
         results, runner, expected_rows_min=expected_rows_min,
-        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown")
+        agent_profile_mode=getattr(run, "agent_profile_mode", None) or "unknown",
+        module_modes=getattr(run, "module_modes", None))
 
     # A step the host says never ran cannot contribute a detection time.
     mttd = [r.mttd_seconds for r in results

@@ -187,7 +187,8 @@ async def terminalise_lost_runs(db: AsyncSession, agent_id: str, now: datetime,
                         termination=TERMINATION_NOT_RUN, reason=UPSTREAM_SEVERED)
             apply_host_outcomes(
                 results, [o for o in existing.values() if o.termination is not None],
-                agent_profile_mode=run.agent_profile_mode)
+                agent_profile_mode=run.agent_profile_mode,
+                module_modes=getattr(run, "module_modes", None))
             await db.commit()
             logger.warning("beacon_lost run_id=%s agent=%s severed_at=%s",
                            run_id, agent_id, severed)

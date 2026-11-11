@@ -204,6 +204,7 @@ class Orchestrator:
         paired_with_run_id: Optional[str] = None,
         canary_run_id: Optional[str] = None,
         allow_missing_tools: bool = False,
+        module_modes: Optional[dict[str, str]] = None,
     ) -> LaunchResult:
         """
         Create a Run record and route to pull or push path.
@@ -241,7 +242,8 @@ class Orchestrator:
 
         Prevention-efficacy launch context (``agent_profile_mode`` and the
         attestation fields) is operator-declared and persisted verbatim on the
-        Run. ``paired_with_run_id`` links a block-mode launch to its completed
+        Run, including ``module_modes`` (per-module Action Mode, validated at
+        the API edge). ``paired_with_run_id`` links a block-mode launch to its completed
         report-mode run and is validated by ``pairing.validate_pair`` after the
         consent gate and before the Run row exists, so a refused pair
         (``PAIR_INVALID``) seeds nothing.
@@ -398,6 +400,7 @@ class Orchestrator:
             or bas_mode_attested is not None
             or soakless_attested is not None
             or attested_by is not None
+            or module_modes is not None
         )
 
         run = Run(
@@ -418,6 +421,7 @@ class Orchestrator:
             paired_with_run_id=paired_with_run_id,
             canary_run_id=canary_run_id,
             block_mode_status=block_mode_status,
+            module_modes=module_modes,
         )
         db.add(run)
         try:

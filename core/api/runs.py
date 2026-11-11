@@ -340,7 +340,8 @@ _ATT = " — attested"
 
 def _attestations_section(run: Run) -> list[str]:
     if not (run.agent_profile_mode != "unknown" or run.bas_mode_attested is not None
-            or run.soakless_attested is not None or run.attested_by):
+            or run.soakless_attested is not None or run.attested_by
+            or run.module_modes is not None):
         return []
 
     def _flag(v):
@@ -354,6 +355,10 @@ def _attestations_section(run: Run) -> list[str]:
         f"- BAS mode: {_flag(run.bas_mode_attested)}{_ATT if run.bas_mode_attested is not None else ''}",
         f"- soakless: {_flag(run.soakless_attested)}{_ATT if run.soakless_attested is not None else ''}",
     ]
+    if run.module_modes:
+        # Per-module Action Mode: what each prevent row was graded against.
+        modes = ", ".join(f"{k}: {v}" for k, v in sorted(run.module_modes.items()))
+        out.append(f"- module modes: {modes}{_ATT}")
     if run.block_mode_status and run.canary_run_id:
         out.append(f"- canary: {run.block_mode_status} (run {run.canary_run_id})")
     elif run.block_mode_status:
@@ -411,6 +416,11 @@ class LaunchRequest(BaseModel):
     # Links this launch (the block-mode run) to its completed report-mode run.
     paired_with_run_id: Optional[str] = None
     canary_run_id: Optional[str] = None
+    # Per-module Action Mode, e.g. {"btp": "block", "local_analysis": "report"}.
+    # XDR sets Block / Report / Disabled per module, never per profile, so a
+    # block-mode launch says nothing about any ONE module until this says so.
+    # Only read in a block-mode launch; keys are PREVENTION_MODULES.
+    module_modes: Optional[dict[str, str]] = None
     # Container agents only: run even though a step calls a tool the pod's
     # roster lacks (the beacon still reports that step TOOL_ABSENT). Never
     # overrides a posture refusal.
@@ -669,6 +679,7 @@ async def _launch_run_impl(
         attested_by=body.attested_by,
         paired_with_run_id=body.paired_with_run_id,
         canary_run_id=body.canary_run_id,
+        module_modes=body.module_modes,
         allow_missing_tools=body.allow_missing_tools,
     )
 
@@ -1363,7 +1374,8 @@ async def _severed_prevent_ok(db: AsyncSession, run_id: str, severed: Optional[s
 
 
 async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
-                               agent_profile_mode: str) -> None:
+                               agent_profile_mode: str,
+                               module_modes: Optional[dict[str, str]] = None) -> None:
     """Project reported step outcomes onto the run's Results from the stored StepOutcome rows (caller commits)."""
     if not steps:
         return
@@ -1377,7 +1389,8 @@ async def _apply_host_evidence(db: AsyncSession, run_id: str, steps: list,
         select(Result).where(Result.run_id == run_id,
                              Result.step_id.in_([s.step_id for s in stored]))
     )).scalars().all()
-    host_evidence.apply_host_outcomes(rows, stored, agent_profile_mode=agent_profile_mode)
+    host_evidence.apply_host_outcomes(rows, stored, agent_profile_mode=agent_profile_mode,
+                                      module_modes=module_modes)
     await db.flush()
 
 
@@ -1474,7 +1487,7 @@ async def complete_run(
     # Project the host evidence onto the Results INSIDE this write transaction,
     # before any terminalising commit: a crash must not leave a terminal run
     # with unprojected Results that a duplicate /complete cannot repair.
-    await _apply_host_evidence(db, run_id, body.steps, profile_mode)
+    await _apply_host_evidence(db, run_id, body.steps, profile_mode, run.module_modes)
 
     if remaining > 0:
         # Not the last endpoint — hold; do NOT terminalise, publish a terminal
