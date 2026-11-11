@@ -1,0 +1,177 @@
+{
+  "_comment": "Shared cases for the tenant-content status logic. TWO implementations read the same TTP cards: the Composer derives rule nodes in the browser (ui/src/components/console/composerContent.js) and the read-only export derives the manifest on the server (core/engine/tenant_content.py). Both test suites assert every case below, so a rule cannot read 'intent-only' on the canvas and something else in the export. Same guard spec/identity_harness.json gives the Python and Go sides of the identity harness. Design: docs/superpowers/specs/2026-11-10-composer-correlation-story-design.md.",
+  "version": 1,
+
+  "ownership": [
+    {"type": "XQL", "ownership": "run"},
+    {"type": "BIOC", "ownership": "deploy"},
+    {"type": "IOC", "ownership": "deploy"},
+    {"type": "Correlation", "ownership": "deploy"},
+    {"type": "ABIOC", "ownership": "built-in"},
+    {"type": "Analytics", "ownership": "built-in"},
+    {"type": "Prevention", "ownership": "built-in"},
+    {"type": "xql", "ownership": "run"},
+    {"type": "CORRELATION", "ownership": "deploy"},
+    {"type": "Sigma", "error": true},
+    {"type": "", "error": true},
+    {"type": null, "error": true}
+  ],
+
+  "slugs": [
+    {"name": "AIACC-003 Gemini Request Rate Exceeds Per User Baseline", "prefix": "xql", "slug": "xql-aiacc-003-gemini-request-rate-exceeds-per-user-baseline"},
+    {"name": "Q Two (burst)", "prefix": "xql", "slug": "xql-q-two-burst"},
+    {"name": "  LSASS -- dump \u2014 via comsvcs.dll  ", "prefix": "bioc", "slug": "bioc-lsass-dump-via-comsvcs-dll"},
+    {"name": "Caf\u00e9 \u00dcber 2\u00b2", "prefix": "abioc", "slug": "abioc-caf\u00e9-\u00fcber-2\u00b2"},
+    {"name": "domain-c2.example.test", "prefix": "ioc", "slug": "ioc-domain-c2-example-test"},
+    {"name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "prefix": "correlation", "slug": "correlation-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
+  ],
+
+  "classify": [
+    {"label": "name + rule_id + logic is the corpus stub", "rule": {"name": "R", "rule_id": "CR-1", "logic": "XQL(a) OR XQL(b)"}, "status": "intent-only"},
+    {"label": "name alone is still a stub", "rule": {"name": "R"}, "status": "intent-only"},
+    {"label": "a complete scheduled deploy block", "rule": {"name": "R", "rule_id": "CR-1", "logic": "XQL(a)", "deploy": {"xql": "dataset = xdr_data\n| filter action_process_image_name = \"x\"", "execution": "scheduled", "schedule": "*/10 * * * *", "search_window": "30m", "severity": "high", "alert": {"name": "R fired"}}}, "status": "deployable"},
+    {"label": "a complete realtime deploy block needs no schedule", "rule": {"name": "R", "deploy": {"xql": "preset = xdr_process | filter x = 1", "execution": "realtime", "severity": "medium", "alert": {"name": "R fired", "description": "d", "fields": {}}}}, "status": "deployable"},
+    {"label": "an unknown key is not quietly ignored", "rule": {"name": "R", "rule_id": "CR-1", "logic": "XQL(a)", "severity": "high"}, "error": true},
+    {"label": "a rule that is not an object", "rule": "XQL(a) OR XQL(b)", "error": true},
+    {"label": "a missing name", "rule": {"rule_id": "CR-1", "logic": "XQL(a)"}, "error": true},
+    {"label": "logic that is not a string", "rule": {"name": "R", "logic": ["XQL(a)"]}, "error": true},
+    {"label": "half a deploy block never downgrades to intent-only", "rule": {"name": "R", "deploy": {"xql": "dataset = xdr_data | filter x = 1", "severity": "high"}}, "error": true},
+    {"label": "deploy XQL with no dataset or preset anchor", "rule": {"name": "R", "deploy": {"xql": "XQL(a) OR XQL(b)", "execution": "realtime", "severity": "high", "alert": {"name": "R fired"}}}, "error": true},
+    {"label": "a scheduled rule with no schedule", "rule": {"name": "R", "deploy": {"xql": "dataset = xdr_data | filter x = 1", "execution": "scheduled", "severity": "high", "alert": {"name": "R fired"}}}, "error": true},
+    {"label": "an unknown key inside deploy", "rule": {"name": "R", "deploy": {"xql": "dataset = xdr_data | filter x = 1", "execution": "realtime", "severity": "high", "alert": {"name": "R fired"}, "enabled": true}}, "error": true},
+    {"label": "a deploy block that is not an object", "rule": {"name": "R", "deploy": "dataset = xdr_data"}, "error": true}
+  ],
+
+  "logic": [
+    {"label": "three named queries", "logic": "XQL(A one) OR XQL(B two) OR XQL(C three)", "kind": "composition", "terms": [{"kind": "xql", "name": "A one"}, {"kind": "xql", "name": "B two"}, {"kind": "xql", "name": "C three"}]},
+    {"label": "mixed kinds, mixed case", "logic": "BIOC(Proc spawn) AND abioc(Rare parent) and Analytics(First seen)", "kind": "composition", "terms": [{"kind": "bioc", "name": "Proc spawn"}, {"kind": "abioc", "name": "Rare parent"}, {"kind": "analytics", "name": "First seen"}]},
+    {"label": "a name carrying its own parentheses", "logic": "XQL(Q Two (burst)) AND IOC(domain: c2.example.test)", "kind": "composition", "terms": [{"kind": "xql", "name": "Q Two (burst)"}, {"kind": "ioc", "name": "domain: c2.example.test"}]},
+    {"label": "quoted names lose the quotes", "logic": "Analytics(\"Risky login\") AND XQL('Token replay')", "kind": "composition", "terms": [{"kind": "analytics", "name": "Risky login"}, {"kind": "xql", "name": "Token replay"}]},
+    {"label": "a space before the parenthesis still parses", "logic": "BIOC (Spaced name) AND XQL(Tight)", "kind": "composition", "terms": [{"kind": "bioc", "name": "Spaced name"}, {"kind": "xql", "name": "Tight"}]},
+    {"label": "a term inside a name is part of the name", "logic": "CORRELATION(Fusion of XQL(inner)) AND free text after", "kind": "composition", "terms": [{"kind": "correlation", "name": "Fusion of XQL(inner)"}]},
+    {"label": "ABIOC is not read as BIOC", "logic": "ABIOC(Unusual exec)", "kind": "composition", "terms": [{"kind": "abioc", "name": "Unusual exec"}]},
+    {"label": "prose", "logic": "Fires when both alerts share a host within 10 minutes", "kind": "prose", "terms": []},
+    {"label": "prose with unrelated parentheses", "logic": "Sequence: File Write (PCI CSV) -> File Copy within 120s", "kind": "prose", "terms": []},
+    {"label": "no logic at all", "logic": null, "kind": "none", "terms": []},
+    {"label": "blank logic", "logic": "   ", "kind": "none", "terms": []},
+    {"label": "an unclosed term", "logic": "XQL(A one) OR XQL(B two", "error": true}
+  ],
+
+  "scenarios": [
+    {
+      "label": "every binding, input state and edge kind in one chain",
+      "steps": [
+        {"id": "step-01", "expected_detections": [
+          {"type": "XQL", "ttp_ref": "TTP-T-0001", "detection_id": "xql-q-one"}
+        ]},
+        {"id": "step-02", "expected_detections": [
+          {"type": "BIOC", "ttp_ref": "TTP-T-0001", "detection_id": "bioc-b-one"},
+          {"type": "XQL", "ttp_ref": "TTP-T-0001", "detection_id": "xql-q-two-burst"}
+        ]},
+        {"id": "step-03", "expected_detections": [
+          {"type": "Correlation", "ttp_ref": "TTP-T-0001", "detection_id": "CR-T-0001"},
+          {"type": "Correlation", "ttp_ref": "TTP-T-0001", "detection_id": "CR-NOPE"},
+          {"type": "Correlation"},
+          {"type": "Correlation", "ttp_ref": "TTP-T-0001", "detection_id": "xql-q-one"},
+          {"type": "XQL", "ttp_ref": "TTP-T-0002", "detection_id": "xql-elsewhere"},
+          {"type": "Correlation", "ttp_ref": "TTP-T-0002", "detection_id": "CR-ELSEWHERE"}
+        ]}
+      ],
+      "cards": {
+        "TTP-T-0001": {
+          "id": "TTP-T-0001",
+          "detections": {
+            "xql_queries": [{"name": "Q One"}, {"name": "Q Two (burst)"}, {"name": "Q Unused"}],
+            "biocs": [{"name": "B One"}],
+            "analytics_modules": ["Module A", {"module": "Module B", "validated": false}],
+            "correlation_rules": [
+              {"name": "Rule Declared", "rule_id": "CR-T-0001", "logic": "XQL(Q One) AND BIOC(B One)"},
+              {"name": "Rule Card Only", "rule_id": "CR-T-0002", "logic": "XQL(Q Two (burst)) OR XQL(Q Unused) OR XQL(Q Missing) OR Analytics(B One) OR Analytics(Module B)"},
+              {"name": "Rule Prose", "logic": "Fires when the two alerts share a host within 10 minutes"},
+              {"name": "Rule Odd", "rule_id": "CR-T-0004", "logic": "XQL(Q One)", "severity": "high"},
+              {"name": "Rule Unclosed", "rule_id": "CR-T-0005", "logic": "XQL(Q One"}
+            ]
+          }
+        }
+      },
+      "expected": {
+        "cited_cards": ["TTP-T-0001", "TTP-T-0002"],
+        "cards_missing": ["TTP-T-0002"],
+        "no_card_binding": false,
+        "rules": [
+          {
+            "rule_id": "CR-T-0001", "ttp_ref": "TTP-T-0001", "name": "Rule Declared",
+            "content_status": "intent-only", "binding": "declared", "logic_kind": "composition",
+            "declared_by": ["step-03"],
+            "inputs": [
+              {"kind": "xql", "name": "Q One", "state": "step", "resolved_kind": "xql", "steps": ["step-01", "step-03"]},
+              {"kind": "bioc", "name": "B One", "state": "step", "resolved_kind": "bioc", "steps": ["step-02"]}
+            ],
+            "feeders": [
+              {"step": "step-01", "inputs": 1, "declares": false},
+              {"step": "step-02", "inputs": 1, "declares": false},
+              {"step": "step-03", "inputs": 1, "declares": true}
+            ],
+            "anchor_step": "step-03", "edge_kind": "feeds"
+          },
+          {
+            "rule_id": "CR-T-0002", "ttp_ref": "TTP-T-0001", "name": "Rule Card Only",
+            "content_status": "intent-only", "binding": "card-only", "logic_kind": "composition",
+            "declared_by": [],
+            "inputs": [
+              {"kind": "xql", "name": "Q Two (burst)", "state": "step", "resolved_kind": "xql", "steps": ["step-02"]},
+              {"kind": "xql", "name": "Q Unused", "state": "card-only", "resolved_kind": "xql", "steps": []},
+              {"kind": "xql", "name": "Q Missing", "state": "unknown", "resolved_kind": null, "steps": []},
+              {"kind": "analytics", "name": "B One", "state": "step", "resolved_kind": "bioc", "steps": ["step-02"]},
+              {"kind": "analytics", "name": "Module B", "state": "card-only", "resolved_kind": "analytics", "steps": []}
+            ],
+            "feeders": [
+              {"step": "step-02", "inputs": 2, "declares": false}
+            ],
+            "anchor_step": "step-02", "edge_kind": "feeds"
+          },
+          {
+            "rule_id": "correlation-rule-prose", "ttp_ref": "TTP-T-0001", "name": "Rule Prose",
+            "content_status": "intent-only", "binding": "card-only", "logic_kind": "prose",
+            "declared_by": [], "inputs": [], "feeders": [],
+            "anchor_step": "step-03", "edge_kind": "card"
+          },
+          {
+            "rule_id": "CR-T-0004", "ttp_ref": "TTP-T-0001", "name": "Rule Odd",
+            "content_status": "unreadable", "binding": "card-only", "logic_kind": null,
+            "declared_by": [], "inputs": [], "feeders": [],
+            "anchor_step": "step-03", "edge_kind": "card"
+          },
+          {
+            "rule_id": "CR-T-0005", "ttp_ref": "TTP-T-0001", "name": "Rule Unclosed",
+            "content_status": "intent-only", "binding": "card-only", "logic_kind": "unparsed",
+            "declared_by": [], "inputs": [], "feeders": [],
+            "anchor_step": "step-03", "edge_kind": "card"
+          }
+        ],
+        "unbound": [
+          {"step": "step-03", "index": 1, "reason": "no-rule"},
+          {"step": "step-03", "index": 2, "reason": "no-reference"},
+          {"step": "step-03", "index": 3, "reason": "not-a-rule"}
+        ],
+        "summary": {"total": 5, "deployable": 0, "intent_only": 4, "unreadable": 1, "declared": 1, "card_only": 4, "unbound": 3}
+      }
+    },
+    {
+      "label": "a chain that cites no card is said to cite none",
+      "steps": [
+        {"id": "step-01", "expected_detections": [{"type": "XQL"}]},
+        {"id": "step-02", "expected_detections": []}
+      ],
+      "cards": {},
+      "expected": {
+        "cited_cards": [],
+        "cards_missing": [],
+        "no_card_binding": true,
+        "rules": [],
+        "unbound": [],
+        "summary": {"total": 0, "deployable": 0, "intent_only": 0, "unreadable": 0, "declared": 0, "card_only": 0, "unbound": 0}
+      }
+    }
+  ]
+}
