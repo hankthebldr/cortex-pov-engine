@@ -2337,7 +2337,17 @@ def generate_powershell(scenario: dict[str, Any]) -> str:
         res, raw = p.res, p.raw
         script += f"# --- {_comment_safe(res.step_id)}: {_comment_safe(raw.get('name', ''))}\n"
         if raw.get("mitre_technique"):
-            script += f"# MITRE: {_comment_safe(raw['mitre_technique'])}\n"
+            # A step carries ONE technique, authored for its primary command.
+            # A Windows variant is often a different sub-technique (cron vs
+            # schtasks.exe), and the schema has no per-variant technique, so
+            # say whose it is instead of presenting it as this command's.
+            script += f"# MITRE: {_comment_safe(raw['mitre_technique'])}"
+            if res.source.startswith("variant:"):
+                script += (
+                    " (authored for the primary command; this step runs its "
+                    f"{res.source.split(':', 1)[1]} variant)"
+                )
+            script += "\n"
         script += f"# Command source: {res.source}"
         script += f" ({res.note})\n" if res.note else "\n"
         for det in raw.get("expected_detections", []) or []:

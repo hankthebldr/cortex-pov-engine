@@ -585,6 +585,26 @@ class TestGeneratePowerShell:
         # mutating machine policy is not.
         assert "-ExecutionPolicy Bypass -File" in code
 
+    def test_a_variant_steps_technique_is_marked_as_the_primarys(self):
+        """CONT-17. A step has ONE mitre_technique, authored for its primary
+        command. SIM-EDR-003 step-01 printed `# MITRE: T1053.003` (Cron) above a
+        schtasks.exe command, which is T1053.005. The schema cannot carry a
+        per-variant technique yet, so the bundle says whose technique it is
+        rather than presenting it as the Windows command's."""
+        scn = _scn([
+            {"id": "step-01", "mitre_technique": "T1053.003", "command": "crontab -l",
+             "platform_variants": {"windows": "schtasks.exe /query /fo LIST"}},
+            {"id": "step-02", "mitre_technique": "T1059.001", "platforms": ["windows"],
+             "command": "Get-Process -Name lsass"},
+            {"id": "step-03", "mitre_technique": "T1082", "command": "echo 'neutral'"},
+        ])
+        out = pg.generate_powershell(scn)
+        assert ("# MITRE: T1053.003 (authored for the primary command; "
+                "this step runs its windows variant)\n") in out
+        # A windows-native primary and a shell-neutral command ARE the authored text.
+        assert "# MITRE: T1059.001\n" in out
+        assert "# MITRE: T1082\n" in out
+
     def test_run_instructions_name_what_can_stop_the_bundle_on_a_managed_host(self):
         """PUSH-16. The header said `-ExecutionPolicy Bypass` and `Unblock-File`
         and nothing else, so on a host where Group Policy sets AllSigned every
