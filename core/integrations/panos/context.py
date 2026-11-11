@@ -64,12 +64,17 @@ async def find_object(ctx: PreflightContext, kind: str, name: str) -> Optional[E
     vsys -> /config/shared -> Panorama-pushed. ``None`` when it is in none of them
     (each scope answered an empty result). Predefined names are the caller's job.
 
+    A name that no allowlisted xpath can express (a quote, a character outside the
+    PAN-OS name set) cannot be a configured object we can read: it is reported as not
+    found (``None``, so the caller emits ``PN_OBJECT_NOT_FOUND`` naming it) and nothing
+    is sent.
+
     A non-empty reply without an ``<entry>`` raises ``PanosShapeError``: an
     unrecognised shape is never read as "not found"."""
-    for xpath in _candidates(ctx, kind, name):
-        if not allowed_xpath(xpath):
-            raise PanosShapeError(
-                f"{kind} name {name!r} cannot be expressed as an allowlisted xpath")
+    candidates = _candidates(ctx, kind, name)
+    if not all(allowed_xpath(x) for x in candidates):
+        return None
+    for xpath in candidates:
         result = await ctx.client.config_show(xpath)
         if result.find("entry") is not None:
             return result

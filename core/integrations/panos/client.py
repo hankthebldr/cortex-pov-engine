@@ -167,6 +167,9 @@ CONFIG_XPATH_ALLOWLIST: tuple[re.Pattern, ...] = tuple(re.compile(p) for p in (
     _SHARED + "/log-settings/syslog",
     _SHARED + "/log-settings/profiles",
     _VSYS + "/rulebase/decryption/rules",
+    _PVSYS + "/log-settings/profiles",
+    _PSHARED + "/log-settings/profiles",
+    _PVSYS + "/(?:pre|post)-rulebase/decryption/rules",
     _VSYS + rf"/rulebase/security/rules/{_ENT}",
     _VSYS + "/zone",
     _VSYS + rf"/zone/{_ENT}",
@@ -264,8 +267,9 @@ class PanosClient:
             raise PanosTransportError("management API rejected the credentials (HTTP 403)",
                                       code=codes.PN_AUTH_REJECTED)
         if not 200 <= resp.status_code < 300:
+            # The host answered: an upstream error on this request, not unreachability.
             raise PanosTransportError(
-                f"management API returned HTTP {resp.status_code}", code=codes.PN_UNREACHABLE)
+                f"management API returned HTTP {resp.status_code}", code=codes.PN_UPSTREAM_ERROR)
         try:
             return parse_response(resp.content)
         except PanosApiError as exc:

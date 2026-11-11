@@ -33,6 +33,10 @@ XPATH_ALLOWED = [
     PV + "/profile-group/" + N,
     "/config/panorama/shared/profile-group/" + N,
     "/config/panorama/shared/profiles/spyware/" + N,
+    PV + "/log-settings/profiles",
+    "/config/panorama/shared/log-settings/profiles",
+    PV + "/pre-rulebase/decryption/rules",
+    PV + "/post-rulebase/decryption/rules",
 ] + [f"{VS}/profiles/{t}/{N}" for t in
      ("virus", "spyware", "vulnerability", "url-filtering", "wildfire-analysis")] \
   + [f"/config/shared/profiles/{t}/{N}" for t in ("virus", "spyware")] \
@@ -64,6 +68,11 @@ XPATH_REFUSED = [
     PV + "/profile-group/" + N.replace("My", "My") + "\n",
     "/config/panorama/vsys/entry[@name='vsys\u0663']/profile-group/" + N,
     "/config/shared/log-settings/profiles\n",
+    PV + "/rulebase/decryption/rules",                  # panorama has no plain rulebase
+    PV + "/pre-rulebase/decryption",                    # not the rules leaf
+    PV + "/pre-rulebase/decryption/rules/" + N,         # not a whole-rules read
+    "/config/panorama/vsys/entry[@name='vsys\u0663']/log-settings/profiles",
+    "/config/panorama/shared/log-settings/syslog",
 ]
 
 

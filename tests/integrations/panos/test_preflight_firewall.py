@@ -33,6 +33,11 @@ SYSLOG_SHARED = "/config/shared/log-settings/syslog"
 LFP_VSYS = VSYS + "/log-settings/profiles"
 LFP_SHARED = "/config/shared/log-settings/profiles"
 DECRYPT = VSYS + "/rulebase/decryption/rules"
+PVSYS = "/config/panorama/vsys/entry[@name='vsys1']"
+LFP_PVSYS = PVSYS + "/log-settings/profiles"
+LFP_PSHARED = "/config/panorama/shared/log-settings/profiles"
+DECRYPT_PRE = PVSYS + "/pre-rulebase/decryption/rules"
+DECRYPT_POST = PVSYS + "/post-rulebase/decryption/rules"
 
 # show clock in clock__fresh.xml is 22:05:00 US/Eastern (EST) = 03:05:00 UTC.
 NOW = datetime(2026, 11, 11, 3, 5, 10, tzinfo=timezone.utc)
@@ -50,6 +55,10 @@ BASE = {
     LFP_VSYS: "lfp__complete.xml",
     LFP_SHARED: "config__empty.xml",
     DECRYPT: "decryption__rules.xml",
+    LFP_PVSYS: "config__empty.xml",
+    LFP_PSHARED: "config__empty.xml",
+    DECRYPT_PRE: "config__empty.xml",
+    DECRYPT_POST: "config__empty.xml",
     REGIP: "registered_ip__empty.xml",
 }
 
@@ -94,10 +103,11 @@ async def test_healthy_sls_firewall(fake_firewall):
     report, fw = await run(fake_firewall)
     by = {s.id: s for s in report.stages}
     for sid in ("config", "dns_tls", "auth", "system", "clock", "forwarding_sls",
-                "eal_device", "log_forwarding_profiles", "decryption", "registered_ip"):
+                "forwarding_syslog", "eal_device", "log_forwarding_profiles", "decryption", "registered_ip"):
         assert by[sid].status == OK, (sid, by[sid].code, by[sid].detail)
-    assert by["forwarding_syslog"].status == SKIPPED
+    assert by["forwarding_syslog"].status == OK
     assert by["forwarding_syslog"].code == codes.PN_PATH_NOT_SELECTED
+    assert report.overall == "ready"
     assert report.panos_version == "10.2.8-h4"
     d = report.to_dict()
     assert d["firewall"] == "lab-fw" and d["mgmt_host"] == "192.0.2.1"
@@ -158,10 +168,26 @@ async def test_unreachable_short_circuits(fake_firewall):
 
 
 @pytest.mark.asyncio
-async def test_non_2xx_is_unreachable_not_auth_ok(fake_firewall):
-    report, _ = await run(fake_firewall, {SYSINFO: 502})
-    assert stage(report, "dns_tls").code == codes.PN_UNREACHABLE
-    assert stage(report, "auth").code == codes.PN_SKIPPED_UNREACHABLE
+async def test_non_2xx_is_upstream_error_not_auth_ok(fake_firewall):
+    report, fw = await run(fake_firewall, {SYSINFO: 502})
+    assert stage(report, "dns_tls").status == OK  # it answered
+    assert (stage(report, "auth").status, stage(report, "auth").code) == (
+        BLOCKED, codes.PN_UPSTREAM_ERROR)
+    assert stage(report, "system").code == codes.PN_UPSTREAM_ERROR
+    assert REGIP in fw.keys()  # no short-circuit
+
+
+@pytest.mark.asyncio
+async def test_500_on_logging_status_blocks_only_that_stage(fake_firewall):
+    report, fw = await run(fake_firewall, {LOGSTATUS: 500})
+    s = stage(report, "forwarding_sls")
+    assert (s.status, s.code) == (BLOCKED, codes.PN_UPSTREAM_ERROR)
+    assert s.remediation
+    for sid in ("eal_device", "decryption", "registered_ip"):
+        assert stage(report, sid).status == OK, sid
+    # it ran, but with no path proven it cannot claim delivery (I2)
+    assert stage(report, "log_forwarding_profiles").code == codes.PN_NO_FORWARDING_PATH
+    assert REGIP in fw.keys()
 
 
 @pytest.mark.asyncio
@@ -264,11 +290,13 @@ async def test_multi_vsys_without_explicit_vsys(fake_firewall):
 
 
 @pytest.mark.asyncio
-async def test_multi_vsys_with_explicit_vsys_reports_only_mode(fake_firewall):
+async def test_multi_vsys_always_degraded_names_checked_vsys(fake_firewall):
     report, _ = await run(fake_firewall, {SYSINFO: "system_info__multivsys.xml"},
                           config={"vsys": "vsys1"})
     s = stage(report, "system")
-    assert (s.status, s.code) == (DEGRADED, codes.PN_NOT_NORMAL_MODE)
+    assert (s.status, s.code) == (DEGRADED, codes.PN_MULTI_VSYS)
+    multi = next(i for i in s.extra["issues"] if i["code"] == codes.PN_MULTI_VSYS)
+    assert "vsys1" in multi["detail"] and "not checked" in multi["detail"]
 
 
 # --------------------------------------------------------------- clock
@@ -313,7 +341,7 @@ async def test_auto_syslog_only(fake_firewall):
     report, fw = await run(fake_firewall, {LOGGING: "device_logging__lsf_off_eal_off.xml",
                                            SYSLOG_VSYS: "syslog__two_servers_udp.xml"})
     sls, sys_ = stage(report, "forwarding_sls"), stage(report, "forwarding_syslog")
-    assert (sls.status, sls.code) == (SKIPPED, codes.PN_PATH_NOT_SELECTED)
+    assert (sls.status, sls.code) == (OK, codes.PN_PATH_NOT_SELECTED)
     assert (sys_.status, sys_.code) == (DEGRADED, codes.PN_SYSLOG_DELIVERY_UNVERIFIED)
     assert codes.PN_SYSLOG_UDP in {i["code"] for i in sys_.extra["issues"]}
     servers = sys_.extra["profiles"][0]["servers"]
@@ -573,11 +601,147 @@ async def test_find_object_unrecognised_shape_raises(fake_firewall):
 
 
 @pytest.mark.asyncio
-async def test_find_object_unexpressible_name_sends_nothing(fake_firewall):
-    from integrations.panos.exceptions import PanosShapeError
+async def test_find_object_unexpressible_name_is_not_found(fake_firewall):
     fw = fake_firewall({})
     ctx = _ctx(fw)
-    with pytest.raises(PanosShapeError):
-        await find_object(ctx, "profile-group", "x' or '1'='1")
+    assert await find_object(ctx, "profile-group", "x' or '1'='1") is None
     await ctx.client.aclose()
     assert fw.calls == []
+
+
+# --------------------------------------------------------------- review round 1
+
+
+TRAFFIC_ROW = b"      traffic   2026/11/10 22:00:00   2026/11/10 22:00:00"
+THREAT_ROW = b"       threat   2026/11/10 21:59:56   2026/11/10 22:00:00"
+
+
+def _logstatus(traffic: bytes, threat: bytes) -> bytes:
+    body = pf_fixture("logging_status__active.xml")
+    return body.replace(TRAFFIC_ROW, b"      traffic   " + traffic, 1).replace(
+        THREAT_ROW, b"       threat   " + threat, 1)
+
+
+def _codes(st):
+    return {i["code"] for i in st.extra.get("issues", [])} | {st.code}
+
+
+# I1: staleness is computed in UTC through the firewall's zone
+
+
+@pytest.mark.asyncio
+async def test_log_age_dst_fall_back_hour_is_unknown(fake_firewall):
+    clock = b'<response status="success"><result>Sun Nov 01 01:30:00 EST 2026</result></response>'
+    ts = b"2026/11/01 01:20:00   2026/11/01 01:20:00"
+    report, _ = await run(fake_firewall, {CLOCK: clock, LOGSTATUS: _logstatus(ts, ts)},
+                          now=datetime(2026, 11, 1, 6, 30, 10, tzinfo=timezone.utc))
+    s = stage(report, "forwarding_sls")
+    assert s.status == DEGRADED and s.code == codes.PN_LOG_TYPE_AGE_UNKNOWN
+    assert s.extra["log_types"]["traffic"]["age_seconds"] is None
+
+
+@pytest.mark.asyncio
+async def test_log_age_future_timestamp_is_unknown_not_ok(fake_firewall):
+    fut = b"2026/11/10 22:10:00   2026/11/10 22:10:00"
+    report, _ = await run(fake_firewall, {LOGSTATUS: _logstatus(fut, fut)})
+    s = stage(report, "forwarding_sls")
+    assert s.status == DEGRADED and s.code == codes.PN_LOG_TYPE_AGE_UNKNOWN
+    assert "future" in s.detail
+
+
+@pytest.mark.asyncio
+async def test_log_age_small_future_within_tolerance_is_ok(fake_firewall):
+    near = b"2026/11/10 22:05:30   2026/11/10 22:05:30"
+    report, _ = await run(fake_firewall, {LOGSTATUS: _logstatus(near, near)})
+    s = stage(report, "forwarding_sls")
+    assert s.status == OK
+    assert s.extra["log_types"]["traffic"]["age_seconds"] == 0
+
+
+@pytest.mark.asyncio
+async def test_log_age_without_timezone_is_unknown(fake_firewall):
+    report, _ = await run(fake_firewall, {TZ: "config__empty.xml"})
+    s = stage(report, "forwarding_sls")
+    assert s.status == DEGRADED and s.code == codes.PN_LOG_TYPE_AGE_UNKNOWN
+
+
+# I2: no proven forwarding path can never yield an ok profile stage
+
+
+@pytest.mark.asyncio
+async def test_auto_neither_path_lfp_cannot_be_ok(fake_firewall):
+    report, _ = await run(fake_firewall, {LOGGING: "device_logging__lsf_off_eal_off.xml"})
+    s = stage(report, "log_forwarding_profiles")
+    assert s.status == DEGRADED
+    assert "no forwarding path proven" in s.detail
+
+
+@pytest.mark.asyncio
+async def test_auto_sls_read_failed_syslog_unconfigured(fake_firewall):
+    bogus = b'<response status="success"><result><bogus/></result></response>'
+    report, _ = await run(fake_firewall, {LOGGING: bogus})
+    sls, sy = stage(report, "forwarding_sls"), stage(report, "forwarding_syslog")
+    assert (sls.status, sls.code) == (BLOCKED, codes.PN_SHAPE_UNRECOGNISED)
+    assert sy.code != codes.PN_PATH_NOT_SELECTED and sy.status == BLOCKED
+    lfp = stage(report, "log_forwarding_profiles")
+    assert lfp.status == DEGRADED and "no forwarding path proven" in lfp.detail
+
+
+# I3: any exception is isolated to its stage
+
+
+@pytest.mark.asyncio
+async def test_unexpected_exception_blocks_only_its_stage(fake_firewall):
+    bad = b"2026/13/40 22:00:00   2026/13/40 22:00:00"
+    report, fw = await run(fake_firewall, {LOGSTATUS: _logstatus(bad, bad)})
+    s = stage(report, "forwarding_sls")
+    assert (s.status, s.code) == (BLOCKED, codes.PN_INTERNAL_ERROR)
+    assert s.detail == "internal error (ValueError)"
+    assert stage(report, "registered_ip").status == OK
+    assert KEY not in json.dumps(report.to_dict())
+
+
+# I4: Panorama-pushed log forwarding and decryption
+
+
+@pytest.mark.asyncio
+async def test_lfp_only_under_panorama_is_found(fake_firewall):
+    report, _ = await run(fake_firewall, {LFP_VSYS: "config__empty.xml",
+                                          LFP_PVSYS: "lfp__complete.xml"})
+    s = stage(report, "log_forwarding_profiles")
+    assert s.code != codes.PN_NO_LFP and s.status == OK
+    assert s.extra["profiles"][0]["scope"] == "panorama-vsys"
+    assert "panorama-vsys" in s.detail
+
+
+@pytest.mark.asyncio
+async def test_decryption_only_in_panorama_pre_rulebase_is_ok(fake_firewall):
+    report, _ = await run(fake_firewall, {DECRYPT: "config__empty.xml",
+                                          DECRYPT_PRE: "decryption__rules.xml"})
+    s = stage(report, "decryption")
+    assert s.status == OK
+    assert "panorama-pre" in s.detail
+
+
+# minors
+
+
+@pytest.mark.asyncio
+async def test_both_path_remediation_is_scoped_to_this_path(fake_firewall):
+    report, _ = await run(fake_firewall, config={"forwarding_path": "both"})
+    s = stage(report, "forwarding_syslog")
+    assert s.code == codes.PN_SYSLOG_NO_SERVERS
+    assert "over this path" in s.remediation
+    assert "every NGFW-dataset detection" not in s.remediation
+
+
+@pytest.mark.asyncio
+async def test_lfp_filtered_match_does_not_count_as_full_forwarding(fake_firewall):
+    filtered = pf_fixture("lfp__complete.xml").replace(
+        b"<log-type>wildfire</log-type><filter>All Logs</filter>",
+        b"<log-type>wildfire</log-type><filter>(verdict eq malicious)</filter>")
+    report, _ = await run(fake_firewall, {LFP_VSYS: filtered})
+    s = stage(report, "log_forwarding_profiles")
+    assert (s.status, s.code) == (DEGRADED, codes.PN_LFP_FILTERED)
+    assert "(verdict eq malicious)" in s.detail and "wildfire" in s.detail
+    assert s.extra["profiles"][0]["filters"]["wildfire"] == ["(verdict eq malicious)"]

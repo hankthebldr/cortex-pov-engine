@@ -174,12 +174,12 @@ async def test_other_api_error_propagates_as_api_error():
 
 
 @pytest.mark.asyncio
-async def test_other_non_2xx_maps_to_unreachable_with_status():
+async def test_other_non_2xx_maps_to_upstream_error_with_status():
     transport, _ = recorder(b"<html>secret-body</html>", 502)
     c = PanosClient("192.0.2.1", "k", verify_tls=False, transport=transport)
     with pytest.raises(PanosTransportError) as ei:
         await c.op(SYSINFO)
-    assert ei.value.code == codes.PN_UNREACHABLE
+    assert ei.value.code == codes.PN_UPSTREAM_ERROR
     assert "502" in str(ei.value) and "secret-body" not in str(ei.value)
     await c.aclose()
 

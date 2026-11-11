@@ -233,6 +233,14 @@ def test_logging_status_negative():
         x.parse_logging_status(_ls("\nstray line\nLog Collector : C1\nConnection Status : lr - Active\n"))
 
 
+@pytest.mark.parametrize("status,active", [
+    ("lr - Active", True), ("Active", True), ("lr - Not Active", False),
+    ("lr - Inactive", False), ("lr - Active-Pending", False), ("lr - Connecting", False)])
+def test_logging_status_active_is_the_whole_status_token(status, active):
+    cs = x.parse_logging_status(_ls(f"\nLog Collector : C1\nConnection Status : {status}\n"))
+    assert cs[0].active is active
+
+
 # ---- device-level logging config ----------------------------------------
 
 def test_lsf_and_eal_device():

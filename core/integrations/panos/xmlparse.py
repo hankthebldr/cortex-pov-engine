@@ -275,6 +275,13 @@ def _ts(s: str) -> Optional[datetime]:
     return None if s == "Not Available" else datetime.strptime(s, "%Y/%m/%d %H:%M:%S")
 
 
+def _status_token(status: str) -> str:
+    """The whole status after an optional ``<kind> - `` prefix (``lr - Active`` ->
+    ``Active``). "Not Active", "Inactive" or "Active-Pending" never equal "Active"."""
+    m = re.fullmatch(r"\s*(?:\S+\s+-\s+)?(.*?)\s*", status)
+    return m.group(1) if m else status.strip()
+
+
 def parse_logging_status(result: ET.Element) -> list[CollectorStatus]:
     conn = result.find("show-logging-status/Conn-Info")
     if conn is None:
@@ -293,7 +300,7 @@ def parse_logging_status(result: ET.Element) -> list[CollectorStatus]:
             raise PanosShapeError(f"collector {cur['name']!r} has no Connection Status line")
         collectors.append(CollectorStatus(
             name=cur["name"], connection_ip=cur["ip"],
-            active=re.search(r"\bActive\b", cur["status"]) is not None, types=cur["types"]))
+            active=_status_token(cur["status"]) == "Active", types=cur["types"]))
 
     for line in text.splitlines():
         if not line.strip():
