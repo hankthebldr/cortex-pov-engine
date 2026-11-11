@@ -583,8 +583,21 @@ class Orchestrator:
                     "status": "error", "code": "EAL_STEP_INVALID", "detail": str(exc),
                 }
 
+        resolutions: dict[str, Any] = {}
         if campaign_steps:
             try:
+                # Collector steps take their destination from the instance's
+                # collector targets, like every other in-process consumer.
+                # Never with keys: this path is dry-run only.
+                from eal_simulator.targets import apply_targets  # noqa: PLC0415
+                from engine.collector_targets import load_specs  # noqa: PLC0415
+
+                resolved, res = apply_targets(
+                    {"steps": [cs.model_dump() for cs in campaign_steps], "target_allowlist": []},
+                    registry, await load_specs(db),
+                )
+                campaign_steps = [CampaignStep(**rs) for rs in resolved["steps"]]
+                resolutions = {r.step_id: r for r in res}
                 campaign = Campaign(
                     # Ephemeral, not persisted; run_id (passed to execute) is the
                     # real disambiguator. campaign_id must match CMP-{LABEL}-{NNN}.
@@ -625,6 +638,10 @@ class Orchestrator:
                     outcomes[cs.step_id] = {
                         "status": status, "code": None, "detail": detail,
                     }
+            for step_id, r in resolutions.items():
+                if step_id in outcomes:
+                    outcomes[step_id]["collector_target"] = r.target
+                    outcomes[step_id]["collector_source"] = r.source
 
         # Seed a Result row per expected detection for the eal steps, with a REAL
         # executed_at (the seeding 3a deferred): the step actually ran here.
@@ -1891,6 +1908,10 @@ def _build_channel_dispatch(
                     "status": outcome.get("status", "dispatched"),
                     "code": outcome.get("code"),
                     "detail": outcome.get("detail"),
+                    # Present only for collector steps, so a ledger entry for
+                    # any other eal step is unchanged.
+                    **{k: outcome[k] for k in ("collector_target", "collector_source")
+                       if k in outcome},
                 })
             else:
                 ledger.append({
