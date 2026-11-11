@@ -42,6 +42,44 @@ Scenarios needing several doors are counted once per door.
 Only 44 scenarios need the XDR agent and nothing else; 88 need the agent, the
 NGFW, or both, and nothing more.
 
+**Per door, as `engine.door_resolution` derives it** (measured on
+feature/api-ingestion-doors f6fd90f on 2026-11-11, pinned in
+`tests/engine/test_door_corpus.py`). These counts apply §5 in order, so they
+differ from the table above in three ways. Collector steps are judged by their
+route and counted under no door. Every `dataset =` anchor is read, not only the
+first. `doors_unknown` rows and cloud detections that name no provider are
+underived.
+
+| Door | Detections | Scenarios |
+|---|---:|---:|
+| `xdr_agent` | 502 | 103 |
+| `ngfw_traffic` | 136 | 49 |
+| `cloud_aws` | 67 | 21 |
+| `saas_okta` | 24 | 14 |
+| `prisma_browser` | 23 | 6 |
+| `windows_events` or `xdr_agent_xth` (one OR-set) | 22 | 8 |
+| `saas_o365` | 19 | 9 |
+| `saas_entra` | 15 | 9 |
+| `xpanse` | 15 | 8 |
+| `tenant_incidents` | 14 | 4 |
+| `ngfw_stitch` | 12 | 10 |
+| `cloud_gcp` | 9 | 3 |
+| `ngfw_globalprotect` | 8 | 3 |
+| `ngfw_threat` | 6 | 2 |
+| `proofpoint_tap` | 5 | 5 |
+| `cloud_azure`, `koi_aes`, `syslog_cisco_asa` | 3 each | 2, 2, 1 |
+| `saas_google_workspace` | 2 | 2 |
+| `syslog_ivanti_connect_secure` | 1 | 1 |
+| Collector route (XQL 63, IOC 47, ABIOC 38, Analytics 21, Correlation 21, BIOC 9) | 199 | — |
+| Underived: `NO_DATASET` 225, `DOORS_UNKNOWN` 61, `NO_PROVIDER` 39 | 325 | — |
+
+The 502 `xdr_agent` detections are the 507 `xdr_data` detections less the 5
+on collector steps. 501 of them need the agent and nothing else. The other one,
+the `SIM-MP-015` step-03 ABIOC, inner-joins `xdr_data` with
+`msft_azure_ad_signin`, so it also needs `saas_entra`. With every door open for
+one agent, 150 scenarios read ready, 30 partial, 10 needs doors (collector
+only) and 8 not evaluated (nothing derivable).
+
 Four defects follow from this:
 
 1. **The XDR agent is never checked.** Get Started's "Install an agent" step
