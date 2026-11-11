@@ -143,4 +143,4 @@ def test_corpus_signal_paths():
         if sig["unplaced"]:
             unplaced.append((sid, step.get("id"), sig["unplaced"]))
     assert unplaced == []
-    assert counts == {"ENDPOINT": 506, "COLLECTOR": 89, "WIRE": 49, "CLOUD": 41, "NONE": 111}
+    assert counts == {"ENDPOINT": 514, "COLLECTOR": 89, "WIRE": 49, "CLOUD": 41, "NONE": 111}
