@@ -839,26 +839,33 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
             if all(d is not None for d in docs):
                 tenant_config = _socfw.parse_tenant_config(docs[0], docs[1])
                 sources.append("list_content")
+            if tenant_config is None and shape_error is None:
+                read_problem = read_problem or "list content (SOCFWTenantConfig / SOCFWConfigModes) was not readable"
         except _socfw.ResponseLayerShapeError as exc:
             shape_error = str(exc)
+        except Exception as exc:  # noqa: BLE001 — transport mid-read
+            read_problem = read_problem or f"list content read failed: {exc}"
 
     if core and shape_error is None:
         # 4. execution evidence
+        reply = None
         try:
             report.queries_issued += 1
             reply = await client.run_xql(RESPONSE_LAYER_XQL,
                                          {"relativeTime": RESPONSE_LAYER_TIMEFRAME_MS})
-            evidence = _socfw.summarize_execution_rows(result_rows(reply))
-            sources.append("xql_evidence")
-        except _socfw.ResponseLayerShapeError as exc:
-            shape_error = str(exc)
         except XsiamQuotaError:
-            read_problem = read_problem or "XQL quota exhausted"
-        except XsiamError as exc:
-            if "unrecognised XQL reply" in str(exc):
-                shape_error = str(exc)
-            else:
-                logger.info("response_layer: execution evidence unreadable: %s", exc)
+            read_problem = read_problem or "XQL read: quota exhausted"
+        except Exception as exc:  # noqa: BLE001 — XsiamError or transport
+            read_problem = read_problem or f"XQL read failed: {exc}"
+            logger.info("response_layer: execution evidence unreadable: %s", exc)
+        if reply is not None:
+            # Any failure unwrapping or summarising a reply that ARRIVED is a
+            # shape problem, whatever its message (no substring matching).
+            try:
+                evidence = _socfw.summarize_execution_rows(result_rows(reply))
+                sources.append("xql_evidence")
+            except Exception as exc:  # noqa: BLE001
+                shape_error = f"XQL read: {exc}"
 
     if shape_error is not None:
         packs = None
@@ -868,9 +875,6 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
     ms = int((time.monotonic() - started) * 1000)
     extra = {"response_layer": layer.to_dict()}
 
-    if layer.state == "PRESENT":
-        return Stage("response_layer", OK, PF_OK,
-                     f"SOC Framework {layer.framework_version} present", ms=ms, extra=extra)
     if layer.state == "ABSENT":
         return Stage(
             "response_layer", DEGRADED, PF_RESPONSE_LAYER_ABSENT,
@@ -897,12 +901,15 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
                          "xsiam_tenant API key: it needs Marketplace / installed-packs "
                          "read."),
             ms=ms, extra=extra)
+    if layer.state == "PRESENT" and not read_problem:
+        return Stage("response_layer", OK, PF_OK,
+                     f"SOC Framework {layer.framework_version} present", ms=ms, extra=extra)
     return Stage(
         "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
-        "framework present, its config could not be read",
-        remediation=("The SOC Framework is installed but SOCFWTenantConfig / SOCFWConfigModes "
-                     "could not be read, so mode and auto-triage settings are unknown. "
-                     "Disposition is shown for context only."),
+        read_problem or "framework present, its config could not be read",
+        remediation=("A read against the SOC Framework did not complete (see detail), so "
+                     "part of its state is unknown. Disposition is shown for context "
+                     "only."),
         ms=ms, extra=extra)
 
 

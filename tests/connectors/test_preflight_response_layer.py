@@ -181,3 +181,59 @@ def test_socfw_operation_pack_loads_and_is_read_only():
         "OP-SOCFW-PACKS-INSTALLED", "OP-SOCFW-LIST-NAMES", "OP-SOCFW-LIST-GET"}
     assert all(o.access_class == "read" and o.method == "GET" for o in ops)
     assert all("povkit-observed" in o.tags for o in ops)
+
+
+def _wrap(inner, fail_when):
+    def h(request):
+        if fail_when(request):
+            raise httpx.ConnectError("reset")
+        return inner(request)
+    return h
+
+
+def test_transport_error_on_list_read_degrades_not_raises():
+    h = _wrap(_tenant(), lambda r: "/lists/download/" in r.url.path)
+    st = _stage(run(h), "response_layer")
+    assert st.status == "degraded" and st.code == "PF_RESPONSE_LAYER_UNREAD"
+    assert "list content" in st.detail
+
+
+def test_transport_error_on_xql_degrades_not_raises():
+    h = _wrap(_tenant(), lambda r: r.url.path.endswith("start_xql_query")
+              and b"xsiam_socfw" in r.content)
+    st = _stage(run(h), "response_layer")
+    assert st.status == "degraded" and st.code == "PF_RESPONSE_LAYER_UNREAD"
+    assert "XQL read" in st.detail
+
+
+def test_unrecognised_xql_envelope_is_shape_code():
+    def h(request):
+        if request.url.path.endswith("get_query_results"):
+            return httpx.Response(200, json={"reply": {"status": "SUCCESS",
+                                                       "results": "oops"}})
+        return _inner(request)
+    _inner = _tenant()
+    st = _stage(run(h), "response_layer")
+    assert st.code == "PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED"
+    assert "XQL" in st.detail
+
+
+def test_xql_non_quota_error_names_the_xql_read():
+    def h(request):
+        if request.url.path.endswith("start_xql_query") and b"xsiam_socfw" in request.content:
+            return httpx.Response(200, json={"reply": {"err_code": "X", "err_msg": "bad"}})
+        return _inner(request)
+    _inner = _tenant()
+    st = _stage(run(h), "response_layer")
+    assert st.status == "degraded" and st.code == "PF_RESPONSE_LAYER_UNREAD"
+    assert "XQL read" in st.detail
+
+
+def test_list_content_not_a_json_object_is_shape_code():
+    def h(request):
+        if "/lists/download/" in request.url.path:
+            return httpx.Response(200, json=[1, 2])
+        return _inner(request)
+    _inner = _tenant()
+    st = _stage(run(h), "response_layer")
+    assert st.code == "PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED"
