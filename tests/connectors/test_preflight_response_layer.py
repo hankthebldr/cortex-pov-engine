@@ -186,7 +186,13 @@ def test_socfw_operation_pack_loads_and_is_read_only():
     assert {o.op_id for o in ops} == {
         "OP-SOCFW-PACKS-INSTALLED", "OP-SOCFW-LIST-NAMES", "OP-SOCFW-LIST-GET"}
     assert all(o.access_class == "read" and o.method == "GET" for o in ops)
-    assert all("povkit-observed" in o.tags for o in ops)
+    by_id = {o.op_id: o for o in ops}
+    # povkit's tenant client has ListNames and DeleteList only: the list-content
+    # read is NOT povkit-observed, and it is restricted to the framework's lists.
+    assert "povkit-observed" in by_id["OP-SOCFW-PACKS-INSTALLED"].tags
+    assert "povkit-observed" in by_id["OP-SOCFW-LIST-NAMES"].tags
+    assert by_id["OP-SOCFW-LIST-GET"].tags == ["path-unverified"]
+    assert by_id["OP-SOCFW-LIST-GET"].path_param_allowlist == {"name": list(CONFIG_LISTS)}
 
 
 def _wrap(inner, fail_when):

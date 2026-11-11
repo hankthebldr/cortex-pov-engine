@@ -14,6 +14,7 @@
 | `destructive` | 🚫 | **Dry-run by default.** Live call needs `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE=1` **and** `consent.destructive_authorized=true`. |
 > Ops tagged `confirm-tail` were not in the source CSV (truncated at row 96); they come from the already-documented read surface and should be confirmed against the live tenant portal.
 > Ops tagged `cortex-bot-observed` were harvested on 2026-11-02 from a field-built MCP server whose author ran them against a live tenant; paths are kept exactly as that tool sends them. That is the author's observation, **not** a CortexSim tenant verification (tenant-verified is 0). Provenance and per-family quirks: `docs/brainstorm/2026-11-02-cortex-bot-review-and-pov-integration.md`. Regenerate this file with `python3 scripts/gen_xsiam_operation_catalog.py --write`.
+> Ops tagged `povkit-observed` take their path from povkit's tenant client (`internal/tenant/api.go`): its author's observation, **not** a CortexSim tenant verification. `path-unverified` means no documented or observed source; confirm it on a tenant before trusting it. A path followed by `(param ∈ …)` takes only those values: the executor refuses any other before a tenant call (`path_param_allowlist`).
 
 ## API Keys
 | Op ID | Method | Path | Access | Doc |
@@ -242,9 +243,9 @@
 ## SOC Framework
 | Op ID | Method | Path | Access | Doc |
 |---|---|---|---|---|
-| `OP-SOCFW-LIST-GET` | GET | `/xsoar/lists/download/{name}` | ✅ read |  |
-| `OP-SOCFW-LIST-NAMES` | GET | `/xsoar/lists/names` | ✅ read |  |
-| `OP-SOCFW-PACKS-INSTALLED` | GET | `/xsoar/contentpacks/metadata/installed` | ✅ read |  |
+| `OP-SOCFW-LIST-GET` | GET | `/xsoar/lists/download/{name}` (name ∈ `SOCFWTenantConfig`, `SOCFWConfigModes`) | ✅ read | `path-unverified` |
+| `OP-SOCFW-LIST-NAMES` | GET | `/xsoar/lists/names` | ✅ read | `povkit-observed` |
+| `OP-SOCFW-PACKS-INSTALLED` | GET | `/xsoar/contentpacks/metadata/installed` | ✅ read | `povkit-observed` |
 
 ## Scripts
 | Op ID | Method | Path | Access | Doc |

@@ -4,9 +4,13 @@
 # (internal/tenant/api.go, verified there against a tenant on 2026-11-06). It is the
 # author's observation, NOT a CortexSim tenant verification (tenant-verified is 0).
 # `path-unverified` = no documented or observed source: povkit has no list-content read
-# and the public XSOAR REST docs show only /lists/save. The path is the XSOAR server's
-# list download route behind the /xsoar gateway prefix; confirm it on a tenant before
-# trusting it. A 404/405 on it makes the preflight read PRESENT_UNREAD, never ABSENT.
+# (its tenant client has ListNames and DeleteList only) and the public XSOAR REST docs
+# show only /lists/save. The path is the XSOAR server's list download route behind the
+# /xsoar gateway prefix; confirm it on a tenant before trusting it. A 404/405 on it makes
+# the preflight read PRESENT_UNREAD, never ABSENT. It is NOT povkit-observed.
+# OP-SOCFW-LIST-GET reads only the framework's two config lists: XSOAR lists can hold
+# integration config and secrets, so `name` is allowlisted (enforced by the executor
+# before any tenant call; must equal connectors/socfw.py CONFIG_LISTS, test-guarded).
 # These are the /xsoar gateway paths, so the operation schema accepts the /xsoar/ prefix
 # in addition to /public_api/. All three are read-only GETs.
 category: "SOC Framework"
@@ -28,4 +32,6 @@ operations:
     method: GET
     path: "/xsoar/lists/download/{name}"
     access_class: read
-    tags: [povkit-observed, path-unverified]
+    path_param_allowlist:
+      name: [SOCFWTenantConfig, SOCFWConfigModes]
+    tags: [path-unverified]
