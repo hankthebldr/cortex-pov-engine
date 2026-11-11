@@ -241,7 +241,7 @@ export default function useLaunchScenario(scenario, {
   const [pairedWith, setPairedWith]       = useState('')
   const [canaryRunId, setCanaryRunId]     = useState('')
   const [canaryBusy, setCanaryBusy]       = useState(false)
-  const [canaryError, setCanaryError]     = useState(null)        // { message, code }
+  const [canaryError, setCanaryError]     = useState(null)        // errorRecord(): { status:'error', message, code, detail }
   const [runHistory, setRunHistory]       = useState([])
 
   const identityOptions  = scenario?.execution_identity?.options || []
@@ -286,7 +286,7 @@ export default function useLaunchScenario(scenario, {
 
   const runCanary = useCallback(async () => {
     if (!selectedAgent) {
-      setCanaryError({ message: 'Pick the beacon to run the canary on', code: null })
+      setCanaryError({ status: 'error', message: 'Pick the beacon to run the canary on', code: null, detail: null })
       return null
     }
     setCanaryBusy(true)
@@ -297,7 +297,9 @@ export default function useLaunchScenario(scenario, {
       return res
     } catch (err) {
       setCanaryRunId('')
-      setCanaryError({ message: describeError(err), code: err.code || null })
+      // The structured record, not a flattened sentence: describeError drops a
+      // detail that is not a string, and the detail is what names the fix.
+      setCanaryError(errorRecord(err, 'Canary run failed'))
       return null
     } finally {
       setCanaryBusy(false)

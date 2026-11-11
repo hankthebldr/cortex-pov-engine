@@ -1,4 +1,5 @@
 import React, { useId } from 'react'
+import LaunchErrorNotice from './LaunchErrorNotice.jsx'
 
 const PAIR_CODES = new Set(['PAIR_INVALID', 'CANARY_INVALID'])
 
@@ -7,12 +8,10 @@ export function isAttestationError(lastRun) {
   return !!(lastRun && lastRun.status === 'error' && PAIR_CODES.has(lastRun.code))
 }
 
-function lastRunText(lastRun) {
-  let text = lastRun.message || 'Launch failed'
-  if (lastRun.code && !text.includes(lastRun.code)) text += ` [${lastRun.code}]`
-  if (lastRun.detail && !text.includes(lastRun.detail)) text += `: ${lastRun.detail}`
-  return text
-}
+// Both refusals render through LaunchErrorNotice, the one component that knows
+// a refusal's `detail` may be a string, a list or an object. This panel used to
+// build its own text with a template literal, so an object detail reached the
+// screen as "[object Object]".
 
 /**
  * AttestationFields — the launch-time prevention context.
@@ -111,15 +110,9 @@ export default function AttestationFields({ launch }) {
         )}
       </div>
 
-      {launch.canaryError && (
-        <div className="launch-result launch-result--error" role="alert">
-          {launch.canaryError.message}
-        </div>
-      )}
+      <LaunchErrorNotice result={launch.canaryError} testId="launch-canary-error" />
       {isAttestationError(launch.lastRun) && (
-        <div className="launch-result launch-result--error" role="alert">
-          {lastRunText(launch.lastRun)}
-        </div>
+        <LaunchErrorNotice result={launch.lastRun} testId="launch-attestation-error" />
       )}
     </fieldset>
   )

@@ -135,6 +135,49 @@ describe('launch form — prevention context', () => {
     expect(alert.textContent).toMatch(/PAIR_INVALID/)
   })
 
+  // A refusal's `detail` is a string today and an object the day the server
+  // structures it. The panel built its text with a template literal, so an
+  // object arrived on screen as "[object Object]" — the one part of the refusal
+  // that names what to fix, replaced by a JavaScript artefact.
+  it('a PAIR_INVALID whose detail is an object is rendered line by line, never "[object Object]"', async () => {
+    routes({
+      'POST /api/run': new Response(JSON.stringify({
+        detail: {
+          error: 'Run pairing refused', code: 'PAIR_INVALID',
+          detail: { partner_run_id: 'r-done', reason: 'partner run is on a different target' },
+        },
+      }), { status: 409, headers: { 'content-type': 'application/json' } }),
+    })
+    render(<Harness />)
+    await waitFor(() => expect(screen.getByLabelText(/Pair with run/i).options.length).toBeGreaterThan(1))
+    await userEvent.selectOptions(screen.getByLabelText(/Pair with run/i), 'r-done')
+    await userEvent.click(screen.getByRole('button', { name: 'fire' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).not.toContain('[object Object]')
+    expect(alert.textContent).toMatch(/PAIR_INVALID/)
+    expect(alert.textContent).toMatch(/partner run is on a different target/)
+    expect(alert.textContent).toMatch(/partner_run_id: r-done/)
+  })
+
+  it('a canary refusal whose detail is an object keeps its lines too', async () => {
+    routes({
+      'POST /api/runs/canary': new Response(JSON.stringify({
+        detail: {
+          error: 'Canary not available', code: 'CANARY_NOT_AVAILABLE',
+          detail: { agent_os: 'windows', hint: 'no Windows canary ships; block mode will be attested-only' },
+        },
+      }), { status: 409, headers: { 'content-type': 'application/json' } }),
+    })
+    render(<Harness />)
+    await screen.findByLabelText(/Agent profile mode/i)
+    await userEvent.click(screen.getByRole('button', { name: /Run canary first/i }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).not.toContain('[object Object]')
+    expect(alert.textContent).toMatch(/CANARY_NOT_AVAILABLE/)
+    expect(alert.textContent).toMatch(/agent_os: windows/)
+    expect(alert.textContent).toMatch(/no Windows canary ships/)
+  })
+
   it('changing the beacon drops a chosen pair partner and canary id', async () => {
     const posted = routes({
       'GET /api/agents': { agents: [
