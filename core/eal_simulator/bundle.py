@@ -2,9 +2,9 @@
 Offline bundle generator — run an EAL log campaign where the collector lives.
 
 The EAL simulator used to be able to emit from exactly one place: SimCore's own
-process. That is the wrong place. The XSIAM Broker VM / HTTP log collector sits
-*inside* the customer network, usually unreachable from wherever a DC parked
-SimCore, and a log-streamer that cannot reach the collector validates nothing.
+process. That is the wrong place. The path to the collector (a forwarder, or
+the egress that reaches the XSIAM HTTP log collector) usually sits *inside*
+the customer network, unreachable from wherever a DC parked SimCore, and a log-streamer that cannot reach the collector validates nothing.
 
 So a campaign can now be exported as a self-contained bundle the DC copies to a
 jumpbox inside the customer network and runs there. The design constraint is the
@@ -261,8 +261,8 @@ def _render_readme(manifest: dict[str, Any]) -> str:
         f"{manifest['campaign_name']}",
         "",
         "Self-contained log-streamer bundle. Copy it to a host **inside the "
-        "customer network** that can reach the collector (XSIAM Broker VM HTTP "
-        "applet, native cloud collector, or a Cribl/nginx forwarder), then run "
+        "customer network** that can reach the collector (the XSIAM HTTP log "
+        "collector, or a Cribl/nginx forwarder in front of it), then run "
         "it. Nothing here talks to SimCore: only `python3` (3.8+) from the "
         "stdlib is required — no pip install, no network access to anything but "
         "the collector.",
@@ -416,7 +416,7 @@ REMEDIATION = {
                            "with `curl -i` from this host.",
     COLLECTOR_ERROR: "Collector returned a server error — records not ingested.",
     COLLECTOR_UNAVAILABLE: "Collector reports itself unavailable — confirm the "
-                           "Broker VM HTTP applet is running.",
+                           "HTTP log collector instance is enabled.",
     COLLECTOR_UNREACHABLE: "Nothing answered — check DNS, routing and firewall "
                            "between this host and the collector.",
     COLLECTOR_TIMEOUT: "Connect/read timed out — raise the timeout or check for "

@@ -8,6 +8,25 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Fixed — EAL collector emitters send the XSIAM API key bare
+
+- **The 14 collector emitters defaulted `auth_scheme` to `"Bearer"`,** so a
+  campaign that supplied only a token sent `Authorization: Bearer <key>`. The
+  XSIAM HTTP log collector expects `Authorization: <api_key>` with no scheme
+  (XSIAM 3.x, "Set up an HTTP log collector to receive logs") and refuses the
+  prefixed form with a 401, which delivery accounting reported as
+  `not_delivered`. The default is now empty; `Bearer` or `Splunk` remain
+  settable for a forwarder that wants one. Campaigns that already set
+  `auth_scheme: ""` are unchanged. Guard:
+  `tests/eal_simulator/test_collector_auth_default.py`, which discovers every
+  emitter from the plugin registry and failed on all 14 before the change.
+- Remediation and help text no longer send a DC to a "Broker VM HTTP applet".
+  The Broker VM applet list has no HTTP receiver; the HTTP log collector is a
+  tenant endpoint at `/logs/v1/event`, and a 500 from it means the body does
+  not match the collector's Log Format.
+- Not changed: `email_emitter` has no auth parameters at all, so it cannot
+  authenticate to an XSIAM collector. Tracked separately.
+
 ### Changed — Composer and Runs: a step's lane is its signal path, not its plane
 
 - **The door badge, the Lanes lens and the Runs topology place a step by what

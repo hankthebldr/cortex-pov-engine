@@ -3,8 +3,8 @@ Collector destination resolution + preflight for the log-streamer families.
 
 Where a campaign's signal is *going* used to be knowable only by reading each
 step's ``params.collector_url`` out of a stored JSON blob. That is the one
-setting a DC must get right before a POV — the Broker VM's HTTP applet, the
-native cloud collector's ``/logs/v1/event``, or a Cribl/nginx forwarder — and
+setting a DC must get right before a POV — the XSIAM HTTP log collector's
+``/logs/v1/event``, or a Cribl/nginx forwarder in front of it — and
 getting it wrong produces a green campaign that ingested nothing.
 
 This module makes the destination a first-class, inspectable object:
