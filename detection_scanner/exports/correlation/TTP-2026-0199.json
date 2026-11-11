@@ -1,0 +1,21 @@
+{
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
+  "mitre_techniques": [
+    "T1053.006",
+    "T1136.001",
+    "T1098.004",
+    "T1543.002",
+    "T1222.002"
+  ],
+  "rules": [
+    {
+      "content_status": "intent-only",
+      "deploy": null,
+      "logic": "Operator-installed correlation rule (CortexSim never writes it). Alert name EXACTLY as this rule's name; severity Medium; Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID. Tested read-only in the lab tenant 2026-11-11 (status SUCCESS; a relaxed variant returned pov-target-01). XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| alter leg = if(event_type = ENUM.PROCESS and action_process_image_name in (\"useradd\", \"adduser\", \"usermod\") and action_process_image_command_line ~= \"(-G|--groups|-aG)[ =]?[^ ]*(sudo|wheel|admin)\", \"account\", if(event_type = ENUM.FILE and action_file_path ~= \"/[.]ssh/authorized_keys2?$\", \"key\", if(event_type = ENUM.FILE and action_file_path ~= \"^/(etc|lib|usr/lib)/systemd/system/[^/]+[.](service|timer)$\" and actor_process_image_name in (\"sh\", \"bash\", \"dash\", \"zsh\", \"tee\", \"cp\", \"mv\", \"cat\", \"python3\", \"perl\"), \"unit\", if(event_type = ENUM.PROCESS and (actor_process_image_name in (\"systemd\", \"9\") or actor_process_image_path ~= \"^/proc/self/fd/[0-9]+$\") and action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\", \"reexecuted\", \"other\"))))\n| filter leg in (\"account\", \"key\", \"unit\", \"reexecuted\")\n| alter reexec = if(leg = \"reexecuted\", 1, 0)\n| comp count_distinct(leg) as legs, max(reexec) as reexecuted, count() as events, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs >= 3 and reexecuted = 1",
+      "name": "EDR-024 Backdoor Account Key And Timer Foothold Re-Executed",
+      "rule_id": "CR-EDR-0024"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0199"
+}

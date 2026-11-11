@@ -106,6 +106,15 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "enumeration burst to the apache2 CGO. Adds NO new index coverage (both rows are already "
         "evidenced); it adds a SECOND, behavioural-not-name-keyed piece of evidence and the delivery "
         "path that works inside a default-deny network."),
+    "SIM-EDR-023": (["TC-IR-02", "TC-EDR-03", "TC-EDR-05"], REMAP,
+        "Cron foothold re-running the WildFire test ELF — built so its Medium+ alerts (Local "
+        "Analysis verdict, operator-installed BIOCs, CR-EDR-0023) group into ONE case across two "
+        "causality chains. Grouping is the claim (TC-IR-02); the malware verdict (TC-EDR-03) and "
+        "the chain (TC-EDR-05) are already evidenced. Depth, not breadth."),
+    "SIM-EDR-024": (["TC-IR-02", "TC-EDR-05"], REMAP,
+        "Sudo backdoor account, SSH key and a systemd timer re-executing on a schedule — the "
+        "identity-persistence counterpart, grouped through operator-installed Medium BIOCs and "
+        "CR-EDR-0024. Depth on TC-IR-02, not new index breadth."),
 
     # ── CDR ────────────────────────────────────────────────────────────────
     "SIM-CDR-001": (["TC-CDR-01", "TC-CITH-03"], REMAP,

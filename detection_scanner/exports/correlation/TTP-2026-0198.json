@@ -1,0 +1,21 @@
+{
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
+  "mitre_techniques": [
+    "T1053.003",
+    "T1105",
+    "T1036.005",
+    "T1564.001",
+    "T1070.006"
+  ],
+  "rules": [
+    {
+      "content_status": "intent-only",
+      "deploy": null,
+      "logic": "Operator-installed correlation rule (CortexSim never writes it). Alert name EXACTLY as this rule's name; severity Medium; Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID (the mapped artifacts are what let a correlation issue join a case). Tested read-only in the lab tenant 2026-11-11 (status SUCCESS). XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| alter leg = if(event_type = ENUM.FILE and action_file_path ~= \"^/etc/cron[.]d/\" and actor_process_image_name in (\"sh\", \"bash\", \"dash\", \"zsh\", \"tee\", \"cp\", \"mv\", \"cat\", \"python3\", \"perl\"), \"planted\", if(event_type = ENUM.PROCESS and actor_process_image_name = \"cron\" and action_process_image_command_line ~= \"/var/tmp/[.][^/ ]+/\", \"reexecuted\", \"other\"))\n| filter leg in (\"planted\", \"reexecuted\")\n| comp count_distinct(leg) as legs, count() as events, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs >= 2",
+      "name": "EDR-023 Cron Foothold Planted Then Re-Executed On Schedule",
+      "rule_id": "CR-EDR-0023"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0198"
+}
