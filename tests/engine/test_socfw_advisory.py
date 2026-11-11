@@ -76,8 +76,16 @@ def test_malformed_layer_degrades_never_raises():
 
 
 def test_remediation_lists_three_tenant_side_options():
+    # Pinned to the framework at d222ba87: SOCFWConfig's triage command takes
+    # score_threshold / window_hours / apply and dry-runs unless apply=yes
+    # (SOCFWConfig.yml:16-17,165,169,216); Auto Triage's own dry run is the
+    # dry_run argument of SOCAutoTriageScoreFilter, the JOB's close task
+    # (SOCAutoTriageScoreFilter.yml:65-70). Auto Triage skips starred cases.
     r = _run()[0]["remediation"]
-    assert "star" in r and "!SOCFWConfig command=triage" in r and "dry_run" in r
+    assert "star the POV's cases (Auto Triage skips starred cases)" in r
+    assert "!SOCFWConfig command=triage window_hours=<n> apply=yes" in r
+    assert "dry_run=true" in r and "JOB - Auto Triage V3" in r
+    assert "command=triage (dry_run)" not in r  # an option that does not exist
     assert "docs/lab/2026-11-11-run-alongside-soc-framework.md" in r
 
 
@@ -107,3 +115,48 @@ def test_stale_triage_not_live_is_unknown_not_silent():
 
 def test_fresh_absent_stays_silent():
     assert _run(layer={"state": "ABSENT"}, read_at=NOW - timedelta(hours=1)) == []
+
+
+# ── I-1: PRESENT_UNREAD with XQL-proven live triage, level of UNKNOWN, never-probed ──
+
+def _unread_live(**at):
+    auto = {"live": True, "window_hours": None, "score_threshold": None,
+            "score_off": False}
+    auto.update(at)
+    return {"state": "PRESENT_UNREAD", "auto_triage": auto}
+
+
+def test_present_unread_with_xql_proven_live_on_paired_run_warns():
+    # Production auto_triage_closed rows prove triage live even when the lists
+    # cannot be read (spec 4.1); the advisory must fire, not say "run preflight".
+    out = _run(layer=_unread_live())
+    assert [(a["code"], a["level"]) for a in out] == [(SOCFW_TRIAGE_MAY_SEAL, "warn")]
+    d = out[0]["detail"]
+    assert "not read" in d and "None" not in d
+
+
+def test_present_unread_live_on_late_scenario_is_info():
+    out = _run(types=("ABIOC",), paired=False, layer=_unread_live())
+    assert [(a["code"], a["level"]) for a in out] == [(SOCFW_TRIAGE_MAY_SEAL, "info")]
+
+
+def test_unknown_takes_the_trigger_level():
+    old = NOW - STALE_AFTER - timedelta(minutes=1)
+    assert [(a["code"], a["level"]) for a in _run(read_at=old)] == \
+        [(SOCFW_RESPONSE_LAYER_UNKNOWN, "warn")]
+    assert [(a["code"], a["level"]) for a in _run(types=("Analytics",), paired=False,
+                                                  read_at=old)] == \
+        [(SOCFW_RESPONSE_LAYER_UNKNOWN, "info")]
+
+
+def test_never_probed_tenant_says_no_probe_stored_not_older_than_24h():
+    d = _run(layer=None, read_at=None)[0]["detail"]
+    assert "no SOC Framework probe is stored for this tenant — run preflight" in d
+    assert "older than 24 hours" not in d
+
+
+def test_liveness_undetermined_does_not_promise_preflight_will_settle_it():
+    for st in ("PRESENT", "PRESENT_UNREAD"):
+        out = _run(layer={"state": st, "auto_triage": {"live": None}})
+        assert out[0]["code"] == SOCFW_RESPONSE_LAYER_UNKNOWN
+        assert "possibly live" in out[0]["detail"]
