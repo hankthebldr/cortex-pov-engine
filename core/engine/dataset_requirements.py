@@ -173,7 +173,7 @@ def parse_registry(data: object, path: str) -> dict[str, DatasetRequirement]:
         for i, c in enumerate(cortex_raw):
             cw = f"{w}.cortex_side[{i}]"
             cd = _keys(c, cw, path, {"kind", "name", "verified"})
-            kind = cd["kind"]
+            kind = _text(cd["kind"], f"{cw}.kind", path)
             if kind not in CORTEX_SIDE_KINDS:
                 raise _bad(path, f"{cw}.kind", f"{kind!r} is not one of {sorted(CORTEX_SIDE_KINDS)}")
             cname = cd["name"]
@@ -223,6 +223,5 @@ def load() -> dict[str, DatasetRequirement] | None:
 
 
 def registry_source() -> dict[str, str]:
-    """``{"path", "source"}``; source is ``"file"`` or ``"absent"``."""
-    path = registry_path()
-    return {"path": path, "source": "file" if os.path.isfile(path) else "absent"}
+    """``{"path", "source"}``; source is ``"file"`` or ``"absent"``, read once per process like ``load()``."""
+    return {"path": registry_path(), "source": "absent" if load() is None else "file"}
