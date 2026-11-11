@@ -404,6 +404,10 @@ _CMD_STRUCTURE = (
 _CMD_FOR_VAR_RE = re.compile(
     r"(?i)(?<![\w-])for\s+(?:/[LFDR]\s+)?(?:\"[^\"\n]*\"\s+)?%%?[A-Za-z]\s+in\b"
 )
+#: A well-formed variable reference, with an optional substring or replace
+#: modifier (``%NAME%``, ``%NAME:~0,4%``, ``%PATH:;= %``). These expand the same
+#: way from a file and from the command line when NAME is defined.
+_CMD_VAR_REF_RE = re.compile(r"%[A-Za-z_][\w()#$\-]*(?::[^%\r\n]*)?%")
 
 
 def cmd_percent_is_context_dependent(command: str) -> bool:
@@ -430,7 +434,7 @@ def cmd_percent_is_context_dependent(command: str) -> bool:
     """
     if _CMD_FOR_VAR_RE.search(command):
         return True
-    return "%" in _CMD_ENVVAR_RE.sub("", command)
+    return "%" in _CMD_VAR_REF_RE.sub("", command)
 
 
 def _has_ps_hash_comment(command: str) -> bool:

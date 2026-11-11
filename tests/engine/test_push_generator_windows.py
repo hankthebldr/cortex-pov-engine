@@ -245,6 +245,8 @@ class TestCmdPercentContext:
         'powershell -nop -c "1..3|%{$_}"',
         "echo 100%% done",
         "whoami /all\nfor /L %i in (1,1,2) do @echo %i\n",
+        # batch parameters exist only in a file
+        "echo %~dp0 & echo %1",
     ])
     def test_context_dependent_percent_is_refused_by_name(self, cmd):
         assert pg.infer_windows_shell(cmd) == "cmd"
@@ -263,6 +265,8 @@ class TestCmdPercentContext:
         'powershell.exe -NoProfile -Command "try { iwr http://%STAGE_HOST%/x } catch { }"',
         "if exist \"%ProgramFiles(x86)%\\x\" echo found",
         "ipconfig /all & route print",
+        # substring / replace modifiers expand the same way in both contexts
+        "echo %COMPUTERNAME:~0,4% & echo %PATH:;= %",
     ])
     def test_a_paired_variable_reference_is_not_refused(self, cmd):
         """`%NAME%` means the same thing in both contexts for a variable that
