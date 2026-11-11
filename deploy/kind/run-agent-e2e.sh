@@ -244,6 +244,34 @@ calls_kubectl() {
     | any(test("(^|[^A-Za-z0-9_./-])kubectl([^A-Za-z0-9_.-]|$)"))' "$1" >/dev/null
 }
 
+# anchor_exe PROCS NAME -> "pid=<n> exe=<target>" for each process whose
+# cmdline starts with NAME, read from /proc/<pid>/exe in the pod.
+anchor_exe() {
+  local pid out=""
+  while read -r pid; do
+    [ -n "$pid" ] || continue
+    out="$out pid=$pid exe=$(pexec "readlink /proc/$pid/exe")"
+  done < <(grep -oE "pid=[0-9]+ ppid=[0-9]+ cmd=$2( |;)" <<<"$1" | sed -E 's/^pid=([0-9]+).*/\1/')
+  echo "${out# }"
+}
+
+# make_draft NAME COMMAND ANCHOR -> creates a one-step Composer draft bound to
+# $SCEN's test case and sets DRAFT to its id.
+make_draft() {
+  http GET "/api/scenarios/$SCEN" >/dev/null
+  local doc code
+  doc=$(jq -c --arg n "$1" --arg c "$2" --arg a "$3" '{
+    name: $n, plane: "CDR",
+    uc_ref: .uc_ref, tc_ref: .tc_ref, tc_refs: [.tc_ref],
+    cgo_anchor: {image_name: $a},
+    steps: [{id: "step-01", name: $n, identity: "direct", command: $c,
+             expected_detections: [{plane: "CDR", type: "BIOC", description: $n}]}]
+  }' "$WORK/body")
+  code=$(http POST /api/scenarios/drafts "$doc")
+  [ "$code" = 201 ] || fail "draft '$1' create returned HTTP $code: $(body | head -c 400)"
+  DRAFT=$(jq -r '.scenario_id' "$WORK/body")
+}
+
 # pexec SCRIPT -> runs SCRIPT under sh in the agent container; never fails the
 # caller (used for observations only).
 pexec() { k -n "$NS" exec "$POD" -c agent -- sh -c "$1" 2>&1 || true; }
@@ -302,8 +330,15 @@ k create namespace "$NS" >/dev/null
 k -n "$NS" create secret generic cortexsim-enroll \
   --from-file=server="$WORK/server" --from-file=token="$WORK/token" >/dev/null
 k -n "$NS" label secret cortexsim-enroll cortexsim.io/agent=true >/dev/null
-k apply -f "$SIMCORE_API/api/agents/manifest?arch=$ARCH&ttl_seconds=$MANIFEST_TTL" >/dev/null 2>"$WORK/apply.err" \
+k apply -f "$SIMCORE_API/api/agents/manifest?arch=$ARCH&ttl_seconds=$MANIFEST_TTL" >"$WORK/apply.out" 2>"$WORK/apply.err" \
   || { cat "$WORK/apply.err"; fail "kubectl apply -f <manifest URL> failed"; }
+# The header's comment lines (REMOVAL instructions) must not leak into what
+# kubectl does: every output line is one object, created/configured/unchanged.
+bad=$(grep -vE '^[a-z0-9.]+/[a-z0-9.-]+ (created|configured|unchanged)$' "$WORK/apply.out" || true)
+[ -z "$bad" ] || fail "unexpected kubectl apply output: $(tr '\n' ' ' <<<"$bad")"
+observe "kubectl apply: $(wc -l < "$WORK/apply.out" | tr -d ' ') objects ($(awk '{print $2}' "$WORK/apply.out" | sort | uniq -c | tr -s ' ' | tr '\n' ' '))"
+fetch_manifest "" "$WORK/header.yaml"
+observe "manifest REMOVAL lines: $(grep -c '^# REMOVAL:' "$WORK/header.yaml"); first: $(grep -m1 '^# REMOVAL:' "$WORK/header.yaml" | head -c 200)"
 ok "token minted, namespace + Secret created, baseline manifest applied from URL"
 
 # ---------------------------------------------------------------------------
@@ -448,6 +483,7 @@ observe "processes mid-step (cgo_anchor apache2 requested): $(tr '\n' ' ' <<<"$p
 # proven), so its absence has exactly one signature.
 if grep -qE '(^|; )pid=[0-9]+ ppid=[0-9]+ cmd=apache2( |;)' <<<"$procs"; then
   observe "anchor rename present: $(grep -oE 'pid=[0-9]+ ppid=[0-9]+ cmd=apache2 ' <<<"$procs" | tr '\n' ' ')"
+  observe "debian anchor binary (readlink /proc/<pid>/exe): $(anchor_exe "$procs" apache2)"
 else
   defect "cgo_anchor apache2 requested on debian (sh is dash, renamed) but no process cmdline starts with 'apache2' while the step runs: $(tr '\n' ' ' <<<"$procs" | head -c 600)"
 fi
@@ -570,7 +606,30 @@ wd=$(pexec 'id -u www-data && echo rc=0 || echo rc=1' | tr '\n' ' ')
 grep -q 'rc=0' <<<"$wd" || fail "alpine+packages: id -u www-data failed: $wd"
 observe "alpine+packages unknown user: $(pexec 'id -u no-such-user-xyz; echo rc=$?' | tr '\n' ' ')"
 observe "alpine+packages runuser/bash: $(pexec 'command -v runuser; command -v bash; echo rc=$?' | tr '\n' ' ')"
-ok "alpine:3.20 prepare=packages enrolled; prepare.status=PREPARE_OK; id -u www-data -> $wd"
+# bash is installed and sh is busybox, so the anchor must be bash renamed and
+# the run must NOT report ANCHOR NOT HONOURED.
+make_draft "kind e2e alpine anchor probe" "echo e2e-anchor-probe; sleep 20; echo e2e-anchor-probe-done" apache2
+code=$(http POST /api/runs "$(launch_body "$DRAFT" "$AGENT")")
+[ "$code" = 200 ] || [ "$code" = 201 ] || fail "anchor probe launch returned HTTP $code $(err_code): $(body | head -c 400)"
+PRUN=$(jq -r '.run_id' "$WORK/body")
+procs=""
+for _ in $(seq 1 60); do
+  procs=$(pexec "$PS_SCRIPT")
+  grep -q 'cmd=sleep 20' <<<"$procs" && break
+  procs=""; sleep 1
+done
+[ -n "$procs" ] || fail "anchor probe run $PRUN: no 'sleep 20' process appeared in $POD within 60s"
+grep -qE '(^|; )pid=[0-9]+ ppid=[0-9]+ cmd=apache2( |;)' <<<"$procs" \
+  || fail "alpine+packages: no process cmdline starts with 'apache2' while the step runs: $(tr '\n' ' ' <<<"$procs" | head -c 600)"
+observe "alpine+packages anchor binary (readlink /proc/<pid>/exe): $(anchor_exe "$procs" apache2)"
+status=$(wait_run "$PRUN" 90)
+http GET "/api/runs/$PRUN" >/dev/null
+pout=$(jq -r '.output // ""' "$WORK/body")
+case "$status" in complete|completed) ;; *) fail "anchor probe run $PRUN ended '$status', not complete" ;; esac
+if grep -q 'ANCHOR NOT HONOURED' <<<"$pout"; then
+  fail "alpine+packages (bash present) anchor probe run $PRUN reports ANCHOR NOT HONOURED: $(grep -m1 'ANCHOR NOT HONOURED' <<<"$pout" | head -c 300)"
+fi
+ok "alpine:3.20 prepare=packages enrolled; prepare.status=PREPARE_OK; id -u www-data -> $wd; anchor apache2 renamed mid-step, run $PRUN complete without ANCHOR NOT HONOURED"
 
 # prepare=none: no bash, so the anchor cannot be honoured. The pod must still
 # enroll, and the run must say so.
@@ -665,6 +724,31 @@ ok "namespace deleted; agent $AGENT went offline"
 for o in clusterrole/cortexsim-agent clusterrolebinding/cortexsim-agent clusterrole/cortexsim-reaper-agent clusterrolebinding/cortexsim-reaper-agent; do
   if k get "$o" >/dev/null 2>&1; then observe "$o still exists after the namespace was deleted"
   else observe "$o is gone after the namespace was deleted"; fi
+done
+
+# ---------------------------------------------------------------------------
+# 11. expiry (observed, not asserted)
+# ---------------------------------------------------------------------------
+STAGE="expiry"
+# One extra apply with the minimum lifetime: does the reaper delete the
+# namespace and the cluster-scoped objects on its own when the TTL runs out?
+k create namespace "$NS" >/dev/null
+k -n "$NS" create secret generic cortexsim-enroll \
+  --from-file=server="$WORK/server" --from-file=token="$WORK/token" >/dev/null
+code=$(curl -sS --max-time 30 -o "$WORK/ttl.yaml" -w '%{http_code}' "$SIMCORE_API/api/agents/manifest?arch=$ARCH&ttl_seconds=60")
+[ "$code" = 200 ] || fail "ttl_seconds=60 manifest returned HTTP $code"
+k apply -f "$WORK/ttl.yaml" >/dev/null 2>"$WORK/apply.err" || { redact < "$WORK/apply.err"; fail "ttl_seconds=60 manifest apply failed"; }
+observe "applied ttl_seconds=60 at $(date -u +%H:%M:%SZ); expires-at $(grep -m1 -oE "expires-at: '[^']+'" "$WORK/ttl.yaml")"
+ns_state=present
+for _ in $(seq 1 30); do
+  if ! k get namespace "$NS" >/dev/null 2>&1; then ns_state=gone; break; fi
+  sleep 5
+done
+observe "namespace $NS after up to 150s: $ns_state ($(date -u +%H:%M:%SZ))"
+observe "reaper log: $({ k -n "$NS" logs deploy/cortexsim-reaper-agent --tail=20 2>&1 || true; } | redact | tr '\n' ' ' | head -c 600)"
+for o in clusterrole/cortexsim-agent clusterrolebinding/cortexsim-agent clusterrole/cortexsim-reaper-agent clusterrolebinding/cortexsim-reaper-agent; do
+  if k get "$o" >/dev/null 2>&1; then observe "$o still exists after expiry"
+  else observe "$o is gone after expiry"; fi
 done
 if [ "$DEFECTS" -gt 0 ]; then
   FAILED=1
