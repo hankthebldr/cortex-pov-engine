@@ -235,13 +235,13 @@
   "detections": {
     "prevention_modules": [
       {
-        "name": "Anti-Ransomware Mass Encryption",
+        "name": "Behavioral Threat Mass Encryption",
         "detection_id": "prevention-anti-ransomware-mass-encryption",
-        "module": "anti_ransomware",
+        "module": "btp",
         "platforms": [
           "linux"
         ],
-        "alert_name_pattern": "Ransomware*",
+        "alert_name_pattern": "Behavioral Threat*",
         "description": "The Cortex XDR agent's anti-ransomware / behavioural-threat module raising a Medium+ verdict on the real AES mass-encryption with a uniform .akira extension and a ransom note dropped across directories. SIM-EDR-025 declares it with outcome: detect, so report mode scores it detected (the case seed); a block-mode paired run would instead grade the agent's kill of the encryptor (two witnesses). AUTHORED, NOT PROVEN: no run has performed REAL on-host encryption against this lab agent, so the exact alert name and the verdict itself are unconfirmed — the alert_name_pattern is the matcher key to tune against the first observed verdict. tenant-verified: 0.",
         "severity": "high",
         "mitre_techniques": [
@@ -415,7 +415,7 @@
     "products": [
       {
         "module": "cortex-xdr",
-        "submodule": "anti-ransomware",
+        "submodule": "behavioral-threat-protection",
         "coverage_tier": "prevention",
         "rule_ids": [
           "XDR-ANTI-RANSOMWARE-MASS-ENCRYPTION"
@@ -488,7 +488,7 @@
   },
   "remediation_guidance": {
     "preventive_controls": [
-      "Enable and enforce the Cortex XDR anti-ransomware module in block mode on Linux servers.",
+      "Set Global Behavioral Threat Protection Rules to Block in the Linux malware profile. Linux has no Ransomware Protection module (Windows/macOS only); on Linux, mass encryption is stopped by Global Behavioral Threat Protection Rules.",
       "Restrict and monitor read access to /etc/shadow and private SSH keys.",
       "Keep immutable, offline or object-locked backups so recovery inhibition cannot reach them."
     ],

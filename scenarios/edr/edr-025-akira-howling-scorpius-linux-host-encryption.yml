@@ -360,7 +360,8 @@ steps:
         # outcome: detect -> report mode scores it detected (no two-witness
         # requirement, no S-21 masking constraint). A block-mode paired run on
         # the same endpoint would instead grade the agent's kill of the
-        # encryptor. anti_ransomware is the module; the alert-name pattern is
+        # encryptor. btp is the module (Linux has no Ransomware Protection
+        # module; Global BTP Rules stop encryption there); the alert-name pattern is
         # authored, NOT lab-proven — no real on-host encryption has run against
         # this agent, so this verdict is the scenario's headline unproven claim.
         outcome: detect

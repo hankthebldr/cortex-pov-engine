@@ -376,7 +376,7 @@
       "Enable Advanced WildFire inline verdicts on the NGFW and Cortex Cloud so malicious downloads are blocked before execution.",
       "Run containers with a read-only root filesystem so /tmp binaries cannot be made executable.",
       "Enforce default-deny egress so C2 beacons to external hosts fail.",
-      "Enable Cortex XDR anti-ransomware behavioral protection in Block mode on workloads."
+      "Set Global Behavioral Threat Protection Rules to Block in the Linux malware profile on workloads (Linux has no Ransomware Protection module)."
     ],
     "detection_engineering": [
       "Alert on execution of any binary that originated from a /tmp download, especially by a service account.",
