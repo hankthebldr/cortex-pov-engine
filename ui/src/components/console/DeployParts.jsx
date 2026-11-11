@@ -253,7 +253,7 @@ export function CopyButton({ copier, id, text, selectRef, what, name = what, cla
  * Uses only routes SimCore serves today (install, binary, binary/sha256).
  * It does not claim to get past any prevention profile: neither path has run
  * on a host with XDR or Defender in prevent mode, and this download-then-run
- * path has not run on Windows at all (the iwr | iex one-liner ran once in CI).
+ * path has not run on Windows at all (the iwr | iex one-liner has run only in CI).
  *
  * `server` is the address the TARGET reaches SimCore at — the one the
  * one-liner beside this is built from. The installer link is fetched by this

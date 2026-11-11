@@ -7,7 +7,7 @@ import '../../styles/destinations/deploy-console.css'
 /**
  * WindowsBundleNote — what a DC must know before running a .ps1 bundle.
  *
- * The pull path already says "not yet proven on a Windows host". The push path
+ * The pull path already says "not yet proven on a customer host". The push path
  * presented a .ps1 as ready, and nothing in the console mentioned that some
  * bundles refuse (exit 2) until CORTEXSIM_ACCEPT_RESIDUE=1 is set. Rendered
  * wherever the console offers or saves a Windows bundle.

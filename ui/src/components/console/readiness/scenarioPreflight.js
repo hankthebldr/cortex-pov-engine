@@ -282,7 +282,7 @@ function targetCheck(scenario, target, agents) {
  * Where to look on the TARGET when its beacon is not polling — in that
  * target's own words. Every offline beacon used to be told to run `systemctl`,
  * Windows ones included. The Windows lines name what the installer creates;
- * that installer has run once, on a CI runner, never on an offline customer
+ * that installer has run only on a CI runner, never on an offline customer
  * beacon, so they are where to look, not a tested procedure.
  */
 export function beaconCheckHint(os) {

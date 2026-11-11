@@ -1,7 +1,7 @@
 /**
  * Console copy that names Windows must say what is proven and what is not.
  *
- * RG-UI-07. The pull path carries "Not yet proven on a Windows host". The push
+ * RG-UI-07. The pull path carries "Not yet proven on a customer host". The push
  * path — the one a "no Windows beacon" notice steers a DC towards — said
  * "always ready … PowerShell (.ps1) for Windows PowerShell 5.1" and "Saved
  * cortexsim-<id>.ps1 · SimCore emitted it for windows", with nothing about the

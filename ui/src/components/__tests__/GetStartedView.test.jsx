@@ -179,7 +179,7 @@ describe('GetStartedView — the Windows command (INST-12 / UI-11)', () => {
     fireEvent.click(screen.getByTestId('gs-agent-generate'))
     await screen.findByTestId('gs-agent-command')
     expect(screen.getByText('Open Windows PowerShell as Administrator, then paste')).toBeInTheDocument()
-    expect(agentStep().textContent).toMatch(/not yet proven on a Windows host/i)
+    expect(agentStep().textContent).toMatch(/not yet proven on a customer host/i)
   })
 })
 

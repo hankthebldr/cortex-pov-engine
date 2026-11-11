@@ -11,9 +11,9 @@
  *
  * What this module can NOT prove: that any of these commands work on a
  * customer's Windows host. The beacon and the elevated install one-liner ran
- * once, green, on a GitHub-hosted windows-2022 runner (run 42933820773, no XDR
- * agent, Defender real-time protection off); no customer endpoint has run
- * them. The strings here are pinned by vitest in jsdom, nothing more.
+ * green on a GitHub-hosted windows-2022 runner (runs 42933820773 and
+ * 43037077022, no XDR agent, Defender real-time protection off); no customer
+ * endpoint has run them. The strings here are pinned by vitest in jsdom, nothing more.
  */
 import { parseServerTime } from '../../api/time.js'
 
@@ -231,7 +231,7 @@ export function legacyRunHint({ os, origin, id }) {
 }
 
 // ── Push bundles for Windows ─────────────────────────────────────────────────
-// The pull path says "not yet proven on a Windows host". The push path said
+// The pull path says "not yet proven on a customer host". The push path said
 // "always ready … PowerShell (.ps1)" with nothing beside it. Both sentences are
 // statements about the tree as it is: every .ps1 bundle is authored and
 // parse-checked, and none has been executed on any Windows host.
@@ -306,8 +306,8 @@ export const WINDOWS_ELEVATION_LABEL = 'Open Windows PowerShell as Administrator
 export const WINDOWS_CAVEATS = Object.freeze([
   {
     id: 'unproven',
-    title: 'Not yet proven on a Windows host.',
-    body: 'The Windows beacon and this installer have run once, on a CI runner with no XDR agent, '
+    title: 'Not yet proven on a customer host.',
+    body: 'The Windows beacon and this installer have run only in CI, on a hosted runner with no XDR agent, '
       + 'and never on a customer endpoint. Treat the first Windows enrolment as the test, before a customer is watching.',
   },
   {
@@ -326,7 +326,7 @@ export const WINDOWS_CAVEATS = Object.freeze([
     id: 'elevation',
     title: 'Run it elevated.',
     body: 'Elevated, the installer registers the CortexSimAgent service so the beacon survives logoff and reboot. '
-      + 'That service path is new and not yet proven on a Windows host. Not elevated, the installer refuses unless '
+      + 'That service path has run only in CI, not on a customer host. Not elevated, the installer refuses unless '
       + 'CORTEXSIM_ALLOW_UNSUPERVISED=1 is set; the beacon then runs detached, dies at logoff, and cannot run '
       + 'admin-only TTPs.',
   },

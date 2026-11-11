@@ -94,7 +94,7 @@ describe('Deploy modal · Windows status is read, not asserted (UI-02 / DOCS-07)
   it('instead it states the true Windows caveats', async () => {
     const dialog = await openDeploy('Windows', { healthModel: healthWith([]) })
     const caveats = within(dialog).getByTestId('deploy-windows-caveats')
-    expect(caveats.textContent).toMatch(/not yet proven on a Windows host/i)
+    expect(caveats.textContent).toMatch(/not yet proven on a customer host/i)
     expect(caveats.textContent).toContain('IDENTITY NOT HONOURED')
     expect(caveats.textContent).toContain('C:\\ProgramData\\CortexSim\\cortexsim-agent.exe')
     expect(caveats.textContent).toMatch(/unsigned/i)
