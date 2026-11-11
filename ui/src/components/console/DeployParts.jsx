@@ -1,10 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { getInstallAttempts } from '../../api/client.js'
+import { agentBinaryUrl, agentInstallUrl, getAgentBinarySha256, getInstallAttempts } from '../../api/client.js'
 import { parseServerTime } from '../../api/time.js'
 import {
   CONTINUED_NOTE,
+  WINDOWS_BEACON_FILE,
+  WINDOWS_BEACON_PATH,
   WINDOWS_CAVEATS,
+  WINDOWS_INSTALLER_FILE,
   archLabel,
+  windowsPrestageRunLine,
+  windowsPrestageVerifyLine,
   attemptKind,
   attemptRole,
   copyFailureMessage,
@@ -208,6 +213,119 @@ export function InstallAttemptsList({ state, limit = 5, testId = 'deploy-attempt
         SimCore restarts. Refreshes every {Math.round(ATTEMPTS_POLL_MS / 1000)} s while this is open.
       </p>
       {body}
+    </section>
+  )
+}
+
+/**
+ * A Copy button that says WHAT it copies. A surface with several buttons all
+ * named "Copy" is a list of identical controls to a screen reader. The visible
+ * text stays short; the accessible name carries the object. The result is
+ * announced by the surface's one CopyLive node, not by this button.
+ */
+export function CopyButton({ copier, id, text, selectRef, what, name = what, className = 'btn btn--xs' }) {
+  const copied = copier.isCopied(id)
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={`${copied ? 'Copied' : 'Copy'} ${name}`}
+      onClick={() => copier.copy(id, text, selectRef, what)}
+    >{copied ? '✓ copied' : 'Copy'}</button>
+  )
+}
+
+/**
+ * WindowsNoCradle — install on Windows without piping a download into `iex`.
+ *
+ * The one-liner is `iwr … | iex`: download-and-execute in one line, on
+ * endpoints that run the prevention product being demonstrated. This brings the
+ * installer AND the beacon as files. The DC checks the beacon's hash against
+ * the digest SimCore serves, then runs the installer with $env:CORTEXSIM_BIN
+ * set to that file — an input the installer already honours, and re-checks.
+ *
+ * Uses only routes SimCore serves today (install, binary, binary/sha256).
+ * It does not claim to get past any prevention profile: no Windows host has
+ * run either path.
+ *
+ * Props: `token` (the minted token value) · `copier` (useCopyFeedback()) ·
+ *        `testIdPrefix` · `buttonClassName`
+ */
+export function WindowsNoCradle({ token, copier, testIdPrefix = 'deploy', buttonClassName = 'btn btn--xs' }) {
+  const [digest, setDigest] = useState({ sha256: null, error: null })
+  const verifyRef = useRef(null)
+  const runRef = useRef(null)
+  useEffect(() => {
+    let cancelled = false
+    getAgentBinarySha256({ os: 'windows', arch: 'amd64' })
+      .then((sha256) => { if (!cancelled) setDigest({ sha256, error: null }) })
+      .catch((err) => {
+        if (cancelled) return
+        const msg = (err && err.message) || 'could not read the digest'
+        setDigest({ sha256: null, error: err && err.code && !msg.includes(err.code) ? `${msg} [${err.code}]` : msg })
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const p = `${testIdPrefix}-nocradle`
+  const verifyLine = digest.sha256 ? windowsPrestageVerifyLine({ sha256: digest.sha256 }) : null
+  const runLine = windowsPrestageRunLine({ token })
+  return (
+    <section className="nocradle" data-testid={p} aria-label="Install without iwr | iex">
+      <div className="nocradle__head">Or without <code className="mono">iwr | iex</code> — download, verify, run</div>
+      <p className="nocradle__lede">
+        Brings the installer and the beacon to the host as files you have checked, instead of piping a download
+        into <code className="mono">iex</code>.
+      </p>
+      <ol className="nocradle__steps">
+        <li>
+          Download both here:{' '}
+          <a className="linklike" href={agentInstallUrl({ os: 'windows' })} download={WINDOWS_INSTALLER_FILE}>↓ installer (.ps1)</a>{' · '}
+          <a className="linklike" href={agentBinaryUrl({ os: 'windows', arch: 'amd64' })} download={WINDOWS_BEACON_FILE}>↓ beacon (.exe)</a>
+          <br />
+          {digest.sha256 ? (
+            <>SHA-256 of the beacon SimCore serves: <code className="mono" data-testid={`${p}-sha256`}>{digest.sha256}</code></>
+          ) : digest.error ? (
+            <span className="nocradle__err" role="status" data-testid={`${p}-sha256-error`}>
+              SimCore gave no digest for the Windows beacon ({digest.error}), so there is nothing to check the file
+              against here.
+            </span>
+          ) : (
+            <span className="nocradle__muted">reading the beacon&apos;s SHA-256…</span>
+          )}
+        </li>
+        <li>Copy both files into one folder on the target.</li>
+        {verifyLine && (
+          <li>
+            There, in Windows PowerShell as Administrator, check the beacon — this must print <code className="mono">True</code>:
+            <div className="deploy-snippet">
+              <code data-testid={`${p}-verify`} ref={verifyRef}>{verifyLine}</code>
+              <CopyButton copier={copier} id={`${p}-verify`} text={verifyLine} selectRef={verifyRef} what="hash check" className={buttonClassName} />
+            </div>
+          </li>
+        )}
+        <li>
+          {verifyLine ? 'Then run the installer on that beacon:' : 'In Windows PowerShell as Administrator, in that folder, run the installer on that beacon:'}
+          <div className="deploy-snippet">
+            <code data-testid={`${p}-run`} ref={runRef}>{runLine}</code>
+            <CopyButton
+              copier={copier}
+              id={`${p}-run`}
+              text={runLine}
+              selectRef={runRef}
+              what="run line"
+              name="run line for the downloaded installer and beacon"
+              className={buttonClassName}
+            />
+          </div>
+          The installer still contacts SimCore, to enrol with the token and to compare the beacon with the same digest.
+        </li>
+      </ol>
+      <p className="nocradle__note">
+        <b>Authored, not yet run on a Windows host.</b> Whether an endpoint prevention profile (Cortex XDR,
+        Defender) allows the unsigned beacon or the new service has not been tested, on this path or the one-liner.
+        Ask for an allow for <code className="mono">{WINDOWS_BEACON_PATH}</code> by that SHA-256 before the session.
+      </p>
     </section>
   )
 }

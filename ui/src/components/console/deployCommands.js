@@ -110,6 +110,28 @@ export function windowsDownloadRunLine({ token }) {
     + `powershell -NoProfile -ExecutionPolicy Bypass -File .\\${WINDOWS_INSTALLER_FILE}`
 }
 
+// ── Windows without `iwr | iex`: download, verify, run ───────────────────────
+// The one-liner pipes a download into iex. This path brings the installer AND
+// the beacon as files: the DC checks the beacon's hash against the digest
+// SimCore serves, then runs the installer with $env:CORTEXSIM_BIN pointing at
+// that file — an input the installer already honours (and re-checks against
+// SimCore's digest). Nothing here is new on the server. Not run on Windows.
+
+/** The name SimCore's Content-Disposition gives the windows/amd64 beacon. */
+export const WINDOWS_BEACON_FILE = 'cortexsim-agent-windows-amd64.exe'
+
+/** Prints True when the downloaded beacon is the one SimCore serves. */
+export function windowsPrestageVerifyLine({ sha256 }) {
+  return `(Get-FileHash .\\${WINDOWS_BEACON_FILE} -Algorithm SHA256).Hash.ToLower() -eq '${sha256}'`
+}
+
+/** Run the downloaded installer against the downloaded, checked beacon. */
+export function windowsPrestageRunLine({ token }) {
+  return `Unblock-File .\\${WINDOWS_INSTALLER_FILE}, .\\${WINDOWS_BEACON_FILE}; $env:CORTEXSIM_TOKEN='${token}'; `
+    + `$env:CORTEXSIM_BIN=(Resolve-Path .\\${WINDOWS_BEACON_FILE}).Path; `
+    + `powershell -NoProfile -ExecutionPolicy Bypass -File .\\${WINDOWS_INSTALLER_FILE}`
+}
+
 /**
  * Starting an already-installed beacon by hand, in the target's own words. The
  * hint used to be a bare `cortexsim-agent --server …` for every OS: no `.exe`

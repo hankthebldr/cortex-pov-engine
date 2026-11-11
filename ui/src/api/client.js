@@ -847,6 +847,42 @@ export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token 
   return `/api/agents/install?${q.toString()}`
 }
 
+/**
+ * URL of the prebuilt beacon SimCore serves for a target
+ * (GET /api/agents/binary). A link, so the browser saves the file.
+ * @param {{os?:string, arch?:string}} opts
+ */
+export function agentBinaryUrl({ os = 'linux', arch = 'amd64' } = {}) {
+  return `/api/agents/binary?${new URLSearchParams({ os, arch }).toString()}`
+}
+
+/**
+ * GET /api/agents/binary/sha256 — the digest of the beacon SimCore serves.
+ *
+ * Returns the 64 lower-case hex characters, or throws. The route answers
+ * text/plain; a body that is not a SHA-256 (a captive portal page, an empty
+ * answer) is an error with code DIGEST_UNRECOGNISED — a hash check built on a
+ * guessed digest is worse than none.
+ *
+ * @param {{os?:string, arch?:string}} opts
+ * @returns {Promise<string>}
+ */
+export async function getAgentBinarySha256({ os = 'linux', arch = 'amd64' } = {}) {
+  const path = `/api/agents/binary/sha256?${new URLSearchParams({ os, arch }).toString()}`
+  const response = await request(path, {
+    _returnBlob: true,
+    _timeoutMs: REQUEST_TIMEOUT_MS,
+    headers: { Accept: 'text/plain' },
+  })
+  const digest = String(await response.text()).trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw apiError('SimCore answered the digest request with something that is not a SHA-256', {
+      code: 'DIGEST_UNRECOGNISED', detail: { path, length: digest.length }, status: response.status,
+    })
+  }
+  return digest
+}
+
 // ─── Agent enrollment tokens ─────────────────────────────────────────────────
 // The documented front door for onboarding: mint a TTL/max-uses/revocable
 // token, hand the jumpbox ONE line, and let SimCore assign the agent id.

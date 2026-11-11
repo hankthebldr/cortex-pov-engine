@@ -127,6 +127,31 @@
 .theme-console .install-attempts__row--warn .install-attempts__kind { color: var(--c-pending); }
 .theme-console .install-attempts__meta { color: var(--c-text-muted); font-size: 10px; }
 
+/* ── Windows without iwr | iex: download, verify, run ───────────────── */
+.theme-console .nocradle {
+  margin-top: 12px; padding: 10px 12px;
+  border: 1px solid var(--c-hairline); border-radius: 4px;
+  font-size: 11px; line-height: 1.55; color: var(--c-text-secondary);
+}
+.theme-console .nocradle__head {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-text);
+}
+.theme-console .nocradle__head code { text-transform: none; letter-spacing: 0; }
+.theme-console .nocradle__lede { margin: 4px 0 6px; }
+.theme-console .nocradle__steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.theme-console .nocradle__steps .deploy-snippet { margin: 4px 0; }
+.theme-console .nocradle__steps .deploy-snippet code,
+.theme-console .nocradle code[data-testid$="-sha256"] { white-space: pre-wrap; word-break: break-all; line-height: 1.6; }
+.theme-console .nocradle code { color: var(--c-text); }
+.theme-console .nocradle__err { color: var(--c-pending); }
+.theme-console .nocradle__muted { color: var(--c-text-muted); }
+.theme-console .nocradle__note {
+  margin: 8px 0 0; padding-left: 8px; border-left: 2px solid var(--c-pending);
+}
+.theme-console .nocradle__note b { color: var(--c-text); font-weight: 600; }
+.theme-console .gs-form .nocradle { font-size: 12.5px; }
+
 /* ── "Authored, not proven" on the Windows push path ────────────────── */
 /* The same weight as the pull path's Windows caveats: a warning rule on the
    left, never the success green of the line it may sit inside. */

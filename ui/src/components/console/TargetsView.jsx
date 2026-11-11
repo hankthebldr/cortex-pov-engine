@@ -30,7 +30,9 @@ import {
 import {
   useInstallAttempts,
   useCopyFeedback,
+  CopyButton,
   CopyLive,
+  WindowsNoCradle,
   LatestAttempt,
   InstallAttemptsList,
   PosixBeaconGap,
@@ -40,24 +42,6 @@ import {
 import { trapTabKey } from './focusTrap.js'
 import '../../styles/destinations/agents.css'
 import '../../styles/destinations/deploy-console.css'
-
-/**
- * A Copy button that says WHAT it copies. The modal had up to four buttons all
- * named "Copy"; a screen reader lists them as four identical controls. The
- * visible text stays short; the accessible name carries the object. The result
- * is announced by the surface's one CopyLive node, not by this button.
- */
-function CopyButton({ copier, id, text, selectRef, what, name = what }) {
-  const copied = copier.isCopied(id)
-  return (
-    <button
-      type="button"
-      className="btn btn--xs"
-      aria-label={`${copied ? 'Copied' : 'Copy'} ${name}`}
-      onClick={() => copier.copy(id, text, selectRef, what)}
-    >{copied ? '✓ copied' : 'Copy'}</button>
-  )
-}
 
 // Compact relative age ("12s" / "5m" / "3h" / "2d") from a number of seconds.
 function fmtAge(seconds) {
@@ -723,6 +707,9 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     Mint another
                   </button>
                 </div>
+                {/* The beacon as a file too: nothing is piped into iex, and
+                    the script downloads nothing the DC has not checked. */}
+                {isWindows && <WindowsNoCradle token={token.token} copier={deployCopy} />}
                 {latestAttempt ? (
                   <LatestAttempt attempt={latestAttempt} />
                 ) : (

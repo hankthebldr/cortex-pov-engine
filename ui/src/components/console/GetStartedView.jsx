@@ -17,6 +17,7 @@ import {
   PosixBeaconGap,
   WindowsBeaconMissing,
   WindowsCaveats,
+  WindowsNoCradle,
   useCopyFeedback,
   useInstallAttempts,
 } from './DeployParts.jsx'
@@ -243,6 +244,10 @@ function AgentStep({ step, onNavigate }) {
           </div>
           <CopyLive feedback={copier.feedback} testId="gs-copy-live" />
           <LatestAttempt attempt={latest} testId="gs-attempt-latest" />
+          {/* Get started offered only the iwr | iex line for Windows. */}
+          {isWindows && (
+            <WindowsNoCradle token={token.token} copier={copier} testIdPrefix="gs" buttonClassName="pov-btn" />
+          )}
         </div>
       )}
       {error && <p className="gs-hint gs-hint--err">{error}</p>}
