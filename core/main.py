@@ -326,7 +326,10 @@ async def xsiam_error_handler(request: Request, exc: XsiamError) -> JSONResponse
     logger.warning("XsiamError on %s %s: %s", request.method, request.url, exc.detail)
     return JSONResponse(
         status_code=exc.http_status,
-        content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail},
+        # upstream_status is additive: the tenant's HTTP status (e.g. 403 on the
+        # license-gated healthcheck), so a caller never reads it out of `detail`.
+        content={"error": "XSIAM integration error", "code": exc.code, "detail": exc.detail,
+                 "upstream_status": exc.upstream_status},
     )
 
 

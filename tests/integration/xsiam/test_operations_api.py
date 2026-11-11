@@ -77,7 +77,8 @@ def _build_app(tmp_path, monkeypatch):
     async def _h(request: Request, exc: XsiamError):
         return JSONResponse(status_code=exc.http_status,
                             content={"error": "XSIAM integration error",
-                                     "code": exc.code, "detail": exc.detail})
+                                     "code": exc.code, "detail": exc.detail,
+                                     "upstream_status": exc.upstream_status})
     return TestClient(app), stub, xsiam_api
 
 

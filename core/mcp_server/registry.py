@@ -31,6 +31,7 @@ from .errors import (
     NO_TENANT_CONFIGURED,
     REMEDIATION,
     TENANT_AMBIGUOUS,
+    TOOL_NOT_BACKED,
     McpToolError,
 )
 from .naming import CANONICAL_IDS, group_of, wire_name
@@ -325,10 +326,11 @@ async def _safe_tenant_verified(ctx: ToolContext) -> Optional[int]:
 
 async def _error_evidence(ctx: ToolContext, *, basis: str, tenant: Optional[str] = None,
                           queries_issued: Optional[int] = 0, ledger_snapshot: Optional[dict] = None,
-                          unreachable: bool = False) -> Evidence:
+                          unreachable: bool = False, tool_id: Optional[str] = None,
+                          not_backed: bool = False) -> Evidence:
     tv = await _safe_tenant_verified(ctx)
     text = statement(basis=basis, queries_issued=queries_issued, tenant=tenant, tenant_verified=tv,
-                     simcore_unreachable=unreachable)
+                     tool_id=tool_id, not_backed=not_backed, simcore_unreachable=unreachable)
     return Evidence(
         basis=basis, queries_issued=queries_issued, tenant=tenant,
         ledger=ledger_from_snapshot(ledger_snapshot), tenant_verified=tv, statement=text,
@@ -354,7 +356,8 @@ def wrap(spec: ToolSpec, ctx: ToolContext) -> Callable[..., Awaitable[CallToolRe
             ev = await _error_evidence(
                 ctx, basis=err.basis, tenant=err.tenant,
                 queries_issued=getattr(err, "queries_issued", 0),
-                ledger_snapshot=getattr(err, "ledger_snapshot", None))
+                ledger_snapshot=getattr(err, "ledger_snapshot", None),
+                tool_id=spec.id, not_backed=err.code == TOOL_NOT_BACKED)
             return _error_result(err.code, err.error, err.detail, err.as_structured(ev))
         except SimCoreUnreachable as err:
             ev = await _error_evidence(ctx, basis="simcore", unreachable=True)

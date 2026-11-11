@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import shlex
 import time
 from typing import Any, NamedTuple, Optional
@@ -71,7 +70,6 @@ _CONSENT = {
     "destructive": ("CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE=1", "destructive_authorized"),
 }
 _XQL_DONE = frozenset({"SUCCESS", "PARTIAL_SUCCESS"})
-_LICENSE_GATED = re.compile(r"XSIAM API error \(HTTP 403\)")
 _LICENSE_GATED_STATUS = "reachable (healthcheck license-gated)"
 
 #: Poll pacing; module attributes so tests can swap in a fake clock.
@@ -308,8 +306,11 @@ async def _named_list(ctx: ToolContext, args: TenantListIn, shape: _Shape) -> En
         rows, total = None, None
     if not isinstance(rows, list):
         raise _parse_error(ex, where, f"expected a list at {shape.rows_key or 'reply'}, got {str(reply)[:200]}")
-    if isinstance(total, bool) or not isinstance(total, int):
+    if shape.total_key is None:
         total = len(rows)
+    elif isinstance(total, bool) or not isinstance(total, int):
+        raise _parse_error(ex, where, f"{shape.total_key} is missing or not an integer "
+                                      f"({total!r}); the list's size is unknown, not {len(rows)}")
     page, _ = cap_list(rows, limit=args.limit, offset=args.offset)
     truncated = args.offset + len(page) < total
     data = {shape.out_key: [_project(r, shape, ex, where) for r in page], "total": total,
@@ -345,7 +346,9 @@ async def healthcheck(ctx: ToolContext, args: TenantIn) -> Envelope:
     except TenantCallError as err:
         # The healthcheck endpoint is license-gated: a 403 means the tenant
         # answered and refused this one endpoint, as POST /tenants/{name}/test reads it.
-        if err.code == "XSIAM_API_ERROR" and _LICENSE_GATED.fullmatch(err.detail or ""):
+        # Keyed on the route's upstream_status, never on the message text.
+        upstream = err.data.get("upstream_status") if isinstance(err.data, dict) else None
+        if err.code == "XSIAM_API_ERROR" and upstream == 403 and not isinstance(upstream, bool):
             return await _tenant_env(
                 ctx, {"license_gated": True, "status": _LICENSE_GATED_STATUS}, tenant=err.tenant,
                 queries=err.queries_issued, ledger=err.ledger_snapshot, basis="reachable")
@@ -478,7 +481,10 @@ def _tenant_row(integ: dict, degradations: list[str]) -> dict:
 async def session_index(ctx: ToolContext, args: EmptyInput) -> Envelope:
     body = _require(await readiness(ctx, fresh=True), "GET /api/readiness", "server_time")
     degradations: list[str] = []
-    rows = [i for i in body["integrations"] if isinstance(i, dict)]
+    rows = body["integrations"]
+    for i in rows:
+        if not isinstance(i, dict):
+            raise SimCoreShapeUnknown(200, f"GET /api/readiness: integration row {i!r} is not an object")
     tenants = [_tenant_row(i, degradations) for i in rows if i.get("kind") == TENANT_KIND]
     others = [{"name": i.get("name"), "kind": i.get("kind")} for i in rows if i.get("kind") != TENANT_KIND]
     if not tenants:

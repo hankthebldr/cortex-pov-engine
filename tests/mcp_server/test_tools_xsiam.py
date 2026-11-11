@@ -11,7 +11,14 @@ import pytest
 
 from mcp_server.naming import CANONICAL_IDS
 from mcp_server.ratelimit import TokenBucket
-from tests.mcp_server.conftest import call
+from tests.mcp_server.conftest import (
+    call,
+    integration,
+    make_ctx,
+    make_fake_simcore,
+    mcp_with,
+    readiness_body,
+)
 
 # The stubbed_app harness imports starlette.testclient (via _build_app), which
 # warns that httpx should be httpx2 (pre-existing, seen in Task 10b). Exactly
@@ -118,7 +125,12 @@ async def test_four_unbacked_tools_return_tool_not_backed_never_empty(stubbed_ap
         assert sc["error"] == f"{tool} has no backing operation"
         assert sc["detail"].endswith("nothing was queried")
         assert "data" not in sc
-        assert sc["evidence"]["queries_issued"] == 0 and sc["evidence"]["tenant"] is None
+        ev = sc["evidence"]
+        assert ev["queries_issued"] == 0 and ev["tenant"] is None
+        assert ev["basis"] == "authored" and ev["ledger"] is None
+        assert ev["statement"] == (
+            f"{tool} has no backing operation in the XSIAM public API; nothing was queried. "
+            "tenant-verified: 0")
     parser = await call(mcp, "xsiam.parser.list")
     assert parser.structuredContent["detail"] == (
         "the XSIAM public API exposes no parser listing; nothing was queried")
@@ -252,7 +264,7 @@ async def test_execute_reply_over_256_kib_is_truncated_with_byte_count(stubbed_a
 
 
 @pytest.mark.asyncio
-async def test_execute_non_json_reply_is_parse_error_not_empty(stubbed_app):
+async def test_execute_non_json_reply_is_an_api_error_not_empty(stubbed_app):
     from integrations.xsiam.exceptions import XsiamApiError
 
     await stubbed_app.seed_tenant("deathstar")
@@ -316,29 +328,67 @@ async def test_session_index_scopes_come_from_capabilities_not_kind(stubbed_app)
 
 
 # --- healthcheck ------------------------------------------------------------------
+def _real_tenant_client(stubbed_app, monkeypatch, answer):
+    """A REAL XsiamClient (its own _unwrap) over MockTransport, behind the route."""
+    import httpx
+    from integrations.xsiam.client import XsiamClient
+    from integrations.xsiam.config import XsiamTenantConfig
+
+    seen: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req.url.path)
+        return answer(req)
+
+    client = XsiamClient(
+        XsiamTenantConfig(base_url="https://api-stub.xdr.us.paloaltonetworks.com",
+                          region="us", api_key_id="1"),
+        "k" * 40, transport=httpx.MockTransport(handler))
+
+    async def _load(session, name):
+        return client
+
+    monkeypatch.setattr(stubbed_app.xsiam_api, "load_xsiam_client", _load)
+    return seen
+
+
 @pytest.mark.asyncio
-async def test_healthcheck_403_is_license_gated_not_unreachable(stubbed_app):
-    from integrations.xsiam.exceptions import XsiamApiError
+async def test_healthcheck_403_is_license_gated_not_unreachable(stubbed_app, monkeypatch):
+    import httpx
 
     await stubbed_app.seed_tenant("deathstar")
+    status = {"code": 403}
+    seen = _real_tenant_client(
+        stubbed_app, monkeypatch,
+        lambda req: httpx.Response(status["code"], json={"reply": {"status": "available"}}))
     mcp = stubbed_app.mcp()
-    stubbed_app.stub.replies["/public_api/v1/healthcheck"] = XsiamApiError(
-        "XSIAM API error (HTTP 403)", upstream_status=403)
+
     res = await call(mcp, "xsiam.healthcheck")
     assert not res.isError, res.structuredContent
     data = res.structuredContent["data"]
-    assert data["license_gated"] is True and data["status"] == "reachable (healthcheck license-gated)"
+    assert data == {"license_gated": True, "status": "reachable (healthcheck license-gated)"}
     assert res.structuredContent["evidence"]["basis"] == "reachable"
+    assert seen == ["/public_api/v1/healthcheck"]
 
-    stubbed_app.stub.replies["/public_api/v1/healthcheck"] = XsiamApiError(
-        "XSIAM API error (HTTP 500)", upstream_status=500)
+    status["code"] = 500
     broken = await call(mcp, "xsiam.healthcheck")
     assert broken.isError and broken.structuredContent["code"] == "XSIAM_API_ERROR"
 
-    stubbed_app.stub.replies["/public_api/v1/healthcheck"] = {"status": "available"}
+    status["code"] = 200
     ok = await call(mcp, "xsiam.healthcheck")
     assert ok.structuredContent["data"] == {"license_gated": False, "status": "available"}
     assert ok.structuredContent["evidence"]["queries_issued"] == 1
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_403_text_without_upstream_status_is_not_license_gated(stubbed_app):
+    """The 403 reading keys on upstream_status, never on the message text."""
+    from integrations.xsiam.exceptions import XsiamApiError
+
+    await stubbed_app.seed_tenant("deathstar")
+    stubbed_app.stub.replies["/public_api/v1/healthcheck"] = XsiamApiError("XSIAM API error (HTTP 403)")
+    res = await call(stubbed_app.mcp(), "xsiam.healthcheck")
+    assert res.isError and res.structuredContent["code"] == "XSIAM_API_ERROR"
 
 
 # --- allowlists -------------------------------------------------------------------
@@ -361,6 +411,21 @@ async def test_named_tools_return_allowlisted_fields_only(stubbed_app):
     [alert] = alerts["alerts"]
     assert "raw_abioc" not in alert
     assert alert["detection_timestamp"] == "2024-11-02T18:04:11+00:00"
+
+
+@pytest.mark.asyncio
+async def test_named_list_missing_declared_total_is_a_parse_error(stubbed_app):
+    await stubbed_app.seed_tenant("deathstar")
+    stub = stubbed_app.stub
+    stub.replies["/public_api/v1/alerts/get_alerts_multi_events"] = {
+        "alerts": [{"alert_id": "1"}]}
+    res = await call(stubbed_app.mcp(), "xsiam.alert.list")
+    assert res.isError and res.structuredContent["code"] == "XSIAM_PARSE_ERROR"
+    assert "total_count" in res.structuredContent["detail"]
+    stub.replies["/public_api/v1/alerts/get_alerts_multi_events"] = {
+        "alerts": [{"alert_id": "1"}], "total_count": True}
+    res = await call(stubbed_app.mcp(), "xsiam.alert.list")
+    assert res.isError and res.structuredContent["code"] == "XSIAM_PARSE_ERROR"
 
 
 @pytest.mark.asyncio
@@ -405,3 +470,44 @@ async def test_every_xsiam_tool_returns_an_envelope_or_typed_refusal(stubbed_app
             assert sc["code"] == "TOOL_NOT_BACKED", (tool, sc)
         else:
             assert sc["evidence"]["tenant_verified"] == 0, tool
+
+
+# --- counts are summed, not start-only (fake SimCore) ------------------------------
+@pytest.mark.asyncio
+async def test_xql_queries_issued_is_the_sum_of_route_reported_counts(fast_polls):
+    from mcp_server.tools.xsiam import specs as xsiam_specs
+
+    polls = iter([{"status": "PENDING", "results": None, "ledger": None, "queries_issued": 2},
+                  {"status": "SUCCESS", "results": {"data": [{"a": 1}]}, "ledger": None,
+                   "queries_issued": 3}])
+    client, calls = make_fake_simcore({
+        ("GET", "/api/readiness"): readiness_body(integrations=[integration("deathstar")]),
+        ("POST", "/api/xsiam/tenants/deathstar/xql"):
+            {"query_id": "q9", "queries_issued": 1, "ledger": None},
+        ("GET", "/api/xsiam/tenants/deathstar/xql/q9"): lambda req: next(polls),
+    })
+    res = await call(mcp_with(xsiam_specs(), make_ctx(client)), "xsiam.xql.query",
+                     query="dataset = xdr_data")
+    assert not res.isError, res.structuredContent
+    assert res.structuredContent["evidence"]["queries_issued"] == 6  # 1 + 2 + 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [["not-a-row"], [{"name": "deathstar", "kind": "xsiam_tenant"}]])
+async def test_session_index_unrecognised_readiness_row_is_shape_unknown(bad):
+    from mcp_server.tools.xsiam import specs as xsiam_specs
+
+    client, _ = make_fake_simcore({("GET", "/api/readiness"): readiness_body(integrations=bad)})
+    res = await call(mcp_with(xsiam_specs(), make_ctx(client)), "xsiam.session.index")
+    assert res.isError and res.structuredContent["code"] == "SIMCORE_SHAPE_UNKNOWN"
+
+
+@pytest.mark.asyncio
+async def test_session_index_readiness_without_integrations_is_shape_unknown():
+    from mcp_server.tools.xsiam import specs as xsiam_specs
+
+    body = readiness_body()
+    del body["integrations"]
+    client, _ = make_fake_simcore({("GET", "/api/readiness"): body})
+    res = await call(mcp_with(xsiam_specs(), make_ctx(client)), "xsiam.session.index")
+    assert res.isError and res.structuredContent["code"] == "SIMCORE_SHAPE_UNKNOWN"
