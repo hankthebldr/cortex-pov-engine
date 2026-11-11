@@ -1156,14 +1156,21 @@
   color: var(--tx3);
 }
 
-/* The door badge on a step card in the Lanes lens — the retargeting readout.
-   It is the same chip the execution timeline uses, docked top-right so the
-   card's title row stays where the Design lens put it. */
+/* The door badge: where the step runs and its signal path ("AGT → WIRE"),
+   read from the command, never the plane. Docked top-right so the card's
+   title row stays where the Design lens put it. */
 .theme-console .chain-node__doorbadge {
   position: absolute;
   top: 6px;
   /* Clear of the step index the card's header row keeps at its far right. */
   right: 30px;
+  white-space: nowrap;
+}
+/* A step whose path could not be read says so in the error tone; its title
+   carries the reason. It is never drawn as a door it does not use. */
+.theme-console .chain-node__doorbadge--unplaced {
+  color: var(--crit);
+  border-color: var(--crit);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

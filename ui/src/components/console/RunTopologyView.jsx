@@ -1,12 +1,12 @@
 /**
  * RunTopologyView — the Topology tab on a run.
  *
- * Five lane bands — the ingestion doors the Composer bands by — with each of
+ * Five lane bands — the signal paths the Composer bands by — with each of
  * the run's steps drawn in its execution-order column inside the lane
  * `composerLanes.laneOf` derives for it, and the Cortex Engine pinned as the
  * terminal on the right holding the Correlation / Analytics / ABIOC rows and
- * the run verdict. A lane no step launched through is drawn dimmed and says
- * so; a step whose door cannot be derived is listed, never guessed.
+ * the run verdict. A lane no step took is drawn dimmed and says so; a step
+ * whose path cannot be read is listed with the reason, never guessed.
  *
  * Live records only: the scenario's steps (door + names), the run record via
  * `useRunStepTail` (host rc / termination, beacon identity + duration, polled
@@ -19,7 +19,7 @@ import { buildTopologyModel, toLaneStep } from './runTopology.js'
 import { isRunUnproven } from './runStatus.js'
 
 const EVIDENCE_SENTENCE =
-  'Lanes are the doors the scenario’s steps declare; status is the host’s record; tones are this SimCore’s Result rows. Authored is not proven.'
+  'Lanes are the signal paths read from each step’s command; status is the host’s record; tones are this SimCore’s Result rows. Authored is not proven.'
 
 function rowLabel(r) {
   return r.detection_name || r.detection_id || r.signal_type || `result ${r.id}`
@@ -98,14 +98,14 @@ export default function RunTopologyView({
       <div className="run-topo__head">
         <div className="run-topo__totals mono" data-testid="topo-totals">
           {model.totals.steps} step{model.totals.steps === 1 ? '' : 's'} · {model.totals.hits} of {model.totals.denominator} rows detected
-          {' · '}{model.lanes.filter((l) => !l.empty).length} of {model.lanes.length} doors used
+          {' · '}{model.lanes.filter((l) => !l.empty).length} of {model.lanes.length} paths used
           {model.unplaced.length ? ` · ${model.unplaced.length} unplaced` : ''}
           {' · tenant-verified: 0'}
         </div>
         <p className="run-topo__sentence">{EVIDENCE_SENTENCE}</p>
         {model.stepsFrom === 'run' && (
           <p className="run-topo__note mono" data-testid="topo-scenario-note">
-            scenario {scenarioId || '(unknown)'} not loaded{scenarioError ? `: ${scenarioError}` : ''} — lanes rebuilt from this run's Result rows, so an EAL step reads by its plane's door and step names are absent.
+            scenario {scenarioId || '(unknown)'} not loaded{scenarioError ? `: ${scenarioError}` : ''} — no step is placed, because a signal path is read from each step's command and this run's Result rows do not carry one. The results are still counted.
           </p>
         )}
         {unproven && (
@@ -136,7 +136,7 @@ export default function RunTopologyView({
               <div className="run-topo__track" style={track} role="cell">
                 {l.empty ? (
                   <span className="run-topo__lane-none mono" style={{ gridColumn: `1 / span ${cols}` }}>
-                    no step launched through this door
+                    no step took this path
                   </span>
                 ) : l.cells.map((c) => (
                   <div

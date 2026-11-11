@@ -1,11 +1,11 @@
 /**
  * RunTopologyView — the Topology tab rendered from live records.
  *
- * Pins: five lane bands in door order; cells sit in the lane `laneOf`
- * derives; an empty lane is dimmed and says so; the Engine terminal is
- * always present and carries the verdict; a missing scenario degrades to
- * row-derived lanes and says so; a failed run never shows a miss; a failed
- * results fetch says "could not load", never 0.
+ * Pins: five lane bands, one per signal path; cells sit in the lane `laneOf`
+ * derives from what each step does; an empty lane is dimmed and says so; the
+ * Engine terminal is always present and carries the verdict; a missing
+ * scenario places no step and says why; a failed run never shows a miss; a
+ * failed results fetch says "could not load", never 0.
  */
 import React from 'react'
 import { describe, it, expect, afterEach } from 'vitest'
@@ -19,9 +19,12 @@ afterEach(cleanup)
 const SCENARIO = {
   scenario_id: 'SIM-MP-001', plane: 'ANALYTICS',
   steps: [
-    { id: 'step-01', name: 'beacon', identity: 'www-data', expected_detections: [{ plane: 'EDR', type: 'BIOC' }] },
-    { id: 'step-02', name: 'ngfw session', expected_detections: [{ plane: 'NDR', type: 'XQL' }] },
-    { id: 'step-03', name: 'stitch', expected_detections: [{ plane: 'ANALYTICS', type: 'Correlation' }] },
+    { id: 'step-01', name: 'beacon', identity: 'www-data', command: 'curl -s http://c2.lab.test/beacon',
+      expected_detections: [{ plane: 'EDR', type: 'BIOC' }] },
+    { id: 'step-02', name: 'ngfw session',
+      command: "cat > /tmp/c.yml <<'YML'\nsteps:\n  - plugin: ngfw_eal_emitter\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/c.yml",
+      expected_detections: [{ plane: 'NDR', type: 'XQL' }] },
+    { id: 'step-03', name: 'stitch', command: 'echo stitch', expected_detections: [{ plane: 'ANALYTICS', type: 'Correlation' }] },
   ],
 }
 
@@ -53,34 +56,35 @@ function routes(status = 'complete', extra = {}) {
 }
 
 describe('RunTopologyView', () => {
-  it('draws the five doors in order, places cells by laneOf, dims the empty lanes, pins the Engine', async () => {
+  it('draws the five signal paths in order, places cells by laneOf, dims the empty lanes, pins the Engine', async () => {
     routes()
     render(<RunTopologyView runId="r1" run={{ run_id: 'r1', scenario_id: 'SIM-MP-001', status: 'complete' }} />)
     await waitFor(() => expect(screen.getByTestId('run-topology')).toHaveAttribute('data-steps-from', 'scenario'))
     const lanes = screen.getAllByTestId('topo-lane')
     expect(lanes.map((l) => l.dataset.lane)).toEqual(STEP_LANES)
     const byLane = Object.fromEntries(lanes.map((l) => [l.dataset.lane, l]))
-    expect(within(byLane.AGT).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-01')
-    expect(within(byLane.BVM).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-02')
-    expect(within(byLane.ENG).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-03')
-    for (const k of ['CC', 'DC']) {
+    expect(within(byLane.ENDPOINT).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-01')
+    expect(within(byLane.COLLECTOR).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-02')
+    expect(within(byLane.NONE).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-03')
+    for (const k of ['WIRE', 'CLOUD']) {
       expect(byLane[k]).toHaveAttribute('data-empty', 'true')
       expect(byLane[k].className).toContain('run-topo__lane--empty')
-      expect(byLane[k]).toHaveTextContent('no step launched through this door')
+      expect(byLane[k]).toHaveTextContent('no step took this path')
     }
+    expect(screen.getByTestId('run-topology')).toHaveTextContent('3 of 5 paths used')
     // the host record is on the cell
-    const c1 = within(byLane.AGT).getByTestId('topo-cell')
+    const c1 = within(byLane.ENDPOINT).getByTestId('topo-cell')
     expect(c1).toHaveAttribute('data-status', 'ok')
     expect(c1).toHaveTextContent('rc=0')
     expect(c1).toHaveTextContent('identity=www-data')
-    expect(within(byLane.BVM).getByTestId('topo-cell')).toHaveAttribute('data-tone', 'miss')
+    expect(within(byLane.COLLECTOR).getByTestId('topo-cell')).toHaveAttribute('data-tone', 'miss')
     // the Engine terminal
     const eng = screen.getByTestId('topo-engine')
     expect(eng).toHaveAttribute('data-empty', 'false')
     expect(screen.getByTestId('topo-verdict')).toHaveTextContent('fail')
     expect(within(eng).getAllByTestId('topo-engine-row')).toHaveLength(1)
     expect(within(eng).getByTestId('topo-engine-row')).toHaveTextContent('C2 ↔ process stitch')
-    expect(screen.getByTestId('topo-crossings')).toHaveTextContent('AGT → BVM at step-02')
+    expect(screen.getByTestId('topo-crossings')).toHaveTextContent('ENDPOINT → COLLECTOR at step-02')
     expect(screen.getByTestId('topo-totals')).toHaveTextContent('tenant-verified: 0')
     expect(screen.getByTestId('run-topology')).toHaveTextContent('Authored is not proven.')
   })
@@ -97,17 +101,23 @@ describe('RunTopologyView', () => {
     expect(screen.queryAllByTestId('topo-engine-row')).toHaveLength(0)
   })
 
-  it('degrades to row-derived lanes when the scenario cannot be loaded, and says so', async () => {
+  it('places no step when the scenario cannot be loaded, lists each one, and says why', async () => {
     routes('complete', {
       'GET /api/scenarios/SIM-MP-001': () => new Response(JSON.stringify({ error: 'not found', code: 'NOT_FOUND' }), { status: 404 }),
     })
     render(<RunTopologyView runId="r1" />)
     await waitFor(() => expect(screen.getByTestId('topo-scenario-note')).toBeInTheDocument())
     expect(screen.getByTestId('run-topology')).toHaveAttribute('data-steps-from', 'run')
-    const lanes = Object.fromEntries(screen.getAllByTestId('topo-lane').map((l) => [l.dataset.lane, l]))
-    expect(within(lanes.AGT).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-01')
-    expect(within(lanes.BVM).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-02')
-    expect(within(lanes.ENG).getByTestId('topo-cell')).toHaveAttribute('data-step-id', 'step-03')
+    expect(screen.getByTestId('topo-scenario-note')).toHaveTextContent(/signal path is read from each step's command/)
+    expect(screen.queryAllByTestId('topo-cell')).toHaveLength(0)
+    const rows = screen.getAllByTestId('topo-unplaced-row')
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringMatching(/^step-01 · scenario not loaded/),
+      expect.stringMatching(/^step-02 · scenario not loaded/),
+      expect.stringMatching(/^step-03 · scenario not loaded/),
+    ])
+    // the Engine still shows the correlation row: results are not lost
+    expect(within(screen.getByTestId('topo-engine')).getAllByTestId('topo-engine-row')).toHaveLength(1)
   })
 
   it('on a FAILED run no cell, lane or engine reads miss, and the page says why', async () => {

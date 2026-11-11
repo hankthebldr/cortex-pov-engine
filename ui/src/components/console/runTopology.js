@@ -1,29 +1,32 @@
 /**
  * runTopology — the pure model behind a run's Topology tab.
  *
- * A lane is the ingestion DOOR a step launched through — the same five doors
- * the Composer bands by (`composerLanes.js`), so a node's lane on the design
- * canvas and its lane here mean the same thing. There is ONE `laneOf()`; this
- * module calls it and adds nothing of its own to the derivation.
+ * A lane is a step's SIGNAL PATH — the mechanism that produced its evidence,
+ * the same five lanes the Composer bands by (`composerLanes.js`), so a node's
+ * lane on the design canvas and its lane here mean the same thing. There is
+ * ONE `laneOf()` (through `composerSignal.signalOf`); this module calls it and
+ * adds nothing of its own to the derivation.
  *
  * Inputs are live records only:
- *   - the scenario's `steps[]` (for `channel`, `plane`, identity, names) — when
- *     the scenario cannot be loaded, the run's `Result` rows carry each
- *     detection's `plane`, so lanes are rebuilt from those instead;
+ *   - the scenario's `steps[]` (for `channel`, `eal`, `command`, identity,
+ *     names). When the scenario cannot be loaded the step ids still come from
+ *     the transcript, outcomes and Result rows, but a path is read from the
+ *     COMMAND and no row carries one, so every step is listed as unplaced;
  *   - the run record (`status`, `tc_verdict`, `output`, `step_outcomes[]`) for
  *     the host's per-step record (rc, termination), joined by `buildStepRows`;
  *   - the run's `Result` rows for per-step detection tones.
  *
  * Honesty rules:
- *   - a step whose door cannot be derived (no channel, no plane anywhere) is
- *     listed as `unplaced` WITH the reason — never defaulted into ENDPOINT;
+ *   - a step whose path cannot be read (no command, an unknown EAL plugin) is
+ *     listed as `unplaced` WITH the reason — never defaulted into a lane;
  *   - a lane with no step is `empty` — dimmed, not "clean";
  *   - the Engine terminal is a VIEW onto rows already counted in their step's
  *     cell (Correlation / Analytics / ABIOC), never a second population, so
  *     the page's totals cannot double-count;
  *   - a `miss` tone needs a proven run (see `runTechniques.resultTone`).
  */
-import { laneOf, STEP_LANES, BANDS } from './composerLanes.js'
+import { STEP_LANES, BANDS } from './composerLanes.js'
+import { signalOf } from './composerSignal.js'
 import { buildStepRows, parseStepTranscript } from './useRunStepTail.js'
 import { resultTone, worstTone } from './runTechniques.js'
 import { isRunComplete } from './runStatus.js'
@@ -51,15 +54,6 @@ export function toLaneStep(step) {
   return { ...step, detections }
 }
 
-/** Whether `laneOf` would derive a door from DATA rather than its default. */
-export function doorKnown(step, draftPlane = null) {
-  if (!step) return false
-  if (step.channel) return true
-  if (step.plane) return true
-  if (step.detections?.[0]?.plane) return true
-  return !!draftPlane
-}
-
 function groupByStep(results) {
   const by = new Map()
   for (const r of results) {
@@ -81,7 +75,6 @@ export function buildTopologyModel({ scenario = null, run = null, results = [], 
   const proven = isRunComplete(run?.status)
   const rows = Array.isArray(results) ? results.filter(Boolean) : []
   const byStep = groupByStep(rows)
-  const draftPlane = scenario?.plane || null
 
   // The step list: the scenario's when we have it, else the ids the host and
   // the rows know about, in transcript order where the transcript has one.
@@ -95,10 +88,12 @@ export function buildTopologyModel({ scenario = null, run = null, results = [], 
     const ids = [...parsed.order]
     for (const o of run?.step_outcomes || []) if (o?.step_id && !ids.includes(o.step_id)) ids.push(o.step_id)
     for (const id of byStep.keys()) if (id && !ids.includes(id)) ids.push(id)
+    // A Result row records each expected detection's PLANE (the observer). A
+    // path is read from the step's command, which no row carries, so these
+    // steps are listed, not placed.
     steps = ids.map((id) => ({
       id,
-      // Result rows record each expected detection's plane: that is live data
-      // about THIS run, so lanes can still be derived without the scenario.
+      command: null,
       detections: (byStep.get(id) || []).map((r) => ({ plane: r.plane })),
     }))
     stepsFrom = 'run'
@@ -133,11 +128,15 @@ export function buildTopologyModel({ scenario = null, run = null, results = [], 
       denominator: tones.filter((t) => t !== 'excluded').length,
       tone: srows.length ? worstTone(tones) : 'none',
     }
-    if (!doorKnown(step, draftPlane)) {
-      unplaced.push({ ...cell, lane: null, reason: 'no channel and no plane on the step or its result rows' })
+    const signal = signalOf(step)
+    if (signal.unplaced) {
+      const reason = stepsFrom === 'run'
+        ? 'scenario not loaded: the signal path is read from the step\'s command'
+        : signal.reason
+      unplaced.push({ ...cell, signal, lane: null, reason })
       return
     }
-    columns.push({ ...cell, lane: laneOf(step, null, draftPlane) })
+    columns.push({ ...cell, signal, lane: signal.path })
   })
 
   const lanes = STEP_LANES.map((key) => {
@@ -155,7 +154,7 @@ export function buildTopologyModel({ scenario = null, run = null, results = [], 
     }
   })
 
-  // Lane crossings along execution order: where the chain changed doors.
+  // Lane crossings along execution order: where the chain changed path.
   const crossings = []
   for (let i = 1; i < columns.length; i += 1) {
     if (columns[i].lane !== columns[i - 1].lane) {
@@ -167,7 +166,7 @@ export function buildTopologyModel({ scenario = null, run = null, results = [], 
   const engineTones = engineRows.map((r) => resultTone(r, proven))
   const engine = {
     key: ENGINE_LANE,
-    label: BANDS[ENGINE_LANE]?.label || 'ANALYTICS',
+    label: BANDS[ENGINE_LANE]?.label || 'CORTEX ENGINE',
     sub: BANDS[ENGINE_LANE]?.sub || 'Cortex Engine',
     rows: engineRows,
     hits: engineTones.filter((t) => t === 'hit').length,

@@ -55,7 +55,6 @@ import {
   removeDetection,
   setCausalityParent,
   setNodePosition,
-  setStepLane,
   setStepChannel,
   setStepEal,
   setStepTarget,
@@ -358,14 +357,14 @@ export default function ComposerView({
   // Launch, and run something other than what is on screen. Composer mode makes
   // those edits one click away (the edge pivot chip, Delete, reconnect), so the
   // comparison is the launch-relevant snapshot, minus pure presentation
-  // (`layout`, `laneOverrides`): dragging a card never forces a draft save.
+  // (`layout`): dragging a card never forces a draft save.
   const edited = useMemo(() => {
     if (!origin) return steps.length > 0
     if (steps.some((s) => s.authored)) return true
     const runShape = (d) => {
       const snap = draftSnapshot(d)
       if (!snap) return snap
-      const { layout: _l, laneOverrides: _lo, ...rest } = snap
+      const { layout: _l, ...rest } = snap
       return rest
     }
     return JSON.stringify(runShape(draft)) !== JSON.stringify(runShape(origin))
@@ -663,11 +662,9 @@ export default function ComposerView({
   // linking would itself make every other root off-chain.
   const selectedRef = React.useRef(selectedId)
   selectedRef.current = selectedId
-  // Latest-state refs for handlers React Flow can call several times in ONE
-  // tick (a multi-card lane drop calls onLaneChange once per card): reading the
-  // render-time `draft` there made the second call overwrite the first.
-  const draftRef = React.useRef(draft)
-  draftRef.current = draft
+  // Latest-state ref for handlers React Flow can call several times in ONE
+  // tick: reading the render-time `steps` there made the second call
+  // overwrite the first.
   const stepsRef = React.useRef(steps)
   stepsRef.current = steps
   // Every step id used this session, plus every id the origin had. A deleted
@@ -789,26 +786,6 @@ export default function ComposerView({
     })
   }, [origin])
   // Re-layout (Task 11): discard every dragged position and fall back to the
-  // Lanes lens: a step dragged into another band. Persisted on the draft like
-  // a position (so it marks the draft dirty and survives reload), and written
-  // through to the step's channel where the lane is channel-backed — see
-  // `setStepLane` for exactly which lanes change the step and which only
-  // record intent.
-  const onLaneChange = useCallback((stepId, lane) => {
-    // Compute once from the MERGED draft, then write each half to the state
-    // that owns it. Calling setSteps inside a setDraftMeta updater would be a
-    // side effect inside an updater — StrictMode double-invokes those, and the
-    // second call would see steps it had already replaced. Read the LATEST
-    // draft through the ref and advance it immediately, so a second card in
-    // the same multi-card drop builds on this one instead of erasing it.
-    const cur = draftRef.current
-    const next = setStepLane(cur, stepId, lane)
-    if (next === cur) return
-    draftRef.current = next
-    stepsRef.current = next.steps
-    if (next.steps !== cur.steps) setSteps(next.steps)
-    setDraftMeta((m) => ({ ...m, laneOverrides: next.laneOverrides }))
-  }, [])
 
   // computed layout. Same overlay shape as `onNodeMoved` above — writing
   // `layout: null` into the `draftMeta` overlay is enough on its own
@@ -859,7 +836,7 @@ export default function ComposerView({
     setSelectedId((cur) => (cur === id ? null : cur))
     setDraftMeta((m) => {
       let out = m
-      for (const key of ['layout', 'laneOverrides']) {
+      for (const key of ['layout']) {
         const cur = m[key] !== undefined ? m[key] : (origin?.[key] ?? null)
         if (cur && Object.prototype.hasOwnProperty.call(cur, id)) {
           const { [id]: _gone, ...rest } = cur
@@ -1432,8 +1409,6 @@ export default function ComposerView({
           onDuplicateStep={onDuplicateStep}
           onRemoveStep={onRemoveStep}
           onNodeMoved={onNodeMoved}
-          onLaneChange={onLaneChange}
-          laneOverrides={draft.laneOverrides}
           onConnectSteps={handleConnectSteps}
           onDeleteStepId={onDeleteStepId}
           onEdgeDelete={onEdgeDelete}
