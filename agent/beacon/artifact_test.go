@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -360,16 +361,23 @@ func TestStage_HappyPath_VerifiesAndLands(t *testing.T) {
 	if string(got) != string(body) {
 		t.Fatalf("staged bytes differ")
 	}
-	info, _ := os.Stat(dest)
-	if info.Mode().Perm() != 0o755 {
-		t.Errorf("staged mode = %v, want 0755 (the step runs as another user via runuser)", info.Mode().Perm())
-	}
-	// The staging directory must be 0755, NOT 0700: a root-owned 0700 dir makes
-	// a `runuser -l www-data` step die EACCES, which reads exactly like the TTP
-	// failing on a hardened host. This is the single most likely field break.
-	dinfo, _ := os.Stat(filepath.Dir(dest))
-	if dinfo.Mode().Perm() != 0o755 {
-		t.Errorf("staging dir mode = %v, want 0755", dinfo.Mode().Perm())
+	// POSIX permission bits only. On Windows Go synthesises Mode().Perm() from
+	// the read-only attribute (0666 for a file, 0777 for a directory), access is
+	// governed by the ACL, and the beacon never switches user there, so these
+	// two assertions failed on the first windows-2022 CI run while asserting
+	// nothing about Windows.
+	if runtime.GOOS != "windows" {
+		info, _ := os.Stat(dest)
+		if info.Mode().Perm() != 0o755 {
+			t.Errorf("staged mode = %v, want 0755 (the step runs as another user via runuser)", info.Mode().Perm())
+		}
+		// The staging directory must be 0755, NOT 0700: a root-owned 0700 dir makes
+		// a `runuser -l www-data` step die EACCES, which reads exactly like the TTP
+		// failing on a hardened host. This is the single most likely field break.
+		dinfo, _ := os.Stat(filepath.Dir(dest))
+		if dinfo.Mode().Perm() != 0o755 {
+			t.Errorf("staging dir mode = %v, want 0755", dinfo.Mode().Perm())
+		}
 	}
 	if _, err := os.Stat(dest + stalePartSuffix); !os.IsNotExist(err) {
 		t.Errorf(".part file survived the rename")
