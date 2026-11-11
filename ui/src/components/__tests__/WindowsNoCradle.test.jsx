@@ -15,6 +15,16 @@
  * and the installer already honours $env:CORTEXSIM_BIN (a pre-staged beacon,
  * checked against SimCore's digest).
  *
+ * The installer link carries the address the beacon must call. The link used
+ * to be the relative `/api/agents/install?os=windows`, so SimCore baked SERVER
+ * from the request's Host header — the address the CONSOLE was opened at. Get
+ * started has a typed "address the host can reach" and builds the one-liner
+ * from it; the download ignored it. With the console on an SSH tunnel
+ * (localhost:8888) and the LAN IP typed, the saved .ps1 carried
+ * SERVER=http://localhost:8888, failed at enrol on the target with
+ * SERVER_UNREACHABLE, and reported nothing here. `GET /api/agents/install`
+ * has always accepted `?server=`; the link now sends it.
+ *
  * What this does NOT show: that either path gets past a prevention profile.
  * No Windows host has run any of it; the copy must say so.
  */
@@ -26,9 +36,9 @@ import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContex
 import TargetsView from '../console/TargetsView.jsx'
 import GetStartedView from '../console/GetStartedView.jsx'
 import {
-  WINDOWS_BEACON_FILE, windowsPrestageVerifyLine, windowsPrestageRunLine,
+  WINDOWS_BEACON_FILE, serverUrlProblem, windowsPrestageVerifyLine, windowsPrestageRunLine,
 } from '../console/deployCommands.js'
-import { agentBinaryUrl, getAgentBinarySha256 } from '../../api/client.js'
+import { agentBinaryUrl, agentInstallUrl, getAgentBinarySha256 } from '../../api/client.js'
 
 void React
 
@@ -69,6 +79,59 @@ describe('the commands, spelled once', () => {
   it('the beacon is fetched from the route SimCore already serves', () => {
     expect(agentBinaryUrl({ os: 'windows' })).toBe('/api/agents/binary?os=windows&arch=amd64')
     expect(WINDOWS_BEACON_FILE).toBe('cortexsim-agent-windows-amd64.exe')
+  })
+
+  it('the installer URL can name the address SimCore bakes in, and stays tokenless', () => {
+    expect(agentInstallUrl({ os: 'windows', server: 'http://10.0.0.5:8888' }))
+      .toBe('/api/agents/install?os=windows&interval=10&server=http%3A%2F%2F10.0.0.5%3A8888')
+    // Without one the URL is what it always was: SimCore falls back to Host.
+    expect(agentInstallUrl({ os: 'windows' })).toBe('/api/agents/install?os=windows&interval=10')
+    expect(agentInstallUrl({ os: 'linux', server: '' })).toBe('/api/agents/install?os=linux&interval=10')
+  })
+})
+
+// A COPY of SimCore's `_server_problem` (core/api/agents.py): the address is
+// baked into the script text, so SimCore answers 400 BAD_SERVER for anything
+// outside a narrow shape. A download link for such an address would save that
+// 400's JSON body under the name install-cortexsim-agent.ps1.
+describe('serverUrlProblem — would SimCore bake this address into an installer?', () => {
+  it('accepts http(s)://host[:port][/path]', () => {
+    for (const ok of [
+      'http://10.0.0.5:8888', 'https://simcore.lab.example', 'http://localhost:8888', 'HTTP://Host:8888',
+      'http://[::1]:8888', 'http://[fd00::5]', 'http://jumpbox:8888/base/path', 'http://10.0.0.5:8888/', '  http://10.0.0.5:8888  ',
+      'http://[::]', 'http://[FD00:0:0:0:0:0:0:5]:8888', 'http://[::ffff:10.0.0.5]:8888', 'http://[1:2:3:4:5:6:7::]',
+    ]) {
+      expect(serverUrlProblem(ok), ok).toBeNull()
+    }
+  })
+
+  it('refuses what SimCore refuses, and says why', () => {
+    expect(serverUrlProblem('')).toMatch(/empty/)
+    expect(serverUrlProblem(undefined)).toMatch(/empty/)
+    expect(serverUrlProblem('10.0.0.5:8888')).toMatch(/scheme must be http or https/)
+    expect(serverUrlProblem('jumpbox:8888')).toMatch(/scheme must be http or https/)
+    expect(serverUrlProblem('ftp://10.0.0.5')).toMatch(/scheme must be http or https/)
+    expect(serverUrlProblem('http://')).toMatch(/no host/)
+    expect(serverUrlProblem('http:/10.0.0.5')).toMatch(/no host/)
+    expect(serverUrlProblem('http://:8888')).toMatch(/no host/)
+    expect(serverUrlProblem('http://10.0.0.5:99999')).toMatch(/port/)
+    expect(serverUrlProblem('http://10.0.0.5:0')).toMatch(/port/)
+    expect(serverUrlProblem('http://10.0.0.5:88x8')).toMatch(/port/)
+    expect(serverUrlProblem('http://[::1')).toMatch(/bracket/)
+    // A bracketed host must be an IPv6 address: SimCore's URL parser refuses
+    // an IPv4 address in brackets and anything that is not an address.
+    for (const bad of [
+      'http://[10.0.0.5]:8888', 'http://[::::]:8888', 'http://[1:2]:8888', 'http://[12345::1]', 'http://[]:8888',
+      'http://[1:2:3:4:5:6:7:8:9]', 'http://[1::2::3]', 'http://[::1]x:8888', 'http://x[::1]', 'http://[::1.2.3.256]',
+    ]) {
+      expect(serverUrlProblem(bad), bad).toMatch(/bracket/)
+    }
+    for (const bad of [
+      'http://my host:8888', 'http://user:pw@10.0.0.5:8888', 'http://10.0.0.5:8888/?x=1', 'http://10.0.0.5:8888/#a',
+      "http://10.0.0.5:8888'; Write-Host PWNED; '", 'http://10.0.0.5:8888/a%20b', 'http://exämple:8888',
+    ]) {
+      expect(serverUrlProblem(bad), bad).toMatch(/only http\(s\):\/\/host/)
+    }
   })
 })
 
@@ -117,8 +180,13 @@ describe('Deploy modal — download, verify, run', () => {
     const dialog = await mintedDialog('Windows')
     const box = within(dialog).getByTestId('deploy-nocradle')
     const installer = within(box).getByRole('link', { name: /installer/i })
-    expect(installer.getAttribute('href')).toBe('/api/agents/install?os=windows&interval=10')
+    // The modal has no address field: the one-liner uses the address this
+    // console was opened at, and so does the download — said, not left to Host.
+    expect(installer.getAttribute('href'))
+      .toBe(`/api/agents/install?os=windows&interval=10&server=${encodeURIComponent(window.location.origin)}`)
+    expect(installer.getAttribute('href')).not.toMatch(/token=|cxs_/)
     expect(installer.getAttribute('download')).toBe('install-cortexsim-agent.ps1')
+    expect(box.textContent).toContain(`contacts SimCore at ${window.location.origin}`)
     const beacon = within(box).getByRole('link', { name: /beacon/i })
     expect(beacon.getAttribute('href')).toBe('/api/agents/binary?os=windows&arch=amd64')
     expect(beacon.getAttribute('download')).toBe(WINDOWS_BEACON_FILE)
@@ -167,6 +235,63 @@ describe('Deploy modal — download, verify, run', () => {
 
 describe('Get started — the same path beside the one-liner', () => {
   beforeEach(() => { window.localStorage.clear() })
+
+  function mountGetStarted() {
+    render(
+      <EnvironmentContext.Provider value={{ ...DEFAULT_ENV, refreshAgents: vi.fn() }}>
+        <GetStartedView />
+      </EnvironmentContext.Provider>,
+    )
+  }
+  async function windowsWithAddress(address) {
+    routes()
+    mountGetStarted()
+    fireEvent.click(screen.getByRole('radio', { name: 'Windows' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: address } })
+    fireEvent.click(screen.getByTestId('gs-agent-generate'))
+    await screen.findByTestId('gs-agent-command')
+    return screen.getByTestId('gs-nocradle')
+  }
+
+  // The SSH-tunnel case Get started itself anticipates: the console is open at
+  // a loopback address and the DC types the address the TARGET can reach.
+  it('the installer download bakes the TYPED address, not the one the console was opened at', async () => {
+    const TYPED = 'http://10.20.30.40:8888'
+    expect(TYPED).not.toBe(window.location.origin)
+    const box = await windowsWithAddress(TYPED)
+
+    // The one-liner already used it …
+    expect(screen.getByTestId('gs-agent-command').textContent).toContain(`"${TYPED}/api/agents/install?os=windows&interval=10"`)
+    // … and the downloaded installer must be told the same address.
+    const href = within(box).getByRole('link', { name: /installer/i }).getAttribute('href')
+    const url = new URL(href, window.location.origin)
+    expect(url.origin).toBe(window.location.origin) // fetched by the browser, from the console
+    expect(url.pathname).toBe('/api/agents/install')
+    expect(url.searchParams.get('server')).toBe(TYPED)
+    expect(url.searchParams.get('os')).toBe('windows')
+    expect(url.searchParams.has('token')).toBe(false)
+    expect(box.textContent).toContain(`contacts SimCore at ${TYPED}`)
+  })
+
+  // A pasted address often ends in a space. That used to stop the trailing-slash
+  // strip, so the one-liner read `iwr " http://…:8888/ /api/agents/install…"`.
+  it('a trailing slash or stray space in the typed address reaches neither the download nor the one-liner', async () => {
+    const box = await windowsWithAddress(' http://10.20.30.40:8888/ ')
+    const href = within(box).getByRole('link', { name: /installer/i }).getAttribute('href')
+    expect(new URL(href, window.location.origin).searchParams.get('server')).toBe('http://10.20.30.40:8888')
+    expect(screen.getByTestId('gs-agent-command').textContent)
+      .toContain('iwr -useb "http://10.20.30.40:8888/api/agents/install?os=windows&interval=10" | iex')
+  })
+
+  it('an address SimCore would refuse gets no installer link, and says why', async () => {
+    const box = await windowsWithAddress('10.20.30.40:8888')
+    expect(within(box).queryByRole('link', { name: /installer/i })).toBeNull()
+    const why = within(box).getByTestId('gs-nocradle-installer-unavailable')
+    expect(why.textContent).toMatch(/scheme must be http or https/)
+    expect(why.textContent).toMatch(/BAD_SERVER/)
+    // The beacon is the same bytes whatever the address: its link stays.
+    expect(within(box).getByRole('link', { name: /beacon/i }).getAttribute('href')).toBe('/api/agents/binary?os=windows&arch=amd64')
+  })
 
   it('Windows gets it once a command is generated; Linux does not', async () => {
     routes()

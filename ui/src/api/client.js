@@ -832,18 +832,26 @@ export async function deleteAgent(agentId) {
 
 /**
  * Build the installer download URL for an agent (bash .sh / PowerShell .ps1).
- * Server URL is auto-derived server-side from the request.
+ *
+ * The script has the address the beacon calls back to written into it. Without
+ * `server`, SimCore takes that address from the request's Host header — right
+ * when the TARGET fetches the URL (`curl <address>/api/agents/install | bash`),
+ * and wrong when a BROWSER fetches it from wherever the console happens to be
+ * open (an SSH tunnel at localhost:8888 bakes localhost). A link the browser
+ * downloads must pass `server`: the address the target can reach. SimCore
+ * validates it and answers 400 BAD_SERVER for one it will not bake.
  *
  * Pass `token` to get the ENROLLMENT installer (SimCore assigns the agent id);
  * pass `id` for the legacy self-asserted path. Prefer the token: an operator
  * who invents ids produces duplicates and typos, and the token is revocable.
  *
- * @param {{os?:string, id?:string, interval?:number, token?:string}} opts
+ * @param {{os?:string, id?:string, interval?:number, token?:string, server?:string}} opts
  */
-export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token = null } = {}) {
+export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token = null, server = null } = {}) {
   const q = new URLSearchParams({ os, interval: String(interval) })
   if (token) q.set('token', token)
   if (id) q.set('id', id)
+  if (server) q.set('server', server)
   return `/api/agents/install?${q.toString()}`
 }
 

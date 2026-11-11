@@ -708,8 +708,10 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   </button>
                 </div>
                 {/* The beacon as a file too: nothing is piped into iex, and
-                    the script downloads nothing the DC has not checked. */}
-                {isWindows && <WindowsNoCradle token={token.token} copier={deployCopy} />}
+                    the script downloads nothing the DC has not checked. The
+                    modal has no address field, so the download names the same
+                    origin the one-liner above carries. */}
+                {isWindows && <WindowsNoCradle token={token.token} copier={deployCopy} server={origin} />}
                 {latestAttempt ? (
                   <LatestAttempt attempt={latestAttempt} />
                 ) : (

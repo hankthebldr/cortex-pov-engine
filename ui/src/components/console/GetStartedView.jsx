@@ -7,7 +7,7 @@ import TenantManager from './TenantManager.jsx'
 import useSetupProgress from './useSetupProgress.js'
 import { agentIsOnline } from './setupProgress.js'
 import {
-  attemptRole, attemptsSince, beaconShipState, installerOS, pullOneLiner, serverHostVerdict,
+  attemptRole, attemptsSince, beaconShipState, installerOS, normaliseServerUrl, pullOneLiner, serverHostVerdict,
   WINDOWS_ELEVATION_LABEL,
 } from './deployCommands.js'
 import {
@@ -163,7 +163,9 @@ function AgentStep({ step, onNavigate }) {
     }
   }, [])
 
-  const base = server.replace(/\/+$/, '')
+  // Trimmed as SimCore trims `?server=`: a pasted address often ends in a space,
+  // which used to stop the slash strip and land inside the command's URL.
+  const base = normaliseServerUrl(server)
   // The install line is only as good as the address in it, and SimCore's Host
   // guard refuses names it was not told about — before the installer is served.
   const hostVerdict = serverHostVerdict(
@@ -246,9 +248,11 @@ function AgentStep({ step, onNavigate }) {
           </div>
           <CopyLive feedback={copier.feedback} testId="gs-copy-live" />
           <LatestAttempt attempt={latest} testId="gs-attempt-latest" />
-          {/* Get started offered only the iwr | iex line for Windows. */}
+          {/* Get started offered only the iwr | iex line for Windows. The
+              download bakes the TYPED address, as the one-liner does — not
+              the address this console happens to be open at. */}
           {isWindows && (
-            <WindowsNoCradle token={token.token} copier={copier} testIdPrefix="gs" buttonClassName="pov-btn" />
+            <WindowsNoCradle token={token.token} copier={copier} server={base} testIdPrefix="gs" buttonClassName="pov-btn" />
           )}
         </div>
       )}

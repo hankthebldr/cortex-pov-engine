@@ -56,6 +56,89 @@ export function agentIdProblem(id) {
   return `it contains ${named}; only letters, digits, ".", "_" and "-" are allowed`
 }
 
+// ── Server address ───────────────────────────────────────────────────────────
+
+/**
+ * The address as SimCore normalises `?server=` before it checks and bakes it
+ * (`override.strip().rstrip("/")` in core/api/agents.py::_resolve_server).
+ */
+export function normaliseServerUrl(url) {
+  return String(url ?? '').trim().replace(/\/+$/, '')
+}
+
+const SERVER_CHARSET = /^[A-Za-z0-9.:/[\]_~-]+$/
+const DOTTED_QUAD = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
+
+/**
+ * Is `s` (the text between the brackets) an IPv6 address? Up to eight groups
+ * of 1-4 hex digits, at most one `::`, and optionally a dotted quad standing
+ * for the last two groups. `[10.0.0.5]` — an IPv4 address in brackets — is not.
+ */
+function isIPv6Literal(s) {
+  if (!s.includes(':')) return false
+  let body = s
+  const cut = s.lastIndexOf(':') + 1
+  if (s.slice(cut).includes('.')) {
+    if (!DOTTED_QUAD.test(s.slice(cut))) return false
+    body = `${s.slice(0, cut)}0:0`
+  }
+  const halves = body.split('::')
+  if (halves.length > 2) return false
+  const groups = (x) => (x === '' ? [] : x.split(':'))
+  const all = groups(halves[0]).concat(halves.length === 2 ? groups(halves[1]) : [])
+  if (!all.every((g) => /^[0-9A-Fa-f]{1,4}$/.test(g))) return false
+  return halves.length === 2 ? all.length <= 7 : all.length === 8
+}
+
+/**
+ * Why SimCore would refuse to bake `url` into an installer as the address the
+ * beacon calls, or null when it would accept it.
+ *
+ * A COPY of `_server_problem` in core/api/agents.py — the server is the
+ * authority. It exists so the console does not offer a DOWNLOAD link that is
+ * certain to answer 400 BAD_SERVER: the browser would save that JSON body
+ * under the installer's file name.
+ *
+ * Compared by hand with `_server_problem` on 2026-11-10 (Python 3.11.18, 137
+ * addresses): nothing this accepted was refused by SimCore, and the only
+ * addresses this refused that SimCore accepts were `[v1.x]` IPvFuture hosts.
+ * No test in this tree runs the two side by side, so the copy can drift.
+ * @returns {string|null}
+ */
+export function serverUrlProblem(url) {
+  const v = normaliseServerUrl(url)
+  if (v === '') return 'the address is empty'
+  if (!SERVER_CHARSET.test(v)) {
+    return 'only http(s)://host[:port][/path] using letters, digits and . : / [ ] _ ~ - is accepted'
+  }
+  const scheme = /^(https?):(.*)$/i.exec(v)
+  if (!scheme) return 'scheme must be http or https'
+  if (!scheme[2].startsWith('//')) return 'no host'
+  const netloc = scheme[2].slice(2).split('/')[0]
+  let host
+  let port
+  if (netloc.includes('[') || netloc.includes(']')) {
+    const m = /^\[([^[\]]*)\](?::(.*))?$/.exec(netloc)
+    if (!m || !isIPv6Literal(m[1])) {
+      return 'not a parseable URL (a bracketed host must be [ipv6-address], optionally followed by :port)'
+    }
+    host = m[1]
+    port = m[2] ?? ''
+  } else {
+    const i = netloc.indexOf(':')
+    host = i < 0 ? netloc : netloc.slice(0, i)
+    port = i < 0 ? '' : netloc.slice(i + 1)
+  }
+  if (!host) return 'no host'
+  if (port !== '') {
+    if (!/^[0-9]+$/.test(port) || Number(port) > 65535) {
+      return 'not a parseable URL (the port is not a number from 1 to 65535)'
+    }
+    if (Number(port) < 1) return 'port out of range'
+  }
+  return null
+}
+
 // ── Pull one-liners ──────────────────────────────────────────────────────────
 
 /**

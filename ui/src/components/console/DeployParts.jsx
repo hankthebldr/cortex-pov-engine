@@ -14,7 +14,9 @@ import {
   attemptRole,
   copyFailureMessage,
   copyToClipboard,
+  normaliseServerUrl,
   selectNodeText,
+  serverUrlProblem,
 } from './deployCommands.js'
 import '../../styles/destinations/deploy-console.css'
 
@@ -252,10 +254,23 @@ export function CopyButton({ copier, id, text, selectRef, what, name = what, cla
  * It does not claim to get past any prevention profile: no Windows host has
  * run either path.
  *
+ * `server` is the address the TARGET reaches SimCore at — the one the
+ * one-liner beside this is built from. The installer link is fetched by this
+ * BROWSER, so without `?server=` SimCore would bake the address the console
+ * was opened at (its Host header): with the console on an SSH tunnel that is
+ * localhost, and the saved .ps1 then fails at enrol on the target with
+ * SERVER_UNREACHABLE, reporting nothing back. So the link always names the
+ * address, and an address SimCore would refuse (400 BAD_SERVER) gets no link
+ * at all — the browser would save the refusal as the .ps1. The beacon and its
+ * digest are the same bytes whatever the address, so those stay relative.
+ *
  * Props: `token` (the minted token value) · `copier` (useCopyFeedback()) ·
+ *        `server` (required: the address baked into the installer) ·
  *        `testIdPrefix` · `buttonClassName`
  */
-export function WindowsNoCradle({ token, copier, testIdPrefix = 'deploy', buttonClassName = 'btn btn--xs' }) {
+export function WindowsNoCradle({ token, copier, server, testIdPrefix = 'deploy', buttonClassName = 'btn btn--xs' }) {
+  const baked = normaliseServerUrl(server)
+  const serverProblem = serverUrlProblem(baked)
   const [digest, setDigest] = useState({ sha256: null, error: null })
   const verifyRef = useRef(null)
   const runRef = useRef(null)
@@ -284,7 +299,15 @@ export function WindowsNoCradle({ token, copier, testIdPrefix = 'deploy', button
       <ol className="nocradle__steps">
         <li>
           Download both here:{' '}
-          <a className="linklike" href={agentInstallUrl({ os: 'windows' })} download={WINDOWS_INSTALLER_FILE}>↓ installer (.ps1)</a>{' · '}
+          {serverProblem ? (
+            <span className="nocradle__err" role="status" data-testid={`${p}-installer-unavailable`}>
+              no installer link — SimCore will not write <code className="mono">{baked || '(nothing)'}</code> into
+              an installer as the address the beacon calls (<code className="mono">400 BAD_SERVER</code>:{' '}
+              {serverProblem}). Use the form <code className="mono">http://&lt;ip-address&gt;:8888</code>.
+            </span>
+          ) : (
+            <a className="linklike" href={agentInstallUrl({ os: 'windows', server: baked })} download={WINDOWS_INSTALLER_FILE}>↓ installer (.ps1)</a>
+          )}{' · '}
           <a className="linklike" href={agentBinaryUrl({ os: 'windows', arch: 'amd64' })} download={WINDOWS_BEACON_FILE}>↓ beacon (.exe)</a>
           <br />
           {digest.sha256 ? (
@@ -322,7 +345,15 @@ export function WindowsNoCradle({ token, copier, testIdPrefix = 'deploy', button
               className={buttonClassName}
             />
           </div>
-          The installer still contacts SimCore, to enrol with the token and to compare the beacon with the same digest.
+          {serverProblem ? (
+            <>The installer still contacts SimCore, to enrol with the token and to compare the beacon with the same digest.</>
+          ) : (
+            <span data-testid={`${p}-server`}>
+              The installer still contacts SimCore at <code className="mono">{baked}</code> from the target, to enrol
+              with the token and to compare the beacon with the same digest. That address is written into the
+              installer when you download it, so it must be one the target can reach.
+            </span>
+          )}
         </li>
       </ol>
       <p className="nocradle__note">
