@@ -74,14 +74,31 @@ def test_the_powershell_text_set_is_not_empty():
     assert len(TEXTS) >= 100, len(TEXTS)
 
 
-@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
+def _pwsh_or_skip() -> str:
+    """The parser, or a skip — unless it was promised, then a FAILURE.
+
+    Same contract as ``test_push_generator_windows.py::_powershell_or_skip``:
+    under ``CI`` or ``CORTEXSIM_REQUIRE_POWERSHELL=1`` a missing interpreter
+    fails the test. A skipped parse gate is indistinguishable from a passing
+    one. ``pwsh`` specifically: ``_PARSE_ALL`` is run with its ``-Command``.
+    """
+    exe = shutil.which("pwsh")
+    if exe is None:
+        if os.environ.get("CORTEXSIM_REQUIRE_POWERSHELL") == "1" or os.environ.get("CI"):
+            pytest.fail("PowerShell is required here (CI or CORTEXSIM_REQUIRE_POWERSHELL=1) "
+                        "and pwsh is not on PATH: the per-step parse gate did not run")
+        pytest.skip("pwsh not installed")
+    return exe
+
+
 def test_every_powershell_windows_step_text_parses():
+    pwsh = _pwsh_or_skip()
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
         json.dump(TEXTS, f)
         path = f.name
     try:
         r = subprocess.run(
-            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", _PARSE_ALL],
+            [pwsh, "-NoProfile", "-NonInteractive", "-Command", _PARSE_ALL],
             env={**os.environ, "CORTEXSIM_PS_TEXTS": path},
             capture_output=True, text=True, timeout=120,
         )
@@ -92,17 +109,54 @@ def test_every_powershell_windows_step_text_parses():
     assert not errors, "PowerShell parse errors in Windows step text:\n  " + "\n  ".join(errors)
 
 
-@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
 def test_the_parse_gate_can_fail():
+    pwsh = _pwsh_or_skip()
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
         json.dump([{"id": "broken", "text": "if ($x { Write-Output 'unclosed'"}], f)
         path = f.name
     try:
         r = subprocess.run(
-            ["pwsh", "-NoProfile", "-NonInteractive", "-Command", _PARSE_ALL],
+            [pwsh, "-NoProfile", "-NonInteractive", "-Command", _PARSE_ALL],
             env={**os.environ, "CORTEXSIM_PS_TEXTS": path},
             capture_output=True, text=True, timeout=60,
         )
     finally:
         Path(path).unlink(missing_ok=True)
     assert "broken :: line 1" in r.stdout, r.stdout
+
+
+# ── RG-PUSH-03: where the parser is promised, its absence is a failure ──────
+#
+# Both parse tests above used a plain `skipif(shutil.which("pwsh") is None)`
+# decorator; they now ask `_pwsh_or_skip()`.
+# Observed with pwsh hidden:
+#
+#     CI=1 CORTEXSIM_REQUIRE_POWERSHELL=1 pytest tests/engine/test_windows_step_text_parses.py -rs
+#     1 passed, 2 skipped        (both: "pwsh not installed")
+#
+# while every sibling parse gate fails under the same flags
+# (test_push_generator_windows.py::_powershell_or_skip). This is the only test
+# that parses each step's OWN text, so a skip there read green with the gate
+# not run.
+
+
+@pytest.mark.parametrize("flag", ["CI", "CORTEXSIM_REQUIRE_POWERSHELL"])
+@pytest.mark.parametrize("gate", ["test_every_powershell_windows_step_text_parses",
+                                  "test_the_parse_gate_can_fail"])
+def test_a_required_parser_that_is_missing_fails_the_gate(monkeypatch, flag, gate):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("CORTEXSIM_REQUIRE_POWERSHELL", raising=False)
+    monkeypatch.setenv(flag, "1")
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: None)
+    with pytest.raises(pytest.fail.Exception, match="PowerShell is required"):
+        globals()[gate]()
+
+
+@pytest.mark.parametrize("gate", ["test_every_powershell_windows_step_text_parses",
+                                  "test_the_parse_gate_can_fail"])
+def test_a_missing_parser_still_skips_where_nothing_promised_it(monkeypatch, gate):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("CORTEXSIM_REQUIRE_POWERSHELL", raising=False)
+    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: None)
+    with pytest.raises(pytest.skip.Exception):
+        globals()[gate]()
