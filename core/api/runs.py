@@ -24,7 +24,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse, Response
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import LargeBinary, and_, case, cast, func, not_, or_, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +55,7 @@ from engine.outcome import (
 from engine.pairing import build_pair_delta
 from engine.orchestrator import orchestrator
 from events import event_bus
-from models import Agent, Result, Run, Scenario, StepOutcome
+from models import Agent, Result, Run, RunTaskCompletion, Scenario, StepOutcome
 from tools.adapter_catalog import catalog as adapter_catalog
 
 logger = logging.getLogger("cortexsim.api.runs")
@@ -663,6 +663,21 @@ class CompleteRequest(BaseModel):
     # Per-step host evidence. Absent from an old beacon, which must behave
     # exactly as before: no step_outcomes rows, status rule unchanged.
     steps: list[StepOutcomeIn] = []
+    # Which task this completion is for (RG-AGENT-03). The beacon retries
+    # /complete when the reply is lost; with an identity a repeat is counted
+    # once. Absent from an old beacon, which is counted per POST as before.
+    task_id: Optional[str] = Field(None, max_length=200)
+    agent_id: Optional[str] = Field(None, max_length=200)
+
+    def completion_key(self) -> Optional[str]:
+        """The idempotency key for this completion, or None when the beacon
+        sent no identity. ``task_id`` wins; a fan-out carries one task per
+        distinct agent, so ``agent_id`` identifies the task just as well."""
+        task = (self.task_id or "").strip()
+        if task:
+            return f"task:{task}"
+        agent = (self.agent_id or "").strip()
+        return f"agent:{agent}" if agent else None
 
 
 # Terminal Run states — reaching any of these stops the agent and makes
@@ -1749,6 +1764,42 @@ async def _record_late_abort_evidence(db: AsyncSession, run: Run, steps: list) -
     return len(steps)
 
 
+async def _refuse_terminal_complete(db: AsyncSession, run: Run,
+                                    body: "CompleteRequest") -> HTTPException:
+    """The 409 for a ``/complete`` that reached a finished run (caller raises it).
+
+    409, not 200 (OPS-03). The beacon RETRIES ``/complete``, so this answer is
+    what tells it to stop: the run was already finished (by an earlier
+    ``/complete``, an operator abort, a staging refusal, or the beacon-lost /
+    abandoned-task sweep). Its summary and exit code are never applied, and
+    neither is ``steps[]`` beyond what ``host_evidence_recorded`` counts. A 200
+    here read as "accepted", which a retrying client cannot tell apart from
+    success.
+    """
+    run_id = run.run_id
+    logger.info(
+        "run_complete refused — run already terminal run_id=%s status=%s exit_code=%d",
+        run_id, run.status, body.exit_code,
+    )
+    # Run is already terminal — drop it from the orchestrator's aborted set
+    # so the in-memory set stays bounded even on the abort→late-complete path.
+    orchestrator.clear_aborted(run_id)
+    orchestrator.forget_control_poll(run_id)
+    # The one thing a late /complete may still add: after an operator abort of
+    # a delivered run, which steps the host says ran (RG-RUNS-01).
+    kept = await _record_late_abort_evidence(db, run, body.steps)
+    return HTTPException(
+        status_code=409,
+        detail={
+            "error": "Run already terminal",
+            "code": "RUN_ALREADY_TERMINAL",
+            "detail": {"run_id": run_id, "status": run.status,
+                       "already_terminal": True,
+                       "host_evidence_recorded": kept},
+        },
+    )
+
+
 @router.post("/{run_id}/complete")
 async def complete_run(
     run_id: str,
@@ -1782,6 +1833,39 @@ async def complete_run(
     # re-score the run. That covers an operator abort (the agent reports exit
     # 130 on abort) and a staging refusal, which stops the surviving endpoints
     # the same way. A sticky-failed fan-out still owed endpoints is in flight.
+    #
+    # A RETRIED /complete counts once (RG-AGENT-03). The beacon re-sends the
+    # same body when the reply is lost, and the decrement below cannot tell a
+    # repeat from the fan-out's next endpoint — so one endpoint's retry used to
+    # terminalise the run, the control channel stopped the other endpoint
+    # mid-step, and its evidence was refused while the run read `complete`.
+    # When the body names its task, that identity is inserted FIRST, in this
+    # same write transaction: a conflict means this completion was already
+    # applied, and nothing below runs. A refusal further down rolls the insert
+    # back with everything else.
+    key = body.completion_key()
+    if key is not None:
+        claimed = await db.execute(
+            sqlite_insert(RunTaskCompletion)
+            .values(run_id=run_id, task_key=key,
+                    agent_id=(body.agent_id or "").strip() or None,
+                    exit_code=body.exit_code, completed_at=datetime.utcnow())
+            .on_conflict_do_nothing(index_elements=["run_id", "task_key"])
+        )
+        if claimed.rowcount == 0:
+            await db.rollback()
+            run = await _reload_run(db, run_id)
+            if run is None:
+                raise _run_not_found(run_id)
+            if not _is_terminal(run):
+                logger.info(
+                    "run_complete duplicate — already applied run_id=%s key=%s "
+                    "remaining_endpoints=%s", run_id, key, run.open_tasks)
+                return {"status": run.status, "run_id": run_id,
+                        "pending_endpoints": run.open_tasks or 0, "duplicate": True}
+            # Finished since: one rule for a terminal run, whoever asks.
+            raise await _refuse_terminal_complete(db, run, body)
+
     summary_text = f"\n--- COMPLETION SUMMARY ---\nExit code: {body.exit_code}\n{body.summary}\n"
     values: dict = {
         "open_tasks": func.max(func.coalesce(Run.open_tasks, 1) - 1, 0),
@@ -1806,34 +1890,7 @@ async def complete_run(
         run = await _reload_run(db, run_id)
         if run is None:
             raise _run_not_found(run_id)
-        logger.info(
-            "run_complete refused — run already terminal run_id=%s status=%s exit_code=%d",
-            run_id, run.status, body.exit_code,
-        )
-        # Run is already terminal — drop it from the orchestrator's aborted set
-        # so the in-memory set stays bounded even on the abort→late-complete path.
-        orchestrator.clear_aborted(run_id)
-        orchestrator.forget_control_poll(run_id)
-        # The one thing a late /complete may still add: after an operator
-        # abort of a delivered run, which steps the host says ran (RG-RUNS-01).
-        kept = await _record_late_abort_evidence(db, run, body.steps)
-        # 409, not 200 (OPS-03). The beacon now RETRIES /complete, so this
-        # answer is what tells it to stop: the run was already finished (by an
-        # earlier /complete, an operator abort, a staging refusal, or the
-        # beacon-lost / abandoned-task sweep). Its summary and exit code are
-        # never applied, and neither is steps[] beyond what
-        # `host_evidence_recorded` counts. A 200 here read as "accepted",
-        # which a retrying client cannot tell apart from success.
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "Run already terminal",
-                "code": "RUN_ALREADY_TERMINAL",
-                "detail": {"run_id": run_id, "status": run.status,
-                           "already_terminal": True,
-                           "host_evidence_recorded": kept},
-            },
-        )
+        raise await _refuse_terminal_complete(db, run, body)
 
     # Host evidence for each step, in the same write transaction.
     await _record_step_outcomes(db, run_id, body.steps)

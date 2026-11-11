@@ -464,6 +464,37 @@ class StepOutcome(Base):
         }
 
 
+class RunTaskCompletion(Base):
+    """One beacon task's ``/complete``, recorded so a retry counts once.
+
+    The beacon retries ``/complete`` when the reply is lost, and
+    ``complete_run`` decrements ``Run.open_tasks`` per accepted POST. On a
+    multi-endpoint fan-out an uncounted retry terminalised the run while
+    another endpoint was still executing (RG-AGENT-03). The row is inserted in
+    the same write transaction as the decrement; the unique key makes a repeat
+    of the same task a no-op.
+
+    ``task_key`` is ``task:<task_id>`` when the beacon sent the task's id, else
+    ``agent:<agent_id>`` (a fan-out carries one task per distinct agent). A
+    beacon that sends neither writes no row and is counted as before.
+
+    A new table, so ``create_all`` adds it to an existing database at boot; no
+    column migration is involved.
+    """
+
+    __tablename__ = "run_task_completions"
+    __table_args__ = (UniqueConstraint("run_id", "task_key",
+                                       name="uq_run_task_completions_run_task"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    task_key: Mapped[str] = mapped_column(String, nullable=False)
+    agent_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    exit_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False,
+                                                   default=datetime.utcnow)
+
+
 class Observation(Base):
     """Tenant evidence: one raw alert pulled back for a run."""
 
