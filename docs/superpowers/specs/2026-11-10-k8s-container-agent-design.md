@@ -397,9 +397,18 @@ Small, and all in `agent/`:
    computed at generation (`ttl_seconds`, default and maximum 12h, the existing
    `ClusterPosture` bound), the way the push path stamps `expires`. It is
    absolute so a rescheduled pod does not get a fresh clock. The beacon stops
-   accepting tasks at expiry, and the push path's reaper Job (`_reaper`, with its
+   accepting tasks at expiry, and the push path's reaper (`_reaper`, with its
    pinned RBAC) is reused to delete the objects, so an expired privileged pod
    does not sit idle on the node. A longer POV re-applies a fresh manifest.
+   In the agent manifest the reaper runs as a `replicas: 1`, `Recreate`
+   Deployment built from `_reaper`'s Job (same name, ServiceAccount, RBAC,
+   image and script): a Job's pod template is immutable and the expiry changes
+   it on every generation, so a re-apply was rejected (kind run, 2026-11-10).
+   Because a Deployment restarts its pod, the reaper waits to the absolute
+   expiry (`EXPIRES_AT_EPOCH`, `date +%s`), not a relative `TTL`. The agent
+   container is Ready only once the beacon has stored its enrolled id
+   (readiness probe on `/cortexsim/state/agent-id`; no liveness or startup
+   probe, which would kill a slow package install).
    Henry's lab advice was "run about an hour, then tear down"; this enforces the
    upper bound.
 5. **Anchor shell.** `newAnchorCmd` starts `sh` with `argv[0]` rewritten to the
