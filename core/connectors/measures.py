@@ -152,9 +152,14 @@ def correlation_rate_from_incidents(incidents: Iterable[Any]) -> "tuple[Optional
     return round((a - k) / (a - 1) * 100.0, 1), a, k
 
 
+SEALED_SPLIT_REASON = ("fail withheld: a case was sealed by the response layer before "
+                       "the chain finished — the split is not the detection engine's")
+
+
 def guard_measurement(
     threshold: Any, value: Optional[float], *,
     unscoped: bool, truncated: bool, matched: Optional[int] = None,
+    sealed_split: bool = False,
 ) -> "tuple[Optional[float], Optional[str]]":
     """Apply the honesty rules; return ``(value_to_score, withheld_reason)``.
 
@@ -174,6 +179,8 @@ def guard_measurement(
     if provisional == FAIL and truncated:
         return None, ("fail withheld: the pull was truncated, so this value is a "
                       "floor — more alerts exist in the tenant than were fetched")
+    if provisional == FAIL and sealed_split:
+        return None, SEALED_SPLIT_REASON
     return value, None
 
 
@@ -241,8 +248,11 @@ def build_measurement(
                 "incident held two or more alerts — a correlation rate needs at "
                 "least two alerts to mean anything")
             return None, record
+    # A split the SOC Framework made (a case sealed before the chain finished)
+    # is not the detection engine's: only this family reads merge_class.
     scored, reason = guard_measurement(threshold, value, unscoped=unscoped,
-                                       truncated=truncated, matched=matched)
+                                       truncated=truncated, matched=matched,
+                                       sealed_split=(ctx.get("merge_class") == "SPLIT_SEALED"))
     record["scored"] = scored
     if reason:
         record["withheld"] = reason
