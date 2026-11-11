@@ -189,6 +189,19 @@ button.pov-chip:hover { border-color: var(--bd2); }
 .pov-chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pos); }
 .pov-chip__dot--off { background: var(--tx3); }
 .pov-chip__dot--warn { background: var(--warn); }
+/* Agent liveness: a SHAPE per state as well as a colour, and a word beside the
+   name when the beacon is not online. Online = filled disc (above); stale or
+   enrolled-only = hollow ring; offline = filled square; unknown / none = the
+   grey --off disc. */
+.pov-chip__dot--ring {
+  width: 8px; height: 8px; box-sizing: border-box;
+  background: transparent; border: 2px solid var(--warn);
+}
+.pov-chip__dot--down { width: 7px; height: 7px; border-radius: 1px; background: var(--crit); }
+.pov-chip__state { font: 700 9px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.pov-chip__state--warn { color: var(--warn); }
+.pov-chip__state--bad { color: var(--crit); }
+.pov-chip__state--muted { color: var(--tx3); }
 .pov-chip__kbd {
   font: 600 10px/1 var(--font-mono);
   padding: 2px 4px; background: var(--s3); border-radius: 3px;

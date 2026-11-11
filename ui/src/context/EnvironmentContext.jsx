@@ -270,10 +270,13 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   // Global run poll — not tab-gated (drives the global LIVE pill everywhere).
   // The health probe rides the same tick so the unreachable banner clears
   // itself the moment SimCore comes back, without an operator reload.
+  // So does the agent list: the header's agent chip states whether the active
+  // beacon is polling, on every surface, and a list read once at page load
+  // would keep saying "online" about a beacon that stopped mid-POV.
   useEffect(() => {
-    const t = setInterval(() => { refreshRuns(); refreshHealth() }, runPollMs)
+    const t = setInterval(() => { refreshRuns(); refreshHealth(); refreshAgents() }, runPollMs)
     return () => clearInterval(t)
-  }, [refreshRuns, refreshHealth, runPollMs])
+  }, [refreshRuns, refreshHealth, refreshAgents, runPollMs])
 
   // Re-scope health when the active tenant changes.
   useEffect(() => {

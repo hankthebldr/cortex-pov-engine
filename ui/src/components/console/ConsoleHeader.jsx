@@ -1,4 +1,24 @@
 import React from 'react'
+import { agentLiveness, LIVENESS } from './setupProgress.js'
+
+// The agent chip's dot per liveness state. Colour is never the only signal:
+// each state has its own SHAPE (disc / ring / square / small grey disc, see
+// povengine-shell.css), a state that is not online shows its word beside the
+// name, and the chip's accessible name carries the full label.
+const AGENT_DOT = {
+  [LIVENESS.ONLINE]: '',
+  [LIVENESS.STALE]: ' pov-chip__dot--ring',
+  [LIVENESS.ENROLLED]: ' pov-chip__dot--ring',
+  [LIVENESS.OFFLINE]: ' pov-chip__dot--down',
+  [LIVENESS.UNKNOWN]: ' pov-chip__dot--off',
+  none: ' pov-chip__dot--off',
+}
+const AGENT_TONE = {
+  [LIVENESS.STALE]: 'warn',
+  [LIVENESS.ENROLLED]: 'warn',
+  [LIVENESS.OFFLINE]: 'bad',
+  [LIVENESS.UNKNOWN]: 'muted',
+}
 
 /**
  * ConsoleHeader — the persistent global bar.
@@ -37,6 +57,14 @@ import React from 'react'
  * exclusive, and choosing between them is an affiliation call rather than a
  * design one — so it is recorded as an open question in
  * docs/design/DESIGN-SYNC.md rather than silently applied.)
+ *
+ * THE AGENT CHIP READS LIVENESS, FROM THE ONE MODEL.
+ * It is the only always-visible statement about the active beacon, so it says
+ * whether that beacon is polling: `setupProgress.agentLiveness`, the same
+ * answer the Agents cards, Get started and the launch preflight give. A state
+ * other than online adds one short word (the header scrolls itself if that
+ * outgrows the viewport; it never wraps). The provider re-reads the agent list
+ * on its poll tick so this is not a snapshot from page load.
  *
  * TENANT AND AGENT ARE READ-OUTS HERE, NOT SWITCHERS.
  * One tenant per instance is a design decision, and it follows from the
@@ -84,6 +112,11 @@ export default function ConsoleHeader({
 
   const tenantLabel = tenant ? (tenant.host || tenant.name || tenant.id) : 'no tenant bound'
   const agentLabel = agent ? (agent.hostname || agent.agent_id || agent.id) : 'no agent selected'
+  // The one liveness model every other surface reads. This chip used to draw
+  // the same green dot for ANY selected agent, so the only always-visible
+  // read-out of the active beacon could not show it had stopped polling.
+  const live = agent ? agentLiveness(agent) : null
+  const agentState = live ? live.state : 'none'
 
   return (
     <header className="pov-header" data-testid="console-header">
@@ -112,11 +145,18 @@ export default function ConsoleHeader({
         type="button"
         className="pov-chip"
         data-testid="header-agent"
+        data-liveness={agentState}
         onClick={() => onNavigate('agents')}
-        title="Active agent"
+        title={live ? `Active agent — ${live.label}` : 'Active agent'}
+        aria-label={live
+          ? `Active agent ${agentLabel} — ${live.label}. Open Agents`
+          : 'No agent selected. Open Agents'}
       >
-        <span className={'pov-chip__dot' + (agent ? '' : ' pov-chip__dot--off')} />
+        <span className={'pov-chip__dot' + AGENT_DOT[agentState]} aria-hidden="true" />
         <span>{agentLabel}</span>
+        {live && live.state !== LIVENESS.ONLINE && (
+          <span className={`pov-chip__state pov-chip__state--${AGENT_TONE[agentState]}`}>{agentState}</span>
+        )}
       </button>
 
       {/* The run view is unconditional. A DC is in the "a run is in flight"
