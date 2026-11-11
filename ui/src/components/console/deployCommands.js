@@ -9,9 +9,11 @@
  * installerOS used `/win/i`, which reads `darwin` as Windows; and Copy buttons
  * announced success before the clipboard had answered.
  *
- * What this module can NOT prove: that any of these commands work on a real
- * Windows host. No Windows host has executed the beacon or its installer. The
- * strings here are pinned by vitest in jsdom, nothing more.
+ * What this module can NOT prove: that any of these commands work on a
+ * customer's Windows host. The beacon and the elevated install one-liner ran
+ * once, green, on a GitHub-hosted windows-2022 runner (run 42933820773, no XDR
+ * agent, Defender real-time protection off); no customer endpoint has run
+ * them. The strings here are pinned by vitest in jsdom, nothing more.
  */
 import { parseServerTime } from '../../api/time.js'
 
@@ -305,8 +307,8 @@ export const WINDOWS_CAVEATS = Object.freeze([
   {
     id: 'unproven',
     title: 'Not yet proven on a Windows host.',
-    body: 'The Windows beacon and this installer are built and served, but no Windows host has run them yet. '
-      + 'Treat the first Windows enrolment as the test, before a customer is watching.',
+    body: 'The Windows beacon and this installer have run once, on a CI runner with no XDR agent, '
+      + 'and never on a customer endpoint. Treat the first Windows enrolment as the test, before a customer is watching.',
   },
   {
     id: 'identity',

@@ -52,8 +52,9 @@ export function DownloadOutcome({
 }) {
   if (!result) return null
   if (result.status === 'success') {
-    // Saved is not the same as known to run. A .ps1 is authored and
-    // parse-checked; none has executed on a Windows host.
+    // Saved is not the same as known to run. A shipped .ps1 is authored and
+    // parsed by 5.1 in CI; none has executed on a Windows host (CI ran only a
+    // probe bundle).
     const isWindowsBundle = result.target === 'windows' || /\.ps1$/i.test(String(result.filename || ''))
     return (
       <div className="launch-result launch-result--success" role="status" data-testid={testId}>
