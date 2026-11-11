@@ -19,6 +19,7 @@ import { isRunTerminal } from './runStatus.js'
 import useShelf from './useShelf.js'
 import useLaunchScenario from './useLaunchScenario.js'
 import useRunStepTail, { STEP_STATUS_LABEL } from './useRunStepTail.js'
+import { launchWarningsFor } from './launchWarnings.js'
 import { relativeTime, absoluteTime, detectionCell, runAgent, statusKey } from './runRows.js'
 import { HS } from './readiness/healthModel.js'
 import { causalityStepStates } from './composerLayout.js'
@@ -1687,6 +1688,8 @@ function ActivePane({ followRunId, activeRun, runs, steps, onNavigate, onUnfollo
   const stepLabel = rows.length ? `step ${Math.min(done + (terminal ? 0 : 1), rows.length)}/${rows.length}` : '—'
   const since = run?.started_at || listRow?.started_at
   const liveIsOther = followRunId && activeRun && activeRun.runId !== followRunId
+  // Remembered from the launch response for this browser session.
+  const launchWarnings = launchWarningsFor(runId)
 
   return (
     <div className="ws-active" data-testid="ws-active" data-run-id={runId}>
@@ -1708,6 +1711,19 @@ function ActivePane({ followRunId, activeRun, runs, steps, onNavigate, onUnfollo
         </span>
       </div>
       {error && <div className="ws-empty ws-active__error">could not load the run: {error}</div>}
+      {/* What SimCore said when it ACCEPTED this launch (an offline target, an
+          agent with no registered OS). The Composer follows the run here, so
+          the Runs page's banner never shows; the 5 s notice is not the place. */}
+      {launchWarnings.length > 0 && (
+        <div className="ws-empty ws-active__warn" role="status" data-testid="ws-launch-warnings">
+          SimCore warned about this launch:
+          <ul className="ws-active__warn-list mono">
+            {launchWarnings.map((w, i) => (
+              <li key={`${i}-${w.code || ''}`}>{w.code ? <strong>{w.code}</strong> : null}{w.code ? ' — ' : ''}{w.text}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {liveIsOther && (
         <div className="ws-empty">
           another run is in flight ({activeRun.scenarioId}).

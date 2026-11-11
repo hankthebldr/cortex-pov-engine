@@ -750,6 +750,18 @@
 .theme-console .ws-active { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .theme-console .ws-active__ctl { display: inline-flex; align-items: center; gap: 8px; }
 .theme-console .ws-active__error { color: var(--neg, #ff6b6b); }
+/* What SimCore said when it accepted the launch (offline target, unknown agent
+   OS). A warning rule on the left; the code is spelled out, not colour-coded. */
+.theme-console .ws-active__warn {
+  display: block;
+  padding: 6px 10px;
+  border-left: 3px solid var(--warn);
+  background: var(--s2);
+  border-radius: 3px;
+  color: var(--tx);
+}
+.theme-console .ws-active__warn-list { margin: 4px 0 0; padding-left: 16px; font-size: 10.5px; color: var(--tx2); }
+.theme-console .ws-active__warn-list strong { color: var(--warn); font-weight: 600; }
 .theme-console .ws-steps { display: flex; flex-direction: column; gap: 3px; width: 100%; }
 .theme-console .ws-step {
   display: grid;
