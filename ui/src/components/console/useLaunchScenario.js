@@ -3,6 +3,7 @@ import { postRun, getAgents, getRuns, postCanary, downloadScenario } from '../..
 import { getLaunchCapability } from '../../api/payloads.js'
 import { agentIdOf, runIdOf } from '../../api/ids.js'
 import { triStateFromValue } from '../../outcomes.js'
+import { AGENT_REFRESH_HINT_S } from './readiness/scenarioPreflight.js'
 
 /**
  * Push-bundle formats GET /api/scenarios/{id}/download serves. One list, so the
@@ -289,21 +290,29 @@ export default function useLaunchScenario(scenario, {
     }
   }, [selectedAgent])
 
-  // Fetch agents whenever pull mode is active.
+  // Fetch agents whenever pull mode is active, and keep re-reading them.
+  //
+  // The list used to be read once. The preflight's Target row answers "is this
+  // beacon polling right now?" from it, so a beacon that went offline after the
+  // view opened still read online, and a BLOCK for a just-enrolled row (no
+  // beacon poll yet) could never clear without leaving the view. A refresh that
+  // fails keeps the last list: one dropped request must not empty the picker.
   useEffect(() => {
-    if (mode !== 'pull') return
+    if (mode !== 'pull') return undefined
     let cancelled = false
-    getAgents()
+    const load = (first) => getAgents()
       .then((data) => {
         if (cancelled) return
         const list = Array.isArray(data) ? data : []
         setAgents(list)
-        if (list.length > 0 && !selectedAgent) {
+        if (first && list.length > 0 && !selectedAgent) {
           setSelectedAgent(agentIdOf(list[0]) || '')
         }
       })
-      .catch(() => { if (!cancelled) setAgents([]) })
-    return () => { cancelled = true }
+      .catch(() => { if (!cancelled && first) setAgents([]) })
+    load(true)
+    const t = setInterval(() => load(false), AGENT_REFRESH_HINT_S * 1000)
+    return () => { cancelled = true; clearInterval(t) }
   }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Probe once, only when a plan is actually in play.

@@ -29,17 +29,23 @@ import { installerOS } from './deployCommands.js'
 export const STEP_IDS = ['agent', 'tenant', 'collector', 'bvm', 'simulate']
 
 // ── Agent liveness ───────────────────────────────────────────────────────────
-// ONE model for every surface that colours an agent (Get started, the Agents
-// cards, the header switcher). Three surfaces each deriving their own answer is
-// how a row SimCore calls offline read "live" on one of them.
+// ONE model for every surface that colours an agent or gates on one: Get
+// started, the Agents cards, the header switcher, and the launch preflight's
+// Target row (readiness/scenarioPreflight.js). Each surface deriving its own
+// answer is how a row SimCore calls offline read "live" on one of them, and how
+// the preflight read PASS "online" for a row the card said not to launch onto.
 //
 // Precedence, and why:
 //   1. ENROLLED beats everything. `POST /api/agents/enroll` writes the row with
 //      registered_at == last_seen and status 'online', and `GET /api/agents`
-//      then derives 'online' for 30 s — before any beacon has polled. The
-//      Windows installer enrols with capabilities ['shell']; only a running
-//      beacon re-registers with 'powershell'. Either signature means "the
-//      installer got this far", not "a beacon is talking to SimCore".
+//      then derives 'online' for 30 s — before any beacon has polled. That
+//      timestamp signature is the rule that does the work today.
+//      A second, older signature is kept for rows written before 2026-11: that
+//      Windows installer enrolled with capabilities ['shell'], and only a
+//      running beacon registers 'powershell'. The current installer enrols
+//      with ['shell', 'powershell'], so the capability rule no longer fires
+//      for it. Either signature means "the installer got this far", not "a
+//      beacon is talking to SimCore".
 //   2. An explicit server status (online / stale / offline) is the answer.
 //      It is measured on SimCore's clock; the browser's can be minutes off.
 //      An unrecognised value is UNKNOWN — never a reason to fall back to age.

@@ -456,3 +456,153 @@ describe('platform — older SimCore without bundle_targets (label heuristic)', 
     expect(check(pf, 'platform-labels')).toBeUndefined()
   })
 })
+
+// ── Inside the POSIX family (RG-UI-01) ──────────────────────────────────────
+// `bundle_targets` separates POSIX from Windows and nothing else: SimCore maps a
+// darwin beacon to `posix` and dispatches the Linux primary to it with no
+// marker. Round 1 took `bundle_targets` as the whole verdict, so a macOS beacon
+// read PASS on every Linux-only scenario (and SIM-KOI-009, macOS-only, read PASS
+// on a Linux beacon). The step labels are the only linux-versus-macOS signal
+// there is, so they stay the verdict INSIDE the POSIX family.
+describe('platform — inside the POSIX family (RG-UI-01)', () => {
+  const MAC = { ...AGENT_ONLINE, os: 'darwin' }
+  const linuxOnly = {
+    ...SCENARIO,
+    steps: [
+      { id: 'step-01', identity: 'www-data', platforms: ['linux'] },
+      { id: 'step-02', identity: 'www-data', platforms: ['linux', 'container'] },
+    ],
+    bundle_targets: ['posix'],
+  }
+  const macOnly = {
+    ...SCENARIO, scenario_id: 'SIM-KOI-009',
+    steps: [{ id: 'step-01', platforms: ['macos'] }, { id: 'step-02', platforms: ['macos'] }],
+    bundle_targets: ['posix'],
+  }
+
+  it('a macOS beacon BLOCKS on a Linux-only scenario, whatever name the beacon gave its OS', () => {
+    for (const os of ['darwin', 'macos']) {
+      const pf = base({ scenario: linuxOnly, agents: [{ ...MAC, os }] })
+      const p = check(pf, 'platform')
+      expect(p.status, os).toBe(PF.BLOCK)
+      expect(p.summary, os).toBe(`no step declares ${os}`)
+      expect(pf.blocking.map((b) => b.id), os).toContain('platform')
+    }
+  })
+
+  it('says SimCore will not refuse it — the console is the only guard', () => {
+    const p = check(base({ scenario: linuxOnly, agents: [MAC] }), 'platform')
+    expect(p.detail).toMatch(/SimCore does not refuse/)
+    expect(p.detail).not.toMatch(/PULL_TARGET_UNSATISFIABLE/)
+  })
+
+  it('a Linux beacon BLOCKS on a macOS-only scenario (SIM-KOI-009 shape)', () => {
+    const p = check(base({ scenario: macOnly }), 'platform')
+    expect(p.status).toBe(PF.BLOCK)
+    expect(p.summary).toBe('no step declares linux')
+  })
+
+  it('WARNs when only some POSIX-labelled steps declare the beacon OS', () => {
+    const mixed = {
+      ...SCENARIO,
+      steps: [
+        { id: 's1', platforms: ['linux'] }, { id: 's2', platforms: ['linux'] },
+        { id: 's3', platforms: ['macos'] },
+      ],
+      bundle_targets: ['posix'],
+    }
+    const pf = base({ scenario: mixed, agents: [MAC] })
+    const p = check(pf, 'platform')
+    expect(p.status).toBe(PF.WARN)
+    expect(p.summary).toBe('2 of 3 platform-bearing steps do not declare darwin')
+    expect(pf.blocking.map((b) => b.id)).not.toContain('platform')
+  })
+
+  it('PASSes when every POSIX-labelled step declares the beacon OS', () => {
+    expect(check(base({ scenario: macOnly, agents: [MAC] }), 'platform').status).toBe(PF.PASS)
+    const both = { ...linuxOnly, steps: [{ id: 's', platforms: ['linux', 'macos'] }] }
+    expect(check(base({ scenario: both, agents: [MAC] }), 'platform').status).toBe(PF.PASS)
+    expect(check(base({ scenario: both }), 'platform').status).toBe(PF.PASS)
+  })
+
+  it('a windows-only LABEL says nothing about linux versus macOS, so it cannot block a POSIX beacon', () => {
+    // SIM-EDR-014 shape: POSIX text under `platforms: [windows]`. The label
+    // disagreement stays the secondary WARN; it is not an intra-POSIX verdict.
+    const mislabelled = { ...SCENARIO, steps: [{ id: 's', platforms: ['windows'] }], bundle_targets: ['posix'] }
+    for (const agent of [AGENT_ONLINE, MAC]) {
+      const pf = base({ scenario: mislabelled, agents: [agent] })
+      expect(check(pf, 'platform').status, agent.os).toBe(PF.PASS)
+      expect(check(pf, 'platform-labels').status, agent.os).toBe(PF.WARN)
+    }
+  })
+
+  it('a push bundle has no beacon OS to compare, so the label check does not apply', () => {
+    const p = check(base({ scenario: macOnly, target: PUSH_TARGET, pushFormat: 'bash' }), 'platform')
+    expect(p.status).toBe(PF.PASS)
+  })
+})
+
+// ── Target liveness is the ONE model (RG-UI-04) ─────────────────────────────
+// POST /api/agents/enroll writes registered_at == last_seen and status 'online';
+// GET /api/agents then says 'online' for 30 s before any beacon has polled. The
+// Agents card called that row "enrolled — waiting for first beacon poll" and
+// said "do not launch onto it" while this row said PASS "12s since last poll".
+describe('target — an enrolled-only row is not a beacon (RG-UI-04)', () => {
+  const T0 = '2026-11-10T10:00:00.123456'
+  const ENROLLED_WIN = {
+    agent_id: 'jumpbox-01', hostname: 'WIN22', os: 'windows', status: 'online',
+    capabilities: ['shell', 'powershell'], registered_at: T0, last_seen: T0, last_seen_age_seconds: 12,
+  }
+
+  it('BLOCKS, in the words every other surface uses, and claims no poll', () => {
+    const pf = base({ agents: [ENROLLED_WIN] })
+    const t = check(pf, 'target')
+    expect(t.status).toBe(PF.BLOCK)
+    expect(t.summary).toMatch(/enrolled — waiting for first beacon poll/)
+    expect(`${t.summary} ${t.detail}`).not.toMatch(/since last poll/)
+    expect(t.summary).not.toMatch(/online/)
+    expect(pf.blocking.map((b) => b.id)).toContain('target')
+  })
+
+  it('the same for a POSIX row, with a POSIX fix line', () => {
+    const t = check(base({ agents: [{ ...ENROLLED_WIN, hostname: 'jb', os: 'linux', capabilities: ['shell', 'identity-harness'] }] }), 'target')
+    expect(t.status).toBe(PF.BLOCK)
+    expect(t.remediation).toMatch(/systemctl/)
+    expect(t.remediation).not.toMatch(/sc\.exe/)
+  })
+
+  it('a row whose beacon has polled since enrolment still PASSes, with its poll age', () => {
+    const t = check(base({ agents: [{ ...ENROLLED_WIN, last_seen: '2026-11-10T10:00:20', last_seen_age_seconds: 4 }] }), 'target')
+    expect(t.status).toBe(PF.PASS)
+    expect(t.detail).toMatch(/4s since last poll/)
+  })
+
+  it('an unrecognised status is UNKNOWN, never read as online', () => {
+    const t = check(base({ agents: [{ ...AGENT_ONLINE, status: 'zombie' }] }), 'target')
+    expect(t.status).toBe(PF.UNKNOWN)
+    expect(t.summary).toMatch(/zombie/)
+  })
+})
+
+// ── Remediation names the target's own supervisor (UI-19) ───────────────────
+describe('target — the fix line matches the beacon OS (UI-19)', () => {
+  it('an offline Windows beacon is not told to run systemctl', () => {
+    const t = check(base({ agents: [{ ...AGENT_OFFLINE, os: 'windows', capabilities: ['shell', 'powershell', 'artifact-fetch'] }] }), 'target')
+    expect(t.status).toBe(PF.BLOCK)
+    expect(t.remediation).toMatch(/sc\.exe query CortexSimAgent/)
+    expect(t.remediation).toMatch(/Restart-Service CortexSimAgent/)
+    expect(t.remediation).not.toMatch(/systemctl/)
+  })
+
+  it('an offline macOS beacon is pointed at launchd', () => {
+    const t = check(base({ agents: [{ ...AGENT_OFFLINE, os: 'darwin' }] }), 'target')
+    expect(t.remediation).toMatch(/launchctl/)
+    expect(t.remediation).not.toMatch(/systemctl/)
+  })
+
+  it('an offline Linux beacon keeps systemctl, including the per-user unit a non-root install creates', () => {
+    const t = check(base({ agents: [AGENT_OFFLINE] }), 'target')
+    expect(t.remediation).toMatch(/systemctl status cortexsim-agent/)
+    expect(t.remediation).toMatch(/systemctl --user status cortexsim-agent/)
+  })
+})

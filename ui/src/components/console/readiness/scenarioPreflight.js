@@ -22,14 +22,19 @@
  *   pass    — checked, and it holds.
  *   warn    — checked, and it will degrade something. Launch stays enabled;
  *             the DC may know egress is fine, and ceremony is not safety.
- *   block   — SimCore's own guard will refuse this launch. A named dead button
- *             beats a 409 mid-demo.
+ *   block   — SimCore's own guard will refuse this launch, OR the launch would
+ *             be accepted and cannot execute as authored: no beacon is polling
+ *             (offline, or enrolled and never polled), or no step is authored
+ *             for the beacon's OS. A named dead button beats a 409 mid-demo,
+ *             and beats a run that reads as the customer's missed detections.
  *   unknown — we could not check. NEVER rendered as a pass. An older SimCore
  *             that does not report shelf state is not a SimCore whose tools are
  *             staged.
  */
 
 import { SUPPLY, supplyOf } from '../supplyState.js'
+import { agentLiveness, LIVENESS } from '../setupProgress.js'
+import { installerOS } from '../deployCommands.js'
 
 export const PF = { PASS: 'pass', WARN: 'warn', BLOCK: 'block', UNKNOWN: 'unknown' }
 
@@ -48,6 +53,13 @@ export const PF_LABEL = {
 }
 
 const SEVERITY = { [PF.PASS]: 0, [PF.UNKNOWN]: 1, [PF.WARN]: 2, [PF.BLOCK]: 3 }
+
+/**
+ * How often the launch surface re-reads the agent list in pull mode (seconds).
+ * useLaunchScenario polls on this; the Target row quotes it, because a BLOCK
+ * that clears itself has to say so or the operator reloads the page instead.
+ */
+export const AGENT_REFRESH_HINT_S = 10
 
 /** Identities that need no wrapper — they cannot fail on account grounds. */
 const NO_WRAPPER_IDENTITIES = new Set(['direct', 'root', 'container-runtime', '']) // '' = unset
@@ -215,29 +227,78 @@ function targetCheck(scenario, target, agents) {
       'Refresh Agents and re-pick the target.')
   }
 
-  const status = String(agent.status || '').toLowerCase()
-  const age = typeof agent.last_seen_age_seconds === 'number'
-    ? `${Math.round(agent.last_seen_age_seconds)}s since last poll`
+  // ONE liveness model (setupProgress.js::agentLiveness), the same one the
+  // Agents cards, the header switcher and Get started read. This row used to
+  // read `agent.status` itself, so a row the installer had only enrolled —
+  // which SimCore stamps 'online' for 30 s before any beacon has polled — read
+  // PASS "online · 12s since last poll" here while the Agents card for the
+  // same row said "do not launch onto it".
+  const live = agentLiveness(agent)
+  const host = agent.hostname || target.id
+  const age = live.ageSeconds !== null
+    ? `${Math.round(live.ageSeconds)}s since last poll`
     : 'last poll unknown'
 
-  if (status === 'offline') {
-    return mk('target', 'Target', PF.BLOCK, `beacon offline (${age})`,
-      `${agent.hostname || target.id} has not polled recently. A pull-mode task queued now sits `
-      + 'undelivered; the run stays `running` and nothing executes.',
-      'Restart the beacon on the target (systemctl status cortexsim-agent), or use push mode.')
+  if (live.state === LIVENESS.ENROLLED) {
+    // No "since last poll" figure: there has been no poll to measure from.
+    return mk('target', 'Target', PF.BLOCK, `${host} ${live.label}`,
+      'The installer enrolled this agent, but no beacon has polled SimCore since. SimCore stamps a '
+      + 'newly enrolled row `online` for its first 30 s, so that status is not a poll. A pull-mode '
+      + 'task queued now sits undelivered until a beacon collects it; the run stays `running` and '
+      + 'nothing executes.',
+      'Wait for the first poll — this check re-reads the agent list every '
+      + `${Math.round(AGENT_REFRESH_HINT_S)} s and clears itself. If it does not, the beacon did not `
+      + `start: ${beaconCheckHint(agent.os)} Deploy agent lists what the installer reported.`)
   }
-  if (status === 'stale') {
+  if (live.state === LIVENESS.OFFLINE) {
+    return mk('target', 'Target', PF.BLOCK, `beacon offline (${age})`,
+      `${host} has not polled recently. A pull-mode task queued now sits `
+      + 'undelivered; the run stays `running` and nothing executes.',
+      `${beaconCheckHint(agent.os)} Or use push mode.`)
+  }
+  if (live.state === LIVENESS.STALE) {
     return mk('target', 'Target', PF.WARN, `beacon stale (${age})`,
       'The beacon has missed poll intervals. The task will be delivered whenever it next polls — '
       + 'which may be after the customer has stopped watching.',
       'Check the beacon\'s connectivity back to this SimCore before launching.')
   }
+  if (live.state !== LIVENESS.ONLINE) {
+    // An unrecognised status, or a row SimCore has never seen. Not a pass:
+    // "we could not tell" is not "online".
+    return mk('target', 'Target', PF.UNKNOWN, `${host}: beacon liveness unknown — ${live.label}`,
+      'SimCore did not report a liveness this console recognises for this beacon, so it cannot say '
+      + 'whether a queued task would be collected.',
+      'Refresh Agents. If the row still reads unknown, check the beacon on the target before launching.')
+  }
 
   const caps = Array.isArray(agent.capabilities) ? agent.capabilities : []
   return mk('target', 'Target', PF.PASS,
-    `${agent.hostname || target.id} online · ${agent.os || 'os?'}`,
+    `${host} online · ${agent.os || 'os?'}`,
     `Capabilities: ${caps.length ? caps.join(', ') : 'none advertised'}. ${age}.`,
     '', { agent })
+}
+
+/**
+ * Where to look on the TARGET when its beacon is not polling — in that
+ * target's own words. Every offline beacon used to be told to run `systemctl`,
+ * Windows ones included. The Windows lines name what the installer creates;
+ * no Windows host has run that installer yet, so they are where to look, not a
+ * tested procedure.
+ */
+export function beaconCheckHint(os) {
+  const target = installerOS(os)
+  if (target === 'windows') {
+    return 'On the target, in Windows PowerShell as Administrator: `sc.exe query CortexSimAgent`, '
+      + 'then `Restart-Service CortexSimAgent` (log: %ProgramData%\\CortexSim\\agent.log). A beacon '
+      + 'installed without elevation is a detached process that ends at logoff — re-run the installer.'
+  }
+  if (target === 'darwin') {
+    return 'On the target: `launchctl print gui/$(id -u)/com.paloaltonetworks.cortexsim.agent` '
+      + '(`system/com.paloaltonetworks.cortexsim.agent` for a root install), and read '
+      + '~/.cortexsim/cortexsim-agent.log (/var/log/cortexsim-agent.log for a root install).'
+  }
+  return 'On the target: `systemctl status cortexsim-agent` (root install) or '
+    + '`systemctl --user status cortexsim-agent` (installed without sudo).'
 }
 
 // ─── 3 · Mode / platform ─────────────────────────────────────────────────────
@@ -387,16 +448,25 @@ function platformChecks(scenario, target, agents, pushFormat) {
           + 'or use format=auto.'
         : `Pick a ${other === 'windows' ? 'Windows' : 'Linux/macOS'} beacon, or push the bundle instead.`)
   } else {
-    const variants = steps.filter((s) => s && s.platform_variants
-      && typeof s.platform_variants === 'object'
-      && Object.keys(s.platform_variants).some((k) => (needed === 'windows'
-        ? String(k).toLowerCase() === 'windows'
-        : String(k).toLowerCase() !== 'windows'))).length
-    primary = mk('platform', 'Platform', PF.PASS, `SimCore resolves every step for ${needed}`,
-      `From bundle_targets [${list.join(', ')}] — the resolver SimCore itself gates on, reading `
-      + `the command text.${variants ? ` ${variants} step${variants === 1 ? '' : 's'} declare a `
-        + `${needed} platform variant; a step that runs its variant is marked PLATFORM VARIANT on `
-        + 'the run, because its expected detections were authored against the primary command.' : ''}`)
+    // SimCore resolves the family. Inside POSIX it resolves nothing further,
+    // so the labels decide whether THIS beacon's OS is one a step is authored for.
+    const family = needed === 'posix' && !isPush
+      ? posixFamilyCheck(declaring, agentOsOf(target, agents))
+      : null
+    if (family) {
+      primary = family
+    } else {
+      const variants = steps.filter((s) => s && s.platform_variants
+        && typeof s.platform_variants === 'object'
+        && Object.keys(s.platform_variants).some((k) => (needed === 'windows'
+          ? String(k).toLowerCase() === 'windows'
+          : String(k).toLowerCase() !== 'windows'))).length
+      primary = mk('platform', 'Platform', PF.PASS, `SimCore resolves every step for ${needed}`,
+        `From bundle_targets [${list.join(', ')}] — the resolver SimCore itself gates on, reading `
+        + `the command text.${variants ? ` ${variants} step${variants === 1 ? '' : 's'} declare a `
+          + `${needed} platform variant; a step that runs its variant is marked PLATFORM VARIANT on `
+          + 'the run, because its expected detections were authored against the primary command.' : ''}`)
+    }
   }
 
   // Secondary: do the labels say the same thing SimCore will do?
@@ -420,6 +490,61 @@ function platformChecks(scenario, target, agents, pushFormat) {
   }
 
   return { primary, labels }
+}
+
+/** The selected beacon's registered OS, lower-cased; '' when unknown or push. */
+function agentOsOf(target, agents) {
+  if (!target || target.kind !== 'agent') return ''
+  const agent = (agents || []).find((a) => (a.agent_id || a.id) === target.id) || null
+  return String((agent && agent.os) || '').toLowerCase()
+}
+
+/**
+ * Linux versus macOS, which `bundle_targets` cannot tell apart.
+ *
+ * SimCore's resolver knows two targets, posix and windows. A darwin beacon is
+ * `posix`, so SimCore sends it the primary command of a Linux-only scenario
+ * (`cat /etc/shadow`, `runuser`, `apt`) with no marker on the run, and sends a
+ * Linux beacon the macOS-only SIM-KOI-009 the same way. Nothing server-side
+ * refuses either. The step labels are the only linux-versus-macOS statement
+ * there is, so inside the POSIX family they are the verdict.
+ *
+ * A step labelled ONLY `windows` says nothing about linux versus macOS (that
+ * is the mislabelled-POSIX-text shape, already a `platform-labels` WARN), so
+ * it is left out rather than read as "not this OS".
+ *
+ * @returns {object|null} a BLOCK / WARN check, or null when the labels raise nothing
+ */
+function posixFamilyCheck(declaring, os) {
+  if (!os) return null
+  const posixDeclaring = declaring.filter(
+    (s) => s.platforms.some((p) => String(p).toLowerCase() !== 'windows'),
+  )
+  if (!posixDeclaring.length) return null
+  const other = posixDeclaring.filter((s) => !s.platforms.some((p) => matchesOs(p, os)))
+  if (!other.length) return null
+
+  const union = Array.from(new Set(
+    posixDeclaring.flatMap((s) => s.platforms).filter((p) => String(p).toLowerCase() !== 'windows'),
+  ))
+  const noMarker = '`bundle_targets` only separates POSIX from Windows, so SimCore does not refuse '
+    + `this launch: it sends that command text to the ${os} host with no marker on the run.`
+
+  if (other.length === posixDeclaring.length) {
+    return mk('platform', 'Platform', PF.BLOCK, `no step declares ${os}`,
+      `Every platform-declaring step is authored for ${union.join(' / ')} and this beacon is ${os}. `
+      + `${noMarker} Steps then fail or do nothing, their expected detections never fire, and the `
+      + 'run reads as detections the customer\'s stack missed.',
+      `Pick a ${union.join(' or ')} beacon. A scenario meant for ${os} as well needs \`${os === 'darwin' ? 'macos' : os}\` `
+      + 'in its steps\' `platforms`.')
+  }
+  const ids = other.map((s) => s.id).filter(Boolean)
+  return mk('platform', 'Platform', PF.WARN,
+    `${other.length} of ${posixDeclaring.length} platform-bearing steps do not declare ${os}`,
+    `${ids.length ? `${ids.slice(0, 6).join(', ')}${ids.length > 6 ? ', …' : ''} ` : 'Those steps '}`
+    + `${other.length === 1 ? 'is' : 'are'} authored for another platform. ${noMarker} A step that `
+    + 'runs on an OS it was not authored for is not evidence about the detection it expects.',
+    'Check the step list, or pick a target matching every declared platform.')
 }
 
 function labelPlatformCheck(scenario, target, agents, pushFormat) {
