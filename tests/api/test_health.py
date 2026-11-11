@@ -26,6 +26,17 @@ import asyncio
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _no_ignored_forwarders(monkeypatch):
+    """api.agents keeps the peers whose X-Forwarded-For it ignored in process
+    memory, and other test files POST such headers. probe_agents reports a
+    non-empty record (RG-INSTALL-05), so start every test here with none; a
+    test that wants one patches it again."""
+    import api.agents as agents_mod
+
+    monkeypatch.setattr(agents_mod, "ignored_forwarders", lambda: [])
+
+
 # ---------------------------------------------------------------------------
 # Build identity
 # ---------------------------------------------------------------------------
