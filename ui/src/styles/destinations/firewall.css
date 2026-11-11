@@ -99,6 +99,23 @@
   color: var(--tx);
   cursor: pointer;
 }
+/* The global `input, select, textarea` rule (cortex-theme.css) gives every
+   input width:100%, padding, a border and a fixed light background. Inside an
+   inline-flex label that squeezes the label text to one word per line, so the
+   checkbox/radio here are put back to their intrinsic size. */
+.fw-check { white-space: nowrap; }
+.fw-check input[type="checkbox"],
+.fw-check input[type="radio"] {
+  display: inline-block;
+  width: auto;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  accent-color: var(--ac-str);
+}
 .fw-check input:focus-visible { outline: 2px solid var(--ac-line); outline-offset: 2px; }
 
 /* ── Registered list ────────────────────────────────────────────────── */
