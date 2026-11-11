@@ -442,6 +442,11 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   not list `"xql"`, and charge the per-tenant daily ledger (429
   `XSIAM_QUOTA_ERROR` when spent). **An existing credential without the field
   stops running XQL after upgrade**; add `"capabilities": ["xql"]` to its config.
+- **The same gate now covers assertion runs.** `POST /api/assertions/{id}/run`
+  with `dry_run: false` on a credential without `"xql"` resolves `pending` with
+  `reason: xql_not_authorised` and `queries_issued: 0` (each check carries the
+  new pending code `XQL_NOT_AUTHORISED`); it builds no client and runs no XQL.
+  It used to run metered XQL for such a credential.
 - **Behaviour change you may veto: preflight treats absent `capabilities` as
   not granted.** It used to authorise XQL when the field was absent. Preflight
   and the verify/reconcile runner now share one rule (`integrations/xsiam/guards.py`).

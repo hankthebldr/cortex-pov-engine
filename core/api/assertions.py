@@ -266,16 +266,18 @@ async def run_assertion_endpoint(
     context.setdefault("lookback_seconds", str(body.timeframe_seconds))
 
     runner = None
+    refusal: Optional[str] = None
     counter: Optional[_CountingRunner] = None
     tenant = body.integration
     if not body.dry_run:
-        runner, tenant = await _resolve_runner(db, body)
+        runner, tenant, refusal = await _resolve_runner(db, body)
         if runner is not None:
             counter = runner = _CountingRunner(runner)
 
     outcome = await assertion_engine.run_assertion(
         spec, runner=runner, context=context,
         entitled_addons=body.entitled_addons, dry_run=body.dry_run,
+        refusal=refusal,
     )
 
     payload: dict[str, Any] = {
@@ -307,18 +309,25 @@ async def run_assertion_endpoint(
 async def _resolve_runner(db: AsyncSession, body: RunBody):
     """Build a read-only ScalarRunner from a registered tenant credential.
 
-    Returns ``(None, name)`` when nothing usable is configured — the caller then
-    resolves ``pending``. A missing credential must never raise into a 500: "no
-    tenant wired" is an honest verdict, not a server error.
+    Returns ``(runner, name, refusal)``. ``runner`` is ``None`` when nothing
+    usable is configured — the caller then resolves ``pending``. A missing
+    credential must never raise into a 500: "no tenant wired" is an honest
+    verdict, not a server error.
+
+    ``refusal`` is ``"XQL_NOT_AUTHORISED"`` when the credential exists but its
+    ``capabilities`` do not list ``"xql"`` (spec §5.6, D-18): the same gate and
+    the same answer as the verify path's ``resolve_tenant_runner``. No client is
+    built and no XQL runs, so ``queries_issued`` is 0.
     """
-    from engine.verifier import xsiam_rows_runner  # noqa: PLC0415
-    from integrations.xsiam.loader import XSIAM_KIND, load_xsiam_client  # noqa: PLC0415
+    from engine import verifier  # noqa: PLC0415
+    from integrations.xsiam import loader  # noqa: PLC0415
+    from integrations.xsiam.guards import xql_capability_granted  # noqa: PLC0415
     from security.credentials import CredentialStore  # noqa: PLC0415
 
     store = CredentialStore(db)
-    integrations = await store.list_integrations(kind=XSIAM_KIND)
+    integrations = await store.list_integrations(kind=loader.XSIAM_KIND)
     if not integrations:
-        return None, None
+        return None, None, None
     integ = (next((i for i in integrations if i.name == body.integration), None)
              if body.integration else integrations[0])
     if integ is None:
@@ -326,11 +335,17 @@ async def _resolve_runner(db: AsyncSession, body: RunBody):
             "error": "Integration not found", "code": "INTEGRATION_NOT_FOUND",
             "detail": f"no xsiam_tenant integration named '{body.integration}'"})
 
+    # Capabilities gate. Registering a tenant grants alert read-back; XQL is a
+    # separate authorisation because it spends the customer's metered quota. An
+    # absent list is the legacy default — read only — so it never grants XQL.
+    if not xql_capability_granted(integ.config or {}):
+        return None, integ.name, "XQL_NOT_AUTHORISED"
+
     try:
-        client = await load_xsiam_client(db, integ.name)
+        client = await loader.load_xsiam_client(db, integ.name)
     except Exception as exc:  # noqa: BLE001 — resolves to pending, not a 500
         logger.warning("could not build XSIAM client for '%s': %s", integ.name, exc)
-        return None, integ.name
+        return None, integ.name, None
 
     timeframe = {"relativeTime": body.timeframe_seconds * 1000}
-    return xsiam_rows_runner(client, timeframe), integ.name
+    return verifier.xsiam_rows_runner(client, timeframe), integ.name, None
