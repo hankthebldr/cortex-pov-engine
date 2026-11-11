@@ -449,3 +449,37 @@ def make_client_engine(session_factory):
     app.include_router(runs_router, prefix="/api")
     app.dependency_overrides[get_db] = _get_db
     return TestClient(app), session_factory
+
+
+# ---------------------------------------------------------------------------
+# The pull refusal's hint follows the reason, as the push one does
+# ---------------------------------------------------------------------------
+#
+# Handed over by the push lane: _unsatisfiable_refusal always said "declare
+# platform_variants.windows on those steps", which is wrong for a step that
+# HAS a Windows variant the resolver refuses as MIXED_DIALECT or
+# CMD_PERCENT_CONTEXT. BundleTargetUnsatisfiable.to_error() already gave the
+# per-reason fix; both now read it from one place.
+
+@pytest.mark.parametrize("reason, says, never", [
+    ("MIXED_DIALECT", "ONE dialect", "declare platform_variants.windows"),
+    ("CMD_PERCENT_CONTEXT", "ForEach-Object", "declare platform_variants.windows"),
+])
+def test_the_pull_refusal_hint_names_the_fix_for_its_reason(reason, says, never):
+    from engine.orchestrator import _unsatisfiable_refusal
+
+    res = _unsatisfiable_refusal(target="windows", agent_id="w1", agent_os="windows",
+                                 unresolved=[("step-01", reason)])
+    hint = res.error_detail["hint"]
+    assert says in hint, hint
+    assert never not in hint, hint
+    assert "launch against a POSIX agent" in hint
+
+
+def test_a_missing_variant_still_says_declare_one():
+    from engine.orchestrator import _unsatisfiable_refusal
+    from engine.push_generator import REASON_WINDOWS_UNAVAILABLE
+
+    res = _unsatisfiable_refusal(target="windows", agent_id="w1", agent_os="windows",
+                                 unresolved=[("step-01", REASON_WINDOWS_UNAVAILABLE)])
+    assert "declare platform_variants.windows" in res.error_detail["hint"]

@@ -30,7 +30,7 @@ import base64
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
 logger = logging.getLogger("cortexsim.push_generator")
 
@@ -553,6 +553,39 @@ class TargetResolution:
     skipped_cleanup: tuple[str, ...] = ()
 
 
+def unsatisfiable_hints(target: str, reasons: Iterable[str]) -> list[str]:
+    """The fix for each reason a step cannot run on ``target``.
+
+    One reading for the push refusal (``BUNDLE_TARGET_UNSATISFIABLE``) and the
+    pull refusal (``PULL_TARGET_UNSATISFIABLE``): a step that HAS a Windows
+    variant the resolver refuses as MIXED_DIALECT or CMD_PERCENT_CONTEXT needs
+    that variant rewritten, not another one declared.
+    """
+    reasons = set(reasons)
+    hints: list[str] = []
+    if reasons - {REASON_MIXED_DIALECT, REASON_CMD_PERCENT_CONTEXT} or not reasons:
+        hints.append(
+            "declare platform_variants.windows on those steps"
+            if target == "windows"
+            else "declare platform_variants.linux on those steps"
+        )
+    if REASON_MIXED_DIALECT in reasons:
+        hints.append(
+            "rewrite each MIXED_DIALECT step's Windows command in ONE dialect "
+            "(cmd or PowerShell) — cmd `&`/%VAR% mixed with PowerShell syntax "
+            "runs correctly under neither interpreter"
+        )
+    if REASON_CMD_PERCENT_CONTEXT in reasons:
+        hints.append(
+            "each CMD_PERCENT_CONTEXT step is cmd text with a FOR variable, a "
+            "`%%` or a lone `%`, which cmd.exe reads differently from a .cmd "
+            "file than from the command line — write the loop in PowerShell "
+            "(`1..N | ForEach-Object { … }`, `ForEach-Object` instead of the "
+            "`%` alias) and keep every remaining `%` inside a `%NAME%` reference"
+        )
+    return hints
+
+
 class BundleTargetUnsatisfiable(Exception):
     """A bundle was requested for a target the scenario cannot satisfy.
 
@@ -572,29 +605,7 @@ class BundleTargetUnsatisfiable(Exception):
     def to_error(self) -> dict[str, Any]:
         """Structured-JSON error body per the repo convention."""
         steps = ", ".join(f"{sid} ({reason})" for sid, reason in self.unresolved)
-        reasons = {reason for _, reason in self.unresolved}
-        hints: list[str] = []
-        if reasons - {REASON_MIXED_DIALECT, REASON_CMD_PERCENT_CONTEXT} or not reasons:
-            hints.append(
-                "declare platform_variants.windows on those steps"
-                if self.target == "windows"
-                else "declare platform_variants.linux on those steps"
-            )
-        if REASON_MIXED_DIALECT in reasons:
-            hints.append(
-                "rewrite each MIXED_DIALECT step's Windows command in ONE dialect "
-                "(cmd or PowerShell) — cmd `&`/%VAR% mixed with PowerShell syntax "
-                "runs correctly under neither interpreter"
-            )
-        if REASON_CMD_PERCENT_CONTEXT in reasons:
-            hints.append(
-                "each CMD_PERCENT_CONTEXT step is cmd text with a FOR variable, a "
-                "`%%` or a lone `%`, which cmd.exe reads differently from a .cmd "
-                "file than from the command line — write the loop in PowerShell "
-                "(`1..N | ForEach-Object { … }`, `ForEach-Object` instead of the "
-                "`%` alias) and keep every remaining `%` inside a `%NAME%` reference"
-            )
-        hint = "; ".join(hints)
+        hint = "; ".join(unsatisfiable_hints(self.target, [r for _, r in self.unresolved]))
         return {
             "error": "Scenario cannot emit a bundle for this target",
             "code": "BUNDLE_TARGET_UNSATISFIABLE",

@@ -283,13 +283,13 @@ def _unsatisfiable_refusal(
     Mirrors ``BUNDLE_TARGET_UNSATISFIABLE`` (the push twin) so a console
     renders both with one code path.
     """
-    hint = (
-        "declare platform_variants.windows on those steps, or launch against a "
-        "POSIX agent"
-        if target == "windows"
-        else "declare platform_variants.linux on those steps, or launch against "
-        "a Windows agent"
-    )
+    from engine.push_generator import unsatisfiable_hints  # noqa: PLC0415
+
+    # The push twin's per-reason fix (MIXED_DIALECT / CMD_PERCENT_CONTEXT need
+    # the variant rewritten, not another declared), plus the pull alternative.
+    hint = "; ".join(unsatisfiable_hints(target, [r for _, r in unresolved])) + (
+        ", or launch against a POSIX agent" if target == "windows"
+        else ", or launch against a Windows agent")
     steps = ", ".join(f"{sid} ({reason})" for sid, reason in unresolved)
     return LaunchResult(
         success=False,
