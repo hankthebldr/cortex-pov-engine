@@ -52,6 +52,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..audit import ecs_event
 from ..base import BaseSimulation, SimulationContext, SimulationResult
+from ..collector_auth import AuthHeader, AuthScheme, AuthToken, apply_collector_auth
 from ..delivery import REMEDIATION, DeliveryLedger, response_evidence
 from ..safety import url_host_port
 
@@ -297,6 +298,11 @@ class EmailEmitterParams(BaseModel):
         default=None,
         description="Override the outbound User-Agent header on POSTs to the collector.",
     )
+    # Collector ingestion auth, shared with the analytics log-streamers. An
+    # XSIAM HTTP log collector answers 401 without it.
+    auth_token: AuthToken
+    auth_header: AuthHeader
+    auth_scheme: AuthScheme
 
     @field_validator("collector_url")
     @classmethod
@@ -473,6 +479,8 @@ class EmailEmitter(BaseSimulation):
         headers: dict[str, str] = {"content-type": "application/json"}
         if params.user_agent:
             headers["user-agent"] = params.user_agent
+        # Client-level only: per-request header dicts land in audit events.
+        apply_collector_auth(headers, params)
         return httpx.AsyncClient(
             timeout=params.request_timeout,
             # default False (NGFW MitM friendly); opt back in per campaign via

@@ -129,8 +129,33 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   The Broker VM applet list has no HTTP receiver; the HTTP log collector is a
   tenant endpoint at `/logs/v1/event`, and a 500 from it means the body does
   not match the collector's Log Format.
-- Not changed: `email_emitter` has no auth parameters at all, so it cannot
-  authenticate to an XSIAM collector. Tracked separately.
+
+### Fixed — `email_emitter` can authenticate to an XSIAM HTTP log collector
+
+- **The EMAIL plane's `email_emitter` had no auth parameters,** so pydantic
+  dropped a supplied `auth_token` and every POST went out without an
+  `Authorization` header. An XSIAM collector answers 401, reported as
+  `collector_unauthorized`, which meant the EMAIL scenarios could not reach a
+  real tenant at all. It now takes `auth_token` / `auth_header` /
+  `auth_scheme` with the same defaults as the other collector emitters
+  (`Authorization: <api_key>`, bare key).
+- The three fields are declared once in `core/eal_simulator/collector_auth.py`
+  (`Annotated` aliases plus `apply_collector_auth()`), and both
+  `AnalyticsEmitterParams` and `EmailEmitterParams` use them. The email emitter
+  does not inherit `AnalyticsEmitterParams`, because that would add `batch` /
+  `compress` / `canary_token` fields it ignores and change its `burst_count`
+  default from 4 to 8. Field order in the console's campaign form is unchanged.
+- The token goes on the HTTP client only. Campaign API responses redact it to
+  `auth_token: null` + `auth_token_configured: true`, and the offline bundle
+  manifest names `CORTEXSIM_COLLECTOR_TOKEN_<STEP>` rather than carrying it;
+  both were already keyed on the param name and now apply to email steps.
+  Guards: `tests/eal_simulator/test_email_emitter_collector_auth.py` (header,
+  no leak into audit events, POST bodies, per-request headers or the bundle),
+  and `test_collector_auth_default.py`, whose discovery now keys on the
+  `auth_token` field and requires `email_emitter` among 15 emitters. Four of
+  the new tests and the discovery test failed before the change. The API
+  redaction test for an email step passed both before and after; it is a
+  regression guard.
 
 ### Changed — detector readiness judges the delivery route and soakless mode
 
