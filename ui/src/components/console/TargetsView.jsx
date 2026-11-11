@@ -32,8 +32,27 @@ import {
   WindowsBeaconMissing,
   WindowsCaveats,
 } from './DeployParts.jsx'
+import { trapTabKey } from './focusTrap.js'
 import '../../styles/destinations/agents.css'
 import '../../styles/destinations/deploy-console.css'
+
+/**
+ * A Copy button that says WHAT it copies. The modal had up to four buttons all
+ * named "Copy"; a screen reader lists them as four identical controls. The
+ * visible text stays short; the accessible name carries the object. The result
+ * is announced by the surface's one CopyLive node, not by this button.
+ */
+function CopyButton({ copier, id, text, selectRef, what, name = what }) {
+  const copied = copier.isCopied(id)
+  return (
+    <button
+      type="button"
+      className="btn btn--xs"
+      aria-label={`${copied ? 'Copied' : 'Copy'} ${name}`}
+      onClick={() => copier.copy(id, text, selectRef, what)}
+    >{copied ? '✓ copied' : 'Copy'}</button>
+  )
+}
 
 // Compact relative age ("12s" / "5m" / "3h" / "2d") from a number of seconds.
 function fmtAge(seconds) {
@@ -184,11 +203,12 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
     setToken(null); setMintedAtMs(null); setMintError(null); setShowLegacy(false)
   }, [])
 
-  // ── Dialog focus + Escape ────────────────────────────────────────────────
+  // ── Dialog focus, Tab trap + Escape ──────────────────────────────────────
   // A keydown handler on the dialog element only fires once focus is already
   // inside it, and opening the modal leaves focus on the opener behind the
   // backdrop — so Escape did nothing for the operator who just clicked Deploy.
-  // Same contract as ConfirmDialog: move focus in, listen on the document,
+  // Move focus in, listen on the document, keep Tab inside (aria-modal alone
+  // does not: Tab used to walk out into the page behind the backdrop), and
   // hand focus back on close.
   const deployRef = useRef(null)
   const deployPrevFocusRef = useRef(null)
@@ -201,7 +221,10 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
       const first = el.querySelector('input, select, button:not(.deploy-modal__close)')
       ;(first || el.querySelector('.deploy-modal__close'))?.focus()
     }, 20)
-    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeDeploy() } }
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeDeploy(); return }
+      trapTabKey(e, deployRef.current)
+    }
     document.addEventListener('keydown', onKey)
     return () => {
       clearTimeout(t)
@@ -367,11 +390,14 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                       </p>
                       <div className="deploy-snippet">
                         <code data-testid="agent-uninstall-cmd" ref={uninstallRef}>{removeCmd}</code>
-                        <button
-                          type="button"
-                          className="btn btn--xs"
-                          onClick={() => cardCopy.copy(`uninstall-${id}`, removeCmd, uninstallRef, 'removal command')}
-                        >{cardCopy.isCopied(`uninstall-${id}`) ? '✓ copied' : 'Copy'}</button>
+                        <CopyButton
+                          copier={cardCopy}
+                          id={`uninstall-${id}`}
+                          text={removeCmd}
+                          selectRef={uninstallRef}
+                          what="removal command"
+                          name={`removal command for ${id}`}
+                        />
                       </div>
                       {targetOs === 'windows' ? (
                         <p>
@@ -617,9 +643,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   </span>
                   <div className="deploy-snippet">
                     <code data-testid="deploy-token" ref={tokenRef}>{token.token}</code>
-                    <button type="button" className="btn btn--xs" onClick={() => deployCopy.copy('token', token.token, tokenRef, 'enrollment token')}>
-                      {deployCopy.isCopied('token') ? '✓ copied' : 'Copy'}
-                    </button>
+                    <CopyButton copier={deployCopy} id="token" text={token.token} selectRef={tokenRef} what="enrollment token" />
                   </div>
                   <span className="deploy-hint mono">
                     {token.remaining_uses ?? token.max_uses} use(s)
@@ -633,9 +657,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   </span>
                   <div className="deploy-snippet">
                     <code data-testid="deploy-one-liner" ref={oneLinerRef}>{oneLiner}</code>
-                    <button type="button" className="btn btn--xs" onClick={() => deployCopy.copy('one-liner', oneLiner, oneLinerRef, 'install command')}>
-                      {deployCopy.isCopied('one-liner') ? '✓ copied' : 'Copy'}
-                    </button>
+                    <CopyButton copier={deployCopy} id="one-liner" text={oneLiner} selectRef={oneLinerRef} what="install command" />
                   </div>
                 </div>
 
@@ -654,9 +676,14 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                       </span>
                       <div className="deploy-snippet">
                         <code data-testid="deploy-download-run" ref={runLineRef}>{downloadRunLine}</code>
-                        <button type="button" className="btn btn--xs" onClick={() => deployCopy.copy('run-line', downloadRunLine, runLineRef, 'run line')}>
-                          {deployCopy.isCopied('run-line') ? '✓ copied' : 'Copy'}
-                        </button>
+                        <CopyButton
+                          copier={deployCopy}
+                          id="run-line"
+                          text={downloadRunLine}
+                          selectRef={runLineRef}
+                          what="run line"
+                          name="run line for the downloaded installer"
+                        />
                       </div>
                       <span className="deploy-hint">
                         Without the token it falls back to the legacy shared id
@@ -705,9 +732,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                   </label>
                   <div className="deploy-snippet">
                     <code data-testid="deploy-legacy-one-liner" ref={legacyRef}>{legacyOneLiner}</code>
-                    <button type="button" className="btn btn--xs" onClick={() => deployCopy.copy('legacy', legacyOneLiner, legacyRef, 'legacy install command')}>
-                      {deployCopy.isCopied('legacy') ? '✓ copied' : 'Copy'}
-                    </button>
+                    <CopyButton copier={deployCopy} id="legacy" text={legacyOneLiner} selectRef={legacyRef} what="legacy install command" />
                   </div>
                   <span className="deploy-hint mono">
                     or, once built: <code>cortexsim-agent --server {origin} --id {deployId || 'jumpbox-01'} --interval 10</code>
