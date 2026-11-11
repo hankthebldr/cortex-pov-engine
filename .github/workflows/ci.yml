@@ -102,6 +102,16 @@ jobs:
         id: image
         run: docker build -f core/Dockerfile -t cortexsim:ci .
 
+      - name: Compose parses docker-compose.yml (config -q)
+        # The first time Compose itself reads the file on this branch: the
+        # long-form port mapping (host_ip from CORTEXSIM_BIND) and the logging
+        # block were checked by a YAML parser only. This parses and
+        # interpolates; it does not bring the stack up. The secret is a
+        # throwaway, because the file refuses to interpolate without one.
+        env:
+          CORTEXSIM_SECRET: ci-compose-parse-only-not-a-real-secret
+        run: docker compose -f docker-compose.yml config -q
+
       - name: Run pytest inside the image
         # The repo is mounted at /repo so the tests/ tree (which is NOT baked
         # into the runtime image) is available, while the bundled content under

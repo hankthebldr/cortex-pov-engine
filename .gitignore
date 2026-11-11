@@ -44,6 +44,9 @@ logs/*.pid
 
 # Environment
 .env
+# dev-up.sh's .env backups (they carry CORTEXSIM_SECRET). Ignored by name, not
+# only because the file inside happens to be called .env.
+.env-backups/
 
 # IaC generator
 infra/blueprints/*
