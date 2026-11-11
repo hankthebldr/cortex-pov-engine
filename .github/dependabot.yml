@@ -1,10 +1,12 @@
 # Dependabot — GitHub Actions only, for now.
 #
-# Purpose: the workflows reference actions by moving tags (actions/checkout@v4,
-# docker/build-push-action@v5, ...). Tracking them here is the first step to
-# pinning each to a full commit SHA, which needs network access to resolve and
-# so was deferred from the least-privilege pass on release.yml (CI-12).
-# Dependabot keeps SHA pins current once they exist.
+# Purpose: every third-party action in .github/workflows is pinned to a full
+# commit SHA with its tag in a trailing comment
+# (`uses: actions/checkout@<40 hex> # v4`), because a tag is a pointer its owner
+# can move and the release workflow holds `packages: write` and
+# `contents: write` (CI-12). tests/ci/test_action_pins.py refuses a floating tag.
+# A pin that nobody refreshes is its own risk, so Dependabot proposes the new
+# SHA (and rewrites the comment) when an action publishes a release.
 #
 # PRs target dev, not main: main only advances by a merge from dev
 # (CONTRIBUTING.md), and a dependency bump is topic work like any other.

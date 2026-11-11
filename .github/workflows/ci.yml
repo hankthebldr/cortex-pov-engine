@@ -91,7 +91,7 @@ jobs:
     name: backend (pytest in prod image)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         # The image COPYs scenarios/, detection_scanner/ and tools/ in; the
         # tier-2 adapter sources are git submodules consumed by some suites,
         # so pull them too.
@@ -173,12 +173,12 @@ jobs:
     env:
       CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # The PowerShell exec tests skip when no PowerShell is on PATH. The
       # hosted image ships pwsh: assert it, so the skip can never happen here.
       - name: PowerShell present (pwsh)
         run: pwsh --version || exit 1
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.21'
           cache-dependency-path: agent/go.sum
@@ -250,8 +250,8 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       PUPPETEER_SKIP_DOWNLOAD: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: npm
@@ -273,8 +273,8 @@ jobs:
     name: detection (validate + export determinism)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
@@ -329,10 +329,10 @@ jobs:
     env:
       CORTEXSIM_REQUIRE_POWERSHELL: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: PowerShell present (pwsh)
         run: pwsh --version || exit 1
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
@@ -340,7 +340,7 @@ jobs:
       # `go test` in agent/ (scripts/ci/render_powershell.py), so this job
       # needs a Go and it must be the one the beacon is tested with. Without
       # this step it used whatever the runner image shipped that week.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           # Same string as the agent job until CI-11 settles which Go ships.
           go-version: '1.21'
@@ -425,7 +425,7 @@ jobs:
       # tests/ci/test_payload_shelf_gate.py holds every workflow to the same rule.
       PAYLOAD_ALLOW_UNPINNED: '0'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         # Tier-2 adapter sources are git submodules; the check FAILs if any
         # declared source_path is missing on disk, so pull them. The Rust gate
         # additionally needs sources/signalbench/helpers/pacemaker.
@@ -435,7 +435,7 @@ jobs:
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
         run: scripts/check-adapter-sources.sh
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
@@ -487,7 +487,7 @@ jobs:
       github.event_name == 'push' ||
       github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
       - name: Detect whether anything that can break the Rust build changed
@@ -532,7 +532,7 @@ jobs:
           echo "6/6 started on clean glibc + musl hosts with no network"
       - name: Upload the matrix
         if: steps.changed.outputs.run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rust-dist-linux-amd64
           path: |
@@ -558,8 +558,8 @@ jobs:
     name: e2e (Tier-C isolated execution)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
           cache: pip
@@ -652,15 +652,15 @@ jobs:
       # windows-proof/pssa-meta.json; pin that version here after the first run.
       CORTEXSIM_PSSA_VERSION: ''
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           # Same string as the agent job until CI-11 settles which Go ships.
           go-version: '1.21'
           cache: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
@@ -748,7 +748,7 @@ jobs:
 
       - name: Upload windows-proof
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-proof
           path: ${{ runner.temp }}/windows-proof
