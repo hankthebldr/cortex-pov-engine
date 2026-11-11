@@ -941,27 +941,57 @@ and both lists are present) and one XQL over the framework's execution dataset
 The stage carries the parsed layer under `extra.response_layer`:
 `state` ∈ `ABSENT | PRESENT_UNREAD | PRESENT | UNKNOWN` (`PRESENT_UNREAD` = core pack installed but list content or evidence not readable; `UNKNOWN` = installed packs not read or unrecognised), `framework_version`, `leftover_lists`
 (a framework uninstalled with its lists left behind reads `ABSENT`, never
-`PRESENT`), `auto_triage` (including `score_off`), per-source `sources_used`
-and `read_at`. All framework strings and shapes live in
-`core/connectors/socfw.py`.
+`PRESENT`), `auto_triage`, per-source `sources_used` and `read_at`. All
+framework strings and shapes live in `core/connectors/socfw.py`.
+
+`auto_triage` is `{live, window_hours, score_threshold, score_off, live_source,
+window_source, threshold_source}`, with provenance **per value**, because most of
+these values are not read from the tenant:
+
+| field | values | meaning |
+|---|---|---|
+| `live_source` | `xql_evidence` · `mode_inferred` · `unknown` | `xql_evidence`: production `auto_triage_closed` rows in the last 24 h. `mode_inferred`: the inferred mode's **shipped** jobs map in `SOCFWConfigModes`; the tenant's actual JOB schedule (which the framework's own `matching_mode` reads) is **not** read |
+| `window_source` / `threshold_source` | `tenant_config` · `shipped_default` · `unknown` | `tenant_config`: `SOCFWTenantConfig.triage` (`threshold_source` also covers `score_off`). `shipped_default`: CortexSim's copy of the framework default (6 h / 40); the framework reads the live value from `SOCOptimizationConfig_V3`, which is **not** read |
+
+A layer whose lists were not read claims no window or threshold (`null`, source
+`unknown`), not even a default. The OK stage detail, the Readiness row and the
+launch advisory print "(inferred from mode, not read)" / "(shipped default, not
+read)" / "not read" accordingly. Reading `SOCOptimizationConfig_V3` and the JOB
+schedule is deferred to Phase 2.
 
 | code | status | meaning |
 |---|---|---|
 | `PF_RESPONSE_LAYER_ABSENT` | degraded | core pack not installed (`state: ABSENT`; list names alone never make it `PRESENT`). Every POV tenant is expected to run the framework, so absence degrades preflight |
-| `PF_RESPONSE_LAYER_UNREAD` | degraded | installed-packs read refused/failed (`state: UNKNOWN`; neither present nor absent is claimed), or the framework is installed but part of its state (list content, XQL) could not be read (`state: PRESENT_UNREAD`) |
+| `PF_RESPONSE_LAYER_UNREAD` | degraded | installed-packs read refused/failed (`state: UNKNOWN`; neither present nor absent is claimed), or the framework is installed but part of its state (list content, XQL) could not be read (`state: PRESENT_UNREAD`). A refused list read names its HTTP status in `detail` (401/403: the key's role; 404/405: the unverified path); both read `PRESENT_UNREAD`, never `ABSENT`. An XQL failure with the lists read degrades the stage while the layer stays `PRESENT` |
 | `PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED` | degraded | a reply arrived in a shape `socfw.py` does not recognise. It raises internally and surfaces here with `state: UNKNOWN`; it is never read as defaults, `open` or `ABSENT` |
 
 A stage skipped because an earlier stage blocked the ladder is reported
 `SKIPPED` and **does not** overwrite the last stored read. A stage that read
 something is persisted on the integration row (`IntegrationCredential.
-response_layer` and `response_layer_read_at`) and surfaced by
-`GET /api/readiness` (§1.16) and the launch advisories on `POST /api/runs`
-(`warnings[]`: `SOCFW_TRIAGE_MAY_SEAL`, `SOCFW_RESPONSE_LAYER_UNKNOWN`; never a
-refusal, no tenant call). **Open:** the list-content path
-`GET /xsoar/lists/download/{name}` is **unverified against a live tenant** (no
-documented source; povkit reads list names only). A 404/405 on it yields
-`PF_RESPONSE_LAYER_UNREAD`, never `ABSENT`. The three reads are catalogued as
-`OP-SOCFW-PACKS-INSTALLED`, `OP-SOCFW-LIST-NAMES` and `OP-SOCFW-LIST-GET`
+response_layer` and `response_layer_read_at`) **together with the stage's own
+verdict** under `response_layer.stage` = `{status, code, detail}`, so a degraded
+stage behind a `PRESENT` layer is never stored as healthy. The stage then carries
+`stored: true`; if the store fails, preflight still returns 200 with the report,
+`stored: false` and a `stored_note` (the previous stored read, if any, stays in
+place). Re-registering the integration (`PUT /api/credentials/integrations`, new
+key or URL) clears the stored read. It is surfaced by `GET /api/readiness`
+(§1.16) and the launch advisories on `POST /api/runs` (`warnings[]`, each
+`{code, level, tenant, detail, remediation}`; never a refusal, no tenant call).
+`SOCFW_TRIAGE_MAY_SEAL` fires when `auto_triage.live` is true in `PRESENT` **or**
+`PRESENT_UNREAD` (execution evidence proves triage live even when the lists are
+unreadable), at `warn` on a paired run and `info` for an ABIOC/Analytics
+scenario; `SOCFW_RESPONSE_LAYER_UNKNOWN` takes the same level. A tenant with no
+stored probe reads "no SOC Framework probe is stored for this tenant — run
+preflight". The console holds the launcher only on a warning that is not
+`level: "info"`. Runbook: `docs/lab/2026-11-11-run-alongside-soc-framework.md`.
+**Open:** the list-content path `GET /xsoar/lists/download/{name}` is
+**unverified against a live tenant** (no documented source; povkit's tenant
+client has `ListNames` and `DeleteList` only). The three reads are catalogued as
+`OP-SOCFW-PACKS-INSTALLED`, `OP-SOCFW-LIST-NAMES` (both `povkit-observed`) and
+`OP-SOCFW-LIST-GET` (`path-unverified`, and its `{name}` is restricted by
+`path_param_allowlist` to `SOCFWTenantConfig` and `SOCFWConfigModes`: the executor
+refuses any other list with 400 `XSIAM_CONFIG_ERROR` before a tenant call, because
+XSOAR lists can hold integration config and secrets)
 (`core/integrations/xsiam/operations/packs/socfw.yml`, 151 operations; the
 operation schema now accepts the `/xsoar/` gateway prefix). Tenant disposition
 is context, not detection evidence, and `tenant-verified` stays 0.
@@ -1305,9 +1335,11 @@ It never returns credential config. Per integration it carries `name`, `kind`,
 `last_verified_ok` / `last_verified_at` / `last_verified_error`, a `ledger`
 snapshot (kind `xsiam_tenant` with a `base_url` only, otherwise `null`), a
 `response_layer` block (`null` until a preflight has stored one; otherwise
-`{layer, state, read_at, stale, proves, does_not_prove}`, where `stale` is true
-past 24 h or when the timestamp is unreadable, and `does_not_prove` says the
-framework handled no CortexSim case) and the four `rungs` booleans.
+`{layer, state, stage, read_at, stale, proves, does_not_prove}`, where `stage` is
+the stored stage verdict `{status, code, detail}` (`null` when none was stored,
+which the console reads as unknown, never healthy), `stale` is true past 24 h or
+when the timestamp is unreadable, and `does_not_prove` says the framework handled
+no CortexSim case) and the four `rungs` booleans.
 `GET /api/health` lists `socfw_response_layer` in `not_checked[]`, naming the
 preflight stage that does check it. `tenant_verified` is counted in Python by
 `core/connectors/provenance.py::tenant_verified` — runs and assertion runs whose

@@ -430,7 +430,7 @@ erDiagram
 > [!TIP]
 > `GET /api/health` is the one diagnostic surface and it obeys one rule: **it
 > never reports green for something it didn't check.** It makes zero outbound
-> calls, publishes `not_checked[]` naming the five reachability-shaped claims it
+> calls, publishes `not_checked[]` naming the six reachability-shaped claims it
 > deliberately does *not* make, and treats a zero as `degraded` — booting
 > without `tools/` used to report `{status: ok, count: 0}` while every
 > `adapter_ref` in the corpus was unresolvable.

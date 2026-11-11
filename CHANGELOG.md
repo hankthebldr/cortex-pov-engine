@@ -78,17 +78,40 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `PRESENT_UNREAD` (installed, config or evidence not readable), `PRESENT` and
   `UNKNOWN`; `ABSENT` degrades preflight.
   Every framework string lives in `core/connectors/socfw.py`.
+- **Each Auto Triage value says where it came from.** `auto_triage` carries
+  `live_source` (`xql_evidence` / `mode_inferred` / `unknown`) and
+  `window_source` / `threshold_source` (`tenant_config` / `shipped_default` /
+  `unknown`). For the usual `pov`-mode config, "live" is inferred from the mode's
+  shipped jobs map and 6 h / 40 are shipped defaults, and every surface says
+  "(inferred from mode, not read)" / "(shipped default, not read)". A refused
+  list read names its HTTP status (403: the key's role; 404/405: the
+  unverified path).
 - **Readiness shows it.** The result is stored on the integration
-  (`response_layer`, `response_layer_read_at`; migration added), returned as a
+  (`response_layer`, `response_layer_read_at`; migration added) with the
+  stage's own verdict (`stage: {status, code, detail}`), returned as a
   `response_layer` block by `GET /api/readiness` with a 24 h staleness flag, and
-  rendered as a SOC Framework row on the console Readiness page. `GET
-  /api/health` lists `socfw_response_layer` under `not_checked`.
+  rendered as a SOC Framework row on the console Readiness page. The row is
+  green only for a `PRESENT` layer whose stored stage is `ok`. A failed store
+  returns the report with `stored: false` instead of a 500, and re-registering
+  the integration clears the stored read. `GET /api/health` lists
+  `socfw_response_layer` under `not_checked`.
 - **Launch advisories, never a refusal.** `POST /api/runs` adds
   `SOCFW_TRIAGE_MAY_SEAL` or `SOCFW_RESPONSE_LAYER_UNKNOWN` to `warnings` when
-  Auto Triage may close a case during a paired run or an ABIOC/Analytics
-  scenario. It reads the stored probe only; CortexSim does not change the tenant.
+  Auto Triage may close a case during a paired run (`warn`) or an
+  ABIOC/Analytics scenario (`info`), including when only execution evidence
+  proves it live (`PRESENT_UNREAD`). The remediation names the three
+  tenant-side options at the pinned framework (star the POV's cases;
+  `!SOCFWConfig command=triage window_hours=<n> apply=yes`; `dry_run=true` on
+  the Auto Triage JOB's close task). It reads the stored probe only; CortexSim
+  does not change the tenant. The console holds the launcher only on a warning
+  that is not `level: "info"`, and shows each warning's level, tenant and
+  remediation.
+- **Runbook:** `docs/lab/2026-11-11-run-alongside-soc-framework.md` (spec §7).
 - **Three read-only operations** (`packs/socfw.yml`; catalog now 151) and the
-  operation schema accepts the `/xsoar/` gateway prefix.
+  operation schema accepts the `/xsoar/` gateway prefix. `OP-SOCFW-LIST-GET`
+  reads only `SOCFWTenantConfig` and `SOCFWConfigModes`: a new
+  `path_param_allowlist` makes the executor refuse any other list before a
+  tenant call, because XSOAR lists can hold integration config and secrets.
 - **Honesty.** `tenant-verified` is still 0: none of this has run against a live
   tenant. The list-content read path (`GET /xsoar/lists/download/{name}`) is
   **unverified against a live tenant**; a refusal on it reads as unread, not
