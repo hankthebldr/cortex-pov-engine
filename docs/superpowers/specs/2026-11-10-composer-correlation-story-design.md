@@ -313,6 +313,10 @@ collector (the Broker VM path)** and **live traffic past a sensor**. The third
 is real in the corpus and was not one of the two named in the requirement;
 Henry decided on 2026-11-10 that it is a path of its own (§11).
 
+**Superseded in part by `2026-11-10-composer-doors-design.md`**, the phase-2
+spec: it derives the path instead of declaring an `emitter` field, and proposes
+five lanes. Its §9 lists every departure from this section.
+
 This is phase 2. It touches `LANE_CATALOG`, which the Runs topology shares, so
 it lands as its own change and gets its own short spec.
 
