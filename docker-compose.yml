@@ -5,8 +5,10 @@ name: cortex-pov-engine
 
 services:
   simcore:
-    # Versioned image + container name, single source CORTEXSIM_VERSION (default
-    # 1.0.2). Keeps the engine's namespace distinct from the SEPARATE
+    # Versioned image + container name, single source CORTEXSIM_VERSION. The
+    # default below must equal APP_VERSION in core/api/health.py, which is what
+    # /api/health reports (tests/scripts/test_dev_up_existing_env.py holds the
+    # two together). Keeps the engine's namespace distinct from the SEPARATE
     # cortex-pov-agent project. The engine's own beacon, if ever containerized,
     # is reserved the name cortex-pov-engine-agent-v<version> — never pov-agent.
     image: cortex-pov-engine-simcore:${CORTEXSIM_VERSION:-1.1.0}
