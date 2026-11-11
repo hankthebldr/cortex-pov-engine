@@ -939,7 +939,7 @@ one counted in `queries_issued`: installed packs
 and both lists are present) and one XQL over the framework's execution dataset
 (`timeframe` argument `{"relativeTime": 86400000}`, never XQL time arithmetic).
 The stage carries the parsed layer under `extra.response_layer`:
-`state` ∈ `PRESENT | ABSENT | UNKNOWN`, `framework_version`, `leftover_lists`
+`state` ∈ `ABSENT | PRESENT_UNREAD | PRESENT | UNKNOWN` (`PRESENT_UNREAD` = core pack installed but list content or evidence not readable; `UNKNOWN` = installed packs not read or unrecognised), `framework_version`, `leftover_lists`
 (a framework uninstalled with its lists left behind reads `ABSENT`, never
 `PRESENT`), `auto_triage` (including `score_off`), per-source `sources_used`
 and `read_at`. All framework strings and shapes live in
@@ -947,8 +947,8 @@ and `read_at`. All framework strings and shapes live in
 
 | code | status | meaning |
 |---|---|---|
-| `PF_RESPONSE_LAYER_ABSENT` | degraded | core pack not installed (list names alone never make it `PRESENT`). Every POV tenant is expected to run the framework, so absence degrades preflight |
-| `PF_RESPONSE_LAYER_UNREAD` | degraded | installed-packs read refused/failed (`state: UNKNOWN`), or the framework is present but part of its state (list content, XQL) could not be read. Neither present nor absent is claimed for the former |
+| `PF_RESPONSE_LAYER_ABSENT` | degraded | core pack not installed (`state: ABSENT`; list names alone never make it `PRESENT`). Every POV tenant is expected to run the framework, so absence degrades preflight |
+| `PF_RESPONSE_LAYER_UNREAD` | degraded | installed-packs read refused/failed (`state: UNKNOWN`; neither present nor absent is claimed), or the framework is installed but part of its state (list content, XQL) could not be read (`state: PRESENT_UNREAD`) |
 | `PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED` | degraded | a reply arrived in a shape `socfw.py` does not recognise. It raises internally and surfaces here with `state: UNKNOWN`; it is never read as defaults, `open` or `ABSENT` |
 
 A stage skipped because an earlier stage blocked the ladder is reported

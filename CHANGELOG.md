@@ -74,7 +74,9 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `queries_issued`. Pass `response_layer=false` to omit it. Codes
   `PF_RESPONSE_LAYER_ABSENT`, `PF_RESPONSE_LAYER_UNREAD` and
   `PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED`; an unrecognised shape raises and
-  reads `UNKNOWN`, never defaults or `ABSENT`. `ABSENT` degrades preflight.
+  reads `UNKNOWN`, never defaults or `ABSENT`. States are `ABSENT`,
+  `PRESENT_UNREAD` (installed, config or evidence not readable), `PRESENT` and
+  `UNKNOWN`; `ABSENT` degrades preflight.
   Every framework string lives in `core/connectors/socfw.py`.
 - **Readiness shows it.** The result is stored on the integration
   (`response_layer`, `response_layer_read_at`; migration added), returned as a
