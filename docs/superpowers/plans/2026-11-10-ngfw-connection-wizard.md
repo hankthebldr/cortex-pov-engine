@@ -188,9 +188,44 @@
 
 - [ ] **Step 1:** Measure routes: `PYTHONPATH=core .venv/bin/python -c "import main; print(len(main.app.routes))"`. Write the number into CLAUDE.md.
 - [ ] **Step 2:** Gates (`.venv/bin` first on PATH): `PYTHONPATH=core .venv/bin/python -m pytest tests/ --ignore=tests/smoke --ignore=tests/e2e_isolated -q` (0 failed); `make test-backend-non-utc` if docker is available (else say so); `cd ui && npx vitest run` (0 failed, 0 errors) and `npm run build`; `make validate` (if `check-adapters` fails only on uninitialised Rust submodules, record that, as the KOI-009 pass did). `make -n ci` lists anything else; run what it lists that is runnable.
-- [ ] **Step 3: Gate A evidence.** For the four guards (read-only allowlist, password hygiene, unknown-shape-raises, no-agents-is-degraded), temporarily revert the guarding line, run its test, observe FAIL, and restore. Record the command + failure line in `docs/superpowers/plans/2026-11-10-ngfw-connection-wizard.md` under a new "Gate A evidence" heading.
+- [x] **Step 3: Gate A evidence.** For the four guards (read-only allowlist, password hygiene, unknown-shape-raises, no-agents-is-degraded), temporarily revert the guarding line, run its test, observe FAIL, and restore. Record the command + failure line in `docs/superpowers/plans/2026-11-10-ngfw-connection-wizard.md` under a new "Gate A evidence" heading.
 - [ ] **Step 4: Commit** — `docs(api): document NGFW connection surface, PN_ codes and gates`.
 
 ## Gate A evidence
 
-(filled in by Task 9 Step 3)
+Every guard below was observed failing with its guarding line reverted, then restored
+(`git diff` empty afterwards). Commands run from the worktree root with
+`/Users/henry/Github/Github_desktop/cortex-pov-engine/.venv/bin` first on PATH and
+`PYTHONPATH=core`.
+
+### Re-proved on HEAD by Task 9 (2026-11-10, on top of `33016e3`)
+
+| guard | mutation (one line) | command | result with the mutation | restored |
+|---|---|---|---|---|
+| read-only allowlist | `client.py::op`: `canonical = _check_op_allowed(cmd_xml)` → `canonical = cmd_xml` | `python -m pytest tests/integrations/panos/test_readonly_guard.py -q` | `FAILED …::test_non_allowlisted_op_refused_with_zero_requests[<request><restart><system/></restart></request>]`, and the same for `<set>`, `<clear>`, `<delete>`, `<debug>`, `<commit/>`, `<show><config><running/>`, nested `<request>` injections … | 29 passed |
+| password hygiene | `ngfw.py::keygen`: `raw = None  # drop the plaintext dict` → `logger.debug("keygen body %s", raw); raw = None` | `python -m pytest tests/api/test_ngfw_api.py -q` | `FAILED …::test_keygen_success_leaves_no_password_in_logs_responses_or_db`, `…::test_keygen_rejected_403_leaves_no_password_anywhere`, `…::test_keygen_422_never_echoes_the_password[body0..body4]`, `…::test_keygen_lone_surrogate_is_422_not_500[name/host/username/vsys]` (canary in `caplog.text`) | 47 passed |
+| unknown shape raises | `xmlparse.py::parse_response`: `raise PanosShapeError(f"response status is {status!r}, …")` → `return root` | `python -m pytest tests/integrations/panos/test_xmlparse.py -q` | `FAILED …::test_parse_response_wrong_shapes_raise[<response><result/></response>]`, `FAILED …[<response status="weird"><result/></response>]` — `2 failed, 73 passed` | 75 passed |
+| no agents is degraded | `sources.py::check_sources`: `return [{"code": codes.PN_NO_AGENTS, …}]` → `return []` | `python -m pytest tests/integrations/panos/test_preflight_sources.py tests/integrations/panos/test_preflight_firewall.py tests/api/test_ngfw_api.py -q` | `FAILED …test_preflight_sources.py::test_no_agents_single_degraded_entry`, `FAILED …test_preflight_firewall.py::test_no_agents_is_degraded_entry_not_empty`, `FAILED …test_ngfw_api.py::test_preflight_no_agents_is_degraded_entry` — `3 failed, 160 passed` | 163 passed |
+
+**Mutants that survived (not guarded by a failing test; flagged, not fixed here):**
+
+- `ngfw.py::_invalid_body.part`: `return p if isinstance(p, str) and p in known else "(other)"` → `return str(p)` — **47 passed**. Nothing pins the "(other)" replacement of a caller-chosen `loc` with an encodable key: a keygen body with an extra key named after the password would echo it in the 422 `detail`/`fields`. The only extra-key test uses a lone-surrogate key. Owed: one test posting `{…, "<canary>": 1}`.
+- `ngfw.py::keygen`: `exc.errors(include_input=False, include_context=False, include_url=False)` → `exc.errors()` — **47 passed**. Defence in depth only: `_invalid_body` copies `loc` and `type` and nothing else, so the input never reaches the response.
+
+### Evidence carried from the per-task reports
+
+| task | guard | mutation | failing result |
+|---|---|---|---|
+| 3 | read-only allowlist | `_check_op_allowed(cmd_xml)` in `op()` replaced with `pass` | `pytest tests/integrations/panos/test_readonly_guard.py -q` → `15 failed, 14 passed` (every refused command: `DID NOT RAISE PanosWriteRefused`); restored → `142 passed` (panos dir) |
+| 5 | zero LFP is not ok | zero-LFP branch returns `OK/PN_OK` | `FAILED tests/integrations/panos/test_preflight_firewall.py::test_zero_lfp_blocked` — `1 failed, 45 passed` |
+| 5 | unknown shape blocks its stage | `_failure_stage` returns `OK/PN_OK` | `FAILED …::test_html_login_page_is_never_auth_ok`, `…::test_api_key_never_in_report_firewall_error_text`, `…::test_lfp_shape_error_blocks_stage_and_later_stages_run` — `3 failed, 43 passed` |
+| 5 | key scrubbed from report | `_scrub_report` disabled | `FAILED …::test_api_key_scrubbed_even_if_a_stage_leaks_it` — `1 failed, 45 passed` |
+| 6 | collision blocks | collision check made a no-op | `pytest tests/integrations/panos/test_preflight_sources.py -q` → 3 failed: `test_two_agents_same_source_collide`, `test_collision_compares_equivalent_forms`, `test_collision_blocks_both_naming_each_other` |
+| 6 | NAT between blocks | NAT verdict always `tuple_intact` | same command → 2 failed: `test_nat_between_when_disjoint`, `test_nat_between_blocks` |
+| 6 | unknown source sends nothing | unknown-source skip disabled | same command → 1 failed: `test_unknown_source_sends_no_network_command` |
+| 6 | only proven paths count | LFP basis = `selected` | `-k proven_paths` → 1 failed |
+| 7 | password never in a 422 | keygen binds `body: KeygenBody` through FastAPI | the 5 `test_keygen_422_never_echoes_the_password` cases FAIL; in 4 the canary is echoed in the 422 `input` even with `hide_input_in_errors=True` |
+| 7 | password never logged | `logger.debug("keygen body %s", raw)` after parsing | 7 FAIL: the success and 403 hygiene tests plus all 5 422 cases, via caplog |
+| 8 | password cleared in the UI | `setPassword('')` removed | `npx vitest run src/components/__tests__/FirewallView.test.jsx` → both password tests fail (2 failed) |
+| 8 | collision row never kinder than its facts | blocked derivation in `sourceStatus` removed | "a collision row is never shown kinder than its own facts" fails |
+| 8 | destination registered | before the registry entry | `everyDestinationRenders.test.jsx` rail test FAILED; passed after |
