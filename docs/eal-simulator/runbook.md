@@ -68,6 +68,14 @@ python -m scripts.eal_simulator.cli run /tmp/first.yml --live
 
 ## API workflow
 
+SimCore's Host guard refuses a name it does not know (`400 HOST_NOT_ALLOWED`),
+so the name in `BASE` must be admitted: in `CORTEXSIM_ALLOWED_HOSTS` for a
+compose deployment (`scripts/dev-up.sh --apply` writes this host's own names),
+or `--set api.allowedHosts[0]=<name>` for the Helm chart. The chart admits its
+own Service names, enabled Ingress hosts and `tailscale.hostname` by itself; a
+Tailscale MagicDNS FQDN (`<host>.<tailnet>.ts.net`) is not derivable and must
+be listed. An IP literal always passes.
+
 ```bash
 BASE=http://cortexsim.tailnet:8888
 
