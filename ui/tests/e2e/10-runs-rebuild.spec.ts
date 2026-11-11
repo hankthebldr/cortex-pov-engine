@@ -127,11 +127,12 @@ test('Run detail: Techniques draws 14 stages on one row, Topology pins the Engin
   expect(page.url()).toMatch(/tab=topology/)
   const lanes = page.getByTestId('topo-lane')
   await expect(lanes).toHaveCount(5)
-  await expect(lanes.nth(0)).toHaveAttribute('data-lane', 'AGT')
-  await expect(lanes.nth(4)).toHaveAttribute('data-lane', 'ENG')
-  // SIM-EDR-001 is an EDR scenario: every step is behind the ENDPOINT door.
+  // Lanes are signal paths (ENDPOINT .. NONE); the Engine is the terminal beside them.
+  await expect(lanes.nth(0)).toHaveAttribute('data-lane', 'ENDPOINT')
+  await expect(lanes.nth(4)).toHaveAttribute('data-lane', 'NONE')
+  // Every SIM-EDR-001 step runs a command on the host: ENDPOINT RUNTIME.
   await expect(lanes.nth(0)).toHaveAttribute('data-empty', 'false')
-  const cells = page.locator('[data-testid=topo-cell][data-lane=AGT]')
+  const cells = page.locator('[data-testid=topo-cell][data-lane=ENDPOINT]')
   expect(await cells.count()).toBe(5)
   // A push bundle executes off this SimCore: no beacon queues its steps and no
   // host records them. Every cell reads staged — never queued (a beacon will
@@ -140,7 +141,7 @@ test('Run detail: Techniques draws 14 stages on one row, Topology pins the Engin
   await expect(topo).toHaveAttribute('data-proven', 'false')
   for (const i of [1, 2, 3, 4]) {
     await expect(lanes.nth(i)).toHaveAttribute('data-empty', 'true')
-    await expect(lanes.nth(i)).toContainText('no step launched through this door')
+    await expect(lanes.nth(i)).toContainText('no step took this path')
   }
   // Layout claim: the Engine terminal sits beside the lanes, not under them.
   const engine = page.getByTestId('topo-engine')
