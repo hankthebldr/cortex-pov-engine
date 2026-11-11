@@ -75,7 +75,7 @@ export const OWNERSHIP_MEANING = {
 }
 
 function typeEntry(type) {
-  const entry = typeof type === 'string' ? TYPES[type.trim().toUpperCase()] : undefined
+  const entry = typeof type === 'string' ? TYPES[strip(type).toUpperCase()] : undefined
   if (!entry) throw new TenantContentError(`unknown detection type ${JSON.stringify(type ?? null)}`)
   return entry
 }
@@ -113,7 +113,10 @@ const DEPLOY_KEYS = new Set([
   'suppression', 'mitre', 'provenance',
 ])
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
-const isText = (v) => typeof v === 'string' && v.trim() !== ''
+// An explicit whitespace set, not `String.trim`: the Python side strips the
+// same four characters, so the two cannot disagree about an exotic space.
+const strip = (v) => v.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')
+const isText = (v) => typeof v === 'string' && strip(v) !== ''
 
 /**
  * A rule's content status: `intent-only` or `deployable`.
@@ -160,7 +163,11 @@ export function classifyRule(rule) {
 
 // ─── The logic line ──────────────────────────────────────────────────────────
 
-const TERM = /(^|[^A-Za-z0-9_])(XQL|BIOC|ABIOC|IOC|ANALYTICS|CORRELATION|PREVENTION)[ \t]*\(/gi
+// An ASCII word followed by "(", not glued to a longer identifier. The word is
+// then looked up in TERM_KINDS: no case-insensitive flag, so the browser and
+// Python fold case identically.
+const TERM = /(?<![A-Za-z0-9_])([A-Za-z]+)[ \t]*\(/g
+const TERM_KINDS = new Set(['XQL', 'BIOC', 'ABIOC', 'IOC', 'ANALYTICS', 'CORRELATION', 'PREVENTION'])
 
 /**
  * Read a rule's `logic` line as a composition of named detections.
@@ -175,12 +182,19 @@ const TERM = /(^|[^A-Za-z0-9_])(XQL|BIOC|ABIOC|IOC|ANALYTICS|CORRELATION|PREVENT
 export function parseLogic(logic) {
   if (logic == null) return { kind: 'none', terms: [] }
   if (typeof logic !== 'string') throw new TenantContentError('logic is not a string')
-  if (logic.trim() === '') return { kind: 'none', terms: [] }
+  if (strip(logic) === '') return { kind: 'none', terms: [] }
 
   const terms = []
-  const re = new RegExp(TERM.source, 'gi')
+  const re = new RegExp(TERM.source, 'g')
   let m = re.exec(logic)
   while (m) {
+    const kind = m[1].toUpperCase()
+    if (!TERM_KINDS.has(kind)) {
+      // Some other word before a parenthesis. Keep scanning INSIDE it: a term
+      // may sit in there (`count(XQL(a))`).
+      m = re.exec(logic)
+      continue
+    }
     let depth = 1
     let i = re.lastIndex
     const start = i
@@ -191,14 +205,14 @@ export function parseLogic(logic) {
       i += 1
     }
     if (depth !== 0) {
-      throw new TenantContentError(`${m[2].toUpperCase()}( has no closing parenthesis`)
+      throw new TenantContentError(`${kind}( has no closing parenthesis`)
     }
-    let name = logic.slice(start, i - 1).trim()
+    let name = strip(logic.slice(start, i - 1))
     const q = name[0]
     if (name.length >= 2 && (q === '"' || q === "'") && name[name.length - 1] === q) {
-      name = name.slice(1, -1).trim()
+      name = strip(name.slice(1, -1))
     }
-    terms.push({ kind: m[2].toLowerCase(), name })
+    terms.push({ kind: kind.toLowerCase(), name })
     // Resume AFTER the term: a KIND( inside a name is part of that name.
     re.lastIndex = i
     m = re.exec(logic)
@@ -272,7 +286,7 @@ function indexCard(card) {
 
 // ─── Derivation ──────────────────────────────────────────────────────────────
 
-const isCorrelation = (type) => typeof type === 'string' && type.trim().toUpperCase() === 'CORRELATION'
+const isCorrelation = (type) => typeof type === 'string' && strip(type).toUpperCase() === 'CORRELATION'
 
 /**
  * Everything a chain needs to exist in the tenant, from the cards its steps cite.

@@ -70,7 +70,7 @@ from models import Scenario
 
 # Reuse the Library list's summary projection so a draft summary row is the
 # SAME shape as a corpus summary row — one projection, no drift.
-from api.scenarios import _slim_scenario
+from api.scenarios import _slim_scenario, tenant_content_manifest
 
 logger = logging.getLogger("cortexsim.api.drafts")
 
@@ -342,6 +342,27 @@ async def create_draft(
 
     logger.info("create_draft scenario_id=%s author=%s", scenario_id, author)
     return _draft_doc(row)
+
+
+@router.post("/tenant-content")
+async def draft_tenant_content(body: dict[str, Any]):
+    """The tenant-content manifest for an UNSAVED draft.
+
+    Takes the body the save route takes and validates it the same way, then
+    resolves it exactly as ``GET /scenarios/{id}/tenant-content`` resolves a
+    saved row. It PERSISTS NOTHING and contacts no tenant, so the Composer can
+    export what is on the canvas before the chain is saved.
+    """
+    draft = _validate_body(body)
+    # The same projection a save would store, so an export of the canvas and an
+    # export of the row it becomes cannot differ.
+    kwargs = draft_to_orm_kwargs(draft, author=draft.author or "composer", scenario_id="unsaved-draft")
+    logger.info("draft_tenant_content steps=%d", len(kwargs.get("steps") or []))
+    return tenant_content_manifest({
+        "scenario_id": None,
+        "name": kwargs.get("name"),
+        "steps": kwargs.get("steps"),
+    })
 
 
 @router.get("")
