@@ -14,6 +14,7 @@ Short answers to the questions a DC asks when a signal stays dark, drawn from th
 | [FAQ-STI-06](#faq-sti-06) | How do I prove a stitch happened, rather than infer it? | working model, unconfirmed |
 | [FAQ-STI-07](#faq-sti-07) | Does alert severity matter for stitching? | working model, unconfirmed |
 | [FAQ-CAU-01](#faq-cau-01) | The scenario ran, every step returned 0, but some steps are missing from xdr_data. Why? | lab observation |
+| [FAQ-CAU-02](#faq-cau-02) | My rule keys on the chain's owner (`causality_actor_process_image_name = apache2`) and never fires, though the step ran. Why? | lab observation |
 | [FAQ-BIO-01](#faq-bio-01) | I imported the detection rule after the run. Will it still fire? | working model, unconfirmed |
 | [FAQ-INC-01](#faq-inc-01) | Why didn't my alerts group into one case? | documented (public source) |
 | [FAQ-INC-02](#faq-inc-02) | What must each plane's alert carry for required_planes_in_incident to pass? | working model, unconfirmed |
@@ -206,9 +207,9 @@ still open (PM-STI-13).
 
 **The scenario ran, every step returned 0, but some steps are missing from xdr_data. Why?**
 
-*Basis: lab observation · reviewed 2026-11-10*
+*Basis: lab observation · reviewed 2026-11-11*
 
-Three causes, the first documented and the other two seen in the lab:
+Five causes, the first documented and the others seen in the lab:
 
 - **The agent collects nothing in its current mode.** *(documented)* A Linux agent
   whose kernel is unsupported, that was installed with `--no-km`, or that runs User
@@ -222,11 +223,46 @@ Three causes, the first documented and the other two seen in the lab:
   identical `sh` starts from the beacon within about 100 ms vanished, with all their
   children; the same commands 2 s apart were all recorded. The public docs say
   nothing about throttling process starts. The cause is not established (PM-CAU-04).
+- **Whole windows were lost.** *(lab)* Even with distinct commands 5 to 8 s apart,
+  the agent recorded no process event at all for windows of 15 to 24 s, while
+  events either side arrived. In the beacon's cgo_anchor (chained) mode only the
+  anchor's first child was recorded. Spacing steps out does not fully prevent
+  loss (PM-CAU-04).
+- **The command line was too long.** *(lab)* On Linux a command line of about 4100
+  characters or more reaches the tenant as argv[0] only (`/bin/sh`), so a rule
+  matching its arguments finds nothing. 3083 characters were recorded whole
+  (PM-TEN-02).
 
 A step the agent never recorded can fire nothing, stitch to nothing and group with
-nothing, so its expectations read as misses.
+nothing, so its expectations read as misses. Check xdr_data for the step's own
+processes before calling a silent step a miss.
 
-- **Would change if answered:** [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, asked) · [PM-TEN-05](LEDGER.md#pm-ten-05) (P0, asked) · [PM-CAU-04](LEDGER.md#pm-cau-04) (P0, asked)
+- **Would change if answered:** [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, asked) · [PM-TEN-05](LEDGER.md#pm-ten-05) (P0, asked) · [PM-CAU-04](LEDGER.md#pm-cau-04) (P0, provisional) · [PM-TEN-02](LEDGER.md#pm-ten-02) (P0, provisional)
+
+### FAQ-CAU-02
+
+**My rule keys on the chain's owner (`causality_actor_process_image_name = apache2`) and never fires, though the step ran. Why?**
+
+*Basis: lab observation · reviewed 2026-11-11*
+
+On the lab's Ubuntu 24.04 host (systemd 255), the owner (CGO) of every chain
+that starts in a systemd service is recorded as image `9`, path
+`/proc/self/fd/9`, with no user. That covers every step the beacon runs, so no
+CGO name a scenario declares can match. *(lab)*
+
+- The beacon's cgo_anchor only renames argv[0]. That changes the command line,
+  not the image name. *(lab)*
+- A renamed copy of a binary does change the image name of that process and of
+  its children's parent, but not the CGO. *(lab)*
+- A chain started by cron is owned by `cron`. *(lab)*
+
+What to do in a POV today: key Linux rules on `actor_process_*` or
+`action_process_*`, never on the CGO, and treat cgo_anchor as a label. Whether
+older systemd versions or another agent version name the real binary is open
+(PM-CAU-07), and so is whether the start order of beacon and agent changes the
+CGO (PM-CAU-08).
+
+- **Would change if answered:** [PM-CAU-01](LEDGER.md#pm-cau-01) (P0, provisional) · [PM-CAU-02](LEDGER.md#pm-cau-02) (P0, provisional) · [PM-CAU-07](LEDGER.md#pm-cau-07) (P0, open) · [PM-CAU-08](LEDGER.md#pm-cau-08) (P1, open)
 - **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/insights-and-tips-cortex-xsiam/endpoint-and-agent-management/cortex-xdr-agent-linux-operation-modes
 
 ## BIOC matching
