@@ -37,7 +37,7 @@ func newShellCmd(cmdStr string) *exec.Cmd {
 func newAnchorCmd(cgoImage string) (cmd *exec.Cmd, renamed bool) {
 	shell := "sh"
 	if cgoImage != "" {
-		shell, renamed = anchorShellWith(exec.LookPath, filepath.EvalSymlinks)
+		shell, renamed = anchorShellWith(exec.LookPath, filepath.EvalSymlinks, SameFile)
 	}
 	cmd = exec.Command(shell)
 	if renamed {
@@ -51,20 +51,35 @@ func newAnchorCmd(cgoImage string) (cmd *exec.Cmd, renamed bool) {
 var multiCallShells = map[string]bool{"busybox": true, "toybox": true}
 
 // anchorShellWith picks the anchor binary and whether it can carry a renamed
-// argv[0]. `sh` that resolves (through symlinks) to a single-purpose shell is
-// renamed. `sh` that is busybox/toybox, or that is not on PATH, falls back to
-// bash renamed, else to `sh` un-renamed. A hardlinked multi-call sh is not
-// detected (its resolved name is `sh`).
+// argv[0]. `sh` that is a single-purpose shell is renamed. `sh` that is a
+// multi-call binary, or that is not on PATH, falls back to bash renamed, else
+// to `sh` un-renamed. `sh` is multi-call when its symlink-resolved base name is
+// busybox/toybox, OR when it is the very same file as a `busybox`/`toybox` on
+// PATH (a hard-linked applet has no symlink to follow, so its resolved name is
+// just `sh`). A stat failure in sameFile means "not the same file".
 func anchorShellWith(
 	lookPath func(string) (string, error),
 	evalSymlinks func(string) (string, error),
+	sameFile func(a, b string) bool,
 ) (shell string, renamed bool) {
-	if p, err := lookPath("sh"); err == nil {
-		resolved, rerr := evalSymlinks(p)
-		if rerr != nil {
-			resolved = p
+	resolve := func(p string) string {
+		if r, err := evalSymlinks(p); err == nil {
+			return r
 		}
-		if !multiCallShells[filepath.Base(resolved)] {
+		return p
+	}
+	if p, err := lookPath("sh"); err == nil {
+		resolved := resolve(p)
+		multiCall := multiCallShells[filepath.Base(resolved)]
+		for name := range multiCallShells {
+			if multiCall {
+				break
+			}
+			if bp, berr := lookPath(name); berr == nil && sameFile(resolved, resolve(bp)) {
+				multiCall = true
+			}
+		}
+		if !multiCall {
 			return "sh", true
 		}
 	}
@@ -79,14 +94,15 @@ func anchorShellWith(
 func AnchorRenameSupportedWith(
 	lookPath func(string) (string, error),
 	evalSymlinks func(string) (string, error),
+	sameFile func(a, b string) bool,
 ) bool {
-	_, renamed := anchorShellWith(lookPath, evalSymlinks)
+	_, renamed := anchorShellWith(lookPath, evalSymlinks, sameFile)
 	return renamed
 }
 
 // AnchorRenameSupported is AnchorRenameSupportedWith over the real PATH.
 func AnchorRenameSupported() bool {
-	return AnchorRenameSupportedWith(exec.LookPath, filepath.EvalSymlinks)
+	return AnchorRenameSupportedWith(exec.LookPath, filepath.EvalSymlinks, SameFile)
 }
 
 // anchorExitScript is what Close() writes to end the anchor cleanly.

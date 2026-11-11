@@ -1,14 +1,16 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1003.001"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "(BIOC(LSASS Handle Open With Sensitive Access Rights) OR BIOC(comsvcs.dll MiniDump LOLBin Execution)) grouped by causality_id, agent_hostname within 60s \u2014 the handle-open and the comsvcs MiniDump share one causality_actor (the launching powershell CGO), so both fold into a single credential-theft incident.",
       "name": "Credential Theft \u2014 LSASS Memory Dump",
-      "rule_id": "CR-CRED-0001",
-      "severity": "high"
+      "rule_id": "CR-CRED-0001"
     }
   ],
   "ttp_ref": "TTP-2026-0002"

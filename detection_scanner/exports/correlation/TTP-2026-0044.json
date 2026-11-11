@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1195.002",
     "T1059.006",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(KOI-003 PyPI Package Import Time Subprocess Spawn Post Install Hook) OR BIOC(KOI-003 Cortex Cloud SCA SBOM Digest Matches Known Bad Fingerprint) OR XQL(KOI-003 Outbound HTTPS To Non Canonical PyPI Mirror With Pip User Agent) \u2014 stitched by shared agent_hostname + causality_id so the runtime import-time child-spawn, the SCA/SBOM fingerprint finding, and the NGFW mirror fetch (endpoint_network_stitch) collapse into ONE agentic-supply-chain incident",
       "name": "Agentic Supply Chain \u2014 Backdoored PyPI Package Post-Install Hook",
-      "rule_id": "CR-KOI-0003",
-      "severity": "high"
+      "rule_id": "CR-KOI-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0044"

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1567.002",
     "T1048.003",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(Rclone Command-Line Flag Pattern) AND BIOC(Large Sustained Egress From File Server to Non-Corporate Cloud Provider) on same host within 30m",
       "name": "Exfiltration \u2014 Rclone-Pattern Tool + Large Egress to Non-Corp ASN",
-      "rule_id": "CR-EXFIL-0001",
-      "severity": "high"
+      "rule_id": "CR-EXFIL-0001"
     }
   ],
   "ttp_ref": "TTP-2026-0005"

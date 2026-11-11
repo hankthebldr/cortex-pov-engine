@@ -606,7 +606,7 @@ run on GitHub.
     argv[0] rewritten, unless `sh` resolves (`LookPath` then `EvalSymlinks`) to
     `busybox` or `toybox`; only then bash renamed if bash is on PATH, else `sh`
     un-renamed and `ANCHOR NOT HONOURED`. `runtime_facts.anchor_rename` reports the
-    same rule. A hardlinked multi-call `sh` is not detected.
+    same rule. A hard-linked busybox `sh` is detected by comparing it with `busybox`/`toybox` on PATH (`os.SameFile`); any stat error falls back to the name rule.
 16. **`artifact-token` reaches the beacon** (final review S1): see item 10.
 17. **Expiry is checked before enrollment** (final review S2). A beacon whose
     `--expires-at` has passed at startup logs `LIFETIME_EXPIRED` and exits 0

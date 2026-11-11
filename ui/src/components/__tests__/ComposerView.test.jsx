@@ -1239,3 +1239,145 @@ describe('ComposerView — every library scenario is reachable from inside', () 
     expect(screen.getByTestId('chain-end')).toBeInTheDocument()
   })
 })
+
+// ─── Tenant content: the rules a chain needs, read from its cited cards ──────
+describe('ComposerView — tenant content', () => {
+  const CARD = {
+    id: 'TTP-2026-0032',
+    detections: {
+      xql_queries: [{ name: 'Passwd read', detection_id: 'xql-1' }],
+      correlation_rules: [
+        { name: 'Shadow Read Fusion', rule_id: 'CR-EDR-0032', logic: 'XQL(Passwd read) OR XQL(Shadow read)' },
+      ],
+    },
+  }
+  const cardCalls = (fetchMock) => fetchMock.mock.calls
+    .filter(([u, init]) => String(u).includes('/api/ttps/TTP-2026-0032') && (init?.method || 'GET') === 'GET')
+  const callsTo = (fetchMock, method, path) => fetchMock.mock.calls
+    .filter(([u, init]) => new URL(String(u), 'http://localhost').pathname === path
+      && (init?.method || 'GET').toUpperCase() === method)
+
+  it('loads each cited card once and draws its rule as an intent-only stub', async () => {
+    const fetchMock = baseRoutes({ 'GET /api/ttps/TTP-2026-0032': CARD })
+    mount({ from: 'SIM-EDR-001' })
+    const rule = await screen.findByTestId('chain-rule-CR-EDR-0032')
+    expect(rule.textContent).toContain('INTENT ONLY · nothing to import')
+    expect(rule.textContent).toContain('not declared by this scenario · not scored')
+    expect(rule.textContent).toContain('1 of 2 inputs on steps · 1 not on the card')
+    expect(cardCalls(fetchMock)).toHaveLength(1)
+  })
+
+  it('says a card that failed to load was not loaded, never that no rule is needed', async () => {
+    baseRoutes() // no route for the card: the stub answers 404
+    mount({ from: 'SIM-EDR-001' })
+    await waitFor(() => expect(screen.getByTestId('composer-content-toggle').textContent)
+      .toContain('1 card not loaded'))
+    expect(screen.queryByText(/no rule on the cited cards/i)).toBeNull()
+  })
+
+  it('opens the Inspector on a rule, read-only, with the logic as an authoring note', async () => {
+    const user = userEvent.setup()
+    baseRoutes({ 'GET /api/ttps/TTP-2026-0032': CARD })
+    mount({ from: 'SIM-EDR-001' })
+    await user.click(await screen.findByTestId('chain-rule-CR-EDR-0032'))
+    const panel = await screen.findByTestId('composer-rule-inspector')
+    expect(panel.textContent).toContain('CR-EDR-0032')
+    expect(panel.textContent).toMatch(/authoring note, not XQL/i)
+    expect(panel.textContent).toContain('XQL(Passwd read) OR XQL(Shadow read)')
+    expect(panel.textContent).toMatch(/No correlation rule .* is deployable/i)
+    // Each input says where it resolved.
+    expect(within(panel).getByTestId('rule-input-0').textContent).toMatch(/Passwd read.*step-01/)
+    expect(within(panel).getByTestId('rule-input-1').textContent).toMatch(/Shadow read.*not on the card/)
+    // Nothing in it edits anything.
+    expect(panel.querySelectorAll('input, textarea, select')).toHaveLength(0)
+  })
+
+  it('selecting a rule never marks the chain edited', async () => {
+    const user = userEvent.setup()
+    baseRoutes({ 'GET /api/ttps/TTP-2026-0032': CARD })
+    mount({ from: 'SIM-EDR-001' })
+    await user.click(await screen.findByTestId('chain-rule-CR-EDR-0032'))
+    await screen.findByTestId('composer-rule-inspector')
+    expect(screen.queryByText(/unsaved edits/i)).toBeNull()
+  })
+
+  it('goes back to the step config when a step is selected after a rule', async () => {
+    const user = userEvent.setup()
+    baseRoutes({ 'GET /api/ttps/TTP-2026-0032': CARD })
+    mount({ from: 'SIM-EDR-001' })
+    await user.click(await screen.findByTestId('chain-rule-CR-EDR-0032'))
+    await screen.findByTestId('composer-rule-inspector')
+    await user.click(screen.getByTestId('chain-step-step-01'))
+    await waitFor(() => expect(screen.queryByTestId('composer-rule-inspector')).toBeNull())
+  })
+
+  it('links from the rule to its card', async () => {
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+    baseRoutes({ 'GET /api/ttps/TTP-2026-0032': CARD })
+    mount({ from: 'SIM-EDR-001' }, { onNavigate })
+    await user.click(await screen.findByTestId('chain-rule-CR-EDR-0032'))
+    await user.click(within(await screen.findByTestId('composer-rule-inspector'))
+      .getByRole('button', { name: /TTP-2026-0032/ }))
+    expect(onNavigate).toHaveBeenCalledWith('ttps', { ttp: 'TTP-2026-0032' })
+  })
+
+  describe('export', () => {
+    beforeEach(() => {
+      URL.createObjectURL = vi.fn(() => 'blob:x')
+      URL.revokeObjectURL = vi.fn()
+      // jsdom cannot follow a blob: link; the download itself is the browser's.
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    })
+    const MANIFEST = {
+      scenario_id: 'SIM-EDR-001', tenant_verified: 0, write_path: false,
+      summary: { correlation: { total: 1, deployable: 0 } }, rules: [],
+    }
+
+    it('reads an untouched scenario through the read-only GET route', async () => {
+      const user = userEvent.setup()
+      const fetchMock = baseRoutes({
+        'GET /api/ttps/TTP-2026-0032': CARD,
+        'GET /api/scenarios/SIM-EDR-001/tenant-content': MANIFEST,
+      })
+      mount({ from: 'SIM-EDR-001' })
+      await screen.findByTestId('chain-rule-CR-EDR-0032')
+      await user.click(screen.getByTestId('composer-content-export'))
+      await waitFor(() => expect(
+        callsTo(fetchMock, 'GET', '/api/scenarios/SIM-EDR-001/tenant-content'),
+      ).toHaveLength(1))
+      expect(callsTo(fetchMock, 'POST', '/api/scenarios/drafts/tenant-content')).toHaveLength(0)
+      await waitFor(() => expect(screen.getByTestId('composer-notice').textContent)
+        .toMatch(/1 rule, 0 deployable.*nothing was sent to a tenant/i))
+    })
+
+    it('sends an edited chain to the draft route, so the file matches the canvas', async () => {
+      const user = userEvent.setup()
+      const fetchMock = baseRoutes({
+        'GET /api/ttps/TTP-2026-0032': CARD,
+        'POST /api/scenarios/drafts/tenant-content': { ...MANIFEST, scenario_id: 'SIM-DRAFT' },
+      })
+      mount({ from: 'SIM-EDR-001' })
+      await screen.findByTestId('chain-rule-CR-EDR-0032')
+      await user.click(screen.getByLabelText('Remove step-02'))
+      await user.click(screen.getByTestId('composer-content-export'))
+      await waitFor(() => expect(
+        callsTo(fetchMock, 'POST', '/api/scenarios/drafts/tenant-content'),
+      ).toHaveLength(1))
+      const [, init] = callsTo(fetchMock, 'POST', '/api/scenarios/drafts/tenant-content')[0]
+      expect(JSON.parse(init.body).steps.map((s) => s.id)).toEqual(['step-01'])
+      expect(callsTo(fetchMock, 'GET', '/api/scenarios/SIM-EDR-001/tenant-content')).toHaveLength(0)
+    })
+
+    it('says why when the export fails, instead of downloading nothing quietly', async () => {
+      const user = userEvent.setup()
+      baseRoutes({ 'GET /api/ttps/TTP-2026-0032': CARD }) // no export route: 404
+      mount({ from: 'SIM-EDR-001' })
+      await screen.findByTestId('chain-rule-CR-EDR-0032')
+      await user.click(screen.getByTestId('composer-content-export'))
+      await waitFor(() => expect(screen.getByTestId('composer-notice').textContent)
+        .toMatch(/tenant content export failed/i))
+      expect(URL.createObjectURL).not.toHaveBeenCalled()
+    })
+  })
+})

@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1505.003",
     "T1620",
@@ -11,11 +13,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "Fires when BIOC(OutlookEN ASPX Web Shell Written to IIS Web Root) or BIOC(IIS Worker Process w3wp.exe Spawns a Command Interpreter) is followed on the same agent_hostname by BIOC(Reflective Fileless .NET Assembly Load in IIS Worker Process) and by XQL(Cookie-Based STAR-Delimited C2 to IIS Host) within a 30-minute window. Stitches web-shell install, in-memory .NET load, AMSI/CLR co-load, and STAR-delimited cookie C2 into a single NET-STAR IIS-backdoor incident anchored to the w3wp.exe process instance.",
       "name": "NET-STAR Fileless IIS Backdoor \u2014 Web Shell to STAR Cookie C2 Stitch",
-      "rule_id": "CR-EDR-0014",
-      "severity": "high"
+      "rule_id": "CR-EDR-0014"
     }
   ],
   "ttp_ref": "TTP-2026-0119"

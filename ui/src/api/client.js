@@ -865,6 +865,39 @@ export async function getTtp(ttpId) {
 }
 
 /**
+ * GET /api/scenarios/:id/tenant-content
+ *
+ * What a scenario (or a saved draft) needs to exist in the TENANT: correlation
+ * rules with their content status and binding, the BIOCs / IOCs to deploy, the
+ * queries to run. READ-ONLY and derived from the TTP cards — it never contacts
+ * a tenant. `catalog_loaded: false` must render as degraded, never as "nothing
+ * needed"; `tenant_verified` is 0 and `write_path` is false, always.
+ *
+ * @param {string} scenarioId
+ * @returns {Promise<Object>} the tenant-content manifest
+ */
+export async function getScenarioTenantContent(scenarioId) {
+  return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/tenant-content`)
+}
+
+/**
+ * POST /api/scenarios/drafts/tenant-content
+ *
+ * The same manifest for an UNSAVED draft: the body the save route takes
+ * (`draftToApi`). Persists nothing, so an export can match the canvas before
+ * the chain is saved. Throws apiError on 422 {code:'DRAFT_SCHEMA_INVALID'}.
+ *
+ * @param {Object} body  DraftCreateRequest
+ * @returns {Promise<Object>} the tenant-content manifest
+ */
+export async function postDraftTenantContent(body) {
+  return request('/api/scenarios/drafts/tenant-content', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/**
  * GET /api/ttps/:ttp_id/runs
  *
  * Run history — every Run whose seeded Results cite this TTP, rolled

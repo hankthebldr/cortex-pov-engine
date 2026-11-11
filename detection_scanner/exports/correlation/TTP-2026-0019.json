@@ -1,15 +1,17 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1176",
     "T1539"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "BIOC(Prisma Browser \u2014 sideloaded extension blocked by managed-extension policy)",
       "name": "Browser Risky Extension Sideload \u2014 Overbroad Permissions",
-      "rule_id": "CR-BROWSER-0003",
-      "severity": "high"
+      "rule_id": "CR-BROWSER-0003"
     }
   ],
   "ttp_ref": "TTP-2026-0019"

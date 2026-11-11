@@ -64,7 +64,7 @@ func newAnchorCmd(cgoImage string) (*exec.Cmd, bool) {
 
 // AnchorRenameSupportedWith reports whether the anchor can carry a cgo_anchor
 // name. On Windows the Args[0] rewrite always works, so the seams are unused.
-func AnchorRenameSupportedWith(lookPath, evalSymlinks func(string) (string, error)) bool {
+func AnchorRenameSupportedWith(lookPath, evalSymlinks func(string) (string, error), sameFile func(a, b string) bool) bool {
 	return true
 }
 

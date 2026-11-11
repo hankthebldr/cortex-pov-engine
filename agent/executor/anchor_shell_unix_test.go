@@ -163,6 +163,7 @@ func TestNewAnchorCmd_NoAnchorRequestedIsPlainSh(t *testing.T) {
 }
 
 func TestAnchorRenameSupportedWith_FollowsItsSeams(t *testing.T) {
+	never := func(a, b string) bool { return false }
 	look := func(present ...string) func(string) (string, error) {
 		return func(n string) (string, error) {
 			for _, p := range present {
@@ -196,8 +197,80 @@ func TestAnchorRenameSupportedWith_FollowsItsSeams(t *testing.T) {
 		{"no sh, no bash", nil, nil, false},
 	}
 	for _, c := range cases {
-		if got := AnchorRenameSupportedWith(look(c.present...), resolve(c.links)); got != c.want {
+		if got := AnchorRenameSupportedWith(look(c.present...), resolve(c.links), never); got != c.want {
 			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// A hard-linked busybox: `sh` has no symlink to follow, so its resolved base
+// name is `sh`. Only comparing it with `busybox`/`toybox` on PATH finds it.
+func TestAnchorShellWith_HardLinkedBusyboxIsMultiCall(t *testing.T) {
+	look := func(present ...string) func(string) (string, error) {
+		return func(n string) (string, error) {
+			for _, p := range present {
+				if p == n {
+					return "/bin/" + n, nil
+				}
+			}
+			return "", errors.New("not found")
+		}
+	}
+	plain := func(p string) (string, error) { return p, nil }
+	same := func(a, b string) bool { return a == "/bin/sh" && b == "/bin/busybox" }
+	notSame := func(a, b string) bool { return false }
+	sameToybox := func(a, b string) bool { return a == "/bin/sh" && b == "/bin/toybox" }
+
+	cases := []struct {
+		name       string
+		present    []string
+		sameFile   func(a, b string) bool
+		wantShell  string
+		wantRename bool
+	}{
+		{"hardlinked busybox, bash present", []string{"sh", "bash", "busybox"}, same, "bash", true},
+		{"hardlinked busybox, no bash", []string{"sh", "busybox"}, same, "sh", false},
+		{"hardlinked toybox, no bash", []string{"sh", "toybox"}, sameToybox, "sh", false},
+		{"distinct busybox on PATH (dash-like sh), bash present", []string{"sh", "bash", "busybox"}, notSame, "sh", true},
+		{"no busybox on PATH", []string{"sh"}, same, "sh", true},
+	}
+	for _, c := range cases {
+		shell, renamed := anchorShellWith(look(c.present...), plain, c.sameFile)
+		if shell != c.wantShell || renamed != c.wantRename {
+			t.Errorf("%s: got (%s, %v), want (%s, %v)", c.name, shell, renamed, c.wantShell, c.wantRename)
+		}
+	}
+}
+
+// A stat failure is "not the same file": the old name-only rule stands.
+func TestSameFile_StatErrorIsNotTheSameFile(t *testing.T) {
+	if SameFile("/nonexistent/a", "/nonexistent/b") {
+		t.Fatal("SameFile reported two missing paths as the same file")
+	}
+}
+
+// The real filesystem: `sh` is a HARD link to `busybox` (no symlink anywhere).
+func TestNewAnchorCmd_HardLinkedBusyboxShWithoutBashRunsUnrenamedSh(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "busybox"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(filepath.Join(dir, "busybox"), filepath.Join(dir, "sh")); err != nil {
+		t.Skipf("hard links unavailable here: %v", err)
+	}
+	t.Setenv("PATH", dir)
+
+	if shell, renamed := anchorShellWith(exec.LookPath, filepath.EvalSymlinks, SameFile); shell != "sh" || renamed {
+		t.Fatalf("anchorShellWith = (%s, %v), want (sh, false)", shell, renamed)
+	}
+	cmd, renamed := newAnchorCmd("nginx")
+	if renamed {
+		t.Fatal("renamed = true: a hard-linked busybox sh cannot be renamed and there is no bash")
+	}
+	if cmd.Args[0] != "sh" {
+		t.Fatalf("Args[0] = %q, want sh", cmd.Args[0])
+	}
+	if AnchorRenameSupported() {
+		t.Fatal("AnchorRenameSupported() = true on a hard-linked busybox sh without bash")
 	}
 }

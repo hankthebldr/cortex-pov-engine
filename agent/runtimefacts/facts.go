@@ -74,6 +74,7 @@ type Options struct {
 	Getenv            func(string) string
 	LookPath          func(string) (string, error)
 	EvalSymlinks      func(string) (string, error)
+	SameFile          func(a, b string) bool
 	ReadFile          func(string) ([]byte, error)
 	LookupUser        func(string) error
 }
@@ -115,6 +116,10 @@ func Collect(opts Options) Facts {
 	lookPath := opts.LookPath
 	if lookPath == nil {
 		lookPath = exec.LookPath
+	}
+	sameFile := opts.SameFile
+	if sameFile == nil {
+		sameFile = executor.SameFile
 	}
 	evalSymlinks := opts.EvalSymlinks
 	if evalSymlinks == nil {
@@ -172,6 +177,6 @@ func Collect(opts Options) Facts {
 	f.Accounts = clampList(f.Accounts)
 
 	// The executor's own rule, over this probe's injected seams.
-	f.AnchorRename = executor.AnchorRenameSupportedWith(lookPath, evalSymlinks)
+	f.AnchorRename = executor.AnchorRenameSupportedWith(lookPath, evalSymlinks, sameFile)
 	return f
 }

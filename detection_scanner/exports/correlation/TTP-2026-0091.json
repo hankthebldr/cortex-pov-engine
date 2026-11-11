@@ -1,14 +1,16 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1566.001"
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(EMAIL-002 Malicious Attachment Blocked By TAP) OR XQL(EMAIL-002 Malicious Attachment Microsoft 365 EmailEvents Shape) FOLLOWED_BY xdr_data file or process with the same sha256 for the recipient within 2h",
       "name": "Malicious Attachment Delivered Then Endpoint Detonation \u2014 Email to Endpoint Stitch",
-      "rule_id": "CR-EMAIL-0002",
-      "severity": "high"
+      "rule_id": "CR-EMAIL-0002"
     }
   ],
   "ttp_ref": "TTP-2026-0091"

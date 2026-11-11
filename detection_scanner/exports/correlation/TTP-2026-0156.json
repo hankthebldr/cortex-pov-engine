@@ -1,4 +1,6 @@
 {
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
   "mitre_techniques": [
     "T1087.004",
     "T1580",
@@ -6,11 +8,11 @@
   ],
   "rules": [
     {
-      "description": null,
+      "content_status": "intent-only",
+      "deploy": null,
       "logic": "XQL(AWS IAM Enumeration Sequence) AND XQL(AWS S3 Buckets Enumeration Activity) observed for the same userIdentity.arn within a 15-minute window, stitched into one cloud-reconnaissance-sequence incident anchored to the caller-ARN causality chain.",
       "name": "Cloud Reconnaissance Sequence \u2014 IAM Then S3 Enumeration by One Principal",
-      "rule_id": "CR-CDR-0021",
-      "severity": "high"
+      "rule_id": "CR-CDR-0021"
     }
   ],
   "ttp_ref": "TTP-2026-0156"

@@ -341,7 +341,7 @@ Both appear in the run record. Neither is silent and neither is a pass.
   step's output says so and the completion summary carries `ANCHOR NOT
   HONOURED`. Detections keyed on the anchor process name will not match. It
   appears on images whose `sh` is busybox and that have no bash, such as `alpine`
-  with `prepare=none`. A hardlinked multi-call `sh` is not detected. In the final
+  with `prepare=none`. A hard-linked multi-call `sh` (no symlink to follow) is detected by comparing it with a `busybox`/`toybox` found on `PATH`: the same file means multi-call. In the final
   kind run processes named after the anchor (`apache2`) were observed mid-step on
   `debian:12-slim`, and on `alpine:3.20` with `prepare=none` `ANCHOR NOT
   HONOURED` was observed in both the step output and the completion summary.
