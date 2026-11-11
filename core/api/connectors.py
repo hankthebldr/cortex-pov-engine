@@ -19,6 +19,7 @@ whether a usable integration credential is configured and verified.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -257,6 +258,11 @@ async def preflight_connector(
         description=("comma-separated agent ids to check the policy path for "
                      "(panos_ngfw only; default: every enrolled agent)"),
     ),
+    response_layer: bool = Query(
+        True,
+        description=("xsiam_tenant only: also run the read-only SOC Framework "
+                     "(response layer) detection stage and store its result"),
+    ),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Staged, read-only reachability/scope check for a registered credential.
@@ -317,7 +323,7 @@ async def preflight_connector(
         report = pf.preflight_reconcile(row.config or {}, secret,
                                         integration_name=row.name).to_dict()
     elif kind == XSIAM_TENANT_KIND:
-        report = (await _preflight_tenant(db, row, datasets)).to_dict()
+        report = (await _preflight_tenant(db, row, datasets, response_layer)).to_dict()
     else:
         raise HTTPException(status_code=400, detail={
             "error": "No preflight for this credential kind", "code": "PREFLIGHT_UNSUPPORTED",
@@ -329,7 +335,8 @@ async def preflight_connector(
     return report
 
 
-async def _preflight_tenant(db: AsyncSession, row: Any, datasets: Optional[str]) -> Any:
+async def _preflight_tenant(db: AsyncSession, row: Any, datasets: Optional[str],
+                            response_layer: bool = True) -> Any:
     """Build the tenant client and run the XQL/dataset/clock stages."""
     from connectors import preflight as pf
     from integrations.xsiam.exceptions import XsiamConfigError
@@ -354,9 +361,20 @@ async def _preflight_tenant(db: AsyncSession, row: Any, datasets: Optional[str])
                                           "request was sent, so the API key did not "
                                           "leave this process."))],
         )
-    return await pf.preflight_tenant(
+    report = await pf.preflight_tenant(
         client, integration_name=row.name, base_url_host=host,
-        datasets=names, xql_authorised=xql_authorised)
+        datasets=names, xql_authorised=xql_authorised,
+        response_layer=response_layer)
+    # Persist only a stage that actually read something: a skipped stage (an
+    # earlier stage blocked the ladder) carries no payload and must not erase
+    # the last good read.
+    for stage in report.stages:
+        if stage.id == "response_layer" and "response_layer" in (stage.extra or {}):
+            row.response_layer = stage.extra["response_layer"]
+            row.response_layer_read_at = datetime.utcnow()
+            await db.commit()
+            break
+    return report
 
 
 # ---------------------------------------------------------------------------

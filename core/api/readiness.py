@@ -9,7 +9,7 @@ in-process quota ledger. It never returns credential config — only
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
@@ -56,6 +56,27 @@ def _ledger_for(kind: str, config: dict[str, Any]) -> Optional[dict[str, Any]]:
     return snap
 
 
+_RL_STALE_AFTER = timedelta(hours=24)
+
+
+def _response_layer_block(row: Any) -> Optional[dict[str, Any]]:
+    """The stored SOC Framework probe, or None. Reads the row only."""
+    layer = getattr(row, "response_layer", None)
+    if not isinstance(layer, dict):
+        return None
+    read_at = coerce_utc(getattr(row, "response_layer_read_at", None))
+    # An unreadable/absent timestamp cannot vouch for freshness: stale.
+    stale = read_at is None or (datetime.utcnow() - read_at) > _RL_STALE_AFTER
+    return {
+        "layer": layer,
+        "state": layer.get("state"),
+        "read_at": _iso(read_at),
+        "stale": stale,
+        "proves": "the SOC Framework is configured on this tenant",
+        "does_not_prove": "that the framework handled any CortexSim case",
+    }
+
+
 @router.get("")
 async def get_readiness(session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     tv = await tenant_verified(session)
@@ -75,6 +96,7 @@ async def get_readiness(session: AsyncSession = Depends(get_db)) -> dict[str, An
             "last_verified_at": _iso(row.last_verified_at),
             "last_verified_error": row.last_verified_error,
             "ledger": _ledger_for(row.kind, config),
+            "response_layer": _response_layer_block(row),
             "rungs": {
                 "authored": authored,
                 "configured": True,
