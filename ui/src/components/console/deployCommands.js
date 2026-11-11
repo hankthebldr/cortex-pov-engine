@@ -40,7 +40,18 @@ export function installerOS(os) {
 export const TLS12_PREFIX =
   '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; '
 
-/** The token rides in an env var, not the URL: out of shell history and proxy logs. */
+/**
+ * The token rides in an env var, not the URL. That keeps it out of the URL and
+ * so out of proxy and web-server access logs. It does NOT keep it out of shell
+ * history: the pasted line carries the token and an interactive shell records
+ * the line (bash unless HISTCONTROL=ignorespace and a leading space; PowerShell
+ * through PSReadLine). The console used to say it stayed out of history.
+ */
+export const TOKEN_HISTORY_NOTE =
+  'The token is kept out of the URL, so proxy and web-server logs never see it. It is on the command line, so '
+  + 'the host\'s shell history will hold it: mint a single-use, short-lived token (1 use and 1 hour are the '
+  + 'defaults here), and clear the history entry on a shared jumpbox.'
+
 export function windowsPullOneLiner({ url, token = null }) {
   return token
     ? `${TLS12_PREFIX}$env:CORTEXSIM_TOKEN='${token}'; iwr -useb "${url}" | iex`
@@ -72,6 +83,33 @@ export function windowsDownloadRunLine({ token }) {
   return `Unblock-File .\\${WINDOWS_INSTALLER_FILE}; $env:CORTEXSIM_TOKEN='${token}'; `
     + `powershell -NoProfile -ExecutionPolicy Bypass -File .\\${WINDOWS_INSTALLER_FILE}`
 }
+
+/**
+ * Starting an already-installed beacon by hand, in the target's own words. The
+ * hint used to be a bare `cortexsim-agent --server …` for every OS: no `.exe`
+ * and not where the Windows installer puts it.
+ */
+export function legacyRunHint({ os, origin, id }) {
+  const base = String(origin || '').replace(/\/+$/, '')
+  const agentId = id || 'jumpbox-01'
+  return installerOS(os) === 'windows'
+    ? `& "${WINDOWS_BEACON_PATH}" --server ${base} --id ${agentId} --interval 10`
+    : `cortexsim-agent --server ${base} --id ${agentId} --interval 10`
+}
+
+// ── Push bundles for Windows ─────────────────────────────────────────────────
+// The pull path says "not yet proven on a Windows host". The push path said
+// "always ready … PowerShell (.ps1)" with nothing beside it. Both sentences are
+// statements about the tree as it is: every .ps1 bundle is authored and
+// parse-checked, and none has been executed on any Windows host.
+
+export const WINDOWS_BUNDLE_UNPROVEN =
+  'Authored, not proven: no .ps1 bundle has run on a Windows host yet. It is parse-checked only, so run it in a '
+  + 'lab before a customer is watching.'
+
+export const WINDOWS_BUNDLE_RESIDUE =
+  'Some Windows bundles stop with exit 2 before running any step, because their cleanup leaves residue on the '
+  + 'host. The bundle prints the reason; it runs once CORTEXSIM_ACCEPT_RESIDUE=1 is set in that PowerShell session.'
 
 // ── Removal ──────────────────────────────────────────────────────────────────
 

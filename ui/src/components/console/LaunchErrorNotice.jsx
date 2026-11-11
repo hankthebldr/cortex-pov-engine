@@ -1,5 +1,29 @@
 import React from 'react'
 import { errorDetailLines, bundleRetryFormat, PUSH_FORMATS } from './useLaunchScenario.js'
+import { WINDOWS_BUNDLE_UNPROVEN, WINDOWS_BUNDLE_RESIDUE } from './deployCommands.js'
+// .launch-win-note lives with the other Windows notices.
+import '../../styles/destinations/deploy-console.css'
+
+/**
+ * WindowsBundleNote — what a DC must know before running a .ps1 bundle.
+ *
+ * The pull path already says "not yet proven on a Windows host". The push path
+ * presented a .ps1 as ready, and nothing in the console mentioned that some
+ * bundles refuse (exit 2) until CORTEXSIM_ACCEPT_RESIDUE=1 is set. Rendered
+ * wherever the console offers or saves a Windows bundle.
+ *
+ * Props:
+ *   inline  — render inside another notice (a span) instead of its own block
+ *   testId  — data-testid
+ */
+export function WindowsBundleNote({ inline = false, testId = undefined }) {
+  const Tag = inline ? 'span' : 'p'
+  return (
+    <Tag className={'launch-win-note' + (inline ? ' launch-win-note--inline' : '')} data-testid={testId}>
+      {inline ? ' ' : null}<strong>{WINDOWS_BUNDLE_UNPROVEN}</strong>{' '}{WINDOWS_BUNDLE_RESIDUE}
+    </Tag>
+  )
+}
 
 /**
  * DownloadOutcome — the result of the last push-bundle download, beside the
@@ -28,10 +52,14 @@ export function DownloadOutcome({
 }) {
   if (!result) return null
   if (result.status === 'success') {
+    // Saved is not the same as known to run. A .ps1 is authored and
+    // parse-checked; none has executed on a Windows host.
+    const isWindowsBundle = result.target === 'windows' || /\.ps1$/i.test(String(result.filename || ''))
     return (
       <div className="launch-result launch-result--success" role="status" data-testid={testId}>
         Saved <span className="mono">{result.filename}</span>
         {result.target && <> · SimCore emitted it for <span className="mono">{result.target}</span></>}
+        {isWindowsBundle && <WindowsBundleNote inline />}
       </div>
     )
   }

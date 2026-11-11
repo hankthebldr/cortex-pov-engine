@@ -3,6 +3,7 @@ import { postRun, getAgents, downloadScenario } from '../api/client.js'
 import { agentIdOf } from '../api/ids.js'
 import { PUSH_FORMATS, saveBlob, errorRecord, describeError } from './console/useLaunchScenario.js'
 import LaunchErrorNotice, { DownloadOutcome } from './console/LaunchErrorNotice.jsx'
+import { WINDOWS_BUNDLE_UNPROVEN, WINDOWS_BUNDLE_RESIDUE } from './console/deployCommands.js'
 
 /** What each push format is, in one line, beside the selector. */
 const FORMAT_HINT = {
@@ -10,7 +11,8 @@ const FORMAT_HINT = {
     + 'content, PowerShell for windows-only content',
   bash: 'Self-contained bash script — runs on any Ubuntu 22.04 box',
   powershell: 'Self-contained PowerShell script for the Windows PowerShell 5.1 floor '
-    + '(Server 2016+ / Windows 10+): powershell.exe -NoProfile -ExecutionPolicy Bypass -File <file>',
+    + '(Server 2016+ / Windows 10+): powershell.exe -NoProfile -ExecutionPolicy Bypass -File <file>. '
+    + `${WINDOWS_BUNDLE_UNPROVEN} ${WINDOWS_BUNDLE_RESIDUE}`,
   k8s: 'K8s YAML manifest — apply with kubectl apply -f <file>',
 }
 

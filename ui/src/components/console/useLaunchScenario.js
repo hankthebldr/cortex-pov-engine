@@ -17,6 +17,19 @@ export const PUSH_FORMATS = Object.freeze([
   { value: 'k8s', label: 'kubernetes (.yml)', short: 'k8s' },
 ])
 
+/**
+ * Will this download be a PowerShell bundle? `powershell` always; `auto` when
+ * SimCore reports it can emit only Windows for this scenario (the server's own
+ * auto rule prefers POSIX when it can). Unknown under `auto` is not guessed —
+ * the saved-file line carries the note once the answer is known.
+ */
+export function bundleIsWindows(scenario, pushFormat) {
+  if (pushFormat === 'powershell') return true
+  if (pushFormat !== 'auto') return false
+  const targets = scenario?.bundle_targets
+  return Array.isArray(targets) && targets.length > 0 && targets.every((t) => t === 'windows')
+}
+
 /** "message [CODE]: detail" from a thrown API error, code and detail never dropped. */
 export function describeError(err) {
   let text = err?.message || 'Request failed'

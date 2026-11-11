@@ -20,6 +20,9 @@ import {
   WINDOWS_ELEVATION_LABEL,
   WINDOWS_INSTALLER_FILE,
   POSIX_INSTALLER_FILE,
+  WINDOWS_BUNDLE_UNPROVEN,
+  TOKEN_HISTORY_NOTE,
+  legacyRunHint,
   beaconShipState,
   attemptsSince,
 } from './deployCommands.js'
@@ -153,15 +156,18 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
   // control plane usually has the console open at localhost:8888 (dev-up.sh),
   // and `localhost` pasted on a jumpbox resolves to the JUMPBOX — the beacon
   // installs, calls itself, and the roster stays empty with nothing to read.
-  // The install endpoint refuses to bake a derived loopback, but say so here
-  // too: catching it before the copy beats catching it after the paste.
+  // SimCore does NOT refuse a loopback address (installing on the same machine
+  // is legitimate; there is no INSTALLER_SERVER_LOOPBACK code), so this warning
+  // is the only thing between the copy and the paste.
   const originIsLoopback = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:|$)/i.test(origin)
 
   // Token-bearing installer (preferred) vs legacy explicit-id installer.
-  // The token rides in an env var rather than the URL so it stays out of the
-  // jumpbox's shell history and any proxy access log the customer keeps.
-  // Command strings come from deployCommands.js — the one spelling shared
-  // with Get started (TLS 1.2 opt-in included for Windows PowerShell 5.1).
+  // The token rides in an env var rather than the URL, which keeps it out of
+  // any proxy or web-server access log. It does NOT keep it out of the
+  // jumpbox's shell history — the pasted line carries it (TOKEN_HISTORY_NOTE
+  // says so beside the token). Command strings come from deployCommands.js —
+  // the one spelling shared with Get started (TLS 1.2 opt-in included for
+  // Windows PowerShell 5.1).
   const isWindows = installerOS(deployOS) === 'windows'
   const installUrl = `${origin}${agentInstallUrl({ os: deployOS })}`
   const legacyInstallUrl = `${origin}${agentInstallUrl({ os: deployOS, id: deployId || 'jumpbox-01' })}`
@@ -465,11 +471,16 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
             <div className="target-card__head">
               <span className="status-dot status-dot--ready" />
               <span className="target-card__title">Offline bundle</span>
-              <span className="target-card__pill target-card__pill--ready">always ready</span>
+              {/* What is always true is that SimCore can GENERATE a bundle with no
+                  agent. Whether the bundle runs is a property of the target. */}
+              <span className="target-card__pill target-card__pill--ready">no agent needed</span>
             </div>
             <p className="target-card__sub">
               Generate a self-contained bundle the DC runs on the target: bash for a clean Ubuntu 22.04 host, PowerShell (.ps1) for Windows PowerShell 5.1, or a K8s manifest.
               No agent, no inbound connection.
+            </p>
+            <p className="target-card__sub target-card__sub--caveat" data-testid="push-windows-caveat">
+              {WINDOWS_BUNDLE_UNPROVEN}
             </p>
             {isSel('push', 'bundle') && <span className="target-card__selected">✓ selected · push mode</span>}
           </button>
@@ -649,6 +660,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     {token.remaining_uses ?? token.max_uses} use(s)
                     {token.expires_at && ` · expires ${serverDate(token.expires_at).toLocaleString()}`}
                   </span>
+                  <span className="deploy-hint" data-testid="deploy-token-history-note">{TOKEN_HISTORY_NOTE}</span>
                 </div>
 
                 <div className="deploy-field">
@@ -734,8 +746,8 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                     <code data-testid="deploy-legacy-one-liner" ref={legacyRef}>{legacyOneLiner}</code>
                     <CopyButton copier={deployCopy} id="legacy" text={legacyOneLiner} selectRef={legacyRef} what="legacy install command" />
                   </div>
-                  <span className="deploy-hint mono">
-                    or, once built: <code>cortexsim-agent --server {origin} --id {deployId || 'jumpbox-01'} --interval 10</code>
+                  <span className="deploy-hint mono" data-testid="deploy-legacy-run-hint">
+                    or, once installed: <code>{legacyRunHint({ os: deployOS, origin, id: deployId })}</code>
                   </span>
                 </div>
               )}

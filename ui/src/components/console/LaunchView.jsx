@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import useLaunchScenario, { PUSH_FORMATS } from './useLaunchScenario.js'
-import LaunchErrorNotice, { DownloadOutcome } from './LaunchErrorNotice.jsx'
+import useLaunchScenario, { PUSH_FORMATS, bundleIsWindows } from './useLaunchScenario.js'
+import LaunchErrorNotice, { DownloadOutcome, WindowsBundleNote } from './LaunchErrorNotice.jsx'
 import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
 import { getToolAdapters, listIntegrations } from '../../api/client.js'
 import useShelf from './useShelf.js'
@@ -301,6 +301,11 @@ export default function LaunchView({
                 {PUSH_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </label>
+          )}
+          {/* A .ps1 is authored and parse-checked only. Said BEFORE the
+              download, where the format is chosen, not discovered at exit 2. */}
+          {targetMode === 'push' && bundleIsWindows(scenario, launch.pushFormat) && (
+            <WindowsBundleNote testId="launch-windows-bundle-note" />
           )}
 
           {/* dual-use / c2 consent gate */}

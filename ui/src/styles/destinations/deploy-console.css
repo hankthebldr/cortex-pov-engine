@@ -119,6 +119,22 @@
 .theme-console .install-attempts__row--warn .install-attempts__kind { color: var(--c-pending); }
 .theme-console .install-attempts__meta { color: var(--c-text-muted); font-size: 10px; }
 
+/* ── "Authored, not proven" on the Windows push path ────────────────── */
+/* The same weight as the pull path's Windows caveats: a warning rule on the
+   left, never the success green of the line it may sit inside. */
+.theme-console .launch-win-note {
+  margin: 8px 0 0; padding: 7px 10px;
+  border-left: 3px solid var(--c-pending); border-radius: 3px;
+  font-family: var(--font-ui); font-size: 11px; line-height: 1.55;
+  color: var(--c-text-secondary);
+}
+.theme-console .launch-win-note strong { color: var(--c-text); font-weight: 600; }
+.theme-console .launch-win-note--inline { display: block; }
+.theme-console .target-card__sub--caveat {
+  padding-left: 8px; border-left: 2px solid var(--c-pending);
+  color: var(--c-text-secondary);
+}
+
 /* ── Get started: the same parts, in that page's type scale ─────────── */
 .theme-console .gs-form .win-caveats,
 .theme-console .gs-form .install-attempt,

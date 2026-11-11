@@ -71,7 +71,7 @@ const TABS_CHEATSHEET = [
   },
   {
     name: 'Agents (Manage)',
-    body: 'The beacon fleet. Every registered cortexsim-agent with live / stale liveness derived from last_seen, a deploy flow that mints an enrollment token and hands you the one-line installer per OS (the token rides in an env var, not the URL, so it stays out of shell history and proxy logs), and confirm-gated retirement. Selecting an agent sets it as the ambient active agent AND arms it as the launch target in pull mode. Note the loopback warning: if you opened the console at localhost the one-liner is not safe to paste on a jumpbox.',
+    body: 'The beacon fleet. Every registered cortexsim-agent with online / stale / offline liveness from SimCore (a row the installer only enrolled reads "enrolled" until its beacon polls), a deploy flow that mints an enrollment token and hands you the one-line installer per OS (the token rides in an env var, not the URL, which keeps it out of proxy logs; it is still on the command line, so the host\'s shell history holds it), and confirm-gated deletion of the registry row, with the command that removes the beacon from the host. The Windows beacon and installer are authored and not yet run on a Windows host. Selecting an agent sets it as the ambient active agent AND arms it as the launch target in pull mode. Note the loopback warning: if you opened the console at localhost the one-liner is not safe to paste on a jumpbox.',
   },
   {
     name: 'Environments (More ▾)',
@@ -82,6 +82,9 @@ const TABS_CHEATSHEET = [
     body: 'MITRE matrix showing what techniques the scenario library covers. Click a technique cell → detail panel → "Filter Scenarios →" jumps to Scenarios pre-filtered to the ones exercising that technique.',
   },
 ]
+
+/** The cheatsheet entries, exported so a test can pin the claims they make. */
+export const HELP_TOPICS = TABS_CHEATSHEET
 
 const FIRST_RUN_KEY = 'cortexsim.helpOverlay.seenV1'
 

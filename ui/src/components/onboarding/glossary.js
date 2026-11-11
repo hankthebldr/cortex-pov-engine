@@ -43,7 +43,7 @@ export const GLOSSARY = {
   },
   'push-bundle': {
     term: 'push bundle',
-    definition: 'A self-contained script generated for offline execution, with no SimCore dependency at run time: bash for a clean Ubuntu 22.04 host, or PowerShell (.ps1) for Windows PowerShell 5.1.',
+    definition: 'A self-contained script generated for offline execution, with no SimCore dependency at run time: bash for a clean Ubuntu 22.04 host, or PowerShell (.ps1) for Windows PowerShell 5.1. The .ps1 form is authored and parse-checked; it has not yet run on a Windows host.',
   },
   'identity-harness': {
     term: 'identity harness',
