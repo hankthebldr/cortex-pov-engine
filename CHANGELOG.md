@@ -8,6 +8,36 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Changed — Composer and Runs: a step's lane is its signal path, not its plane
+
+- **The door badge, the Lanes lens and the Runs topology place a step by what
+  it does.** They used to derive the door from the step's plane (NDR read
+  "Broker VM relay", CDR read "Cloud"), which names the product that observes
+  the signal, not how the step produces it. Measured on the corpus, that put
+  427 of 796 steps behind a door they are not launched through. The lane is now
+  the step's **signal path**, read from its command and channel: ENDPOINT
+  RUNTIME (the beacon runs it, 506 steps), LOG INJECTION (an EAL collector
+  plugin posts records to a Broker VM or HTTP collector, 89), LIVE TRAFFIC (an
+  EAL traffic generator, 49), CLOUD CONTROL PLANE (the command calls `aws`,
+  `gcloud`, `gsutil`, `az`, `bq` or `kubectl`, 41) and NO ACTION (it only
+  echoes, prints, sleeps or comments, 111). The Engine band holds tenant
+  content, never a step.
+- **The badge says where the step runs and its path:** `AGT`, `AGT → WIRE`,
+  `SIM → COLLECTOR`, `AGT · no action`. A step whose path cannot be read reads
+  `AGT → EAL ?` in the error tone with the reason in its title, and is never
+  drawn behind a door it does not use.
+- **Lanes are read-only.** A card dropped in another lane snaps back with the
+  reason; change the command, or the channel in the Inspector. Lane overrides
+  are gone (the drafts API never stored them).
+- **Runs topology without its scenario places no step.** A path is read from the
+  command and no Result row carries one, so each step is listed as unplaced
+  with that reason; the results are still counted.
+- **Loader lint S-28** (structural, not gated by `CORTEXSIM_STRICT_REFS`): a
+  command that runs the EAL simulator must name registered plugins, all of one
+  class. No corpus scenario trips it. `GET /api/eal/plugins` gains `delivery:
+  collector | wire`, and `core/engine/signal_path.py` is now the one definition
+  of the EAL plugin classes, pinned to the live registry.
+
 ### Added
 
 - **Dataset requirement registry and scenario prerequisites.**

@@ -1,7 +1,8 @@
 # Composer: doors by signal path, not by plane (2026-11-10)
 
-Status: **approved 2026-11-10**, with CLOUD CONTROL PLANE as a fourth path
-(§10). Branch `feature/ui-composer-doors`, cut from `dev` @ 3f5426a. This is phase 2 of
+Status: **approved 2026-11-10** with CLOUD CONTROL PLANE as a fourth path
+(§10), and **built** on this branch. §11 records where the build differs from
+the text. Branch `feature/ui-composer-doors`, cut from `dev` @ 3f5426a. This is phase 2 of
 `2026-11-10-composer-correlation-story-design.md` (phase 1 merged as #173). It
 replaces that spec's §8 where the two disagree; §9 below lists where and why.
 
@@ -221,3 +222,43 @@ marks as API- or audit-log-ingested (CloudTrail, Kubernetes audit).
 4. Runs topology follows the new lanes, and a run whose scenario cannot be
    loaded shows its steps as `unplaced` with the reason (§6).
 5. "Where the evidence enters Cortex" waits for phase 2b (§8).
+
+## 11. As built
+
+Verified: `cd ui && npx vitest run`; the Python suites for the derivation, S-28,
+the plugin pin and `/api/eal/plugins`; `make check-refs` (every corpus scenario
+loads through S-28); `ui/tests/e2e/13-composer-doors.spec.ts` plus specs 09, 10
+and 12 through installed Chrome against a host-run SimCore and the Vite dev
+server. **Not verified:** the bundle baked into a Docker image; anything
+against a tenant.
+
+Where the build differs from the text above:
+
+* **The counts moved with the rules (§1, §3).** The spec's throwaway script
+  matched a cloud CLI anywhere after whitespace and called a line no-action if
+  it started with `echo`. The built rules ignore CLI names inside quotes and
+  comments (an `echo '... maps to: aws sts ...'` marker is not a call) and treat
+  a redirect, a pipe or a command substitution as an action (`date > /tmp/t1`
+  acts). Measured by the built module: ENDPOINT 506 · COLLECTOR 89 · WIRE 49 ·
+  CLOUD 41 · NONE 111, pinned by the corpus tripwire.
+* **Plugin classes are not fetched (§4).** The browser holds the two sets
+  itself, pinned to `spec/signal_path_cases.json`, which a Python test pins to
+  the live registry. That removes a request from the Composer and the Runs
+  topology and the "plugins not loaded" state with it. `GET /api/eal/plugins`
+  still gains `delivery`, for other readers.
+* **The loader already had a collector set.** `scenario_loader.
+  COLLECTOR_POST_PLUGINS` (the S-25 indicator check) was a second hand-kept
+  list; it now re-exports `signal_path.COLLECTOR_PLUGINS`.
+* **S-28 judges a command-level EAL run only.** An `eal`-channel step's plugin is
+  still checked only for being non-empty by the channel validator. The
+  stdlib lint hook (`.claude/hooks/lint-scenario.py`) does not carry S-28.
+* **The badge has its own line (§3).** In the header row the longest badge
+  needed 208px of a 192px row and covered the step id (measured in Chrome).
+* **The refusal banner reads "Lane not changed"**, not the canvas's "Edge
+  refused".
+* **The execution timeline** (`ExecutionTimeline.jsx`) is updated but is not
+  mounted anywhere today.
+* **Lanes lens geometry is unchanged.** Step cards are taller than the 104px
+  bands, so a card's lower half overlaps the band below; the e2e spec places a
+  card by the top of its box. Pre-existing, now one line taller.
+
