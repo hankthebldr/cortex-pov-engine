@@ -406,3 +406,57 @@ def test_a_reaper_without_a_usable_clock_exits_non_zero_and_never_waits_relative
 def test_reaper_pod_has_a_short_grace_period():
     # A Recreate rollout must not leave the old-expiry pod alive for 30 s.
     assert _reaper(objs("baseline"))["spec"]["template"]["spec"]["terminationGracePeriodSeconds"] == 1
+
+
+# ── I5: the header is the one thing a customer reads ─────────────────────────
+
+_REMOVAL_1 = ("# REMOVAL: delete cluster-scoped objects FIRST:  "
+              "kubectl delete clusterrole,clusterrolebinding -l cortexsim.io/agent=true")
+_REMOVAL_2 = ("#          then:  kubectl delete namespace cortexsim-agent   "
+              "(deleting only the namespace leaves the ClusterRole/Binding behind)")
+_CONSENT = {"baseline": {}, "cluster-privilege": {"cluster_privilege_authorized": True},
+            "lab-privileged": {"cluster_privilege_authorized": True,
+                               "node_access_authorized": True}}
+
+
+def _header(profile="baseline", image="debian:12-slim", prepare="packages"):
+    text = generate_agent_manifest(
+        profile=profile, image=image, arch="amd64", prepare=prepare, ttl_seconds=43200,
+        beacon_sha256="a" * 64, now=NOW, authorized_by="henry",
+        consent=_CONSENT[profile], allow_privileged_k8s=True)
+    return text.split("\n---\n")[0]
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_header_states_removal_order_verbatim_for_every_profile(profile):
+    lines = _header(profile).splitlines()
+    assert _REMOVAL_1 in lines and _REMOVAL_2 in lines
+    assert lines.index(_REMOVAL_2) == lines.index(_REMOVAL_1) + 1
+
+
+@pytest.mark.parametrize("prepare", ["packages", "none"])
+def test_header_states_image_and_prepare(prepare):
+    lines = _header(image="alpine:3.20", prepare=prepare).splitlines()
+    assert "# Image      : alpine:3.20" in lines
+    assert f"# Prepare    : {prepare}" in lines
+
+
+@pytest.mark.parametrize("image", [
+    "a",
+    "registry.example.com:5000/team/img@sha256:" + "f" * 64,
+    "A" + "._/:@-" * 42,                      # every punctuation the allowlist takes
+    "z" * 255,                                # the longest value it accepts
+])
+def test_no_image_the_allowlist_accepts_can_break_the_header_line(image):
+    from engine.agent_manifest import validate_image
+    assert validate_image(image) == image
+    header = _header(image=image)
+    (line,) = [ln for ln in header.splitlines() if ln.startswith("# Image")]
+    assert line == f"# Image      : {image}"
+
+
+@pytest.mark.parametrize("bad", ["debian\n# injected", "debian\r", "debian 12", "debian#x", ""])
+def test_image_values_that_could_break_the_header_are_refused(bad):
+    from engine.agent_manifest import validate_image
+    with pytest.raises(ValueError):
+        validate_image(bad)

@@ -243,6 +243,17 @@ pid=""
 TERMED=0
 trap 'TERMED=1; if [ -n "$pid" ]; then kill -TERM $pid 2>/dev/null; else exit 143; fi' TERM INT
 @@PREPARE@@
+# Optional Secret key artifact-token: the payload-shelf token, handed to the beacon
+# through its environment only (never argv, never echoed).
+ART_TOKEN_FILE="${CORTEXSIM_SECRET_DIR:-/secret}/artifact-token"
+if [ -s "$ART_TOKEN_FILE" ]; then
+  CORTEXSIM_ARTIFACT_TOKEN="$(cat "$ART_TOKEN_FILE")"
+  if [ -n "$CORTEXSIM_ARTIFACT_TOKEN" ]; then
+    export CORTEXSIM_ARTIFACT_TOKEN
+  else
+    unset CORTEXSIM_ARTIFACT_TOKEN
+  fi
+fi
 AGENT="${CORTEXSIM_AGENT_BIN:-/cortexsim/cortexsim-agent}"
 "$AGENT" --server "$(cat /secret/server)" --enroll-token-file /secret/token --state-dir /cortexsim/state --expires-at @@EXPIRES@@ --posture-profile @@PROFILE@@ --prepare-status-file /cortexsim/prepare.status --subreaper --long-poll 30 --stream-output &
 pid=$!
@@ -665,6 +676,8 @@ def _agent_pod_spec(posture: ClusterPosture, *, image: str) -> dict[str, Any]:
 def _agent_header(
     *,
     profile: str,
+    image: str,
+    prepare: str,
     posture: ClusterPosture,
     objects: list[dict[str, Any]],
     expires: str,
@@ -680,6 +693,10 @@ def _agent_header(
     out = [rule, "# CortexSim Kubernetes Container Agent\n", rule]
     out.append(f"# Profile    : {profile}   Risk tier: {posture.risk_tier()}\n")
     out.append(f"# Namespace  : {AGENT_NAMESPACE}   Expires: {expires}\n")
+    # `image` passed validate_image (no whitespace, no newline, no '#'), so it
+    # cannot break this comment line.
+    out.append(f"# Image      : {image}\n")
+    out.append(f"# Prepare    : {prepare}\n")
     out.append(f"# Consent    : {', '.join(granted) if granted else '(none required)'}\n")
     out.append(f"# Authorized : {authorized_by or '(not recorded)'}\n")
     out.append("#\n")
@@ -701,6 +718,12 @@ def _agent_header(
     out.append(
         f"# A reaper Deployment deletes namespace {AGENT_NAMESPACE} and the cluster-scoped objects\n"
         "# above at expiry. It is a safety net: delete the manifest yourself when done.\n"
+    )
+    out.append(
+        f"# REMOVAL: delete cluster-scoped objects FIRST:  "
+        f"kubectl delete clusterrole,clusterrolebinding -l {_AGENT_LABEL}=true\n"
+        f"#          then:  kubectl delete namespace {AGENT_NAMESPACE}   "
+        "(deleting only the namespace leaves the ClusterRole/Binding behind)\n"
     )
     out.append(rule)
     return "".join(out)
@@ -738,7 +761,7 @@ def generate_agent_manifest(
         authorized_by=authorized_by,
     )
     header = _agent_header(
-        profile=profile, posture=posture, objects=objects,
+        profile=profile, image=image, prepare=prepare, posture=posture, objects=objects,
         expires=km._iso(now.timestamp() + ttl_seconds),
         authorized_by=authorized_by, consent=consent,
     )

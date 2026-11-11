@@ -252,3 +252,36 @@ def test_existing_user_runs_nothing(tmp_path, tool):
 def test_start_script_uses_the_account_fragment():
     s = start_script(arch="amd64", prepare="packages", expires_at=EXP, profile="baseline")
     assert account_creation_fragment(identity_spec.service_accounts()).strip() in s
+
+
+# ── S1: the optional artifact-token Secret key reaches the beacon's env ──────
+
+_RECORD_TOKEN = (
+    'if [ "${CORTEXSIM_ARTIFACT_TOKEN+set}" = set ]; then '
+    'printf "set:%s" "$CORTEXSIM_ARTIFACT_TOKEN" > @READY@.env; '
+    'else printf unset > @READY@.env; fi\n'
+    'case "$*" in *artifact*) printf argv > @READY@.argv ;; esac\n'
+    'exit 3\n'
+)
+
+
+@pytest.mark.parametrize("content,want", [
+    ("cxs_art_123\n", "set:cxs_art_123"),
+    (None, "unset"),
+    ("", "unset"),
+])
+def test_artifact_token_from_the_secret_is_exported_never_on_argv(tmp_path, content, want):
+    secret = tmp_path / "secret"
+    secret.mkdir()
+    if content is not None:
+        (secret / "artifact-token").write_text(content)
+    os.environ.pop("CORTEXSIM_ARTIFACT_TOKEN", None)
+    os.environ["CORTEXSIM_SECRET_DIR"] = str(secret)
+    try:
+        proc, out, ready = _start(tmp_path, _RECORD_TOKEN)
+        assert proc.wait(timeout=10) == 3
+    finally:
+        os.environ.pop("CORTEXSIM_SECRET_DIR", None)
+    assert (tmp_path / "ready.env").read_text() == want
+    assert not (tmp_path / "ready.argv").exists()
+    assert "cxs_art_123" not in out.read_text()
