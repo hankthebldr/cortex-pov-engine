@@ -1232,8 +1232,8 @@ echo "[CORTEXSIM] payload verified sha256=$ACT (served from $CORTEXSIM_SERVER)"
 mkdir -p /cortexsim/tools
 i=0
 while [ "$i" -lt "${{PAYLOAD_COUNT:-0}}" ]; do
-  eval "PN=\$PAYLOAD_${{i}}_NAME"
-  eval "PS=\$PAYLOAD_${{i}}_SHA256"
+  eval "PN=\\$PAYLOAD_${{i}}_NAME"
+  eval "PS=\\$PAYLOAD_${{i}}_SHA256"
   [ -n "$PS" ] || die "PAYLOAD_INTEGRITY_MISSING no digest for '$PN' — refusing to stage an unverifiable tool"
   wget -q -T 120 -O "/cortexsim/tools/.$PN.part" "$CORTEXSIM_SERVER/api/k8s/payload/$PN" \\
     || die "PAYLOAD_FETCH_FAILED could not fetch '$PN' from $CORTEXSIM_SERVER. NOTHING RAN."
