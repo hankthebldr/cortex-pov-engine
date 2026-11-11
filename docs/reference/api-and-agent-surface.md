@@ -44,20 +44,20 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **149 HTTP routes total** (counted 2026-11-10 on the host venv, FastAPI
+- **150 HTTP routes total** (counted 2026-11-10 on the host venv, FastAPI
   0.141.1 as pinned in `core/requirements.txt`; not re-counted against a built
   image). Routers under `/api`, plus the app-level `GET /api/health` and a static
-  file mount at `/`. Per-prefix: `runs` 19 · `agents` 15 · `eal` 15 ·
+  file mount at `/`. Per-prefix: `runs` 19 · `agents` 16 · `eal` 15 ·
   `scenarios` 13 (7 of them under `/scenarios/drafts`) · `tools` 11 ·
   `credentials` 10 · `uctc` 9 · `ttps` 8 · `xsiam` 8 · `shelf` 7 · `k8s` 6 ·
   `assertions` 6 · `infra` 4 · `results` 4 · `pov` 3 · `connectors` 2 ·
   `mitre` 2 · `run` 1 · `events` 1 · `health` 1, plus 4 FastAPI-owned
-  docs/openapi routes. The previous figure here was 133 (2026-08-06); 14 routes
+  docs/openapi routes. The previous figure here was 133 (2026-08-06); 15 routes
   landed since without this line moving, and 2 more are the tenant-content
   routes in §1.2.1.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
-> here was two content passes stale, and the 133 after it was 16 stale. The
+> here was two content passes stale, and the 133 after it was 17 stale. The
 > command is the ground truth. The one-liner this section used to carry
 > (`len([r for r in app.routes if getattr(r,'methods',None)])`) returns **4** on
 > FastAPI 0.141: `include_router` now keeps each router behind a wrapper, so the

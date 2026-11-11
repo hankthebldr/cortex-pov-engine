@@ -423,7 +423,8 @@ Where the build differs from the text above:
 * **Not done from §6.** `validate.py` V1 (the info count line) and the second
   coverage share. Both report numbers the manifest and the tripwire test
   already carry; they move with V2 to V4 in phase 3.
-* **Route count (§7).** The count was 133 in the docs and is 149 measured; the
+* **Route count (§7).** The count was 133 in the docs and is 150 measured (on `dev` @ e964501
+  plus this branch); the
   documented counting one-liner returns 4 on FastAPI 0.141. Both are corrected
   in `docs/reference/api-and-agent-surface.md` §0.
 
