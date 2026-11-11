@@ -287,6 +287,12 @@ jobs:
   # Every other UC/TC test exercises the machinery on synthetic refs. Without
   # this job a scenario re-keyed to a dangling test case ships green: the loader
   # would reject it at boot, but nothing in CI would ever watch that happen.
+  #
+  # Three gates share this job (PowerShell floor, strict refs, ground truth)
+  # and none may mask another. Each one after the dependency
+  # install carries `!cancelled()` plus the outcome of the step it actually
+  # needs, so a red PowerShell gate still reports a dangling tc_ref from the
+  # same push, and a gate never runs vacuously behind a failed prerequisite.
   # ---------------------------------------------------------------------------
   refs:
     name: refs (UC/TC strict validation + ground-truth drift gate)
@@ -301,7 +307,18 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
+      # The PowerShell gate renders the beacon's own wrapper by running
+      # `go test` in agent/ (scripts/ci/render_powershell.py), so this job
+      # needs a Go and it must be the one the beacon is tested with. Without
+      # this step it used whatever the runner image shipped that week.
+      - uses: actions/setup-go@v5
+        with:
+          # Same string as the agent job until CI-11 settles which Go ships.
+          go-version: '1.21'
+          # The beacon is stdlib-only: there is no agent/go.sum to key a cache on.
+          cache: false
       - name: Install loader deps
+        id: deps
         run: |
           python -m pip install --upgrade pip
           pip install -r core/requirements.txt pytest pytest-asyncio
@@ -314,6 +331,7 @@ jobs:
       - name: Every scenario resolves under CORTEXSIM_STRICT_REFS
         # A failure here names the scenario that would refuse to load in
         # production. Fix the ref (or the crosswalk), never the gate.
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
           CORTEXSIM_ENV: development
@@ -329,6 +347,8 @@ jobs:
       # here — the committed files' shape does not depend on which job
       # regenerated them.
       - name: Regenerate ground-truth inventory
+        id: ground_truth
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
           CORTEXSIM_ENV: development
@@ -341,6 +361,11 @@ jobs:
         # `python3 scripts/generate_ground_truth.py` (or `make ground-truth`)
         # locally and commit the result. This is the gate that keeps a repeat
         # of the README drifting 30-90% from reality from recurring.
+        #
+        # Gated on the regeneration, not merely on `!cancelled()`: after a
+        # FAILED regeneration this diff compares the committed files with
+        # themselves and reads green.
+        if: ${{ !cancelled() && steps.ground_truth.outcome == 'success' }}
         run: git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
 
   # ---------------------------------------------------------------------------
