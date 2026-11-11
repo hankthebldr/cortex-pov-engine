@@ -78,7 +78,7 @@ def _clean_orchestrator():
     _reset()
 
 
-def _detection(det_id: str, technique: str, text: str) -> dict:
+def _detection(det_id: str, text: str) -> dict:
     return {"plane": "EDR", "type": "BIOC", "description": text, "detection_id": det_id}
 
 
@@ -95,11 +95,11 @@ async def _seed(db, *, agents: dict[str, list[str]]):
             {"id": "step-01", "name": "enumerate", "identity": "root", "command": "id",
              "mitre_technique": "T1003.001",
              "expected_detections": [
-                 _detection("bioc-lsass-access", "T1003.001", "LSASS memory access")]},
+                 _detection("bioc-lsass-access", "LSASS memory access")]},
             {"id": "step-02", "name": "discover", "identity": "root", "command": "id",
              "mitre_technique": "T1082",
              "expected_detections": [
-                 _detection("bioc-sysinfo", "T1082", "System information discovery")]},
+                 _detection("bioc-sysinfo", "System information discovery")]},
         ],
     ))
     for agent_id, caps in agents.items():
@@ -214,7 +214,7 @@ def test_only_the_refused_tasks_own_steps_are_stamped(client, session_factory):
     """A fan-out partition: the refused endpoint held step-01 only. step-02
     belongs to another endpoint (or ran in-process) and may really have
     executed, so its row must stay matchable."""
-    run_id = _launch(session_factory, {"agent-old": ["shell", "identity-harness"]}, "agent-old")
+    _launch(session_factory, {"agent-old": ["shell", "identity-harness"]}, "agent-old")
     _attach_artifact("agent-old", only_steps=["step-01"])
 
     assert client.get("/api/agents/agent-old/tasks").status_code == 409
