@@ -194,6 +194,59 @@ func TestPlanStep_DecisionTable(t *testing.T) {
 	}
 }
 
+// BEACON-17: a PowerShell step that ends in a bare `exit` exits 0 whatever its
+// last tool returned (sh would return the tool's status). The wrapper cannot
+// see it happen, so the plan carries a caveat into the step's output — on every
+// Windows route that runs PowerShell, and on none that does not.
+func TestPlanStep_WindowsNotesABareTrailingExit(t *testing.T) {
+	const caveat = "exit-code caveat"
+	bare := "tool.exe --run\nexit"
+	cases := []struct {
+		name, goos string
+		step       Step
+		want       bool
+	}{
+		{"win: primary", "windows", Step{ID: "s", Command: bare}, true},
+		{"win: platform variant", "windows",
+			Step{ID: "s", Command: "ls", PlatformVariants: map[string]string{"windows": bare}}, true},
+		{"win: server-resolved powershell", "windows", Step{ID: "s", Command: bare, Shell: "powershell"}, true},
+		// cmd's bare exit keeps ERRORLEVEL: no caveat.
+		{"win: server-resolved cmd", "windows", Step{ID: "s", Command: bare, Shell: "cmd"}, false},
+		{"win: explicit exit code", "windows", Step{ID: "s", Command: "tool.exe\nexit $LASTEXITCODE"}, false},
+		{"win: no exit", "windows", Step{ID: "s", Command: "tool.exe"}, false},
+		// sh's bare exit IS the last status: nothing to say on POSIX.
+		{"linux: bare exit", "linux", Step{ID: "s", Command: bare}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			p := planStep(&c.step, c.goos)
+			if p.refuse != "" {
+				t.Fatalf("unexpected refusal: %+v", p)
+			}
+			if got := strings.Contains(p.note, caveat); got != c.want {
+				t.Fatalf("note carries the bare-exit caveat = %v, want %v (note=%q)", got, c.want, p.note)
+			}
+		})
+	}
+}
+
+// The caveat reaches the run record: it is in the step's /output frame.
+func TestExecuteTask_WindowsBareExitCaveatIsInTheStepOutput(t *testing.T) {
+	withGOOS(t, "windows")
+	rs := newRecordingServer(t, nil)
+	defer rs.Close()
+	c := New(rs.URL, "a-1", 0)
+	c.execStep = (&execRecorder{}).exec
+	c.executeTask(context.Background(), &Task{TaskID: "t", RunID: "r", ScenarioID: "S",
+		Steps: []Step{{ID: "step-01", Command: "tool.exe --run\nexit", Identity: "root"}}})
+
+	outs := rs.find("POST", "/output")
+	if len(outs) != 1 || !strings.Contains(outs[0].Body, "exit-code caveat") ||
+		!strings.Contains(outs[0].Body, "exit $LASTEXITCODE") {
+		t.Fatalf("the step frame does not carry the bare-exit caveat: %+v", outs)
+	}
+}
+
 // The chained (causality-contract) path has its own loop and needs its own
 // proof: a refused step never reaches the anchor, the variant does.
 func TestExecuteTaskChained_WindowsSelectsVariantAndRefusesUnsatisfiable(t *testing.T) {

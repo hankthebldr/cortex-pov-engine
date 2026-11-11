@@ -202,6 +202,28 @@ func powerShellChainLaunch(launch, marker, stepID string) string {
 // .ps1 bundles): `Write-Output ok` -> 0; last statement a native exiting 3 -> 3;
 // last statement a failing cmdlet (`Get-Item <missing>`) -> 1; a native that
 // writes to stderr and exits 0 -> 0.
+//
+// WHERE THIS IS NOT `sh -c` (BEACON-17). The engine reads a step's exit code
+// the way sh defines it — the status of the LAST command — and this wrapper
+// differs in two places. Both are stated rules, each a row in
+// TestPowerShellExitWrapper_ShParityRows:
+//
+//  1. A bare `exit` ends the step with 0, whatever ran before it. The author's
+//     `exit` leaves the process before the epilogue below can look at $? or
+//     $LASTEXITCODE, and PowerShell's `exit` with no argument is 0, where sh's
+//     is "the last command's status" (`false; exit` is 1). Nothing here can
+//     see that it happened; the beacon notes a step whose text ENDS in a bare
+//     exit (EndsWithBareExit) and content should write `exit $LASTEXITCODE`.
+//  2. A native command that failed EARLIER in the step fails the step even if
+//     later statements succeed: $LASTEXITCODE is only ever written by the next
+//     native command, so `tool.exe; Write-Output done` exits with tool.exe's
+//     code where sh's `false; echo ok` is 0. This is deliberately the STRICTER
+//     reading. The looser one ("$? is true, so 0") would report a PASS for
+//     `tool.exe | Out-String` when tool.exe failed, which is the false-green
+//     this wrapper exists to remove. A step that expects a failure says so with
+//     `$global:LASTEXITCODE = 0` after it. When the wrapper fails a step this
+//     way it writes one line to stderr (earlierNativeFailureNote) so the run
+//     record explains an exit code the last statement did not produce.
 func powerShellExitWrapper(cmd string) string {
 	var b strings.Builder
 	// First, and before any cmdlet: Windows PowerShell 5.1 raises a "Preparing
@@ -220,12 +242,83 @@ func powerShellExitWrapper(cmd string) string {
 	b.WriteString(cmd)
 	b.WriteString("\n$__cs_ok = $?\n")
 	b.WriteString("$__cs_native = $LASTEXITCODE\n")
-	b.WriteString("if ($null -ne $__cs_native -and $__cs_native -ne 0) { exit $__cs_native }\n")
+	// $__cs_ok is true here only when the last statement itself succeeded, i.e.
+	// the non-zero code was left by an earlier native command (or by a native
+	// inside the last pipeline): rule 2 above, said out loud.
+	b.WriteString("if ($null -ne $__cs_native -and $__cs_native -ne 0) { if ($__cs_ok) { " +
+		"[Console]::Error.WriteLine(" + psSingleQuote(earlierNativeFailureNote) + " -f $__cs_native) }; " +
+		"exit $__cs_native }\n")
 	b.WriteString("if (-not $__cs_ok -and $__cs_native -eq 0 -and $Error.Count -gt 0 -and " +
 		"$Error[0].FullyQualifiedErrorId -like 'NativeCommandError*') { exit 0 }\n")
 	b.WriteString("if (-not $__cs_ok) { exit 1 }\n")
 	b.WriteString("exit 0\n")
 	return b.String()
+}
+
+// earlierNativeFailureNote is the stderr line the wrapper writes when it fails
+// a step whose LAST statement succeeded (BEACON-17 rule 2). {0} is the exit
+// code. ASCII only, and a .NET format string: braces other than {0} would have
+// to be doubled.
+const earlierNativeFailureNote = "[cortexsim] step exit code {0}: a native command in this step exited {0} and " +
+	"nothing after it reset $LASTEXITCODE, although the last statement itself succeeded. sh would report the " +
+	"last command only; this wrapper does not. If that failure is expected, put $global:LASTEXITCODE = 0 after it."
+
+// bareExitCaveat is the run-record note for a PowerShell step whose text ends
+// in a bare `exit` (BEACON-17 rule 1).
+const bareExitCaveat = "[cortexsim] exit-code caveat: this step ends with a bare `exit`. PowerShell exits 0 there " +
+	"whatever the command before it returned (sh would return that command's status), so an exit_code=0 below " +
+	"does not show that the step's last tool succeeded. Write `exit $LASTEXITCODE` instead."
+
+// BareExitCaveat returns the note to put in a PowerShell step's output when its
+// text ends in a bare `exit`, or "".
+func BareExitCaveat(stepText string) string {
+	if EndsWithBareExit(stepText) {
+		return bareExitCaveat
+	}
+	return ""
+}
+
+// EndsWithBareExit reports whether the LAST statement of a PowerShell step is
+// `exit` with no argument.
+//
+// It reads text, not a syntax tree, and is deliberately narrow: only the final
+// statement, found by taking the last line that is not blank or a `#` comment
+// and the part of it after the last `;`. A final line cannot be the inside of a
+// here-string or a block (their terminators would follow it), so the cases this
+// can misread are a comment after the keyword (handled) and an `exit` that is a
+// bare-word argument continued from the line above with a backtick (refused).
+// A bare `exit` earlier in the step, inside a branch, is not looked for.
+func EndsWithBareExit(stepText string) bool {
+	lines := strings.Split(strings.ReplaceAll(stepText, "\r\n", "\n"), "\n")
+	last := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if t := strings.TrimSpace(lines[i]); t != "" && !strings.HasPrefix(t, "#") {
+			last = i
+			break
+		}
+	}
+	if last < 0 {
+		return false
+	}
+	stmt := lines[last]
+	if i := strings.Index(stmt, "#"); i >= 0 {
+		stmt = stmt[:i] // a trailing comment
+	}
+	stmt = strings.TrimRight(strings.TrimSpace(stmt), ";")
+	onlyStatement := true
+	if i := strings.LastIndex(stmt, ";"); i >= 0 {
+		stmt, onlyStatement = stmt[i+1:], false
+	}
+	if !strings.EqualFold(strings.TrimSpace(stmt), "exit") {
+		return false
+	}
+	if onlyStatement && last > 0 {
+		// `Write-Output `<newline>exit` prints the word; it does not exit.
+		if prev := strings.TrimRight(lines[last-1], " \t"); strings.HasSuffix(prev, "`") {
+			return false
+		}
+	}
+	return true
 }
 
 // encodePowerShellCommand encodes a script for -EncodedCommand: UTF-16LE

@@ -188,6 +188,10 @@ func planStep(step *Step, goos string) stepPlan {
 		if step.ResolvedFrom != "" {
 			note += " (from " + step.ResolvedFrom + ")"
 		}
+		if sh != executor.ShellCmd {
+			// BEACON-17: only PowerShell's bare `exit` is 0; cmd's keeps ERRORLEVEL.
+			note = joinNotes(note, executor.BareExitCaveat(step.Command))
+		}
 		return stepPlan{command: step.Command, shell: sh, note: note}
 	case "":
 	default:
@@ -197,13 +201,14 @@ func planStep(step *Step, goos string) stepPlan {
 
 	if v, ok := step.PlatformVariants["windows"]; ok && strings.TrimSpace(v) != "" {
 		return stepPlan{command: v,
-			note: "[cortexsim] platform: ran platform_variants.windows under PowerShell, not the primary command"}
+			note: joinNotes("[cortexsim] platform: ran platform_variants.windows under PowerShell, not the primary command",
+				executor.BareExitCaveat(v))}
 	}
 	if len(step.Platforms) > 0 && !declaresPlatform(step.Platforms, "windows") {
 		return stepPlan{refuse: fmt.Sprintf("%s step=%s declared=%s host=windows",
 			platformNotRunMarker, step.ID, strings.Join(step.Platforms, ","))}
 	}
-	return stepPlan{command: step.Command}
+	return stepPlan{command: step.Command, note: executor.BareExitCaveat(step.Command)}
 }
 
 func declaresPlatform(platforms []string, want string) bool {
