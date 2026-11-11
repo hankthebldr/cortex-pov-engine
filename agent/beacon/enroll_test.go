@@ -171,8 +171,10 @@ func TestTokenSuffix(t *testing.T) {
 	if got := TokenSuffix("cxs_abcdefghij"); got != "efghij" {
 		t.Errorf("got %q", got)
 	}
-	if got := TokenSuffix("abc"); got != "abc" {
-		t.Errorf("short token: got %q", got)
+	for _, short := range []string{"abc", "abcdef", ""} {
+		if got := TokenSuffix(short); got != "…" {
+			t.Errorf("TokenSuffix(%q) = %q, want an ellipsis", short, got)
+		}
 	}
 }
 
@@ -235,6 +237,82 @@ func TestLoadOrEnrollWhitespaceFileEnrollsAgain(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(state, "agent-id"))
 	if strings.TrimSpace(string(b)) != "fresh" {
 		t.Errorf("file = %q", b)
+	}
+}
+
+func TestLoadOrEnrollUnwritableDirFailsBeforeEnrolling(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	parent := t.TempDir()
+	state := filepath.Join(parent, "state")
+	os.Mkdir(state, 0o500) // readable, not writable
+	defer os.Chmod(state, 0o700)
+	_, _, err := LoadOrEnroll(state, func() (string, error) {
+		t.Fatal("enroll must not be called when the state dir is unwritable")
+		return "", nil
+	})
+	var se *StateDirError
+	if !errors.As(err, &se) {
+		t.Fatalf("err = %v, want *StateDirError", err)
+	}
+
+	// A path under a regular file can never be created.
+	blocker := filepath.Join(parent, "file")
+	os.WriteFile(blocker, nil, 0o600)
+	_, _, err = LoadOrEnroll(filepath.Join(blocker, "sub"), func() (string, error) {
+		t.Fatal("enroll must not be called when the state dir cannot be created")
+		return "", nil
+	})
+	if !errors.As(err, &se) {
+		t.Fatalf("err = %v, want *StateDirError", err)
+	}
+}
+
+func TestLoadOrEnrollUnreadableIDFileFailsBeforeEnrolling(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores file permissions")
+	}
+	state := t.TempDir()
+	p := filepath.Join(state, "agent-id")
+	os.WriteFile(p, []byte("pod-1\n"), 0o000)
+	defer os.Chmod(p, 0o600)
+	_, _, err := LoadOrEnroll(state, func() (string, error) {
+		t.Fatal("enroll must not be called when the stored id cannot be read")
+		return "", nil
+	})
+	var se *StateDirError
+	if !errors.As(err, &se) {
+		t.Fatalf("err = %v, want *StateDirError", err)
+	}
+}
+
+func TestLoadOrEnrollLeavesNoProbeOrTempFiles(t *testing.T) {
+	state := t.TempDir()
+	if _, _, err := LoadOrEnroll(state, func() (string, error) { return "x", nil }); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := os.ReadDir(state)
+	if len(entries) != 1 || entries[0].Name() != "agent-id" {
+		t.Errorf("state dir = %v, want only agent-id", entries)
+	}
+}
+
+func TestEnrollDoesNotFollowRedirects(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("redirect target received a request (%s %s): the token would have leaked", r.Method, r.URL.Path)
+	}))
+	defer other.Close()
+	for _, code := range []int{307, 308} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, other.URL+"/api/agents/enroll", code)
+		}))
+		_, err := Enroll(srv.URL, "cxs_secret", "h", "linux", "", nil, nil, nil)
+		srv.Close()
+		var ee *EnrollError
+		if !errors.As(err, &ee) || ee.Status != code {
+			t.Errorf("status %d: err = %v, want *EnrollError with that status", code, err)
+		}
 	}
 }
 

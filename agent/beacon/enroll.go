@@ -28,12 +28,29 @@ const (
 	// enrollResponseLimit bounds how much of a response body is read.
 	enrollResponseLimit = 1 << 20
 
-	CodeEnrollDenied      = "ENROLL_DENIED"
-	CodeServerUnreachable = "SERVER_UNREACHABLE"
+	CodeEnrollDenied       = "ENROLL_DENIED"
+	CodeServerUnreachable  = "SERVER_UNREACHABLE"
+	CodeStateDirUnwritable = "STATE_DIR_UNWRITABLE"
 )
 
 // ErrEnrollTokenEmpty means the token file exists but holds nothing.
 var ErrEnrollTokenEmpty = errors.New("ENROLL_TOKEN_EMPTY: enrollment token file is empty")
+
+// ErrEnrollTokenUnreadable means the token file could not be read at all.
+var ErrEnrollTokenUnreadable = errors.New("ENROLL_TOKEN_UNREADABLE")
+
+// StateDirError means the agent-id store cannot be read or written. It is
+// raised BEFORE the token is redeemed: enrolling without being able to remember
+// the id would spend a use on every container restart until the token is gone.
+type StateDirError struct {
+	Op  string
+	Err error
+}
+
+func (e *StateDirError) Error() string {
+	return fmt.Sprintf("%s: %s: %v", CodeStateDirUnwritable, e.Op, e.Err)
+}
+func (e *StateDirError) Unwrap() error { return e.Err }
 
 // EnrollError is a failed enrollment. Status is the HTTP status (0 when no
 // response was received); Code is the server's structured error code, or
@@ -62,10 +79,11 @@ func NormalizeServerURL(s string) string {
 }
 
 // TokenSuffix is the only part of an enrollment token that may be logged: its
-// last 6 characters, as the server does.
+// last 6 characters, as the server does. A token of 6 or fewer characters would
+// be disclosed whole, so it yields "…" instead.
 func TokenSuffix(token string) string {
 	if len(token) <= 6 {
-		return token
+		return "…"
 	}
 	return token[len(token)-6:]
 }
@@ -74,7 +92,7 @@ func TokenSuffix(token string) string {
 func ReadTokenFile(path string) (string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read enrollment token file: %w", err)
+		return "", fmt.Errorf("%w: %v", ErrEnrollTokenUnreadable, err)
 	}
 	tok := strings.TrimSpace(string(b))
 	if tok == "" {
@@ -112,7 +130,12 @@ func Enroll(serverURL, token, hostname, goos, desiredName string,
 	}
 
 	url := NormalizeServerURL(serverURL) + "/api/agents/enroll"
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		// A 307/308 would re-send the token to whatever host the response names.
+		// A redirect is surfaced as a non-2xx failure instead.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	resp, err := client.Post(url, "application/json", bytes.NewReader(raw))
 	if err != nil {
 		// net/http errors name the URL, never the request body.
@@ -173,29 +196,55 @@ func parseErrorBody(b []byte) (code, detail string) {
 // LoadOrEnroll returns the agent id stored under stateDir, enrolling (and
 // storing the result) only when there is none. A stored id means the pod was
 // restarted: the token is typically spent by then, so it must not be redeemed
-// again. If the id cannot be persisted the id is still returned alongside the
-// error so the caller can run this life; the next restart will enroll afresh.
+// again. Before enrolling it proves the store is readable and writable; if not
+// it returns a *StateDirError WITHOUT calling enroll, so no token use is spent
+// on an id that could not be remembered.
 func LoadOrEnroll(stateDir string, enroll func() (string, error)) (agentID string, reused bool, err error) {
 	path := filepath.Join(stateDir, agentIDFile)
-	if b, rerr := os.ReadFile(path); rerr == nil {
+	b, rerr := os.ReadFile(path)
+	switch {
+	case rerr == nil:
 		if id := strings.TrimSpace(string(b)); id != "" {
 			return id, true, nil
 		}
+	case !errors.Is(rerr, os.ErrNotExist):
+		return "", false, &StateDirError{Op: "read agent id", Err: rerr}
 	}
+
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		return "", false, &StateDirError{Op: "create state dir", Err: err}
+	}
+	probe, err := os.CreateTemp(stateDir, ".write-probe-*")
+	if err != nil {
+		return "", false, &StateDirError{Op: "write probe", Err: err}
+	}
+	probe.Close()
+	os.Remove(probe.Name())
+
 	id, err := enroll()
 	if err != nil {
 		return "", false, err
 	}
-	if err := os.MkdirAll(stateDir, 0o700); err != nil {
-		return id, false, fmt.Errorf("store agent id: %w", err)
-	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(id+"\n"), 0o600); err != nil {
-		return id, false, fmt.Errorf("store agent id: %w", err)
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return id, false, &StateDirError{Op: "store agent id", Err: err}
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	// OpenFile's mode is masked by umask and ignored for a pre-existing file.
+	if err := f.Chmod(0o600); err == nil {
+		_, err = f.WriteString(id + "\n")
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+	} else {
+		f.Close()
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
 		os.Remove(tmp)
-		return id, false, fmt.Errorf("store agent id: %w", err)
+		return id, false, &StateDirError{Op: "store agent id", Err: err}
 	}
 	return id, false, nil
 }

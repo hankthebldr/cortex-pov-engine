@@ -230,55 +230,70 @@ func main() {
 	log.Printf("agent exited cleanly")
 }
 
-// enrollOrExit redeems the enrollment token (or reuses the id stored from an
-// earlier life of this pod) and returns the agent id. Any failure is fatal: a
-// pod that cannot enroll must crash-loop visibly rather than idle. The token is
-// never logged; only its last 6 characters are.
-func enrollOrExit(serverURL, tokenFile, stateDir, hostname string,
-	capabilities, interpreters []string, facts *runtimefacts.Facts) string {
+// enrollSleep is the pause between SERVER_UNREACHABLE retries; tests replace it.
+var enrollSleep = time.Sleep
 
-	token, err := beacon.ReadTokenFile(tokenFile)
-	if err != nil {
-		if errors.Is(err, beacon.ErrEnrollTokenEmpty) {
-			log.Printf("FATAL ENROLL_TOKEN_EMPTY: %s is empty", tokenFile)
-		} else {
-			log.Printf("FATAL ENROLL_TOKEN_UNREADABLE: %v", err)
-		}
-		os.Exit(1)
-	}
+// enrollAgent redeems the enrollment token (or reuses the id stored by an
+// earlier life of this pod) and returns the agent id. On failure it returns a
+// stable code for the one fatal log line. The token file is read lazily, only
+// when an enrollment is actually needed, so a restart that reuses a stored id
+// still works after the Secret's token was rotated or removed. The token is
+// never logged; only its last 6 characters are.
+func enrollAgent(serverURL, tokenFile, stateDir, hostname string,
+	capabilities, interpreters []string, facts *runtimefacts.Facts) (id, code string, err error) {
 
 	desired := strings.TrimSpace(os.Getenv("POD_NAME"))
 	if desired == "" {
 		desired = hostname
 	}
-
 	doEnroll := func() (string, error) {
-		log.Printf("enrolling — server=%s token=…%s", serverURL, beacon.TokenSuffix(token))
-		return beacon.EnrollWithRetry(enrollAttempts, enrollRetryDelay, time.Sleep, func() (string, error) {
+		token, err := beacon.ReadTokenFile(tokenFile)
+		if err != nil {
+			return "", err
+		}
+		log.Printf("enrolling — server=%s token=%s", serverURL, beacon.TokenSuffix(token))
+		return beacon.EnrollWithRetry(enrollAttempts, enrollRetryDelay, enrollSleep, func() (string, error) {
 			return beacon.Enroll(serverURL, token, hostname, runtime.GOOS, desired,
 				capabilities, interpreters, facts)
 		})
 	}
 	id, reused, err := beacon.LoadOrEnroll(stateDir, doEnroll)
 	if err != nil {
-		var ee *beacon.EnrollError
-		switch {
-		case errors.As(err, &ee) && ee.Code != "":
-			log.Printf("FATAL %s: %v", ee.Code, err)
-			os.Exit(1)
-		case id == "":
-			log.Printf("FATAL ENROLL_FAILED: %v", err)
-			os.Exit(1)
-		default:
-			// Enrolled, but the id could not be stored: this life is fine, the
-			// next restart will have to enroll again.
-			log.Printf("WARNING: %v", err)
-		}
+		return "", enrollFailureCode(err), err
 	}
 	if reused {
 		log.Printf("enrollment reused — agent id %s read from %s", id, stateDir)
 	} else {
 		log.Printf("enrolled — agent id %s", id)
+	}
+	return id, "", nil
+}
+
+// enrollFailureCode maps an enrollment error to the code on the fatal log line.
+func enrollFailureCode(err error) string {
+	var se *beacon.StateDirError
+	var ee *beacon.EnrollError
+	switch {
+	case errors.As(err, &se):
+		return beacon.CodeStateDirUnwritable
+	case errors.Is(err, beacon.ErrEnrollTokenEmpty):
+		return "ENROLL_TOKEN_EMPTY"
+	case errors.Is(err, beacon.ErrEnrollTokenUnreadable):
+		return "ENROLL_TOKEN_UNREADABLE"
+	case errors.As(err, &ee) && ee.Code != "":
+		return ee.Code
+	}
+	return "ENROLL_FAILED"
+}
+
+// enrollOrExit is the thin wrapper: any failure is fatal, so a pod that cannot
+// enroll crash-loops visibly rather than idling.
+func enrollOrExit(serverURL, tokenFile, stateDir, hostname string,
+	capabilities, interpreters []string, facts *runtimefacts.Facts) string {
+	id, code, err := enrollAgent(serverURL, tokenFile, stateDir, hostname, capabilities, interpreters, facts)
+	if err != nil {
+		log.Printf("FATAL %s: %v", code, err)
+		os.Exit(1)
 	}
 	return id
 }
