@@ -132,6 +132,17 @@ mechanisms:
           kind: public_doc
           ref: https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/check-point-fw1-vpn1/ingest-logs-from-check-point-firewalls ; https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/cisco-asa-firewalls-and-anyconnect/ingest-logs-from-cisco-asa-firewalls-and-anyconnect
           date: "2026-11-10"
+      - fact: >-
+          A causality view in the lab tenant showed an agent's curl process on a
+          libvirt NAT guest connecting through a firewall node to 35.222.124.72, so
+          the agent network event and the NGFW session were joined although the
+          agent recorded the guest's source IP (192.168.122.0/24) and the firewall
+          logged the hypervisor's LAN IP as source. Which fields made the join
+          (source port, destination, protocol, time) is not yet confirmed.
+        source:
+          kind: operator_report
+          ref: Henry, tenant deathstar causality view for the lab VM after SIM-CDR-012 (02:58Z), screenshot 2026-11-10 21:30 CST
+          date: "2026-11-10"
     assumes:
       - assumption: >-
           A cross-source join on the shared 5-tuple (or container_id, or src_host)
