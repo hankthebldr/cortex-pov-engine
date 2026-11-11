@@ -38,15 +38,16 @@ readiness gate, a scoring rule.
      │                                                        ▼
   answers/PMA-…md ◄──ingest (refuses non-public)◄── _RoB/product-mechanics/answers/PMA-…md
      │
-     └─► render → LEDGER.md      apply → change proposals for the generator (Henry approves)
+     └─► render → LEDGER.md + FAQ.md      apply → change proposals for the generator (Henry approves)
 ```
 
 | Path | What it is | Who writes it |
 |---|---|---|
 | [`ledger.yml`](ledger.yml) | Source of truth: mechanisms (`known`, `assumes`, `contrasts`) and questions | hand-edited, here |
 | [`LEDGER.md`](LEDGER.md) | Rendered read view, with derived statuses | `render --apply` — never edit |
+| [`FAQ.md`](FAQ.md) | Short answers a DC needs when a signal stays dark (stitching, grouping, …), each labelled by its basis and listing the open questions that would change it, with live status | `render --apply` from `faq:` in `ledger.yml` — never edit |
 | `packets/PMQ-<date>-<slug>.md` | Outbound question packet, self-contained, immutable | `packet --apply` |
-| `answers/PMA-<date>-<slug>.md` | Inbound answer file, validated, immutable | `ingest --apply` |
+| `answers/PMA-<date>-<slug>.md` | Inbound answer file, validated, immutable. Usually the work Mac's reply to a packet; public-docs research done here uses the same format and the same refusal rules | `ingest --apply` |
 | vault `github-projects/cortex-pov-engine/product-mechanics/questions/` | Packet copy the work Mac reads (Obsidian Sync carries it; the vault's git ignores it) | `packet --apply --vault` or `send --apply`, each read back and hash-checked |
 | vault `_RoB/product-mechanics/answers/` | Where the work-Mac agent writes its answer file | work Mac (its working area) |
 
@@ -90,8 +91,8 @@ settled rule is what the generator gets changed to.
 Every command previews by default and writes only with `--apply`.
 
 ```bash
-.venv/bin/python scripts/product_mechanics.py check                      # validate; fail if LEDGER.md is stale
-.venv/bin/python scripts/product_mechanics.py render --apply             # regenerate LEDGER.md
+.venv/bin/python scripts/product_mechanics.py check                      # validate; fail if LEDGER.md or FAQ.md is stale
+.venv/bin/python scripts/product_mechanics.py render --apply             # regenerate LEDGER.md and FAQ.md
 .venv/bin/python scripts/product_mechanics.py packet --priority P0 --slug p0-seed            # preview
 .venv/bin/python scripts/product_mechanics.py packet --priority P0 --slug p0-seed --apply --vault
 .venv/bin/python scripts/product_mechanics.py check --vault              # prove every packet is in the vault outbox, byte-identical

@@ -2,7 +2,7 @@
 
 # Product-mechanics ledger
 
-How Cortex turns signal into a detection: what we know, what CortexSim assumes, and what we still have to ask. Source: [`ledger.yml`](ledger.yml) (updated 2026-11-05). Loop and rules: [`README.md`](README.md).
+How Cortex turns signal into a detection: what we know, what CortexSim assumes, and what we still have to ask. Source: [`ledger.yml`](ledger.yml) (updated 2026-11-10). Loop and rules: [`README.md`](README.md).
 
 > **Known is not assumed, and answered is not settled.** A `known` fact cites a public or lab source; an `assumes` row is what the engine does today and may be wrong. A question is `settled` only when its answers earn it (see `promote()`).
 
@@ -10,18 +10,19 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 
 | mechanism | P0 | P1 | P2 | open | asked | internal_only | unknown | provisional | conflicting | settled | retired |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| [ING](#ing) Ingestion, parsing and XDM modeling | 3 | 3 | 2 | 5 | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [STI](#sti) Stitching (data fusion across sources) | 5 | 5 | 1 | 6 | 5 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [CAU](#cau) Causality and the Causality Group Owner (CGO) | 2 | 3 | 1 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [BIO](#bio) BIOC matching | 2 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [ABI](#abi) ABIOC (analytics BIOC) | 2 | 2 | 1 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [ANA](#ana) Analytics engine (profiles, baselines, thresholds) | 4 | 5 | 2 | 7 | 4 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [COR](#cor) Correlation rules | 2 | 4 | 1 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [ING](#ing) Ingestion, parsing and XDM modeling | 3 | 4 | 2 | 4 | 2 | 0 | 0 | 3 | 0 | 0 | 0 |
+| [STI](#sti) Stitching (data fusion across sources) | 6 | 6 | 1 | 7 | 5 | 0 | 0 | 1 | 0 | 0 | 0 |
+| [CAU](#cau) Causality and the Causality Group Owner (CGO) | 3 | 2 | 1 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [BIO](#bio) BIOC matching | 3 | 4 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [ABI](#abi) ABIOC (analytics BIOC) | 2 | 3 | 1 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 1 |
+| [ANA](#ana) Analytics engine (profiles, baselines, thresholds) | 4 | 5 | 2 | 7 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
+| [COR](#cor) Correlation rules | 2 | 4 | 1 | 3 | 1 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [IOC](#ioc) IOC matching and threat intel | 2 | 2 | 1 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | [PRV](#prv) Prevention (agent modules, report vs block) | 1 | 2 | 1 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [INC](#inc) Alert-to-incident grouping | 1 | 2 | 1 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
-| [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 2 | 2 | 0 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **all (71)** | **26** | **34** | **11** | **45** | **26** | **0** | **0** | **0** | **0** | **0** | **0** |
+| [INC](#inc) Alert-to-incident grouping | 2 | 4 | 1 | 5 | 0 | 0 | 0 | 2 | 0 | 0 | 0 |
+| [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 3 | 2 | 0 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [ALR](#alr) Alert records and read-back | 2 | 3 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **all (85)** | **33** | **41** | **11** | **52** | **22** | **0** | **0** | **10** | **0** | **0** | **1** |
 
 Priority: **P0** a wrong guess produces a silent miss in a POV today · **P1** it weakens fidelity, attribution or MTTD · **P2** refinement.
 
@@ -33,12 +34,14 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 **Known**
 
-- Nothing with a crossable source yet.
+- An HTTP log collector names its dataset `<Vendor>_<Product>_raw` from the Vendor and Product set on the collector instance. The request carries the raw key as `Authorization: {api_key}` (no scheme). Documented responses: 200 success; 401 wrong token or collector deleted/disabled; 404 wrong URL; 413 body over 10 MB; 429 over 400 requests/s per customer per endpoint; 500 body does not match the collector's log format. Records may be up to 5 MB each, and the collector ingests up to 80,000 events/s. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/vendor-specific-data-sources-and-connectors/http-log-collector/set-up-an-http-log-collector-to-receive-logs.md (2026-11-10)
+- "Analytics, IOC, and BIOC issues are only generated on normalized logs." Raw firewall data is queryable as `panw_ngfw_*_raw`; stitched data through `xdr_data` or a stitched preset such as `network_story`. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall (2026-11-10)
 
 **What CortexSim assumes today**
 
 - A 2xx from the collector means the record was delivered; delivery is accounted per record and nothing above 2xx counts. — `core/eal_simulator/delivery.py:45`
 - Analytics-family emitters put a top-level `dataset` hint in the body, as if the body can steer dataset routing. — `core/eal_simulator/analytics_emitter.py:354`
+- The analytics emitter's default `auth_scheme` is "Bearer", so a campaign that does not override it sends `Authorization: Bearer <key>`, which is not the documented header form. — `core/eal_simulator/analytics_emitter.py:119`
 - XDM modeling rules are a normalization substrate, surfaced and exported but counted informationally, not as a detection type. — `detection_scanner/ttps (detections.modeling_rules[], 5 cards)`
 
 **How this differs from**
@@ -50,13 +53,14 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 | id | priority | status | question |
 |---|---|---|---|
 | [PM-ING-01](#pm-ing-01) | P0 | asked | When the HTTP log collector (cloud /logs/v1/event or Broker VM HTTP applet) returns 2xx, is the record guaranteed to be parsed into its dataset, or can it be accepted and then dropped by the parsing rule (bad JSON, missing or unparseable timestamp, oversize field)? Where does a dropped record become visible (an error dataset, a collector health metric, nowhere)? |
-| [PM-ING-02](#pm-ing-02) | P0 | asked | How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect? |
+| [PM-ING-02](#pm-ing-02) | P0 | provisional | How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect? |
 | [PM-ING-03](#pm-ing-03) | P0 | asked | Which field becomes `_time` for each data source we emit, which formats are accepted, and what happens to a record whose timestamp is in the future or days in the past: rejected, clamped, or filed at ingestion time? |
 | [PM-ING-04](#pm-ing-04) | P1 | open | What is the typical and worst-case latency from collector acceptance to (a) queryable in XQL, (b) visible to BIOC evaluation, (c) visible to correlation rules, (d) visible to analytics engines? |
-| [PM-ING-05](#pm-ing-05) | P1 | open | For third-party data sources, do analytics engines and correlation rules read the raw dataset or the XDM-modeled view? If XDM, which XDM fields must be populated for a record to be counted (e.g. xdm.source.ipv4, xdm.event.type, xdm.source.user.username)? |
+| [PM-ING-05](#pm-ing-05) | P1 | provisional | For third-party data sources, do analytics engines and correlation rules read the raw dataset or the XDM-modeled view? If XDM, which XDM fields must be populated for a record to be counted (e.g. xdm.source.ipv4, xdm.event.type, xdm.source.user.username)? |
 | [PM-ING-06](#pm-ing-06) | P1 | open | When a modeling rule exists for a vendor/product and the record's field names drift (case, nesting, missing optional fields), does the rule silently produce nulls? Is there any tenant-visible signal for low XDM field coverage? |
-| [PM-ING-07](#pm-ing-07) | P2 | open | What rate and size limits apply to the HTTP collector (records per request, bytes per request, requests per second, per-tenant daily volume), and which status code signals throttling? |
+| [PM-ING-07](#pm-ing-07) | P2 | provisional | What rate and size limits apply to the HTTP collector (records per request, bytes per request, requests per second, per-tenant daily volume), and which status code signals throttling? |
 | [PM-ING-08](#pm-ing-08) | P2 | open | Does the Broker VM HTTP applet behave identically to the cloud HTTP collector (same parsing, dataset routing, latency, limits)? |
+| [PM-ING-09](#pm-ing-09) | P1 | open | Does the HTTP log collector accept `Content-Type: application/x-ndjson`, and a gzip body when the collector is set to uncompressed (or the reverse)? The documented types are `application/json` and `text/plain`. What does a mismatch return: 500, 2xx with the records dropped, or something else? |
 
 #### PM-ING-01
 
@@ -72,13 +76,14 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 #### PM-ING-02
 
-**P0 · asked** — How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect?
+**P0 · provisional** — How is the destination dataset chosen for an HTTP-collector record: by the collector instance's configured vendor/product, by a field in the body, or by the parsing rule? Does a top-level `dataset` field in the body have any effect?
 
 - **Why we ask:** Analytics-family emitters send a top-level `dataset` hint (analytics_emitter.py:354). If routing is decided by the collector's vendor/product, the hint does nothing and a misconfigured collector sends every record to the wrong dataset while still returning 2xx.
 - **What the answer moves:** Collector preflight checks vendor/product pairing per data source; drop or keep the body hint.
 - **Settle it in the lab:** Send identical records with different `dataset` hints through one collector; see which dataset each lands in.
 - **Touches:** `core/eal_simulator/analytics_emitter.py`, `GET /api/eal/campaigns/{id}/collectors`
 - **Asked in:** PMQ-2026-11-10-p0-seed
+- **Answer (2026-11-10, partial, public_doc):** The HTTP log collector names its dataset from the collector instance's own Vendor and Product, as `<Vendor>_<Product>_raw`. The page never mentions a dataset field in the request body, so a body hint appears to route nothing; that last part is our reading of a silence, not a statement on the page. **Rule:** One collector per target dataset, with Vendor/Product spelling the dataset; never rely on a `dataset` field in the body.
 
 #### PM-ING-03
 
@@ -100,11 +105,12 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 #### PM-ING-05
 
-**P1 · open** — For third-party data sources, do analytics engines and correlation rules read the raw dataset or the XDM-modeled view? If XDM, which XDM fields must be populated for a record to be counted (e.g. xdm.source.ipv4, xdm.event.type, xdm.source.user.username)?
+**P1 · provisional** — For third-party data sources, do analytics engines and correlation rules read the raw dataset or the XDM-modeled view? If XDM, which XDM fields must be populated for a record to be counted (e.g. xdm.source.ipv4, xdm.event.type, xdm.source.user.username)?
 
 - **Why we ask:** Our emitters are shape-true to the raw vendor format. If the engine reads XDM, a raw field the modeling rule does not map is invisible.
 - **What the answer moves:** Which fields each emitter must populate; SIM-CDR-015 modeling-rule substrate proof.
 - **Touches:** `core/eal_simulator/plugins/*`, `scenarios/cdr/ (SIM-CDR-015)`
+- **Answer (2026-11-10, partial, public_doc):** Analytics, IOC and BIOC issues are generated only on normalized logs, and the analytics engine runs on all mapped network and authentication data. The pages read do not list which XDM fields must be populated, and do not say whether correlation rules read the raw or the modeled view. **Rule:** A third-party source that must raise Analytics, BIOC or IOC issues needs to be normalized (an XDM modeling rule); raw-only data cannot raise them.
 
 #### PM-ING-06
 
@@ -116,19 +122,29 @@ Everything between "the emitter POSTed a record" and "a detector can read it": t
 
 #### PM-ING-07
 
-**P2 · open** — What rate and size limits apply to the HTTP collector (records per request, bytes per request, requests per second, per-tenant daily volume), and which status code signals throttling?
+**P2 · provisional** — What rate and size limits apply to the HTTP collector (records per request, bytes per request, requests per second, per-tenant daily volume), and which status code signals throttling?
 
 - **Why we ask:** High-volume analytics shapes (sweeps, brute force) can exceed a limit mid-campaign.
 - **What the answer moves:** Emitter batching; a throttling code in the 12-code delivery taxonomy.
 - **Touches:** `core/eal_simulator/delivery.py`
+- **Answer (2026-11-10, partial, public_doc):** Rate limit 400 requests per second per customer per endpoint, signalled by 429. Request body up to 10 MB, signalled by 413, with 1 MB recommended. Each record at most 5 MB. The collector ingests up to 80,000 events per second. No per-tenant daily volume limit is stated on the page. **Rule:** Stay under 400 requests/s per endpoint and about 1 MB per request; map 429 to throttled and 413 to too-large in the delivery taxonomy.
 
 #### PM-ING-08
 
 **P2 · open** — Does the Broker VM HTTP applet behave identically to the cloud HTTP collector (same parsing, dataset routing, latency, limits)?
 
-- **Why we ask:** The offline bundle and collector preflight treat the two doors as equivalent.
+- **Why we ask:** The offline bundle and collector preflight treat the two doors as equivalent. Neither public Broker VM applet overview read on 2026-11-10 names an HTTP applet, so first confirm that the second door exists at all; if it does not, the delivery REMEDIATION text that points to it is wrong.
 - **What the answer moves:** Per-door preflight expectations.
 - **Touches:** `core/eal_simulator/bundle.py`
+
+#### PM-ING-09
+
+**P1 · open** — Does the HTTP log collector accept `Content-Type: application/x-ndjson`, and a gzip body when the collector is set to uncompressed (or the reverse)? The documented types are `application/json` and `text/plain`. What does a mismatch return: 500, 2xx with the records dropped, or something else?
+
+- **Why we ask:** Batch mode sends application/x-ndjson (analytics_emitter.py:608). A mismatch that returns 2xx and drops the records is exactly the accepted-but- not-landed case PM-ING-01 asks about.
+- **What the answer moves:** Batch-mode content type and compression defaults; a one-record canary in the collector preflight.
+- **Settle it in the lab:** POST one canary record per combination (json, ndjson, text; gzip on and off) to one collector; record the status code and whether each canary lands.
+- **Touches:** `core/eal_simulator/analytics_emitter.py`, `GET /api/eal/campaigns/{id}/collectors`
 
 ## STI
 
@@ -139,6 +155,7 @@ The engine that links records from different sensors (agent network events, NGFW
 **Known**
 
 - Network-endpoint stitching did not occur until src IP, src port, dst IP, dst port and protocol were made consistent: source as the endpoint (agent) records it, destination as the firewall transaction records it. — *operator_report*, Henry, design conversation 2026-11-05 (lab evidence not attached) (2026-11-05)
+- Once the native NGFW integration is set up, "the console begins stitching logs with other Palo Alto Networks-generated logs to form stories". Stitched data is read from `xdr_data` or a preset designated for stitched data, such as `network_story`, and "IOC and BIOC issues are applicable to stitched data only, and are not available on raw data." — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -147,6 +164,7 @@ The engine that links records from different sensors (agent network events, NGFW
 - An in-process EAL emitter cannot share a 5-tuple with the agent because it POSTs from SimCore; only the identity principal (canary_token) is injected. NOTE: ngfw_eal_emitter has since gained src_ip/src_host/dst_ip/dst_port overrides that the stitch adapter does not yet use. — `core/eal_simulator/stitch_params.py:7 ; core/eal_simulator/plugins/ngfw_eal_emitter.py:282`
 - SIM-MP-006 stitches NGFW and container endpoint on 5-tuple + container_id inside 10 s, but its endpoint query groups by action_local_ip, action_remote_ip, action_remote_port and omits the local port. — `scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml:131`
 - `stitching_key` is one of src_host | session_id | user_principal | container_id; in the corpus it is src_host 28x, user_principal 13x and a long tail, and `correlation_window_seconds` ranges 10 s to 86400 s against "XSIAM's default correlation window". — `scenarios/_schema.yml:380`
+- 62 of the 87 EAL `plugin:` references in the multi-plane and NDR scenarios (15 files) name `ngfw_eal_emitter` (32) or `ngfw_threat_emitter` (30). Both POST firewall-shaped records to a custom HTTP collector, not through the native NGFW integration, yet those scenarios declare stitched expectations. — `core/eal_simulator/plugins/ngfw_eal_emitter.py ; scenarios/multi_plane/ ; scenarios/ndr/`
 
 **How this differs from**
 
@@ -165,9 +183,11 @@ The engine that links records from different sensors (agent network events, NGFW
 | [PM-STI-06](#pm-sti-06) | P1 | open | Does stitching require the agent to have recorded its own network event for the connection, or can a firewall record be linked to a process from other evidence (a DNS query event, the host's IP at that time, an RPC/ETW event)? |
 | [PM-STI-07](#pm-sti-07) | P1 | open | What is the observable output of a successful stitch: fields added to the firewall row (e.g. actor process or causality fields), a link in the network story, a joined row in a specific dataset? What XQL proves "this firewall session was stitched to process X"? |
 | [PM-STI-08](#pm-sti-08) | P1 | open | How do identity sources stitch to endpoints: on UPN, sAMAccountName, email, SID, or a normalized user? What normalization does the engine apply (case, domain prefix, @suffix)? |
-| [PM-STI-09](#pm-sti-09) | P1 | open | Is stitching (data fusion) the same mechanism that groups alerts into an incident, or separate? If separate, what does each key on? |
+| [PM-STI-09](#pm-sti-09) | P1 | provisional | Is stitching (data fusion) the same mechanism that groups alerts into an incident, or separate? If separate, what does each key on? |
 | [PM-STI-10](#pm-sti-10) | P2 | open | How are protocols without ports keyed for stitching (ICMP), and is DNS over UDP/53 stitched per query or per session? |
 | [PM-STI-11](#pm-sti-11) | P1 | open | Does App-ID or session state gate stitching, e.g. only sessions with an identified application, only allowed sessions, or only sessions that have ended? |
+| [PM-STI-12](#pm-sti-12) | P0 | open | Do firewall-shaped records that arrive through a custom HTTP log collector ever enter stitching, or does only the native NGFW integration produce stitched stories? If a custom-collector dataset can be stitched, what does it take: a specific Vendor/Product pair, a modeling rule onto XDM network fields, or something else? |
+| [PM-STI-13](#pm-sti-13) | P1 | open | Does any part of data stitching (records into stories, the network story, the causality view's network legs) depend on alert severity, or is the Medium floor purely a rule for grouping issues into cases? |
 
 #### PM-STI-01
 
@@ -243,11 +263,12 @@ The engine that links records from different sensors (agent network events, NGFW
 
 #### PM-STI-09
 
-**P1 · open** — Is stitching (data fusion) the same mechanism that groups alerts into an incident, or separate? If separate, what does each key on?
+**P1 · provisional** — Is stitching (data fusion) the same mechanism that groups alerts into an incident, or separate? If separate, what does each key on?
 
 - **Why we ask:** Our scenario schema treats `stitching_key` and `required_planes_in_incident` as one contract.
 - **What the answer moves:** What our stitch fields mean; how the correlation-rate KPI is scored.
 - **Touches:** `scenarios/_schema.yml`, `core/connectors/measures.py`
+- **Answer (2026-11-10, partial, public_doc):** They are separate mechanisms. Stitching joins logs with other Palo Alto Networks-generated logs into stories, which are read through xdr_data or a stitched preset. Grouping puts issues into a case when they share artifacts and attributes, and only when their domain is Security or Posture and their severity is Medium or higher. What each one keys on in detail is not stated. **Rule:** `stitching_key` and `required_planes_in_incident` are two contracts: one says records form a story, the other says issues share a case.
 
 #### PM-STI-10
 
@@ -265,6 +286,25 @@ The engine that links records from different sensors (agent network events, NGFW
 - **What the answer moves:** Egress step design (allowed vs denied, session length).
 - **Touches:** `ngfw_eal_emitter`, `scenarios/ndr/`
 
+#### PM-STI-12
+
+**P0 · open** — Do firewall-shaped records that arrive through a custom HTTP log collector ever enter stitching, or does only the native NGFW integration produce stitched stories? If a custom-collector dataset can be stitched, what does it take: a specific Vendor/Product pair, a modeling rule onto XDM network fields, or something else?
+
+- **Why we ask:** The docs tie stitching to the native NGFW integration and say IOC and BIOC issues exist only on stitched data (STI known). 62 of 87 EAL plugin references in the multi-plane and NDR scenarios use ngfw_eal_emitter or ngfw_threat_emitter, which POST to a custom collector. If those records are never stitched, every stitched expectation on them is unsatisfiable.
+- **What the answer moves:** Which detection types NGFW-emitter scenarios may declare (XQL and correlation only, or also stitched BIOC/IOC); whether the emitters need a modeling rule; MOAT claims on those scenarios.
+  - *if* only the native integration stitches → Cap NGFW-emitter scenarios at XQL and correlation detections; add a loader warning for stitched expectations on emitter-only network legs.
+  - *if* a modeled custom dataset can stitch → Ship the modeling rule with the emitter and add a stitch-proof probe to the collector preflight.
+- **Settle it in the lab:** Make one real agent connection, then POST a firewall record carrying the same 5-tuple through a custom collector; query `network_story` for a stitched row.
+- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `core/eal_simulator/plugins/ngfw_threat_emitter.py`, `scenarios/multi_plane/`, `scenarios/ndr/`
+
+#### PM-STI-13
+
+**P1 · open** — Does any part of data stitching (records into stories, the network story, the causality view's network legs) depend on alert severity, or is the Medium floor purely a rule for grouping issues into cases?
+
+- **Why we ask:** Henry's report says "stitching/grouping started with medium severity" (INC known), and the docs state the floor for case grouping. Stitching operates on records, which carry no severity, so we read the floor as grouping-only, but that reading is ours.
+- **What the answer moves:** Whether a Low-severity step can still yield a stitched story we can prove with XQL; how the FAQ separates the two engines.
+- **Touches:** `docs/product-mechanics/ledger.yml (faq)`, `core/engine/causality_graph.py`
+
 ## CAU
 
 ### Causality and the Causality Group Owner (CGO)
@@ -273,7 +313,7 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 
 **Known**
 
-- Nothing with a crossable source yet.
+- With the agent fully up, SIM-EDR-003 steps 1–2 were recorded in xdr_data and steps 3–5 never appeared, even 8+ minutes later. Each step was a fresh `sh` (argv[0] `apache2`) spawned by the beacon; the 3rd to 5th identical shells started within about 100 ms, and neither they nor their children were recorded. The same commands (useradd, chpasswd, ssh-keygen, userdel) run in one shell 2 s apart were all recorded within seconds. The cause is not established. — *lab_observation*, Lab tenant, XDR agent 9.4.0.470 on Ubuntu 24.04 (kernel 6.8), SIM-EDR-003 run 2 and a spaced diagnostic draft run, 2026-11-10 (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -292,7 +332,7 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 | [PM-CAU-01](#pm-cau-01) | P0 | asked | How does the causality engine choose the CGO? Which processes count as causality boundaries (services, shells spawned by services, remote sessions, the agent's own children)? When our beacon, running as a systemd service, spawns `sh -c`, which process becomes the CGO of the chain? |
 | [PM-CAU-02](#pm-cau-02) | P0 | asked | Does the agent record process image name from the executable (/proc/pid/exe, comm) or from argv[0]? Confirm whether an argv[0] rewrite changes causality_actor_process_image_name or action_process_image_name. |
 | [PM-CAU-03](#pm-cau-03) | P1 | open | Do privilege-transition wrappers (runuser, sudo, su, setpriv) continue a causality chain or start a new one? Do they appear as nodes, and does the user change alter the causality actor's primary username? |
-| [PM-CAU-04](#pm-cau-04) | P1 | open | Does the agent drop, sample or collapse very short-lived processes or known system binaries? Is there a minimum process lifetime or a deduplication of identical command lines within a window? |
+| [PM-CAU-04](#pm-cau-04) | P0 | open | Does the agent drop, sample, throttle or collapse process-start events: very short-lived processes, known system binaries, or several identical starts (same parent, image and command line) inside a short window? If so, what are the window and the count, and are the children of a dropped process dropped with it? |
 | [PM-CAU-05](#pm-cau-05) | P1 | open | For a process launched by cron, a systemd timer or a scheduled task, what becomes the CGO: the scheduler, or the launched process? |
 | [PM-CAU-06](#pm-cau-06) | P2 | open | In containers, is the runtime (containerd-shim, runc) a causality boundary, and is container identity populated on every event type (process, file, network)? |
 
@@ -325,11 +365,14 @@ The agent-side engine that assembles a process tree per chain, names one CGO as 
 
 #### PM-CAU-04
 
-**P1 · open** — Does the agent drop, sample or collapse very short-lived processes or known system binaries? Is there a minimum process lifetime or a deduplication of identical command lines within a window?
+**P0 · open** — Does the agent drop, sample, throttle or collapse process-start events: very short-lived processes, known system binaries, or several identical starts (same parent, image and command line) inside a short window? If so, what are the window and the count, and are the children of a dropped process dropped with it?
 
-- **Why we ask:** Many TTP steps are sub-second one-liners.
-- **What the answer moves:** Whether steps need padding or repetition to be recorded.
-- **Touches:** `scenarios (step commands)`
+- **Why we ask:** Raised from P1 on lab evidence (CAU known, 2026-11-10): three identical `sh` starts from the beacon within about 100 ms vanished with all their children, taking steps 3–5 of SIM-EDR-003 with them, while the same commands spaced 2 s apart in one shell were all recorded. Each step is a fresh `sh` with the same argv[0] (`apache2`, the CGO masquerade), so every multi-step scenario looks like a burst of identical starts.
+- **What the answer moves:** Inter-step pacing in the beacon (a minimum gap between step launches), or giving each step a distinct parent or command line; whether a missing step is scored `missed` or `not_recorded`.
+  - *if* identical rapid starts are throttled or deduplicated → Add a minimum inter-step gap above the window to the beacon, and stop scoring steps the agent never recorded as missed.
+  - *if* nothing is dropped by design → Treat the lab loss as a collection fault; check agent mode and resource limits before relaunching.
+- **Settle it in the lab:** Launch 5 identical `sh -c 'id'` from one parent at 0, 50, 200, 500 and 1000 ms spacing; count the process events per spacing in xdr_data.
+- **Touches:** `agent/beacon`, `agent/executor/script.go`, `scenarios (step commands)`, `core/engine/outcome.py`
 
 #### PM-CAU-05
 
@@ -355,13 +398,14 @@ Behavioral IOC rules: a predicate over agent event fields (process image, comman
 
 **Known**
 
-- Nothing with a crossable source yet.
+- BIOC (and IOC) issues are generated on stitched, normalized data only: "IOC and BIOC issues are applicable to stitched data only, and are not available on raw data." — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall (2026-11-10)
 
 **What CortexSim assumes today**
 
 - Windows steps run as `powershell.exe -EncodedCommand <base64>` wrapped in an exit-code shim, so the visible command line is the base64 blob. — `agent/executor/platform_windows.go:40 ; agent/executor/script.go:134`
 - Linux command lines carry the identity wrapper prefix, e.g. `runuser -l www-data -c '<ttp>'`. — `agent/identity/harness.go:53`
 - A BIOC card entry is `{name, description, logic, severity, mitre_technique_ids, suppression_window_seconds?}`. — `detection_scanner/ttps/*.json (detections.biocs[])`
+- Nine NDR card BIOCs (eight cards) put their predicate on a raw firewall dataset: `panw_ngfw_traffic_raw` eight times, `cisco_asa_raw` once. — `detection_scanner/ttps/TTP-2026-0050-sim-ndr-001.json ; detection_scanner/ttps/TTP-2026-0106-sim-ndr-010.json`
 
 **How this differs from**
 
@@ -378,6 +422,7 @@ Behavioral IOC rules: a predicate over agent event fields (process image, comman
 | [PM-BIO-04](#pm-bio-04) | P1 | open | Where and when is a BIOC evaluated: in the agent, in the cloud on ingest, or both, and what is the typical event-to-alert latency? |
 | [PM-BIO-05](#pm-bio-05) | P1 | open | Do BIOCs deduplicate or suppress repeats (same rule, same host or causality, within N minutes)? If a scenario loops a step 20 times, do we get one alert or twenty? |
 | [PM-BIO-06](#pm-bio-06) | P1 | open | Do custom BIOCs apply retroactively to already-ingested data, or only to events after the rule is saved and enabled? How long after saving does evaluation start? |
+| [PM-BIO-07](#pm-bio-07) | P0 | open | Since BIOC issues exist only on stitched data, which datasets and event types can a custom BIOC predicate address? Can a BIOC be written against firewall fields at all (a raw `panw_ngfw_traffic_raw` field, or the NGFW half of a stitched network story), or only against agent event types (process, file, network, registry and so on)? |
 
 #### PM-BIO-01
 
@@ -432,6 +477,16 @@ Behavioral IOC rules: a predicate over agent event fields (process image, comman
 - **What the answer moves:** Operator runbook sequencing; a rule-enabled preflight.
 - **Touches:** `docs/operator-runbook.md`
 
+#### PM-BIO-07
+
+**P0 · open** — Since BIOC issues exist only on stitched data, which datasets and event types can a custom BIOC predicate address? Can a BIOC be written against firewall fields at all (a raw `panw_ngfw_traffic_raw` field, or the NGFW half of a stitched network story), or only against agent event types (process, file, network, registry and so on)?
+
+- **Why we ask:** Nine NDR card BIOCs put their predicate on a raw firewall dataset (BIO assumes). If a BIOC cannot address raw data, those nine are manufactured misses, and the right artifact is a correlation rule on the raw dataset or a BIOC on the agent's own network event.
+- **What the answer moves:** Rewrite the nine NDR card BIOCs as correlation rules, or retarget them to stitched network-event fields; a lint rule that refuses a BIOC whose logic names a `*_raw` dataset.
+  - *if* BIOCs address agent event types only → Move the nine to `correlation_rules[]` and add the lint rule.
+  - *if* stitched NGFW fields are BIOC-addressable → Retarget the nine to those fields and document which.
+- **Touches:** `detection_scanner/ttps/TTP-2026-0050-sim-ndr-001.json`, `detection_scanner/ttps/TTP-2026-0106-sim-ndr-010.json`, `detection_scanner/scripts/validate.py`
+
 ## ABI
 
 ### ABIOC (analytics BIOC)
@@ -440,7 +495,7 @@ PANW-authored, auto-tuned behavioral detections evaluated over causality chains.
 
 **Known**
 
-- Nothing with a crossable source yet.
+- The first built-in alerts CortexSim activity raised in the lab were "XDR Analytics BIOC" alerts at Low severity: "Uncommon Linux shell command execution" on the beacon spawning `sh` (raised by beacon activity itself, so any run can raise it), and "Suspicious access to shadow file", mapped to T1003, on `useradd` and `chpasswd`. The scenario declared T1136.001 for that step. All three came from diagnostic runs, so none is tenant verification of a scenario. — *lab_observation*, Lab tenant, XDR agent 9.4.0.470 on Ubuntu 24.04, diagnostic draft runs, 2026-11-10 (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -459,7 +514,8 @@ PANW-authored, auto-tuned behavioral detections evaluated over causality chains.
 | [PM-ABI-02](#pm-abi-02) | P0 | asked | What population is "rare" judged against: the host, the tenant, or PANW's global telemetry? Can a lab tenant with two endpoints ever see a behavior as unusual? |
 | [PM-ABI-03](#pm-abi-03) | P1 | open | Are causality context features (e.g. CGO class such as web server or Office app, parent image, user type) inputs to ABIOCs, such that a `sh`-owned chain cannot reproduce a web-shell ABIOC? |
 | [PM-ABI-04](#pm-abi-04) | P1 | open | Do ABIOCs auto-tune per tenant so that repeating a scenario teaches the engine it is normal? How long does that take, and can it be reset? |
-| [PM-ABI-05](#pm-abi-05) | P2 | open | Do ABIOC alerts carry a stable rule identifier in the alert record we can match on, rather than only a name and technique? |
+| [PM-ABI-05](#pm-abi-05) | P2 | retired | Do ABIOC alerts carry a stable rule identifier in the alert record we can match on, rather than only a name and technique? |
+| [PM-ABI-06](#pm-abi-06) | P1 | open | The built-in "Uncommon Linux shell command execution" Analytics BIOC fires on the beacon spawning `sh` (ABI known). Does it deduplicate per host or per parent, so a POV sees it once, and can a tenant exclusion scoped to the beacon's parent image suppress it without also suppressing detections on that parent's children? |
 
 #### PM-ABI-01
 
@@ -497,11 +553,19 @@ PANW-authored, auto-tuned behavioral detections evaluated over causality chains.
 
 #### PM-ABI-05
 
-**P2 · open** — Do ABIOC alerts carry a stable rule identifier in the alert record we can match on, rather than only a name and technique?
+**P2 · retired** — Do ABIOC alerts carry a stable rule identifier in the alert record we can match on, rather than only a name and technique?
 
-- **Why we ask:** The matcher prefers detection_id over technique (mechanics-review M12).
+- **Why we ask:** The matcher prefers detection_id over technique (mechanics-review M12). Retired 2026-11-10: superseded by PM-ALR-01, which asks the same thing for every alert source after the lab tenant's alerts carried no rule-id key at all.
 - **What the answer moves:** Matcher key strength for ABIOC.
 - **Touches:** `core/connectors/matcher.py`
+
+#### PM-ABI-06
+
+**P1 · open** — The built-in "Uncommon Linux shell command execution" Analytics BIOC fires on the beacon spawning `sh` (ABI known). Does it deduplicate per host or per parent, so a POV sees it once, and can a tenant exclusion scoped to the beacon's parent image suppress it without also suppressing detections on that parent's children?
+
+- **Why we ask:** Every pull run can raise this alert. Arriving inside a step's window, it can be credited to the wrong Result by technique and name; excluded too broadly, it silences the scenario itself.
+- **What the answer moves:** A beacon-footprint denylist in the matcher so noise never credits a Result; runbook guidance for a narrowly scoped exclusion.
+- **Touches:** `core/connectors/matcher.py`, `agent/beacon`, `docs/operator-runbook.md`
 
 ## ANA
 
@@ -513,6 +577,8 @@ Detectors that judge activity against a learned profile: port scans, failed conn
 
 - Each bound analytics alert publishes Activation Period, Training Period, Test Period, Deduplication Period and a Required Data OR-set of data sources. All eight transcribed alerts state activation 14 days and training 30 days. — *public_doc*, https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/ (per-alert pages, transcribed in core/eal_simulator/analytics_alerts.py) (2026-09-20)
 - No analytics alert page publishes a numeric threshold, a dataset field name or the detection predicate itself. — *public_doc*, core/eal_simulator/analytics_alerts.py (module docstring) (2026-09-20)
+- The four periods are defined: Activation is "the shortest amount of log file time before the app can generate an issue"; Training is the logging time a detector needs "to establish a baseline"; Test is the logging time it uses to decide whether activity is unusual; Deduplication is the time in which further issues "for the same activity or behavior are suppressed". "Most but not all detectors start running after the activation period ends." The page does not say whether an issue can fire before training completes. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/analytics/analytics-detection-time-intervals.md (2026-11-10)
+- The analytics engine "accesses your logs as they are streamed to the Cortex XSIAM tenant" and runs "on all mapped network and authentication data": a source that is not mapped is not analysed. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/analytics/analytics-engine.md (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -529,7 +595,7 @@ Detectors that judge activity against a learned profile: port scans, failed conn
 | id | priority | status | question |
 |---|---|---|---|
 | [PM-ANA-01](#pm-ana-01) | P0 | asked | For each analytics alert we bind (Port Scan, Port Sweep, Failed Connections, Impossible traveler - VPN, VPN login Brute-Force attempt, A user connected to a VPN from a new country, A user connected from a new country, Abnormal increase in network-related alerts on the same host): what is the trigger in generatable terms: minimum event count, minimum distinct values (distinct dst ports, hosts, countries), inside what window? |
-| [PM-ANA-02](#pm-ana-02) | P0 | asked | How do Activation Period and Training Period compose: does an alert need 14 days of data, 30 days, or 14 days to activate and a rolling 30-day baseline after? Can it fire before training completes? |
+| [PM-ANA-02](#pm-ana-02) | P0 | provisional | How do Activation Period and Training Period compose: does an alert need 14 days of data, 30 days, or 14 days to activate and a rolling 30-day baseline after? Can it fire before training completes? |
 | [PM-ANA-03](#pm-ana-03) | P0 | asked | Is the activation and training clock per tenant, per data source, or per entity (user, host)? Does a brand-new user in a tenant that has carried VPN data for 60 days count as baselined? |
 | [PM-ANA-04](#pm-ana-04) | P0 | asked | Does attack-shaped synthetic traffic sent during the training period become part of the baseline, so a later identical test reads as normal? |
 | [PM-ANA-05](#pm-ana-05) | P1 | open | What exactly does the Deduplication Period suppress (same alert, same entity pair, same source)? If a scenario is rerun inside it (7 days for impossible traveler, 30 days for new country), will the rerun produce no alert? |
@@ -554,12 +620,13 @@ Detectors that judge activity against a learned profile: port scans, failed conn
 
 #### PM-ANA-02
 
-**P0 · asked** — How do Activation Period and Training Period compose: does an alert need 14 days of data, 30 days, or 14 days to activate and a rolling 30-day baseline after? Can it fire before training completes?
+**P0 · provisional** — How do Activation Period and Training Period compose: does an alert need 14 days of data, 30 days, or 14 days to activate and a rolling 30-day baseline after? Can it fire before training completes?
 
 - **Why we ask:** The gate is max(activation, training), which is our inference (analytics_alerts.py:78).
 - **What the answer moves:** GATE_BASIS and the readiness verdict.
 - **Touches:** `core/eal_simulator/analytics_alerts.py`
 - **Asked in:** PMQ-2026-11-10-p0-seed
+- **Answer (2026-11-10, partial, public_doc):** Activation is the shortest log time before a detector can raise an issue; Training is the log time it needs to build a baseline. Most but not all detectors start running when activation ends. The page does not say whether an issue can be raised before training completes, so max(activation, training) stays our inference.
 
 #### PM-ANA-03
 
@@ -643,7 +710,7 @@ Authored, scheduled XQL that produces alerts, can join datasets, and is the mech
 
 **Known**
 
-- Nothing with a crossable source yet.
+- A correlation rule runs Real Time ("scan the data as it's ingested"; limited XQL stages, must include a `filter`) or Scheduled: every 10, 20 or 30 minutes, hourly, daily or custom, "minimum query frequency is every 10 minutes", over a query time frame "up to 7 days". Docs recommend `time_frame_end()` over `current_time()`. Suppression is off by default; when enabled its default duration is 1 hour and the maximum is 1 day. Rules with 5000 or more hits in 24 hours are disabled automatically, and at most 1200 user-created scheduled correlations can be active. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-correlation-rule/create-a-correlation-rule.md (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -658,22 +725,23 @@ Authored, scheduled XQL that produces alerts, can join datasets, and is the mech
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-COR-01](#pm-cor-01) | P0 | asked | How are correlation rules scheduled: fixed cadence with a query time-frame lookback, or streaming? What schedule and time-frame values are allowed, and what is the minimum interval? |
+| [PM-COR-01](#pm-cor-01) | P0 | provisional | How are correlation rules scheduled: fixed cadence with a query time-frame lookback, or streaming? What schedule and time-frame values are allowed, and what is the minimum interval? |
 | [PM-COR-02](#pm-cor-02) | P0 | asked | Does a correlation rule window on event `_time` or ingestion time? Can a record that arrives late fall outside every evaluated window and never match? |
 | [PM-COR-03](#pm-cor-03) | P1 | open | Can one correlation rule join across datasets (xdr_data with an NGFW dataset), and what limits apply (join size, row limits, query time, cost)? |
 | [PM-COR-04](#pm-cor-04) | P1 | open | How does a correlation rule's alert get its fields (name, severity, host, user, IPs), and which mapped fields make it join the same incident as the endpoint alerts? |
-| [PM-COR-05](#pm-cor-05) | P1 | open | What suppression or dedup options does a correlation rule have, and what are the defaults? |
-| [PM-COR-06](#pm-cor-06) | P1 | open | Is there a per-tenant cap on enabled correlation rules or on their total query compute? |
+| [PM-COR-05](#pm-cor-05) | P1 | provisional | What suppression or dedup options does a correlation rule have, and what are the defaults? |
+| [PM-COR-06](#pm-cor-06) | P1 | provisional | Is there a per-tenant cap on enabled correlation rules or on their total query compute? |
 | [PM-COR-07](#pm-cor-07) | P2 | open | Can correlation rules be created and validated through the API (dry-run or test against history) without enabling them? |
 
 #### PM-COR-01
 
-**P0 · asked** — How are correlation rules scheduled: fixed cadence with a query time-frame lookback, or streaming? What schedule and time-frame values are allowed, and what is the minimum interval?
+**P0 · provisional** — How are correlation rules scheduled: fixed cadence with a query time-frame lookback, or streaming? What schedule and time-frame values are allowed, and what is the minimum interval?
 
 - **Why we ask:** Our `correlation_window_seconds` goes down to 10 s and claims to be enforced against "XSIAM's default correlation window" (_schema.yml:380). If rules run on a minutes-scale schedule, the field means something else.
 - **What the answer moves:** Map correlation_window_seconds onto the real schedule and time frame; card correlation_rules[] gain those fields.
 - **Touches:** `scenarios/_schema.yml`, `detection_scanner/ttps (correlation_rules[])`
 - **Asked in:** PMQ-2026-11-10-p0-seed
+- **Answer (2026-11-10, answered, public_doc):** Two modes. Real Time rules scan data as it is ingested, accept only some XQL stages and must include a filter. Scheduled rules run every 10, 20 or 30 minutes, hourly, daily or on a custom schedule; the minimum is every 10 minutes, and the query time frame can be up to 7 days. The docs recommend time_frame_end() over current_time(). **Rule:** A scheduled correlation sees a run only at its next execution (at most every 10 minutes) and only inside its time frame (at most 7 days); a correlation_window_seconds below 600 cannot mean "evaluated within N seconds" for a scheduled rule.
 
 #### PM-COR-02
 
@@ -702,19 +770,21 @@ Authored, scheduled XQL that produces alerts, can join datasets, and is the mech
 
 #### PM-COR-05
 
-**P1 · open** — What suppression or dedup options does a correlation rule have, and what are the defaults?
+**P1 · provisional** — What suppression or dedup options does a correlation rule have, and what are the defaults?
 
 - **Why we ask:** Reruns inside a suppression window score as misses today.
 - **What the answer moves:** Rerun guidance; card fields.
 - **Touches:** `detection_scanner/ttps (correlation_rules[])`
+- **Answer (2026-11-10, partial, public_doc):** Suppression is off by default. When enabled, its default duration is 1 hour and the maximum is 1 day. The fields suppression keys on were not captured.
 
 #### PM-COR-06
 
-**P1 · open** — Is there a per-tenant cap on enabled correlation rules or on their total query compute?
+**P1 · provisional** — Is there a per-tenant cap on enabled correlation rules or on their total query compute?
 
 - **Why we ask:** The corpus carries 209 correlation rules.
 - **What the answer moves:** How many card rules a DC can enable at once; a rule-pack subset per POV.
 - **Touches:** `core/api/pov.py`
+- **Answer (2026-11-10, partial, public_doc):** At most 1200 user-created scheduled correlations can be active, and any correlation rule with 5000 or more hits in 24 hours is disabled automatically. No compute cap and no separate Real Time limit is stated. **Rule:** A POV rule pack stays well under 1200 active scheduled rules, and no rule may be driven to 5000 hits in 24 hours, emitter volume included.
 
 #### PM-COR-07
 
@@ -732,7 +802,7 @@ Indicator-value matching (hash, IP, domain, URL) against agent and network data,
 
 **Known**
 
-- Nothing with a crossable source yet.
+- IOC issues, like BIOC issues, are generated only on stitched, normalized data, not on raw datasets. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -860,15 +930,17 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 
 ### Alert-to-incident grouping
 
-The logic that groups alerts into incidents. Our correlation-rate KPI asserts ">= N distinct planes under one incident_id", so the grouping key, not the stitch, decides whether a multi-plane scenario scores.
+The logic that groups alerts into incidents. Our correlation-rate KPI asserts ">= N distinct planes under one incident_id", so the grouping key, not the stitch, decides whether a multi-plane scenario scores. The XSIAM docs now say "issue" for alert and "case" for incident.
 
 **Known**
 
-- Nothing with a crossable source yet.
+- Case creation for correlation-rule issues: "Medium or High severity issues: Automatically creates a new case." "Low severity: Do not create cases and are not grouped into existing cases." Issues with shared artifacts and attributes group into one case only when their domain is Security or Posture AND their severity is Medium or higher. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-correlation-rule/create-a-correlation-rule.md (2026-11-10)
+- Grouping starts at Medium severity, in the operator's words: "things like stitching/grouping started with medium severity". Which sources this covers and whether "stitching" here means data stitching or alert grouping is open (PM-INC-05, PM-STI-13). — *operator_report*, Henry, design conversation 2026-11-10 (lab evidence not attached) (2026-11-10)
 
 **What CortexSim assumes today**
 
-- `required_planes_in_incident` planes must all be represented under one incident_id; the verifier asserts each in dataset=xdr_data. — `scenarios/_schema.yml:385`
+- `required_planes_in_incident` planes must all be represented under one incident_id; the verifier asserts each in dataset=xdr_data. 55 scenarios declare it. — `scenarios/_schema.yml:385`
+- Card severities are authored without a grouping floor: 15 BIOCs are Informational and 1 ABIOC is Low (16 cards, including SIM-MP-013, which declares required_planes_in_incident), and the 209 card correlation rules carry no severity at all, so the severity a DC picks at import decides whether the issue can ever join a case. — `detection_scanner/ttps/TTP-2026-0123-sim-mp-013.json ; scenarios/multi_plane/mp-013-muddled-libra-rogue-vm-alert-storm.yml`
 
 **How this differs from**
 
@@ -878,27 +950,32 @@ The logic that groups alerts into incidents. Our correlation-rate KPI asserts ">
 
 | id | priority | status | question |
 |---|---|---|---|
-| [PM-INC-01](#pm-inc-01) | P0 | asked | What decides whether two alerts land in the same incident: shared causality_id, host, user, time proximity, or a grouping key per alert source? Is there a maximum grouping window? |
-| [PM-INC-02](#pm-inc-02) | P1 | open | Do informational and low severity alerts (Port Scan is Informational) open incidents, or only attach to existing ones? |
+| [PM-INC-01](#pm-inc-01) | P0 | provisional | What decides whether two alerts land in the same incident: shared causality_id, host, user, time proximity, or a grouping key per alert source? Is there a maximum grouping window? |
+| [PM-INC-02](#pm-inc-02) | P1 | provisional | Do informational and low severity alerts (Port Scan is Informational) open incidents, or only attach to existing ones? |
 | [PM-INC-03](#pm-inc-03) | P1 | open | Do alerts ingested from third-party sources join incidents with agent alerts, and on what keys? |
 | [PM-INC-04](#pm-inc-04) | P2 | open | How is incident scoring (SmartScore, starring) computed, and is it exposed in the incident record? |
+| [PM-INC-05](#pm-inc-05) | P0 | open | Does the Medium-severity floor for case creation and grouping apply to issues from every source (custom BIOC, Analytics BIOC, Analytics, IOC, XDR agent prevention, third-party ingested alerts), or only to correlation-rule issues, where the docs state it? Is Informational treated like Low? |
+| [PM-INC-06](#pm-inc-06) | P1 | open | Which severity does case creation read: the rule's configured severity, or the issue's severity after scoring or automation changes it? If an issue is raised from Low to Medium after it fired, does it then create or join a case? |
+| [PM-INC-07](#pm-inc-07) | P1 | open | Grouping also needs the issue's domain to be Security or Posture. Which domain do custom BIOCs, imported correlation rules and third-party ingested alerts get by default, and can the domain be set when a rule is created or imported? |
 
 #### PM-INC-01
 
-**P0 · asked** — What decides whether two alerts land in the same incident: shared causality_id, host, user, time proximity, or a grouping key per alert source? Is there a maximum grouping window?
+**P0 · provisional** — What decides whether two alerts land in the same incident: shared causality_id, host, user, time proximity, or a grouping key per alert source? Is there a maximum grouping window?
 
 - **Why we ask:** The correlation-rate KPI asserts >= N planes under one incident_id; 21 scenarios score that way.
 - **What the answer moves:** Which shared entity each multi-plane scenario must plant across planes.
 - **Touches:** `core/connectors/measures.py`, `scenarios/multi_plane/`
 - **Asked in:** PMQ-2026-11-10-p0-seed
+- **Answer (2026-11-10, partial, public_doc):** Issues with shared artifacts and attributes are grouped into one case only when their domain is Security or Posture and their severity is Medium or higher. Which artifacts count, and whether a time window applies, are not stated.
 
 #### PM-INC-02
 
-**P1 · open** — Do informational and low severity alerts (Port Scan is Informational) open incidents, or only attach to existing ones?
+**P1 · provisional** — Do informational and low severity alerts (Port Scan is Informational) open incidents, or only attach to existing ones?
 
 - **Why we ask:** Some scenarios expect an informational analytics alert to stand alone.
 - **What the answer moves:** Expectations for low-severity detections.
 - **Touches:** `core/eal_simulator/analytics_alerts.py`
+- **Answer (2026-11-10, partial, operator_report, public_doc):** For correlation-rule issues, Medium and High create a case automatically; Low creates no case and is not grouped into an existing one. Henry reports that grouping starts at Medium severity in general. Informational is not addressed on the page. **Rule:** A detection that must appear under a case must be Medium or higher (documented for correlation issues; PM-INC-05 asks whether it holds for every source).
 
 #### PM-INC-03
 
@@ -916,6 +993,33 @@ The logic that groups alerts into incidents. Our correlation-rate KPI asserts ">
 - **What the answer moves:** Report content.
 - **Touches:** `core/connectors/xsiam.py`
 
+#### PM-INC-05
+
+**P0 · open** — Does the Medium-severity floor for case creation and grouping apply to issues from every source (custom BIOC, Analytics BIOC, Analytics, IOC, XDR agent prevention, third-party ingested alerts), or only to correlation-rule issues, where the docs state it? Is Informational treated like Low?
+
+- **Why we ask:** The docs state the floor on the correlation-rule page; Henry reports it more broadly (INC known). 55 scenarios declare required_planes_in_incident, and the built-in alerts the lab raised were Low (ABI known). If the floor is universal, any plane whose alert is below Medium can never be under the case, and the correlation-rate KPI scores that as a miss.
+- **What the answer moves:** A severity floor on every detection a scenario counts toward required_planes_in_incident (a loader lint); a `not_groupable` reading in the correlation-rate KPI for below-floor alerts instead of a miss; card severities raised to Medium where a scenario needs grouping.
+  - *if* the floor applies to every source → Add the lint and the not_groupable reading; raise the 16 below-Medium card detections or drop them from required planes.
+  - *if* it applies to correlation issues only → Record the per-source rule and enforce it only for Correlation detections.
+- **Settle it in the lab:** On one host, raise a custom BIOC at Low, the same BIOC cloned at Medium, and a Medium correlation issue sharing the host; see which issues the case holds.
+- **Touches:** `core/connectors/measures.py`, `core/engine/scenario_loader.py`, `scenarios/multi_plane/`, `detection_scanner/ttps (biocs[].severity)`
+
+#### PM-INC-06
+
+**P1 · open** — Which severity does case creation read: the rule's configured severity, or the issue's severity after scoring or automation changes it? If an issue is raised from Low to Medium after it fired, does it then create or join a case?
+
+- **Why we ask:** The 209 card correlation rules carry no severity (INC assumes), so the DC chooses one at import. If severity can be fixed after the fact, a wrong import choice is recoverable; if not, it silently decides the KPI.
+- **What the answer moves:** Import runbook (set severity before enabling); whether card correlation rules must carry a severity.
+- **Touches:** `detection_scanner/ttps (correlation_rules[])`, `docs/operator-runbook.md`
+
+#### PM-INC-07
+
+**P1 · open** — Grouping also needs the issue's domain to be Security or Posture. Which domain do custom BIOCs, imported correlation rules and third-party ingested alerts get by default, and can the domain be set when a rule is created or imported?
+
+- **Why we ask:** An issue outside those domains never groups, whatever its severity, and our cards record no domain.
+- **What the answer moves:** Card correlation_rules[] and biocs[] gain `domain` (with `severity`); import runbook.
+- **Touches:** `detection_scanner/ttps (correlation_rules[])`, `docs/operator-runbook.md`
+
 ## TEN
 
 ### Tenant readiness (content, entitlements, data collection)
@@ -924,7 +1028,7 @@ The state of the tenant that decides whether a detector can fire at all: which c
 
 **Known**
 
-- Nothing with a crossable source yet.
+- A run that started 15 s after the endpoint first showed CONNECTED left no events at all: the agent's collectors were still stopped, and the first process events arrived about a minute after connect. A second run 16 minutes later was recorded (see the CAU observation for what it lost). — *lab_observation*, Lab tenant, XDR agent 9.4.0.470 on Ubuntu 24.04, SIM-EDR-003 runs 1 and 2, 2026-11-10 (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -939,6 +1043,7 @@ The state of the tenant that decides whether a detector can fire at all: which c
 | [PM-TEN-02](#pm-ten-02) | P0 | asked | Which agent profile settings change what telemetry is collected (network event collection, file monitoring scope, command-line capture), and is there a maximum captured command-line length? |
 | [PM-TEN-03](#pm-ten-03) | P1 | open | Can the detection-content version and agent version be read through the API, so each run records the content it was scored against? |
 | [PM-TEN-04](#pm-ten-04) | P1 | open | Which licences or add-ons gate which detection engines (identity analytics, cloud detection, third-party ingestion volume)? |
+| [PM-TEN-05](#pm-ten-05) | P0 | open | After an XDR agent is installed, restarted or upgraded, how long until it collects events, and which tenant-readable field says collection is running (endpoint status, operational status, a per-module state)? Is CONNECTED reported before collection starts? |
 
 #### PM-TEN-01
 
@@ -973,3 +1078,85 @@ The state of the tenant that decides whether a detector can fire at all: which c
 - **Why we ask:** POV entitlement scoping maps the corpus to PAN-* parts.
 - **What the answer moves:** Entitlement profiles in core/api/pov.py.
 - **Touches:** `core/api/pov.py`
+
+#### PM-TEN-05
+
+**P0 · open** — After an XDR agent is installed, restarted or upgraded, how long until it collects events, and which tenant-readable field says collection is running (endpoint status, operational status, a per-module state)? Is CONNECTED reported before collection starts?
+
+- **Why we ask:** In the lab a run 15 s after CONNECTED left no events at all because the collectors had not started (TEN known). A run against a just-connected agent scores every expectation as missed.
+- **What the answer moves:** An agent-ready gate before launch: refuse or delay a run until the endpoint reports collection running, and read it from the endpoint record rather than guessing a delay.
+- **Settle it in the lab:** Restart the agent, then every 5 s record the endpoint's status fields from the API while a 1 Hz canary process runs; note when the first canary event lands.
+- **Touches:** `core/api/runs.py`, `core/connectors/preflight.py`, `agent/beacon`
+
+## ALR
+
+### Alert records and read-back
+
+What an alert ("issue") looks like when SimCore pulls it back: which field names the rule that fired, which timestamp is the detection time, which MITRE technique and source string it carries, and which case it joined. The matcher credits a seeded Result from these fields alone, so a misread field turns a real detection into a miss, or a noise alert into a pass.
+
+**Known**
+
+- Alerts pulled from the lab tenant carried none of the four rule-identifier keys the connector reads (`matching_service_rule_id`, `detector_id`, `bioc_id`, `rule_id`); the connector preflight reported PF_ALERT_SHAPE_PARTIAL and matching fell back to technique plus name. — *lab_observation*, Lab tenant, xsiam connector preflight and reconcile, 2026-11-04 (2026-11-04)
+
+**What CortexSim assumes today**
+
+- The alert's time is the first present of `detection_timestamp`, `creation_time`, `local_insert_ts`, and MTTD is that time minus the step's `executed_at`. — `core/connectors/xsiam.py:378`
+- The rule identifier is the first present of `matching_service_rule_id`, `detector_id`, `bioc_id`, `rule_id`; the case is `incident_id` or `case_id`. — `core/connectors/xsiam.py:400 ; core/connectors/xsiam.py:404`
+- The alert's `source` string ("XDR BIOC", "XDR Analytics BIOC", "Correlation", ...) maps onto one signal family, and a pair whose families differ never matches; the default match window is 3600 s. — `core/connectors/matcher.py:32`
+
+**How this differs from**
+
+- **INC (Alert-to-incident grouping)** — ALR is the shape of one alert as the API returns it; INC decides which alerts share a case. A correct case can still be scored wrong if the alert fields it carries are misread.
+
+**Questions**
+
+| id | priority | status | question |
+|---|---|---|---|
+| [PM-ALR-01](#pm-alr-01) | P0 | open | Which field on an alert or issue record carries the identifier of the rule that raised it, for each source: custom BIOC, Analytics BIOC, Analytics, correlation rule, IOC, XDR agent prevention? Is it stable across content updates and tenants? |
+| [PM-ALR-02](#pm-alr-02) | P0 | open | Which timestamp on an alert is the time of the event that triggered it, and which is the time the platform raised the alert: `detection_timestamp`, `creation_time`, `local_insert_ts`, or another field? Does the answer differ by alert source? |
+| [PM-ALR-03](#pm-alr-03) | P1 | open | Is the MITRE technique on a built-in alert fixed by the detector's content, whatever the activity was, and is that detector-to-technique mapping published anywhere we can read (content metadata, an API, the alert page)? |
+| [PM-ALR-04](#pm-alr-04) | P1 | open | What is the full vocabulary of the alert `source` field (e.g. "XDR BIOC", "XDR Analytics BIOC", "XDR Analytics", "Correlation", "XDR Agent", "IOC", third-party names), and is it stable across platform versions? |
+| [PM-ALR-05](#pm-alr-05) | P1 | open | With the docs now saying "issue" and "case", which API endpoints and record fields changed (for example `case_id` vs `incident_id`, an issues endpoint vs the alerts endpoint), from which platform version, and do the old names keep working? |
+
+#### PM-ALR-01
+
+**P0 · open** — Which field on an alert or issue record carries the identifier of the rule that raised it, for each source: custom BIOC, Analytics BIOC, Analytics, correlation rule, IOC, XDR agent prevention? Is it stable across content updates and tenants?
+
+- **Why we ask:** Lab alerts carried none of the four keys the connector reads (ALR known), so matching fell back to technique plus name, the weakest key the matcher has.
+- **What the answer moves:** The connector's rule-id field list; card detections record that identifier so the matcher can key on it; preflight stops reporting PARTIAL.
+- **Touches:** `core/connectors/xsiam.py`, `core/connectors/matcher.py`, `core/connectors/preflight.py`
+
+#### PM-ALR-02
+
+**P0 · open** — Which timestamp on an alert is the time of the event that triggered it, and which is the time the platform raised the alert: `detection_timestamp`, `creation_time`, `local_insert_ts`, or another field? Does the answer differ by alert source?
+
+- **Why we ask:** MTTD is the alert time minus the step's executed_at, and the connector takes detection_timestamp first (ALR assumes). If detection_timestamp is the triggering event's own time, every MTTD we report measures nearly zero instead of detection latency, and it would pass any threshold.
+- **What the answer moves:** The connector's timestamp order; the MTTD definition in the report.
+  - *if* detection_timestamp is event time → Use the creation or insert time for MTTD and keep the event time as evidence of which step fired it.
+  - *if* detection_timestamp is raise time → Keep the order and document it as proven.
+- **Settle it in the lab:** Fire a scheduled correlation rule (10-minute grid) on a canary event; compare each timestamp field with the canary's `_time` and the rule's run time.
+- **Touches:** `core/connectors/xsiam.py`, `core/connectors/service.py`
+
+#### PM-ALR-03
+
+**P1 · open** — Is the MITRE technique on a built-in alert fixed by the detector's content, whatever the activity was, and is that detector-to-technique mapping published anywhere we can read (content metadata, an API, the alert page)?
+
+- **Why we ask:** The lab's built-in alert on useradd and chpasswd carried T1003 while the scenario declared T1136.001 (ABI known); a technique-keyed match can then credit or miss the wrong Result.
+- **What the answer moves:** Cards list the technique each built-in detector they expect actually carries; matcher technique aliases.
+- **Touches:** `core/connectors/matcher.py`, `detection_scanner/ttps (analytics_modules[])`
+
+#### PM-ALR-04
+
+**P1 · open** — What is the full vocabulary of the alert `source` field (e.g. "XDR BIOC", "XDR Analytics BIOC", "XDR Analytics", "Correlation", "XDR Agent", "IOC", third-party names), and is it stable across platform versions?
+
+- **Why we ask:** The matcher maps source onto a signal family, and a known-but-different family never matches (matcher.py:32). An unmapped source string falls back to technique and name; a renamed one can block a real match.
+- **What the answer moves:** The family map in the matcher; a preflight that lists unmapped source strings.
+- **Touches:** `core/connectors/matcher.py`
+
+#### PM-ALR-05
+
+**P1 · open** — With the docs now saying "issue" and "case", which API endpoints and record fields changed (for example `case_id` vs `incident_id`, an issues endpoint vs the alerts endpoint), from which platform version, and do the old names keep working?
+
+- **Why we ask:** The connector reads `incident_id or case_id` (xsiam.py:404) and pages the alerts endpoint.
+- **What the answer moves:** Connector endpoint and field names; a version gate in preflight.
+- **Touches:** `core/connectors/xsiam.py`, `core/connectors/preflight.py`
