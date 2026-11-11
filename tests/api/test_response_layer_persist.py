@@ -106,3 +106,36 @@ def test_migration_adds_columns_to_existing_db(tmp_path):
     with eng.begin() as conn:
         cols = {c["name"] for c in inspect(conn).get_columns("integration_credentials")}
     assert {"response_layer", "response_layer_read_at"} <= cols
+
+
+def test_reregistering_a_tenant_clears_the_stored_response_layer(session_factory):
+    # A new key or URL may point at a different tenant: the previous tenant's
+    # read must not stay "fresh" for up to 24 h (it would drive Readiness and
+    # the launch advisory).
+    from datetime import datetime
+
+    from security.credentials import CredentialStore
+
+    async def _go():
+        async with session_factory() as db:
+            store = CredentialStore(db)
+            await store.put_integration(
+                name="acme", kind="xsiam_tenant", plaintext_secret="k" * 40,
+                config={"base_url": _URL, "api_key_id": "1"})
+            row = (await store.list_integrations())[0]
+            row.response_layer = {"state": "PRESENT"}
+            row.response_layer_read_at = datetime.utcnow()
+            await db.commit()
+        async with session_factory() as db:
+            store = CredentialStore(db)
+            await store.put_integration(
+                name="acme", kind="xsiam_tenant", plaintext_secret="n" * 40,
+                config={"base_url": "https://api-other.xdr.us.paloaltonetworks.com",
+                        "api_key_id": "2"})
+            await db.commit()
+        async with session_factory() as db:
+            return (await CredentialStore(db).list_integrations())[0]
+
+    row = asyncio.run(_go())
+    assert row.response_layer is None
+    assert row.response_layer_read_at is None
