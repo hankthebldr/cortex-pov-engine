@@ -20,7 +20,7 @@
  */
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, cleanup } from '@testing-library/react'
 import { installRoutes } from '../../test/mockFetch.js'
 import { EnvironmentContext, DEFAULT_ENV } from '../../context/EnvironmentContext.jsx'
 import { buildHealthModel } from '../console/readiness/healthModel.js'
@@ -236,12 +236,28 @@ describe('Agent cards · delete says what it does and how to really remove a bea
     return c
   }
 
-  it('Linux: registry row only, beacon re-registers, and the sudo bash removal line', () => {
+  it('Linux: registry row only, beacon re-registers, and the removal line runs as the installing user (RG-UI-02)', () => {
     const c = confirmFor({ agent_id: 'jb-l', hostname: 'h', os: 'linux', status: 'online', last_seen_age_seconds: 1 })
     expect(c.textContent).toMatch(/removes the registry row only/i)
     expect(c.textContent).toMatch(/re-registers/i)
+    // No sudo: under sudo the script resolves per-user paths from root's
+    // environment, misses the per-user unit and still prints "done".
     expect(within(c).getByTestId('agent-uninstall-cmd').textContent)
+      .toBe(`curl -fsSL '${ORIGIN}/api/agents/install?uninstall=1' | bash`)
+    const note = within(c).getByTestId('agent-uninstall-note').textContent
+    expect(note).toMatch(/same user who ran the installer/i)
+    expect(note).toContain('NEEDS_ROOT')
+    expect(within(c).getByTestId('agent-uninstall-root-cmd').textContent)
       .toBe(`curl -fsSL '${ORIGIN}/api/agents/install?uninstall=1' | sudo bash`)
+  })
+
+  it('macOS gets the same per-user removal line; Windows gets no POSIX note', () => {
+    let c = confirmFor({ agent_id: 'mac-l', hostname: 'm', os: 'darwin', status: 'online', last_seen_age_seconds: 1 })
+    expect(within(c).getByTestId('agent-uninstall-cmd').textContent)
+      .toBe(`curl -fsSL '${ORIGIN}/api/agents/install?uninstall=1' | bash`)
+    cleanup()
+    c = confirmFor({ agent_id: 'win-n', hostname: 'W', os: 'windows', status: 'online', capabilities: ['shell', 'powershell'], last_seen_age_seconds: 1 })
+    expect(within(c).queryByTestId('agent-uninstall-note')).toBeNull()
   })
 
   it('Windows: the PowerShell removal line plus the manual fallback', () => {

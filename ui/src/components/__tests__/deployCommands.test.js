@@ -21,6 +21,8 @@ import {
   pullOneLiner,
   windowsDownloadRunLine,
   uninstallCommand,
+  posixRootUninstallCommand,
+  POSIX_UNINSTALL_NOTE,
   WINDOWS_MANUAL_UNINSTALL,
   beaconShipState,
   copyToClipboard,
@@ -94,11 +96,27 @@ describe('downloaded-installer run line (UI-15)', () => {
 })
 
 describe('uninstall commands (UI-10)', () => {
-  it('Linux and macOS pipe the removal script to sudo bash', () => {
+  // RG-UI-02. The console's install line has no sudo and the installer never
+  // escalates, so the default install is per-user: a `systemctl --user` unit
+  // with Restart=always under the installing user's $HOME. The uninstaller
+  // resolves every per-user path from $HOME. Under `sudo bash` that is root's,
+  // so it found nothing per-user, killed the process, printed "done -- removed
+  // 1 of 1 item(s)", and the user unit restarted the beacon ten seconds later.
+  // Its own header gives the contract: `| bash`, and `| sudo bash` only for a
+  // root install — which a non-root run refuses loudly with NEEDS_ROOT.
+  it('Linux and macOS pipe the removal script to bash, as the installing user — never sudo by default', () => {
     expect(uninstallCommand({ os: 'linux', origin: 'https://x:8888' }))
-      .toBe("curl -fsSL 'https://x:8888/api/agents/install?uninstall=1' | sudo bash")
+      .toBe("curl -fsSL 'https://x:8888/api/agents/install?uninstall=1' | bash")
     expect(uninstallCommand({ os: 'darwin', origin: 'https://x:8888' }))
+      .toBe("curl -fsSL 'https://x:8888/api/agents/install?uninstall=1' | bash")
+  })
+
+  it('the root-install form is separate and named for what it is', () => {
+    expect(posixRootUninstallCommand({ origin: 'https://x:8888/' }))
       .toBe("curl -fsSL 'https://x:8888/api/agents/install?uninstall=1' | sudo bash")
+    expect(POSIX_UNINSTALL_NOTE).toMatch(/same user who ran the installer/i)
+    expect(POSIX_UNINSTALL_NOTE).toContain('NEEDS_ROOT')
+    expect(POSIX_UNINSTALL_NOTE).toMatch(/installed as root/i)
   })
 
   it('Windows asks for the PowerShell removal script (TLS opt-in first)', () => {

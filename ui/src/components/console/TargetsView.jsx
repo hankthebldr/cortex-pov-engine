@@ -14,6 +14,8 @@ import {
   pullOneLiner,
   windowsDownloadRunLine,
   uninstallCommand,
+  posixRootUninstallCommand,
+  POSIX_UNINSTALL_NOTE,
   WINDOWS_MANUAL_UNINSTALL,
   WINDOWS_ELEVATION_LABEL,
   WINDOWS_INSTALLER_FILE,
@@ -361,7 +363,7 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                       <p>
                         This <strong>removes the registry row only</strong>. A beacon still running on the
                         host re-registers on its next poll and the row comes back. To remove the beacon
-                        itself, run this on the host{targetOs === 'windows' ? ' in Windows PowerShell as Administrator' : ''}:
+                        itself, run this on the host{targetOs === 'windows' ? ' in Windows PowerShell as Administrator' : ', as the user who installed it'}:
                       </p>
                       <div className="deploy-snippet">
                         <code data-testid="agent-uninstall-cmd" ref={uninstallRef}>{removeCmd}</code>
@@ -371,10 +373,15 @@ export default function TargetsView({ selectedTarget = null, onSelectTarget = ()
                           onClick={() => cardCopy.copy(`uninstall-${id}`, removeCmd, uninstallRef, 'removal command')}
                         >{cardCopy.isCopied(`uninstall-${id}`) ? '✓ copied' : 'Copy'}</button>
                       </div>
-                      {targetOs === 'windows' && (
+                      {targetOs === 'windows' ? (
                         <p>
                           If the host cannot reach SimCore, remove it by hand:{' '}
                           <code className="mono" data-testid="agent-uninstall-manual">{WINDOWS_MANUAL_UNINSTALL}</code>
+                        </p>
+                      ) : (
+                        <p data-testid="agent-uninstall-note">
+                          {POSIX_UNINSTALL_NOTE}{' '}
+                          <code className="mono" data-testid="agent-uninstall-root-cmd">{posixRootUninstallCommand({ origin })}</code>
                         </p>
                       )}
                       <CopyLive feedback={cardCopy.feedback} testId="agent-copy-live" />

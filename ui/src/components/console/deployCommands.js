@@ -79,13 +79,37 @@ export function windowsDownloadRunLine({ token }) {
  * Removing the beacon from the HOST. Deleting the agent in the console removes
  * the registry row only; a running beacon re-registers on its next poll.
  * The Windows script is served by `?os=windows&uninstall=1`.
+ *
+ * POSIX is `| bash`, run as the user who installed — the uninstaller's own
+ * contract (core/api/agents.py, _POSIX_UNINSTALLER header). The console's
+ * install line has no sudo and the installer never escalates, so the default
+ * install is per-user: a `systemctl --user` unit (Restart=always) or a
+ * LaunchAgent under that user's $HOME. The uninstaller resolves every per-user
+ * path from $HOME and the launchd domain from `id -u`. Under `sudo bash` those
+ * are root's, so it missed the per-user unit, killed the process, printed
+ * "done -- removed 1 of 1 item(s)" and exited 0 — and the unit restarted the
+ * beacon, which re-registered. Without sudo the same script fails LOUDLY on a
+ * root install (NEEDS_ROOT, printing the sudo form), which is the safe default.
  */
 export function uninstallCommand({ os, origin }) {
   const base = String(origin || '').replace(/\/+$/, '')
   return installerOS(os) === 'windows'
     ? `${TLS12_PREFIX}iwr -useb '${base}/api/agents/install?os=windows&uninstall=1' | iex`
-    : `curl -fsSL '${base}/api/agents/install?uninstall=1' | sudo bash`
+    : `curl -fsSL '${base}/api/agents/install?uninstall=1' | bash`
 }
+
+/** Only for a beacon that was installed as root (`sudo bash`, or a root shell). */
+export function posixRootUninstallCommand({ origin }) {
+  const base = String(origin || '').replace(/\/+$/, '')
+  return `curl -fsSL '${base}/api/agents/install?uninstall=1' | sudo bash`
+}
+
+export const POSIX_UNINSTALL_NOTE =
+  'Run it as the same user who ran the installer. The install line has no sudo, so the beacon is '
+  + 'normally a per-user service under that user\'s home. Under sudo the script looks for per-user '
+  + 'files in root\'s environment instead, can miss them, and still print "done" while the service '
+  + 'restarts the beacon. If the beacon was installed as root, the script stops with NEEDS_ROOT '
+  + 'and removes nothing; only then use:'
 
 /** Manual Windows removal, for when the host cannot reach SimCore. */
 export const WINDOWS_MANUAL_UNINSTALL =
