@@ -948,6 +948,22 @@ name — reconcile could only ever read 0 %, and that 0 % would be wrong),
 `PF_ALERT_SHAPE_UNKNOWN` (degraded: no alert in 7 days, shape unverified). A
 tenant with no alert to inspect is therefore **degraded, not ready**.
 
+**Issues API field names (2026-11-10).** The connector and this rung also read the names
+the public Issues API documents (`POST /public_api/v1/issue/search`): `detection.rule_id`
+(rule id), `detection.method` (source), `case_ids` (incident) and `_insert_time`
+(timestamp). Each comes after the alerts-API keys of its role, so a record carrying both
+keeps its old value. `detection.*` is read as the flat dotted property the schema names,
+then as a nested `detection` object. `case_ids` counts only when it lists exactly one case.
+`_insert_time` dates a record only when it carries no `detection_timestamp`,
+`creation_time` or `local_insert_ts`; which timestamp MTTD should use is still open. Both
+sides read through one function, `connectors/xsiam.py::alert_key`, and
+`tests/connectors/test_issues_api_fields.py` fails if `ALERT_SHAPE_KEYS` lists a key the
+connector does not read. The matcher maps the `detection.method` codes `ANALYTICS_BIOC`,
+`BIOC`, `IOC`, `CORRELATION`, `MAGNIFIER` and `TRAPS` onto `abioc`, `bioc`, `ioc`,
+`correlation`, `analytics` and `prevention`. TRAPS (XDR Agent) and MAGNIFIER (XDR
+Analytics) are inferred from the order of the docs' two value lists. Every other code
+names no family and stays unconstrained.
+
 **Alerts-path probe (2026-11-02).** The connector reads
 `/public_api/v1/alerts/get_alerts_multi_events` unless the credential's `alerts_path` says
 otherwise; a field-built MCP server reads the same call on **v2** against a live tenant.

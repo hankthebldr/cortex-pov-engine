@@ -85,19 +85,25 @@ ALERT_SHAPE_LOOKBACK_DAYS = 7
 #: The keys the reconcile connector reads off a tenant alert, by role. The
 #: shape probe reports which one (if any) this tenant's alerts carry, so
 #: "will matching work?" is a rung with a code instead of a POV with zero
-#: matches. Keep in lock-step with ``connectors/xsiam.py::_normalize_alert``.
+#: matches. Keep in lock-step with ``connectors/xsiam.py::_normalize_alert``;
+#: ``tests/connectors/test_issues_api_fields.py`` asserts every key listed here
+#: is one the connector actually reads. Values are read through the same
+#: ``xsiam.alert_key`` (flat-then-nested dotted keys; ``case_ids`` only when it
+#: lists one case). The Issues API names — ``_insert_time``,
+#: ``detection.method``, ``detection.rule_id``, ``case_ids`` — come last.
 ALERT_SHAPE_KEYS: dict[str, tuple[str, ...]] = {
-    "timestamp": ("detection_timestamp", "creation_time", "local_insert_ts"),
+    "timestamp": ("detection_timestamp", "creation_time", "local_insert_ts", "_insert_time"),
     "technique": ("mitre_technique_ids", "mitre_technique_id_and_name", "mitre_techniques"),
     "name": ("name", "alert_name", "description"),
     "host": ("host_name", "endpoint_name", "hosts"),
-    "source": ("source", "alert_source"),
-    "rule_id": ("matching_service_rule_id", "detector_id", "bioc_id", "rule_id"),
+    "source": ("source", "alert_source", "detection.method"),
+    "rule_id": ("matching_service_rule_id", "detector_id", "bioc_id", "rule_id",
+                "detection.rule_id"),
     # what the agent did about the alert: the prevention outcome cannot be
     # read without it. Not a matching key — but its absence is surfaced.
     "action": ("action_pretty", "action"),
     # informational — decides the correlation-rate basis, never the grade
-    "incident": ("incident_id", "case_id"),
+    "incident": ("incident_id", "case_id", "case_ids"),
 }
 
 #: Clock skew beyond this makes MTTD untrustworthy. MTTD is the only KPI the
@@ -623,10 +629,13 @@ def _alert_shape_stage(sample: Any, total_count: Any, path: Optional[str] = None
             extra={"keys": {role: None for role in ALERT_SHAPE_KEYS},
                    "source": None, "total_count": total_count, "alerts_path": path},
         )
+    from .xsiam import alert_key  # noqa: PLC0415 — the connector's own reader
+
     raw = sample.raw if isinstance(getattr(sample, "raw", None), dict) else {}
     keys: dict[str, Optional[str]] = {}
     for role, candidates in ALERT_SHAPE_KEYS.items():
-        keys[role] = next((k for k in candidates if raw.get(k) not in (None, "", [])), None)
+        keys[role] = next((k for k in candidates
+                           if alert_key(raw, k) not in (None, "", [])), None)
     extra: dict[str, Any] = {
         "keys": keys,
         "source": getattr(sample, "alert_source", None),
