@@ -72,6 +72,10 @@ class InfraGenerateParams(BaseModel):
     @field_validator("dc_ssh_cidr")
     @classmethod
     def _validate_cidr(cls, v: str) -> str:
+        # This decides "is it a network, and is it narrow enough". It does NOT
+        # decide whether the text is safe between HCL quotes: ip_network()
+        # accepts an IPv6 zone id, which is free text. hcl_param_problems()
+        # below is what refuses that, for the route and the generator alike.
         try:
             net = ipaddress.ip_network(v, strict=False)
         except ValueError as e:
@@ -148,6 +152,15 @@ class InfraGenerateRequest(BaseModel):
 # The check is an ALLOW-list per field, applied before anything is rendered,
 # never an attempt to escape: a region or an instance type has a known shape,
 # and a value outside it is refused, not repaired.
+#
+# The same two templates quote four request strings, and each is bound once:
+#
+#   region, jumpbox_size   the shapes below
+#   dc_ssh_cidr            _is_plain_cidr below
+#   project_name           the request model's own pattern (InfraGenerateParams)
+#
+# plus `tags`. tests/api/test_infra_hcl_injection.py walks the templates and
+# fails when one of them starts rendering a request value nothing refuses.
 
 #: Per-provider shapes. Only AWS ships modules; the generic shapes cover the
 #: providers the request model already accepts but the generator refuses.
@@ -176,6 +189,30 @@ _TAG_KEY_RE = re.compile(r"^[A-Za-z0-9 _.:/=+@-]{1,128}$")
 _TAG_VALUE_RE = re.compile(r"^[A-Za-z0-9 _.:/=+@-]{0,256}$")
 _TAG_EXPECTED = "letters, digits, space and _ . : / = + - @ (key 1-128, value 0-256)"
 
+#: ``dc_ssh_cidr``. "ip_network() parsed it" is not a shape: an IPv6 zone id —
+#: the text between ``%`` and the ``/`` — may hold anything but those two
+#: characters, so ``fe80::1%a" } resource … { default = "x/64`` is a network to
+#: the parser and rendered a ``local-exec`` provisioner exactly as an
+#: unconstrained jumpbox_size did. The alphabet is what an address, a prefix
+#: length and a dotted netmask are written in. ``%`` is outside it on purpose:
+#: a zone id names an interface on one host and means nothing in a
+#: security-group rule. (``str(ip_network(v))`` keeps the zone id whenever no
+#: host bits are set, so rendering the canonical form would not have helped.)
+_CIDR_RE = re.compile(r"^[0-9A-Fa-f:.]{2,45}(?:/[0-9.]{1,15})?$")
+_CIDR_EXPECTED = ("an IPv4 or IPv6 network such as 203.0.113.7/32 or "
+                  "2001:db8:1::/48, with no zone id ('%...')")
+
+
+def _is_plain_cidr(value: object) -> bool:
+    """A network written in the CIDR alphabet only, that also parses."""
+    if not isinstance(value, str) or not _CIDR_RE.fullmatch(value):
+        return False
+    try:
+        ipaddress.ip_network(value, strict=False)
+    except ValueError:
+        return False
+    return True
+
 
 def _shown(value: object) -> str:
     """A refused value, for an error body: bounded and repr-escaped."""
@@ -198,6 +235,11 @@ def hcl_param_problems(request: "InfraGenerateRequest") -> list[dict[str, str]]:
         pattern, expected = shapes[field.rsplit(".", 1)[-1]]
         if not isinstance(value, str) or not pattern.fullmatch(value):
             problems.append({"field": field, "value": _shown(value), "expected": expected})
+
+    cidr = request.params.dc_ssh_cidr
+    if not _is_plain_cidr(cidr):
+        problems.append({"field": "params.dc_ssh_cidr", "value": _shown(cidr),
+                         "expected": _CIDR_EXPECTED})
 
     tags = request.params.tags or {}
     if len(tags) > _TAG_MAX_COUNT:

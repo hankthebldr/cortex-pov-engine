@@ -20,9 +20,14 @@ The fix refuses the value before anything is rendered: ``400 BAD_INFRA_PARAM``
 from the route, and a ``GenerationError`` from the generator for any caller
 that builds the request model itself. The same check covers ``tags``, whose
 values land in the same two files.
+
+That first fix named three fields and missed the fourth string the same two
+templates quote, ``dc_ssh_cidr`` (review of 3547c57; second half of this file).
+The last test walks the templates so a fifth cannot be added unnoticed.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -165,3 +170,172 @@ def test_the_check_names_every_bad_field_and_never_echoes_it_whole():
     assert [p["field"] for p in problems] == ["region", "params.jumpbox_size"]
     assert all(len(p["value"]) <= 64 for p in problems)
     assert all(p["expected"] for p in problems)
+
+
+# -----------------------------------------------------------------------------
+# dc_ssh_cidr — "it parses as a network" is not a shape
+# -----------------------------------------------------------------------------
+#
+# The first SEC-17 fix gated region, jumpbox_size and tags and left
+# ``dc_ssh_cidr`` to ``ipaddress.ip_network``. That is a parser: an IPv6 zone
+# id (the text between ``%`` and the ``/``) may hold anything but ``/`` and
+# ``%`` — quotes, braces, newlines. Observed on 3547c57 through this route:
+#
+#     dc_ssh_cidr = fe80::1%a" } resource "terraform_data" "pwn" { provisioner
+#         "local-exec" { command = "id" } } variable "z" { default = "x/64
+#     -> 200, and variables.tf AND terraform.tfvars carry the provisioner.
+#
+# Every payload below is one the request model ACCEPTS (one "/" only, a prefix
+# inside the SEC-10 floor), so the 400 is the gate's and not a 422 from
+# pydantic. A payload the model already refused would prove nothing here.
+
+_ZONE_TAIL =('" } resource "terraform_data" "cortexsim_pwn" { provisioner "local-exec" '
+              '{ command = "id" } } variable "z" { default = "x/64')
+
+CIDR_INJECTIONS = [
+    pytest.param("fe80::1%a" + _ZONE_TAIL, id="single-line"),
+    pytest.param('fe80::1%a"\n}\nresource "terraform_data" "cortexsim_pwn" {\n'
+                 '  provisioner "local-exec" {\n    command = "id"\n  }\n}\n'
+                 'variable "z" {\n  default = "x/64', id="multi-line"),
+    # No host bits set, so ``str(ip_network(v))`` KEEPS the zone id: returning
+    # the canonical form instead of the raw input would not have been a fix.
+    pytest.param("fe80::%a" + _ZONE_TAIL, id="network-address-form"),
+    pytest.param("fe80::%${path.module}/64", id="template-sequence"),
+    # Harmless text, refused all the same: a zone id names an interface on one
+    # host and means nothing in a security-group rule.
+    pytest.param("fe80::1%eth0/64", id="plain-zone-id"),
+]
+
+
+@pytest.mark.parametrize("cidr", CIDR_INJECTIONS)
+def test_a_cidr_carrying_a_zone_id_is_refused_and_nothing_is_rendered(client, blueprints, cidr):
+    resp = client.post("/api/infra/generate", json=_body(params={"dc_ssh_cidr": cidr}))
+
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "BAD_INFRA_PARAM"
+    assert [f["field"] for f in detail["detail"]["fields"]] == ["params.dc_ssh_cidr"]
+    assert "zone id" in detail["detail"]["fields"][0]["expected"]
+    assert list(blueprints.iterdir()) == [], "a refused request must leave no bundle"
+    assert "local-exec" not in _rendered(blueprints)
+
+
+@pytest.mark.parametrize("cidr", CIDR_INJECTIONS)
+def test_the_generator_refuses_a_zone_id_cidr_built_without_the_route(blueprints, repo_root, cidr):
+    from engine.infra_catalog import InfraCatalog
+    from engine.infra_generator import GenerationError, InfraGenerator
+    from engine.infra_models import InfraGenerateParams, InfraGenerateRequest
+
+    gen = InfraGenerator(
+        catalog=InfraCatalog(modules_root=repo_root / "infra" / "modules"),
+        templates_dir=repo_root / "infra" / "templates", blueprints_dir=blueprints)
+    request = InfraGenerateRequest(
+        provider="aws", region="us-east-1", modules=["edr"],
+        params=InfraGenerateParams(project_name="sec17", dc_ssh_cidr=cidr))
+
+    with pytest.raises(GenerationError, match="dc_ssh_cidr"):
+        gen.generate(request)
+    assert list(blueprints.iterdir()) == []
+
+
+@pytest.mark.parametrize("cidr", [
+    "1.2.3.4/32",
+    "203.0.113.0/24",
+    "10.20.0.0/16",
+    "203.0.113.7",               # bare address: the model has always read it as /32
+    "2001:db8:1::/48",
+    "2001:DB8:1:2::/64",
+    "::ffff:203.0.113.7/128",
+])
+def test_real_cidrs_still_generate_and_render_as_typed(client, blueprints, cidr):
+    resp = client.post("/api/infra/generate", json=_body(params={"dc_ssh_cidr": cidr}))
+
+    assert resp.status_code == 200, resp.text
+    rendered = _rendered(blueprints)
+    assert f'default     = "{cidr}"' in rendered
+    assert f'dc_ssh_cidr      = "{cidr}"' in rendered
+
+
+def test_the_gate_reads_a_cidr_that_does_not_parse_as_refused():
+    """For a caller that skipped model validation: the alphabet alone is not
+    the shape, the value must also be a network."""
+    from engine.infra_models import (InfraGenerateParams, InfraGenerateRequest,
+                                     hcl_param_problems)
+
+    def problems(cidr):
+        params = InfraGenerateParams.model_construct(
+            project_name="sec17", dc_ssh_cidr=cidr, jumpbox_size="t3.medium", tags={})
+        request = InfraGenerateRequest.model_construct(
+            provider="aws", region="us-east-1", modules=["edr"], params=params,
+            adapter_refs=[])
+        return [p["field"] for p in hcl_param_problems(request)]
+
+    assert problems("1.2.3.4/32") == []
+    for bad in ("999.1.1.1/99", "1.2.3.4/32\n", "", None, 5, "1.2.3.4/32 #"):
+        assert problems(bad) == ["params.dc_ssh_cidr"], repr(bad)
+
+
+# -----------------------------------------------------------------------------
+# The class of miss, not the instance: every interpolation is accounted for
+# -----------------------------------------------------------------------------
+
+_HCL_TEMPLATES = ("main.tf.j2", "variables.tf.j2", "terraform.tfvars.j2", "outputs.tf.j2")
+_INTERPOLATION = re.compile(r"{{\s*(.*?)\s*}}")
+
+#: Values the generator makes itself (uuid4, an ISO timestamp).
+_SERVER_MADE = {"bundle_id", "generated_at"}
+
+#: Every request value a Terraform template interpolates -> where it sits in
+#: the request, and a hostile value for it. A template that starts rendering a
+#: new request value fails the test below until it is listed here, which is
+#: the moment to decide what refuses it.
+_HOSTILE_FOR: dict[str, tuple[str, object]] = {
+    "provider": ("provider", 'aws"\n}'),
+    "region": ("region", 'us-east-1"\n}'),
+    "modules": ("modules", ['edr"\n}']),
+    "project_name": ("params.project_name", 'sec17"\n}'),
+    "dc_ssh_cidr": ("params.dc_ssh_cidr", 'fe80::%a"\n}\nvariable "z" { default = "x/64'),
+    "jumpbox_size": ("params.jumpbox_size", 't3.medium"\n}'),
+    "k8s_node_count": ("params.k8s_node_count", '2 }\nresource "terraform_data" "x" {}'),
+    "edr_target_count": ("params.edr_target_count", '2 }\nresource "terraform_data" "x" {}'),
+    "ttl_hours": ("params.ttl_hours", '72 }\nresource "terraform_data" "x" {}'),
+    "tags": ("params.tags", {"Owner": 'x"\n}'}),
+}
+
+
+def test_every_request_value_a_terraform_template_renders_is_refused_when_hostile(repo_root):
+    """The first fix named three fields and missed a fourth one line below
+    them. This walks the templates instead of a list somebody remembered."""
+    from pydantic import ValidationError
+
+    from engine.infra_models import InfraGenerateRequest, hcl_param_problems
+
+    names: set[str] = set()
+    for template in _HCL_TEMPLATES:
+        text = (repo_root / "infra" / "templates" / template).read_text(encoding="utf-8")
+        names |= {expr.split("|")[0].strip() for expr in _INTERPOLATION.findall(text)}
+
+    # A walk that finds nothing would pass everything below.
+    assert {"region", "project_name", "dc_ssh_cidr", "jumpbox_size", "tags"} <= names, names
+    undeclared = names - _SERVER_MADE - set(_HOSTILE_FOR)
+    assert not undeclared, (
+        f"infra/templates renders {sorted(undeclared)}, which this test does not know. "
+        "Decide what refuses a hostile value for it (the request model, or "
+        "engine.infra_models.hcl_param_problems), then list it in _HOSTILE_FOR.")
+
+    survived = []
+    for name in sorted(names - _SERVER_MADE):
+        path, hostile = _HOSTILE_FOR[name]
+        body = _body()
+        target = body
+        *parents, leaf = path.split(".")
+        for part in parents:
+            target = target[part]
+        target[leaf] = hostile
+        try:
+            request = InfraGenerateRequest(**body)
+        except ValidationError:
+            continue                                    # the model refused it
+        if not any(p["field"].startswith(path) for p in hcl_param_problems(request)):
+            survived.append(name)
+    assert survived == [], f"a hostile value for {survived} reaches the Terraform templates"

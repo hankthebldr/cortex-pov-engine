@@ -117,10 +117,12 @@ class InfraGenerator:
                 f"{', '.join(PROVIDERS_WITH_MODULES)}"
             )
 
-        # 0b. SEC-17 — nothing that is not shaped like a region, an instance
-        #     type or a tag is rendered between HCL quotes. The route refuses
-        #     first (400 BAD_INFRA_PARAM); this is the same check for a caller
-        #     that built the request model itself. Before any directory exists.
+        # 0b. SEC-17 — region, jumpbox_size, dc_ssh_cidr and tags are refused
+        #     here unless each is shaped like what its field names. The route
+        #     refuses first (400 BAD_INFRA_PARAM); this is the same check for a
+        #     caller that built the request model itself. Before any directory
+        #     exists. project_name, the fourth quoted string, is bound by the
+        #     request model's pattern and is not re-checked here.
         problems = hcl_param_problems(request)
         if problems:
             raise GenerationError(

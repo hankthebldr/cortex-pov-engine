@@ -82,11 +82,14 @@ async def generate_bundle(body: InfraGenerateRequest) -> InfraGenerateResponse:
     ``asyncio.to_thread`` so the event loop is never blocked while a (possibly
     large) module tree is copied and archived.
 
-    SEC-17 — ``region``, ``params.jumpbox_size`` and ``params.tags`` are
-    written between double quotes in the generated ``variables.tf`` /
-    ``terraform.tfvars``. A value that is not shaped like what its field names
-    is refused here with ``400 BAD_INFRA_PARAM`` before anything is rendered;
-    it is never escaped and rendered anyway."""
+    SEC-17 — ``region``, ``params.jumpbox_size``, ``params.dc_ssh_cidr`` and
+    ``params.tags`` are written between double quotes in the generated
+    ``variables.tf`` / ``terraform.tfvars``. A value that is not shaped like
+    what its field names is refused here with ``400 BAD_INFRA_PARAM`` before
+    anything is rendered; it is never escaped and rendered anyway. A
+    ``dc_ssh_cidr`` that is not a network at all, or is too broad, is still the
+    request model's ``422``; the 400 is for one that parses and carries an IPv6
+    zone id, which is free text."""
     problems = hcl_param_problems(body)
     if problems:
         logger.warning("infra generate refused: %s",
