@@ -99,3 +99,17 @@ test('the toolbar row keeps every button inside the viewport at 800x600', async 
   expect(rights.length).toBeGreaterThanOrEqual(3)
   for (const r of rights) expect(r.right, `${r.text} overflows`).toBeLessThanOrEqual(r.inner)
 })
+
+test('at 1440x900 the search input and the three buttons share one line', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/#/library')
+  await page.waitForSelector('.scenario-card', { timeout: 20_000 })
+  await expect(page.getByTestId('filter-runnable')).toBeVisible()
+  const tops = await page.evaluate(() =>
+    [...document.querySelectorAll('.ops-toolbar > *')].map((el) => ({
+      what: el.tagName + ' ' + (el.textContent || '').trim().slice(0, 20),
+      top: el.getBoundingClientRect().top,
+    })))
+  expect(tops).toHaveLength(4)
+  for (const t of tops) expect(Math.abs(t.top - tops[0].top), `${t.what} is on another line`).toBeLessThanOrEqual(2)
+})

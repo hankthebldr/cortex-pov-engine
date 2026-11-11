@@ -103,8 +103,9 @@
 
 .theme-console .library-layout .ops-toolbar {
   gap: 8px;
-  /* Wrap rather than overflow: at narrow widths the buttons drop to a second
-     line inside the row. A single line at wide widths is unchanged. */
+  /* Wrap only when the controls genuinely do not fit: the search input first
+     shrinks from its 260px basis toward its 160px floor, and only then do the
+     buttons drop to a second line. A single line at wide widths is unchanged. */
   flex-wrap: wrap;
   max-width: 100%;
 }
@@ -112,7 +113,10 @@
 
 .theme-console .library-layout .ops-search {
   height: 32px;
-  min-width: 260px;
+  flex: 1 1 260px;
+  width: auto;
+  min-width: 160px;
+  max-width: 260px;
   padding: 0 11px;
   background: var(--s2);
   border: 1px solid var(--bd);
