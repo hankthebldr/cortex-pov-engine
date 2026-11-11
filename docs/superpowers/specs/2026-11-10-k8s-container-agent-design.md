@@ -566,14 +566,20 @@ been observed through this agent.
    check is skipped and `AGENT_TOOL_ROSTER_UNKNOWN` warns.
 9. **The server coerces `null` `capabilities` / `interpreters` to `[]`** and the
    beacon no longer sends null (a pod with no interpreter could not enroll).
-10. **The Secret's `artifact-token` key is reserved and not read** by the phase-1
-    pod.
+10. **The Secret's optional `artifact-token` key is read** (superseded; it was
+    reserved and unread in Tasks 1-11): `start.sh` exports a non-empty
+    `artifact-token` as `CORTEXSIM_ARTIFACT_TOKEN` before starting the beacon,
+    through the environment only, never argv. See item 16.
 11. **`SIM-CDR-015` stood in for `SIM-CDR-001`** in the real-pod posture stage,
     because the payload-shelf gate fires before the agent gate for `SIM-CDR-001`.
 
-**Not in phase 1 / not proven:** `lab-privileged` has never been run anywhere; the
-Linux subreaper effect and the anchor rename under bash are not yet asserted in a
-pod; the console tab was not checked in a real browser; the opt-in CI step has not
+**Not in phase 1 / not proven:** `lab-privileged` has never been run anywhere. The
+final kind run observed, on debian, processes whose cmdline carried the anchor
+name while a step ran, and observed `child subreaper enabled` in the beacon log
+plus no zombies after a run; orphan **reparenting** itself was not asserted. That
+run predates the anchor-rule change in item 15, so the debian rename (now via `sh`,
+i.e. dash) and the alpine + `prepare=packages` bash path need re-confirmation in a
+pod. The console tab was not checked in a real browser; the opt-in CI step has not
 run on GitHub.
 
 12. **Secret ordering corrected.** §3 said either order works and that a pod
@@ -585,3 +591,25 @@ run on GitHub.
 13. **Removal.** Deleting the namespace alone leaves the agent and reaper
     ClusterRole/ClusterRoleBinding behind (observed in the final kind run); remove
     them first by label, then the namespace.
+14. **The launch gate applies only to agents the manifest deployed** (final review
+    I1). Every beacon now sends runtime facts, and one started in Docker, Podman
+    or a foreign pod reports `container: true` with no `--posture-profile`. The
+    gate runs only when `posture_profile` is a non-empty string; `""`, whitespace,
+    `None` or a missing key is a strict no-op (no refusal, no warning, no
+    `required_binaries` stamping), exactly as for `container: false`. A non-empty
+    profile outside the known three is still refused. Every agent target of a
+    composed run is gated on its own facts, and a refusal or warning names the
+    agent (`agent_id`).
+15. **The chained anchor shell is `sh` again on host beacons** (final review I2).
+    Tasks 1-11 made it `bash` wherever bash was on PATH, silently changing which
+    shell evaluates commands on Debian/Ubuntu hosts. Rule: the anchor is `sh` with
+    argv[0] rewritten, unless `sh` resolves (`LookPath` then `EvalSymlinks`) to
+    `busybox` or `toybox`; only then bash renamed if bash is on PATH, else `sh`
+    un-renamed and `ANCHOR NOT HONOURED`. `runtime_facts.anchor_rename` reports the
+    same rule. A hardlinked multi-call `sh` is not detected.
+16. **`artifact-token` reaches the beacon** (final review S1): see item 10.
+17. **Expiry is checked before enrollment** (final review S2). A beacon whose
+    `--expires-at` has passed at startup logs `LIFETIME_EXPIRED` and exits 0
+    without redeeming the token or registering; `start.sh` then idles. A container
+    restart before expiry still reads Ready from the stored id before it has
+    re-registered (documented gap, unchanged).

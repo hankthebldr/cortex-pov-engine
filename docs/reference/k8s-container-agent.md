@@ -67,8 +67,14 @@ kubectl delete clusterrole,clusterrolebinding -l cortexsim.io/agent=true
 kubectl delete namespace cortexsim-agent
 ```
 
+**Let runs finish, or abort them, first.** After the label delete the pod is
+still running but has lost its RBAC, so a step that calls `kubectl` would fail
+`Forbidden` and score as a miss. The label delete was exercised once, in the
+proof script's teardown. The manifest header carries the same two lines.
+
 Letting the pod expire (`ttl_seconds`) lets the reaper run, and it removes
-everything itself.
+everything itself (from the reaper's script; expiry-triggered cleanup has not
+been observed in a cluster).
 
 ## 3 · Query parameters
 
@@ -158,7 +164,7 @@ checked before a 409: the owner of the SimCore must act, not the caller.
 |---|---|---|
 | `server` | yes | SimCore as the **pod** reaches it. Trailing slash and whitespace are trimmed. Must start `http://` or `https://` |
 | `token` | yes | enrollment token (`cxs_…`) |
-| `artifact-token` | no | payload-shelf bearer token for `CORTEXSIM_K8S_PAYLOAD_AUTH=token`. **Reserved: the phase-1 pod does not read it.** `start.sh` passes no `--artifact-token` and sets no `CORTEXSIM_ARTIFACT_TOKEN`, so a SimCore in shelf token mode cannot serve shelf payloads to this agent yet |
+| `artifact-token` | no | payload-shelf bearer token for `CORTEXSIM_K8S_PAYLOAD_AUTH=token`. When the key is present and non-empty, `start.sh` exports it as `CORTEXSIM_ARTIFACT_TOKEN` before starting the beacon, which reads that variable. It goes through the environment only: never on the command line, never echoed. Absent or empty, nothing is set (unit-tested under real `sh`; not yet observed in a pod) |
 
 ## 7 · What the pod contains
 
@@ -215,7 +221,8 @@ It installs `bash curl wget python3 jq openssl tar ca-certificates util-linux`
 account the identity harness names. Each package run is bounded to 120 s when
 `timeout` exists. `apt-get` and `apk` are the only supported managers. **With
 `prepare=none` the image must already carry what the scenarios call**; an image
-with no `bash` also loses the renamed anchor (§11).
+whose `sh` is busybox/toybox and that has no `bash` also loses the renamed anchor
+(§11).
 
 ## 9 · Expiry, the reaper, re-apply, downgrade
 
@@ -225,14 +232,20 @@ rescheduled pod does not get a fresh clock. At expiry the beacon takes no more
 tasks and exits 0; `start.sh` logs `LIFETIME_EXPIRED` and idles (a clean exit 0
 caused by a SIGTERM is a shutdown, not an expiry). A task already delivered by an
 in-flight long-poll can still start up to about 30 s late: do not quote expiry as
-exact. A pod rescheduled after expiry still enrolls a fresh agent row.
+exact. **Expiry is checked before enrollment:** a beacon that starts after its
+`--expires-at` (a pod rescheduled or restarted late) logs `LIFETIME_EXPIRED` and
+exits 0 without redeeming the token or registering, and `start.sh` idles. A
+container restart before expiry still reads Ready from the stored id before it has
+re-registered with SimCore (a known gap; Ready means "has an id", not "SimCore has
+heard from it since the restart").
 
 **The reaper** is a `replicas: 1`, `Recreate` **Deployment** named
 `cortexsim-reaper-agent`, built from the push path's reaper Job (same pinned RBAC,
 image and script). It waits to the **absolute** expiry (`EXPIRES_AT_EPOCH` against
 `date +%s`), then deletes namespace `cortexsim-agent` and the cluster-scoped
 `ClusterRole` and `ClusterRoleBinding` named `cortexsim-agent` — the whole set
-any profile can emit, whatever the current one. If the node clock gives no epoch
+any profile can emit, whatever the current one (from the reaper's script;
+expiry-triggered cleanup has not been observed in a cluster). If the node clock gives no epoch
 it exits 70 (`REAPER_CLOCK_UNAVAILABLE`) and crash-loops visibly rather than
 restarting its clock. It is a safety net; remove the agent yourself when done.
 **The reaper dies with the namespace**, so deleting the namespace by hand leaves
@@ -274,6 +287,16 @@ refused **before dispatch** by `core/engine/agent_launch_gate.py`; otherwise a
 step that failed for lack of privilege would be scored as a detection Cortex
 missed, a false negative we manufactured. Host and VM beacons are untouched.
 
+**It applies only to an agent this manifest deployed**, recognised by a non-empty
+`posture_profile` (the manifest's `start.sh` always passes `--posture-profile`).
+A beacon started in Docker, Podman or a pod not from this manifest reports
+`container: true` but no profile; for it (`""`, whitespace, `null` or no key) the
+gate is a strict no-op: no refusal, no warning, no `required_binaries` stamping,
+exactly as for a host beacon. A non-empty profile the engine does not know is
+still refused. In a composed run every agent target is gated on its own facts and
+only for the steps routed to it; a refusal's `detail.agent_id` and each warning's
+`agent_id` name the agent.
+
 | Code | Kind | Status | Meaning |
 |---|---|---|---|
 | `AGENT_POSTURE_INSUFFICIENT` | refusal | 409 | the scenario's cluster posture (findings **and** RBAC rules, namespaced and cluster-scoped) exceeds the agent's profile. `detail` has `missing_findings`, `missing_rbac_rules`, `agent_profile`, `satisfying_profile`. An agent reporting a profile this engine does not know is refused too |
@@ -282,8 +305,14 @@ missed, a false negative we manufactured. Host and VM beacons are untouched.
 | `AGENT_TOOL_ROSTER_UNKNOWN` | warning | 200 | the agent reported no `tools` key. Unknown is not empty: the tool check is skipped and this warns |
 
 `allow_missing_tools: true` on `POST /api/runs` runs anyway; the beacon still
-reports that step `TOOL_ABSENT`. A missing `posture_profile` is read as
-`baseline` unless the scenario needs more. Comparison is on posture, not tier:
+reports that step `TOOL_ABSENT`. **In the console** (Launch), warnings from a
+launch the gate let through are listed with their code and steps before the
+console moves to the run ("View run"); an `AGENT_TOOL_ABSENT` refusal lists the
+missing tools per step and offers **Launch anyway (steps needing a missing tool
+will stop with TOOL_ABSENT)**, which re-sends the same launch with
+`allow_missing_tools: true`; an `AGENT_POSTURE_INSUFFICIENT` refusal shows the
+missing findings and RBAC rules and the `satisfying_profile`, with no override
+(jsdom-tested; not checked in a real browser). Comparison is on posture, not tier:
 `SIM-CDR-001` is baseline-tier yet needs a namespaced secrets Role, so a baseline
 agent is refused.
 
@@ -304,16 +333,23 @@ Both appear in the run record. Neither is silent and neither is a pass.
   starts with `-` or `#`, or holds a control character is unusable and degrades.
   On Windows every non-direct identity degrades, as before.
 * **`ANCHOR NOT HONOURED`.** A scenario's `cgo_anchor` renames the chain's root
-  process. That needs a shell that survives `argv[0]` rewriting, which is `bash`.
-  With no `bash` on `PATH` (a multi-call `sh`, e.g. busybox) the chain runs under
-  `sh`, the first step's output says so and the completion summary carries
-  `ANCHOR NOT HONOURED`. Detections keyed on the anchor process name will not
-  match. It appears on images without bash, such as `alpine` with
-  `prepare=none`. With `prepare=packages` bash is installed and the anchor is
-  honoured: in the final kind run processes named after the anchor (`apache2`)
-  were observed mid-step on `debian:12-slim`, and on `alpine:3.20` with
-  `prepare=none` `ANCHOR NOT HONOURED` was observed in both the step output and
-  the completion summary.
+  process by rewriting the anchor shell's `argv[0]`. The rule, on every POSIX
+  beacon: the anchor is **`sh` renamed** (dash on Debian/Ubuntu: what host
+  beacons have always run), **unless `sh` resolves** (`LookPath`, then symlinks)
+  **to `busybox` or `toybox`**, where `argv[0]` selects the applet. Only then is
+  it `bash` renamed if `bash` is on `PATH`, else `sh` un-renamed: the first
+  step's output says so and the completion summary carries `ANCHOR NOT
+  HONOURED`. Detections keyed on the anchor process name will not match. It
+  appears on images whose `sh` is busybox and that have no bash, such as `alpine`
+  with `prepare=none`. A hardlinked multi-call `sh` is not detected. In the final
+  kind run processes named after the anchor (`apache2`) were observed mid-step on
+  `debian:12-slim`, and on `alpine:3.20` with `prepare=none` `ANCHOR NOT
+  HONOURED` was observed in both the step output and the completion summary.
+  **That run predates the rule above** (the anchor was then `bash` wherever bash
+  existed), so the debian rename, now via `sh` (dash), and the alpine +
+  `prepare=packages` bash path need re-confirmation in a pod: re-confirmation
+  pending.
+  <!-- E2E-FINAL-CONFIRM: to be filled by the controller -->
 
 ## 12 · The beacon
 
@@ -325,7 +361,7 @@ Flags added for containers (all optional; the VM installer is unchanged):
 | `--state-dir <dir>` | where the assigned id is kept across container restarts (`agent-id`). Checked **before** the token is redeemed, so an unwritable dir cannot burn a use per restart |
 | `--posture-profile <name>` | reported as `runtime_facts.posture_profile` |
 | `--prepare-status-file <path>` | first line reported as `runtime_facts.prepare_status` |
-| `--expires-at <RFC3339>` | stop taking tasks and exit 0 after this time |
+| `--expires-at <RFC3339>` | stop taking tasks and exit 0 after this time; checked before enrollment, so a beacon started after it exits 0 (`LIFETIME_EXPIRED`) without redeeming the token or registering |
 | `--subreaper` | become a child subreaper (Linux) and reap orphans of finished steps. On darwin / windows it logs `SUBREAPER_UNAVAILABLE` |
 
 `start.sh` also passes `--long-poll 30 --stream-output`. Enrollment retries
@@ -357,9 +393,12 @@ kubectl delete clusterrole,clusterrolebinding -l cortexsim.io/agent=true
 kubectl delete namespace cortexsim-agent
 ```
 
-In this order. Namespace deletion cannot remove cluster-scoped objects and takes
-the reaper with it; the label delete also catches the reaper's own
-ClusterRole/Binding. After the delete the agent row reads `offline` within
+In this order, after letting runs finish or aborting them: once the label delete
+runs, the still-running pod has lost its RBAC and a `kubectl` step would fail
+`Forbidden` and score as a miss. Namespace deletion cannot remove cluster-scoped
+objects and takes the reaper with it; the label delete also catches the reaper's
+own ClusterRole/Binding. The label delete was exercised once, in the proof
+script's teardown. After the delete the agent row reads `offline` within
 SimCore's 5-minute window (the final kind run asserted the agent was `online`
 immediately before the delete, then `offline`).
 
@@ -407,7 +446,8 @@ place. All four were fixed in code and re-run.
   the init container (v1.34.1);
 * the beacon logged "child subreaper enabled", and no zombies were left after
   `SIM-CDR-010`;
-* the anchor rename under real `bash`: processes with `cmd=apache2` were present
+* the anchor rename (then via `bash`; the anchor is `sh` since the final-review
+  fix, §11, re-confirmation pending): processes with `cmd=apache2` were present
   mid-step (asserted);
 * baseline refused `AGENT_POSTURE_INSUFFICIENT` (`SIM-CDR-015`) and
   `AGENT_TOOL_ABSENT`; `SIM-CDR-010` completed 4 steps;
