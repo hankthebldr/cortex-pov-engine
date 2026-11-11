@@ -206,6 +206,7 @@ first — `make rust-dist` does both phases.
 - **Schema validation is strict.** Scenario loader validates every YAML against the Pydantic schema derived from `scenarios/_schema.yml`. Invalid files are rejected at startup.
 - **All API responses are structured JSON** — including errors: `{"error": "...", "code": "...", "detail": "..."}`.
 - **Push bundles must be self-contained** — execute on clean Ubuntu 22.04 with no SimCore dependency at runtime.
+- **Dataset prerequisites are derived from a registry, not authored per scenario.** `spec/dataset_requirements.yml` (31 datasets, one per dataset a card query reads) states what each needs on the Cortex side and the source side; `core/engine/prerequisites.py` derives a scenario's list through the cards it cites, served at `GET /api/prerequisites/datasets`, `/api/scenarios/{id}/prerequisites` and `/query-library`. An **absent registry is degraded** (200, `registry_loaded: false`, health `DATASET_REGISTRY_ABSENT`), a **malformed one raises** (structured 500; boot refuses only under `CORTEXSIM_STRICT_DATASETS=true`), and a cited card with no entry is `UNREGISTERED_DATASET`, never "no prerequisite". Rows read `from documentation` or `confirmed in a tenant`; none is confirmed, so ***tenant-verified is 0***. Reference: `docs/reference/dataset-requirements.md`.
 
 ## Scenario YAML
 
@@ -358,7 +359,7 @@ A tier-4 pack may declare **one** staged artifact, `install.artifact` (`filename
 - **adapters** — `scripts/check-adapter-sources.sh`: tier-2 adapter source trees (git submodules) **must exist on disk** (FAIL if missing — GAP-ADAPT-01 guard); tier-4 runtime-fetched misses are WARN only. **Plus** `scripts/check-adapter-wiring.py` (de-hand-rolling gate: FAIL if a scenario names a tool that HAS a non-reference-only adapter pack but never wires it via `external_tools[].adapter_ref`; green at 0 candidates). **Owed:** `python3 -m engine.payload_shelf --check` and `PAYLOAD_ALLOW_UNPINNED=0` belong in **this** job — not a thirteenth one, because a job that can be skipped reads exactly like a passing one.
 - **e2e-isolated** — Tier-C isolated-execution assertion suite (`tests/e2e_isolated/test_tier_c_{assets,isolated_exec}.py` driven by `deploy/tier-c/tier_c_assert.py`; stdlib + pyyaml, no docker) as a hard gate. The docker-gated end-to-end (real SIM-EDR-001 detonation through the runner+sinkhole stack) is an opt-in step behind the `tier-c-e2e` PR label.
 
-App boot on this tree is **150 routes** (counted 2026-11-10 on the host venv, FastAPI 0.141.1; the walker in `docs/reference/api-and-agent-surface.md` §0 is the ground truth, because the old `app.routes` one-liner returns 4 on this FastAPI). The 133 that stood here was 17 routes stale.
+App boot on this tree is **153 routes** (counted 2026-11-10 on the host venv, FastAPI 0.141.1; the walker in `docs/reference/api-and-agent-surface.md` §0 is the ground truth, because the old `app.routes` one-liner returns 4 on this FastAPI). The 133 that stood here was 20 routes stale.
 
 `make -n ci` enumerates the local equivalents. Run `scripts/check-adapter-sources.sh`
 standalone to preflight adapter source availability before pushing.

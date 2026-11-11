@@ -44,20 +44,20 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **150 HTTP routes total** (counted 2026-11-10 on the host venv, FastAPI
+- **153 HTTP routes total** (counted 2026-11-10 on the host venv, FastAPI
   0.141.1 as pinned in `core/requirements.txt`; not re-counted against a built
   image). Routers under `/api`, plus the app-level `GET /api/health` and a static
   file mount at `/`. Per-prefix: `runs` 19 · `agents` 16 · `eal` 15 ·
-  `scenarios` 13 (7 of them under `/scenarios/drafts`) · `tools` 11 ·
+  `scenarios` 15 (7 of them under `/scenarios/drafts`) · `tools` 11 ·
   `credentials` 10 · `uctc` 9 · `ttps` 8 · `xsiam` 8 · `shelf` 7 · `k8s` 6 ·
   `assertions` 6 · `infra` 4 · `results` 4 · `pov` 3 · `connectors` 2 ·
-  `mitre` 2 · `run` 1 · `events` 1 · `health` 1, plus 4 FastAPI-owned
-  docs/openapi routes. The previous figure here was 133 (2026-08-06); 15 routes
-  landed since without this line moving, and 2 more are the tenant-content
-  routes in §1.2.1.
+  `mitre` 2 · `prerequisites` 1 · `run` 1 · `events` 1 · `health` 1, plus 4
+  FastAPI-owned docs/openapi routes. The previous figure here was 133
+  (2026-08-06); 18 routes landed since without this line moving (the three in
+  §1.16 among them), and 2 more are the tenant-content routes in §1.2.1.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
-> here was two content passes stale, and the 133 after it was 17 stale. The
+> here was two content passes stale, and the 133 after it was 20 stale. The
 > command is the ground truth. The one-liner this section used to carry
 > (`len([r for r in app.routes if getattr(r,'methods',None)])`) returns **4** on
 > FastAPI 0.141: `include_router` now keeps each router behind a wrapper, so the
@@ -208,6 +208,13 @@ asserted by both test suites so the two cannot disagree.
   call (a test refuses any socket connect), and nothing here reaches
   `OP-CORRELATIONS-INSERT`. Creating a rule is the DC's own action in the XSIAM
   console.
+
+**See also §1.16**, which reads the same cited cards for a different question:
+`GET /api/scenarios/{id}/prerequisites` (the datasets those cards read and what
+must exist for each) and `GET /api/scenarios/{id}/query-library` (the cards'
+queries as paste-ready text). The `queries[]` here are the queries a step
+*declares*, as card objects; the query library is every query on the cited
+cards, as text.
 
 The on-disk `detection_scanner/exports/correlation/*.json` files carry the same
 status (`content_status`, `deploy: null`, `importable_rules: 0`) and no longer
@@ -943,6 +950,39 @@ measured value.
 > fallback does not catch, so the DC sees `preflight failed: Method Not Allowed`.
 > The working route for both kinds is `POST /api/connectors/{kind}/preflight`.
 > See `ui/src/components/console/ReadinessView.jsx::TenantRow.runPreflight`.
+
+### 1.16 Dataset prerequisites (`core/api/prerequisites.py`, mounted before the scenarios router)
+
+Added 2026-11-10 (POV content pack, phase 1). Read-only: local files and the
+scenario table only, no outbound call; the scenario route carries
+`tenant_verified: 0`. Full reference:
+[`dataset-requirements.md`](dataset-requirements.md).
+
+| Method | Full path | Purpose | Request | Response |
+|--------|-----------|---------|---------|----------|
+| GET | `/api/prerequisites/datasets` | The dataset requirement registry joined to the cards that read each dataset | — | `{registry_loaded, path, count, datasets[], unregistered[]}`, each row with `cards[]` and `read_by[]`; 500 `DATASET_REGISTRY_MALFORMED`, 500 `CARD_SHAPE_UNRECOGNISED` |
+| GET | `/api/scenarios/{scenario_id}/prerequisites` | What one scenario needs on the Cortex and source side, derived from the cards it cites | — | `{scenario_id, registry_loaded, tenant_verified, write_path, cards[], datasets[], summary, notes[]}`, each dataset row with `read_by[]`; 404 `SCENARIO_NOT_FOUND`, 500 `DATASET_REGISTRY_MALFORMED`, 500 `CARD_SHAPE_UNRECOGNISED` |
+| GET | `/api/scenarios/{scenario_id}/query-library` | The cited cards' queries as paste-ready text | query: `purpose` (comma-separated from `hunt`, `investigation`, `validation`, `metric`; default `hunt,investigation`) | `text/plain; charset=utf-8`, non-query lines as `//` comments; 422 `PURPOSE_UNRECOGNISED` (checked first), 404 `SCENARIO_NOT_FOUND`, 500 `CARD_SHAPE_UNRECOGNISED` |
+
+- **Error shape differs from the older scenario routes.** These three return the
+  error object at the top level, `{"error", "code", "detail"}`. The scenario
+  routes in section 1.2 nest it under `"detail"`.
+- An absent registry answers 200 with `registry_loaded: false` (and a
+  `REGISTRY_ABSENT` note on the scenario route). A registry that exists but is
+  malformed answers a structured 500.
+- A card reads a dataset through `xql_queries[].dataset` or a `dataset =` /
+  `preset =` anchor in `biocs[]` / `abiocs[]` / `correlation_rules[]` logic;
+  `read_by` lists which of those four kinds did.
+- Derivation note codes: `NO_CARD_BINDING`, `DETECTION_UNBOUND`, `CARD_NOT_FOUND`,
+  `CARD_DECLARES_NO_QUERY`, `DATASET_UNDECLARED`, `UNREGISTERED_DATASET`,
+  `REGISTRY_ABSENT`. Row states are `confirmed in a tenant` and `from
+  documentation`; the response field for emulation is `can_be_emulated_by`.
+- `/api/health` gains a `dataset_requirements` component (degraded codes
+  `DATASET_REGISTRY_ABSENT`, `DATASET_REGISTRY_MALFORMED`, `DATASETS_UNREGISTERED`,
+  `CARD_SHAPE_UNRECOGNISED`). Boot refuses an absent-or-malformed registry or an
+  unregistered card dataset only when `CORTEXSIM_STRICT_DATASETS=true`
+  (default `false`).
+- Route count: this branch adds 3 routes.
 
 **Still undocumented in this table:** `/api/xsiam` (the ~116-operation read-only
 Cortex operation catalog) and the `/api/runs/*` storyline + causality routes.
