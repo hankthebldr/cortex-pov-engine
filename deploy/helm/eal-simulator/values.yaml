@@ -47,7 +47,14 @@ masterSecret:
 # ─────────────────────────────────────────────────────────────────────────────
 api:
   enabled: true
-  replicaCount: 2
+  # ONE replica. SimCore is single-process by construction: its task queue and
+  # its live-event bus live in the process (core/events.py: "Single process
+  # only"), and with persistence.enabled=false each pod has its own SQLite
+  # file. Two API pods behind one Service are two separate SimCores: an agent
+  # enrolled on one is unknown to the other, a task queued on one is never
+  # delivered by the other, and a campaign created on one is a 404 on the
+  # other. This defaulted to 2. Scale the pod's resources, not the count.
+  replicaCount: 1
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits:   {cpu: 500m, memory: 512Mi}

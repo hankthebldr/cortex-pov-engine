@@ -112,6 +112,19 @@ def test_helm_configmap_template_emits_the_host_allowlist():
     assert "CORTEXSIM_TRUSTED_PROXIES" in text
 
 
+def test_helm_default_runs_one_api_replica():
+    """OPS-21. SimCore is single-process by construction: the task queue, the
+    SSE bus and (with persistence off, the default) the SQLite file are per
+    pod. Two replicas behind one Service are two SimCores: an agent enrolled on
+    one is unknown to the other, and a task queued on one is never delivered by
+    the other. The chart defaulted to 2."""
+    values = yaml.safe_load((CHART / "values.yaml").read_text(encoding="utf-8"))
+    assert values["api"]["replicaCount"] == 1, (
+        f"api.replicaCount defaults to {values['api']['replicaCount']}: more than "
+        f"one SimCore API pod splits agents, tasks and events between processes"
+    )
+
+
 def test_helm_guard_helper_refuses_a_service_name_that_is_not_listed():
     """The control: the helper above can say no. Without this, every 'admitted'
     assertion below could pass on a guard that admits everything."""
