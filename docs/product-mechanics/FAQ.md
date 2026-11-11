@@ -4,4 +4,385 @@
 
 Short answers to the questions a DC asks when a signal stays dark, drawn from the [ledger](LEDGER.md). Each answer carries its **basis**. Only `documented` rests on a public page, and a `working model` is what we believe and have not confirmed. Each entry lists the open questions whose answers would change it, with their live status.
 
-No FAQ entries yet. Add them under `faq:` in `ledger.yml`.
+| id | question | basis |
+|---|---|---|
+| [FAQ-STI-01](#faq-sti-01) | Is "stitching" the same thing as grouping alerts into an incident? | documented (public source) |
+| [FAQ-STI-02](#faq-sti-02) | My firewall session didn't stitch to the endpoint process. What do I check first? | working model, unconfirmed |
+| [FAQ-STI-03](#faq-sti-03) | Which side of the connection goes into which field? | operator report |
+| [FAQ-STI-04](#faq-sti-04) | Why does a BIOC on firewall data never fire? | documented (public source) |
+| [FAQ-STI-05](#faq-sti-05) | Can records from an EAL emitter stitch to what the agent recorded? | working model, unconfirmed |
+| [FAQ-STI-06](#faq-sti-06) | How do I prove a stitch happened, rather than infer it? | working model, unconfirmed |
+| [FAQ-STI-07](#faq-sti-07) | Does alert severity matter for stitching? | working model, unconfirmed |
+| [FAQ-CAU-01](#faq-cau-01) | The scenario ran, every step returned 0, but some steps are missing from xdr_data. Why? | lab observation |
+| [FAQ-BIO-01](#faq-bio-01) | I imported the detection rule after the run. Will it still fire? | working model, unconfirmed |
+| [FAQ-INC-01](#faq-inc-01) | Why didn't my alerts group into one case? | documented (public source) |
+| [FAQ-INC-02](#faq-inc-02) | What must each plane's alert carry for required_planes_in_incident to pass? | working model, unconfirmed |
+| [FAQ-INC-03](#faq-inc-03) | Does an alert below Medium still count as a detection? | lab observation |
+| [FAQ-INC-04](#faq-inc-04) | What happens when I rerun a scenario? | documented (public source) |
+| [FAQ-ALR-01](#faq-alr-01) | The alert is in the console, but reconcile matched nothing. Why? | lab observation |
+
+## Stitching (data fusion across sources)
+
+### FAQ-STI-01
+
+**Is "stitching" the same thing as grouping alerts into an incident?**
+
+*Basis: documented (public source) · reviewed 2026-11-10*
+
+No. Two engines share the word, and a third thing gets confused with both.
+
+- **Data stitching** joins records from different sensors, such as an NGFW
+  session and the agent's network event, into one *story*. You read the result in
+  the `network_story` and `authentication_story` presets over `xdr_data`. It works
+  on records, before any rule fires, and records carry no severity.
+- **Grouping** puts *issues* (alerts) into one *case* (incident). It applies only to
+  Security or Posture issues at Medium severity or higher, and it groups by shared
+  artifacts, by the same causality chain, and by related entities close in time.
+- **A correlation rule** is an XQL query someone authored, and it can join datasets
+  itself. A correlation rule that fires does not prove that the engine stitched
+  anything.
+
+In our scenarios, `stitching_key` is about the first and
+`required_planes_in_incident` is about the second. A scenario can stitch perfectly
+and still fail its incident check.
+
+- **Would change if answered:** [PM-STI-09](LEDGER.md#pm-sti-09) (P1, provisional) · [PM-STI-13](LEDGER.md#pm-sti-13) (P1, open) · [PM-INC-01](LEDGER.md#pm-inc-01) (P0, provisional)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/get-started-with-xql/datasets-and-presets · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping
+
+### FAQ-STI-02
+
+**My firewall session didn't stitch to the endpoint process. What do I check first?**
+
+*Basis: working model, unconfirmed · reviewed 2026-11-10*
+
+Work down this list; the cheapest checks come first. Each item says how sure we
+are of it.
+
+1. **Did the firewall data arrive through a source that stitches?** *(documented /
+   open)* The native NGFW integration stitches. So do Check Point and Cisco ASA
+   logs through the Broker VM syslog applet; ASA only for message IDs 302013 to
+   302016, and Check Point drops logs with `sessionid = 0`. Records that
+   `ngfw_eal_emitter` and `ngfw_threat_emitter` POST to a custom HTTP collector
+   land in `<Vendor>_<Product>_raw`; whether they can stitch at all is PM-STI-12, so
+   treat them as unstitched until that is proven.
+2. **Is the agent collecting, and did it record this connection?** *(documented /
+   working model)* A Linux agent in asynchronous mode collects nothing
+   (FAQ-CAU-01). Look for the connect in `xdr_data` on the endpoint first. We
+   assume stitching needs the agent's own network event (PM-STI-06).
+3. **Does the 5-tuple agree?** *(operator report)* Source IP and port as the
+   endpoint recorded them, destination IP and port as the firewall transaction
+   recorded them, same protocol (FAQ-STI-03).
+4. **Is NAT or a container in between?** *(unknown)* Both sides record NAT fields,
+   but which pair stitching compares is PM-STI-03. A pod behind node SNAT is
+   PM-STI-04.
+5. **Did you look too early, or in the wrong place?** *(documented / unknown)*
+   Stories are published after their events (`story_publish_timestamp`) and can be
+   re-versioned; the delay is PM-STI-14. Look in `network_story`, not the raw
+   firewall dataset. The time tolerance between the two legs is PM-STI-02.
+6. **Is it another third-party firewall?** *(unknown)* Only the vendors in item 1
+   were checked; PM-STI-05 stays partial.
+
+- **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, open) · [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, open) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-01](LEDGER.md#pm-sti-01) (P0, asked) · [PM-STI-03](LEDGER.md#pm-sti-03) (P0, asked) · [PM-STI-04](LEDGER.md#pm-sti-04) (P0, asked) · [PM-STI-14](LEDGER.md#pm-sti-14) (P1, open) · [PM-STI-02](LEDGER.md#pm-sti-02) (P0, asked) · [PM-STI-05](LEDGER.md#pm-sti-05) (P0, provisional)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/check-point-fw1-vpn1/ingest-logs-from-check-point-firewalls · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/cisco-asa-firewalls-and-anyconnect/ingest-logs-from-cisco-asa-firewalls-and-anyconnect · `core/eal_simulator/plugins/ngfw_eal_emitter.py`
+
+### FAQ-STI-03
+
+**Which side of the connection goes into which field?**
+
+*Basis: operator report · reviewed 2026-11-10*
+
+For a connection the endpoint makes outbound:
+
+- **Source**: the endpoint's local IP and port exactly as the agent recorded them,
+  which on its network event are `action_local_ip` and `action_local_port`.
+- **Destination**: the remote IP and port exactly as the firewall's transaction
+  recorded them.
+- **Protocol**: the same on both legs (`action_network_protocol` on the agent side).
+
+This is what made Henry's NGFW-to-endpoint stitch work. Resolve the tuple once per
+run and project it into every leg rather than letting each emitter pick its own;
+`core/engine/stitch_context.py` does this.
+
+Two things are still open. Whether the source port has to match is PM-STI-01:
+SIM-MP-006's endpoint query groups by local IP, remote IP and remote port but not by
+local port, so either that query or our model is wrong. And NAT: the agent records
+`action_local_nat_ip`, `action_local_nat_port`, `action_remote_nat_ip`,
+`action_remote_nat_port` and `action_nat`, and the firewall carries pre- and post-NAT
+addresses, but which pair stitching compares is not published (PM-STI-03). An
+agent behind source NAT sees only its local address, so keep the firewall's pre-NAT
+source equal to the agent's `action_local_*` *(our inference)*.
+
+- **Would change if answered:** [PM-STI-01](LEDGER.md#pm-sti-01) (P0, asked) · [PM-STI-03](LEDGER.md#pm-sti-03) (P0, asked)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields-by-actor/action-actor · `core/engine/stitch_context.py:75` · `scenarios/multi_plane/mp-006-ngfw-container-causality-stitch.yml:131`
+
+### FAQ-STI-04
+
+**Why does a BIOC on firewall data never fire?**
+
+*Basis: documented (public source) · reviewed 2026-11-10*
+
+Because it is reading the wrong data. "IOC and BIOC issues are applicable to
+stitched data only, and are not available on raw data". A BIOC rule may query only
+`xdr_data` or `cloud_audit_log`, and the stitched firewall-plus-endpoint view is
+`event_type = STORY`.
+
+Nine NDR card BIOCs put their predicate on a raw firewall dataset instead: eight
+on `panw_ngfw_traffic_raw`, one on `cisco_asa_raw`. As written, they are not valid
+BIOCs. Retarget each one to `xdr_data` with `event_type = STORY`, or move it to a
+correlation rule on the raw dataset, which can read raw data. Until then, use the
+card's XQL query as the proof for those steps. Which STORY fields a BIOC may use is
+still PM-BIO-07.
+
+- **Would change if answered:** [PM-BIO-07](LEDGER.md#pm-bio-07) (P0, provisional) · [PM-STI-12](LEDGER.md#pm-sti-12) (P0, open)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule · `detection_scanner/ttps/TTP-2026-0050-sim-ndr-001.json`
+
+### FAQ-STI-05
+
+**Can records from an EAL emitter stitch to what the agent recorded?**
+
+*Basis: working model, unconfirmed · reviewed 2026-11-10*
+
+Not by 5-tuple, today, for three reasons:
+
+- EAL emitters run inside SimCore and POST from there, so their records describe
+  no connection the agent made.
+- Their records arrive through a custom HTTP collector, not a stitching source
+  (FAQ-STI-02, item 1).
+- The only entity we plant on both sides is the identity principal
+  (`canary_token`), and its format has not been checked against the engine's user
+  normalization (PM-STI-08). Authentication stories need the user as a UPN.
+
+`ngfw_eal_emitter` accepts `src_ip` / `dst_ip` / `dst_port` overrides that could
+carry a real agent connection's tuple, but the stitch adapter does not use them yet.
+Even with them, PM-STI-12 still decides whether a custom-collector record can
+stitch.
+
+- **Would change if answered:** [PM-STI-12](LEDGER.md#pm-sti-12) (P0, open) · [PM-STI-06](LEDGER.md#pm-sti-06) (P1, open) · [PM-STI-08](LEDGER.md#pm-sti-08) (P1, open)
+- **Sources:** `core/eal_simulator/stitch_params.py:7` · `core/eal_simulator/plugins/ngfw_eal_emitter.py:282`
+
+### FAQ-STI-06
+
+**How do I prove a stitch happened, rather than infer it?**
+
+*Basis: working model, unconfirmed · reviewed 2026-11-10*
+
+Query the stitched view, not the raw one, and let the query come back false.
+
+- **Where:** `network_story`, or `xdr_data` with `event_type = STORY`. Both are
+  documented as stitched firewall-plus-endpoint data. *(documented)*
+- **What counts:** a row where the firewall fields (`fw_*`) and the endpoint actor
+  fields (`actor_process_*`, `causality_actor_*`) are both populated and match the
+  run's tuple. A firewall-only story has empty actor fields. *(our inference; no page
+  names the field that marks the link, PM-STI-07)*
+- **When:** after the story is published. Read `story_publish_timestamp` and the
+  latest `story_version` (PM-STI-14).
+
+A correlation rule or XQL join of `xdr_data` to `panw_ngfw_traffic_raw` on the tuple
+proves only that both records exist. It does not show that the engine linked them.
+Tier-2 verify does not carry a stitch-proof query yet.
+
+- **Would change if answered:** [PM-STI-07](LEDGER.md#pm-sti-07) (P1, provisional) · [PM-STI-14](LEDGER.md#pm-sti-14) (P1, open)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/get-started-with-xql/datasets-and-presets · https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields · `core/engine/causality_graph.py`
+
+### FAQ-STI-07
+
+**Does alert severity matter for stitching?**
+
+*Basis: working model, unconfirmed · reviewed 2026-11-10*
+
+As far as we can tell, no. Stitching joins records, and records carry no severity.
+Severity gates **grouping**: the case-grouping page admits only Security or
+Posture issues at Medium or higher (FAQ-INC-01).
+
+Henry's report, "stitching/grouping started with medium severity", fits that
+reading. Whether any part of the story or causality view depends on severity is
+still open (PM-STI-13).
+
+- **Would change if answered:** [PM-STI-13](LEDGER.md#pm-sti-13) (P1, open) · [PM-INC-05](LEDGER.md#pm-inc-05) (P0, provisional)
+
+## Causality and the Causality Group Owner (CGO)
+
+### FAQ-CAU-01
+
+**The scenario ran, every step returned 0, but some steps are missing from xdr_data. Why?**
+
+*Basis: lab observation · reviewed 2026-11-10*
+
+Three causes, the first documented and the other two seen in the lab:
+
+- **The agent collects nothing in its current mode.** *(documented)* A Linux agent
+  whose kernel is unsupported, that was installed with `--no-km`, or that runs User
+  Space on a kernel older than 5.0 falls back to asynchronous mode: no event
+  collection, no BTP, no EDR. The endpoint still shows connected. PM-TEN-06 asks
+  how to read the mode from the tenant.
+- **The agent was not collecting yet.** *(lab)* A run that started 15 s after the
+  endpoint showed CONNECTED left no events, because the collectors had not started.
+  The first events arrived about a minute after connect (PM-TEN-05).
+- **Rapid identical steps were lost.** *(lab)* With the agent fully up, three
+  identical `sh` starts from the beacon within about 100 ms vanished, with all their
+  children; the same commands 2 s apart were all recorded. The public docs say
+  nothing about throttling process starts. The cause is not established (PM-CAU-04).
+
+A step the agent never recorded can fire nothing, stitch to nothing and group with
+nothing, so its expectations read as misses.
+
+- **Would change if answered:** [PM-TEN-06](LEDGER.md#pm-ten-06) (P0, open) · [PM-TEN-05](LEDGER.md#pm-ten-05) (P0, open) · [PM-CAU-04](LEDGER.md#pm-cau-04) (P0, open)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/insights-and-tips-cortex-xsiam/endpoint-and-agent-management/cortex-xdr-agent-linux-operation-modes
+
+## BIOC matching
+
+### FAQ-BIO-01
+
+**I imported the detection rule after the run. Will it still fire?**
+
+*Basis: working model, unconfirmed · reviewed 2026-11-10*
+
+It depends on the rule type:
+
+- **BIOC:** yes. *(documented)* Creating or enabling a BIOC also analyzes data
+  already collected in the tenant. How far back is not stated (PM-BIO-06).
+- **IOC:** yes. *(documented)* IOCs are matched against all data collected in the
+  past (PM-IOC-02).
+- **Correlation rule:** only if the run falls inside the time frame of a run made
+  after the rule is enabled. *(our inference from the schedule model)* A scheduled
+  rule runs on 10-minute clock boundaries or slower and queries a time frame of up
+  to 7 days. Whether that frame is event time or insert time is PM-COR-02.
+- **Built-in analytics:** no amount of importing helps. A detector raises nothing
+  until its activation and training periods have passed on that data source.
+
+A match found by a backward scan carries no meaningful detection latency. Import
+before the run whenever MTTD is part of the result.
+
+- **Would change if answered:** [PM-BIO-06](LEDGER.md#pm-bio-06) (P1, provisional) · [PM-IOC-02](LEDGER.md#pm-ioc-02) (P0, provisional) · [PM-COR-02](LEDGER.md#pm-cor-02) (P0, asked) · [PM-ANA-02](LEDGER.md#pm-ana-02) (P0, provisional)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-an-ioc
+
+## Alert-to-incident grouping
+
+### FAQ-INC-01
+
+**Why didn't my alerts group into one case?**
+
+*Basis: documented (public source) · reviewed 2026-11-10*
+
+Check these, in order:
+
+1. **Severity and domain.** Only Security or Posture issues at Medium severity or
+   higher are grouped. Low correlation issues create no case and join none. A May
+   2024 PANW blog says Low alerts may be grouped in identity, cloud and SaaS areas;
+   the current docs do not say so, which makes PM-INC-05 `conflicting`. Henry
+   reports the Medium floor in practice.
+2. **Something shared.** Issues group through shared artifacts (hash, host name,
+   user name and so on), through the same causality chain ID, or as related
+   entities "within a close timeframe". No numeric window is published, and
+   grouping by user name "may be subject to temporal constraints". For correlation
+   issues, only mapped artifact fields count (FAQ-INC-02).
+3. **A case still taking issues.** A case stops accepting issues 30 days after it
+   was created, 14 days after its last issue, or at 1,000 issues.
+
+The built-in alerts the lab raised on CortexSim activity were all Low, so none of
+them would open a case. The grouping logic is proprietary and continuously tuned,
+so treat any rule above as true today, not forever.
+
+- **Would change if answered:** [PM-INC-05](LEDGER.md#pm-inc-05) (P0, provisional) · [PM-INC-01](LEDGER.md#pm-inc-01) (P0, provisional) · [PM-INC-07](LEDGER.md#pm-inc-07) (P1, open) · [PM-INC-06](LEDGER.md#pm-inc-06) (P1, open)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/case-concepts/case-grouping · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/overview-of-cases/case-thresholds · https://www.paloaltonetworks.com/blog/security-operations/smartgrouping-precision-ai-driven-investigation/
+
+### FAQ-INC-02
+
+**What must each plane's alert carry for required_planes_in_incident to pass?**
+
+*Basis: working model, unconfirmed · reviewed 2026-11-10*
+
+Four things:
+
+- severity **Medium or higher**;
+- domain **Security or Posture**;
+- an artifact it shares with the other planes' alerts, which should be the
+  scenario's `stitching_key`: the host, the user, the container or the session;
+- for a correlation rule, that artifact **mapped** in the rule's issue fields. Only
+  mapped fields group a correlation issue: Host Name, User name, Agent ID, Remote IP,
+  the hashes, DNS Query Name, Url, or the Initiator CMD / Path / Initiated By
+  triplet. An issue with nothing mapped always opens a new case, and "field mapping
+  does not guarantee grouping".
+
+Two traps. User name grouping excludes "known service accounts", and our identity
+harness runs Linux steps as service accounts; whether `www-data` or `svc-backup`
+count is PM-INC-08. And nothing in the corpus enforces the floor: 15 card BIOCs are
+Informational and 1 ABIOC is Low (including SIM-MP-013, which requires its planes
+under one incident), and the 209 card correlation rules carry no severity at all.
+When you import a scenario's correlation rule for a POV, set it to Medium or higher
+and map its host and user fields.
+
+- **Would change if answered:** [PM-INC-05](LEDGER.md#pm-inc-05) (P0, provisional) · [PM-INC-08](LEDGER.md#pm-inc-08) (P1, open) · [PM-INC-06](LEDGER.md#pm-inc-06) (P1, open) · [PM-INC-07](LEDGER.md#pm-inc-07) (P1, open) · [PM-COR-04](LEDGER.md#pm-cor-04) (P1, open)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/customize-cases-and-issues/optimize-case-grouping-in-correlations · `detection_scanner/ttps/TTP-2026-0123-sim-mp-013.json` · `scenarios/_schema.yml:385`
+
+### FAQ-INC-03
+
+**Does an alert below Medium still count as a detection?**
+
+*Basis: lab observation · reviewed 2026-11-10*
+
+Yes, as a detection. Low alerts are returned when the connector pulls alerts (the
+lab's built-in Low alerts were), and the matcher reads alerts, not cases, so a Low
+alert can still mark a Result observed and give it an MTTD. The XQL `issues` dataset
+leaves out INFO issues, so query an Informational alert through the API, not
+through that dataset.
+
+It fails only the checks that need a case: the correlation-rate KPI and
+`required_planes_in_incident`, because it never sits under one. A miss on those
+checks can therefore mean "below the grouping floor", not "not detected".
+PM-INC-05 decides whether that reading becomes its own `not_groupable` outcome.
+
+- **Would change if answered:** [PM-INC-05](LEDGER.md#pm-inc-05) (P0, provisional) · [PM-INC-02](LEDGER.md#pm-inc-02) (P1, provisional)
+- **Sources:** `core/connectors/matcher.py` · `core/connectors/measures.py:124`
+
+### FAQ-INC-04
+
+**What happens when I rerun a scenario?**
+
+*Basis: documented (public source) · reviewed 2026-11-10*
+
+- **BIOC, IOC and correlation issues are raised again.** Default deduplication
+  covers only WildFire and Local Analysis issues, over 1 hour. Correlation
+  suppression is off by default; when it is enabled, it defaults to 1 hour and can
+  be set up to 1 day.
+- **Built-in analytics may stay silent.** Each analytics alert has a Deduplication
+  Period, the time "in which additional issues for the same activity or behavior
+  are suppressed"; its value is on the alert's page (PM-ANA-05).
+- **The rerun joins the old case only while that case takes issues:** within 14
+  days of its last issue, 30 days of its creation, and under 1,000 issues.
+- **Volume can switch a rule off.** BIOC rules, correlation rules and analytics
+  detectors are disabled at 5000 or more hits in 24 hours. A BIOC that hits more than
+  100 endpoints over 72 hours gets an automatic exception on PROCESS SHA256.
+
+Whether ABIOCs learn a repeated scenario as normal is unknown (PM-ABI-04).
+
+- **Would change if answered:** [PM-ANA-05](LEDGER.md#pm-ana-05) (P1, open) · [PM-ABI-04](LEDGER.md#pm-abi-04) (P1, open) · [PM-COR-05](LEDGER.md#pm-cor-05) (P1, provisional) · [PM-BIO-05](LEDGER.md#pm-bio-05) (P1, provisional)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/investigate-issues/issue-deduplication · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/investigation-and-response/overview-of-cases/case-thresholds · https://cortex-docs.paloaltonetworks.com/cortex-xsiam/detect-investigate-and-respond-to-threats/threat-management/detection-rules/what-are-detection-rules/whats-a-bioc/create-a-bioc-rule
+
+## Alert records and read-back
+
+### FAQ-ALR-01
+
+**The alert is in the console, but reconcile matched nothing. Why?**
+
+*Basis: lab observation · reviewed 2026-11-10*
+
+The matcher credits a Result only from fields it can read. Check these four:
+
+1. **Rule id.** *(lab, documented)* The connector reads `matching_service_rule_id`,
+   `detector_id`, `bioc_id` or `rule_id`. Lab alerts carried none of them, so
+   matching fell back to technique plus name. The Issues API documents the
+   identifier as `detection.rule_id`, which the connector does not read (PM-ALR-01).
+2. **Technique.** *(lab)* Built-in detectors carry their own technique: the lab's
+   alert on `useradd` carried T1003 where the scenario declared T1136.001
+   (PM-ALR-03).
+3. **Source family.** *(checked in code)* The matcher refuses a pair whose families
+   differ. On the Issues API's `detection.method` codes it would misread
+   ANALYTICS_BIOC as `analytics`, so an ABIOC expectation could never match it, and
+   it reads TRAPS (agent prevention) as nothing (PM-ALR-04).
+4. **Time.** *(our code, unknown latency)* The default match window is 3600 s.
+   Scheduled correlation rules run on 10-minute boundaries or slower, and which
+   alert timestamp is the detection time is PM-ALR-02.
+
+- **Would change if answered:** [PM-ALR-01](LEDGER.md#pm-alr-01) (P0, provisional) · [PM-ALR-03](LEDGER.md#pm-alr-03) (P1, open) · [PM-ALR-04](LEDGER.md#pm-alr-04) (P1, provisional) · [PM-ALR-02](LEDGER.md#pm-alr-02) (P0, provisional) · [PM-ALR-05](LEDGER.md#pm-alr-05) (P1, provisional)
+- **Sources:** https://cortex-docs.paloaltonetworks.com/xsiam-api/issues-apis/issues · `core/connectors/xsiam.py:400` · `core/connectors/matcher.py:42`
