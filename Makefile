@@ -6,10 +6,13 @@
 #   make down      — stop SimCore
 #   make build     — build the production simcore image
 #   make test      — backend (UTC + non-UTC pass) + agent + ui suites (the three code-test gates)
-#   make validate  — detection corpus validity + export determinism
-#   make ci        — everything CI runs, in one shot
+#   make validate  — the detection / refs / adapter / shelf / ground-truth gates and
+#                    the PowerShell 5.1 floor gate (needs pwsh 7)
+#   make ci        — everything CI runs on Linux, in one shot (not the windows job)
 #
 # Override the image tag with `make IMAGE=foo:bar build`.
+# No PowerShell 7 on this host: CORTEXSIM_SKIP_POWERSHELL_GATE=1 skips that one
+# gate inside `validate` / `ci`, loudly. It is never a pass and CI never sets it.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -27,7 +30,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc ground-truth check-ground-truth \
-        wiki wiki-check ci clean launch-preflight check-powershell
+        wiki wiki-check ci clean launch-preflight check-powershell skip-powershell-gate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -176,9 +179,40 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
 
+# The PowerShell floor gate inside the aggregates. `make validate` and `make ci`
+# run `check-powershell`, which needs pwsh 7, a Go toolchain and a Python with
+# core/requirements.txt. With no pwsh it FAILS: a gate that quietly does not
+# run reads exactly like one that passed.
+#
+# CORTEXSIM_SKIP_POWERSHELL_GATE=1 is the ONE named opt-out, for a host that
+# cannot have PowerShell 7. It applies to the aggregates only (`make
+# check-powershell` itself never skips), it is said where the gate would have
+# run and again as the aggregate's last line, and no CI workflow may set it
+# (tests/ci/test_make_powershell_gate.py). Any value other than exactly 1 runs
+# the gate.
+ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
+POWERSHELL_GATE := skip-powershell-gate
+else
+POWERSHELL_GATE := check-powershell
+endif
+
+# check-powershell is LAST on purpose: it is the only gate here with host
+# prerequisites beyond docker and python, and it must not stand in front of the
+# older gates when one of them is missing.
+#
 # check-lab-ready is here because the refs job runs it: a gate CI has and this
 # aggregate lacks makes `make validate` green on a tree CI will turn red.
-validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth check-lab-ready ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth + lab-readiness gates
+validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth check-lab-ready $(POWERSHELL_GATE) ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth + lab-readiness + PowerShell 5.1 floor gates
+ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
+	@echo "validate: finished with check-powershell SKIPPED (CORTEXSIM_SKIP_POWERSHELL_GATE=1). Not a full pass."
+endif
+
+skip-powershell-gate:
+	@echo "=============================================================================="
+	@echo "check-powershell SKIPPED: CORTEXSIM_SKIP_POWERSHELL_GATE=1"
+	@echo "No emitted PowerShell (Windows installer, uninstaller, push bundles, beacon"
+	@echo "steps) was rendered or parsed on this host. This is NOT a pass."
+	@echo "=============================================================================="
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -385,8 +419,12 @@ check-lab-ready: lab-ready ## Determinism gate: regenerate the manifest and fail
 # -----------------------------------------------------------------------------
 # Everything
 # -----------------------------------------------------------------------------
-ci: test validate e2e-tierc ## Run every CI gate (backend + agent + ui + detection + adapters + e2e-tierc)
+ci: test validate e2e-tierc ## Run every CI gate (backend + agent + ui + detection + adapters + powershell + e2e-tierc)
+ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
+	@echo "CI gates passed EXCEPT check-powershell, which was SKIPPED (CORTEXSIM_SKIP_POWERSHELL_GATE=1)."
+else
 	@echo "All CI gates passed."
+endif
 
 # Gate B (dev -> main). Not part of `ci`: it asserts release-time facts (branch
 # topology, version coherence, no abandoned branches) that are meaningless on a
