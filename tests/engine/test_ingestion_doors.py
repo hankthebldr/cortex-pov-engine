@@ -80,3 +80,18 @@ def test_validate_rejects_malformed(monkeypatch):
         monkeypatch.setattr(doors, "DOORS", (good, bad))
         with pytest.raises(ValueError):
             doors._validate()
+
+
+#: Pack folders the 2026-11-10 tenant-setup research states (marketplace appendix).
+RESEARCH_PACK_FOLDERS = frozenset({
+    "CiscoASA", "VMwareESXi", "MicrosoftWindowsEvents", "Kubernetes",
+    "IvantiConnectSecure", "Office365", "MicrosoftEntraID", "ProofpointTAP", "Koi",
+})
+_PACK_PREFIX = "https://github.com/demisto/content/tree/master/Packs/"
+
+
+def test_pack_evidence_folders_are_research_stated():
+    folders = {d.evidence[len(_PACK_PREFIX):] for d in DOORS
+               if d.evidence.startswith(_PACK_PREFIX)}
+    assert folders, "expected pack evidence on some doors"
+    assert folders <= RESEARCH_PACK_FOLDERS, folders - RESEARCH_PACK_FOLDERS

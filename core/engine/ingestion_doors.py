@@ -42,48 +42,50 @@ _NGFW_INGEST = (
     _DS + "palo-alto-networks-integrations/next-generation-firewall/"
     "ingest-data-from-next-generation-firewall"
 )
+# Every evidence URL below is stated in the 2026-11-10 tenant-setup research
+# (its appendices or Sources lists), or fetched by the controller (_NGFW_INGEST).
 _HTTP_COLLECTOR = (
-    _VENDOR + "http-log-collector/set-up-an-http-log-collector-to-receive-logs"
+    _VENDOR + "http-log-collector/set-up-an-http-log-collector-to-receive-logs.md"
 )
-_OKTA_INGEST = _VENDOR + "okta/ingest-logs-and-data-from-okta"
+_OKTA_INGEST = (
+    _CORTEX_DOCS + "cortex-xdr/configure-cortex-xdr/cortex-xdr-data-sources/"
+    "vendor-specific-data-sources/okta/ingest-logs-and-data-from-okta"
+)
 _XDR_LINUX = (
-    _CORTEX_DOCS + "cortex-xdr-agent/9.1/cortex-xdr-agent-for-linux/"
-    "cortex-xdr-agent-for-linux-requirements.md"
+    "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/"
+    "Cortex-XDR-5.x-Documentation/Pre-installation-steps-for-Cortex-XDR-agents"
 )
+# The XTH requirement is stated on the Alerts-by-data-source page for the
+# Windows Event Collector (identity appendix).
+_XTH = _CORTEX_DOCS + "analytics-alerts/alerts-by-data-source/windows-event-collector.md"
 _AWS_AUDIT = (
-    _CORTEX_DOCS + "cortex-cloud-runtime-security/onboard-and-configure/"
-    "deployment-steps-and-checklist/cloud-service-provider-csp-onboarding/"
-    "amazon-web-services-cloud-onboarding/"
-    "cortex-cloud-and-aws-audit-log-collection-architecture"
+    "https://docs-cortex.paloaltonetworks.com/r/Cortex-CLOUD/"
+    "Cortex-Cloud-Runtime-Security-Documentation/"
+    "Cortex-Cloud-and-AWS-audit-log-collection-architecture"
 )
 _GCP_ONBOARD = (
-    _CORTEX_DOCS + "cortex-cloud-runtime-security/onboard-and-configure/"
-    "deployment-steps-and-checklist/cloud-service-provider-csp-onboarding/"
-    "google-cloud-platform-cloud-onboarding/how-to-onboard-google-cloud-platform"
+    "https://docs-cortex.paloaltonetworks.com/r/Cortex-CLOUD/"
+    "Cortex-Cloud-Runtime-Security-Documentation/How-to-onboard-Google-Cloud-Platform"
 )
 _AZURE_EVENT_HUB = (
     "https://docs-cortex.paloaltonetworks.com/r/Cortex-XDR/"
     "Cortex-XDR-5.x-Documentation/Ingest-logs-from-Microsoft-Azure-Event-Hub"
 )
 _PACKS = "https://github.com/demisto/content/tree/master/Packs/"
-_PROOFPOINT = "https://cortex.marketplace.pan.dev/marketplace/details/ProofpointTAP/"
+_PROOFPOINT = _PACKS + "ProofpointTAP"
 _PRISMA_BROWSER = (
     _DS + "palo-alto-networks-integrations/prisma-access-browser/"
     "ingest-logs-from-prisma-access-browser.md"
 )
-_XPANSE = (
-    _CORTEX_DOCS + "cortex-xsiam/detect-investigate-and-respond-to-threats/"
-    "attack-surface-management.md"
-)
+_XPANSE = _CORTEX_DOCS + "cortex-xpanse/attack-surface-rules.md"
 _TIM = (
     _CORTEX_DOCS + "cortex-xsiam/detect-investigate-and-respond-to-threats/"
     "threat-management/threat-intel-management.md"
 )
-_AIRS = (
-    "https://docs.paloaltonetworks.com/prisma-airs/getting-started/"
-    "ai-runtime-security-overview"
-)
-_KOI = _VENDOR + "koi/koi.md"
+_AIRS = _DS + "palo-alto-networks-integrations/strata-cloud-manager.md"
+_KOI = _PACKS + "Koi"
+# D1 in the research (marketplace appendix): the datasets-and-presets page.
+# Used where no pack or product page is stated for a dataset.
 _DATASETS = (
     _CORTEX_DOCS + "cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/"
     "get-started-with-xql/datasets-and-presets"
@@ -107,7 +109,7 @@ class Door:
 DOORS: tuple[Door, ...] = (
     Door("xdr_agent", "XDR agent", "agent", ("xdr_data",), evidence=_XDR_LINUX),
     Door("xdr_agent_xth", "XDR agent with threat hunting", "agent", ("xdr_data",),
-         needs_attestation_of="xth", evidence=_XDR_LINUX),
+         needs_attestation_of="xth", evidence=_XTH),
     Door("ngfw_traffic", "NGFW traffic logs", "tenant", ("panw_ngfw_traffic_raw",),
          evidence=_NGFW_INGEST, wizard="firewall"),
     Door("ngfw_threat", "NGFW threat logs", "tenant", ("panw_ngfw_threat_raw",),
@@ -126,13 +128,13 @@ DOORS: tuple[Door, ...] = (
          provider_filter="AZURE", evidence=_AZURE_EVENT_HUB),
     Door("saas_okta", "Okta", "tenant", ("okta_sso_raw",), evidence=_OKTA_INGEST),
     Door("saas_entra", "Microsoft Entra ID", "tenant", ("msft_azure_ad_raw",),
-         evidence=_PACKS + "AzureActiveDirectory"),
+         evidence=_PACKS + "MicrosoftEntraID"),
     Door("saas_o365", "Microsoft 365", "tenant",
          ("msft_o365_exchange_online_raw", "msft_o365_sharepoint_online_raw"),
          evidence=_PACKS + "Office365"),
     Door("saas_google_workspace", "Google Workspace", "tenant",
          ("google_workspace_login_raw", "google_workspace_admin_console_raw"),
-         evidence=_PACKS + "GoogleWorkspace"),
+         evidence=_DATASETS),
     Door("windows_events", "Windows events", "tenant", ("microsoft_windows_raw",),
          evidence=_PACKS + "MicrosoftWindowsEvents"),
     Door("syslog_cisco_asa", "Cisco ASA syslog", "tenant", ("cisco_asa_raw",),
