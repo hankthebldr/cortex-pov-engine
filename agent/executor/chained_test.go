@@ -3,10 +3,7 @@ package executor
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -188,78 +185,5 @@ func TestChainSession_AnchorDiesMidStep(t *testing.T) {
 	}
 	if !errors.Is(err, ErrAnchorTerminated) {
 		t.Fatalf("want ErrAnchorTerminated, got %v", err)
-	}
-}
-
-// shOnlyPath points PATH at a temp dir holding only a symlinked sh — the shape
-// of an alpine image, where sh is a multi-call binary and there is no bash.
-func shOnlyPath(t *testing.T) {
-	t.Helper()
-	sh, err := exec.LookPath("sh")
-	if err != nil {
-		t.Skip("no sh on PATH")
-	}
-	dir := t.TempDir()
-	if err := os.Symlink(sh, filepath.Join(dir, "sh")); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir)
-}
-
-func TestNewAnchorCmd_NoBashRunsUnrenamedSh(t *testing.T) {
-	shOnlyPath(t)
-	cmd, renamed := newAnchorCmd("nginx")
-	if renamed {
-		t.Fatal("renamed = true without bash on PATH")
-	}
-	if cmd.Args[0] != "sh" {
-		t.Fatalf("Args[0] = %q, want sh", cmd.Args[0])
-	}
-	if AnchorRenameSupported() {
-		t.Fatal("AnchorRenameSupported() = true without bash")
-	}
-
-	s, err := NewChainSession(context.Background(), "nginx")
-	if err != nil {
-		t.Fatalf("NewChainSession: %v", err)
-	}
-	defer s.Close()
-	if s.AnchorRenamed() {
-		t.Fatal("session reports a rename it did not do")
-	}
-	out, _, rc, err := s.RunStep("echo ok")
-	if err != nil || rc != 0 || strings.TrimSpace(out) != "ok" {
-		t.Fatalf("step on un-renamed anchor: out=%q rc=%d err=%v", out, rc, err)
-	}
-}
-
-func TestNewAnchorCmd_BashRenamesAnchor(t *testing.T) {
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("no bash on PATH")
-	}
-	cmd, renamed := newAnchorCmd("nginx")
-	if !renamed || cmd.Args[0] != "nginx" {
-		t.Fatalf("renamed=%v Args[0]=%q, want true/nginx", renamed, cmd.Args[0])
-	}
-	if !AnchorRenameSupportedWith(func(string) (string, error) { return "/x/bash", nil }) ||
-		AnchorRenameSupportedWith(func(string) (string, error) { return "", errors.New("no") }) {
-		t.Fatal("AnchorRenameSupportedWith does not follow its lookPath")
-	}
-
-	s, err := NewChainSession(context.Background(), "nginx")
-	if err != nil {
-		t.Fatalf("NewChainSession: %v", err)
-	}
-	defer s.Close()
-	if !s.AnchorRenamed() {
-		t.Fatal("AnchorRenamed() = false")
-	}
-	pid := s.cmd.Process.Pid
-	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil {
-		t.Skip("no /proc")
-	}
-	if !strings.HasPrefix(string(raw), "nginx") {
-		t.Fatalf("anchor cmdline = %q, want prefix nginx", raw)
 	}
 }

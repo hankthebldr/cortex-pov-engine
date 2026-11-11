@@ -174,18 +174,48 @@ elif command -v apk >/dev/null 2>&1; then
 else
   pf "no supported package manager (apt-get or apk)"
 fi
+@@ACCOUNT_LOOP@@
+if [ "$PREP_BAD" = 0 ]; then echo PREPARE_OK >> "$STATUS"; fi
+"""
+
+# alpine ships some of these names as a GROUP with no user (www-data, gid 82), and
+# useradd refuses to create a user whose name is an existing group unless told to
+# join it; so join the group when it exists, otherwise create both.
+_ACCOUNT_LOOP = """has_group() {
+  if command -v getent >/dev/null 2>&1; then
+    getent group "$1" >/dev/null 2>&1
+  else
+    grep -q "^$1:" /etc/group 2>/dev/null
+  fi
+}
 for u in @@ACCOUNTS@@; do
   id "$u" >/dev/null 2>&1 && continue
   if command -v useradd >/dev/null 2>&1; then
-    useradd -m -s /bin/sh "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    if has_group "$u"; then
+      useradd -m -s /bin/sh -g "$u" "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    else
+      useradd -m -s /bin/sh -U "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    fi
   elif command -v adduser >/dev/null 2>&1; then
-    adduser -D -s /bin/sh "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    if has_group "$u"; then
+      adduser -D -s /bin/sh -G "$u" "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    else
+      adduser -D -s /bin/sh "$u" >/dev/null 2>&1 || pf "could not create account $u"
+    fi
   else
     pf "could not create account $u"
   fi
 done
-if [ "$PREP_BAD" = 0 ]; then echo PREPARE_OK >> "$STATUS"; fi
 """
+
+
+def account_creation_fragment(accounts: list[str]) -> str:
+    """The prepare stage's account loop; expects ``pf`` to be defined."""
+    for name in accounts:
+        if not _SAFE_WORD.match(name):
+            raise ValueError(f"service account {name!r} is not shell-safe")
+    return _render(_ACCOUNT_LOOP, ACCOUNTS=" ".join(accounts))
+
 
 _PREPARE_NONE = """STATUS=/cortexsim/prepare.status
 echo PREPARE_SKIPPED > "$STATUS"
@@ -213,6 +243,17 @@ pid=""
 TERMED=0
 trap 'TERMED=1; if [ -n "$pid" ]; then kill -TERM $pid 2>/dev/null; else exit 143; fi' TERM INT
 @@PREPARE@@
+# Optional Secret key artifact-token: the payload-shelf token, handed to the beacon
+# through its environment only (never argv, never echoed).
+ART_TOKEN_FILE="${CORTEXSIM_SECRET_DIR:-/secret}/artifact-token"
+if [ -s "$ART_TOKEN_FILE" ]; then
+  CORTEXSIM_ARTIFACT_TOKEN="$(cat "$ART_TOKEN_FILE")"
+  if [ -n "$CORTEXSIM_ARTIFACT_TOKEN" ]; then
+    export CORTEXSIM_ARTIFACT_TOKEN
+  else
+    unset CORTEXSIM_ARTIFACT_TOKEN
+  fi
+fi
 AGENT="${CORTEXSIM_AGENT_BIN:-/cortexsim/cortexsim-agent}"
 "$AGENT" --server "$(cat /secret/server)" --enroll-token-file /secret/token --state-dir /cortexsim/state --expires-at @@EXPIRES@@ --posture-profile @@PROFILE@@ --prepare-status-file /cortexsim/prepare.status --subreaper --long-poll 30 --stream-output &
 pid=$!
@@ -246,11 +287,8 @@ def start_script(*, arch: str, prepare: str, expires_at: str, profile: str) -> s
     if not _SAFE_WORD.match(expires_at):
         raise ValueError(f"expires_at {expires_at!r} is not shell-safe")
     if prepare == "packages":
-        accounts = identity_spec.service_accounts()
-        for name in accounts:
-            if not _SAFE_WORD.match(name):
-                raise ValueError(f"service account {name!r} is not shell-safe")
-        block = _render(_PREPARE_PACKAGES, ACCOUNTS=" ".join(accounts))
+        loop = account_creation_fragment(identity_spec.service_accounts())
+        block = _render(_PREPARE_PACKAGES, ACCOUNT_LOOP=loop.rstrip("\n"))
     else:
         block = _PREPARE_NONE
     return _render(
@@ -278,6 +316,16 @@ _INIT_RESOURCES = {
 _KUBECTL_COPY = (
     "mkdir -p /cortexsim/bin && cp \"$(command -v kubectl)\" /cortexsim/bin/kubectl "
     "|| { echo KUBECTL_COPY_FAILED > /dev/termination-log; exit %d; }" % km.EXIT_NEVER_RAN
+)
+
+_NEUTRALISED = "cortexsim.io/neutralised"
+
+#: Every cluster-scoped object ANY agent profile can emit. The reaper deletes,
+#: and its ClusterRole pins, this whole set whatever the current profile, so a
+#: downgrade cannot strand a binding the current generation no longer names.
+AGENT_CLUSTER_SCOPED: tuple[tuple[str, str], ...] = (
+    ("clusterroles", AGENT_APP),
+    ("clusterrolebindings", AGENT_APP),
 )
 
 _CARRIER_OBJECT = {
@@ -383,18 +431,26 @@ def build_agent_objects(
         "automountServiceAccountToken": posture.service_account.automount_token,
     })
 
-    cluster_scoped: list[tuple[str, str]] = []
-    if posture.service_account.cluster_role_rules:
-        cr_findings, crb_findings = carried("clusterrole"), carried("clusterrolebinding")
-        objects.append({
-            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
-            "metadata": {
-                "name": AGENT_APP,
-                "labels": {**base, **km._finding_labels(cr_findings)},
-                "annotations": km._finding_annotations(cr_findings),
+    # Every profile emits the agent ClusterRole: on a profile with no cluster rules
+    # it is empty and marked neutralised, so re-applying a lower profile over a
+    # higher one overwrites the wildcard role in place (`kubectl apply` does not
+    # prune). The binding is emitted only when there are rules; a leftover binding
+    # then points at a role that grants nothing, and the reaper removes it.
+    cr_findings, crb_findings = carried("clusterrole"), carried("clusterrolebinding")
+    cluster_rules = posture.service_account.cluster_role_rules
+    objects.append({
+        "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+        "metadata": {
+            "name": AGENT_APP,
+            "labels": {**base, **km._finding_labels(cr_findings)},
+            "annotations": {
+                **km._finding_annotations(cr_findings),
+                **({} if cluster_rules else {_NEUTRALISED: "true"}),
             },
-            "rules": [km._rbac(r) for r in posture.service_account.cluster_role_rules],
-        })
+        },
+        "rules": [km._rbac(r) for r in cluster_rules],
+    })
+    if cluster_rules:
         objects.append({
             "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
             "metadata": {
@@ -408,7 +464,6 @@ def build_agent_objects(
             },
             "subjects": [{"kind": "ServiceAccount", "name": AGENT_APP, "namespace": ns}],
         })
-        cluster_scoped = [("clusterroles", AGENT_APP), ("clusterrolebindings", AGENT_APP)]
 
     objects.append({
         "apiVersion": "v1", "kind": "ConfigMap",
@@ -442,10 +497,15 @@ def build_agent_objects(
     })
 
     # The reaper deletes the agent namespace itself (the push path relies on the
-    # same call), plus exactly the cluster-scoped objects emitted above.
-    objects.extend(km._reaper(
-        scenario_id=AGENT_SCENARIO_ID, sid_lower="agent", ns=ns, base=base,
-        ttl=ttl_seconds, image=km.DEFAULT_REAPER_IMAGE, cluster_scoped=cluster_scoped,
+    # same call), plus every cluster-scoped name any agent profile emits. Here it
+    # runs as a Deployment, not the push path's Job: see _reaper_as_deployment.
+    objects.extend(_reaper_as_deployment(
+        km._reaper(
+            scenario_id=AGENT_SCENARIO_ID, sid_lower="agent", ns=ns, base=base,
+            ttl=ttl_seconds, image=km.DEFAULT_REAPER_IMAGE,
+            cluster_scoped=list(AGENT_CLUSTER_SCOPED),
+        ),
+        expires_epoch=int(now.timestamp()) + ttl_seconds,
     ))
 
     # Every object expires and names who authorised it, reaper objects included.
@@ -453,6 +513,91 @@ def build_agent_objects(
         meta = obj["metadata"]
         meta["annotations"] = {**common, **meta.get("annotations", {})}
     return objects
+
+
+# The push path's reaper waits a RELATIVE ttl. In a Job that ran once that was the
+# expiry; in a Deployment a restarted reaper would start the clock again. This
+# replaces exactly that wait with one to the absolute expiry, using only what the
+# pinned busybox image is known to carry (sh, date +%s, sleep).
+_REAPER_RELATIVE_WAIT = (
+    'echo "[cortexsim-reaper] sleeping ${TTL}s before reaping ${NS}"\n'
+    'sleep "${TTL}"\n'
+)
+_REAPER_ABSOLUTE_WAIT = """\
+echo "[cortexsim-reaper] waiting until epoch ${EXPIRES_AT_EPOCH} before reaping ${NS}"
+while :; do
+  NOW_S=$(date +%s 2>/dev/null)
+  case "$NOW_S" in
+    ''|*[!0-9]*)
+      # No relative fallback: it would restart on every pod restart, deferring
+      # the reap without bound. A visible CrashLoop is the better failure.
+      echo "[cortexsim-reaper] REAPER_CLOCK_UNAVAILABLE: date +%s gave no epoch seconds; cannot wait to the expiry" >&2
+      exit 70 ;;
+  esac
+  LEFT=$((EXPIRES_AT_EPOCH - NOW_S))
+  if [ "$LEFT" -le 0 ]; then break; fi
+  # Short naps, so a clock step or a long suspend cannot overshoot by hours.
+  if [ "$LEFT" -gt 300 ]; then sleep 300; else sleep "$LEFT"; fi
+done
+"""
+
+
+def _reaper_as_deployment(reaper: list[dict[str, Any]], *, expires_epoch: int) -> list[dict[str, Any]]:
+    """The push path's reaper objects, with its Job turned into a Deployment.
+
+    A Job's ``spec.template`` is immutable and the reaper's template changes with
+    every generation (the expiry), so re-applying the agent manifest — the path
+    after a SimCore upgrade or a profile change — was rejected (kind run, D1).
+    A Deployment's template is mutable. Name, ServiceAccount, pinned RBAC, image
+    and script are kept; only the wait becomes absolute, because a Deployment
+    restarts its pod where a ``backoffLimit: 0`` Job did not.
+    """
+    jobs = [o for o in reaper if o["kind"] == "Job"]
+    if len(jobs) != 1:
+        raise RuntimeError(f"expected exactly one reaper Job from km._reaper, got {len(jobs)}")
+    job = jobs[0]
+    name = job["metadata"]["name"]
+    # A 1 s grace period: a Recreate rollout must not leave the old-expiry pod
+    # alive for the default 30 s.
+    pod_spec = {**job["spec"]["template"]["spec"], "restartPolicy": "Always",
+                "terminationGracePeriodSeconds": 1}
+    (container,) = pod_spec["containers"]
+    (script,) = container["args"]
+    if script.count(_REAPER_RELATIVE_WAIT) != 1:
+        raise RuntimeError("the reaper script no longer has the relative wait this replaces")
+    container = {
+        **container,
+        "args": [script.replace(_REAPER_RELATIVE_WAIT, _REAPER_ABSOLUTE_WAIT)],
+        "env": [*container["env"], {"name": "EXPIRES_AT_EPOCH", "value": str(expires_epoch)}],
+    }
+    pod_spec["containers"] = [container]
+    selector = {"app.kubernetes.io/name": name, _AGENT_LABEL: "true"}
+    deployment = {
+        "apiVersion": "apps/v1", "kind": "Deployment",
+        "metadata": dict(job["metadata"]),
+        "spec": {
+            "replicas": 1,
+            # Never two reapers at once, never a gap filled by a stale one.
+            "strategy": {"type": "Recreate"},
+            "selector": {"matchLabels": selector},
+            "template": {
+                "metadata": {"labels": {**job["spec"]["template"]["metadata"]["labels"], **selector}},
+                "spec": pod_spec,
+            },
+        },
+    }
+    return [deployment if o is job else o for o in reaper]
+
+
+#: Ready means enrolled: the beacon writes its id only after SimCore assigned it,
+#: so a pod still installing packages or retrying enrollment is not Ready. No
+#: liveness or startup probe: either would kill a slow package install.
+_READINESS_PROBE = {
+    "exec": {"command": ["/bin/sh", "-c", "test -s /cortexsim/state/agent-id"]},
+    "periodSeconds": 5,
+    "timeoutSeconds": 2,
+    "failureThreshold": 3,
+}
 
 
 def _agent_pod_spec(posture: ClusterPosture, *, image: str) -> dict[str, Any]:
@@ -518,6 +663,7 @@ def _agent_pod_spec(posture: ClusterPosture, *, image: str) -> dict[str, Any]:
         ],
         "securityContext": km._container_security_context(posture.security_context),
         "volumeMounts": [dict(state), dict(boot), dict(secret), *hp_mounts],
+        "readinessProbe": _READINESS_PROBE,
         **termination,
     }
     resources = km._resources_block(posture)
@@ -530,6 +676,8 @@ def _agent_pod_spec(posture: ClusterPosture, *, image: str) -> dict[str, Any]:
 def _agent_header(
     *,
     profile: str,
+    image: str,
+    prepare: str,
     posture: ClusterPosture,
     objects: list[dict[str, Any]],
     expires: str,
@@ -545,6 +693,10 @@ def _agent_header(
     out = [rule, "# CortexSim Kubernetes Container Agent\n", rule]
     out.append(f"# Profile    : {profile}   Risk tier: {posture.risk_tier()}\n")
     out.append(f"# Namespace  : {AGENT_NAMESPACE}   Expires: {expires}\n")
+    # `image` passed validate_image (no whitespace, no newline, no '#'), so it
+    # cannot break this comment line.
+    out.append(f"# Image      : {image}\n")
+    out.append(f"# Prepare    : {prepare}\n")
     out.append(f"# Consent    : {', '.join(granted) if granted else '(none required)'}\n")
     out.append(f"# Authorized : {authorized_by or '(not recorded)'}\n")
     out.append("#\n")
@@ -553,6 +705,7 @@ def _agent_header(
         "# Secret names. This file carries no token and no Secret object.\n"
     )
     out.append("# After a SimCore upgrade that changes the beacon, restarted pods exit 78 until this manifest is re-applied.\n")
+    out.append("# Changing profile by re-applying is supported; a downgrade strips the cluster role's rules immediately and the binding is removed at expiry or by `kubectl delete clusterrolebinding cortexsim-agent`.\n")
     out.append("#\n")
     if findings:
         out.append(f"# PLANTED POSTURE FINDINGS ({len(findings)})\n")
@@ -563,8 +716,14 @@ def _agent_header(
         out.append("# PLANTED POSTURE FINDINGS: none beyond Kubernetes defaults\n")
     out.append("#\n")
     out.append(
-        f"# A reaper Job deletes namespace {AGENT_NAMESPACE} and the cluster-scoped objects\n"
+        f"# A reaper Deployment deletes namespace {AGENT_NAMESPACE} and the cluster-scoped objects\n"
         "# above at expiry. It is a safety net: delete the manifest yourself when done.\n"
+    )
+    out.append(
+        f"# REMOVAL: delete cluster-scoped objects FIRST:  "
+        f"kubectl delete clusterrole,clusterrolebinding -l {_AGENT_LABEL}=true\n"
+        f"#          then:  kubectl delete namespace {AGENT_NAMESPACE}   "
+        "(deleting only the namespace leaves the ClusterRole/Binding behind)\n"
     )
     out.append(rule)
     return "".join(out)
@@ -602,7 +761,7 @@ def generate_agent_manifest(
         authorized_by=authorized_by,
     )
     header = _agent_header(
-        profile=profile, posture=posture, objects=objects,
+        profile=profile, image=image, prepare=prepare, posture=posture, objects=objects,
         expires=km._iso(now.timestamp() + ttl_seconds),
         authorized_by=authorized_by, consent=consent,
     )

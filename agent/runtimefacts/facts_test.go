@@ -266,3 +266,61 @@ func TestCollectCapsListsAndDropsOverlongItems(t *testing.T) {
 		t.Errorf("Tools = %v, want only the 64-char item", g.Tools)
 	}
 }
+
+// AnchorRename is the executor's anchor rule over Collect's injected seams: a
+// single-purpose sh is renamed; a busybox/toybox sh needs bash.
+func TestCollectAnchorRenameFollowsTheShRule(t *testing.T) {
+	links := func(target string) func(string) (string, error) {
+		return func(p string) (string, error) {
+			if p == "/usr/bin/sh" {
+				return target, nil
+			}
+			return p, nil
+		}
+	}
+	cases := []struct {
+		name    string
+		present []string
+		target  string
+		want    bool
+	}{
+		{"dash sh without bash", []string{"sh"}, "/usr/bin/dash", true},
+		{"busybox sh with bash", []string{"sh", "bash"}, "/bin/busybox", true},
+		{"busybox sh without bash", []string{"sh"}, "/bin/busybox", false},
+		{"toybox sh without bash", []string{"sh"}, "/system/bin/toybox", false},
+	}
+	for _, c := range cases {
+		f := Collect(Options{
+			Getenv: envFrom(nil), LookPath: lookPathIn(c.present...),
+			EvalSymlinks: links(c.target), ReadFile: readFileFrom(nil),
+			LookupUser: lookupUserIn(),
+		})
+		if f.AnchorRename != c.want {
+			t.Errorf("%s: AnchorRename = %v, want %v", c.name, f.AnchorRename, c.want)
+		}
+	}
+}
+
+// A hard-linked busybox sh has no symlink for EvalSymlinks to follow; the
+// executor's rule compares it with `busybox` on PATH through the SameFile seam.
+func TestCollectAnchorRenameDetectsHardLinkedBusybox(t *testing.T) {
+	same := func(a, b string) bool { return a == "/usr/bin/sh" && b == "/usr/bin/busybox" }
+	cases := []struct {
+		name    string
+		present []string
+		want    bool
+	}{
+		{"hard-linked busybox sh without bash", []string{"sh", "busybox"}, false},
+		{"hard-linked busybox sh with bash", []string{"sh", "busybox", "bash"}, true},
+	}
+	for _, c := range cases {
+		f := Collect(Options{
+			Getenv: envFrom(nil), LookPath: lookPathIn(c.present...),
+			EvalSymlinks: func(p string) (string, error) { return p, nil },
+			SameFile:     same, ReadFile: readFileFrom(nil), LookupUser: lookupUserIn(),
+		})
+		if f.AnchorRename != c.want {
+			t.Errorf("%s: AnchorRename = %v, want %v", c.name, f.AnchorRename, c.want)
+		}
+	}
+}

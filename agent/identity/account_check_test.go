@@ -49,13 +49,41 @@ func TestAccountChecker_ProbeCalledOnceAcrossThreeSteps(t *testing.T) {
 	}
 }
 
-func TestAccountChecker_HostileNameIsAbsentWithoutProbe(t *testing.T) {
-	chk := NewAccountChecker(
-		func(string) error { t.Fatal("lookup called for hostile name"); return nil },
-		func(string) ProbeResult { t.Fatal("probe called for hostile name"); return ProbePresent })
-	r := ResolveWith("linux", "x; rm -rf /", "root", chk)
-	if !r.Degraded() || r.Mode != "direct" {
-		t.Fatalf("hostile name not degraded: %+v", r)
+// A name outside the portable account-name shape is INCONCLUSIVE, not absent:
+// uppercase, user@domain and DOMAIN\user are real accounts on directory-joined
+// hosts, and runuser honoured them before the check existed. Such a name is not
+// probed (never handed to `id`), not cached, and read as present, so runuser
+// decides. The name is single-quoted into the wrapper (harness shellQuote), so
+// this cannot become shell; see TestWrappedUsernameIsOneArgvElement.
+func TestAccountChecker_NonPortableNameIsInconclusiveAndUnprobed(t *testing.T) {
+	for _, name := range []string{"Administrator", "jdoe@corp.example", `CORP\jdoe`, "x; rm -rf /", "a'b"} {
+		chk := NewAccountChecker(
+			func(string) error { t.Fatalf("lookup called for %q", name); return nil },
+			func(string) ProbeResult { t.Fatalf("probe called for %q", name); return ProbeAbsent })
+		for i := 0; i < 2; i++ {
+			if err := chk(name); err != nil {
+				t.Fatalf("%q read as absent: %v", name, err)
+			}
+			if r := ResolveWith("linux", name, "root", chk); r.Degraded() || r.Mode != "runuser" {
+				t.Fatalf("%q degraded: %+v", name, r)
+			}
+		}
+	}
+}
+
+// Two shapes stay absent without running anything: a leading '-' would be read
+// by runuser/su/sudo as an OPTION (the quoting stops shell injection, not option
+// injection), and a control character or NUL is no account on any host (Go's
+// exec refuses a NUL argument, which would read as a failed TTP).
+func TestAccountChecker_OptionOrControlCharNameIsAbsentWithoutProbe(t *testing.T) {
+	// A leading '#' is sudo's uid form: `sudo -u '#0'` is root.
+	for _, name := range []string{"-c", "--session-command=id", "#0", "#1000", "a\nb", "a\x00b", "a\tb", ""} {
+		chk := NewAccountChecker(
+			func(string) error { t.Fatalf("lookup called for %q", name); return nil },
+			func(string) ProbeResult { t.Fatalf("probe called for %q", name); return ProbePresent })
+		if err := chk(name); err == nil {
+			t.Fatalf("%q read as present", name)
+		}
 	}
 }
 

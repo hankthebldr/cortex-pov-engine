@@ -1,7 +1,7 @@
 # Kubernetes container agent — design
 
 **Date:** 2026-11-10
-**Status:** draft for review. Nothing is built.
+**Status:** Phase 1 built (branch `feature/agent-k8s-container-agent`, PR #171). Not tenant-verified. See "As built" at the end.
 **Branch:** `docs/agent-k8s-container-agent` (from `dev`)
 
 Decisions are marked **[Henry]** where Henry made them in the design
@@ -112,9 +112,11 @@ kubectl apply -f 'http://<simcore>:8888/api/agents/manifest'
 kubectl -n cortexsim-agent create secret generic cortexsim-enroll --from-literal=server=http://<simcore>:8888 --from-literal=token=cxs_…
 ```
 
-Either order works. The manifest emits the Namespace (with its Pod Security
-labels, as the push path does); a pod applied before the Secret exists waits in
-`CreateContainerConfigError` and starts when the Secret appears.
+Apply the manifest first, then create the Secret. The manifest emits the
+Namespace (with its Pod Security labels, as the push path does), so creating the
+Secret first fails with `NotFound`; a pod applied before the Secret exists waits
+and starts when the Secret appears. (Corrected in build: this section originally
+said either order works; see §13 item 12.)
 
 That is the `baseline` profile. **[Henry]** Gated profiles are the same single
 URL apply, with the profile and its consent keys in the query string (§5):
@@ -397,9 +399,18 @@ Small, and all in `agent/`:
    computed at generation (`ttl_seconds`, default and maximum 12h, the existing
    `ClusterPosture` bound), the way the push path stamps `expires`. It is
    absolute so a rescheduled pod does not get a fresh clock. The beacon stops
-   accepting tasks at expiry, and the push path's reaper Job (`_reaper`, with its
+   accepting tasks at expiry, and the push path's reaper (`_reaper`, with its
    pinned RBAC) is reused to delete the objects, so an expired privileged pod
    does not sit idle on the node. A longer POV re-applies a fresh manifest.
+   In the agent manifest the reaper runs as a `replicas: 1`, `Recreate`
+   Deployment built from `_reaper`'s Job (same name, ServiceAccount, RBAC,
+   image and script): a Job's pod template is immutable and the expiry changes
+   it on every generation, so a re-apply was rejected (kind run, 2026-11-10).
+   Because a Deployment restarts its pod, the reaper waits to the absolute
+   expiry (`EXPIRES_AT_EPOCH`, `date +%s`), not a relative `TTL`. The agent
+   container is Ready only once the beacon has stored its enrolled id
+   (readiness probe on `/cortexsim/state/agent-id`; no liveness or startup
+   probe, which would kill a slow package install).
    Henry's lab advice was "run about an hour, then tear down"; this enforces the
    upper bound.
 5. **Anchor shell.** `newAnchorCmd` starts `sh` with `argv[0]` rewritten to the
@@ -509,3 +520,96 @@ is *authored, not proven*, and `tenant-verified` stays **0**.
 2. Real miners and real malware samples carry over, and realism is the governing
    rule for all content (§6). The safeguards listed there are the author's calls
    and are Henry's to veto.
+
+---
+
+## 13 · As built (2026-11-10)
+
+Operator reference: `docs/reference/k8s-container-agent.md`. This section records
+only where the build differs from, or settled a **[call]** in, the text above.
+**Authored is not proven:** `tenant-verified` is 0, and no Cortex detection has
+been observed through this agent.
+
+**Plan-level decisions that refine the design.**
+
+1. **`kubectl` reaches the pod from a second init container**, not a package
+   manager: `alpine/kubectl:1.34.1` copies the binary to `/cortexsim/bin`.
+2. **`start.sh` is PID 1 and supervises the beacon as a child.** §7 item 3 said
+   the beacon is PID 1. The supervisor is needed so a pod can idle after expiry
+   (`LIFETIME_EXPIRED`) instead of crash-looping; the beacon is therefore a child
+   subreaper (`--subreaper`) that reaps orphans of finished steps. `start.sh`
+   idles only on a clean exit 0 with no TERM received, so a SIGTERM-driven exit 0
+   is a shutdown, not an expiry.
+
+**Settled during build and the first real-pod run.**
+
+3. **The agent manifest's reaper is a Deployment, not a Job.** A Job's pod template
+   is immutable and the expiry changes it per generation, so re-apply was rejected.
+   It waits to the absolute expiry and exits 70 if the clock is unusable (see §7
+   item 4).
+4. **Profile downgrade neutralises immediately.** Every profile emits ClusterRole
+   `cortexsim-agent`; one with no cluster rules is emitted with `rules: []` and
+   `cortexsim.io/neutralised`, so re-applying a lower profile strips the wildcard
+   grant at once. The ClusterRoleBinding is removed at expiry or by hand. The
+   reaper always targets the union of agent cluster-scoped names.
+5. **All profiles use the runtime's default capability set** (no `drop: ALL`),
+   because `apt-get` and `useradd`/`runuser` need it. Measured: no change to
+   findings or consent keys.
+6. **The pod is Ready only once enrolled** (readiness probe on the stored id);
+   there is no liveness or startup probe.
+7. **Absent-account degradation applies to every POSIX beacon**, not only
+   containers: one mechanism, visible as `IDENTITY NOT HONOURED`. An account is
+   absent only if `user.Lookup` fails **and** `id -u -- <name>` exits 1; an
+   inconclusive probe means present, and a non-portable name is not probed.
+   **[Henry may veto]** to restrict it to container facts.
+8. **Container agent with no `tools` key = roster unknown**, not empty: the tool
+   check is skipped and `AGENT_TOOL_ROSTER_UNKNOWN` warns.
+9. **The server coerces `null` `capabilities` / `interpreters` to `[]`** and the
+   beacon no longer sends null (a pod with no interpreter could not enroll).
+10. **The Secret's optional `artifact-token` key is read** (superseded; it was
+    reserved and unread in Tasks 1-11): `start.sh` exports a non-empty
+    `artifact-token` as `CORTEXSIM_ARTIFACT_TOKEN` before starting the beacon,
+    through the environment only, never argv. See item 16.
+11. **`SIM-CDR-015` stood in for `SIM-CDR-001`** in the real-pod posture stage,
+    because the payload-shelf gate fires before the agent gate for `SIM-CDR-001`.
+
+**Not in phase 1 / not proven:** `lab-privileged` has never been run anywhere. The
+final kind run observed, on debian, processes whose cmdline carried the anchor
+name while a step ran, and observed `child subreaper enabled` in the beacon log
+plus no zombies after a run; orphan **reparenting** itself was not asserted. That
+run predates the anchor-rule change in item 15, so the debian rename (now via `sh`,
+i.e. dash) and the alpine + `prepare=packages` bash path need re-confirmation in a
+pod. The console tab was not checked in a real browser; the opt-in CI step has not
+run on GitHub.
+
+12. **Secret ordering corrected.** §3 said either order works and that a pod
+    without the Secret waits in `CreateContainerConfigError`. The Namespace comes
+    from the manifest, so the Secret must follow the apply; and because the Secret
+    is a volume mount (`optional: false`), the waiting symptom is `Init:0/2` /
+    `ContainerCreating` with a `FailedMount` event (expected from the pod spec; not
+    observed in a cluster).
+13. **Removal.** Deleting the namespace alone leaves the agent and reaper
+    ClusterRole/ClusterRoleBinding behind (observed in the final kind run); remove
+    them first by label, then the namespace.
+14. **The launch gate applies only to agents the manifest deployed** (final review
+    I1). Every beacon now sends runtime facts, and one started in Docker, Podman
+    or a foreign pod reports `container: true` with no `--posture-profile`. The
+    gate runs only when `posture_profile` is a non-empty string; `""`, whitespace,
+    `None` or a missing key is a strict no-op (no refusal, no warning, no
+    `required_binaries` stamping), exactly as for `container: false`. A non-empty
+    profile outside the known three is still refused. Every agent target of a
+    composed run is gated on its own facts, and a refusal or warning names the
+    agent (`agent_id`).
+15. **The chained anchor shell is `sh` again on host beacons** (final review I2).
+    Tasks 1-11 made it `bash` wherever bash was on PATH, silently changing which
+    shell evaluates commands on Debian/Ubuntu hosts. Rule: the anchor is `sh` with
+    argv[0] rewritten, unless `sh` resolves (`LookPath` then `EvalSymlinks`) to
+    `busybox` or `toybox`; only then bash renamed if bash is on PATH, else `sh`
+    un-renamed and `ANCHOR NOT HONOURED`. `runtime_facts.anchor_rename` reports the
+    same rule. A hard-linked busybox `sh` is detected by comparing it with `busybox`/`toybox` on PATH (`os.SameFile`); any stat error falls back to the name rule.
+16. **`artifact-token` reaches the beacon** (final review S1): see item 10.
+17. **Expiry is checked before enrollment** (final review S2). A beacon whose
+    `--expires-at` has passed at startup logs `LIFETIME_EXPIRED` and exits 0
+    without redeeming the token or registering; `start.sh` then idles. A container
+    restart before expiry still reads Ready from the stored id before it has
+    re-registered (documented gap, unchanged).

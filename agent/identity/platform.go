@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/hankthebldr/cortexsim/agent/executor"
 )
@@ -90,20 +91,48 @@ const (
 
 var accountNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}\$?$`)
 
+// unusableAccountName is a name no host can hold or that a wrapper would read
+// as something else: empty, a leading '-' (runuser/su/sudo would take it as an
+// option; the wrapper's quoting stops shell injection, not option injection),
+// a leading '#' (sudo's uid form: `sudo -u '#0'` is root), or any control
+// character, NUL included.
+func unusableAccountName(name string) bool {
+	if name == "" || strings.HasPrefix(name, "-") || strings.HasPrefix(name, "#") {
+		return true
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
+
 // NewAccountChecker returns a check that reports an error only when BOTH lookup
 // fails AND probe positively says the account is absent. user.Lookup with CGO
 // off reads only /etc/passwd, so an account that exists through NSS (sssd, LDAP,
 // AD-joined hosts) fails it though runuser, which goes through PAM/NSS, would
 // honour it; a false "missing" changes actor attribution, a false "present" only
-// preserves the old behaviour. Names that are not plain account names are absent
-// without running anything (the name comes from a scenario). Conclusive probe
-// results are cached per name; an unknown result is not.
+// preserves the old behaviour. Conclusive probe results are cached per name; an
+// unknown result is not.
+//
+// The name comes from a scenario. A name outside the portable shape
+// (accountNameRE) is INCONCLUSIVE, not absent: uppercase, user@domain and
+// DOMAIN\user are real accounts on directory-joined hosts, and runuser honoured
+// them before this check existed. Such a name is not looked up, not probed
+// (never handed to `id`), not cached, and read as present, so runuser decides.
+// That is safe because buildWrappedCommand single-quotes the name into one argv
+// element (TestWrappedUsernameIsOneArgvElement). Only unusableAccountName names
+// are absent without running anything.
 func NewAccountChecker(lookup func(string) error, probe func(string) ProbeResult) func(string) error {
 	var mu sync.Mutex
 	cache := map[string]ProbeResult{}
 	return func(name string) error {
+		if unusableAccountName(name) {
+			return fmt.Errorf("account name %q is not a usable account name", name)
+		}
 		if !accountNameRE.MatchString(name) {
-			return fmt.Errorf("account name %q is not a valid account name", name)
+			return nil // inconclusive: runuser decides, as it did before the check
 		}
 		if lookup(name) == nil {
 			return nil

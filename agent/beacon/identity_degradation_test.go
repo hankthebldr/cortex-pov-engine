@@ -158,14 +158,24 @@ func TestResolve_ZeroValueClientFallsBackToHostResolver(t *testing.T) {
 	}
 }
 
+// shOnlyPathForBeacon is an alpine-shaped PATH: sh -> busybox, no bash. The
+// "busybox" is a script that execs the host sh, so the chain still runs; the
+// anchor rule reads only the resolved name.
 func shOnlyPathForBeacon(t *testing.T) {
 	t.Helper()
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("no sh on PATH")
 	}
+	if sh, err = filepath.EvalSymlinks(sh); err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
-	if err := os.Symlink(sh, filepath.Join(dir, "sh")); err != nil {
+	script := "#!" + sh + "\nexec " + sh + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "busybox"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "busybox"), filepath.Join(dir, "sh")); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
@@ -193,7 +203,7 @@ func TestExecuteTaskChained_AnchorNotHonouredIsRecordedOnce(t *testing.T) {
 	for _, o := range rs.find("POST", "/output") {
 		if strings.Contains(o.Body, "ANCHOR NOT HONOURED") {
 			n++
-			if !strings.Contains(o.Body, "requested nginx") || !strings.Contains(o.Body, "(no bash on PATH)") || !strings.Contains(o.Body, "'sh'") {
+			if !strings.Contains(o.Body, "requested nginx") || !strings.Contains(o.Body, "multi-call") || !strings.Contains(o.Body, "no bash on PATH") || !strings.Contains(o.Body, "'sh'") {
 				t.Errorf("notice text wrong:\n%s", o.Body)
 			}
 		}

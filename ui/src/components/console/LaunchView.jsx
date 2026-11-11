@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import useLaunchScenario from './useLaunchScenario.js'
 import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
+import LaunchGateNotice, { GATE_TOOL_ABSENT, GATE_POSTURE } from './LaunchGateNotice.jsx'
 import { getToolAdapters, listIntegrations } from '../../api/client.js'
 import useShelf from './useShelf.js'
 import { SUPPLY, supplyOf, shortDigest } from './supplyState.js'
@@ -39,7 +40,13 @@ export default function LaunchView({
   onGoTargets = () => {},
   onNavigate = null,
 }) {
-  const launch = useLaunchScenario(scenario, { onRunComplete, onError, payloadPlan, payloadPlanResolving })
+  const launch = useLaunchScenario(scenario, {
+    onRunComplete, onError, payloadPlan, payloadPlanResolving, holdOnWarnings: true,
+  })
+  // A gate refusal renders as LaunchGateNotice instead of the generic line: the
+  // server's sentence names an API override the operator acts on via a button.
+  const gateRefusal = launch.lastRun?.status === 'error' && launch.lastRun.gate
+    && [GATE_TOOL_ABSENT, GATE_POSTURE].includes(launch.lastRun.code)
 
   // First-use hint on Launch (I6 / spec §5) — one of the five named
   // consequential controls (Arm · Launch · Abort · Reconcile · Export POV).
@@ -393,7 +400,7 @@ export default function LaunchView({
             </ul>
           )}
 
-          {launch.lastRun && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
+          {launch.lastRun && !gateRefusal && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
             <div className={`launch-result launch-result--${launch.lastRun.status}`} role="status">
               {launch.lastRun.message}
               {launch.lastRun.code && (
@@ -401,6 +408,12 @@ export default function LaunchView({
               )}
             </div>
           )}
+          <LaunchGateNotice
+            lastRun={launch.lastRun}
+            launching={launch.launching}
+            onContinue={launch.continueToRun}
+            onLaunchAnyway={() => launch.launch({ allowMissingTools: true })}
+          />
         </section>
       </div>
     </div>

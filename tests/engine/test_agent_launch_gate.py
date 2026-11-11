@@ -69,16 +69,37 @@ def test_unknown_profile_is_refused_and_echoed():
     assert r.refusal.detail["agent_profile"] == "mystery"
 
 
-@pytest.mark.parametrize("facts", [{"container": True, "tools": []},
-                                   {"container": True, "posture_profile": None, "tools": []}])
-def test_missing_profile_is_baseline_when_nothing_beyond_baseline_is_needed(facts):
-    assert evaluate({"steps": [{"id": "s1", "command": "ls"}]}, facts).refusal is None
+# ── I1: the gate applies only to an agent the manifest deployed ──────────────
+# A beacon started in Docker/Podman/a foreign pod reports container=true but no
+# --posture-profile. It is not ours to gate: refusing it would break every pull
+# launch for an existing user (even `echo hi`). Only a non-empty profile string
+# — which the manifest's start.sh always passes — switches the gate on.
+
+_UNGATED_PROFILES = [
+    {"container": True, "posture_profile": "", "tools": ["curl"]},
+    {"container": True, "posture_profile": "   ", "tools": []},
+    {"container": True, "posture_profile": None, "tools": []},
+    {"container": True, "tools": []},
+    {"container": True},
+]
 
 
-def test_missing_profile_is_refused_when_scenario_needs_more(load_scenario):
-    r = evaluate(load_scenario("SIM-CDR-004"), {"container": True, "tools": None})
+@pytest.mark.parametrize("facts", _UNGATED_PROFILES)
+def test_container_agent_without_a_profile_is_a_strict_no_op(facts, load_scenario):
+    for sc in (
+        {"steps": [{"id": "s1", "command": "echo hi"}], "cluster_posture": None},
+        {"steps": [{"id": "s1", "command": "jq . && kubectl get po"}]},
+        load_scenario("SIM-CDR-004"),
+        _needs_cluster_rule(),
+    ):
+        assert evaluate(sc, facts) == GateResult(None, [])
+
+
+@pytest.mark.parametrize("profile", ["mystery", "Baseline", " baseline "])
+def test_non_empty_unknown_profile_is_still_refused(profile):
+    r = evaluate({"steps": []}, dict(BASE, posture_profile=profile))
     assert r.refusal.code == "AGENT_POSTURE_INSUFFICIENT"
-    assert r.refusal.detail["agent_profile"] is None
+    assert r.refusal.detail["agent_profile"] == profile
 
 
 def test_missing_tool_refuses_and_names_step():
@@ -133,3 +154,94 @@ def test_quoted_tool_names_do_not_trip_the_gate():
 def test_step_required_binaries_is_the_manifest_scan():
     assert step_required_binaries("jq . x | curl -s y") == ["jq", "curl"]
     assert step_required_binaries("") == []
+
+
+# ── cluster-scoped RBAC needs are compared as rules, not only as findings ────
+
+_NODES_LIST = {"api_groups": [""], "resources": ["nodes"], "verbs": ["list"]}
+
+
+def _needs_cluster_rule():
+    return {"steps": [{"id": "s1", "command": "ls"}],
+            "cluster_posture": {"service_account": {"cluster_role_rules": [_NODES_LIST]}}}
+
+
+def test_cluster_rule_need_on_baseline_is_refused_and_named():
+    r = evaluate(_needs_cluster_rule(), BASE)
+    assert r.refusal and r.refusal.code == "AGENT_POSTURE_INSUFFICIENT"
+    assert r.refusal.detail["satisfying_profile"] == "cluster-privilege"
+    assert {"scope": "cluster", **_NODES_LIST} in r.refusal.detail["missing_rbac_rules"]
+
+
+def test_cluster_rule_need_on_cluster_privilege_passes():
+    r = evaluate(_needs_cluster_rule(), dict(BASE, posture_profile="cluster-privilege"))
+    assert r.refusal is None
+
+
+def test_a_namespaced_rule_never_covers_a_cluster_scoped_need():
+    from engine import k8s_manifest as km
+    from engine.agent_launch_gate import uncovered_rules
+    need = km.parse_posture(_needs_cluster_rule())
+    ns_only = [km.RbacRule(api_groups=["*"], resources=["*"], verbs=["*"])]
+    missing = uncovered_rules(need, cluster_have=[], namespace_have=ns_only)
+    assert missing == [{"scope": "cluster", **_NODES_LIST}]
+    # The same rule held cluster-wide does cover it.
+    assert uncovered_rules(need, cluster_have=ns_only, namespace_have=[]) == []
+
+
+def test_a_cluster_rule_still_covers_a_namespaced_need(load_scenario):
+    from engine import k8s_manifest as km
+    from engine.agent_launch_gate import uncovered_rules
+    need = km.parse_posture(load_scenario("SIM-CDR-001"))
+    wild = [km.RbacRule(api_groups=["*"], resources=["*"], verbs=["*"])]
+    assert need.service_account.namespace_role_rules
+    assert uncovered_rules(need, cluster_have=wild, namespace_have=[]) == []
+    assert all(m["scope"] == "namespace"
+               for m in uncovered_rules(need, cluster_have=[], namespace_have=[]))
+
+
+# ── I4: every agent target that receives agent-channel steps is gated ────────
+
+from engine.agent_launch_gate import agent_step_targets, evaluate_launch  # noqa: E402
+
+
+def _composed_steps():
+    return [
+        {"id": "s1", "command": "echo hi"},                       # launch target
+        {"id": "s2", "command": "jq . x", "target": "pod-b"},     # second endpoint
+        {"id": "s3", "command": "curl -s y", "channel": "eal"},  # in-process
+    ]
+
+
+def test_agent_step_targets_partitions_agent_channel_steps_by_effective_target():
+    parts = agent_step_targets(_composed_steps(), "host-a")
+    assert {k: [s["id"] for s in v] for k, v in parts.items()} == {
+        "host-a": ["s1"], "pod-b": ["s2"]}
+
+
+def test_a_composed_step_on_another_container_agent_is_gated_and_named():
+    facts = {"host-a": None, "pod-b": dict(BASE, tools=["curl"])}
+    r = evaluate_launch(None, _composed_steps(), "host-a", facts)
+    assert r.refusal and r.refusal.code == "AGENT_TOOL_ABSENT"
+    assert r.refusal.detail["agent_id"] == "pod-b"
+    assert r.refusal.detail["missing"] == [{"step": "s2", "tools": ["jq"]}]
+    assert "pod-b" in r.refusal.error
+
+
+def test_each_target_is_judged_on_its_own_facts_and_only_its_own_steps():
+    steps = [{"id": "s1", "command": "jq ."}, {"id": "s2", "command": "kubectl get po",
+                                                "target": "pod-b"}]
+    facts = {"pod-a": dict(BASE, tools=["jq"]), "pod-b": dict(BASE, tools=["kubectl"])}
+    r = evaluate_launch(None, steps, "pod-a", facts)
+    assert r.refusal is None
+    assert r.warnings == [{"code": "AGENT_NO_RBAC_FOR_KUBECTL", "steps": ["s2"],
+                           "agent_id": "pod-b"}]
+    assert steps[0]["required_binaries"] == ["jq"]
+    assert steps[1]["required_binaries"] == ["kubectl"]
+
+
+def test_ungated_targets_are_not_stamped():
+    steps = _composed_steps()
+    facts = {"host-a": {"container": True, "posture_profile": ""}, "pod-b": None}
+    assert evaluate_launch(None, steps, "host-a", facts) == GateResult(None, [])
+    assert all("required_binaries" not in s for s in steps)

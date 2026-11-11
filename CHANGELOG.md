@@ -33,6 +33,83 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   object at the top level, unlike the older scenario routes. See
   `docs/reference/dataset-requirements.md`.
 
+### Added — Kubernetes container agent (phase 1; authored, not tenant-verified)
+
+- **The Linux beacon can run inside a pod and enroll with SimCore**, so cluster
+  scenarios are dispatched from the console with the normal pull lifecycle (abort,
+  run record, MTTD). Output: chained execution delivers a step's output when the
+  step ends, not live mid-step (observed in the kind run; pre-existing, not
+  container-specific). `GET /api/agents/manifest` serves the manifest
+  (`profile` `baseline` | `cluster-privilege` | `lab-privileged`, `image`,
+  `prepare`, `arch`, `ttl_seconds` 60..43200, consent keys, `authorized_by`); the
+  pod reads a `cortexsim-enroll` Secret holding `server` and `token`, and an
+  optional `artifact-token` that `start.sh` exports as `CORTEXSIM_ARTIFACT_TOKEN`
+  for the payload shelf (environment only, never argv). Gated
+  profiles are served on the GET with consent in the query string; the push path's
+  `GATED_FORMAT_REQUIRES_POST` on `download?format=k8s` is unchanged. A Kubernetes
+  tab in the deploy-agent dialog builds both commands. Operator reference:
+  `docs/reference/k8s-container-agent.md`.
+- **Launch gate for container agents.** `409 AGENT_POSTURE_INSUFFICIENT` and `409
+  AGENT_TOOL_ABSENT` (`allow_missing_tools` overrides tools only) before dispatch,
+  and warnings `AGENT_NO_RBAC_FOR_KUBECTL` / `AGENT_TOOL_ROSTER_UNKNOWN`, so a step
+  the pod could never run is not scored as a detection Cortex missed. **It applies
+  only to an agent the manifest deployed** (a non-empty `posture_profile`): a
+  beacon in Docker, Podman or a foreign pod reports `container: true` with no
+  profile, and for it (`""`, whitespace, `null`, no key) the gate is a strict
+  no-op, byte-identical to a host agent. Every agent target of a composed run is
+  gated on its own facts; refusals and warnings carry `agent_id`. The console's
+  Launch view lists launch warnings, offers "Launch anyway" (re-sends with
+  `allow_missing_tools: true`) on `AGENT_TOOL_ABSENT`, and shows a posture
+  refusal's missing findings, rules and satisfying profile.
+- **Honest degradations.** `ANCHOR NOT HONOURED` when the image's `sh` is
+  busybox/toybox and there is no `bash` to carry a renamed `cgo_anchor`; `IDENTITY NOT HONOURED` (existing text) now also
+  covers an absent account.
+- New beacon flags: `--enroll-token-file`, `--state-dir`, `--posture-profile`,
+  `--prepare-status-file`, `--expires-at`, `--subreaper`. `--expires-at` is
+  checked before enrollment: a beacon started after it logs `LIFETIME_EXPIRED` and
+  exits 0 without redeeming the token or registering.
+- **Removal.** Deleting the namespace alone leaves the agent and reaper
+  ClusterRole/Binding behind. Remove with `kubectl delete clusterrole,clusterrolebinding
+  -l cortexsim.io/agent=true` and then `kubectl delete namespace cortexsim-agent`.
+  Apply the manifest before creating the Secret. The manifest header states this
+  order, plus the image and prepare mode.
+- **Proof so far.** A first kind run (2026-11-10) found three product defects
+  (re-apply rejected, pod with no interpreter could not enroll, `alpine` could not
+  create `www-data`) and review found a profile-downgrade hole; all fixed. A final
+  run on arm64 against `cd7601e` passed with zero defect lines: enrollment, abort,
+  re-apply, downgrade, digest mismatch, the anchor rename (then via bash) and
+  `ANCHOR NOT HONOURED` on alpine. That run predates the anchor-shell fix below,
+  so the debian rename via `sh` needs re-confirmation in a pod. `lab-privileged`
+  has never been run; no amd64 node, no CI run on GitHub, console tab not
+  browser-checked, no Cortex detection observed. `tenant-verified` is still 0.
+- **Delivery.** PR #171 merged Tasks 1-11 at ef71c30; the fixes for re-apply,
+  interpreter-less enrollment, alpine accounts and downgrade neutralisation are in
+  the follow-up.
+
+### Changed — behaviour that reaches beyond containers
+
+- **Absent-account degradation now applies on every POSIX beacon** (VM and macOS
+  too), not only inside a failing `runuser`. A step whose declared service account
+  does not exist runs as the beacon's own account with a visible `IDENTITY NOT
+  HONOURED` note and a count in the run summary, instead of failing inside the
+  wrapper. An account is absent only when `user.Lookup` fails **and** `id -u --
+  <name>` exits 1; an inconclusive probe, or a name outside the portable account
+  shape (uppercase, `user@domain`, `DOMAIN\user`), is read as present so a
+  directory-joined host behaves as before.
+- **The chained anchor shell on host beacons is UNCHANGED: `sh`** with argv[0]
+  renamed, as before. Only when `sh` resolves to busybox/toybox does the anchor
+  become `bash` renamed (if bash is on `PATH`), else `sh` un-renamed with `ANCHOR
+  NOT HONOURED`. A hard-linked busybox `sh` is detected by comparing it with `busybox`/`toybox` on `PATH`. An intermediate build of this branch had switched every beacon
+  with bash on `PATH` to a bash anchor; that is reverted.
+- **Every beacon sends `runtime_facts` on register and enroll**, including legacy
+  VM beacons (`container: false`). Stored on a new nullable `agents.runtime_facts`
+  JSON column, returned in the agent row.
+- **The server accepts `null` for `capabilities` and `interpreters`** on register
+  and enroll and reads it as `[]`; the beacon no longer sends null. A shipped
+  beacon on a host with no detectable interpreter would otherwise 422.
+- **Migration.** `agents.runtime_facts` is added automatically at boot. By hand:
+  `ALTER TABLE agents ADD COLUMN runtime_facts JSON`.
+
 ### Added — Composer: the correlation rules a chain needs are part of its story
 
 - **A step's chips read as its proof contract, not as tags on the TTP.**

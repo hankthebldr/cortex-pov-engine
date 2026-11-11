@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import BaseModel, Field, StrictBool, field_validator
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,6 +68,13 @@ class RuntimeFacts(BaseModel):
         return self.model_dump(exclude_unset=True)
 
 
+def _null_list_is_empty(value):
+    """Already-shipped beacons send ``null`` for an empty Go slice (a pod with no
+    detectable interpreter, kind run D2): read it as ``[]``. Only ``None`` is
+    coerced; any other wrong type still fails list validation with a 422."""
+    return [] if value is None else value
+
+
 class RegisterRequest(BaseModel):
     agent_id: str
     hostname: str
@@ -81,6 +88,11 @@ class RegisterRequest(BaseModel):
     interpreters: list[str] = []
     # NULL (omitted) = not a container agent / facts unknown; see RuntimeFacts.
     runtime_facts: Optional[RuntimeFacts] = None
+
+    @field_validator("capabilities", "interpreters", mode="before")
+    @classmethod
+    def _null_lists(cls, v):
+        return _null_list_is_empty(v)
 
 
 class MintTokenRequest(BaseModel):
@@ -103,6 +115,11 @@ class EnrollRequest(BaseModel):
     # Optional client-suggested name; sanitised + suffixed for uniqueness.
     desired_name: Optional[str] = Field(default=None, max_length=60)
     runtime_facts: Optional[RuntimeFacts] = None
+
+    @field_validator("capabilities", "interpreters", mode="before")
+    @classmethod
+    def _null_lists(cls, v):
+        return _null_list_is_empty(v)
 
 
 # ---------------------------------------------------------------------------

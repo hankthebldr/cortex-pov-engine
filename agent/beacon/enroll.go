@@ -101,6 +101,16 @@ func ReadTokenFile(path string) (string, error) {
 	return tok, nil
 }
 
+// nonNilStrings returns s, or an empty slice when s is nil: a nil slice marshals
+// as JSON null, which SimCore refused with a 422 for a pod that had no
+// interpreter at all (kind run, D2). "None" is an answer, sent as [].
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 func clampRunes(s string, n int) string {
 	if utf8.RuneCountInString(s) <= n {
 		return s
@@ -117,8 +127,8 @@ func Enroll(serverURL, token, hostname, goos, desiredName string,
 		"token":        token,
 		"hostname":     hostname,
 		"os":           goos,
-		"capabilities": capabilities,
-		"interpreters": interpreters,
+		"capabilities": nonNilStrings(capabilities),
+		"interpreters": nonNilStrings(interpreters),
 		"desired_name": clampRunes(desiredName, maxDesiredName),
 	}
 	if facts != nil {

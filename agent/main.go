@@ -127,6 +127,7 @@ func main() {
 	expiresAt, err := parseExpiresAt(*expiresAtFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: BAD_EXPIRES_AT: %v\n", err)
+		writeTerminationLog(terminationLogPath(), fatalLine("BAD_EXPIRES_AT", err.Error()))
 		os.Exit(1)
 	}
 
@@ -134,6 +135,15 @@ func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("[cortexsim-agent] ")
+
+	// A lifetime that ran out before this process started (a container restart
+	// after expiry, a pod rescheduled late) must not redeem the enrollment token
+	// or register: exit 0 and let the supervisor idle until the reaper removes it.
+	if expiredAtStartup(expiresAt, time.Now()) {
+		log.Printf("LIFETIME_EXPIRED — expires-at %s passed before startup; not enrolling or registering",
+			expiresAt.UTC().Format(time.RFC3339))
+		return
+	}
 
 	// The server URL usually comes from a Kubernetes Secret and may carry a
 	// trailing slash or newline: normalise it once, before any use.
@@ -311,8 +321,7 @@ func enrollOrExit(serverURL, tokenFile, stateDir, hostname string,
 	capabilities, interpreters []string, facts *runtimefacts.Facts) string {
 	id, code, err := enrollAgent(serverURL, tokenFile, stateDir, hostname, capabilities, interpreters, facts)
 	if err != nil {
-		log.Printf("FATAL %s: %v", code, err)
-		os.Exit(1)
+		exitFatal(code, err)
 	}
 	return id
 }
