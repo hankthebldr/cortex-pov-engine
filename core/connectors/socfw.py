@@ -49,7 +49,25 @@ MODE_NO_SHADOW = "no_shadow_overrides"
 MODE_CUSTOM = "custom"
 
 STATES = ("ABSENT", "PRESENT_UNREAD", "PRESENT", "UNKNOWN")
-SOURCES = ("tenant_config", "job_default", "xql_evidence", "unknown")
+# Per-value provenance of the Auto Triage block. Only "xql_evidence" and
+# "tenant_config" are reads of the tenant's own behaviour or settings:
+#  * live: "xql_evidence" = production auto_triage_closed rows in the last 24 h;
+#    "mode_inferred" = the inferred mode's SHIPPED jobs map in SOCFWConfigModes
+#    (the framework's own matching_mode reads the tenant's actual JOB schedule,
+#    which CortexSim does not read).
+#  * window / threshold: "tenant_config" = SOCFWTenantConfig.triage;
+#    "shipped_default" = CortexSim's copy of the framework default (the
+#    framework reads the live value from SOCOptimizationConfig_V3, not read here).
+LIVE_SOURCES = ("xql_evidence", "mode_inferred", "unknown")
+SETTING_SOURCES = ("tenant_config", "shipped_default", "unknown")
+# What a reader is told next to a value, by its source. A value with no
+# recorded source is never shown as read.
+_PROVENANCE_NOTE = {
+    "tenant_config": "",
+    "xql_evidence": " (seen in the execution log, last 24 h)",
+    "mode_inferred": " (inferred from mode, not read)",
+    "shipped_default": " (shipped default, not read)",
+}
 
 
 class ResponseLayerShapeError(ValueError):
@@ -84,7 +102,9 @@ class AutoTriage:
     window_hours: Optional[float]
     score_threshold: Optional[int]
     score_off: bool
-    source: str
+    live_source: str        # LIVE_SOURCES
+    window_source: str      # SETTING_SOURCES
+    threshold_source: str   # SETTING_SOURCES (also covers score_off)
 
 
 @dataclass(frozen=True)
@@ -113,7 +133,9 @@ class ResponseLayer:
                 "window_hours": self.auto_triage.window_hours,
                 "score_threshold": self.auto_triage.score_threshold,
                 "score_off": self.auto_triage.score_off,
-                "source": self.auto_triage.source,
+                "live_source": self.auto_triage.live_source,
+                "window_source": self.auto_triage.window_source,
+                "threshold_source": self.auto_triage.threshold_source,
             },
             "ai_close": self.ai_close,
             "leftover_lists": self.leftover_lists,
@@ -125,6 +147,11 @@ class ResponseLayer:
     def from_dict(cls, d: dict) -> "ResponseLayer":
         try:
             at = d["auto_triage"]
+            for key, vocab in (("live_source", LIVE_SOURCES),
+                               ("window_source", SETTING_SOURCES),
+                               ("threshold_source", SETTING_SOURCES)):
+                if at[key] not in vocab:
+                    raise ValueError(f"auto_triage.{key}={at[key]!r} not in {vocab}")
             return cls(
                 state=d["state"],
                 code=d["code"],
@@ -136,7 +163,9 @@ class ResponseLayer:
                     window_hours=at["window_hours"],
                     score_threshold=at["score_threshold"],
                     score_off=at["score_off"],
-                    source=at["source"],
+                    live_source=at["live_source"],
+                    window_source=at["window_source"],
+                    threshold_source=at["threshold_source"],
                 ),
                 ai_close=d["ai_close"],
                 leftover_lists=d["leftover_lists"],
@@ -348,7 +377,7 @@ def assemble_response_layer(
     read_at: datetime,
     shape_error: Optional[str] = None,
 ) -> ResponseLayer:
-    no_triage = AutoTriage(None, None, None, False, "unknown")
+    no_triage = AutoTriage(None, None, None, False, "unknown", "unknown", "unknown")
     leftover = bool(list_names) and any(n in list_names for n in CONFIG_LISTS)
 
     # Without the installed-packs read, neither present nor absent can be claimed.
@@ -377,26 +406,30 @@ def assemble_response_layer(
         state, code = "PRESENT", "RESPONSE_LAYER_OK"
 
     tc = tenant_config
+    # Per-value provenance: a value is "read" only when the tenant's own
+    # settings or execution rows produced it (see LIVE_SOURCES / SETTING_SOURCES).
     live: Optional[bool] = None
+    live_source = "unknown"
     if evidence is not None and evidence.triage_closed_production > 0:
-        live, source = True, "xql_evidence"
+        live, live_source = True, "xql_evidence"
     elif tc is not None and tc.triage_job_on is not None:
-        live, source = tc.triage_job_on, "tenant_config"
-    elif tc is not None and tc.triage_overridden:
-        source = "tenant_config"
-    elif tc is not None:
-        source = "job_default"
-    else:
-        source = "unknown"
+        live, live_source = tc.triage_job_on, "mode_inferred"
 
     window = threshold = None
+    window_source = threshold_source = "unknown"
     off = False
     if tc is not None:
         off = tc.triage_score_off
-        window = tc.triage_window_hours if tc.triage_window_hours is not None else TRIAGE_DEFAULT_WINDOW_HOURS
-        if not off:
-            threshold = (tc.triage_score_threshold if tc.triage_score_threshold is not None
-                         else TRIAGE_DEFAULT_SCORE_THRESHOLD)
+        if tc.triage_window_hours is not None:
+            window, window_source = tc.triage_window_hours, "tenant_config"
+        else:
+            window, window_source = TRIAGE_DEFAULT_WINDOW_HOURS, "shipped_default"
+        if off:
+            threshold_source = "tenant_config"
+        elif tc.triage_score_threshold is not None:
+            threshold, threshold_source = tc.triage_score_threshold, "tenant_config"
+        else:
+            threshold, threshold_source = TRIAGE_DEFAULT_SCORE_THRESHOLD, "shipped_default"
 
     if evidence is not None and evidence.ai_close_production > 0:
         ai_close = "live"
@@ -408,6 +441,41 @@ def assemble_response_layer(
     return ResponseLayer(
         state=state, code=code, framework_version=packs[CORE_PACK_ID], packs=framework,
         mode=tc.mode if tc is not None else None,
-        auto_triage=AutoTriage(live, window, threshold, off, source),
+        auto_triage=AutoTriage(live, window, threshold, off,
+                               live_source, window_source, threshold_source),
         ai_close=ai_close, leftover_lists=leftover,
         sources_used=tuple(sources_used), read_at=read_at)
+
+
+def provenance_note(source: Any) -> str:
+    """The caveat shown next to a value with this source ("" when it was read)."""
+    return _PROVENANCE_NOTE.get(source, " (source not recorded)")
+
+
+def auto_triage_summary(at: Any) -> str:
+    """One line for a stored ``auto_triage`` dict, naming every value not read.
+
+    e.g. ``live (inferred from mode, not read) · 6 h (shipped default, not read)
+    · score <= 40 (shipped default, not read)``. A missing value reads
+    ``... not read``, never a default.
+    """
+    if not isinstance(at, dict):
+        return "Auto Triage unknown (not read)"
+    live = at.get("live")
+    head = ("live" if live is True else "off" if live is False else "unknown")
+    if isinstance(live, bool):
+        head += provenance_note(at.get("live_source"))
+    parts = [head]
+    w = at.get("window_hours")
+    if isinstance(w, (int, float)) and not isinstance(w, bool):
+        parts.append(f"{w:g} h{provenance_note(at.get('window_source'))}")
+    else:
+        parts.append("window not read")
+    t = at.get("score_threshold")
+    if at.get("score_off") is True:
+        parts.append(f"every aged case (score off){provenance_note(at.get('threshold_source'))}")
+    elif isinstance(t, (int, float)) and not isinstance(t, bool):
+        parts.append(f"score <= {t:g}{provenance_note(at.get('threshold_source'))}")
+    else:
+        parts.append("threshold not read")
+    return " · ".join(parts)

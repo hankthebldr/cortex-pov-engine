@@ -11,7 +11,8 @@ NOW = datetime(2026, 11, 11, 12, 0, 0)
 
 def _layer(**at):
     auto = {"live": True, "window_hours": 6, "score_threshold": 30,
-            "score_off": False, "source": "tenant_config"}
+            "score_off": False, "live_source": "xql_evidence",
+            "window_source": "tenant_config", "threshold_source": "tenant_config"}
     auto.update(at)
     return {"state": "PRESENT", "auto_triage": auto}
 
@@ -160,3 +161,18 @@ def test_liveness_undetermined_does_not_promise_preflight_will_settle_it():
         out = _run(layer={"state": st, "auto_triage": {"live": None}})
         assert out[0]["code"] == SOCFW_RESPONSE_LAYER_UNKNOWN
         assert "possibly live" in out[0]["detail"]
+
+
+# ── I-3: the advisory names values it did not read ──
+
+def test_may_seal_detail_says_which_values_were_not_read():
+    out = _run(layer=_layer(live_source="mode_inferred", window_source="shipped_default",
+                            threshold_source="shipped_default", score_threshold=40))
+    d = out[0]["detail"]
+    assert "inferred from mode, not read" in d
+    assert d.count("shipped default, not read") == 2
+
+
+def test_may_seal_detail_read_values_carry_no_caveat():
+    d = _run()[0]["detail"]
+    assert "not read" not in d and "6 h" in d and "<= 30" in d

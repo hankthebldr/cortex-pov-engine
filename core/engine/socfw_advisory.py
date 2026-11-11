@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from connectors.base import coerce_utc
+from connectors.socfw import provenance_note
 
 SOCFW_TRIAGE_MAY_SEAL = "SOCFW_TRIAGE_MAY_SEAL"
 SOCFW_RESPONSE_LAYER_UNKNOWN = "SOCFW_RESPONSE_LAYER_UNKNOWN"
@@ -72,13 +73,15 @@ def _num(v: Any) -> bool:
 def _scope(at: dict) -> str:
     """Which cases Auto Triage may close. A value that was not read says so."""
     window = at.get("window_hours")
-    age = (f"older than {window:g} h" if _num(window)
-           else "older than the Auto Triage window (not read)")
+    age = (f"older than {window:g} h{provenance_note(at.get('window_source'))}"
+           if _num(window) else "older than the Auto Triage window (not read)")
     if at.get("score_off") is True:
-        return f"every New unstarred case {age} is eligible (the triage score is switched off)"
+        return (f"every New unstarred case {age} is eligible (the triage score is "
+                f"switched off){provenance_note(at.get('threshold_source'))}")
     threshold = at.get("score_threshold")
     if _num(threshold):
-        return f"New unstarred cases {age} with aggregated_score <= {threshold:g} are eligible"
+        return (f"New unstarred cases {age} with aggregated_score <= {threshold:g}"
+                f"{provenance_note(at.get('threshold_source'))} are eligible")
     return (f"New unstarred cases {age} at or under the triage score threshold "
             f"(not read) are eligible")
 
@@ -136,7 +139,8 @@ def triage_advisories(
 
         why = ("this is a paired run" if paired else
                "this scenario has ABIOC/Analytics detections that can match up to 24 h later")
-        detail = (f"Auto Triage is live on this tenant and {why}: {_scope(at)}. Auto "
+        detail = (f"Auto Triage is live on this tenant"
+                  f"{provenance_note(at.get('live_source'))} and {why}: {_scope(at)}. Auto "
                   f"Triage closes an eligible case as resolved_other, which XSIAM never "
                   f"reopens, so the chain may split across cases.")
         return [_adv(SOCFW_TRIAGE_MAY_SEAL, level, tenant, detail)]

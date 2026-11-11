@@ -114,7 +114,11 @@ def test_execution_evidence_proves_triage_live():
         list_names=frozenset(), tenant_config=None, evidence=ev,
         sources_used=["packs", "lists", "xql"], read_at=NOW)
     assert rl.state == "PRESENT_UNREAD" and rl.auto_triage.live is True
-    assert rl.auto_triage.source == "xql_evidence"
+    assert rl.auto_triage.live_source == "xql_evidence"
+    # The lists were not read: no window or threshold is claimed, not even a default.
+    at = rl.auto_triage
+    assert (at.window_hours, at.window_source) == (None, "unknown")
+    assert (at.score_threshold, at.threshold_source) == (None, "unknown")
 
 
 def test_shadow_rows_and_analyst_closes_are_not_evidence():
@@ -171,15 +175,74 @@ def test_blank_override_is_not_overridden(blank):
     doc = load("tenant_config.json"); doc["triage"] = {"score_threshold": blank}
     v = socfw.parse_tenant_config(doc, load("config_modes.json"))
     assert v.triage_overridden is False
-    doc2 = {"triage": {"score_threshold": blank}}  # no job switch known: source must be job_default
+    doc2 = {"triage": {"score_threshold": blank}}  # no override, no job switch known
     v2 = socfw.parse_tenant_config(doc2, load("config_modes.json"))
     rl = socfw.assemble_response_layer(packs={socfw.CORE_PACK_ID: "3.31.4"},
         list_names=frozenset(), tenant_config=v2, evidence=None, sources_used=["packs"], read_at=NOW)
-    assert rl.auto_triage.source == "job_default"
+    at = rl.auto_triage
+    assert (at.live, at.live_source) == (None, "unknown")
+    assert at.window_source == at.threshold_source == "shipped_default"
 
 
 def test_real_override_sets_tenant_config_source():
     v = socfw.parse_tenant_config({"triage": {"window_hours": 12}}, load("config_modes.json"))
     rl = socfw.assemble_response_layer(packs={socfw.CORE_PACK_ID: "3.31.4"},
         list_names=frozenset(), tenant_config=v, evidence=None, sources_used=["packs"], read_at=NOW)
-    assert v.triage_overridden is True and rl.auto_triage.source == "tenant_config"
+    assert v.triage_overridden is True
+    # Per value: the window was read from the tenant, the threshold was not.
+    assert (rl.auto_triage.window_hours, rl.auto_triage.window_source) == (12.0, "tenant_config")
+    assert (rl.auto_triage.score_threshold, rl.auto_triage.threshold_source) == (
+        socfw.TRIAGE_DEFAULT_SCORE_THRESHOLD, "shipped_default")
+
+
+# ── I-3: per-value provenance. Assumed and inferred values are never shown as read. ──
+
+def _pov_layer(doc=None, evidence=None):
+    v = socfw.parse_tenant_config(doc or load("tenant_config.json"), load("config_modes.json"))
+    return socfw.assemble_response_layer(packs={socfw.CORE_PACK_ID: "3.31.4"},
+        list_names=frozenset(socfw.CONFIG_LISTS), tenant_config=v, evidence=evidence,
+        sources_used=["packs", "lists"], read_at=NOW)
+
+
+def test_canonical_pov_config_marks_live_inferred_and_settings_shipped_default():
+    # No triage section: 6 h / 40 are CortexSim's copies of the framework defaults
+    # (the framework reads them from SOCOptimizationConfig_V3, which is not read),
+    # and "live" comes from the mode's SHIPPED jobs map, not the tenant's schedule.
+    at = _pov_layer().auto_triage
+    assert (at.live, at.live_source) == (True, "mode_inferred")
+    assert (at.window_hours, at.window_source) == (socfw.TRIAGE_DEFAULT_WINDOW_HOURS, "shipped_default")
+    assert (at.score_threshold, at.threshold_source) == (
+        socfw.TRIAGE_DEFAULT_SCORE_THRESHOLD, "shipped_default")
+
+
+def test_execution_evidence_outranks_mode_inference_for_live():
+    ev = socfw.ExecutionEvidence(triage_closed_production=2, ai_close_production=0)
+    assert _pov_layer(evidence=ev).auto_triage.live_source == "xql_evidence"
+
+
+def test_score_off_is_a_tenant_config_threshold():
+    doc = load("tenant_config.json"); doc["triage"] = {"score_threshold": "off"}
+    at = _pov_layer(doc).auto_triage
+    assert (at.score_off, at.score_threshold, at.threshold_source) == (True, None, "tenant_config")
+
+
+def test_provenance_round_trips_and_unknown_source_is_rejected():
+    rl = _pov_layer()
+    d = rl.to_dict()
+    assert d["auto_triage"]["live_source"] == "mode_inferred"
+    assert "source" not in d["auto_triage"]  # one conflated source is gone
+    assert socfw.ResponseLayer.from_dict(d) == rl
+    d["auto_triage"]["window_source"] = "guessed"
+    with pytest.raises(socfw.ResponseLayerShapeError):
+        socfw.ResponseLayer.from_dict(d)
+
+
+def test_auto_triage_summary_says_what_was_not_read():
+    s = socfw.auto_triage_summary(_pov_layer().to_dict()["auto_triage"])
+    assert "live (inferred from mode, not read)" in s
+    assert "6 h (shipped default, not read)" in s
+    assert "score <= 40 (shipped default, not read)" in s
+    unread = socfw.auto_triage_summary({"live": True, "live_source": "xql_evidence",
+                                        "window_hours": None, "score_threshold": None,
+                                        "score_off": False})
+    assert "window not read" in unread and "threshold not read" in unread

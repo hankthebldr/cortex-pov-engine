@@ -902,8 +902,11 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
                          "read."),
             ms=ms, extra=extra)
     if layer.state == "PRESENT" and not read_problem:
+        # Name every Auto Triage value that was assumed or inferred, not read.
         return Stage("response_layer", OK, PF_OK,
-                     f"SOC Framework {layer.framework_version} present", ms=ms, extra=extra)
+                     f"SOC Framework {layer.framework_version} present; Auto Triage "
+                     f"{_socfw.auto_triage_summary(extra['response_layer']['auto_triage'])}",
+                     ms=ms, extra=extra)
     return Stage(
         "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
         read_problem or "framework present, its config could not be read",

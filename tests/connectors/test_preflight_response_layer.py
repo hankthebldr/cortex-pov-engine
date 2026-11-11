@@ -81,6 +81,12 @@ def test_present_framework_stage_ok():
     st = _stage(run(_tenant()), "response_layer")
     assert st.status == "ok" and st.code == "PF_OK"
     assert st.extra["response_layer"]["state"] == "PRESENT"
+    # The canonical pov config has no triage section: the stage says so.
+    at = st.extra["response_layer"]["auto_triage"]
+    assert (at["live_source"], at["window_source"], at["threshold_source"]) == (
+        "mode_inferred", "shipped_default", "shipped_default")
+    assert "shipped default, not read" in st.detail
+    assert "inferred from mode, not read" in st.detail
 
 
 def test_absent_framework_degrades_overall():
