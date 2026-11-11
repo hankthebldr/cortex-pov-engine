@@ -12,7 +12,7 @@ Every number below comes from `python3 scripts/generate_ground_truth.py`, which 
 | TTP cards | 197 |
 | Detection planes | 16 |
 | Step-detections | 1419 |
-| Catalog detection objects | 2266 |
+| Catalog detection objects | 2260 |
 | ABIOC+Analytics share (step-detections) | 15.7% |
 | Correlation share (step-detections) | 10.2% |
 | Distinct MITRE techniques (base) | 239 (128) |

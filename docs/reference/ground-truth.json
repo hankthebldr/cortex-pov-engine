@@ -37,10 +37,10 @@
   },
   "corpus": {
     "abioc_analytics_share": 0.1568,
-    "catalog_detections": 2266,
+    "catalog_detections": 2260,
     "catalog_detections_by_kind": {
       "abioc": 171,
-      "analytics": 358,
+      "analytics": 352,
       "bioc": 382,
       "correlation": 215,
       "ioc": 475,
