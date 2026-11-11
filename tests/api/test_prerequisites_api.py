@@ -59,6 +59,7 @@ def test_scenario_prerequisites_ok(client):
     r = client.get(f"/api/scenarios/{SCENARIO}/prerequisites")
     body = r.json()
     assert r.status_code == 200 and body["registry_loaded"] is True
+    assert body["scenario_id"] == SCENARIO
     assert body["tenant_verified"] == 0 and body["write_path"] is False
     assert any(d.get("produced_by") == "strata-ngfw" for d in body["datasets"])
 
@@ -210,5 +211,71 @@ def test_draft_id_style_resolves_and_reports_no_card_binding(client, session_fac
     asyncio.run(_seed())
     r = client.get("/api/scenarios/SIM-DRAFT-unbound/prerequisites")
     assert r.status_code == 200
+    assert r.json()["scenario_id"] == "SIM-DRAFT-unbound"
     assert [n["code"] for n in r.json()["notes"]] == ["NO_CARD_BINDING"]
     assert client.get("/api/scenarios/SIM-DRAFT-nope/prerequisites").status_code == 404
+
+
+def test_bad_card_shape_is_structured_500_on_both_routes(client, monkeypatch):
+    from engine.ttp_catalog import catalog
+    # SIM-MP-001 cites TTP-2026-0047, so the scenario route reads the broken card too.
+    bad = {"TTP-2026-0047": {"detections": {"xql_queries": "nope"}}}
+    monkeypatch.setattr(catalog, "all_raw", lambda: bad)
+    for url in (f"/api/scenarios/{SCENARIO}/prerequisites", "/api/prerequisites/datasets"):
+        r = client.get(url)
+        assert r.status_code == 500, url
+        body = r.json()
+        assert body["code"] == "CARD_SHAPE_UNRECOGNISED" and "TTP-2026-0047" in body["detail"], url
+
+
+def test_health_reports_bad_card_shape_as_degraded(monkeypatch):
+    from api import health
+    from engine.ttp_catalog import catalog
+    monkeypatch.setattr(catalog, "all_raw", lambda: {"TTP-BAD": {"detections": []}})
+    comp = health.probe_dataset_requirements()
+    assert comp["status"] == "degraded" and comp["code"] == "CARD_SHAPE_UNRECOGNISED"
+    assert "TTP-BAD" in comp["detail"] and "Fix:" in comp["detail"]
+
+
+# --- boot check -------------------------------------------------------------
+
+def _boot(monkeypatch, *, strict, registry, cards=None, load_raises=False):
+    from engine import dataset_requirements as dr
+    monkeypatch.setattr(settings, "CORTEXSIM_STRICT_DATASETS", strict)
+    if load_raises:
+        def boom():
+            raise DatasetRequirementsError("registry /p is malformed at root: bad")
+        monkeypatch.setattr(dr, "load", boom)
+    else:
+        monkeypatch.setattr(dr, "load", lambda: registry)
+    return dr.boot_check_dataset_requirements(cards if cards is not None else {})
+
+
+def test_boot_malformed_registry_strict_off_logs_and_continues(monkeypatch, caplog):
+    import logging
+    with caplog.at_level(logging.ERROR):
+        _boot(monkeypatch, strict=False, registry=None, load_raises=True)
+    assert any("malformed" in r.message and r.levelno == logging.ERROR for r in caplog.records)
+
+
+def test_boot_malformed_registry_strict_on_raises(monkeypatch):
+    with pytest.raises(DatasetRequirementsError, match="malformed"):
+        _boot(monkeypatch, strict=True, registry=None, load_raises=True)
+
+
+def test_boot_unregistered_strict_on_raises(monkeypatch):
+    cards = {"TTP-X": {"detections": {"xql_queries": [{"dataset": "mystery_raw"}]}}}
+    with pytest.raises(DatasetRequirementsError, match="mystery_raw"):
+        _boot(monkeypatch, strict=True, registry={}, cards=cards)
+
+
+def test_boot_absent_registry_strict_off_does_not_raise(monkeypatch):
+    cards = {"TTP-X": {"detections": {"xql_queries": [{"dataset": "mystery_raw"}]}}}
+    assert _boot(monkeypatch, strict=False, registry=None, cards=cards) == ["mystery_raw"]
+
+
+def test_boot_bad_card_shape_strict_off_continues_strict_on_raises(monkeypatch):
+    bad = {"TTP-BAD": {"detections": []}}
+    _boot(monkeypatch, strict=False, registry={}, cards=bad)
+    with pytest.raises(DatasetRequirementsError, match="TTP-BAD"):
+        _boot(monkeypatch, strict=True, registry={}, cards=bad)

@@ -138,17 +138,8 @@ async def lifespan(app: FastAPI):
     #      catalog loaded just above. Strict (CORTEXSIM_STRICT_DATASETS) raises on an
     #      unregistered dataset; otherwise it only warns, and an absent registry never
     #      stops boot (the health component reports it degraded).
-    from engine.dataset_requirements import (  # noqa: PLC0415
-        card_datasets, check_datasets_registered, load as load_dataset_requirements,
-    )
-    _ds_registry = load_dataset_requirements()
-    _unregistered = check_datasets_registered(card_datasets(ttp_catalog.all_raw()), _ds_registry)
-    if _unregistered:
-        logger.warning(
-            "dataset requirement registry %s: %d card dataset(s) unregistered: %s",
-            "absent" if _ds_registry is None else "loaded", len(_unregistered),
-            ", ".join(_unregistered),
-        )
+    from engine.dataset_requirements import boot_check_dataset_requirements  # noqa: PLC0415
+    boot_check_dataset_requirements(ttp_catalog.all_raw())
 
     # 2b. Load Tool Adapter catalog (Phase A — tool framework). Same
     #     warn-not-fail pattern: missing adapter packs are advisory and the

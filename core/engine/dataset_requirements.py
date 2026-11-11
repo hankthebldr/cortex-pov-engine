@@ -290,3 +290,27 @@ def check_datasets_registered(card_ds: dict[str, set[str]],
             f"CORTEXSIM_STRICT_DATASETS to boot with a warning."
         )
     return unregistered
+
+
+def boot_check_dataset_requirements(all_raw: dict[str, dict]) -> list[str]:
+    """Lifespan check: the registry against the datasets the cards read. Returns the unregistered names.
+
+    With ``CORTEXSIM_STRICT_DATASETS`` on, a malformed registry, a malformed card shape or an
+    unregistered dataset raises. With it off, none of them stops boot: a malformed registry or
+    card shape is logged at error level with its path, an unregistered dataset at warning level,
+    and /api/health plus the routes report the same fault.
+    """
+    try:
+        registry = load()
+        unregistered = check_datasets_registered(card_datasets(all_raw), registry)
+    except DatasetRequirementsError as exc:
+        if settings.CORTEXSIM_STRICT_DATASETS:
+            raise
+        logger.error("dataset requirements check failed (registry %s): %s; continuing because "
+                     "CORTEXSIM_STRICT_DATASETS is off", registry_path(), exc)
+        return []
+    if unregistered:
+        logger.warning("dataset requirement registry %s: %d card dataset(s) unregistered: %s",
+                       "absent" if registry is None else "loaded", len(unregistered),
+                       ", ".join(unregistered))
+    return unregistered

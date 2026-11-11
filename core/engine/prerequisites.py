@@ -97,8 +97,12 @@ def _registered_row(req: DatasetRequirement, cards: list[str]) -> dict:
 
 def derive(scenario: dict, cards: dict[str, dict],
            registry: dict[str, DatasetRequirement] | None) -> dict:
-    if not isinstance(scenario, dict) or "id" not in scenario:
-        raise ValueError("scenario must be a mapping with an id")
+    if not isinstance(scenario, dict):
+        raise ValueError(f"scenario must be a mapping, got {type(scenario).__name__}")
+    sid = scenario.get("scenario_id")
+    if not isinstance(sid, str) or not sid.strip():
+        # ``id`` is the integer primary key on Scenario.to_dict(); never the scenario's name.
+        raise ValueError(f"scenario must carry a non-blank string scenario_id, got {sid!r}")
     cited = _cited_cards(scenario)
 
     notes: list[dict] = []
@@ -108,7 +112,7 @@ def derive(scenario: dict, cards: dict[str, dict],
                            "listed as unregistered, not as having no requirements"))
     if not cited:
         notes.append(_note("NO_CARD_BINDING",
-                           f"scenario {scenario['id']} cites no card (no ttp_ref on any expected "
+                           f"scenario {sid} cites no card (no ttp_ref on any expected "
                            f"detection), so its datasets cannot be derived"))
 
     by_dataset: dict[str, set[str]] = {}
@@ -149,7 +153,7 @@ def derive(scenario: dict, cards: dict[str, dict],
                 documentation += 1
 
     return {
-        "scenario_id": scenario["id"],
+        "scenario_id": sid,
         "registry_loaded": registry is not None,
         "tenant_verified": 0,
         "write_path": False,

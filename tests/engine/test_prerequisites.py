@@ -11,7 +11,7 @@ from tests.engine._dataset_requirements_fixtures import GOOD
 
 
 def scen(*refs):
-    return {"id": "SIM-T-001", "steps": [{"id": f"s{i}", "expected_detections": [{"ttp_ref": r}]}
+    return {"scenario_id": "SIM-T-001", "steps": [{"id": f"s{i}", "expected_detections": [{"ttp_ref": r}]}
                                          for i, r in enumerate(refs)]}
 
 
@@ -34,7 +34,7 @@ def test_one_row_per_dataset_listing_every_card():
 
 
 def test_no_card_binding_is_a_note_not_an_empty_answer():
-    out = derive({"id": "SIM-T-002", "steps": [{"id": "s", "expected_detections": []}]}, {}, REG)
+    out = derive({"scenario_id": "SIM-T-002", "steps": [{"id": "s", "expected_detections": []}]}, {}, REG)
     assert [n["code"] for n in out["notes"]] == ["NO_CARD_BINDING"]
 
 
@@ -70,7 +70,7 @@ def test_never_claims_verification():
 
 def test_unrecognised_scenario_shape_raises():
     with pytest.raises(ValueError):
-        derive({"id": "x", "steps": "nope"}, {}, REG)
+        derive({"scenario_id": "x", "steps": "nope"}, {}, REG)
 
 
 # --- beyond the brief ---
@@ -126,7 +126,7 @@ def test_one_note_per_missing_card_and_per_unregistered_dataset():
 
 
 def test_blank_and_missing_ttp_refs_are_not_cards():
-    sc = {"id": "S", "steps": [{"id": "a", "expected_detections": [{"ttp_ref": ""}, {"ttp_ref": None}, {}]}]}
+    sc = {"scenario_id": "S", "steps": [{"id": "a", "expected_detections": [{"ttp_ref": ""}, {"ttp_ref": None}, {}]}]}
     out = derive(sc, {}, REG)
     assert out["cards"] == [] and codes(out) == ["NO_CARD_BINDING"]
 
@@ -153,10 +153,10 @@ def test_does_not_mutate_inputs():
 
 
 @pytest.mark.parametrize("scenario, cards", [
-    ({"id": "x", "steps": [["not a dict"]]}, {}),
-    ({"id": "x", "steps": ["s"]}, {}),
-    ({"id": "x", "steps": [{"id": "s", "expected_detections": "nope"}]}, {}),
-    ({"id": "x", "steps": [{"id": "s", "expected_detections": ["nope"]}]}, {}),
+    ({"scenario_id": "x", "steps": [["not a dict"]]}, {}),
+    ({"scenario_id": "x", "steps": ["s"]}, {}),
+    ({"scenario_id": "x", "steps": [{"id": "s", "expected_detections": "nope"}]}, {}),
+    ({"scenario_id": "x", "steps": [{"id": "s", "expected_detections": ["nope"]}]}, {}),
     (scen("A"), {"A": {"detections": []}}),
     (scen("A"), {"A": {"detections": {"xql_queries": "nope"}}}),
     (scen("A"), {"A": {"detections": {"xql_queries": ["nope"]}}}),
@@ -166,3 +166,21 @@ def test_does_not_mutate_inputs():
 def test_other_unrecognised_shapes_raise(scenario, cards):
     with pytest.raises(ValueError):
         derive(scenario, cards, REG)
+
+
+def test_derive_reads_the_string_scenario_id_not_the_integer_pk():
+    sc = {"id": 136, "scenario_id": "SIM-MP-001", "steps": []}
+    out = derive(sc, {}, REG)
+    assert out["scenario_id"] == "SIM-MP-001"
+    assert any("SIM-MP-001" in n["detail"] for n in out["notes"] if n["code"] == "NO_CARD_BINDING")
+
+
+@pytest.mark.parametrize("sc", [
+    {"id": "SIM-X", "steps": []},
+    {"id": 5, "scenario_id": 136, "steps": []},
+    {"scenario_id": "   ", "steps": []},
+    {"scenario_id": None, "steps": []},
+])
+def test_derive_requires_a_non_blank_string_scenario_id(sc):
+    with pytest.raises(ValueError, match="scenario_id"):
+        derive(sc, {}, REG)

@@ -333,7 +333,17 @@ def probe_dataset_requirements() -> dict[str, Any]:
             f"the checkout root, then restart SimCore.",
             path=path,
         )
-    unregistered = sorted(set(dr.card_datasets(catalog.all_raw())) - set(registry))
+    try:
+        unregistered = sorted(set(dr.card_datasets(catalog.all_raw())) - set(registry))
+    except dr.DatasetRequirementsError as exc:
+        return _degraded(
+            "CARD_SHAPE_UNRECOGNISED",
+            f"{exc} Until the card is fixed, its datasets cannot be checked against the "
+            f"registry and /api/prerequisites/* return a structured 500. "
+            f"Fix: correct detections.xql_queries on that card in detection_scanner/ttps/ "
+            f"and restart SimCore.",
+            path=path,
+        )
     if unregistered:
         return _degraded(
             "DATASETS_UNREGISTERED",

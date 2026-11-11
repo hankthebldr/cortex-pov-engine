@@ -36,6 +36,15 @@ logger = logging.getLogger("cortexsim.api.prerequisites")
 router = APIRouter(tags=["prerequisites"])
 
 
+def _card_shape(exc: Exception) -> JSONResponse:
+    logger.error("card shape unrecognised: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"error": "A detection card or scenario step has an unrecognised shape",
+                 "code": "CARD_SHAPE_UNRECOGNISED", "detail": str(exc)},
+    )
+
+
 def _malformed(exc: Exception) -> JSONResponse:
     logger.error("dataset requirement registry malformed: %s", exc)
     return JSONResponse(
@@ -55,7 +64,10 @@ async def list_dataset_requirements():
         source = registry_source()
     except DatasetRequirementsError as exc:
         return _malformed(exc)
-    by_card = card_datasets(catalog.all_raw())
+    try:
+        by_card = card_datasets(catalog.all_raw())
+    except DatasetRequirementsError as exc:
+        return _card_shape(exc)
     rows = []
     for name in sorted(registry or {}):
         row = registry[name].to_dict()
@@ -86,4 +98,7 @@ async def get_scenario_prerequisites(scenario_id: str, db: AsyncSession = Depend
         registry = load()
     except DatasetRequirementsError as exc:
         return _malformed(exc)
-    return derive(scenario.to_dict(), catalog.all_raw(), registry)
+    try:
+        return derive(scenario.to_dict(), catalog.all_raw(), registry)
+    except (DatasetRequirementsError, ValueError) as exc:
+        return _card_shape(exc)
