@@ -49,6 +49,7 @@ from engine.outcome import (
     UPSTREAM_SEVERED,
 )
 from engine.pairing import build_pair_delta
+from connectors.case_ledger import CaseShapeError, pair_merge
 from engine.orchestrator import orchestrator
 from events import event_bus
 from models import Agent, Result, Run, Scenario, StepOutcome
@@ -910,8 +911,15 @@ async def get_run_pair(run_id: str, db: AsyncSession = Depends(get_db)):
         )
 
     a, b = run.to_dict(), partner.to_dict()
+    try:
+        merge = pair_merge(run.case_ledger, partner.case_ledger)
+    except CaseShapeError as e:
+        # A corrupt stored ledger is degraded with a code, never read as a merge.
+        merge = {"merge_class": "PENDING", "basis": None, "code": "CASE_LEDGER_UNREADABLE",
+                 "merge_reason": str(e)}
     return {
         "runs": [a, b],
+        "merge": merge,
         "delta": build_pair_delta(a, await _run_result_dicts(db, run.run_id), b,
                                   await _run_result_dicts(db, partner.run_id)),
     }
@@ -1639,6 +1647,31 @@ async def verify_run_endpoint(
                 run_id, outcome.tc_verdict, outcome.tenant,
                 outcome.queries_issued, outcome.reason)
     return outcome.to_dict()
+
+
+@router.post("/{run_id}/case-ledger/refresh")
+async def refresh_case_ledger_endpoint(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Re-read the cases named in this run's stored case ledger (read-only).
+
+    Explicit operator action, its own consent like ``POST .../reconcile``.
+    Disposition drifts after a run (Auto Triage seals cases ~6 h later); this
+    refreshes it. Cases only: the stored alerts are kept. Disposition is context,
+    never detection evidence. 409 ``NO_CASE_LEDGER`` when the run has none.
+    """
+    from api.connectors import _RECONCILE_ERROR_STATUS  # noqa: PLC0415
+    from connectors.service import ReconcileError, refresh_case_ledger  # noqa: PLC0415
+
+    run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one_or_none()
+    if run is None:
+        raise _run_not_found(run_id)
+    try:
+        out = await refresh_case_ledger(db, run)
+    except ReconcileError as e:
+        status = {**_RECONCILE_ERROR_STATUS, "NO_CASE_LEDGER": 409,
+                  "CASE_LEDGER_UNREADABLE": 409}.get(e.code, 500)
+        raise HTTPException(status_code=status, detail={
+            "error": str(e), "code": e.code, "detail": e.detail})
+    return out
 
 
 @router.get("/{run_id}/control")

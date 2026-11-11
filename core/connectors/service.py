@@ -33,6 +33,7 @@ from connectors.case_ledger import (
     build_case_ledger,
     ledger_alert,
     ledger_case_from_incident,
+    ledger_from_dict,
 )
 from connectors.matcher import DEFAULT_WINDOW_SECONDS, scope_to_host
 from connectors.measures import (
@@ -151,6 +152,36 @@ def pick_integration(rows: list, integration_name: Optional[str]):
         detail={"available": [r.name for r in rows]})
 
 
+async def _resolve_connector(
+    db: AsyncSession, connector_kind: str, integration_name: Optional[str],
+    fetcher: Optional[HttpFetcher],
+) -> tuple[Any, ConnectorConfig, CredentialStore, Any]:
+    """Connector + decrypted credential config for ``connector_kind``.
+
+    The one place a credentialed read is set up, shared by :func:`reconcile_run`
+    and :func:`refresh_case_ledger` so neither can resolve a different tenant.
+    """
+    conn = get_connector(connector_kind, fetcher=fetcher)
+    if conn is None:
+        raise ReconcileError("CONNECTOR_NOT_FOUND",
+                             f"unknown connector '{connector_kind}'")
+
+    store = CredentialStore(db)
+    integrations = await resolve_connector_integrations(store, connector_kind)
+    if not integrations:
+        kinds = " or ".join(f"'{k}'" for k in credential_kinds_for(connector_kind))
+        raise ReconcileError("NO_INTEGRATION",
+                             f"configure an integration of kind {kinds} first")
+    integ = pick_integration(integrations, integration_name)
+    try:
+        secret = await store.get_integration_secret(integ.name)
+    except Exception as e:  # noqa: BLE001
+        raise ReconcileError("CREDENTIAL_ERROR", str(e))
+
+    cfg = ConnectorConfig(integration_name=integ.name, config=integ.config or {}, secret=secret)
+    return conn, cfg, store, integ
+
+
 async def reconcile_run(
     db: AsyncSession,
     run: Run,
@@ -173,24 +204,8 @@ async def reconcile_run(
 
     Raises :class:`ReconcileError` (never HTTP) on any failure.
     """
-    conn = get_connector(connector_kind, fetcher=fetcher)
-    if conn is None:
-        raise ReconcileError("CONNECTOR_NOT_FOUND",
-                             f"unknown connector '{connector_kind}'")
-
-    store = CredentialStore(db)
-    integrations = await resolve_connector_integrations(store, connector_kind)
-    if not integrations:
-        kinds = " or ".join(f"'{k}'" for k in credential_kinds_for(connector_kind))
-        raise ReconcileError("NO_INTEGRATION",
-                             f"configure an integration of kind {kinds} first")
-    integ = pick_integration(integrations, integration_name)
-    try:
-        secret = await store.get_integration_secret(integ.name)
-    except Exception as e:  # noqa: BLE001
-        raise ReconcileError("CREDENTIAL_ERROR", str(e))
-
-    cfg = ConnectorConfig(integration_name=integ.name, config=integ.config or {}, secret=secret)
+    conn, cfg, store, integ = await _resolve_connector(
+        db, connector_kind, integration_name, fetcher)
 
     exec_times = [r.executed_at for r in results if r.executed_at]
     since = (min(exec_times) if exec_times
@@ -354,58 +369,64 @@ async def build_and_store_case_ledger(
         ledger["issue_read"] = issue_read
         return ledger
 
-    async def finish(ledger: dict) -> tuple[dict, int]:
-        run.case_ledger = ledger
-        if commit:
-            await db.commit()
-        return ledger, queries
+    # ``compute`` builds the ledger and nothing else. Storing and committing sit
+    # AFTER it: a ``db.commit()`` inside the try was re-caught as an
+    # "unexpected" ledger error and retried on a failed session. A DB error now
+    # reaches the caller untouched.
+    def compute() -> dict:
+        nonlocal queries
+        try:
+            case_ids = sorted({str(a.incident_id) for a in alerts
+                               if a.incident_id not in (None, "")})
+            cpull = conn.pull_cases(cfg, case_ids)
+            queries += _pages_issued(cpull.detail)
+            if not cpull.ok:
+                ledger = degraded("CASE_READ_FAILED",
+                                  f"the case read failed ({cpull.code}); no merge claim is made",
+                                  skipped)
+                ledger["case_read"] = {"code": cpull.code,
+                                       "remediation": remediation_for(cpull.code)}
+                return ledger
+            try:
+                cases = {}
+                for inc in cpull.incidents:
+                    c = ledger_case_from_incident(inc)
+                    cases[c.case_id] = c
+            except CaseShapeError as e:
+                return degraded("CASE_STATUS_UNRECOGNIZED", str(e), skipped)
 
-    try:
-        case_ids = sorted({str(a.incident_id) for a in alerts
-                           if a.incident_id not in (None, "")})
-        cpull = conn.pull_cases(cfg, case_ids)
-        queries += _pages_issued(cpull.detail)
-        if not cpull.ok:
+            status_map: dict = {}
+            issue_ids = sorted({a.external_id for a in alerts if a.external_id})
+            try:
+                smap = conn.pull_issue_status(cfg, issue_ids)
+                queries += int(smap.pages)  # before the copy: a dict() copy drops .pages
+                status_map = dict(smap)
+                issue_read: dict[str, Any] = {"ok": True, "pages": int(smap.pages)}
+            except IssueReadError as e:
+                pages = _pages_issued(e.detail)
+                queries += pages
+                issue_read = {"ok": False, "code": e.code, "pages": pages,
+                              "remediation": remediation_for(e.code)}
+            try:
+                ledger = build_case_ledger(
+                    [ledger_alert(a, status_map.get(str(a.external_id))) for a in alerts],
+                    cases, basis=basis, read_at=read_at)
+            except CaseShapeError as e:
+                return degraded("CASE_STATUS_UNRECOGNIZED", str(e), issue_read)
+            ledger["issue_read"] = issue_read
+            return ledger
+        except Exception as e:  # noqa: BLE001 - context-only data must never fail reconcile
+            logger.warning("case ledger degraded on unexpected %s", type(e).__name__, exc_info=True)
             ledger = degraded("CASE_READ_FAILED",
-                              f"the case read failed ({cpull.code}); no merge claim is made",
-                              skipped)
-            ledger["case_read"] = {"code": cpull.code,
-                                   "remediation": remediation_for(cpull.code)}
-            return await finish(ledger)
-        try:
-            cases = {}
-            for inc in cpull.incidents:
-                c = ledger_case_from_incident(inc)
-                cases[c.case_id] = c
-        except CaseShapeError as e:
-            return await finish(degraded("CASE_STATUS_UNRECOGNIZED", str(e), skipped))
+                              f"the case ledger could not be built ({type(e).__name__}); "
+                              "no merge claim is made", skipped)
+            return ledger
 
-        status_map: dict = {}
-        issue_ids = sorted({a.external_id for a in alerts if a.external_id})
-        try:
-            smap = conn.pull_issue_status(cfg, issue_ids)
-            queries += int(smap.pages)  # before the copy: a dict() copy drops .pages
-            status_map = dict(smap)
-            issue_read: dict[str, Any] = {"ok": True, "pages": int(smap.pages)}
-        except IssueReadError as e:
-            pages = _pages_issued(e.detail)
-            queries += pages
-            issue_read = {"ok": False, "code": e.code, "pages": pages,
-                          "remediation": remediation_for(e.code)}
-        try:
-            ledger = build_case_ledger(
-                [ledger_alert(a, status_map.get(str(a.external_id))) for a in alerts],
-                cases, basis=basis, read_at=read_at)
-        except CaseShapeError as e:
-            return await finish(degraded("CASE_STATUS_UNRECOGNIZED", str(e), issue_read))
-        ledger["issue_read"] = issue_read
-        return await finish(ledger)
-    except Exception as e:  # noqa: BLE001 - context-only data must never fail reconcile
-        logger.warning("case ledger degraded on unexpected %s", type(e).__name__, exc_info=True)
-        ledger = degraded("CASE_READ_FAILED",
-                          f"the case ledger could not be built ({type(e).__name__}); "
-                          "no merge claim is made", skipped)
-        return await finish(ledger)
+    ledger = compute()
+    run.case_ledger = ledger
+    if commit:
+        await db.commit()
+    return ledger, queries
 
 
 def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
@@ -416,6 +437,146 @@ def _pages_issued(detail: Optional[dict[str, Any]]) -> int:
         if d.get(key) is not None:
             return int(d[key])
     return 1
+
+
+CASE_LEDGER_CONNECTOR = "xsiam"
+
+
+async def refresh_case_ledger(
+    db: AsyncSession, run: Run, *, fetcher: Optional[HttpFetcher] = None,
+) -> dict:
+    """Re-read the cases named in ``run.case_ledger`` and rebuild it.
+
+    Disposition drifts after a run (Auto Triage seals cases ~6 h later), so the
+    stored ledger goes stale. This re-reads CASES only: the stored alerts are
+    kept, and each alert's stored ``issue_closed_by`` is carried forward
+    unchanged (``issue_override``), never recomputed from the restored alerts,
+    which carry no issue status and would all read ``unread``. ``merge_class``
+    and per-case disposition are recomputed from the fresh cases.
+
+    Read-only toward Cortex. Raises :class:`ReconcileError`:
+
+    * ``NO_CASE_LEDGER`` - nothing to refresh (409 at the API);
+    * ``CASE_LEDGER_UNREADABLE`` - the stored ledger is corrupt;
+    * ``CONNECTOR_PULL_FAILED`` - the case read failed. The stored ledger is
+      KEPT: a transient failure must not overwrite a good ledger with PENDING.
+      ``detail["queries_issued"]`` carries the pages spent (the sweep counts
+      them, and ``detail["status"] == 429`` trips its quota breaker).
+
+    An unrecognised case shape does not raise to the caller: the stored ledger
+    is replaced by a degraded one (``CASE_STATUS_UNRECOGNIZED``, ``PENDING``),
+    because the old merge claim can no longer be trusted.
+
+    Transaction: this function commits (outside any ``try`` that could swallow
+    it); a commit failure rolls back and propagates, and the commit is never
+    retried on a failed session.
+    """
+    stored = run.case_ledger
+    if not stored:
+        raise ReconcileError("NO_CASE_LEDGER",
+                             f"run '{run.run_id}' has no case ledger to refresh")
+    try:
+        alerts, old_cases = ledger_from_dict(stored)
+        carried = {a["external_id"]: a["issue_closed_by"] for a in stored["alerts"]}
+        basis = stored["basis"]
+    except (CaseShapeError, KeyError, TypeError) as e:
+        raise ReconcileError("CASE_LEDGER_UNREADABLE", f"stored case ledger is unreadable: {e}")
+
+    case_ids = sorted({a.case_id for a in alerts if a.case_id} | set(old_cases))
+    if not case_ids:
+        return {"run_id": run.run_id, "refreshed": False, "queries_issued": 0,
+                "merge_class": stored.get("merge_class"), "code": stored.get("code"),
+                "read_at": stored.get("read_at"), "ledger": stored,
+                "reason": "the ledger names no case to re-read"}
+
+    conn, cfg, _store, _integ = await _resolve_connector(
+        db, CASE_LEDGER_CONNECTOR, None, fetcher)
+    cpull = conn.pull_cases(cfg, case_ids)
+    pages = _pages_issued(cpull.detail)
+    if not cpull.ok:
+        detail = dict(cpull.detail or {})
+        detail.update({"code": cpull.code, "remediation": remediation_for(cpull.code),
+                       "queries_issued": pages})
+        raise ReconcileError("CONNECTOR_PULL_FAILED", cpull.error or "case read failed",
+                             detail=detail)
+
+    read_at = datetime.now(timezone.utc)
+    try:
+        cases = {}
+        for inc in cpull.incidents:
+            c = ledger_case_from_incident(inc)
+            cases[c.case_id] = c
+        ledger = build_case_ledger(alerts, cases, basis=basis, read_at=read_at,
+                                   issue_override=carried)
+    except CaseShapeError as e:
+        ledger = build_case_ledger(alerts, {}, basis=basis, read_at=read_at,
+                                   code="CASE_STATUS_UNRECOGNIZED", issue_override=carried)
+        ledger["merge_class"] = "PENDING"
+        ledger["merge_reason"] = str(e)
+    ledger["issue_read"] = stored.get("issue_read", {"ok": None})
+
+    run.case_ledger = ledger
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return {"run_id": run.run_id, "refreshed": True, "queries_issued": pages,
+            "merge_class": ledger["merge_class"], "code": ledger["code"],
+            "read_at": ledger["read_at"], "ledger": ledger,
+            "previous_merge_class": stored.get("merge_class")}
+
+
+async def refresh_case_ledgers_once(
+    db: AsyncSession, *, window_hours: int, max_runs: int,
+    fetcher: Optional[HttpFetcher] = None,
+) -> dict[str, int]:
+    """One bounded sweep over stored case ledgers (opt-in: called only from
+    ``auto_reconcile_loop``, i.e. only with ``CORTEXSIM_AUTO_RECONCILE`` on).
+
+    Candidates are runs with a stored ``case_ledger`` whose ``Run.started_at``
+    (the run's own timestamp, naive UTC) is within ``window_hours``, newest
+    first. At most ``max_runs`` are attempted per sweep; every tenant page is
+    counted in ``queries_issued``; a quota error (HTTP 429) stops the whole
+    sweep, exactly like the reconcile sweep. Returns
+    ``{"refreshed", "skipped", "queries_issued", "quota_tripped"}``.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=window_hours)
+    rows = (await db.execute(
+        select(Run).where(Run.started_at >= cutoff).order_by(Run.started_at.desc())
+    )).scalars().all()
+    refreshed = skipped = queries = attempted = 0
+    tripped = False
+    for run in rows:
+        if not run.case_ledger:
+            continue
+        if attempted >= max_runs:
+            break
+        attempted += 1
+        try:
+            out = await refresh_case_ledger(db, run, fetcher=fetcher)
+        except ReconcileError as e:
+            skipped += 1
+            detail = e.detail if isinstance(e.detail, dict) else {}
+            queries += int(detail.get("queries_issued") or 0)
+            if _is_quota_error(e):
+                tripped = True
+                logger.warning("case-ledger refresh: tenant reported quota exhaustion (%s) "
+                               "- sweep circuit-broken", e.code)
+                break
+            logger.debug("case-ledger refresh skip run=%s: %s", run.run_id, e.code)
+            continue
+        except Exception:  # noqa: BLE001 - e.g. a failed commit; the session was rolled back
+            skipped += 1
+            logger.warning("case-ledger refresh failed run=%s", run.run_id, exc_info=True)
+            continue
+        queries += int(out["queries_issued"])
+        if out["refreshed"]:
+            refreshed += 1
+        else:
+            skipped += 1
+    return {"refreshed": refreshed, "skipped": skipped, "queries_issued": queries,
+            "quota_tripped": int(tripped)}
 
 
 async def resolve_run_host(db: AsyncSession, run: Run) -> Optional[str]:
@@ -1691,6 +1852,20 @@ async def _with_verify_phase(db: AsyncSession, stats: dict[str, Any], *,
     return stats
 
 
+async def _refresh_ledgers_phase() -> None:
+    """The case-ledger refresh sweep; a failure never stops the reconcile loop."""
+    from database import AsyncSessionLocal  # noqa: PLC0415
+    try:
+        async with AsyncSessionLocal() as db:
+            out = await refresh_case_ledgers_once(
+                db, window_hours=settings.CORTEXSIM_CASE_LEDGER_WINDOW_HOURS,
+                max_runs=settings.CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP)
+        if out["refreshed"] or out["skipped"]:
+            logger.info("case-ledger refresh: %s", out)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("case-ledger refresh phase failed - continuing")
+
+
 async def auto_reconcile_loop(interval_seconds: int, lookback_seconds: int,
                               window_seconds: int) -> None:
     """Run :func:`auto_reconcile_once` forever on a fixed cadence. Opt-in;
@@ -1712,6 +1887,10 @@ async def auto_reconcile_loop(interval_seconds: int, lookback_seconds: int,
                 if stats["newly_matched"]:
                     logger.info("auto-reconcile: %d detection(s) validated across %d run(s) via %s",
                                 stats["newly_matched"], stats["runs_reconciled"], stats["kinds"])
+                if not stats.get("quota_tripped"):
+                    # Same flag (this loop only runs with it on), same breaker:
+                    # a quota error in the reconcile sweep skips the refresh.
+                    await _refresh_ledgers_phase()
             except Exception:  # pragma: no cover - defensive
                 logger.exception("auto-reconcile sweep failed — continuing")
     except asyncio.CancelledError:  # pragma: no cover - shutdown path

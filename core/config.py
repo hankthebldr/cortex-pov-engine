@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     CORTEXSIM_AUTO_RECONCILE_INTERVAL: int = 300          # seconds between sweeps
     CORTEXSIM_AUTO_RECONCILE_LOOKBACK: int = 86400        # consider runs newer than this
     CORTEXSIM_AUTO_RECONCILE_WINDOW: int = 3600           # match window per result
+    # Case-ledger refresh sweep (runs inside the auto-reconcile loop only).
+    # Disposition drifts after a run (Auto Triage seals cases ~6 h later), so a
+    # stored ledger is re-read; read-only, cases only, counted and capped.
+    CORTEXSIM_CASE_LEDGER_WINDOW_HOURS: int = 24          # refresh ledgers of runs started within this
+    CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP: int = 20    # runs refreshed per sweep
     # A delivered run whose agent is offline and silent this long is terminalised
     # as beacon_lost by the heartbeat sweep (the XDR agent may kill the beacon).
     CORTEXSIM_BEACON_LOST_AFTER_SECONDS: int = 180

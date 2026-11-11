@@ -245,9 +245,17 @@ def _iso(dt: Optional[datetime]) -> Optional[str]:
 
 def build_case_ledger(alerts: Sequence[LedgerAlert], cases: Mapping[str, LedgerCase], *,
                       basis: str, read_at: datetime, ai_close_marker: Optional[str] = None,
-                      code: str = "CASE_LEDGER_OK") -> dict:
+                      code: str = "CASE_LEDGER_OK",
+                      issue_override: Optional[Mapping[str, str]] = None) -> dict:
+    """``issue_override`` carries a stored ``issue_closed_by`` forward for alerts
+    whose issue status is not re-read (a cases-only refresh); it wins over what
+    the (unset) restored issue fields would compute, which is always ``unread``.
+    """
     merge_class, reason = classify_merge(alerts, cases, basis=basis)
-    per_issue = {a.external_id: issue_closed_by(a, ai_close_marker=ai_close_marker) for a in alerts}
+    override = issue_override or {}
+    per_issue = {a.external_id: (override[a.external_id] if a.external_id in override
+                                 else issue_closed_by(a, ai_close_marker=ai_close_marker))
+                 for a in alerts}
     case_rows = []
     shared = False
     for cid in sorted(cases):
