@@ -44,17 +44,12 @@
   SSE (`text/event-stream`) now backs `GET /api/runs/{id}/events` (scoped) and
   `GET /api/events` (global); the rest of the surface remains REST/JSON. No
   WebSocket, no gRPC (GAP-API-002 closed 2026-06-08).
-- **153 HTTP routes total** (counted 2026-11-10 on the host venv, FastAPI
-  0.141.1 as pinned in `core/requirements.txt`; not re-counted against a built
-  image). Routers under `/api`, plus the app-level `GET /api/health` and a static
-  file mount at `/`. Per-prefix: `runs` 19 · `agents` 16 · `eal` 15 ·
-  `scenarios` 15 (7 of them under `/scenarios/drafts`) · `tools` 11 ·
-  `credentials` 10 · `uctc` 9 · `ttps` 8 · `xsiam` 8 · `shelf` 7 · `k8s` 6 ·
-  `assertions` 6 · `infra` 4 · `results` 4 · `pov` 3 · `connectors` 2 ·
-  `mitre` 2 · `prerequisites` 1 · `run` 1 · `events` 1 · `health` 1, plus 4
-  FastAPI-owned docs/openapi routes. The previous figure here was 133
-  (2026-08-06); 18 routes landed since without this line moving (the three in
-  §1.16 among them), and 2 more are the tenant-content routes in §1.2.1.
+- **161 HTTP routes total** (counted 2026-11-11 on the host venv with the walker
+  below, after the NGFW connection was rebased onto dev `30b10cc`; not re-counted
+  against a built image). Routers under `/api`, plus the app-level `GET /api/health`
+  and a static file mount at `/`, plus 4 FastAPI-owned docs/openapi routes. Since the
+  153 that stood here: `collector-targets` 5 and `ngfw` 3 (§1.17). Per-prefix
+  breakdown: run the walker; a quoted breakdown went stale twice.
 
 > **Count it, do not quote it.** The "65 HTTP routes / 11 routers" line that stood
 > here was two content passes stale, and the 133 after it was 20 stale. The

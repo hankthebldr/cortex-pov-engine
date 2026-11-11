@@ -315,6 +315,8 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   tenant, or change door badges; those are phases 2 to 4 of
   `docs/superpowers/specs/2026-11-10-composer-correlation-story-design.md`.
 
+### Added — read-only NGFW (PAN-OS) connection
+
 - **Read-only NGFW (PAN-OS) connection and a Firewall wizard under Manage.** A
   firewall is registered as integration kind `panos_ngfw`, by pasting an API key
   (`PUT /api/credentials/integrations`) or with `POST /api/ngfw/keygen`, which
