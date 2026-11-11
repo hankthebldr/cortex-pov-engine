@@ -61,6 +61,13 @@ function apiError(message, { code = null, detail = null, status = null } = {}) {
 export const REQUEST_TIMEOUT_MS = 20_000
 /** Reports and bundles are generated on demand and legitimately take longer. */
 export const DOWNLOAD_TIMEOUT_MS = 60_000
+/**
+ * POST /api/tools/{tool}/install holds the request open while it builds, and
+ * SimCore caps that build at 600 s (core/tools/instantiator.py). The default
+ * 20 s budget abandoned every real install; the next request then met
+ * 409 INSTALL_IN_PROGRESS because the first was still running.
+ */
+export const INSTALL_TIMEOUT_MS = 630_000
 
 /**
  * Attach an abort signal unless the caller brought their own.
@@ -603,7 +610,8 @@ export async function getTools() {
  * @returns {Promise<Object>}
  */
 export async function installTool(toolName) {
-  return request(`/api/tools/${toolName}/install`, { method: 'POST' })
+  // The request stays open for the whole build, so it gets a build's budget.
+  return request(`/api/tools/${toolName}/install`, { method: 'POST', _timeoutMs: INSTALL_TIMEOUT_MS })
 }
 
 /**
