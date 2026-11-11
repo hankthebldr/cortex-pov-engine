@@ -10,7 +10,8 @@ import { serverDate } from '../../api/time.js'
 
 /**
  * CollectorTargetsPanel — the tenant-side ingestion doors this POV's emitters
- * POST to (XSIAM HTTP log collector, Broker VM HTTP applet, a forwarder).
+ * POST to (the XSIAM HTTP log collector, or a forwarder in front of it).
+ * Broker VM targets are not modelled yet.
  *
  * Entered once per instance; every campaign, offline bundle and Composer EAL
  * step resolves its destination from these. Three honesty rules shape it:
@@ -23,7 +24,6 @@ import { serverDate } from '../../api/time.js'
 
 const KIND_LABEL = {
   xsiam_http_collector: 'XSIAM HTTP collector',
-  broker_vm_http: 'Broker VM (HTTP)',
   http_forwarder: 'HTTP forwarder',
 }
 
@@ -282,8 +282,8 @@ export default function CollectorTargetsPanel() {
     <section className="ct-panel" data-testid="collector-targets">
       <h2 className="ct-panel__title">Collector targets</h2>
       <p className="ct-panel__lede">
-        Where this POV's log emitters send records: the tenant's HTTP log collector, the Broker VM's
-        HTTP applet, or a forwarder in front of either. Every campaign, offline bundle and Composer
+        Where this POV's log emitters send records: the tenant's HTTP log collector, or a forwarder
+        in front of it. Every campaign, offline bundle and Composer
         step takes its destination from here. Keys are stored encrypted and never shown again.
       </p>
 

@@ -7,7 +7,7 @@ going" in place of answering the remaining questions, so the calls marked
 ## 1. Intent
 
 A Domain Consultant enters the tenant-side ingestion doors once per POV (the XSIAM
-HTTP log collector, the Broker VM's HTTP applet, a forwarder in front of either),
+HTTP log collector, a forwarder in front of it, and — once modelled — the Broker VM),
 checks each one before the customer is watching, and every campaign and offline
 bundle in that POV uses them with nothing re-entered.
 
@@ -64,8 +64,14 @@ check that leaves the tenant untouched.
   user) is a beacon change: a per-step `env` on the task, a `step-env` capability,
   and environment pass-through on each identity wrapper. That is a separate
   `agent`-area branch (§10). Push bundles for those scenarios ride with it.
-- A syslog transport. Every collector emitter is HTTP POST; a Broker VM *syslog*
-  applet target would be a new transport, not a new row.
+- **Broker VM targets — on hold.** Henry, 2026-11-10: *"hold off on the broker VM
+  specifics -- I can confirm what applets shortly"*. Every collector emitter today is
+  an HTTP POST. Which Broker VM applets a POV uses decides whether a Broker VM target
+  is a new kind (an HTTP receiver) or a new transport (for example syslog). Note for
+  that decision: the tenant-setup research (`docs/docs-tenant-setup-research`) lists
+  no HTTP receiver among the documented applets, and #178 reworded the delivery
+  remediation on that basis, while the mechanics ledger still carries a "Broker VM
+  HTTP applet" as an open question.
 - Carrying targets between instances (export/import). Henry: not portable.
 - Moving the plaintext `auth_token` that existing campaigns already store into the
   vault. Targets stop new keys landing there; the old field is left as it is.
@@ -86,7 +92,7 @@ tables except §7's run column).
 | field | notes |
 |---|---|
 | `name` | unique slug `^[a-z0-9][a-z0-9-]{1,47}$`, the handle steps and runs use |
-| `kind` | `xsiam_http_collector` · `broker_vm_http` · `http_forwarder` **[my call]** — the label decides defaults and the configured-rung rules, not the transport |
+| `kind` | `xsiam_http_collector` · `http_forwarder` **[my call]** — the label decides defaults and the configured-rung rules, not the transport. Broker VM kinds wait on §10 |
 | `url` | full URL, http/https, host required. A pathless URL warns; an `xsiam_http_collector` whose path is not `/logs/v1/event` warns (the console shows the exact path, so a warning, not a refusal) |
 | `dataset` | optional label. An XSIAM HTTP collector writes one dataset fixed in its own config; this is what the DC sees, not something sent |
 | `auth_header` | default `Authorization` |
@@ -197,7 +203,13 @@ discard-safe record into the tenant. Plugins no target serves are listed as a
 warning, never hidden. The campaign builder's `collector_url` field becomes optional
 when a target serves that plugin.
 
-## 10. Follow-up: agent-run scenario steps (separate branch)
+## 10. Follow-ups
+
+**Broker VM targets** — once Henry confirms which applets a POV uses: a new kind if
+an applet receives HTTP, or a transport (and kind) if it is syslog or another
+protocol, with its own reachable rung (port check) and accepted rung.
+
+**Agent-run scenario steps (separate branch)**
 
 `feature/agent-collector-env`. Resolve per step from the plugins named in the step's
 command text (2 of 89 steps name two collector plugins; both NGFW); ship `COLLECTOR_URL`,

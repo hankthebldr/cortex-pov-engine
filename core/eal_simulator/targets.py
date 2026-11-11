@@ -1,8 +1,7 @@
 """Collector targets: where every in-process collector step POSTs.
 
 A SimCore instance serves one POV against one tenant, so the tenant-side
-ingestion doors (the XSIAM HTTP log collector, the Broker VM's HTTP applet, a
-forwarder in front of either) are instance configuration, entered once. This
+ingestion doors (the XSIAM HTTP log collector, or a forwarder in front of it) are instance configuration, entered once. This
 module is the one resolver every consumer calls — campaign create, the
 collector view, campaign preflight, launch, the offline bundle and the Composer
 in-process dispatch — so they cannot disagree about a destination.
@@ -33,7 +32,10 @@ from urllib.parse import urlparse
 
 #: The kinds a target may declare. The label decides defaults and the
 #: configured-rung rules, not the transport — every kind is an HTTP POST.
-KINDS: tuple[str, ...] = ("xsiam_http_collector", "broker_vm_http", "http_forwarder")
+#: Broker VM targets are not modelled yet: which Broker VM applets a POV uses
+#: is pending the operator's confirmation, and every collector emitter today
+#: is an HTTP POST (spec §10).
+KINDS: tuple[str, ...] = ("xsiam_http_collector", "http_forwarder")
 
 #: Kinds whose collector refuses a POST without a key.
 KINDS_REQUIRING_KEY: frozenset[str] = frozenset({"xsiam_http_collector"})

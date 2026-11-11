@@ -1,10 +1,11 @@
 """CortexSim API — /api/collector-targets.
 
 The tenant-side ingestion doors this instance's emitters POST to: the XSIAM
-HTTP log collector, the Broker VM's HTTP applet, a forwarder in front of
-either. A SimCore instance serves one POV, so these are entered once and every
-campaign launch, campaign preflight, offline bundle and Composer EAL dispatch
-resolves its destination from them (``eal_simulator.targets``).
+HTTP log collector (``https://api-<tenant>/logs/v1/event``), or a forwarder
+in front of it. Broker VM targets are not modelled yet (spec §10). A SimCore
+instance serves one POV, so these are entered once and every campaign launch,
+campaign preflight, offline bundle and Composer EAL dispatch resolves its
+destination from them (``eal_simulator.targets``).
 
   GET    /api/collector-targets               list + which collector plugins nothing serves
   GET    /api/collector-targets/{name}        one target
@@ -100,7 +101,7 @@ async def list_targets(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     }
     if not rows:
         payload["detail"] = ("No collector target is configured, so no collector step "
-                             "can run live. Add the tenant's HTTP collector or Broker VM.")
+                             "can run live. Add the tenant's HTTP log collector.")
     return payload
 
 

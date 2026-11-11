@@ -51,7 +51,7 @@ async def _default_connect(host: str, port: int, use_tls: bool, timeout: float) 
     ctx: Optional[ssl.SSLContext] = None
     if use_tls:
         # Matches the live run, which does not verify certificates by default
-        # (Broker VMs commonly present self-signed ones). A stricter preflight
+        # (lab forwarders commonly present self-signed ones). A stricter preflight
         # would fail doors the run would use.
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
