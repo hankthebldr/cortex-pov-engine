@@ -158,8 +158,11 @@ async def list_integrations(
     return {"integrations": [r.to_dict() for r in rows]}
 
 
-def _validate_integration_config(kind: str, config: dict[str, Any]) -> None:
+def _validate_integration_config(kind: str, config: dict[str, Any]) -> dict[str, Any]:
     """Per-kind config validation at WRITE time. Raises HTTPException(400).
+
+    Returns the config to store (``panos_ngfw`` gets its defaults filled; every
+    other kind is returned unchanged).
 
     A bad tenant URL used to be accepted here silently and only became a problem
     at the first ``/reconcile`` — at which point CortexSim had already sent the
@@ -170,9 +173,20 @@ def _validate_integration_config(kind: str, config: dict[str, Any]) -> None:
     from integrations.xsiam.exceptions import XsiamConfigError  # noqa: PLC0415
     from integrations.xsiam.loader import XSIAM_KIND  # noqa: PLC0415
     from integrations.xsiam.tenant_url import normalize_tenant_base_url  # noqa: PLC0415
+    from integrations.panos import PANOS_KIND  # noqa: PLC0415
+    from integrations.panos.exceptions import PanosConfigError  # noqa: PLC0415
+    from integrations.panos.host import validate_panos_config  # noqa: PLC0415
+
+    if kind == PANOS_KIND:
+        try:
+            return validate_panos_config(config)
+        except PanosConfigError as exc:
+            raise HTTPException(status_code=400, detail={
+                "error": "NGFW config rejected", "code": "INTEGRATION_CONFIG_INVALID",
+                "detail": str(exc)}) from exc
 
     if kind not in ("xsiam", XSIAM_KIND):
-        return
+        return config
     url = config.get("base_url") or config.get("fqdn") or config.get("tenant_url")
     if not url:
         raise HTTPException(status_code=400, detail={
@@ -193,6 +207,7 @@ def _validate_integration_config(kind: str, config: dict[str, Any]) -> None:
             "error": "capabilities must be a list of strings",
             "code": "INTEGRATION_CONFIG_INVALID",
             "detail": "e.g. [\"read_alerts\"] or [\"read_alerts\", \"xql\"]"})
+    return config
 
 
 @router.put("/integrations")
@@ -200,13 +215,13 @@ async def put_integration(
     body: IntegrationPut,
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    _validate_integration_config(body.kind, body.config or {})
+    config = _validate_integration_config(body.kind, body.config or {})
     store = CredentialStore(session)
     row = await store.put_integration(
         name=body.name,
         kind=body.kind,
         plaintext_secret=body.plaintext_secret,
-        config=body.config,
+        config=config,
         secret_type_hint=body.secret_type_hint,
         description=body.description,
     )
