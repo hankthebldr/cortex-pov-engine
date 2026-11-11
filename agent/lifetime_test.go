@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -80,5 +84,50 @@ func TestRunUntilShutdown_ReturnsWhenLoopEndsOnItsOwn(t *testing.T) {
 	defer cancel()
 	if runUntilShutdown(ctx, cancel, func(context.Context) {}, make(chan os.Signal), time.Second) {
 		t.Fatal("lifetime expiry (loop returns, no signal) was reported as a timeout")
+	}
+}
+
+func TestExpiredAtStartup(t *testing.T) {
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	if expiredAtStartup(time.Time{}, now) {
+		t.Fatal("zero expiry (never) reported as expired")
+	}
+	if expiredAtStartup(now.Add(time.Minute), now) {
+		t.Fatal("future expiry reported as expired")
+	}
+	if !expiredAtStartup(now, now) || !expiredAtStartup(now.Add(-time.Hour), now) {
+		t.Fatal("past expiry not reported as expired")
+	}
+}
+
+// A pod whose lifetime ran out before the beacon started must not redeem its
+// enrollment token or register: it logs LIFETIME_EXPIRED and exits 0, and the
+// supervisor idles. The enroll server must receive ZERO requests.
+func TestMainExpiredAtStartupNeverEnrolls(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	tok := filepath.Join(dir, "token")
+	if err := os.WriteFile(tok, []byte("cxs_test_token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMainFlagValidationExits$")
+	cmd.Env = append(os.Environ(), "CORTEXSIM_TEST_MAIN_ARGS=--server "+srv.URL+
+		" --enroll-token-file "+tok+" --state-dir "+filepath.Join(dir, "state")+
+		" --expires-at "+past)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("want exit 0, got err=%v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "LIFETIME_EXPIRED") {
+		t.Fatalf("output does not carry LIFETIME_EXPIRED:\n%s", out)
+	}
+	if n := atomic.LoadInt32(&hits); n != 0 {
+		t.Fatalf("enroll server received %d request(s), want 0\n%s", n, out)
 	}
 }

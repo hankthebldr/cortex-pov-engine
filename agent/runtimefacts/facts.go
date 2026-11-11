@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -72,6 +73,7 @@ type Options struct {
 	ProbeAccounts     []string
 	Getenv            func(string) string
 	LookPath          func(string) (string, error)
+	EvalSymlinks      func(string) (string, error)
 	ReadFile          func(string) ([]byte, error)
 	LookupUser        func(string) error
 }
@@ -113,6 +115,10 @@ func Collect(opts Options) Facts {
 	lookPath := opts.LookPath
 	if lookPath == nil {
 		lookPath = exec.LookPath
+	}
+	evalSymlinks := opts.EvalSymlinks
+	if evalSymlinks == nil {
+		evalSymlinks = filepath.EvalSymlinks
 	}
 	readFile := opts.ReadFile
 	if readFile == nil {
@@ -165,7 +171,7 @@ func Collect(opts Options) Facts {
 	f.Tools = clampList(f.Tools)
 	f.Accounts = clampList(f.Accounts)
 
-	// The executor's own rule, over this probe's injected LookPath.
-	f.AnchorRename = executor.AnchorRenameSupportedWith(lookPath)
+	// The executor's own rule, over this probe's injected seams.
+	f.AnchorRename = executor.AnchorRenameSupportedWith(lookPath, evalSymlinks)
 	return f
 }

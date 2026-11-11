@@ -801,9 +801,11 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 var newChainSession = executor.NewChainSession
 
 // anchorNotHonouredLine is the run-record notice for a cgo_anchor the host's
-// shell could not carry (no bash: a multi-call sh cannot be renamed).
+// shell could not carry (sh is busybox/toybox, which cannot be renamed, and
+// there is no bash).
 func anchorNotHonouredLine(image string) string {
-	return fmt.Sprintf("ANCHOR NOT HONOURED: requested %s; this image has no shell that can be started under another name (no bash on PATH), "+
+	return fmt.Sprintf("ANCHOR NOT HONOURED: requested %s; this image's sh is a multi-call binary (busybox/toybox) "+
+		"that cannot be started under another name and there is no bash on PATH, "+
 		"so the chain runs under 'sh'. Detections keyed on the anchor process name will not match.", image)
 }
 

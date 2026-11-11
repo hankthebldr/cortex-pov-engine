@@ -14,6 +14,11 @@ import (
 // the beacon is gone before the kubelet's SIGKILL, not killed by it.
 const shutdownGrace = 20 * time.Second
 
+// expiredAtStartup reports whether a non-zero expiry is already at or before now.
+func expiredAtStartup(expiresAt, now time.Time) bool {
+	return !expiresAt.IsZero() && !now.Before(expiresAt)
+}
+
 // parseExpiresAt reads --expires-at. Empty means the beacon never expires; any
 // other value must be RFC3339. A value that does not parse is an error, never a
 // silent "no expiry": a pod would otherwise outlive the lifetime it was granted.

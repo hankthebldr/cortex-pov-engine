@@ -136,6 +136,15 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	log.SetPrefix("[cortexsim-agent] ")
 
+	// A lifetime that ran out before this process started (a container restart
+	// after expiry, a pod rescheduled late) must not redeem the enrollment token
+	// or register: exit 0 and let the supervisor idle until the reaper removes it.
+	if expiredAtStartup(expiresAt, time.Now()) {
+		log.Printf("LIFETIME_EXPIRED — expires-at %s passed before startup; not enrolling or registering",
+			expiresAt.UTC().Format(time.RFC3339))
+		return
+	}
+
 	// The server URL usually comes from a Kubernetes Secret and may carry a
 	// trailing slash or newline: normalise it once, before any use.
 	serverURL := beacon.NormalizeServerURL(*serverFlag)
