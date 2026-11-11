@@ -2327,6 +2327,22 @@ async def agent_installer(
         if problem:
             raise _bad_request("BAD_TOKEN", "Invalid enrollment token", problem)
     resolved = _resolve_server(request, server)
+    if server:
+        # RG-GUARD-05: a name this deployment's Host guard refuses would be
+        # answered 400 HOST_NOT_ALLOWED on every enroll and poll the beacon
+        # makes: the installer would "succeed" and no agent would appear. A
+        # server taken from this request's own Host header was admitted to get
+        # here, so only ?server= can trip this.
+        from security import host_guard  # noqa: PLC0415
+
+        if not await host_guard.would_admit(resolved):
+            name = urlparse(resolved).hostname or resolved
+            raise _bad_request(
+                "SERVER_HOST_NOT_ALLOWED", "Server name refused by SimCore's Host guard",
+                f"the beacon would call back to {name!r}, and SimCore answers every request "
+                f"addressed to that name with 400 HOST_NOT_ALLOWED. Add {name} to "
+                "CORTEXSIM_ALLOWED_HOSTS (comma separated; *.domain matches subdomains) and "
+                "restart SimCore, or pass ?server= with this SimCore's IP address.")
 
     if os_norm == "windows":
         return _script_response(_windows_installer(resolved, id, interval_n, token),

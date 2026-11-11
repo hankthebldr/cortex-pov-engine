@@ -492,8 +492,13 @@ def test_a_hostile_derived_default_server_is_refused(base_url):
     {"token": TOKEN},
 ])
 @pytest.mark.parametrize("os_name", ["windows", "linux"])
-def test_legitimate_values_are_still_served(client, shelf, os_name, params):
+def test_legitimate_values_are_still_served(client, shelf, os_name, params, monkeypatch):
     shelf(True)
+    # A DNS name is only bakeable when this deployment's Host guard admits it
+    # (RG-GUARD-05, test_agents_install_host_guard.py); this test is about the
+    # shape of the value, so the deployment admits the name.
+    from config import settings
+    monkeypatch.setattr(settings, "CORTEXSIM_ALLOWED_HOSTS", "simcore.corp.local", raising=False)
     r = client.get("/api/agents/install", params={"os": os_name, **params})
     assert r.status_code == 200, r.text[:400]
 
