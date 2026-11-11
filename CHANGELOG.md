@@ -408,6 +408,59 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
   quietly read tenant B would have credited B's alerts to the run; the error
   lists the names that are available and pulls nothing.
 
+### Added
+
+- **MCP server** (`core/mcp_server/`, `mcp==1.30.0`): 41 tools — 25
+  `cortexsim.*` and 16 `xsiam.*` (37 backed, 4 registered-but-unbacked that
+  answer `TOOL_NOT_BACKED`; count from `python -m mcp_server --list-tools`).
+  Two transports over one implementation: stdio (`python -m mcp_server`) and an
+  opt-in Streamable HTTP mount at `/mcp` behind `CORTEXSIM_MCP_HTTP=1`
+  (default off), plus the P-2 manifest (`--manifest`). Every result carries an
+  evidence envelope; `queries_issued` and `tenant_verified` may be `null`,
+  meaning *not known*, never zero. **Authored is not proven:** no MCP tool has
+  run against a live tenant; `tenant-verified` is still 0. Reference:
+  `docs/reference/api-and-agent-surface.md` §9.
+- `GET /api/readiness`: the connector ladder and `tenant_verified`, counted in
+  Python, with zero outbound calls (§1.16).
+- `GET /api/runs` accepts `status`, `scenario_id` and `limit` (1..500).
+- `queries_issued` (and a `ledger` snapshot) on the XSIAM executor, XQL and
+  metrics routes, on `POST /api/runs/{id}/reconcile`, and on
+  `POST /api/assertions/{id}/run`.
+- `/api/health` reports an `mcp` component.
+- `make check-mcp-boot`: runs `python -m mcp_server --list-tools` inside the
+  built image and requires at least 41 tools; part of `make validate` and the
+  backend CI job.
+
+### Changed
+
+- **Behaviour change you may veto: XQL needs `"xql"` in `capabilities`.** The
+  XSIAM executor and XQL routes (`POST …/operations/{op_id}`, `POST …/xql`,
+  `GET …/xql/{query_id}`, `GET …/metrics`) now refuse with 403
+  `XSIAM_CAPABILITY_MISSING` for a credential whose `config.capabilities` does
+  not list `"xql"`, and charge the per-tenant daily ledger (429
+  `XSIAM_QUOTA_ERROR` when spent). **An existing credential without the field
+  stops running XQL after upgrade**; add `"capabilities": ["xql"]` to its config.
+- **Behaviour change you may veto: preflight treats absent `capabilities` as
+  not granted.** It used to authorise XQL when the field was absent. Preflight
+  and the verify/reconcile runner now share one rule (`integrations/xsiam/guards.py`).
+- XQL start refuses a malformed body (`XQL_REQUEST_SHAPE_INVALID`, 400) and a
+  write-stage query (`XQL_WRITE_STAGE_REFUSED`, 400) before any tenant call;
+  `OP-XQL-GET-QUOTA` and the results stream are gated like the other XQL ops.
+- The global `XsiamError` body gains an additive `upstream_status`;
+  `{error, code, detail}` is unchanged.
+- Reconcile counts the page a failed read died on as a query.
+- Pins: `uvicorn[standard]` 0.29.0 to 0.31.1 and `httpx` 0.27.0 to 0.27.2
+  (forced by the MCP SDK).
+
+### Security
+
+- Writes through MCP preview by construction: a write or destructive operation
+  with `dry_run: false` returns `MCP_WRITE_NOT_EXECUTABLE` with the preview
+  attached and the tenant is never called. There is no write path to Cortex
+  through this surface; `CORTEXSIM_XSIAM_ALLOW_WRITE` and
+  `CORTEXSIM_XSIAM_ALLOW_DESTRUCTIVE` stay default-off. The `/mcp` mount is
+  off by default and, like the rest of SimCore, has no authentication of its own.
+
 ## [1.1.0] - 2026-11-02
 
 **The library grows from 177 to 193 scenarios, fifteen of them Unit 42
