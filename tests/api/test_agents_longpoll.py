@@ -163,3 +163,67 @@ async def test_wait_for_task_returns_at_once_when_a_task_is_already_queued():
     elapsed = time.monotonic() - started
 
     assert elapsed < 0.5, f"wait_for_task blocked {elapsed:.2f}s with a task already queued"
+
+
+# ── OPS-09, route half ──────────────────────────────────────────────────────
+# A beacon that restarts inside its long-poll window leaves the old request
+# parked. wait_for_task now returns False to a waiter a newer poll superseded
+# (3547c57), but poll_tasks ignored the result and dequeued anyway, so a task
+# enqueued while both were parked could be handed to the abandoned connection
+# and never reach the beacon. The same holds for a request whose client has
+# gone. Neither may dequeue.
+
+def _lp_task(task_id):
+    from engine.orchestrator import Task
+    return Task(task_id=task_id, run_id=f"run-{task_id}", scenario_id="SIM-EDR-001",
+                steps=[], identity_context=None)
+
+
+def _drain(agent_id):
+    from engine.orchestrator import orchestrator
+    while orchestrator.dequeue(agent_id) is not None:
+        pass
+
+
+def test_a_superseded_long_poll_does_not_take_the_task(client, monkeypatch):
+    from engine.orchestrator import orchestrator
+    agent_id = _register(client, "lp-superseded")
+    task = _lp_task("t-sup")
+
+    async def superseded_wait(aid, timeout):
+        orchestrator._enqueue(aid, task)   # arrives while the stale poll is parked
+        return False                       # ...and a newer poll superseded it
+
+    monkeypatch.setattr(orchestrator, "wait_for_task", superseded_wait)
+    try:
+        r = client.get(f"/api/agents/{agent_id}/tasks?wait=5")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"task": None}, r.json()
+        assert orchestrator.peek_queue(agent_id) == [task], "the stale poll took the task"
+    finally:
+        _drain(agent_id)
+
+
+def test_a_disconnected_long_poll_does_not_take_the_task(client, monkeypatch):
+    from starlette.requests import Request
+
+    from engine.orchestrator import orchestrator
+    agent_id = _register(client, "lp-gone")
+    task = _lp_task("t-gone")
+
+    async def current_wait(aid, timeout):
+        orchestrator._enqueue(aid, task)
+        return True
+
+    async def gone(self):
+        return True
+
+    monkeypatch.setattr(orchestrator, "wait_for_task", current_wait)
+    monkeypatch.setattr(Request, "is_disconnected", gone)
+    try:
+        r = client.get(f"/api/agents/{agent_id}/tasks?wait=5")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"task": None}, r.json()
+        assert orchestrator.peek_queue(agent_id) == [task], "a gone client was handed the task"
+    finally:
+        _drain(agent_id)

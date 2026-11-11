@@ -2820,8 +2820,13 @@ async def poll_tasks(
     # (GAP-API-005). A restart will not re-deliver an already-dispatched task.
     task = await orchestrator.dequeue_for_agent(agent_id, db)
     if task is None and wait > 0:
-        await orchestrator.wait_for_task(agent_id, timeout=float(wait))
-        task = await orchestrator.dequeue_for_agent(agent_id, db)
+        # OPS-09: a waiter that a newer poll for this agent superseded belongs
+        # to a connection the beacon abandoned (a restart inside the window),
+        # and a request whose client has gone cannot receive a task. Either
+        # dequeuing would hand the task to nobody and leave the run waiting.
+        current = await orchestrator.wait_for_task(agent_id, timeout=float(wait))
+        if current is not False and not await request.is_disconnected():
+            task = await orchestrator.dequeue_for_agent(agent_id, db)
 
     if task is None:
         logger.debug("poll_tasks agent=%s no tasks", agent_id)
