@@ -127,6 +127,12 @@ an unknown forwarder. A route that cannot be derived gives `unknown`, never `arm
 datasets are datasets the tenant creates on a documented route
 (`EMITTER_DATASET_NOT_TENANT_DATASET`).
 
+Counted 2026-11-10 on the shipped registry: 21 of 31 addressable sources have a
+documented route; 12 emitter-to-source pairs name a dataset no documented route
+creates; 6 pairs sit on a source with no documented route at all (`duo`, both
+Google Workspace sources, `pan_firewall_eal_logs`, `third_party_alerts`). Both
+figures are pinned in `tests/eal_simulator/test_analytics_catalogue.py`.
+
 ### 6. Validation
 
 Offline, in the test suite: route registry integrity; readiness ordering (route

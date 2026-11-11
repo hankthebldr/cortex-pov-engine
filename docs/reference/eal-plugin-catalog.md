@@ -227,6 +227,57 @@ tolerance beats a crash; this reads an *operator-typed config date*, where
 assuming UTC shifts the gate by the DC's own offset and answers wrongly with no
 error anywhere. **Do not unify them.**
 
+#### Route and soakless (2026-11-10, LogSimv2 port phase 1)
+
+The gate now asks a question before training time: **can the record reach the
+detector at all?** Three documented facts make the answer often no:
+
+- *"Analytics, IOC, and BIOC issues are only generated on normalized logs."*
+  ([Ingest data from Next-Generation Firewall](https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall))
+- A custom HTTP log collector writes `<Vendor>_<Product>_raw`, which analytics
+  reads only once an XDM modeling rule maps it. Every streamer in this family
+  delivers this way.
+- On the Cribl receiver, out-of-the-box analytics run only on dedicated-UUID
+  sources, never the generic UUID
+  ([Data source UUIDs](https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/vendor-specific-data-sources-and-connectors/cribl/ingest-data-from-cribl/data-souce-uuids)).
+
+`core/eal_simulator/ingestion_routes.py` records, per catalogue source, each
+documented route: pipe, the dataset the tenant creates, Cribl source UUID,
+vendor/product, and whether out-of-the-box analytics run on it (`yes` / `no` /
+`requires_xdm`). Dataset and analytics claims carry **separate** evidence
+(`documented` / `inferred` / `reported`). `reported` means only LogSimv2 states
+it, and it is never quoted as a vendor statement.
+
+The endpoint reads each step's route from its own `collector_url`
+(`/logs/v1/event` is the HTTP collector; `/logs/v1/integrated/cribl/data` is the
+Cribl receiver, whose UUID is in a header and so unresolved; anything else is an
+unknown forwarder). Then, in order:
+
+| Gate | Result |
+|---|---|
+| Route analytics never reads (`cribl_generic`, ingestion-only sources) | `not_armable` · `DETECTOR_ROUTE_NO_ANALYTICS`. A soakless tenant does not change this |
+| Route needs XDM and `xdm_modeled_sources` does not attest it | `unknown` · `DETECTOR_ROUTE_REQUIRES_XDM` |
+| Route cannot be read from the URL, or one emitter uses two doors (`mixed`) | `unknown` · `DETECTOR_ROUTE_UNRESOLVED` |
+| `soakless_attested: true` | `armed` · `DETECTOR_ARMED_SOAKLESS`, `armed_basis: "attested:soakless"`. The documented periods stay in the verdict |
+| Otherwise | the onboarding-date gate above, `armed_basis: "onboarding_date"` when armed |
+
+**Behaviour change.** Before this pass, an HTTP-collector campaign whose source
+had been onboarded long enough read `armed` and `ready: true`. It now reads
+`unknown` until the DC attests the XDM rule, because the vendor says built-in
+analytics never see that data otherwise.
+
+`GET /api/eal/data-streams` source rows gain `routes[]` and `dataset_check[]`
+(does each emitter name a dataset the tenant creates for that source:
+`match` / `mismatch` / `no_documented_route`). Top-level `generic_routes[]` and
+`ingestion_only[]` list the two routes any source can take and the four sources
+with real data but no published analytics (Proofpoint TAP, Infoblox NIOS, Apache
+httpd, VMware ESXi). Those four sit outside the 34-source coverage figure by
+construction. Counted 2026-11-10: **21 of 31** addressable sources have a
+documented route, and **12** emitter-to-source pairs name a dataset no
+documented route creates (`counts.emitter_dataset_mismatch`). That is measured,
+not fixed; renaming is decision D-2 in
+`docs/superpowers/specs/2026-11-10-logsim-v2-catalog-port-design.md`.
+
 #### Counted state (2026-09-20)
 
 `detectors 15 · documented 11 · undocumented 4 · alerts transcribed 8 ·
