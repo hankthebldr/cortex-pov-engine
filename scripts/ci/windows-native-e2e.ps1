@@ -19,7 +19,9 @@
       render     scripts/ci/render_powershell.py --out <RUNNER_TEMP>\ps.
       parse      every rendered file through Parser::ParseFile (BOM, else ANSI,
                  as -File reads it) AND Parser::ParseInput on its UTF-8 text
-                 (as iwr | iex reads it).
+                 (as iwr | iex reads it). Then three control fixtures with a
+                 known verdict, two of which this parser MUST reject, so the
+                 phase is not a gate that can only ever say yes.
       pssa       PSScriptAnalyzer: PSUseCompatibleSyntax 5.1 plus
                  PSUseCompatibleCommands / PSUseCompatibleTypes against the
                  Server 2016 / 2019 Windows PowerShell 5.1 profiles.
@@ -834,6 +836,60 @@ function Invoke-PhaseParse {
         })
     }
     Write-CsProof -Name 'parse.json' -Text (ConvertTo-CsJsonArray -Items $rows.ToArray())
+    $controls = @(Invoke-CsParseControls)
+    Write-CsProof -Name 'parse-controls.json' -Text (ConvertTo-CsJsonArray -Items $controls)
+}
+
+# Controls for the parse phase. The loop above only ever asserts ZERO errors,
+# so a parser that could reject nothing (a wrong decode, an empty read, a
+# powershell.exe that is not 5.1 Desktop) would report the same green. These
+# three fixtures have a known verdict under Windows PowerShell 5.1 and two of
+# them MUST be rejected:
+#   good_51.ps1           clean as a file and as UTF-8 text
+#   bad_ps7_only.ps1      PowerShell-7-only syntax (ASCII): 5.1 cannot parse it
+#   bad_cp1252_quote.ps1  BOM-less UTF-8 em dash inside a double-quoted string:
+#                         ParseFile reads the file in the ANSI code page, where
+#                         the dash's third byte (0x94) is a closing quote, so
+#                         the file read must fail; the UTF-8 text (what
+#                         iwr | iex hands the parser) must parse.
+# scripts/ci/render_powershell.py excludes the two bad files from the rendered
+# set by exact path, so this is the only place in the job that reads them. A
+# missing fixture throws: controls over zero files prove nothing.
+function Invoke-CsParseControls {
+    param([string]$FixtureDir = '')
+    if (-not $FixtureDir) { $FixtureDir = Join-Path $script:Workspace 'tests\ci\fixtures' }
+    $ansi = [System.Text.Encoding]::Default.CodePage
+    $controls = @(
+        @{ file = 'good_51.ps1'; file_rejected = $false; input_rejected = $false },
+        @{ file = 'bad_ps7_only.ps1'; file_rejected = $true; input_rejected = $true },
+        @{ file = 'bad_cp1252_quote.ps1'; file_rejected = $true; input_rejected = $false }
+    )
+    $rows = New-Object System.Collections.ArrayList
+    foreach ($c in $controls) {
+        $name = [string]$c.file
+        $path = Join-Path $FixtureDir $name
+        if (-not (Test-Path -LiteralPath $path)) { throw ('parse control fixture is missing: ' + $path) }
+        $r = Get-CsParseErrors -Path $path
+        $checks = @(
+            @{ what = 'ParseFile (as -File reads it)'; want = [bool]$c.file_rejected; errors = @($r.FileErrors) },
+            @{ what = 'ParseInput on the UTF-8 text (as iwr | iex reads it)'; want = [bool]$c.input_rejected; errors = @($r.InputErrors) }
+        )
+        foreach ($k in $checks) {
+            $found = @($k.errors).Count
+            $rejected = ($found -gt 0)
+            if ($k.want) { $expect = 'expected it to be REJECTED' } else { $expect = 'expected it to parse' }
+            $detail = $expect + ', the parser reported ' + $found + ' error(s); ANSI cp' + $ansi
+            if ($found -gt 0) { $detail = $detail + '; ' + (Format-CsParseError $k.errors) }
+            if ($k.want) { $verdict = 'rejects' } else { $verdict = 'accepts' }
+            Assert-Cs ($rejected -eq $k.want) ('control: ' + $k.what + ' ' + $verdict + ' ' + $name) $detail
+        }
+        [void]$rows.Add([ordered]@{
+            file = $name; bom = $r.HasBom; non_ascii_bytes = $r.NonAscii; ansi_code_page = $ansi
+            expect_file_rejected = [bool]$c.file_rejected; parsefile_errors = @($r.FileErrors).Count
+            expect_input_rejected = [bool]$c.input_rejected; parseinput_errors = @($r.InputErrors).Count
+        })
+    }
+    return $rows.ToArray()
 }
 
 function Invoke-PhasePssa {

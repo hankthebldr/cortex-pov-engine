@@ -605,7 +605,9 @@ jobs:
   #   build      the SHIPPED recipe, scripts/build-agent-dist.sh, then PE32+
   #              x86-64 / SHA256SUMS / Authenticode checks on what it wrote
   #   render     scripts/ci/render_powershell.py (the powershell-gate lane)
-  #   parse      ParseFile (as -File reads it) + ParseInput (as iwr | iex does)
+  #   parse      ParseFile (as -File reads it) + ParseInput (as iwr | iex does),
+  #              then control fixtures the 5.1 parser must REJECT (a PS7-only
+  #              file, a BOM-less em dash) so the phase can be seen to fail
   #   pssa       PSScriptAnalyzer compatibility rules vs Server 2016/2019 5.1
   #   boot       SimCore under uvicorn on 127.0.0.1:8888 from this checkout
   #   install    the console's token one-liner in a child powershell.exe
