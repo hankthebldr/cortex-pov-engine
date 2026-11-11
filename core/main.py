@@ -446,6 +446,7 @@ from api.mitre import router as mitre_router            # noqa: E402
 from api.infra import router as infra_router            # noqa: E402
 from api.eal import router as eal_router                # noqa: E402
 from api.credentials import router as credentials_router  # noqa: E402
+from api.collector_targets import router as collector_targets_router  # noqa: E402
 from api.xsiam import router as xsiam_router  # noqa: E402
 from api.ttps import router as ttps_router              # noqa: E402
 from api.events import router as events_router          # noqa: E402
@@ -486,6 +487,7 @@ app.include_router(mitre_router, prefix="/api")
 app.include_router(infra_router, prefix="/api")
 app.include_router(eal_router, prefix="/api")
 app.include_router(credentials_router, prefix="/api")
+app.include_router(collector_targets_router, prefix="/api")
 app.include_router(xsiam_router, prefix="/api")
 app.include_router(ttps_router, prefix="/api")
 app.include_router(events_router, prefix="/api")

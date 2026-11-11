@@ -1101,3 +1101,47 @@ class IntegrationCredential(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class CollectorTargetConfig(Base):
+    """One tenant-side ingestion door for this instance's POV.
+
+    A SimCore instance serves one POV against one tenant, so the collectors
+    the emitters POST to are instance configuration, entered once and read by
+    every campaign, bundle and Composer dispatch through
+    ``eal_simulator.targets``. The key lives in the vault (``Secret`` named by
+    ``secret_name``); this row never holds it and ``to_dict`` never reports
+    more than whether one is set.
+    """
+
+    __tablename__ = "collector_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    dataset: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    auth_header: Mapped[str] = mapped_column(String, nullable=False, default="Authorization")
+    auth_scheme: Mapped[str] = mapped_column(String, nullable=False, default="")
+    plugins: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    secret_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_check: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "kind": self.kind,
+            "url": self.url,
+            "dataset": self.dataset,
+            "auth_header": self.auth_header,
+            "auth_scheme": self.auth_scheme,
+            "plugins": list(self.plugins or []),
+            "is_default": bool(self.is_default),
+            "has_key": self.secret_name is not None,
+            "last_check": self.last_check,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
