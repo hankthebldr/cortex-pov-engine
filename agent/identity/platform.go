@@ -94,9 +94,10 @@ var accountNameRE = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}\$?$`)
 // unusableAccountName is a name no host can hold or that a wrapper would read
 // as something else: empty, a leading '-' (runuser/su/sudo would take it as an
 // option; the wrapper's quoting stops shell injection, not option injection),
-// or any control character, NUL included.
+// a leading '#' (sudo's uid form: `sudo -u '#0'` is root), or any control
+// character, NUL included.
 func unusableAccountName(name string) bool {
-	if name == "" || strings.HasPrefix(name, "-") {
+	if name == "" || strings.HasPrefix(name, "-") || strings.HasPrefix(name, "#") {
 		return true
 	}
 	for _, r := range name {

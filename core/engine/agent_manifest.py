@@ -307,6 +307,16 @@ _KUBECTL_COPY = (
     "|| { echo KUBECTL_COPY_FAILED > /dev/termination-log; exit %d; }" % km.EXIT_NEVER_RAN
 )
 
+_NEUTRALISED = "cortexsim.io/neutralised"
+
+#: Every cluster-scoped object ANY agent profile can emit. The reaper deletes,
+#: and its ClusterRole pins, this whole set whatever the current profile, so a
+#: downgrade cannot strand a binding the current generation no longer names.
+AGENT_CLUSTER_SCOPED: tuple[tuple[str, str], ...] = (
+    ("clusterroles", AGENT_APP),
+    ("clusterrolebindings", AGENT_APP),
+)
+
 _CARRIER_OBJECT = {
     "namespace": "Namespace",
     "serviceaccount": "ServiceAccount",
@@ -410,18 +420,26 @@ def build_agent_objects(
         "automountServiceAccountToken": posture.service_account.automount_token,
     })
 
-    cluster_scoped: list[tuple[str, str]] = []
-    if posture.service_account.cluster_role_rules:
-        cr_findings, crb_findings = carried("clusterrole"), carried("clusterrolebinding")
-        objects.append({
-            "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
-            "metadata": {
-                "name": AGENT_APP,
-                "labels": {**base, **km._finding_labels(cr_findings)},
-                "annotations": km._finding_annotations(cr_findings),
+    # Every profile emits the agent ClusterRole: on a profile with no cluster rules
+    # it is empty and marked neutralised, so re-applying a lower profile over a
+    # higher one overwrites the wildcard role in place (`kubectl apply` does not
+    # prune). The binding is emitted only when there are rules; a leftover binding
+    # then points at a role that grants nothing, and the reaper removes it.
+    cr_findings, crb_findings = carried("clusterrole"), carried("clusterrolebinding")
+    cluster_rules = posture.service_account.cluster_role_rules
+    objects.append({
+        "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole",
+        "metadata": {
+            "name": AGENT_APP,
+            "labels": {**base, **km._finding_labels(cr_findings)},
+            "annotations": {
+                **km._finding_annotations(cr_findings),
+                **({} if cluster_rules else {_NEUTRALISED: "true"}),
             },
-            "rules": [km._rbac(r) for r in posture.service_account.cluster_role_rules],
-        })
+        },
+        "rules": [km._rbac(r) for r in cluster_rules],
+    })
+    if cluster_rules:
         objects.append({
             "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding",
             "metadata": {
@@ -435,7 +453,6 @@ def build_agent_objects(
             },
             "subjects": [{"kind": "ServiceAccount", "name": AGENT_APP, "namespace": ns}],
         })
-        cluster_scoped = [("clusterroles", AGENT_APP), ("clusterrolebindings", AGENT_APP)]
 
     objects.append({
         "apiVersion": "v1", "kind": "ConfigMap",
@@ -469,12 +486,13 @@ def build_agent_objects(
     })
 
     # The reaper deletes the agent namespace itself (the push path relies on the
-    # same call), plus exactly the cluster-scoped objects emitted above. Here it
+    # same call), plus every cluster-scoped name any agent profile emits. Here it
     # runs as a Deployment, not the push path's Job: see _reaper_as_deployment.
     objects.extend(_reaper_as_deployment(
         km._reaper(
             scenario_id=AGENT_SCENARIO_ID, sid_lower="agent", ns=ns, base=base,
-            ttl=ttl_seconds, image=km.DEFAULT_REAPER_IMAGE, cluster_scoped=cluster_scoped,
+            ttl=ttl_seconds, image=km.DEFAULT_REAPER_IMAGE,
+            cluster_scoped=list(AGENT_CLUSTER_SCOPED),
         ),
         expires_epoch=int(now.timestamp()) + ttl_seconds,
     ))
@@ -500,10 +518,10 @@ while :; do
   NOW_S=$(date +%s 2>/dev/null)
   case "$NOW_S" in
     ''|*[!0-9]*)
-      # Never worse than the Job it replaces: fall back to the relative wait.
-      echo "[cortexsim-reaper] REAPER_CLOCK_UNAVAILABLE: sleeping ${TTL}s instead"
-      sleep "${TTL}"
-      break ;;
+      # No relative fallback: it would restart on every pod restart, deferring
+      # the reap without bound. A visible CrashLoop is the better failure.
+      echo "[cortexsim-reaper] REAPER_CLOCK_UNAVAILABLE: date +%s gave no epoch seconds; cannot wait to the expiry" >&2
+      exit 70 ;;
   esac
   LEFT=$((EXPIRES_AT_EPOCH - NOW_S))
   if [ "$LEFT" -le 0 ]; then break; fi
@@ -528,7 +546,10 @@ def _reaper_as_deployment(reaper: list[dict[str, Any]], *, expires_epoch: int) -
         raise RuntimeError(f"expected exactly one reaper Job from km._reaper, got {len(jobs)}")
     job = jobs[0]
     name = job["metadata"]["name"]
-    pod_spec = {**job["spec"]["template"]["spec"], "restartPolicy": "Always"}
+    # A 1 s grace period: a Recreate rollout must not leave the old-expiry pod
+    # alive for the default 30 s.
+    pod_spec = {**job["spec"]["template"]["spec"], "restartPolicy": "Always",
+                "terminationGracePeriodSeconds": 1}
     (container,) = pod_spec["containers"]
     (script,) = container["args"]
     if script.count(_REAPER_RELATIVE_WAIT) != 1:
@@ -667,6 +688,7 @@ def _agent_header(
         "# Secret names. This file carries no token and no Secret object.\n"
     )
     out.append("# After a SimCore upgrade that changes the beacon, restarted pods exit 78 until this manifest is re-applied.\n")
+    out.append("# Changing profile by re-applying is supported; a downgrade strips the cluster role's rules immediately and the binding is removed at expiry or by `kubectl delete clusterrolebinding cortexsim-agent`.\n")
     out.append("#\n")
     if findings:
         out.append(f"# PLANTED POSTURE FINDINGS ({len(findings)})\n")
