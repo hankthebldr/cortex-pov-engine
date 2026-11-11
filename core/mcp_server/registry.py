@@ -212,19 +212,30 @@ def take_token(ctx: ToolContext) -> None:
 
 
 async def resolve_tenant(ctx: ToolContext, tenant: Optional[str], *, kind: str,
-                         required: bool = True) -> Optional[str]:
+                         required: bool = True, must_exist: bool = False) -> Optional[str]:
     """Spec section 5.4: by vault name, never by URL.
 
     A name the caller gives is returned as-is (the route is the authority on
-    whether it exists). Otherwise one credential of ``kind`` is the default,
+    whether it exists) unless ``must_exist``: then it must name a credential of
+    ``kind`` in ``GET /api/readiness``, or ``NO_TENANT_CONFIGURED`` names what
+    is configured. Otherwise one credential of ``kind`` is the default,
     more than one is ``TENANT_AMBIGUOUS``, none is ``NO_TENANT_CONFIGURED`` —
     or ``None`` when ``required`` is false, for routes that answer "no tenant"
     themselves (verify's ``pending`` + ``no_tenant_integration``).
     """
-    if tenant is not None:
+    if tenant is not None and not must_exist:
         return tenant
     names = [i["name"] for i in (await readiness(ctx))["integrations"]
              if isinstance(i, dict) and i.get("kind") == kind]
+    if tenant is not None:
+        if tenant in names:
+            return tenant
+        raise McpToolError(
+            NO_TENANT_CONFIGURED, f"no {kind} credential is named {tenant!r}",
+            f"{tenant!r} is not among the configured {kind} credentials "
+            f"({', '.join(sorted(names)) or 'none'}); nothing was queried",
+            remediation=REMEDIATION[NO_TENANT_CONFIGURED], basis="authored",
+        )
     if len(names) == 1:
         return names[0]
     if len(names) > 1:
