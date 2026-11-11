@@ -6,8 +6,8 @@
 #   make down      — stop SimCore
 #   make build     — build the production simcore image
 #   make test      — backend (UTC + non-UTC pass) + agent + ui suites (the three code-test gates)
-#   make validate  — the detection / refs / adapter / shelf / ground-truth gates and
-#                    the PowerShell 5.1 floor gate (needs pwsh 7)
+#   make validate  — builds the image, then the detection / refs / adapter / shelf /
+#                    ground-truth gates and the PowerShell 5.1 floor gate (needs pwsh 7)
 #   make ci        — everything CI runs on Linux, in one shot (not the windows job)
 #
 # Override the image tag with `make IMAGE=foo:bar build`.
@@ -164,13 +164,21 @@ test-agent: test-agent-cross ## go build + vet + test -race, all target platform
 # Setpgid/syscall.Kill in agent/executor) while 71 scenarios declared
 # platforms: [windows] — pull mode was impossible there and no gate noticed.
 # This target is that gate. CGO_ENABLED=0 matches scripts/build-agent-dist.sh.
-test-agent-cross: ## Cross-compile + vet the beacon for every supported host family
-	@set -e; for goos in linux darwin windows; do \
-		echo "[agent-cross] GOOS=$$goos build+vet"; \
-		( cd agent && CGO_ENABLED=0 GOOS=$$goos go build ./... \
-		           && CGO_ENABLED=0 GOOS=$$goos go vet ./... ); \
+#
+# Named GOOS/GOARCH pairs, the script's TARGETS array, and not GOOS alone:
+# `GOOS=windows go build` on an arm64 Mac compiles windows/arm64, which nobody
+# ships, and never windows/amd64, which is the only Windows beacon there is.
+# tests/ci/test_agent_cross_matrix.py holds this list equal to TARGETS.
+AGENT_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+
+test-agent-cross: ## Cross-compile + vet the beacon for every GOOS/GOARCH target the shelf ships
+	@set -e; for t in $(AGENT_TARGETS); do \
+		goos=$${t%/*}; goarch=$${t#*/}; \
+		echo "[agent-cross] $$t build+vet"; \
+		( cd agent && CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch go build ./... \
+		           && CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch go vet ./... ); \
 	done
-	@echo "[agent-cross] linux darwin windows OK"
+	@echo "[agent-cross] $(AGENT_TARGETS) OK"
 
 test-ui: ## npm ci + build + vitest (CI 'ui' job)
 	cd ui && npm ci && npm run build && npx vitest run
@@ -196,13 +204,22 @@ else
 POWERSHELL_GATE := check-powershell
 endif
 
+# `build` sits in front of the first gate that reads $(IMAGE). check-refs and
+# ground-truth run the tree's code inside the image; check-agent-shelf and
+# check-ui-shelf assert what the image itself SHIPS. Without a build here they
+# all ran against whatever tag was already on the machine, so after a Dockerfile
+# change the beacon and console parity gates passed against yesterday's image.
+# A warm rebuild costs seconds. The targeted gates stay assertions about a NAMED
+# image (CI builds cortexsim:ci once and points check-agent-shelf at it), so
+# they do not rebuild on their own.
+#
 # check-powershell is LAST on purpose: it is the only gate here with host
 # prerequisites beyond docker and python, and it must not stand in front of the
 # older gates when one of them is missing.
 #
 # check-lab-ready is here because the refs job runs it: a gate CI has and this
 # aggregate lacks makes `make validate` green on a tree CI will turn red.
-validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth check-lab-ready $(POWERSHELL_GATE) ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth + lab-readiness + PowerShell 5.1 floor gates
+validate: validate-detection build check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-ground-truth check-lab-ready $(POWERSHELL_GATE) ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + ground-truth + lab-readiness + PowerShell 5.1 floor gates (builds the image first)
 ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
 	@echo "validate: finished with check-powershell SKIPPED (CORTEXSIM_SKIP_POWERSHELL_GATE=1). Not a full pass."
 endif

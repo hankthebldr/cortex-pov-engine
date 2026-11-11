@@ -15,10 +15,12 @@ name: CI
 #               runner and the image are UTC and a naive-UTC-read-as-local bug
 #               is invisible there.
 #   agent     — Go 1.21+: build, vet, and `go test -race` the beacon agent,
-#               PLUS a cross-compile gate for every host family the engine
-#               claims to support (linux, darwin, windows). The Windows arm is
+#               PLUS a cross-compile + vet gate for every target the beacon
+#               shelf ships (linux/amd64 natively; linux/arm64, darwin/amd64,
+#               darwin/arm64 and windows/amd64 cross). The Windows arm is
 #               load-bearing: the beacon silently could not compile for Windows
-#               while 71 scenarios declared platforms: [windows].
+#               while 71 scenarios declared platforms: [windows]. Compiling for
+#               a target is not executing on it.
 #   ui        — Node 20: npm ci + vite build + vitest run (>=305 tests).
 #   detection — detection_scanner/scripts/validate.py (0 fail) AND the
 #               export-determinism gate: regenerate every artifact and assert
@@ -188,9 +190,14 @@ jobs:
       # Cross-compile gate. 71 of the 162 scenarios declare platforms: [windows],
       # yet the beacon could not compile for GOOS=windows at all (POSIX-only
       # Setpgid / syscall.Kill in agent/executor) — so pull mode was impossible
-      # on Windows and nothing in CI ever said so. Building for every host family
-      # the engine claims to support is what keeps that honest. CGO_ENABLED=0
-      # matches scripts/build-agent-dist.sh, which is what actually ships.
+      # on Windows and nothing in CI ever said so. Building for every TARGET the
+      # shelf ships is what keeps that honest: one step per GOOS/GOARCH pair in
+      # scripts/build-agent-dist.sh TARGETS other than linux/amd64, which is
+      # this runner's native build above. It used to be one architecture per OS
+      # family, so linux/arm64 and darwin/amd64 were compiled for the first time
+      # inside the image build. tests/ci/test_agent_cross_matrix.py holds these
+      # steps equal to TARGETS. CGO_ENABLED=0 matches the script, which is what
+      # ships.
       - name: Cross-compile (windows/amd64)
         working-directory: agent
         env:
@@ -203,6 +210,22 @@ jobs:
         working-directory: agent
         env:
           GOOS: darwin
+          GOARCH: arm64
+          CGO_ENABLED: '0'
+        run: go build ./... && go vet ./...
+
+      - name: Cross-compile (darwin/amd64)
+        working-directory: agent
+        env:
+          GOOS: darwin
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: go build ./... && go vet ./...
+
+      - name: Cross-compile (linux/arm64)
+        working-directory: agent
+        env:
+          GOOS: linux
           GOARCH: arm64
           CGO_ENABLED: '0'
         run: go build ./... && go vet ./...
