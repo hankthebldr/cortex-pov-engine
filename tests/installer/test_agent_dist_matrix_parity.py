@@ -262,3 +262,11 @@ def test_the_windows_job_and_the_image_gate_name_the_same_matrix():
     m = re.search(r"^check-agent-shelf:.*?for t in (.*?); do", makefile, re.MULTILINE | re.DOTALL)
     assert m, "could not locate the `for t in ...; do` loop in `make check-agent-shelf`"
     assert {f"cortexsim-agent-{t}" for t in m.group(1).split()} == shipped
+
+
+def test_health_wants_exactly_the_shipped_matrix():
+    """/api/health's agent_binaries probe must want what the producers build, or
+    a short shelf reads ok (it once wanted <goos>/amd64 only)."""
+    from api.health import _SHIPPED_BEACON_TARGETS
+
+    assert set(_SHIPPED_BEACON_TARGETS) == _script_targets()

@@ -342,6 +342,10 @@ def probe_xsiam_operation_catalog() -> dict[str, Any]:
     return _ok(count=count)
 
 
+_SHIPPED_BEACON_TARGETS = ("linux/amd64", "linux/arm64", "darwin/amd64",
+                           "darwin/arm64", "windows/amd64")
+
+
 def probe_agent_binaries() -> dict[str, Any]:
     """Which prebuilt beacons this SimCore can hand to an endpoint.
 
@@ -354,7 +358,12 @@ def probe_agent_binaries() -> dict[str, Any]:
     dist_dir = str(_agent_dist_dir())
     binaries = _available_binaries()
     have = {f"{b['os']}/{b['arch']}" for b in binaries}
-    want = {f"{goos}/amd64" for goos in ("linux", "darwin", "windows")}
+    # The shipped matrix (scripts/build-agent-dist.sh and the core/Dockerfile
+    # agent-builder stage; tests/installer/test_agent_dist_matrix_parity.py
+    # holds those two together). This used to want <goos>/amd64 only, so a
+    # shelf without the arm64 beacons read ok while an Apple-silicon Mac or an
+    # arm64 Linux host got a 404 and a source-build fallback.
+    want = set(_SHIPPED_BEACON_TARGETS)
     missing = sorted(want - have)
 
     if not binaries:
@@ -368,12 +377,20 @@ def probe_agent_binaries() -> dict[str, Any]:
             dist_dir=dist_dir, available=[], missing=sorted(want),
         )
     if missing:
+        consequence = (
+            "GET /api/agents/binary 404s for those targets and the POSIX installer "
+            "falls back to a source build, which needs Go on the host")
+        if "windows/amd64" in missing:
+            consequence = (
+                "GET /api/agents/binary?os=windows will 404 and the PowerShell "
+                "installer will refuse WINDOWS_AGENT_UNAVAILABLE"
+                + ("; the other targets fall back to a source build"
+                   if len(missing) > 1 else ""))
         return _degraded(
             "AGENT_DIST_INCOMPLETE",
-            f"prebuilt beacons are missing for {', '.join(missing)}. "
-            f"GET /api/agents/binary?os=windows will 404 and the PowerShell "
-            f"installer will refuse WINDOWS_AGENT_UNAVAILABLE. Fix: run "
-            f"`make agent-dist` (it cross-compiles linux/darwin/windows) and rebuild.",
+            f"prebuilt beacons are missing for {', '.join(missing)}. {consequence}. "
+            f"Fix: run `make agent-dist` (it cross-compiles the five shipped targets) "
+            f"and rebuild.",
             dist_dir=dist_dir, available=sorted(have), missing=missing,
         )
     return _ok(dist_dir=dist_dir, available=sorted(have), missing=[])

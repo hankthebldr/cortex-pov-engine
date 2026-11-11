@@ -348,7 +348,7 @@ def test_agent_binaries_incomplete_matrix_is_degraded(monkeypatch):
 
     monkeypatch.setattr(
         agents_mod, "_available_binaries",
-        lambda: [{"os": "linux", "arch": "amd64"}, {"os": "darwin", "arch": "amd64"}],
+        lambda: [{"os": o, "arch": a} for o, a in SHIPPED_MATRIX if o != "windows"],
     )
     comp = health.probe_agent_binaries()
     assert comp["status"] == "degraded"
@@ -367,7 +367,28 @@ def test_agent_binaries_empty_dist_is_degraded(monkeypatch):
     assert comp["code"] == "AGENT_DIST_EMPTY"
 
 
+SHIPPED_MATRIX = [("linux", "amd64"), ("linux", "arm64"), ("darwin", "amd64"),
+                  ("darwin", "arm64"), ("windows", "amd64")]
+
+
 def test_agent_binaries_full_matrix_is_ok(monkeypatch):
+    import api.agents as agents_mod
+    from api import health
+
+    monkeypatch.setattr(
+        agents_mod, "_available_binaries",
+        lambda: [{"os": o, "arch": a} for o, a in SHIPPED_MATRIX],
+    )
+    comp = health.probe_agent_binaries()
+    assert comp["status"] == "ok"
+    assert comp["missing"] == []
+
+
+def test_agent_binaries_amd64_only_shelf_is_degraded(monkeypatch):
+    """CRITIC-SHIPSTATE-AMD64. `want` was <goos>/amd64 only, so a shelf without
+    the arm64 beacons read ok while an Apple-silicon Mac or a Graviton host got
+    a 404 from /api/agents/binary and an installer that fell back to a source
+    build. The shipped matrix is five targets."""
     import api.agents as agents_mod
     from api import health
 
@@ -376,8 +397,10 @@ def test_agent_binaries_full_matrix_is_ok(monkeypatch):
         lambda: [{"os": o, "arch": "amd64"} for o in ("linux", "darwin", "windows")],
     )
     comp = health.probe_agent_binaries()
-    assert comp["status"] == "ok"
-    assert comp["missing"] == []
+    assert comp["status"] == "degraded", comp
+    assert comp["code"] == "AGENT_DIST_INCOMPLETE"
+    assert comp["missing"] == ["darwin/arm64", "linux/arm64"]
+    assert "WINDOWS_AGENT_UNAVAILABLE" not in comp["detail"], comp["detail"]
 
 
 # ---------------------------------------------------------------------------
