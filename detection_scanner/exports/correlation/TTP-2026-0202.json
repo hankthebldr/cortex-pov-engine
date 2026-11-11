@@ -1,0 +1,27 @@
+{
+  "content_note": "Every rule here is intent-only: a name, an id and a logic line that names the detections the rule would join. There is no query, schedule, severity or alert mapping, so nothing in this file can be imported into a tenant as-is. Author the rule in the XSIAM console from the logic line.",
+  "importable_rules": 0,
+  "mitre_techniques": [
+    "T1195",
+    "T1204.002",
+    "T1027",
+    "T1140",
+    "T1105",
+    "T1059.004",
+    "T1552.001",
+    "T1074.001",
+    "T1560",
+    "T1041",
+    "T1567"
+  ],
+  "rules": [
+    {
+      "content_status": "intent-only",
+      "deploy": null,
+      "logic": "ABIOC(KOI-011 Base64 Decode Of Agent Skill Prerequisite Block) FOLLOWED_BY ABIOC(KOI-011 Curl Pipe To Bash Dropper From Agent Lineage) FOLLOWED_BY BIOC(KOI-011 Dropped Shell Reads Multiple Developer Credential Files) FOLLOWED_BY XQL(KOI-011 Stolen Credentials Archived Into Staging Tarball) \u2014 all stitched by shared agent_hostname and actor_causality_id (CGO = the OpenClaw node agent runtime) so the prerequisite decode, the curl|bash dropper, the multi-credential read and the local loot staging collapse into ONE OpenClaw agentic-supply-chain incident. The chain closes on the endpoint: its terminal term is the loot-archive create, not the egress, so the rule fires in a lab with no authorised sink and no firewall in path.",
+      "name": "OpenClaw ClawHub Malicious Skill \u2014 Prerequisite Decode, curl|bash Dropper, Developer-Credential Read and Local Staging",
+      "rule_id": "CR-KOI-0011"
+    }
+  ],
+  "ttp_ref": "TTP-2026-0202"
+}

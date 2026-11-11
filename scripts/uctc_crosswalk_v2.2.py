@@ -115,6 +115,13 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Sudo backdoor account, SSH key and a systemd timer re-executing on a schedule — the "
         "identity-persistence counterpart, grouped through operator-installed Medium BIOCs and "
         "CR-EDR-0024. Depth on TC-IR-02, not new index breadth."),
+    "SIM-EDR-025": (["TC-EDR-04", "TC-EDR-03", "TC-EDR-05"], REMAP,
+        "Akira (Howling Scorpius) on-host Linux encryption — REAL AES-256/RSA-wrapped encryption of "
+        "a synthetic /var/tmp tree with the .akira extension and ransom note, raising the agent's "
+        "anti-ransomware verdict (TC-EDR-04 confirmed-malware impact) and the built-in shadow-access "
+        "ABIOC (TC-EDR-03) with full causality (TC-EDR-05). The host-impact counterpart to the ESXi "
+        "path (SIM-EDR-019) and to the SAFE-MODE non-encrypting variant (SIM-EDR-008); all three rows "
+        "already evidenced — depth, not new index breadth."),
 
     # ── CDR ────────────────────────────────────────────────────────────────
     "SIM-CDR-001": (["TC-CDR-01", "TC-CITH-03"], REMAP,
@@ -608,6 +615,10 @@ CROSSWALK: dict[str, tuple[list[str], str, str]] = {
         "Shai-Hulud self-replicating npm worm — a preinstall hook spawning a detached child."),
     "SIM-KOI-009": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
         "GlassWorm poisoned IDE extension executing, persisting and collecting developer credentials on a macOS endpoint."),
+    "SIM-KOI-011": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
+        "OpenClaw ClawHub marketplace malicious skill — padded-README scanner evasion + base64 curl|bash prerequisite dropper + developer-credential theft on a Linux dev endpoint."),
+    "SIM-KOI-010": (["TC-SCA-01", "TC-SSCAN-01"], NETNEW,
+        "npm preinstall-hook credential stealer reached via a phantom-squatted / AI-hallucinated package name, detonating and harvesting developer credentials for real on a Linux endpoint. TC-SCA-01 scores known-CVE dependencies, not a malicious package's lifecycle hook."),
 
     # ── DLP ────────────────────────────────────────────────────────────────
     # First DLP-plane scenarios. Refs below match each scenario's own authored

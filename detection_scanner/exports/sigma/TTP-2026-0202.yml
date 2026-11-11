@@ -1,0 +1,100 @@
+title: "OpenClaw ClawHub Malicious Skill \u2014 Padded README, base64 curl|bash Dropper and Developer-Credential Theft \u2014 KOI-011 Dropped Shell Reads Multiple Developer Credential Files"
+id: ttp-2026-0202-bioc-01
+status: experimental
+description: |
+  A shell dropped by the OpenClaw skill prerequisite reads three or more distinct developer credential-named files (SSH private key, cloud credentials, npm token, .env secrets, the agent's own ~/.claude.json) in one window under the agent causality chain. A productivity skill that reads this set is stealing, not assisting. The threshold is three distinct paths to keep a single settings read quiet; the decoy run yields five (.ssh/id_rsa, .aws/credentials, .npmrc, .env, .claude.json). Keep routine agent/editor config reads out of the credential-name list so a launch that reads only config does not satisfy the threshold.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_OPEN, ENUM.FILE_READ)
+    | filter action_process_image_name in ("sh", "bash", "dash", "cat", "python3", "perl")
+    | filter action_file_path contains_any (".ssh/id_rsa", "id_ed25519", ".aws/credentials", ".npmrc", ".env", ".claude.json", ".config/gcloud/credentials")
+    | comp count_distinct(action_file_path) as cred_files by agent_hostname, actor_causality_id, action_process_image_name
+    | filter cred_files >= 3
+    | fields agent_hostname, actor_causality_id, action_process_image_name, cred_files
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1552/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1552.001
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "OpenClaw ClawHub Malicious Skill \u2014 Padded README, base64 curl|bash Dropper and Developer-Credential Theft \u2014 KOI-011 Base64 Decode Of Agent Skill Prerequisite Block"
+id: ttp-2026-0202-abioc-02
+status: experimental
+description: |
+  Behavioral-ML deviation (the built-in 'Uncommon Linux shell command execution' analytics): a process in the AI-agent lineage runs base64 -d on a blob lifted from a marketplace skill's prerequisite block. A productivity skill has no reason to carry a base64-encoded shell command; decoding one in the agent chain is the OpenClaw dropper's reveal step.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name = "base64"
+    | filter action_process_image_command_line contains_any ("-d", "--decode")
+    | comp count() as decodes by agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line
+    | filter decodes >= 1
+    | fields agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line, decodes
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1140/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1140
+    - attack.t1027
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high
+---
+title: "OpenClaw ClawHub Malicious Skill \u2014 Padded README, base64 curl|bash Dropper and Developer-Credential Theft \u2014 KOI-011 Curl Pipe To Bash Dropper From Agent Lineage"
+id: ttp-2026-0202-abioc-03
+status: experimental
+description: |
+  Behavioral-ML deviation (the built-in 'Uncommon Linux shell command execution' analytics): a curl (or wget) fetch of a remote URL is piped straight into a shell under the AI-agent lineage — the curl|bash LOLBIN ingress the OpenClaw prerequisite block performs. The fetch targets a host outside any package registry or marketplace CDN; in the lab it is a non-resolving canary, so curl fails and nothing is downloaded, but the process shape and the DNS lookup are the signal.
+  Canonical Cortex XQL body follows (preserve verbatim for XSIAM):
+  ----
+    dataset = xdr_data
+    | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+    | filter action_process_image_name in ("curl", "wget")
+    | filter action_process_image_command_line contains_any ("http://", "https://")
+    | join type = inner (
+        dataset = xdr_data
+        | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
+        | filter action_process_image_name in ("bash", "sh", "dash")
+        | fields actor_causality_id as shell_cid, agent_hostname as shell_host
+    ) as sib shell_cid = actor_causality_id and shell_host = agent_hostname
+    | comp count() as fetches by agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line
+    | filter fetches >= 1
+    | fields agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line, fetches
+  ----
+references:
+  - https://attack.mitre.org/techniques/T1105/
+author: CortexSim detection_scanner
+tags:
+    - attack.t1105
+    - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    placeholder: replace_with_target_dialect_translation_of_xql
+  condition: selection
+falsepositives:
+  - Legitimate administrative tooling that mirrors the same telemetry shape.
+level: high

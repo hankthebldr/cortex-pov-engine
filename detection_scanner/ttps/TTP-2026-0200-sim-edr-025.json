@@ -1,0 +1,522 @@
+{
+  "id": "TTP-2026-0200",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-11-11T07:30:00+00:00",
+    "updated_at": "2026-11-11T07:30:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "linux",
+      "ransomware",
+      "akira",
+      "howling-scorpius",
+      "data-encrypted-for-impact",
+      "inhibit-recovery",
+      "real-encryption"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 360,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Akira (Howling Scorpius) Linux-Host Kill Chain — Real On-Host File Encryption",
+    "summary": "An Akira operator, landed via a stolen remote session and running as root, evades defenses, reads /etc/shadow and SSH keys, stages a company share, then REALLY encrypts a synthetic victim tree with openssl AES-256 under an RSA-wrapped key, appends the .akira extension, drops the akira_readme.txt note and deletes staged backups — the real encryption raising the agent's anti-ransomware verdict.",
+    "description": "The on-host Linux variant of Akira (Unit 42 Howling Scorpius, 2024-12-02), distinct from the vCenter->ESXi hypervisor path (SIM-EDR-019) and from the SAFE-MODE non-encrypting host variant (SIM-EDR-008). It executes for real on a bare Ubuntu host against a synthetic tree under /var/tmp/.cortexsim-akira — never real user data — and cleans up fully. Only two detections are declared because only two fire on the lab agent's own judgement: the built-in 'Suspicious access to shadow file' ABIOC (Low, proven on pov-target-01 2026-11-11) on the /etc/shadow read, and the agent's anti-ransomware / behavioural-threat verdict (Medium+) on the real mass-encryption. The host-mass-encryption BIOCs, the hunt XQL and the Akira IOCs on this card are hunting / TIM content, NOT declared scenario expectations, because the lab tenant shows 0 queryable custom BIOCs and a declared-but-unfirable detection scores a working tenant as a miss.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Howling Scorpius",
+        "aliases": [
+          "Akira ransomware operators"
+        ]
+      }
+    ],
+    "campaigns": [
+      "Akira / Akira_v2 double-extortion ransomware (RaaS), Linux and ESXi encryptors"
+    ],
+    "malware_families": [
+      {
+        "name": "Akira"
+      },
+      {
+        "name": "Megazord"
+      },
+      {
+        "name": "Akira_v2"
+      }
+    ],
+    "industries_targeted": [
+      "manufacturing",
+      "education",
+      "technology",
+      "healthcare",
+      "financial-services"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      },
+      {
+        "technique_id": "T1562",
+        "subtechnique_id": "T1562.001",
+        "name": "Impair Defenses: Disable or Modify Tools",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1070",
+        "subtechnique_id": "T1070.002",
+        "name": "Indicator Removal: Clear Linux or Mac System Logs",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1003",
+        "subtechnique_id": "T1003.008",
+        "name": "OS Credential Dumping: /etc/passwd and /etc/shadow",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1552",
+        "subtechnique_id": "T1552.004",
+        "name": "Unsecured Credentials: Private Keys",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ]
+      },
+      {
+        "technique_id": "T1083",
+        "name": "File and Directory Discovery",
+        "tactic_ids": [
+          "TA0007"
+        ],
+        "tactic_names": [
+          "Discovery"
+        ]
+      },
+      {
+        "technique_id": "T1560",
+        "subtechnique_id": "T1560.001",
+        "name": "Archive Collected Data: Archive via Utility",
+        "tactic_ids": [
+          "TA0009"
+        ],
+        "tactic_names": [
+          "Collection"
+        ]
+      },
+      {
+        "technique_id": "T1490",
+        "name": "Inhibit System Recovery",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Creation",
+      "File: File Creation",
+      "File: File Modification",
+      "File: File Access",
+      "Command: Command Execution",
+      "Service: Service Metadata"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "SIM-EDR-025 — six root-run steps delivered by the CortexSim beacon (40 s apart); scenarios/edr/edr-025-akira-howling-scorpius-linux-host-encryption.yml is the delivery path.",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR agent on the Linux endpoint with the anti-ransomware / behavioural-threat module enabled (lab: 9.4.0.470 on Ubuntu, report-mode malware policy).",
+        "check_command": "test -x /opt/traps/bin/cytool && /opt/traps/bin/cytool runtime query | head -n 5"
+      },
+      {
+        "description": "openssl, tar, findmnt and systemd present (all on a stock Ubuntu base).",
+        "check_command": "command -v openssl tar findmnt systemctl"
+      },
+      {
+        "description": "Writable /var/tmp with execute permission; the scenario stages and encrypts ONLY under /var/tmp/.cortexsim-akira.",
+        "check_command": "test -w /var/tmp"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# NOT A SUBSTITUTE FOR THE SCENARIO: scenarios/edr/edr-025-akira-howling-scorpius-linux-host-encryption.yml is the delivery path (six steps, 40 s apart). Illustrative impact leg only:\nD=/var/tmp/.cortexsim-akira\nopenssl genrsa -out \"$D/.keys/attacker_rsa.key\" 2048\nopenssl rsa -in \"$D/.keys/attacker_rsa.key\" -pubout -out \"$D/.keys/attacker_rsa.pub\"\nAESKEY=$(openssl rand -hex 32)\nwhile IFS= read -r f; do openssl enc -aes-256-cbc -pbkdf2 -salt -in \"$f\" -out \"$f.akira\" -pass \"pass:$AESKEY\" && rm -f \"$f\"; done < \"$D/targets.list\"\nprintf '%s' \"$AESKEY\" | openssl pkeyutl -encrypt -pubin -inkey \"$D/.keys/attacker_rsa.pub\" -out \"$D/akira_wrapped.key\"",
+      "input_variables": [],
+      "timeout_seconds": 180
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "An unpopular process opens /etc/shadow (read-only credential access).",
+        "expected_value": "action_file_path = \"/etc/shadow\" and event_sub_type = ENUM.FILE_OPEN"
+      },
+      {
+        "artifact_type": "process",
+        "description": "openssl encrypts each staged file to <file>.akira under the hidden victim tree.",
+        "expected_value": "action_process_image_name = \"openssl\" and action_process_image_command_line contains \"enc -aes-256-cbc\""
+      },
+      {
+        "artifact_type": "file",
+        "description": "Mass file creation with the uniform .akira extension and akira_readme.txt notes.",
+        "expected_value": "action_file_path ~= \"[.]akira$\" or action_file_name = \"akira_readme.txt\""
+      },
+      {
+        "artifact_type": "process",
+        "description": "Staged backup deletion (recovery inhibition) immediately after encryption.",
+        "expected_value": "action_process_image_name = \"rm\" and action_process_image_command_line contains \"/var/tmp/.cortexsim-akira/backup/\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "systemctl disable --now cortexsim-decoy.service >/dev/null 2>&1 || true\nrm -f /etc/systemd/system/cortexsim-decoy.service\nsystemctl daemon-reload >/dev/null 2>&1 || true\nrm -rf /var/tmp/.cortexsim-akira"
+    }
+  },
+  "detections": {
+    "prevention_modules": [
+      {
+        "name": "Anti-Ransomware Mass Encryption",
+        "detection_id": "prevention-anti-ransomware-mass-encryption",
+        "module": "anti_ransomware",
+        "platforms": [
+          "linux"
+        ],
+        "alert_name_pattern": "Ransomware*",
+        "description": "The Cortex XDR agent's anti-ransomware / behavioural-threat module raising a Medium+ verdict on the real AES mass-encryption with a uniform .akira extension and a ransom note dropped across directories. SIM-EDR-025 declares it with outcome: detect, so report mode scores it detected (the case seed); a block-mode paired run would instead grade the agent's kill of the encryptor (two witnesses). AUTHORED, NOT PROVEN: no run has performed REAL on-host encryption against this lab agent, so the exact alert name and the verdict itself are unconfirmed — the alert_name_pattern is the matcher key to tune against the first observed verdict. tenant-verified: 0.",
+        "severity": "high",
+        "mitre_techniques": [
+          "T1486"
+        ]
+      }
+    ],
+    "abiocs": [
+      {
+        "name": "Suspicious access to shadow file",
+        "description": "PANW built-in XDR Analytics BIOC (Low; Low issues never create or join a case). The same built-in was observed on pov-target-01 2026-11-11 (issues 1500417, 1500418) on useradd and chpasswd, mapped by the tenant to T1003. The name is the built-in alert name verbatim so the matcher keys on it. In SIM-EDR-025 the reader is `cat` — a distinct unpopular process opening /etc/shadow. The logic below approximates the trigger for hunting; it is not the built-in's code. Rarity-judged: it may read missed where this process/file pair is already baselined on the host.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN\n| filter action_file_path = \"/etc/shadow\"\n| filter actor_process_image_name in (\"cat\", \"less\", \"more\", \"head\", \"tail\", \"cp\", \"dd\", \"python3\", \"perl\")",
+        "severity": "low",
+        "mitre_technique_ids": [
+          "T1003.008"
+        ],
+        "behavioral_profile": "statistical",
+        "causality_anchor": "The unpopular process opening /etc/shadow (here cat) and its causality chain; how rarely that process touches shadow across the tenant decides whether it fires."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "EDR-025 Rapid Mass File Rewrite With Uniform Akira Extension",
+        "description": "Hunting / operator-installable content (NOT a declared SIM-EDR-025 expectation — the lab tenant has 0 queryable custom BIOCs). One process creates many files that all take a single new extension while deleting the originals — the encryptor fingerprint. If installed in a tenant, create it with EXACTLY this name at Medium. CortexSim never writes it to the tenant. Category: impact.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_path ~= \"[.]akira(new|ranges)?$\"\n| comp count() as encrypted_files, count_distinct(action_file_path) as distinct_paths by agent_hostname, actor_causality_id, causality_actor_process_image_name\n| filter encrypted_files >= 10",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1486"
+        ]
+      },
+      {
+        "name": "EDR-025 Akira Ransom Note Written Across Directories",
+        "description": "Hunting / operator-installable content (NOT a declared SIM-EDR-025 expectation). The same causality chain drops the Akira ransom note into multiple directories. If installed, create it with EXACTLY this name at Medium. CortexSim never writes it to the tenant. Category: impact.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_name in (\"akira_readme.txt\", \"akiranew.txt\", \"powerranges.txt\")\n| comp count_distinct(action_file_directory) as dirs by agent_hostname, actor_causality_id\n| filter dirs >= 2",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1486"
+        ]
+      },
+      {
+        "name": "EDR-025 Backup Deletion Co-Occurring With Mass Encryption",
+        "description": "Hunting / operator-installable content (NOT a declared SIM-EDR-025 expectation). rm removing backup/snapshot artefacts — recovery inhibition that the correlation fuses with the encryption on the same host. If installed, create it with EXACTLY this name at Medium. CortexSim never writes it to the tenant. Category: impact.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"rm\", \"shred\", \"unlink\")\n| filter action_process_image_command_line ~= \"(backup|snapshot|[.]img|[.]bak)\"",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1490"
+        ]
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "hunt",
+        "name": "EDR-025 Mass Akira-Extension Encryption By One Causality Chain",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.FILE and event_sub_type in (ENUM.FILE_CREATE_NEW, ENUM.FILE_WRITE)\n| filter action_file_path ~= \"[.]akira(new|ranges)?$\"\n| comp count() as encrypted_files, min(_time) as first_file, max(_time) as last_file by agent_hostname, agent_id, actor_causality_id, causality_actor_process_image_name\n| filter encrypted_files >= 10\n| fields agent_hostname, agent_id, actor_causality_id, causality_actor_process_image_name, encrypted_files, first_file, last_file",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-025 openssl Symmetric Encryption Of The Staged Victim Tree",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"openssl\"\n| filter action_process_image_command_line contains \"enc -aes-256-cbc\" and action_process_image_command_line contains \".akira\"\n| fields _time, agent_hostname, actor_causality_id, causality_actor_process_image_name, action_process_image_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      },
+      {
+        "purpose": "hunt",
+        "name": "EDR-025 Shadow Read Then Mass Encryption On One Host",
+        "query": "dataset = xdr_data\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| alter leg = if(event_type = ENUM.FILE and event_sub_type = ENUM.FILE_OPEN and action_file_path = \"/etc/shadow\", \"shadow\", if(event_type = ENUM.FILE and action_file_path ~= \"[.]akira(new|ranges)?$\", \"encrypt\", \"other\"))\n| filter leg in (\"shadow\", \"encrypt\")\n| comp count_distinct(leg) as legs, count() as events by agent_hostname, agent_id\n| filter legs >= 2",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [
+      {
+        "name": "EDR-025 Akira Linux Host Encryption With Recovery Inhibition",
+        "rule_id": "CR-EDR-0025",
+        "logic": "Hunting / operator-installable correlation (NOT a declared SIM-EDR-025 expectation; CortexSim never writes it). If installed: alert name EXACTLY as this rule's name; severity High; Scheduled, every 10 minutes, query time frame 1 hour; alert field mapping: agent_hostname -> Host Name, agent_id -> Agent ID. XQL:\ndataset = xdr_data\n| filter agent_os_type = ENUM.AGENT_OS_LINUX\n| filter timestamp_diff(current_time(), _time, \"SECOND\") < 3600\n| alter leg = if(event_type = ENUM.FILE and action_file_path ~= \"[.]akira(new|ranges)?$\", \"encrypt\", if(event_type = ENUM.FILE and action_file_name in (\"akira_readme.txt\", \"akiranew.txt\", \"powerranges.txt\"), \"note\", if(event_type = ENUM.PROCESS and action_process_image_name in (\"rm\", \"shred\", \"unlink\") and action_process_image_command_line ~= \"(backup|snapshot|[.]img|[.]bak)\", \"recovery\", \"other\")))\n| filter leg in (\"encrypt\", \"note\", \"recovery\")\n| comp count_distinct(leg) as legs, count() as events, min(_time) as first_seen, max(_time) as last_seen by agent_hostname, agent_id\n| filter legs >= 2"
+      }
+    ],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "akira_readme.txt",
+        "context": "Akira Linux/ESXi ransom note dropped in each encrypted directory.",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "akiranew.txt",
+        "context": "Akira_v2 ransom note variant.",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "powerranges.txt",
+        "context": "Akira Megazord/'powerranges' ransom note variant.",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "*.akira",
+        "context": "Extension appended by the Akira encryptor to encrypted files.",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "*.akiranew",
+        "context": "Extension appended by the Rust Akira_v2 encryptor to encrypted files.",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "*.powerranges",
+        "context": "Extension appended by the Akira Megazord/'powerranges' encryptor variant.",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "log_field"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "1d3b5c650533d13c81e325972a912e3ff8776e36e18bca966dae50735f8ab296",
+        "context": "Akira Linux/ESXi encryptor sample (Unit 42 Howling Scorpius IoC appendix). Also carried by SIM-EDR-019.",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "3298d203c2acb68c474e5fdad8379181890b4403d6491c523c13730129be3f75",
+        "context": "Akira ransomware sample (Unit 42 Howling Scorpius IoC appendix).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "8e9a33809b9062c5033928f82e8adacbef6cd7b40e73da9fcf13ec2493b4544c",
+        "context": "Akira ransomware sample (Unit 42 Howling Scorpius IoC appendix).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "hash_only"
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "c9c94ac5e1991a7db42c7973e328fceeb6f163d9f644031bdfd4123c7b3898b0",
+        "context": "Akira ransomware sample (Unit 42 Howling Scorpius IoC appendix).",
+        "reputation_required": "malicious",
+        "source_url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+        "published": "2024-12-02",
+        "safe_form": "hash_only"
+      }
+    ],
+    "analytics_modules": [
+      "Not declared: beyond the built-in 'Suspicious access to shadow file' ABIOC, no multi-event baseline XDR Analytics alert has been observed on this endpoint for this chain, so none is an expectation."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "anti-ransomware",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "XDR-ANTI-RANSOMWARE-MASS-ENCRYPTION"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Issue from the agent's anti-ransomware / behavioural-threat module (detection.method BEHAVIORAL/RANSOMWARE) on the openssl mass-encryption, severity Medium or higher — the case seed. Authored, not yet observed."
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-ABIOC-SHADOW-FILE-ACCESS"
+        ],
+        "license_required": "pro",
+        "evidence_query": "Issue 'Suspicious access to shadow file' (detection.method ANALYTICS_BIOC, Low) on the cat read of /etc/shadow."
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "case-grouping",
+        "coverage_tier": "investigation",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0025"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "The anti-ransomware verdict (Medium+) carries a case_id; hunting correlation CR-EDR-0025 groups encrypt/note/recovery legs on one host if installed."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-025",
+        "name": "Akira Linux-Host Kill Chain Terminating In Real File Encryption",
+        "description": "Evade defenses, steal local credentials, enumerate and stage a share, encrypt for real with an RSA-wrapped AES key, inhibit recovery — and prove Cortex XDR raises an anti-ransomware verdict on the real encryption and the shadow-access ABIOC on the credential read.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-025A",
+            "objective": "The credential read raises the built-in shadow-access ABIOC.",
+            "preconditions": [
+              "Linux endpoint with the Cortex agent; the staged victim tree present."
+            ],
+            "steps": [
+              "Evade defenses on staged artefacts.",
+              "Read /etc/shadow and SSH keys."
+            ],
+            "success_criteria": [
+              "ABIOC 'Suspicious access to shadow file' (Low) fires on the cat read."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-EDR-025B",
+            "objective": "The real mass-encryption raises a Medium+ anti-ransomware verdict.",
+            "preconditions": [
+              "The anti-ransomware / behavioural-threat module enabled."
+            ],
+            "steps": [
+              "Enumerate and stage the company share.",
+              "AES-256-encrypt each file to .akira under an RSA-wrapped key and drop the note.",
+              "Delete the staged backups."
+            ],
+            "success_criteria": [
+              "Anti-ransomware verdict (Medium+) on the encryption — the case seed.",
+              "The verdict carries a case_id."
+            ],
+            "expected_score_weight": 0.7
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable and enforce the Cortex XDR anti-ransomware module in block mode on Linux servers.",
+      "Restrict and monitor read access to /etc/shadow and private SSH keys.",
+      "Keep immutable, offline or object-locked backups so recovery inhibition cannot reach them."
+    ],
+    "detection_engineering": [
+      "The headline detection is the agent's behavioural anti-ransomware verdict on the real encryption, not a filename rule: key the matcher on that verdict's alert name once observed.",
+      "Do not over-declare: the lab tenant has 0 queryable custom BIOCs, so the mass-encryption BIOCs and CR-EDR-0025 are hunting content, not scored expectations.",
+      "Hunt XQL uses actor_causality_id and timestamp_diff(current_time(), _time, \"SECOND\") — bare causality_id and to_timestamp(current_time() - N) are rejected by the tenant."
+    ]
+  },
+  "references": [
+    {
+      "title": "Threat Assessment: Howling Scorpius (Akira Ransomware)",
+      "url": "https://unit42.paloaltonetworks.com/threat-assessment-howling-scorpius-akira-ransomware/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK — T1486 Data Encrypted for Impact",
+      "url": "https://attack.mitre.org/techniques/T1486/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Cortex XSIAM — Anti-ransomware protection and behavioural threat detection on endpoints",
+      "url": "https://docs-cortex.paloaltonetworks.com/",
+      "publisher": "Palo Alto Networks TechDocs",
+      "publisher_id": "SRC-PANW-TECHDOCS"
+    }
+  ]
+}
