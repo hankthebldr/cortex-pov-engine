@@ -139,3 +139,58 @@ def test_reregistering_a_tenant_clears_the_stored_response_layer(session_factory
     row = asyncio.run(_go())
     assert row.response_layer is None
     assert row.response_layer_read_at is None
+
+
+# ── M-4: the stage verdict is stored with the layer ──
+
+def test_stage_verdict_is_persisted_with_the_layer(client, cred_client, session_factory,
+                                                   monkeypatch):
+    # An XQL failure with the lists read: the layer says PRESENT / RESPONSE_LAYER_OK,
+    # the stage says degraded. Storing only the layer would show green on Readiness.
+    from connectors import preflight as pf
+    _register(cred_client)
+    _patch_preflight(monkeypatch, [pf.Stage(
+        "response_layer", pf.DEGRADED, pf.PF_RESPONSE_LAYER_UNREAD,
+        "XQL read failed: boom",
+        extra={"response_layer": {"state": "PRESENT", "code": "RESPONSE_LAYER_OK"}})])
+    client.post("/api/connectors/xsiam_tenant/preflight")
+    stored = _row(session_factory).response_layer
+    assert stored["state"] == "PRESENT"
+    assert stored["stage"] == {"status": "degraded", "code": "PF_RESPONSE_LAYER_UNREAD",
+                               "detail": "XQL read failed: boom"}
+
+
+# ── M-2: a failed store never turns a good preflight into a 500 ──
+
+def test_commit_failure_still_returns_the_report(client, cred_client, session_factory,
+                                                 monkeypatch):
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from connectors import preflight as pf
+    _register(cred_client)
+    _patch_preflight(monkeypatch, [pf.Stage(
+        "response_layer", pf.OK, pf.PF_OK, "present",
+        extra={"response_layer": {"state": "PRESENT"}})])
+
+    async def _boom(self):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(AsyncSession, "commit", _boom)
+    r = client.post("/api/connectors/xsiam_tenant/preflight")
+    assert r.status_code == 200, r.text
+    st = next(s for s in r.json()["stages"] if s["id"] == "response_layer")
+    assert st["status"] == "ok" and st["response_layer"]["state"] == "PRESENT"
+    assert st["stored"] is False
+    assert "not stored" in st["stored_note"]
+    monkeypatch.undo()
+    assert _row(session_factory).response_layer is None
+
+
+def test_successful_store_says_stored(client, cred_client, monkeypatch):
+    from connectors import preflight as pf
+    _register(cred_client)
+    _patch_preflight(monkeypatch, [pf.Stage(
+        "response_layer", pf.OK, pf.PF_OK, extra={"response_layer": {"state": "PRESENT"}})])
+    st = next(s for s in client.post("/api/connectors/xsiam_tenant/preflight").json()["stages"]
+              if s["id"] == "response_layer")
+    assert st["stored"] is True

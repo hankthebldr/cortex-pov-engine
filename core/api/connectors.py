@@ -319,6 +319,10 @@ async def preflight_connector(
             )],
         ).to_dict()
 
+    # Read before the preflight: a failed store rolls the session back, which
+    # expires the row, and an async lazy reload here would turn a good report
+    # into a 500.
+    credential = {"name": row.name, "kind": row.kind}
     if kind == "xsiam":
         report = pf.preflight_reconcile(row.config or {}, secret,
                                         integration_name=row.name).to_dict()
@@ -331,7 +335,7 @@ async def preflight_connector(
     # Name the credential actually exercised: an `xsiam` preflight may have run
     # on the equivalent `xsiam_tenant` row, and a DC reading "ok" must be able
     # to tell which vault entry that verdict belongs to.
-    report["credential"] = {"name": row.name, "kind": row.kind}
+    report["credential"] = credential
     return report
 
 
@@ -367,12 +371,32 @@ async def _preflight_tenant(db: AsyncSession, row: Any, datasets: Optional[str],
         response_layer=response_layer)
     # Persist only a stage that actually read something: a skipped stage (an
     # earlier stage blocked the ladder) carries no payload and must not erase
-    # the last good read.
+    # the last good read. The stage verdict is stored WITH the layer: an XQL
+    # failure leaves the layer PRESENT / RESPONSE_LAYER_OK while the stage is
+    # degraded, and storing the layer alone would show it green on Readiness.
     for stage in report.stages:
         if stage.id == "response_layer" and "response_layer" in (stage.extra or {}):
-            row.response_layer = stage.extra["response_layer"]
-            row.response_layer_read_at = datetime.utcnow()
-            await db.commit()
+            try:
+                row.response_layer = {
+                    **stage.extra["response_layer"],
+                    "stage": {"status": stage.status, "code": stage.code,
+                              "detail": stage.detail},
+                }
+                row.response_layer_read_at = datetime.utcnow()
+                await db.commit()
+                stage.extra["stored"] = True
+            except Exception as exc:  # noqa: BLE001 — a failed store must not drop the report
+                logger.warning("response_layer: preflight result for %s not stored: %s",
+                               report.tenant, exc, exc_info=True)
+                try:
+                    await db.rollback()
+                except Exception:  # noqa: BLE001
+                    logger.warning("response_layer: rollback failed", exc_info=True)
+                stage.extra["stored"] = False
+                stage.extra["stored_note"] = (
+                    f"this result was read but not stored ({type(exc).__name__}); "
+                    "Readiness and the launch advisory still show the previous stored "
+                    "read, if any. Run preflight again.")
             break
     return report
 

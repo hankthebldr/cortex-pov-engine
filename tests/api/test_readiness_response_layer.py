@@ -64,3 +64,19 @@ def test_readiness_makes_no_outbound_call(client, session_factory):
     _seed(session_factory, layer={"state": "ABSENT"}, read_at=datetime.utcnow())
     body = client.get("/api/readiness").json()
     assert body["outbound_calls"] == 0
+
+
+def test_block_carries_the_stored_stage_verdict(client, session_factory):
+    stage = {"status": "degraded", "code": "PF_RESPONSE_LAYER_UNREAD",
+             "detail": "XQL read failed: boom"}
+    _seed(session_factory, layer={"state": "PRESENT", "code": "RESPONSE_LAYER_OK",
+                                  "stage": stage},
+          read_at=datetime.utcnow())
+    rl = client.get("/api/readiness").json()["integrations"][0]["response_layer"]
+    assert rl["stage"] == stage
+    assert "stage" not in rl["layer"]  # the verdict sits beside the layer, not in it
+
+
+def test_block_without_a_stored_stage_says_so(client, session_factory):
+    _seed(session_factory, layer={"state": "PRESENT"}, read_at=datetime.utcnow())
+    assert client.get("/api/readiness").json()["integrations"][0]["response_layer"]["stage"] is None

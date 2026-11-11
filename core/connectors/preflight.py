@@ -757,11 +757,43 @@ _PACKS_PATH = "/xsoar/contentpacks/metadata/installed"
 _LIST_NAMES_PATH = "/xsoar/lists/names"
 
 
-async def _read_list(client: Any, name: str) -> Optional[Any]:
-    """Read one tenant list's content as a JSON document, or None if unreadable.
+def _http_status(exc: Exception) -> Optional[int]:
+    """The tenant's HTTP status behind an XsiamError, when there was one."""
+    from integrations.xsiam.exceptions import XsiamAuthError, XsiamQuotaError  # noqa: PLC0415
 
-    None covers 401/403/404/405 and any other tenant refusal: the caller turns
-    it into PRESENT_UNREAD. A reply that arrives but is not a JSON object raises
+    status = getattr(exc, "upstream_status", None)
+    if isinstance(status, int):
+        return status
+    if isinstance(exc, XsiamAuthError):
+        return 401
+    if isinstance(exc, XsiamQuotaError):
+        return 429
+    return None
+
+
+def _list_refusal(name: str, exc: Exception) -> str:
+    """Why one list read failed, with the HTTP status (spec §8: 403 vs 404 matter)."""
+    status = _http_status(exc)
+    if status is None:
+        return f"list {name}: {exc}"
+    if status in (401, 403):
+        why = "the xsiam_tenant key's role may not read lists"
+    elif status in (404, 405):
+        why = "the list-content path is not available on this tenant (path unverified)"
+    elif status == 429:
+        why = "rate or quota limit"
+    else:
+        why = "tenant refused the read"
+    return f"list {name}: HTTP {status} ({why})"
+
+
+async def _read_list(client: Any, name: str) -> tuple[Optional[Any], Optional[str]]:
+    """Read one tenant list's content as a JSON document.
+
+    Returns ``(document, None)``, or ``(None, reason)`` when the tenant refused the
+    read; the reason names the HTTP status, because a 403 (role) and a 404/405
+    (path not available) need different fixes and both read as PRESENT_UNREAD,
+    never ABSENT. A reply that arrives but is not a JSON object raises
     ``ResponseLayerShapeError`` (tolerance hides bugs).
     """
     import json  # noqa: PLC0415
@@ -771,8 +803,9 @@ async def _read_list(client: Any, name: str) -> Optional[Any]:
     try:
         reply = await client.request("GET", _LIST_CONTENT_PATH.format(name=name))
     except XsiamError as exc:
-        logger.info("response_layer: list %s unreadable: %s", name, exc)
-        return None
+        reason = _list_refusal(name, exc)
+        logger.info("response_layer: %s", reason)
+        return None, reason
     if isinstance(reply, (str, bytes)):
         try:
             reply = json.loads(reply)
@@ -782,7 +815,7 @@ async def _read_list(client: Any, name: str) -> Optional[Any]:
     if not isinstance(reply, dict):
         raise _socfw.ResponseLayerShapeError(
             f"list {name}: expected a JSON object, got {type(reply).__name__}")
-    return reply
+    return reply, None
 
 
 async def _probe_response_layer(client: Any, report: PreflightReport,
@@ -832,15 +865,21 @@ async def _probe_response_layer(client: Any, report: PreflightReport,
             and shape_error is None:
         # 3. list content, both documents or neither
         docs = []
+        refusals: list[str] = []
         try:
             for list_name in _socfw.CONFIG_LISTS:
                 report.queries_issued += 1
-                docs.append(await _read_list(client, list_name))
+                doc, refusal = await _read_list(client, list_name)
+                docs.append(doc)
+                if refusal:
+                    refusals.append(refusal)
             if all(d is not None for d in docs):
                 tenant_config = _socfw.parse_tenant_config(docs[0], docs[1])
                 sources.append("list_content")
             if tenant_config is None and shape_error is None:
-                read_problem = read_problem or "list content (SOCFWTenantConfig / SOCFWConfigModes) was not readable"
+                read_problem = read_problem or (
+                    "list content (SOCFWTenantConfig / SOCFWConfigModes) was not readable"
+                    + (": " + "; ".join(refusals) if refusals else ""))
         except _socfw.ResponseLayerShapeError as exc:
             shape_error = str(exc)
         except Exception as exc:  # noqa: BLE001 — transport mid-read

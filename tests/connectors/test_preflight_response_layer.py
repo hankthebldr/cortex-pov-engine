@@ -249,3 +249,20 @@ def test_list_content_not_a_json_object_is_shape_code():
     _inner = _tenant()
     st = _stage(run(h), "response_layer")
     assert st.code == "PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED"
+
+
+# ── M-1: a refused list read records its HTTP status (spec §8: 403 vs 404) ──
+
+def test_list_content_refusal_records_the_http_status():
+    for status in (403, 404, 405):
+        st = _stage(run(_tenant(list_status=status)), "response_layer")
+        assert st.code == "PF_RESPONSE_LAYER_UNREAD"
+        assert f"HTTP {status}" in st.detail, st.detail
+        assert "SOCFWTenantConfig" in st.detail
+
+
+def test_list_content_403_names_the_role_not_the_path():
+    st = _stage(run(_tenant(list_status=403)), "response_layer")
+    assert "role" in st.detail.lower()
+    st = _stage(run(_tenant(list_status=404)), "response_layer")
+    assert "path" in st.detail.lower()
