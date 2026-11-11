@@ -49,7 +49,7 @@ from engine.outcome import (
     UPSTREAM_SEVERED,
 )
 from engine.pairing import build_pair_delta
-from connectors.case_ledger import LEDGER_READ_ERRORS, pair_merge
+from connectors.case_ledger import CASE_DISCLAIMER, LEDGER_READ_ERRORS, pair_merge
 from engine.orchestrator import orchestrator
 from events import event_bus
 from models import Agent, Result, Run, Scenario, StepOutcome
@@ -163,6 +163,65 @@ def _build_tools_used_rows(external_tools: Optional[list]) -> list[dict]:
                 "upstream": "—",
             })
     return rows
+
+
+def _safe_xdr_url(url) -> Optional[str]:
+    """``xdr_url`` comes from the tenant: link it only when it is https on a
+    ``*.paloaltonetworks.com`` host, otherwise it is shown as plain text."""
+    from urllib.parse import urlsplit
+    if not isinstance(url, str):
+        return None
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return None
+    if parts.scheme == "https" and host.endswith(".paloaltonetworks.com"):
+        return url
+    return None
+
+
+def _case_section(run: Run) -> list[str]:
+    """Markdown ``## Case`` block from the stored case ledger.
+
+    Disposition is context, never detection evidence: nothing here is a
+    detected/missed claim, and the fixed disclaimer is always rendered.
+    """
+    out = ["## Case", ""]
+    led = run.case_ledger if isinstance(run.case_ledger, dict) else None
+    if led is None:
+        out += ["Not read yet — reconcile the run.", "", f"*{CASE_DISCLAIMER}*", ""]
+        return out
+    out.append(f"**Case merge:** `{led.get('merge_class') or '—'}` — {led.get('merge_reason') or '—'}")
+    out.append("")
+    out.append(f"Read at {led.get('read_at') or '—'} from `{led.get('integration') or '—'}` "
+               f"(basis: {led.get('basis') or '—'}).")
+    out.append("")
+    if led.get("code") and led.get("code") != "CASE_LEDGER_OK":
+        out += [f"> Ledger status: `{led['code']}`", ""]
+    ir = led.get("issue_read")
+    if isinstance(ir, dict) and not ir.get("ok", True):
+        out += [f"> Issue-status read failed: `{ir.get('code') or '—'}` — "
+                f"{ir.get('remediation') or 'no remediation recorded'}", ""]
+    cases = led.get("cases") or []
+    if cases:
+        out.append("| Case | Status | Closed by | Sealed | Issues (this run / other) | Link |")
+        out.append("|------|--------|-----------|--------|---------------------------|------|")
+        for c in cases:
+            url = c.get("xdr_url")
+            safe = _safe_xdr_url(url)
+            link = f"[open]({safe})" if safe else (f"`{url}`" if url else "—")
+            out.append(
+                f"| {c.get('case_id')} | {c.get('status') or '—'} | {c.get('closed_by') or '—'} | "
+                f"{'yes' if c.get('sealed') else 'no'} | "
+                f"{c.get('issues_from_run', 0)} / {c.get('issues_other', 0)} | {link} |"
+            )
+        out.append("")
+    if led.get("shared_with_other_runs"):
+        other = sum(int(c.get("issues_other") or 0) for c in cases)
+        out += [f"Shared with other runs: {other} issues from other runs sit in these cases.", ""]
+    out += [f"*{CASE_DISCLAIMER}*", ""]
+    return out
 
 
 def _verdict_section(run: Run) -> list[str]:
@@ -1009,6 +1068,7 @@ async def get_report(
             },
             "mttd": {"avg_seconds": mttd_avg, "min_seconds": mttd_min, "max_seconds": mttd_max, "count": len(mttd_values)} if mttd_values else None,
             "tools_used": tools_used,
+            "case_ledger": run.case_ledger,
         }
 
     # --- Generate Markdown report ---
@@ -1125,6 +1185,7 @@ async def get_report(
     # to prevent. Rendered only when a verdict exists: an unscored historical
     # run must not grow a fake section.
     lines.extend(_verdict_section(run))
+    lines.extend(_case_section(run))
 
     # MTTD
     if mttd_values:
