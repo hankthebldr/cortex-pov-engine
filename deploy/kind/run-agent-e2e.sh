@@ -56,9 +56,14 @@ say()     { echo "[e2e] $*"; }
 ok()      { say "$STAGE ok${1:+ $1}"; }
 observe() { say "observe $*"; }
 k()       { kubectl --context "$CTX" "$@"; }
+# Enrollment tokens never reach this script's output.
+redact()  { sed -E 's/token=[^ ]+/token=<redacted>/g; s/cxs_[A-Za-z0-9_-]+/cxs_<redacted>/g'; }
 
 dump() {
   [ "$CLUSTER_CREATED" = 1 ] || return 0
+  _dump 2>&1 | redact
+}
+_dump() {
   echo "----- [e2e] diagnostics: pods -----"
   k -n "$NS" get pods -o wide 2>&1 || true
   echo "----- [e2e] diagnostics: describe pod -----"
@@ -89,6 +94,11 @@ cleanup() {
     dump
   fi
   if [ "$CLUSTER_CREATED" = 1 ]; then
+    if k delete clusterrole,clusterrolebinding -l cortexsim.io/agent=true --ignore-not-found >/dev/null 2>&1; then
+      say "teardown ok cluster-scoped cortexsim.io/agent objects deleted"
+    else
+      say "teardown observe could not delete cluster-scoped cortexsim.io/agent objects (the cluster is deleted next)"
+    fi
     if kind delete cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" >/dev/null 2>&1; then
       say "teardown ok kind cluster $CLUSTER deleted"
     else
@@ -104,10 +114,10 @@ trap cleanup EXIT
 http() {
   local m=$1 p=$2 d=${3:-}
   if [ -n "$d" ]; then
-    curl -sS -o "$WORK/body" -w '%{http_code}' -X "$m" \
+    curl -sS --max-time 30 -o "$WORK/body" -w '%{http_code}' -X "$m" \
       -H 'Content-Type: application/json' --data "$d" "$SIMCORE_API$p"
   else
-    curl -sS -o "$WORK/body" -w '%{http_code}' -X "$m" "$SIMCORE_API$p"
+    curl -sS --max-time 30 -o "$WORK/body" -w '%{http_code}' -X "$m" "$SIMCORE_API$p"
   fi
 }
 body()     { cat "$WORK/body"; }
@@ -124,13 +134,14 @@ current_pod() {
 # fetch_manifest QUERY OUTFILE — the manifest for this node's architecture.
 fetch_manifest() {
   local q=$1 out=$2 code
-  code=$(curl -sS -o "$out" -w '%{http_code}' \
+  code=$(curl -sS --max-time 30 -o "$out" -w '%{http_code}' \
     "$SIMCORE_API/api/agents/manifest?arch=$ARCH&ttl_seconds=$MANIFEST_TTL&$q")
   [ "$code" = 200 ] || fail "manifest ($q) returned HTTP $code: $(head -c 400 "$out")"
 }
 
-# defect MSG — a PRODUCT defect this run observed. Recorded, not fatal, so the
-# stages after it still run; the script exits non-zero at the end.
+# defect MSG — a PRODUCT defect this run observed, recorded only on the one
+# signature its caller expects (anything else is a FAIL). Not fatal, so the
+# stages after it still run; the script exits 2 at the end.
 DEFECTS=0
 defect() {
   DEFECTS=$((DEFECTS + 1))
@@ -138,22 +149,32 @@ defect() {
 }
 
 # reapply FILE — `kubectl apply` a fresh manifest over a running agent, the way
-# the manifest header tells an operator to. A rejection of the reaper Job
-# (spec.template is immutable on a Job) is recorded as a product defect; the
-# Job is then deleted and the apply repeated so later stages can run.
+# the manifest header tells an operator to. Any rejection is a FAIL.
 reapply() {
-  local f=$1
-  if k apply -f "$f" >/dev/null 2>"$WORK/apply.err"; then return 0; fi
-  if grep -q 'Job "cortexsim-reaper-agent" is invalid' "$WORK/apply.err" \
-     && [ "$(grep -c 'is invalid\|Error from server' "$WORK/apply.err")" = 1 ]; then
-    defect "re-applying the manifest is rejected: job/cortexsim-reaper-agent spec.template: field is immutable (the reaper Job's pod template changes on every generation). Workaround for the rest of this run: delete job/cortexsim-reaper-agent and apply again."
-    observe "kubectl apply stderr: $(tr '\n' ' ' < "$WORK/apply.err" | head -c 700)"
-    k -n "$NS" delete job cortexsim-reaper-agent --wait=true >/dev/null
-    k apply -f "$f" >/dev/null 2>"$WORK/apply.err" || { cat "$WORK/apply.err"; fail "apply still fails after deleting the reaper Job"; }
-    return 0
-  fi
-  cat "$WORK/apply.err"
-  fail "kubectl apply -f $f failed"
+  k apply -f "$1" >/dev/null 2>"$WORK/apply.err" && return 0
+  redact < "$WORK/apply.err"
+  fail "re-applying $1 over the running agent was rejected: $(tr '\n' ' ' < "$WORK/apply.err" | redact | head -c 400)"
+}
+
+# pod_names -> the current agent pod names, one per line.
+pod_names() {
+  k -n "$NS" get pods -l app.kubernetes.io/name=cortexsim-agent -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+}
+
+# wait_new_pod BEFORE_FILE -> sets NPOD to the newest agent pod whose name is
+# not in BEFORE_FILE (the names recorded before the change), or fails.
+wait_new_pod() {
+  NPOD=""
+  for _ in $(seq 1 60); do
+    NPOD=$(k -n "$NS" get pods -l app.kubernetes.io/name=cortexsim-agent -o json \
+      | jq -r --rawfile before "$1" '($before | split("\n")) as $b
+          | [.items[] | select(.metadata.deletionTimestamp == null)
+                      | select(.metadata.name as $n | $b | index($n) | not)]
+          | sort_by(.metadata.creationTimestamp) | last | .metadata.name // empty')
+    [ -n "$NPOD" ] && return 0
+    sleep 2
+  done
+  fail "no new agent pod appeared within 120s"
 }
 
 rollout() {
@@ -247,7 +268,7 @@ STAGE="cluster"
 CLUSTER_CREATED=1
 kind create cluster --name "$CLUSTER" --kubeconfig "$KUBECONFIG" --wait 120s >"$WORK/kind.log" 2>&1 \
   || { cat "$WORK/kind.log"; fail "kind create cluster failed"; }
-cur=$(kubectl config current-context 2>/dev/null || true)
+cur=$(kubectl --kubeconfig "$KUBECONFIG" config current-context 2>/dev/null || true)
 [ "$cur" = "$CTX" ] || fail "current context of the e2e kubeconfig is '$cur', not $CTX; refusing to continue"
 ARCH=$(k get node -o jsonpath='{.items[0].status.nodeInfo.architecture}')
 [ -n "$ARCH" ] || fail "could not read the node architecture"
@@ -263,7 +284,7 @@ if [ "$sc_host" = host.docker.internal ] \
 else
   observe "resolver in $NODE: $(docker exec "$NODE" getent hosts "$sc_host" 2>&1 | head -1)"
 fi
-docker exec "$NODE" curl -sf -o /dev/null "$SIMCORE_URL/api/health" \
+docker exec "$NODE" curl -sf --max-time 30 -o /dev/null "$SIMCORE_URL/api/health" \
   || fail "SimCore is not reachable from inside the kind node at $SIMCORE_URL"
 ok "context=$CTX arch=$ARCH; node reaches SimCore at $SIMCORE_URL"
 
@@ -281,7 +302,6 @@ k create namespace "$NS" >/dev/null
 k -n "$NS" create secret generic cortexsim-enroll \
   --from-file=server="$WORK/server" --from-file=token="$WORK/token" >/dev/null
 k -n "$NS" label secret cortexsim-enroll cortexsim.io/agent=true >/dev/null
-rm -f "$WORK/token"
 k apply -f "$SIMCORE_API/api/agents/manifest?arch=$ARCH&ttl_seconds=$MANIFEST_TTL" >/dev/null 2>"$WORK/apply.err" \
   || { cat "$WORK/apply.err"; fail "kubectl apply -f <manifest URL> failed"; }
 ok "token minted, namespace + Secret created, baseline manifest applied from URL"
@@ -293,7 +313,12 @@ STAGE="rollout"
 rollout
 POD=$(current_pod)
 [ -n "$POD" ] || fail "rollout finished but no Ready agent pod found"
-ok "pod $POD Ready"
+if k -n "$NS" get job cortexsim-reaper-agent >/dev/null 2>&1; then
+  fail "a Job named cortexsim-reaper-agent exists; the agent's reaper must be a Deployment"
+fi
+k -n "$NS" wait --for=condition=Available deploy/cortexsim-reaper-agent --timeout=120s >/dev/null \
+  || fail "deploy/cortexsim-reaper-agent is not Available within 120s"
+ok "pod $POD Ready (readiness = beacon stored its id); reaper is deploy/cortexsim-reaper-agent, Available, no Job"
 
 # ---------------------------------------------------------------------------
 # 5. enroll
@@ -304,19 +329,24 @@ got_pod=$(jq -r '.runtime_facts.pod_name' <<<"$AGENT_ROW")
 [ "$got_pod" = "$POD" ] || fail "agent pod_name=$got_pod, real pod is $POD"
 observe "runtime_facts: $(jq -c '.runtime_facts | {container, pod_name, pod_namespace, posture_profile, prepare_status, tools}' <<<"$AGENT_ROW")"
 ok "agent $AGENT online, container=true, pod_name=$got_pod"
-# Observations, taken once the beacon is up (it starts after prepare finishes;
-# the pod reads Ready before that, because the container has no readiness probe).
+# Observations of the enrolled baseline pod.
 # shellcheck disable=SC2016  # expanded by the pod's shell, not this one
 PS_SCRIPT='for d in /proc/[0-9]*; do
   c=$(tr "\0" " " < $d/cmdline 2>/dev/null); [ -n "$c" ] || continue
   printf "pid=%s ppid=%s cmd=%s; " "${d#/proc/}" "$(sed -n "s/^PPid:[[:space:]]*//p" $d/status)" "$c"
 done'
+# shellcheck disable=SC2016
+ZOMBIE_SCRIPT='for f in /proc/[0-9]*/stat; do
+  s=$(cat "$f" 2>/dev/null) || continue
+  st=${s##*) }; st=${st%% *}
+  [ "$st" = Z ] && printf "zombie %s; " "$s"
+done; echo end'
 observe "pid1 cmdline: $(pexec "tr '\\0' ' ' < /proc/1/cmdline")"
 observe "processes: $(pexec "$PS_SCRIPT" | tr '\n' ' ')"
 observe "unknown user: $(pexec 'id -u no-such-user-xyz; echo rc=$?' | tr '\n' ' ')"
 observe "prepare.status: $(pexec 'cat /cortexsim/prepare.status' | tr '\n' ' ')"
 observe "kubectl copied by init container: $(pexec '/cortexsim/bin/kubectl version --client 2>&1 | head -1')"
-observe "beacon log: $({ k -n "$NS" logs "$POD" -c agent 2>&1 || true; } | grep -iE 'subreaper|enrol' | head -4 | tr '\n' ' ' || true)"
+observe "beacon log (subreaper): $({ k -n "$NS" logs "$POD" -c agent 2>&1 || true; } | grep -i 'subreaper' | head -2 | redact | tr '\n' ' ' || true)"
 
 
 # ---------------------------------------------------------------------------
@@ -375,11 +405,12 @@ out=$(jq -r '.output // ""' "$WORK/body")
 observe "run $RUN ($SCEN) status=$status summary: $(printf '%s' "$out" | sed -n '/COMPLETION SUMMARY/,$p' | tr '\n' ' ' | head -c 500)"
 missing=""
 for sid in $( (http GET "/api/scenarios/$SCEN" >/dev/null; jq -r '.steps[].id' "$WORK/body") ); do
-  grep -q -- "$sid" <<<"$out" || missing="$missing $sid"
+  grep -qF -- "· $sid ·" <<<"$out" || missing="$missing $sid"
 done
 [ -n "$out" ] || fail "run $RUN ($SCEN) recorded no output"
 [ -z "$missing" ] || fail "run $RUN ($SCEN) output names no output for step(s):$missing"
 case "$status" in complete|completed) ;; *) fail "run $RUN ($SCEN) ended '$status', not complete" ;; esac
+observe "zombies in the pod after $SCEN completed: $(pexec "$ZOMBIE_SCRIPT" | tr '\n' ' ')"
 ok "$SCEN run $RUN complete, output for all $n_steps steps; refused on baseline with AGENT_POSTURE_INSUFFICIENT:$POSTURE_REFUSED"
 
 # ---------------------------------------------------------------------------
@@ -410,16 +441,30 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 [ "$started" = 1 ] || fail "draft run $ARUN: no 'sleep 300' process appeared in $POD within 90s"
-observe "processes mid-step (cgo_anchor apache2 requested): $(pexec "$PS_SCRIPT" | tr '\n' ' ')"
+procs=$(pexec "$PS_SCRIPT")
+observe "processes mid-step (cgo_anchor apache2 requested): $(tr '\n' ' ' <<<"$procs")"
+# The anchor rename: a process whose /proc/<pid>/cmdline starts with the
+# anchor image name must exist while the step runs. sleep 300 is running (just
+# proven), so its absence has exactly one signature.
+if grep -qE '(^|; )pid=[0-9]+ ppid=[0-9]+ cmd=apache2( |;)' <<<"$procs"; then
+  observe "anchor rename present: $(grep -oE 'pid=[0-9]+ ppid=[0-9]+ cmd=apache2 ' <<<"$procs" | tr '\n' ' ')"
+else
+  defect "cgo_anchor apache2 requested on debian (bash present) but no process cmdline starts with 'apache2' while the step runs: $(tr '\n' ' ' <<<"$procs" | head -c 600)"
+fi
 http GET "/api/runs/$ARUN" >/dev/null
 observe "output SimCore holds for $ARUN mid-step: $(jq -c '.output' "$WORK/body" | head -c 200)"
 code=$(http POST "/api/runs/$ARUN/abort")
 [ "$code" = 200 ] || fail "abort returned HTTP $code: $(body | head -c 300)"
 status=$(wait_run "$ARUN" 60)
 [ "$status" = aborted ] || fail "run $ARUN is '$status' after abort, not aborted"
-sleep 3
+gone=0
+for _ in $(seq 1 30); do
+  if ! pexec "$PS_SCRIPT" | grep -qE 'cmd=(sleep 300|apache2)( |;)'; then gone=1; break; fi
+  sleep 1
+done
+[ "$gone" = 1 ] || fail "run $ARUN reads aborted but its step is still alive in $POD after 30s: $(pexec "$PS_SCRIPT" | tr '\n' ' ')"
 observe "processes after abort: $(pexec "$PS_SCRIPT" | tr '\n' ' ')"
-ok "draft run $ARUN aborted mid-step"
+ok "draft run $ARUN aborted mid-step; its process group is gone from the pod"
 
 # ---------------------------------------------------------------------------
 # 8. cluster-privilege
@@ -452,23 +497,46 @@ done
 ok "accepted on agent $AGENT (posture_profile=cluster-privilege):$accepted"
 
 # ---------------------------------------------------------------------------
+# 8b. downgrade
+# ---------------------------------------------------------------------------
+STAGE="downgrade"
+# Re-applying baseline over the cluster-privilege agent must take the cluster
+# grant away, not leave it behind for the new pod's ServiceAccount.
+fetch_manifest "" "$WORK/down.yaml"
+pod_names > "$WORK/before"
+reapply "$WORK/down.yaml"
+rollout
+wait_new_pod "$WORK/before"
+POD=$NPOD
+rules=$(k get clusterrole cortexsim-agent -o jsonpath='{.rules}' 2>&1) \
+  || fail "clusterrole/cortexsim-agent is not readable after the downgrade: $rules"
+case "$rules" in ""|"[]"|"null") ;; *) fail "clusterrole/cortexsim-agent still grants rules after the baseline re-apply: $rules" ;; esac
+cani=$(pexec '/cortexsim/bin/kubectl auth can-i list secrets --all-namespaces' | head -1 | tr -d '[:space:]')
+[ "$cani" = no ] || fail "from pod $POD, 'kubectl auth can-i list secrets --all-namespaces' answered '$cani', want no"
+wait_agent "$POD"
+prof=$(jq -r '.runtime_facts.posture_profile' <<<"$AGENT_ROW")
+[ "$prof" = baseline ] || fail "downgraded agent reports posture_profile=$prof, want baseline"
+ok "baseline re-applied over cluster-privilege: clusterrole/cortexsim-agent rules=${rules:-<empty>}; pod $POD can-i list secrets -A = no; agent $AGENT posture_profile=baseline"
+
+# ---------------------------------------------------------------------------
 # 9a. digest mismatch
 # ---------------------------------------------------------------------------
 STAGE="digest-mismatch"
 fetch_manifest "" "$WORK/flip.yaml"
-digest=$(curl -sSf "$SIMCORE_API/api/agents/binary/sha256?os=linux&arch=$ARCH" | grep -oE '[0-9a-f]{64}' | head -1)
+digest=$(curl -sSf --max-time 30 "$SIMCORE_API/api/agents/binary/sha256?os=linux&arch=$ARCH" | grep -oE '[0-9a-f]{64}' | head -1)
 { [ -n "$digest" ] && grep -q "$digest" "$WORK/flip.yaml"; } \
   || fail "the served beacon digest '${digest:-none}' is not in the manifest"
 first=${digest:0:1}; [ "$first" = 0 ] && repl=1 || repl=0
 flipped="${repl}${digest:1}"
 sed -i.bak "s/$digest/$flipped/" "$WORK/flip.yaml"
 grep -q "$flipped" "$WORK/flip.yaml" || fail "digest flip did not land in the manifest copy"
+pod_names > "$WORK/before"
 reapply "$WORK/flip.yaml"
+wait_new_pod "$WORK/before"
 seen=""
 for _ in $(seq 1 60); do
-  seen=$(k -n "$NS" get pods -l app.kubernetes.io/name=cortexsim-agent -o json | jq -r '
-    [.items[] | select(.metadata.deletionTimestamp == null)] | sort_by(.metadata.creationTimestamp)
-    | last | [.status.initContainerStatuses[]? | select(.name == "fetch")
+  seen=$(k -n "$NS" get pod "$NPOD" -o json | jq -r '
+    [.status.initContainerStatuses[]? | select(.name == "fetch")
      | (.state.terminated // .lastState.terminated) | select(. != null)
      | "\(.exitCode) \(.message // "" | gsub("\\s+$"; ""))"] | first // empty')
   [ -n "$seen" ] && break
@@ -476,70 +544,109 @@ for _ in $(seq 1 60); do
 done
 [ "$seen" = "78 BEACON_DIGEST_MISMATCH" ] \
   || fail "fetch init container: expected '78 BEACON_DIGEST_MISMATCH', saw '${seen:-nothing in 180s}'"
-ok "fetch init container exited 78 with BEACON_DIGEST_MISMATCH"
+ok "new pod $NPOD: fetch init container exited 78 with BEACON_DIGEST_MISMATCH"
 
 # ---------------------------------------------------------------------------
 # 9b. alpine
 # ---------------------------------------------------------------------------
 STAGE="alpine"
-# With prepare=packages, apk installs bash, so the anchor IS honoured: observe it.
+# prepare=packages: apk installs bash and runuser and creates the accounts.
 fetch_manifest "image=alpine:3.20" "$WORK/alpine.yaml"
+pod_names > "$WORK/before"
 reapply "$WORK/alpine.yaml"
 rollout
-POD=$(current_pod)
+wait_new_pod "$WORK/before"
+POD=$NPOD
 wait_agent "$POD"
 observe "alpine+packages runtime_facts: $(jq -c '.runtime_facts | {posture_profile, prepare_status, tools}' <<<"$AGENT_ROW")"
-observe "alpine+packages prepare.status: $(pexec 'cat /cortexsim/prepare.status' | tr '\n' ' ')"
+pstat=$(pexec 'cat /cortexsim/prepare.status' | tr '\n' ' ' | sed 's/ *$//')
+[ "$pstat" = PREPARE_OK ] || fail "alpine+packages prepare.status is '$pstat', not PREPARE_OK"
+wd=$(pexec 'id -u www-data && echo rc=0 || echo rc=1' | tr '\n' ' ')
+grep -q 'rc=0' <<<"$wd" || fail "alpine+packages: id -u www-data failed: $wd"
 observe "alpine+packages unknown user: $(pexec 'id -u no-such-user-xyz; echo rc=$?' | tr '\n' ' ')"
 observe "alpine+packages runuser/bash: $(pexec 'command -v runuser; command -v bash; echo rc=$?' | tr '\n' ' ')"
-observe "alpine+packages www-data before/after a manual useradd: $(pexec 'getent passwd www-data; getent group www-data; useradd -m -s /bin/sh www-data; echo useradd_rc=$?' | tr '\n' ' ')"
-LAST_GOOD_AGENT=$AGENT
+ok "alpine:3.20 prepare=packages enrolled; prepare.status=PREPARE_OK; id -u www-data -> $wd"
 
-# With prepare=none there is no bash, so the anchor cannot be honoured: assert it.
+# prepare=none: no bash, so the anchor cannot be honoured. The pod must still
+# enroll, and the run must say so.
 fetch_manifest "image=alpine:3.20&prepare=none" "$WORK/alpine-none.yaml"
+pod_names > "$WORK/before"
 reapply "$WORK/alpine-none.yaml"
-sleep 5
-NPOD=$(newest_pod)
-if ! try_agent "$NPOD" 60; then
-  { k -n "$NS" logs "$NPOD" -c agent --previous || true; k -n "$NS" logs "$NPOD" -c agent || true; } >"$WORK/none.log" 2>&1
-  fatal=$(grep -m1 'FATAL' "$WORK/none.log" || true)
-  phase=$(k -n "$NS" get pod "$NPOD" -o json | jq -r '.status.containerStatuses[0]
-    | "\(.state | keys[0]) \(.state[] .reason // "") restarts=\(.restartCount)"' 2>/dev/null || true)
-  [ -n "$fatal" ] || fail "alpine prepare=none pod $NPOD never enrolled ($phase) and logged no FATAL line; last log lines: $(tail -3 "$WORK/none.log" | tr '\n' ' ')"
-  defect "alpine:3.20 prepare=none pod $NPOD cannot enroll (${phase:-not running}); beacon log: ${fatal#*] }"
-  say "$STAGE SKIP ANCHOR NOT HONOURED assertion: no enrolled bash-less agent to run it on (blocked by the defect above)"
-  AGENT=$LAST_GOOD_AGENT
-else
-  POD=$NPOD
-  observe "alpine prepare=none runtime_facts: $(jq -c '.runtime_facts | {posture_profile, prepare_status, tools}' <<<"$AGENT_ROW")"
-  http GET /api/scenarios >/dev/null
-  jq -r '.scenarios[]
-    | select(.pull_supported == true and .status == "active" and .cgo_anchor != null)
-    | select(.plane == "CDR") | .scenario_id' "$WORK/body" > "$WORK/anchor-candidates"
-  ANS=""; BRUN=""
-  while read -r sid; do
-    code=$(http GET "/api/scenarios/$sid")
-    [ "$code" = 200 ] || continue
-    [ "$(jq '.external_tools | length' "$WORK/body")" = 0 ] || continue
-    calls_kubectl "$WORK/body" && continue
-    code=$(http POST /api/runs "$(launch_body "$sid" "$AGENT")")
-    if [ "$code" = 200 ] || [ "$code" = 201 ]; then ANS=$sid; BRUN=$(jq -r '.run_id' "$WORK/body"); break; fi
-    observe "anchor candidate $sid skipped: HTTP $code $(err_code)"
-  done < "$WORK/anchor-candidates"
-  [ -n "$ANS" ] || fail "no cgo_anchor scenario is accepted by the gate on an alpine prepare=none agent"
-  status=$(wait_run "$BRUN" 300)
-  http GET "/api/runs/$BRUN" >/dev/null
-  out=$(jq -r '.output // ""' "$WORK/body")
-  observe "run $BRUN ($ANS) status=$status summary: $(sed -n '/COMPLETION SUMMARY/,$p' <<<"$out" | tr '\n' ' ' | head -c 600)"
-  grep -q 'ANCHOR NOT HONOURED' <<<"$out" || fail "run $BRUN ($ANS) output has no ANCHOR NOT HONOURED line"
-  case "$status" in complete|completed) ;; *) fail "run $BRUN ($ANS) ended '$status', not complete" ;; esac
-  ok "$ANS on alpine (no bash) completed and recorded ANCHOR NOT HONOURED"
-fi
+rollout
+wait_new_pod "$WORK/before"
+POD=$NPOD
+wait_agent "$POD"
+observe "alpine prepare=none runtime_facts: $(jq -c '.runtime_facts | {posture_profile, prepare_status, tools}' <<<"$AGENT_ROW")"
+http GET /api/scenarios >/dev/null
+jq -r '.scenarios[]
+  | select(.pull_supported == true and .status == "active" and .cgo_anchor != null)
+  | select(.plane == "CDR") | .scenario_id' "$WORK/body" > "$WORK/anchor-candidates"
+ANS=""; BRUN=""
+while read -r sid; do
+  code=$(http GET "/api/scenarios/$sid")
+  [ "$code" = 200 ] || continue
+  [ "$(jq '.external_tools | length' "$WORK/body")" = 0 ] || continue
+  calls_kubectl "$WORK/body" && continue
+  code=$(http POST /api/runs "$(launch_body "$sid" "$AGENT")")
+  if [ "$code" = 200 ] || [ "$code" = 201 ]; then ANS=$sid; BRUN=$(jq -r '.run_id' "$WORK/body"); break; fi
+  observe "anchor candidate $sid skipped: HTTP $code $(err_code)"
+done < "$WORK/anchor-candidates"
+[ -n "$ANS" ] || fail "no cgo_anchor scenario is accepted by the gate on the alpine prepare=none agent"
+status=$(wait_run "$BRUN" 300)
+http GET "/api/runs/$BRUN" >/dev/null
+out=$(jq -r '.output // ""' "$WORK/body")
+summary=$(sed -n '/COMPLETION SUMMARY/,$p' <<<"$out")
+observe "run $BRUN ($ANS) status=$status summary: $(tr '\n' ' ' <<<"$summary" | head -c 700)"
+case "$status" in complete|completed) ;; *) fail "run $BRUN ($ANS) ended '$status', not complete" ;; esac
+grep -q 'ANCHOR NOT HONOURED' <<<"${out%%--- COMPLETION SUMMARY*}" || fail "run $BRUN ($ANS) step output has no ANCHOR NOT HONOURED line"
+grep -q 'ANCHOR NOT HONOURED' <<<"$summary" || fail "run $BRUN ($ANS) completion summary has no ANCHOR NOT HONOURED"
+ok "$ANS on alpine prepare=none (no bash) enrolled, completed, and recorded ANCHOR NOT HONOURED in output and summary"
+
+# ---------------------------------------------------------------------------
+# 9c. enroll denied
+# ---------------------------------------------------------------------------
+STAGE="enroll-denied"
+# A garbage token in the Secret, then a fresh pod: it must fail to enroll and
+# say why in its termination message. Then the real token goes back and a
+# fresh pod enrolls; that agent is the one the offline stage watches.
+put_secret() { # TOKEN_FILE
+  k -n "$NS" create secret generic cortexsim-enroll \
+    --from-file=server="$WORK/server" --from-file=token="$1" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+}
+printf 'cxs_e2e-not-a-real-token' > "$WORK/bad-token"
+put_secret "$WORK/bad-token"
+pod_names > "$WORK/before"
+k -n "$NS" delete pod "$POD" --wait=false >/dev/null
+wait_new_pod "$WORK/before"
+msg=""
+for _ in $(seq 1 60); do
+  msg=$(k -n "$NS" get pod "$NPOD" -o json | jq -r '[.status.containerStatuses[]? | select(.name == "agent")
+        | (.lastState.terminated // .state.terminated) | select(. != null) | .message // ""] | first // empty')
+  [ -n "$msg" ] && break
+  sleep 3
+done
+grep -q 'ENROLL_DENIED' <<<"$msg" || fail "pod $NPOD with a garbage token: last termination message is '${msg:-none in 180s}', want ENROLL_DENIED"
+k -n "$NS" describe pod "$NPOD" | grep -q 'FATAL ENROLL_DENIED' \
+  || fail "kubectl describe pod $NPOD does not show the FATAL ENROLL_DENIED reason"
+observe "termination message of $NPOD: $(redact <<<"$msg" | tr '\n' ' ' | head -c 300)"
+put_secret "$WORK/token"
+pod_names > "$WORK/before"
+k -n "$NS" delete pod "$NPOD" --wait=false >/dev/null
+rollout
+wait_new_pod "$WORK/before"
+POD=$NPOD
+wait_agent "$POD"
+ok "garbage token -> termination message carries ENROLL_DENIED (and describe shows it); real token restored, pod $POD enrolled as $AGENT"
 
 # ---------------------------------------------------------------------------
 # 10. teardown
 # ---------------------------------------------------------------------------
 STAGE="offline"
+POD=$(current_pod)
+[ -n "$POD" ] || fail "no Ready agent pod before the namespace is deleted"
+wait_agent "$POD"
+observe "agent $AGENT of running pod $POD is online immediately before the namespace is deleted"
 k delete namespace "$NS" --wait=true --timeout=180s >/dev/null
 gone=""
 for _ in $(seq 1 $((OFFLINE_TIMEOUT / 10))); do
@@ -550,9 +657,13 @@ for _ in $(seq 1 $((OFFLINE_TIMEOUT / 10))); do
 done
 [ "$gone" = offline ] || fail "agent $AGENT is '$gone' ${OFFLINE_TIMEOUT}s after namespace deletion, not offline"
 ok "namespace deleted; agent $AGENT went offline"
+for o in clusterrole/cortexsim-agent clusterrolebinding/cortexsim-agent clusterrole/cortexsim-reaper-agent clusterrolebinding/cortexsim-reaper-agent; do
+  if k get "$o" >/dev/null 2>&1; then observe "$o still exists after the namespace was deleted"
+  else observe "$o is gone after the namespace was deleted"; fi
+done
 if [ "$DEFECTS" -gt 0 ]; then
   FAILED=1
   say "RESULT FAIL all stages ran; $DEFECTS product defect(s) recorded (DEFECT lines above)"
   exit 2
 fi
-say "ALL STAGES PASSED (this proves the pod runs and reports; no Cortex detection is proven)"
+say "RESULT PASS all stages passed (this proves the pod runs and reports; no Cortex detection is proven)"
