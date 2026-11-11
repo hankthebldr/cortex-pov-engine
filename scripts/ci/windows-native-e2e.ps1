@@ -876,6 +876,25 @@ function Invoke-PhasePssa {
     foreach ($f in @(Get-CsRenderedFiles)) { $targets.Add($f.FullName) }
     $targets.Add((Join-Path $script:Workspace 'scripts\ci\windows-native-e2e.ps1'))
 
+    # Reviewed waivers, from the first run of this job (2026-11-10, PSScriptAnalyzer
+    # 1.25.0). Each names ONE rule, ONE file kind and ONE message pattern, and says
+    # why the finding is not a Windows PowerShell 5.1 defect. Every other
+    # PSUseCompatible* / Error / ParseError finding still fails the phase. A waiver
+    # that matches nothing is reported as stale so this list cannot rot quietly.
+    $waivers = @(
+        @{
+            id = 'installer-acl-extension-branch'; rule = 'PSUseCompatibleTypes'
+            path = '*\installer\windows-*.ps1'; message = '*''IO.FileSystemAclExtensions''*'
+            why = 'reached only when [IO.Directory] has no two-argument CreateDirectory (.NET Core); 5.1 takes the other branch, which the install phase executes'
+        },
+        @{
+            id = 'step-names-its-target-host'; rule = 'PSAvoidUsingComputerNameHardcoded'
+            path = '*\steps\*\*.ps1'; message = '*'
+            why = 'a scenario step names its target host by design; a sharing-hygiene rule, not a 5.1 compatibility finding'
+        }
+    )
+    $waived = @{}
+
     $records = New-Object System.Collections.ArrayList
     $failing = 0
     $tolerated = @{}
@@ -885,11 +904,26 @@ function Invoke-PhasePssa {
             $sev = [string]$d.Severity
             $rule = [string]$d.RuleName
             $isFailure = ($rule -like 'PSUseCompatible*') -or ($sev -eq 'Error') -or ($sev -eq 'ParseError')
+            $waivedBy = ''
+            if ($isFailure) {
+                foreach ($w in $waivers) {
+                    if (($rule -eq $w.rule) -and ($path -like $w.path) -and ([string]$d.Message -like $w.message)) {
+                        $waivedBy = [string]$w.id
+                        break
+                    }
+                }
+                if ($waivedBy) {
+                    $isFailure = $false
+                    if (-not $waived.ContainsKey($waivedBy)) { $waived[$waivedBy] = 0 }
+                    $waived[$waivedBy] = $waived[$waivedBy] + 1
+                }
+            }
             $line = 0
             if ($null -ne $d.Extent) { $line = $d.Extent.StartLineNumber }
             [void]$records.Add([ordered]@{
-                file = $path; line = $line; rule = $rule; severity = $sev; failing = $isFailure; message = [string]$d.Message
+                file = $path; line = $line; rule = $rule; severity = $sev; failing = $isFailure; waived = $waivedBy; message = [string]$d.Message
             })
+            if ($waivedBy) { continue }
             if ($isFailure) {
                 $failing++
                 Assert-Cs $false ($rule + ' [' + $sev + '] ' + (Split-Path -Leaf $path) + ':' + $line) (Limit-Cs ([string]$d.Message) 300)
@@ -903,6 +937,13 @@ function Invoke-PhasePssa {
     # Expected and NOT failures: PSAvoidAssignmentToAutomaticVariable (the
     # installer's $Args), PSUseApprovedVerbs (Cs-*), PSAvoidUsingWriteHost.
     foreach ($rule in @($tolerated.Keys | Sort-Object)) { Write-CsInfo ('tolerated: ' + $rule + ' x' + $tolerated[$rule]) }
+    foreach ($w in $waivers) {
+        if ($waived.ContainsKey([string]$w.id)) {
+            Write-CsInfo ('WAIVED: ' + $w.rule + ' x' + $waived[[string]$w.id] + ' (' + $w.id + ') -- ' + $w.why)
+        } else {
+            Write-CsInfo ('STALE WAIVER: ' + $w.id + ' matched nothing; remove it from the pssa phase')
+        }
+    }
     Write-CsInfo ('PSScriptAnalyzer: ' + $targets.Count + ' file(s), ' + $records.Count + ' record(s), ' + $failing + ' failing')
     Assert-Cs ($failing -eq 0) 'no PSUseCompatible* / Error / ParseError findings'
 }
