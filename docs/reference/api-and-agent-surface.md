@@ -228,8 +228,9 @@ stamp `severity: "high"` on every rule.
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List all runs (newest first) | — | `{"runs":[<run.to_dict()>],"total":N}` |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
-| GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}}`; 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
-| GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used}`; 404 |
+| GET | `/api/runs/{run_id}/pair` | This run, its report/block partner and the per-detection delta (§1.3.1) | — | `{runs:[<run>,<run>], delta:{report_run_id, block_run_id, severed_at_step, steps[]}, merge:{merge_class, basis, code, merge_reason}}`; 404 `RUN_NOT_FOUND`; 409 `RUN_NOT_PAIRED` |
+| POST | `/api/runs/{run_id}/case-ledger/refresh` | Re-read the cases named in the run's stored `case_ledger` (read-only; cases only, stored alerts kept). Explicit operator action | — | the rebuilt ledger; 404 `RUN_NOT_FOUND`; 409 `NO_CASE_LEDGER` / `CASE_LEDGER_UNREADABLE` / `CASE_LEDGER_TENANT_UNKNOWN` |
+| GET | `/api/runs/{run_id}/report` | POV report | query: `format=markdown\|json` (default markdown) | markdown `PlainTextResponse` **or** JSON `{run, scenario, results, coverage, mttd, tools_used, case_ledger}` (markdown gains a `## Case` section); 404 |
 | GET | `/api/runs/{run_id}/report/matrix` | detection_matrix.csv (Phase 8) | — | `text/csv` attachment |
 | GET | `/api/runs/{run_id}/report/navigator` | ATT&CK Navigator v4.5 layer JSON | — | `application/json` attachment |
 | GET | `/api/runs/{run_id}/report/bundle` | tar.gz of matrix + navigator + exec_summary | — | `application/gzip` attachment |
@@ -440,6 +441,31 @@ terminal (`complete` or `failed`, with `completed_at`), or the first run is alre
 pointing at it) and returns the two runs plus a delta joined per
 `(step_id, detection_id)`; a detection present on one side only appears with the other side
 `null`. 409 `RUN_NOT_PAIRED` when no partner exists.
+
+**The run case ledger (`Run.case_ledger`).** Reconcile builds it from the run's matched
+alerts and the cases the tenant made from them (by-id case, issue-status and endpoint
+reads, counted in `queries_issued` and bounded by the existing ledger, caps and quota
+breaker) and stores it with the tenant `integration` it came from. Shape:
+`{merge_class, merge_reason, basis, read_at, integration, code, cases[], issue_read,
+shared_with_other_runs}`. `merge_class` is `ONE_CASE | SPLIT_SEALED | SPLIT_NATIVE |
+LOW_ONLY_NO_CASE | NO_CASE_YET | PENDING`; a case id the tenant does not return is
+`PENDING`, never `ONE_CASE`. A case `closed_by` is `open | socfw_auto_triage |
+auto_resolved | other_resolved`; an issue adds `socfw_ai_close | unread`. An unrecognised
+case status raises and the ledger reports `CASE_STATUS_UNRECOGNIZED` with merge `PENDING`.
+`GET /api/runs/{id}/pair` returns the pair-level `merge`; a corrupt stored ledger reads
+`PENDING` / `CASE_LEDGER_UNREADABLE`. `POST /api/runs/{id}/case-ledger/refresh` re-reads
+the cases; with `CORTEXSIM_AUTO_RECONCILE` on, the auto-reconcile loop refreshes ledgers
+of runs started within `CORTEXSIM_CASE_LEDGER_WINDOW_HOURS` (24), at most
+`CORTEXSIM_CASE_LEDGER_MAX_RUNS_PER_SWEEP` (20) per sweep, skipping any read newer than
+`CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES` (60) and terminal ledgers.
+**Disposition is context, not detection evidence** (`Tenant disposition is shown for
+context. It is not detection evidence.`): it never feeds `detected`/`missed`, MTTD or a
+detection verdict. The single exception: `SPLIT_SEALED` withholds a Cross-Source
+Correlation Rate FAIL as `pending` (reason: `fail withheld: a case was sealed by the
+response layer before the chain finished — the split is not the detection engine's`); a
+PASS is never touched. The endpoint reply fields used by the bridge diagnosis come from
+`docs/reference/xsiam-platform-apis/05-endpoints-api.md` and are unverified against a live
+tenant. `tenant-verified` is 0.
 
 **The canary — `POST /api/runs/canary`.** Launches the benign built-in trigger named by
 `CORTEXSIM_CANARY_SCENARIO_LINUX` as a pull run with `agent_profile_mode: "block"`. Empty

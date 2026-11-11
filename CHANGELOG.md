@@ -64,6 +64,35 @@ with 409 `PUSH_NOT_SUPPORTED`.
   `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
   stitched chain either way.
 
+### Added — CortexSim alongside the SOC Framework: the run case ledger (Part B)
+
+- **`Run.case_ledger`**, built during reconcile (`core/connectors/case_ledger.py`):
+  did the run's chain stay in one native case, and if not, why. `merge_class` is
+  `ONE_CASE | SPLIT_SEALED | SPLIT_NATIVE | LOW_ONLY_NO_CASE | NO_CASE_YET | PENDING`
+  with per-case status, `closed_by` and sealed flag. A case the tenant does not
+  return is `PENDING`; an unrecognised case status raises and reads
+  `CASE_STATUS_UNRECOGNIZED`, never `open`. The ledger records its tenant
+  integration and its reads are counted in `queries_issued`.
+- **`POST /api/runs/{id}/case-ledger/refresh`** re-reads the cases (read-only);
+  the auto-reconcile loop refreshes recent ledgers behind
+  `CORTEXSIM_CASE_LEDGER_{WINDOW_HOURS,MAX_RUNS_PER_SWEEP,MIN_INTERVAL_MINUTES}`.
+  `GET /api/runs/{id}/pair` gains a pair-level `merge`; the markdown report gains
+  a `## Case` section and the json report `case_ledger`; the console run view
+  gains a Case panel. An unbridged firewall-to-endpoint split carries a bridge
+  diagnosis.
+- **Disposition is context, not detection evidence.** It never feeds
+  detected/missed, MTTD or a detection verdict. One exception: `SPLIT_SEALED`
+  withholds a Cross-Source Correlation Rate FAIL as `pending` (a PASS is never
+  touched).
+- Runbook step 5 now describes reading the Case panel; `docs/reference/lab-runbook.md`
+  says `not_checked` names six claims.
+- **Honesty.** `tenant-verified` is still 0. The endpoint reply fields used by
+  the bridge diagnosis come from the repo's transcription
+  (`docs/reference/xsiam-platform-apis/05-endpoints-api.md`) and are unverified
+  against a live tenant. **Owed:** one SIM-EDR-023 run on `pov-target-01`
+  reading the ledger at T+0 (`ONE_CASE`, case `open`) and T+7 h
+  (`socfw_auto_triage`, sealed); not executed.
+
 ### Added — CortexSim alongside the SOC Framework: the response layer, read-only (Part A)
 
 - **A `response_layer` stage on `POST /api/connectors/xsiam_tenant/preflight`**
