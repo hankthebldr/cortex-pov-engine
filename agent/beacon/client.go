@@ -803,7 +803,21 @@ func (c *BeaconClient) sendOutput(runID, stepID, output string, retry bool) erro
 
 // Complete marks a run as finished with its exit code and a human-readable summary.
 // Corresponds to: POST /api/runs/{run_id}/complete
+//
+// The body names this beacon (agent_id) and, through completeTask, the task it
+// finishes (task_id). The beacon retries /complete, and SimCore counts a
+// fan-out run's completion once per task only when the body says which task it
+// is (RG-AGENT-03): an anonymous retry used to count as a second endpoint.
 func (c *BeaconClient) Complete(runID string, exitCode int, summary string, steps []StepOutcome) error {
+	return c.complete(runID, "", exitCode, summary, steps)
+}
+
+// completeTask is Complete for a task this beacon collected: it adds task_id.
+func (c *BeaconClient) completeTask(task *Task, exitCode int, summary string, steps []StepOutcome) error {
+	return c.complete(task.RunID, task.TaskID, exitCode, summary, steps)
+}
+
+func (c *BeaconClient) complete(runID, taskID string, exitCode int, summary string, steps []StepOutcome) error {
 	if steps == nil {
 		steps = []StepOutcome{} // encode [] never null
 	}
@@ -812,6 +826,12 @@ func (c *BeaconClient) Complete(runID string, exitCode int, summary string, step
 		"exit_code": exitCode,
 		"summary":   summary,
 		"steps":     steps,
+	}
+	if c.AgentID != "" {
+		body["agent_id"] = c.AgentID
+	}
+	if taskID != "" {
+		body["task_id"] = taskID
 	}
 	_, err := c.postRetry(fmt.Sprintf("/api/runs/%s/complete", runID), body)
 	if err != nil {
@@ -941,7 +961,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 	led := newOutcomeLedger(task)
 	if totalSteps == 0 {
 		log.Printf("[beacon] task run_id=%s has no steps — completing as no-op", task.RunID)
-		_ = c.Complete(task.RunID, 0, fmt.Sprintf("SUCCESS | scenario=%s | no steps", task.ScenarioID), []StepOutcome{})
+		_ = c.completeTask(task, 0, fmt.Sprintf("SUCCESS | scenario=%s | no steps", task.ScenarioID), []StepOutcome{})
 		return
 	}
 
@@ -960,7 +980,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 			log.Printf("[beacon] stop detected before artifact staging (run_id=%s lost=%v)", task.RunID, state.Lost)
 			_ = c.SendOutput(task.RunID, "", strings.TrimSuffix(state.stopLine(), " ---")+" before artifact staging ---")
 			led.markRemaining(0, ReasonUpstreamFailed)
-			_ = c.Complete(task.RunID, abortExitCode, state.stopBeforeSummary("(artifact staging)"), led.steps)
+			_ = c.completeTask(task, abortExitCode, state.stopBeforeSummary("(artifact staging)"), led.steps)
 			return
 		}
 	}
@@ -1058,14 +1078,14 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		if stop != nil {
 			led.recordAborted(i)
 			log.Printf("[beacon] step %s terminated (lost-control=%v, run_id=%s)", step.ID, stop.Lost, task.RunID)
-			_ = c.Complete(task.RunID, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
+			_ = c.completeTask(task, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
 			return
 		}
 
 		if timedOut {
 			led.recordTimeout(i)
 			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
-			_ = c.Complete(task.RunID, timeoutExitCode,
+			_ = c.completeTask(task, timeoutExitCode,
 				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout), led.steps)
 			return
 		}
@@ -1074,7 +1094,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		if ctx.Err() != nil {
 			led.recordAborted(i)
 			log.Printf("[beacon] context cancelled during task run_id=%s", task.RunID)
-			_ = c.Complete(task.RunID, abortExitCode, "agent shutdown — task interrupted", led.steps)
+			_ = c.completeTask(task, abortExitCode, "agent shutdown — task interrupted", led.steps)
 			return
 		}
 
@@ -1082,7 +1102,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 			led.recordExecError(i, res.ExitCode)
 			// A real execution error (e.g. /bin/sh missing) — fail the run.
 			log.Printf("[beacon] execution error step %s run_id=%s: %v", step.ID, task.RunID, execErr)
-			_ = c.Complete(task.RunID, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
+			_ = c.completeTask(task, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
 			return
 		}
 
@@ -1109,7 +1129,7 @@ func (c *BeaconClient) executeTask(ctx context.Context, task *Task) {
 		finalExitCode = platformUnsatisfiableExitCode
 	}
 	summary := buildSummary(task, finalExitCode, degradedSteps, led.steps)
-	if err := c.Complete(task.RunID, finalExitCode, summary, led.steps); err != nil {
+	if err := c.completeTask(task, finalExitCode, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
 	}
 }
@@ -1213,7 +1233,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 				depOutcome.cleanup()
 				log.Printf("[beacon] wrap error step %s run_id=%s: %v", step.ID, task.RunID, wrapErr)
 				led.markRemaining(i, ReasonUpstreamFailed)
-				_ = c.Complete(task.RunID, 1, fmt.Sprintf("wrap error in step %s: %v", step.ID, wrapErr), led.steps)
+				_ = c.completeTask(task, 1, fmt.Sprintf("wrap error in step %s: %v", step.ID, wrapErr), led.steps)
 				return
 			}
 
@@ -1242,20 +1262,20 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 		if stop != nil {
 			led.recordAborted(i)
 			log.Printf("[beacon] step %s terminated (lost-control=%v, run_id=%s)", step.ID, stop.Lost, task.RunID)
-			_ = c.Complete(task.RunID, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
+			_ = c.completeTask(task, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
 			return
 		}
 		if timedOut {
 			led.recordTimeout(i)
 			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
-			_ = c.Complete(task.RunID, timeoutExitCode,
+			_ = c.completeTask(task, timeoutExitCode,
 				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout), led.steps)
 			return
 		}
 		if ctx.Err() != nil {
 			led.recordAborted(i)
 			log.Printf("[beacon] context cancelled during task run_id=%s", task.RunID)
-			_ = c.Complete(task.RunID, abortExitCode, "agent shutdown — task interrupted", led.steps)
+			_ = c.completeTask(task, abortExitCode, "agent shutdown — task interrupted", led.steps)
 			return
 		}
 		if errors.Is(execErr, executor.ErrAnchorTerminated) {
@@ -1264,13 +1284,13 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 			log.Printf("[beacon] anchor terminated during step %s run_id=%s — severing remaining steps", step.ID, task.RunID)
 			led.record(StepOutcome{StepID: step.ID, Termination: TermAnchorTerminated})
 			led.markRemaining(i+1, ReasonUpstreamSevered)
-			_ = c.Complete(task.RunID, 137, buildSummary(task, 137, degradedSteps, led.steps), led.steps)
+			_ = c.completeTask(task, 137, buildSummary(task, 137, degradedSteps, led.steps), led.steps)
 			return
 		}
 		if execErr != nil {
 			led.recordExecError(i, res.ExitCode)
 			log.Printf("[beacon] execution error step %s run_id=%s: %v", step.ID, task.RunID, execErr)
-			_ = c.Complete(task.RunID, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
+			_ = c.completeTask(task, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
 			return
 		}
 
@@ -1302,7 +1322,7 @@ func (c *BeaconClient) executeTaskChained(ctx context.Context, task *Task) {
 	// or signal-severed break arrives here with a non-zero code.
 	chainClean = finalExitCode == 0
 	summary := buildSummary(task, finalExitCode, degradedSteps, led.steps)
-	if err := c.Complete(task.RunID, finalExitCode, summary, led.steps); err != nil {
+	if err := c.completeTask(task, finalExitCode, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
 	}
 }
@@ -1420,24 +1440,24 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 		}
 		if stop != nil {
 			led.recordAborted(i)
-			_ = c.Complete(task.RunID, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
+			_ = c.completeTask(task, abortExitCode, stop.stopDuringSummary(step.ID), led.steps)
 			return
 		}
 		if timedOut {
 			led.recordTimeout(i)
 			log.Printf("[beacon] step %s timed out after %s (run_id=%s)", step.ID, stTimeout, task.RunID)
-			_ = c.Complete(task.RunID, timeoutExitCode,
+			_ = c.completeTask(task, timeoutExitCode,
 				fmt.Sprintf("step %s timed out after %s", step.ID, stTimeout), led.steps)
 			return
 		}
 		if ctx.Err() != nil {
 			led.recordShutdown(i)
-			_ = c.Complete(task.RunID, abortExitCode, "agent shutdown — task interrupted", led.steps)
+			_ = c.completeTask(task, abortExitCode, "agent shutdown — task interrupted", led.steps)
 			return
 		}
 		if execErr != nil {
 			led.recordExecError(i, res.ExitCode)
-			_ = c.Complete(task.RunID, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
+			_ = c.completeTask(task, res.ExitCode, fmt.Sprintf("execution error in step %s: %v", step.ID, execErr), led.steps)
 			return
 		}
 		if c.afterStep(task, i, led, res, depOutcome.blocked) {
@@ -1455,7 +1475,7 @@ func (c *BeaconClient) executeTaskPerStep(ctx context.Context, task *Task) {
 		finalExitCode = platformUnsatisfiableExitCode
 	}
 	summary := buildSummary(task, finalExitCode, degradedSteps, led.steps)
-	if err := c.Complete(task.RunID, finalExitCode, summary, led.steps); err != nil {
+	if err := c.completeTask(task, finalExitCode, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
 	}
 }
@@ -1540,7 +1560,7 @@ func (c *BeaconClient) stopBeforeStep(task *Task, i int, led *outcomeLedger, sta
 	log.Printf("[beacon] stop detected before step %s (run_id=%s lost-control=%v)", stepID, task.RunID, state.Lost)
 	_ = c.SendOutput(task.RunID, stepID, state.stopLine())
 	led.markRemaining(i, ReasonUpstreamFailed)
-	_ = c.Complete(task.RunID, abortExitCode, state.stopBeforeSummary(stepID), led.steps)
+	_ = c.completeTask(task, abortExitCode, state.stopBeforeSummary(stepID), led.steps)
 }
 
 // refuseStep records step i as not run on this host (BEACON-01) and writes the

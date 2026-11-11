@@ -217,7 +217,7 @@ func (c *BeaconClient) preflightTools(task *Task, i int, led *outcomeLedger, deg
 	led.markRemaining(i+1, ReasonUpstreamNotExecuted)
 	summary := buildSummary(task, 127, degradedSteps, led.steps) +
 		fmt.Sprintf(" | TOOL_ABSENT: %s at %s — step not run", missing[0], step.ID)
-	if err := c.Complete(task.RunID, 127, summary, led.steps); err != nil {
+	if err := c.completeTask(task, 127, summary, led.steps); err != nil {
 		log.Printf("[beacon] complete error: %v", err)
 	}
 	return true
