@@ -179,6 +179,23 @@ def test_uninstall_returns_a_removal_script(client, dist):
         assert p.returncode == 0, p.stderr
 
 
+def test_uninstaller_rerun_hints_name_the_server_it_was_fetched_from(client, dist):
+    """The script was a static template: its NEEDS_ROOT fix told a DC on a
+    customer endpoint to curl '<server>/api/agents/install?uninstall=1'."""
+    script = client.get("/api/agents/install?uninstall=1").text
+    assert 'CS_SERVER="http://testserver"' in script
+    assert "@@" not in script, "an unrendered placeholder reached the endpoint"
+
+    script = client.get("/api/agents/install?uninstall=1&server=http://10.0.0.5:8888/").text
+    assert 'CS_SERVER="http://10.0.0.5:8888"' in script
+
+    # A value that cannot be baked is not an error here: the hint falls back to
+    # the literal placeholder, and nothing caller-controlled reaches the script.
+    r = client.get("/api/agents/install", params={"uninstall": "1", "server": "http://x$(id)"})
+    assert r.status_code == 200
+    assert 'CS_SERVER="<server>"' in r.text and "$(id)" not in r.text
+
+
 def test_generated_installer_is_valid_bash_in_every_mode(client, dist):
     if not shutil.which("bash"):
         pytest.skip("bash unavailable")

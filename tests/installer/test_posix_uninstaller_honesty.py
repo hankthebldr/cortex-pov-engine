@@ -46,9 +46,10 @@ HOME_ROOTS_LINE = 'HOME_ROOTS=("/home" "/Users")'
 
 
 def _script() -> str:
-    from api.agents import _POSIX_UNINSTALLER
+    """The uninstaller as the route serves it (its one placeholder rendered)."""
+    from api.agents import _posix_uninstaller
 
-    return _POSIX_UNINSTALLER
+    return _posix_uninstaller("http://simcore.lab:8888")
 
 
 def _stub(path: Path, body: str) -> None:
@@ -170,10 +171,11 @@ def test_the_uninstaller_parses():
     assert p.returncode == 0, p.stderr
 
 
-@pytest.mark.skipif(IS_ROOT, reason="asserts the non-root refusal; root may remove these")
-def test_a_root_install_seen_by_a_non_root_uninstall_is_refused_up_front(sandbox):
+def test_a_root_install_seen_by_a_non_root_uninstall_is_never_touched(sandbox):
     """The exact base defect: a system unit in a directory this user cannot write.
-    Base: rm fails silently, REMOVED stays 0, "nothing to remove", rc 0."""
+    Base: rm fails silently, REMOVED stays 0, "nothing to remove", rc 0.
+    `id` is stubbed non-root, so this runs inside the root CI image too."""
+    _fake_id(sandbox, 501, "dc")
     unit_dir = sandbox["paths"]["/etc/systemd/system"]
     (unit_dir / "cortexsim-agent.service").write_text("[Service]\nExecStart=/x\n")
     _readonly(unit_dir)
@@ -184,7 +186,7 @@ def test_a_root_install_seen_by_a_non_root_uninstall_is_refused_up_front(sandbox
     assert "nothing to remove" not in out, out
     assert "NEEDS_ROOT" in out, out
     assert "sudo" in out
-    assert (unit_dir / "cortexsim-agent.service").exists()  # refused before touching anything
+    assert (unit_dir / "cortexsim-agent.service").exists()  # a root install is never half-removed
 
 
 def test_an_item_that_cannot_be_removed_is_incomplete_not_absent(sandbox):
@@ -257,8 +259,8 @@ def test_a_custom_install_prefix_is_found(sandbox):
     assert not (prefix / "cortexsim-agent").exists(), out
 
 
-@pytest.mark.skipif(not IS_ROOT, reason="exercises the root branch")
 def test_as_root_the_system_log_is_removed(sandbox):
+    _fake_id(sandbox, 0, "root")
     log = sandbox["paths"]["/var/log/cortexsim-agent.log"]
     log.write_text("x\n")
     p = _run(_rewrite(_script(), sandbox), sandbox)
@@ -478,3 +480,107 @@ def test_a_non_root_run_never_looks_in_another_users_home(sandbox):
     assert p.returncode == 0, out
     assert "nothing to remove" in out, out
     assert len(_survivors(inst)) == len(inst), out
+
+
+# ---------------------------------------------------------------------------
+# A root leftover must not block removing this user's own beacon
+# ---------------------------------------------------------------------------
+#
+# The NEEDS_ROOT preflight exited before removing anything whenever ANY of the
+# system unit, plist, binary or LOG existed. A stale /var/log/cortexsim-agent.log
+# (left by a launchd root install or the nohup fallback; the v1.1.0 uninstaller
+# never deleted it) was enough: the user-mode beacon stayed installed, and the
+# printed fix, `| sudo bash`, could not see it either.
+#
+# A non-root run now removes what this user owns, never touches the root
+# items, and then fails NEEDS_ROOT naming them.
+
+
+def test_a_stale_root_log_does_not_block_removing_this_users_install(sandbox):
+    """Executed on c852eac: `FAILED stage=uninstall code=NEEDS_ROOT ... a
+    root-installed beacon is present (.../var-log/cortexsim-agent.log) ...
+    nothing was removed`, exit 1, the user unit, binary and log all left."""
+    _fake_id(sandbox, 501, "dc")
+    inst = _user_install(sandbox["home"])
+    log = sandbox["paths"]["/var/log/cortexsim-agent.log"]
+    log.write_text("stale\n")
+
+    p = _run(_rewrite(_script(), sandbox), sandbox)
+    out = p.stdout + p.stderr
+    assert not _survivors(inst), f"this user's own beacon was left installed: {_survivors(inst)}\n{out}"
+    assert log.exists(), "a non-root run must not touch a root-owned item"
+    assert p.returncode == 1, out
+    assert "code=NEEDS_ROOT" in out and str(log) in out, out
+    assert "| sudo bash" in out, out
+    assert "nothing was removed" not in out, out
+    assert "root-installed beacon" not in out, "a lone leftover log is not an installed beacon"
+    assert "done --" not in out and "nothing to remove" not in out, out
+
+
+def test_a_root_install_beside_a_user_install_is_left_untouched_and_named(sandbox):
+    _fake_id(sandbox, 501, "dc")
+    inst = _user_install(sandbox["home"])
+    unit = sandbox["paths"]["/etc/systemd/system"] / "cortexsim-agent.service"
+    unit.write_text("[Service]\nExecStart=/x\n")
+    sys_bin = sandbox["paths"]["/usr/local/bin/cortexsim-agent"]
+    sys_bin.write_text("#!/bin/sh\n")
+
+    p = _run(_rewrite(_script(), sandbox), sandbox)
+    out = p.stdout + p.stderr
+    assert not _survivors(inst), f"{_survivors(inst)}\n{out}"
+    assert unit.exists() and sys_bin.exists(), "a non-root run must not half-remove a root install"
+    assert p.returncode == 1, out
+    assert "code=NEEDS_ROOT" in out, out
+    assert "root-installed beacon" in out and str(unit) in out and str(sys_bin) in out, out
+    assert "removed 3 of 3" in out, out
+    calls = sandbox["calls"].read_text()
+    assert "systemctl disable --now" not in calls, "the system unit was stopped by a non-root run"
+
+
+def test_the_sudo_rerun_that_needs_root_names_finishes_the_job(sandbox):
+    """NEEDS_ROOT is only honest if the command it prints works. The first run
+    (as dc) removes dc's beacon and names the root log; the second (the printed
+    `| sudo bash`, simulated) removes the log and ends "done"."""
+    home = sandbox["home"]
+    _user_install(home)
+    log = sandbox["paths"]["/var/log/cortexsim-agent.log"]
+    log.write_text("stale\n")
+    script = _rewrite(_script(), sandbox)
+
+    _fake_id(sandbox, 501, "dc")
+    first = _run(script, sandbox)
+    assert first.returncode == 1 and "code=NEEDS_ROOT" in first.stderr, first.stdout + first.stderr
+
+    env = _as_sudo(sandbox, "dc", home)
+    second = _run(script, sandbox, env)
+    out = second.stdout + second.stderr
+    assert second.returncode == 0, out
+    assert not log.exists(), out
+    assert "done -- removed 1 of 1 item(s)" in out, out
+
+
+def test_a_non_root_run_with_only_a_root_install_removes_nothing_and_says_so(sandbox):
+    _fake_id(sandbox, 501, "dc")
+    unit = sandbox["paths"]["/etc/systemd/system"] / "cortexsim-agent.service"
+    unit.write_text("[Service]\nExecStart=/x\n")
+
+    p = _run(_rewrite(_script(), sandbox), sandbox)
+    out = p.stdout + p.stderr
+    assert p.returncode == 1, out
+    assert "code=NEEDS_ROOT" in out and "| sudo bash" in out, out
+    assert "nothing of this user's own was found" in out, out
+    assert unit.exists()
+
+
+def test_the_rerun_hint_names_a_real_server_when_the_route_knows_one():
+    """The uninstaller was a static template, so its fix lines told a DC on a
+    customer endpoint to curl '<server>/...'."""
+    from api.agents import _posix_uninstaller
+
+    script = _posix_uninstaller("http://10.0.0.5:8888")
+    assert "CS_SERVER=\"http://10.0.0.5:8888\"" in script
+    assert "@@" not in script
+    # An unusable value keeps the placeholder: an uninstall is never refused
+    # (or made injectable) over a hint.
+    for bad in (None, "", "http://x$(id)", "javascript:alert(1)"):
+        assert 'CS_SERVER="<server>"' in _posix_uninstaller(bad), bad

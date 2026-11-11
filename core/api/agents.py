@@ -914,8 +914,11 @@ _POSIX_UNINSTALLER = r"""#!/usr/bin/env bash
 #   - everything found removed   -> "done", exit 0
 #   - anything found but kept    -> FAILED code=UNINSTALL_INCOMPLETE naming each
 #                                   item, exit 1
-# A non-root run that can SEE a root install refuses up front (NEEDS_ROOT)
-# instead of half-removing it and calling the host clean.
+# A non-root run never touches a root install (unit, launchd job, binary, log).
+# It removes this user's own install, then fails NEEDS_ROOT naming what is
+# left, so a root install is never half-removed and the host never reads clean.
+# It used to refuse BEFORE removing anything, and a stale root-owned log alone
+# was enough to keep a user-mode beacon installed.
 #
 # A root run (sudo) also sweeps the invoking user's home ($SUDO_USER) and every
 # home under /home and /Users that holds a user-mode install. sudo resets HOME
@@ -930,6 +933,8 @@ set -uo pipefail
 SVC="cortexsim-agent"
 PLIST_LABEL="com.paloaltonetworks.cortexsim.agent"
 PROC_PATTERN='cortexsim-agent --server'
+# Fills the re-run hints only. "<server>" when the request named none usable.
+CS_SERVER="@@SERVER@@"
 
 SYS_UNIT="/etc/systemd/system/$SVC.service"
 SYS_PLIST="/Library/LaunchDaemons/$PLIST_LABEL.plist"
@@ -962,6 +967,7 @@ esac
 FOUND=0
 REMOVED=0
 LEFT=""
+NEED_ROOT=""
 IS_ROOT=0
 [ "$(id -u)" = "0" ] && IS_ROOT=1
 
@@ -1054,33 +1060,30 @@ if [ "$IS_ROOT" = "1" ]; then
   done
 fi
 
-# -- preflight: a root install needs root to remove ----------------------------
+# -- a root install needs root to remove ---------------------------------------
+# Noted here, reported in the verdict. A non-root run leaves these untouched.
 if [ "$IS_ROOT" != "1" ]; then
-  NEED=""
   for p in "$SYS_UNIT" "$SYS_PLIST" "$SYS_BIN" "$SYS_LOG"; do
-    if [ -e "$p" ] || [ -L "$p" ]; then NEED="$NEED $p"; fi
+    if [ -e "$p" ] || [ -L "$p" ]; then NEED_ROOT="$NEED_ROOT $p"; fi
   done
-  if [ -n "$NEED" ]; then
-    cs_fail NEEDS_ROOT \
-      "a root-installed beacon is present (${NEED# }) and this shell is $(id -un 2>/dev/null || echo non-root); nothing was removed" \
-      "re-run with sudo:  curl -fsSL '<server>/api/agents/install?uninstall=1' | sudo bash"
-  fi
 fi
 
 # -- supervisors: stop first, so nothing restarts what we remove ---------------
-if [ -e "$SYS_UNIT" ] || [ -L "$SYS_UNIT" ]; then
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl disable --now "$SVC" >/dev/null 2>&1 || true
+if [ "$IS_ROOT" = "1" ]; then
+  if [ -e "$SYS_UNIT" ] || [ -L "$SYS_UNIT" ]; then
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl disable --now "$SVC" >/dev/null 2>&1 || true
+    fi
+    cs_rm_file "$SYS_UNIT" "system unit"
+    if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload >/dev/null 2>&1 || true; fi
   fi
-  cs_rm_file "$SYS_UNIT" "system unit"
-  if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload >/dev/null 2>&1 || true; fi
-fi
-if [ -e "$SYS_PLIST" ] || [ -L "$SYS_PLIST" ]; then
-  if command -v launchctl >/dev/null 2>&1; then
-    launchctl bootout "system/$PLIST_LABEL" >/dev/null 2>&1 || true
-    launchctl unload -w "$SYS_PLIST" >/dev/null 2>&1 || true
+  if [ -e "$SYS_PLIST" ] || [ -L "$SYS_PLIST" ]; then
+    if command -v launchctl >/dev/null 2>&1; then
+      launchctl bootout "system/$PLIST_LABEL" >/dev/null 2>&1 || true
+      launchctl unload -w "$SYS_PLIST" >/dev/null 2>&1 || true
+    fi
+    cs_rm_file "$SYS_PLIST" "launchd job"
   fi
-  cs_rm_file "$SYS_PLIST" "launchd job"
 fi
 
 cs_stop_user_install() {  # home  -- that login's systemd --user unit and launchd agent
@@ -1159,7 +1162,7 @@ elif command -v pkill >/dev/null 2>&1; then
 fi
 
 # -- files ----------------------------------------------------------------------
-SEEN=""
+SEEN="$NEED_ROOT"   # a non-root run skips the root install's binary and log
 BINS=("$SYS_BIN")
 for H in "${HOMES[@]}"; do BINS+=("$H/.local/bin/cortexsim-agent"); done
 BINS+=("$EXTRA_BIN")
@@ -1171,6 +1174,8 @@ for b in "${BINS[@]}"; do
 done
 for l in "$SYS_LOG" "$EXTRA_LOG"; do
   [ -n "$l" ] || continue
+  case " $SEEN " in *" $l "*) continue ;; esac
+  SEEN="$SEEN $l"
   cs_rm_file "$l" "log"
 done
 for H in "${HOMES[@]}"; do
@@ -1184,10 +1189,33 @@ done
 rmdir "${SYS_CACHE%/cache}" 2>/dev/null || true   # their parent, only once empty
 
 # -- verdict --------------------------------------------------------------------
+SUDO_RERUN="curl -fsSL '$CS_SERVER/api/agents/install?uninstall=1' | sudo bash"
 if [ -n "$LEFT" ]; then
-  cs_fail UNINSTALL_INCOMPLETE \
-    "found $FOUND item(s), removed $REMOVED; still present:$LEFT" \
-    "re-run with sudo:  curl -fsSL '<server>/api/agents/install?uninstall=1' | sudo bash  -- then check the items above by hand"
+  for p in $NEED_ROOT; do
+    LEFT="$LEFT
+[cortexsim]          - $p (root-owned, left untouched: needs sudo)"
+  done
+  if [ "$IS_ROOT" = "1" ]; then
+    FIX="each item above says why it was kept; clear that, then re-run"
+  else
+    FIX="re-run with sudo:  $SUDO_RERUN  -- then check the items above by hand"
+  fi
+  cs_fail UNINSTALL_INCOMPLETE "found $FOUND item(s), removed $REMOVED; still present:$LEFT" "$FIX"
+fi
+if [ -n "$NEED_ROOT" ]; then
+  # A lone leftover log is not an installed beacon; say which this is.
+  KIND="a root-owned beacon log is left behind"
+  for p in "$SYS_UNIT" "$SYS_PLIST" "$SYS_BIN"; do
+    if [ -e "$p" ] || [ -L "$p" ]; then KIND="a root-installed beacon is present"; fi
+  done
+  if [ "$FOUND" = "0" ]; then
+    MINE="nothing of this user's own was found"
+  else
+    MINE="removed $REMOVED of $FOUND item(s) of this user's own install"
+  fi
+  cs_fail NEEDS_ROOT \
+    "$KIND (${NEED_ROOT# }) and this shell is $(id -un 2>/dev/null || echo non-root), which cannot remove it; $MINE" \
+    "re-run with sudo:  $SUDO_RERUN"
 fi
 if [ "$FOUND" = "0" ]; then
   cs_say "nothing to remove -- no CortexSim beacon found on this host"
@@ -2086,6 +2114,14 @@ def _posix_installer(server: str, agent_id: str, interval: int,
     )
 
 
+def _posix_uninstaller(server: Optional[str] = None) -> str:
+    """The POSIX removal script. ``server`` only fills its re-run hints, so one
+    that cannot be baked keeps the literal ``<server>``: an uninstall is never
+    refused over a hint."""
+    usable = bool(server) and _server_problem(server) is None
+    return _render(_POSIX_UNINSTALLER, SERVER=server if usable else "<server>")
+
+
 def _windows_installer(server: str, agent_id: str, interval: int,
                        token: Optional[str]) -> str:
     _check_baked(server, agent_id, interval, token)
@@ -2165,7 +2201,8 @@ async def agent_installer(
                 "mode selects how to INSTALL; drop it from an ?uninstall=1 request")
         if os_norm == "windows":
             return _script_response(_WINDOWS_UNINSTALLER, windows=True, uninstall=True)
-        return _script_response(_POSIX_UNINSTALLER, windows=False, uninstall=True)
+        hint = (server or str(request.base_url)).strip().rstrip("/")
+        return _script_response(_posix_uninstaller(hint), windows=False, uninstall=True)
 
     if os_norm == "windows" and mode_norm == "foreground":
         raise _bad_request(
