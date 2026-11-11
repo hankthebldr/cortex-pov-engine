@@ -153,8 +153,8 @@ class Settings(BaseSettings):
     # /api/health reports it as api_auth: API_UNAUTHENTICATED and boot warns.
     #
     # CORTEXSIM_BIND: the host address docker-compose.yml publishes the port on
-    # (long-form mapping: host_ip "${CORTEXSIM_BIND:-}", published
-    # "${CORTEXSIM_PORT:-8888}", target 8888). The app does not bind it —
+    # ("${CORTEXSIM_BIND:+${CORTEXSIM_BIND}:}${CORTEXSIM_PORT:-8888}:8888",
+    # target 8888; an empty host_ip does not parse). The app does not bind it —
     # uvicorn's --host does — it is read so the boot warning and the health
     # detail can NAME what is exposed. Empty means compose's default, every
     # host address, IPv4 and IPv6; 0.0.0.0 means IPv4 only.

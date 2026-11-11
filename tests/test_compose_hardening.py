@@ -18,9 +18,13 @@
   ``${CORTEXSIM_BIND:-0.0.0.0}``. Docker publishes a mapping that names no host
   address on IPv4 AND IPv6, and one that names 0.0.0.0 on IPv4 only, so the
   default silently stopped answering beacons that reach the jumpbox over IPv6.
-  The mapping is now the long form with ``host_ip: ${CORTEXSIM_BIND:-}``: unset
-  means no host address (both families, as before SEC-10), set means that
-  address.
+  Round 2 moved to the long form with ``host_ip: ${CORTEXSIM_BIND:-}``, which
+  these yaml-only tests passed and Compose itself rejects when the variable is
+  unset ("invalid ip address", CI run 43033286928). The mapping is now the short
+  form ``${CORTEXSIM_BIND:+${CORTEXSIM_BIND}:}${CORTEXSIM_PORT:-8888}:8888``:
+  unset means no host address (both families, as before SEC-10), set means that
+  address. ``test_real_compose_accepts_every_bind`` asks a real Compose when one
+  is on the host; the CI ``backend`` job's ``config -q`` step always does.
 * OPS-14: the json-file log driver grows without limit unless told otherwise.
 * OPS-16: nothing told Docker how to ask SimCore whether it is alive.
 * OPS-21: the orchestrator's queue, the SSE bus and the rehydrate pass are per
@@ -28,8 +32,9 @@
   so one environment variable forked N SimCores that each rehydrated and
   delivered the same queued tasks.
 
-Parsed with yaml / read as text: there is no ``docker`` on the test host, and
-"the file says X" is exactly the property that drifts. NOTHING here ran a
+Parsed with yaml / read as text, plus one test that asks a real ``docker
+compose`` when the host has one (it skips otherwise; the CI step does not).
+"The file says X" is exactly the property that drifts. NOTHING here ran a
 container: what Docker does with these files is authored, not observed.
 """
 from __future__ import annotations
@@ -45,30 +50,55 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 
-_INTERP = re.compile(r"\$\{([^}]*)\}")
+def _split_braced(value: str, i: int) -> int:
+    """Index just past the ``}`` closing the ``${`` at ``i``, honouring nesting."""
+    depth, j = 0, i
+    while j < len(value):
+        if value.startswith("${", j):
+            depth += 1
+            j += 2
+            continue
+        if value[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    raise AssertionError(f"unterminated compose interpolation in {value!r}")
 
 
 def _interpolate(value: str, env: dict[str, str]) -> str:
-    """Compose's ``${VAR}`` / ``${VAR:-default}`` / ``${VAR-default}`` /
-    ``${VAR:?error}`` forms, which every Compose release reads. Any other form
-    raises: ``${VAR:+x}`` needs a newer Compose than some jumpboxes carry, and
-    nobody can run ``docker compose config`` on the test host to find out."""
-    def _one(match: re.Match) -> str:
-        expr = match.group(1)
-        m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(?:(:-|-|:\?|\?)(.*))?", expr, re.S)
+    """The Compose Specification's braced forms: ``${VAR}``, ``${VAR:-x}``,
+    ``${VAR-x}``, ``${VAR:?err}``, ``${VAR?err}``, ``${VAR:+x}``, ``${VAR+x}``,
+    with nested operands (``${A:+${A}:}``), as Compose v2 reads them. Any other
+    form raises, so a shell-only feature (``${VAR/foo/bar}``) cannot slip in."""
+    out, i = [], 0
+    while i < len(value):
+        if not value.startswith("${", i):
+            out.append(value[i])
+            i += 1
+            continue
+        end = _split_braced(value, i)
+        expr = value[i + 2:end - 1]
+        m = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(?:(:-|-|:\?|\?|:\+|\+)(.*))?", expr, re.S)
         if not m:
             raise AssertionError(f"unsupported compose interpolation: ${{{expr}}}")
         name, op, arg = m.group(1), m.group(2), m.group(3) or ""
         cur = env.get(name)
-        if op in (":-",):
-            return cur if cur else arg
-        if op == "-":
-            return arg if cur is None else cur
-        if op in (":?", "?"):
-            assert cur, f"compose would refuse to start: {arg}"
-            return cur
-        return cur or ""
-    return _INTERP.sub(_one, value)
+        if op == ":-":
+            out.append(cur if cur else _interpolate(arg, env))
+        elif op == "-":
+            out.append(_interpolate(arg, env) if cur is None else cur)
+        elif op in (":?", "?"):
+            assert cur if op == ":?" else cur is not None, f"compose would refuse to start: {arg}"
+            out.append(cur)
+        elif op == ":+":
+            out.append(_interpolate(arg, env) if cur else "")
+        elif op == "+":
+            out.append(_interpolate(arg, env) if cur is not None else "")
+        else:
+            out.append(cur or "")
+        i = end
+    return "".join(out)
 
 
 @pytest.fixture(scope="module")
@@ -110,14 +140,14 @@ def test_stop_grace_period_is_set(simcore):
     )
 
 
-def _only_port(simcore) -> dict:
+def _only_port(simcore) -> str:
     ports = simcore.get("ports") or []
     assert len(ports) == 1, f"simcore should publish exactly one port, got {ports}"
     port = ports[0]
-    assert isinstance(port, dict), (
-        f"port mapping {port!r} is the short string form. It cannot express 'no "
-        f"host address unless CORTEXSIM_BIND is set' without ${{VAR:+...}}, and a "
-        f"literal default address makes the publish IPv4-only"
+    assert isinstance(port, str), (
+        f"port mapping {port!r} is the long form. Its host_ip cannot be left "
+        f"empty: Compose rejects an empty host_ip, so an unset CORTEXSIM_BIND "
+        f"stops `docker compose up` (CI run 43033286928)"
     )
     return port
 
@@ -125,30 +155,79 @@ def _only_port(simcore) -> dict:
 def test_compose_port_publish_address_is_operator_settable(simcore):
     """SEC-10: a DC can publish on 127.0.0.1 or one NIC through CORTEXSIM_BIND."""
     port = _only_port(simcore)
-    assert port.get("target") == 8888, port
-    assert port.get("protocol", "tcp") == "tcp", port
-    assert "CORTEXSIM_BIND" in str(port.get("host_ip", "")), (
+    assert "CORTEXSIM_BIND" in port, (
         f"port mapping {port!r} does not take its bind address from CORTEXSIM_BIND"
     )
     for bind in ("127.0.0.1", "10.20.30.40", "::1", "fd00::10"):
-        assert _interpolate(str(port["host_ip"]), {"CORTEXSIM_BIND": bind}) == bind
-    assert _interpolate(str(port["published"]), {}) == "8888"
-    assert _interpolate(str(port["published"]), {"CORTEXSIM_PORT": "9443"}) == "9443"
+        assert _interpolate(port, {"CORTEXSIM_BIND": bind}) == f"{bind}:8888:8888"
+    assert _interpolate(port, {"CORTEXSIM_PORT": "9443"}) == "9443:8888"
+    assert _interpolate(port, {"CORTEXSIM_BIND": "127.0.0.1", "CORTEXSIM_PORT": "9443"}) == (
+        "127.0.0.1:9443:8888"
+    )
 
 
 def test_compose_default_publish_is_not_ipv4_only(simcore):
     """RG-GUARD-09 / RG-INSTALL-06. With CORTEXSIM_BIND unset (and with the
     empty value .env.example ships) the mapping must name NO host address, so
     Docker publishes on IPv4 and IPv6 as the bare "8888:8888" did before SEC-10.
-    A default of 0.0.0.0 is IPv4-only."""
+    A default of 0.0.0.0 is IPv4-only, and an empty host address does not parse."""
     port = _only_port(simcore)
     for env in ({}, {"CORTEXSIM_BIND": ""}):
-        host_ip = _interpolate(str(port.get("host_ip", "")), env)
-        assert host_ip == "", (
-            f"with CORTEXSIM_BIND={env.get('CORTEXSIM_BIND', '<unset>')!r} the port is "
-            f"published on {host_ip!r} only; an endpoint that reaches the jumpbox "
-            f"over IPv6 is refused the connection"
+        published = _interpolate(port, env)
+        assert published == "8888:8888", (
+            f"with CORTEXSIM_BIND={env.get('CORTEXSIM_BIND', '<unset>')!r} the mapping "
+            f"is {published!r}; it must name no host address, so an endpoint that "
+            f"reaches the jumpbox over IPv6 is still answered"
         )
+
+
+_COMPOSE = None
+
+
+def _real_compose() -> list[str] | None:
+    """`docker compose` when this host has it, else None (the test then skips;
+    the CI backend job's `config -q` step is the gate that never skips)."""
+    global _COMPOSE
+    if _COMPOSE is None:
+        import shutil
+        import subprocess
+        cmd = ["docker", "compose"]
+        ok = False
+        if shutil.which("docker"):
+            try:
+                ok = subprocess.run(cmd + ["version"], capture_output=True, timeout=20).returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                ok = False
+        _COMPOSE = cmd if ok else []
+    return _COMPOSE or None
+
+
+@pytest.mark.parametrize("bind,want_host", [
+    (None, None), ("", None), ("127.0.0.1", "127.0.0.1"),
+    ("0.0.0.0", "0.0.0.0"), ("::1", "::1"),
+])
+def test_real_compose_accepts_every_bind(bind, want_host):
+    """Compose itself, not a model of it: the file parses for an unset, empty,
+    IPv4 and IPv6 CORTEXSIM_BIND, and only a set value names a host address."""
+    import os
+    import subprocess
+    compose = _real_compose()
+    if not compose:
+        pytest.skip("no `docker compose` on this host; CI's backend job runs `config -q`")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CORTEXSIM_")}
+    env["CORTEXSIM_SECRET"] = "x" * 40
+    if bind is not None:
+        env["CORTEXSIM_BIND"] = bind
+    proc = subprocess.run(
+        compose + ["-f", str(REPO / "docker-compose.yml"), "--project-directory",
+                   str(REPO), "config", "--format", "json"],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    assert proc.returncode == 0, f"compose rejected the file with CORTEXSIM_BIND={bind!r}: {proc.stderr}"
+    ports = json.loads(proc.stdout)["services"]["simcore"]["ports"]
+    assert len(ports) == 1, ports
+    assert ports[0].get("host_ip") == want_host, ports[0]
+    assert str(ports[0]["published"]) == "8888" and ports[0]["target"] == 8888, ports[0]
 
 
 def test_compose_reports_an_unset_bind_to_the_app_as_unset(simcore):
@@ -167,7 +246,7 @@ def test_compose_files_use_only_interpolation_every_compose_reads(name):
     raw = (REPO / name).read_text(encoding="utf-8")
     live = "\n".join(ln for ln in raw.splitlines() if not ln.lstrip().startswith("#"))
     env = {"CORTEXSIM_SECRET": "x" * 40}
-    _interpolate(live, env)  # raises on ${VAR:+...} and anything else unknown
+    _interpolate(live, env)  # raises on any form outside the Compose Specification
 
 
 def test_compose_container_logs_are_rotated(simcore):

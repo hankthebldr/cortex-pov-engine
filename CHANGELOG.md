@@ -66,12 +66,16 @@ artifacts.
   `[--dev] [--apply]` and refuses an unknown argument with exit 2. It also says
   when `CORTEXSIM_VERSION` differs from the code's version, because that
   changes the image tag and container name.
-- **Where SimCore listens.** Compose now uses the long-form port mapping with
-  `host_ip: "${CORTEXSIM_BIND:-}"`. Empty or unset means every host address,
-  IPv4 and IPv6, as in 1.1.0 (round 1 had made the default IPv4 only). `0.0.0.0` means IPv4 only. Write an IPv6
-  address without brackets. `scripts/dev-up-native.sh` now binds where
-  `CORTEXSIM_BIND` says; it used to bind every interface. *Authored; not yet
-  brought up under Docker.*
+- **Where SimCore listens.** Compose now publishes with
+  `"${CORTEXSIM_BIND:+${CORTEXSIM_BIND}:}${CORTEXSIM_PORT:-8888}:8888"`. Empty or unset means the mapping names no host address, so Docker
+  publishes on every host address, IPv4 and IPv6, as in 1.1.0 (round 1 had made
+  the default IPv4 only). `0.0.0.0` means IPv4 only. Write an IPv6 address
+  without brackets. An intermediate long-form mapping with
+  `host_ip: "${CORTEXSIM_BIND:-}"` did not parse when the variable was unset
+  (Compose rejects an empty `host_ip`); CI run 43033286928's
+  `docker compose config -q` step caught it before release. Needs Compose v2.
+  `scripts/dev-up-native.sh` now binds where `CORTEXSIM_BIND` says; it used to
+  bind every interface. *Parsed by Compose; not yet brought up under Docker.*
 - **Container behaviour.** The image declares a `HEALTHCHECK`. It is liveness
   only: healthy means the process answers, not that nothing is degraded, and
   Docker does not restart an unhealthy container. Container logs are capped at

@@ -4,7 +4,9 @@ Handed over by the deploy lane: e5890a1 moved the port mapping to the long
 form with ``host_ip: "${CORTEXSIM_BIND:-}"`` and added a ``logging`` block.
 The file was checked with a YAML parser and against the schema embedded in
 one local Compose plugin, never by ``docker compose config``, and no CI step
-ran Compose on it. A key Compose rejects would first fail on a DC's jumpbox.
+ran Compose on it. The step's first run (CI 43033286928) proved the point:
+Compose rejected the empty ``host_ip`` ("invalid ip address"), which every
+YAML-level test had accepted, and the mapping went back to the short form.
 
 The step runs in the ``backend`` job (docker is already there for the image
 build), with a throwaway CORTEXSIM_SECRET because the file refuses to

@@ -103,9 +103,10 @@ jobs:
         run: docker build -f core/Dockerfile -t cortexsim:ci .
 
       - name: Compose parses docker-compose.yml (config -q)
-        # The first time Compose itself reads the file on this branch: the
-        # long-form port mapping (host_ip from CORTEXSIM_BIND) and the logging
-        # block were checked by a YAML parser only. This parses and
+        # Compose itself reads the file: the port mapping (CORTEXSIM_BIND,
+        # ${VAR:+...} with a nested operand) and the logging block are checked
+        # by a YAML parser in pytest. Its first run (43033286928) caught an
+        # empty host_ip that Compose rejects and the YAML tests accepted. This parses and
         # interpolates; it does not bring the stack up. The secret is a
         # throwaway, because the file refuses to interpolate without one.
         env:

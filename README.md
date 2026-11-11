@@ -1229,11 +1229,12 @@ What narrows the exposure (2026-11):
   any name other than `localhost`, an IP literal, the host's own name, or
   `CORTEXSIM_ALLOWED_HOSTS`. `scripts/dev-up.sh` seeds that list with the
   jumpbox's names.
-- **Compose publishes on the address in `CORTEXSIM_BIND`** (long-form port
-  mapping, `host_ip: "${CORTEXSIM_BIND:-}"`). Empty or unset is every host
+- **Compose publishes on the address in `CORTEXSIM_BIND`**
+  (`"${CORTEXSIM_BIND:+${CORTEXSIM_BIND}:}${CORTEXSIM_PORT:-8888}:8888"`). Empty or unset names no host address, which is every host
   address, IPv4 and IPv6; `0.0.0.0` is IPv4 only; write an IPv6 address
   without brackets. Set `127.0.0.1` for a console-only host, but beacons must
-  reach the port. *Authored; not brought up under Docker in this pass.*
+  reach the port. Needs Compose v2. *Parsed by `docker compose config`; not
+  brought up under Docker in this pass.*
 - **`CORTEXSIM_TRUSTED_PROXIES`** names the proxies whose `X-Forwarded-For` is
   believed. It may go in `.env`. `/api/health` flags an ignored forwarder
   (`XFF_FROM_UNTRUSTED_PEER`) because every agent behind it is recorded with

@@ -89,10 +89,11 @@ before or across routers:
 | `VALIDATION_ERROR` | 422 | `POST` / `PUT /api/scenarios/drafts` | A control character (CR/LF, tab, NUL, ESC, DEL, NEL, U+2028/2029) in a single-line field: name, author, tags, step id/name, or detection description / `detection_id` / `ttp_ref`. `command` stays multi-line. |
 
 CORS is **not mounted** unless `CORTEXSIM_CORS_ORIGINS` names origins, and it
-never allows credentials. Compose publishes with the long-form port mapping,
-`host_ip: "${CORTEXSIM_BIND:-}"`: empty or unset is every host address, IPv4
+never allows credentials. Compose publishes with
+`"${CORTEXSIM_BIND:+${CORTEXSIM_BIND}:}${CORTEXSIM_PORT:-8888}:8888"`: empty or unset names no host address, which is every host address, IPv4
 and IPv6; `0.0.0.0` is IPv4 only; an IPv6 address goes without brackets
-(authored; not brought up under Docker in this pass).
+(parsed by `docker compose config` in CI; not brought up under Docker in this
+pass).
 `X-Forwarded-For` is read only from peers inside `CORTEXSIM_TRUSTED_PROXIES`
 (CIDRs, empty default), right to left. Since round 2 it is a `Settings` field
 (process environment first, then `.env`). A malformed value means requests

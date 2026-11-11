@@ -47,13 +47,13 @@ is built to run on a customer-lab jumpbox where the operating consultant already
 has full administrative access to the host. Adding auth would secure the API
 against an attacker who, by construction, already owns the box. **The
 assumption that carries this is that SimCore is never exposed to an untrusted
-network.** `docker-compose.yml` publishes the port with `host_ip` taken from
-`CORTEXSIM_BIND` (long-form mapping, `"${CORTEXSIM_BIND:-}"`). Unset or empty
-means every host address, IPv4 and IPv6, because beacons on the lab network
-must reach the port; `0.0.0.0` means every IPv4 address. Set
-`CORTEXSIM_BIND=127.0.0.1` for a console-only host, and keep the jumpbox on a
-private lab segment. (The long-form mapping is authored and has not yet been
-brought up under Docker.) The Helm chart's `api.bindAddress` is rendered into
+network.** `docker-compose.yml` publishes the port on the address in `CORTEXSIM_BIND`
+(`"${CORTEXSIM_BIND:+${CORTEXSIM_BIND}:}${CORTEXSIM_PORT:-8888}:8888"`). Unset or empty names no host address, which means every host address,
+IPv4 and IPv6, because beacons on the lab network must reach the port;
+`0.0.0.0` means every IPv4 address. Set `CORTEXSIM_BIND=127.0.0.1` for a
+console-only host, and keep the jumpbox on a private lab segment. (The mapping
+is parsed by `docker compose config` in CI and has not yet been brought up
+under Docker.) The Helm chart's `api.bindAddress` is rendered into
 the ConfigMap as `CORTEXSIM_BIND_ADDRESS`, which nothing in SimCore reads, so
 it does **not** restrict where the pod listens; restrict exposure with the
 Service type, a NetworkPolicy or the Tailscale ingress instead. `/api/health` states the exposure on every deployment: its
