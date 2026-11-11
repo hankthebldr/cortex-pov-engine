@@ -776,12 +776,36 @@ actions; and the refs, adapters and agent CI gaps.
 - Byte parity between host-built and image-built beacons (CI-16): the VCS
   stamp differs by design.
 
-**Regression findings left unfixed:** none recorded. The regression review
-handed this page no documentation findings. The code findings recorded
-against round-2 commits were fixed on the branch: the elevated uninstaller's
-delete inside another profile (`7d6187a`), the silent refused agent delete
-(`66084cb`), the Windows `SERVICE_START_FAILED` shown as a warning
-(`33236a2`), the no-cradle installer link baking the wrong address
-(`11c13ef`), the withheld POSIX teardown lines with cmdlet-shaped arguments
-(`1aeb559`), and the IPv6 zone id in `dc_ssh_cidr` (`e14dc03`). If the review
-raised others, they were not in this page's handoff.
+**Regression findings fixed on the branch.** These code findings were recorded
+against round-2 commits and fixed: the elevated uninstaller's delete inside
+another profile (`7d6187a`), the silent refused agent delete (`66084cb`), the
+Windows `SERVICE_START_FAILED` shown as a warning (`33236a2`), the no-cradle
+installer link baking the wrong address (`11c13ef`), the withheld POSIX
+teardown lines with cmdlet-shaped arguments (`1aeb559`), and the IPv6 zone id
+in `dc_ssh_cidr` (`e14dc03`).
+
+**Regression findings still open** (re-checked at the round-2 head):
+- RG-UI-01, server half. `platform_target_for_os` maps `darwin` to `posix`,
+  so a macOS beacon is sent the commands of a Linux-only step with no
+  `!! PLATFORM` marker. Only the console's launch preflight blocks it; an API
+  client gets no guard.
+- RG-AGENT-01, Windows half (decision). After a chained run that ends
+  cleanly, Windows still leaves the steps' background processes alive, so a
+  helper left by run N can answer run N+1. POSIX is fixed (`3527b70`).
+- RG-AGENT-04, residual. `BeaconClient.Control()` is still a 30 s GET that
+  the shutdown does not cancel, so a stop that lands during a `/control` poll
+  against an unresponsive SimCore can take about 30 s, past launchd's 20 s.
+- RG-INSTALL-07 part 1 (decision). A non-Windows installer refusal is still
+  JSON, so `curl -fsSL … | bash` shows only curl's error and hides the 400
+  code.
+- RG-GUARD-05, K8s half. `core/engine/k8s_manifest.py` does not ask the Host
+  guard, so a manifest can bake a `?server=` name SimCore will refuse. That
+  file belongs to the container-agent branch. The installer half is fixed
+  (`f529365`).
+- RG-RUNS-01, residual. Only a beacon that sends the late `/complete`
+  `steps[]` gets its unrun steps scored `not_reached` / `not_executed`. If the
+  beacon dies, or predates `steps[]`, an aborted, delivered run's unrun steps
+  stay creditable by reconcile.
+- RG-UI-05, residual. `/api/health` does not publish the machine's own host
+  name, which the Host guard also admits, so Get started can only say an
+  unlisted DNS name "may" be refused.
