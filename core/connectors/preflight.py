@@ -36,6 +36,8 @@ from typing import Any, Callable, Optional
 
 import httpx
 
+from connectors import socfw as _socfw
+
 logger = logging.getLogger("cortexsim.connectors.preflight")
 
 OK = "ok"
@@ -66,6 +68,19 @@ PF_ALERT_SHAPE_PARTIAL = "PF_ALERT_SHAPE_PARTIAL"
 PF_ALERT_SHAPE_UNMATCHABLE = "PF_ALERT_SHAPE_UNMATCHABLE"
 PF_ALERT_SHAPE_UNKNOWN = "PF_ALERT_SHAPE_UNKNOWN"
 PF_ALERTS_PATH_MISMATCH = "PF_ALERTS_PATH_MISMATCH"
+PF_RESPONSE_LAYER_ABSENT = "PF_RESPONSE_LAYER_ABSENT"
+PF_RESPONSE_LAYER_UNREAD = "PF_RESPONSE_LAYER_UNREAD"
+PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED = "PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED"
+
+#: The one XQL the response_layer stage runs: production closes by the framework
+#: over the last day. ``action_actor`` is needed to tell an AI close from an
+#: analyst's. The window is the ``timeframe`` argument, never XQL time
+#: arithmetic (``current_time()`` maths returns HTTP 500 on deathstar).
+RESPONSE_LAYER_XQL = (
+    f"dataset = {_socfw.EXECUTION_DATASET} | comp count() as n "
+    "by action_taken, execution_mode, action_actor"
+)
+RESPONSE_LAYER_TIMEFRAME_MS = 86_400_000
 
 #: The two published versions of the alert read. The connector defaults to v1
 #: (the vendor lists it as legacy); a field-built MCP server reads v2 against a
@@ -375,8 +390,12 @@ async def preflight_tenant(
     datasets: Optional[list[str]] = None,
     xql_authorised: bool = True,
     now: Optional[datetime] = None,
+    response_layer: bool = True,
 ) -> PreflightReport:
-    """auth -> XQL scope -> (opt-in) dataset presence -> clock skew.
+    """auth -> XQL scope -> (opt-in) dataset presence -> clock skew -> response layer.
+
+    ``response_layer`` adds the read-only SOC Framework detection stage (four
+    kinds of tenant read, counted in ``queries_issued``); pass False to omit it.
 
     ``client`` is injected — an ``XsiamClient`` built over ``httpx.MockTransport``
     in tests, a real one in the field — so every stage's logic is provable
@@ -392,6 +411,7 @@ async def preflight_tenant(
     report = PreflightReport(tenant=integration_name, kind="xsiam_tenant",
                              base_url_host=base_url_host)
     now = now or datetime.utcnow()
+    rl_ids = ["response_layer"] if response_layer else []
 
     # ── auth (also proves dns/tls) ──────────────────────────────────────
     started = time.monotonic()
@@ -407,7 +427,7 @@ async def preflight_tenant(
             remediation=("The tenant rejected this API key. Nothing was measured, so "
                          "every verification resolves `pending` — this is not a "
                          "detection failure.")))
-        _skip_rest(report, ["scope_xql", "datasets", "clock"])
+        _skip_rest(report, ["scope_xql", "datasets", "clock"] + rl_ids)
         report.capabilities_denied.append("xql")
         return report
     except XsiamApiError as exc:
@@ -425,7 +445,7 @@ async def preflight_tenant(
             "auth", BLOCKED, PF_UNREACHABLE, str(exc),
             remediation=("CortexSim could not reach the tenant (DNS, TLS, or egress "
                          "policy on this host). Every verification resolves `pending`.")))
-        _skip_rest(report, ["scope_xql", "datasets", "clock"])
+        _skip_rest(report, ["scope_xql", "datasets", "clock"] + rl_ids)
         return report
 
     # ── XQL scope ───────────────────────────────────────────────────────
@@ -439,14 +459,14 @@ async def preflight_tenant(
                          "verification queries. Until then Tier-2 verification and "
                          "all assertions resolve `pending`; reconcile and MTTD "
                          "still work.")))
-        _skip_rest(report, ["datasets", "clock"])
+        _skip_rest(report, ["datasets", "clock"] + rl_ids)
         report.capabilities_denied.append("xql")
         return report
 
     xql_ok, xql_stage = await _probe_xql(client, report)
     report.stages.append(xql_stage)
     if not xql_ok:
-        _skip_rest(report, ["datasets", "clock"])
+        _skip_rest(report, ["datasets", "clock"] + rl_ids)
         report.capabilities_denied.append("xql")
         return report
     report.capabilities_confirmed.append("xql")
@@ -485,6 +505,10 @@ async def preflight_tenant(
 
     # ── clock skew ──────────────────────────────────────────────────────
     report.stages.append(await _probe_clock(client, report, now))
+
+    # ── response layer (SOC Framework) ──────────────────────────────────
+    if response_layer:
+        report.stages.append(await _probe_response_layer(client, report, now))
     return report
 
 
@@ -715,6 +739,171 @@ def _path_mismatch_stage(stage_id: str, configured: str, working: str,
                      f"the path itself."),
         extra={"configured_path": configured, "working_path": working},
     )
+
+
+# ---------------------------------------------------------------------------
+# response_layer — is the Palo-Cortex SOC Framework on this tenant?
+# ---------------------------------------------------------------------------
+
+# List-content path. povkit (internal/tenant/api.go) only ever reads list NAMES
+# and deletes lists; it has no list-content read, and the public XSOAR REST docs
+# (xsoar.pan.dev "Demisto REST API") show only /lists/save. The path below is
+# the XSOAR server's list download route (GET /lists/download/{name}) behind the
+# same /xsoar gateway prefix povkit's other reads use. It is UNVERIFIED against a
+# live tenant. A 404/405 here is therefore read as "path not available", which
+# yields PRESENT_UNREAD, never ABSENT.
+_LIST_CONTENT_PATH = "/xsoar/lists/download/{name}"
+_PACKS_PATH = "/xsoar/contentpacks/metadata/installed"
+_LIST_NAMES_PATH = "/xsoar/lists/names"
+
+
+async def _read_list(client: Any, name: str) -> Optional[Any]:
+    """Read one tenant list's content as a JSON document, or None if unreadable.
+
+    None covers 401/403/404/405 and any other tenant refusal: the caller turns
+    it into PRESENT_UNREAD. A reply that arrives but is not a JSON object raises
+    ``ResponseLayerShapeError`` (tolerance hides bugs).
+    """
+    import json  # noqa: PLC0415
+
+    from integrations.xsiam.exceptions import XsiamError  # noqa: PLC0415
+
+    try:
+        reply = await client.request("GET", _LIST_CONTENT_PATH.format(name=name))
+    except XsiamError as exc:
+        logger.info("response_layer: list %s unreadable: %s", name, exc)
+        return None
+    if isinstance(reply, (str, bytes)):
+        try:
+            reply = json.loads(reply)
+        except ValueError as exc:
+            raise _socfw.ResponseLayerShapeError(
+                f"list {name}: content is not JSON") from exc
+    if not isinstance(reply, dict):
+        raise _socfw.ResponseLayerShapeError(
+            f"list {name}: expected a JSON object, got {type(reply).__name__}")
+    return reply
+
+
+async def _probe_response_layer(client: Any, report: PreflightReport,
+                                now: datetime) -> Stage:
+    """Detect the SOC Framework with read-only calls. Every call is counted.
+
+    Order: installed packs, list names, one read per ``CONFIG_LISTS`` entry (only
+    when the core pack and both lists are present), one XQL (only when the core
+    pack is present). A shape this module does not recognise yields state
+    UNKNOWN with ``PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED``; it is never read as
+    ABSENT or as defaults.
+    """
+    from integrations.xsiam.exceptions import XsiamError, XsiamQuotaError  # noqa: PLC0415
+    from integrations.xsiam.queries import result_rows  # noqa: PLC0415
+
+    started = time.monotonic()
+    sources: list[str] = []
+    packs = names = tenant_config = evidence = None
+    shape_error: Optional[str] = None
+    read_problem: Optional[str] = None
+
+    # 1. installed packs
+    try:
+        report.queries_issued += 1
+        packs = _socfw.parse_installed_packs(await client.request("GET", _PACKS_PATH))
+        sources.append("installed_packs")
+    except _socfw.ResponseLayerShapeError as exc:
+        shape_error = str(exc)
+    except XsiamError as exc:
+        read_problem = str(exc)
+    except Exception as exc:  # noqa: BLE001 — transport
+        read_problem = str(exc)
+
+    # 2. list names (a leftover-lists signal, so read even if packs failed)
+    try:
+        report.queries_issued += 1
+        names = _socfw.parse_list_names(await client.request("GET", _LIST_NAMES_PATH))
+        sources.append("list_names")
+    except _socfw.ResponseLayerShapeError as exc:
+        shape_error = shape_error or str(exc)
+        packs = None  # a shape we cannot read: neither present nor absent
+    except Exception as exc:  # noqa: BLE001 — XsiamError or transport
+        read_problem = read_problem or str(exc)
+
+    core = packs is not None and _socfw.CORE_PACK_ID in packs
+    if core and names is not None and all(n in names for n in _socfw.CONFIG_LISTS) \
+            and shape_error is None:
+        # 3. list content, both documents or neither
+        docs = []
+        try:
+            for list_name in _socfw.CONFIG_LISTS:
+                report.queries_issued += 1
+                docs.append(await _read_list(client, list_name))
+            if all(d is not None for d in docs):
+                tenant_config = _socfw.parse_tenant_config(docs[0], docs[1])
+                sources.append("list_content")
+        except _socfw.ResponseLayerShapeError as exc:
+            shape_error = str(exc)
+
+    if core and shape_error is None:
+        # 4. execution evidence
+        try:
+            report.queries_issued += 1
+            reply = await client.run_xql(RESPONSE_LAYER_XQL,
+                                         {"relativeTime": RESPONSE_LAYER_TIMEFRAME_MS})
+            evidence = _socfw.summarize_execution_rows(result_rows(reply))
+            sources.append("xql_evidence")
+        except _socfw.ResponseLayerShapeError as exc:
+            shape_error = str(exc)
+        except XsiamQuotaError:
+            read_problem = read_problem or "XQL quota exhausted"
+        except XsiamError as exc:
+            if "unrecognised XQL reply" in str(exc):
+                shape_error = str(exc)
+            else:
+                logger.info("response_layer: execution evidence unreadable: %s", exc)
+
+    if shape_error is not None:
+        packs = None
+    layer = _socfw.assemble_response_layer(
+        packs=packs, list_names=names, tenant_config=tenant_config, evidence=evidence,
+        sources_used=sources, read_at=now, shape_error=shape_error)
+    ms = int((time.monotonic() - started) * 1000)
+    extra = {"response_layer": layer.to_dict()}
+
+    if layer.state == "PRESENT":
+        return Stage("response_layer", OK, PF_OK,
+                     f"SOC Framework {layer.framework_version} present", ms=ms, extra=extra)
+    if layer.state == "ABSENT":
+        return Stage(
+            "response_layer", DEGRADED, PF_RESPONSE_LAYER_ABSENT,
+            "the SOC Framework core pack is not installed on this tenant"
+            + (" (its config lists remain)" if layer.leftover_lists else ""),
+            remediation=("Every POV tenant is expected to run the SOC Framework. Without "
+                         "it, tenant disposition cannot be explained, and runs are not "
+                         "comparable to a tenant that has it. Install it, or record why "
+                         "this tenant is the exception."),
+            ms=ms, extra=extra)
+    if shape_error is not None:
+        return Stage(
+            "response_layer", DEGRADED, PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED, shape_error,
+            remediation=(f"A reply did not match the shape pinned for framework "
+                         f"{_socfw.FRAMEWORK_PINNED_VERSION}. CortexSim will not guess: "
+                         f"the response layer is reported UNKNOWN."),
+            ms=ms, extra=extra)
+    if layer.state == "UNKNOWN":
+        return Stage(
+            "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
+            read_problem or "the installed-packs read failed",
+            remediation=("The installed-packs read was refused or failed, so neither "
+                         "present nor absent can be claimed. Check the role of the "
+                         "xsiam_tenant API key: it needs Marketplace / installed-packs "
+                         "read."),
+            ms=ms, extra=extra)
+    return Stage(
+        "response_layer", DEGRADED, PF_RESPONSE_LAYER_UNREAD,
+        "framework present, its config could not be read",
+        remediation=("The SOC Framework is installed but SOCFWTenantConfig / SOCFWConfigModes "
+                     "could not be read, so mode and auto-triage settings are unknown. "
+                     "Disposition is shown for context only."),
+        ms=ms, extra=extra)
 
 
 def _skip_rest(report: PreflightReport, stage_ids: list[str]) -> None:

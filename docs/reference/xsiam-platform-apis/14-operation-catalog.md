@@ -5,7 +5,7 @@
 > `POST /api/xsiam/tenants/{name}/operations/{op_id}`). This table is generated
 > from the loaded catalog — if the packs change, regenerate it.
 >
-> **148 operations** across **30 categories** — 79 read · 51 write · 18 destructive.
+> **151 operations** across **31 categories** — 82 read · 51 write · 18 destructive.
 ## Access classes & gating
 | Class | Badge | Executor behavior |
 |---|---|---|
@@ -238,6 +238,13 @@
 | `OP-HASH-EXCEPTIONS-ALLOWLIST` | POST | `/public_api/v1/hash_exceptions/allowlist` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/md2df8eqgx7fr-allow-list-files) |
 | `OP-HASH-EXCEPTIONS-BLOCKLIST` | POST | `/public_api/v1/hash_exceptions/blocklist` | ⚠ write | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/bugt5tvao9rls-block-list-files) |
 | `OP-QUARANTINE-STATUS` | POST | `/public_api/v1/quarantine/status` | ✅ read | [↗](https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/ay663dcgsvgv6-get-quarantine-status) |
+
+## SOC Framework
+| Op ID | Method | Path | Access | Doc |
+|---|---|---|---|---|
+| `OP-SOCFW-LIST-GET` | GET | `/xsoar/lists/download/{name}` | ✅ read |  |
+| `OP-SOCFW-LIST-NAMES` | GET | `/xsoar/lists/names` | ✅ read |  |
+| `OP-SOCFW-PACKS-INSTALLED` | GET | `/xsoar/contentpacks/metadata/installed` | ✅ read |  |
 
 ## Scripts
 | Op ID | Method | Path | Access | Doc |

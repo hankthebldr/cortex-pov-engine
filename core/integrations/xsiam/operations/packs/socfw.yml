@@ -1,0 +1,31 @@
+# SOC Framework (Palo-Cortex secops-framework) reads — Cortex XSIAM platform API operations
+# Pinned to soc-optimization-unified 3.31.4 (secops-framework commit d222ba87).
+# Provenance: `povkit-observed` = the path is taken from povkit's tenant client
+# (internal/tenant/api.go, verified there against a tenant on 2026-11-06). It is the
+# author's observation, NOT a CortexSim tenant verification (tenant-verified is 0).
+# `path-unverified` = no documented or observed source: povkit has no list-content read
+# and the public XSOAR REST docs show only /lists/save. The path is the XSOAR server's
+# list download route behind the /xsoar gateway prefix; confirm it on a tenant before
+# trusting it. A 404/405 on it makes the preflight read PRESENT_UNREAD, never ABSENT.
+# These are the /xsoar gateway paths, so the operation schema accepts the /xsoar/ prefix
+# in addition to /public_api/. All three are read-only GETs.
+category: "SOC Framework"
+operations:
+  - op_id: OP-SOCFW-PACKS-INSTALLED
+    name: "List installed Marketplace packs"
+    method: GET
+    path: "/xsoar/contentpacks/metadata/installed"
+    access_class: read
+    tags: [povkit-observed]
+  - op_id: OP-SOCFW-LIST-NAMES
+    name: "List tenant list names"
+    method: GET
+    path: "/xsoar/lists/names"
+    access_class: read
+    tags: [povkit-observed]
+  - op_id: OP-SOCFW-LIST-GET
+    name: "Read one tenant list's content"
+    method: GET
+    path: "/xsoar/lists/download/{name}"
+    access_class: read
+    tags: [povkit-observed, path-unverified]

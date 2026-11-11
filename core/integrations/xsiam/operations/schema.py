@@ -66,8 +66,10 @@ class XsiamOperationSchema(BaseModel):
     @field_validator("path")
     @classmethod
     def _v_path(cls, v: str) -> str:
-        if not v.startswith("/public_api/"):
-            raise ValueError(f"path {v!r} must start with /public_api/")
+        # /xsoar/ is the gateway prefix for the XSOAR-side reads (SOC Framework
+        # detection: installed packs, lists). Every other call is /public_api/.
+        if not v.startswith(("/public_api/", "/xsoar/")):
+            raise ValueError(f"path {v!r} must start with /public_api/ or /xsoar/")
         return v
 
     # ── cross-field: derive path_params + default consent ────────────────
