@@ -679,6 +679,38 @@ start_simcore() {
 # ==============================================================================
 # STEP 10 — Success Banner
 # ==============================================================================
+
+# Does SimCore's Host guard admit NAME? SimCore answers to localhost, to IP
+# addresses and to the names in CORTEXSIM_ALLOWED_HOSTS; anything else gets
+# 400 HOST_NOT_ALLOWED. Inside the container its own hostname is the container
+# id, so this host's name is admitted only through that variable. Read the way
+# compose resolves it (shell first, then .env next to this script) and matched
+# by the guard's rules: exact name, '*.suffix' for subdomains, '*' for anything.
+host_guard_admits() {
+    local name allowed pattern patterns
+    name="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    name="${name%.}"
+    if [[ -n "${CORTEXSIM_ALLOWED_HOSTS+set}" ]]; then
+        allowed="${CORTEXSIM_ALLOWED_HOSTS}"
+    else
+        allowed="$(sed -n 's/^CORTEXSIM_ALLOWED_HOSTS=//p' "${SCRIPT_DIR}/.env" 2>/dev/null | tail -n1 || true)"
+    fi
+    allowed="$(printf '%s' "${allowed}" | tr '[:upper:]' '[:lower:]' | tr -d " \"'")"
+    # read -a, not an unquoted expansion: '*' must stay a pattern, not a glob.
+    IFS=',' read -r -a patterns <<< "${allowed}"
+    for pattern in ${patterns[@]+"${patterns[@]}"}; do
+        pattern="${pattern%.}"
+        if [[ "${pattern}" == "*" ]]; then
+            return 0
+        elif [[ "${pattern}" == "*."* ]]; then
+            if [[ "${name}" == *"${pattern#\*}" ]]; then return 0; fi
+        elif [[ -n "${pattern}" && "${name}" == "${pattern}" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 print_success_banner() {
     local hostname port
     hostname="$(hostname -f 2>/dev/null || hostname)"
@@ -690,8 +722,20 @@ print_success_banner() {
     echo -e "  ${GREEN}✓ Installation complete${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  ${BOLD}SimCore URL:${NC}   http://${hostname}:${port}"
-    echo -e "  ${BOLD}Local URL:${NC}     http://localhost:${port}"
+    # Never print a URL SimCore refuses. This used to lead with
+    # http://<hostname -f>:<port>, which answers 400 HOST_NOT_ALLOWED unless the
+    # name is in CORTEXSIM_ALLOWED_HOSTS, and nothing in this script sets that.
+    if host_guard_admits "${hostname}"; then
+        echo -e "  ${BOLD}SimCore URL:${NC}   http://${hostname}:${port}"
+        echo -e "  ${BOLD}Local URL:${NC}     http://localhost:${port}"
+    else
+        echo -e "  ${BOLD}SimCore URL:${NC}   http://localhost:${port}"
+        echo -e "  ${BOLD}By name:${NC}       ${hostname} is refused (400 HOST_NOT_ALLOWED) until it is"
+        echo -e "                 listed in CORTEXSIM_ALLOWED_HOSTS in ${SCRIPT_DIR}/.env."
+        echo -e "                 Add it and restart SimCore, or use this host's IP address,"
+        echo -e "                 which is always accepted. When the variable is empty,"
+        echo -e "                 scripts/dev-up.sh --apply writes this host's names for you."
+    fi
     echo -e "  ${BOLD}Auth:${NC}          None (Phase 1 — jumpbox-controlled access)"
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
