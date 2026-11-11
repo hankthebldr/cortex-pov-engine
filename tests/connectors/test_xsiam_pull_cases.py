@@ -193,3 +193,36 @@ def test_issue_read_bad_config_raises_config_code():
         XsiamConnector(fetcher=Recorder({})).pull_issue_status(
             ConnectorConfig("t", {}, "k"), ["1"])
     assert ei.value.code == codes.XSIAM_CONFIG_ERROR
+
+
+def test_issue_status_reports_pages_on_success():
+    rec = Recorder(responder=lambda req: {"reply": {"DATA": []}})
+    out = XsiamConnector(fetcher=rec).pull_issue_status(CFG, [str(i) for i in range(1, 231)])
+    assert out == {} and out.pages == 3 and len(rec.calls) == 3
+
+
+def test_issue_status_empty_ids_pages_zero():
+    rec = Recorder({})
+    out = XsiamConnector(fetcher=rec).pull_issue_status(CFG, [])
+    assert out.pages == 0 and rec.calls == []
+
+
+def test_non_ascii_digit_id_sent_as_string():
+    rec = Recorder({"reply": {"DATA": []}})
+    XsiamConnector(fetcher=rec).pull_issue_status(CFG, ["²", "7"])
+    assert rec.calls[0]["request_data"]["filters"][0]["value"] == ["²", 7]
+
+
+def test_duplicate_and_padded_ids_deduped():
+    rec = Recorder({"reply": {"DATA": []}})
+    XsiamConnector(fetcher=rec).pull_issue_status(CFG, ["7", " 7 ", "8", "7"])
+    assert rec.calls[0]["request_data"]["filters"][0]["value"] == [7, 8]
+    rec2 = Recorder(_incidents_reply([_case(5)]))
+    XsiamConnector(fetcher=rec2).pull_cases(CFG, ["5", "5", " 5"])
+    assert rec2.calls[0]["request_data"]["filters"][0]["value"] == ["5"]
+
+
+def test_pull_cases_empty_ids_zero_posts():
+    rec = Recorder({})
+    res = XsiamConnector(fetcher=rec).pull_cases(CFG, [])
+    assert res.ok and rec.calls == [] and res.detail["pages"] == 0

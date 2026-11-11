@@ -59,6 +59,32 @@ _SEVERITY_MAP = {
 }
 
 
+class IssueStatusMap(dict):
+    """``pull_issue_status`` result: a plain dict plus the read's accounting.
+
+    ``.pages`` is the number of POSTs issued (the caller adds it to
+    ``queries_issued`` and the per-sweep caps); ``.detail`` is the merged detail.
+    """
+
+    pages: int = 0
+    detail: dict
+
+    def __init__(self, *a: Any, pages: int = 0, detail: Optional[dict] = None) -> None:
+        super().__init__(*a)
+        self.pages = pages
+        self.detail = detail or {}
+
+
+def _clean_ids(raw: Sequence[Any]) -> list[str]:
+    """Stripped, non-empty, order-preserving de-duplicated ids."""
+    seen: dict[str, None] = {}
+    for i in raw:
+        t = str(i).strip()
+        if t:
+            seen.setdefault(t, None)
+    return list(seen)
+
+
 class IssueReadError(ConnectorError):
     """A by-id issue read failed (transport, auth, HTTP, or unrecognised shape).
 
@@ -298,7 +324,7 @@ class XsiamConnector(Connector):
         """
         conf = cfg.config or {}
         path = str(conf.get("incidents_path") or self._INCIDENTS_PATH)
-        ids = [str(i) for i in case_ids]
+        ids = _clean_ids(case_ids)
 
         def _one(chunk: list[str]) -> PullResult:
             def body(search_from: int, page_size: int) -> dict:
@@ -316,7 +342,7 @@ class XsiamConnector(Connector):
 
     def pull_issue_status(
         self, cfg: ConnectorConfig, issue_ids: Sequence[str],
-    ) -> dict[str, dict[str, Optional[str]]]:
+    ) -> "IssueStatusMap":
         """Issue id (string) -> ``{"status", "reason", "comment"}``.
 
         Read from ``status.progress`` / ``status.resolution_reason`` /
@@ -332,10 +358,10 @@ class XsiamConnector(Connector):
         """
         conf = cfg.config or {}
         path = str(conf.get("issues_path") or self._ISSUES_SEARCH_PATH)
-        ids = [str(i) for i in issue_ids]
+        ids = _clean_ids(issue_ids)
 
         def _one(chunk: list[str]) -> PullResult:
-            values: list[Any] = [int(i) if i.isdigit() else i for i in chunk]
+            values: list[Any] = [int(i) if i.isascii() and i.isdigit() else i for i in chunk]
 
             def body(search_from: int, page_size: int) -> dict:
                 return {"request_data": {
@@ -356,7 +382,8 @@ class XsiamConnector(Connector):
                 f"{res.dropped} issue row(s) lacked an id or status.progress; the "
                 "issue shape is not the one this connector reads. Refusing to "
                 "treat them as absent.", res.detail)
-        return {iid: row for iid, row in res.observations}
+        return IssueStatusMap({iid: row for iid, row in res.observations},
+                              pages=int(res.detail.get("pages", 0)), detail=res.detail)
 
     def _chunked(self, ids: list[str], one: Callable[[list[str]], PullResult],
                  path: str) -> PullResult:
