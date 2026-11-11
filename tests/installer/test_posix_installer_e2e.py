@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -146,6 +147,41 @@ def sandbox(tmp_path):
     return {"env": env, "tripwire": tripwire,
             "bin": tmp_path / "prefix" / "bin" / "cortexsim-agent",
             "log": tmp_path / "beacon.log"}
+
+
+_LAUNCHD_LABEL = "com.paloaltonetworks.cortexsim.agent"
+
+
+def _loaded_launchd_plist() -> str | None:
+    """The plist behind this user's loaded CortexSim launchd job, or None when
+    no such job is loaded (or this is not macOS)."""
+    if os.uname().sysname != "Darwin" or shutil.which("launchctl") is None:
+        return None
+    p = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{_LAUNCHD_LABEL}"],
+                       capture_output=True, text=True, timeout=15)
+    if p.returncode != 0:
+        return None
+    m = re.search(r"^\s*path = (.+)$", p.stdout, re.M)
+    return m.group(1).strip() if m else ""
+
+
+@pytest.fixture(autouse=True)
+def _no_launchd_job_outlives_the_test(tmp_path):
+    """On macOS a service-mode install REALLY bootstraps a KeepAlive launchd
+    agent into the developer's own gui domain, pointing at a stub under this
+    test's tmp_path. Nothing removed it, so every run of this file left one
+    loaded, respawning a stub every few seconds for as long as the temp
+    directory lasted. Only a job whose plist is under THIS test's tmp_path is
+    touched; a real beacon installed on the machine is never booted out here."""
+    yield
+    mine = (str(tmp_path), os.path.realpath(tmp_path))
+    plist = _loaded_launchd_plist()
+    if plist and plist.startswith(mine):
+        subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{_LAUNCHD_LABEL}"],
+                       capture_output=True, text=True, timeout=30)
+        left = _loaded_launchd_plist()
+        assert not (left and left.startswith(mine)), (
+            f"this test left a launchd job loaded on the developer's machine: {left}")
 
 
 def _fetch(url: str) -> str:
