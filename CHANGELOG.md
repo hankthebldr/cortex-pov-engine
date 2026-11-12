@@ -8,6 +8,49 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-11
+
+**Security hotfix for v1.1.0: four unauthenticated routes let the caller
+choose a program SimCore runs, or text that becomes code on the target or in
+a Terraform bundle.** Each now refuses the input with a structured error.
+No scenario, card, emitter or scoring change; every route below is still
+unauthenticated, like the rest of SimCore.
+
+### Security
+
+- **Tool start refuses caller-supplied argv.** `POST /api/tools/{tool}/start`
+  merged the body's `params` over the registry's `binary` / `source_path` /
+  `port` before `run_template.format`, so `{"params": {"binary": "<any command
+  line>"}}` ran that command as SimCore's user (root in the image). Caller
+  params now fill only the placeholders a tool's `run_template` leaves open
+  (`mitre_id` for signalbench, `config_path` for ackbarx), each validated and
+  quoted into one argv token; anything else is `400 BAD_TOOL_PARAM` and nothing
+  is spawned, and a missing required placeholder is that 400 rather than a 500.
+  `POST /api/tools/{tool}/install` runs its build off the event loop, one at a
+  time; a concurrent install gets `409 INSTALL_IN_PROGRESS`.
+- **EAL campaigns no longer pick the executable.** `airs_prompt_attack` and
+  `browser_attack_runner` spawned whatever path a step's `params.binary` named,
+  and `POST /api/eal/campaigns` + `/launch` take the step params and the consent
+  gates from the same caller, so any program ran as SimCore's user. Both
+  plugins now run only their own CLI (`cortex-prompt-attacker`,
+  `cortex-browser-attacker`) from SimCore's PATH, and both routes refuse a step
+  that sets `params.binary` with `400 CALLER_EXECUTABLE_REFUSED`, including a
+  campaign stored before this release.
+- **The agent installer no longer runs its query string.** `GET
+  /api/agents/install` pasted `id`, `server` and `token` raw into the bash and
+  PowerShell scripts that are piped into `bash` / `iex`, so `?id=$(…)` ran on
+  the target. Each is now checked against its real format (agent id
+  `A-Za-z0-9._-`, token `cxs_…`, server `http(s)://host[:port][/path]`, the
+  derived one included) and baked in as a single-quoted literal; a bad value is
+  `400 BAD_AGENT_ID` / `BAD_TOKEN` / `BAD_SERVER` with no script.
+- **Infra bundles no longer take Terraform from the request.** `POST
+  /api/infra/generate` rendered `params.jumpbox_size` (unbounded) and `region`
+  raw into Terraform string literals, so a quote and newlines could add a
+  `data "external"` block that `terraform plan` runs on the DC's machine.
+  `region` must now be an AWS region and `jumpbox_size` an AWS instance type
+  (422 otherwise), and the templates write string values only as escaped HCL
+  literals. Bundles for valid input are byte-identical.
+
 ## [1.1.0] - 2026-11-02
 
 **The library grows from 177 to 193 scenarios, fifteen of them Unit 42
@@ -813,7 +856,8 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.0...v1.0.1
