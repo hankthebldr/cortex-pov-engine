@@ -96,7 +96,8 @@ async def _load(db, scenario_id: str):
     return row
 
 
-async def _agent(db, agent_id: str, os_name, *, seen_ago: float = 0.0):
+async def _agent(db, agent_id: str, os_name, *, seen_ago: float = 0.0,
+                 runtime_facts=None):
     from models import Agent
 
     now = datetime.utcnow()
@@ -106,6 +107,7 @@ async def _agent(db, agent_id: str, os_name, *, seen_ago: float = 0.0):
         else ["shell", "identity-harness"],
         interpreters=[], registered_at=now,
         last_seen=now - timedelta(seconds=seen_ago), status="online",
+        runtime_facts=runtime_facts,
     ))
     await db.commit()
 
@@ -318,6 +320,43 @@ def test_offline_target_warns_but_still_queues(session_factory):
 
     output = asyncio.run(_output())
     assert output.count("!! TARGET_AGENT_OFFLINE: agent 'lin-1'") == 1, output
+
+
+# RG-RUNS-06 for the container-agent gate's advisories: a launch the gate let
+# through with a caveat says so on the run, not only in the launching tab's
+# response. The synthetic scenario and step helpers are defined further down.
+@pytest.mark.parametrize("code,command,facts,says", [
+    ("AGENT_NO_RBAC_FOR_KUBECTL", "kubectl get secrets",
+     {"container": True, "posture_profile": "baseline", "tools": ["kubectl"]},
+     "step-01"),
+    ("AGENT_TOOL_ROSTER_UNKNOWN", "id -un",
+     {"container": True, "posture_profile": "baseline"},
+     "tools were not checked"),
+])
+def test_container_gate_advisory_is_written_onto_the_run(
+    session_factory, code, command, facts, says,
+):
+    from engine.orchestrator import Orchestrator
+    from models import Run
+
+    async def _go():
+        orch = Orchestrator()
+        async with session_factory() as db:
+            await _agent(db, "pod-1", "linux", runtime_facts=facts)
+            await _synthetic(db, [_step("step-01", command)])
+            res = await orch.launch(scenario_id="SIM-EDR-900", mode="pull", db=db,
+                                    target_agent_id="pod-1")
+            output = (await db.execute(select(Run.output))).scalar_one() or ""
+            return res, output
+
+    res, output = asyncio.run(_go())
+    assert res.success, (res.error_code, res.error)
+    # The response keeps the gate's own dict, unchanged.
+    assert [w["code"] for w in res.warnings if isinstance(w, dict)] == [code], res.warnings
+    # The run record carries it once, naming the agent and what it is about.
+    lines = [ln for ln in output.splitlines() if ln.startswith(f"!! {code}: ")]
+    assert len(lines) == 1, output
+    assert "agent 'pod-1'" in lines[0] and says in lines[0], lines[0]
 
 
 def test_unknown_os_is_treated_as_posix_with_a_warning(session_factory):

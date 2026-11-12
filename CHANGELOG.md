@@ -642,7 +642,10 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   The launch still queues, but `!! TARGET_AGENT_OFFLINE: …` is now written onto
   the run's output too, so another browser and the exported report see it;
   before, only the tab that launched did. A beacon restarted inside its
-  long-poll window can no longer lose a task to its own abandoned poll.
+  long-poll window can no longer lose a task to its own abandoned poll. The
+  container-agent gate's advisories (`AGENT_NO_RBAC_FOR_KUBECTL`,
+  `AGENT_TOOL_ROSTER_UNKNOWN`) are written the same way, one `!! CODE: …` line
+  each naming the agent; the launch response still carries them as dicts.
 - **The pull refusal says how to fix its reason (round 2).** A
   `409 PULL_TARGET_UNSATISFIABLE` for a step whose Windows variant is refused
   as `MIXED_DIALECT` or `CMD_PERCENT_CONTEXT` used to say "declare

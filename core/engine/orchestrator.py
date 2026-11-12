@@ -173,7 +173,9 @@ class LaunchResult:
     #     were authored against the primary command;
     #   * ``dict`` -- an advisory, non-refusing notice from the container-agent
     #     launch gate (engine/agent_launch_gate.py), e.g.
-    #     ``{"code": "AGENT_NO_RBAC_FOR_KUBECTL", "steps": [...], "agent_id": ...}``.
+    #     ``{"code": "AGENT_NO_RBAC_FOR_KUBECTL", "steps": [...], "agent_id": ...}``,
+    #     which SimCore also writes onto Run.output as one ``!! CODE: ...`` line
+    #     (``_gate_advisory_line``).
     # The API surfaces both under ``warnings``.
     warnings: list[Any] = field(default_factory=list)
 
@@ -393,6 +395,21 @@ def _offline_warning(agent: Any, now: datetime) -> Optional[str]:
         f"TARGET_AGENT_OFFLINE: agent '{agent.agent_id}' last polled {seen}; the "
         "task is queued and runs only when its beacon polls again"
     )
+
+
+def _gate_advisory_line(warning: dict[str, Any]) -> str:
+    """A container-agent gate advisory (engine/agent_launch_gate.py) as the
+    reservation text Run.output carries for it (RG-RUNS-06), e.g.
+    ``AGENT_NO_RBAC_FOR_KUBECTL: agent 'pod-1'; steps step-01``. The launch
+    response keeps the dict itself."""
+    parts = []
+    if warning.get("agent_id"):
+        parts.append(f"agent '{warning['agent_id']}'")
+    if warning.get("steps"):
+        parts.append("steps " + ", ".join(str(s) for s in warning["steps"]))
+    if warning.get("detail"):
+        parts.append(str(warning["detail"]))
+    return f"{warning['code']}: " + "; ".join(parts)
 
 
 @dataclass
@@ -1511,7 +1528,11 @@ class Orchestrator:
         # An offline target (launch()'s own, and a composed run's other
         # endpoints) goes on the record too (RG-RUNS-06): the launch response
         # reaches only the tab that launched, not another browser or the report.
-        reservations = list(launch_warnings or []) + dispatch_warnings
+        # So do the container-agent gate's advisories, rendered as one line each.
+        reservations = (
+            list(launch_warnings or []) + dispatch_warnings
+            + [_gate_advisory_line(w) for w in gate_warnings]
+        )
         if egress_warnings or output_markers or reservations:
             lines = "".join(
                 f"!! TARGET_EGRESS_REQUIRED: {aid} — {text}\n"
@@ -1541,8 +1562,9 @@ class Orchestrator:
             run_id=run_id,
             mode="pull",
             message=queued_message,
-            # The platform/offline reservations (strings, also on Run.output),
-            # then the container-agent gate's advisory notices (dicts).
+            # The platform/offline reservations (strings), then the
+            # container-agent gate's advisory notices (dicts); all of them
+            # are on Run.output too.
             warnings=dispatch_warnings + output_markers + list(gate_warnings),
         )
 

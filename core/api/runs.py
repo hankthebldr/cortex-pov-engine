@@ -968,7 +968,8 @@ async def _launch_run_impl(
     # (see LaunchResult.warnings): a string reservation SimCore also wrote onto
     # the run (an offline target, an unknown agent OS, a step running a
     # platform variant), and a {code, ...} dict from the container-agent
-    # launch gate (AGENT_NO_RBAC_FOR_KUBECTL, AGENT_TOOL_ROSTER_UNKNOWN).
+    # launch gate (AGENT_NO_RBAC_FOR_KUBECTL, AGENT_TOOL_ROSTER_UNKNOWN), which
+    # SimCore also wrote onto the run as one line.
     if result.warnings:
         response["warnings"] = list(result.warnings)
 
