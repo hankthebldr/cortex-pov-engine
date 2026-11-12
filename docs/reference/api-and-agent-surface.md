@@ -501,8 +501,8 @@ get it.
 | GET | `/api/tools` | List built-in tools + live+DB-merged runtime status | — | `{"tools":[{tool_name,status,pid,port,install_path,description,plane,type,last_health_check}],"total":N}` |
 | GET | `/api/tools/adapters` | Tool-adapter catalog (slim cards) | query: `plane`, `tier`, `safety_class`, `category` (compose AND) | `{"adapters":[<summary>],"total":N}` |
 | GET | `/api/tools/adapters/{adapter_id}` | Full adapter pack | — | `adapter.model_dump()`; 404 `ADAPTER_NOT_FOUND` |
-| POST | `/api/tools/{tool_name}/install` | Build tool from submodule source | — | `{"status":"installed",...}`; 404 `TOOL_NOT_FOUND`; 500 `INSTALL_FAILED` |
-| POST | `/api/tools/{tool_name}/start` | Start managed process | `StartParams`: `{params:{}}` | `{"status":"running","pid",...}`; 404; 500 `START_FAILED` |
+| POST | `/api/tools/{tool_name}/install` | Build tool from submodule source | — | `{"status":"installed",...}`; 404 `TOOL_NOT_FOUND`; 409 `INSTALL_IN_PROGRESS` (installs run one at a time, off the event loop); 500 `INSTALL_FAILED` |
+| POST | `/api/tools/{tool_name}/start` | Start managed process | `StartParams`: `{params:{}}` — only the `run_template` placeholders the registry leaves open (`mitre_id`, `config_path`) | `{"status":"running","pid",...}`; 400 `BAD_TOOL_PARAM` (a registry key, an unreferenced key, a missing placeholder or a malformed value; nothing is spawned); 404; 500 `START_FAILED` |
 | POST | `/api/tools/{tool_name}/stop` | Stop process | — | `{"status":"stopped",...}`; 404; 500 `STOP_FAILED` |
 | GET | `/api/tools/{tool_name}/status` | Live health check + status | — | `{tool_name,status,pid,port,healthy,description,plane}`; 404 |
 

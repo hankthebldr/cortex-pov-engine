@@ -8,6 +8,21 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
+### Security — `POST /api/tools/{tool}/start` no longer runs a command line from the request
+
+- **Tool start refuses caller-supplied argv.** The body's `params` were merged
+  over the registry's `binary` / `source_path` / `port` before
+  `run_template.format`, so `{"params": {"binary": "<any command line>"}}` ran
+  that command as SimCore's user (root in the image) from an unauthenticated
+  route. v1.1.0 ships the defect. Caller params now fill only the placeholders a
+  tool's `run_template` leaves open (`mitre_id` for signalbench, `config_path`
+  for ackbarx), each validated and quoted into one argv token; anything else is
+  `400 BAD_TOOL_PARAM` and nothing is spawned, and a missing required
+  placeholder is that 400 rather than a 500. `POST /api/tools/{tool}/install`
+  runs its build off the event loop, one at a time; a concurrent install gets
+  `409 INSTALL_IN_PROGRESS`. Both routes are still unauthenticated, like the
+  rest of SimCore.
+
 ### Added — ingestion doors, phase 1 (read API, Library chip, launch check)
 
 - **Ingestion doors read API** (`GET /api/doors`, `/api/doors/readiness`,
