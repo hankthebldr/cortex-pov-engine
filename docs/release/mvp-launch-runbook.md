@@ -589,7 +589,7 @@ are the beta-readiness review's; quote them when you report.
 | **API is unauthenticated** (SEC-01) | `/api/health` is `degraded`, with `api_auth: API_UNAUTHENTICATED` on every deployment | By design until auth lands. Any **other** degraded component is a real fault. Keep SimCore on an isolated lab segment; `CORTEXSIM_BIND=127.0.0.1` for a console-only host. |
 | **Installer checksum is corruption-only** (SEC-12) | `CHECKSUM_MISMATCH` / `verify` stage | SimCore serves plain HTTP, so the digest proves integrity in transit, not authenticity. |
 | **Windows: green in CI only, no customer host** | — | The `windows-2022` job ran green at `d7f4f29` and on the round-2 code at `fb0f646` and `e434efa` (run 43037077022) on a hosted runner with no XDR and Defender real-time off. It is not a required check (DOCS-12). None of the 13 shipped bundles has run anywhere (§8.4). |
-| **Abort evidence before round 2** | An aborted step's `step_outcomes` read `termination` / `rc` empty, on the Linux lab VM and in the `windows` job | Fixed on the server in round 2 (RG-RUNS-01): a late `/complete` on an aborted, delivered pull run now records `steps[]`. Pinned by a host test, and observed on Windows in run 43037077022 (`termination=aborted rc=130`); not re-run on the lab VM. A beacon that dies before its `/complete` still leaves the row unjudged. |
+| **Abort evidence before round 2** | An aborted step's `step_outcomes` read `termination` / `rc` empty, on the Linux lab VM and in the `windows` job | Fixed on the server in round 2 (RG-RUNS-01): a late `/complete` on an aborted, delivered pull run now records `steps[]`. Pinned by a host test, and observed on Windows in run 43037077022 (`termination=aborted rc=130`); not re-run on the lab VM. A beacon that dies before its `/complete` still leaves the row unjudged, but since `271320d` no alert is credited to a step its host never reported: the row stays `pending`. |
 | **Glued step frames before round 2** | `--- exit_code=0 duration=10ms ---=== STEP 2/4 …`, so anything matching `^=== STEP` saw only the first step | Fixed in the beacon (every frame ends with a newline). Runs recorded by an older beacon keep the glued text. |
 | **`docker ps` healthy is liveness only** | `healthy` while `/api/health` reads degraded | The image `HEALTHCHECK` checks that the process answers, and Docker does not restart an unhealthy container. Read `/api/health` for faults. *(Authored; no container ran in this pass.)* |
 | **Rollback is not symmetric** (OPS-17) | After a rollback to 1.1.0 or older, every launch is a 500 | Back up the volume before upgrading; roll back by restoring it (§8.5). |
@@ -603,7 +603,7 @@ are the beta-readiness review's; quote them when you report.
 | **Push bundles are not consent-gated** (PUSH-08) | `GET /download` hands out dual-use tooling with no prompt | Decision open. Treat a downloaded bundle as you would the tool itself. |
 | **An agent row with work owed cannot be deleted** (OPS-08) | `409 AGENT_HAS_OPEN_RUNS` with `run_ids` | Abort those runs (`POST /api/runs/{id}/abort`, or Abort beside the row in the console). Nothing expires on its own: there is no queued-task TTL. |
 | **The Windows system proxy is not read** (BEACON-19) | A beacon behind a proxy never polls | Set a machine-level `CORTEXSIM_AGENT_PROXY`; the installer does not yet write `--proxy` into the service. |
-| **macOS pull of a Linux-only scenario** (RG-UI-01, server half open) | SimCore dispatches the Linux command to a macOS beacon with no marker | The console's preflight now blocks it; an API client gets no guard. |
+| **macOS pull of a Linux-only scenario** (RG-UI-01) | SimCore dispatches the Linux command to a macOS beacon unchanged, with `!! PLATFORM MISMATCH` on the run and in `warnings[]` (`77f80b4`) | The console's preflight blocks it; the server marks it and does not refuse it. A step's `macos` variant is still not preferred on a Mac (§8.6). |
 | **Windows `SERVICE_START_FAILED` is a stop; POSIX is a warning** | — | The POSIX installer reports it and falls back to `nohup`; the Windows installer stops. The console renders each accordingly. |
 | **PSScriptAnalyzer unpinned** | — | The green run installed 1.25.0. Pin it with `CORTEXSIM_PSSA_VERSION=1.25.0` (`TODO(pssa-pin)`). |
 | **Release beacons ≠ image beacons** (CI-11) | Different sha256 | `ci.yml` / `release.yml` build with Go 1.21; `core/Dockerfile` uses `golang:1.22-alpine`. The new `release.yml` has never run. |
@@ -775,7 +775,11 @@ actions; and the refs, adapters and agent CI gaps.
 - The SimCore single-worker lock (OPS-21): `--workers 1` is pinned in the
   image and the chart defaults to one replica, but nothing refuses a second
   worker started another way.
-- macOS pull of a Linux-only scenario has no server-side guard (RG-UI-01).
+- A macOS beacon is sent a step's Linux primary even when the step declares a
+  `macos` `platform_variants` entry (34 corpus steps, e.g. `SIM-EDR-003`'s
+  `useradd` instead of `sysadminctl`). SimCore now marks a step whose labels
+  exclude the beacon's OS (RG-UI-01, below), but preferring the variant
+  changes what runs on a Mac and is left for a decision.
 - The Windows installer does not write `--proxy` into the service
   (BEACON-19).
 - The K8s manifest generator still renders a server name the Host guard will
@@ -798,17 +802,37 @@ installer link baking the wrong address (`11c13ef`), the withheld POSIX
 teardown lines with cmdlet-shaped arguments (`1aeb559`), and the IPv6 zone id
 in `dc_ssh_cidr` (`e14dc03`).
 
+**Closed after the round-2 head** (each re-checked as reproducing at
+`7f8ae17` before the fix; each commit body records the test that failed
+before it and passed after; host and httptest evidence only, no lab run):
+- RG-UI-01, server half (`77f80b4`). A step whose `platforms` labels exclude
+  a POSIX beacon's OS (a Linux-only step on a darwin beacon, `SIM-KOI-009` on
+  a Linux one) now carries `!! PLATFORM MISMATCH` on `Run.output` and the
+  launch `warnings[]`, read the way the console's preflight reads the labels,
+  and the markdown report lists it. SimCore still does not refuse it and
+  sends the command unchanged; the console's preflight still blocks it. The
+  run-detail banner does not render this marker yet.
+- RG-AGENT-04, residual (`46a827e`). `Control()` is bound to the shutdown
+  context: a stop during a blocked `/control` poll returns at once (2.01 s in
+  the in-step test, which is the poll interval) instead of after 30 s, and
+  the run records "agent shutdown — task interrupted", not
+  `CONTROL_CHANNEL_LOST`. Not observed under a real launchd or SCM stop.
+- RG-RUNS-01, residual (`271320d`). On an aborted, delivered pull run an
+  alert is credited only to a step the host reported (a `step_outcomes` row
+  other than `not_run`, a step frame, or an in-process step). A dead or
+  pre-`steps[]` beacon leaves the other rows `pending`, uncredited and never
+  `missed`; the step that was running is credited once the late `/complete`
+  arrives.
+- RG-UI-05, residual (`b7e6e25`). `api_auth` publishes `local_host_names`
+  and `local_fqdn_names` (`null` until the running guard has resolved its
+  FQDN; health does no DNS). Get started admits the machine's own names and
+  says POVengine *refuses* an unlisted name when both are known; with the
+  FQDN unresolved it names the host name and says only the FQDN is unknown.
+
 **Regression findings still open** (re-checked at the round-2 head):
-- RG-UI-01, server half. `platform_target_for_os` maps `darwin` to `posix`,
-  so a macOS beacon is sent the commands of a Linux-only step with no
-  `!! PLATFORM` marker. Only the console's launch preflight blocks it; an API
-  client gets no guard.
 - RG-AGENT-01, Windows half (decision). After a chained run that ends
   cleanly, Windows still leaves the steps' background processes alive, so a
   helper left by run N can answer run N+1. POSIX is fixed (`3527b70`).
-- RG-AGENT-04, residual. `BeaconClient.Control()` is still a 30 s GET that
-  the shutdown does not cancel, so a stop that lands during a `/control` poll
-  against an unresponsive SimCore can take about 30 s, past launchd's 20 s.
 - RG-INSTALL-07 part 1 (decision). A non-Windows installer refusal is still
   JSON, so `curl -fsSL … | bash` shows only curl's error and hides the 400
   code.
@@ -816,10 +840,3 @@ in `dc_ssh_cidr` (`e14dc03`).
   guard, so a manifest can bake a `?server=` name SimCore will refuse. That
   file belongs to the container-agent branch. The installer half is fixed
   (`f529365`).
-- RG-RUNS-01, residual. Only a beacon that sends the late `/complete`
-  `steps[]` gets its unrun steps scored `not_reached` / `not_executed`. If the
-  beacon dies, or predates `steps[]`, an aborted, delivered run's unrun steps
-  stay creditable by reconcile.
-- RG-UI-05, residual. `/api/health` does not publish the machine's own host
-  name, which the Host guard also admits, so Get started can only say an
-  unlisted DNS name "may" be refused.
