@@ -948,7 +948,7 @@ IAM permission names (`logging.sinks.update`).
 | `log_stop` | 1 × `StopLogging` (`cloudtrail.amazonaws.com`), `requestParameters {name: <trail ARN>}` | 1 × `google.logging.v2.ConfigServiceV2.UpdateSink` (`logging.googleapis.com`), request `sinkName`, `sink {name, destination, disabled: true}`, `updateMask: "disabled"` | T1562.008 |
 | `log_destination_delete` | `burst_count` × `DeleteObject` (`s3.amazonaws.com`, data event, `{bucketName, key}`, a different key per record), then 1 × `DeleteBucket` (management event, `{bucketName}`) on the trail's bucket | 1 × `…ConfigServiceV2.DeleteBucket`, request `name: <log bucket>`. One call whatever `burst_count` is: a Cloud Logging log bucket has no object-level API | T1485 |
 | `log_router_delete` | 1 × `DeleteTrail`, `{name: <trail ARN>}` | 1 × `…ConfigServiceV2.DeleteSink`, request `sinkName` | T1562.008 |
-| `log_key_swap` | 1 × `UpdateTrail`, `{name, kmsKeyId: <key in another account>}` | 1 × `…ConfigServiceV2.UpdateBucket`, request `name`, `bucket.cmekSettings.kmsKeyName: <key in another project>`, `updateMask: "cmekSettings"` | T1562.008 |
+| `log_key_swap` | 1 × `UpdateTrail`, `{name, kmsKeyId: <key in another account>}` | 1 × `…ConfigServiceV2.UpdateBucket`, request `name: <log bucket>`, `bucket.cmekSettings.kmsKeyName: <key in another project, same region as the bucket>`, `updateMask: "cmekSettings"` | T1562.008 |
 | `log_object_overwrite` | `GetObject` (`readOnly: true`) then `PutObject`, both data events on the same `{bucketName, key}` | `storage.objects.get` then `storage.objects.create` (`storage.googleapis.com`, Data Access) on the same object | T1565.001 |
 | `log_router_create` | 1 × `CreateTrail`, `{name, s3BucketName: <attacker bucket>, isMultiRegionTrail: true}` | 1 × `…ConfigServiceV2.CreateSink`, request `parent`, `sink {name, destination: <attacker bucket>}`, `uniqueWriterIdentity: true` | T1537 |
 | `log_router_redirect` | 1 × `UpdateTrail`, `{name, s3BucketName: <attacker bucket>}` | 1 × `…ConfigServiceV2.UpdateSink`, request `sinkName`, `sink {name, destination: <attacker bucket>}`, `updateMask: "destination"`, `uniqueWriterIdentity: true` | T1562.008 |
@@ -958,6 +958,14 @@ Each record carries the marker `<event_pattern>_marker: true` and
 `cortexsim_run_id`. All calls are made by one identity per provider
 (`arn:aws:iam::123456789012:user/cortexsim-canary`;
 `cortexsim-canary@cortexsim-canary.invalid`), so a rule can group on the caller.
+
+The Cloud Logging log bucket is regional:
+`projects/cortexsim-canary/locations/us-central1/buckets/cortexsim-canary-log-bucket`,
+and the external key of `log_key_swap` is in the same region. Google does not
+allow CMEK on a log bucket in the `global` location and requires the key's
+region to match the bucket's ("Configure CMEK for log buckets", Limitations), so
+a successful key change on a global bucket is a record no tenant can produce.
+`log_destination_delete` (`gcp`) deletes that same bucket.
 
 | Param | Type / default | Notes |
 |-------|----------------|-------|
@@ -979,7 +987,7 @@ Each record carries the marker `<event_pattern>_marker: true` and
 - `gcp`: `protoPayload.request` (the `google.logging.v2` request message, `@type`
   first; absent on Cloud Storage calls, which log a request only under detailed
   audit logging mode), a per-call `protoPayload.resourceName`
-  (`projects/cortexsim-canary/sinks/…`, `…/locations/global/buckets/…`,
+  (`projects/cortexsim-canary/sinks/…`, `…/locations/us-central1/buckets/…`,
   `projects/_/buckets/<bucket>[/objects/<object>]`), `logName` ending
   `cloudaudit.googleapis.com%2Factivity` or `%2Fdata_access`, and for Cloud
   Storage calls the `gcs_bucket` monitored-resource block.
@@ -988,14 +996,24 @@ Each record carries the marker `<event_pattern>_marker: true` and
 
 | Hint key | On | Value |
 |---|---|---|
-| `cloud_provider` | every record | `aws` / `gcp` |
+| `audit_provider` | every record | `aws` / `gcp`: the `provider` param as given, lower-case |
 | `api_operation` | every record | the `eventName` / `methodName` |
-| `principal_id` | every record | the caller ARN / `principalEmail` (follows a planted canary principal) |
+| `principal_id` | every record | on `gcp` the `principalEmail`, which follows a planted canary; on `aws` the caller ARN, which the canary plant does not change (it rewrites `userIdentity.userName`). To find one run's records on either provider, join on `cortexsim_canary` |
 | `log_resource_name` | every record | the trail ARN, sink, log bucket, or storage bucket acted on (`arn:aws:s3:::<bucket>` / `projects/_/buckets/<bucket>` for object calls too) |
 | `log_object_key` | object calls only | the S3 key / Cloud Storage object name |
 | `log_destination` | `log_router_create`, `log_router_redirect` | `cortexsim-canary-attacker-logs-999` (`aws`) / `storage.googleapis.com/cortexsim-canary-attacker-log-drop` (`gcp`) |
-| `kms_key_id` | `log_key_swap` | `arn:aws:kms:us-east-1:444455556666:alias/cortexsim-canary-external-key` (`aws`) / `projects/attacker-project-999/locations/global/keyRings/cortexsim-canary-ring/cryptoKeys/cortexsim-canary-key` (`gcp`) |
+| `kms_key_id` | `log_key_swap` | `arn:aws:kms:us-east-1:444455556666:alias/cortexsim-canary-external-key` (`aws`) / `projects/attacker-project-999/locations/us-central1/keyRings/cortexsim-canary-ring/cryptoKeys/cortexsim-canary-key` (`gcp`) |
 | `log_disabled` | `log_stop` (`gcp`) | `true` |
+
+The provider hint is `audit_provider`, not `cloud_provider`. `cloud_provider` is
+a field of normalised `cloud_audit_logs`, which existing cards filter as `"AWS"`
+/ `"GCP"`; a collector record is not that dataset, so the hint has its own name
+and carries the param's lower-case values. A query written to the
+`cloud_provider = "AWS"` convention reads zero on these records. The name also
+matters to a gate: `scripts/check-streamer-fidelity.py` counts every dict-literal
+key of a plugin as emitted, so a hint called `cloud_provider` hid its advisory on
+`TTP-2026-0155` and `TTP-2026-0158`, whose presets write no such field
+(`test_new_record_keys_do_not_silence_a_streamer_fidelity_advisory` holds that).
 
 **Not emitted, on purpose.** Anything the attacker does in their own account or
 project: creating the external key, changing or deleting its policy, re-creating
@@ -1024,26 +1042,40 @@ provider).
 - *Field literals not seen on a provider page.* The CloudTrail request keys
   `s3BucketName` and `kmsKeyId` follow the lower-camel convention AWS's own
   UpdateTrail example record shows for `name` and `isMultiRegionTrail`; no AWS
-  page was found printing those two literals in a record. Cloud Logging
-  configuration records keep the project-level `resource` block because the
-  monitored-resource type of those audit entries was not confirmed.
+  page was found printing those two literals in a record.
   `responseElements` and the S3 `resources` list are not written. Prefer the flat
   hints in scored queries.
+- *Two `gcp` builder defaults, not provider-documented.* (1) Cloud Logging
+  configuration records (sink and log-bucket calls) keep the project-level
+  `resource` block: Google lists `logging_sink` as a monitored-resource type,
+  but no page read says these audit entries carry it, and none was found for a
+  log bucket. (2) Data Access entries (`storage.objects.get` / `.create` /
+  `.delete`) carry `severity: NOTICE`, the builder's value for every successful
+  call: Google's sample entry shows `NOTICE` on an Admin Activity entry and
+  nothing read states the Data Access value. Both are pinned in
+  `test_unverified_builder_defaults_are_pinned_as_such`, apart from the
+  documentation-match test, so a correction changes one test. Do not key a query
+  on either.
 - *tenant-verified is 0.* No record of these presets has been ingested by a live
   tenant.
 
-Sample campaign step (the form the CDR emitter scenarios use):
+Sample campaign steps. `step_id` must be `step-NN` (anything else is rejected
+when the campaign loads); this is the form the CDR emitter scenarios use, for
+example `scenarios/cdr/cdr-020-aws-credential-secret-harvesting-behavioral-chain.yml`.
+A scenario puts them in a campaign file that also carries `campaign_id`,
+`authorized_by`, `simulation_authorized`, `target_allowlist` and `dry_run`.
+`TestCatalogEntry` loads and dry-runs this block as written.
 
 ```yaml
 steps:
-  - step_id: log-stop-aws
+  - step_id: step-01
     plugin: cloud_audit_emitter
     params:
       collector_url: "$COLLECTOR_URL"
       provider: aws
       event_pattern: log_stop
       iterations: 1
-  - step_id: stream-bucket-delete-gcp
+  - step_id: step-02
     plugin: cloud_audit_emitter
     params:
       collector_url: "$COLLECTOR_URL"

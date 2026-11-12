@@ -13,18 +13,22 @@ live in the base, so proving them here proves the spine.
 """
 from __future__ import annotations
 
+import ast
 import asyncio
 import gzip
 import hashlib
+import importlib.util
 import itertools
 import json
 import re
 import types
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+import yaml
 
 from eal_simulator import AuditLogger, Campaign, CampaignExecutor
 from eal_simulator.analytics_emitter import AnalyticsEmitterParams
@@ -1143,17 +1147,25 @@ _SINK = "projects/cortexsim-canary/sinks/cortexsim-canary-sink"
 _SHADOW_SINK = "projects/cortexsim-canary/sinks/cortexsim-canary-shadow-sink"
 _SINK_DESTINATION = "storage.googleapis.com/cortexsim-canary-log-archive"
 _ATTACKER_SINK_DESTINATION = "storage.googleapis.com/cortexsim-canary-attacker-log-drop"
+# Regional, and one region for both. Google, "Configure CMEK for log buckets",
+# Limitations: a log bucket's key must be in the bucket's own region, and CMEK
+# cannot be configured on a log bucket in the global location — so a key swap
+# on a ``locations/global`` bucket is a record no tenant can produce.
 _LOG_BUCKET = (
-    "projects/cortexsim-canary/locations/global/buckets/cortexsim-canary-log-bucket"
+    "projects/cortexsim-canary/locations/us-central1/buckets/"
+    "cortexsim-canary-log-bucket"
 )
 _EXTERNAL_CMEK_KEY = (
-    "projects/attacker-project-999/locations/global/keyRings/"
+    "projects/attacker-project-999/locations/us-central1/keyRings/"
     "cortexsim-canary-ring/cryptoKeys/cortexsim-canary-key"
 )
 _GCS_BUCKET = "cortexsim-canary-log-archive"
 _GCS_BUCKET_RESOURCE = "projects/_/buckets/cortexsim-canary-log-archive"
 
+# NOT provider-documented for Cloud Logging's own audit entries: the builder's
+# project-level default. See test_unverified_builder_defaults_are_pinned_as_such.
 _PROJECT_RESOURCE = {"type": "project", "labels": {"project_id": "cortexsim-canary"}}
+# Provider-documented: Cloud Storage audit entries use the gcs_bucket resource.
 _GCS_RESOURCE = {
     "type": "gcs_bucket",
     "labels": {
@@ -1192,10 +1204,13 @@ def _aws_call(name, source, request, *, read_only=False, management=True, **hint
 
 def _gcp_call(method, service, resource_name, request=None, *,
               admin_activity=True, resource=None, **hints):
+    # ``resource`` is the monitored-resource block a provider page documents
+    # for the call (Cloud Storage: gcs_bucket). None means no page was found
+    # that names one, which is every Cloud Logging configuration call here.
     return {
         "name": method, "source": service, "resource_name": resource_name,
         "request": request, "admin_activity": admin_activity,
-        "resource": resource or _PROJECT_RESOURCE, "hints": hints,
+        "resource": resource, "hints": hints,
     }
 
 
@@ -1353,7 +1368,11 @@ def _render(provider, pattern, *, burst_count=4, via_seam=False, **kw):
 
 
 def _assert_hints(rec, provider, exp, principal):
-    assert rec["cloud_provider"] == provider
+    # The plugin's own ``provider`` value, lower-case, under a name no card in
+    # the corpus queries. Not ``cloud_provider``: that is a field of normalised
+    # cloud_audit_logs, which existing cards filter as "AWS" / "GCP".
+    assert rec["audit_provider"] == provider
+    assert "cloud_provider" not in rec
     assert rec["api_operation"] == exp["name"]
     assert rec["principal_id"] == principal
     for key, value in exp["hints"].items():
@@ -1401,10 +1420,17 @@ def _assert_gcp_record(rec, exp, marker):
     assert rec["logName"] == (
         f"projects/cortexsim-canary/logs/cloudaudit.googleapis.com%2F{log_id}"
     )
-    assert rec["resource"] == exp["resource"]
+    # Only what a provider page states is asserted here. The resource block of
+    # a Cloud Logging configuration call and the severity of a Data Access
+    # entry are on no page that was read; they are pinned, labelled as
+    # unverified, in test_unverified_builder_defaults_are_pinned_as_such.
+    if exp["resource"] is not None:
+        assert rec["resource"] == exp["resource"]
+    if exp["admin_activity"]:
+        # Google's sample Admin Activity entry ("Understanding audit logs").
+        assert rec["severity"] == "NOTICE"
     assert payload["authenticationInfo"]["principalEmail"] == _GCP_PRINCIPAL
     assert payload["status"] == {}
-    assert rec["severity"] == "NOTICE"
     assert rec[marker] is True
     assert rec["cortexsim_run_id"] == _RUN_ID
     _assert_hints(rec, "gcp", exp, _GCP_PRINCIPAL)
@@ -1454,6 +1480,68 @@ _POST_LAB_VALUES = (
     "sensitive-bucket-for-backup-purposes", "modified-to-being-undetected",
     "1.1.1.1",
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_STREAMER_GATE = _REPO_ROOT / "scripts" / "check-streamer-fidelity.py"
+_CATALOG = _REPO_ROOT / "docs" / "reference" / "eal-plugin-catalog.md"
+
+
+def _load_streamer_gate():
+    """``scripts/check-streamer-fidelity.py`` as a module (hyphenated name)."""
+    spec = importlib.util.spec_from_file_location(
+        "check_streamer_fidelity", _STREAMER_GATE,
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _dict_literal_keys(path: Path) -> set[str]:
+    """Every dict-literal string key in a source file, lower-cased.
+
+    The same reading the streamer-fidelity gate takes of a plugin: any such key
+    counts as a field the plugin's dataset "emits".
+    """
+    return {
+        key.value.lower()
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Dict)
+        for key in node.keys
+        if isinstance(key, ast.Constant) and isinstance(key.value, str)
+    }
+
+
+def _record_keys(patterns) -> set[str]:
+    """Every key, at any depth, of every record the presets render (lower-cased)."""
+    return {
+        key.lower()
+        for pattern, provider in itertools.product(patterns, _PROVIDERS)
+        for rec in _render(provider, pattern)
+        for _, key, _ in _walk(rec)
+    }
+
+
+def _flat_hint_keys() -> set[str]:
+    """The flat top-level hint keys only the logging-service presets write."""
+    top = {
+        key
+        for pattern, provider in _NEW_COMBOS
+        for rec in _render(provider, pattern)
+        for key in rec
+    }
+    return {
+        key for key in top - _LEGACY_AWS_KEYS - _LEGACY_GCP_KEYS
+        # Provider-true additions are camelCase (requestParameters,
+        # eventCategory, logName); hints are snake_case.
+        if key == key.lower() and not key.endswith("_marker")
+    }
+
+
+def _catalog_entry() -> str:
+    """The cloud_audit_emitter entry of docs/reference/eal-plugin-catalog.md."""
+    text = _CATALOG.read_text(encoding="utf-8")
+    start = text.index("#### `cloud_audit_emitter`")
+    return text[start:text.index("\n## ", start)]
 
 
 class TestLoggingServicePresets:
@@ -1513,6 +1601,75 @@ class TestLoggingServicePresets:
         assert [_op(provider, r) for r in records] == [e["name"] for e in expected]
         for rec, exp in zip(records, expected, strict=True):
             _ASSERT_RECORD[provider](rec, exp, f"{pattern}_marker")
+
+    def test_gcp_key_swap_is_a_cmek_change_google_allows(self):
+        # Google, "Configure CMEK for log buckets", Limitations: "you must use
+        # a key whose region matches the regional scope of your data. You
+        # can't configure CMEK for log buckets created in the global region."
+        # A SUCCESSFUL key change on a locations/global bucket, or to a key in
+        # another location, is a record no tenant's audit log can contain.
+        (rec,) = _render("gcp", "log_key_swap")
+        payload = rec["protoPayload"]
+        request = payload["request"]
+        key_name = request["bucket"]["cmekSettings"]["kmsKeyName"]
+        bucket = re.fullmatch(
+            r"projects/cortexsim-canary/locations/([a-z0-9-]+)/buckets/[a-z0-9-]+",
+            request["name"],
+        )
+        key = re.fullmatch(
+            r"projects/([a-z0-9-]+)/locations/([a-z0-9-]+)"
+            r"/keyRings/[a-z0-9-]+/cryptoKeys/[a-z0-9-]+",
+            key_name,
+        )
+        assert bucket, request["name"]
+        assert key, key_name
+        assert payload["status"] == {}, "the preset renders a successful call"
+        assert bucket.group(1) != "global", "CMEK cannot be set on a global log bucket"
+        assert key.group(2) == bucket.group(1), "the key must be in the bucket's region"
+        # Still an EXTERNAL key: same region, another project.
+        assert key.group(1) != "cortexsim-canary"
+        # One bucket and one key, named the same way everywhere on the record.
+        assert payload["resourceName"] == rec["log_resource_name"] == request["name"]
+        assert rec["kms_key_id"] == key_name
+        # The log-bucket delete preset acts on that same bucket ...
+        (deleted,) = _render("gcp", "log_destination_delete")
+        assert deleted["protoPayload"]["resourceName"] == request["name"]
+        # ... and no logging-service record names a global log bucket or key.
+        blob = json.dumps([
+            rec for pattern in _NEW_PATTERNS for rec in _render("gcp", pattern)
+        ])
+        assert "/locations/global/" not in blob
+
+    @pytest.mark.parametrize("pattern", _NEW_PATTERNS)
+    def test_unverified_builder_defaults_are_pinned_as_such(self, pattern):
+        # NOT a provider-documentation check. Two values on the gcp records are
+        # the record builder's defaults, kept because no provider page that was
+        # read settles them. They are pinned here so a drift is seen, and kept
+        # OUT of test_records_match_provider_documentation so that a correction
+        # — once a page does settle one — changes this test and nothing else.
+        #
+        #   1. severity of a Data Access entry (object get / create / delete).
+        #      Google's sample entry shows NOTICE on an Admin Activity entry;
+        #      nothing read states the Data Access value. The builder writes
+        #      NOTICE on every successful call, as it does for the original
+        #      storage_object_download preset.
+        #   2. the monitored-resource block of a Cloud Logging configuration
+        #      call (sink and log-bucket methods). Google lists logging_sink as
+        #      a monitored-resource type; nothing read says these audit entries
+        #      carry it, and no type was found for a log bucket. The builder
+        #      keeps the project-level block.
+        records = _render("gcp", pattern)
+        expected = _expected(pattern, "gcp", 4)
+        pinned = 0
+        for rec, exp in zip(records, expected, strict=True):
+            if not exp["admin_activity"]:
+                assert rec["severity"] == "NOTICE"
+                pinned += 1
+            if exp["source"] == _LOGGING:
+                assert exp["resource"] is None, "the spec claims no resource block here"
+                assert rec["resource"] == _PROJECT_RESOURCE
+                pinned += 1
+        assert pinned, f"{pattern}: nothing was pinned"
 
     @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
     def test_records_carry_only_their_own_marker(self, pattern, provider):
@@ -1704,16 +1861,56 @@ class TestLoggingServicePresets:
 
     # -- seams the records pass through ------------------------------------
 
+    def test_new_record_keys_do_not_silence_a_streamer_fidelity_advisory(self):
+        # scripts/check-streamer-fidelity.py counts a field as emitted when ANY
+        # dict-literal key of ANY plugin on the dataset has that name. So a key
+        # only the logging-service presets write must not be a field that an
+        # existing streamer card queries on cloud_audit_logs: that card's own
+        # preset still does not emit it, and the gate would stop saying so.
+        # (A flat hint named cloud_provider did exactly that to TTP-2026-0155
+        # and TTP-2026-0158.)
+        gate = _load_streamer_gate()
+        logging_only = _record_keys(_NEW_PATTERNS) - _record_keys(_LEGACY_PATTERNS)
+        assert _flat_hint_keys() and _flat_hint_keys() <= logging_only
+        # Keys another plugin on the dataset already declares were counted
+        # before these presets existed; they are not this plugin's doing.
+        _, files_by_dataset = gate.emitter_datasets_and_keys()
+        declared_elsewhere: set[str] = set()
+        for name in files_by_dataset[_DATASET] - {"cloud_audit_emitter.py"}:
+            declared_elsewhere |= _dict_literal_keys(gate.PLUGINS / name)
+
+        cards_checked = 0
+        silenced: dict[str, list[str]] = {}
+        for path in sorted(gate.TTPS.glob("*.json")):
+            card = json.loads(path.read_text(encoding="utf-8"))
+            if card.get("id") not in gate.STREAMER_IDS:
+                continue
+            queried: set[str] = set()
+            for _, body in gate.card_bodies(card):
+                if _DATASET in {m.group(1) for m in gate._DATASET_RE.finditer(body)}:
+                    queried |= gate._queried_fields(body)
+            if not queried:
+                continue
+            cards_checked += 1
+            hit = (queried & logging_only) - declared_elsewhere
+            if hit:
+                silenced[card["id"]] = sorted(hit)
+        assert cards_checked >= 1, "no streamer card queries cloud_audit_logs"
+        assert silenced == {}
+
     @pytest.mark.parametrize("pattern,provider", _NEW_COMBOS)
     def test_principal_hint_follows_the_canary_planted_principal(self, pattern, provider):
         # The canary plant rewrites the GCP principalEmail in place; the flat
         # principal_id must not be left pointing at the pre-plant identity.
+        # On aws the plant rewrites userName, not the ARN principal_id restates,
+        # so the token is NOT in principal_id there: join on cortexsim_canary.
         token = "csim-9f2a41c0d3e7"
         for rec in _render(provider, pattern, via_seam=True, canary_token=token):
             assert rec["cortexsim_canary"] == token
             if provider == "aws":
                 assert rec["userIdentity"]["userName"] == f"cortexsim-canary-{token}"
                 assert rec["principal_id"] == rec["userIdentity"]["arn"]
+                assert token not in rec["principal_id"]
             else:
                 planted = f"{token}@cortexsim-canary.invalid"
                 assert rec["protoPayload"]["authenticationInfo"]["principalEmail"] == planted
@@ -1823,6 +2020,36 @@ class TestLoggingServicePresets:
                        "UpdateSink", "DeleteSink", "CreateSink"):
             assert needle in targets, needle
 
+    def test_logging_targets_are_presented_as_xql_and_correlation_only(self):
+        # eal_targets is what the console shows a DC. On a collector these
+        # records feed XQL and correlation rules; a target naming one of the
+        # logging-service calls under "Analytics" or "ABIOC" would present a
+        # built-in alert (14-day activation, 30-day training, native audit
+        # source) as something this plugin arms.
+        targets = CloudAuditEmitter.Meta.eal_targets
+        prefix = "XQL / Correlation — "
+        logging_targets = [t for t in targets if t.startswith(prefix)]
+        assert len(logging_targets) == len(_NEW_PATTERNS) == 8
+        # Calls only the logging-service presets make. GetObject and
+        # storage.objects.get are left out: storage_object_download makes them
+        # too, under a legitimate Analytics label.
+        logging_only_calls = (
+            "StopLogging", "DeleteTrail", "UpdateTrail", "CreateTrail",
+            "PutObject", "DeleteObject", "DeleteBucket",
+            "UpdateSink", "DeleteSink", "CreateSink", "UpdateBucket",
+            "storage.objects.create", "storage.objects.delete",
+            "storage.buckets.delete",
+        )
+        for target in targets:
+            if any(call in target for call in logging_only_calls):
+                assert target.startswith(prefix), target
+        named = " | ".join(logging_targets)
+        for call in logging_only_calls:
+            assert call in named, call
+        # The original twelve keep their labels, plus the one NGFW EAL target.
+        assert sum(t.startswith(("Analytics — ", "ABIOC — ")) for t in targets) == 12
+        assert len(targets) == 12 + 8 + 1
+
     def test_no_detector_is_presented_as_armable(self):
         # The vendor alerts these records correspond to need a natively
         # onboarded audit source plus a 14-day activation / 30-day training
@@ -1833,6 +2060,61 @@ class TestLoggingServicePresets:
         assert manifest["datasets"] == ["cloud_audit_logs"]
         assert manifest["data_sources"] == ["aws_audit_log", "gcp_audit_log"]
         assert manifest["supports_negative_control"] is False
+
+
+class TestCatalogEntry:
+    """docs/reference/eal-plugin-catalog.md describes the plugin as it is.
+
+    A scenario author reads that entry, not this file. A sample that does not
+    load, or a value the records do not carry, sends them to a query that
+    reads zero on a healthy tenant.
+    """
+
+    def test_sample_campaign_loads_and_dry_runs(self):
+        blocks = re.findall(r"```yaml\n(.*?)```", _catalog_entry(), flags=re.S)
+        assert len(blocks) == 1, "the entry carries exactly one sample campaign"
+        sample = yaml.safe_load(blocks[0].replace("$COLLECTOR_URL", _DEFAULT_COLLECTOR))
+        campaign = Campaign.model_validate({
+            "campaign_id": "CMP-CLOUDAUDIT-DOC-001",
+            "name": "catalog sample",
+            "dry_run": True,
+            **sample,
+        })
+        # step-NN is the only form Campaign accepts, and the form the CDR
+        # emitter scenarios use.
+        assert [step.step_id for step in campaign.steps] == ["step-01", "step-02"]
+        for step in campaign.steps:
+            assert step.plugin == "cloud_audit_emitter"
+            params = CloudAuditEmitterParams.model_validate(step.params)
+            assert params.event_pattern in _NEW_PATTERNS
+        state = _run(CampaignExecutor(audit=AuditLogger(file_path=None)).execute(campaign))
+        assert [sr.status for sr in state.step_results] == ["success", "success"]
+        assert all(sr.detail["dry_run"] is True for sr in state.step_results)
+
+    def test_entry_names_the_values_and_hint_keys_records_carry(self):
+        entry = _catalog_entry()
+        # Attacker-controlled values, as the records spell them.
+        for literal in (_ATTACKER_S3_BUCKET, _ATTACKER_SINK_DESTINATION,
+                        _EXTERNAL_KMS_KEY, _EXTERNAL_CMEK_KEY):
+            assert literal in entry, literal
+        # The log bucket is regional (CMEK cannot be set on a global one).
+        assert "locations/us-central1/buckets/" in entry
+        assert "locations/global" not in entry
+        # The hint table lists exactly the flat hint keys the records carry.
+        table = entry.split("| Hint key | On | Value |", 1)[1].split("\n\n", 1)[0]
+        documented = set(re.findall(r"^\| `([a-z_]+)` \|", table, flags=re.M))
+        assert documented == _flat_hint_keys()
+        assert documented == {
+            "audit_provider", "api_operation", "principal_id", "log_resource_name",
+            "log_object_key", "log_destination", "kms_key_id", "log_disabled",
+        }
+        # principal_id carries a planted canary on gcp only; the entry has to
+        # point at the key that carries it on both providers.
+        principal_row = next(
+            line for line in table.splitlines() if line.startswith("| `principal_id` |")
+        )
+        assert "cortexsim_canary" in principal_row
+        assert "gcp" in principal_row and "aws" in principal_row
 
 
 def _strip_volatile(blob: str) -> str:

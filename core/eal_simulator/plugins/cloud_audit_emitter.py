@@ -75,6 +75,8 @@ the VICTIM-side audit events of one technique, for either provider:
   log_key_swap           UpdateTrail, kmsKeyId set to   ConfigServiceV2.UpdateBucket,
                          a key in another account       cmekSettings.kmsKeyName set
                                                         to a key in another project
+                                                        (regional log bucket, key
+                                                        in the same region)
   log_object_overwrite   GetObject then PutObject on    storage.objects.get then
                          the same stored log object     storage.objects.create on the
                                                         same object
@@ -95,13 +97,27 @@ What these records carry beyond the original presets: the call's request
 (``requestParameters`` + ``eventCategory`` on aws; ``protoPayload.request``, a
 per-call ``protoPayload.resourceName`` and a ``logName`` on gcp) and flat,
 top-level hint keys so a query needs no nested-JSON access:
-``cloud_provider``, ``api_operation`` (the eventName / methodName),
-``principal_id`` (the caller ARN / principalEmail), ``log_resource_name`` (the
-trail, sink, log bucket or storage bucket acted on) and, where the call has
-one, ``log_object_key``, ``log_destination``, ``kms_key_id``, ``log_disabled``.
-Every hint restates a provider-true field of the same record. The original
-eleven presets set none of this and render byte-for-byte what they rendered
-before (pinned by ``TestLegacyPresetsUnchanged``).
+``audit_provider`` (``aws`` / ``gcp``, the ``provider`` param as given),
+``api_operation`` (the eventName / methodName), ``principal_id`` (the caller
+ARN / principalEmail), ``log_resource_name`` (the trail, sink, log bucket or
+storage bucket acted on) and, where the call has one, ``log_object_key``,
+``log_destination``, ``kms_key_id``, ``log_disabled``. Every hint restates a
+provider-true field of the same record. The original eleven presets set none
+of this and render byte-for-byte what they rendered before (pinned by
+``TestLegacyPresetsUnchanged``).
+
+Two notes on the hints. The provider hint is not called ``cloud_provider``:
+that name belongs to normalised ``cloud_audit_logs``, where existing cards
+filter it as ``"AWS"`` / ``"GCP"``; a collector record is not that dataset, so
+it gets its own name and the param's own lower-case values. And
+``principal_id`` follows a planted canary on gcp only (the plant rewrites
+``principalEmail``); on aws the plant rewrites ``userName``, not the ARN, so
+join on ``cortexsim_canary`` there.
+
+Builder defaults that no provider page was found to settle, kept as they were
+and pinned as unverified in the tests: the ``NOTICE`` severity on gcp Data
+Access entries (Google's sample shows it on an Admin Activity entry), and the
+project-level ``resource`` block on Cloud Logging configuration calls.
 
 What they deliberately do NOT emit: anything the attacker does in their own
 account or project (creating the external key, editing or deleting its policy,
@@ -123,7 +139,10 @@ Names and field shapes are from provider documentation, not from CLI spellings
     ADMIN_WRITE / Admin Activity) and the published ``google.logging.v2``
     request messages (``sinkName``, ``sink``, ``updateMask``,
     ``uniqueWriterIdentity``, ``parent``, ``name``, ``bucket``,
-    ``cmekSettings.kmsKeyName``).
+    ``cmekSettings.kmsKeyName``). The log bucket is regional and the external
+    key sits in the same region, per "Configure CMEK for log buckets"
+    (Limitations: the key's region must match the bucket's, and CMEK cannot
+    be configured on a log bucket in the global location).
   * Cloud Storage calls — "Cloud Audit Logs with Cloud Storage" (service name,
     ``gcs_bucket`` resource, Admin Activity vs Data Access, the log names, and
     that request/response are written only under detailed audit logging mode,
@@ -215,8 +234,16 @@ _CANARY_SINK_OBJECT = (
     f"cloudaudit.googleapis.com/activity/2026/01/01/cortexsim-canary-{_SEQ}.json"
 )
 # The Cloud Logging log bucket (a different thing from a Cloud Storage bucket).
+# Regional on purpose. Google, "Configure CMEK for log buckets", Limitations:
+# a log bucket's key must be in the bucket's own region, and CMEK cannot be
+# configured on a log bucket in the ``global`` location. log_key_swap renders a
+# SUCCESSFUL key change, so the bucket and the external key (_ATTACKER_CMEK_KEY)
+# share this one region; a global bucket there is a record no tenant can
+# produce. log_destination_delete (gcp) deletes the same bucket.
+_GCP_LOG_REGION = "us-central1"
 _CANARY_LOG_BUCKET = (
-    f"projects/{_CANARY_PROJECT}/locations/global/buckets/cortexsim-canary-log-bucket"
+    f"projects/{_CANARY_PROJECT}/locations/{_GCP_LOG_REGION}/buckets/"
+    "cortexsim-canary-log-bucket"
 )
 
 # -- logging-service presets: what the ATTACKER controls ----------------------
@@ -229,8 +256,10 @@ _ATTACKER_KMS_KEY = (
     f"arn:aws:kms:{_AWS_REGION}:444455556666:alias/cortexsim-canary-external-key"
 )
 _ATTACKER_SINK_DESTINATION = "storage.googleapis.com/cortexsim-canary-attacker-log-drop"
+# Another project, the SAME region as the log bucket it is applied to (see
+# _GCP_LOG_REGION): external by project, valid by location.
 _ATTACKER_CMEK_KEY = (
-    "projects/attacker-project-999/locations/global/keyRings/"
+    f"projects/attacker-project-999/locations/{_GCP_LOG_REGION}/keyRings/"
     "cortexsim-canary-ring/cryptoKeys/cortexsim-canary-key"
 )
 
@@ -1285,8 +1314,15 @@ class CloudAuditEmitter(AnalyticsLogEmitter):
                 )
                 # Flat hints last, each restating a provider-true field of
                 # this same record (so XQL needs no nested-JSON access).
+                # ``audit_provider`` is the ``provider`` param as given
+                # (lower-case). It is deliberately NOT named cloud_provider:
+                # that is a field of normalised cloud_audit_logs which existing
+                # cards filter (as "AWS" / "GCP"), these records are not that
+                # dataset, and check-streamer-fidelity.py reads every
+                # dict-literal key in this file as emitted — the name would
+                # hide its advisory on cards whose presets write no such field.
                 record.update({
-                    "cloud_provider": params.provider,
+                    "audit_provider": params.provider,
                     "api_operation": _operation_of(record),
                     "principal_id": _principal_of(record),
                 })
