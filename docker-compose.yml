@@ -46,6 +46,10 @@ services:
       # booting with "changeme". `scripts/dev-up.sh` generates this for you;
       # otherwise see .env.example for one-liners to generate a secret.
       - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:?set CORTEXSIM_SECRET in .env (run scripts/dev-up.sh, or see .env.example)}
+      # The only URLs the agent installer's ?server= and a served k8s bundle's
+      # `server` may name, besides the address a request arrives on. Empty is
+      # the request's own origin only; see .env.example.
+      - CORTEXSIM_PUBLIC_URLS=${CORTEXSIM_PUBLIC_URLS:-}
     restart: unless-stopped
 
 volumes:
