@@ -268,3 +268,80 @@ def test_bridge_unread_when_endpoint_not_returned():
 ])
 def test_bridge_ip_canonicalisation(agent_ip, eps, code):
     assert cl.bridge_diagnosis(host="h", agent_ip=agent_ip, endpoint_ips=eps)["code"] == code
+
+
+# ── Ruling 41: every boundary of a multi-case split is classified ──────────
+#
+# Cases are ordered by their first alert; each consecutive boundary is a seal
+# (earlier case sealed, resolved_at known and before the next case's first
+# alert), native (earlier case open or auto-resolved, or sealed after) or
+# unknown (sealed, resolved_at None). Any native -> SPLIT_NATIVE; else any
+# unknown -> PENDING; else SPLIT_SEALED. Split rules and the missing-case check
+# read every alert that carries a case id, whatever its severity.
+
+def _mins(m):
+    return T0 + timedelta(minutes=m)
+
+
+THREE = [A("a1", 0, case="A"), A("a2", 1, case="A"),
+         A("b1", 5, case="B"), A("b2", 6, case="B"),
+         A("c1", 7, case="C"), A("c2", 8, case="C")]
+
+
+def _cls(alerts, cases):
+    return cl.classify_merge(alerts, cases, basis="alert_incident_ids")
+
+
+def test_seal_then_native_boundary_is_split_native():
+    # A sealed 10:02 before B (10:05-06); B and C (10:07-08) natively split.
+    cases = {"A": C("A", "resolved_other", resolved_at=_mins(2)), "B": C("B"), "C": C("C")}
+    mc, reason = _cls(THREE, cases)
+    assert mc == "SPLIT_NATIVE"
+    assert "B" in reason and "C" in reason
+
+
+def test_native_then_seal_boundary_is_split_native():
+    # A and B natively split; B sealed (10:06:30) before C's first alert (10:07).
+    cases = {"A": C("A"), "B": C("B", "resolved_other", resolved_at=_mins(6.5)), "C": C("C")}
+    assert _cls(THREE, cases)[0] == "SPLIT_NATIVE"
+
+
+def test_every_boundary_sealed_is_split_sealed():
+    cases = {"A": C("A", "resolved_other", resolved_at=_mins(2)),
+             "B": C("B", "resolved_other", resolved_at=_mins(6.5)), "C": C("C")}
+    mc, reason = _cls(THREE, cases)
+    assert mc == "SPLIT_SEALED"
+    assert "A" in reason and "B" in reason and "C" in reason
+
+
+def test_native_boundary_wins_over_an_unknown_seal_time():
+    cases = {"A": C("A", "resolved_other", resolved_at=None), "B": C("B"), "C": C("C")}
+    assert _cls(THREE, cases)[0] == "SPLIT_NATIVE"
+
+
+def test_seal_and_unknown_boundaries_only_is_pending():
+    cases = {"A": C("A", "resolved_other", resolved_at=_mins(2)),
+             "B": C("B", "resolved_other", resolved_at=None), "C": C("C")}
+    mc, reason = _cls(THREE, cases)
+    assert mc == "PENDING"
+    assert "case B" in reason and "unknown" in reason
+
+
+def test_unseverity_alert_in_unreturned_case_is_pending_not_split_sealed():
+    al = [A("a1", 0, case="A"), A("b1", 5, case="B"), A("x", 6, sev=None, case="Z")]
+    cases = {"A": C("A", "resolved_other", resolved_at=_mins(2)), "B": C("B")}
+    mc, reason = _cls(al, cases)
+    assert mc == "PENDING"
+    assert "case Z" in reason
+
+
+def test_unseverity_alert_in_third_native_case_is_split_native():
+    al = [A("a1", 0, case="A"), A("b1", 5, case="B"), A("x", 7, sev=None, case="C")]
+    cases = {"A": C("A", "resolved_other", resolved_at=_mins(2)), "B": C("B"), "C": C("C")}
+    assert _cls(al, cases)[0] == "SPLIT_NATIVE"
+
+
+def test_unseverity_alert_in_another_case_is_not_one_case():
+    # The correlation KPI counts every alert with a case id; so does the classifier.
+    al = [A("a1", 0, case="A"), A("a2", 1, case="A"), A("x", 3, sev=None, case="B")]
+    assert _cls(al, {"A": C("A"), "B": C("B")})[0] == "SPLIT_NATIVE"

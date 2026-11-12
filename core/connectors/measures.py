@@ -154,6 +154,33 @@ def correlation_rate_from_incidents(incidents: Iterable[Any]) -> "tuple[Optional
 
 SEALED_SPLIT_REASON = ("fail withheld: a case was sealed by the response layer before "
                        "the chain finished — the split is not the detection engine's")
+SEALED_SPLIT_NOT_COVERED = (
+    "the case ledger reads SPLIT_SEALED but did not classify every alert this KPI "
+    "counted (in the same case), so the FAIL is not withheld")
+
+
+def ledger_covers(alert_incidents: dict[str, Optional[str]], ledger_alerts: Any) -> bool:
+    """Did the case ledger classify every cased alert the correlation KPI counted?
+
+    ``alert_incidents`` is the KPI's alert id -> incident id; ``ledger_alerts``
+    is the ledger's alert id -> case id for every alert it classified. Covered
+    means each KPI alert that carries an incident id is in the ledger, in the
+    same case. A subset is enough: the ledger is rebuilt from every alert it has
+    seen, so it may hold more than this reconcile counted, and when every
+    boundary is a seal the cases are time-disjoint, so any subset of its alerts
+    crosses only seals.
+
+    Anything that is not a mapping is "not covered": the FAIL stands. Raising
+    here would leave the verdict pending, the wrong direction for a guard whose
+    only effect is to withhold a FAIL.
+    """
+    if not isinstance(ledger_alerts, dict):
+        return False
+    cased = {str(k): str(v) for k, v in alert_incidents.items() if v}
+    if not cased:
+        return False
+    return all(ledger_alerts.get(aid) is not None and str(ledger_alerts[aid]) == cid
+               for aid, cid in cased.items())
 
 
 def guard_measurement(
@@ -227,11 +254,16 @@ def build_measurement(
     # host-scoped incident rows second, nothing third.
     alert_incidents = dict(ctx.get("alert_incidents") or {})
     value, a, k = correlation_rate(alert_incidents)
+    sealed_split = False
     if value is not None:
         record.update({"kpi": "Cross-Source Correlation Rate", "value": value,
                        "alerts": a, "incidents": k, "unit": "%",
                        "basis": "alert_incident_ids"})
         matched = a
+        if ctx.get("merge_class") == "SPLIT_SEALED":
+            sealed_split = ledger_covers(alert_incidents, ctx.get("case_ledger_alerts"))
+            if not sealed_split:
+                record["sealed_split_not_applied"] = SEALED_SPLIT_NOT_COVERED
     else:
         rows = list(ctx.get("incidents") or [])
         value, a, k = correlation_rate_from_incidents(rows)
@@ -249,10 +281,12 @@ def build_measurement(
                 "least two alerts to mean anything")
             return None, record
     # A split the SOC Framework made (a case sealed before the chain finished)
-    # is not the detection engine's: only this family reads merge_class.
+    # is not the detection engine's: only this family reads merge_class, and
+    # only on the alert_incident_ids basis, where the ledger and the KPI count
+    # the same alerts. The host_incidents fallback never withholds.
     scored, reason = guard_measurement(threshold, value, unscoped=unscoped,
                                        truncated=truncated, matched=matched,
-                                       sealed_split=(ctx.get("merge_class") == "SPLIT_SEALED"))
+                                       sealed_split=sealed_split)
     record["scored"] = scored
     if reason:
         record["withheld"] = reason

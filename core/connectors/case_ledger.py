@@ -197,6 +197,27 @@ def _t(dt: datetime) -> datetime:
 
 def classify_merge(alerts: Sequence[LedgerAlert], cases: Mapping[str, LedgerCase],
                    *, basis: str) -> tuple[str, str]:
+    """One ``merge_class`` and its reason line for the run's alerts.
+
+    Severity gates only the questions it answers: Low-only, no case yet, fewer
+    than two Medium+ alerts, and Medium+ alerts not yet in a case. The missing
+    case check and the split rules read EVERY alert that carries a case id,
+    because the correlation KPI counts every such alert.
+
+    A split is classified per boundary. Cases are ordered by their first alert
+    and each consecutive pair is a boundary:
+
+    * **seal**    - the earlier case is sealed and its ``resolved_at`` is known
+      and before the later case's first alert (the platform could not reopen it);
+    * **native**  - the earlier case is open or auto-resolved, or was sealed only
+      after the later case began (native grouping did not merge them);
+    * **unknown** - the earlier case is sealed but ``resolved_at`` is None.
+
+    Any native boundary is ``SPLIT_NATIVE``: at least one split is the engine's,
+    which disproves "the split is not the detection engine's". Otherwise any
+    unknown boundary is ``PENDING``. Only when every boundary is a seal is the
+    class ``SPLIT_SEALED``, the one value that withholds a correlation FAIL.
+    """
     if basis != "alert_incident_ids":
         return "PENDING", f"basis {basis!r} makes no merge claim"
     mp = [a for a in alerts if (a.severity or "").lower() in MEDIUM_PLUS]
@@ -204,43 +225,50 @@ def classify_merge(alerts: Sequence[LedgerAlert], cases: Mapping[str, LedgerCase
         if alerts and all((a.severity or "").lower() == "low" for a in alerts):
             return "LOW_ONLY_NO_CASE", "only Low-severity issues; Low never creates or joins a case"
         return "PENDING", "no Medium+ alert to classify"
-    with_case = [a for a in mp if a.case_id]
-    if not with_case:
+    if not any(a.case_id for a in mp):
         return "NO_CASE_YET", "no Medium+ alert has been grouped into a case yet"
     if len(mp) < 2:
         return "PENDING", "a single Medium+ alert cannot split or merge"
-    missing = sorted({a.case_id for a in with_case if a.case_id not in cases})
+    cased = [a for a in alerts if a.case_id]
+    missing = sorted({a.case_id for a in cased if a.case_id not in cases})
     if missing:
         return "PENDING", f"case {', '.join(missing)} named by an alert was not returned by the tenant"
-    if len(with_case) < len(mp):
+    if any(not a.case_id for a in mp):
         return "PENDING", "some Medium+ alerts are not in a case yet"
-    ids = {a.case_id for a in with_case}
+    ids = {a.case_id for a in cased}
     if len(ids) == 1:
-        return "ONE_CASE", f"all Medium+ alerts are in case {next(iter(ids))}"
+        return "ONE_CASE", f"every alert carrying a case id is in case {next(iter(ids))}"
     first: dict[str, datetime] = {}
-    for a in with_case:
+    for a in cased:
         t = _t(a.observed_at)
         if a.case_id not in first or t < first[a.case_id]:
             first[a.case_id] = t
     ordered = sorted(first, key=lambda k: (first[k], k))
-    for n, early in enumerate(ordered):
+    seals: list[str] = []
+    natives: list[str] = []
+    unknowns: list[str] = []
+    for early, later in zip(ordered, ordered[1:]):
         c = cases[early]
         if not case_sealed(c):
-            continue
-        if c.resolved_at is None:
+            natives.append(f"case {early} was {case_closed_by(c)} when case {later} "
+                           "received its first alert")
+        elif c.resolved_at is None:
             # Sealed, but when? Without the time we cannot say whether it was
-            # sealed before the later case began, and only SPLIT_SEALED
-            # withholds a correlation FAIL: do not claim a native split.
-            return "PENDING", f"case {early} was sealed but its resolve time is unknown"
-        sealed_at = _t(c.resolved_at)
-        for later in ordered[n + 1:]:
-            if sealed_at < first[later]:
-                return "SPLIT_SEALED", (
-                    f"case {early} was resolved ({case_closed_by(c)}) before case {later} "
-                    "received its first alert, so the platform could not reopen it")
-    # Reached only when every earlier sealed case has a known resolve time and
-    # none was sealed before a later case's first alert.
-    return "SPLIT_NATIVE", f"alerts spread across cases {', '.join(ordered)} with no earlier case sealed first"
+            # sealed before the later case began.
+            unknowns.append(f"case {early} was sealed but its resolve time is unknown")
+        elif _t(c.resolved_at) < first[later]:
+            seals.append(f"case {early} was resolved ({case_closed_by(c)}) before case "
+                         f"{later} received its first alert")
+        else:
+            natives.append(f"case {early} was sealed only after case {later} "
+                           "received its first alert")
+    spread = f"alerts spread across cases {', '.join(ordered)}"
+    if natives:
+        return "SPLIT_NATIVE", f"{spread}; {'; '.join(natives)}, so native grouping did not merge them"
+    if unknowns:
+        return "PENDING", "; ".join(unknowns)
+    tail = "it" if len(seals) == 1 else "them"
+    return "SPLIT_SEALED", f"{'; '.join(seals)}, so the platform could not reopen {tail}"
 
 
 # ── ledger dict ───────────────────────────────────────────────────────────

@@ -282,6 +282,10 @@ async def reconcile_run(
             alerts=[by_ext[e] for e in dict.fromkeys(matched_ext)],
             basis="alert_incident_ids")
         ctx["merge_class"] = ledger["merge_class"]
+        # What the ledger classified: the withhold applies only when it covers
+        # every cased alert the correlation KPI counts (measures.ledger_covers).
+        ctx["case_ledger_alerts"] = {a["external_id"]: a["case_id"]
+                                     for a in ledger["alerts"] if a.get("case_id")}
 
     summary, newly = await apply_verdicts(db, run.run_id, results, verdicts,
                                           source=f"{connector_kind}:{integ.name}",

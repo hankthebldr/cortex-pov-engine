@@ -352,3 +352,41 @@ def test_bridge_not_read_on_split_native_without_mixed_keys(session_factory, mon
     assert run.case_ledger["merge_class"] == "SPLIT_NATIVE" and "bridge" not in run.case_ledger
     assert seen == []
 
+
+
+# ── the one verdict effect, end to end (Ruling 41) ─────────────────────────
+
+CORR = {"kpi": "Cross-Source Correlation Rate", "op": "≥", "value": 100, "unit": "%"}
+
+
+def _sealed_ms(seconds):
+    return _epoch_ms(datetime.utcnow() - timedelta(minutes=10) + timedelta(seconds=seconds))
+
+
+def test_reconcile_withholds_correlation_fail_on_a_sealed_split(session_factory):
+    from connectors.measures import SEALED_SPLIT_REASON
+    _seed(session_factory, results=2, threshold=CORR, primary_kpi="Cross-Source Correlation Rate")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059")))
+    fetcher, _ = _tenant(
+        [_alert("a", technique="T1003.001", case="900", seconds=30),
+         _alert("b", technique="T1059", case="901", seconds=300)],
+        [_case("900", status="resolved_other", resolved_timestamp=_sealed_ms(120)),
+         _case("901")])
+    summary, run = asyncio.run(_reconcile(session_factory, fetcher))
+    assert run.case_ledger["merge_class"] == "SPLIT_SEALED"
+    m = run.tc_verdict_detail["measurement"]
+    assert m["value"] == 0.0 and m["withheld"] == SEALED_SPLIT_REASON
+    assert run.tc_verdict == "pending"
+
+
+def test_reconcile_lets_correlation_fail_stand_on_a_native_split(session_factory):
+    _seed(session_factory, results=2, threshold=CORR, primary_kpi="Cross-Source Correlation Rate")
+    asyncio.run(_setup(session_factory, techniques=("T1003.001", "T1059")))
+    fetcher, _ = _tenant(
+        [_alert("a", technique="T1003.001", case="900", seconds=30),
+         _alert("b", technique="T1059", case="901", seconds=300)],
+        [_case("900"), _case("901")])
+    _, run = asyncio.run(_reconcile(session_factory, fetcher))
+    assert run.case_ledger["merge_class"] == "SPLIT_NATIVE"
+    assert run.tc_verdict == "fail"
+    assert "withheld" not in run.tc_verdict_detail["measurement"]

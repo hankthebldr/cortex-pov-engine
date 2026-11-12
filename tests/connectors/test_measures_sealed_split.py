@@ -26,7 +26,7 @@ RESULTS = [_r(True), _r(True)]
 def test_sealed_split_withholds_correlation_fail():
     value, rec = build_measurement(CORR, THRESH_80, RESULTS,
         {"basis": "reconcile", "alert_incidents": {"a1": "A", "a2": "B"},
-         "merge_class": "SPLIT_SEALED"})
+         "merge_class": "SPLIT_SEALED", "case_ledger_alerts": {"a1": "A", "a2": "B"}})
     assert value is None and rec["withheld"] == SEALED_SPLIT_REASON
     assert rec["scored"] is None
 
@@ -61,3 +61,37 @@ def test_accuracy_family_ignores_merge_class():
     b = build_measurement("Detection Accuracy", ACC_T, RESULTS,
                           {**ctx_without, "merge_class": "SPLIT_SEALED"})
     assert a == b
+
+
+# ── Ruling 41: the withhold needs the ledger to have classified the KPI's alerts ──
+
+def _ctx(alert_incidents, ledger_alerts):
+    return {"basis": "reconcile", "alert_incidents": alert_incidents,
+            "merge_class": "SPLIT_SEALED", "case_ledger_alerts": ledger_alerts}
+
+
+def test_sealed_split_withholds_when_kpi_alerts_are_a_subset_of_the_ledger():
+    # The ledger may hold more alerts than this reconcile counted (it is rebuilt
+    # from every alert it has seen); a subset is enough.
+    value, rec = build_measurement(CORR, THRESH_80, RESULTS,
+        _ctx({"a1": "A", "a2": "B"}, {"a0": "A", "a1": "A", "a2": "B"}))
+    assert value is None and rec["withheld"] == SEALED_SPLIT_REASON
+
+
+def test_sealed_split_fail_stands_when_a_kpi_alert_is_absent_from_the_ledger():
+    value, rec = build_measurement(CORR, THRESH_80, RESULTS,
+        _ctx({"a1": "A", "a2": "B", "a3": "C"}, {"a1": "A", "a2": "B"}))
+    assert value == 0.0 and rec["scored"] == 0.0 and "withheld" not in rec
+
+
+def test_sealed_split_fail_stands_when_the_ledger_put_an_alert_in_another_case():
+    value, rec = build_measurement(CORR, THRESH_80, RESULTS,
+        _ctx({"a1": "A", "a2": "B"}, {"a1": "A", "a2": "C"}))
+    assert value == 0.0 and "withheld" not in rec
+
+
+def test_sealed_split_without_the_ledger_alerts_lets_the_fail_stand():
+    value, rec = build_measurement(CORR, THRESH_80, RESULTS,
+        {"basis": "reconcile", "alert_incidents": {"a1": "A", "a2": "B"},
+         "merge_class": "SPLIT_SEALED"})
+    assert value == 0.0 and "withheld" not in rec
