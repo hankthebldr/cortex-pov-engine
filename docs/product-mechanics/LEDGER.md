@@ -1021,7 +1021,7 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 
 **P0 · open** — On Linux, does the agent's malware protection (local analysis / WildFire verdict) evaluate an ELF when it is written or chmod'd, or only when it is executed? In report mode, does executing the public WildFire test ELF raise an agent issue, and how long after exec?
 
-- **Why we ask:** SIM-CDR-012 stages the WildFire test samples and stubs execution (step-02); on a lab Linux agent that produced no issue, so the endpoint half of every NGFW+agent stitch test built on it is empty. A stitch test needs an endpoint trigger that is known to fire.
+- **Why we ask:** SIM-CDR-012 stages the WildFire test samples and stubs execution (step-02); on a lab Linux agent that produced no issue, so the endpoint half of every NGFW+agent stitch test built on it is empty. A stitch test needs an endpoint trigger that is known to fire. Operator observation, not an answer (2026-11-11): in run fac6e8d5 (SIM-EDR-023, which executes the WildFire test ELF it stages), the lab Linux agent raised Local Analysis Malware (HIGH) on the execution. That says exec fires; it does not say whether a write or chmod alone would.
 - **What the answer moves:** Whether endpoint-trigger steps must execute their artifact, and which benign artifact CortexSim uses as the canonical agent trigger for stitch pairing.
   - *if* scan on write → Keep staging-only steps; investigate why the lab profile did not alert (module off, exception).
   - *if* exec only → Endpoint-trigger steps execute the WildFire test ELF under report mode; record the exec in step_outcomes.
