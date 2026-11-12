@@ -60,6 +60,11 @@ ERROR = "error"
 
 NOT_CHECKED: tuple[dict[str, str], ...] = (
     {
+        "what": "socfw_response_layer",
+        "why": "presence and Auto Triage settings need tenant reads, which health never makes",
+        "checked_by": "POST /api/connectors/xsiam_tenant/preflight (stage response_layer)",
+    },
+    {
         "what": "xsiam_tenant_reachability",
         "why": "a health probe must not spend the customer's API quota, and must "
                "not claim reachability it did not measure",

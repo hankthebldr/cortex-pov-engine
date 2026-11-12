@@ -15,6 +15,17 @@ export function describeError(err) {
 }
 
 /**
+ * Does this launch warning hold the launcher (holdOnWarnings) until the operator
+ * continues? Only an explicit `level: 'info'` does not: the SOC Framework
+ * advisories at info level reach about half the corpus once a tenant is
+ * registered, and holding on each would stop every launch. Warnings with no
+ * level (the container-agent gate's) and `warn` keep holding, as before.
+ */
+export function warningHoldsLaunch(w) {
+  return !(w && typeof w === 'object' && w.level === 'info')
+}
+
+/**
  * useLaunchScenario — encapsulates pull/push launch state for a scenario.
  *
  * Used by the ScenarioInspector drawer and (eventually) the command palette
@@ -27,9 +38,10 @@ export function describeError(err) {
  * @param {(run) => void} callbacks.onRunComplete
  * @param {(message: string) => void} callbacks.onError
  * @param {boolean} [callbacks.holdOnWarnings] — when the launch response carries
- *   container-agent gate `warnings[]`, do NOT call onRunComplete (which usually
- *   navigates away); keep them on `lastRun.warnings` until `continueToRun()`.
- *   Only a consumer that renders the warnings should set it.
+ *   a holding warning (see `warningHoldsLaunch`: anything but `level: 'info'`),
+ *   do NOT call onRunComplete (which usually navigates away); keep them on
+ *   `lastRun.warnings` until `continueToRun()`. Only a consumer that renders the
+ *   warnings should set it.
  */
 export default function useLaunchScenario(scenario, {
   onRunComplete, onError, payloadPlan = null, holdOnWarnings = false,
@@ -202,7 +214,7 @@ export default function useLaunchScenario(scenario, {
       setLastRun({
         status: 'success', message: `Run ${runIdOf(run) || ''} started`, warnings, run,
       })
-      if (onRunComplete && !(holdOnWarnings && warnings.length)) onRunComplete(run)
+      if (onRunComplete && !(holdOnWarnings && warnings.some(warningHoldsLaunch))) onRunComplete(run)
       return run
     } catch (err) {
       const msg = err.message || 'Launch failed'

@@ -27,6 +27,10 @@ operations:
   per-request consent (`write_authorized` / `destructive_authorized`) to send.
 - **`path_params`** are **derived automatically** from `{token}`s in `path` — do not hand-list
   them (the schema validates any you provide match the path).
+- **`path_param_allowlist`** (optional) restricts a path param to a closed set,
+  `{param: [value, ...]}`. The executor refuses any other value before a tenant client is built,
+  for a dry run too. Use it when a free-form param would let a read reach any object of its kind
+  (`OP-SOCFW-LIST-GET` reads only the SOC Framework's two config lists, not any XSOAR list).
 - **`consent`** defaults to `none`/`write`/`destructive` from `access_class`; only set it to
   override.
 - Invalid rows are **rejected and logged** at boot, never fatal (one bad row won't sink a file).
@@ -36,7 +40,9 @@ operations:
 - **Provenance tags.** `confirm-tail` = not in the source CSV. `cortex-bot-observed` = harvested
   from a field tool whose author ran it against a live tenant (an observation, not a CortexSim
   verification). `prefix-inferred` = the full path was composed from that tool's default
-  `/public_api/v1` prefix, not copied as a literal.
+  `/public_api/v1` prefix, not copied as a literal. `povkit-observed` = taken from povkit's
+  tenant client (an observation, not a CortexSim verification). `path-unverified` = no documented
+  or observed source.
 - After editing packs, regenerate the doc mirror:
   `python3 scripts/gen_xsiam_operation_catalog.py` (dry run), then `--write`.
 

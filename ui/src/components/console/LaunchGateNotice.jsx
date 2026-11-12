@@ -11,8 +11,9 @@ void React
  * missed. It also attaches advisory `warnings[]` to a launch it lets through.
  * Neither may be silent in the console:
  *
- *   • warnings      → a non-blocking notice listing each code with its steps or
- *                     detail; the run has already started.
+ *   • warnings      → a non-blocking notice listing each code with its level,
+ *                     tenant, steps, detail and remediation; the run has
+ *                     already started.
  *   • TOOL_ABSENT   → the missing tools per step, plus an explicit "Launch
  *                     anyway" that re-sends the same launch with the override.
  *   • POSTURE_...   → the missing findings / RBAC rules and the profile that
@@ -39,10 +40,19 @@ function Warnings({ warnings, onContinue }) {
       <ul>
         {warnings.map((w, i) => (
           <li key={`${w.code}-${i}`}>
+            {typeof w.level === 'string' && w.level && (
+              <><span className="mono" data-testid="launch-warning-level">[{w.level}]</span> </>
+            )}
             <span className="mono">{w.code}</span>
             {w.agent_id && <> on <span className="mono">{w.agent_id}</span></>}
+            {typeof w.tenant === 'string' && w.tenant && (
+              <> — tenant <span className="mono">{w.tenant}</span></>
+            )}
             {Array.isArray(w.steps) && w.steps.length > 0 && <> — steps {w.steps.join(', ')}</>}
             {typeof w.detail === 'string' && w.detail && <> — {w.detail}</>}
+            {typeof w.remediation === 'string' && w.remediation && (
+              <div data-testid="launch-warning-remediation">{w.remediation}</div>
+            )}
           </li>
         ))}
       </ul>

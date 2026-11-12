@@ -451,18 +451,71 @@ class Orchestrator:
         )
 
         if mode == "pull":
-            return await self._handle_pull(
+            result = await self._handle_pull(
                 run_id, scenario, target_agent_id, identity, db,
                 runtime_install_authorized=runtime_install_authorized,
                 allow_missing_tools=allow_missing_tools,
             )
+            return await self._with_socfw_advisories(
+                result, db, scenario, paired_with_run_id, agent_profile_mode)
         elif mode == "push":
-            return await self._handle_push(run_id, scenario, db)
+            result = await self._handle_push(run_id, scenario, db)
+            return await self._with_socfw_advisories(
+                result, db, scenario, paired_with_run_id, agent_profile_mode)
         else:
             return await self._refuse_after_seed(
                 db, run_id,
                 error=f"Unknown mode '{mode}' — must be 'pull' or 'push'",
             )
+
+    # ------------------------------------------------------------------
+    # SOC Framework Auto Triage advisory (never refuses, never calls a tenant)
+    # ------------------------------------------------------------------
+
+    async def _with_socfw_advisories(
+        self,
+        result: LaunchResult,
+        db: AsyncSession,
+        scenario: Any,
+        paired_with_run_id: Optional[str],
+        agent_profile_mode: str,
+    ) -> LaunchResult:
+        """Append SOCFW_TRIAGE_MAY_SEAL advisories to a successful launch.
+
+        Reads only the stored response-layer probe of each ``xsiam_tenant``
+        integration. A problem here is logged and dropped: an advisory must
+        never fail or block the launch.
+
+        "Paired" = the launch carries ``paired_with_run_id`` (the block-mode
+        half of a pair) or declares ``agent_profile_mode == "block"``. There is
+        no other pair flag on the launch request; the report-mode first run of a
+        pair is indistinguishable from an ordinary run at launch time.
+        """
+        if not result.success:
+            return result
+        try:
+            from engine.socfw_advisory import triage_advisories  # noqa: PLC0415
+            from security.credentials import CredentialStore  # noqa: PLC0415
+
+            detection_types = {
+                d.get("type")
+                for st in (scenario.steps or []) if isinstance(st, dict)
+                for d in (st.get("expected_detections") or []) if isinstance(d, dict)
+                if d.get("type")
+            }
+            paired = bool(paired_with_run_id) or agent_profile_mode == "block"
+            now = datetime.utcnow()
+            extra: list[dict[str, Any]] = []
+            for row in await CredentialStore(db).list_integrations("xsiam_tenant"):
+                extra.extend(triage_advisories(
+                    tenant=row.name, detection_types=detection_types, paired=paired,
+                    response_layer=getattr(row, "response_layer", None),
+                    read_at=getattr(row, "response_layer_read_at", None), now=now))
+            if extra:
+                result.warnings = [*result.warnings, *extra]
+        except Exception:  # noqa: BLE001
+            logger.warning("socfw advisory skipped run_id=%s", result.run_id, exc_info=True)
+        return result
 
     # ------------------------------------------------------------------
     # refusal after the Run row exists

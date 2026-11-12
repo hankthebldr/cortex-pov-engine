@@ -1,0 +1,2 @@
+3.31.4
+SOC Framework Auto Triage: case exceeded age threshold, aggregated_score below threshold, no analyst activity detected. Auto-closed by JOB.

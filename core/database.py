@@ -177,6 +177,7 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_run_delivery_columns)
         await conn.run_sync(_migrate_prevention_columns)
         await conn.run_sync(_migrate_eal_run_columns)
+        await conn.run_sync(_migrate_integration_response_layer_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -352,6 +353,25 @@ def _migrate_runtime_dependency_columns(connection) -> None:
             if col_name in existing:
                 continue
             connection.execute(text(f"ALTER TABLE runs ADD COLUMN {col_name} {col_type}"))
+
+
+def _migrate_integration_response_layer_columns(connection) -> None:
+    """Add the stored SOC Framework probe columns to ``integration_credentials``
+    if absent — same ``create_all``-never-adds-a-COLUMN rationale as above."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "integration_credentials" not in set(inspector.get_table_names()):
+        return
+    existing = {col["name"] for col in inspector.get_columns("integration_credentials")}
+    for col_name, col_type in [
+        ("response_layer", "JSON"),
+        ("response_layer_read_at", "DATETIME"),
+    ]:
+        if col_name in existing:
+            continue
+        connection.execute(text(
+            f"ALTER TABLE integration_credentials ADD COLUMN {col_name} {col_type}"))
 
 
 def _migrate_composer_channel_columns(connection) -> None:
