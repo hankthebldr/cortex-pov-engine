@@ -539,11 +539,10 @@ func runBeacon(ctx context.Context, cfg beaconConfig) int {
 
 // fatalStartup is a fatal startup failure inside runBeacon: the FATAL line on
 // the log and on the termination log, so `kubectl describe pod` shows why the
-// pod is crash-looping, then exit code 1 for the caller. It is exitFatal
-// (termination_log.go) returning instead of calling os.Exit, because runBeacon
-// also runs under the Windows SCM, where an os.Exit inside the service handler
-// is recorded only as "terminated unexpectedly" (1067) instead of as the
-// service's exit code.
+// pod is crash-looping, then exit code 1 for the caller. It returns instead of
+// calling os.Exit because runBeacon also runs under the Windows SCM, where an
+// os.Exit inside the service handler is recorded only as "terminated
+// unexpectedly" (1067) instead of as the service's exit code.
 func fatalStartup(code string, err error) int {
 	log.Printf("FATAL %s: %v", code, err)
 	writeTerminationLog(terminationLogPath(), fatalLine(code, err.Error()))
