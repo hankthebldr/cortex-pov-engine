@@ -106,6 +106,14 @@ describe('serverHostVerdict — the machine\'s own names, as SimCore publishes t
     expect(r).toMatchObject({ state: 'not_listed', certain: true, ownNames: ['4f2a9c'] })
   })
 
+  it('a certain refusal carries the FQDN names the guard does admit', () => {
+    const r = v('http://povengine.corp.example:8888', OWN(['simcore-01'], ['simcore-01', 'simcore-01.corp.example']))
+    expect(r).toMatchObject({
+      state: 'not_listed', certain: true, ownNames: ['simcore-01'],
+      fqdnNames: ['simcore-01', 'simcore-01.corp.example'],
+    })
+  })
+
   it('with the FQDN not looked up yet, the refusal is not certain, and says why', () => {
     const r = v('http://simcore.lab.customer.example:8888', OWN(['4f2a9c'], null))
     expect(r).toMatchObject({ state: 'not_listed', certain: false, ownNames: ['4f2a9c'] })
@@ -167,6 +175,18 @@ describe('GetStartedView — the typed address meets the Host guard', () => {
     expect(warn.textContent).not.toMatch(/cannot see the machine/)
     expect(warn.textContent).toContain('4f2a9c')
     expect(warn.textContent).toContain('HOST_NOT_ALLOWED')
+  })
+
+  it('with a resolved FQDN it names that FQDN as a name that works, not "nothing else"', () => {
+    // A bare-metal jumpbox: gethostname is the short name, reverse DNS adds the FQDN.
+    mount({ healthModel: health({
+      ...GUARD([]), local_host_names: ['simcore-01'], local_fqdn_names: ['simcore-01', 'simcore-01.corp.example'],
+    }) })
+    typeServer('http://povengine.corp.example:8888')
+    const warn = screen.getByTestId('gs-server-host-warn')
+    expect(warn.textContent).toMatch(/POVengine refuses/)
+    expect(warn.textContent).toContain('simcore-01.corp.example')
+    expect(warn.textContent).not.toMatch(/admits nothing else/)
   })
 
   it('with the FQDN not looked up yet it names the host name and says what is left unknown', () => {

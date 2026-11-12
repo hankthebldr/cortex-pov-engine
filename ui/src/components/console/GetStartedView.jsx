@@ -303,7 +303,12 @@ function ServerHostWarning({ verdict }) {
   if (!own) {
     ownLine = <>This console cannot see the machine&apos;s own host name, and inside a container that is the container id.</>
   } else if (verdict.certain) {
-    ownLine = <>{ownNames}, and its fully-qualified name admits nothing else.</>
+    // The FQDN names are admitted too: name them, they are a name that works.
+    const extra = (Array.isArray(verdict.fqdnNames) ? verdict.fqdnNames : [])
+      .filter((n) => !own.includes(n))
+    ownLine = extra.length
+      ? <>{ownNames}, and its fully-qualified name is <span className="mono">{extra.join(', ')}</span>.</>
+      : <>{ownNames}, and its fully-qualified name admits nothing else.</>
   } else {
     ownLine = (
       <>

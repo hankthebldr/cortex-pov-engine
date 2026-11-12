@@ -452,7 +452,8 @@ function hostMatches(host, patterns) {
  *   not_listed — a name the published allowlist does not carry. `certain` when
  *                every local name is known (then SimCore refuses it); else it
  *                is refused unless it is a local name SimCore did not publish.
- *                `ownNames` carries the published host names, or null
+ *                `ownNames` carries the published host names and `fqdnNames`
+ *                the resolved FQDN names, each null when not published
  *   unknown    — SimCore did not report the guard in a shape this reads; never
  *                collapsed into admitted
  *   invalid    — not an http(s) URL at all
@@ -462,7 +463,7 @@ function hostMatches(host, patterns) {
  * @param {string} [consoleHost]     window.location.hostname
  * @returns {{state: 'admitted'|'not_listed'|'unknown'|'invalid', host: string|null,
  *            why: string|null, allowed: string[]|null, certain?: boolean,
- *            ownNames?: string[]|null}}
+ *            ownNames?: string[]|null, fqdnNames?: string[]|null}}
  */
 export function serverHostVerdict(healthModel, serverUrl, consoleHost = '') {
   const out = (state, host, why = null, allowed = null) => ({ state, host, why, allowed })
@@ -500,6 +501,7 @@ export function serverHostVerdict(healthModel, serverUrl, consoleHost = '') {
     ...out('not_listed', host, 'not in CORTEXSIM_ALLOWED_HOSTS', allowed),
     certain: !!(ownNames && fqdnNames),
     ownNames,
+    fqdnNames,
   }
 }
 
