@@ -8,7 +8,28 @@ the earlier `0.y.z` pre-releases (see `v0.1.0`) predate that commitment.
 
 ## [Unreleased]
 
-This section carries two lines of work, merged with `git merge` (no rebase):
+## [1.2.0] - 2026-11-12
+
+**SimCore learns what a POV's tenant can receive before the run, and is
+hardened for a beta on real endpoints.** Ingestion doors, collector targets,
+the dataset requirement registry and a read-only NGFW (PAN-OS) connection say
+which detections can fire; an MCP server whose tenant writes only preview, a
+Kubernetes container agent and a read-only SOC Framework layer are added; and
+two beta-readiness rounds, weighted to Windows, close a verified
+unauthenticated root command-execution path, fix Windows push bundles that had
+been silent no-ops and give the Windows beacon a service handler. 1.1.1's six
+security fixes are carried. Counted on this tree: 199
+scenarios · 197 TTP cards · 27 EAL plugins · 1411 step-detections · 2260
+catalog detection objects · 28 assertion artifacts · 156 route decorators (166
+served routes); lab-readiness GREEN 167 · YELLOW 27 · RED 5.
+
+**`tenant-verified` is still 0.** Nothing in this release has executed against
+a live Cortex tenant. The Windows path has run only in the `windows-2022` CI job
+against CI probe scenarios, never a shipped scenario or a customer host; the
+Kubernetes container agent and the MCP server are authored, not
+tenant-verified. Authored is not proven.
+
+This release carries two lines of work, merged with `git merge` (no rebase):
 the **beta-readiness pass** summarised next, and the **features merged to
 `dev` after 1.1.0** (PRs #169–#212), among them ingestion doors, collector
 targets, the read-only NGFW connection, the MCP server, the Kubernetes
@@ -60,18 +81,30 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 > DOCS-12).
 > **`tenant-verified` is still 0.**
 
-### Upgrading from 1.1.0 (read before you re-run `dev-up.sh` on a jumpbox)
+### Upgrading from 1.1.x (read before you re-run `dev-up.sh` on a jumpbox)
+
+1.1.1 carries 1.1.0's schema code unchanged (`git diff v1.1.0 v1.1.1 --
+core/models.py core/database.py` is empty), so everything below applies to
+both.
 
 - **Back up the database volume first, and roll back only by restoring it.**
-  A database created or migrated by this release cannot be used by 1.1.0 or
-  older code: `runs.agent_profile_mode` and `results.expected_outcome` are
-  `NOT NULL` with no SQL default, so every launch from older code fails with a
-  500 that does not name the schema (OPS-17, open). There is no schema stamp.
-  Columns added since 1.0.0 are added automatically at boot; do not run the
-  `ALTER TABLE` lines older notes mention, because SQLite rejects a duplicate
-  column. The procedure is in `docs/release/mvp-launch-runbook.md` §8.5.
+  A database *created* by 1.1.0 or later code cannot be used by 1.0.2 or older
+  code: `runs.agent_profile_mode` and `results.expected_outcome` are
+  `NOT NULL` with no SQL default, so every launch from that older code fails
+  with a 500 that does not name the schema (OPS-17, open). There is no schema
+  stamp. Probed on 2026-11-12 through each version's own `init_db` and ORM
+  (one Scenario, Run and Result inserted and read back), not through a launch:
+  1.2.0 upgraded a database 1.1.1 created and one 1.0.2 created; 1.1.1 then
+  wrote to a database 1.2.0 created and to one it upgraded, because every
+  column 1.2.0 adds to an existing table is nullable; 1.0.2 wrote to the
+  database 1.2.0 upgraded (the migration gives `agent_profile_mode` a SQL
+  default) and failed on the one 1.2.0 created (`NOT NULL constraint failed:
+  runs.agent_profile_mode`). Columns added since 1.0.0 are added automatically
+  at boot; do not run the `ALTER TABLE` lines older notes mention, because
+  SQLite rejects a duplicate column. The procedure is in
+  `docs/release/mvp-launch-runbook.md` §8.5.
 - **Re-running `scripts/dev-up.sh` over an existing `.env` (RG-GUARD-01).** A
-  1.1.0 `.env` has no `CORTEXSIM_ALLOWED_HOSTS`, so after this release's Host
+  1.1.x `.env` has no `CORTEXSIM_ALLOWED_HOSTS`, so after this release's Host
   guard every request by the jumpbox's name would get
   `400 HOST_NOT_ALLOWED`. `dev-up.sh` now warns, starts compose with this
   host's short and fully qualified names for that bring-up only, and leaves
@@ -2440,7 +2473,8 @@ note never overstates what has been proven.
   (`linux/amd64` + `linux/arm64`) is produced by CI on tag push, not by this
   local build — see `docs/release/PUBLISH-v0.1.0.md`.
 
-[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/hankthebldr/cortex-pov-engine/compare/v1.0.1...v1.0.2
