@@ -40,6 +40,9 @@ XSIAM Microsoft-365 analytics alert:
                                   (T1213.002 / T1530)
   mailbox_rule_creation          Analytics — "Azure mailbox rule creation" — a
                                   New-InboxRule hide/forward rule (T1564.008 / T1114.003)
+  internal_extortion_notice      Exchange ``Send`` (RecordType 2, ``recipientList``) to
+                                  N internal colleagues + one Teams ``MessageSent``
+                                  (RecordType 25) per colleague
   ============================== ======================================================
 
 All records carry ``cortexsim_run_id`` in-body and a top-level ``dataset``
@@ -50,14 +53,15 @@ hint (``msft_o365_audit``) exactly like the exemplars, plus the
 from __future__ import annotations
 
 import dataclasses
+import ipaddress
 import logging
 import secrets
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import Field, field_validator
 
-from ..analytics_emitter import AnalyticsEmitterParams, AnalyticsLogEmitter
+from ..analytics_emitter import AnalyticsEmitterParams, AnalyticsLogEmitter, body_time
 
 
 logger = logging.getLogger("cortexsim.eal.plugins.m365_activity_emitter")
@@ -113,6 +117,8 @@ class _M365Activity:
 
 # RecordType enum values from the O365 Management Activity API schema.
 _RT_EXCHANGE_ADMIN = 1
+_RT_EXCHANGE_ITEM = 2
+_RT_MICROSOFT_TEAMS = 25
 _RT_SHAREPOINT = 4
 _RT_SHAREPOINT_FILE_OP = 6
 _RT_EXCHANGE_ITEM_AGGREGATED = 50  # MailItemsAccessed lands here
@@ -133,10 +139,12 @@ def _m365_audit_event(
     object_id: Optional[str] = None,
     site_url: Optional[str] = None,
     extra: Optional[dict[str, Any]] = None,
+    when: Optional[str] = None,
+    user_agent: Optional[str] = None,
 ) -> dict[str, Any]:
     """Shape a Microsoft 365 unified-audit-log record (subset of the O365
     Management Activity API schema -> ``msft_o365_audit``)."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = when or datetime.now(timezone.utc).isoformat()
     body: dict[str, Any] = {
         "dataset": _DATASET,
         "CreationTime": now,
@@ -157,6 +165,8 @@ def _m365_audit_event(
     }
     if site_url is not None:
         body["SiteUrl"] = site_url
+    if user_agent is not None:
+        body["UserAgent"] = user_agent
     if extra:
         body.update(extra)
     return body
@@ -191,6 +201,14 @@ _PAGE_VIEWED = _M365Activity(
     operation="PageViewed", record_type=_RT_SHAREPOINT,
     workload="SharePoint", item_type="Page",
 )
+_EXCHANGE_SEND = _M365Activity(
+    operation="Send", record_type=_RT_EXCHANGE_ITEM,
+    workload="Exchange", item_type="Message",
+)
+_TEAMS_MESSAGE_SENT = _M365Activity(
+    operation="MessageSent", record_type=_RT_MICROSOFT_TEAMS,
+    workload="MicrosoftTeams", item_type="Message",
+)
 _NEW_INBOX_RULE = _M365Activity(
     operation="New-InboxRule", record_type=_RT_EXCHANGE_ADMIN,
     workload="Exchange", item_type="Rule",
@@ -206,6 +224,7 @@ _PATTERN_MARKERS: dict[str, str] = {
     "sharepoint_enumeration": "sharepoint_enumeration_marker",
     "onedrive_enumeration": "onedrive_enumeration_marker",
     "mailbox_rule_creation": "mailbox_rule_creation_marker",
+    "internal_extortion_notice": "internal_extortion_notice_marker",
 }
 
 _EVENT_PATTERNS = tuple(_PATTERN_MARKERS)
@@ -226,13 +245,42 @@ class M365ActivityEmitterParams(AnalyticsEmitterParams):
         description="Analytics alert to exercise: storage_exfiltration | "
                     "unusual_storage_access | mailbox_enumeration_by_app | "
                     "sharepoint_enumeration | onedrive_enumeration | "
-                    "mailbox_rule_creation.",
+                    "mailbox_rule_creation | internal_extortion_notice.",
     )
     target_user: str = Field(
         default=_CANARY_UPN,
         description="Canary mailbox / OneDrive owner UPN the synthetic activity "
                     "is attributed to (user@host).",
     )
+
+    source_ip: Optional[str] = Field(
+        default=None,
+        description="Client IP stamped on every record; None keeps the "
+                    "canary documentation-range address.",
+    )
+    user_agents: list[str] = Field(
+        default_factory=list,
+        description="Actor user agents written into each record's UserAgent "
+                    "field, cycled in order. Never used as the collector POST "
+                    "User-Agent header.",
+    )
+    storage_targets: list[Literal["onedrive", "sharepoint"]] = Field(
+        default_factory=lambda: ["onedrive"], min_length=1,
+        description="storage_exfiltration cycles its records over these "
+                    "workloads.",
+    )
+    event_time_offset_seconds: int = Field(
+        default=0, ge=-86400, le=0,
+        description="Back-dates every record's CreationTime (seconds, <= 0). "
+                    "Delivery time is unchanged.",
+    )
+
+    @field_validator("source_ip")
+    @classmethod
+    def _source_ip_valid(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        return str(ipaddress.ip_address(v.strip()))
 
     @property
     def dataset(self) -> str:
@@ -317,22 +365,43 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
         user = params.target_user
         pattern = params.event_pattern
         events: list[dict[str, Any]] = []
+        src = params.source_ip or _ANOMALOUS_IP
+        offset = params.event_time_offset_seconds
+        uas = params.user_agents
+
+        def common(idx: int, *, plus: float = 0.0) -> dict[str, Any]:
+            kw: dict[str, Any] = {
+                "source_ip": src,
+                "user_agent": uas[idx % len(uas)] if uas else None,
+            }
+            # Only back-dated runs pass an explicit time; by default each record
+            # takes its own now(), exactly as before.
+            if offset:
+                kw["when"] = body_time(offset, plus_seconds=plus)
+            return kw
 
         if pattern == "storage_exfiltration":
             # A burst of bulk downloads across the sensitive bait files — the
             # mass-download shape the exfiltration analytic keys on.
             for idx in range(params.burst_count):
                 fname = _BAIT_FILES[idx % len(_BAIT_FILES)]
+                activity = _FILE_DOWNLOADED if idx % 2 == 0 else _FILE_SYNC_DOWNLOAD
+                if params.storage_targets[idx % len(params.storage_targets)] == "sharepoint":
+                    activity = dataclasses.replace(activity, workload="SharePoint")
+                    site, library = _SHAREPOINT_SITE, "Shared Documents"
+                else:
+                    site, library = _ONEDRIVE_SITE, "Documents"
                 events.append(_m365_audit_event(
-                    activity=_FILE_DOWNLOADED if idx % 2 == 0 else _FILE_SYNC_DOWNLOAD,
+                    activity=activity,
                     marker=marker,
                     sim_run_id=sim_run_id,
                     user_id=user,
-                    object_id=f"{_ONEDRIVE_SITE}/Documents/{fname}",
-                    site_url=_ONEDRIVE_SITE,
+                    object_id=f"{site}/{library}/{fname}",
+                    site_url=site,
+                    **common(idx),
                     extra={
                         "SourceFileName": fname,
-                        "SourceRelativeUrl": f"Documents/{fname}",
+                        "SourceRelativeUrl": f"{library}/{fname}",
                         "download_count_marker": params.burst_count,
                     },
                 ))
@@ -348,10 +417,10 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
                     activity=_FILE_ACCESSED,
                     marker=marker,
                     sim_run_id=sim_run_id,
-                    source_ip=_ANOMALOUS_IP,
                     user_id=user,
                     object_id=f"{_SHAREPOINT_SITE}/Shared Documents/{fname}",
                     site_url=_SHAREPOINT_SITE,
+                    **common(idx),
                     extra={
                         "SourceFileName": fname,
                         "anomalous_geo_marker": "unusual-country",
@@ -371,13 +440,14 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
             mailboxes = [user] + [
                 f"enum-target-{i:02d}@{domain}" for i in range(1, n_mailboxes)
             ]
-            for mbx in mailboxes:
+            for idx, mbx in enumerate(mailboxes):
                 events.append(_m365_audit_event(
                     activity=_MAIL_ITEMS_ACCESSED,
                     marker=marker,
                     sim_run_id=sim_run_id,
                     user_id=mbx,
                     object_id=mbx,
+                    **common(idx),
                     extra={
                         "MailboxOwnerUPN": mbx,
                         "AppId": _CANARY_APP_ID,
@@ -404,6 +474,7 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
                     user_id=user,
                     object_id=f"{_SHAREPOINT_SITE}/_layouts/15/search.aspx",
                     site_url=_SHAREPOINT_SITE,
+                    **common(2 * idx),
                     extra={"SearchQueryText": term},
                 ))
                 events.append(_m365_audit_event(
@@ -413,6 +484,7 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
                     user_id=user,
                     object_id=f"{_SHAREPOINT_SITE}/SitePages/Home.aspx",
                     site_url=_SHAREPOINT_SITE,
+                    **common(2 * idx + 1),
                 ))
             return events
 
@@ -428,6 +500,7 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
                     user_id=user,
                     object_id=f"{_ONEDRIVE_SITE}/Documents/{fname}",
                     site_url=_ONEDRIVE_SITE,
+                    **common(idx),
                     extra={
                         "SourceFileName": fname,
                         "SourceRelativeUrl": f"Documents/{fname}",
@@ -445,6 +518,7 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
                 sim_run_id=sim_run_id,
                 user_id=user,
                 object_id="CortexSim-AutoForward-And-Hide",
+                **common(0),
                 extra={
                     "MailboxOwnerUPN": user,
                     "RuleName": "CortexSim-AutoForward-And-Hide",
@@ -459,6 +533,47 @@ class M365ActivityEmitter(AnalyticsLogEmitter):
                     "forwarding_rule_marker": True,
                 },
             )]
+
+        if pattern == "internal_extortion_notice":
+            # One Exchange Send to N internal colleagues, then one Teams
+            # MessageSent per colleague — the internal extortion-notice fan-out.
+            # Recipients ride in the Exchange mailbox schema's ``recipientList``
+            # (EmailAddress{Address, Name}) + ``recipientCount``.
+            domain = user.split("@", 1)[1]
+            n = params.burst_count
+            addrs = [f"colleague-{i:02d}@{domain}" for i in range(1, n + 1)]
+            events.append(_m365_audit_event(
+                activity=_EXCHANGE_SEND,
+                marker=marker,
+                sim_run_id=sim_run_id,
+                user_id=user,
+                object_id=f"{user}/Sent Items/extortion-notice",
+                **common(0),
+                extra={
+                    "MailboxOwnerUPN": user,
+                    "recipientCount": n,
+                    "recipientList": [
+                        {"Address": a, "Name": a.split("@", 1)[0]} for a in addrs
+                    ],
+                },
+            ))
+            for idx, addr in enumerate(addrs, start=1):
+                events.append(_m365_audit_event(
+                    activity=_TEAMS_MESSAGE_SENT,
+                    marker=marker,
+                    sim_run_id=sim_run_id,
+                    user_id=user,
+                    object_id=f"teams-chat-{idx:02d}",
+                    **common(idx, plus=3.0 * idx),
+                    extra={
+                        "MessageId": secrets.token_hex(8),
+                        "Members": [
+                            {"UPN": user, "Role": 1, "DisplayName": user.split("@", 1)[0]},
+                            {"UPN": addr, "Role": 1, "DisplayName": addr.split("@", 1)[0]},
+                        ],
+                    },
+                ))
+            return events
 
         raise ValueError(  # pragma: no cover — gated by the pydantic validator
             f"unknown event_pattern {pattern!r}"
