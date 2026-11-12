@@ -89,7 +89,11 @@ async def generate_bundle(body: InfraGenerateRequest) -> InfraGenerateResponse:
     anything is rendered; it is never escaped and rendered anyway. A
     ``dc_ssh_cidr`` that is not a network at all, or is too broad, is still the
     request model's ``422``; the 400 is for one that parses and carries an IPv6
-    zone id, which is free text."""
+    zone id, which is free text. Since the merge with dev (#212) the model also
+    holds ``region`` and ``jumpbox_size`` to the AWS shapes, so those two are a
+    ``422`` too and the 400 here is in practice ``tags`` and a zone-id CIDR. The
+    templates then write every string through dev's ``hcl_string`` /
+    ``hcl_object`` filters, a second layer behind this one."""
     problems = hcl_param_problems(body)
     if problems:
         logger.warning("infra generate refused: %s",

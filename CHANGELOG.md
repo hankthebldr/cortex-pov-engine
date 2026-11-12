@@ -740,7 +740,10 @@ From `dev` (#212). Its tool-start fix is the SEC-02 fix recorded under
 file strictly below `CORTEXSIM_BASE_DIR`. The installer keeps the beta's
 narrower formats (agent id 1-64 characters, token `cxs_` + 20-128) and adds
 `dev`'s quoting and own-URL rule; `SERVER_HOST_NOT_ALLOWED` is checked after
-`SERVER_NOT_THIS_SIMCORE`.
+`SERVER_NOT_THIS_SIMCORE`. For infra bundles both layers stand: `dev`'s
+request-model shapes answer `422` for a bad `region` or `jumpbox_size` before
+the beta's SEC-17 gate, which still answers `400 BAD_INFRA_PARAM` for `tags`
+and a zone-id `dc_ssh_cidr`, and the templates escape every string behind it.
 
 - **Tool start refuses caller-supplied argv.** The body's `params` were merged
   over the registry's `binary` / `source_path` / `port` before

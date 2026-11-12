@@ -116,7 +116,11 @@ feeds `/api/health` (§11). uvicorn's own `--forwarded-allow-ips` (default
 `400 BAD_INFRA_PARAM` (`POST /api/infra/generate`) refuses a `region`,
 `jumpbox_size`, `tags` or `dc_ssh_cidr` value outside its allow-list before
 any HCL is rendered (SEC-17); `dc_ssh_cidr` must be written in the CIDR
-alphabet, so an IPv6 zone id is refused.
+alphabet, so an IPv6 zone id is refused. The request model refuses a `region`
+or `jumpbox_size` outside the AWS shapes first, with `422` (from `dev`), so on
+the route the 400 is in practice `tags` and a zone-id CIDR; the generator
+re-checks all four for a caller that skips the model, and the templates write
+every string as an escaped HCL literal.
 
 ### 1.1 Health (app-level, `core/main.py`)
 

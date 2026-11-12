@@ -73,14 +73,20 @@ def _rendered(blueprints: Path) -> str:
                      and p.name in ("variables.tf", "terraform.tfvars", "main.tf"))
 
 
+# region and jumpbox_size: since the merge with dev (#212) the request model
+# holds both to the AWS shapes (AWS_REGION_PATTERN, AWS_INSTANCE_TYPE_PATTERN,
+# jumpbox_size max_length 32), so the route answers pydantic's 422 before this
+# gate runs, the way it always has for a dc_ssh_cidr that is not a network.
+# What these two tests hold is that nothing is rendered. The gate itself is
+# still exercised for both fields by the generator tests below, which build the
+# model without validation.
+
+
 def test_an_injected_jumpbox_size_is_refused_and_nothing_is_rendered(client, blueprints):
     resp = client.post("/api/infra/generate", json=_body(params={"jumpbox_size": INJECTION}))
 
-    assert resp.status_code == 400, resp.text
-    detail = resp.json()["detail"]
-    assert detail["code"] == "BAD_INFRA_PARAM"
-    assert set(detail) >= {"error", "code", "detail"}
-    assert [f["field"] for f in detail["detail"]["fields"]] == ["params.jumpbox_size"]
+    assert resp.status_code == 422, resp.text
+    assert "jumpbox_size" in resp.text
     assert list(blueprints.iterdir()) == [], "a refused request must leave no bundle"
     assert "local-exec" not in _rendered(blueprints)
 
@@ -96,10 +102,8 @@ def test_an_injected_jumpbox_size_is_refused_and_nothing_is_rendered(client, blu
 def test_an_unsafe_region_is_refused(client, blueprints, region):
     resp = client.post("/api/infra/generate", json=_body(region=region))
 
-    assert resp.status_code == 400, resp.text
-    detail = resp.json()["detail"]
-    assert detail["code"] == "BAD_INFRA_PARAM"
-    assert detail["detail"]["fields"][0]["field"] == "region"
+    assert resp.status_code == 422, resp.text
+    assert "region" in resp.text
     assert list(blueprints.iterdir()) == []
 
 
@@ -138,20 +142,30 @@ def test_real_regions_and_instance_types_still_generate(client, blueprints, regi
     assert f'default     = "{size}"' in rendered
 
 
+def _unvalidated_params(**over):
+    """InfraGenerateParams as a caller that skips validation builds it: the
+    model now refuses these values itself, so the gate is reached only this way."""
+    from engine.infra_models import InfraGenerateParams
+
+    fields = {"project_name": "sec17", "dc_ssh_cidr": "1.2.3.4/32", "jumpbox_size": "t3.medium",
+              "k8s_node_count": 2, "edr_target_count": 2, "ttl_hours": 72, "tags": {}}
+    fields.update(over)
+    return InfraGenerateParams.model_construct(**fields)
+
+
 def test_the_generator_refuses_a_request_built_without_the_route(blueprints, repo_root):
-    """Defence in depth: a caller that constructs the model itself gets the
-    same refusal, before a bundle directory exists."""
+    """Defence in depth: a caller that constructs the model itself, without its
+    validation, gets the same refusal, before a bundle directory exists."""
     from engine.infra_catalog import InfraCatalog
     from engine.infra_generator import GenerationError, InfraGenerator
-    from engine.infra_models import InfraGenerateParams, InfraGenerateRequest
+    from engine.infra_models import InfraGenerateRequest
 
     gen = InfraGenerator(
         catalog=InfraCatalog(modules_root=repo_root / "infra" / "modules"),
         templates_dir=repo_root / "infra" / "templates", blueprints_dir=blueprints)
-    request = InfraGenerateRequest(
-        provider="aws", region="us-east-1", modules=["edr"],
-        params=InfraGenerateParams(project_name="sec17", dc_ssh_cidr="1.2.3.4/32",
-                                   jumpbox_size=INJECTION))
+    request = InfraGenerateRequest.model_construct(
+        provider="aws", region="us-east-1", modules=["edr"], adapter_refs=[],
+        params=_unvalidated_params(jumpbox_size=INJECTION))
 
     with pytest.raises(GenerationError, match="jumpbox_size"):
         gen.generate(request)
@@ -159,13 +173,11 @@ def test_the_generator_refuses_a_request_built_without_the_route(blueprints, rep
 
 
 def test_the_check_names_every_bad_field_and_never_echoes_it_whole():
-    from engine.infra_models import (InfraGenerateParams, InfraGenerateRequest,
-                                     hcl_param_problems)
+    from engine.infra_models import InfraGenerateRequest, hcl_param_problems
 
-    request = InfraGenerateRequest(
-        provider="aws", region='x"y', modules=["edr"],
-        params=InfraGenerateParams(project_name="sec17", dc_ssh_cidr="1.2.3.4/32",
-                                   jumpbox_size=INJECTION, tags={"a": "ok"}))
+    request = InfraGenerateRequest.model_construct(
+        provider="aws", region='x"y', modules=["edr"], adapter_refs=[],
+        params=_unvalidated_params(jumpbox_size=INJECTION, tags={"a": "ok"}))
     problems = hcl_param_problems(request)
     assert [p["field"] for p in problems] == ["region", "params.jumpbox_size"]
     assert all(len(p["value"]) <= 64 for p in problems)
