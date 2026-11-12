@@ -186,3 +186,34 @@ def test_refresh_of_a_no_case_yet_ledger_points_at_the_next_reconcile(client, se
     body = client.post("/api/runs/r1/case-ledger/refresh").json()
     assert body["refreshed"] is False and calls["cases"] == 0
     assert "reconcile" in body["reason"]
+
+
+# ── Ruling 43: the refresh route has a minimum interval ────────────────────
+
+def test_refresh_inside_the_min_interval_is_refused_with_a_code(client, session_factory, inject):
+    from config import settings
+    seed(session_factory, [("r1", datetime.utcnow(), stored_ledger(read_age=timedelta(minutes=5)))])
+    before = _get(session_factory, "r1").case_ledger
+    fetcher, calls = tenant({"900": "resolved_other"})
+    inject(fetcher)
+    r = client.post("/api/runs/r1/case-ledger/refresh")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["refreshed"] is False and body["queries_issued"] == 0
+    assert body["reason_code"] == "CASE_LEDGER_READ_RECENTLY"
+    assert str(settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES) in body["reason"]
+    assert 0 < body["retry_after_seconds"] <= settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES * 60
+    assert calls["cases"] == 0
+    assert _get(session_factory, "r1").case_ledger == before
+
+
+def test_refresh_force_reads_inside_the_min_interval(client, session_factory, inject):
+    seed(session_factory, [("r1", datetime.utcnow(), stored_ledger(read_age=timedelta(minutes=5)))])
+    fetcher, calls = tenant({"900": "resolved_other"})
+    inject(fetcher)
+    r = client.post("/api/runs/r1/case-ledger/refresh?force=true")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["refreshed"] is True and body["queries_issued"] == 1 and calls["cases"] == 1
+    assert body["reason_code"] is None
+    assert _get(session_factory, "r1").case_ledger["cases"][0]["status"] == "resolved_other"

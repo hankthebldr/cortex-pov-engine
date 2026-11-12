@@ -1773,13 +1773,21 @@ async def verify_run_endpoint(
 
 
 @router.post("/{run_id}/case-ledger/refresh")
-async def refresh_case_ledger_endpoint(run_id: str, db: AsyncSession = Depends(get_db)):
+async def refresh_case_ledger_endpoint(
+    run_id: str,
+    force: bool = Query(False, description="Read even inside CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES"),
+    db: AsyncSession = Depends(get_db),
+):
     """Re-read the cases named in this run's stored case ledger (read-only).
 
     Explicit operator action, its own consent like ``POST .../reconcile``.
-    Disposition drifts after a run (Auto Triage seals cases ~6 h later); this
-    refreshes it. Cases only: the stored alerts are kept. Disposition is context,
-    never detection evidence. 409 ``NO_CASE_LEDGER`` when the run has none.
+    Disposition drifts after a run (Auto Triage seals cases after a window that
+    is the shipped default and tenant-configurable); this refreshes it. Cases
+    only: the stored alerts are kept. Disposition is context, never detection
+    evidence. 409 ``NO_CASE_LEDGER`` when the run has none. A ledger read
+    inside ``CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES`` is not re-read
+    (200, ``refreshed: false``, ``reason_code: CASE_LEDGER_READ_RECENTLY``)
+    unless ``force=true``.
     """
     from api.connectors import _RECONCILE_ERROR_STATUS  # noqa: PLC0415
     from connectors.service import ReconcileError, refresh_case_ledger  # noqa: PLC0415
@@ -1788,7 +1796,7 @@ async def refresh_case_ledger_endpoint(run_id: str, db: AsyncSession = Depends(g
     if run is None:
         raise _run_not_found(run_id)
     try:
-        out = await refresh_case_ledger(db, run)
+        out = await refresh_case_ledger(db, run, force=force)
     except ReconcileError as e:
         status = {**_RECONCILE_ERROR_STATUS, "NO_CASE_LEDGER": 409,
                   "CASE_LEDGER_UNREADABLE": 409, "CASE_LEDGER_TENANT_UNKNOWN": 409}.get(e.code, 500)

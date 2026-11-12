@@ -361,7 +361,8 @@ def _refresh(SessionLocal, fetcher):
     async def go():
         async with SessionLocal() as db:
             run = (await db.execute(select(Run))).scalar_one()
-            return await refresh_case_ledger(db, run, fetcher=fetcher)
+            # force: these ledgers were read "now"; the min interval is tested on the route.
+            return await refresh_case_ledger(db, run, fetcher=fetcher, force=True)
     return asyncio.run(go())
 
 

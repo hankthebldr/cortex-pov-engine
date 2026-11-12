@@ -18,6 +18,7 @@ maps them to HTTP; the loop logs and moves on).
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -571,6 +572,7 @@ CASE_LEDGER_CONNECTOR = "xsiam"
 
 async def refresh_case_ledger(
     db: AsyncSession, run: Run, *, fetcher: Optional[HttpFetcher] = None,
+    force: bool = False, min_interval_minutes: Optional[int] = None,
 ) -> dict:
     """Re-read the cases named in ``run.case_ledger`` and rebuild it.
 
@@ -594,6 +596,16 @@ async def refresh_case_ledger(
     is replaced by a degraded one (``CASE_STATUS_UNRECOGNIZED``, ``PENDING``),
     because the old merge claim can no longer be trusted.
 
+    Not refreshed, with no tenant read (``refreshed: false`` and a
+    ``reason_code``; ``reason_code`` is None on a refresh that read):
+
+    * ``CASE_LEDGER_NAMES_NO_CASE`` - the ledger names no case (``NO_CASE_YET``
+      and the like); only the next reconcile can advance it;
+    * ``CASE_LEDGER_READ_RECENTLY`` - the ledger was read less than
+      ``min_interval_minutes`` ago (default
+      ``CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES``), unless ``force``. The
+      reply carries ``retry_after_seconds``. An unreadable ``read_at`` is stale.
+
     Transaction: this function commits (outside any ``try`` that could swallow
     it); a commit failure rolls back and propagates, and the commit is never
     retried on a failed session.
@@ -609,13 +621,31 @@ async def refresh_case_ledger(
     except LEDGER_READ_ERRORS as e:
         raise ReconcileError("CASE_LEDGER_UNREADABLE", f"stored case ledger is unreadable: {e}")
 
-    case_ids = sorted({a.case_id for a in alerts if a.case_id} | set(old_cases))
-    if not case_ids:
+    def not_refreshed(reason_code: str, reason: str, **extra: Any) -> dict:
         return {"run_id": run.run_id, "refreshed": False, "queries_issued": 0,
                 "merge_class": stored.get("merge_class"), "code": stored.get("code"),
                 "read_at": stored.get("read_at"), "ledger": stored,
-                "reason": ("the ledger names no case to re-read; the next reconcile "
-                           "rebuilds it once the tenant has grouped the alerts into a case")}
+                "reason_code": reason_code, "reason": reason, **extra}
+
+    case_ids = sorted({a.case_id for a in alerts if a.case_id} | set(old_cases))
+    if not case_ids:
+        return not_refreshed(
+            "CASE_LEDGER_NAMES_NO_CASE",
+            "the ledger names no case to re-read; the next reconcile rebuilds it once "
+            "the tenant has grouped the alerts into a case")
+
+    if not force:
+        mins = (settings.CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES
+                if min_interval_minutes is None else min_interval_minutes)
+        last = _read_at_of(stored)
+        age = datetime.utcnow() - last if last is not None else None
+        if age is not None and age < timedelta(minutes=mins):
+            return not_refreshed(
+                "CASE_LEDGER_READ_RECENTLY",
+                f"the ledger was read at {stored.get('read_at')} UTC, inside the {mins}-minute "
+                "minimum interval (CORTEXSIM_CASE_LEDGER_MIN_INTERVAL_MINUTES); "
+                "pass force=true to read now",
+                retry_after_seconds=math.ceil((timedelta(minutes=mins) - age).total_seconds()))
 
     recorded = stored.get("integration")
     if not recorded:
@@ -670,7 +700,7 @@ async def refresh_case_ledger(
         raise
     return {"run_id": run.run_id, "refreshed": True, "queries_issued": pages,
             "merge_class": ledger["merge_class"], "code": ledger["code"],
-            "read_at": ledger["read_at"], "ledger": ledger,
+            "read_at": ledger["read_at"], "ledger": ledger, "reason_code": None,
             "previous_merge_class": stored.get("merge_class")}
 
 
@@ -734,7 +764,8 @@ async def refresh_case_ledgers_once(
     for _read_at, run_id in eligible[:max_runs]:
         try:
             run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
-            out = await refresh_case_ledger(db, run, fetcher=fetcher)
+            out = await refresh_case_ledger(db, run, fetcher=fetcher,
+                                            min_interval_minutes=min_interval_minutes)
         except ReconcileError as e:
             skipped += 1
             detail = e.detail if isinstance(e.detail, dict) else {}
