@@ -2496,13 +2496,13 @@ async def agent_installer(
     # ?server= must name this SimCore (the request's own origin or one of
     # CORTEXSIM_PUBLIC_URLS); anything else is SERVER_NOT_THIS_SIMCORE.
     resolved = _own_server(request, server)
-    if server:
+    if server and resolved != _canonical_url(str(request.base_url)):
         # RG-GUARD-05: a name this deployment's Host guard refuses would be
         # answered 400 HOST_NOT_ALLOWED on every enroll and poll the beacon
-        # makes: the installer would "succeed" and no agent would appear. A
-        # server taken from this request's own Host header was admitted to get
-        # here, so only ?server= can trip this, and after _own_server only for
-        # a name listed in CORTEXSIM_PUBLIC_URLS.
+        # makes: the installer would "succeed" and no agent would appear. The
+        # origin this request arrived on was admitted by the guard to get here,
+        # so after _own_server only a name listed in CORTEXSIM_PUBLIC_URLS can
+        # trip this.
         from security import host_guard  # noqa: PLC0415
 
         if not await host_guard.would_admit(resolved):
