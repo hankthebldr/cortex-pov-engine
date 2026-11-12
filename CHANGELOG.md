@@ -1644,6 +1644,29 @@ escape every string behind it.
   counted it as emitting nothing. Neither does now. The corpus count is
   unchanged on this tree (98 marker-only steps of 823).
 
+### Added — a scenario run's collector steps can send live, behind consent and keys (#231)
+
+- **Before:** a run's `channel: eal` steps were dispatched in SimCore's own
+  process but hard-wired to dry-run, so a scenario could never deliver its
+  collector records in the same run as its agent steps, a dry-run ledger entry
+  carried `code: null`, and undelivered steps stayed in the scoring
+  denominator, so a later Tier-2 verify could read `fail` for records that
+  were never sent.
+- **Now:** the in-process campaign runs live only when the launch carries
+  `consent.simulation_authorized` **and** a non-blank `authorized_by` (new on
+  `LaunchRequest`), every eal step is registered, validates and resolves to a
+  keyed, non-failing collector target, and the steps' total sleep is ≤ 30 s.
+  Otherwise the whole campaign stays dry-run (never half-live), and each step
+  records why: `EAL_DRY_RUN_NO_CONSENT`, `_NOT_COLLECTOR`,
+  `_TARGET_UNRESOLVED`, `_TARGET_NO_KEY`, `_TARGET_FAILING`, `_SLEEP_CAP`,
+  `_HELD`, or `EAL_STEP_INVALID`.
+- Keys are decrypted only on the sending path and never reach the ledger.
+  `Result.executed_at` comes from each step's real start; a step that delivered
+  no record seeds its results as `outcome: not_executed` with the code as the
+  reason, so it leaves the denominator.
+- The MCP launch tool does not take `authorized_by`, so only a human operator
+  calling the REST launch can start a live send. `tenant-verified` is still 0.
+
 ### Added — idp and m365 emitters gain the Pink chain shapes (#234)
 
 For IOC-driven SaaS chains such as Unit 42's Pink (CL-CRI-1147: vishing,
