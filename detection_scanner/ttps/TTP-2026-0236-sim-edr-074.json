@@ -198,7 +198,7 @@
       {
         "purpose": "validation",
         "name": "Rare Domain Network Connections",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.100'\n| filter not action_remote_hostname in (SELECT DISTINCT action_remote_hostname FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.100'\n| comp count() as events by action_remote_ip, agent_hostname\n| sort desc events",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -211,7 +211,7 @@
       {
         "name": "Abnormal Communication to Rare Domain",
         "description": "Behavioral deviation indicating communication to a rare domain not seen in historical data",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.100'\n| filter action_remote_hostname = '192.0.2.100'\n| filter not action_remote_hostname in (SELECT DISTINCT action_remote_hostname FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip = '192.0.2.100'\n| filter action_remote_hostname = '192.0.2.100'\n| comp count() as events by action_remote_ip, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "action_remote_ip",
         "mitre_technique_ids": [

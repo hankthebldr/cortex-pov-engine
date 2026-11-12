@@ -8,8 +8,9 @@
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
 | filter action_remote_ip != null
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'host1' AND timestamp > now() - 1d)
 | filter actor_process_image_name in ('powershell.exe', 'wscript.exe', 'cscript.exe')
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## ABIOC — Suspicious PowerShell Network Connection (behavioral-ML, causality-anchored)
 # severity: high
@@ -21,8 +22,9 @@ dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
 | filter actor_process_image_name = 'powershell.exe'
 | filter action_remote_ip != null
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = agent_hostname AND timestamp > now() - 7d)
 | filter action_remote_ip not in ('192.0.2.0/24', '10.0.0.0/8', '172.16.0.0/12', '127.0.0.0/8')
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## VALIDATION — PowerShell Rare Network Connection Hunt
 # purpose: validation
@@ -31,7 +33,6 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
 | filter actor_process_image_name = 'powershell.exe'
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = agent_hostname AND timestamp > now() - 7d)
 | filter action_remote_ip not in ('192.0.2.0/24', '10.0.0.0/8', '172.16.0.0/12', '127.0.0.0/8')
 | comp count() by action_remote_ip, actor_process_image_name
 

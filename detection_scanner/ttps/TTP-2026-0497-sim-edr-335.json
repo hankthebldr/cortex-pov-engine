@@ -168,7 +168,7 @@
       {
         "name": "Rare Process Created SSH Session to Uncommon Host",
         "description": "Detection of a rare process initiating an SSH session to an external IP not typically seen in the environment",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name contains 'ssh'\n| filter action_remote_ip not in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK)\n| filter actor_process_image_name not in ('sshd', 'systemd', 'cron')",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name contains 'ssh'\n| filter actor_process_image_name not in ('sshd', 'systemd', 'cron')\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1021.004",
           "T1059.001"
@@ -181,7 +181,7 @@
       {
         "purpose": "validation",
         "name": "SSH Sessions to Uncommon IPs",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and network_direction = ENUM.OUTBOUND\n| filter dst_port = 22\n| filter dst_ip not in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND dst_port = 22)\n| filter action_process_image_name contains 'ssh'\n| filter actor_process_image_name not in ('sshd', 'systemd', 'cron')",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and network_direction = ENUM.OUTBOUND\n| filter dst_port = 22\n| filter action_process_image_name contains 'ssh'\n| filter actor_process_image_name not in ('sshd', 'systemd', 'cron')\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -194,7 +194,7 @@
       {
         "name": "SSH Session from Rare Process to Uncommon External IP",
         "description": "Behavioral deviation where a rare process initiates SSH connection to an uncommon external host",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name contains 'ssh'\n| filter action_remote_ip not in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK)\n| filter actor_process_image_name not in ('sshd', 'systemd', 'cron')",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name contains 'ssh'\n| filter actor_process_image_name not in ('sshd', 'systemd', 'cron')\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "actor_process_image_name",
         "mitre_technique_ids": [

@@ -212,7 +212,7 @@
       {
         "name": "Unpopular DLL Injection by Signed Process",
         "description": "Detection of a signed process performing a DLL injection that is not typical for that process",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name IN ('rundll32.exe', 'msiexec.exe')\n| filter action_file_path CONTAINS '.dll'\n| filter action_file_path NOT IN ('C:\\\\Windows\\\\System32\\\\', 'C:\\\\Windows\\\\SysWOW64\\\\')\n| filter action_file_path NOT IN (SELECT DISTINCT action_file_path FROM xdr_data WHERE actor_process_image_name = 'rundll32.exe' AND event_type = ENUM.PROCESS)",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name IN ('rundll32.exe', 'msiexec.exe')\n| filter action_file_path CONTAINS '.dll'\n| filter action_file_path NOT IN ('C:\\\\Windows\\\\System32\\\\', 'C:\\\\Windows\\\\SysWOW64\\\\')\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "actor_process_image_name = 'rundll32.exe'",
         "mitre_technique_ids": [

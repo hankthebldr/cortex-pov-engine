@@ -10,7 +10,8 @@ dataset = xdr_data
 | filter action_process_image_name != null
 | filter action_remote_ip != null
 | filter action_process_image_name matches '.*signed.*'
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## ABIOC — Unusual Network Behavior from Trusted Process (behavioral-ML, causality-anchored)
 # severity: high
@@ -23,7 +24,8 @@ dataset = xdr_data
 | filter action_process_image_name != null
 | filter action_remote_ip != null
 | filter action_process_image_name matches '.*signed.*'
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## VALIDATION — Hunt for Signed Processes Connecting to Rare IPs
 # purpose: validation
@@ -34,5 +36,6 @@ dataset = xdr_data
 | filter action_process_image_name != null
 | filter action_remote_ip != null
 | filter action_process_image_name matches '.*signed.*'
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 

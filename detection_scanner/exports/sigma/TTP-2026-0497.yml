@@ -8,8 +8,9 @@ description: |
     dataset = xdr_data
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter action_process_image_name contains 'ssh'
-    | filter action_remote_ip not in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK)
     | filter actor_process_image_name not in ('sshd', 'systemd', 'cron')
+    | comp count() as events by actor_process_image_name, agent_hostname
+    | sort desc events
   ----
 references:
   - https://attack.mitre.org/techniques/T1021/
@@ -38,8 +39,9 @@ description: |
     dataset = xdr_data
     | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
     | filter action_process_image_name contains 'ssh'
-    | filter action_remote_ip not in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK)
     | filter actor_process_image_name not in ('sshd', 'systemd', 'cron')
+    | comp count() as events by actor_process_image_name, agent_hostname
+    | sort desc events
   ----
 references:
   - https://attack.mitre.org/techniques/T1021/

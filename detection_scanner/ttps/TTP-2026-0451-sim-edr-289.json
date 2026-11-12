@@ -184,7 +184,7 @@
       {
         "name": "Uncommon Recurring Rare External Host Access",
         "description": "Detection of process accessing rare external IP address repeatedly",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d))\n| filter actor_process_image_name = 'powershell.exe'\n",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1059.001",
           "T1071.004"
@@ -197,7 +197,7 @@
       {
         "purpose": "validation",
         "name": "Detect Rare External Host Access",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT\n| filter action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)\n| filter actor_process_image_name = 'powershell.exe'\n",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT\n| filter actor_process_image_name = 'powershell.exe'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -210,7 +210,7 @@
       {
         "name": "Rare External Host Access via PowerShell",
         "description": "Behavioral deviation of PowerShell accessing uncommon external IP address",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT\n| filter action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)\n| filter actor_process_image_name = 'powershell.exe'\n",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT\n| filter actor_process_image_name = 'powershell.exe'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "action_remote_ip",
         "mitre_technique_ids": [

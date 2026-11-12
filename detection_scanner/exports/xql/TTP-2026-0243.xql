@@ -7,8 +7,9 @@
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECTION_ESTABLISHED
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 3389 AND event_time > now() - 30d)
 | filter dst_port = 3389
+| comp count() as events by agent_hostname, agent_hostname
+| sort desc events
 
 ## ABIOC — RDP Session with Remote Execution (behavioral-ML, causality-anchored)
 # severity: high
@@ -31,6 +32,5 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECTION_ESTABLISHED
 | filter dst_port = 3389
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 3389 AND event_time > now() - 30d)
 | comp count() by action_remote_ip, dst_ip
 

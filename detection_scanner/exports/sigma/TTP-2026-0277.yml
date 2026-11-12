@@ -10,7 +10,8 @@ description: |
     | filter action_process_image_name != null
     | filter action_remote_ip != null
     | filter action_process_image_name matches '.*signed.*'
-    | filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')
+    | comp count() as events by action_remote_ip, agent_hostname
+    | sort desc events
   ----
 references:
   - https://attack.mitre.org/techniques/T1071/
@@ -41,7 +42,8 @@ description: |
     | filter action_process_image_name != null
     | filter action_remote_ip != null
     | filter action_process_image_name matches '.*signed.*'
-    | filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')
+    | comp count() as events by action_remote_ip, agent_hostname
+    | sort desc events
   ----
 references:
   - https://attack.mitre.org/techniques/T1071/

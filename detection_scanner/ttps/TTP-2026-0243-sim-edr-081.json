@@ -178,7 +178,7 @@
       {
         "name": "Abnormal RDP Session",
         "description": "RDP session initiated from a rarely seen host to a target",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECTION_ESTABLISHED\n| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 3389 AND event_time > now() - 30d)\n| filter dst_port = 3389",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECTION_ESTABLISHED\n| filter dst_port = 3389\n| comp count() as events by agent_hostname, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1021.001",
           "T1566"
@@ -191,7 +191,7 @@
       {
         "purpose": "validation",
         "name": "Detect Rare Host RDP Sessions",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECTION_ESTABLISHED\n| filter dst_port = 3389\n| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 3389 AND event_time > now() - 30d)\n| comp count() by action_remote_ip, dst_ip",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECTION_ESTABLISHED\n| filter dst_port = 3389\n| comp count() by action_remote_ip, dst_ip",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }

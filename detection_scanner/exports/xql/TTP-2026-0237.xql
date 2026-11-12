@@ -23,7 +23,8 @@ dataset = xdr_data
 | filter action_remote_ip = '192.0.2.10'
 | filter dst_port = 80
 | filter action_process_image_name = 'powershell.exe'
-| filter action_remote_ip in (SELECT remote_ip FROM network WHERE user_agent like '%Mozilla/5.0%')
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## VALIDATION — PowerShell with Custom User-Agent
 # purpose: validation

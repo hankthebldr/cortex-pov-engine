@@ -174,7 +174,7 @@
       {
         "name": "Globally Uncommon IP Connection from Signed Process",
         "description": "Detection of a signed process initiating a network connection to an IP address that is not commonly seen in the organization's network traffic.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_process_image_name != null\n| filter action_remote_ip != null\n| filter action_process_image_name matches '.*signed.*'\n| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')\n",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_process_image_name != null\n| filter action_remote_ip != null\n| filter action_process_image_name matches '.*signed.*'\n| comp count() as events by action_remote_ip, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1071.004",
           "T1059.001"
@@ -187,7 +187,7 @@
       {
         "purpose": "validation",
         "name": "Hunt for Signed Processes Connecting to Rare IPs",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_process_image_name != null\n| filter action_remote_ip != null\n| filter action_process_image_name matches '.*signed.*'\n| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')\n",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_process_image_name != null\n| filter action_remote_ip != null\n| filter action_process_image_name matches '.*signed.*'\n| comp count() as events by action_remote_ip, agent_hostname\n| sort desc events",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -200,7 +200,7 @@
       {
         "name": "Unusual Network Behavior from Trusted Process",
         "description": "Detects when a signed/legitimate process makes an outbound connection to an IP address not typically seen in the environment, indicating potential compromise or lateral movement.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_process_image_name != null\n| filter action_remote_ip != null\n| filter action_process_image_name matches '.*signed.*'\n| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND action_process_image_name matches '.*signed.*')\n",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_process_image_name != null\n| filter action_remote_ip != null\n| filter action_process_image_name matches '.*signed.*'\n| comp count() as events by action_remote_ip, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "action_process_image_name",
         "mitre_technique_ids": [

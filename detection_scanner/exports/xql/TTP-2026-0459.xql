@@ -8,7 +8,8 @@
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = 'powershell.exe'
-| filter action_command_line contains 'SELECT' and action_command_line contains 'FROM' and action_command_line contains 'WHERE' and action_command_line contains 'LIKE'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## ABIOC — SQL-like Command Line in PowerShell (behavioral-ML, causality-anchored)
 # severity: high
@@ -19,7 +20,8 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = 'powershell.exe'
-| filter action_command_line contains 'SELECT' and action_command_line contains 'FROM' and action_command_line contains 'WHERE' and action_command_line contains 'LIKE'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## VALIDATION — Detect SQL-like PowerShell Commands
 # purpose: validation
@@ -28,6 +30,7 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = 'powershell.exe'
-| filter action_command_line contains 'SELECT' and action_command_line contains 'FROM' and action_command_line contains 'WHERE' and action_command_line contains 'LIKE'
 | fields agent_hostname, actor_process_image_name, action_command_line
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 

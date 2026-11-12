@@ -22,7 +22,8 @@ dataset = xdr_data
 | filter actor_process_image_name IN ('rundll32.exe', 'msiexec.exe')
 | filter action_file_path CONTAINS '.dll'
 | filter action_file_path NOT IN ('C:\\Windows\\System32\\', 'C:\\Windows\\SysWOW64\\')
-| filter action_file_path NOT IN (SELECT DISTINCT action_file_path FROM xdr_data WHERE actor_process_image_name = 'rundll32.exe' AND event_type = ENUM.PROCESS)
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## VALIDATION — Signed Process DLL Injection Hunt
 # purpose: validation

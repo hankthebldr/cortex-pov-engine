@@ -8,8 +8,9 @@
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter action_process_image_name contains 'ssh'
-| filter action_remote_ip not in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK)
 | filter actor_process_image_name not in ('sshd', 'systemd', 'cron')
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## ABIOC — SSH Session from Rare Process to Uncommon External IP (behavioral-ML, causality-anchored)
 # severity: high
@@ -20,8 +21,9 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter action_process_image_name contains 'ssh'
-| filter action_remote_ip not in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK)
 | filter actor_process_image_name not in ('sshd', 'systemd', 'cron')
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## VALIDATION — SSH Sessions to Uncommon IPs
 # purpose: validation
@@ -30,7 +32,8 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK and network_direction = ENUM.OUTBOUND
 | filter dst_port = 22
-| filter dst_ip not in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK AND dst_port = 22)
 | filter action_process_image_name contains 'ssh'
 | filter actor_process_image_name not in ('sshd', 'systemd', 'cron')
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 

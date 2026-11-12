@@ -174,7 +174,7 @@
       {
         "name": "Process connecting to rare cloud resource",
         "description": "Detects a process connecting to an IP address that is not commonly seen in the environment",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip in (SELECT remote_ip FROM rare_cloud_ips)\n| filter action_process_image_name != 'System'\n| filter causality_actor_process_image_name != 'System'",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_process_image_name != 'System'\n| filter causality_actor_process_image_name != 'System'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1071.004",
           "T1059.001"
@@ -187,7 +187,7 @@
       {
         "purpose": "validation",
         "name": "Rare cloud resource connections",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip in (SELECT remote_ip FROM rare_cloud_ips)\n| filter action_process_image_name != 'System'\n| filter causality_actor_process_image_name != 'System'",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_process_image_name != 'System'\n| filter causality_actor_process_image_name != 'System'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -200,7 +200,7 @@
       {
         "name": "Rare cloud resource connection",
         "description": "Detects behavioral deviation when a process connects to a rare cloud resource IP address",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip in (SELECT remote_ip FROM rare_cloud_ips)\n| filter action_process_image_name != 'System'\n| filter causality_actor_process_image_name != 'System'",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_process_image_name != 'System'\n| filter causality_actor_process_image_name != 'System'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "action_remote_ip",
         "mitre_technique_ids": [

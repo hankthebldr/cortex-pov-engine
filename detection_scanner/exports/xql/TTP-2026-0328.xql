@@ -7,8 +7,8 @@
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
-| filter action_remote_ip in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND agent_hostname = 'target-host'))
-| filter causality_actor_process_image_name in (SELECT DISTINCT actor_process_image_name FROM xdr_data WHERE event_type = ENUM.PROCESS AND actor_process_image_name = 'powershell.exe')
+| comp count() as events by agent_hostname, agent_hostname
+| sort desc events
 
 ## ABIOC — PowerShell download to rare IP (behavioral-ML, causality-anchored)
 # severity: high
@@ -21,7 +21,8 @@ dataset = xdr_data
 | filter actor_process_image_name = 'powershell.exe'
 | filter action_process_image_name = 'powershell.exe'
 | filter action_file_path like '%DownloadFile%'
-| filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND agent_hostname = 'target-host'))
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## VALIDATION — Detect rare IP usage from PowerShell
 # purpose: validation
@@ -29,6 +30,7 @@ dataset = xdr_data
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
-| filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND agent_hostname = 'target-host'))
 | filter causality_actor_process_image_name = 'powershell.exe'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 

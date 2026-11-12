@@ -7,8 +7,9 @@
 
 dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
-| filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d))
 | filter actor_process_image_name = 'powershell.exe'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## ABIOC — Rare External Host Access via PowerShell (behavioral-ML, causality-anchored)
 # severity: high
@@ -18,8 +19,9 @@ dataset = xdr_data
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT
-| filter action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)
 | filter actor_process_image_name = 'powershell.exe'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## VALIDATION — Detect Rare External Host Access
 # purpose: validation
@@ -27,6 +29,7 @@ dataset = xdr_data
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT
-| filter action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)
 | filter actor_process_image_name = 'powershell.exe'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 

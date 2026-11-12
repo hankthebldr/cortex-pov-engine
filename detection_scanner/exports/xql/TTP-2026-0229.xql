@@ -8,8 +8,8 @@
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
 | filter action_remote_ip != null
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'target-host')
-| filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'target-host' AND action_remote_ip != '192.0.2.100')
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## ABIOC — Rare External Host Connection (behavioral-ML, causality-anchored)
 # severity: high
@@ -20,7 +20,8 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
 | filter action_remote_ip != null
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'target-host')
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## VALIDATION — Detect Rare Network Connections
 # purpose: validation
@@ -29,6 +30,5 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
 | filter action_remote_ip != null
-| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'target-host')
 | comp count() by action_remote_ip
 

@@ -184,7 +184,7 @@
       {
         "name": "Rare AppID usage to rare destination",
         "description": "Detection of rare application ID usage to a rare destination IP",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip in (SELECT DISTINCT dst_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND agent_hostname = 'target-host'))\n| filter causality_actor_process_image_name in (SELECT DISTINCT actor_process_image_name FROM xdr_data WHERE event_type = ENUM.PROCESS AND actor_process_image_name = 'powershell.exe')",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| comp count() as events by agent_hostname, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1059.001",
           "T1105",
@@ -198,7 +198,7 @@
       {
         "purpose": "validation",
         "name": "Detect rare IP usage from PowerShell",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND agent_hostname = 'target-host'))\n| filter causality_actor_process_image_name = 'powershell.exe'",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter causality_actor_process_image_name = 'powershell.exe'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -211,7 +211,7 @@
       {
         "name": "PowerShell download to rare IP",
         "description": "Behavioral deviation of PowerShell downloading from rare IP",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_process_image_name = 'powershell.exe'\n| filter action_file_path like '%DownloadFile%'\n| filter action_remote_ip in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND action_remote_ip NOT IN (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND dst_port = 80 AND agent_hostname = 'target-host'))",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_process_image_name = 'powershell.exe'\n| filter action_file_path like '%DownloadFile%'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "powershell.exe downloading file from rare IP",
         "mitre_technique_ids": [

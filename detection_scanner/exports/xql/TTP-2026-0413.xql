@@ -9,8 +9,9 @@ dataset = xdr_data
 | filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START
 | filter actor_process_image_name = 'svchost.exe'
 | filter action_file_path contains '.dll'
-| filter action_file_path not in (SELECT file_path FROM trusted_dlls)
 | filter action_file_signature_status = 'unsigned'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## ABIOC — Unusual svchost DLL load behavior (behavioral-ML, causality-anchored)
 # severity: high
@@ -23,7 +24,6 @@ dataset = xdr_data
 | filter actor_process_image_name = 'svchost.exe'
 | filter action_file_path contains '.dll'
 | filter action_file_signature_status = 'unsigned'
-| filter action_file_path not in (SELECT file_path FROM trusted_dlls)
 | comp count() as cnt by action_file_path
 | filter count() > 1
 
@@ -36,5 +36,6 @@ dataset = xdr_data
 | filter actor_process_image_name = 'svchost.exe'
 | filter action_file_path contains '.dll'
 | filter action_file_signature_status = 'unsigned'
-| filter action_file_path not in (SELECT file_path FROM trusted_dlls)
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 

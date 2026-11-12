@@ -7,9 +7,10 @@
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
-| filter action_remote_ip in (SELECT remote_ip FROM rare_cloud_ips)
 | filter action_process_image_name != 'System'
 | filter causality_actor_process_image_name != 'System'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## ABIOC — Rare cloud resource connection (behavioral-ML, causality-anchored)
 # severity: high
@@ -19,9 +20,10 @@ dataset = xdr_data
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
-| filter action_remote_ip in (SELECT remote_ip FROM rare_cloud_ips)
 | filter action_process_image_name != 'System'
 | filter causality_actor_process_image_name != 'System'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 
 ## VALIDATION — Rare cloud resource connections
 # purpose: validation
@@ -29,7 +31,8 @@ dataset = xdr_data
 
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
-| filter action_remote_ip in (SELECT remote_ip FROM rare_cloud_ips)
 | filter action_process_image_name != 'System'
 | filter causality_actor_process_image_name != 'System'
+| comp count() as events by actor_process_image_name, agent_hostname
+| sort desc events
 

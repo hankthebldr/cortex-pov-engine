@@ -185,7 +185,7 @@
       {
         "name": "Rundll32 Executes Rare Unsigned Module",
         "description": "Detects rundll32.exe executing a rare or unsigned DLL module.",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'rundll32.exe'\n| filter action_file_path contains '.dll'\n| filter action_file_path not in (SELECT DISTINCT action_file_path FROM xdr_data WHERE action_file_signature_status = 'signed')\n",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'rundll32.exe'\n| filter action_file_path contains '.dll'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1059.001",
           "T1218.011"

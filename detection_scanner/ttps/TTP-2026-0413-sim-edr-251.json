@@ -178,7 +178,7 @@
       {
         "name": "Svchost loads rare unsigned module",
         "description": "Detection of svchost.exe loading an unsigned module not typically seen in normal operations",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains '.dll'\n| filter action_file_path not in (SELECT file_path FROM trusted_dlls)\n| filter action_file_signature_status = 'unsigned'",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains '.dll'\n| filter action_file_signature_status = 'unsigned'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1059.001",
           "T1106",
@@ -192,7 +192,7 @@
       {
         "purpose": "validation",
         "name": "Detect unsigned DLL load by svchost",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains '.dll'\n| filter action_file_signature_status = 'unsigned'\n| filter action_file_path not in (SELECT file_path FROM trusted_dlls)",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains '.dll'\n| filter action_file_signature_status = 'unsigned'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -205,7 +205,7 @@
       {
         "name": "Unusual svchost DLL load behavior",
         "description": "Behavioral deviation where svchost.exe loads an unsigned DLL not commonly seen in baseline",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains '.dll'\n| filter action_file_signature_status = 'unsigned'\n| filter action_file_path not in (SELECT file_path FROM trusted_dlls)\n| comp count() as cnt by action_file_path\n| filter count() > 1",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'svchost.exe'\n| filter action_file_path contains '.dll'\n| filter action_file_signature_status = 'unsigned'\n| comp count() as cnt by action_file_path\n| filter count() > 1",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "actor_process_image_name = 'svchost.exe'",
         "mitre_technique_ids": [

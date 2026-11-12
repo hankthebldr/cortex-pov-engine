@@ -9,7 +9,8 @@ dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT
 | filter action_remote_ip != null and dst_port = 3389
 | filter actor_process_image_name contains 'rdpclient.exe'
-| filter agent_hostname not in (SELECT hostname FROM managed_endpoints)
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## ABIOC — Unmanaged RDP Access Pattern (behavioral-ML, causality-anchored)
 # severity: high
@@ -20,8 +21,8 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT
 | filter action_remote_ip != null and dst_port = 3389
-| filter agent_hostname not in (SELECT hostname FROM managed_endpoints)
-| filter dst_ip in (SELECT ip FROM managed_subnets)
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## VALIDATION — RDP Access from Unmanaged Host
 # purpose: validation
@@ -30,6 +31,6 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION and event_sub_type = ENUM.NETWORK_CONNECT
 | filter action_remote_ip != null and dst_port = 3389
-| filter agent_hostname not in (SELECT hostname FROM managed_endpoints)
-| filter dst_ip in (SELECT ip FROM managed_subnets)
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 

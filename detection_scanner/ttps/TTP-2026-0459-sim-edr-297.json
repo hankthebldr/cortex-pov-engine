@@ -180,7 +180,7 @@
       {
         "name": "Uncommon SQL-like Command Line Pattern",
         "description": "Detection of PowerShell processes with command lines containing SQL-like syntax patterns",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_command_line contains 'SELECT' and action_command_line contains 'FROM' and action_command_line contains 'WHERE' and action_command_line contains 'LIKE'",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1059.001",
           "T1071.004"
@@ -193,7 +193,7 @@
       {
         "purpose": "validation",
         "name": "Detect SQL-like PowerShell Commands",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_command_line contains 'SELECT' and action_command_line contains 'FROM' and action_command_line contains 'WHERE' and action_command_line contains 'LIKE'\n| fields agent_hostname, actor_process_image_name, action_command_line",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| fields agent_hostname, actor_process_image_name, action_command_line\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -206,7 +206,7 @@
       {
         "name": "SQL-like Command Line in PowerShell",
         "description": "Behavioral deviation showing PowerShell command lines with SQL-like syntax patterns",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_command_line contains 'SELECT' and action_command_line contains 'FROM' and action_command_line contains 'WHERE' and action_command_line contains 'LIKE'",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'powershell.exe'\n| comp count() as events by actor_process_image_name, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "actor_process_image_name = 'powershell.exe'",
         "mitre_technique_ids": [

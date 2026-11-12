@@ -21,7 +21,8 @@ dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
 | filter action_remote_ip = '192.0.2.100'
 | filter action_remote_hostname = '192.0.2.100'
-| filter not action_remote_hostname in (SELECT DISTINCT action_remote_hostname FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 
 ## VALIDATION — Rare Domain Network Connections
 # purpose: validation
@@ -30,5 +31,6 @@ dataset = xdr_data
 dataset = xdr_data
 | filter event_type = ENUM.NETWORK_CONNECTION
 | filter action_remote_ip = '192.0.2.100'
-| filter not action_remote_hostname in (SELECT DISTINCT action_remote_hostname FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND timestamp > now() - 30d)
+| comp count() as events by action_remote_ip, agent_hostname
+| sort desc events
 

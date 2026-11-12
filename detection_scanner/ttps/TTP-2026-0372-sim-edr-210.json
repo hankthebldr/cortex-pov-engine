@@ -179,7 +179,7 @@
       {
         "name": "Scripting Engine Connected to Rare External Host",
         "description": "Detection of PowerShell or WSH process connecting to an IP address that is not commonly seen in the environment",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip != null\n| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = 'host1' AND timestamp > now() - 1d)\n| filter actor_process_image_name in ('powershell.exe', 'wscript.exe', 'cscript.exe')",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter action_remote_ip != null\n| filter actor_process_image_name in ('powershell.exe', 'wscript.exe', 'cscript.exe')\n| comp count() as events by action_remote_ip, agent_hostname\n| sort desc events",
         "mitre_technique_ids": [
           "T1059.001",
           "T1071.004"
@@ -192,7 +192,7 @@
       {
         "purpose": "validation",
         "name": "PowerShell Rare Network Connection Hunt",
-        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = agent_hostname AND timestamp > now() - 7d)\n| filter action_remote_ip not in ('192.0.2.0/24', '10.0.0.0/8', '172.16.0.0/12', '127.0.0.0/8')\n| comp count() by action_remote_ip, actor_process_image_name",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_remote_ip not in ('192.0.2.0/24', '10.0.0.0/8', '172.16.0.0/12', '127.0.0.0/8')\n| comp count() by action_remote_ip, actor_process_image_name",
         "expected_rows_min": 1,
         "dataset": "xdr_data"
       }
@@ -205,7 +205,7 @@
       {
         "name": "Suspicious PowerShell Network Connection",
         "description": "Behavioral deviation where PowerShell process connects to a rare external IP address not observed in recent network activity",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_remote_ip != null\n| filter action_remote_ip not in (SELECT DISTINCT action_remote_ip FROM xdr_data WHERE event_type = ENUM.NETWORK_CONNECTION AND agent_hostname = agent_hostname AND timestamp > now() - 7d)\n| filter action_remote_ip not in ('192.0.2.0/24', '10.0.0.0/8', '172.16.0.0/12', '127.0.0.0/8')",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION\n| filter actor_process_image_name = 'powershell.exe'\n| filter action_remote_ip != null\n| filter action_remote_ip not in ('192.0.2.0/24', '10.0.0.0/8', '172.16.0.0/12', '127.0.0.0/8')\n| comp count() as events by action_remote_ip, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "actor_process_image_name = 'powershell.exe'",
         "mitre_technique_ids": [

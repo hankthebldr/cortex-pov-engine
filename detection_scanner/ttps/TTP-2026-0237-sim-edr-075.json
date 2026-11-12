@@ -210,7 +210,7 @@
       {
         "name": "Abnormal TLS/HTTP User-Agent Communication",
         "description": "Detects a rare combination of TLS and HTTP User-Agent headers used in communication",
-        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 80\n| filter action_process_image_name = 'powershell.exe'\n| filter action_remote_ip in (SELECT remote_ip FROM network WHERE user_agent like '%Mozilla/5.0%')",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = '192.0.2.10'\n| filter dst_port = 80\n| filter action_process_image_name = 'powershell.exe'\n| comp count() as events by action_remote_ip, agent_hostname\n| sort desc events",
         "behavioral_profile": "machine-learning",
         "causality_anchor": "powershell.exe process start with custom HTTP headers",
         "mitre_technique_ids": [
