@@ -1,7 +1,8 @@
 # Lab run plan — Unit 42 backlog: SIM-KOI-012 (and why SIM-CDR-029 gets none)
 
 **Scenario:** SIM-KOI-012, the Axios npm supply chain's Linux second stage
-(card TTP-2026-0203), on branch `feature/scenarios-unit42-backlog`.
+(card TTP-2026-0203), on branch `feature/scenarios-unit42-axios-koi-012`
+(Gate A PR into `dev`; on `dev` once merged).
 **Target:** the Cortex XDR agent on `pov-target-01` (lab VM, Ubuntu 24.04,
 agent 9.4.0.470, policy `SEBC-FY25-LAB-LinuxServerPolicy`, report mode),
 beacon `pov-target-01-4dcdce` (server `http://192.168.1.105:8888`), tenant
@@ -60,8 +61,8 @@ has no cloud account. No result here has been verified against a live tenant.
 
 1. **Load the scenario.** The SimCore on :8888 must carry SIM-KOI-012:
    `curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8888/api/scenarios/SIM-KOI-012`
-   must print `200`. If it prints `404`, rebuild SimCore from
-   `feature/scenarios-unit42-backlog` with `scripts/dev-up.sh` (reuse the root
+   must print `200`. If it prints `404`, rebuild SimCore from `dev` (or, before
+   the merge, `feature/scenarios-unit42-axios-koi-012`) with `scripts/dev-up.sh` (reuse the root
    `.env` so the vault and the `deathstar` credential decrypt; keep the image
    tag the cortex-mcp `run.sh` expects).
 2. **Confirm the beacon.**
@@ -299,8 +300,8 @@ These are the scenario's own `cleanup.commands`.
 Henry's decision of 2026-11-11 ("Yes, separate branch (Recommended)"): Blinding
 the Watchmen is built on its own branch, `feature/scenarios-unit42-cloud-logging`,
 **authored-only**, with Universal Bucket Hijacking as one leg. The emitter
-presets it needs are on `feature/api-cloud-audit-emitter-presets`
-(`cloud_audit_emitter`, eight logging-service presets). On 2026-11-11 no file
+presets it needs are on `feature/api-cloud-audit-logging-presets`
+(`cloud_audit_emitter`, eight logging-service presets; Gate A PR into `dev`). On 2026-11-11 no file
 on any branch carries the id SIM-CDR-029; it is the next free CDR id.
 
 No lab run is planned for it, and none could prove it:
