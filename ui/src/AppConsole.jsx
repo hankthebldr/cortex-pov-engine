@@ -318,37 +318,40 @@ function ConsoleShell() {
             params={router.params}
             setParams={router.setParams}
             onNavigate={router.navigate}
+            onAbortRun={() => setAbortConfirmOpen(true)}
             onExit={immersive ? exitImmersive : undefined}
           />
         </SurfaceBoundary>
+        {/* Inside the shell, like the palette and help overlays: every
+            .confirm-dialog rule is scoped to .theme-console, so mounted after
+            </AppShell> it rendered as bare text at the foot of the page. */}
+        <ConfirmDialog
+          open={abortConfirmOpen}
+          onClose={() => setAbortConfirmOpen(false)}
+          onConfirm={handleAbortConfirmed}
+          title="Abort active run?"
+          body={
+            env.activeRun ? (
+              <>
+                <p>
+                  Aborting <strong className="mono">{env.activeRun.scenarioId}</strong>{' '}
+                  (step {env.activeRun.step} of {env.activeRun.totalSteps}) will:
+                </p>
+                <ul>
+                  <li>Stop the agent from executing remaining steps</li>
+                  <li>Trigger the scenario's cleanup block on the target</li>
+                  <li>Mark the run as <span className="mono">aborted</span> in Evidence</li>
+                </ul>
+                <p className="abort-dialog__note">
+                  Already-fired detections remain valid for POV evidence.
+                </p>
+              </>
+            ) : null
+          }
+          confirmLabel="Abort run"
+          confirmVariant="danger"
+        />
       </AppShell>
-
-      <ConfirmDialog
-        open={abortConfirmOpen}
-        onClose={() => setAbortConfirmOpen(false)}
-        onConfirm={handleAbortConfirmed}
-        title="Abort active run?"
-        body={
-          env.activeRun ? (
-            <>
-              <p>
-                Aborting <strong className="mono">{env.activeRun.scenarioId}</strong>{' '}
-                (step {env.activeRun.step} of {env.activeRun.totalSteps}) will:
-              </p>
-              <ul>
-                <li>Stop the agent from executing remaining steps</li>
-                <li>Trigger the scenario's cleanup block on the target</li>
-                <li>Mark the run as <span className="mono">aborted</span> in Evidence</li>
-              </ul>
-              <p className="abort-dialog__note">
-                Already-fired detections remain valid for POV evidence.
-              </p>
-            </>
-          ) : null
-        }
-        confirmLabel="Abort run"
-        confirmVariant="danger"
-      />
 
       {toast && (
         <div className={`toast toast-${toast.type} app-toast`}>

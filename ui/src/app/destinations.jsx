@@ -398,7 +398,7 @@ function GuidedPovFlow({ params = {}, onNavigate = () => {} }) {
 // Run history list → single Run Detail surface keyed by runId with
 // Live / Evidence / Storyline / Causality SUB-tabs (collapses the four former
 // top-level tabs, extracted into RunDetailView). Multi-run compare via ?compare=1.
-function RunsSurface({ params = {}, setParams = () => {} }) {
+function RunsSurface({ params = {}, setParams = () => {}, onAbortRun = () => {} }) {
   const { runs, activeRun } = useEnvironment()
   // The live-run telemetry used to be a permanent shell row above every
   // destination. It is a property of the RUN, so it belongs on the run's own
@@ -441,7 +441,7 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
           </div>
           <button className="btn" onClick={() => setParams({ compare: '1' }, { replace: true })}>Compare runs</button>
         </div>
-        {activeRun && <TelemetryStrip run={activeRun} />}
+        {activeRun && <TelemetryStrip run={activeRun} onAbort={onAbortRun} />}
         {/* "What ran last" leads the page: the first question on this surface
             is never "list every run", it is "what is happening / what just
             happened". The run list stays below, unchanged. */}
@@ -468,6 +468,7 @@ function RunsSurface({ params = {}, setParams = () => {} }) {
         subTab={subTab}
         onSubTab={(tab) => setParams({ tab })}
         onBack={() => setParams({ run: null, tab: null }, { replace: true })}
+        onAbort={onAbortRun}
         onError={() => {}}
       />
     </Suspense>

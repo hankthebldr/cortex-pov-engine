@@ -121,6 +121,8 @@ function tailOutput(output, lines = 8) {
  *   subTab     — 'live' | 'evidence' | 'storyline' | 'techniques' | 'topology' | 'causality'
  *   onSubTab   — (tab) => void   switch sub-tab (writes ?tab=)
  *   onBack     — () => void      return to the run list
+ *   onAbort    — () => void      ask the shell to confirm aborting this run
+ *                                (offered only while this run is the live one)
  *   onError    — (msg) => void
  */
 
@@ -248,6 +250,7 @@ export default function RunDetailView({
   subTab = 'live',
   onSubTab = () => {},
   onBack = () => {},
+  onAbort = () => {},
   onError = () => {},
 }) {
   const tab = RUN_SUBTABS.some((t) => t.id === subTab) ? subTab : 'live'
@@ -382,6 +385,11 @@ export default function RunDetailView({
             {run?.target && <> · <span className="mono">{run.target}</span></>}
           </div>
         </div>
+        {/* The run's own page is where a DC watches it go wrong, so it is
+            where they stop it. The shell owns the confirm dialog. */}
+        {isThisActive && (
+          <button type="button" className="btn-abort" onClick={onAbort}>Abort run</button>
+        )}
       </div>
 
       {/* The run died and the console knew — say it here, once, at the top,
