@@ -76,8 +76,13 @@ def make_env() -> dict[str, str]:
 
 
 def make_n(*args: str) -> str:
-    """``make -n <args>`` on the real Makefile: what WOULD run, nothing executed."""
-    proc = subprocess.run([require_make(), "-n", "-C", str(REPO), *args],
+    """``make -n <args>`` on the real Makefile: what WOULD run, nothing executed.
+
+    ``--no-print-directory``: GNU make 4.x turns on ``-w`` with ``-C``, so its
+    stdout would end in ``make: Leaving directory ...`` instead of the last line
+    ``make -n <args>`` prints from the repo root (make 3.81 adds no notice).
+    """
+    proc = subprocess.run([require_make(), "--no-print-directory", "-n", "-C", str(REPO), *args],
                           capture_output=True, text=True, timeout=120, env=make_env())
     assert proc.returncode == 0, f"make -n {' '.join(args)} failed:\n{proc.stdout}\n{proc.stderr}"
     return proc.stdout
