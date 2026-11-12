@@ -968,6 +968,8 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 **Known**
 
 - On a Linux agent, the four public WildFire test samples (PE, APK, macOS, ELF) downloaded to /var/tmp and marked executable, but never run, raised no agent issue. The tenant showed nothing for that host after the run. — *operator_report*, Henry, tenant deathstar after SIM-CDR-012 pull run on the lab VM (02:58Z), 2026-11-10 21:27 CST (2026-11-10)
+- On a Linux agent running as a Kubernetes DaemonSet, an EICAR file written to /tmp was still present and un-alerted 20 s later. — *operator_report*, Henry, tenant deathstar case view after the K3s-node test, 2026-11-10 20:23 CST (2026-11-10)
+- On the same lab VM as the SIM-CDR-012 run, executing the public WildFire test ELF raised Local Analysis Malware (HIGH): alone as case 51877 from a draft run, and with WildFire Malware (MEDIUM) as case 51896 from SIM-EDR-023 run fac6e8d5, reconcile MTTD 46 s. — *lab_observation*, docs/lab/2026-11-11-persistence-grouping-lab-run.md:45 ; docs/lab/2026-11-11-linux-endpoint-campaign.md:86 (2026-11-11)
 
 **What CortexSim assumes today**
 
@@ -1025,11 +1027,11 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 
 **P0 · open** — On Linux, does the agent's malware protection (local analysis / WildFire verdict) evaluate an ELF when it is written or chmod'd, or only when it is executed? In report mode, does executing the public WildFire test ELF raise an agent issue, and how long after exec?
 
-- **Why we ask:** SIM-CDR-012 stages the WildFire test samples and stubs execution (step-02); on a lab Linux agent that produced no issue, so the endpoint half of every NGFW+agent stitch test built on it is empty. A stitch test needs an endpoint trigger that is known to fire. Operator observation, not an answer (2026-11-11): in run fac6e8d5 (SIM-EDR-023, which executes the WildFire test ELF it stages), the lab Linux agent raised Local Analysis Malware (HIGH) on the execution. That says exec fires; it does not say whether a write or chmod alone would.
+- **Why we ask:** SIM-CDR-012 stages the WildFire test samples, marks them executable and stubs execution (step-02), so the endpoint half of every NGFW+agent stitch test built on it is empty. A stitch test needs an endpoint trigger that is known to fire. Three lab data points (PRV known): on the lab VM, staged and chmod'd but not run raised no issue, wait not recorded; on a DaemonSet-agent host, an EICAR write raised none after 20 s; on the lab VM again, executing the test ELF raised Local Analysis Malware (HIGH), MTTD 46 s. They point to exec only, but no run waited long enough on an unexecuted file to rule out a slower on-write verdict.
 - **What the answer moves:** Whether endpoint-trigger steps must execute their artifact, and which benign artifact CortexSim uses as the canonical agent trigger for stitch pairing.
   - *if* scan on write → Keep staging-only steps; investigate why the lab profile did not alert (module off, exception).
   - *if* exec only → Endpoint-trigger steps execute the WildFire test ELF under report mode; record the exec in step_outcomes.
-- **Settle it in the lab:** On the lab VM in report mode, execute /var/tmp/.hidden_wildfire_samples/test_elf once and query the tenant for an agent issue on that host for 15 minutes.
+- **Settle it in the lab:** On the lab VM in report mode, download the WildFire test ELF to a fresh path and chmod +x it without running it; query the tenant for an agent issue on that host for 15 minutes. Then execute the same file and query for another 15 minutes. An issue in the first window means scan on write; an issue only in the second means exec only.
 - **Touches:** `scenarios/cdr/cdr-012-wildfire-in-container-misconfig.yml`
 
 ## INC
@@ -1462,7 +1464,7 @@ Everything on the firewall that decides whether an NGFW record exists in the ten
 - Subdomains of testmynids.org resolved through a DNS Security-enabled anti-spyware profile raise threat id `new:testmynids.org` (thr_category dns-new-domain, severity low to informational). Under a profile whose newly-registered-domain action is alert, each distinct query name produced one threat log carrying the full 5-tuple; under a sinkhole profile the query was answered with sinkhole.paloaltonetworks.com. — *lab_observation*, SIM-NDR-009 pull run from a lab beacon, 15 distinct *.exfil.testmynids.org names, 2026-11-11 02:59Z (2026-11-10)
 - Traffic from a libvirt NAT guest is logged with the hypervisor's LAN IP as its source; the guest's own address (192.168.122.0/24) never appears in firewall logs. The guest's XDR agent reports the guest address, so its NGFW and agent records carry different source IPs. — *lab_observation*, PA-440 traffic logs, 0 sessions from libvirt's default 192.168.122.0/24; lab target VM behind the hypervisor's virbr0 NAT (2026-11-10)
 - A Cortex XDR agent running as a Kubernetes DaemonSet with host networking reports the node's LAN IP, which is the same pre-NAT source IP the firewall logs for that node. — *lab_observation*, K3s DaemonSet pods cortex-xdr/cortex-agent-* on both lab K3s nodes, agent IP = node IP (2026-11-10)
-- An NGFW DNS Security threat log for a host produced an NGFW-only issue in the tenant ("generic C2 / generic DNS"). It was not grouped with an agent issue because the agent raised none: an EICAR file written to /tmp on a Linux DaemonSet-agent host was still present and un-alerted 20 s later. One-sided evidence cannot test stitching. — *operator_report*, Henry, tenant deathstar case view after the K3s-node test, 2026-11-10 20:23 CST (2026-11-10)
+- An NGFW DNS Security threat log for a host produced an NGFW-only issue in the tenant ("generic C2 / generic DNS"). It was not grouped with an agent issue because the agent on that host raised none (the EICAR write in PRV known). One-sided evidence cannot test stitching. — *operator_report*, Henry, tenant deathstar case view after the K3s-node test, 2026-11-10 20:23 CST (2026-11-10)
 
 **What CortexSim assumes today**
 
