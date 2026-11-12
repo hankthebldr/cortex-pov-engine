@@ -16,18 +16,11 @@ import pytest
 
 from tests._core_reimport import CORE_DIR, is_core_module, reimport_core
 
-# Two pre-existing warnings, each ignored by exact category/message; any other
-# warning is an error under -W error:
-# * starlette.testclient warns at import that httpx should be httpx2;
-# * core/engine/k8s_manifest.py:1235-1236 carries `\$` in a non-raw string, and a
-#   fresh compile of it (main imports it via the k8s router) is a
-#   DeprecationWarning on 3.11 (SyntaxWarning on 3.12+) — a SyntaxError under
-#   -W error. Not this task's file.
+# One pre-existing warning, ignored by exact category; any other warning is an
+# error under -W error:
+# * starlette.testclient warns at import that httpx should be httpx2.
 pytestmark = [
     pytest.mark.filterwarnings("ignore::starlette.exceptions.StarletteDeprecationWarning"),
-    pytest.mark.filterwarnings(r"ignore:invalid escape sequence '\\\$':DeprecationWarning"),
-    # Python >= 3.12 raises the same compile warning as SyntaxWarning.
-    pytest.mark.filterwarnings(r"ignore:invalid escape sequence '\\\$':SyntaxWarning"),
 ]
 
 MCP_HEADERS = {"Host": "localhost", "Accept": "application/json, text/event-stream",

@@ -48,7 +48,7 @@ state, audit logs, health/metrics — and, where explicitly authorized, act on t
 | [11](11-distributions-assets-api.md) | Distributions / device control / assets | `distributions`/`device_control` | ✅ some reads (prefer XQL for assets) |
 | [12](12-data-ingestion-api.md) | Data ingestion (push) | collector / `alerts` | ⚠ reference-only — **do not implement** |
 | [13](13-healthcheck-metrics.md) | Health & metrics | `healthcheck` + `xql` | ✅ read — **Phase-9 track** |
-| [14](14-operation-catalog.md) | **Operation catalog (all 148 ops)** | every family | authoritative index driving the harness |
+| [14](14-operation-catalog.md) | **Operation catalog (all 151 ops)** | every family | authoritative index driving the harness |
 
 ## The one-paragraph model
 

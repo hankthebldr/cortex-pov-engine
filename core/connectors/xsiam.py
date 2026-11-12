@@ -28,7 +28,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional, Sequence
 
 from integrations.xsiam import codes
 from integrations.xsiam.auth import advanced_auth_headers, standard_auth_headers
@@ -59,6 +59,45 @@ _SEVERITY_MAP = {
 }
 
 
+class IssueStatusMap(dict):
+    """``pull_issue_status`` result: a plain dict plus the read's accounting.
+
+    ``.pages`` is the number of POSTs issued (the caller adds it to
+    ``queries_issued`` and the per-sweep caps); ``.detail`` is the merged detail.
+    """
+
+    pages: int = 0
+    detail: dict
+
+    def __init__(self, *a: Any, pages: int = 0, detail: Optional[dict] = None) -> None:
+        super().__init__(*a)
+        self.pages = pages
+        self.detail = detail or {}
+
+
+def _clean_ids(raw: Sequence[Any]) -> list[str]:
+    """Stripped, non-empty, order-preserving de-duplicated ids."""
+    seen: dict[str, None] = {}
+    for i in raw:
+        t = str(i).strip()
+        if t:
+            seen.setdefault(t, None)
+    return list(seen)
+
+
+class IssueReadError(ConnectorError):
+    """A by-id issue read failed (transport, auth, HTTP, or unrecognised shape).
+
+    ``.code`` is a ``integrations.xsiam.codes`` code; ``.detail`` is the harvest
+    detail. Raised instead of returning ``{}``, which would read as "no issues".
+    """
+
+    def __init__(self, code: str, message: str, detail: Optional[dict] = None) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.detail = detail or {}
+
+
 @register_connector
 class XsiamConnector(Connector):
     """Read alerts from a Cortex XSIAM / XDR tenant Public API."""
@@ -73,6 +112,13 @@ class XsiamConnector(Connector):
     # ``PullResult.detail["path"]`` and the preflight ``alert_shape`` rung.
     _ALERTS_PATH = "/public_api/v1/alerts/get_alerts_multi_events"
     _INCIDENTS_PATH = "/public_api/v1/incidents/get_incidents"
+    #: Issue search (read-only POST). Observed on the lab tenant 2026-11-10: the
+    #: envelope is ``reply.DATA`` and the status fields are flat dotted keys.
+    _ISSUES_SEARCH_PATH = "/public_api/v1/issue/search/"
+    #: Endpoint detail (read-only POST); overridable via ``config["endpoints_path"]``.
+    _ENDPOINT_PATH = "/public_api/v1/endpoints/get_endpoint"
+    #: Ids per request body for the by-id reads (the tenant's page ceiling).
+    _ID_CHUNK = 100
 
     #: The tenant's hard page ceiling (search_to - search_from <= 100).
     _PAGE_SIZE_MAX = 100
@@ -118,9 +164,14 @@ class XsiamConnector(Connector):
     # ── the one paged harvest both reads share ─────────────────────────
 
     def _harvest(
-        self, cfg: ConnectorConfig, path: str, *, since: datetime, until: datetime,
-        filters: dict[str, Any], list_key: str, normalize: Any, kind: str,
+        self, cfg: ConnectorConfig, path: str, *, since: Optional[datetime],
+        until: Optional[datetime], filters: dict[str, Any], list_key: str,
+        normalize: Any, kind: str,
+        request_for: Optional[Callable[[int, int], dict]] = None,
     ) -> PullResult:
+        # `request_for(search_from, page_size)` replaces the time-window body for
+        # the by-id reads; everything else (auth, URL validation, error mapping,
+        # envelope parsing) is this one path.
         conf = cfg.config or {}
         # `base_url` first so ONE registration (the xsiam_tenant spelling) can
         # serve both call paths; `fqdn`/`tenant_url` stay for back-compat with
@@ -168,8 +219,10 @@ class XsiamConnector(Connector):
         total_capped = False
         search_from = 0
         while pages < max_pages:
-            payload = self._build_request(since, until, filters,
-                                          search_from=search_from, page_size=page_size)
+            payload = (request_for(search_from, page_size) if request_for
+                       else self._build_request(since, until, filters,
+                                                search_from=search_from,
+                                                page_size=page_size))
             body = json.dumps(payload).encode("utf-8")
             try:
                 status, text = self._fetch("POST", url, headers, body, 30.0)
@@ -222,7 +275,8 @@ class XsiamConnector(Connector):
         detail: dict[str, Any] = {
             "queried_host": _host_only(url),
             "path": path,
-            "window": [since.isoformat(), until.isoformat()],
+            "window": ([since.isoformat(), until.isoformat()]
+                       if since is not None and until is not None else None),
             "pages": pages,
             "page_size": page_size,
             "returned": returned,
@@ -251,11 +305,167 @@ class XsiamConnector(Connector):
             # Visible, not absorbed: a dropped row is one the DC's coverage
             # number will not include, and they must be told why.
             detail["unparseable_timestamps"] = dropped
-        if kind == "incidents":
+        if kind in ("incidents", "cases"):
             return PullResult(ok=True, connector=self.kind, incidents=items,
                               dropped=dropped, detail=detail)
         return PullResult(ok=True, connector=self.kind, observations=items,
                           dropped=dropped, detail=detail)
+
+
+    # ── by-id reads for the run case ledger (read-only) ─────────────────
+
+    def pull_cases(self, cfg: ConnectorConfig, case_ids: Sequence[str]) -> PullResult:
+        """Read specific cases by id via ``get_incidents`` ``incident_id_list``.
+
+        Rows land on ``.incidents`` (``_normalize_incident``, ``raw`` kept).
+        ``detail["pages"]`` is the number of POSTs issued, one per chunk of 100
+        ids. A failed chunk fails the whole read (``ok=False`` + code): a
+        partial id set would read as "those cases do not exist". An id the
+        tenant does not return is simply absent; the caller decides what that
+        means.
+        """
+        conf = cfg.config or {}
+        path = str(conf.get("incidents_path") or self._INCIDENTS_PATH)
+        ids = _clean_ids(case_ids)
+
+        def _one(chunk: list[str]) -> PullResult:
+            # `search_from` is ignored on purpose: the explicit `limit` below makes
+            # this ONE page per chunk, so the window is always [0, len(chunk)).
+            def body(search_from: int, page_size: int) -> dict:
+                return {"request_data": {
+                    "filters": [{"field": "incident_id_list", "operator": "in",
+                                 "value": chunk}],
+                    "search_from": 0, "search_to": len(chunk)}}
+            # explicit `limit` => exactly one page per chunk.
+            return self._harvest(cfg, path, since=None, until=None,
+                                 filters={"limit": len(chunk)}, list_key="incidents",
+                                 normalize=self._normalize_incident, kind="cases",
+                                 request_for=body)
+
+        return self._chunked(ids, _one, path)
+
+    def pull_issue_status(
+        self, cfg: ConnectorConfig, issue_ids: Sequence[str],
+    ) -> "IssueStatusMap":
+        """Issue id (string) -> ``{"status", "reason", "comment"}``.
+
+        Read from ``status.progress`` / ``status.resolution_reason`` /
+        ``status.resolution_comment`` of ``POST /public_api/v1/issue/search/``
+        filtered by ``id`` (ints when the id is numeric), chunks of 100. An id
+        the tenant does not return is ABSENT from the map.
+
+        Failure contract: a failed read RAISES :class:`IssueReadError` carrying
+        the ``codes.py`` code (``.code``), the message and the harvest detail. It
+        never returns ``{}`` for a failure, because ``{}`` reads as "the tenant
+        returned no issues". A row whose id or ``status.progress`` is missing is
+        an unrecognised shape and also raises.
+        """
+        conf = cfg.config or {}
+        path = str(conf.get("issues_path") or self._ISSUES_SEARCH_PATH)
+        ids = _clean_ids(issue_ids)
+
+        def _one(chunk: list[str]) -> PullResult:
+            values: list[Any] = [int(i) if i.isascii() and i.isdigit() else i for i in chunk]
+
+            # One page per chunk (explicit `limit`), so `search_from` is ignored.
+            def body(search_from: int, page_size: int) -> dict:
+                return {"request_data": {
+                    "filters": [{"field": "id", "operator": "in", "value": values}],
+                    "search_from": 0, "search_to": len(chunk)}}
+            return self._harvest(cfg, path, since=None, until=None,
+                                 filters={"limit": len(chunk)}, list_key="DATA",
+                                 normalize=self._normalize_issue_status, kind="issues",
+                                 request_for=body)
+
+        res = self._chunked(ids, _one, path)
+        if not res.ok:
+            raise IssueReadError(res.code or codes.XSIAM_API_ERROR,
+                                 res.error or "issue read failed", res.detail)
+        if res.dropped:
+            raise IssueReadError(
+                codes.XSIAM_PARSE_ERROR,
+                f"{res.dropped} issue row(s) lacked an id or status.progress; the "
+                "issue shape is not the one this connector reads. Refusing to "
+                "treat them as absent.", res.detail)
+        return IssueStatusMap({iid: row for iid, row in res.observations},
+                              pages=int(res.detail.get("pages", 0)), detail=res.detail)
+
+    def pull_endpoint_ips(self, cfg: ConnectorConfig, hostname: str) -> Optional[list[str]]:
+        """IPs on the tenant's endpoint record for ``hostname``, or None.
+
+        ``POST /public_api/v1/endpoints/get_endpoint`` with a ``hostname``
+        ``in`` filter; the reply is ``reply.endpoints[]`` and each record's
+        ``ip`` is a list of strings (field table and sample reply in
+        ``docs/reference/xsiam-platform-apis/05-endpoints-api.md``, itself taken
+        from the vendor's Get Endpoint page,
+        https://cortex-panw.stoplight.io/docs/cortex-xsiam-3-x/nxq2mf3ia6wrd-get-endpoint
+        -- unverified against a live tenant).
+
+        Exactly ONE request (an explicit ``limit`` is a single page), so the
+        caller counts one query per call whatever the outcome. ``None`` means
+        "do not claim anything": the read failed, no record's ``endpoint_name``
+        matched the host, more than one record matched it (a stale reinstall
+        record cannot be told from the live one, so the two are never unioned
+        into a BRIDGED claim), the result was truncated, or a matching record had
+        no ``ip`` list. It is never ``[]`` for a failure.
+        """
+        want = (hostname or "").strip().lower()
+        if not want:
+            return None
+        conf = cfg.config or {}
+        path = str(conf.get("endpoints_path") or self._ENDPOINT_PATH)
+
+        # Exactly one page (explicit `limit`), so `search_from` is ignored; a
+        # truncated reply reads as None below rather than as a partial record set.
+        def body(search_from: int, page_size: int) -> dict:
+            return {"request_data": {
+                "filters": [{"field": "hostname", "operator": "in", "value": [hostname]}],
+                "search_from": 0, "search_to": page_size}}
+
+        def norm(e: dict[str, Any]) -> Optional[dict]:
+            return e
+
+        res = self._harvest(cfg, path, since=None, until=None,
+                            filters={"limit": self._PAGE_SIZE_MAX}, list_key="endpoints",
+                            normalize=norm, kind="endpoints", request_for=body)
+        if not res.ok or res.detail.get("truncated"):
+            return None
+        records = [rec for rec in res.observations
+                   if (_s(rec.get("endpoint_name")) or "").lower() == want]
+        if len(records) != 1:
+            return None                             # none, or ambiguous
+        raw = records[0].get("ip")
+        if not isinstance(raw, list) or not all(isinstance(i, str) for i in raw):
+            return None                             # unrecognised record shape
+        return list(dict.fromkeys(raw))
+
+    def _chunked(self, ids: list[str], one: Callable[[list[str]], PullResult],
+                 path: str) -> PullResult:
+        """Run ``one`` per chunk of ids; first failure wins; pages are summed."""
+        merged = PullResult(ok=True, connector=self.kind,
+                            detail={"path": path, "pages": 0, "requested": len(ids)})
+        for start in range(0, len(ids), self._ID_CHUNK):
+            r = one(ids[start:start + self._ID_CHUNK])
+            if not r.ok:
+                r.detail = {**r.detail, "pages": merged.detail["pages"] + 1}
+                return r
+            merged.incidents.extend(r.incidents)
+            merged.observations.extend(r.observations)
+            merged.dropped += r.dropped
+            merged.detail["pages"] += int(r.detail.get("pages", 0))
+        return merged
+
+    def _normalize_issue_status(self, i: dict[str, Any]) -> Optional[tuple]:
+        """One issue row -> ``(id_str, {status, reason, comment})`` or None."""
+        iid = _s(i.get("id"))
+        status = alert_key(i, "status.progress")
+        if iid is None or status is None:
+            return None
+        return iid, {
+            "status": _s(status),
+            "reason": _s(alert_key(i, "status.resolution_reason")),
+            "comment": _s(alert_key(i, "status.resolution_comment")),
+        }
 
     # ── request / response shaping ──────────────────────────────────────
 

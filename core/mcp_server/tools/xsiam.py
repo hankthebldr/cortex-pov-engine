@@ -561,7 +561,8 @@ def specs() -> list[ToolSpec]:
           f"with total + truncated, plus categories. {_NO_TENANT}"),
         s("xsiam.operation.get", OpIdIn, operation_get, "read", "none",
           "GET /api/xsiam/operations/{op_id}: the catalog entry (op_id, category, name, method, path, "
-          f"access_class, consent, path_params, doc_link, tags). {_NO_TENANT}"),
+          f"access_class, consent, path_params, path_param_allowlist, doc_link, tags). "
+          f"{_NO_TENANT}"),
         s("xsiam.operation.execute", OperationExecuteIn, operation_execute, "write", "tenant",
           "POST /api/xsiam/tenants/{tenant}/operations/{op_id}. Takes no consent. A read op runs live "
           "(queries_issued 1; 0 for the OP-XQL-GET-QUERY-RESULTS poll, which still sets "

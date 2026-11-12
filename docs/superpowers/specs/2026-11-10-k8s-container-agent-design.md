@@ -577,9 +577,10 @@ been observed through this agent.
 final kind run observed, on debian, processes whose cmdline carried the anchor
 name while a step ran, and observed `child subreaper enabled` in the beacon log
 plus no zombies after a run; orphan **reparenting** itself was not asserted. That
-run predates the anchor-rule change in item 15, so the debian rename (now via `sh`,
-i.e. dash) and the alpine + `prepare=packages` bash path need re-confirmation in a
-pod. The console tab was not checked in a real browser; the opt-in CI step has not
+run predates the anchor-rule change in item 15; a re-run on PR head `2762d22`
+observed the debian rename via `sh` (dash) and the alpine + `prepare=packages`
+bash path. The hard-link detection in item 15 postdates that re-run and has not
+been exercised in a pod. The console tab was not checked in a real browser; the opt-in CI step has not
 run on GitHub.
 
 12. **Secret ordering corrected.** §3 said either order works and that a pod
@@ -613,3 +614,16 @@ run on GitHub.
     without redeeming the token or registering; `start.sh` then idles. A container
     restart before expiry still reads Ready from the stored id before it has
     re-registered (documented gap, unchanged).
+18. **Reaper own-RBAC residue: one inert, unbound ClusterRole.** The re-run on
+    `2762d22` observed expiry cleanup (namespace, both `cortexsim-agent` objects
+    and `clusterrole/cortexsim-reaper-agent` gone within 150 s of a 60 s TTL) but
+    `clusterrolebinding/cortexsim-reaper-agent` remained: the reaper deleted its
+    own ClusterRole before its own ClusterRoleBinding. PR #176 reversed that order
+    in the shared reaper (`k8s_manifest._reaper`, whose `own` list renders into
+    `_REAPER_SCRIPT`; push manifests and the agent reaper Deployment both use it;
+    no golden digest moved, because the push-bundle goldens cover
+    bash/PowerShell only). Each own delete revokes the permission the other
+    needs, so what PR #176 is expected to leave is one inert, unbound ClusterRole
+    `cortexsim-reaper-agent`: it grants nothing and the label delete removes it.
+    The order is pinned by unit tests; expiry has not been observed in a cluster
+    since the fix.

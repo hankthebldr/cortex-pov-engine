@@ -416,3 +416,20 @@
   outline:2px solid var(--ac-str);
   outline-offset: 2px;
 }
+
+/* ── SOC Framework row (under an xsiam_tenant; not a ladder rung) ───── */
+.theme-console .rdy-socfw {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--bd);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.theme-console .rdy-socfw[data-degraded='true'] { border-left: 3px solid var(--warn); padding-left: 9px; }
+.theme-console .rdy-socfw__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.theme-console .rdy-socfw__label { font-size: 11.5px; font-weight: 700; color: var(--tx); }
+.theme-console .rdy-socfw__facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; font-size: 10.5px; color: var(--tx2); }
+.theme-console .rdy-socfw__facts div { display: flex; gap: 6px; }
+.theme-console .rdy-socfw__facts dt { color: var(--tx3); }
+.theme-console .rdy-socfw__facts dd { margin: 0; color: var(--tx); }

@@ -177,6 +177,8 @@ async def _init_db_inner() -> None:
         await conn.run_sync(_migrate_run_delivery_columns)
         await conn.run_sync(_migrate_prevention_columns)
         await conn.run_sync(_migrate_eal_run_columns)
+        await conn.run_sync(_migrate_integration_response_layer_columns)
+        await conn.run_sync(_migrate_case_ledger_columns)
 
 
 def _migrate_results_columns(connection) -> None:
@@ -354,6 +356,25 @@ def _migrate_runtime_dependency_columns(connection) -> None:
             connection.execute(text(f"ALTER TABLE runs ADD COLUMN {col_name} {col_type}"))
 
 
+def _migrate_integration_response_layer_columns(connection) -> None:
+    """Add the stored SOC Framework probe columns to ``integration_credentials``
+    if absent — same ``create_all``-never-adds-a-COLUMN rationale as above."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "integration_credentials" not in set(inspector.get_table_names()):
+        return
+    existing = {col["name"] for col in inspector.get_columns("integration_credentials")}
+    for col_name, col_type in [
+        ("response_layer", "JSON"),
+        ("response_layer_read_at", "DATETIME"),
+    ]:
+        if col_name in existing:
+            continue
+        connection.execute(text(
+            f"ALTER TABLE integration_credentials ADD COLUMN {col_name} {col_type}"))
+
+
 def _migrate_composer_channel_columns(connection) -> None:
     """Add the Phase-3a composer channel columns if absent — same
     ``create_all``-never-adds-a-COLUMN rationale as the helpers above.
@@ -417,6 +438,20 @@ def _migrate_eal_run_columns(connection) -> None:
     if "collector_resolution" not in existing:
         connection.execute(text(
             "ALTER TABLE eal_campaign_runs ADD COLUMN collector_resolution JSON"))
+
+
+def _migrate_case_ledger_columns(connection) -> None:
+    """Add ``runs.case_ledger`` if absent (same ``create_all``-never-adds-a-COLUMN
+    rationale as the helpers above). Nullable JSON: a legacy run reads as "no
+    ledger built", never as "one case"."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if "runs" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("runs")}
+    if "case_ledger" not in existing:
+        connection.execute(text("ALTER TABLE runs ADD COLUMN case_ledger JSON"))
 
 
 def _migrate_prevention_columns(connection) -> None:

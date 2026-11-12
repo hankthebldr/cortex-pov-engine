@@ -202,4 +202,5 @@ Do NOT edit them by hand. Edit the TTP entry, then re-run the export script.
 | `TTP-2026-0200` | Akira (Howling Scorpius) Linux-Host Kill Chain — Real On-Host File Encryption | [sigma](sigma/TTP-2026-0200.yml), [xql](xql/TTP-2026-0200.xql), [correlation](correlation/TTP-2026-0200.json) |
 | `TTP-2026-0201` | npm Supply-Chain Compromise on a Linux Developer Endpoint — Preinstall-Hook Credential Theft via a Phantom-Squatted Package | [sigma](sigma/TTP-2026-0201.yml), [xql](xql/TTP-2026-0201.xql), [correlation](correlation/TTP-2026-0201.json) |
 | `TTP-2026-0202` | OpenClaw ClawHub Malicious Skill — Padded README, base64 curl|bash Dropper and Developer-Credential Theft | [sigma](sigma/TTP-2026-0202.yml), [xql](xql/TTP-2026-0202.xql), [correlation](correlation/TTP-2026-0202.json) |
+| `TTP-2026-0203` | Axios npm Supply Chain — plain-crypto-js Postinstall Dropper to a Linux Python RAT (rundir, runscript, peinject, kill) | [sigma](sigma/TTP-2026-0203.yml), [xql](xql/TTP-2026-0203.xql), [correlation](correlation/TTP-2026-0203.json) |
 

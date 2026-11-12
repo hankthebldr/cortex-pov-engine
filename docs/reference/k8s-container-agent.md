@@ -72,9 +72,18 @@ still running but has lost its RBAC, so a step that calls `kubectl` would fail
 `Forbidden` and score as a miss. The label delete was exercised once, in the
 proof script's teardown. The manifest header carries the same two lines.
 
-Letting the pod expire (`ttl_seconds`) lets the reaper run, and it removes
-everything itself (from the reaper's script; expiry-triggered cleanup has not
-been observed in a cluster).
+Letting the pod expire (`ttl_seconds`) lets the reaper run. Observed in the
+re-run against 2762d22 (`ttl_seconds` 60): within 150 s it deleted the
+namespace, `clusterrole`/`clusterrolebinding` `cortexsim-agent` and
+`clusterrole/cortexsim-reaper-agent`, and left
+`clusterrolebinding/cortexsim-reaper-agent` behind, because that build deleted
+its own ClusterRole first and so lost the permission to delete its own binding.
+PR #176 reversed the order in the reaper script, which push manifests share: the
+binding first, the ClusterRole last. Each of the two deletes revokes the
+permission the other needs, so expiry is now expected to leave **one inert
+residue: the unbound ClusterRole `cortexsim-reaper-agent`**. It grants nothing, and the label
+delete above removes it. That residue is read from the script and the unit tests
+that pin the order; expiry has **not been observed in a cluster since the fix**.
 
 ## 3 · Query parameters
 
@@ -244,8 +253,13 @@ heard from it since the restart").
 image and script). It waits to the **absolute** expiry (`EXPIRES_AT_EPOCH` against
 `date +%s`), then deletes namespace `cortexsim-agent` and the cluster-scoped
 `ClusterRole` and `ClusterRoleBinding` named `cortexsim-agent` — the whole set
-any profile can emit, whatever the current one (from the reaper's script;
-expiry-triggered cleanup has not been observed in a cluster). If the node clock gives no epoch
+any profile can emit, whatever the current one. Expiry-triggered cleanup was
+observed in the re-run against 2762d22, which left the reaper's own
+`ClusterRoleBinding` `cortexsim-reaper-agent` behind. Since PR #176 the reaper
+deletes that binding first, so the one residue to expect is its own unbound
+`ClusterRole` `cortexsim-reaper-agent`, inert and removed by the label delete;
+not observed in a cluster since the fix (see "Removal" in §2).
+If the node clock gives no epoch
 it exits 70 (`REAPER_CLOCK_UNAVAILABLE`) and crash-loops visibly rather than
 restarting its clock. It is a safety net; remove the agent yourself when done.
 **The reaper dies with the namespace**, so deleting the namespace by hand leaves
@@ -346,10 +360,42 @@ Both appear in the run record. Neither is silent and neither is a pass.
   `debian:12-slim`, and on `alpine:3.20` with `prepare=none` `ANCHOR NOT
   HONOURED` was observed in both the step output and the completion summary.
   **That run predates the rule above** (the anchor was then `bash` wherever bash
-  existed), so the debian rename, now via `sh` (dash), and the alpine +
-  `prepare=packages` bash path need re-confirmation in a pod: re-confirmation
-  pending.
-  <!-- E2E-FINAL-CONFIRM: to be filled by the controller -->
+  existed); the debian rename via `sh` (dash) and the alpine + `prepare=packages`
+  bash path were observed in the re-run below.
+
+### Re-run — 2026-11-10, kind on arm64, against 2762d22: RESULT PASS, zero defect lines
+
+Observed in a real pod (`debian:12-slim` unless noted); this run's binary
+predates commit `aa390d0`:
+
+* debian: processes named `apache2` were present mid-step (the rename; their
+  absence is the one `DEFECT` signature, and none was recorded), and their
+  `/proc/<pid>/exe` read `/usr/bin/dash` (observed, not asserted);
+* `alpine:3.20` with `prepare=packages`: a renamed `apache2` process was present
+  mid-step and the run completed without `ANCHOR NOT HONOURED` (both asserted);
+  its `/proc/<pid>/exe` read `/bin/bash` (observed, not asserted);
+* `alpine:3.20` with `prepare=none`: `ANCHOR NOT HONOURED` (asserted);
+* the manifest's `# REMOVAL:` header is present and does not change the `kubectl
+  apply` output;
+* **expiry** (`ttl_seconds` 60): within 150 s the reaper deleted namespace
+  `cortexsim-agent`, and `clusterrole` and `clusterrolebinding`
+  `cortexsim-agent` and `clusterrole/cortexsim-reaper-agent` were gone. Before
+  expiry all four cluster-scoped objects existed.
+
+**Defect found by this run, since changed by PR #176.** `clusterrolebinding/
+cortexsim-reaper-agent` was left behind after expiry: the reaper deleted its own
+ClusterRole before its own ClusterRoleBinding. The leftover bound to a deleted
+role and granted nothing; `kubectl delete clusterrole,clusterrolebinding -l
+cortexsim.io/agent=true` removes it. The cause was in the reaper script, which
+the push manifests also use. PR #176 (`c0a6267`) deletes the binding first and
+the ClusterRole last, so what it is expected to leave is one inert, unbound ClusterRole
+`cortexsim-reaper-agent`, removed by the same label delete. That order is pinned
+by unit tests, not observed in a cluster.
+
+**Not covered by this run:** the hard-linked busybox `sh` detection (commit
+`aa390d0`) postdates it. No pod with a hard-linked busybox `sh` has exercised it.
+PR #176's binding-first reaper order also postdates it; no expiry has been
+observed since.
 
 ## 12 · The beacon
 
@@ -447,7 +493,7 @@ place. All four were fixed in code and re-run.
 * the beacon logged "child subreaper enabled", and no zombies were left after
   `SIM-CDR-010`;
 * the anchor rename (then via `bash`; the anchor is `sh` since the final-review
-  fix, §11, re-confirmation pending): processes with `cmd=apache2` were present
+  fix, §11; the `sh` rename was observed in the §11 re-run): processes with `cmd=apache2` were present
   mid-step (asserted);
 * baseline refused `AGENT_POSTURE_INSUFFICIENT` (`SIM-CDR-015`) and
   `AGENT_TOOL_ABSENT`; `SIM-CDR-010` completed 4 steps;

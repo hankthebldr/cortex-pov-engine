@@ -78,12 +78,102 @@ with 409 `PUSH_NOT_SUPPORTED`.
 - **`scripts/check_grouping_keys.py`** (`make check-grouping`, a step in CI's
   `refs` job, part of `make validate`) exits 1 only on G-03. The ground truth
   gains a `grouping` block.
-- **Measured:** 198 scenarios, 1411 step-detections: G-01 0, G-02 2
+- **Measured:** 199 scenarios, 1419 step-detections: G-01 0, G-02 2
   (SIM-EMAIL-003/004, informational BIOCs on a stitched step), G-03 0, G-04
-  **1042**, G-05 0. G-04 is the size of the later authoring program: no card
+  **1050**, G-05 0. G-04 is the size of the later authoring program: no card
   carries `alert_fields`, and only custom-BIOC severity is read from the
   corpus. The analysis is by key class, never by value, so it is advisory.
   `tenant-verified` is still 0.
+
+### Added — CortexSim alongside the SOC Framework: the run case ledger (Part B)
+
+- **`Run.case_ledger`**, built during reconcile (`core/connectors/case_ledger.py`):
+  did the run's chain stay in one native case, and if not, why. `merge_class` is
+  `ONE_CASE | SPLIT_SEALED | SPLIT_NATIVE | LOW_ONLY_NO_CASE | NO_CASE_YET | PENDING`
+  with per-case status, `closed_by` and sealed flag. A case the tenant does not
+  return is `PENDING`; an unrecognised case status raises and reads
+  `CASE_STATUS_UNRECOGNIZED`, never `open`. Every reconcile rebuilds it from the
+  stored alerts plus the new matches; alerts with no case id yet store
+  `NO_CASE_YET` with no tenant read, and a failed case read keeps the stored
+  ledger. A split is classified per boundary between cases: any native boundary
+  is `SPLIT_NATIVE`, only all-seal is `SPLIT_SEALED`. The ledger records its
+  integration and tenant (a refresh refuses a ledger whose integration now points
+  at another tenant, `CASE_LEDGER_TENANT_MISMATCH`, and a pair across tenants is
+  `PENDING`), and its reads are counted in `queries_issued` (they do not charge
+  the per-tenant XQL ledger).
+- **`POST /api/runs/{id}/case-ledger/refresh`** re-reads the cases (read-only;
+  refused inside the minimum interval unless `force=true`); the auto-reconcile loop refreshes recent ledgers (a ledger is terminal when every case in it is sealed, i.e. resolved and not auto-resolved, its merge is not `PENDING` and every case an alert names is in it, and is skipped; otherwise it can still change, so it keeps being refreshed) behind
+  `CORTEXSIM_CASE_LEDGER_{WINDOW_HOURS,MAX_RUNS_PER_SWEEP,MIN_INTERVAL_MINUTES}`.
+  `GET /api/runs/{id}/pair` gains a pair-level `merge`; the markdown report gains
+  a `## Case` section and the json report `case_ledger`; the console run view
+  gains a Case panel. An unbridged firewall-to-endpoint split carries a bridge
+  diagnosis.
+- **Disposition is context, not detection evidence.** It never feeds
+  detected/missed, MTTD or a detection verdict. One exception: `SPLIT_SEALED`
+  withholds a Cross-Source Correlation Rate FAIL as `pending` when the ledger
+  classified every alert the KPI counted (a PASS is never touched).
+- Runbook step 5 now describes reading the Case panel; `docs/reference/lab-runbook.md`
+  says `not_checked` names six claims.
+- **Honesty.** `tenant-verified` is still 0. The endpoint reply fields used by
+  the bridge diagnosis come from the repo's transcription
+  (`docs/reference/xsiam-platform-apis/05-endpoints-api.md`) and are unverified
+  against a live tenant. **Owed:** one SIM-EDR-023 run on `pov-target-01`
+  reading the ledger at T+0 (`ONE_CASE`, case `open`) and T+7 h
+  (`socfw_auto_triage`, sealed); not executed.
+
+### Added — CortexSim alongside the SOC Framework: the response layer, read-only (Part A)
+
+- **A `response_layer` stage on `POST /api/connectors/xsiam_tenant/preflight`**
+  detects whether the Palo-Cortex SOC Framework (`soc-optimization-unified`,
+  pinned to 3.31.4) runs on the tenant and what its Auto Triage settings are:
+  installed packs, list names, the two config lists and one XQL over the
+  framework's execution dataset. All reads are read-only and counted in
+  `queries_issued`. Pass `response_layer=false` to omit it. Codes
+  `PF_RESPONSE_LAYER_ABSENT`, `PF_RESPONSE_LAYER_UNREAD` and
+  `PF_RESPONSE_LAYER_SHAPE_UNRECOGNIZED`; an unrecognised shape raises and
+  reads `UNKNOWN`, never defaults or `ABSENT`. States are `ABSENT`,
+  `PRESENT_UNREAD` (installed, config or evidence not readable), `PRESENT` and
+  `UNKNOWN`; `ABSENT` degrades preflight.
+  Every framework string lives in `core/connectors/socfw.py`.
+- **Each Auto Triage value says where it came from.** `auto_triage` carries
+  `live_source` (`xql_evidence` / `mode_inferred` / `unknown`) and
+  `window_source` / `threshold_source` (`tenant_config` / `shipped_default` /
+  `unknown`). For the usual `pov`-mode config, "live" is inferred from the mode's
+  shipped jobs map and 6 h / 40 are shipped defaults, and every surface says
+  "(inferred from mode, not read)" / "(shipped default, not read)". A refused
+  list read names its HTTP status (403: the key's role; 404/405: the
+  unverified path).
+- **Readiness shows it.** The result is stored on the integration
+  (`response_layer`, `response_layer_read_at`; migration added) with the
+  stage's own verdict (`stage: {status, code, detail}`), returned as a
+  `response_layer` block by `GET /api/readiness` with a 24 h staleness flag, and
+  rendered as a SOC Framework row on the console Readiness page. The row is
+  green only for a `PRESENT` layer whose stored stage is `ok`. A failed store
+  returns the report with `stored: false` instead of a 500, and re-registering
+  the integration clears the stored read. `GET /api/health` lists
+  `socfw_response_layer` under `not_checked`.
+- **Launch advisories, never a refusal.** `POST /api/runs` adds
+  `SOCFW_TRIAGE_MAY_SEAL` or `SOCFW_RESPONSE_LAYER_UNKNOWN` to `warnings` when
+  Auto Triage may close a case during a paired run (`warn`) or an
+  ABIOC/Analytics scenario (`info`), including when only execution evidence
+  proves it live (`PRESENT_UNREAD`). The remediation names the three
+  tenant-side options at the pinned framework (star the POV's cases;
+  `!SOCFWConfig command=triage window_hours=<n> apply=yes`; switch the JOB off
+  for the POV window with `!SOCFWConfig command=job job="Auto Triage V3"
+  value=off apply=yes`, and back on after). It reads the stored probe only; CortexSim
+  does not change the tenant. The console holds the launcher only on a warning
+  that is not `level: "info"`, and shows each warning's level, tenant and
+  remediation.
+- **Runbook:** `docs/lab/2026-11-11-run-alongside-soc-framework.md` (spec §7).
+- **Three read-only operations** (`packs/socfw.yml`; catalog now 151) and the
+  operation schema accepts the `/xsoar/` gateway prefix. `OP-SOCFW-LIST-GET`
+  reads only `SOCFWTenantConfig` and `SOCFWConfigModes`: a new
+  `path_param_allowlist` makes the executor refuse any other list before a
+  tenant call, because XSOAR lists can hold integration config and secrets.
+- **Honesty.** `tenant-verified` is still 0: none of this has run against a live
+  tenant. The list-content read path (`GET /xsoar/lists/download/{name}`) is
+  **unverified against a live tenant**; a refusal on it reads as unread, not
+  absent. Tenant disposition is context, not detection evidence.
 
 ### Added — two Linux persistence chains built to group into one case
 
@@ -378,9 +468,17 @@ with 409 `PUSH_NOT_SUPPORTED`.
   create `www-data`) and review found a profile-downgrade hole; all fixed. A final
   run on arm64 against `cd7601e` passed with zero defect lines: enrollment, abort,
   re-apply, downgrade, digest mismatch, the anchor rename (then via bash) and
-  `ANCHOR NOT HONOURED` on alpine. That run predates the anchor-shell fix below,
-  so the debian rename via `sh` needs re-confirmation in a pod. `lab-privileged`
-  has never been run; no amd64 node, no CI run on GitHub, console tab not
+  `ANCHOR NOT HONOURED` on alpine. That run predates the anchor-shell fix below;
+  a re-run on the PR head `2762d22` (arm64) passed with zero defect lines and
+  observed the debian rename via `sh` (dash), the alpine `bash` anchor and the
+  60 s expiry (namespace and both `cortexsim-agent` objects plus the reaper's
+  ClusterRole deleted within 150 s). It also found the reaper left its own
+  ClusterRoleBinding `cortexsim-reaper-agent` behind. PR #176 now deletes that
+  binding first, so the one residue expected at expiry is the inert, unbound
+  ClusterRole `cortexsim-reaper-agent`, removed by the label delete; not observed
+  in a cluster since the fix. The hard-linked busybox detection postdates the
+  re-run, unexercised in a pod.
+  `lab-privileged` has never been run; no amd64 node, no CI run on GitHub, console tab not
   browser-checked, no Cortex detection observed. `tenant-verified` is still 0.
 - **Delivery.** PR #171 merged Tasks 1-11 at ef71c30; the fixes for re-apply,
   interpreter-less enrollment, alpine accounts and downgrade neutralisation are in

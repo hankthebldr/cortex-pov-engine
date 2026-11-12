@@ -43,17 +43,20 @@ Only 44 scenarios need the XDR agent and nothing else; 88 need the agent, the
 NGFW, or both, and nothing more.
 
 **Per door, as `engine.door_resolution` derives it** (the corpus as of
-feature/api-ingestion-doors f6fd90f, measured on 2026-11-11 with the code at
-its implementation commit c4e52a2, pinned in
+feature/api-ingestion-doors f6fd90f plus `SIM-KOI-012`, measured on 2026-11-11
+with the code at its implementation commit c4e52a2, pinned in
 `tests/engine/test_door_corpus.py`). These counts apply §5 in order, so they
-differ from the table above in three ways. Collector steps are judged by their
+differ from the table above in four ways. Collector steps are judged by their
 route and counted under no door. Every `dataset =` anchor is read, not only the
 first. `doors_unknown` rows and cloud detections that name no provider are
-underived.
+underived. And `SIM-KOI-012` (TTP-2026-0203), added after the 8c90739
+measurement, is the 199th scenario and brings 8 more detections: 7 read
+`xdr_data` and need only the agent, 1 is a Prevention row with no dataset. The
+total is 1,419.
 
 | Door | Detections | Scenarios |
 |---|---:|---:|
-| `xdr_agent` | 502 | 103 |
+| `xdr_agent` | 509 | 104 |
 | `ngfw_traffic` | 136 | 49 |
 | `cloud_aws` | 67 | 21 |
 | `saas_okta` | 24 | 14 |
@@ -72,13 +75,13 @@ underived.
 | `saas_google_workspace` | 2 | 2 |
 | `syslog_ivanti_connect_secure` | 1 | 1 |
 | Collector route (XQL 63, IOC 47, ABIOC 38, Analytics 21, Correlation 21, BIOC 9) | 199 | — |
-| Underived: `NO_DATASET` 225, `DOORS_UNKNOWN` 61, `NO_PROVIDER` 39 | 325 | — |
+| Underived: `NO_DATASET` 226, `DOORS_UNKNOWN` 61, `NO_PROVIDER` 39 | 326 | — |
 
-The 502 `xdr_agent` detections are the 507 `xdr_data` detections less the 5
-on collector steps. 501 of them need the agent and nothing else. The other one,
+The 509 `xdr_agent` detections are the 514 `xdr_data` detections less the 5
+on collector steps. 508 of them need the agent and nothing else. The other one,
 the `SIM-MP-015` step-03 ABIOC, inner-joins `xdr_data` with
 `msft_azure_ad_signin`, so it also needs `saas_entra`. With every door open for
-one agent, 150 scenarios read ready, 30 partial, 10 needs doors (collector
+one agent, 151 scenarios read ready, 30 partial, 10 needs doors (collector
 only) and 8 not evaluated (nothing derivable).
 
 Four defects follow from this:

@@ -414,7 +414,7 @@ erDiagram
 | `runs` | 12 | launch, output, complete, abort, control, report export, SSE |
 | `uctc` | 9 | the FY27 v2.2 index, read-only, joined to engine evidence |
 | `credentials` | 9 | encrypted integration vault |
-| `xsiam` | 8 | 148-op gated operation catalog (writes preview) + Tier-2 XQL |
+| `xsiam` | 8 | 151-op gated operation catalog (writes preview) + Tier-2 XQL |
 | `ttps` | 8 | TTP cards, detection objects, ATT&CK Navigator export |
 | `tools` | 8 | adapter catalog, tool instantiation |
 | `assertions` | 6 | POS/PLT/AUT artifacts, probes, runs (`rejected[]` surfaced) |
@@ -430,7 +430,7 @@ erDiagram
 > [!TIP]
 > `GET /api/health` is the one diagnostic surface and it obeys one rule: **it
 > never reports green for something it didn't check.** It makes zero outbound
-> calls, publishes `not_checked[]` naming the five reachability-shaped claims it
+> calls, publishes `not_checked[]` naming the six reachability-shaped claims it
 > deliberately does *not* make, and treats a zero as `degraded` — booting
 > without `tools/` used to report `{status: ok, count: 0}` while every
 > `adapter_ref` in the corpus was unresolvable.
@@ -876,7 +876,7 @@ cortex-pov-engine/
 │   │                           payload_shelf · assertions · causality_graph
 │   │                           push_generator · uctc_registry · storyline
 │   ├── connectors/             opt-in read-back measurement loop
-│   ├── integrations/xsiam/     148-op gated operation catalog (writes preview) + Tier-2 XQL
+│   ├── integrations/xsiam/     151-op gated operation catalog (writes preview) + Tier-2 XQL
 │   ├── eal_simulator/          27 plugins, two families
 │   ├── planes/                 declarative PlaneDescriptor registry (16)
 │   └── models.py               14 ORM models
