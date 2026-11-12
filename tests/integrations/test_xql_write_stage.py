@@ -244,13 +244,34 @@ def test_generic_request_onto_the_xql_path_is_guarded():
     {"request_data": {"query": "dataset = x"}, "smuggled": True},
 ])
 def test_unrecognised_xql_start_body_is_refused(body):
-    """An unrecognised shape must raise, not read as 'nothing to inspect'."""
-    from integrations.xsiam.exceptions import XsiamConfigError
+    """An unrecognised shape must raise, not read as 'nothing to inspect'.
+
+    It is a config error (refused before anything is sent) carrying the one
+    start-body code the routes and dev's guards.xql_query_text also use.
+    """
+    from integrations.xsiam.exceptions import XqlRequestShapeInvalid, XsiamConfigError
 
     rec = _Recorder()
-    with pytest.raises(XsiamConfigError):
+    with pytest.raises(XsiamConfigError) as ei:
         asyncio.run(_client(rec).request("POST", START_PATH, json=body))
+    assert isinstance(ei.value, XqlRequestShapeInvalid)
+    assert ei.value.code == "XQL_REQUEST_SHAPE_INVALID"
     assert rec.requests == []
+
+
+def test_both_write_stage_guards_raise_one_exception_type():
+    """client.refuse_xql_write_stages (SEC-05) and guards.refuse_xql_write_stage
+    (D-18) raise the same class, so a caller catching either name catches both."""
+    from integrations.xsiam import guards
+    from integrations.xsiam.client import XqlWriteStageRefused as FromClient
+    from integrations.xsiam.client import refuse_xql_write_stages
+    from integrations.xsiam.exceptions import XqlWriteStageRefused, XsiamConfigError
+
+    for guard in (refuse_xql_write_stages, guards.refuse_xql_write_stage):
+        with pytest.raises(XqlWriteStageRefused) as ei:
+            guard(DOCUMENTED_WRITE)
+        assert isinstance(ei.value, FromClient) and isinstance(ei.value, XsiamConfigError)
+        assert ei.value.code == "XQL_WRITE_STAGE_REFUSED" and ei.value.http_status == 400
 
 
 @pytest.mark.parametrize("path", [START_PATH, START_PATH + "/", "public_api/v1/xql/start_xql_query",
@@ -290,7 +311,11 @@ def xsiam_app(monkeypatch):
 
     async def _load(session, name):
         loads.append(name)
-        return _client(rec)
+        # The tenant is authorised for XQL (dev's D-18 capability gate), so a
+        # refusal here can only come from the write-stage guard under test.
+        client = _client(rec)
+        client.capabilities = ["xql"]
+        return client
 
     monkeypatch.setattr(xsiam_api, "load_xsiam_client", _load)
 
@@ -325,7 +350,9 @@ def test_xql_route_still_runs_a_read_query(xsiam_app):
     resp = client.post("/api/xsiam/tenants/acme/xql",
                        json={"query": "dataset = xdr_data | limit 1"})
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"query_id": "q-1"}
+    # dev's metering adds queries_issued and the ledger snapshot beside query_id.
+    assert resp.json()["query_id"] == "q-1"
+    assert resp.json()["queries_issued"] == 1
     assert len(rec.requests) == 1
 
 

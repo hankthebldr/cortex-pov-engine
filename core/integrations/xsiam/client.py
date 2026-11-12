@@ -20,6 +20,7 @@ import httpx
 from .auth import advanced_auth_headers, standard_auth_headers
 from .config import AuthMode, XsiamTenantConfig
 from .exceptions import (
+    XqlRequestShapeInvalid, XqlWriteStageRefused,
     XsiamApiError, XsiamAuthError, XsiamConfigError,
     XsiamQueryError, XsiamQuotaError,
 )
@@ -67,12 +68,9 @@ XQL_WRITE_STAGES = frozenset({"target"})
 
 _STAGE_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-
-class XqlWriteStageRefused(XsiamConfigError):
-    """An XQL query carried a stage that writes to the tenant."""
-
-    code = "XQL_WRITE_STAGE_REFUSED"
-    http_status = 400
+# XqlWriteStageRefused (an XsiamConfigError) is defined in .exceptions and
+# imported above, so `from integrations.xsiam.client import XqlWriteStageRefused`
+# and the guards module name the same class.
 
 
 #: The quote-character sets tried; `"` is a string delimiter in every one.
@@ -181,22 +179,23 @@ def _xql_start_body(body: Any) -> tuple[str, Optional[dict[str, Any]], dict[str,
     """Unpack a start_xql_query body: ``{"request_data": {"query": str, ...}}``.
 
     Any other shape is refused — an unrecognised shape must raise, not read as
-    a body with no query in it.
+    a body with no query in it. The refusal is XqlRequestShapeInvalid (an
+    XsiamConfigError), the same code guards.xql_query_text raises.
     """
     if not isinstance(body, dict) or set(body) != {"request_data"}:
-        raise XsiamConfigError(
+        raise XqlRequestShapeInvalid(
             "start_xql_query body must be exactly {\"request_data\": {\"query\": ...}}; "
             f"got {type(body).__name__}"
             + (f" with keys {sorted(body)}" if isinstance(body, dict) else "")
         )
     rd = body["request_data"]
     if not isinstance(rd, dict) or not isinstance(rd.get("query"), str):
-        raise XsiamConfigError(
+        raise XqlRequestShapeInvalid(
             "start_xql_query needs request_data.query as a string"
         )
     timeframe = rd.get("timeframe")
     if timeframe is not None and not isinstance(timeframe, dict):
-        raise XsiamConfigError("start_xql_query request_data.timeframe must be an object")
+        raise XqlRequestShapeInvalid("start_xql_query request_data.timeframe must be an object")
     extra = {k: v for k, v in rd.items() if k not in ("query", "timeframe")}
     return rd["query"], timeframe, extra
 
