@@ -18,12 +18,13 @@ How Cortex turns signal into a detection: what we know, what CortexSim assumes, 
 | [ANA](#ana) Analytics engine (profiles, baselines, thresholds) | 4 | 5 | 2 | 7 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
 | [COR](#cor) Correlation rules | 3 | 4 | 1 | 3 | 2 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [IOC](#ioc) IOC matching and threat intel | 2 | 3 | 1 | 2 | 1 | 0 | 0 | 3 | 0 | 0 | 0 |
-| [PRV](#prv) Prevention (agent modules, report vs block) | 1 | 2 | 1 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| [PRV](#prv) Prevention (agent modules, report vs block) | 2 | 2 | 1 | 4 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
 | [INC](#inc) Alert-to-incident grouping | 2 | 5 | 1 | 5 | 0 | 0 | 0 | 3 | 0 | 0 | 0 |
 | [TEN](#ten) Tenant readiness (content, entitlements, data collection) | 4 | 2 | 0 | 2 | 3 | 0 | 0 | 1 | 0 | 0 | 0 |
 | [ALR](#alr) Alert records and read-back | 2 | 3 | 0 | 1 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
 | [IDN](#idn) Identity resolution (CGO ownership, Cloud Identity Engine, Active Directory) | 6 | 3 | 0 | 0 | 8 | 0 | 0 | 1 | 0 | 0 | 0 |
-| **all (101)** | **42** | **48** | **11** | **37** | **31** | **0** | **0** | **32** | **0** | **0** | **1** |
+| [NGF](#ngf) NGFW sensor configuration (what the firewall must be set to emit) | 2 | 1 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **all (105)** | **45** | **49** | **11** | **41** | **31** | **0** | **0** | **32** | **0** | **0** | **1** |
 
 Priority: **P0** a wrong guess produces a silent miss in a POV today · **P1** it weakens fidelity, attribution or MTTD · **P2** refinement.
 
@@ -159,6 +160,7 @@ The engine that links records from different sensors (agent network events, NGFW
 - Once the native NGFW integration is set up, "the console begins stitching logs with other Palo Alto Networks-generated logs to form stories". Stitched data is read from `xdr_data` or a preset designated for stitched data, such as `network_story`, and "IOC and BIOC issues are applicable to stitched data only, and are not available on raw data." — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/palo-alto-networks-integrations/next-generation-firewall/ingest-data-from-next-generation-firewall (2026-11-10)
 - The `network_story` and `authentication_story` presets over `xdr_data` "contain information stitched together from Cortex XSIAM agent events and log files to form a common schema". Stitched rows carry story fields (`story_id`, `story_version`, `story_publish_timestamp`, `is_disintegrated`) and firewall fields (`fw_time_generated`, "equivalent to the event_timestamp"). The agent network event carries `action_local_ip` / `action_local_port` ("Source IP address", "Source port"), `action_remote_ip` / `action_remote_port`, `action_network_protocol`, `action_network_connection_id`, `action_network_creation_time` ("The start time of the network session") and the NAT fields `action_local_nat_ip` / `action_local_nat_port`, `action_remote_nat_ip` / `action_remote_nat_port` and `action_nat`. No public page names the fields stitching matches on, a time tolerance or a NAT rule. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/reference-and-developer-docs/cortex-agentix-xql/get-started-with-xql/datasets-and-presets ; https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields ; https://cortex-docs.paloaltonetworks.com/xql-schema-reference/xdr-data-fields-by-actor/action-actor (2026-11-10)
 - Third-party firewalls are stitched too. "Cortex XSIAM can stitch data from Check Point firewalls with other logs to make up network stories"; Check Point logs with `sessionid = 0` are dropped, and the destination port is available only in the raw logs. Cisco ASA connection logs are stitched into network stories for message IDs 302013, 302014, 302015 and 302016 only. Both arrive through the Broker VM syslog applet. — *public_doc*, https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/check-point-fw1-vpn1/ingest-logs-from-check-point-firewalls ; https://cortex-docs.paloaltonetworks.com/cortex-xsiam/configure-cortex-xsiam/cortex-xsiam-data-sources/generic-on-premise-data-collectors/broker-vm-data-collector-applets/syslog-collector-applet/cisco-asa-firewalls-and-anyconnect/ingest-logs-from-cisco-asa-firewalls-and-anyconnect (2026-11-10)
+- A causality view in the lab tenant showed an agent's curl process on a libvirt NAT guest connecting through a firewall node to 35.222.124.72, so the agent network event and the NGFW session were joined although the agent recorded the guest's source IP (192.168.122.0/24) and the firewall logged the hypervisor's LAN IP as source. Which fields made the join (source port, destination, protocol, time) is not yet confirmed. — *operator_report*, Henry, tenant deathstar causality view for the lab VM after SIM-CDR-012 (02:58Z), screenshot 2026-11-10 21:30 CST (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -961,7 +963,7 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 
 **Known**
 
-- Nothing with a crossable source yet.
+- On a Linux agent, the four public WildFire test samples (PE, APK, macOS, ELF) downloaded to /var/tmp and marked executable, but never run, raised no agent issue. The tenant showed nothing for that host after the run. — *operator_report*, Henry, tenant deathstar after SIM-CDR-012 pull run on the lab VM (02:58Z), 2026-11-10 21:27 CST (2026-11-10)
 
 **What CortexSim assumes today**
 
@@ -980,6 +982,7 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 | [PM-PRV-02](#pm-prv-02) | P1 | open | Which Linux and macOS prevention modules exist, and which are on in a default profile (e.g. behavioral threat protection, local analysis, reverse shell protection, exploit protection)? |
 | [PM-PRV-03](#pm-prv-03) | P1 | open | When a step is blocked, does downstream telemetry still occur for later steps, and should their expected detections read `not_reached`? |
 | [PM-PRV-04](#pm-prv-04) | P2 | open | Do agent profile exceptions suppress both prevention and detection alerts, or prevention only? |
+| [PM-PRV-05](#pm-prv-05) | P0 | open | On Linux, does the agent's malware protection (local analysis / WildFire verdict) evaluate an ELF when it is written or chmod'd, or only when it is executed? In report mode, does executing the public WildFire test ELF raise an agent issue, and how long after exec? |
 
 #### PM-PRV-01
 
@@ -1013,6 +1016,17 @@ Agent-side modules that block in block mode and alert in report mode. Our outcom
 - **Why we ask:** Customer tenants often carry broad exceptions.
 - **What the answer moves:** Preflight guidance for exception review.
 - **Touches:** `docs/operator-runbook.md`
+
+#### PM-PRV-05
+
+**P0 · open** — On Linux, does the agent's malware protection (local analysis / WildFire verdict) evaluate an ELF when it is written or chmod'd, or only when it is executed? In report mode, does executing the public WildFire test ELF raise an agent issue, and how long after exec?
+
+- **Why we ask:** SIM-CDR-012 stages the WildFire test samples and stubs execution (step-02); on a lab Linux agent that produced no issue, so the endpoint half of every NGFW+agent stitch test built on it is empty. A stitch test needs an endpoint trigger that is known to fire. Operator observation, not an answer (2026-11-11): in run fac6e8d5 (SIM-EDR-023, which executes the WildFire test ELF it stages), the lab Linux agent raised Local Analysis Malware (HIGH) on the execution. That says exec fires; it does not say whether a write or chmod alone would.
+- **What the answer moves:** Whether endpoint-trigger steps must execute their artifact, and which benign artifact CortexSim uses as the canonical agent trigger for stitch pairing.
+  - *if* scan on write → Keep staging-only steps; investigate why the lab profile did not alert (module off, exception).
+  - *if* exec only → Endpoint-trigger steps execute the WildFire test ELF under report mode; record the exec in step_outcomes.
+- **Settle it in the lab:** On the lab VM in report mode, execute /var/tmp/.hidden_wildfire_samples/test_elf once and query the tenant for an agent issue on that host for 15 minutes.
+- **Touches:** `scenarios/cdr/cdr-012-wildfire-in-container-misconfig.yml`
 
 ## INC
 
@@ -1427,3 +1441,73 @@ How Cortex decides who an event, a chain or an alert belongs to: the user fields
 - **What the answer moves:** How the lab marks its honey account and which expectation type the scenario declares.
 - **Touches:** `scenarios/itdr/`, `detection_scanner/ttps`
 - **Asked in:** PMQ-2026-11-11-identity-cgo-cie-ad
+
+## NGF
+
+### NGFW sensor configuration (what the firewall must be set to emit)
+
+Everything on the firewall that decides whether an NGFW record exists in the tenant at all: which security rule a session matches (first match wins), the profile group that rule carries and whether each profile alerts or blocks, the log forwarding profile and the log types it sends, Enhanced Application Logging, the logging-service connection, decryption, NAT and User-ID / Cloud Identity Engine. A scenario that expects "the firewall will see it" is making a claim about this config, and CortexSim checks none of it today.
+
+**Known**
+
+- With logging-service forwarding enabled and the rule's log forwarding profile sending threat logs, a DNS Security threat log written by a PA-440 reached panw_ngfw_threat_raw about 12 s later (_time 02:17:50Z, log_time 02:18:02Z), carrying is_nat=true and dest_port 53. — *lab_observation*, Henry's PA-440 lab, tenant deathstar, XQL on panw_ngfw_threat_raw for the lab K3s control-plane node's source IP (2026-11-10)
+- Security rules match first-hit. An outbound any-application any-service allow rule placed above an "alert-all" profile rule made that rule unreachable for outbound traffic: it only ever matched inbound and intrazone sessions, so lab egress ran under a block-and-log profile group. — *lab_observation*, PA-440 rulebase and 24 h traffic logs for the two lab K3s nodes (2026-11-10)
+- An anti-spyware profile whose signature rules were all `alert` still dropped the DNS Security test domains test-c2.testpanw.com and test-malware.testpanw.com, because its DNS Security category actions were left at `default`. Category actions are set separately from signature rules. The drop was still logged as a threat (thr_category dns-c2 and dns-malware); a profile using `sinkhole` logged the same domains with action sinkhole. — *lab_observation*, PA-440 threat logs 21:15:20 and 21:17:50 EST, profiles hr-spyware-alertall and user-url (2026-11-10)
+- With no SSL decryption, the firewall cannot see file content inside HTTPS, so file-based AV or WildFire tests must use plain HTTP. The official EICAR download is served over HTTPS only, so fetching it produces no NGFW AV log on a firewall that does not decrypt. — *public_doc*, https://www.eicar.org/download-anti-malware-testfile/ (download area offered over HTTPS) (2026-11-10)
+- Downloading the four public WildFire test samples (wildfire.paloaltonetworks.com/publicapi/test/{pe,apk,macos,elf}) over HTTPS through a firewall that does not decrypt produced only traffic logs: four sessions to one destination on 443, App-ID paloalto-wildfire-cloud, s_encrypted=1, 19 KB to 1.5 MB received each, and no threat or WildFire log. — *lab_observation*, SIM-CDR-012 pull run from a lab beacon through the PA-440, 2026-11-11 02:58:52Z (2026-11-10)
+- Subdomains of testmynids.org resolved through a DNS Security-enabled anti-spyware profile raise threat id `new:testmynids.org` (thr_category dns-new-domain, severity low to informational). Under a profile whose newly-registered-domain action is alert, each distinct query name produced one threat log carrying the full 5-tuple; under a sinkhole profile the query was answered with sinkhole.paloaltonetworks.com. — *lab_observation*, SIM-NDR-009 pull run from a lab beacon, 15 distinct *.exfil.testmynids.org names, 2026-11-11 02:59Z (2026-11-10)
+- Traffic from a libvirt NAT guest is logged with the hypervisor's LAN IP as its source; the guest's own address (192.168.122.0/24) never appears in firewall logs. The guest's XDR agent reports the guest address, so its NGFW and agent records carry different source IPs. — *lab_observation*, PA-440 traffic logs, 0 sessions from libvirt's default 192.168.122.0/24; lab target VM behind the hypervisor's virbr0 NAT (2026-11-10)
+- A Cortex XDR agent running as a Kubernetes DaemonSet with host networking reports the node's LAN IP, which is the same pre-NAT source IP the firewall logs for that node. — *lab_observation*, K3s DaemonSet pods cortex-xdr/cortex-agent-* on both lab K3s nodes, agent IP = node IP (2026-11-10)
+- An NGFW DNS Security threat log for a host produced an NGFW-only issue in the tenant ("generic C2 / generic DNS"). It was not grouped with an agent issue because the agent raised none: an EICAR file written to /tmp on a Linux DaemonSet-agent host was still present and un-alerted 20 s later. One-sided evidence cannot test stitching. — *operator_report*, Henry, tenant deathstar case view after the K3s-node test, 2026-11-10 20:23 CST (2026-11-10)
+
+**What CortexSim assumes today**
+
+- Synthetic NGFW threat records may only carry action alert or allow; block-class actions are refused. A real lab firewall running block profiles writes drop, reset or sinkhole, which the synthetic contract never produces, so the two shapes differ in the action field. — `core/eal_simulator/plugins/ngfw_threat_emitter.py:162`
+- Synthetic NGFW records default the source user to corp\cortexsim-canary and the source address to 10.0.12.34. A firewall with no User-ID or Cloud Identity Engine mapping logs no user at all. — `core/eal_simulator/plugins/ngfw_eal_emitter.py:83 ; core/eal_simulator/plugins/ngfw_threat_emitter.py:45`
+- The NDR IaC module's VM-Series path documents HTTP log forwarding to a lab collector. Nothing in the repo describes the logging-service path a customer firewall actually uses for XSIAM (CSP registration, device certificate, logging-service region, log forwarding profile, profile actions, rule order, decryption, User-ID). — `infra/modules/aws/ndr/README.md:27`
+
+**How this differs from**
+
+- **ING (Ingestion, parsing and XDM modeling)** — NGF decides whether the firewall writes and forwards a record; ING decides what the tenant does with it once received. A missing NGFW record is usually an NGF problem (wrong rule, block profile, no decryption) that looks like an ING problem.
+- **STI (Stitching (data fusion across sources))** — NGF decides which identity fields an NGFW record carries (pre-NAT source, NAT fields, user). Stitching can only join on fields that are there, so a NAT guest or a missing User-ID mapping breaks the join before the engine ever runs.
+
+**Questions**
+
+| id | priority | status | question |
+|---|---|---|---|
+| [PM-NGF-01](#pm-ngf-01) | P0 | open | For XSIAM analytics that read Enhanced Application Logging, which firewall settings must all be on for the EAL records to reach the tenant: the device-level enhanced-application-logging switch, the flag on the rule's log forwarding profile, or both? Which log types must the profile forward for EAL (traffic only, or also url, data, auth)? Is a minimum PAN-OS or content version required? |
+| [PM-NGF-02](#pm-ngf-02) | P0 | open | Does the action on an NGFW threat log (alert, drop, reset-both, sinkhole) change which XSIAM issue is raised, its severity, or whether it can join a case with agent issues on the same host? |
+| [PM-NGF-03](#pm-ngf-03) | P1 | open | When the firewall maps source IPs to users (User-ID or Cloud Identity Engine), does XSIAM use the NGFW source-user field as an entity when it links NGFW records or issues to agent and identity data, and which format does it match (domain\user, UPN, or a normalised identity)? |
+
+#### PM-NGF-01
+
+**P0 · open** — For XSIAM analytics that read Enhanced Application Logging, which firewall settings must all be on for the EAL records to reach the tenant: the device-level enhanced-application-logging switch, the flag on the rule's log forwarding profile, or both? Which log types must the profile forward for EAL (traffic only, or also url, data, auth)? Is a minimum PAN-OS or content version required?
+
+- **Why we ask:** ngfw_eal_emitter fabricates EAL-shaped records; a real firewall only emits them if configured. The lab firewall has both switches on and still nothing in CortexSim checks either one, so a DC cannot tell "EAL off" from "missed".
+- **What the answer moves:** The required-settings list in an NGFW preflight and in a generated firewall config; which EAL-based scenarios may run against a given firewall.
+  - *if* device switch alone is enough → Preflight checks one setting; the generated config sets it once.
+  - *if* both are required → Preflight checks the device switch and every log forwarding profile used by a lab egress rule.
+- **Settle it in the lab:** Turn off the profile-level EAL flag on the lab-scoped rule only, generate the same FTP egress from a lab host, and compare EAL dataset rows with and without the flag over 15 minutes.
+- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `infra/modules/aws/ndr`
+
+#### PM-NGF-02
+
+**P0 · open** — Does the action on an NGFW threat log (alert, drop, reset-both, sinkhole) change which XSIAM issue is raised, its severity, or whether it can join a case with agent issues on the same host?
+
+- **Why we ask:** In the lab a dropped DNS Security lookup still produced an NGFW issue. The synthetic emitter refuses block-class actions (ngfw_threat_emitter.py:162), and a block on the wire can stop the next step from ever running, so the agent half of a stitch never happens.
+- **What the answer moves:** Whether lab egress profiles must be alert-only for stitched scenarios, and whether a scenario declares the NGFW action it expects.
+  - *if* action changes nothing upstream → Keep block profiles for realism; only require alert where a later step needs the traffic to pass.
+  - *if* block actions change the issue or its grouping → Generated lab config uses alert-only profiles (DNS Security categories included); scenarios declare the expected action.
+- **Settle it in the lab:** From the same lab host, resolve test-c2.testpanw.com once under a profile whose DNS Security C2 category is set to alert and once under sinkhole; compare the two issues and their cases.
+- **Touches:** `core/eal_simulator/plugins/ngfw_threat_emitter.py`
+
+#### PM-NGF-03
+
+**P1 · open** — When the firewall maps source IPs to users (User-ID or Cloud Identity Engine), does XSIAM use the NGFW source-user field as an entity when it links NGFW records or issues to agent and identity data, and which format does it match (domain\user, UPN, or a normalised identity)?
+
+- **Why we ask:** Synthetic NGFW records always carry corp\cortexsim-canary (ngfw_eal_emitter.py:84); the lab firewall has no User-ID and logs no user, so a user-keyed stitch can never form from real traffic.
+- **What the answer moves:** Whether the generated firewall config must include User-ID or CIE mappings for lab hosts, and how emitters format the user field.
+  - *if* user is a join or grouping key → The firewall config generator adds a User-ID mapping (or CIE) for each lab host; emitters match its format.
+  - *if* user is enrichment only → Leave User-ID optional; drop user from the stitch contract.
+- **Settle it in the lab:** Register a static IP-to-user mapping for one lab host through the firewall's User-ID API, run the DNS Security test from that host, and compare the resulting issue's entities and grouping with the same test unmapped.
+- **Touches:** `core/eal_simulator/plugins/ngfw_eal_emitter.py`, `core/eal_simulator/plugins/ngfw_threat_emitter.py`
