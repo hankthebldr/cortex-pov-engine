@@ -43,7 +43,7 @@ variable "ttl_hours" {
 variable "tags" {
   description = "Additional tags applied to all resources"
   type        = map(string)
-  default     = {{ tags | tojson }}
+  default     = {{ tags | hcl_object }}
 }
 
 variable "itdr_workstation_count" {
