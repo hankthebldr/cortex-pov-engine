@@ -5,8 +5,15 @@
 **Target:** the standalone Cortex XDR agent on `pov-target-01` (lab VM, Ubuntu
 24.04, agent 9.4.0.470, policy `SEBC-FY25-LAB-LinuxServerPolicy`), beacon
 `pov-target-01-41a13a`, tenant `deathstar`.
-**Status:** authored, not run. `tenant-verified` is 0. Nothing below runs
-against the VM without Henry's explicit OK, given for that run.
+**Status:** SIM-EDR-023 run once, as `fac6e8d5` (2026-11-11 16:24Z, 4/4
+steps rc 0). Local Analysis Malware (HIGH) and WildFire Malware (MEDIUM) on
+the cron re-run grouped into case 51896 across two causality chains, MTTD
+46 s. The 3 custom BIOCs did not fire (the tenant API lists 0 BIOCs), so the
+run does not meet the PASS row in section 3. Run log and findings F4/F5:
+`docs/lab/2026-11-11-linux-endpoint-campaign.md`. SIM-EDR-024 has no run
+recorded.
+`tenant-verified` is 0. Nothing below runs against the VM without Henry's
+explicit OK, given for that run.
 
 ## Executive summary
 

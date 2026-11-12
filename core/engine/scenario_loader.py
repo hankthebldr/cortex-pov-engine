@@ -1640,6 +1640,10 @@ def _schema_to_orm_kwargs(schema: ScenarioSchema) -> dict[str, Any]:
         "threat_report_url": schema.threat_report_url,
         "execution_identity": schema.execution_identity.model_dump(),
         "push_supported": schema.push_supported,
+        # A corpus scenario's push_supported IS its declaration. Copied so the
+        # console reads ONE field (`push_supported_declared`) for a corpus
+        # origin and for a draft, where the two columns legitimately differ.
+        "push_supported_declared": schema.push_supported,
         "pull_supported": schema.pull_supported,
         "external_tools": [t.model_dump() for t in schema.external_tools],
         "steps": [omit_unset_channel_fields(s.model_dump()) for s in schema.steps],

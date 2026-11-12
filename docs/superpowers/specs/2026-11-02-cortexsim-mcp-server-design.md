@@ -4,8 +4,7 @@ Status: **design** (awaiting review) · 2026-11-02
 Author: Henry + Claude
 Branch: `feature/api-mcp-server` (cut from `dev` @ `b98ccac`)
 Origin: option B of `docs/brainstorm/2026-11-02-cortex-bot-review-and-pov-integration.md`
-(§2.6, "MCP server, do next, own feature branch") on branch
-`claude/cortex-bot-integration-e97964`.
+(§2.6, "MCP server, do next, own feature branch").
 
 Scope: give an agent — Claude Code on a DC's laptop today, `cortex-pov-agent`
 next — a Model Context Protocol surface over CortexSim's own API (scenarios,

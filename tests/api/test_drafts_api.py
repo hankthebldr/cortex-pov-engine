@@ -537,3 +537,94 @@ def test_malformed_position_is_422_not_dropped(client):
     resp = client.post("/api/scenarios/drafts", json=body)
     assert resp.status_code == 422, resp.text
     assert resp.json()["detail"]["code"] == "DRAFT_SCHEMA_INVALID"
+
+
+# ---------------------------------------------------------------------------
+# Push support on a FORKED draft (2026-10-30)
+# ---------------------------------------------------------------------------
+
+
+def test_fork_of_push_refusing_origin_is_refused_a_bundle(client_with_library):
+    """Fork SIM-MP-031 the way the console does, then ask for its bundle.
+
+    The origin declares ``push_supported: false``. Before the fix the drafts
+    API re-derived push support from the draft's own (POSIX-shaped) commands,
+    stored the fork as push-capable, and ``GET /download`` emitted a bundle —
+    where the ORIGIN answers 409 PUSH_NOT_SUPPORTED.
+    """
+    from tests._composer_fork import fork_body_like_the_ui, load_corpus_doc  # noqa: PLC0415
+
+    c = client_with_library
+    doc = load_corpus_doc("SIM-MP-031")
+    assert doc["push_supported"] is False
+
+    created = c.post("/api/scenarios/drafts", json=fork_body_like_the_ui("SIM-MP-031"))
+    assert created.status_code == 201, created.text
+    draft = created.json()
+    assert draft["push_supported"] is False, "the fork was stored push-capable"
+    assert draft["push_supported_declared"] is False
+
+    dl = c.get(f"/api/scenarios/{draft['scenario_id']}/download")
+    assert dl.status_code == 409, dl.text[:400]
+    assert dl.json()["detail"]["code"] == "PUSH_NOT_SUPPORTED"
+
+
+def test_put_never_widens_a_carried_push_refusal(client):
+    """The floor survives a full-replace PUT whether the client re-sends it,
+    omits it, or sends ``true``: a fork of a refusing origin stays refused for
+    its lifetime. The way out is a new draft, not an edit."""
+    sid = client.post(
+        "/api/scenarios/drafts", json=_draft_body(push_supported=False)
+    ).json()["scenario_id"]
+
+    omitted = client.put(f"/api/scenarios/drafts/{sid}", json=_draft_body())
+    assert omitted.status_code == 200, omitted.text
+    assert omitted.json()["push_supported"] is False
+    assert omitted.json()["push_supported_declared"] is False
+
+    widened = client.put(
+        f"/api/scenarios/drafts/{sid}", json=_draft_body(push_supported=True)
+    )
+    assert widened.status_code == 200, widened.text
+    assert widened.json()["push_supported"] is False
+    assert widened.json()["push_supported_declared"] is False
+
+
+def test_hand_authored_draft_recovers_push_once_its_steps_are_fixed(client):
+    """A DERIVED false is not a floor. A draft whose first save had nothing
+    emittable must become push-capable once its steps are — otherwise the
+    floor above would turn every transient derivation into a permanent
+    refusal, which today's re-derive-on-PUT never did."""
+    win = _step("step-01", command="Get-Process | Out-File C:\\temp\\procs.txt")
+    created = client.post("/api/scenarios/drafts", json=_draft_body(steps=[win]))
+    assert created.status_code == 201, created.text
+    assert created.json()["push_supported"] is False
+    assert created.json()["push_supported_declared"] is None
+
+    sid = created.json()["scenario_id"]
+    fixed = client.put(f"/api/scenarios/drafts/{sid}", json=_draft_body())
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["push_supported"] is True
+    assert fixed.json()["push_supported_declared"] is None
+
+
+# ---------------------------------------------------------------------------
+# Threat-report provenance survives the fork (2026-10-30)
+# ---------------------------------------------------------------------------
+
+
+def test_draft_carries_threat_report_provenance(client):
+    body = _draft_body(
+        threat_report="Unit 42 — example threat assessment",
+        threat_report_url="https://unit42.paloaltonetworks.com/example/",
+    )
+    created = client.post("/api/scenarios/drafts", json=body)
+    assert created.status_code == 201, created.text
+    sid = created.json()["scenario_id"]
+    got = client.get(f"/api/scenarios/drafts/{sid}").json()
+    assert got["threat_report"] == "Unit 42 — example threat assessment"
+    assert got["threat_report_url"] == "https://unit42.paloaltonetworks.com/example/"
+    # Full-replace without them clears them — they are content, not a floor.
+    cleared = client.put(f"/api/scenarios/drafts/{sid}", json=_draft_body()).json()
+    assert cleared["threat_report"] is None
+    assert cleared["threat_report_url"] is None

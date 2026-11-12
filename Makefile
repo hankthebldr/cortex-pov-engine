@@ -424,10 +424,11 @@ check-ground-truth: ground-truth ## Ground-truth determinism gate (CI step): reg
 # ($(WIKI_PY): the repo venv when there is one). payloads/sources.json is
 # GENERATED from the packs; on drift this prints the diff and exits 1. Fix with
 # `python3 -m engine.payload_shelf --write`.
-check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate + payload-shelf drift check (CI 'adapters' job)
+check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate + payload-shelf drift check + installer submodule denylist (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
 	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-adapter-wiring.py --list
 	CORTEXSIM_BASE_DIR=$(CURDIR) PYTHONPATH=$(CURDIR)/core $(WIKI_PY) -m engine.payload_shelf --check
+	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-installer-submodules.py
 
 e2e-tierc: ## Tier-C isolated-execution assertion suite (CI 'e2e-isolated' job, no docker)
 	python3 -m pytest tests/e2e_isolated/test_tier_c_assets.py \

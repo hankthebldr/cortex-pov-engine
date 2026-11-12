@@ -38,6 +38,8 @@ name: CI
 #               never wires it via external_tools[].adapter_ref.
 #               ALSO `python3 -m engine.payload_shelf --check`: the generated
 #               payloads/sources.json must match the packs it is derived from.
+#               ALSO check-installer-submodules.py: FAIL if install.sh would
+#               check out a denylisted submodule or one shipping Binaries/*.zip.
 #   refs      — every scenario through the real loader under
 #               CORTEXSIM_STRICT_REFS, the PowerShell 5.1 floor gate (pwsh 7:
 #               necessary, not sufficient), and the ground-truth and
@@ -484,6 +486,17 @@ jobs:
           CORTEXSIM_BASE_DIR: ${{ github.workspace }}
           PYTHONPATH: ${{ github.workspace }}/core
         run: python3 -m engine.payload_shelf --check
+      - name: Installer submodule denylist (no compiled implants on a jumpbox)
+        # Runs install.sh's real init_submodules with real git in a sandbox and
+        # FAILs if it checks out a denylisted submodule (sources/MITRE-Turla-
+        # Carbon shipped compiled Turla implants until 2026-11-10), or any
+        # checked-out submodule that ships a Binaries/*.zip. This job checks
+        # submodules out, so the content rule scans every one of them. It lives
+        # here, not in backend: the prod image has no git, so the pytest twin
+        # (tests/installer/test_install_sh_submodule_denylist.py) skips there.
+        env:
+          CORTEXSIM_BASE_DIR: ${{ github.workspace }}
+        run: python3 scripts/check-installer-submodules.py
 
   # ---------------------------------------------------------------------------
   # rust-dist — static musl build of the three tier-2 Rust tools, then EXECUTE

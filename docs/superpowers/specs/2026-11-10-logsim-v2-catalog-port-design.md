@@ -29,7 +29,7 @@ it". Today three things make that silence likely and invisible:
 | Cause | Evidence |
 |---|---|
 | The readiness gate ignores soakless. `outcome.soak_pending_reason` honours `soakless_attested`; `analytics_alerts.readiness_for` gates only on `max(activation, training)` and says "not armed" on a soakless tenant. | `core/engine/outcome.py:260`, `core/eal_simulator/analytics_alerts.py:325` |
-| The emitters deliver through a custom HTTP collector. Analytics, IOC and BIOC run only on normalised data, and a custom-collector dataset is normalised only after an XDM modeling rule maps it. | HTTP collector and Analytics Engine pages, quoted in `docs/superpowers/specs/2026-11-10-tenant-setup-research/` (branch `docs/docs-tenant-setup-research`) |
+| The emitters deliver through a custom HTTP collector. Analytics, IOC and BIOC run only on normalised data, and a custom-collector dataset is normalised only after an XDM modeling rule maps it. | HTTP collector and Analytics Engine pages, quoted in `docs/superpowers/specs/2026-11-10-tenant-setup-research/` |
 | Out-of-the-box analytics run only on dedicated-UUID Cribl sources, never the generic UUID. | Cribl "Data source UUIDs" page, fetched 2026-11-10 |
 
 LogSimv2 avoids all three: native pipes (Broker syslog, WEC, S3, Pub/Sub, HTTP

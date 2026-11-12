@@ -746,6 +746,42 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 - The XDR agent doors read `configured` only when the beacon is online and an XQL
   tenant credential exists: an online CortexSim beacon is not the Cortex XDR agent.
 
+### Fixed — a Composer fork keeps its origin's push refusal
+
+Follow-up to the composer-mode branch (PR #161). A draft forked from a corpus
+scenario that declares `push_supported: false` (`SIM-MP-030/031/034`) was
+stored push-capable, because the drafts API re-derived push support from the
+draft's own POSIX-shaped commands — measured 2 of 3 on 2026-10-28 — and
+`GET /api/scenarios/{id}/download` then emitted a bundle the origin refuses
+with 409 `PUSH_NOT_SUPPORTED`.
+
+- **`push_supported: false` on the draft body is a floor, never widened:** the
+  derivation may narrow true to false, an explicit false wins, and a PUT that
+  omits it or sends true keeps the refusal (`effective_push_support`, the one
+  rule for POST and PUT).
+- **New column `scenarios.push_supported_declared`** (nullable; the loader
+  copies the YAML value for corpus rows; `_migrate_scenarios_columns` adds it
+  on boot). It keeps a carried refusal apart from a merely derived `false`, so
+  a hand-authored draft whose first save had nothing emittable still recovers
+  once its steps are fixed. Prod: `ALTER TABLE scenarios ADD COLUMN
+  push_supported_declared BOOLEAN`.
+- **The Composer fork carries it:** `draftFromScenario` reads
+  `push_supported_declared` (never the derived `push_supported`), and
+  `draftToApi` sends `push_supported: false` only for a carried refusal. The
+  fork now also carries `threat_report` / `threat_report_url`, which the POV
+  report and the bundle header cite and the fork used to drop.
+- **Guard:** the drafts-API tests fork SIM-MP-031 from a golden pair under
+  `tests/fixtures/composer_fork/`, pinned from both sides — pytest refuses it
+  unless its document still equals the live corpus, and
+  `composerForkGolden.test.js` fails unless the real console fork still
+  produces its body. Both new guards were observed red against the unfixed
+  code.
+- `indicators[]` is deliberately **not** carried: the Composer has no
+  indicator editor, so `S-24` would wedge a draft the moment a referenced step
+  is removed; nothing in the run path reads the column; and
+  `coverage_report.py` walks the YAML corpus, so a draft cannot count toward a
+  stitched chain either way.
+
 ### Added — two Linux persistence chains built to group into one case
 
 - **SIM-EDR-023 and SIM-EDR-024**, with cards TTP-2026-0198/0199. SIM-EDR-023
@@ -847,8 +883,33 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
   The Broker VM applet list has no HTTP receiver; the HTTP log collector is a
   tenant endpoint at `/logs/v1/event`, and a 500 from it means the body does
   not match the collector's Log Format.
-- Not changed: `email_emitter` has no auth parameters at all, so it cannot
-  authenticate to an XSIAM collector. Tracked separately.
+
+### Fixed — `email_emitter` can authenticate to an XSIAM HTTP log collector
+
+- **The EMAIL plane's `email_emitter` had no auth parameters,** so pydantic
+  dropped a supplied `auth_token` and every POST went out without an
+  `Authorization` header. An XSIAM collector answers 401, reported as
+  `collector_unauthorized`, which meant the EMAIL scenarios could not reach a
+  real tenant at all. It now takes `auth_token` / `auth_header` /
+  `auth_scheme` with the same defaults as the other collector emitters
+  (`Authorization: <api_key>`, bare key).
+- The three fields are declared once in `core/eal_simulator/collector_auth.py`
+  (`Annotated` aliases plus `apply_collector_auth()`), and both
+  `AnalyticsEmitterParams` and `EmailEmitterParams` use them. The email emitter
+  does not inherit `AnalyticsEmitterParams`, because that would add `batch` /
+  `compress` / `canary_token` fields it ignores and change its `burst_count`
+  default from 4 to 8. Field order in the console's campaign form is unchanged.
+- The token goes on the HTTP client only. Campaign API responses redact it to
+  `auth_token: null` + `auth_token_configured: true`, and the offline bundle
+  manifest names `CORTEXSIM_COLLECTOR_TOKEN_<STEP>` rather than carrying it;
+  both were already keyed on the param name and now apply to email steps.
+  Guards: `tests/eal_simulator/test_email_emitter_collector_auth.py` (header,
+  no leak into audit events, POST bodies, per-request headers or the bundle),
+  and `test_collector_auth_default.py`, whose discovery now keys on the
+  `auth_token` field and requires `email_emitter` among 15 emitters. Four of
+  the new tests and the discovery test failed before the change. The API
+  redaction test for an email step passed both before and after; it is a
+  regression guard.
 
 ### Changed — detector readiness judges the delivery route and soakless mode
 
@@ -886,6 +947,33 @@ in `docs/reference/ground-truth.md`, regenerated after the merge.
 - Design for the remaining four phases (transports, wire-format generators,
   threat catalog, kill chains and correlation exports):
   `docs/superpowers/specs/2026-11-10-logsim-v2-catalog-port-design.md`.
+
+### Removed — `sources/MITRE-Turla-Carbon`: the jumpbox bootstrap no longer fetches compiled implants
+
+- **The submodule is gone (10 → 9).** Nothing in the engine read it. No `.py`,
+  `.yml`, `.sh`, `.json`, `Makefile` or `Dockerfile` referenced it, and the
+  image never copied it. But `install.sh::init_submodules` runs
+  `git submodule update --init --recursive`, so every jumpbox it bootstrapped
+  received `files/turla/Resources/Binaries/binaries.zip`, a password-zipped
+  archive of compiled Turla emulation implants (EPIC, Carbon, keylogger,
+  Mimikatz, Snake, LightNeuron) plus PsExec. CI's `submodules: recursive`
+  checkouts and the session-start hook pulled it too. No tier-2 adapter
+  declared it as a source.
+- **New guard: `scripts/check-installer-submodules.py`**, in `make
+  check-adapters` and the CI `adapters` job. It runs `install.sh`'s real
+  `init_submodules` with real git, in a sandbox that registers the tree's
+  `.gitmodules` byte for byte, never touches the network, and points every URL
+  at one local placeholder repo. It FAILs if a denylisted submodule (matched
+  by URL or path) is registered without `update = none` or gets checked out,
+  or if any checked-out submodule ships a `Binaries/*.zip`. Run against
+  `origin/dev` before this change, it fails on R1 and R2. Run against a checkout
+  that has the Turla submodule populated, it also fails R3 on the real
+  `binaries.zip`.
+  The pytest twin (`tests/installer/test_install_sh_submodule_denylist.py`)
+  carries the negative controls. It skips inside the prod image, which has no
+  git.
+- **Existing clones keep the files.** `git pull` leaves a populated submodule
+  directory in place. `sources/README.md` gives the removal commands.
 
 ### Changed — Composer and Runs: a step's lane is its signal path, not its plane
 
