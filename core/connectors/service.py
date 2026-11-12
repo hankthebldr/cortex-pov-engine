@@ -40,6 +40,7 @@ from connectors.case_ledger import (
     ledger_from_dict,
 )
 from connectors.matcher import DEFAULT_WINDOW_SECONDS, scope_to_host
+from connectors.verify_window import PUSH_WINDOW_REASON
 from connectors.measures import (
     CORRELATION,
     build_measurement,
@@ -1720,6 +1721,7 @@ async def verify_run_now(
     budget: Optional[dict[str, Any]] = None,
     source: str = "verify",
     window: Optional[dict[str, int]] = None,
+    window_reason: Optional[str] = None,
 ) -> VerifyOutcome:
     """Verify one run's ``verification_xql`` results, then score it.
 
@@ -1789,10 +1791,14 @@ async def verify_run_now(
         ))
         runner, tenant = resolved.runner, resolved.tenant
         if runner is not None and timeframe_seconds is None and resolved.client is not None:
-            from engine.verifier import xsiam_query_runner  # noqa: PLC0415
-            window = await _run_window(db, run, now=datetime.utcnow())
-            runner = xsiam_query_runner(resolved.client, window)
-            window_used = window
+            if run.mode == "push":
+                # No execution time to anchor on: keep the relative lookback.
+                window_reason = PUSH_WINDOW_REASON
+            else:
+                from engine.verifier import xsiam_query_runner  # noqa: PLC0415
+                window = await _run_window(db, run, now=datetime.utcnow())
+                runner = xsiam_query_runner(resolved.client, window)
+                window_used = window
         if runner is None:
             # No usable credential -> pending, never pass. The seeded results
             # keep the `pending` kpi_verdict the orchestrator gave them,
@@ -1831,6 +1837,10 @@ async def verify_run_now(
     })
     if window_used is not None:
         book["window"] = window_used
+        book.pop("window_reason", None)
+    elif window_reason is not None:
+        book["window"] = None
+        book["window_reason"] = window_reason
     score = await score_run_for_run(db, run, source=source, results=results,
                                     extra_detail={"verification": book})
     return VerifyOutcome(run.run_id, score.verdict, detail=run.tc_verdict_detail or {},
@@ -1912,14 +1922,16 @@ async def auto_verify_once(
             continue
         stats["runs_considered"] += 1
         try:
-            run_runner, run_window = runner, None
-            if client is not None:
+            run_runner, run_window, run_reason = runner, None, None
+            if client is not None and run.mode == "push":
+                run_reason = PUSH_WINDOW_REASON
+            elif client is not None:
                 from engine.verifier import xsiam_query_runner  # noqa: PLC0415
                 run_window = await _run_window(db, run, now=now)
                 run_runner = xsiam_query_runner(client, run_window)
             outcome = await verify_run_now(db, run, runner=run_runner, tenant=tenant,
                                            budget=budget, source="sweep",
-                                           window=run_window)
+                                           window=run_window, window_reason=run_reason)
         except Exception:  # noqa: BLE001 — one bad run must not kill the sweep
             logger.exception("auto-verify failed run=%s", run.run_id)
             continue

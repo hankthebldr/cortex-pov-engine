@@ -498,7 +498,8 @@ def _wire_tenant(SessionLocal, monkeypatch):
     return client
 
 
-def _set_run(SessionLocal, run_id, *, started, completed, window=None):
+def _set_run(SessionLocal, run_id, *, started, completed, window=None, mode=None,
+             status=None, steps=None):
     from models import Run, Scenario
     from sqlalchemy import select
 
@@ -506,12 +507,30 @@ def _set_run(SessionLocal, run_id, *, started, completed, window=None):
         async with SessionLocal() as db:
             run = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
             run.started_at, run.completed_at = started, completed
-            if window is not None:
+            if mode is not None:
+                run.mode = mode
+            if status is not None:
+                run.status = status
+            if window is not None or steps is not None:
                 sc = (await db.execute(select(Scenario).where(
                     Scenario.scenario_id == run.scenario_id))).scalar_one()
-                sc.correlation_window_seconds = window
+                if window is not None:
+                    sc.correlation_window_seconds = window
+                if steps is not None:
+                    sc.steps = steps
             await db.commit()
     asyncio.run(_do())
+
+
+def _verification_book(SessionLocal, run_id="run-1"):
+    from models import Run
+    from sqlalchemy import select
+
+    async def _do():
+        async with SessionLocal() as db:
+            r = (await db.execute(select(Run).where(Run.run_id == run_id))).scalar_one()
+            return r.tc_verdict_detail["verification"]
+    return asyncio.run(_do())
 
 
 async def _verify_win(SessionLocal, run_id="run-1", **kw):
@@ -596,3 +615,75 @@ def test_missing_scenario_falls_back_to_default_window(session_factory, monkeypa
     # completed None -> to = min(started + default window, now) = now (30 min in)
     assert tf["to"] - tf["from"] <= (settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS + 300) * 1000
     assert tf["to"] - tf["from"] >= (30 * 60 + 300) * 1000 - 5000
+
+
+# ---------------------------------------------------------------------------
+# Push runs: SimCore never learns when the bundle ran (C1)
+# ---------------------------------------------------------------------------
+
+
+def test_push_run_verified_late_keeps_the_relative_lookback(session_factory, monkeypatch):
+    """A push run reaches `staged` at bundle generation; the bundle runs offline
+    later. Querying [staging - 5 min, staging + window] finds nothing once the
+    bundle ran after it, so a push run keeps the relativeTime lookback and says why."""
+    from config import settings
+
+    staged = datetime.utcnow() - timedelta(hours=3)
+    _seed(session_factory, verification_xql="dataset = xdr_data | limit 1")
+    _set_run(session_factory, "run-1", started=staged, completed=staged,
+             window=3600, mode="push", status="staged")
+    client = _wire_tenant(session_factory, monkeypatch)
+
+    asyncio.run(_verify_win(session_factory))
+
+    want = {"relativeTime": settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS * 1000}
+    assert client.timeframes and all(tf == want for tf in client.timeframes)
+    book = _verification_book(session_factory)
+    assert book["window"] is None
+    assert book["window_reason"] == "push_execution_time_unknown"
+
+
+def test_pull_run_records_its_window_and_no_reason(session_factory, monkeypatch):
+    started = datetime.utcnow() - timedelta(hours=3)
+    _seed(session_factory, verification_xql="dataset = xdr_data | limit 1")
+    _set_run(session_factory, "run-1", started=started,
+             completed=started + timedelta(minutes=2), window=3600)
+    client = _wire_tenant(session_factory, monkeypatch)
+
+    asyncio.run(_verify_win(session_factory))
+
+    assert all("relativeTime" not in tf for tf in client.timeframes)
+    book = _verification_book(session_factory)
+    assert book["window"] in client.timeframes
+    assert "window_reason" not in book
+
+
+def test_sweep_keeps_the_relative_lookback_for_a_push_run(session_factory, monkeypatch):
+    from config import settings
+    from connectors.service import auto_verify_once
+
+    now = datetime.utcnow()
+    staged, started = now - timedelta(hours=3), now - timedelta(hours=2)
+    _seed(session_factory, run_id="run-push", verification_xql="dataset = a | limit 1",
+          started_at=staged)
+    _seed(session_factory, run_id="run-pull", scenario_id=None,
+          verification_xql="dataset = a | limit 1", started_at=started)
+    _set_run(session_factory, "run-push", started=staged, completed=staged,
+             window=3600, mode="push", status="staged")
+    _set_run(session_factory, "run-pull", started=started,
+             completed=started + timedelta(minutes=1))
+    client = _wire_tenant(session_factory, monkeypatch)
+
+    async def _do():
+        async with session_factory() as db:
+            return await auto_verify_once(db, lookback_seconds=86400)
+    asyncio.run(_do())
+
+    relative = {"relativeTime": settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS * 1000}
+    assert relative in client.timeframes
+    push_book = _verification_book(session_factory, "run-push")
+    assert push_book["window"] is None
+    assert push_book["window_reason"] == "push_execution_time_unknown"
+    pull_book = _verification_book(session_factory, "run-pull")
+    assert pull_book["window"] in client.timeframes
+    assert "relativeTime" not in pull_book["window"]

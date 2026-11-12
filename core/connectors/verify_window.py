@@ -15,6 +15,12 @@ from connectors.base import coerce_utc
 #: Slack before ``started_at`` for clock skew and ingestion-time stamping.
 LEAD_SECONDS = 300
 
+#: Why a push run has no window of its own. It reaches ``staged`` when its
+#: bundle is generated; the bundle runs offline later and SimCore never learns
+#: when, so a window anchored on staging would miss every event. A push run
+#: keeps the relative lookback and records this reason instead.
+PUSH_WINDOW_REASON = "push_execution_time_unknown"
+
 
 def _epoch_ms(naive_utc: datetime) -> int:
     # Naive UTC -> epoch. ``naive.timestamp()`` would read it as host-local.
