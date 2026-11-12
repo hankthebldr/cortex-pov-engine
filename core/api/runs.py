@@ -527,6 +527,11 @@ class LaunchRequest(BaseModel):
     # POST /api/scenarios/{id}/bundle, which gates independently and also
     # demands authorized_by. See docs/reference/k8s-delivery.md.
     consent: Optional[dict[str, bool]] = None
+    # The operator authorising this launch. With consent.simulation_authorized
+    # it lets the run's in-process EAL steps deliver live to the instance's
+    # collector targets; without both, those steps stay dry-run and each says
+    # why (EAL_DRY_RUN_*). Not read for anything else.
+    authorized_by: Optional[str] = None
     # Per-run authorization for the beacon to attempt a package-manager
     # install when a step's declared `requires_interpreters` is absent on the
     # target (docs/design/agent-runtime-dependencies.md). Mirrors
@@ -809,6 +814,7 @@ async def _launch_run_impl(
         canary_run_id=body.canary_run_id,
         module_modes=body.module_modes,
         allow_missing_tools=body.allow_missing_tools,
+        authorized_by=body.authorized_by,
     )
 
     if not result.success:

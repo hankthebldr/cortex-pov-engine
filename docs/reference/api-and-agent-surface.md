@@ -224,7 +224,7 @@ stamp `severity: "high"` on every rule.
 
 | Method | Full path | Purpose | Request body | Response |
 |--------|-----------|---------|--------------|----------|
-| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?}`; 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
+| POST | `/api/runs` (alias `/api/run`, deprecated) | Launch a scenario run (pull or push) | `LaunchRequest`: `{scenario_id, mode, target_agent_id?, identity?, consent?, authorized_by?, allow_runtime_install?, agent_profile_mode?, bas_mode_attested?, soakless_attested?, attested_by?, paired_with_run_id?, canary_run_id?}` (the last six are the prevention-efficacy launch context, §1.3.1) | `{run_id, mode, message, download_url?}`; 400 `INVALID_MODE`; 409 `CONSENT_REQUIRED` / `PAIR_INVALID` / `CANARY_INVALID` (and the other launch-precondition codes); 422 `LAUNCH_FAILED` and a malformed `agent_profile_mode` |
 | POST | `/api/runs/canary` | Launch the block-mode canary against an agent (§1.3.1) | `CanaryRequest`: `{target_agent_id}` | `{run_id, scenario_id}`; 409 `CANARY_NOT_AVAILABLE` when `CORTEXSIM_CANARY_SCENARIO_LINUX` is unset |
 | GET | `/api/runs` | List all runs (newest first) | — | `{"runs":[<run.to_dict()>],"total":N}` |
 | GET | `/api/runs/{run_id}` | Run detail + status | — | `<run.to_dict()>` plus `step_outcomes[]` (§1.3.1); 404 `RUN_NOT_FOUND` |
@@ -250,6 +250,10 @@ stamp `severity: "high"` on every rule.
   `simulation_authorized` (for `dual-use-lab-only`). The orchestrator refuses to
   create a Run and returns 422 `LAUNCH_FAILED` if a gated adapter lacks consent
   (see §3.1 / `_check_adapter_consent`).
+- **`authorized_by`** (`str`, optional) names the operator. With
+  `consent.simulation_authorized` it is the first key of the live gate for the
+  run's in-process EAL steps (§1.3.2); a blank name counts as none. It gates
+  nothing else and refuses no launch.
 - `/complete` appends a `--- COMPLETION SUMMARY ---` block to `run.output` and
   decrements `open_tasks`. A non-zero `exit_code` makes the run `failed`, and
   failure is sticky across a fan-out. The endpoint that brings `open_tasks` to 0
@@ -523,6 +527,53 @@ get it.
 > live tenant: the three host witnesses are proven against a branch SimCore (§5.6) and the
 > rest by injected transports. Tier-D has no Cortex agent, so no run there reads
 > `prevented`.
+
+#### 1.3.2 In-process EAL steps: the live gate
+
+A pull-mode run's `channel: eal` steps run as one campaign inside SimCore's own
+process at launch (`orchestrator._dispatch_eal_in_process`); no beacon is
+involved. This is the one path on which a **scenario run** makes SimCore itself
+POST to a customer collector, so the campaign goes live only when **every**
+condition below holds, and otherwise runs dry-run (records pre-rendered, nothing
+POSTed):
+
+1. the launch carried `consent.simulation_authorized: true` **and** a non-blank
+   `authorized_by`;
+2. every eal step's plugin is a collector plugin (`targets.collector_plugin_names`);
+3. every eal step resolves to a configured collector target (§1.9.1) — `explicit`,
+   `binding` or `default`; an inline `collector_url` does not count;
+4. every such target has a key in the vault;
+5. no such target's last preflight is failing (`not_configured` / `unreachable` /
+   `refused`);
+6. the campaign's total sleep, Σ `sleep_seconds × (iterations − 1)` over its eal
+   steps (defaults 0 and 1), is at most **30 s**
+   (`EAL_IN_PROCESS_MAX_SLEEP_SECONDS`) — the campaign runs synchronously inside
+   the launch request.
+
+The campaign goes live whole or not at all. In a dry run each eal step's
+`Run.channel_dispatch` entry has `status: dry_run` (or the executor's own
+`not_delivered` / `skipped` / `error`) and a `code` saying why:
+
+| `code` | Meaning |
+|---|---|
+| `EAL_DRY_RUN_NO_CONSENT` | Every step, when condition 1 fails |
+| `EAL_DRY_RUN_NOT_COLLECTOR` | The step's plugin does not POST to a collector target |
+| `EAL_DRY_RUN_TARGET_UNRESOLVED` | The step's target resolution is `none`, `error` or `inline` |
+| `EAL_DRY_RUN_TARGET_NO_KEY` | The step's target has no key stored |
+| `EAL_DRY_RUN_TARGET_FAILING` | The step's target's last preflight failed |
+| `EAL_DRY_RUN_SLEEP_CAP` | Total sleep is over 30 s; set on the steps that sleep |
+| `EAL_DRY_RUN_HELD` | This step is clean, but another step blocks; `detail` names the blocking steps |
+
+When the gate passes, the keys are read from the vault (`collector_targets.load_tokens`)
+only then and only into the in-memory campaign, which runs with
+`dry_run: false`, `simulation_authorized: true`, the launch's `authorized_by` and
+the resolved targets' exact `host:port` pins as `target_allowlist`. The ledger
+`status` is then `dispatched` (code `null`) or the executor's `not_delivered` /
+`skipped` / `error`; delivery is accounted by `eal_simulator/delivery.py` (only a
+2xx delivers, so a collector 401 reads `not_delivered`). Each eal step's seeded
+`Result.executed_at` is that step's own recorded start (naive UTC), or the launch
+time when the step has no result. ***tenant-verified is 0***: nothing on this
+path has delivered to a live tenant.
 
 ### 1.4 Results (`core/api/results.py`, prefix `/results`)
 
