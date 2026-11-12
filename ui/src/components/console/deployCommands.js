@@ -440,14 +440,19 @@ function hostMatches(host, patterns) {
  * served — so nothing is reported back and the console keeps waiting.
  *
  * `/api/health` publishes the guard's configuration on `api_auth`
- * (`host_guard`, `allowed_hosts`). It does NOT publish the machine's own host
- * name, and inside a container that is the container id anyway. So the honest
- * states are:
+ * (`host_guard`, `allowed_hosts`) and, since RG-UI-05, the machine's own names
+ * the guard admits: `local_host_names` (gethostname — inside a container, the
+ * container id) and `local_fqdn_names` (what the running guard resolved by
+ * reverse DNS; `[]` when that found nothing, `null` when it has not looked yet,
+ * because health does no DNS). So the honest states are:
  *   admitted   — loopback, an IP literal, the name THIS console was reached by
  *                (the page loading proves SimCore answers to it), a listed
- *                name, or a disabled guard
- *   not_listed — a name the published allowlist does not carry; SimCore refuses
- *                it unless it is the machine's own name
+ *                name, one of the machine's own published names, or a disabled
+ *                guard
+ *   not_listed — a name the published allowlist does not carry. `certain` when
+ *                every local name is known (then SimCore refuses it); else it
+ *                is refused unless it is a local name SimCore did not publish.
+ *                `ownNames` carries the published host names, or null
  *   unknown    — SimCore did not report the guard in a shape this reads; never
  *                collapsed into admitted
  *   invalid    — not an http(s) URL at all
@@ -456,7 +461,8 @@ function hostMatches(host, patterns) {
  * @param {string} serverUrl         what the DC typed
  * @param {string} [consoleHost]     window.location.hostname
  * @returns {{state: 'admitted'|'not_listed'|'unknown'|'invalid', host: string|null,
- *            why: string|null, allowed: string[]|null}}
+ *            why: string|null, allowed: string[]|null, certain?: boolean,
+ *            ownNames?: string[]|null}}
  */
 export function serverHostVerdict(healthModel, serverUrl, consoleHost = '') {
   const out = (state, host, why = null, allowed = null) => ({ state, host, why, allowed })
@@ -482,9 +488,19 @@ export function serverHostVerdict(healthModel, serverUrl, consoleHost = '') {
   }
   const allowed = extra.allowed_hosts.map(String)
   if (allowed.includes('*')) return out('admitted', host, 'guard-disabled', allowed)
-  return hostMatches(host, allowed)
-    ? out('admitted', host, 'listed', allowed)
-    : out('not_listed', host, 'not in CORTEXSIM_ALLOWED_HOSTS', allowed)
+  if (hostMatches(host, allowed)) return out('admitted', host, 'listed', allowed)
+
+  // The machine's own names, exactly (the guard compares them, no wildcards).
+  const ownNames = Array.isArray(extra.local_host_names) ? extra.local_host_names.map(normHost) : null
+  const fqdnNames = Array.isArray(extra.local_fqdn_names) ? extra.local_fqdn_names.map(normHost) : null
+  if ((ownNames && ownNames.includes(host)) || (fqdnNames && fqdnNames.includes(host))) {
+    return out('admitted', host, 'own-name', allowed)
+  }
+  return {
+    ...out('not_listed', host, 'not in CORTEXSIM_ALLOWED_HOSTS', allowed),
+    certain: !!(ownNames && fqdnNames),
+    ownNames,
+  }
 }
 
 // ── Install telemetry ────────────────────────────────────────────────────────

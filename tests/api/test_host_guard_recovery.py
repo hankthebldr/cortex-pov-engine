@@ -319,3 +319,76 @@ def test_the_boot_warning_does_not_claim_a_loopback_only_publish(monkeypatch, ca
     assert "Published on 127.0.0.1 only" not in text
     assert "CORTEXSIM_BIND=127.0.0.1" in text
     assert "uvicorn" in text
+
+
+# ---------------------------------------------------------------------------
+# RG-UI-05 — health names the machine's own host names the guard admits
+# ---------------------------------------------------------------------------
+#
+# The guard admits "this machine's own hostname or FQDN", and /api/health did
+# not say what those are. Get started could only tell a DC that an unlisted DNS
+# name "may" be refused: under compose the hostname is the container id, so the
+# name a DC types is usually refused, and the console could not say so.
+
+
+def _plain_guard():
+    from security import host_guard
+
+    async def ok(scope, receive, send):  # noqa: ANN001, ARG001
+        return None
+
+    return host_guard.HostGuardMiddleware(ok)  # the default resolvers, as main.app
+
+
+def test_health_publishes_the_hostname_names_the_guard_admits(monkeypatch):
+    import asyncio
+
+    from api import health
+    from security import host_guard
+
+    monkeypatch.setattr(host_guard, "_default_hostname", lambda: "JumpBox-01.lab.example.")
+    monkeypatch.setattr(host_guard, "_resolved_fqdn_names", None, raising=False)
+    comp = health.probe_api_auth()
+    assert comp["local_host_names"] == ["jumpbox-01", "jumpbox-01.lab.example"]
+    # Every published name is one the guard really admits.
+    guard = _plain_guard()
+    monkeypatch.setattr(host_guard, "_default_fqdn", lambda: "")
+    for name in comp["local_host_names"]:
+        assert asyncio.run(guard.is_allowed(f"{name}:8888")) is True, name
+
+
+def test_health_does_no_reverse_dns_and_says_when_the_fqdn_is_unknown(monkeypatch):
+    from api import health
+    from security import host_guard
+
+    def _no_dns():
+        raise AssertionError("/api/health did a reverse-DNS lookup")
+
+    monkeypatch.setattr(host_guard, "_default_fqdn", _no_dns)
+    monkeypatch.setattr(host_guard, "_default_hostname", lambda: "cid-4f2a")
+    monkeypatch.setattr(host_guard, "_resolved_fqdn_names", None, raising=False)
+    comp = health.probe_api_auth()
+    assert comp["local_host_names"] == ["cid-4f2a"]
+    assert comp["local_fqdn_names"] is None, "not looked up yet is not 'none'"
+
+
+def test_health_publishes_the_fqdn_once_the_running_guard_resolved_it(monkeypatch):
+    import asyncio
+
+    from api import health
+    from security import host_guard
+
+    monkeypatch.setattr(host_guard, "_default_hostname", lambda: "cid-4f2a")
+    monkeypatch.setattr(host_guard, "_default_fqdn", lambda: "simcore.corp.example")
+    monkeypatch.setattr(host_guard, "_resolved_fqdn_names", None, raising=False)
+    guard = _plain_guard()
+    # A Host nothing cheaper explains makes the guard resolve its FQDN.
+    assert asyncio.run(guard.is_allowed("jumpbox.lab:8888")) is False
+    comp = health.probe_api_auth()
+    assert comp["local_fqdn_names"] == ["simcore", "simcore.corp.example"]
+    assert asyncio.run(guard.is_allowed("simcore.corp.example")) is True
+
+    # A lookup that found nothing is published as [] — known to admit nothing.
+    monkeypatch.setattr(host_guard, "_default_fqdn", lambda: "")
+    asyncio.run(_plain_guard().is_allowed("jumpbox.lab"))
+    assert health.probe_api_auth()["local_fqdn_names"] == []

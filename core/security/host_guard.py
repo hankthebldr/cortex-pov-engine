@@ -212,6 +212,37 @@ def _default_fqdn() -> str:
     return socket.getfqdn()
 
 
+def _names_of(name: str) -> set[str]:
+    """``"Box-1.lab."`` -> ``{"box-1.lab", "box-1"}``: a local name as the guard
+    admits it, whole and as its first label."""
+    name = (name or "").lower().rstrip(".")
+    return {name, name.split(".", 1)[0]} - {""}
+
+
+#: The FQDN names a guard on the default resolver last resolved, or None until
+#: one has. The lookup is lazy (see the module docstring), so this stays None
+#: until a request arrives under a Host nothing cheaper explains.
+_resolved_fqdn_names: Optional[set[str]] = None
+
+
+def local_host_names() -> dict[str, Optional[list[str]]]:
+    """The names this machine admits as its own, as far as is known with no DNS.
+
+    ``hostname``: from ``socket.gethostname()``, a local syscall (inside a
+    container, the container id). ``fqdn``: what the running guard resolved
+    with its reverse-DNS lookup, ``[]`` when that found nothing, and ``None``
+    when it has not looked yet — which ``/api/health`` must not do itself, as it
+    makes no outbound calls (RG-UI-05).
+    """
+    try:
+        hostname = _names_of(_default_hostname())
+    except Exception:  # noqa: BLE001 — an unknown hostname admits nothing extra
+        hostname = set()
+    fqdn = _resolved_fqdn_names
+    return {"hostname": sorted(hostname),
+            "fqdn": sorted(fqdn) if fqdn is not None else None}
+
+
 def split_host(header: str) -> Optional[str]:
     """Return the lower-cased host part of a Host header, or None if malformed.
 
@@ -344,10 +375,10 @@ class HostGuardMiddleware:
         if self._hostname is None:
             fn = self._hostname_fn or _default_hostname
             try:
-                name = (fn() or "").lower().rstrip(".")
+                names = _names_of(fn() or "")
             except Exception:  # noqa: BLE001 — an unknown hostname admits nothing extra
-                name = ""
-            self._hostname = {name, name.split(".", 1)[0]} - {""}
+                names = set()
+            self._hostname = names
         return self._hostname
 
     async def _fqdns(self) -> set[str]:
@@ -357,12 +388,16 @@ class HostGuardMiddleware:
             fn = self._fqdn_fn or _default_fqdn
             try:
                 name = await asyncio.wait_for(asyncio.to_thread(fn), FQDN_TIMEOUT_SECONDS)
-                name = (name or "").lower().rstrip(".")
+                names = _names_of(name or "")
             except Exception as exc:  # noqa: BLE001 — timeout or resolver failure
                 logger.warning("host guard: FQDN lookup failed (%s); only the "
                                "hostname and CORTEXSIM_ALLOWED_HOSTS admit names", exc)
-                name = ""
-            self._fqdn_names = {name, name.split(".", 1)[0]} - {""}
+                names = set()
+            self._fqdn_names = names
+            if self._fqdn_fn is None:
+                # The process's own answer: what /api/health publishes.
+                global _resolved_fqdn_names
+                _resolved_fqdn_names = set(self._fqdn_names)
         return self._fqdn_names
 
     async def is_allowed(self, raw_host: Optional[str]) -> bool:

@@ -87,6 +87,36 @@ describe('serverHostVerdict — what the console can and cannot confirm', () => 
   })
 })
 
+// RG-UI-05 residual: /api/health now publishes the machine's own names the guard
+// admits (`local_host_names` from gethostname, `local_fqdn_names` once the running
+// guard resolved its FQDN, null before). The console no longer has to say "may".
+describe('serverHostVerdict — the machine\'s own names, as SimCore publishes them', () => {
+  const v = (url, model) => serverHostVerdict(model, url, 'localhost')
+  const OWN = (hostNames, fqdn) => health({ ...GUARD(['jumpbox-01']), local_host_names: hostNames, local_fqdn_names: fqdn })
+
+  it('a name the guard admits as this machine\'s own is admitted', () => {
+    const m = OWN(['simcore-01', 'simcore-01.lab.example'], ['simcore-01', 'simcore-01.corp.example'])
+    expect(v('http://simcore-01:8888', m)).toMatchObject({ state: 'admitted', why: 'own-name' })
+    expect(v('http://SIMCORE-01.lab.example:8888', m).state).toBe('admitted')
+    expect(v('http://simcore-01.corp.example:8888', m)).toMatchObject({ state: 'admitted', why: 'own-name' })
+  })
+
+  it('with the FQDN known, an unlisted name is a certain refusal that names the machine', () => {
+    const r = v('http://simcore.lab.customer.example:8888', OWN(['4f2a9c'], []))
+    expect(r).toMatchObject({ state: 'not_listed', certain: true, ownNames: ['4f2a9c'] })
+  })
+
+  it('with the FQDN not looked up yet, the refusal is not certain, and says why', () => {
+    const r = v('http://simcore.lab.customer.example:8888', OWN(['4f2a9c'], null))
+    expect(r).toMatchObject({ state: 'not_listed', certain: false, ownNames: ['4f2a9c'] })
+  })
+
+  it('a SimCore that publishes no local names keeps the old, uncertain reading', () => {
+    const r = v('http://simcore.lab.customer.example:8888', health(GUARD(['jumpbox-01'])))
+    expect(r).toMatchObject({ state: 'not_listed', certain: false, ownNames: null })
+  })
+})
+
 function mount(env = {}) {
   installRoutes({
     'GET /api/tenants': [], 'GET /api/xsiam/tenants': [],
@@ -125,6 +155,33 @@ describe('GetStartedView — the typed address meets the Host guard', () => {
     expect(warn.textContent).toMatch(/error: 400/)
     expect(warn.textContent).toMatch(/no install attempt/i)
     expect(warn.textContent).toMatch(/IP address/i)
+  })
+
+  it('with every local name known it says SimCore WILL refuse, and names the machine', () => {
+    mount({ healthModel: health({ ...GUARD(['jumpbox-01']), local_host_names: ['4f2a9c'], local_fqdn_names: [] }) })
+    typeServer('http://simcore.lab.customer.example:8888')
+    const warn = screen.getByTestId('gs-server-host-warn')
+    expect(warn.getAttribute('data-state')).toBe('not_listed')
+    expect(warn.textContent).toMatch(/POVengine refuses/)
+    expect(warn.textContent).not.toMatch(/may refuse/)
+    expect(warn.textContent).not.toMatch(/cannot see the machine/)
+    expect(warn.textContent).toContain('4f2a9c')
+    expect(warn.textContent).toContain('HOST_NOT_ALLOWED')
+  })
+
+  it('with the FQDN not looked up yet it names the host name and says what is left unknown', () => {
+    mount({ healthModel: health({ ...GUARD([]), local_host_names: ['4f2a9c'], local_fqdn_names: null }) })
+    typeServer('http://simcore.lab.customer.example:8888')
+    const warn = screen.getByTestId('gs-server-host-warn')
+    expect(warn.textContent).toContain('4f2a9c')
+    expect(warn.textContent).toMatch(/fully-qualified/)
+    expect(warn.textContent).not.toMatch(/cannot see the machine/)
+  })
+
+  it('the machine\'s own published name raises nothing', () => {
+    mount({ healthModel: health({ ...GUARD([]), local_host_names: ['simcore-01'], local_fqdn_names: null }) })
+    typeServer('http://simcore-01:8888')
+    expect(screen.queryByTestId('gs-server-host-warn')).toBeNull()
   })
 
   it('says the allowlist is empty rather than printing nothing', () => {

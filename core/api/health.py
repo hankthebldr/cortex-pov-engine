@@ -497,6 +497,9 @@ def probe_api_auth() -> dict[str, Any]:
         f"every interface of the host ({bind})"
     )
     refused = host_guard.refusals.snapshot()
+    # What the guard admits as this machine's own name (RG-UI-05). No DNS here:
+    # the FQDN is whatever the running guard already resolved, or None.
+    local = host_guard.local_host_names()
     guard_notes = ""
     if ignored:
         guard_notes += (
@@ -542,6 +545,8 @@ def probe_api_auth() -> dict[str, Any]:
         host_guard="disabled" if "*" in allowed else "enforced",
         allowed_hosts=allowed,
         ignored_allowed_hosts=ignored,
+        local_host_names=local["hostname"],
+        local_fqdn_names=local["fqdn"],
         host_guard_refusals=refused["total"],
         last_refused_hosts=refused["hosts"],
         cors_origins=cors,

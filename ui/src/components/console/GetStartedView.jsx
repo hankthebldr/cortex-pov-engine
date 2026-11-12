@@ -294,14 +294,33 @@ function ServerHostWarning({ verdict }) {
       </span>
     )
   }
+  // RG-UI-05: a SimCore that publishes its own names lets this say what it knows.
+  const own = Array.isArray(verdict.ownNames) ? verdict.ownNames : null
+  const ownNames = own && own.length
+    ? <>Its own host name is <span className="mono">{own.join(', ')}</span> (inside a container, the container id)</>
+    : <>Its own host name is unknown</>
+  let ownLine
+  if (!own) {
+    ownLine = <>This console cannot see the machine&apos;s own host name, and inside a container that is the container id.</>
+  } else if (verdict.certain) {
+    ownLine = <>{ownNames}, and its fully-qualified name admits nothing else.</>
+  } else {
+    ownLine = (
+      <>
+        {ownNames}. It also answers to the machine&apos;s fully-qualified DNS name, which it has not looked up yet,
+        so this is refused unless it is that name.
+      </>
+    )
+  }
   return (
     <span {...common}>
-      POVengine may refuse <b className="mono">{verdict.host}</b> with <code>400 HOST_NOT_ALLOWED</code>. It answers
+      POVengine {verdict.certain ? 'refuses' : 'may refuse'} <b className="mono">{verdict.host}</b> with{' '}
+      <code>400 HOST_NOT_ALLOWED</code>. It answers
       only to localhost, an IP address, its own host name, and names in <code>CORTEXSIM_ALLOWED_HOSTS</code>
       {verdict.allowed && verdict.allowed.length
         ? <> (currently <span className="mono">{verdict.allowed.join(', ')}</span>)</>
         : <> — and <code>CORTEXSIM_ALLOWED_HOSTS is empty</code></>}
-      . This console cannot see the machine&apos;s own host name, and inside a container that is the container id.{' '}
+      . {ownLine}{' '}
       {symptom} Use the machine&apos;s IP address, or add this name to <code>CORTEXSIM_ALLOWED_HOSTS</code> and restart
       POVengine.
     </span>
