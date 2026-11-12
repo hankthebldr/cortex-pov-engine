@@ -675,3 +675,81 @@ class TestCampaignSecretsAreNotReturned:
                                json={"operator": "tester", "dry_run": False})
         assert resp.status_code == 200, resp.text
         assert seen.get("authorization") == f"Bearer {self._TOKEN}"
+
+
+class TestCallerExecutable:
+    """A campaign body must not pick the program SimCore spawns.
+
+    airs_prompt_attack and browser_attack_runner shell out to a CLI. Both used
+    to read ``params.binary`` as the path of that CLI, and the consent gates
+    that make a launch live are set by the same caller in the same body, so
+    ``POST /campaigns`` + ``/launch`` ran any executable as SimCore's user.
+    """
+
+    @staticmethod
+    def _planted(tmp_path):
+        marker = tmp_path / "caller-binary-ran"
+        script = tmp_path / "caller-chosen"
+        script.write_text(f"#!/bin/sh\ntouch '{marker}'\n", encoding="utf-8")
+        script.chmod(0o755)
+        return script, marker
+
+    @staticmethod
+    def _spec(campaign_id: str, plugin: str, script, tmp_path) -> dict:
+        if plugin == "airs_prompt_attack":
+            params = {"target_url": "http://canary.invalid/llm01/chat",
+                      "probes_dir": str(tmp_path)}
+        else:
+            plan = tmp_path / "campaign.yml"
+            plan.write_text("campaign_id: BC-BROWSER-900\nname: x\n", encoding="utf-8")
+            params = {"campaign_path": str(plan), "allowlist_host": "canary.invalid",
+                      "browser_channel": "stub"}
+        params["binary"] = str(script)
+        return {
+            "campaign_id": campaign_id,
+            "name": "caller-chosen executable",
+            "authorized_by": "tester",
+            "simulation_authorized": True,
+            "target_allowlist": ["canary.invalid"],
+            "dry_run": False,
+            "steps": [{"step_id": "step-01", "plugin": plugin, "params": params}],
+        }
+
+    @pytest.mark.parametrize("plugin", ["airs_prompt_attack", "browser_attack_runner"])
+    def test_create_refuses_params_binary(self, api_client: TestClient, tmp_path, plugin):
+        script, marker = self._planted(tmp_path)
+        spec = self._spec("CMP-EXEC-900", plugin, script, tmp_path)
+
+        resp = api_client.post("/api/eal/campaigns", json=spec)
+        api_client.post("/api/eal/campaigns/CMP-EXEC-900/launch", json={"dry_run": False})
+
+        assert not marker.exists(), "SimCore ran the executable the campaign body named"
+        assert resp.status_code == 400, resp.text
+        detail = resp.json()["detail"]
+        assert detail["code"] == "CALLER_EXECUTABLE_REFUSED"
+        assert "params.binary" in detail["detail"]
+
+    def test_launch_refuses_a_stored_spec_naming_a_binary(self, api_client: TestClient, tmp_path):
+        """A campaign persisted before the fix still carries the key; launching
+        it is refused the same way, not run and not silently stripped."""
+        from api import eal as eal_api
+        from models import EalCampaign
+
+        script, marker = self._planted(tmp_path)
+        spec = self._spec("CMP-EXEC-901", "airs_prompt_attack", script, tmp_path)
+
+        async def _persist():
+            async with eal_api.AsyncSessionLocal() as session:
+                session.add(EalCampaign(
+                    campaign_id=spec["campaign_id"], name=spec["name"], spec=spec,
+                    authorized_by="tester", simulation_authorized=True,
+                    target_allowlist=["canary.invalid"], tags=[],
+                ))
+                await session.commit()
+
+        asyncio.run(_persist())
+        resp = api_client.post("/api/eal/campaigns/CMP-EXEC-901/launch", json={"dry_run": False})
+
+        assert not marker.exists(), "SimCore ran the executable the stored spec named"
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"]["code"] == "CALLER_EXECUTABLE_REFUSED"
