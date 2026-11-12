@@ -83,8 +83,10 @@ def corpus_report(base: Path) -> dict[str, Any]:
             if not isinstance(doc, dict):
                 raise ValueError("not a YAML mapping")
             out = analyze_scenario(doc, catalog)
-        except (yaml.YAMLError, ValueError) as exc:
-            raise CorpusShapeError(f"{path}: {exc}") from exc
+        except (yaml.YAMLError, ValueError, TypeError, AttributeError, KeyError) as exc:
+            # A step or detection that is not a mapping surfaces as one of the
+            # last three; uncaught it would exit 1, which means G-03.
+            raise CorpusShapeError(f"{path}: {type(exc).__name__}: {exc}") from exc
         scenarios += 1
         step_detections += sum(len(s.get("expected_detections") or [])
                                for s in doc.get("steps") or [])

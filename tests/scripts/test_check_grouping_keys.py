@@ -55,6 +55,18 @@ def test_exit_1_when_g03_present(tmp_path):
     assert "SIM-T-001" in proc.stdout and "Suspicious_User" in proc.stdout
 
 
+def test_unreadable_scenario_exits_2_not_1(tmp_path):
+    # Exit 1 means a G-03. A step that is not a mapping is bad input: it must
+    # exit 2 naming the file, not crash with a traceback, which exits 1.
+    (tmp_path / "scenarios" / "edr").mkdir(parents=True)
+    (tmp_path / "detection_scanner" / "ttps").mkdir(parents=True)
+    (tmp_path / "scenarios" / "edr" / "edr-t.yml").write_text(
+        "scenario_id: SIM-T-002\nsteps:\n  - not a mapping\n")
+    proc = run("--base", str(tmp_path))
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "edr-t.yml" in proc.stderr and "Traceback" not in proc.stderr
+
+
 def test_json_counts_match_findings():
     proc = run("--json")
     assert proc.returncode == 0, proc.stderr
