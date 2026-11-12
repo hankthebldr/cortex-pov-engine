@@ -807,3 +807,36 @@ def test_eal_step_rejected_before_the_campaign_holds_the_rest(session_factory, r
             assert recorder.posts == []
 
     asyncio.run(_run())
+
+
+def test_eal_step_with_invalid_params_holds_the_rest(session_factory, recorder):
+    """Params are validated by the executor only once the campaign runs, after
+    the go-live decision. A step whose params cannot validate must be caught
+    before it, or the clean steps beside it go live and the run is half-live."""
+    import json
+
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db, "m365-hec")
+            await _seed_target(db, "idp-hec", plugins=("idp_signin_emulator",))
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[
+                _m365_step("step-01"),
+                # The invalid value is key-shaped: the ledger must never echo it.
+                _eal_step("step-02", plugin="idp_signin_emulator",
+                          params={"event_pattern": FAKE_KEY}),
+                _m365_step("step-03"),
+            ])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-02"]["status"] == "error", ledger["step-02"]
+            assert ledger["step-02"]["code"] == "EAL_STEP_INVALID"
+            assert "event_pattern" in ledger["step-02"]["detail"]
+            for sid in ("step-01", "step-03"):
+                assert ledger[sid]["status"] == "dry_run", ledger[sid]
+                assert ledger[sid]["code"] == "EAL_DRY_RUN_HELD"
+                assert "step-02" in ledger[sid]["detail"]
+            assert recorder.posts == []
+            assert FAKE_KEY not in json.dumps(ledger, default=str)
+
+    asyncio.run(_run())

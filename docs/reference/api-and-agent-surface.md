@@ -539,9 +539,11 @@ POSTed):
 
 1. the launch carried `consent.simulation_authorized: true` **and** a non-blank
    `authorized_by`;
-2. every eal step entered the campaign (its plugin is registered and its id is
-   `step-NN`), and every one's plugin is a collector plugin
-   (`targets.collector_plugin_names`);
+2. every eal step entered the campaign (its plugin is registered, its id is
+   `step-NN`, and its params, resolved against the collector targets but without
+   the key, pass the plugin's own `validate_params`, the check the executor would
+   otherwise make only after the go-live decision), and every one's plugin is a
+   collector plugin (`targets.collector_plugin_names`);
 3. every eal step resolves to a configured collector target (§1.9.1) — `explicit`,
    `binding` or `default`; an inline `collector_url` does not count;
 4. every such target has a key in the vault;
@@ -556,7 +558,8 @@ The run's eal steps go live whole or not at all. In a dry run each campaign
 step's `Run.channel_dispatch` entry has `status: dry_run` (`not_delivered` when
 the executor reported the step failed, `skipped` when it skipped it) and a `code`
 saying why. A step rejected before the campaign keeps `status: error` with its
-own code (`PLUGIN_MISCONFIGURED`, `EAL_STEP_INVALID`), as does every step when
+own code (`PLUGIN_MISCONFIGURED`, `EAL_STEP_INVALID`; for invalid params the
+`detail` names the failing fields and error types only, never a value), as does every step when
 the dispatch itself faults (`EAL_DISPATCH_FAULT`) or the executor returns no
 result (`EAL_NO_RESULT`); `error` comes only from those orchestrator codes.
 

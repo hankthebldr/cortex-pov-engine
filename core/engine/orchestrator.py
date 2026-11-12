@@ -696,6 +696,21 @@ class Orchestrator:
                 specs = await load_specs(db)
                 resolved, res = apply_targets(spec, registry, specs)
                 resolutions = {r.step_id: r for r in res}
+                # The executor validates params only as each step runs, after
+                # the go-live decision. Validate them here, without the token,
+                # the same way: a step that fails is rejected before the
+                # campaign and holds the rest at dry-run.
+                invalid = _eal_params_invalid(resolved["steps"], registry)
+                if invalid:
+                    for step_id, why in invalid.items():
+                        outcomes[step_id] = {
+                            "status": "error", "code": "EAL_STEP_INVALID", "detail": why,
+                        }
+                    spec["steps"] = [st for st in spec["steps"] if st["step_id"] not in invalid]
+                    resolved["steps"] = [
+                        st for st in resolved["steps"] if st["step_id"] not in invalid
+                    ]
+                    campaign_steps = [cs for cs in campaign_steps if cs.step_id not in invalid]
                 # Every entry in `outcomes` so far is an eal step rejected
                 # before the campaign; it holds the rest at dry-run.
                 blockers = _eal_live_blockers(
@@ -708,7 +723,9 @@ class Orchestrator:
                     "campaign_id": "CMP-COMPOSER-001",
                     "name": f"composer eal dispatch {run_id[:8]}",
                 }
-                if blockers:
+                if not campaign_steps:
+                    campaign = None  # every eal step was rejected; nothing to run
+                elif blockers:
                     campaign = Campaign(
                         **campaign_kw,
                         steps=[CampaignStep(**rs) for rs in resolved["steps"]],
@@ -728,9 +745,11 @@ class Orchestrator:
                         authorized_by=authorized_by,
                         target_allowlist=resolved["target_allowlist"],
                     )
-                campaign_steps = list(campaign.steps)
-                executor = CampaignExecutor(registry=registry)
-                state = await executor.execute(campaign, run_id=run_id)
+                campaign_steps = list(campaign.steps) if campaign is not None else []
+                state = None
+                if campaign is not None:
+                    executor = CampaignExecutor(registry=registry)
+                    state = await executor.execute(campaign, run_id=run_id)
             except Exception as exc:  # a dispatch fault must never crash the launch
                 logger.exception("EAL in-process dispatch faulted run_id=%s", run_id)
                 for cs in campaign_steps:
@@ -738,7 +757,7 @@ class Orchestrator:
                         "status": "error", "code": "EAL_DISPATCH_FAULT", "detail": str(exc),
                     }
             else:
-                by_step = {r.step_id: r for r in state.step_results}
+                by_step = {r.step_id: r for r in state.step_results} if state else {}
                 for cs in campaign_steps:
                     r = by_step.get(cs.step_id)
                     if r is None:
@@ -1999,6 +2018,33 @@ def _eal_step_sleep_seconds(params: Mapping[str, Any]) -> float:
     if math.isnan(total):
         return math.inf
     return max(total, 0.0)
+
+
+def _eal_params_invalid(steps: Sequence[Mapping[str, Any]], registry: Any) -> dict[str, str]:
+    """``{step_id: detail}`` for each campaign step whose params fail its
+    plugin's own ``validate_params`` -- the call ``CampaignExecutor._run_step``
+    makes -- on the token-free resolved spec.
+
+    The detail names the failing fields and error types only, never a value, so
+    nothing pasted into a param (a key fragment included) reaches the ledger.
+    """
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    out: dict[str, str] = {}
+    for st in steps:
+        plugin = st.get("plugin")
+        try:
+            registry.get(plugin).validate_params(st.get("params") or {})
+        except ValidationError as exc:
+            fields = ", ".join(
+                f"{'.'.join(str(p) for p in (e.get('loc') or ())) or '(params)'} "
+                f"({e.get('type')})"
+                for e in exc.errors()
+            )
+            out[st["step_id"]] = f"params invalid for plugin '{plugin}': {fields}"
+        except Exception as exc:  # noqa: BLE001 -- a non-pydantic refusal is still a refusal
+            out[st["step_id"]] = f"params invalid for plugin '{plugin}': {type(exc).__name__}"
+    return out
 
 
 def _eal_live_blockers(
