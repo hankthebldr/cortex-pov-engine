@@ -381,13 +381,19 @@ class IdpSigninEmulatorParams(AnalyticsEmitterParams):
 class IdpSigninEmulator(AnalyticsLogEmitter):
     # Three provider shapes, one map — Okta nests the principal under actor,
     # Entra carries it flat, Google nests it under actor.email. Each record
-    # only has one of them, and the rest are skipped.
+    # only has one of them, and the rest are skipped. The Entra directory-audit
+    # record (vishing_passkey_enrollment's passkey registration) nests it under
+    # initiatedBy.user, so the sign-in and the registration carry ONE principal
+    # under a canary. Its targetResources[] list is not a dotted path and keeps
+    # target_user.
     CANARY_FIELDS = {
         "actor.alternateId": "{principal}",
         "actor.displayName": "{account}",
         "actor.email": "{principal}",
         "userPrincipalName": "{principal}",
         "userDisplayName": "{account}",
+        "initiatedBy.user.userPrincipalName": "{principal}",
+        "initiatedBy.user.displayName": "{account}",
     }
 
     class Meta:

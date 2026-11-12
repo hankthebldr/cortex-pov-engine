@@ -612,7 +612,7 @@ Five behavioural presets, each producing a burst:
 | `credential_stuffing` | `burst_count` failed logins across `user000..N` from one source IP (sa-east) |
 | `token_replay` | a session-start + token reuse from a different geo/UA with shared `session_token_id` |
 | `brute_force_lockout` | `burst_count` failures + 1 `user.account.lock` event |
-| `vishing_passkey_enrollment` | provider `microsoft` only: an interactive Entra sign-in (password plus approved number-matched push, from `anon-vpn`) then a "User registered security info" audit record (Passkey) from the same IP 90 s later; both carry `vishing_passkey_marker` |
+| `vishing_passkey_enrollment` | provider `microsoft` only: an interactive Entra sign-in (password plus approved number-matched push, from `anon-vpn`) then a "User registered security info" audit record (Passkey) from the same IP 90 s later; both carry `vishing_passkey_marker`. Under `canary_token` both carry the canary principal (`userPrincipalName` on the sign-in, `initiatedBy.user.userPrincipalName` on the audit record); the audit record's `targetResources[]` keeps `target_user` |
 
 Source locations are 5 canned `_SourceLocation` entries (us-west, eu-central,
 apac-east, africa-south, sa-east) using documentation-range IPs (203.0.113.x,

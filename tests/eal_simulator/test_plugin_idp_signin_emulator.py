@@ -805,3 +805,51 @@ def test_vishing_passkey_needs_microsoft():
             collector_url=_DEFAULT_COLLECTOR, provider="okta",
             event_pattern="vishing_passkey_enrollment",
         )
+
+
+# --------------------------------------------------------------------------
+# Canary principal under the passkey pattern: one human, one principal.
+# --------------------------------------------------------------------------
+
+_CANARY = "csim-pink-0001"
+
+#: IdpSigninEmulator.CANARY_FIELDS as it stood before the passkey record's
+#: initiatedBy fields joined it: the before half of the before/after check.
+_CANARY_FIELDS_BEFORE_PASSKEY = {
+    "actor.alternateId": "{principal}",
+    "actor.displayName": "{account}",
+    "actor.email": "{principal}",
+    "userPrincipalName": "{principal}",
+    "userDisplayName": "{account}",
+}
+
+
+def test_vishing_passkey_canary_principal_agrees_across_both_records():
+    params = IdpSigninEmulatorParams(
+        collector_url=_DEFAULT_COLLECTOR, provider="microsoft",
+        event_pattern="vishing_passkey_enrollment", canary_token=_CANARY,
+    )
+    signin, audit = IdpSigninEmulator().records_for(params, sim_run_id="run-x", iteration=0)
+    principal = analytics_emitter.canary_bindings(_CANARY)["principal"]
+    assert signin["userPrincipalName"] == principal
+    assert audit["initiatedBy"]["user"]["userPrincipalName"] == principal
+    assert audit["initiatedBy"]["user"]["displayName"] == _CANARY
+
+
+@pytest.mark.parametrize("provider,pattern", [
+    ("okta", "impossible_travel"),
+    ("microsoft", "azure_risky_login"),
+])
+def test_existing_patterns_canary_records_unchanged(provider, pattern):
+    import copy
+
+    params = IdpSigninEmulatorParams(
+        collector_url=_DEFAULT_COLLECTOR, provider=provider,
+        event_pattern=pattern, canary_token=_CANARY,
+    )
+    raw = IdpSigninEmulator().build_events(params, sim_run_id="run-x", iteration=0)
+    before = [analytics_emitter.plant_canary(copy.deepcopy(e), _CANARY,
+                                             _CANARY_FIELDS_BEFORE_PASSKEY) for e in raw]
+    after = [analytics_emitter.plant_canary(copy.deepcopy(e), _CANARY,
+                                            IdpSigninEmulator.CANARY_FIELDS) for e in raw]
+    assert after == before
