@@ -354,8 +354,14 @@ naming it, so a DC who tries it gets told rather than guessing.
 
 ### The SimCore URL
 
-Precedence is the API track's: `?server=` → `CORTEXSIM_PUBLIC_URL` → derived
-from the request `Host`. If it resolves to a loopback or docker-internal
+`POST /api/scenarios/{id}/bundle` takes the URL from the body's `server`. It
+must name this SimCore, by the agent installer's rule: the origin the request
+arrived on, or an entry in `CORTEXSIM_PUBLIC_URLS` (comma-separated http(s)
+origins, for a name the cluster uses that the request cannot show). Anything
+else is `400 BAD_SERVER` (not `http(s)://host[:port][/path]`) or
+`400 SERVER_NOT_THIS_SIMCORE`, and no manifest. With no `server`, a served
+manifest carries the placeholder `http://SET-CORTEXSIM_PUBLIC_URL:8888`, which
+fails the preflight until it is replaced. If the URL is a loopback or docker-internal
 address, `generate_k8s` emits a **`!! WARNING: … LOOPBACK address`** block in the
 header and sets `cortexsim.io/simcore-url-suspect: "true"`. A pod resolves
 `localhost` to *itself*; this is the single most likely way the served mode
