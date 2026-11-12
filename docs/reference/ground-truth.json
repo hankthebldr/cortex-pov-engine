@@ -98,6 +98,17 @@
   },
   "eal_plugins": 27,
   "generated_by": "scripts/generate_ground_truth.py",
+  "grouping": {
+    "counts_by_code": {
+      "G-01": 0,
+      "G-02": 2,
+      "G-03": 0,
+      "G-04": 1050,
+      "G-05": 0
+    },
+    "scenarios_analyzed": 199,
+    "step_detections_analyzed": 1419
+  },
   "http_routes": {
     "apirouter_instances": 30,
     "by_method": {

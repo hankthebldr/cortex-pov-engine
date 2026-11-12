@@ -316,6 +316,11 @@ jobs:
         # locally and commit the result. This is the gate that keeps a repeat
         # of the README drifting 30-90% from reality from recurring.
         run: git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
+      - name: Grouping-key gate (fails only on G-03)
+        # A G-03 means a card's correlation rule maps the scenario's declared
+        # stitching_key to a custom destination XSIAM does not group on. Every
+        # other code (incl. G-04 GROUPING_KEY_UNKNOWN) is reported, not gated.
+        run: make check-grouping
 
   # ---------------------------------------------------------------------------
   # adapters — tool-adapter source preflight + Rust build-recipe preflight.

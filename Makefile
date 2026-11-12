@@ -26,7 +26,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
 .PHONY: help up dev down build agent-dist lab-ready check-lab-ready test test-backend test-backend-non-utc test-agent test-agent-cross \
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf check-mcp-boot rust-dist check-rust-recipe \
-        check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth \
+        check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth check-grouping \
         wiki wiki-check ci clean launch-preflight
 
 help: ## Show this help
@@ -175,7 +175,7 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-mcp-boot check-ground-truth ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + mcp-boot + ground-truth gates
+validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-mcp-boot check-ground-truth check-grouping ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + mcp-boot + ground-truth + grouping-key gates
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -326,6 +326,14 @@ ground-truth: ## Regenerate docs/reference/ground-truth.{json,md} from the corpu
 
 check-ground-truth: ground-truth ## Ground-truth determinism gate (CI step): regenerate and diff against committed files
 	git diff --exit-code docs/reference/ground-truth.json docs/reference/ground-truth.md
+
+# Grouping-key corpus gate (spec 2026-11-11-socfw-coexistence §5.3): reports
+# G-01..G-05 per scenario and exits 1 ONLY on a G-03 (a correlation rule maps
+# the declared stitching_key to a custom destination XSIAM does not group on).
+# G-04 GROUPING_KEY_UNKNOWN is reported, never gated. Needs pyyaml (.venv/bin
+# first on PATH).
+check-grouping: ## Grouping-key gate (CI 'refs' step): fail only on G-03
+	python3 scripts/check_grouping_keys.py
 
 check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate + installer submodule denylist (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
