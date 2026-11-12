@@ -136,14 +136,17 @@ export default function LaunchView({
   }, [])
 
   // Door readiness for THIS scenario against the selected agent. A failure is
-  // null — "not reported", rendered UNKNOWN by the Data path check, never a pass.
+  // null readiness plus the error text, rendered UNKNOWN by the Data path check
+  // ("door readiness unavailable: …", as the library chip does), never a pass.
   const [doorReadiness, setDoorReadiness] = useState(null)
   const [doorRows, setDoorRows] = useState(null)
+  const [doorError, setDoorError] = useState(null)
   const doorScenarioId = scenario ? (scenario.scenario_id || scenario.id) : null
   const doorAgentId = selectedTarget?.kind === 'agent' ? selectedTarget.id : null
   useEffect(() => {
     setDoorReadiness(null)
     setDoorRows(null)
+    setDoorError(null)
     if (!doorScenarioId) return undefined
     let cancelled = false
     Promise.all([getScenarioDoors(doorScenarioId, doorAgentId), getDoors()])
@@ -152,7 +155,12 @@ export default function LaunchView({
         setDoorReadiness(data.readiness)
         setDoorRows(doors.doors)
       })
-      .catch(() => { if (!cancelled) { setDoorReadiness(null); setDoorRows(null) } })
+      .catch((err) => {
+        if (cancelled) return
+        setDoorReadiness(null)
+        setDoorRows(null)
+        setDoorError((err && err.message) || 'door readiness failed')
+      })
     return () => { cancelled = true }
   }, [doorScenarioId, doorAgentId])
 
@@ -168,8 +176,9 @@ export default function LaunchView({
     doorReadiness,
     doorRows,
     doorAgentId,
+    doorError,
   }), [scenario, selectedTarget, launch.agents, shelf.shelf, adapterIndex, integrations,
-       launch.identity, launch.pushFormat, doorReadiness, doorRows, doorAgentId])
+       launch.identity, launch.pushFormat, doorReadiness, doorRows, doorAgentId, doorError])
 
   const needsSim = gated.dualUse.length > 0
   const needsC2  = gated.c2.length > 0
@@ -265,6 +274,7 @@ export default function LaunchView({
           doorReadiness={doorReadiness}
           doorRows={doorRows}
           doorAgentId={doorAgentId}
+          doorError={doorError}
           onNavigate={onNavigate}
         />
 

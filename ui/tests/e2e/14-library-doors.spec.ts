@@ -10,21 +10,21 @@ import type { Page } from '@playwright/test'
  * The unit suite proves the chip text and the filter predicate. It cannot prove
  * that the chip actually renders on a library card, that it fits beside the
  * plane and difficulty chips, or that toggling the filter really removes the
- * rows that are not runnable. Phase 1 writes no door events, so a live SimCore
- * reads NOT CHECKED / NEEDS DOORS everywhere; the filter test therefore stubs
- * GET /api/doors/readiness to make one row `ready` and one `partial`, which is
- * exactly what the UI must handle once phase 2 opens doors.
+ * rows that are not runnable. Phase 1 writes no door events, so no door reads
+ * open or closed and a live SimCore reads NOT CHECKED everywhere; the filter
+ * test therefore stubs GET /api/doors/readiness to make one row `ready` and one
+ * `partial`, which is exactly what the UI must handle once doors can open.
  *
  * Spec: docs/superpowers/specs/2026-11-11-ingestion-doors-design.md §6
  */
 
 const READY = {
   scenario_id: 'SIM-EDR-001', state: 'ready', scorable: 3, total: 3, underived: 0,
-  route_blocked: 0, unevaluated: 0, closed: [], agent_scoped_evaluated: false,
+  route_blocked: 0, unevaluated: 0, not_open: [], agent_scoped_evaluated: false,
 }
 const PARTIAL = {
   scenario_id: 'SIM-EDR-002', state: 'partial', scorable: 1, total: 3, underived: 0,
-  route_blocked: 0, unevaluated: 0, closed: [{ door_id: 'xdr_agent', detections: 2 }],
+  route_blocked: 0, unevaluated: 0, not_open: [{ door_id: 'xdr_agent', detections: 2 }],
   agent_scoped_evaluated: false,
 }
 
@@ -50,8 +50,8 @@ test('SIM-EDR-001 carries a door chip, and nothing is hidden by default', async 
   await openLibrary(page)
   const chip = page.getByTestId('door-chip-SIM-EDR-001')
   await expect(chip).toBeVisible()
-  // Phase 1 truth: no door is open on a fresh SimCore, so the chip is never READY.
-  await expect(chip).toHaveText(/NOT CHECKED|NEEDS DOORS|PARTIAL \d+\/\d+/)
+  // Phase 1 truth: no door reads open or closed on a fresh SimCore, so every chip is NOT CHECKED.
+  await expect(chip).toHaveText('NOT CHECKED')
   const before = await page.locator('.scenario-card').count()
   expect(before).toBeGreaterThan(1)
   await expect(page.getByTestId('filter-runnable')).toHaveAttribute('aria-pressed', 'false')
@@ -62,6 +62,7 @@ test('Runnable here keeps ready and partial rows and drops the rest; off restore
   await openLibrary(page)
   await expect(page.getByTestId('door-chip-SIM-EDR-001')).toHaveText('READY')
   await expect(page.getByTestId('door-chip-SIM-EDR-002')).toHaveText('PARTIAL 1/3')
+  await expect(page.getByTestId('door-chip-SIM-EDR-002')).toHaveAttribute('title', /^1 of 3 detections can fire/)
 
   const all = await page.locator('.scenario-card').count()
   await page.getByTestId('filter-runnable').click()

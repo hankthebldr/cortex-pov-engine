@@ -100,6 +100,21 @@ describe('LaunchView preflight', () => {
     expect(screen.getByRole('button', { name: /Launch run/i })).not.toBeDisabled()
   })
 
+  it('surfaces a failed door readiness fetch in the Data path check instead of "not reported"', async () => {
+    installRoutes(ROUTES({
+      'GET /api/scenarios/:id/doors': () => new Response(
+        JSON.stringify({ error: 'A detection card has an unrecognised shape', code: 'DOOR_DERIVATION_FAILED', detail: 'x' }),
+        { status: 500, headers: { 'content-type': 'application/json' } }),
+      'GET /api/doors': { doors: [], registry_loaded: true, tenant_verified: 0, outbound_calls: 0 },
+    }))
+    render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
+    await waitFor(() => {
+      expect(screen.getByTestId('preflight-data-path')).toHaveTextContent(/door readiness unavailable/)
+    })
+    expect(screen.getByTestId('preflight-data-path')).toHaveAttribute('data-status', 'unknown')
+    expect(screen.getByTestId('preflight-data-path')).not.toHaveTextContent(/not reported/)
+  })
+
   it('says a scoreable scenario with no credential will resolve pending, not fail', async () => {
     render(<LaunchView scenario={SCENARIO} selectedTarget={TARGET} />)
     await waitFor(() => {
