@@ -8,7 +8,7 @@ about the customer's coverage. The window now belongs to the run.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Iterable, Optional
 
 from connectors.base import coerce_utc
 
@@ -29,14 +29,39 @@ def _epoch_ms(naive_utc: datetime) -> int:
     return int(naive_utc.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
+def back_dating_seconds(steps: Optional[Iterable[Any]]) -> int:
+    """How far before the run its record bodies may be dated, in seconds (>= 0).
+
+    A ``channel: eal`` step may set ``eal.params.event_time_offset_seconds``
+    (<= 0) to back-date its record body times; a collector that derives
+    ``_time`` from the body puts those rows before ``started_at``. Returns the
+    magnitude of the most negative offset, 0 when none. Non-int values are
+    ignored (the params model owns their validation).
+    """
+    most_negative = 0
+    for step in steps or ():
+        eal = step.get("eal") if isinstance(step, dict) else None
+        params = eal.get("params") if isinstance(eal, dict) else None
+        offset = params.get("event_time_offset_seconds") if isinstance(params, dict) else None
+        if isinstance(offset, int) and not isinstance(offset, bool):
+            most_negative = min(most_negative, offset)
+    return -most_negative
+
+
 def run_timeframe(started_at: datetime, completed_at: Optional[datetime],
-                  window_seconds: int, *, now: datetime) -> dict[str, int]:
+                  window_seconds: int, *, now: datetime,
+                  lead_extra_seconds: int = 0) -> dict[str, int]:
     """``{"from": ms, "to": ms}`` covering the run plus its correlation window
-    (never less than :data:`LEAD_SECONDS` after the run), clamped to ``now``."""
+    (never less than :data:`LEAD_SECONDS` after the run), clamped to ``now``.
+
+    ``lead_extra_seconds`` (non-negative) is added to the lead, for record
+    bodies dated before the run (:func:`back_dating_seconds`).
+    """
     started = coerce_utc(started_at)
     end_anchor = coerce_utc(completed_at) or started
     now_utc = coerce_utc(now)
-    start = started - timedelta(seconds=LEAD_SECONDS)
+    lead = LEAD_SECONDS + max(0, int(lead_extra_seconds))
+    start = started - timedelta(seconds=lead)
     tail = max(int(window_seconds), LEAD_SECONDS)
     end = min(end_anchor + timedelta(seconds=tail), now_utc)
     end = max(end, start)

@@ -41,6 +41,13 @@ def test_short_window_still_gets_the_lead_as_a_tail():
     assert tf["to"] == _ms(2026, 11, 11, 10, 7)  # completed + 300 s, not + 10 s
 
 
+def test_lead_extra_seconds_opens_the_window_earlier():
+    tf = run_timeframe(STARTED, COMPLETED, 3600, now=datetime(2026, 11, 11, 14, 0, 0),
+                       lead_extra_seconds=1500)
+    assert tf["from"] == _ms(2026, 11, 11, 9, 30)  # started - 300 s - 1500 s
+    assert tf["to"] == _ms(2026, 11, 11, 11, 2)
+
+
 @pytest.fixture
 def la_tz(monkeypatch):
     monkeypatch.setenv("TZ", "America/Los_Angeles")

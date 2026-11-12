@@ -687,3 +687,46 @@ def test_sweep_keeps_the_relative_lookback_for_a_push_run(session_factory, monke
     pull_book = _verification_book(session_factory, "run-pull")
     assert pull_book["window"] in client.timeframes
     assert "relativeTime" not in pull_book["window"]
+
+
+# ---------------------------------------------------------------------------
+# Back-dated record bodies widen the lead (I4)
+# ---------------------------------------------------------------------------
+
+
+def _eal_step(step_id, offset):
+    return {"step_id": step_id, "channel": "eal",
+            "eal": {"plugin": "idp_signin_emulator",
+                    "params": {"event_time_offset_seconds": offset}}}
+
+
+def test_back_dated_eal_bodies_open_the_window_earlier(session_factory):
+    """An eal step with event_time_offset_seconds back-dates its record body
+    times; a collector that takes `_time` from the body puts those rows before
+    `started_at`. The most negative offset widens the lead."""
+    from connectors.service import _run_window
+    from models import Run
+    from sqlalchemy import select
+
+    started = datetime(2026, 11, 11, 10, 0, 0)
+    now = datetime(2026, 11, 11, 14, 0, 0)
+    _seed(session_factory, run_id="run-plain", scenario_id="SIM-PLAIN")
+    _seed(session_factory, run_id="run-dated", scenario_id="SIM-DATED")
+    _set_run(session_factory, "run-plain", started=started, completed=started,
+             window=3600, steps=[{"step_id": "step-01", "command": "id"}])
+    _set_run(session_factory, "run-dated", started=started, completed=started,
+             window=3600, steps=[_eal_step("step-01", -1500), _eal_step("step-02", -300),
+                                 _eal_step("step-03", "-9000"),
+                                 {"step_id": "step-04", "command": "id"}])
+
+    async def _windows():
+        async with session_factory() as db:
+            out = {}
+            for rid in ("run-plain", "run-dated"):
+                run = (await db.execute(select(Run).where(Run.run_id == rid))).scalar_one()
+                out[rid] = await _run_window(db, run, now=now)
+            return out
+    w = asyncio.run(_windows())
+
+    assert w["run-plain"]["from"] - w["run-dated"]["from"] == 1500 * 1000
+    assert w["run-plain"]["to"] == w["run-dated"]["to"]

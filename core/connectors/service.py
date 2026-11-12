@@ -1585,8 +1585,9 @@ async def resolve_tenant_runner(
 
 async def _run_window(db: AsyncSession, run: Run, *, now: datetime) -> dict[str, int]:
     """The absolute window for ``run``: its span plus its scenario's correlation
-    window (``CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS`` when unset or missing)."""
-    from connectors.verify_window import run_timeframe  # noqa: PLC0415
+    window (``CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS`` when unset or missing),
+    opened earlier by the most back-dated eal record body its steps declare."""
+    from connectors.verify_window import back_dating_seconds, run_timeframe  # noqa: PLC0415
 
     scenario = (await db.execute(
         select(Scenario).where(Scenario.scenario_id == run.scenario_id)
@@ -1594,7 +1595,9 @@ async def _run_window(db: AsyncSession, run: Run, *, now: datetime) -> dict[str,
     window = getattr(scenario, "correlation_window_seconds", None)
     if window is None:
         window = settings.CORTEXSIM_AUTO_VERIFY_TIMEFRAME_SECONDS
-    return run_timeframe(run.started_at, run.completed_at, int(window), now=now)
+    return run_timeframe(run.started_at, run.completed_at, int(window), now=now,
+                         lead_extra_seconds=back_dating_seconds(
+                             getattr(scenario, "steps", None)))
 
 
 def _new_budget(max_queries: int) -> dict[str, Any]:
