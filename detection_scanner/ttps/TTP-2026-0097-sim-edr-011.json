@@ -48,9 +48,9 @@
     }
   },
   "identity": {
-    "name": "Ransomware Pre-Encryption Behavioral Anomaly on a Host — Cortex Analytics Behavioral IOC (ABIOC) (T1486 / T1490 / T1083)",
-    "summary": "A host process shows an anomalous file rewrite rate, per-file entropy spike, and snapshot/backup inhibition that deviate from the host's learned Cortex baseline — the pre-encryption fingerprint of Akira (Howling Scorpius). No single write is a known-bad IOC, so signature BIOCs miss it; the deviation plus causality chain is what an auto-tuned ABIOC fires on.",
-    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the endpoint, user, and network behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the ENDPOINT plane against the earliest, cheapest-to-catch phase of a ransomware intrusion — the moment BEFORE bulk encryption completes and while recovery is being inhibited. It models the tradecraft attributed to Howling Scorpius (the Akira ransomware operation), whose Linux/ESXi encryptors enumerate a target file set, rewrite files at a rate and entropy no legitimate workload produces, and delete snapshots/backups so victims cannot roll back. Cortex has learned this host's normal file-I/O profile: a small, stable set of processes writing at a modest, low-entropy cadence (log rotation, package updates, scheduled tar/rsync jobs) and a backup routine that CREATES snapshots on a schedule, never bulk-DELETES them. The scenario injects two behavioral deviations from that learned baseline: (a) a single process producing a rapid burst of high-entropy file writes/renames with a uniform new extension at a rate far above the host's learned file-modification profile, and (b) a recovery-inhibition burst that deletes snapshot/backup artefacts a routine backup job never removes. A hand-authored BIOC keyed on a specific encryptor hash, ransom-note string, or known extension would miss a fresh Akira build — which is exactly the point: the auto-tuned ABIOC fires on the deviation from the host's learned behavior and anchors it to the causality chain (file enumeration -> high-entropy mass rewrite -> snapshot/backup deletion). Two ABIOCs cover the two deviation shapes; supporting validation XQL confirms the learned file-I/O baseline and surfaces the pre-encryption burst; a correlation rule stitches the two ABIOCs into a single pre-encryption-ransomware incident the DC presents as proof that Cortex's behavioral analytics caught a novel encryptor no static signature was written for. Fully SAFE-MODE: writes land only in an isolated /tmp victim directory, nothing outside it is touched, and cleanup restores the directory.",
+    "name": "Ransomware Pre-Encryption Behavioral Anomaly on a Host \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1486 / T1490 / T1083)",
+    "summary": "A host process shows an anomalous file rewrite rate, per-file entropy spike, and snapshot/backup inhibition that deviate from the host's learned Cortex baseline \u2014 the pre-encryption fingerprint of Akira (Howling Scorpius). No single write is a known-bad IOC, so signature BIOCs miss it; the deviation plus causality chain is what an auto-tuned ABIOC fires on.",
+    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the endpoint, user, and network behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the ENDPOINT plane against the earliest, cheapest-to-catch phase of a ransomware intrusion \u2014 the moment BEFORE bulk encryption completes and while recovery is being inhibited. It models the tradecraft attributed to Howling Scorpius (the Akira ransomware operation), whose Linux/ESXi encryptors enumerate a target file set, rewrite files at a rate and entropy no legitimate workload produces, and delete snapshots/backups so victims cannot roll back. Cortex has learned this host's normal file-I/O profile: a small, stable set of processes writing at a modest, low-entropy cadence (log rotation, package updates, scheduled tar/rsync jobs) and a backup routine that CREATES snapshots on a schedule, never bulk-DELETES them. The scenario injects two behavioral deviations from that learned baseline: (a) a single process producing a rapid burst of high-entropy file writes/renames with a uniform new extension at a rate far above the host's learned file-modification profile, and (b) a recovery-inhibition burst that deletes snapshot/backup artefacts a routine backup job never removes. A hand-authored BIOC keyed on a specific encryptor hash, ransom-note string, or known extension would miss a fresh Akira build \u2014 which is exactly the point: the auto-tuned ABIOC fires on the deviation from the host's learned behavior and anchors it to the causality chain (file enumeration -> high-entropy mass rewrite -> snapshot/backup deletion). Two ABIOCs cover the two deviation shapes; supporting validation XQL confirms the learned file-I/O baseline and surfaces the pre-encryption burst; a correlation rule stitches the two ABIOCs into a single pre-encryption-ransomware incident the DC presents as proof that Cortex's behavioral analytics caught a novel encryptor no static signature was written for. Fully SAFE-MODE: writes land only in an isolated /tmp victim directory, nothing outside it is touched, and cleanup restores the directory.",
     "severity": "high",
     "confidence": "high"
   },
@@ -123,7 +123,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-EDR-011 — Ransomware pre-encryption behavioral deviation on a learned host file-I/O baseline for Cortex ABIOC validation",
+    "framework_reference_id": "SIM-EDR-011 \u2014 Ransomware pre-encryption behavioral deviation on a learned host file-I/O baseline for Cortex ABIOC validation",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -166,8 +166,47 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/cortexsim_snapshot_baseline.img",
+        "context": "File path used in the payload to delete snapshot baseline image."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/cortexsim_backup_baseline.tar",
+        "context": "File path used in the payload to delete backup baseline archive."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "*.locked",
+        "context": "File extension used in the payload for encrypted files."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "High-Rate File Rewrite with .locked Extension",
+        "description": "Detection of a single process rapidly rewriting files with .locked extension, exceeding normal host file modification rate.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and action_file_extension = \".locked\"\n| comp count() as cnt by actor_process_image_name, agent_hostname\n| comp count() as file_count, timestamp()\n| filter file_count > 50\n| filter timestamp() > now() - 5m",
+        "mitre_technique_ids": [
+          "T1486",
+          "T1490"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Process Deleting Snapshot/Backup Artifacts",
+        "description": "Detection of a process running rm command that targets snapshot or backup related files.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"rm\" and action_process_command_line contains \"snapshot\"\n| comp count() as cnt by actor_process_image_name, agent_hostname\n| comp count() as delete_count\n| filter delete_count > 1",
+        "mitre_technique_ids": [
+          "T1486",
+          "T1490"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "EDR-011 Anomalous Pre-Encryption File-Modification Burst Deviating from Host Baseline",
@@ -211,13 +250,13 @@
     ],
     "correlation_rules": [
       {
-        "name": "Pre-Encryption Ransomware on Host — ABIOC Causality Stitch",
+        "name": "Pre-Encryption Ransomware on Host \u2014 ABIOC Causality Stitch",
         "rule_id": "CR-EDR-0011",
-        "logic": "ABIOC(EDR-011 Anomalous Pre-Encryption File-Modification Burst Deviating from Host Baseline) AND ABIOC(EDR-011 Recovery-Inhibition Snapshot Deletion Deviating from Host Baseline) — fuses the two auto-tuned behavioral deviations on the same host into a single pre-encryption-ransomware incident anchored to the enumeration -> mass-rewrite -> recovery-inhibition causality chain, catching the Akira encryptor before bulk encryption completes."
+        "logic": "ABIOC(EDR-011 Anomalous Pre-Encryption File-Modification Burst Deviating from Host Baseline) AND ABIOC(EDR-011 Recovery-Inhibition Snapshot Deletion Deviating from Host Baseline) \u2014 fuses the two auto-tuned behavioral deviations on the same host into a single pre-encryption-ransomware incident anchored to the enumeration -> mass-rewrite -> recovery-inhibition causality chain, catching the Akira encryptor before bulk encryption completes."
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-endpoint file-I/O rate, write entropy, and backup/recovery behavior"
+      "Cortex XSIAM Analytics \u2014 auto-tuned behavioral profiling of per-endpoint file-I/O rate, write entropy, and backup/recovery behavior"
     ]
   },
   "panw_mapping": {
@@ -248,7 +287,7 @@
       {
         "threat_scenario_id": "TS-EDR-011",
         "name": "Ransomware Pre-Encryption Behavioral Anomaly Detection via Cortex ABIOC",
-        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a host's normal file-I/O and backup profile and detect the pre-encryption phase of a ransomware intrusion — a single process rewriting files at anomalous rate and entropy while deleting snapshots — anchored to its causality chain, where no static signature was written for a fresh encryptor build.",
+        "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a host's normal file-I/O and backup profile and detect the pre-encryption phase of a ransomware intrusion \u2014 a single process rewriting files at anomalous rate and entropy while deleting snapshots \u2014 anchored to its causality chain, where no static signature was written for a fresh encryptor build.",
         "threat_steps": [
           {
             "threat_step_id": "TS-EDR-011A",
@@ -288,7 +327,7 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection",
+      "title": "Cortex XSIAM \u2014 Analytics BIOC (ABIOC) behavioral detection",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
@@ -301,13 +340,13 @@
       "publisher_id": "SRC-UNIT42"
     },
     {
-      "title": "MITRE ATT&CK T1486 — Data Encrypted for Impact",
+      "title": "MITRE ATT&CK T1486 \u2014 Data Encrypted for Impact",
       "url": "https://attack.mitre.org/techniques/T1486/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1490 — Inhibit System Recovery",
+      "title": "MITRE ATT&CK T1490 \u2014 Inhibit System Recovery",
       "url": "https://attack.mitre.org/techniques/T1490/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

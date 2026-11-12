@@ -47,9 +47,9 @@
     }
   },
   "identity": {
-    "name": "Malicious In-Cluster Multi-Stage TTP Chain — Cortex Analytics Behavioral IOC (ABIOC) (T1078 / T1071 / T1560 / T1496 / T1574)",
-    "summary": "A single in-cluster workload runs a nine-technique chain — system discovery, HTTP C2, archive of collected data, valid-account abuse, resource hijacking, and execution-flow hijack. The multi-stage causality chain is the ABIOC sweet spot: an auto-tuned behavioral detector fires on the chain as one identified-causality story rather than nine disconnected static rules.",
-    "description": "This scenario ports the xsiam-prisma-cdr-lab attk-ttp fixture (attk-ttp.sh + attk-k8.yml) into a Cortex ABIOC detection card, complementing the single-vector ABIOC of SIM-CDR-009 with a multi-stage in-cluster chain. The lab script runs nine MITRE techniques back-to-back from one container: System Information Discovery (T1082), HTTP application-layer C2 (T1071), Archive Collected Data (T1560 — tar of /var/log and /etc), Valid Accounts abuse (T1078 — accessing /root), Remote Services (T1021 — SSH), Resource Hijacking (T1496 — cryptominer deploy), Hijack Execution Flow (T1574 — appending to /etc/profile), unauthorized file exfil (T1020), and a privileged-container deploy (T1068). Authored as static rules this would be nine detections; the ABIOC value is that Cortex's auto-tuned behavioral analytics observe the whole sequence as a single deviating causality chain from a workload whose learned baseline is a single long-running service process, and fire on the chain with an identified causality anchor. CortexSim runs the chain with safe stand-ins (benign HTTP, tar of files it creates, an echo-stubbed cryptominer/privileged-deploy) so no real impact occurs while preserving the multi-stage process/network/file telemetry shape. The detection content is two ABIOCs: one anchors the multi-stage in-cluster chain behavioral causality (discovery -> C2 -> archive -> hijack observed as one deviating sequence), and one fires on the anomalous multi-stage container discovery-and-exfil deviation from the learned per-container baseline. A supporting XQL confirms the chain surfaced in endpoint telemetry, and a correlation rule stitches the two ABIOCs into one in-cluster behavioral-anomaly incident. The reusable container-workload projection attributes each stage to its pod, image, and container_id. This proves Cortex's behavioral analytics catch a multi-stage in-cluster TTP chain as one causality story no static rule was written for.",
+    "name": "Malicious In-Cluster Multi-Stage TTP Chain \u2014 Cortex Analytics Behavioral IOC (ABIOC) (T1078 / T1071 / T1560 / T1496 / T1574)",
+    "summary": "A single in-cluster workload runs a nine-technique chain \u2014 system discovery, HTTP C2, archive of collected data, valid-account abuse, resource hijacking, and execution-flow hijack. The multi-stage causality chain is the ABIOC sweet spot: an auto-tuned behavioral detector fires on the chain as one identified-causality story rather than nine disconnected static rules.",
+    "description": "This scenario ports the xsiam-prisma-cdr-lab attk-ttp fixture (attk-ttp.sh + attk-k8.yml) into a Cortex ABIOC detection card, complementing the single-vector ABIOC of SIM-CDR-009 with a multi-stage in-cluster chain. The lab script runs nine MITRE techniques back-to-back from one container: System Information Discovery (T1082), HTTP application-layer C2 (T1071), Archive Collected Data (T1560 \u2014 tar of /var/log and /etc), Valid Accounts abuse (T1078 \u2014 accessing /root), Remote Services (T1021 \u2014 SSH), Resource Hijacking (T1496 \u2014 cryptominer deploy), Hijack Execution Flow (T1574 \u2014 appending to /etc/profile), unauthorized file exfil (T1020), and a privileged-container deploy (T1068). Authored as static rules this would be nine detections; the ABIOC value is that Cortex's auto-tuned behavioral analytics observe the whole sequence as a single deviating causality chain from a workload whose learned baseline is a single long-running service process, and fire on the chain with an identified causality anchor. CortexSim runs the chain with safe stand-ins (benign HTTP, tar of files it creates, an echo-stubbed cryptominer/privileged-deploy) so no real impact occurs while preserving the multi-stage process/network/file telemetry shape. The detection content is two ABIOCs: one anchors the multi-stage in-cluster chain behavioral causality (discovery -> C2 -> archive -> hijack observed as one deviating sequence), and one fires on the anomalous multi-stage container discovery-and-exfil deviation from the learned per-container baseline. A supporting XQL confirms the chain surfaced in endpoint telemetry, and a correlation rule stitches the two ABIOCs into one in-cluster behavioral-anomaly incident. The reusable container-workload projection attributes each stage to its pod, image, and container_id. This proves Cortex's behavioral analytics catch a multi-stage in-cluster TTP chain as one causality story no static rule was written for.",
     "severity": "high",
     "confidence": "high"
   },
@@ -134,7 +134,7 @@
   "execution": {
     "target_platform": "kubernetes",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-CDR-014 — multi-stage in-cluster TTP chain for Cortex ABIOC causality validation",
+    "framework_reference_id": "SIM-CDR-014 \u2014 multi-stage in-cluster TTP chain for Cortex ABIOC causality validation",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -148,7 +148,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Multi-stage in-cluster TTP chain from attk-ttp.sh, run with SAFE stand-ins:\n# benign HTTP, tar of self-created files, echo-stubbed cryptominer/privileged\n# deploy. Preserves the multi-stage process/network/file telemetry shape.\nset -euo pipefail\nWORK=\"$(mktemp -d /tmp/cortexsim-attk.XXXXXX)\"\nuname -a; cat /etc/os-release 2>/dev/null | head -3                       # T1082 discovery\ncurl -sSL -m 5 -I http://testmynids.org/ -o /dev/null || true            # T1071 HTTP C2\nfor i in $(seq 1 5); do echo \"collected-$i\" > \"$WORK/data_$i\"; done\ntar -czf \"$WORK/collected.tar.gz\" \"$WORK\"/data_* 2>/dev/null              # T1560 archive\nid; echo \"[*] valid-account/root access stubbed [truncated]\"               # T1078 valid accounts\necho \"[*] cryptominer deploy stubbed — no miner run [truncated]\"           # T1496 resource hijack\necho 'echo cortexsim-marker' >> \"$WORK/profile_stub\"                       # T1574 exec-flow hijack stub\necho \"[*] multi-stage in-cluster chain executed with safe stand-ins in ${WORK}\"",
+      "code": "# Multi-stage in-cluster TTP chain from attk-ttp.sh, run with SAFE stand-ins:\n# benign HTTP, tar of self-created files, echo-stubbed cryptominer/privileged\n# deploy. Preserves the multi-stage process/network/file telemetry shape.\nset -euo pipefail\nWORK=\"$(mktemp -d /tmp/cortexsim-attk.XXXXXX)\"\nuname -a; cat /etc/os-release 2>/dev/null | head -3                       # T1082 discovery\ncurl -sSL -m 5 -I http://testmynids.org/ -o /dev/null || true            # T1071 HTTP C2\nfor i in $(seq 1 5); do echo \"collected-$i\" > \"$WORK/data_$i\"; done\ntar -czf \"$WORK/collected.tar.gz\" \"$WORK\"/data_* 2>/dev/null              # T1560 archive\nid; echo \"[*] valid-account/root access stubbed [truncated]\"               # T1078 valid accounts\necho \"[*] cryptominer deploy stubbed \u2014 no miner run [truncated]\"           # T1496 resource hijack\necho 'echo cortexsim-marker' >> \"$WORK/profile_stub\"                       # T1574 exec-flow hijack stub\necho \"[*] multi-stage in-cluster chain executed with safe stand-ins in ${WORK}\"",
       "input_variables": [
         {
           "name": "BASELINE_WINDOW_SECONDS",
@@ -173,16 +173,29 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "rm -rf /tmp/cortexsim-attk.*; echo '[CortexSim] SIM-CDR-014 cleanup complete — scratch chain artifacts removed; EKS cluster owned by terraform destroy.'"
+      "code": "rm -rf /tmp/cortexsim-attk.*; echo '[CortexSim] SIM-CDR-014 cleanup complete \u2014 scratch chain artifacts removed; EKS cluster owned by terraform destroy.'"
     }
   },
   "detections": {
     "iocs": [],
-    "biocs": [],
+    "biocs": [
+      {
+        "name": "CDR-014 Multi-Stage Process and Archive Deviation",
+        "description": "A container whose learned baseline is a single service process runs a shell that spawns discovery, archive, and hijack child processes \u2014 a process-sequence deviation the endpoint agent detects.",
+        "logic": "dataset = xdr_data\n| filter actor_process_image_name in (\"sh\", \"bash\") and child in (uname, curl, tar, id) OR action_file_path contains \".tar.gz\"",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1082",
+          "T1560",
+          "T1574"
+        ],
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "CDR-014 In-Cluster TTP Chain Behavioral Causality",
-        "description": "A container whose learned baseline is a single long-running service process suddenly executes a multi-stage sequence — system discovery, outbound HTTP, data archival, and execution-flow modification — within one short window. ABIOC anchors the chain to its causality (one shell parent spawning discovery -> C2 -> archive -> hijack children) and fires on the deviating sequence as one story rather than on any single static process name.",
+        "description": "A container whose learned baseline is a single long-running service process suddenly executes a multi-stage sequence \u2014 system discovery, outbound HTTP, data archival, and execution-flow modification \u2014 within one short window. ABIOC anchors the chain to its causality (one shell parent spawning discovery -> C2 -> archive -> hijack children) and fires on the deviating sequence as one story rather than on any single static process name.",
         "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter causality_actor_process_image_name in (\"sh\", \"bash\", \"containerd-shim\")\n| filter action_process_image_name in (\"uname\", \"curl\", \"tar\", \"id\", \"lscpu\", \"hostname\")\n| comp count_distinct(action_process_image_name) as distinct_stages, values(action_process_image_name) as stages by agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id\n| filter distinct_stages >= 3\n| sort desc distinct_stages\n| fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, causality_actor_process_instance_id, distinct_stages, stages",
         "severity": "high",
         "mitre_technique_ids": [
@@ -195,7 +208,7 @@
       },
       {
         "name": "CDR-014 Anomalous Multi-Stage Container Discovery and Exfil",
-        "description": "A baselined container deviates by archiving collected data and then opening outbound connections — the collection-then-exfil shape of the in-cluster chain. ABIOC fires on the single deviation event (archive creation followed by egress from a container that never archived or exfiltrated in its learned baseline) with the causality chain that ties the egress back to the archive.",
+        "description": "A baselined container deviates by archiving collected data and then opening outbound connections \u2014 the collection-then-exfil shape of the in-cluster chain. ABIOC fires on the single deviation event (archive creation followed by egress from a container that never archived or exfiltrated in its learned baseline) with the causality chain that ties the egress back to the archive.",
         "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_container_info != null\n| filter action_process_image_name in (\"tar\", \"gzip\", \"curl\", \"wget\", \"scp\")\n| comp count() as collect_exfil_events, values(action_process_image_name) as tools by agent_hostname, container_id, causality_id, causality_actor_process_image_name\n| filter collect_exfil_events >= 1\n| sort desc collect_exfil_events\n| fields agent_hostname, container_id, causality_id, causality_actor_process_image_name, collect_exfil_events, tools",
         "severity": "high",
         "mitre_technique_ids": [
@@ -224,13 +237,13 @@
     ],
     "correlation_rules": [
       {
-        "name": "Multi-Stage In-Cluster TTP Chain — ABIOC Causality Stitch",
+        "name": "Multi-Stage In-Cluster TTP Chain \u2014 ABIOC Causality Stitch",
         "rule_id": "CR-CDR-0014",
-        "logic": "ABIOC(CDR-014 In-Cluster TTP Chain Behavioral Causality) AND ABIOC(CDR-014 Anomalous Multi-Stage Container Discovery and Exfil) GROUPED BY container_id, causality_id, causality_actor_process_image_name WITHIN 900s — fuses the two auto-tuned behavioral deviations into one in-cluster behavioral-anomaly incident anchored to the single containerd-shim -> shell process_lineage causality chain (same container_id + causality_id), not two disconnected anomalies."
+        "logic": "ABIOC(CDR-014 In-Cluster TTP Chain Behavioral Causality) AND ABIOC(CDR-014 Anomalous Multi-Stage Container Discovery and Exfil) GROUPED BY container_id, causality_id, causality_actor_process_image_name WITHIN 900s \u2014 fuses the two auto-tuned behavioral deviations into one in-cluster behavioral-anomaly incident anchored to the single containerd-shim -> shell process_lineage causality chain (same container_id + causality_id), not two disconnected anomalies."
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-container process trees and multi-stage causality chains"
+      "Cortex XSIAM Analytics \u2014 auto-tuned behavioral profiling of per-container process trees and multi-stage causality chains"
     ]
   },
   "panw_mapping": {
@@ -301,26 +314,26 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection",
+      "title": "Cortex XSIAM \u2014 Analytics BIOC (ABIOC) behavioral detection",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1560 — Archive Collected Data",
+      "title": "MITRE ATT&CK T1560 \u2014 Archive Collected Data",
       "url": "https://attack.mitre.org/techniques/T1560/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1574 — Hijack Execution Flow",
+      "title": "MITRE ATT&CK T1574 \u2014 Hijack Execution Flow",
       "url": "https://attack.mitre.org/techniques/T1574/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Unit 42 Cloud Threat Report — The State of Cloud-Native Security",
+      "title": "Unit 42 Cloud Threat Report \u2014 The State of Cloud-Native Security",
       "url": "https://unit42.paloaltonetworks.com/cloud-threat-report-volume-7/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42"

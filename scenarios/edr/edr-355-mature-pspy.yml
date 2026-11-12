@@ -1,0 +1,125 @@
+scenario_id: SIM-EDR-355
+name: 'Offensive Tooling: pspy (payload-shelf staged)'
+version: '1.0'
+status: active
+plane: EDR
+detection_types:
+- BIOC
+- XQL
+- Analytics
+- ABIOC
+- IOC
+uc_ref: UCS-EDR-03
+tc_ref: TC-EDR-05
+tc_refs:
+- TC-EDR-05
+- TC-EDR-03
+pov_scenario_id: POV-SC-045
+uc_name: Endpoint Detection & Response
+tc_name: Validate causality graph provides full process chain and causality owner attribution
+mitre_tactic: TA0007
+mitre_tactic_name: Discovery
+mitre_technique: T1057
+mitre_technique_name: System Information Discovery
+additional_techniques:
+- technique: T1083
+  name: File and Directory Discovery
+- technique: T1057
+  name: Process Discovery
+- technique: T1548.001
+  name: 'Abuse Elevation Control Mechanism: Setuid and Setgid'
+- technique: T1518.001
+  name: 'Software Discovery: Security Software Discovery'
+- technique: T1059.004
+  name: 'Command and Scripting Interpreter: Unix Shell'
+threat_report: 'Unit42 - Hildegard: New TeamTNT Cryptojacking Malware Targeting Kubernetes'
+threat_report_url: https://unit42.paloaltonetworks.com/hildegard-malware-teamtnt/
+execution_identity:
+  default: www-data
+  options:
+  - www-data
+  - nobody
+push_supported: true
+pull_supported: true
+cgo_anchor:
+  image_name: apache2
+  primary_username: www-data
+external_tools:
+- name: pspy
+  source: https://github.com
+  type: script
+  install_inline: false
+  adapter_ref: TOOL-PSPY
+validation_methodology: Timeline Completeness
+methodology_family: F1
+primary_kpi: Causality Chain Completeness
+threshold:
+  kpi: Causality Chain Completeness
+  op: ≥
+  value: 95
+  unit: '%'
+success_criteria: 'Cortex XDR walks the causality chain from the enumeration burst back to the
+
+  apache2 causality group owner, with the www-data effective username, the
+
+  interpreter spawn, the staged-tool process, and the file-read fan-out all
+
+  present and in correct temporal order. Behavioural detections
+
+  (service-account interpreter spawn, discovery-binary breadth, SUID sweep,
+
+  /proc + /etc read fan-out, process-table snoop) fire on the tool''s BEHAVIOUR.
+
+  The two filename-keyed detections on TTP-2026-0176 are recorded separately:
+
+  they fire on the canonical run and are EXPECTED NOT TO FIRE under a renamed
+
+  run. If only the filename-keyed detections fire, the finding is that the
+
+  customer''s endpoint coverage is name-keyed, not that the TTP did not run.
+
+  '
+moat_tier: MOAT
+steps:
+- id: step-01
+  name: Deploy preflight for pspy (shelf-staged)
+  command: '[ -s /tmp/pspy64 ] || { echo ''[SIM-EDR-355][FATAL] PAYLOAD_NOT_STAGED_ON_TARGET:/tmp/pspy64''
+    >&2; exit 1; }; sha256sum /tmp/pspy64; id'
+  identity: www-data
+  platforms: &id001
+  - linux
+  - container
+  mitre_technique: T1082
+- id: step-02
+  name: Execute pspy
+  command: /tmp/pspy64 -pf -i 1000
+  identity: www-data
+  platforms: *id001
+  mitre_technique: T1057
+  causality:
+    parent_step: step-01
+    pivot: process_lineage
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: pspy executed by a service account
+    ttp_ref: TTP-2026-0517
+    detection_id: bioc-pspy-executed-by-a-service-account-on-the-endpoint
+  - plane: EDR
+    type: Analytics
+    description: Analytics flags the uncommon pspy execution
+    ttp_ref: TTP-2026-0517
+    detection_id: xql-pspy-execution-hunt
+cleanup:
+  commands:
+  - rm -f /tmp/linpeas.sh /tmp/linpeas_output.txt /tmp/pspy64 /tmp/suid3num.py
+  - echo '[CortexSim] SIM-EDR-022 cleanup complete — read-only enumeration only, nothing was exploited'
+author: Henry Reed
+created: '2026-08-05'
+last_updated: '2026-08-05'
+tags:
+- edr
+- privilege-escalation
+- discovery
+- payload-shelf
+- behavioural-not-name-keyed

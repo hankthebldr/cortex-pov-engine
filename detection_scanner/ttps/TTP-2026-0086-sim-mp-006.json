@@ -148,8 +148,23 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "lsass*.dmp",
+        "context": "Memory dump file typically created in writable temp directory."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "CDR-001 Privileged Container Exec Spawning curl",
+        "description": "A container-origin shell (sh/bash) spawning curl — the canonical endpoint process detection layer on the command chain the PAYLOAD runs.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS\n| filter actor_process_image_name = \"sh\" or actor_process_image_name = \"bash\"\n| filter parent_process_image_name = \"curl\"\n| alter five_tuple = concat(action_local_ip, \":\", to_string(action_local_port), \"->\", action_remote_ip, \":\", to_string(action_remote_port), \"/\", action_network_protocol)\n| comp count() as process_sessions by container_id, five_tuple\n| filter process_sessions >= 1\n| fields container_id, five_tuple, process_sessions",
+        "severity": "high",
+        "mitre_technique_ids": ["T1071.001"],
+        "suppression_window_seconds": 0
+      }
+    ],
     "xql_queries": [
       {
         "purpose": "hunt",

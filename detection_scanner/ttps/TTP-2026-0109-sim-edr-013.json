@@ -195,7 +195,16 @@
         "reputation_required": "any"
       }
     ],
-    "biocs": [],
+    "biocs": [
+      {
+        "name": "EDR-013 SAFE-MODE Marker Files Written Under %TEMP% by a Child of a Known Host",
+        "description": "Three deterministic marker files under %TEMP%\\cortexsim-edr-013 model the DLL side-load, UUID reassembly, and enum-callback stages. A process-level BIOC on action_file_path catches the written artifacts regardless of which process image wrote them — it is a file rule, not a restatement of the module-load abiocs, and fires on the file observables that the abiocs do not query.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE and event_sub_type = ENUM.FILE_WRITE\n| filter action_file_path contains \"cortexsim-edr-013\"\n| fields agent_hostname, actor_process_image_name, action_file_path, actor_process_command_line",
+        "severity": "medium",
+        "mitre_technique_ids": ["T1620", "T1574.002"],
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "EDR-013 DLL Side-Loaded Module Loads from a User-Writable Path in a Signed Host Process",

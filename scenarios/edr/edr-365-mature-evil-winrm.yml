@@ -1,0 +1,108 @@
+scenario_id: SIM-EDR-365
+name: 'Offensive Tooling: evil-winrm (adapter-deployed)'
+version: '1.0'
+status: active
+plane: EDR
+detection_types:
+- BIOC
+- XQL
+- Analytics
+- ABIOC
+- IOC
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+- TC-EDR-03
+- TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: Endpoint Detection & Response
+tc_name: Validate multi-method malware detection (local sandbox, behavioral, static analysis)
+mitre_tactic: TA0011
+mitre_tactic_name: Command and Control
+mitre_technique: T1021.006
+mitre_technique_name: 'Command and Scripting Interpreter: Unix Shell'
+additional_techniques:
+- technique: T1071.001
+  name: 'Application Layer Protocol: Web Protocols'
+- technique: T1059.006
+  name: 'Command and Scripting Interpreter: Python'
+threat_report: Unit42 - Mirai Variant Targets Linux and IoT Devices
+threat_report_url: https://unit42.paloaltonetworks.com/mirai-variant-v3g4/
+execution_identity:
+  default: www-data
+  options:
+  - www-data
+  - node
+  - nobody
+  - root
+push_supported: true
+pull_supported: true
+validation_methodology: Endpoint Signal Injection & Detection Accuracy
+methodology_family: F1
+primary_kpi: MTTD
+threshold:
+  kpi: MTTD
+  op: ≤
+  value: 300
+  unit: seconds
+success_criteria: 'The endpoint TTP signals injected by this scenario produce the expected
+
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+
+  creation is within the MTTD budget. Each step''s expected_detections row is
+
+  validated against dataset=xdr_data.
+
+  '
+moat_tier: LEAD
+cgo_anchor:
+  image_name: apache2
+  primary_username: www-data
+external_tools:
+- name: evil-winrm
+  source: https://github.com
+  type: binary
+  install_inline: false
+  adapter_ref: TOOL-EVIL-WINRM
+steps:
+- id: step-01
+  name: Deploy preflight for evil-winrm (adapter-installed)
+  command: echo '[SIM-EDR-365] adapter TOOL-EVIL-WINRM provides evil-winrm'; id
+  identity: www-data
+  platforms: &id001
+  - windows
+  mitre_technique: T1082
+- id: step-02
+  name: Execute evil-winrm
+  command: evil-winrm.exe -i 10.0.0.5 -u user -p pass
+  identity: www-data
+  platforms: *id001
+  mitre_technique: T1021.006
+  causality:
+    parent_step: step-01
+    pivot: process_lineage
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: evil-winrm executed by a service account
+    ttp_ref: TTP-2026-0527
+    detection_id: bioc-evil-winrm-executed-by-a-service-account-on-the-endpoint
+  - plane: EDR
+    type: Analytics
+    description: Analytics flags the uncommon evil-winrm execution
+    ttp_ref: TTP-2026-0527
+    detection_id: xql-evil-winrm-execution-hunt
+cleanup:
+  commands:
+  - echo '[CortexSim] SIM-EDR-002 cleanup complete — no artifacts to remove (all simulated to localhost)'
+author: Henry Reed
+created: '2026-04-14'
+last_updated: '2026-04-14'
+tags:
+- reverse-shell
+- command-and-control
+- c2-callback
+- endpoint-security
+- bash
+- python
+- netcat

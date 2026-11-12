@@ -1,0 +1,324 @@
+{
+  "id": "TTP-2026-0537",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-13T00:00:00Z",
+    "updated_at": "2026-05-13T00:00:00Z",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "actor-ignoble-scorpius",
+      "actor-multiple",
+      "vector-credential-dump",
+      "malware-mimikatz",
+      "industry-all",
+      "severity-critical",
+      "endpoint"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-ATOMIC-RED-TEAM"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": true,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "windows"
+      ],
+      "estimated_runtime_seconds": 60,
+      "cleanup_required": true,
+      "safety_class": "destructive-with-cleanup"
+    }
+  },
+  "identity": {
+    "name": "Offensive Tooling: rubeus (adapter-deployed)",
+    "summary": "A service account deploys and runs rubeus (roasts and forges Kerberos tickets (kerberoast / asreproast / pass-the-ticket)). Deployed via adapter_ref TOOL-RUBEUS.",
+    "description": "rubeus roasts and forges Kerberos tickets (kerberoast / asreproast / pass-the-ticket). The tool is delivered through the Cortex POV tool adapter (TOOL-RUBEUS, installed by the pack at dispatch) rather than an ad-hoc internet download, so it survives default-deny egress and the absent detection is never a manufactured false negative. Cortex should detect the execution of rubeus and its artifacts.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Ignoble Scorpius",
+        "aliases": [
+          "BlackSuit operators"
+        ],
+        "unit42_actor_id": "Ignoble Scorpius"
+      },
+      {
+        "name": "Muddled Libra",
+        "aliases": [
+          "Scattered Spider"
+        ],
+        "mitre_group_id": "G1015"
+      }
+    ],
+    "campaigns": [
+      "BlackSuit Blitz 2025"
+    ],
+    "malware_families": [
+      {
+        "name": "Mimikatz",
+        "mitre_software_id": "S0002"
+      },
+      {
+        "name": "BlackSuit Ransomware"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2011-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1558",
+        "name": "T1558.003",
+        "tactic_ids": [
+          "TA0006"
+        ],
+        "tactic_names": [
+          "Credential Access"
+        ],
+        "subtechnique_id": "T1558.003"
+      },
+      {
+        "technique_id": "T1550",
+        "name": "T1550.003",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1550.003"
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "T1003.001 \u2014 Atomic Test #1 (Dump LSASS.exe Memory using ProcDump) / Atomic Test #3 (Dump LSASS using comsvcs.dll)",
+    "privilege_required": "administrator",
+    "prerequisites": [
+      {
+        "description": "Local administrator rights on the target Windows endpoint.",
+        "check_command": "whoami /groups | findstr /i \"S-1-5-32-544\"",
+        "remediation": "Elevate to administrator before running."
+      },
+      {
+        "description": "Cortex XDR agent installed and reporting healthy.",
+        "check_command": "Get-Service cyserver"
+      }
+    ],
+    "payload": {
+      "interpreter": "powershell",
+      "input_variables": [],
+      "timeout_seconds": 180,
+      "code": "# MATURE: rubeus deployed via adapter_ref TOOL-RUBEUS.\n# adapter TOOL-RUBEUS installs the tool at dispatch (pack runtime_install_command); this payload runs it.\nrubeus.exe kerberoast\n"
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "rubeus executed by a service account.",
+        "expected_value": "action_process_image_name contains \"rubeus.exe\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "powershell",
+      "code": "echo '[CortexSim] rubeus run complete'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "rubeus.exe",
+        "context": "rubeus artifact path/name on the target."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Rubeus Executed by a Service Account on the Endpoint",
+        "description": "A non-interactive service account runs rubeus \u2014 an offensive TOOL-RUBEUS-wired tool not part of normal operations on this host.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name contains \"rubeus.exe\" or action_process_command_line contains \"rubeus\"\n| comp count() as runs by agent_hostname, actor_effective_username\n| filter runs >= 1",
+        "mitre_technique_ids": [
+          "T1558.003"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Rubeus Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"rubeus\"\n| fields agent_hostname, actor_effective_username, action_process_image_name, action_process_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "abiocs": [
+      {
+        "name": "First-Seen Execution of rubeus on This Host",
+        "description": "A host that has never run rubeus executes it shortly after it is staged/installed \u2014 the deploy-then-run chain of an offensive tool.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"rubeus\"\n| comp count() as first_runs by agent_hostname",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "adapter deploy/stage of rubeus -> first execution by a service-account shell",
+        "mitre_technique_ids": [
+          "T1558.003"
+        ],
+        "severity": "high"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) \u2014 uncommon offensive tool (rubeus) executed by a service account; Required Data: XDR Agent; ATT&CK T1558.003."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "credential-theft-protection",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "BTP-CRED-LSASS-001",
+          "Exploit-LSASS-Handle-Block"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset:prevention | filter rule_name contains \"LSASS\""
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-CRED-0001",
+          "XDR-BIOC-CRED-0002"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-CRED-LSASS"
+        ],
+        "license_required": "advanced"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-CredentialTheftResponse-v3"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: Credential Theft Response \u2014 isolate host, force domain-wide password reset for impacted accounts, ticket DFIR."
+      },
+      {
+        "module": "advanced-wildfire",
+        "coverage_tier": "prevention",
+        "license_required": "advanced",
+        "evidence_query": "WildFire verdict on any dropped Mimikatz binary downstream of the dump."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-RANSOM-002",
+        "name": "Ransomware Kill-Chain Disruption \u2014 Credential Theft Stage",
+        "description": "Block or detect LSASS credential dumping, the pivot stage of nearly every ransomware kill chain (BlackSuit Blitz, DragonForce, etc.).",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-RANSOM-002A",
+            "objective": "Cortex XDR Credential Theft Protection blocks the comsvcs.dll MiniDump attempt before the dump file is fully written.",
+            "preconditions": [
+              "Cortex XDR agent >= 8.4.0 installed on target.",
+              "Profile includes Credential Theft Protection enabled in Block mode."
+            ],
+            "steps": [
+              "Run TTP-2026-0002 payload.",
+              "Confirm rundll32 process is terminated and dump file is absent or zero-byte.",
+              "Observe XDR alert in console."
+            ],
+            "success_criteria": [
+              "Process terminated within 5s; XDR alert `BTP-CRED-LSASS-001` raised with severity High.",
+              "Dump file size = 0 bytes or absent.",
+              "End-user notified via agent toast (if enabled)."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "threat_step_id": "TS-RANSOM-002B",
+            "objective": "If prevention is in Report-Only mode, BIOC + correlation rule still fire as detection.",
+            "success_criteria": [
+              "BIOC `LSASS Handle Open With Sensitive Access Rights` fires within 30s.",
+              "Correlation `CR-CRED-0001` generates a Cortex incident.",
+              "XQL validation query returns \u22651 row."
+            ],
+            "expected_score_weight": 0.2
+          },
+          {
+            "threat_step_id": "TS-RANSOM-002C",
+            "objective": "XSOAR auto-response isolates host.",
+            "success_criteria": [
+              "Playbook `XSOAR-PB-CredentialTheftResponse-v3` invoked.",
+              "Cortex XDR Endpoint Isolation applied to host within 90s.",
+              "Investigation ticket created in SOAR + ITSM."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Cortex XDR Credential Theft Protection in Block mode for all production endpoints.",
+      "Enable LSA Protection (RunAsPPL) on supported Windows builds.",
+      "Restrict local administrator membership; implement LAPS for the local admin password.",
+      "Credential Guard for Windows 10/11 + Server 2016+.",
+      "Disable Wdigest cleartext credential caching."
+    ],
+    "detection_engineering": [
+      "Tune BIOC allowlist for legitimate processes that access LSASS (AV, EDR, backup agents) \u2014 alert on everything else.",
+      "Build hunts for comsvcs.dll MiniDump, rundll32.exe with unusual exports, and Sysmon Event ID 10 with GrantedAccess 0x1010 or 0x1410.",
+      "Correlate LSASS access events with downstream Mimikatz indicators (kerberos ticket extraction, DC sync calls)."
+    ],
+    "response_playbook": "XSOAR-PB-CredentialTheftResponse-v3"
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1558.003",
+      "url": "https://attack.mitre.org/techniques/T1558/003/",
+      "publisher": "MITRE",
+      "primary": true
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-05-13",
+      "author": "Henry Reed",
+      "change": "Initial entry \u2014 schema validation example."
+    }
+  ]
+}

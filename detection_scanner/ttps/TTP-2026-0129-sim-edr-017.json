@@ -230,7 +230,16 @@
         "reputation_required": "suspicious"
       }
     ],
-    "biocs": [],
+    "biocs": [
+  {
+    "name": "findstr.exe Security-Product Discovery Command Line",
+    "description": "A process named findstr.exe running with security-software product names (opssvc, wrsa, SophosHealth, AvastUI, AVGUI, nsWscSvc, ekrn) on its command line. These are benign admin tools; the BIOC fires on the command-shape itself, not on a known-bad string.",
+    "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"findstr.exe\"\n| filter action_process_command_line contains \"opssvc\" or action_process_command_line contains \"wrsa\" or action_process_command_line contains \"SophosHealth\" or action_process_command_line contains \"AvastUI\" or action_process_command_line contains \"AVGUI\" or action_process_command_line contains \"nsWscSvc\" or action_process_command_line contains \"ekrn\"\n| fields agent_hostname, action_process_command_line",
+    "severity": "medium",
+    "mitre_technique_ids": ["T1518.001"],
+    "suppression_window_seconds": 0
+  }
+],
     "abiocs": [
       {
         "name": "ClickFix mshta Remote Fetch Parenting a Windows Command-Shell Loader Lineage",

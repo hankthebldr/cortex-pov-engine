@@ -48,9 +48,9 @@
     }
   },
   "identity": {
-    "name": "Collection and Data-Staging Behavioral Anomaly — Cortex ABIOC (T1074.001 / T1560.001 / T1005)",
-    "summary": "A service process whose learned Cortex profile never reads bulk files or writes archives performs a bulk file-read sweep then an archive/compression staging burst — the pre-exfil collection tradecraft attributed to Scattered Spider. The deviation from the learned baseline plus the causality chain is what the auto-tuned ABIOC fires on.",
-    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the user, endpoint, and process behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the ENDPOINT plane for the collection/staging kill-chain phase — the pre-exfil moment where an intruder gathers and compresses data before it leaves the estate. It models the signature staging tradecraft attributed to Scattered Spider / Muddled Libra (UNC3944) and observed in Mandiant-tracked extortion intrusions: after obtaining access, the operator sweeps local files, concentrates them into a staging directory, and compresses them into a single archive so the subsequent exfil is one clean transfer. Cortex has learned that the acting process (a web/app service identity such as www-data) exhibits a narrow, stable behavioral profile — it serves requests and touches a bounded set of files, and it never fans out reads across the filesystem nor spawns tar/gzip/zip to produce archives. The scenario injects two behavioral deviations from that learned baseline: (a) a bulk file-read sweep whose read count and file-diversity exceed the process's learned baseline, and (b) an archive/compression staging burst (tar -czf / gzip) that the process has never performed. A hand-authored BIOC keyed on a specific bad binary or path would miss this — tar, gzip, and cat are legitimate on every host — which is exactly the point: the auto-tuned ABIOC fires on the deviation from the process's learned behavior and anchors it to the causality chain (service process -> bulk read sweep -> archive creation in a staging directory). Two ABIOCs cover the two deviation shapes; supporting validation XQL confirms the learned baseline and surfaces the staging deviation; a correlation rule stitches the two ABIOCs into a single collection-and-staging (pre-exfil) incident the DC presents as proof that Cortex's behavioral analytics caught novel activity no static rule was written for.",
+    "name": "Collection and Data-Staging Behavioral Anomaly \u2014 Cortex ABIOC (T1074.001 / T1560.001 / T1005)",
+    "summary": "A service process whose learned Cortex profile never reads bulk files or writes archives performs a bulk file-read sweep then an archive/compression staging burst \u2014 the pre-exfil collection tradecraft attributed to Scattered Spider. The deviation from the learned baseline plus the causality chain is what the auto-tuned ABIOC fires on.",
+    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the user, endpoint, and process behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the ENDPOINT plane for the collection/staging kill-chain phase \u2014 the pre-exfil moment where an intruder gathers and compresses data before it leaves the estate. It models the signature staging tradecraft attributed to Scattered Spider / Muddled Libra (UNC3944) and observed in Mandiant-tracked extortion intrusions: after obtaining access, the operator sweeps local files, concentrates them into a staging directory, and compresses them into a single archive so the subsequent exfil is one clean transfer. Cortex has learned that the acting process (a web/app service identity such as www-data) exhibits a narrow, stable behavioral profile \u2014 it serves requests and touches a bounded set of files, and it never fans out reads across the filesystem nor spawns tar/gzip/zip to produce archives. The scenario injects two behavioral deviations from that learned baseline: (a) a bulk file-read sweep whose read count and file-diversity exceed the process's learned baseline, and (b) an archive/compression staging burst (tar -czf / gzip) that the process has never performed. A hand-authored BIOC keyed on a specific bad binary or path would miss this \u2014 tar, gzip, and cat are legitimate on every host \u2014 which is exactly the point: the auto-tuned ABIOC fires on the deviation from the process's learned behavior and anchors it to the causality chain (service process -> bulk read sweep -> archive creation in a staging directory). Two ABIOCs cover the two deviation shapes; supporting validation XQL confirms the learned baseline and surfaces the staging deviation; a correlation rule stitches the two ABIOCs into a single collection-and-staging (pre-exfil) incident the DC presents as proof that Cortex's behavioral analytics caught novel activity no static rule was written for.",
     "severity": "high",
     "confidence": "high"
   },
@@ -118,7 +118,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-EDR-012 — Collection/staging behavioral deviation on a learned service process for Cortex ABIOC validation",
+    "framework_reference_id": "SIM-EDR-012 \u2014 Collection/staging behavioral deviation on a learned service process for Cortex ABIOC validation",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -161,8 +161,47 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/cortexsim-stage.tar.gz",
+        "context": "Staging archive file created during payload execution, indicating data staging behavior."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/cortexsim-collect",
+        "context": "Temporary directory used for collecting files during payload execution."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/cortexsim-stage.tar.gz",
+        "context": "Archive file generated by tar command, used for compressing collected files."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Archive Process Spawned by Service Account",
+        "description": "Detection of tar or gzip process spawned by www-data service account, indicating potential data staging behavior.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"www-data\" and action_process_image_name in (tar, gzip, zip)\n| filter action_process_image_name != \"tar\" and action_process_image_name != \"gzip\" and action_process_image_name != \"zip\"\n| filter causality_actor_process_image_name != \"tar\" and causality_actor_process_image_name != \"gzip\" and causality_actor_process_image_name != \"zip\"\n| filter action_process_image_name in (\"tar\", \"gzip\")",
+        "mitre_technique_ids": [
+          "T1074",
+          "T1560"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Non-Standard Archive Creation by Service Process",
+        "description": "Detection of archive creation (tar.gz) by a service process that has never performed such activity before.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"www-data\" and action_process_image_name in (tar, gzip)\n| filter action_file_path contains \"cortexsim-stage\"\n| filter action_file_extension in (\"gz\", \"tar\")",
+        "mitre_technique_ids": [
+          "T1074",
+          "T1560"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "EDR-012 Anomalous Bulk File-Read Sweep from Non-Staging Process",
@@ -178,7 +217,7 @@
       },
       {
         "name": "EDR-012 Archive/Compression Staging Burst Deviating from Process Baseline",
-        "description": "A service process whose learned baseline never produces archives spawns tar/gzip/zip to compress swept files into a single staging artifact. Every utility is legitimate; the ABIOC fires on the archive-creation deviation from the process's learned behavior, anchored to the bulk-read sweep that fed it — the pre-exfil staging moment.",
+        "description": "A service process whose learned baseline never produces archives spawns tar/gzip/zip to compress swept files into a single staging artifact. Every utility is legitimate; the ABIOC fires on the archive-creation deviation from the process's learned behavior, anchored to the bulk-read sweep that fed it \u2014 the pre-exfil staging moment.",
         "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username in (\"www-data\", \"node\", \"nobody\")\n| filter causality_actor_process_image_name in (\"apache2\", \"httpd\", \"nginx\", \"node\")\n| filter action_process_image_name in (\"tar\", \"gzip\", \"zip\", \"7z\", \"xz\", \"bzip2\")\n| filter action_process_command_line contains \"-c\" or action_process_command_line contains \"tmp\"\n| comp count() as archive_ops, values(actor_process_instance_id) as proc_instances by agent_hostname, actor_effective_username, causality_actor_process_image_name, action_process_image_name\n| filter archive_ops >= 1\n| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, action_process_image_name, archive_ops, proc_instances",
         "severity": "high",
         "mitre_technique_ids": [
@@ -207,13 +246,13 @@
     ],
     "correlation_rules": [
       {
-        "name": "Collection and Data-Staging Intrusion on Service Process — ABIOC Causality Stitch",
+        "name": "Collection and Data-Staging Intrusion on Service Process \u2014 ABIOC Causality Stitch",
         "rule_id": "CR-EDR-0012",
-        "logic": "ABIOC(EDR-012 Anomalous Bulk File-Read Sweep from Non-Staging Process) AND ABIOC(EDR-012 Archive/Compression Staging Burst Deviating from Process Baseline) — fuses the two auto-tuned behavioral deviations on the same host+process into a single collection-and-staging (pre-exfil) incident anchored to the read-sweep-to-archive causality chain."
+        "logic": "ABIOC(EDR-012 Anomalous Bulk File-Read Sweep from Non-Staging Process) AND ABIOC(EDR-012 Archive/Compression Staging Burst Deviating from Process Baseline) \u2014 fuses the two auto-tuned behavioral deviations on the same host+process into a single collection-and-staging (pre-exfil) incident anchored to the read-sweep-to-archive causality chain."
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-process file-access diversity and archive-creation cadence"
+      "Cortex XSIAM Analytics \u2014 auto-tuned behavioral profiling of per-process file-access diversity and archive-creation cadence"
     ]
   },
   "panw_mapping": {
@@ -284,32 +323,32 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection",
+      "title": "Cortex XSIAM \u2014 Analytics BIOC (ABIOC) behavioral detection",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1074.001 — Data Staged: Local Data Staging",
+      "title": "MITRE ATT&CK T1074.001 \u2014 Data Staged: Local Data Staging",
       "url": "https://attack.mitre.org/techniques/T1074/001/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1560.001 — Archive Collected Data: Archive via Utility",
+      "title": "MITRE ATT&CK T1560.001 \u2014 Archive Collected Data: Archive via Utility",
       "url": "https://attack.mitre.org/techniques/T1560/001/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Unit 42 — Muddled Libra (Scattered Spider) threat assessment",
+      "title": "Unit 42 \u2014 Muddled Libra (Scattered Spider) threat assessment",
       "url": "https://unit42.paloaltonetworks.com/muddled-libra/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42"
     },
     {
-      "title": "Mandiant — UNC3944 targets SaaS applications and stages data for extortion",
+      "title": "Mandiant \u2014 UNC3944 targets SaaS applications and stages data for extortion",
       "url": "https://cloud.google.com/blog/topics/threat-intelligence/unc3944-targets-saas-applications",
       "publisher": "Mandiant",
       "publisher_id": "SRC-MANDIANT"

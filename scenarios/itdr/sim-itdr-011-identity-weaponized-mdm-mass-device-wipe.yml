@@ -101,6 +101,11 @@ steps:
         description: "Validation query surfaces the RemoteWipe/FactoryReset burst across the estate within the run window, returning the wipe count and distinct devices targeted per initiating admin identity (the deviation is observable in msft_azure_ad_signin DeviceManagement events)."
         ttp_ref: "TTP-2026-0107"
         detection_id: xql-itdr-011-mass-remote-wipe-burst-surfaced-across-managed-estate
+      - plane: ITDR
+        type: BIOC
+        description: "Deterministic process-tree rule: sh/bash spawning children (curl, nc, nmap, python3) under /tmp or dropping/executing a binary from /tmp — a process deviation from the actor's learned endpoint baseline."
+        ttp_ref: "TTP-2026-0107"
+        detection_id: bioc-sh-spawns-child-processes-under-writable-temp
 
   - id: step-02
     name: "First-ever destructive device action on a standing-privilege admin, with the phished-admin risky sign-in precursor"

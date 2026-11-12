@@ -114,6 +114,11 @@ steps:
         description: "The automation account runs a rapid fan-out of distinct discovery/staging utilities (whoami/id/uname/hostname/ss/curl) that exceeds its learned process diversity — auto-tuned ABIOC fires on the cadence-and-diversity deviation, anchored to the interactive shell that spawned them. No single utility is a known-bad IOC."
         ttp_ref: "TTP-2026-0096"
         detection_id: "abioc-edr-010-living-off-the-land-discovery-burst-deviating-from-account-baseline"
+      - plane: EDR
+        type: BIOC
+        description: "Deterministic rule on the specific discovery image names (whoami/id/uname/hostname/ss) within 60s — fires on the fan-out count, distinct from the ML ABIOC."
+        ttp_ref: "TTP-2026-0096"
+        detection_id: "bioc-discovery-burst-of-lolbin-utilities-on-automation-account"
 
   - id: step-03
     name: "Correlation stitches the two behavioral deviations into one incident"

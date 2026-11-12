@@ -43,9 +43,9 @@
     }
   },
   "identity": {
-    "name": "Cloud Instance-Credential (IMDS) Theft and Off-Instance Reuse — Cloud Storage & Compute (SIM-CDR-023)",
+    "name": "Cloud Instance-Credential (IMDS) Theft and Off-Instance Reuse \u2014 Cloud Storage & Compute (SIM-CDR-023)",
     "summary": "An EC2 instance-profile credential harvested from IMDS is reused from an off-instance IP. The IMDS read is not in CloudTrail; the only observable footprint is the off-instance use of the instance-profile role session, recorded in cloud_audit_logs. Detections: ABIOC 'Cloud Unusual Instance Metadata Service (IMDS) access' and Analytics 'Suspicious usage of EC2 token'.",
-    "description": "Instance-metadata credential theft is the dominant cloud-native lateral path: an SSRF or on-box foothold reads the IMDS security-credentials path, harvesting a short-lived instance-profile role token, which the attacker then uses from their own infrastructure — the token's provenance (an EC2 instance-profile AssumedRole session whose roleSessionName is the instance id) no longer matches the network origin (an external IP outside the instance's own egress). The IMDS read is served off the link-local 169.254.169.254 endpoint over plain HTTP and produces ZERO CloudTrail records; there is no GetInstanceMetadataCredentials API and no imds.amazonaws.com event source. What XSIAM CAN see, and what this card keys on, is the credential's subsequent USE: an instance-profile AssumedRole session appearing on API calls (GetCallerIdentity, then a follow-on such as ListAttachedRolePolicies) from a source IP that is not the instance's own egress. This card drives the cloud_storage_compute_emitter EAL plugin ('Cloud Storage & Compute' data source, AWS provider) to POST that off-instance instance-profile use into cloud_audit_logs, and its detections ARE two named XSIAM analytics alerts — the behavioral-ML ABIOC 'Cloud Unusual Instance Metadata Service (IMDS) access' (the deviation: an instance role session used from outside its learned egress) and the Analytics alert 'Suspicious usage of EC2 token' (an instance-profile session making a mutating off-instance API call) — stitched by a correlation on the shared instance role session. Detections resolve against the XDM-normalized cloud_audit_logs schema (identity_type, role_session_name, source_ip, read_only), which requires the collector to run the AWS CloudTrail modeling ruleset so the AssumedRole ARN is normalised into those fields.",
+    "description": "Instance-metadata credential theft is the dominant cloud-native lateral path: an SSRF or on-box foothold reads the IMDS security-credentials path, harvesting a short-lived instance-profile role token, which the attacker then uses from their own infrastructure \u2014 the token's provenance (an EC2 instance-profile AssumedRole session whose roleSessionName is the instance id) no longer matches the network origin (an external IP outside the instance's own egress). The IMDS read is served off the link-local 169.254.169.254 endpoint over plain HTTP and produces ZERO CloudTrail records; there is no GetInstanceMetadataCredentials API and no imds.amazonaws.com event source. What XSIAM CAN see, and what this card keys on, is the credential's subsequent USE: an instance-profile AssumedRole session appearing on API calls (GetCallerIdentity, then a follow-on such as ListAttachedRolePolicies) from a source IP that is not the instance's own egress. This card drives the cloud_storage_compute_emitter EAL plugin ('Cloud Storage & Compute' data source, AWS provider) to POST that off-instance instance-profile use into cloud_audit_logs, and its detections ARE two named XSIAM analytics alerts \u2014 the behavioral-ML ABIOC 'Cloud Unusual Instance Metadata Service (IMDS) access' (the deviation: an instance role session used from outside its learned egress) and the Analytics alert 'Suspicious usage of EC2 token' (an instance-profile session making a mutating off-instance API call) \u2014 stitched by a correlation on the shared instance role session. Detections resolve against the XDM-normalized cloud_audit_logs schema (identity_type, role_session_name, source_ip, read_only), which requires the collector to run the AWS CloudTrail modeling ruleset so the AssumedRole ARN is normalised into those fields.",
     "severity": "high",
     "confidence": "high"
   },
@@ -95,7 +95,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "cloud_storage_compute_emitter EAL plugin — event_pattern=imds_token_usage then ec2_token_usage (AWS CloudTrail shape -> cloud_audit_logs).",
+    "framework_reference_id": "cloud_storage_compute_emitter EAL plugin \u2014 event_pattern=imds_token_usage then ec2_token_usage (AWS CloudTrail shape -> cloud_audit_logs).",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -128,12 +128,51 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/cdr-023-imds.yml",
+        "context": "YAML configuration file used by the EAL simulator to define the attack behavior for IMDS theft and reuse."
+      },
+      {
+        "ioc_type": "domain",
+        "value": "COLLECTOR_URL",
+        "context": "Environment variable containing the URL of the operator collector used in the attack payload."
+      },
+      {
+        "ioc_type": "file-sha256",
+        "value": "cortexsim_run_id",
+        "context": "Identifier included in each CloudTrail JSON record emitted to the collector, used for tracking the attack."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Python Process Execution with EAL Simulator Script",
+        "description": "Detection of python3 process execution invoking the EAL simulator CLI with run command and a specific YAML configuration file for IMDS theft simulation.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'python3'\n| filter action_process_command_line contains 'scripts.eal_simulator.cli run'\n| filter action_process_command_line contains '/tmp/cdr-023-imds.yml'\n| filter action_process_command_line contains '--live'",
+        "mitre_technique_ids": [
+          "T1552",
+          "T1078"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Outbound Network Connection to Collector URL",
+        "description": "Detection of outbound network activity to the defined collector URL, indicating data exfiltration via the cloud audit logs streamer.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip in (select distinct action_remote_ip from xdr_data where action_process_command_line contains 'COLLECTOR_URL' and action_process_command_line contains 'POST')\n| filter action_remote_ip != '127.0.0.1'\n| filter action_remote_ip != '0.0.0.0'",
+        "mitre_technique_ids": [
+          "T1552",
+          "T1078"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "Cloud Unusual Instance Metadata Service (IMDS) access",
-        "description": "PANW behavioral-ML ABIOC. Learns the per-instance baseline that an EC2 instance-profile role session (roleSessionName == instance_id) is normally exercised only from that instance's own egress. Fires when that instance role session appears on API calls (GetCallerIdentity, ListAttachedRolePolicies) from a source IP outside the learned egress set within the causality window — the CloudTrail-observable footprint of an IMDS-harvested credential being reused off-instance. The learned anchor is the instance role session (assumed-role ARN + instance_id); the deviation is the source-IP set diverging from the instance's own egress. The IMDS read itself is not in CloudTrail, so the ABIOC keys on the credential's use, not on a phantom fetch event.",
+        "description": "PANW behavioral-ML ABIOC. Learns the per-instance baseline that an EC2 instance-profile role session (roleSessionName == instance_id) is normally exercised only from that instance's own egress. Fires when that instance role session appears on API calls (GetCallerIdentity, ListAttachedRolePolicies) from a source IP outside the learned egress set within the causality window \u2014 the CloudTrail-observable footprint of an IMDS-harvested credential being reused off-instance. The learned anchor is the instance role session (assumed-role ARN + instance_id); the deviation is the source-IP set diverging from the instance's own egress. The IMDS read itself is not in CloudTrail, so the ABIOC keys on the credential's use, not on a phantom fetch event.",
         "logic": "dataset = cloud_audit_logs\n| filter cloud_provider = \"AWS\" and management_event = true\n| filter identity_type = \"AssumedRole\" and role_session_name = instance_id\n| filter event_name in (\"GetCallerIdentity\", \"ListAttachedRolePolicies\")\n| comp count() as api_calls, values(event_name) as api_actions, values(source_ip) as source_ips by role_session_name, instance_id\n| filter api_calls >= 1\n| fields role_session_name, instance_id, source_ips, api_actions, api_calls",
         "severity": "high",
         "mitre_technique_ids": [
@@ -165,7 +204,7 @@
       {
         "name": "SIM-CDR-023 IMDS token theft to remote use stitch",
         "rule_id": "CR-CDR-0023",
-        "logic": "Fires when abioc `Cloud Unusual Instance Metadata Service (IMDS) access` and xql `Suspicious usage of EC2 token` both observe the SAME EC2 instance role session (assumed-role ARN + instance_id) within the run window — stitching the off-instance instance-profile credential use and the off-instance EC2-token write into one incident. The shared entity is the instance-profile role session (role_session_name == instance_id); the pivot is the divergence of the session's source IP from the instance's own egress."
+        "logic": "Fires when abioc `Cloud Unusual Instance Metadata Service (IMDS) access` and xql `Suspicious usage of EC2 token` both observe the SAME EC2 instance role session (assumed-role ARN + instance_id) within the run window \u2014 stitching the off-instance instance-profile credential use and the off-instance EC2-token write into one incident. The shared entity is the instance-profile role session (role_session_name == instance_id); the pivot is the divergence of the session's source IP from the instance's own egress."
       }
     ],
     "analytics_modules": []
@@ -239,34 +278,34 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM — Analytics Alert Reference by data source: Cloud Unusual Instance Metadata Service (IMDS) access (cloud_audit_logs)",
+      "title": "Cortex XSIAM \u2014 Analytics Alert Reference by data source: Cloud Unusual Instance Metadata Service (IMDS) access (cloud_audit_logs)",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source/Cloud-Unusual-Instance-Metadata-Service-IMDS-access",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
       "primary": true
     },
     {
-      "title": "Cortex XSIAM — Analytics Alert Reference by data source: Suspicious usage of EC2 token (cloud_audit_logs)",
+      "title": "Cortex XSIAM \u2014 Analytics Alert Reference by data source: Suspicious usage of EC2 token (cloud_audit_logs)",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source/Suspicious-usage-of-EC2-token",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS"
     },
     {
-      "title": "MITRE ATT&CK — T1552.005 Unsecured Credentials: Cloud Instance Metadata API",
+      "title": "MITRE ATT&CK \u2014 T1552.005 Unsecured Credentials: Cloud Instance Metadata API",
       "url": "https://attack.mitre.org/techniques/T1552/005/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK — T1078.004 Valid Accounts: Cloud Accounts",
+      "title": "MITRE ATT&CK \u2014 T1078.004 Valid Accounts: Cloud Accounts",
       "url": "https://attack.mitre.org/techniques/T1078/004/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Unit 42 — Cloud threat research (EC2 instance-credential theft and off-instance reuse)",
+      "title": "Unit 42 \u2014 Cloud threat research (EC2 instance-credential theft and off-instance reuse)",
       "url": "https://unit42.paloaltonetworks.com/category/cloud/",
-      "publisher": "Unit 42 — Palo Alto Networks",
+      "publisher": "Unit 42 \u2014 Palo Alto Networks",
       "publisher_id": "SRC-UNIT42"
     }
   ]

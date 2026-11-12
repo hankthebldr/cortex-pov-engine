@@ -49,9 +49,9 @@
     }
   },
   "identity": {
-    "name": "Identity to Endpoint to Network Hands-on-Keyboard Campaign — Cross-Plane XSIAM Stitch (T1078 / T1059 / T1071)",
+    "name": "Identity to Endpoint to Network Hands-on-Keyboard Campaign \u2014 Cross-Plane XSIAM Stitch (T1078 / T1059 / T1071)",
     "summary": "A single social-engineered account takeover fans out across three planes: an anomalous IdP sign-in (ITDR), hands-on-keyboard living-off-the-land activity on the endpoint (EDR), then C2 egress (NDR). No stage is a known-bad IOC on its own; XSIAM fuses the two behavioral ABIOCs and the egress signal into ONE incident anchored to the shared identity-host-session chain.",
-    "description": "This scenario proves the flagship Cortex correlation narrative on the ANALYTICS plane: a staged intrusion that no single detection plane would confidently escalate, stitched into one incident by XSIAM's causality engine. It models the signature identity-driven tradecraft attributed to Scattered Spider / Muddled Libra (UNC3944) and Octo Tempest — social-engineered credential + MFA-fatigue takeover of a privileged/service account, followed by interactive hands-on-keyboard work on a reachable host, then attacker-controlled egress. Stage one is an ITDR sign-in anomaly: the same account authenticates from an improbable geography while a burst of MFA challenges is pushed at it (MFA request generation / fatigue). Stage two is an EDR behavioral deviation: the account, whose learned Cortex profile is narrow non-interactive automation, suddenly parents an interactive shell and runs a rapid living-off-the-land discovery burst (whoami, id, uname, hostname, ss). Stage three is an NDR signal: repetitive low-and-slow outbound sessions to an attacker-staging destination. Two auto-tuned ABIOCs cover the identity and endpoint behavioral shapes; a validation XQL confirms the C2 egress burst on the NGFW; a second validation XQL asserts the cross-plane convergence; and a correlation rule (CR-MP-0013) joins all three planes on the shared identity/host/session entity within a 300-second window into a single hands-on-keyboard-campaign incident. The point is F2 cross-plane coverage: every individual binary and session is legitimate in isolation — the escalation comes from the behavioral deviations plus the stitched causality chain (anomalous auth -> interactive shell + discovery burst -> C2 egress), not any static signature. The DC presents the single stitched incident as proof that Cortex correlates identity, endpoint, and network telemetry into one causality graph where point tools would raise three disconnected, individually-dismissable low-severity alerts.",
+    "description": "This scenario proves the flagship Cortex correlation narrative on the ANALYTICS plane: a staged intrusion that no single detection plane would confidently escalate, stitched into one incident by XSIAM's causality engine. It models the signature identity-driven tradecraft attributed to Scattered Spider / Muddled Libra (UNC3944) and Octo Tempest \u2014 social-engineered credential + MFA-fatigue takeover of a privileged/service account, followed by interactive hands-on-keyboard work on a reachable host, then attacker-controlled egress. Stage one is an ITDR sign-in anomaly: the same account authenticates from an improbable geography while a burst of MFA challenges is pushed at it (MFA request generation / fatigue). Stage two is an EDR behavioral deviation: the account, whose learned Cortex profile is narrow non-interactive automation, suddenly parents an interactive shell and runs a rapid living-off-the-land discovery burst (whoami, id, uname, hostname, ss). Stage three is an NDR signal: repetitive low-and-slow outbound sessions to an attacker-staging destination. Two auto-tuned ABIOCs cover the identity and endpoint behavioral shapes; a validation XQL confirms the C2 egress burst on the NGFW; a second validation XQL asserts the cross-plane convergence; and a correlation rule (CR-MP-0013) joins all three planes on the shared identity/host/session entity within a 300-second window into a single hands-on-keyboard-campaign incident. The point is F2 cross-plane coverage: every individual binary and session is legitimate in isolation \u2014 the escalation comes from the behavioral deviations plus the stitched causality chain (anomalous auth -> interactive shell + discovery burst -> C2 egress), not any static signature. The DC presents the single stitched incident as proof that Cortex correlates identity, endpoint, and network telemetry into one causality graph where point tools would raise three disconnected, individually-dismissable low-severity alerts.",
     "severity": "high",
     "confidence": "high"
   },
@@ -132,7 +132,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-MP-008 — Identity-to-endpoint-to-network hands-on-keyboard campaign stitched into one XSIAM incident (F2 cross-plane correlation)",
+    "framework_reference_id": "SIM-MP-008 \u2014 Identity-to-endpoint-to-network hands-on-keyboard campaign stitched into one XSIAM incident (F2 cross-plane correlation)",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -180,8 +180,48 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "127.0.0.1",
+        "context": "C2 staging host used in repetitive beaconing payload"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "/bin/sh",
+        "context": "Used in hands-on-keyboard discovery burst"
+      },
+      {
+        "ioc_type": "filename",
+        "value": "/bin/bash",
+        "context": "Used in hands-on-keyboard discovery burst"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Interactive Shell with Discovery Burst",
+        "description": "Detection of an interactive shell process followed by execution of discovery utilities under a non-interactive account baseline.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"svc-backup\"\n| filter action_process_image_name in (\"/bin/sh\", \"/bin/bash\")\n| filter action_process_command_line contains \"whoami\" or action_process_command_line contains \"id\" or action_process_command_line contains \"uname\" or action_process_command_line contains \"hostname\" or action_process_command_line contains \"ss -tunlp\"\n| comp by actor_effective_username, agent_hostname, action_process_image_name\n| filter count() >= 5",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1621"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Repetitive C2 Egress from Endpoint",
+        "description": "Detection of repetitive outbound network connections to a known staging host from a single endpoint.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK\n| filter action_remote_ip = \"127.0.0.1\"\n| filter action_remote_port = 80\n| filter actor_effective_username = \"svc-backup\"\n| comp by agent_hostname, action_remote_ip\n| filter count() >= 5",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1059",
+          "T1071"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "MP-008 Identity Sign-In Anomaly on a Privileged Account",
@@ -228,12 +268,12 @@
       {
         "name": "Identity-to-Endpoint-to-Network Hands-on-Keyboard Campaign Stitch",
         "rule_id": "CR-MP-0013",
-        "logic": "ABIOC(MP-008 Identity Sign-In Anomaly on a Privileged Account) AND ABIOC(MP-008 Hands-on-Keyboard Endpoint Behavioral Deviation) AND XQL(MP-008 C2 Egress Session Burst From the Compromised Host) joined on the shared identity-host-session entity chain within a 300-second correlation window — fuses the ITDR sign-in anomaly, the EDR hands-on-keyboard behavioral deviation, and the NDR C2 egress into ONE incident_id spanning >= 3 planes (ITDR + EDR + NDR), producing the anomalous-auth -> interactive-shell-plus-discovery -> C2-egress causality chain."
+        "logic": "ABIOC(MP-008 Identity Sign-In Anomaly on a Privileged Account) AND ABIOC(MP-008 Hands-on-Keyboard Endpoint Behavioral Deviation) AND XQL(MP-008 C2 Egress Session Burst From the Compromised Host) joined on the shared identity-host-session entity chain within a 300-second correlation window \u2014 fuses the ITDR sign-in anomaly, the EDR hands-on-keyboard behavioral deviation, and the NDR C2 egress into ONE incident_id spanning >= 3 planes (ITDR + EDR + NDR), producing the anomalous-auth -> interactive-shell-plus-discovery -> C2-egress causality chain."
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-identity sign-in geography and per-identity endpoint process lineage",
-      "Cortex XSIAM Correlation Engine — cross-plane causality stitching over identity, endpoint, and network telemetry"
+      "Cortex XSIAM Analytics \u2014 auto-tuned behavioral profiling of per-identity sign-in geography and per-identity endpoint process lineage",
+      "Cortex XSIAM Correlation Engine \u2014 cross-plane causality stitching over identity, endpoint, and network telemetry"
     ]
   },
   "panw_mapping": {
@@ -305,38 +345,38 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM — Correlation Rules and Analytics BIOC (ABIOC) cross-plane detection",
+      "title": "Cortex XSIAM \u2014 Correlation Rules and Analytics BIOC (ABIOC) cross-plane detection",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1078 — Valid Accounts",
+      "title": "MITRE ATT&CK T1078 \u2014 Valid Accounts",
       "url": "https://attack.mitre.org/techniques/T1078/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1621 — Multi-Factor Authentication Request Generation",
+      "title": "MITRE ATT&CK T1621 \u2014 Multi-Factor Authentication Request Generation",
       "url": "https://attack.mitre.org/techniques/T1621/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Unit 42 — Muddled Libra (Scattered Spider) threat assessment",
+      "title": "Unit 42 \u2014 Muddled Libra (Scattered Spider) threat assessment",
       "url": "https://unit42.paloaltonetworks.com/muddled-libra/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42"
     },
     {
-      "title": "Microsoft Threat Intelligence — Octo Tempest: the linchpin of hybrid identity attacks",
+      "title": "Microsoft Threat Intelligence \u2014 Octo Tempest: the linchpin of hybrid identity attacks",
       "url": "https://www.microsoft.com/en-us/security/blog/2023/10/25/octo-tempest-crosses-boundaries-to-facilitate-extortion-encryption-and-destruction/",
       "publisher": "Microsoft Threat Intelligence",
       "publisher_id": "SRC-MSTIC"
     },
     {
-      "title": "CrowdStrike — Scattered Spider identity-driven hands-on-keyboard intrusion tradecraft",
+      "title": "CrowdStrike \u2014 Scattered Spider identity-driven hands-on-keyboard intrusion tradecraft",
       "url": "https://www.crowdstrike.com/adversaries/scattered-spider/",
       "publisher": "CrowdStrike",
       "publisher_id": "SRC-CROWDSTRIKE"

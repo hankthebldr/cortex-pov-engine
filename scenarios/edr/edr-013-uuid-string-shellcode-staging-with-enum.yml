@@ -122,6 +122,11 @@ steps:
         description: "Hunt query surfaces the unsigned, unbacked module load (no on-disk image) by the signed host process in xdr_data."
         ttp_ref: "TTP-2026-0109"
         detection_id: "xql-edr-013-fileless-unbacked-unsigned-module-loaded-by-a-signed-host-process"
+      - plane: EDR
+        type: BIOC
+        description: "Process-level BIOC on action_file_path catches the three SAFE-MODE marker files written under %TEMP%\\cortexsim-edr-013 — fires on the file observables the abiocs do not query."
+        ttp_ref: "TTP-2026-0109"
+        detection_id: "bioc-edr-013-safe-mode-marker-files-written-under-temp-by-a-child-of-a-known-host"
 
   - id: step-03
     name: "Correlation stitches the side-load and fileless-execution deviations into one incident"

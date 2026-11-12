@@ -49,9 +49,9 @@
     }
   },
   "identity": {
-    "name": "ITDR — Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly → SOAR Suspend + Session Revoke)",
-    "summary": "A Muddled Libra takeover trips a two-signal correlation — impossible-travel sign-in then anomalous privilege grant / MFA reset on one identity — firing an identity-containment playbook. It emits the Okta remediation events (user.lifecycle.suspend + user.session.clear); the terminal correlation asserts the compromise->remediation chain is one incident within SLA. KPI: Remediation Success Rate (F5).",
-    "description": "This is an F5 (Automation & Workflow) validation of Cortex's closed-loop identity containment: not 'did we detect it?' but 'did the SOAR containment playbook actually fire, disable the right account, revoke its sessions, and close the loop within the response SLA?'. It models the identity tradecraft attributed to Muddled Libra / Scattered Spider (UNC3944): the operator obtains valid cloud credentials (help-desk social engineering, SIM-swap, MFA fatigue) and authenticates to the IdP (Okta) from infrastructure absent from the victim's history, then escalates by granting the compromised identity an anomalous privileged role and resetting an MFA factor to persist. Cortex ITDR risk-scores those two off-baseline signals on the same identity and a correlation raises a single account-takeover incident, which triggers an XSOAR/XSIAM containment playbook. The scenario's emphasis is the RESPONSE proof: the playbook — acting as an Okta API service principal — emits user.lifecycle.suspend (account disabled) and user.session.clear (all sessions and tokens revoked, forcing re-auth), and those remediation-confirmation audit events land in okta_sso. Two ABIOCs cover the compromise deviations (impossible travel; anomalous privilege grant + MFA reset); a validation XQL confirms the remediation events fired; a second XQL measures the SLA field (remediation_ts − alert_ts in seconds); and — the weighted centre of the card — two correlation rules stitch the chain: CR-ITDR-0016 fuses the two compromise ABIOCs on the same target identity into the account-takeover incident that triggers the playbook, and CR-ITDR-0017 (the terminal F5 assertion) fuses that incident with the suspend + session.clear remediation events on the same identity and asserts the auto-disable fired within the SLA window. The DC presents CR-ITDR-0017 as evidence that Cortex's closed-loop response is not merely an alert but a measurable, SLA-bound containment action — the Remediation Success Rate KPI.",
+    "name": "ITDR \u2014 Closed-Loop Auto-Disable of a Compromised Account (Impossible-Travel + Privilege Anomaly \u2192 SOAR Suspend + Session Revoke)",
+    "summary": "A Muddled Libra takeover trips a two-signal correlation \u2014 impossible-travel sign-in then anomalous privilege grant / MFA reset on one identity \u2014 firing an identity-containment playbook. It emits the Okta remediation events (user.lifecycle.suspend + user.session.clear); the terminal correlation asserts the compromise->remediation chain is one incident within SLA. KPI: Remediation Success Rate (F5).",
+    "description": "This is an F5 (Automation & Workflow) validation of Cortex's closed-loop identity containment: not 'did we detect it?' but 'did the SOAR containment playbook actually fire, disable the right account, revoke its sessions, and close the loop within the response SLA?'. It models the identity tradecraft attributed to Muddled Libra / Scattered Spider (UNC3944): the operator obtains valid cloud credentials (help-desk social engineering, SIM-swap, MFA fatigue) and authenticates to the IdP (Okta) from infrastructure absent from the victim's history, then escalates by granting the compromised identity an anomalous privileged role and resetting an MFA factor to persist. Cortex ITDR risk-scores those two off-baseline signals on the same identity and a correlation raises a single account-takeover incident, which triggers an XSOAR/XSIAM containment playbook. The scenario's emphasis is the RESPONSE proof: the playbook \u2014 acting as an Okta API service principal \u2014 emits user.lifecycle.suspend (account disabled) and user.session.clear (all sessions and tokens revoked, forcing re-auth), and those remediation-confirmation audit events land in okta_sso. Two ABIOCs cover the compromise deviations (impossible travel; anomalous privilege grant + MFA reset); a validation XQL confirms the remediation events fired; a second XQL measures the SLA field (remediation_ts \u2212 alert_ts in seconds); and \u2014 the weighted centre of the card \u2014 two correlation rules stitch the chain: CR-ITDR-0016 fuses the two compromise ABIOCs on the same target identity into the account-takeover incident that triggers the playbook, and CR-ITDR-0017 (the terminal F5 assertion) fuses that incident with the suspend + session.clear remediation events on the same identity and asserts the auto-disable fired within the SLA window. The DC presents CR-ITDR-0017 as evidence that Cortex's closed-loop response is not merely an alert but a measurable, SLA-bound containment action \u2014 the Remediation Success Rate KPI.",
     "severity": "high",
     "confidence": "high"
   },
@@ -123,7 +123,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-ITDR-016 — Closed-loop auto-disable of a compromised Okta identity (impossible-travel + privilege anomaly → playbook suspend + session revoke) for Cortex F5 response/SLA validation",
+    "framework_reference_id": "SIM-ITDR-016 \u2014 Closed-loop auto-disable of a compromised Okta identity (impossible-travel + privilege anomaly \u2192 playbook suspend + session revoke) for Cortex F5 response/SLA validation",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -177,16 +177,55 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "echo '[CortexSim] SIM-ITDR-016 cleanup complete — synthetic events only; re-enable the canary identity in the tenant if the playbook suspended it.'"
+      "code": "echo '[CortexSim] SIM-ITDR-016 cleanup complete \u2014 synthetic events only; re-enable the canary identity in the tenant if the playbook suspended it.'"
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "powershell.exe",
+        "context": "Used in the payload to execute commands that simulate compromised account behavior."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "cmd.exe",
+        "context": "Used in the payload to execute commands that simulate compromised account behavior."
+      },
+      {
+        "ioc_type": "domain",
+        "value": "okta.com",
+        "context": "Used in the payload to emit synthetic audit events to an authorized in-customer collector."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Process Execution from Suspicious Temp Directory",
+        "description": "Detection of process execution from a temporary directory, often used by malicious scripts to avoid detection during payload delivery.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_path contains \"\\\\temp\\\\\" or actor_process_image_path contains \"\\\\tmp\\\\\"\n| filter actor_process_image_name in (\"powershell.exe\", \"cmd.exe\", \"wscript.exe\", \"cscript.exe\")",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1098"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Execution of Script with Suspicious Arguments",
+        "description": "Detection of script execution with arguments that indicate privilege escalation or account manipulation, such as those used in the payload.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"powershell.exe\", \"cmd.exe\")\n| filter actor_process_command_line contains \"set -euo pipefail\" or actor_process_command_line contains \"user.lifecycle.suspend\" or actor_process_command_line contains \"user.session.clear\"",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1098"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "ITDR-016 Impossible-Travel Sign-In Deviation on Target Identity",
-        "description": "The compromised identity succeeds at two sign-ins from geographically distant locations / distinct ASNs inside a travel-impossibility window, deviating from the single-region, stable-ASN sign-in profile Cortex learned for the account. The credentials are valid and each session in isolation is benign; the ABIOC fires on the geo/ASN-velocity deviation from the learned baseline, anchored to the session pair from one stolen-credential intrusion — the first of the two signals that trips the account-takeover correlation.",
+        "description": "The compromised identity succeeds at two sign-ins from geographically distant locations / distinct ASNs inside a travel-impossibility window, deviating from the single-region, stable-ASN sign-in profile Cortex learned for the account. The credentials are valid and each session in isolation is benign; the ABIOC fires on the geo/ASN-velocity deviation from the learned baseline, anchored to the session pair from one stolen-credential intrusion \u2014 the first of the two signals that trips the account-takeover correlation.",
         "logic": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter eventType = \"user.session.start\" and auth_outcome = \"SUCCESS\"\n| comp count_distinct(src_geo_country) as geo_count, count_distinct(src_asn) as asn_count, values(src_geo_city) as cities, earliest(_time) as first_seen, latest(_time) as last_seen by actor_effective_username\n| alter window_minutes = divide(subtract(last_seen, first_seen), 60000000)\n| filter geo_count >= 2 and asn_count >= 2 and window_minutes <= 300\n| sort desc geo_count\n| fields actor_effective_username, geo_count, asn_count, cities, window_minutes, first_seen, last_seen",
         "severity": "high",
         "mitre_technique_ids": [
@@ -197,7 +236,7 @@
       },
       {
         "name": "ITDR-016 Anomalous Privilege Grant and MFA Reset on the Compromised Identity",
-        "description": "The same identity that just tripped the impossible-travel deviation is granted an anomalous privileged role (admin/privileged-role assignment) and/or has an MFA factor reset — the escalation-and-persistence move Muddled Libra uses after takeover. Every action uses a legitimate Okta administrative API; the ABIOC fires on the deviation from the identity's learned governance baseline, anchored to the impossible-travel sign-in that preceded it, and supplies the second signal the account-takeover correlation fuses.",
+        "description": "The same identity that just tripped the impossible-travel deviation is granted an anomalous privileged role (admin/privileged-role assignment) and/or has an MFA factor reset \u2014 the escalation-and-persistence move Muddled Libra uses after takeover. Every action uses a legitimate Okta administrative API; the ABIOC fires on the deviation from the identity's learned governance baseline, anchored to the impossible-travel sign-in that preceded it, and supplies the second signal the account-takeover correlation fuses.",
         "logic": "dataset = okta_sso\n| filter _time > to_timestamp(current_time() - 1800)\n| filter eventType in (\"user.account.privilege.grant\", \"user.mfa.factor.reset\") and auth_outcome = \"SUCCESS\"\n| comp count() as privilege_events, count_distinct(eventType) as distinct_actions, values(eventType) as actions, values(actor_effective_username) as actor by actor_effective_username\n| filter privilege_events >= 1\n| sort desc privilege_events\n| fields actor_effective_username, privilege_events, distinct_actions, actions, actor",
         "severity": "high",
         "mitre_technique_ids": [
@@ -233,19 +272,19 @@
     ],
     "correlation_rules": [
       {
-        "name": "ITDR-016 Account-Takeover Compromise Fusion — Auto-Disable Playbook Trigger",
+        "name": "ITDR-016 Account-Takeover Compromise Fusion \u2014 Auto-Disable Playbook Trigger",
         "rule_id": "CR-ITDR-0016",
         "logic": "ABIOC(ITDR-016 Impossible-Travel Sign-In Deviation on Target Identity) AND ABIOC(ITDR-016 Anomalous Privilege Grant and MFA Reset on the Compromised Identity) on the same actor_effective_username within a 30-minute window -> raises a single account-takeover incident. This incident is the trigger condition bound to the XSOAR/XSIAM identity-containment playbook (auto-disable + session revoke)."
       },
       {
-        "name": "ITDR-016 Closed-Loop Auto-Disable SLA Validation — F5 Response KPI",
+        "name": "ITDR-016 Closed-Loop Auto-Disable SLA Validation \u2014 F5 Response KPI",
         "rule_id": "CR-ITDR-0017",
-        "logic": "CORRELATION(ITDR-016 Account-Takeover Compromise Fusion — Auto-Disable Playbook Trigger) AND okta_sso eventType = \"user.lifecycle.suspend\" AND okta_sso eventType = \"user.session.clear\", all resolving to the same actor_effective_username -> confirms the compromise->remediation chain is ONE incident. The rule asserts the auto-disable is (a) real — both suspend and session.clear fired; (b) targeted — the remediation actor_effective_username matches the compromised identity, not a bystander; and (c) timely — remediation_ts minus the correlation alert_ts is within the response SLA (default 300s). This terminal assertion is the Remediation Success Rate / SLA-compliance KPI: proof the closed loop closed."
+        "logic": "CORRELATION(ITDR-016 Account-Takeover Compromise Fusion \u2014 Auto-Disable Playbook Trigger) AND okta_sso eventType = \"user.lifecycle.suspend\" AND okta_sso eventType = \"user.session.clear\", all resolving to the same actor_effective_username -> confirms the compromise->remediation chain is ONE incident. The rule asserts the auto-disable is (a) real \u2014 both suspend and session.clear fired; (b) targeted \u2014 the remediation actor_effective_username matches the compromised identity, not a bystander; and (c) timely \u2014 remediation_ts minus the correlation alert_ts is within the response SLA (default 300s). This terminal assertion is the Remediation Success Rate / SLA-compliance KPI: proof the closed loop closed."
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-identity sign-in geography/ASN and administrative governance baseline",
-      "Cortex XSOAR/XSIAM Automation — identity-containment playbook (Okta suspend user + clear sessions) with SLA-bound closed-loop response"
+      "Cortex XSIAM Analytics \u2014 auto-tuned behavioral profiling of per-identity sign-in geography/ASN and administrative governance baseline",
+      "Cortex XSOAR/XSIAM Automation \u2014 identity-containment playbook (Okta suspend user + clear sessions) with SLA-bound closed-loop response"
     ]
   },
   "panw_mapping": {
@@ -277,8 +316,8 @@
     "threat_scenarios": [
       {
         "threat_scenario_id": "TS-ITDR-016",
-        "name": "Closed-Loop Auto-Disable of a Compromised Account — Response/SLA Validation",
-        "description": "Cortex ITDR correlates a two-signal identity compromise (impossible travel + anomalous privilege grant / MFA reset) into a single account-takeover incident that triggers an XSOAR/XSIAM containment playbook; the playbook suspends the account and revokes all sessions, and the terminal correlation validates the closed loop fired against the right identity within the response SLA. The DC measures Remediation Success Rate / SLA compliance, proving the auto-disable is real, targeted and timely — not merely an alert.",
+        "name": "Closed-Loop Auto-Disable of a Compromised Account \u2014 Response/SLA Validation",
+        "description": "Cortex ITDR correlates a two-signal identity compromise (impossible travel + anomalous privilege grant / MFA reset) into a single account-takeover incident that triggers an XSOAR/XSIAM containment playbook; the playbook suspends the account and revokes all sessions, and the terminal correlation validates the closed loop fired against the right identity within the response SLA. The DC measures Remediation Success Rate / SLA compliance, proving the auto-disable is real, targeted and timely \u2014 not merely an alert.",
         "threat_steps": [
           {
             "threat_step_id": "TS-ITDR-016A",
@@ -323,11 +362,11 @@
               "The remediation-confirmation events are present for the target identity."
             ],
             "steps": [
-              "Compute the SLA field remediation_ts − alert_ts for the target identity.",
+              "Compute the SLA field remediation_ts \u2212 alert_ts for the target identity.",
               "Observe CR-ITDR-0017 fuse the compromise incident with the suspend + session.clear events into one incident and assert the SLA is met."
             ],
             "success_criteria": [
-              "XQL `ITDR-016 Closed-Loop Remediation SLA Measurement` returns sla_seconds within the SLA budget (≤300s).",
+              "XQL `ITDR-016 Closed-Loop Remediation SLA Measurement` returns sla_seconds within the SLA budget (\u2264300s).",
               "Correlation CR-ITDR-0017 raises one closed-loop incident asserting the auto-disable was real, targeted and within SLA."
             ],
             "expected_score_weight": 0.2
@@ -339,51 +378,51 @@
   "remediation_guidance": {
     "preventive_controls": [
       "Enforce phishing-resistant MFA (FIDO2/passkeys) and device-bound conditional access so a stolen password alone cannot complete an Okta sign-in the way Muddled Libra requires.",
-      "Harden the help-desk identity-verification and MFA-reset workflow — the social-engineering entry point Scattered Spider uses to seed valid credentials and reset factors.",
+      "Harden the help-desk identity-verification and MFA-reset workflow \u2014 the social-engineering entry point Scattered Spider uses to seed valid credentials and reset factors.",
       "Constrain who/what can assign privileged roles and require step-up approval for privileged-role grants and MFA-factor resets so the escalation signal is blocked, not merely detected."
     ],
     "detection_engineering": [
       "Risk-score per-identity sign-in geography/ASN and administrative-governance deviations with auto-tuned ABIOCs rather than static IP or geo-fence rules, and stitch the impossible-travel and privilege-anomaly signals into one account-takeover incident.",
       "Bind the account-takeover correlation to an automated identity-containment playbook (Okta suspend user + clear user sessions) and treat the remediation-confirmation events (user.lifecycle.suspend, user.session.clear) as first-class validation signal.",
-      "Instrument the response with an SLA measurement (remediation_ts − alert_ts) and alert on closed-loop SLA breaches so Remediation Success Rate is a tracked, evidence-backed KPI, not an assumption."
+      "Instrument the response with an SLA measurement (remediation_ts \u2212 alert_ts) and alert on closed-loop SLA breaches so Remediation Success Rate is a tracked, evidence-backed KPI, not an assumption."
     ],
     "response_playbook": "XSOAR-PB-ITDR-ClosedLoopAutoDisable-SuspendAndRevoke-v1"
   },
   "references": [
     {
-      "title": "Unit 42 — Threat Group Assessment: Muddled Libra (help-desk social engineering, SIM-swap/MFA-fatigue for valid Okta credentials, impossible-travel IdP logins, MFA-factor reset and privileged-role abuse) — the source of the identity tradecraft this card models",
+      "title": "Unit 42 \u2014 Threat Group Assessment: Muddled Libra (help-desk social engineering, SIM-swap/MFA-fatigue for valid Okta credentials, impossible-travel IdP logins, MFA-factor reset and privileged-role abuse) \u2014 the source of the identity tradecraft this card models",
       "url": "https://unit42.paloaltonetworks.com/muddled-libra/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "Unit 42 — Inside the Modern SOC: The 72-Minute Race (scoped: Muddled Libra / Scattered Spider actor attribution and initial-access-to-exfiltration intrusion-speed urgency only; does NOT describe Okta, impossible travel, or an automated closed-loop auto-disable/session-revoke SLA — those are grounded on SRC-PANW-TECHDOCS and ITDR-plane convention)",
+      "title": "Unit 42 \u2014 Inside the Modern SOC: The 72-Minute Race (scoped: Muddled Libra / Scattered Spider actor attribution and initial-access-to-exfiltration intrusion-speed urgency only; does NOT describe Okta, impossible travel, or an automated closed-loop auto-disable/session-revoke SLA \u2014 those are grounded on SRC-PANW-TECHDOCS and ITDR-plane convention)",
       "url": "https://unit42.paloaltonetworks.com/soc-72-minute-race/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": false
     },
     {
-      "title": "MITRE ATT&CK T1078.004 — Valid Accounts: Cloud Accounts",
+      "title": "MITRE ATT&CK T1078.004 \u2014 Valid Accounts: Cloud Accounts",
       "url": "https://attack.mitre.org/techniques/T1078/004/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1098 — Account Manipulation",
+      "title": "MITRE ATT&CK T1098 \u2014 Account Manipulation",
       "url": "https://attack.mitre.org/techniques/T1098/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1556.006 — Modify Authentication Process: Multi-Factor Authentication",
+      "title": "MITRE ATT&CK T1556.006 \u2014 Modify Authentication Process: Multi-Factor Authentication",
       "url": "https://attack.mitre.org/techniques/T1556/006/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Cortex XSIAM — Identity Threat Detection (ITDR) and XSOAR closed-loop response automation",
+      "title": "Cortex XSIAM \u2014 Identity Threat Detection (ITDR) and XSOAR closed-loop response automation",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS"

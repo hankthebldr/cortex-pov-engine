@@ -55,9 +55,9 @@
     }
   },
   "identity": {
-    "name": "Muddled Libra Rogue-VM Alert Storm — AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537)",
-    "summary": "Seven medium/low behavioral (ABIOC) alerts from one Muddled Libra rogue-VM intrusion — vSphere VM create, NTDS.dit-from-VMDK, ADRecon, gooner local admin, forged Kerberos tickets, Chisel 443 tunnel, and S3/Snowflake exfil — all within ~15h. The card validates whether XSIAM AI-triage collapses them into ONE correctly-summarized critical incident instead of an alert storm of seven.",
-    "description": "Muddled Libra (Scattered Spider / UNC3944 / Octo Tempest) runs low-malware, hands-on-keyboard intrusions and — per the Unit 42 operations playbook — repeatedly stands up a rogue virtual machine inside the target's own vSphere estate to work from a host that endpoint tooling does not watch. From that rogue VM the operator powers down virtualized domain controllers, mounts their VMDKs, and copies NTDS.dit + the SYSTEM hive off-disk (decrypted into 'result' and 'result.kerb'), enumerates AD with ADRecon (ComputerSPNs.csv), stands up a 'gooner' local-admin account, forges Kerberos tickets to move laterally over the SSH tunnel / RDP / PsExec, keeps a persistent SSH-over-HTTPS Chisel tunnel on 443 alive for ~15 hours, and attempts bulk exfiltration from Snowflake and to attacker S3 buckets. Each of those seven behaviors, scored in isolation by Cortex analytics, surfaces as a MEDIUM or LOW ABIOC — none is a single known-bad that trips a critical rule. The detection question this card exists to answer is NOT 'does any one signal fire' (they all do) but the F7 AI-triage question: does the XSIAM AI SOC analyst GROUP the seven correlated behavioral alerts into exactly ONE critical incident, on the same rogue host / attacker actor inside the ~15h window, and SUMMARIZE it correctly — naming the domain-controller compromise (NTDS.dit copied from the mounted DC VMDK) and the exfiltration channel (Chisel 443 tunnel + S3/Snowflake). The ground truth is one incident, not seven; a SOC drowning in an un-grouped alert storm is the failure mode. Seven ABIOCs model the seven signals, a correlation rule (CR-MP-0013) fuses them, a validation XQL surfaces the grouped evidence, and the terminal scenario step asserts the single stitched incident. This is the 'AI collapses the alert storm to one correctly-summarized critical incident' proof — the analytics/correlation depth a signature-per-alert SOC cannot reach.",
+    "name": "Muddled Libra Rogue-VM Alert Storm \u2014 AI SOC Analyst Seven-Signal Incident-Grouping Validation (T1003.003 / T1550.003 / T1537)",
+    "summary": "Seven medium/low behavioral (ABIOC) alerts from one Muddled Libra rogue-VM intrusion \u2014 vSphere VM create, NTDS.dit-from-VMDK, ADRecon, gooner local admin, forged Kerberos tickets, Chisel 443 tunnel, and S3/Snowflake exfil \u2014 all within ~15h. The card validates whether XSIAM AI-triage collapses them into ONE correctly-summarized critical incident instead of an alert storm of seven.",
+    "description": "Muddled Libra (Scattered Spider / UNC3944 / Octo Tempest) runs low-malware, hands-on-keyboard intrusions and \u2014 per the Unit 42 operations playbook \u2014 repeatedly stands up a rogue virtual machine inside the target's own vSphere estate to work from a host that endpoint tooling does not watch. From that rogue VM the operator powers down virtualized domain controllers, mounts their VMDKs, and copies NTDS.dit + the SYSTEM hive off-disk (decrypted into 'result' and 'result.kerb'), enumerates AD with ADRecon (ComputerSPNs.csv), stands up a 'gooner' local-admin account, forges Kerberos tickets to move laterally over the SSH tunnel / RDP / PsExec, keeps a persistent SSH-over-HTTPS Chisel tunnel on 443 alive for ~15 hours, and attempts bulk exfiltration from Snowflake and to attacker S3 buckets. Each of those seven behaviors, scored in isolation by Cortex analytics, surfaces as a MEDIUM or LOW ABIOC \u2014 none is a single known-bad that trips a critical rule. The detection question this card exists to answer is NOT 'does any one signal fire' (they all do) but the F7 AI-triage question: does the XSIAM AI SOC analyst GROUP the seven correlated behavioral alerts into exactly ONE critical incident, on the same rogue host / attacker actor inside the ~15h window, and SUMMARIZE it correctly \u2014 naming the domain-controller compromise (NTDS.dit copied from the mounted DC VMDK) and the exfiltration channel (Chisel 443 tunnel + S3/Snowflake). The ground truth is one incident, not seven; a SOC drowning in an un-grouped alert storm is the failure mode. Seven ABIOCs model the seven signals, a correlation rule (CR-MP-0013) fuses them, a validation XQL surfaces the grouped evidence, and the terminal scenario step asserts the single stitched incident. This is the 'AI collapses the alert storm to one correctly-summarized critical incident' proof \u2014 the analytics/correlation depth a signature-per-alert SOC cannot reach.",
     "severity": "critical",
     "confidence": "high"
   },
@@ -210,7 +210,7 @@
   "execution": {
     "target_platform": "cross-platform",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-MP-013 — Muddled Libra rogue-VM seven-signal AI-triage incident-grouping validation",
+    "framework_reference_id": "SIM-MP-013 \u2014 Muddled Libra rogue-VM seven-signal AI-triage incident-grouping validation",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -259,7 +259,7 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "rm -rf /tmp/cortexsim-mp013; echo '[CortexSim] SIM-MP-013 cleanup complete — SAFE-MODE markers removed.'"
+      "code": "rm -rf /tmp/cortexsim-mp013; echo '[CortexSim] SIM-MP-013 cleanup complete \u2014 SAFE-MODE markers removed.'"
     }
   },
   "detections": {
@@ -267,45 +267,68 @@
       {
         "ioc_type": "file-sha256",
         "value": "996e68f2fe1c8bb091f34e9bf39fd34d95c3e21508def1f54098a1874bfb825e",
-        "context": "chisel.exe — SSH-over-HTTPS tunneling tool delivered inside goon.zip from an attacker AWS S3 bucket; sustains the 443 C2 tunnel.",
+        "context": "chisel.exe \u2014 SSH-over-HTTPS tunneling tool delivered inside goon.zip from an attacker AWS S3 bucket; sustains the 443 C2 tunnel.",
         "reputation_required": "malicious"
       },
       {
         "ioc_type": "file-sha256",
         "value": "088f2aced9ed60c2ce853b065f57691403459e1e0d167891d6849e1b58228173",
-        "context": "goon.zip — attacker tool archive (contains Chisel + tooling) staged on an AWS S3 bucket.",
+        "context": "goon.zip \u2014 attacker tool archive (contains Chisel + tooling) staged on an AWS S3 bucket.",
         "reputation_required": "malicious"
       },
       {
         "ioc_type": "file-sha256",
         "value": "078163d5c16f64caa5a14784323fd51451b8c831c73396b967b4e35e6879937b",
-        "context": "psexec.exe — Sysinternals PsExec used for lateral movement from the rogue VM.",
+        "context": "psexec.exe \u2014 Sysinternals PsExec used for lateral movement from the rogue VM.",
         "reputation_required": "suspicious"
       },
       {
         "ioc_type": "file-sha256",
         "value": "6784e652f304bf8e43b42c29ad8dd146dd384fa9536b9c6640dfbc370c3e78de",
-        "context": "s3browser-12-6-1.exe — S3 Browser client used to attempt exfiltration to an attacker S3 bucket.",
+        "context": "s3browser-12-6-1.exe \u2014 S3 Browser client used to attempt exfiltration to an attacker S3 bucket.",
         "reputation_required": "suspicious"
       },
       {
         "ioc_type": "file-sha256",
         "value": "e451287843b3927c6046eaabd3e22b929bc1f445eec23a73b1398b115d02e4fb",
-        "context": "ADExplorer64.exe — Sysinternals AD browsing tool used during Active Directory enumeration.",
+        "context": "ADExplorer64.exe \u2014 Sysinternals AD browsing tool used during Active Directory enumeration.",
         "reputation_required": "suspicious"
       },
       {
         "ioc_type": "ipv4",
         "value": "162.125.3.18",
-        "context": "Destination IP associated with Dropbox, observed in firewall logs from the attacker's rogue VM (Unit 42). A cloud-storage endpoint seen in the attacker VM's egress — NOT the Chisel tunnel endpoint (the post names no IP for the unnamed attacker-controlled 443 Chisel C2).",
+        "context": "Destination IP associated with Dropbox, observed in firewall logs from the attacker's rogue VM (Unit 42). A cloud-storage endpoint seen in the attacker VM's egress \u2014 NOT the Chisel tunnel endpoint (the post names no IP for the unnamed attacker-controlled 443 Chisel C2).",
         "reputation_required": "suspicious"
       }
     ],
-    "biocs": [],
+    "biocs": [
+      {
+        "name": "Rogue VM Creation via vSphere API",
+        "description": "Detection of process starting with vSphere-related command-line arguments indicating a new virtual machine creation event.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"vmware.exe\", \"esxcli.exe\", \"vpxd.exe\")\n| filter action_process_command_line contains \"VmCreatedEvent\"\n| filter action_process_command_line contains \"new-virtual-machine.SAFE-MODE\"",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1564"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Local Admin Account Creation with Logon",
+        "description": "Detection of local admin account creation followed by interactive logon event.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.AUTHENTICATION\n| filter action_process_image_name = \"net.exe\" or action_process_image_name = \"net1.exe\"\n| filter action_process_command_line contains \"user\" and action_process_command_line contains \"/add\"\n| filter target_user_name = \"gooner\"\n| filter action_auth_event_id = 4720\n| filter action_auth_event_id = 4624",
+        "mitre_technique_ids": [
+          "T1078",
+          "T1564"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "MP-013 Rogue vSphere VM Creation with Local Administrator Login",
-        "description": "A 'New Virtual Machine' is created in vSphere and immediately logged into with a local Administrator account — the rogue-VM tradecraft Muddled Libra uses to work from a host outside EDR visibility. Individually a medium behavioral signal; the ABIOC anchors it to the vCenter identity + source-host chain.",
+        "description": "A 'New Virtual Machine' is created in vSphere and immediately logged into with a local Administrator account \u2014 the rogue-VM tradecraft Muddled Libra uses to work from a host outside EDR visibility. Individually a medium behavioral signal; the ABIOC anchors it to the vCenter identity + source-host chain.",
         "logic": "dataset = esxi_syslog\n| filter event_message contains \"VmCreatedEvent\" or event_message contains \"New Virtual Machine\"\n| filter user_name = \"Administrator\" or user_name contains \"administrator\"\n| alter agent_hostname = source_address\n| comp count() as vm_creates by agent_hostname, esxi_host, user_name\n| filter vm_creates >= 1\n| fields agent_hostname, esxi_host, user_name, vm_creates",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -317,7 +340,7 @@
       },
       {
         "name": "MP-013 NTDS.dit Extraction from Mounted Domain Controller VMDK",
-        "description": "NTDS.dit and the SYSTEM registry hive are copied off a mounted (powered-down) domain-controller VMDK and decrypted into 'result' / 'result.kerb' on the rogue VM — full-domain credential theft that never touches a live DC's LSASS. The ABIOC anchors the file activity to the rogue-VM process lineage.",
+        "description": "NTDS.dit and the SYSTEM registry hive are copied off a mounted (powered-down) domain-controller VMDK and decrypted into 'result' / 'result.kerb' on the rogue VM \u2014 full-domain credential theft that never touches a live DC's LSASS. The ABIOC anchors the file activity to the rogue-VM process lineage.",
         "logic": "dataset = xdr_data\n| filter event_type = ENUM.FILE\n| filter action_file_name in (\"ntds.dit\", \"SYSTEM\", \"result\", \"result.kerb\")\n| filter actor_process_image_name in (\"cmd.exe\", \"powershell.exe\", \"esentutl.exe\", \"diskshadow.exe\")\n| comp count() as ntds_ops by agent_hostname, actor_effective_username\n| filter ntds_ops >= 1\n| fields agent_hostname, actor_effective_username, ntds_ops",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -328,7 +351,7 @@
       },
       {
         "name": "MP-013 ADRecon Domain Enumeration Burst",
-        "description": "A PowerShell ADRecon run enumerates the domain — forest, trusts, SPNs (ComputerSPNs.csv), users — in a short LDAP-heavy burst. Legitimate admins occasionally run AD reporting, so in isolation this scores medium; the ABIOC keys on the cadence + the rogue-host origin.",
+        "description": "A PowerShell ADRecon run enumerates the domain \u2014 forest, trusts, SPNs (ComputerSPNs.csv), users \u2014 in a short LDAP-heavy burst. Legitimate admins occasionally run AD reporting, so in isolation this scores medium; the ABIOC keys on the cadence + the rogue-host origin.",
         "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"powershell.exe\"\n| filter action_process_command_line contains \"ADRecon\" or action_process_command_line contains \"ComputerSPNs\"\n| comp count() as adrecon_runs by agent_hostname, actor_effective_username\n| filter adrecon_runs >= 1\n| fields agent_hostname, actor_effective_username, adrecon_runs",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -339,7 +362,7 @@
       },
       {
         "name": "MP-013 Rogue Local Administrator Account Creation (gooner)",
-        "description": "A new local account 'gooner' is created (Windows 4720) and immediately used for an interactive logon (4624) on the rogue host — attacker-controlled persistence. Account creation is routine in isolation (low), so the value is the correlation into the wider chain.",
+        "description": "A new local account 'gooner' is created (Windows 4720) and immediately used for an interactive logon (4624) on the rogue host \u2014 attacker-controlled persistence. Account creation is routine in isolation (low), so the value is the correlation into the wider chain.",
         "logic": "dataset = msft_windows_security\n| filter event_id in (4720, 4624)\n| filter target_user_name = \"gooner\"\n| alter agent_hostname = host_name\n| comp count() as account_events by agent_hostname, target_user_name\n| filter account_events >= 1\n| fields agent_hostname, target_user_name, account_events",
         "severity": "low",
         "mitre_technique_ids": [
@@ -350,7 +373,7 @@
       },
       {
         "name": "MP-013 Forged Kerberos Ticket Pass-the-Ticket Authentication",
-        "description": "Kerberos service tickets requested with RC4 (0x17) encryption — a downgrade consistent with tickets forged/roasted from the credential material harvested off the DC VMDK — are used for pass-the-ticket authentication, enabling RDP / PsExec lateral movement without re-entering passwords. The ABIOC keys on the RC4-downgraded 4769 service-ticket request (excluding the krbtgt TGT service) from the rogue host, normalized to the resolved endpoint entity (agent_hostname), rather than on all Kerberos traffic.",
+        "description": "Kerberos service tickets requested with RC4 (0x17) encryption \u2014 a downgrade consistent with tickets forged/roasted from the credential material harvested off the DC VMDK \u2014 are used for pass-the-ticket authentication, enabling RDP / PsExec lateral movement without re-entering passwords. The ABIOC keys on the RC4-downgraded 4769 service-ticket request (excluding the krbtgt TGT service) from the rogue host, normalized to the resolved endpoint entity (agent_hostname), rather than on all Kerberos traffic.",
         "logic": "dataset = ad_audit\n| filter event_id = 4769 and ticket_encryption_type = \"0x17\"\n| filter service_name != \"krbtgt\"\n| alter agent_hostname = client_address\n| comp count() as ticket_events by agent_hostname, service_name\n| filter ticket_events >= 1\n| fields agent_hostname, service_name, ticket_events",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -362,7 +385,7 @@
       },
       {
         "name": "MP-013 Chisel SSH-over-HTTPS Persistent C2 Tunnel",
-        "description": "A Chisel SSH-over-HTTPS tunnel to an attacker-associated destination stays alive on TCP 443 for hours — protocol-on-non-standard-port persistence that blends into HTTPS. The ABIOC keys on the long-lived ssh-app-over-443 session from the rogue host.",
+        "description": "A Chisel SSH-over-HTTPS tunnel to an attacker-associated destination stays alive on TCP 443 for hours \u2014 protocol-on-non-standard-port persistence that blends into HTTPS. The ABIOC keys on the long-lived ssh-app-over-443 session from the rogue host.",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter dest_port = 443 and app = \"ssh\"\n| filter session_duration >= 3600\n| alter agent_hostname = source_address\n| comp count() as long_tunnels, sum(bytes_total) as tunnel_bytes by agent_hostname, dest_address\n| filter long_tunnels >= 1\n| fields agent_hostname, dest_address, long_tunnels, tunnel_bytes",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -394,14 +417,14 @@
     ],
     "correlation_rules": [
       {
-        "name": "Muddled Libra Rogue-VM Intrusion — Seven-Signal AI-Triage Incident Grouping",
+        "name": "Muddled Libra Rogue-VM Intrusion \u2014 Seven-Signal AI-Triage Incident Grouping",
         "rule_id": "CR-MP-0013",
-        "logic": "ABIOC(MP-013 Rogue vSphere VM Creation with Local Administrator Login) AND ABIOC(MP-013 NTDS.dit Extraction from Mounted Domain Controller VMDK) AND ABIOC(MP-013 ADRecon Domain Enumeration Burst) AND ABIOC(MP-013 Rogue Local Administrator Account Creation (gooner)) AND ABIOC(MP-013 Forged Kerberos Ticket Pass-the-Ticket Authentication) AND ABIOC(MP-013 Chisel SSH-over-HTTPS Persistent C2 Tunnel) AND ABIOC(MP-013 Bulk Cloud Exfiltration to S3 and Snowflake) within 54000s on the same resolved endpoint entity (agent_hostname — every ABIOC projects it; hostname-native bodies emit it directly, IP-native bodies (vSphere source_address, Kerberos client_address, NGFW source_address) normalize their raw identifier into it, and XSIAM XDM endpoint entity resolution reconciles hostname<->IP) -> fuse the seven medium/low behavioral alerts into ONE critical hands-on-keyboard-intrusion incident whose summary names the domain-controller compromise (NTDS.dit copied from the mounted DC VMDK) and the exfiltration channel (Chisel 443 tunnel + S3/Snowflake). Ground truth is one incident, not seven; the AI SOC analyst passes F7 when it produces a single correctly-summarized critical incident rather than an un-grouped alert storm."
+        "logic": "ABIOC(MP-013 Rogue vSphere VM Creation with Local Administrator Login) AND ABIOC(MP-013 NTDS.dit Extraction from Mounted Domain Controller VMDK) AND ABIOC(MP-013 ADRecon Domain Enumeration Burst) AND ABIOC(MP-013 Rogue Local Administrator Account Creation (gooner)) AND ABIOC(MP-013 Forged Kerberos Ticket Pass-the-Ticket Authentication) AND ABIOC(MP-013 Chisel SSH-over-HTTPS Persistent C2 Tunnel) AND ABIOC(MP-013 Bulk Cloud Exfiltration to S3 and Snowflake) within 54000s on the same resolved endpoint entity (agent_hostname \u2014 every ABIOC projects it; hostname-native bodies emit it directly, IP-native bodies (vSphere source_address, Kerberos client_address, NGFW source_address) normalize their raw identifier into it, and XSIAM XDM endpoint entity resolution reconciles hostname<->IP) -> fuse the seven medium/low behavioral alerts into ONE critical hands-on-keyboard-intrusion incident whose summary names the domain-controller compromise (NTDS.dit copied from the mounted DC VMDK) and the exfiltration channel (Chisel 443 tunnel + S3/Snowflake). Ground truth is one incident, not seven; the AI SOC analyst passes F7 when it produces a single correctly-summarized critical incident rather than an un-grouped alert storm."
       }
     ],
     "analytics_modules": [
       {
-        "module": "Cortex XSIAM AI SOC — correlated-alert incident grouping and analyst summarization",
+        "module": "Cortex XSIAM AI SOC \u2014 correlated-alert incident grouping and analyst summarization",
         "validated": true,
         "note": "Backed by CR-MP-0013, which fuses the seven MP-013 ABIOCs into one incident on the rogue host within the 15h window."
       }
@@ -418,7 +441,7 @@
           "TBD-XSIAM-002"
         ],
         "license_required": "enterprise",
-        "evidence_query": "Seven medium/low ABIOCs on the rogue host stitch via CR-MP-0013 into ONE incident; the AI SOC analyst summary names the DC compromise (NTDS.dit from VMDK) and the Chisel/cloud exfil channel, scored critical — not seven separate alerts.",
+        "evidence_query": "Seven medium/low ABIOCs on the rogue host stitch via CR-MP-0013 into ONE incident; the AI SOC analyst summary names the DC compromise (NTDS.dit from VMDK) and the Chisel/cloud exfil channel, scored critical \u2014 not seven separate alerts.",
         "agent_version_min": "8.4"
       },
       {
@@ -445,7 +468,7 @@
     "threat_scenarios": [
       {
         "threat_scenario_id": "TS-MP-013",
-        "name": "AI SOC Analyst Incident Grouping — Seven Signals to One Incident",
+        "name": "AI SOC Analyst Incident Grouping \u2014 Seven Signals to One Incident",
         "description": "Cortex XSIAM's AI SOC analyst consolidates seven medium/low correlated behavioral alerts from a single Muddled Libra rogue-VM intrusion into one correctly-summarized critical incident, proving the analytics/AI-triage depth a signature-per-alert SOC cannot reach (F7).",
         "threat_steps": [
           {
@@ -485,7 +508,7 @@
           },
           {
             "threat_step_id": "TS-MP-013C",
-            "objective": "No alert-storm fan-out — the seven signals do not produce seven separate incidents, and triage-to-single-incident lands within the response-timing budget.",
+            "objective": "No alert-storm fan-out \u2014 the seven signals do not produce seven separate incidents, and triage-to-single-incident lands within the response-timing budget.",
             "preconditions": [
               "TS-MP-013A executed."
             ],
@@ -505,13 +528,13 @@
   },
   "remediation_guidance": {
     "preventive_controls": [
-      "Restrict vSphere/vCenter VM-create and datastore-browse permissions to a tiny admin set and require phishing-resistant MFA on vCenter — Muddled Libra's rogue-VM tradecraft depends on obtaining VM-create rights.",
+      "Restrict vSphere/vCenter VM-create and datastore-browse permissions to a tiny admin set and require phishing-resistant MFA on vCenter \u2014 Muddled Libra's rogue-VM tradecraft depends on obtaining VM-create rights.",
       "Alert on and block powering-down of domain controllers and mounting of DC VMDKs to non-DC hosts; treat DC virtual disks as crown-jewel assets.",
       "Enforce phishing-resistant MFA and helpdesk identity-verification to blunt the social-engineering (vishing/smishing) initial access this actor relies on.",
       "Egress-filter and inspect long-lived TCP 443 sessions; block Chisel-style SSH-over-HTTPS tunnels to non-sanctioned destinations."
     ],
     "detection_engineering": [
-      "Let the XSIAM AI SOC analyst GROUP correlated behavioral alerts into a single incident rather than paging on each medium/low ABIOC — measure the seven-to-one consolidation and summary correctness, not just per-alert firing.",
+      "Let the XSIAM AI SOC analyst GROUP correlated behavioral alerts into a single incident rather than paging on each medium/low ABIOC \u2014 measure the seven-to-one consolidation and summary correctness, not just per-alert firing.",
       "Alert on NTDS.dit / SYSTEM-hive file access on any host that is not a domain controller (the mounted-VMDK signature).",
       "Alert on new local-admin creation (4720) immediately followed by an interactive logon (4624), and on forged/anomalous Kerberos tickets presented from hosts that never legitimately request them."
     ],
@@ -519,38 +542,38 @@
   },
   "references": [
     {
-      "title": "Unit 42 — Muddled Libra Operations Playbook (rogue-VM intrusion tradecraft)",
+      "title": "Unit 42 \u2014 Muddled Libra Operations Playbook (rogue-VM intrusion tradecraft)",
       "url": "https://unit42.paloaltonetworks.com/muddled-libra-ops-playbook/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK — T1003.003 OS Credential Dumping: NTDS",
+      "title": "MITRE ATT&CK \u2014 T1003.003 OS Credential Dumping: NTDS",
       "url": "https://attack.mitre.org/techniques/T1003/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK — T1550.003 Use Alternate Authentication Material: Pass the Ticket",
+      "title": "MITRE ATT&CK \u2014 T1550.003 Use Alternate Authentication Material: Pass the Ticket",
       "url": "https://attack.mitre.org/techniques/T1550/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Cortex XSIAM — AI SOC analyst, correlated-alert incident grouping and Analytics BIOC (ABIOC)",
+      "title": "Cortex XSIAM \u2014 AI SOC analyst, correlated-alert incident grouping and Analytics BIOC (ABIOC)",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS"
     },
     {
-      "title": "CrowdStrike — Scattered Spider (rogue-VM, hands-on-keyboard intrusion tradecraft)",
+      "title": "CrowdStrike \u2014 Scattered Spider (rogue-VM, hands-on-keyboard intrusion tradecraft)",
       "url": "https://www.crowdstrike.com/adversaries/scattered-spider/",
       "publisher": "CrowdStrike",
       "publisher_id": "SRC-CROWDSTRIKE"
     },
     {
-      "title": "Microsoft Threat Intelligence — Octo Tempest (== Scattered Spider / Muddled Libra)",
+      "title": "Microsoft Threat Intelligence \u2014 Octo Tempest (== Scattered Spider / Muddled Libra)",
       "url": "https://www.microsoft.com/en-us/security/blog/2023/10/25/octo-tempest-crosses-boundaries-to-facilitate-extortion-encryption-and-destruction/",
       "publisher": "Microsoft Threat Intelligence",
       "publisher_id": "SRC-MSTIC"

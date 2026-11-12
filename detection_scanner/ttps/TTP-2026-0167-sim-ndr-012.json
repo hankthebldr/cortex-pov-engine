@@ -46,9 +46,9 @@
     }
   },
   "identity": {
-    "name": "NGFW EAL Rare-Domain Beacon then Large/Massive HTTPS Upload Exfil — Cortex Network Analytics / ABIOC (T1071.001 / T1048 / T1567)",
-    "summary": "A host beacons at a recurring interval to a rare domain over HTTPS, then uploads a large then massive data volume to a rare storage/mail domain. No IP or domain is a known-bad IOC — the deviation from the host's learned NGFW EAL egress baseline (destination rarity, recurring cadence, anomalous bytes_sent) is what the auto-tuned Cortex NGFW Analytics / ABIOC detectors fire on.",
-    "description": "The PAN-OS NGFW Enhanced Application Logs (EAL) carry per-session application, byte-volume and URL/domain context that Cortex XSIAM Network Security Analytics learns a per-host egress baseline from. EAL records land in the primary NGFW traffic dataset panw_ngfw_traffic_raw (log_source_type = \"eal\" isolates the EAL subset within that traffic dataset). This card exercises the three NGFW EAL analytics alerts named in the XSIAM Analytics Alert Reference for that data source against a single beacon-then-exfil chain, all keyed on panw_ngfw_traffic_raw: (1) Abnormal Recurring Communications to a Rare Domain — a regular-interval burst of small HTTPS (ssl/443) sessions from one source to a domain that is rare across the fleet (few distinct sources ever contact it), the C2-beacon shape that survives infrastructure rotation because no address is a static IOC; (2) Large Upload (HTTPS) — a single session whose bytes_sent over 443 is anomalously large versus the host's learned outbound-volume baseline; and (3) Massive upload to a rare storage or mail domain — a subsequent, even larger bytes_sent to a rare object-store / mail domain, the exfiltration terminal of the chain. Because a domain-blocklist or IOC rule keyed on a specific address misses the beacon the moment infrastructure rotates and never sees the volume anomaly at all, the signal that matters is behavioral and lives entirely in the network plane: destination rarity (fleet-wide source prevalence), recurring cadence, and outbound-byte anomaly, each a deviation from what Cortex has learned is normal for the host. Two ABIOCs anchor the recurring-beacon and massive-upload deviations to the source host (src) and rare destination domain (rare destination -> recurring small callbacks -> anomalous upload volume from the same source host); a third statistical ABIOC covers the large-HTTPS-upload volume deviation; two validation XQL queries prove the emitted panw_ngfw_traffic_raw records landed and surface each deviation; and a correlation rule stitches the recurring-beacon ABIOC and the massive-upload ABIOC for the same source host into one beacon-then-exfil incident that a static domain/IOC rule would never have raised. The scenario drives the ngfw_eal_emitter analytics log-streamer to POST shape-true panw_ngfw_traffic_raw records into an operator-supplied collector, so a customer validates that these NGFW Analytics / ABIOC detections fire without generating a single real outbound session to a rare domain or storage endpoint.",
+    "name": "NGFW EAL Rare-Domain Beacon then Large/Massive HTTPS Upload Exfil \u2014 Cortex Network Analytics / ABIOC (T1071.001 / T1048 / T1567)",
+    "summary": "A host beacons at a recurring interval to a rare domain over HTTPS, then uploads a large then massive data volume to a rare storage/mail domain. No IP or domain is a known-bad IOC \u2014 the deviation from the host's learned NGFW EAL egress baseline (destination rarity, recurring cadence, anomalous bytes_sent) is what the auto-tuned Cortex NGFW Analytics / ABIOC detectors fire on.",
+    "description": "The PAN-OS NGFW Enhanced Application Logs (EAL) carry per-session application, byte-volume and URL/domain context that Cortex XSIAM Network Security Analytics learns a per-host egress baseline from. EAL records land in the primary NGFW traffic dataset panw_ngfw_traffic_raw (log_source_type = \"eal\" isolates the EAL subset within that traffic dataset). This card exercises the three NGFW EAL analytics alerts named in the XSIAM Analytics Alert Reference for that data source against a single beacon-then-exfil chain, all keyed on panw_ngfw_traffic_raw: (1) Abnormal Recurring Communications to a Rare Domain \u2014 a regular-interval burst of small HTTPS (ssl/443) sessions from one source to a domain that is rare across the fleet (few distinct sources ever contact it), the C2-beacon shape that survives infrastructure rotation because no address is a static IOC; (2) Large Upload (HTTPS) \u2014 a single session whose bytes_sent over 443 is anomalously large versus the host's learned outbound-volume baseline; and (3) Massive upload to a rare storage or mail domain \u2014 a subsequent, even larger bytes_sent to a rare object-store / mail domain, the exfiltration terminal of the chain. Because a domain-blocklist or IOC rule keyed on a specific address misses the beacon the moment infrastructure rotates and never sees the volume anomaly at all, the signal that matters is behavioral and lives entirely in the network plane: destination rarity (fleet-wide source prevalence), recurring cadence, and outbound-byte anomaly, each a deviation from what Cortex has learned is normal for the host. Two ABIOCs anchor the recurring-beacon and massive-upload deviations to the source host (src) and rare destination domain (rare destination -> recurring small callbacks -> anomalous upload volume from the same source host); a third statistical ABIOC covers the large-HTTPS-upload volume deviation; two validation XQL queries prove the emitted panw_ngfw_traffic_raw records landed and surface each deviation; and a correlation rule stitches the recurring-beacon ABIOC and the massive-upload ABIOC for the same source host into one beacon-then-exfil incident that a static domain/IOC rule would never have raised. The scenario drives the ngfw_eal_emitter analytics log-streamer to POST shape-true panw_ngfw_traffic_raw records into an operator-supplied collector, so a customer validates that these NGFW Analytics / ABIOC detections fire without generating a single real outbound session to a rare domain or storage endpoint.",
     "severity": "high",
     "confidence": "high"
   },
@@ -108,7 +108,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-NDR-012 — NGFW EAL rare-domain recurring beacon then large/massive HTTPS upload exfil, driven by the ngfw_eal_emitter analytics log-streamer for Cortex NGFW Analytics / ABIOC validation.",
+    "framework_reference_id": "SIM-NDR-012 \u2014 NGFW EAL rare-domain recurring beacon then large/massive HTTPS upload exfil, driven by the ngfw_eal_emitter analytics log-streamer for Cortex NGFW Analytics / ABIOC validation.",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -151,12 +151,51 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "collector.cortexsim-canary.invalid",
+        "context": "Used in payload to simulate EAL events and initiate beaconing behavior."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "scripts.eal_simulator.cli",
+        "context": "Executable used in the payload to simulate EAL events."
+      },
+      {
+        "ioc_type": "domain",
+        "value": "ssl/443",
+        "context": "Indicates HTTPS traffic used for beaconing and exfiltration."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Rare Domain HTTPS Beacon Process",
+        "description": "Detection of process spawning that correlates with recurring rare-domain HTTPS beacon behavior.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"powershell.exe\", \"cmd.exe\", \"python3\")\n| filter action_remote_ip in (select dst_ip from xdr_data where action_remote_ip != \"0.0.0.0\" and dst_port = 443 and agent_hostname in (select agent_hostname from xdr_data where action_remote_ip in (select distinct dst_ip from xdr_data where action_file_path contains \"ngfw_eal_emitter\" and event_type = ENUM.NETWORK)))",
+        "mitre_technique_ids": [
+          "T1071",
+          "T1048"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Large HTTPS Upload Process",
+        "description": "Detection of process performing large HTTPS upload to rare domain.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_file_path contains \"scripts.eal_simulator.cli\"\n| filter action_process_image_name in (\"python3\")\n| filter agent_hostname in (select agent_hostname from xdr_data where dst_port = 443 and bytes_sent > 1073741824)",
+        "mitre_technique_ids": [
+          "T1071",
+          "T1567"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
-        "name": "NGFW EAL — Abnormal Recurring Communications to a Rare Domain",
-        "description": "A source host produces a tight, recurring burst of small HTTPS (ssl/443) sessions to a single domain that is rare across the fleet (few distinct sources ever contact it) — the rare-domain C2-beacon shape. Every destination is legitimate-looking and rotates, so no IOC matches; the ABIOC fires on the recurring-cadence-plus-destination-rarity deviation from the host's learned NGFW EAL egress baseline, anchored to the source host (src) and the rare destination domain rather than to a known-bad indicator.",
+        "name": "NGFW EAL \u2014 Abnormal Recurring Communications to a Rare Domain",
+        "description": "A source host produces a tight, recurring burst of small HTTPS (ssl/443) sessions to a single domain that is rare across the fleet (few distinct sources ever contact it) \u2014 the rare-domain C2-beacon shape. Every destination is legitimate-looking and rotates, so no IOC matches; the ABIOC fires on the recurring-cadence-plus-destination-rarity deviation from the host's learned NGFW EAL egress baseline, anchored to the source host (src) and the rare destination domain rather than to a known-bad indicator.",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter log_source_type = \"eal\" and app = \"ssl\" and dst_port = 443\n| filter action = \"allow\"\n| comp count() as recurring_sessions, avg(bytes_sent) as avg_bytes by src, url_domain\n| windowcomp count_distinct(src) as fleet_src_prevalence by url_domain\n| filter recurring_sessions >= 6 and avg_bytes < 8192 and fleet_src_prevalence <= 2\n| sort desc recurring_sessions\n| fields src, url_domain, recurring_sessions, avg_bytes, fleet_src_prevalence",
         "severity": "high",
         "mitre_technique_ids": [
@@ -166,7 +205,7 @@
         "causality_anchor": "Learned host NGFW EAL egress baseline (few destinations, ordinary bursty web volume) -> a single domain that is rare across the fleet (low distinct-source prevalence) contacted at a recurring interval with small stable payloads, anchored to the source host (src) and that rare destination domain."
       },
       {
-        "name": "NGFW EAL — Large Upload (HTTPS) to a Rare Domain",
+        "name": "NGFW EAL \u2014 Large Upload (HTTPS) to a Rare Domain",
         "description": "A single HTTPS (ssl/443) session carries a bytes_sent volume that is anomalously large versus the host's learned outbound-volume baseline, to a domain that is rare across the fleet. The statistical ABIOC fires on the outbound-byte-volume deviation, the first stage of the exfiltration that follows the rare-domain beacon, anchored to the source host (src) and the rare destination domain.",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter log_source_type = \"eal\" and app = \"ssl\" and dst_port = 443 and action = \"allow\"\n| filter bytes_sent > 1073741824\n| comp sum(bytes_sent) as uploaded_bytes, count() as sessions by src, url_domain\n| windowcomp count_distinct(src) as fleet_src_prevalence by url_domain\n| filter uploaded_bytes > 1073741824 and fleet_src_prevalence <= 2\n| sort desc uploaded_bytes\n| fields src, url_domain, uploaded_bytes, sessions, fleet_src_prevalence",
         "severity": "high",
@@ -177,8 +216,8 @@
         "causality_anchor": "Learned host outbound-volume baseline over 443 -> a single session whose bytes_sent is a large positive deviation to a fleet-rare domain, anchored to the source host (src) and destination domain."
       },
       {
-        "name": "NGFW EAL — Massive Upload to a Rare Storage or Mail Domain",
-        "description": "The same source host uploads a massive bytes_sent volume to a storage / mail domain that is rare across the fleet over HTTPS — the exfiltration terminal of the beacon-then-exfil chain. The ABIOC fires on the massive-outbound-volume-to-a-rare-domain deviation from the learned baseline, anchored to the same source host (src) that carried the earlier recurring beacon.",
+        "name": "NGFW EAL \u2014 Massive Upload to a Rare Storage or Mail Domain",
+        "description": "The same source host uploads a massive bytes_sent volume to a storage / mail domain that is rare across the fleet over HTTPS \u2014 the exfiltration terminal of the beacon-then-exfil chain. The ABIOC fires on the massive-outbound-volume-to-a-rare-domain deviation from the learned baseline, anchored to the same source host (src) that carried the earlier recurring beacon.",
         "logic": "dataset = panw_ngfw_traffic_raw\n| filter log_source_type = \"eal\" and dst_port = 443 and action = \"allow\"\n| filter bytes_sent > 10737418240\n| comp sum(bytes_sent) as uploaded_bytes, count() as sessions by src, url_domain\n| windowcomp count_distinct(src) as fleet_src_prevalence by url_domain\n| filter uploaded_bytes > 10737418240 and fleet_src_prevalence <= 2\n| sort desc uploaded_bytes\n| fields src, url_domain, uploaded_bytes, fleet_src_prevalence",
         "severity": "high",
         "mitre_technique_ids": [
@@ -191,14 +230,14 @@
     "xql_queries": [
       {
         "purpose": "validation",
-        "name": "NGFW EAL — Recurring Rare-Domain Beacon Landed in panw_ngfw_traffic_raw",
+        "name": "NGFW EAL \u2014 Recurring Rare-Domain Beacon Landed in panw_ngfw_traffic_raw",
         "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 900)\n| filter log_source_type = \"eal\" and app = \"ssl\" and dst_port = 443\n| comp count() as recurring_sessions, avg(bytes_sent) as avg_bytes by src, url_domain\n| filter recurring_sessions >= 6\n| fields src, url_domain, recurring_sessions, avg_bytes",
         "expected_rows_min": 1,
         "dataset": "panw_ngfw_traffic_raw"
       },
       {
         "purpose": "validation",
-        "name": "NGFW EAL — Large and Massive HTTPS Upload Landed in panw_ngfw_traffic_raw",
+        "name": "NGFW EAL \u2014 Large and Massive HTTPS Upload Landed in panw_ngfw_traffic_raw",
         "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 900)\n| filter log_source_type = \"eal\" and dst_port = 443 and action = \"allow\"\n| filter bytes_sent > 1073741824\n| comp max(bytes_sent) as peak_upload_bytes, sum(bytes_sent) as total_upload_bytes by src, url_domain\n| sort desc peak_upload_bytes\n| fields src, url_domain, peak_upload_bytes, total_upload_bytes",
         "expected_rows_min": 1,
         "dataset": "panw_ngfw_traffic_raw"
@@ -206,24 +245,24 @@
     ],
     "correlation_rules": [
       {
-        "name": "NGFW EAL Rare-Domain Beacon then Massive Upload — ABIOC Causality Stitch",
+        "name": "NGFW EAL Rare-Domain Beacon then Massive Upload \u2014 ABIOC Causality Stitch",
         "rule_id": "CR-NDR-0012",
-        "logic": "ABIOC(NGFW EAL — Abnormal Recurring Communications to a Rare Domain) AND ABIOC(NGFW EAL — Massive Upload to a Rare Storage or Mail Domain) — fuses the recurring rare-domain HTTPS beacon and the subsequent massive upload from the same NGFW EAL source host (src) into one beacon-then-exfil incident anchored to that shared source host: recurring rare-domain callbacks over 443 lead to a large then massive bytes_sent upload to a fleet-rare storage or mail domain from the same source host, surviving destination/IP rotation that defeats any static IOC."
+        "logic": "ABIOC(NGFW EAL \u2014 Abnormal Recurring Communications to a Rare Domain) AND ABIOC(NGFW EAL \u2014 Massive Upload to a Rare Storage or Mail Domain) \u2014 fuses the recurring rare-domain HTTPS beacon and the subsequent massive upload from the same NGFW EAL source host (src) into one beacon-then-exfil incident anchored to that shared source host: recurring rare-domain callbacks over 443 lead to a large then massive bytes_sent upload to a fleet-rare storage or mail domain from the same source host, surviving destination/IP rotation that defeats any static IOC."
       }
     ],
     "analytics_modules": [
       {
-        "module": "Cortex XSIAM Network Security Analytics — Abnormal Recurring Communications to a Rare Domain",
+        "module": "Cortex XSIAM Network Security Analytics \u2014 Abnormal Recurring Communications to a Rare Domain",
         "validated": true,
         "note": "Backed by the recurring-beacon ABIOC and its validation XQL on this card."
       },
       {
-        "module": "Cortex XSIAM Network Security Analytics — Large Upload (HTTPS)",
+        "module": "Cortex XSIAM Network Security Analytics \u2014 Large Upload (HTTPS)",
         "validated": true,
         "note": "Backed by the large-HTTPS-upload statistical ABIOC and the upload validation XQL on this card."
       },
       {
-        "module": "Cortex XSIAM Network Security Analytics — Massive upload to a rare storage or mail domain",
+        "module": "Cortex XSIAM Network Security Analytics \u2014 Massive upload to a rare storage or mail domain",
         "validated": true,
         "note": "Backed by the massive-upload ABIOC and the upload validation XQL on this card."
       }
@@ -282,7 +321,7 @@
               "Observe the recurring-beacon ABIOC fire."
             ],
             "success_criteria": [
-              "ABIOC `NGFW EAL — Abnormal Recurring Communications to a Rare Domain` fires.",
+              "ABIOC `NGFW EAL \u2014 Abnormal Recurring Communications to a Rare Domain` fires.",
               "Validation XQL returns the recurring rare-domain sessions in panw_ngfw_traffic_raw."
             ],
             "expected_score_weight": 0.4
@@ -298,7 +337,7 @@
               "Observe the large-upload ABIOC fire."
             ],
             "success_criteria": [
-              "ABIOC `NGFW EAL — Large Upload (HTTPS) to a Rare Domain` fires.",
+              "ABIOC `NGFW EAL \u2014 Large Upload (HTTPS) to a Rare Domain` fires.",
               "Upload validation XQL surfaces the anomalous bytes_sent session in panw_ngfw_traffic_raw."
             ],
             "expected_score_weight": 0.3
@@ -314,7 +353,7 @@
               "Observe the massive-upload ABIOC fire and the correlation raise one incident."
             ],
             "success_criteria": [
-              "ABIOC `NGFW EAL — Massive Upload to a Rare Storage or Mail Domain` fires.",
+              "ABIOC `NGFW EAL \u2014 Massive Upload to a Rare Storage or Mail Domain` fires.",
               "Correlation `CR-NDR-0012` raises one stitched beacon-then-exfil incident."
             ],
             "expected_score_weight": 0.3
@@ -338,32 +377,32 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM — Network Security Analytics and Analytics BIOC (ABIOC) Alert Reference (NGFW EAL rare-domain beacon and large/massive HTTPS upload alerts by data source)",
+      "title": "Cortex XSIAM \u2014 Network Security Analytics and Analytics BIOC (ABIOC) Alert Reference (NGFW EAL rare-domain beacon and large/massive HTTPS upload alerts by data source)",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
       "primary": true
     },
     {
-      "title": "Unit 42 — Threat research on command-and-control and data-exfiltration tradecraft (contextual background)",
+      "title": "Unit 42 \u2014 Threat research on command-and-control and data-exfiltration tradecraft (contextual background)",
       "url": "https://unit42.paloaltonetworks.com/",
       "publisher": "Unit 42",
       "publisher_id": "SRC-UNIT42"
     },
     {
-      "title": "MITRE ATT&CK T1071.001 — Application Layer Protocol: Web Protocols",
+      "title": "MITRE ATT&CK T1071.001 \u2014 Application Layer Protocol: Web Protocols",
       "url": "https://attack.mitre.org/techniques/T1071/001/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1048 — Exfiltration Over Alternative Protocol",
+      "title": "MITRE ATT&CK T1048 \u2014 Exfiltration Over Alternative Protocol",
       "url": "https://attack.mitre.org/techniques/T1048/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1567 — Exfiltration Over Web Service",
+      "title": "MITRE ATT&CK T1567 \u2014 Exfiltration Over Web Service",
       "url": "https://attack.mitre.org/techniques/T1567/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
@@ -374,7 +413,7 @@
       "entry_version": "1.0.0",
       "date": "2026-07-25",
       "author": "Henry Reed",
-      "change": "Promoted from research-intake scaffold to active NGFW EAL network Analytics/ABIOC card — rare-domain recurring HTTPS beacon then large/massive HTTPS upload exfil (three XSIAM NGFW EAL analytics alerts), three ABIOCs + two validation XQL stitched by CR-NDR-0012. Keyed on the real primary NGFW traffic dataset panw_ngfw_traffic_raw (EAL enrichment isolated via log_source_type = \"eal\"); rarity computed as fleet-wide distinct-source prevalence per url_domain; recurring beacon anchored on T1071.001 (Application Layer Protocol: Web Protocols). Anchored on the pure network-plane keys src + url_domain (no endpoint-process fields, which NGFW EAL does not carry). Driven by the ngfw_eal_emitter analytics log-streamer. Backs scenario SIM-NDR-012."
+      "change": "Promoted from research-intake scaffold to active NGFW EAL network Analytics/ABIOC card \u2014 rare-domain recurring HTTPS beacon then large/massive HTTPS upload exfil (three XSIAM NGFW EAL analytics alerts), three ABIOCs + two validation XQL stitched by CR-NDR-0012. Keyed on the real primary NGFW traffic dataset panw_ngfw_traffic_raw (EAL enrichment isolated via log_source_type = \"eal\"); rarity computed as fleet-wide distinct-source prevalence per url_domain; recurring beacon anchored on T1071.001 (Application Layer Protocol: Web Protocols). Anchored on the pure network-plane keys src + url_domain (no endpoint-process fields, which NGFW EAL does not carry). Driven by the ngfw_eal_emitter analytics log-streamer. Backs scenario SIM-NDR-012."
     }
   ]
 }

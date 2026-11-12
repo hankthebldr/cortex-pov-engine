@@ -114,10 +114,25 @@ steps:
         ttp_ref: "TTP-2026-0126"
         detection_id: "abioc-edr-016-runmru-paste-execution-seeding-an-interpreter-download-cradle"
       - plane: EDR
+        type: BIOC
+        description: "A command interpreter (sh/bash/zsh) spawns curl, nc, nmap, or python3 with a download/scan argument and no prior learned baseline — the process-level tell of a manual vs normal behaviour. Distinct from network-layer ABIOCs: this fires on the process-image + command-line deviation."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "bioc-edr-016-shelled-interpreter-spawning-a-downloader-lolbin-from-a-writable-path"
+      - plane: EDR
         type: IOC
         description: "Windows Run-dialog MRU key indicator (RunMRU) — the forensic artifact ClickFix paste-execution records the pasted download cradle in."
         ttp_ref: "TTP-2026-0126"
         detection_id: "ioc-registry-key-hkey-current-user-software-microsoft-windows-currentversion-explorer-runmru"
+      - plane: EDR
+        type: IOC
+        description: "Dropped binary at /tmp/cortexsim-edr-016/a.bin — the LOLBin remote fetch target, a writable-path file the endpoint agent observes."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "ioc-file-path-tmp-cortexsim-edr-016-a-bin"
+      - plane: EDR
+        type: IOC
+        description: "C2 loopback 127.0.0.1 — the authorised host the SAFE-MODE LOLBin fetches from (stands in for the real C2)."
+        ttp_ref: "TTP-2026-0126"
+        detection_id: "ioc-ip-127-0-0-1"
 
   - id: step-02
     name: "explorer.exe-parented interpreter launches with remote-fetch arguments"

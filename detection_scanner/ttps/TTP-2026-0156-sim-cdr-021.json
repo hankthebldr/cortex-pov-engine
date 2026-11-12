@@ -42,9 +42,9 @@
     }
   },
   "identity": {
-    "name": "AWS IAM & S3 Enumeration Sequence — Cloud Discovery Recon (SIM-CDR-021)",
-    "summary": "An AWS principal runs a cloud discovery sequence — an IAM enumeration burst then an S3 bucket enumeration sweep. The cloud_audit_emitter EAL plugin (aws) POSTs shape-true CloudTrail records to the operator collector so XSIAM raises the 'IAM Enumeration sequence' and 'AWS S3 Buckets enumeration activity' Analytics alerts, plus an ABIOC volume anomaly and a correlation on one caller ARN.",
-    "description": "Cloud attackers rarely act blind. Once a credential or role is obtained, the first move is enumeration: list the IAM users, roles, groups and attached policies to understand privilege and trust, then list the S3 buckets and their ACL/policy posture to find reachable data. Neither call is individually malicious — ListRoles and ListBuckets are made thousands of times a day by legitimate automation — so the signal is the SEQUENCE, VOLUME and BREADTH of discovery API calls from one principal in a short window, deviating from that principal's learned baseline. This card exercises the two XSIAM cloud-audit Analytics alerts named in the Cortex XSIAM Analytics Alert Reference for the AWS Audit Log (CloudTrail) data source — 'IAM Enumeration sequence' and 'AWS S3 Buckets enumeration activity' — mapped here to T1087.004 Account Discovery: Cloud Account (the IAM enumeration alert) and T1580 Cloud Infrastructure Discovery / T1619 Cloud Storage Object Discovery (the S3 enumeration alert), matching the driving cloud_audit_emitter's own technique mapping, plus a PANW-authored ABIOC that anchors the discovery-volume anomaly to the identity's learned CloudTrail baseline (behavioral-ML, causality chain), and a correlation rule that stitches the two enumeration alerts on the same caller ARN into one incident. The scenario DRIVES the cloud_audit_emitter analytics log-streamer to POST shape-true CloudTrail records into an operator-supplied collector so the detections fire without touching a real AWS tenant or reading any real account data. A validation XQL confirms the emitted records landed in cloud_audit_logs.",
+    "name": "AWS IAM & S3 Enumeration Sequence \u2014 Cloud Discovery Recon (SIM-CDR-021)",
+    "summary": "An AWS principal runs a cloud discovery sequence \u2014 an IAM enumeration burst then an S3 bucket enumeration sweep. The cloud_audit_emitter EAL plugin (aws) POSTs shape-true CloudTrail records to the operator collector so XSIAM raises the 'IAM Enumeration sequence' and 'AWS S3 Buckets enumeration activity' Analytics alerts, plus an ABIOC volume anomaly and a correlation on one caller ARN.",
+    "description": "Cloud attackers rarely act blind. Once a credential or role is obtained, the first move is enumeration: list the IAM users, roles, groups and attached policies to understand privilege and trust, then list the S3 buckets and their ACL/policy posture to find reachable data. Neither call is individually malicious \u2014 ListRoles and ListBuckets are made thousands of times a day by legitimate automation \u2014 so the signal is the SEQUENCE, VOLUME and BREADTH of discovery API calls from one principal in a short window, deviating from that principal's learned baseline. This card exercises the two XSIAM cloud-audit Analytics alerts named in the Cortex XSIAM Analytics Alert Reference for the AWS Audit Log (CloudTrail) data source \u2014 'IAM Enumeration sequence' and 'AWS S3 Buckets enumeration activity' \u2014 mapped here to T1087.004 Account Discovery: Cloud Account (the IAM enumeration alert) and T1580 Cloud Infrastructure Discovery / T1619 Cloud Storage Object Discovery (the S3 enumeration alert), matching the driving cloud_audit_emitter's own technique mapping, plus a PANW-authored ABIOC that anchors the discovery-volume anomaly to the identity's learned CloudTrail baseline (behavioral-ML, causality chain), and a correlation rule that stitches the two enumeration alerts on the same caller ARN into one incident. The scenario DRIVES the cloud_audit_emitter analytics log-streamer to POST shape-true CloudTrail records into an operator-supplied collector so the detections fire without touching a real AWS tenant or reading any real account data. A validation XQL confirms the emitted records landed in cloud_audit_logs.",
     "severity": "medium",
     "confidence": "high"
   },
@@ -102,7 +102,7 @@
   "execution": {
     "target_platform": "aws",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-CDR-021 — cloud_audit_emitter (provider=aws / CloudTrail) drives an IAM + S3 enumeration sequence into cloud_audit_logs.",
+    "framework_reference_id": "SIM-CDR-021 \u2014 cloud_audit_emitter (provider=aws / CloudTrail) drives an IAM + S3 enumeration sequence into cloud_audit_logs.",
     "privilege_required": "user",
     "prerequisites": [
       {
@@ -116,7 +116,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Drive the cloud_audit_emitter analytics log-streamer to POST shape-true\n# CloudTrail IAM + S3 enumeration records into the operator's collector.\nset -euo pipefail\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/cdr-021.yml <<YML\ncampaign_id: CMP-CDR-021\nname: \"CDR — AWS IAM & S3 enumeration sequence\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"${COLLECTOR_HOST}\"\ndry_run: false\nsteps:\n  - step_id: iam-enum\n    plugin: cloud_audit_emitter\n    params:\n      collector_url: \"${COLLECTOR_URL}\"\n      provider: aws\n      event_pattern: iam_enumeration\n      iterations: 3\n  - step_id: s3-enum\n    plugin: cloud_audit_emitter\n    params:\n      collector_url: \"${COLLECTOR_URL}\"\n      provider: aws\n      event_pattern: s3_bucket_enumeration\n      iterations: 3\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/cdr-021.yml --live\n",
+      "code": "# Drive the cloud_audit_emitter analytics log-streamer to POST shape-true\n# CloudTrail IAM + S3 enumeration records into the operator's collector.\nset -euo pipefail\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/logs/v1/event}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/cdr-021.yml <<YML\ncampaign_id: CMP-CDR-021\nname: \"CDR \u2014 AWS IAM & S3 enumeration sequence\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"${COLLECTOR_HOST}\"\ndry_run: false\nsteps:\n  - step_id: iam-enum\n    plugin: cloud_audit_emitter\n    params:\n      collector_url: \"${COLLECTOR_URL}\"\n      provider: aws\n      event_pattern: iam_enumeration\n      iterations: 3\n  - step_id: s3-enum\n    plugin: cloud_audit_emitter\n    params:\n      collector_url: \"${COLLECTOR_URL}\"\n      provider: aws\n      event_pattern: s3_bucket_enumeration\n      iterations: 3\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/cdr-021.yml --live\n",
       "input_variables": [
         {
           "name": "COLLECTOR_URL",
@@ -150,12 +150,51 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/cdr-021.yml",
+        "context": "Temporary YAML file containing the configuration for the EAL simulator to perform IAM and S3 enumeration."
+      },
+      {
+        "ioc_type": "domain",
+        "value": "collector.cortexsim-canary.invalid",
+        "context": "Outbound collector domain used to POST CloudTrail records during enumeration."
+      },
+      {
+        "ioc_type": "ipv4",
+        "value": "192.168.1.100",
+        "context": "Assumed IP of the operator's collector (NGFW EAL App-ID match) used in the payload."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Process Execution of Python with EAL Simulator Module",
+        "description": "Detection of python3 process executing the EAL simulator module with CLI run command, indicative of cloud enumeration sequence.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"python3\"\n| filter action_process_command_line contains \"scripts.eal_simulator.cli run\"",
+        "mitre_technique_ids": [
+          "T1087",
+          "T1580"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Execution of Shell Script with Cloud Audit Emitter Configuration",
+        "description": "Detection of shell script execution that configures and runs cloud_audit_emitter for IAM and S3 enumeration.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = \"bash\"\n| filter action_process_command_line contains \"cloud_audit_emitter\"\n| filter action_process_command_line contains \"iam_enumeration\"\n| filter action_process_command_line contains \"s3_bucket_enumeration\"",
+        "mitre_technique_ids": [
+          "T1087",
+          "T1580"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "AWS Cloud-Discovery Volume Anomaly on a Learned Identity Baseline",
-        "description": "PANW-authored, auto-tuned behavioral-ML detection. Cortex learns each AWS principal's normal CloudTrail discovery-API profile (which enumeration calls it makes, how often, and how broad). This ABIOC fires when a principal's discovery-call volume and API breadth spike far above its learned baseline within a short window — the mass-enumeration deviation an attacker produces while mapping IAM trust and S3 exposure. No single ListRoles / ListBuckets call is a known-bad IOC; the catch is the deviation from the learned per-identity baseline, anchored to the identity's CloudTrail causality chain. The body below is the XQL-shaped proxy the ABIOC evaluates against the modeled baseline.",
+        "description": "PANW-authored, auto-tuned behavioral-ML detection. Cortex learns each AWS principal's normal CloudTrail discovery-API profile (which enumeration calls it makes, how often, and how broad). This ABIOC fires when a principal's discovery-call volume and API breadth spike far above its learned baseline within a short window \u2014 the mass-enumeration deviation an attacker produces while mapping IAM trust and S3 exposure. No single ListRoles / ListBuckets call is a known-bad IOC; the catch is the deviation from the learned per-identity baseline, anchored to the identity's CloudTrail causality chain. The body below is the XQL-shaped proxy the ABIOC evaluates against the modeled baseline.",
         "logic": "dataset = cloud_audit_logs\n| filter eventType = \"AwsApiCall\"\n| filter eventName in (\"ListUsers\", \"ListRoles\", \"ListPolicies\", \"GetAccountAuthorizationDetails\", \"ListAttachedRolePolicies\", \"ListBuckets\", \"GetBucketAcl\", \"GetBucketPolicy\", \"ListObjects\")\n| filter _time > to_timestamp(current_time() - 1800)\n| comp count() as discovery_calls, count_distinct(eventName) as distinct_apis by userIdentity.arn, sourceIPAddress\n| filter discovery_calls >= 8 and distinct_apis >= 5\n| fields userIdentity.arn, sourceIPAddress, discovery_calls, distinct_apis",
         "severity": "medium",
         "mitre_technique_ids": [
@@ -192,7 +231,7 @@
     ],
     "correlation_rules": [
       {
-        "name": "Cloud Reconnaissance Sequence — IAM Then S3 Enumeration by One Principal",
+        "name": "Cloud Reconnaissance Sequence \u2014 IAM Then S3 Enumeration by One Principal",
         "rule_id": "CR-CDR-0021",
         "logic": "XQL(AWS IAM Enumeration Sequence) AND XQL(AWS S3 Buckets Enumeration Activity) observed for the same userIdentity.arn within a 15-minute window, stitched into one cloud-reconnaissance-sequence incident anchored to the caller-ARN causality chain."
       }
@@ -226,7 +265,7 @@
     "threat_scenarios": [
       {
         "threat_scenario_id": "TS-CDR-021",
-        "name": "Cloud reconnaissance — IAM & S3 enumeration sequence detection",
+        "name": "Cloud reconnaissance \u2014 IAM & S3 enumeration sequence detection",
         "description": "Validate that Cortex XSIAM cloud-audit Analytics catches a discovery-stage enumeration sequence (IAM trust mapping followed by S3 exposure mapping) from a single AWS principal, and that the ABIOC + correlation fuse the two Analytics alerts into one cloud-reconnaissance incident.",
         "threat_steps": [
           {
@@ -266,26 +305,26 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM Analytics Alert Reference by data source — AWS Audit Log (CloudTrail)",
+      "title": "Cortex XSIAM Analytics Alert Reference by data source \u2014 AWS Audit Log (CloudTrail)",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK — T1087.004 Account Discovery: Cloud Account",
+      "title": "MITRE ATT&CK \u2014 T1087.004 Account Discovery: Cloud Account",
       "url": "https://attack.mitre.org/techniques/T1087/004/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK — T1580 Cloud Infrastructure Discovery",
+      "title": "MITRE ATT&CK \u2014 T1580 Cloud Infrastructure Discovery",
       "url": "https://attack.mitre.org/techniques/T1580/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK — T1619 Cloud Storage Object Discovery",
+      "title": "MITRE ATT&CK \u2014 T1619 Cloud Storage Object Discovery",
       "url": "https://attack.mitre.org/techniques/T1619/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

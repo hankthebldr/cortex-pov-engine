@@ -215,7 +215,19 @@
         "reputation_required": "malicious"
       }
     ],
-    "biocs": [],
+    "biocs": [
+      {
+        "name": "EDR-016 Shelled Interpreter Spawning a Downloader LOLBin from a Writable Path",
+        "description": "A command interpreter (sh / bash / zsh) spawns curl, nc, nmap, or python3 with a download/scan argument and no prior learned baseline for that host — the process-level tell of a manual or scripted reconnaissance/download vs the host's normal behaviour. Distinct from network-layer ABIOCs: this fires on the process-image + command-line deviation, not on the flow.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name in (\"sh\", \"bash\", \"zsh\")\n| filter action_process_image_name in (\"curl\", \"nc\", \"nmap\", \"python3\")\n| filter action_process_command_line contains \"http\" or action_process_command_line contains \"-sS\" or action_process_command_line contains \"-p\" or action_process_command_line contains \"--socket-timeout\"\n| comp count() as shelled_downloads by agent_hostname, actor_effective_username\n| filter shelled_downloads >= 1\n| fields agent_hostname, actor_effective_username, shelled_downloads",
+        "severity": "medium",
+        "mitre_technique_ids": [
+          "T1059.003",
+          "T1105"
+        ],
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "EDR-016 RunMRU Paste-Execution Seeding an Interpreter Download Cradle",

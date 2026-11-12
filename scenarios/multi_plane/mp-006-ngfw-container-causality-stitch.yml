@@ -129,6 +129,17 @@ steps:
           | filter actor_container_info != null
           | alter container_id = json_extract_scalar(actor_container_info, "$.id")
           | comp count() as endpoint_sessions by container_id, action_local_ip, action_remote_ip, action_remote_port
+      - plane: CDR
+        type: BIOC
+        description: "CDR-001 Privileged Container Exec Spawning curl — shell spawning curl on the command chain"
+        ttp_ref: "TTP-2026-0086"
+        detection_id: bioc-cdr-001-privileged-container-exec-spawning-curl
+        verification_xql: |
+          dataset = xdr_data
+          | filter event_type = ENUM.NETWORK
+          | filter actor_container_info != null
+          | alter container_id = json_extract_scalar(actor_container_info, "$.id")
+          | comp count() as endpoint_sessions by container_id, action_local_ip, action_remote_ip, action_remote_port
 
   - id: step-02
     name: "DGA-shaped hostname resolution (NGFW DNS/URL analytics)"

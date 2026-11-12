@@ -46,9 +46,9 @@
     }
   },
   "identity": {
-    "name": "Leaked .env Credential to Self-Propagating Lambda Escalation — Large-Scale Cloud Extortion (SIM-CDR-017)",
+    "name": "Leaked .env Credential to Self-Propagating Lambda Escalation \u2014 Large-Scale Cloud Extortion (SIM-CDR-017)",
     "summary": "A harvested IAM access key validates itself (GetCallerIdentity), fans out into IAM/SES/S3 discovery, self-escalates by creating a role and attaching AdministratorAccess, is denied on EC2, then pivots to deploying a scanning Lambda across every enabled region so the victim pays the compute. The denied-EC2-then-succeed-on-Lambda pivot is the behavioral tell an ABIOC anchors on.",
-    "description": "Modeled on the Unit 42 report on a large-scale cloud-extortion campaign that harvested exposed .env-file credentials (110,000+ domains targeted, 90,000+ unique environment variables, 7,000+ cloud access keys). The operator treats a single leaked long-lived IAM access key as a foothold and runs a repeatable automation: (1) validate the key with sts:GetCallerIdentity; (2) burst account/service discovery — iam:ListUsers, iam:ListBuckets, and a distinctive SES enumeration set (ses:GetSendQuota, ses:ListVerifiedEmailAddresses, ses:GetAccountSendingEnabled, ses:GetAccount, ses:ListIdentities) to gauge spam/phishing capacity; (3) self-escalate privileges with iam:CreateRole (role name 'lambda-ex') followed immediately by iam:AttachRolePolicy attaching the managed AdministratorAccess policy; (4) attempt EC2 compute (ec2:CreateSecurityGroup 'security', ec2:AuthorizeSecurityGroupIngress, ec2:CreateKeyPair, ec2:RunInstances c6g / ami-08e8725a42775740f) which is DENIED (Client.UnauthorizedOperation); (5) pivot to serverless — lambda:CreateFunction (function 'ex') deployed to every enabled region (initiated us-east-1), each backed by logs:CreateLogGroup '/aws/lambda/ex' — so the victim's account funds a distributed scanner that cURLs http://<target>/.env, greps for 'mailgun', and writes hits to an attacker-controlled public S3 bucket (s3://<REDACTED>/ref5/); (6) an S3 Browser-signature bucket-metadata read fan-out (GetBucketLocation/Logging/Versioning/Acl/PublicAccessBlock/…) enumerates victim storage for exfil. Tor exit nodes source the Lambda-creation calls; commercial VPN endpoints source the S3 exfil. No single API call is malware; the extortion note lands later. The detection differentiator is behavioral: an access key that was never an IAM administrator performs a CreateRole->AttachRolePolicy(AdministratorAccess) self-escalation, is denied on EC2, then immediately succeeds on a cross-region Lambda fan-out. Two ABIOCs anchor those two deviations to the leaked key's causality chain; validation XQL surfaces the cross-region Lambda fan-out and the SES recon burst; a correlation rule stitches the whole leaked-credential-to-self-propagating-Lambda extortion chain into one incident.",
+    "description": "Modeled on the Unit 42 report on a large-scale cloud-extortion campaign that harvested exposed .env-file credentials (110,000+ domains targeted, 90,000+ unique environment variables, 7,000+ cloud access keys). The operator treats a single leaked long-lived IAM access key as a foothold and runs a repeatable automation: (1) validate the key with sts:GetCallerIdentity; (2) burst account/service discovery \u2014 iam:ListUsers, iam:ListBuckets, and a distinctive SES enumeration set (ses:GetSendQuota, ses:ListVerifiedEmailAddresses, ses:GetAccountSendingEnabled, ses:GetAccount, ses:ListIdentities) to gauge spam/phishing capacity; (3) self-escalate privileges with iam:CreateRole (role name 'lambda-ex') followed immediately by iam:AttachRolePolicy attaching the managed AdministratorAccess policy; (4) attempt EC2 compute (ec2:CreateSecurityGroup 'security', ec2:AuthorizeSecurityGroupIngress, ec2:CreateKeyPair, ec2:RunInstances c6g / ami-08e8725a42775740f) which is DENIED (Client.UnauthorizedOperation); (5) pivot to serverless \u2014 lambda:CreateFunction (function 'ex') deployed to every enabled region (initiated us-east-1), each backed by logs:CreateLogGroup '/aws/lambda/ex' \u2014 so the victim's account funds a distributed scanner that cURLs http://<target>/.env, greps for 'mailgun', and writes hits to an attacker-controlled public S3 bucket (s3://<REDACTED>/ref5/); (6) an S3 Browser-signature bucket-metadata read fan-out (GetBucketLocation/Logging/Versioning/Acl/PublicAccessBlock/\u2026) enumerates victim storage for exfil. Tor exit nodes source the Lambda-creation calls; commercial VPN endpoints source the S3 exfil. No single API call is malware; the extortion note lands later. The detection differentiator is behavioral: an access key that was never an IAM administrator performs a CreateRole->AttachRolePolicy(AdministratorAccess) self-escalation, is denied on EC2, then immediately succeeds on a cross-region Lambda fan-out. Two ABIOCs anchor those two deviations to the leaked key's causality chain; validation XQL surfaces the cross-region Lambda fan-out and the SES recon burst; a correlation rule stitches the whole leaked-credential-to-self-propagating-Lambda extortion chain into one incident.",
     "severity": "high",
     "confidence": "high"
   },
@@ -178,7 +178,7 @@
   "execution": {
     "target_platform": "aws",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-CDR-017 — Leaked cloud credential self-escalating to a cross-region self-propagating Lambda for Cortex CDR / ABIOC validation",
+    "framework_reference_id": "SIM-CDR-017 \u2014 Leaked cloud credential self-escalating to a cross-region self-propagating Lambda for Cortex CDR / ABIOC validation",
     "privilege_required": "cloud-iam-user",
     "prerequisites": [
       {
@@ -217,7 +217,7 @@
     ],
     "cleanup": {
       "interpreter": "bash",
-      "code": "rm -rf \"${MARKER_DIR:-/tmp/cortexsim-cdr-017}\"; echo '[CortexSim] SIM-CDR-017 cleanup complete — SAFE-MODE markers removed; rotate the lab access key between runs.'"
+      "code": "rm -rf \"${MARKER_DIR:-/tmp/cortexsim-cdr-017}\"; echo '[CortexSim] SIM-CDR-017 cleanup complete \u2014 SAFE-MODE markers removed; rotate the lab access key between runs.'"
     }
   },
   "detections": {
@@ -225,7 +225,7 @@
       {
         "ioc_type": "file-sha256",
         "value": "64e6ce23db74aed7c923268e953688fa5cc909cc9d1e84dd46063b62bd649bf6",
-        "context": "lambda.sh — the scanning payload the self-propagating Lambda executes.",
+        "context": "lambda.sh \u2014 the scanning payload the self-propagating Lambda executes.",
         "reputation_required": "malicious",
         "cortex_severity_override": "high"
       },
@@ -311,7 +311,30 @@
         "context": "VPS endpoint observed in the campaign."
       }
     ],
-    "biocs": [],
+    "biocs": [
+      {
+        "name": "AWS CLI Process with AdministratorAccess Policy Attachment",
+        "description": "Detection of aws cli process starting with CreateRole followed by AttachRolePolicy targeting AdministratorAccess policy",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name contains \"aws\"\n| filter action_process_image_name contains \"aws\"\n| filter action_file_path contains \"CreateRole\"\n| filter action_file_path contains \"AttachRolePolicy\"\n| filter action_file_path contains \"AdministratorAccess\"",
+        "mitre_technique_ids": [
+          "T1552",
+          "T1078"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Lambda Function Creation Across Multiple Regions",
+        "description": "Detection of Lambda CreateFunction calls across multiple AWS regions following a denied EC2 RunInstances call",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_name contains \"aws\"\n| filter action_file_path contains \"CreateFunction\"\n| filter action_file_path contains \"region=us-\"\n| filter action_file_path contains \"region=eu-\"\n| filter action_file_path contains \"region=ap-\"",
+        "mitre_technique_ids": [
+          "T1651",
+          "T1580"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "IAM Self-Escalation to AdministratorAccess by a Newly Observed Access Key",
@@ -363,7 +386,7 @@
     ],
     "analytics_modules": [
       {
-        "module": "Cortex Cloud CDR — per-identity CloudTrail behavioral profiling (call rate, action set, error-code pivots)",
+        "module": "Cortex Cloud CDR \u2014 per-identity CloudTrail behavioral profiling (call rate, action set, error-code pivots)",
         "validated": true,
         "note": "Backed by the two ABIOCs and CR-CDR-0017 on this card."
       }
@@ -407,7 +430,7 @@
     "threat_scenarios": [
       {
         "threat_scenario_id": "TS-CDR-017",
-        "name": "Leaked Cloud Credential Self-Propagating Lambda Extortion — Behavioral Detection via Cortex CDR / ABIOC",
+        "name": "Leaked Cloud Credential Self-Propagating Lambda Extortion \u2014 Behavioral Detection via Cortex CDR / ABIOC",
         "description": "Cortex's auto-tuned Analytics Behavioral IOCs learn a cloud access key's non-administrator usage baseline and detect the leaked-key self-escalation to AdministratorAccess and the denied-EC2-then-Lambda victim-funded compute pivot, anchored to the key's causality chain, where no static rule was written for the legitimate AWS API calls involved.",
         "threat_steps": [
           {
@@ -488,13 +511,13 @@
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1098.003 — Account Manipulation: Additional Cloud Roles",
+      "title": "MITRE ATT&CK T1098.003 \u2014 Account Manipulation: Additional Cloud Roles",
       "url": "https://attack.mitre.org/techniques/T1098/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Cortex XSIAM / Cortex Cloud — CDR Analytics & Behavioral IOC (ABIOC) reference",
+      "title": "Cortex XSIAM / Cortex Cloud \u2014 CDR Analytics & Behavioral IOC (ABIOC) reference",
       "url": "https://docs-cortex.paloaltonetworks.com/",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS"

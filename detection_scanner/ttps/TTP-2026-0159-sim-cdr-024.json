@@ -45,7 +45,7 @@
     }
   },
   "identity": {
-    "name": "Compute Activity in a Dormant Cloud Region (Cryptomining) — CDR (SIM-CDR-024)",
+    "name": "Compute Activity in a Dormant Cloud Region (Cryptomining) \u2014 CDR (SIM-CDR-024)",
     "summary": "Stolen AWS credentials launch EC2 compute in a never-used region, then burst large GPU instances to mine cryptocurrency. SIM-CDR-024 drives cloud_storage_compute_emitter to emit CloudTrail RunInstances into cloud_audit_logs, firing two XSIAM alerts: 'Compute activity in dormant cloud region' (T1535) and 'Suspicious heavy allocation of compute resources - possible mining activity' (T1496).",
     "description": "Detection-validation card for the XSIAM Cloud Storage & Compute analytics alerts 'Compute activity in dormant cloud region' (T1535) and 'Suspicious heavy allocation of compute resources - possible mining activity' (T1496), both keyed on the cloud_audit_logs dataset. The dormant-region alert is an Analytics detection anchored on a per-account region-usage baseline (a region dormant for >90 days that suddenly launches instances is anomalous); the heavy-allocation alert is an auto-tuned behavioral-ML (ABIOC) detection anchored on a learned per-principal compute-allocation baseline (a burst of GPU/high-core instance types reads as a mining fleet). The scenario SIM-CDR-024 emits the driving telemetry via the cloud_storage_compute_emitter EAL plugin and includes a validation XQL that confirms the emitted RunInstances records landed in cloud_audit_logs, plus a correlation rule that stitches the dormant-region landing and the mining-shaped heavy allocation into one cloud cryptomining incident.",
     "severity": "high",
@@ -93,7 +93,7 @@
   "execution": {
     "target_platform": "aws",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-CDR-024 — driven by the cloud_storage_compute_emitter analytics log-streamer EAL plugin (dormant_region_activity + heavy_compute_allocation presets against the cloud_audit_logs dataset).",
+    "framework_reference_id": "SIM-CDR-024 \u2014 driven by the cloud_storage_compute_emitter analytics log-streamer EAL plugin (dormant_region_activity + heavy_compute_allocation presets against the cloud_audit_logs dataset).",
     "privilege_required": "cloud-iam-user",
     "prerequisites": [
       {
@@ -103,7 +103,7 @@
     ],
     "payload": {
       "interpreter": "bash",
-      "code": "# Drive the cloud_storage_compute_emitter analytics log-streamer to POST\n# shape-true CloudTrail RunInstances records into the operator's collector.\n# No real AWS tenant is touched and no instance is launched — every record is a\n# synthetic JSON blob shaped like the cloud_audit_logs (CloudTrail) schema.\nset -euo pipefail\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/cloud/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/sim-cdr-024.yml <<YML\ncampaign_id: CMP-CDR-024\nname: \"CDR — dormant-region compute then mining-shaped heavy allocation\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\nsteps:\n  - step_id: dormant-region\n    plugin: cloud_storage_compute_emitter\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: aws\n      event_pattern: dormant_region_activity\n      iterations: 1\n  - step_id: heavy-allocation\n    plugin: cloud_storage_compute_emitter\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: aws\n      event_pattern: heavy_compute_allocation\n      iterations: 1\n      burst_count: 10\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-024.yml --live\n",
+      "code": "# Drive the cloud_storage_compute_emitter analytics log-streamer to POST\n# shape-true CloudTrail RunInstances records into the operator's collector.\n# No real AWS tenant is touched and no instance is launched \u2014 every record is a\n# synthetic JSON blob shaped like the cloud_audit_logs (CloudTrail) schema.\nset -euo pipefail\n: \"${COLLECTOR_URL:=https://collector.cortexsim-canary.invalid/cloud/events}\"\n: \"${COLLECTOR_HOST:=collector.cortexsim-canary.invalid}\"\ncat > /tmp/sim-cdr-024.yml <<YML\ncampaign_id: CMP-CDR-024\nname: \"CDR \u2014 dormant-region compute then mining-shaped heavy allocation\"\nauthorized_by: \"domain-consultant@paloaltonetworks.com\"\nsimulation_authorized: true\ntarget_allowlist:\n  - \"$COLLECTOR_HOST\"\ndry_run: false\nsteps:\n  - step_id: dormant-region\n    plugin: cloud_storage_compute_emitter\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: aws\n      event_pattern: dormant_region_activity\n      iterations: 1\n  - step_id: heavy-allocation\n    plugin: cloud_storage_compute_emitter\n    params:\n      collector_url: \"$COLLECTOR_URL\"\n      provider: aws\n      event_pattern: heavy_compute_allocation\n      iterations: 1\n      burst_count: 10\nYML\npython3 -m scripts.eal_simulator.cli run /tmp/sim-cdr-024.yml --live\n",
       "input_variables": [
         {
           "name": "COLLECTOR_URL",
@@ -126,12 +126,51 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "domain",
+        "value": "collector.cortexsim-canary.invalid",
+        "context": "Domain used for POSTing synthetic CloudTrail records to the operator's collector."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/sim-cdr-024.yml",
+        "context": "YAML configuration file used by the EAL simulator to define the CDR-024 campaign."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "scripts.eal_simulator.cli",
+        "context": "Python module invoked to run the simulation campaign."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Process Execution of Python with EAL Simulator Module",
+        "description": "Detection of python3 process executing the EAL simulator CLI module with run command and a specific YAML configuration file path.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'python3'\n| filter action_process_command_line contains 'scripts.eal_simulator.cli run'\n| filter action_process_command_line contains '/tmp/sim-cdr-024.yml'",
+        "mitre_technique_ids": [
+          "T1535",
+          "T1496"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "Execution of Cloud Storage Compute Emitter Script",
+        "description": "Detection of process execution invoking the cloud_storage_compute_emitter plugin via a Python script, indicative of synthetic cloud activity generation.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name = 'python3'\n| filter action_process_command_line contains 'cloud_storage_compute_emitter'\n| filter action_process_command_line contains 'dormant_region_activity'",
+        "mitre_technique_ids": [
+          "T1535",
+          "T1496"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "Suspicious Heavy Allocation of Compute Resources - Possible Mining Activity",
-        "description": "ABIOC (is_ml=true) — the XSIAM Cloud Storage & Compute analytics alert 'Suspicious heavy allocation of compute resources - possible mining activity'. Auto-tuned behavioral-ML anchored on a learned per-principal compute-allocation baseline: a short-window burst of large GPU / high-core instance types (a mining-shaped fleet) far above the principal's normal allocation profile.",
+        "description": "ABIOC (is_ml=true) \u2014 the XSIAM Cloud Storage & Compute analytics alert 'Suspicious heavy allocation of compute resources - possible mining activity'. Auto-tuned behavioral-ML anchored on a learned per-principal compute-allocation baseline: a short-window burst of large GPU / high-core instance types (a mining-shaped fleet) far above the principal's normal allocation profile.",
         "logic": "dataset = cloud_audit_logs\n| filter eventSource = \"ec2.amazonaws.com\" and eventName = \"RunInstances\"\n| filter instance_type in (\"p4d.24xlarge\", \"p5.48xlarge\", \"g5.48xlarge\", \"g6e.48xlarge\")\n| comp count() as gpu_launches, sum(instances_requested) as total_requested by userIdentity.arn, awsRegion\n| filter gpu_launches >= 3 or total_requested >= 20\n| fields userIdentity.arn, awsRegion, gpu_launches, total_requested",
         "severity": "high",
         "mitre_technique_ids": [
@@ -161,7 +200,7 @@
       {
         "name": "Dormant-Region Compute Escalating to Mining-Shaped Heavy Allocation",
         "rule_id": "CR-CDR-0024",
-        "logic": "Fires when analytics `Compute Activity in Dormant Cloud Region` and abioc `Suspicious Heavy Allocation of Compute Resources - Possible Mining Activity` both observe RunInstances activity for the same recipientAccountId and userIdentity.arn within a 30-minute window — stitching the dormant-region landing and the mining-shaped GPU burst into ONE cloud cryptomining incident rather than two isolated alerts."
+        "logic": "Fires when analytics `Compute Activity in Dormant Cloud Region` and abioc `Suspicious Heavy Allocation of Compute Resources - Possible Mining Activity` both observe RunInstances activity for the same recipientAccountId and userIdentity.arn within a 30-minute window \u2014 stitching the dormant-region landing and the mining-shaped GPU burst into ONE cloud cryptomining incident rather than two isolated alerts."
       }
     ],
     "analytics_modules": []
@@ -182,7 +221,7 @@
     "threat_scenarios": [
       {
         "threat_scenario_id": "TS-CDR-024",
-        "name": "Cloud cryptomining — dormant-region compute + mining-shaped heavy allocation",
+        "name": "Cloud cryptomining \u2014 dormant-region compute + mining-shaped heavy allocation",
         "description": "Validate that Cortex XSIAM raises the two Cloud Storage & Compute ML analytics alerts when an adversary stands up compute in a never-used region and bursts a fleet of large GPU instances, and that the correlation engine stitches them into a single cryptomining incident.",
         "threat_steps": [
           {
@@ -236,20 +275,20 @@
   },
   "references": [
     {
-      "title": "Cortex XSIAM Analytics Alert Reference by data source — Cloud Storage & Compute (Compute Activity in a Dormant Cloud Region / Cryptomining)",
+      "title": "Cortex XSIAM Analytics Alert Reference by data source \u2014 Cloud Storage & Compute (Compute Activity in a Dormant Cloud Region / Cryptomining)",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference-by-data-source",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK — T1535 Unused/Unsupported Cloud Regions",
+      "title": "MITRE ATT&CK \u2014 T1535 Unused/Unsupported Cloud Regions",
       "url": "https://attack.mitre.org/techniques/T1535/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK — T1496 Resource Hijacking",
+      "title": "MITRE ATT&CK \u2014 T1496 Resource Hijacking",
       "url": "https://attack.mitre.org/techniques/T1496/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"

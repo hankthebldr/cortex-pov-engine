@@ -47,9 +47,9 @@
     }
   },
   "identity": {
-    "name": "Anomalous Privileged Role / Consent Grant Deviating from Admin Learned Baseline — Cortex Identity ABIOC (T1098 / T1484)",
-    "summary": "A directory-sync / identity-automation account whose learned Cortex baseline is read-and-sync suddenly assigns a privileged directory role and grants a high-risk OAuth consent — Storm-0501 hybrid-cloud identity abuse. The deviation from the account's learned governance baseline plus the causality chain is what the auto-tuned ABIOC fires on.",
-    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the user, endpoint, and network behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the IDENTITY plane. It models Storm-0501, the Microsoft-tracked actor that pivots from on-prem compromise into a victim's Entra ID tenant by abusing a compromised Directory Synchronization / identity-automation account: rather than dropping malware, the operator assigns itself (or a controlled principal) a privileged directory role and grants a high-risk OAuth application consent to persist and escalate in the cloud. Cortex has learned that the sync/automation identity is a low-noise governance principal — it reconciles attribute writes and reads directory objects, never assigns Global Administrator, and never consents to Directory.ReadWrite.All-class application scopes. The scenario injects two behavioral deviations from that learned baseline: (a) a privileged directory-role assignment (Global Administrator / Privileged Role Administrator) initiated by the non-governance identity, and (b) a high-risk OAuth consent / service-principal credential grant carrying tenant-wide application scopes. A hand-authored BIOC keyed on a specific bad principal or role id would miss this — every action uses legitimate Entra ID administrative APIs — which is exactly the point: the auto-tuned ABIOC fires on the deviation from the account's learned governance behavior and anchors it to the causality chain (compromised sync account -> privileged role assignment -> tenant-wide consent grant). Two ABIOCs cover the two deviation shapes; supporting validation XQL confirms the account's learned baseline and surfaces the out-of-workflow role assignment; a correlation rule stitches the two ABIOCs into a single rogue-privilege-escalation incident the DC presents as proof that Cortex's behavioral analytics caught novel hybrid-cloud identity abuse no static rule was written for.",
+    "name": "Anomalous Privileged Role / Consent Grant Deviating from Admin Learned Baseline \u2014 Cortex Identity ABIOC (T1098 / T1484)",
+    "summary": "A directory-sync / identity-automation account whose learned Cortex baseline is read-and-sync suddenly assigns a privileged directory role and grants a high-risk OAuth consent \u2014 Storm-0501 hybrid-cloud identity abuse. The deviation from the account's learned governance baseline plus the causality chain is what the auto-tuned ABIOC fires on.",
+    "description": "Analytics Behavioral IOC (ABIOC) is a first-party Cortex detection type distinct from a hand-authored BIOC: PANW authors and continually tunes ABIOCs against the user, endpoint, and network behavioral profiles Cortex learns per environment, firing on a single suspicious event that carries an identified chain of causality. This scenario exercises that detector class on the IDENTITY plane. It models Storm-0501, the Microsoft-tracked actor that pivots from on-prem compromise into a victim's Entra ID tenant by abusing a compromised Directory Synchronization / identity-automation account: rather than dropping malware, the operator assigns itself (or a controlled principal) a privileged directory role and grants a high-risk OAuth application consent to persist and escalate in the cloud. Cortex has learned that the sync/automation identity is a low-noise governance principal \u2014 it reconciles attribute writes and reads directory objects, never assigns Global Administrator, and never consents to Directory.ReadWrite.All-class application scopes. The scenario injects two behavioral deviations from that learned baseline: (a) a privileged directory-role assignment (Global Administrator / Privileged Role Administrator) initiated by the non-governance identity, and (b) a high-risk OAuth consent / service-principal credential grant carrying tenant-wide application scopes. A hand-authored BIOC keyed on a specific bad principal or role id would miss this \u2014 every action uses legitimate Entra ID administrative APIs \u2014 which is exactly the point: the auto-tuned ABIOC fires on the deviation from the account's learned governance behavior and anchors it to the causality chain (compromised sync account -> privileged role assignment -> tenant-wide consent grant). Two ABIOCs cover the two deviation shapes; supporting validation XQL confirms the account's learned baseline and surfaces the out-of-workflow role assignment; a correlation rule stitches the two ABIOCs into a single rogue-privilege-escalation incident the DC presents as proof that Cortex's behavioral analytics caught novel hybrid-cloud identity abuse no static rule was written for.",
     "severity": "high",
     "confidence": "high"
   },
@@ -117,7 +117,7 @@
   "execution": {
     "target_platform": "linux",
     "execution_framework": "custom-cortex",
-    "framework_reference_id": "SIM-ITDR-010 — Anomalous privileged role/consent grant deviating from the admin learned baseline for Cortex identity ABIOC validation",
+    "framework_reference_id": "SIM-ITDR-010 \u2014 Anomalous privileged role/consent grant deviating from the admin learned baseline for Cortex identity ABIOC validation",
     "privilege_required": "cloud-iam-user",
     "prerequisites": [
       {
@@ -160,8 +160,47 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "directory-role-assignment",
+        "context": "File path used in the process that assigns privileged roles by non-governance identity."
+      },
+      {
+        "ioc_type": "filename",
+        "value": "oauth-consent",
+        "context": "File path used in the process that initiates high-risk OAuth consent."
+      },
+      {
+        "ioc_type": "domain",
+        "value": "sync-automation.exe",
+        "context": "Executable name of the automation identity performing the anomalous behavior."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Privileged Role Assignment by Non-Governance Identity",
+        "description": "Detection of a process starting that performs a privileged directory-role assignment (Global Administrator or Privileged Role Administrator) by an identity not in the learned governance baseline.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username not in (\"governance-user-1\", \"governance-user-2\", \"admin-user-1\")\n| filter action_process_image_name in (\"powershell.exe\", \"cmd.exe\", \"sh.exe\")\n| filter action_file_path contains \"directory-role-assignment\"\n| filter causality_actor_process_image_name contains \"sync-automation.exe\"",
+        "mitre_technique_ids": [
+          "T1098",
+          "T1484"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      },
+      {
+        "name": "High-Risk OAuth Consent by Automation Identity",
+        "description": "Detection of a process starting that initiates a high-risk OAuth consent or service-principal credential grant by a non-governance identity with tenant-wide scopes.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_effective_username not in (\"governance-user-1\", \"governance-user-2\", \"admin-user-1\")\n| filter action_process_image_name in (\"powershell.exe\", \"curl.exe\", \"wget.exe\")\n| filter action_file_path contains \"oauth-consent\"\n| filter causality_actor_process_image_name contains \"automation-sync.exe\"",
+        "mitre_technique_ids": [
+          "T1098",
+          "T1484"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "ITDR-010 Anomalous Privileged Directory Role Assignment by Non-Governance Identity",
@@ -206,13 +245,13 @@
     ],
     "correlation_rules": [
       {
-        "name": "Rogue Privilege Escalation on Sync Account — ABIOC Causality Stitch",
+        "name": "Rogue Privilege Escalation on Sync Account \u2014 ABIOC Causality Stitch",
         "rule_id": "CR-ITDR-0010",
-        "logic": "ABIOC(ITDR-010 Anomalous Privileged Directory Role Assignment by Non-Governance Identity) AND ABIOC(ITDR-010 High-Risk OAuth Consent and App Credential Grant Deviating from Baseline) — fuses the two auto-tuned behavioral deviations on the same tenant+identity into a single rogue-privilege-escalation incident anchored to the sync/automation-account causality chain."
+        "logic": "ABIOC(ITDR-010 Anomalous Privileged Directory Role Assignment by Non-Governance Identity) AND ABIOC(ITDR-010 High-Risk OAuth Consent and App Credential Grant Deviating from Baseline) \u2014 fuses the two auto-tuned behavioral deviations on the same tenant+identity into a single rogue-privilege-escalation incident anchored to the sync/automation-account causality chain."
       }
     ],
     "analytics_modules": [
-      "Cortex XSIAM Analytics — auto-tuned behavioral profiling of per-identity directory-administration and consent activity"
+      "Cortex XSIAM Analytics \u2014 auto-tuned behavioral profiling of per-identity directory-administration and consent activity"
     ]
   },
   "panw_mapping": {
@@ -283,26 +322,26 @@
   },
   "references": [
     {
-      "title": "Microsoft Threat Intelligence — Storm-0501: Ransomware attacks expanding to hybrid cloud environments",
+      "title": "Microsoft Threat Intelligence \u2014 Storm-0501: Ransomware attacks expanding to hybrid cloud environments",
       "url": "https://www.microsoft.com/en-us/security/blog/2024/08/27/storm-0501-ransomware-attacks-expanding-to-hybrid-cloud-environments/",
       "publisher": "Microsoft Threat Intelligence",
       "publisher_id": "SRC-MSTIC",
       "primary": true
     },
     {
-      "title": "MITRE ATT&CK T1098.003 — Account Manipulation: Additional Cloud Roles",
+      "title": "MITRE ATT&CK T1098.003 \u2014 Account Manipulation: Additional Cloud Roles",
       "url": "https://attack.mitre.org/techniques/T1098/003/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "MITRE ATT&CK T1484 — Domain or Tenant Policy Modification",
+      "title": "MITRE ATT&CK T1484 \u2014 Domain or Tenant Policy Modification",
       "url": "https://attack.mitre.org/techniques/T1484/",
       "publisher": "MITRE",
       "publisher_id": "SRC-MITRE-ATTACK"
     },
     {
-      "title": "Cortex XSIAM — Analytics BIOC (ABIOC) behavioral detection",
+      "title": "Cortex XSIAM \u2014 Analytics BIOC (ABIOC) behavioral detection",
       "url": "https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-Analytics-Alert-Reference",
       "publisher": "Palo Alto Networks TechDocs",
       "publisher_id": "SRC-PANW-TECHDOCS"

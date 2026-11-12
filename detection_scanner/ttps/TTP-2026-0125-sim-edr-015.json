@@ -206,7 +206,18 @@
         "reputation_required": "suspicious"
       }
     ],
-    "biocs": [],
+    "biocs": [
+      {
+        "name": "First-Seen Tunneler Executed from Writable Path by Downloader",
+        "description": "A never-before-seen binary (chisel.exe) written to a writable path (/tmp/...) and executed from that same path, where the direct causality parent is an HTTPS downloader (curl), fires on the process deviation — a first-seen binary executing from /tmp — rather than on any known-bad hash. A static BIOC keyed on a specific process image name or hash is brittle against dual-use tooling; the hand-authored BIOC fires on the execution-context deviation (first-seen binary from /tmp) that a learned rule would not catch because the learned rule fires on the transfer-to-first-seen deviation, not on the execution-context of the first-seen binary itself. Distinct from the two ABIOCs: they fire on transfer-and-fan-out and peer-diversity, not on first-seen-execution-from-writable-path.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_image_name in (\"chisel.exe\", \"chisel\")\n| filter causality_actor_process_image_name in (\"curl\", \"curl.exe\")\n| filter action_file_path starts_with \"/tmp/\"\n| comp count() as first_seen_execs by agent_hostname, action_process_image_name\n| filter first_seen_execs >= 1\n| sort desc first_seen_execs\n| fields agent_hostname, action_process_image_name, first_seen_execs",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1570"
+        ],
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "Lateral Tool Transfer to Never-Before-Seen Tunneler over HTTPS",

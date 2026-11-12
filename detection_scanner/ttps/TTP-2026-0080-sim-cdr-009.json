@@ -164,8 +164,26 @@
     }
   },
   "detections": {
-    "iocs": [],
-    "biocs": [],
+    "iocs": [
+      {
+        "ioc_type": "filename",
+        "value": "/tmp/.hidden/shell",
+        "context": "Dropped binary (renamed to blend with /tmp) executed from a writable temp path inside the container."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "CDR-009 Exec-Spawned Shell Process Tree Inside Baselined Container",
+        "description": "A container whose learned per-process baseline is a single long-running service binary suddenly hosts a shell process tree. BIOC fires on the specific child image names (curl, nc, nmap, python3, apt, apk) — a deterministic rule, not ML — distinct from the two ABIOCs that fire on the same deviation via learned-behavioral profiles. The rule keys on the exec-spawned shell (causality_actor_process_image_name) so it does not confuse the service's own process.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter causality_actor_process_image_name in (\"sh\", \"bash\")\n| filter action_process_image_name in (\"curl\", \"nc\", \"nmap\", \"python3\", \"apt\", \"apk\", \"ps\")\n| comp count() as anomalous_children by agent_hostname, container_id, causality_actor_process_image_name, actor_process_instance_id\n| filter anomalous_children >= 1\n| fields agent_hostname, container_id, causality_actor_process_image_name, actor_process_instance_id, anomalous_children",
+        "severity": "high",
+        "mitre_technique_ids": [
+          "T1610",
+          "T1611"
+        ],
+        "suppression_window_seconds": 0
+      }
+    ],
     "abiocs": [
       {
         "name": "CDR-009 Anomalous East-West Connection Spike from Baselined Microservice",

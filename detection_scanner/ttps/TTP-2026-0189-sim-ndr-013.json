@@ -1,0 +1,263 @@
+{
+  "id": "TTP-2026-0189",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.0",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-05-29T00:00:00+00:00",
+    "updated_at": "2026-06-02",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-ndr",
+      "vector-c2-tunneling",
+      "protocol-ssh",
+      "industry-all",
+      "severity-high",
+      "network"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "network",
+      "destructive": false,
+      "requires_network_egress": true,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "network-fabric"
+      ],
+      "estimated_runtime_seconds": 120,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Anomalous Outbound RDP Egress \u2014 Lateral Movement (ms-rdp)",
+    "summary": "A workstation opens outbound RDP (ms-rdp / TCP 3389) to a host it never normally reaches, the App-ID + NGFW-traffic shape of interactive lateral movement.",
+    "description": "An endpoint that normally only RECEIVES RDP initiates OUTBOUND ms-rdp sessions \u2014 the X.224 Connection Request carries an mstshash cookie (the pivoting account) and an NLA/CredSSP negotiation. Cortex NGFW App-ID classifies the session as ms-rdp and the NDR/traffic analytics flag the anomalous outbound/lateral RDP. CortexSim drives rdp_egress (real TCP X.224 CR to an authorised sinkhole) \u2014 no credentials/CredSSP material ever leaves the simulator.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [],
+    "campaigns": [],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology"
+    ],
+    "first_observed": "2015-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1021",
+        "name": "Remote Services: Remote Desktop Protocol",
+        "subtechnique_id": "T1021.001",
+        "tactic_ids": [
+          "TA0008"
+        ],
+        "tactic_names": [
+          "Lateral Movement"
+        ]
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "atomic-red-team",
+    "framework_reference_id": "T1572 / T1021.004 \u2014 CortexSim ssh_egress EAL plugin (outbound SSH-2.0 banner + KEXINIT to lab sinkhole)",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Lab environment matching scenario SIM-NDR-007 requirements (NGFW logging outbound traffic from the lab subnet to XSIAM, TCP listener on 10.50.0.42:22).",
+        "check_command": "python3 -m scripts.eal_simulator.cli describe ssh_egress"
+      },
+      {
+        "description": "NGFW forwards outbound traffic logs into XSIAM (panw_ngfw_traffic_raw / network_story carries app, src_ip, dst_ip, dst_port, session duration)."
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "code": "# Live outbound RDP X.224 Connection Request burst against the lab sinkhole, so\n# the NGFW App-ID fingerprints ms-rdp egress (traffic-level EAL \u2014 real TCP, no\n# credentials/CredSSP ever sent). Mirrors ssh_egress/ftp_egress.\ncat > /tmp/rdp-egress-live.yml <<'YML'\ncampaign_id: CMP-NDR-013\nname: \"Outbound RDP egress (ms-rdp X.224 CR)\"\ntarget_allowlist:\n  - \"10.50.0.42:3389\"\nsteps:\n  - plugin: rdp_egress\n    params:\n      target_host: \"10.50.0.42\"\n      target_port: 3389\n      mstshash_cookie: \"svc-rdp\"\n      requested_protocols: 2\n      iterations: 5\n      sleep_seconds: 10\nYML\npython3 -m core.eal_simulator.run_campaign --campaign /tmp/rdp-egress-live.yml || true\n",
+      "input_variables": [],
+      "timeout_seconds": 120
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "network-connection",
+        "description": "Outbound ms-rdp session from a workstation to TCP 3389 on an internal host.",
+        "expected_value": "dataset panw_ngfw_traffic_raw: app = 'ms-rdp' and dst_port = 3389"
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "rm -f /tmp/ssh-egress-live.yml"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "ipv4",
+        "value": "10.50.0.42",
+        "context": "Lab RDP sinkhole the egress targets (TEST/lab only)."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "NDR-013 Outbound RDP From a Non-Server Endpoint",
+        "description": "A workstation-class host initiates an outbound RDP (ms-rdp / 3389) session \u2014 RDP from a host that normally only accepts it, consistent with interactive lateral movement.",
+        "logic": "dataset = panw_ngfw_traffic_raw\n| filter app = \"ms-rdp\" or dst_port = 3389\n| filter action = \"allow\"\n| comp count() as rdp_sessions by src_ip, dst_ip, dst_port\n| filter rdp_sessions >= 1",
+        "mitre_technique_ids": [
+          "T1021.001"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Outbound ms-rdp Egress on the NGFW Traffic Feed",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter _time > to_timestamp(current_time() - 1800)\n| filter app = \"ms-rdp\" or dst_port = 3389\n| comp count() as sessions by src_ip, dst_ip\n| sort desc sessions",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      },
+      {
+        "purpose": "hunt",
+        "name": "RDP To an Internal Host Never Previously Contacted",
+        "query": "dataset = panw_ngfw_traffic_raw\n| filter dst_port = 3389 and app = \"ms-rdp\"\n| comp count_distinct(dst_ip) as rdp_peers by src_ip\n| filter rdp_peers >= 1",
+        "expected_rows_min": 1,
+        "dataset": "panw_ngfw_traffic_raw"
+      }
+    ],
+    "correlation_rules": [],
+    "analytics_modules": [
+      "Cortex NGFW/NDR Analytics \u2014 Anomalous outbound/lateral RDP (ms-rdp App-ID from an endpoint that normally only accepts RDP); Required Data: Palo Alto Networks Firewall traffic logs; ATT&CK T1021.001."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "ngfw-pa-series",
+        "submodule": "app-id-traffic-log",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "NGFW-SSH-OUTBOUND-001",
+          "NGFW-EAL-SSH-BANNER-001"
+        ],
+        "license_required": "pro",
+        "evidence_query": "dataset = panw_ngfw_traffic_raw | filter app = \"ssh\" | comp count() as ssh_sessions by src_ip, dst_ip"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "network-security-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-AN-SSH-TUNNEL-SETUP",
+          "XSIAM-CR-NDR-0006"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "preset = network_story | filter app = \"ssh\" | comp count() as handshakes by src_ip, dst_ip | filter handshakes >= 4"
+      },
+      {
+        "module": "cortex-xsoar",
+        "coverage_tier": "response",
+        "rule_ids": [
+          "XSOAR-PB-SshTunnelResponse-v1"
+        ],
+        "license_required": "base",
+        "evidence_query": "Playbook: block the outbound SSH destination, quarantine the source host, hunt for established tunnels/port-forwards, open a C2 DFIR ticket."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-C2-062",
+        "name": "Outbound SSH Tunnel / C2 Setup Detection via NGFW EAL",
+        "description": "Validate that NGFW App-ID + XSIAM Network Security Analytics detect outbound SSH with an atypical client banner and a repeated short-lived handshake burst from a non-admin endpoint.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-C2-062A",
+            "objective": "Outbound SSH App-ID and the atypical client banner are detected from NGFW telemetry.",
+            "preconditions": [
+              "NGFW logging outbound traffic from the lab subnet to XSIAM.",
+              "TCP listener reachable on 10.50.0.42:22."
+            ],
+            "steps": [
+              "Run SIM-NDR-007 step-02 (live ssh_egress with atypical banner + KEXINIT).",
+              "Inspect Network Security Analytics / network_story for the source IP."
+            ],
+            "success_criteria": [
+              "XQL `NGFW App-ID SSH outbound session from non-admin endpoint` returns >= 1 row.",
+              "IOC `SSH-2.0-Cortex_atypical_lateral_001` matches the session banner."
+            ],
+            "expected_score_weight": 0.6
+          },
+          {
+            "threat_step_id": "TS-C2-062B",
+            "objective": "The handshake burst and banner anomaly stitch into a single tunnel/C2-setup incident.",
+            "success_criteria": [
+              "BIOC `NGFW EAL repeated short-lived outbound SSH handshakes from single source` returns >= 1 row with handshake_count >= 4.",
+              "Correlation `CR-NDR-0006` raises a single SSH-tunnel/C2 incident for the source."
+            ],
+            "expected_score_weight": 0.4
+          }
+        ]
+      }
+    ]
+  },
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Restrict outbound SSH at the NGFW to approved bastion/jump hosts and sanctioned destinations only.",
+      "Apply default-deny outbound policy and block ssh App-ID from workstation subnets.",
+      "Enforce SSH client allowlisting so only sanctioned clients/banners are permitted."
+    ],
+    "detection_engineering": [
+      "Alert on ssh App-ID from non-admin endpoints toward non-corporate destinations.",
+      "Surface atypical/non-standard SSH client identification banners.",
+      "Correlate repeated short-lived SSH handshakes with the banner anomaly into one tunnel/C2-setup incident."
+    ],
+    "response_playbook": "XSOAR-PB-SshTunnelResponse-v1"
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1021.001 \u2014 Remote Services: Remote Desktop Protocol",
+      "url": "https://attack.mitre.org/techniques/T1021/001/",
+      "publisher": "MITRE",
+      "primary": true
+    },
+    {
+      "title": "Cortex Analytics \u2014 Palo Alto Networks Firewall traffic Logs data source",
+      "url": "https://cortex-docs.paloaltonetworks.com/analytics-alerts/alerts-by-data-source/palo-alto-networks-firewall-traffic-logs",
+      "publisher": "Palo Alto Networks"
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-05-29",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-NDR-007."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-06-02",
+      "author": "Henry Reed",
+      "change": "Authored real NGFW SSH outbound App-ID + banner-anomaly XQL/BIOC/IOC, added correlation CR-NDR-0006, enriched identity + panw_mapping. Promoted to active."
+    }
+  ]
+}

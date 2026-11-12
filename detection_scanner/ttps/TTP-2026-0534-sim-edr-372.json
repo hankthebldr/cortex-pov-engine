@@ -1,0 +1,325 @@
+{
+  "id": "TTP-2026-0534",
+  "schema_version": "1.0.0",
+  "entry_version": "1.0.1",
+  "status": "active",
+  "metadata": {
+    "created_at": "2026-08-05T18:23:22+00:00",
+    "updated_at": "2026-08-05",
+    "authors": [
+      {
+        "name": "CortexSim generate_card.py",
+        "role": "author"
+      },
+      {
+        "name": "Henry Reed",
+        "email": "hreed@paloaltonetworks.com",
+        "role": "reviewer"
+      }
+    ],
+    "tags": [
+      "plane-edr",
+      "vector-privilege-escalation-enumeration",
+      "industry-all",
+      "severity-high",
+      "linux",
+      "container",
+      "payload-shelf",
+      "behavioural-not-name-keyed"
+    ],
+    "source_refs": [
+      "SRC-MITRE-ATTACK",
+      "SRC-UNIT42"
+    ],
+    "pov_engine": {
+      "engine_version_min": "0.1.0",
+      "auto_load": true,
+      "simulation_class": "endpoint",
+      "destructive": false,
+      "requires_network_egress": false,
+      "requires_internet": false,
+      "platforms": [
+        "linux",
+        "kubernetes"
+      ],
+      "estimated_runtime_seconds": 240,
+      "cleanup_required": true,
+      "safety_class": "lab-only"
+    }
+  },
+  "identity": {
+    "name": "Offensive Tooling: metasploit (adapter-deployed)",
+    "summary": "A service account deploys and runs metasploit (generates and runs a Meterpreter session back to the handler). Deployed via adapter_ref TOOL-METASPLOIT.",
+    "description": "metasploit generates and runs a Meterpreter session back to the handler. The tool is delivered through the Cortex POV tool adapter (TOOL-METASPLOIT, installed by the pack at dispatch) rather than an ad-hoc internet download, so it survives default-deny egress and the absent detection is never a manufactured false negative. Cortex should detect the execution of metasploit and its artifacts.",
+    "severity": "high",
+    "confidence": "high"
+  },
+  "threat_context": {
+    "actors": [
+      {
+        "name": "TeamTNT"
+      }
+    ],
+    "campaigns": [
+      "Hildegard"
+    ],
+    "malware_families": [],
+    "industries_targeted": [
+      "technology",
+      "financial-services"
+    ],
+    "first_observed": "2021-01-01"
+  },
+  "mitre_attack": {
+    "matrix": "enterprise",
+    "techniques": [
+      {
+        "technique_id": "T1059",
+        "name": "T1059.004",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1059.004"
+      },
+      {
+        "technique_id": "T1071",
+        "name": "T1071.001",
+        "tactic_ids": [
+          "TA0002"
+        ],
+        "tactic_names": [
+          "Execution"
+        ],
+        "subtechnique_id": "T1071.001"
+      }
+    ]
+  },
+  "execution": {
+    "target_platform": "linux",
+    "execution_framework": "custom-cortex",
+    "framework_reference_id": "T1082 \u2014 automated Linux privilege-escalation enumeration (LinPEAS / pspy / SUID3NUM) executed by a web-server service account from a staging directory.",
+    "privilege_required": "user",
+    "prerequisites": [
+      {
+        "description": "Cortex XDR Linux agent installed and reporting on the target endpoint.",
+        "check_command": "systemctl is-active cortex-agent || ps aux | grep -i cortex"
+      },
+      {
+        "description": "The payload shelf carries linpeas.sh, pspy64 and suid3num.py, pinned to the digests in tools/packs/{linpeas,pspy,suid3num}.yml. Verify BEFORE the customer is watching.",
+        "check_command": "curl -fsS \"$CORTEXSIM_SERVER/api/shelf/resolve/SIM-EDR-022\" | jq '.air_gapped, .artifacts[].sha256'"
+      },
+      {
+        "description": "An enrolled beacon whose capabilities include artifact fetch (pull mode), or a generated bash bundle on a target that DOES have public-internet egress (push mode)."
+      },
+      {
+        "description": "A POSIX target with `python3` on PATH and a LOGIN-CAPABLE www-data account. Both were found missing on a bare ubuntu:22.04 during the 2026-08-05 beacon proof: no python3 made step-04 exit 127, and www-data's /usr/sbin/nologin shell made `runuser -l www-data` refuse before any step ran. Both fail LOUDLY, which is correct \u2014 but a DC should discover them here, not in front of a customer.",
+        "check_command": "command -v python3 && getent passwd www-data | grep -qv nologin"
+      }
+    ],
+    "payload": {
+      "interpreter": "bash",
+      "input_variables": [],
+      "timeout_seconds": 180,
+      "code": "# MATURE: metasploit deployed via adapter_ref TOOL-METASPLOIT.\n# adapter TOOL-METASPLOIT installs the tool at dispatch (pack runtime_install_command); this payload runs it.\nmetasploit -q -x 'use exploit/multi/handler; run'\n"
+    },
+    "expected_artifacts": [
+      {
+        "artifact_type": "process",
+        "description": "metasploit executed by a service account.",
+        "expected_value": "action_process_image_name contains \"metasploit\""
+      }
+    ],
+    "cleanup": {
+      "interpreter": "bash",
+      "code": "echo '[CortexSim] metasploit run complete'"
+    }
+  },
+  "detections": {
+    "iocs": [
+      {
+        "ioc_type": "filepath",
+        "value": "metasploit",
+        "context": "metasploit artifact path/name on the target."
+      }
+    ],
+    "biocs": [
+      {
+        "name": "Metasploit Executed by a Service Account on the Endpoint",
+        "description": "A non-interactive service account runs metasploit \u2014 an offensive TOOL-METASPLOIT-wired tool not part of normal operations on this host.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter actor_process_image_path contains \"metasploit\" or action_process_command_line contains \"metasploit\"\n| comp count() as runs by agent_hostname, actor_effective_username\n| filter runs >= 1",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ],
+        "severity": "high",
+        "suppression_window_seconds": 0
+      }
+    ],
+    "xql_queries": [
+      {
+        "purpose": "validation",
+        "name": "Metasploit Execution Hunt",
+        "query": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"metasploit\"\n| fields agent_hostname, actor_effective_username, action_process_image_name, action_process_command_line",
+        "expected_rows_min": 1,
+        "dataset": "xdr_data"
+      }
+    ],
+    "correlation_rules": [],
+    "abiocs": [
+      {
+        "name": "First-Seen Execution of metasploit on This Host",
+        "description": "A host that has never run metasploit executes it shortly after it is staged/installed \u2014 the deploy-then-run chain of an offensive tool.",
+        "logic": "dataset = xdr_data\n| filter event_type = ENUM.PROCESS and event_sub_type = ENUM.PROCESS_START\n| filter action_process_command_line contains \"metasploit\"\n| comp count() as first_runs by agent_hostname",
+        "behavioral_profile": "machine-learning",
+        "causality_anchor": "adapter deploy/stage of metasploit -> first execution by a service-account shell",
+        "mitre_technique_ids": [
+          "T1059.004"
+        ],
+        "severity": "high"
+      }
+    ],
+    "analytics_modules": [
+      "Cortex XSIAM Analytics (XDR Agent) \u2014 uncommon offensive tool (metasploit) executed by a service account; Required Data: XDR Agent; ATT&CK T1059.004."
+    ]
+  },
+  "panw_mapping": {
+    "products": [
+      {
+        "module": "cortex-xdr",
+        "submodule": "behavioral-analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-BIOC-EDR-0176-SVCACCT-INTERP",
+          "XDR-BIOC-EDR-0176-DISCOVERY-BREADTH",
+          "XDR-BIOC-EDR-0176-SUID-SWEEP"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter actor_effective_username in (\"www-data\", \"apache\", \"nginx\") | filter action_process_image_path contains_any (\"/tmp/\", \"/var/tmp/\", \"/dev/shm/\") | fields _time, agent_hostname, causality_id, action_process_image_command_line"
+      },
+      {
+        "module": "cortex-xdr",
+        "submodule": "causality-view",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XDR-CGO-EDR-0176-APACHE2"
+        ],
+        "agent_version_min": "8.4.0",
+        "license_required": "pro",
+        "evidence_query": "preset = xdr_data | filter causality_actor_process_image_name = \"apache2\" | comp count_distinct(action_process_image_name) as chain_breadth by causality_id | filter chain_breadth >= 6"
+      },
+      {
+        "module": "cortex-xsiam",
+        "submodule": "analytics",
+        "coverage_tier": "detection",
+        "rule_ids": [
+          "XSIAM-CR-EDR-0022"
+        ],
+        "license_required": "advanced",
+        "evidence_query": "Correlation CR-EDR-0022 fuses the service-account interpreter spawn with at least one enumeration-breadth BIOC from the same causality_id into one Discovery incident."
+      }
+    ],
+    "threat_scenarios": [
+      {
+        "threat_scenario_id": "TS-EDR-022",
+        "name": "Shelf-Staged Privilege-Escalation Enumeration",
+        "description": "Detect automated Linux privilege-escalation enumeration run by a web-server service account from a staging directory, and stitch the stages back to the web server as causality group owner.",
+        "threat_steps": [
+          {
+            "threat_step_id": "TS-EDR-022A",
+            "objective": "The BEHAVIOURAL detections fire on the canonical run.",
+            "preconditions": [
+              "Cortex XDR Linux agent >= 8.4.0 reporting.",
+              "BIOCs from this card imported and enabled.",
+              "The payload shelf resolves SIM-EDR-022 with air_gapped = true."
+            ],
+            "steps": [
+              "Compose and launch SIM-EDR-022 in pull mode against an enrolled beacon.",
+              "Read the Cortex console for the seven behavioural BIOCs."
+            ],
+            "success_criteria": [
+              "BIOC `EDR-022 Service Account Spawns Interpreter Under Web Server CGO` fires within 60s.",
+              "BIOC `EDR-022 Automated Discovery Binary Breadth Burst` fires with discovery_breadth >= 6.",
+              "BIOC `EDR-022 Filesystem Wide Suid Sgid Sweep By Service Account` fires.",
+              "All three XQL validation queries return >= 1 row."
+            ],
+            "expected_score_weight": 0.5
+          },
+          {
+            "threat_step_id": "TS-EDR-022B",
+            "objective": "The chain stitches to the web-server causality owner (TC-EDR-05).",
+            "success_criteria": [
+              "Correlation `CR-EDR-0022` groups the stages from one causality_id into one incident.",
+              "The Causality View root is apache2 under www-data, NOT cortexsim-agent.",
+              "Process, file and network artifacts are present and temporally ordered."
+            ],
+            "expected_score_weight": 0.3
+          },
+          {
+            "threat_step_id": "TS-EDR-022C",
+            "objective": "RENAME NEGATIVE CONTROL \u2014 behavioural coverage is proven independent of the tool name.",
+            "preconditions": [
+              "The scenario-loader track has landed external_tools[].stage_as (S-19/S-20), OR the run is composed with a POST /api/shelf/compose stage_as override."
+            ],
+            "steps": [
+              "Re-run with linpeas.sh staged as /tmp/.cache/sysinfo.sh.",
+              "Diff which detections fired against the canonical run."
+            ],
+            "success_criteria": [
+              "The seven behavioural BIOCs STILL fire.",
+              "`EDR-022 Filename Keyed Linpeas Command Line Negative Control` and the filename IOCs do NOT fire.",
+              "The sha256 IOC still fires \u2014 a rename changes the destination, never the bytes.",
+              "If the behavioural BIOCs also darken, the reported finding is that the customer's endpoint coverage is name-keyed, NOT that the TTP failed to run."
+            ],
+            "expected_score_weight": 0.2
+          }
+        ]
+      }
+    ]
+  },
+  "references": [
+    {
+      "title": "MITRE ATT&CK T1059.004",
+      "url": "https://attack.mitre.org/techniques/T1059/004/",
+      "publisher": "MITRE",
+      "primary": true
+    }
+  ],
+  "changelog": [
+    {
+      "entry_version": "0.1.0",
+      "date": "2026-08-05",
+      "author": "CortexSim generate_card.py",
+      "change": "Initial draft auto-generated from scenario SIM-EDR-022."
+    },
+    {
+      "entry_version": "1.0.0",
+      "date": "2026-08-05",
+      "author": "Henry Reed",
+      "change": "Authored the payload-shelf EDR card: seven BEHAVIOURAL BIOCs (service-account interpreter spawn under a web-server CGO, discovery-binary breadth burst, privesc read fan-out, staging-directory execution, /proc cmdline sweep, cron-path read, SUID sweep, interpreter-on-staged-script) plus two deliberately filename-keyed detections and two filename IOCs labelled NEGATIVE-CONTROL TARGET, and three sha256 IOCs pinned to the adapter packs' install.artifact digests. Correlation CR-EDR-0022 stitches the chain to the apache2 causality owner for TC-EDR-05. Promoted to active."
+    },
+    {
+      "entry_version": "1.0.1",
+      "date": "2026-08-05",
+      "author": "Henry Reed",
+      "change": "Verified end-to-end against a real enrolled beacon (5/5 steps green under www-data, run status complete, tooling served from the SimCore shelf and sha256-verified against the composition's carried-in digests). Two real prerequisites surfaced by that run and recorded: python3 on PATH (absent on bare ubuntu:22.04 -> step-04 exit 127) and a login-capable www-data shell (nologin -> runuser refuses before any step runs). step-03 now enumerates 0 and 124 as success rather than using `|| true`, so 126/127 from a missing staged artifact still fail the run."
+    }
+  ],
+  "remediation_guidance": {
+    "preventive_controls": [
+      "Mount /tmp, /var/tmp and /dev/shm noexec on servers so a staged script cannot be executed at all.",
+      "Run the web tier under a shell-less account (/usr/sbin/nologin) so an interpreter spawn is impossible, not merely visible.",
+      "Restrict egress from application servers so an un-staged enumerator cannot fetch itself.",
+      "Remove unnecessary SUID/SGID bits and audit the remaining set on a schedule."
+    ],
+    "detection_engineering": [
+      "Alert on ANY interpreter spawn whose causality owner is a web server \u2014 the highest-signal, lowest-volume rule on this card.",
+      "Prefer breadth and fan-out aggregations over tool-name string matches: rename-resistant by construction.",
+      "Keep filename rules, but score them as corroboration only, and periodically run a rename control to prove the behavioural rules carry the detection on their own.",
+      "Hash IOCs survive a rename; filename IOCs do not. Track which of the two your coverage actually rests on."
+    ],
+    "response_playbook": "XSOAR-PB-EndpointEnumerationResponse-v1"
+  }
+}
