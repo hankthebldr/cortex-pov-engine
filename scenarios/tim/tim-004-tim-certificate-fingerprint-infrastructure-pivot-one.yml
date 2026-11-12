@@ -98,7 +98,19 @@ steps:
     mitre_technique: "T1608.003"
     platforms: ["linux", "container", "windows"]
     platform_variants:
-      windows: '$h="tu-node-a.cortexsim-tim.internal"; try { $c=[Net.Sockets.TcpClient]::new($h,443); $s=[Net.Security.SslStream]::new($c.GetStream(),$false,({$true})); $s.AuthenticateAsClient($h); $s.RemoteCertificate.GetCertHashString() } catch { $_ }'
+      # CONT-13: the old one-liner carried no cmdlet or $env: marker, so the
+      # bundle inferred cmd and handed PowerShell to cmd.exe; its catch also
+      # printed the error and exited 0. Valid, recognisable PowerShell now.
+      windows: |
+        $h = 'tu-node-a.cortexsim-tim.internal'
+        try {
+          $c = [Net.Sockets.TcpClient]::new($h, 443)
+          $s = [Net.Security.SslStream]::new($c.GetStream(), $false, ({ $true }))
+          $s.AuthenticateAsClient($h)
+          Write-Output $s.RemoteCertificate.GetCertHashString()
+          $s.Dispose()
+          $c.Dispose()
+        } catch { Write-Error ("TLS fingerprint probe of {0}:443 failed: {1}" -f $h, $_.Exception.Message); exit 1 }
     causality:
       parent_step: step-01
       pivot: shared_entity

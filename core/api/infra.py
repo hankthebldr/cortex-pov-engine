@@ -24,6 +24,7 @@ from engine.infra_models import (
     InfraGenerateRequest,
     InfraGenerateResponse,
     InfraModuleMetadata,
+    hcl_param_problems,
 )
 
 logger = logging.getLogger("cortexsim.api.infra")
@@ -79,7 +80,34 @@ async def generate_bundle(body: InfraGenerateRequest) -> InfraGenerateResponse:
     GAP-API-010 — bundle generation does blocking filesystem work
     (``shutil.copytree`` + ``tar``). It is offloaded to a worker thread via
     ``asyncio.to_thread`` so the event loop is never blocked while a (possibly
-    large) module tree is copied and archived."""
+    large) module tree is copied and archived.
+
+    SEC-17 — ``region``, ``params.jumpbox_size``, ``params.dc_ssh_cidr`` and
+    ``params.tags`` are written between double quotes in the generated
+    ``variables.tf`` / ``terraform.tfvars``. A value that is not shaped like
+    what its field names is refused here with ``400 BAD_INFRA_PARAM`` before
+    anything is rendered; it is never escaped and rendered anyway. A
+    ``dc_ssh_cidr`` that is not a network at all, or is too broad, is still the
+    request model's ``422``; the 400 is for one that parses and carries an IPv6
+    zone id, which is free text. Since the merge with dev (#212) the model also
+    holds ``region`` and ``jumpbox_size`` to the AWS shapes, so those two are a
+    ``422`` too and the 400 here is in practice ``tags`` and a zone-id CIDR. The
+    templates then write every string through dev's ``hcl_string`` /
+    ``hcl_object`` filters, a second layer behind this one."""
+    problems = hcl_param_problems(body)
+    if problems:
+        logger.warning("infra generate refused: %s",
+                       ", ".join(f"{p['field']}={p['value']}" for p in problems))
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": ("Refusing to generate Terraform from "
+                          + ", ".join(p["field"] for p in problems)
+                          + ": the value is not one this field can hold"),
+                "code": "BAD_INFRA_PARAM",
+                "detail": {"fields": problems},
+            },
+        )
     gen = _get_generator()
     try:
         return await asyncio.to_thread(gen.generate, body)

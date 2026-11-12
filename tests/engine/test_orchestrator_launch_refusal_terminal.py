@@ -76,6 +76,17 @@ async def _seed_scenario(db, scenario_id="SIM-EDR-999"):
             ],
         }],
     ))
+    # The launch target is enrolled: an unenrolled one is refused before the
+    # Run row exists (TARGET_AGENT_NOT_ENROLLED), which is not what these
+    # tests are about — they pin refusals that fire AFTER seeding.
+    from datetime import datetime  # noqa: PLC0415
+
+    from models import Agent  # noqa: PLC0415
+
+    db.add(Agent(agent_id="a1", hostname="h-a1", os="linux",
+                 capabilities=["shell", "identity-harness"], interpreters=[],
+                 registered_at=datetime.utcnow(), last_seen=datetime.utcnow(),
+                 status="online"))
     await db.commit()
 
 
@@ -151,7 +162,14 @@ def test_payload_refusal_keeps_the_seeded_results(session_factory, monkeypatch):
             )).scalars().all()
             return rows
 
-    assert len(asyncio.run(_go())) == 1
+    rows = asyncio.run(_go())
+    assert len(rows) == 1
+    # OPS-01: kept, but stamped. Nothing ran, so no alert may ever be credited
+    # to these rows and they leave every efficacy denominator. Left NULL they
+    # read as "pending, awaiting reconcile" and the next matching alert from
+    # anything else on the host produced a detection with an MTTD.
+    assert [(r.outcome, r.outcome_reason) for r in rows] == [
+        ("not_executed", "LAUNCH_REFUSED")]
 
 
 def test_payload_refusal_is_invisible_to_the_restart_orphan_sweep(
@@ -316,6 +334,14 @@ async def _seed_stitch_scenario(db, scenario_id="SIM-EDR-998"):
             ],
         }],
     ))
+    from datetime import datetime  # noqa: PLC0415
+
+    from models import Agent  # noqa: PLC0415
+
+    db.add(Agent(agent_id="a1", hostname="h-a1", os="linux",
+                 capabilities=["shell", "identity-harness"], interpreters=[],
+                 registered_at=datetime.utcnow(), last_seen=datetime.utcnow(),
+                 status="online"))
     await db.commit()
 
 

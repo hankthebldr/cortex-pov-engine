@@ -2,11 +2,6 @@ package identity
 
 import (
 	"context"
-	"os"
-	"os/exec"
-	"os/user"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -97,51 +92,8 @@ func TestShellQuoteEscapesEmbeddedSingleQuotes(t *testing.T) {
 	}
 }
 
-// The account check lets non-portable names through as inconclusive, which is
-// safe only if the wrapper can never turn a username into shell. Proven by
-// executing each wrapper under a real sh with stub runuser/su/sudo that print
-// their argv: the username must arrive as exactly one argv element and nothing
-// it contains may run.
-func TestWrappedUsernameIsOneArgvElement(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX wrappers")
-	}
-	bin := t.TempDir()
-	for _, tool := range []string{"runuser", "su", "sudo"} {
-		stub := "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]\\n' \"$a\"; done\n"
-		if err := os.WriteFile(filepath.Join(bin, tool), []byte(stub), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	pwned := filepath.Join(t.TempDir(), "PWNED")
-	hostile := []string{
-		"x'; touch " + pwned + "; echo '",
-		"$(touch " + pwned + ")",
-		"`touch " + pwned + "`",
-		"a b\nc;touch " + pwned,
-		`CORP\jdoe`, "jdoe@corp.example",
-	}
-	for _, mode := range []string{"runuser", "su", "sudo_u", "sudo_sh"} {
-		for _, name := range hostile {
-			wrapped, err := buildWrappedCommand(ExecutionIdentity{Mode: mode, Username: name, Command: "true"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			cmd := exec.Command("/bin/sh", "-c", wrapped)
-			cmd.Env = []string{"PATH=" + bin + ":/usr/bin:/bin"}
-			out, err := cmd.Output()
-			if err != nil {
-				t.Fatalf("%s %q: %v", mode, name, err)
-			}
-			if !strings.Contains(string(out), "["+name+"]\n") {
-				t.Errorf("%s: username %q not one argv element:\n%s", mode, name, out)
-			}
-			if _, err := os.Stat(pwned); err == nil {
-				t.Fatalf("%s: username %q executed shell", mode, name)
-			}
-		}
-	}
-}
+// TestWrappedUsernameIsOneArgvElement runs the wrappers under a real /bin/sh,
+// so it lives with the other POSIX-dialect tests in harness_unix_test.go (CI-04).
 
 func TestResolveIdentity(t *testing.T) {
 	cases := []struct {
@@ -208,84 +160,4 @@ func TestExecuteCtx_CancelTerminatesAndReturns130(t *testing.T) {
 	if elapsed > 10*time.Second {
 		t.Errorf("cancel took too long: %s", elapsed)
 	}
-}
-
-func TestExecuteCtxStream_CarriesTermination(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX signals")
-	}
-	r, err := ExecuteCtxStream(context.Background(),
-		ExecutionIdentity{Mode: "direct", Command: "kill -9 $$"}, nil)
-	if err != nil {
-		t.Fatalf("err=%v", err)
-	}
-	if r.ExitCode != 137 || r.Termination != "signaled" || r.Signal != 9 {
-		t.Fatalf("got exit=%d term=%q sig=%d, want 137/signaled/9", r.ExitCode, r.Termination, r.Signal)
-	}
-}
-
-// wrapperSurfacesChildSignal is the shared body of the three owed wrapper tests
-// (spec 5.2). It targets the current user's own account so it is runnable
-// without a service account (sudo_u splits the command on whitespace and runs no shell, so it gets a self-killing script instead), skips when the wrapper binary or a non-interactive
-// switch to that account is unavailable, and asserts ExitCode == 137 whichever
-// Termination the wrapper surfaces (a wrapper that forwards the child's death
-// as an exit code reports "exited"; one that re-raises reports "signaled").
-// wrapperTimeout bounds both the probe and the kill run of a wrapper test.
-const wrapperTimeout = 5 * time.Second
-
-// killScript writes an executable that SIGKILLs itself and returns its path (no
-// whitespace, so it survives sudo_u's naive argument split).
-func killScript(t *testing.T) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "selfkill.sh")
-	if err := os.WriteFile(p, []byte("#!/bin/sh\nkill -9 $$\n"), 0o755); err != nil {
-		t.Fatalf("write script: %v", err)
-	}
-	return p
-}
-
-func wrapperSurfacesChildSignal(t *testing.T, mode, bin, killCmd string) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX wrappers")
-	}
-	if _, err := exec.LookPath(bin); err != nil {
-		t.Skipf("%s not present on this host", bin)
-	}
-	u, err := user.Current()
-	if err != nil {
-		t.Skipf("cannot resolve current user: %v", err)
-	}
-	// A wrapper that prompts for a password would otherwise block until the
-	// package timeout; the deadline turns that into a skip.
-	pctx, pcancel := context.WithTimeout(context.Background(), wrapperTimeout)
-	defer pcancel()
-	probe, perr := ExecuteCtxStream(pctx,
-		ExecutionIdentity{Mode: mode, Username: u.Username, Command: "true"}, nil)
-	if perr != nil || probe.ExitCode != 0 {
-		t.Skipf("%s -> %s not usable non-interactively here (may be awaiting a password; exit=%d err=%v)", bin, u.Username, probe.ExitCode, perr)
-	}
-	kctx, kcancel := context.WithTimeout(context.Background(), wrapperTimeout)
-	defer kcancel()
-	r, err := ExecuteCtxStream(kctx,
-		ExecutionIdentity{Mode: mode, Username: u.Username, Command: killCmd}, nil)
-	if err != nil {
-		t.Fatalf("err=%v", err)
-	}
-	t.Logf("%s surfaced exit=%d termination=%q signal=%d", bin, r.ExitCode, r.Termination, r.Signal)
-	if r.ExitCode != 137 {
-		t.Fatalf("ExitCode = %d, want 137 (termination=%q)", r.ExitCode, r.Termination)
-	}
-}
-
-func TestExecuteCtxStream_RunuserSurfacesChildSignal(t *testing.T) {
-	wrapperSurfacesChildSignal(t, "runuser", "runuser", "kill -9 $$")
-}
-
-func TestExecuteCtxStream_SudoSurfacesChildSignal(t *testing.T) {
-	wrapperSurfacesChildSignal(t, "sudo_u", "sudo", killScript(t))
-}
-
-func TestExecuteCtxStream_SuSurfacesChildSignal(t *testing.T) {
-	wrapperSurfacesChildSignal(t, "su", "su", "kill -9 $$")
 }

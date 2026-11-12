@@ -163,6 +163,23 @@ const SPEC = [
     purpose: 'where campaign records are POSTed — reachability is NOT probed here',
     remediation: 'A campaign collector is misconfigured. Run the campaign preflight before launching.',
   },
+  {
+    key: 'master_key', label: 'Credential master key', countKey: null, zeroIsBad: false, required: false,
+    purpose: 'whether CORTEXSIM_SECRET opens the credentials already stored in this vault',
+    remediation:
+      'The master key does not open the stored credentials (a regenerated .env over an old data '
+      + 'volume reads this way). Restore the previous CORTEXSIM_SECRET, or re-enter each credential.',
+  },
+  {
+    // Degraded on EVERY deployment by design: the API has no per-request
+    // authentication yet. Labelled so it is not a raw key, and so a DC can tell
+    // this standing state from a degradation that is new.
+    key: 'api_auth', label: 'API authentication (none yet — expected)', countKey: null, zeroIsBad: false, required: false,
+    purpose: 'SimCore has no per-request authentication; this reads degraded on every deployment by design',
+    remediation:
+      'Expected, not a fault: keep SimCore on an isolated lab network and bound to a trusted interface '
+      + '(CORTEXSIM_BIND). Any OTHER degraded component is a real problem.',
+  },
 ]
 
 const SPEC_BY_KEY = new Map(SPEC.map((s) => [s.key, s]))

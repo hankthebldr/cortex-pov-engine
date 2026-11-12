@@ -17,15 +17,33 @@ from __future__ import annotations
 
 import time
 import uuid
+import warnings
+from typing import Iterator
 
 import httpx
 import pytest
 
 
 @pytest.fixture
-def agent_id() -> str:
-    """Fresh agent_id per test so re-runs don't collide."""
-    return f"smoke-{uuid.uuid4().hex[:8]}"
+def agent_id(client: httpx.Client) -> Iterator[str]:
+    """Fresh agent_id per test so re-runs don't collide, deregistered after it.
+
+    Every stand-in agent here registers from the one address the suite runs on,
+    under a different hostname. Left in the roster, distinct hostnames on one
+    ``last_ip`` are what ``/api/health`` reports as ``AGENT_ADDRESS_SHARED``, so
+    ``test_health_ok`` (which runs after this file) read the suite's own agents
+    as a fault of the SimCore under test, and so would every later run against
+    the same database.
+    """
+    aid = f"smoke-{uuid.uuid4().hex[:8]}"
+    yield aid
+    r = client.delete(f"/api/agents/{aid}")
+    # 404: the test never registered it. Anything else leaves it in the roster.
+    if r.status_code not in (200, 404):
+        warnings.warn(
+            f"smoke agent {aid} was not deregistered (HTTP {r.status_code}: "
+            f"{r.text[:300]}); test_health_ok may report AGENT_ADDRESS_SHARED for it",
+            stacklevel=1)
 
 
 def test_agent_register_idempotent(client: httpx.Client, agent_id: str) -> None:

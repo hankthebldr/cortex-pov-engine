@@ -173,8 +173,15 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
       .finally(() => setLoading((l) => ({ ...l, scenarios: false })))
   }, [setListError])
 
+  // The summary projection (OPS-06). This list is polled every 10 s by every
+  // open console, and the full shape carried every run's whole transcript on
+  // every tick. Rows here therefore carry NO `output` on a current SimCore
+  // (`output_bytes` + `output_tail` instead): a surface that needs a run's
+  // transcript reads GET /api/runs/{id} for that run — RunDetailView,
+  // useRunStepTail and RunTopologyView all do. An older SimCore ignores the
+  // parameter and returns the full shape, which every consumer still handles.
   const refreshRuns = useCallback(() => {
-    return getRuns()
+    return getRuns({ fields: 'summary' })
       .then((data) => setRuns(Array.isArray(data) ? data : []))
       .catch(() => {})
       .finally(() => setLoading((l) => ({ ...l, runs: false })))
@@ -263,10 +270,13 @@ export function EnvironmentProvider({ children, runPollMs = 10_000 }) {
   // Global run poll — not tab-gated (drives the global LIVE pill everywhere).
   // The health probe rides the same tick so the unreachable banner clears
   // itself the moment SimCore comes back, without an operator reload.
+  // So does the agent list: the header's agent chip states whether the active
+  // beacon is polling, on every surface, and a list read once at page load
+  // would keep saying "online" about a beacon that stopped mid-POV.
   useEffect(() => {
-    const t = setInterval(() => { refreshRuns(); refreshHealth() }, runPollMs)
+    const t = setInterval(() => { refreshRuns(); refreshHealth(); refreshAgents() }, runPollMs)
     return () => clearInterval(t)
-  }, [refreshRuns, refreshHealth, runPollMs])
+  }, [refreshRuns, refreshHealth, refreshAgents, runPollMs])
 
   // Re-scope health when the active tenant changes.
   useEffect(() => {

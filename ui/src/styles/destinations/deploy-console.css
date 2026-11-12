@@ -1,0 +1,177 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   deploy-console.css — the Agents deploy modal, agent liveness pills and
+   the Get started agent step: install telemetry, Windows notices, removal
+   help and honest Copy feedback.
+
+   Its own file so the deploy surfaces can change without touching the
+   shared agents.css / cortex-console.css. Tokens only — every var() here
+   is declared in cortex-tokens.css or cortex-console.css.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* ── Liveness pills the base stylesheet does not define ─────────────── */
+.theme-console .target-card__pill--offline { color: var(--c-missed); background: var(--c-missed-soft); }
+.theme-console .target-card__pill--enrolled { color: var(--c-pending); background: var(--c-pending-soft); }
+.theme-console .targets .target-card__pill--offline { color: var(--crit); background: transparent; }
+.theme-console .targets .target-card__pill--enrolled { color: var(--warn); background: transparent; }
+.theme-console .status-dot--offline { background: var(--c-missed); }
+.theme-console .status-dot--enrolled { background: var(--c-pending); }
+.theme-console .targets .target-card--agent:has(.target-card__pill--offline) { border-top: 3px solid var(--crit); }
+.theme-console .targets .target-card--agent:has(.target-card__pill--enrolled) { border-top: 3px dashed var(--warn); }
+.theme-console .target-card__waiting {
+  display: block; margin-top: 6px;
+  font-size: 11px; line-height: 1.5; color: var(--c-text-secondary);
+}
+
+/* An action the card deliberately does not offer (no installer for an id
+   SimCore refuses). Text, not a control: muted, dashed, no hover. */
+.theme-console .card-action--off,
+.theme-console .card-action--off:hover {
+  color: var(--c-text-muted); border-style: dashed; border-color: var(--c-hairline);
+  cursor: help;
+}
+
+/* ── Removal help in the delete confirm ─────────────────────────────── */
+.theme-console .target-card__remove {
+  padding: 10px 12px 0;
+  border-top: 1px solid var(--c-hairline);
+  font-size: 11px; line-height: 1.55; color: var(--c-text-secondary);
+}
+.theme-console .target-card__remove p { margin: 0 0 8px; }
+.theme-console .target-card__remove strong { color: var(--c-text); }
+.theme-console .target-card__remove .deploy-snippet { margin-bottom: 8px; }
+.theme-console .target-card__remove .deploy-snippet code {
+  white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+}
+
+/* ── Snippet captions and the downloaded-installer run line ─────────── */
+.theme-console .deploy-run-line { margin-top: 4px; }
+.theme-console .deploy-run-line .deploy-snippet code {
+  white-space: pre-wrap; word-break: break-all; line-height: 1.6;
+}
+.theme-console .deploy-legacy .deploy-snippet code { white-space: pre-wrap; word-break: break-all; }
+
+/* ── Copy feedback: visible AND announced (aria-live) ───────────────── */
+.theme-console .deploy-copy-live {
+  display: block; min-height: 1em;
+  font-family: var(--font-mono); font-size: 10px; color: var(--c-text-muted);
+}
+.theme-console .deploy-copy-live:empty { min-height: 0; }
+.theme-console .deploy-copy-live--fail { color: var(--c-pending); }
+
+/* ── Windows notices ────────────────────────────────────────────────── */
+.theme-console .win-caveats {
+  margin: 0 0 14px; padding: 9px 11px;
+  border-left: 3px solid var(--c-pending);
+  border-radius: 3px;
+  font-size: 11px; line-height: 1.55; color: var(--c-text-secondary);
+}
+.theme-console .win-caveats__head {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--c-text); margin-bottom: 6px;
+}
+.theme-console .win-caveats__unknown { margin: 0 0 6px; color: var(--c-pending); }
+.theme-console .win-caveats__list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; }
+.theme-console .win-caveats__list b { color: var(--c-text); font-weight: 600; }
+.theme-console .win-caveats code { color: var(--c-text); }
+
+/* ── Install telemetry ──────────────────────────────────────────────── */
+.theme-console .install-attempt {
+  margin: 8px 0; padding: 8px 10px;
+  border-radius: 3px; border-left: 3px solid var(--c-hairline-strong);
+  font-size: 11px; line-height: 1.55; color: var(--c-text-secondary);
+}
+.theme-console .install-attempt--fail { border-left-color: var(--c-missed); background: var(--c-missed-soft); }
+/* Reported-and-continued (CHECKSUM_SKIPPED, DEGRADED_NO_SUPERVISOR, and
+   SERVICE_START_FAILED from the POSIX installer only — on Windows that code is
+   a stop): not a stop, and not a clean pass. The lead sentence carries the
+   meaning; the tint only repeats it. */
+.theme-console .install-attempt--warn { border-left-color: var(--c-pending); background: var(--c-pending-soft); }
+.theme-console .install-attempt--ok { border-left-color: var(--c-hairline-strong); }
+.theme-console .install-attempt code { color: var(--c-text); font-family: var(--font-mono); }
+.theme-console .install-attempt__lead { color: var(--c-text); }
+.theme-console .install-attempt__meta { color: var(--c-text-muted); font-size: 10px; }
+/* The ticking age lives OUTSIDE the live region (see DeployParts.jsx). */
+.theme-console .install-attempt__ago {
+  display: block; margin-top: 2px;
+  color: var(--c-text-muted); font-size: 10px;
+}
+
+.theme-console .install-attempts {
+  margin-top: 14px; padding-top: 10px;
+  border-top: 1px solid var(--c-hairline);
+}
+.theme-console .install-attempts__head {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--c-text-muted);
+}
+.theme-console .install-attempts__note,
+.theme-console .install-attempts__empty {
+  margin: 4px 0 0; font-size: 10px; line-height: 1.5; color: var(--c-text-muted);
+}
+.theme-console .install-attempts__empty--err { color: var(--c-missed); }
+.theme-console .install-attempts__list {
+  list-style: none; margin: 6px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 11px; color: var(--c-text-secondary);
+}
+.theme-console .install-attempts__row { overflow-wrap: anywhere; }
+.theme-console .install-attempts__row--fail .mono { color: var(--c-missed); }
+.theme-console .install-attempts__row--warn .mono { color: var(--c-pending); }
+.theme-console .install-attempts__kind {
+  font-family: var(--font-mono); font-size: 9px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--c-text-muted);
+}
+.theme-console .install-attempts__row--fail .install-attempts__kind { color: var(--c-missed); }
+.theme-console .install-attempts__row--warn .install-attempts__kind { color: var(--c-pending); }
+.theme-console .install-attempts__meta { color: var(--c-text-muted); font-size: 10px; }
+
+/* ── Windows without iwr | iex: download, verify, run ───────────────── */
+.theme-console .nocradle {
+  margin-top: 12px; padding: 10px 12px;
+  border: 1px solid var(--c-hairline); border-radius: 4px;
+  font-size: 11px; line-height: 1.55; color: var(--c-text-secondary);
+}
+.theme-console .nocradle__head {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-text);
+}
+.theme-console .nocradle__head code { text-transform: none; letter-spacing: 0; }
+.theme-console .nocradle__lede { margin: 4px 0 6px; }
+.theme-console .nocradle__steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.theme-console .nocradle__steps .deploy-snippet { margin: 4px 0; }
+.theme-console .nocradle__steps .deploy-snippet code,
+.theme-console .nocradle code[data-testid$="-sha256"] { white-space: pre-wrap; word-break: break-all; line-height: 1.6; }
+.theme-console .nocradle code { color: var(--c-text); }
+.theme-console .nocradle__err { color: var(--c-pending); }
+.theme-console .nocradle__muted { color: var(--c-text-muted); }
+.theme-console .nocradle__note {
+  margin: 8px 0 0; padding-left: 8px; border-left: 2px solid var(--c-pending);
+}
+.theme-console .nocradle__note b { color: var(--c-text); font-weight: 600; }
+.theme-console .gs-form .nocradle { font-size: 12.5px; }
+
+/* ── "Authored, not proven" on the Windows push path ────────────────── */
+/* The same weight as the pull path's Windows caveats: a warning rule on the
+   left, never the success green of the line it may sit inside. */
+.theme-console .launch-win-note {
+  margin: 8px 0 0; padding: 7px 10px;
+  border-left: 3px solid var(--c-pending); border-radius: 3px;
+  font-family: var(--font-ui); font-size: 11px; line-height: 1.55;
+  color: var(--c-text-secondary);
+}
+.theme-console .launch-win-note strong { color: var(--c-text); font-weight: 600; }
+.theme-console .launch-win-note--inline { display: block; }
+.theme-console .target-card__sub--caveat {
+  padding-left: 8px; border-left: 2px solid var(--c-pending);
+  color: var(--c-text-secondary);
+}
+
+/* ── Get started: the same parts, in that page's type scale ─────────── */
+.theme-console .gs-form .win-caveats,
+.theme-console .gs-form .install-attempt,
+.theme-console .gs-form .install-attempts { font-size: 12.5px; }
+.theme-console .gs-form .install-attempts__note,
+.theme-console .gs-form .install-attempts__empty { font-size: 12px; }

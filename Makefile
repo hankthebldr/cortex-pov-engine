@@ -6,10 +6,13 @@
 #   make down      — stop SimCore
 #   make build     — build the production simcore image
 #   make test      — backend (UTC + non-UTC pass) + agent + ui suites (the three code-test gates)
-#   make validate  — detection corpus validity + export determinism
-#   make ci        — everything CI runs, in one shot
+#   make validate  — builds the image, then the detection / refs / adapter / shelf /
+#                    ground-truth gates and the PowerShell 5.1 floor gate (needs pwsh 7)
+#   make ci        — everything CI runs on Linux, in one shot (not the windows job)
 #
 # Override the image tag with `make IMAGE=foo:bar build`.
+# No PowerShell 7 on this host: CORTEXSIM_SKIP_POWERSHELL_GATE=1 skips that one
+# gate inside `validate` / `ci`, loudly. It is never a pass and CI never sets it.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -27,7 +30,7 @@ SECRET      ?= $(shell openssl rand -hex 32)
         test-ui validate validate-detection check-refs check-adapters coverage \
         coverage-strict check-agent-shelf check-ui-shelf check-mcp-boot rust-dist check-rust-recipe \
         check-rust-shelf check-rust-exec e2e-tierc agent-k8s-e2e ground-truth check-ground-truth check-grouping \
-        wiki wiki-check ci clean launch-preflight
+        wiki wiki-check ci clean launch-preflight check-powershell skip-powershell-gate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -161,13 +164,21 @@ test-agent: test-agent-cross ## go build + vet + test -race, all target platform
 # Setpgid/syscall.Kill in agent/executor) while 71 scenarios declared
 # platforms: [windows] — pull mode was impossible there and no gate noticed.
 # This target is that gate. CGO_ENABLED=0 matches scripts/build-agent-dist.sh.
-test-agent-cross: ## Cross-compile + vet the beacon for every supported host family
-	@set -e; for goos in linux darwin windows; do \
-		echo "[agent-cross] GOOS=$$goos build+vet"; \
-		( cd agent && CGO_ENABLED=0 GOOS=$$goos go build ./... \
-		           && CGO_ENABLED=0 GOOS=$$goos go vet ./... ); \
+#
+# Named GOOS/GOARCH pairs, the script's TARGETS array, and not GOOS alone:
+# `GOOS=windows go build` on an arm64 Mac compiles windows/arm64, which nobody
+# ships, and never windows/amd64, which is the only Windows beacon there is.
+# tests/ci/test_agent_cross_matrix.py holds this list equal to TARGETS.
+AGENT_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+
+test-agent-cross: ## Cross-compile + vet the beacon for every GOOS/GOARCH target the shelf ships
+	@set -e; for t in $(AGENT_TARGETS); do \
+		goos=$${t%/*}; goarch=$${t#*/}; \
+		echo "[agent-cross] $$t build+vet"; \
+		( cd agent && CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch go build ./... \
+		           && CGO_ENABLED=0 GOOS=$$goos GOARCH=$$goarch go vet ./... ); \
 	done
-	@echo "[agent-cross] linux darwin windows OK"
+	@echo "[agent-cross] $(AGENT_TARGETS) OK"
 
 test-ui: ## npm ci + build + vitest (CI 'ui' job)
 	cd ui && npm ci && npm run build && npx vitest run
@@ -175,7 +186,52 @@ test-ui: ## npm ci + build + vitest (CI 'ui' job)
 # -----------------------------------------------------------------------------
 # Detection + adapter gates (mirror ci.yml detection / adapters jobs)
 # -----------------------------------------------------------------------------
-validate: validate-detection check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-mcp-boot check-ground-truth check-grouping ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + mcp-boot + ground-truth + grouping-key gates
+
+# The PowerShell floor gate inside the aggregates. `make validate` and `make ci`
+# run `check-powershell`, which needs pwsh 7, a Go toolchain and a Python with
+# core/requirements.txt. With no pwsh it FAILS: a gate that quietly does not
+# run reads exactly like one that passed.
+#
+# CORTEXSIM_SKIP_POWERSHELL_GATE=1 is the ONE named opt-out, for a host that
+# cannot have PowerShell 7. It applies to the aggregates only (`make
+# check-powershell` itself never skips), it is said where the gate would have
+# run and again as the aggregate's last line, and no CI workflow may set it
+# (tests/ci/test_make_powershell_gate.py). Any value other than exactly 1 runs
+# the gate.
+ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
+POWERSHELL_GATE := skip-powershell-gate
+else
+POWERSHELL_GATE := check-powershell
+endif
+
+# `build` sits in front of the first gate that reads $(IMAGE). check-refs and
+# ground-truth run the tree's code inside the image; check-agent-shelf,
+# check-ui-shelf and check-mcp-boot assert what the image itself SHIPS. Without
+# a build here they all ran against whatever tag was already on the machine, so
+# after a Dockerfile change the beacon and console parity gates passed against
+# yesterday's image. A warm rebuild costs seconds. The targeted gates stay
+# assertions about a NAMED image (CI builds cortexsim:ci once and points
+# check-agent-shelf and check-mcp-boot at it), so they do not rebuild on their
+# own.
+#
+# check-powershell is LAST on purpose: it is the only gate here with host
+# prerequisites beyond docker and python, and it must not stand in front of the
+# older gates when one of them is missing.
+#
+# check-lab-ready and check-grouping are here because the refs job runs them: a
+# gate CI has and this aggregate lacks makes `make validate` green on a tree CI
+# will turn red.
+validate: validate-detection build check-refs check-uctc-sheet check-adapters check-streamer check-agent-shelf check-ui-shelf check-mcp-boot check-ground-truth check-grouping check-lab-ready $(POWERSHELL_GATE) ## Detection corpus + UC/TC ref + adapter source + streamer-fidelity + beacon-shelf + console-shelf + mcp-boot + ground-truth + grouping-key + lab-readiness + PowerShell 5.1 floor gates (builds the image first)
+ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
+	@echo "validate: finished with check-powershell SKIPPED (CORTEXSIM_SKIP_POWERSHELL_GATE=1). Not a full pass."
+endif
+
+skip-powershell-gate:
+	@echo "=============================================================================="
+	@echo "check-powershell SKIPPED: CORTEXSIM_SKIP_POWERSHELL_GATE=1"
+	@echo "No emitted PowerShell (Windows installer, uninstaller, push bundles, beacon"
+	@echo "steps) was rendered or parsed on this host. This is NOT a pass."
+	@echo "=============================================================================="
 # NOTE: check-adapters now also runs `build-rust-dist.sh --check-recipe`, so the
 # Rust recipe gate is inside `make validate` at ~50 ms. check-rust-shelf and
 # check-rust-exec are NOT in validate: both need a `make build` / `make
@@ -199,13 +255,50 @@ check-ui-layout: ## assert the console survives narrow viewports (real browser; 
 	  echo "no SimCore on :8888 — start it first (make up), or set CORTEXSIM_BASE_URL"; exit 1; }
 	cd ui && npx playwright test tests/e2e/08-viewport-matrix.spec.ts
 
-check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target (needs `make build`)
+# Presence is not identity: a non-empty file named cortexsim-agent-windows-amd64.exe
+# that is really a linux ELF (a mislabelled loop variable in the agent-builder
+# stage) passes `test -s` and the checksum, and fails only on the customer's
+# endpoint. The second run checks each target's header with the IMAGE's own
+# python3 (the script arrives on stdin -- still no host mount): ELF + e_machine
+# for linux, Mach-O 64 + cputype for darwin, MZ/PE + machine for windows.
+check-agent-shelf: ## assert the BUILT IMAGE serves every beacon target, with the right magic bytes (needs `make build`)
 	docker run --rm --entrypoint sh $(IMAGE) -c '\
 	  set -e; cd /app/agent-dist; sha256sum -c SHA256SUMS; \
 	  for t in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64.exe; do \
 	    test -s "cortexsim-agent-$$t" || { echo "MISSING cortexsim-agent-$$t"; exit 1; }; \
 	  done; \
 	  echo "shelf OK: $$(ls cortexsim-agent-* | wc -l) targets"'
+	docker run --rm -i --entrypoint python3 $(IMAGE) - /app/agent-dist < scripts/ci/check_agent_magic.py
+
+# Render EVERY PowerShell artifact the repo emits (Windows installer variants,
+# the Windows uninstaller, every windows push bundle, every PowerShell step a
+# beacon runs, the beacon's own wrapper, every tracked *.ps1) and parse each the
+# way Windows PowerShell 5.1 reads it: UTF-8 if it carries a BOM, else
+# Windows-1252 -- plus the UTF-8 read the `iwr | iex` path uses -- then walk the
+# AST for PowerShell-7-only constructs.
+#
+# NECESSARY, NOT SUFFICIENT: this runs pwsh 7 (ubuntu runners ship it; so does
+# Homebrew), and pwsh is not Windows PowerShell 5.1, the product floor. A green
+# run is not evidence that anything executes on Windows -- that is the
+# windows-native-ci job's job (PSScriptAnalyzer + real 5.1). The renderer is
+# hermetic (TestClient in-process, no network, no tenant). Both halves run even
+# when the first fails, so one invocation reports every finding.
+PS_GATE_DIR ?= build/ps-gate
+PS_GATE_PY  ?= $(WIKI_PY)
+PWSH        ?= pwsh
+
+check-powershell: ## render all emitted PowerShell + parse it as 5.1 reads it (pwsh; necessary, not sufficient)
+	@command -v $(PWSH) >/dev/null 2>&1 || { \
+	  echo "check-powershell: no '$(PWSH)' on PATH -- install PowerShell 7; a skipped gate reads as a pass"; exit 1; }
+	$(PWSH) --version
+	@rc=0; \
+	PYTHONPATH=core $(PS_GATE_PY) scripts/ci/render_powershell.py --out $(PS_GATE_DIR) || rc=1; \
+	if [ -f "$(PS_GATE_DIR)/manifest.json" ]; then \
+	  $(PWSH) -NoProfile -NonInteractive -File scripts/ci/ps51-gate.ps1 -Dir $(PS_GATE_DIR) || rc=1; \
+	else \
+	  echo "check-powershell: the renderer wrote no manifest -- nothing was gated"; rc=1; \
+	fi; \
+	exit $$rc
 
 # The same argument once more, for the surface a DC actually stands in front of.
 # check-agent-shelf asks "does the image ship the beacon the tree builds"; this
@@ -335,9 +428,15 @@ check-ground-truth: ground-truth ## Ground-truth determinism gate (CI step): reg
 check-grouping: ## Grouping-key gate (CI 'refs' step): fail only on G-03
 	python3 scripts/check_grouping_keys.py
 
-check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate + installer submodule denylist (CI 'adapters' job)
+# The shelf drift check goes through the REAL pack loader (pydantic + pyyaml),
+# so it runs under the same interpreter as the other loader-backed gates here
+# ($(WIKI_PY): the repo venv when there is one). payloads/sources.json is
+# GENERATED from the packs; on drift this prints the diff and exits 1. Fix with
+# `python3 -m engine.payload_shelf --write`.
+check-adapters: ## tier-2 source preflight + de-hand-rolling wiring gate + payload-shelf drift check + installer submodule denylist (CI 'adapters' job)
 	CORTEXSIM_BASE_DIR=$(CURDIR) scripts/check-adapter-sources.sh
 	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-adapter-wiring.py --list
+	CORTEXSIM_BASE_DIR=$(CURDIR) PYTHONPATH=$(CURDIR)/core $(WIKI_PY) -m engine.payload_shelf --check
 	CORTEXSIM_BASE_DIR=$(CURDIR) python3 scripts/check-installer-submodules.py
 
 e2e-tierc: ## Tier-C isolated-execution assertion suite (CI 'e2e-isolated' job, no docker)
@@ -369,8 +468,12 @@ check-lab-ready: lab-ready ## Determinism gate: regenerate the manifest and fail
 # -----------------------------------------------------------------------------
 # Everything
 # -----------------------------------------------------------------------------
-ci: test validate e2e-tierc ## Run every CI gate (backend + agent + ui + detection + adapters + e2e-tierc)
+ci: test validate e2e-tierc ## Run every CI gate (backend + agent + ui + detection + adapters + powershell + e2e-tierc)
+ifeq ($(CORTEXSIM_SKIP_POWERSHELL_GATE),1)
+	@echo "CI gates passed EXCEPT check-powershell, which was SKIPPED (CORTEXSIM_SKIP_POWERSHELL_GATE=1)."
+else
 	@echo "All CI gates passed."
+endif
 
 # Gate B (dev -> main). Not part of `ci`: it asserts release-time facts (branch
 # topology, version coherence, no abandoned branches) that are meaningless on a

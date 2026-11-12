@@ -128,6 +128,7 @@ def test_no_channel_run_is_single_task_and_channel_dispatch_is_null(session_fact
     async def _run():
         orch = _fresh_orchestrator()
         async with session_factory() as db:
+            await _seed_agent(db, "agent-1")
             await _seed_scenario(db, steps=[_agent_step("step-01"), _agent_step("step-02")])
             result = await orch.launch(
                 scenario_id="SIM-EDR-001", mode="pull", db=db,

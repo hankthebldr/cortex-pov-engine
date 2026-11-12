@@ -34,8 +34,13 @@ import { useEnvironment } from '../../context/EnvironmentContext.jsx'
  *   isPinned                 — (id) => boolean
  *   togglePin                — (id) => void
  *   onRunComplete            — (run) => void  forwarded from parent
- *   onError                  — (msg) => void  forwarded from parent
- *   onSurfaceMessage         — (msg, type='info') => void   for non-error toasts
+ *   onError                  — (msg) => void  for a fault this view does NOT render
+ *                              itself (a scenario detail that would not load).
+ *                              Faults it renders inline as an alert — the list
+ *                              load, a refused launch or download — are not
+ *                              sent here too, or they would be announced twice.
+ *   onSurfaceMessage         — (msg, tone='info') => void   polite notices,
+ *                              including the echo of an inline launch refusal
  */
 export default function OperationsView({
   onNavigate = () => {},
@@ -129,8 +134,11 @@ export default function OperationsView({
         if (cancelled) return
         const msg = err.message || 'Failed to load scenarios'
         setScenarios([])
+        // Rendered below as the one alert for this fault (with its Retry). It
+        // is deliberately NOT also sent to `onError`: the Library destination
+        // renders that as a second alert at the top of the page, so the same
+        // failure was announced twice.
         setLoadError(msg)
-        onError(msg)
       })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -199,7 +207,11 @@ export default function OperationsView({
       // the new run without requiring a tab switch.
       refreshHistory()
     },
-    onError,
+    // A refused launch or download is already an alert beside the button that
+    // was clicked (LaunchErrorNotice / DownloadOutcome in the inspector). The
+    // parent gets a polite echo, not a second alert — the same contract the
+    // guided Launch step uses.
+    onError: (msg) => onSurfaceMessage(msg, 'warn'),
   })
 
   // ── ⌘L / Ctrl+L → launch the currently selected scenario ────────────

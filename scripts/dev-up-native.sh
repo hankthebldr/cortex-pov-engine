@@ -176,8 +176,13 @@ set -a
 . "${ENV_FILE}"
 set +a
 export CORTEXSIM_BASE_DIR="${REPO_ROOT}"
+# The address to listen on: CORTEXSIM_BIND from .env (or the environment), the
+# same setting docker-compose.yml publishes the port on. Unset or empty keeps
+# the old every-interface bind. This used to be a literal 0.0.0.0, so a
+# host-run SimCore ignored CORTEXSIM_BIND=127.0.0.1 (RG-GUARD-06).
+BIND="${CORTEXSIM_BIND:-0.0.0.0}"
 
-log "Starting SimCore on port ${PORT} (logs: ${LOG_FILE})."
+log "Starting SimCore on ${BIND}:${PORT} (logs: ${LOG_FILE})."
 # Detach properly: `setsid` puts uvicorn in its own session so it outlives this
 # script, and every fd is redirected (stdin from /dev/null, stdout+stderr to the
 # log) so a piped invocation — `dev-up-native.sh | tee` — is not held open by the
@@ -185,7 +190,7 @@ log "Starting SimCore on port ${PORT} (logs: ${LOG_FILE})."
 # --stop needs; a wrapper subshell's pid would leave --stop killing the wrong
 # process (or nothing).
 cd "${REPO_ROOT}/core"
-setsid "${VENV}/bin/uvicorn" main:app --host 0.0.0.0 --port "${PORT}" \
+setsid "${VENV}/bin/uvicorn" main:app --host "${BIND}" --port "${PORT}" \
     </dev/null >"${LOG_FILE}" 2>&1 &
 SIMCORE_PID=$!
 echo "${SIMCORE_PID}" >"${PID_FILE}"
@@ -239,7 +244,14 @@ except Exception:
   fi
 }
 
-HEALTH_URL="http://localhost:${PORT}/api/health"
+# Poll where it actually listens: a bind to one non-loopback address does not
+# answer on localhost.
+case "${BIND}" in
+  0.0.0.0|::|127.*|localhost) HEALTH_HOST="localhost" ;;
+  *:*) HEALTH_HOST="[${BIND}]" ;;
+  *) HEALTH_HOST="${BIND}" ;;
+esac
+HEALTH_URL="http://${HEALTH_HOST}:${PORT}/api/health"
 log "Waiting for ${HEALTH_URL} ..."
 
 deadline=$(( $(date +%s) + 90 ))

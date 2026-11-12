@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import useLaunchScenario from './useLaunchScenario.js'
+import useLaunchScenario, { PUSH_FORMATS, bundleIsWindows } from './useLaunchScenario.js'
+import LaunchErrorNotice, { DownloadOutcome, LaunchSuccessNotice, WindowsBundleNote } from './LaunchErrorNotice.jsx'
 import AttestationFields, { isAttestationError } from './AttestationFields.jsx'
 import LaunchGateNotice, { GATE_TOOL_ABSENT, GATE_POSTURE } from './LaunchGateNotice.jsx'
 import { getToolAdapters, listIntegrations, getScenarioDoors, getDoors } from '../../api/client.js'
@@ -9,6 +10,28 @@ import ScenarioPreflightCard from './ScenarioPreflightCard.jsx'
 import { preflightScenario } from './readiness/scenarioPreflight.js'
 import { useFirstUseHint } from '../onboarding/useFirstUseHint.js'
 import FirstUseHint from '../onboarding/FirstUseHint.jsx'
+
+/**
+ * The launch result as LaunchGateNotice reads it. Its warning list renders a
+ * warning's `code`, `agent_id`, `steps` and string `detail`. A launch
+ * reservation parsed from a string ("TARGET_AGENT_OFFLINE: …") carries its
+ * sentence as `text` and has none of those fields, so it would show as a bare
+ * code: the sentence that says the beacon is not polling would be dropped.
+ * Such an entry gets its `text` as the `detail` the notice prints. A gate
+ * warning object keeps its own fields untouched.
+ */
+function forGateNotice(lastRun) {
+  if (!lastRun || lastRun.status !== 'success' || !Array.isArray(lastRun.warnings)) return lastRun
+  return {
+    ...lastRun,
+    warnings: lastRun.warnings.map((w) => {
+      if (!w || typeof w !== 'object') return w
+      const shown = w.agent_id || (Array.isArray(w.steps) && w.steps.length)
+        || (typeof w.detail === 'string' && w.detail)
+      return shown || !w.text ? w : { ...w, detail: w.text }
+    }),
+  }
+}
 
 /**
  * LaunchView — ③ Launch: arm a scenario against a target and fire.
@@ -47,6 +70,10 @@ export default function LaunchView({
   // server's sentence names an API override the operator acts on via a button.
   const gateRefusal = launch.lastRun?.status === 'error' && launch.lastRun.gate
     && [GATE_TOOL_ABSENT, GATE_POSTURE].includes(launch.lastRun.code)
+  // holdOnWarnings kept a warned launch here instead of navigating to its run.
+  const heldOnWarnings = launch.lastRun?.status === 'success'
+    && Array.isArray(launch.lastRun.warnings) && launch.lastRun.warnings.length > 0
+  const gateNoticeRun = useMemo(() => forGateNotice(launch.lastRun), [launch.lastRun])
 
   // First-use hint on Launch (I6 / spec §5) — one of the five named
   // consequential controls (Arm · Launch · Abort · Reconcile · Export POV).
@@ -341,10 +368,14 @@ export default function LaunchView({
                 value={launch.pushFormat}
                 onChange={(e) => launch.setPushFormat(e.target.value)}
               >
-                <option value="bash">bash (.sh)</option>
-                <option value="k8s">kubernetes (.yml)</option>
+                {PUSH_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </label>
+          )}
+          {/* A .ps1 is authored and parse-checked only. Said BEFORE the
+              download, where the format is chosen, not discovered at exit 2. */}
+          {targetMode === 'push' && bundleIsWindows(scenario, launch.pushFormat) && (
+            <WindowsBundleNote testId="launch-windows-bundle-note" />
           )}
 
           {/* dual-use / c2 consent gate */}
@@ -425,6 +456,13 @@ export default function LaunchView({
             )}
           </div>
 
+          {/* The download's own outcome, beside the button that asked for it.
+              A refusal names its steps; a refusal that another format can
+              satisfy offers that format in one click. */}
+          {targetMode === 'push' && (
+            <DownloadOutcome launch={launch} scenario={scenario} testId="launch-download-result" />
+          )}
+
           {/* Why the button is dead. Rendered next to it, tied by
               aria-describedby so a screen reader hears the reason too. */}
           {blockers.length > 0 && (
@@ -437,16 +475,19 @@ export default function LaunchView({
             </ul>
           )}
 
-          {launch.lastRun && !gateRefusal && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
-            <div className={`launch-result launch-result--${launch.lastRun.status}`} role="status">
-              {launch.lastRun.message}
-              {launch.lastRun.code && (
-                <span className="launch-result__code mono"> [{launch.lastRun.code}]</span>
-              )}
-            </div>
+          {/* A clean start is LaunchSuccessNotice's line. A launch held on its
+              warnings is LaunchGateNotice's: it lists every warning (gate
+              advisories and launch reservations alike) and owns the "View run"
+              that continues — listing them in both would say it twice. */}
+          {!heldOnWarnings && (
+            <LaunchSuccessNotice result={launch.lastRun} testId="launch-success" />
+          )}
+          {launch.lastRun?.status === 'error' && !gateRefusal
+            && !(targetMode === 'pull' && isAttestationError(launch.lastRun)) && (
+            <LaunchErrorNotice result={launch.lastRun} testId="launch-error" />
           )}
           <LaunchGateNotice
-            lastRun={launch.lastRun}
+            lastRun={gateNoticeRun}
             launching={launch.launching}
             onContinue={launch.continueToRun}
             onLaunchAnyway={() => launch.launch({ allowMissingTools: true })}

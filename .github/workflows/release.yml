@@ -11,21 +11,30 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  packages: write
+# Least privilege: nothing at workflow scope, each job asks for exactly what it
+# uses. Only build-image may write packages (the GHCR push) and only release
+# may write contents (the GitHub Release). lint-shell runs apt-get, and before
+# this split it ran holding a token that could rewrite the release and the
+# image (CI-12).
+permissions: {}
 
 jobs:
   resolve-tag:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     outputs:
       tag: ${{ steps.t.outputs.tag }}
       version: ${{ steps.t.outputs.version }}
     steps:
       - id: t
+        env:
+          # Through env, never ${{ }} inside run: — a dispatch input
+          # interpolated into the script is executed as shell.
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
+            TAG="${INPUT_TAG}"
           else
             TAG="${GITHUB_REF#refs/tags/}"
           fi
@@ -38,8 +47,10 @@ jobs:
 
   lint-shell:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Shellcheck installer + bootstrap scripts
         run: |
@@ -57,22 +68,25 @@ jobs:
   build-image:
     runs-on: ubuntu-22.04
     needs: [resolve-tag, lint-shell]
+    permissions:
+      contents: read
+      packages: write
     outputs:
       image: ${{ steps.meta.outputs.image }}
       digest: ${{ steps.push.outputs.digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           submodules: recursive
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -91,7 +105,7 @@ jobs:
 
       - name: Build and push
         id: push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
           file: core/Dockerfile
@@ -105,35 +119,43 @@ jobs:
   build-stage2:
     runs-on: ubuntu-22.04
     needs: resolve-tag
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Prepare release dir
         run: mkdir -p dist
 
+      # A stage2-<os> asset ships only when installer/stage2/<os>/ exists.
+      # Shared files under stage2/common/ never produce an asset on their own:
+      # with only common/ present, the old `|| -d common` clause attached a
+      # stage2-windows.zip whose entire content was one bash file
+      # (common/annotate.sh) — a "Windows installer" asset with nothing for
+      # Windows in it (CI-13).
       - name: Package stage2-linux.tar.gz
         run: |
-          if [ -d installer/stage2/linux ] || [ -d installer/stage2/common ]; then
+          if [ -d installer/stage2/linux ]; then
+            # common/ is bash (annotate.sh) and rides along with Linux only.
+            PARTS=(linux)
+            [ -d installer/stage2/common ] && PARTS=(common linux)
             tar -C installer/stage2 \
                 --exclude='*.zip' --exclude='*.tar.gz' \
-                -czf dist/stage2-linux.tar.gz \
-                $([ -d installer/stage2/common ] && echo common) \
-                $([ -d installer/stage2/linux ] && echo linux)
+                -czf dist/stage2-linux.tar.gz "${PARTS[@]}"
           else
-            echo "no stage2 linux assets — skipping" && touch dist/.no-stage2-linux
+            echo "no installer/stage2/linux/ — stage2-linux.tar.gz not emitted"
           fi
 
       - name: Package stage2-windows.zip
         run: |
-          if [ -d installer/stage2/windows ] || [ -d installer/stage2/common ]; then
-            sudo apt-get update && sudo apt-get install -y zip
+          if [ -d installer/stage2/windows ]; then
+            command -v zip >/dev/null || { sudo apt-get update && sudo apt-get install -y zip; }
+            # windows/ only: common/ holds bash, which a Windows host cannot run.
             ( cd installer/stage2 && \
-              zip -r "${GITHUB_WORKSPACE}/dist/stage2-windows.zip" \
-                $([ -d common ] && echo common) \
-                $([ -d windows ] && echo windows) \
+              zip -r "${GITHUB_WORKSPACE}/dist/stage2-windows.zip" windows \
                 -x '*.tar.gz' '*.zip' )
           else
-            echo "no stage2 windows assets — skipping" && touch dist/.no-stage2-windows
+            echo "no installer/stage2/windows/ — stage2-windows.zip not emitted"
           fi
 
       - name: Stage bootstrap scripts (or fall back to legacy install.sh)
@@ -147,28 +169,126 @@ jobs:
             cp installer/bootstrap/install.ps1 dist/install.ps1
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: stage2-bundles
           path: dist/
           if-no-files-found: warn
           retention-days: 7
 
+  # The beacon matrix, built from the tag with the same script `make agent-dist`
+  # runs, so a DC can stage it through change control or onto an air-gapped
+  # shelf without building Go. SimCore still serves its own baked copy from
+  # /api/agents/binary, which is the supported install path (CI-06).
+  build-agent:
+    runs-on: ubuntu-22.04
+    needs: resolve-tag
+    permissions:
+      contents: read
+    outputs:
+      go_version: ${{ steps.go.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          # Same version string as ci.yml's agent job.
+          go-version: '1.21'
+          # No build cache in a release job: release bytes must not depend on
+          # a cache another workflow run could have written. (agent/go.sum
+          # does not exist either; the beacon is stdlib-only.)
+          cache: false
+
+      - id: go
+        run: echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Cross-compile the beacon matrix
+        env:
+          OUT_DIR: ${{ github.workspace }}/dist/agent
+        run: bash scripts/build-agent-dist.sh
+
+      - name: Assert the five-target matrix shipped
+        working-directory: dist/agent
+        run: |
+          # Fail closed: a release missing a target must not publish, and in
+          # particular must not publish without the Windows beacon.
+          EXPECT="cortexsim-agent-darwin-amd64 cortexsim-agent-darwin-arm64 cortexsim-agent-linux-amd64 cortexsim-agent-linux-arm64 cortexsim-agent-windows-amd64.exe"
+          GOT="$(printf '%s\n' cortexsim-agent-* | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+          if [ "$GOT" != "$EXPECT" ]; then
+            echo "::error::beacon matrix mismatch. expected: $EXPECT  got: $GOT"
+            exit 1
+          fi
+          # Structural check only: the .exe is a PE image (MZ header). This
+          # proves the right file format, not that it runs on Windows.
+          if [ "$(head -c 2 cortexsim-agent-windows-amd64.exe)" != "MZ" ]; then
+            echo "::error::cortexsim-agent-windows-amd64.exe is not a PE image"
+            exit 1
+          fi
+          sha256sum -c SHA256SUMS
+
+      - name: Record build provenance (go version -m)
+        working-directory: dist/agent
+        run: |
+          # The module path, Go toolchain, GOOS/GOARCH, CGO_ENABLED, -trimpath
+          # and vcs.revision embedded in each binary, read back from the bytes
+          # rather than asserted. (-ldflags is not recorded: Go omits it when
+          # -trimpath is set.)
+          : > BUILDINFO.txt
+          for f in cortexsim-agent-*; do
+            go version -m "$f" >> BUILDINFO.txt
+            echo >> BUILDINFO.txt
+          done
+          cat BUILDINFO.txt
+          # Each binary must carry the GOOS its filename claims.
+          for f in cortexsim-agent-*; do
+            want="${f#cortexsim-agent-}"; want="${want%%-*}"
+            if ! go version -m "$f" | grep -qE "^[[:space:]]+build[[:space:]]+GOOS=${want}$"; then
+              echo "::error::$f does not record GOOS=${want}"
+              exit 1
+            fi
+          done
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: agent-dist
+          path: dist/agent/
+          if-no-files-found: error
+          retention-days: 7
+
   manifest:
     runs-on: ubuntu-22.04
-    needs: [resolve-tag, build-image, build-stage2]
+    needs: [resolve-tag, build-image, build-stage2, build-agent]
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: stage2-bundles
           path: dist/
 
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: agent-dist
+          path: dist/agent/
+
+      - name: Stage beacon assets at the release root
+        working-directory: dist
+        run: |
+          # Verify the bytes survived the artifact hop against the sums the
+          # build job wrote, then flatten: a GitHub Release has no
+          # directories, and the beacon's SHA256SUMS would collide with the
+          # release-wide one, so it ships renamed.
+          ( cd agent && sha256sum -c SHA256SUMS )
+          mv agent/cortexsim-agent-* .
+          mv agent/SHA256SUMS cortexsim-agent-SHA256SUMS
+          mv agent/BUILDINFO.txt cortexsim-agent-buildinfo.txt
+          rmdir agent
+
       - name: Generate SHA256SUMS
         working-directory: dist
         run: |
-          rm -f .no-stage2-linux .no-stage2-windows
           if compgen -G "*" > /dev/null; then
             sha256sum * > SHA256SUMS
             cat SHA256SUMS
@@ -184,6 +304,7 @@ jobs:
           IMAGE: ${{ needs.build-image.outputs.image }}
           DIGEST: ${{ needs.build-image.outputs.digest }}
           REPO: ${{ github.repository }}
+          AGENT_GO_VERSION: ${{ needs.build-agent.outputs.go_version }}
         run: |
           python3 - <<'PY'
           import hashlib, json, os, pathlib, datetime
@@ -212,11 +333,41 @@ jobs:
               },
               "artifacts": artifacts,
           }
+          # The beacon matrix, described rather than just listed, so a reader
+          # of the manifest alone learns what the binaries are NOT.
+          extras = {"cortexsim-agent-SHA256SUMS", "cortexsim-agent-buildinfo.txt"}
+          beacons = []
+          for p in sorted(d.glob("cortexsim-agent-*")):
+              if p.name in extras:
+                  continue
+              goos, goarch = p.name[len("cortexsim-agent-"):].removesuffix(".exe").split("-", 1)
+              beacons.append({
+                  "name": p.name,
+                  "os": goos,
+                  "arch": goarch,
+                  "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+              })
+          if len(beacons) != 5 or not all((d / x).is_file() for x in extras):
+              raise SystemExit(f"beacon assets incomplete: {[b['name'] for b in beacons]}")
+          manifest["agent"] = {
+              "go_version": os.environ["AGENT_GO_VERSION"],
+              "build": "scripts/build-agent-dist.sh: CGO_ENABLED=0 go build -trimpath -ldflags='-s -w'",
+              "signed": False,
+              "executed_on_target_os_by_release": False,
+              "sha256sums": "cortexsim-agent-SHA256SUMS",
+              "buildinfo": "cortexsim-agent-buildinfo.txt",
+              "binaries": beacons,
+              "notes": [
+                  "Not code-signed: no Authenticode signature on the Windows .exe, no Apple notarization on the darwin builds.",
+                  "Built and structurally checked (file set, PE header, embedded GOOS) on Linux by this run; not executed on Windows or macOS by this run.",
+                  "Not expected to be byte-identical to the beacon baked into the container image, which core/Dockerfile builds with its own Go toolchain. Verify each copy against its own checksums, never across the two.",
+              ],
+          }
           pathlib.Path("manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
           print(pathlib.Path("manifest.json").read_text())
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-bundle
           path: dist/
@@ -224,13 +375,16 @@ jobs:
 
   release:
     runs-on: ubuntu-22.04
-    needs: [resolve-tag, manifest]
+    needs: [resolve-tag, manifest, build-agent]
+    permissions:
+      # gh release create/upload/edit. The only job that writes the repo.
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-bundle
           path: dist/
@@ -277,6 +431,7 @@ jobs:
           GHCR_STATE: ${{ steps.ghcr.outputs.state }}
           GHCR_CODE: ${{ steps.ghcr.outputs.code }}
           GHCR_AT: ${{ steps.ghcr.outputs.at }}
+          AGENT_GO_VERSION: ${{ needs.build-agent.outputs.go_version }}
         run: |
           PREV=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || echo "")
           IMG="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cortexsim:${TAG}"
@@ -315,6 +470,12 @@ jobs:
               echo "**\`install.sh\` is the source bootstrap, not a one-line installer.** It installs a Go/Rust/Node/Python toolchain, initialises the submodules, builds every component and runs \`docker compose up -d --build\`, all relative to the directory it runs in. Run it from the root of the clone above as your normal user (\`./install.sh\`); it calls \`sudo\` itself. Do not pipe it (\`curl … | bash\`). Outside a checkout it installs the toolchain, skips every build step with a warning, starts nothing, and still prints \"Installation complete\". The attached copy is the same file as \`install.sh\` at the root of the tree this release was built from."
               echo
             fi
+            # Every claim below is about what this run did. Signing is not
+            # done here; whether to sign is an open decision, not a TODO.
+            echo "**Beacon binaries — unsigned.** \`cortexsim-agent-linux-{amd64,arm64}\`, \`cortexsim-agent-darwin-{amd64,arm64}\` and \`cortexsim-agent-windows-amd64.exe\` were cross-compiled from this tag by \`scripts/build-agent-dist.sh\` with ${AGENT_GO_VERSION} (\`CGO_ENABLED=0 -trimpath -ldflags='-s -w'\`). They are **not code-signed**: the Windows \`.exe\` carries no Authenticode signature and the darwin builds are not notarized, so SmartScreen, Defender or Gatekeeper may warn or block them. This run built them on Linux and checked their structure (file set, PE header, embedded GOOS); it did not execute them on Windows or macOS. Per-binary checksums are in \`cortexsim-agent-SHA256SUMS\` and the \`go version -m\` build record in \`cortexsim-agent-buildinfo.txt\`."
+            echo
+            echo "The supported install path is unchanged: SimCore serves the beacon baked into its own image from \`/api/agents/binary\`, and the installer verifies it against that SimCore. That baked copy is built separately, by \`core/Dockerfile\` with its own Go toolchain, so it is **not expected to be byte-identical** to the assets here; compare each copy only against its own checksums."
+            echo
             echo "Verify artifact integrity with \`SHA256SUMS\` or \`manifest.json\`."
             echo
             if [ -n "$PREV" ]; then

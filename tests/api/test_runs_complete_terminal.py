@@ -8,9 +8,12 @@ last-endpoint branch. The finished run flipped ``complete`` -> ``failed``, its
 terminal ``run.status`` SSE frame went out again and the run was re-scored. A
 push-mode ``staged`` run flipped to ``complete`` the same way.
 
-The beacon does not retry /complete, so the trigger is a replay, a proxy or
-another caller. It does not need to be frequent to matter: the verdict on a
-finished run is what a POV report quotes, and it changed after the fact.
+The beacon now RETRIES /complete (and the abandoned-task sweep can finish a
+run before a late retry lands), so a late callback is routine, not exotic. It
+does not need to be frequent to matter: the verdict on a finished run is what a
+POV report quotes, and it changed after the fact. A late /complete is answered
+409 ``RUN_ALREADY_TERMINAL`` with the run's status — the signal that tells a
+retrying client to stop — and nothing in it is applied.
 
 The guard has a boundary. Failure is sticky across a fan-out, so a run reads
 ``failed`` while it still waits on other endpoints (``completed_at`` unset,
@@ -98,6 +101,15 @@ def _row(session_factory, run_id: str) -> dict:
     return asyncio.run(_go())
 
 
+def _refused(run_id: str, status: str) -> dict:
+    # host_evidence_recorded is 0 for every run in this file: none of them is
+    # an aborted, DELIVERED run whose late /complete carries steps[] — the one
+    # case that keeps anything (tests/api/test_runs_abort_late_host_evidence.py).
+    return {"error": "Run already terminal", "code": "RUN_ALREADY_TERMINAL",
+            "detail": {"run_id": run_id, "status": status, "already_terminal": True,
+                       "host_evidence_recorded": 0}}
+
+
 def _complete(client, run_id: str, exit_code: int, summary: str):
     return client.post(
         f"/api/runs/{run_id}/complete", json={"exit_code": exit_code, "summary": summary})
@@ -114,8 +126,8 @@ def test_late_complete_cannot_reopen_a_completed_run(client, session_factory, mo
     seen = side_effects(monkeypatch)
     late = _complete(client, "done-1", 1, "late replay")
 
-    assert late.status_code == 200
-    assert late.json() == {"status": "complete", "run_id": "done-1", "already_terminal": True}
+    assert late.status_code == 409
+    assert late.json()["detail"] == _refused("done-1", "complete")
     assert _row(session_factory, "done-1") == before
     assert seen == {"published": [], "scored": []}
 
@@ -144,8 +156,8 @@ def test_every_terminal_state_absorbs_a_late_complete(
     seen = side_effects(monkeypatch)
     r = _complete(client, run_id, exit_code, "late")
 
-    assert r.status_code == 200
-    assert r.json() == {"status": status, "run_id": run_id, "already_terminal": True}
+    assert r.status_code == 409
+    assert r.json()["detail"] == _refused(run_id, status)
     assert _row(session_factory, run_id) == before
     assert seen == {"published": [], "scored": []}
 
@@ -204,7 +216,7 @@ def test_staging_refusal_ends_the_run_for_every_endpoint(client, session_factory
     seen = side_effects(monkeypatch)
     survivor = _complete(client, "fan-stage", 130, "stopped by control poll")
 
-    assert survivor.status_code == 200
-    assert survivor.json() == {"status": "failed", "run_id": "fan-stage", "already_terminal": True}
+    assert survivor.status_code == 409
+    assert survivor.json()["detail"] == _refused("fan-stage", "failed")
     assert _row(session_factory, "fan-stage") == before
     assert seen == {"published": [], "scored": []}

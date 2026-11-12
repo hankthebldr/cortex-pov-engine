@@ -24,6 +24,7 @@ from database import get_db
 from engine.outcome import (
     EXCLUDED_FROM_DENOMINATOR,
     OUTCOME_DETECTED,
+    OUTCOME_PENDING,
     OUTCOME_PREVENTED,
     is_hit,
 )
@@ -149,14 +150,38 @@ async def get_results_for_run(run_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
-async def _has_engine_evidence(db: AsyncSession, result: Result) -> bool:
-    """Did a reconcile match an alert to this row? ``apply_verdicts`` records
-    one ``Observation`` per (result, alert); an attestation records none."""
+def _same_instant(a: Optional[datetime], b: Optional[datetime]) -> bool:
+    if a is None or b is None:
+        return False
+    return a.replace(tzinfo=None) == b.replace(tzinfo=None)
+
+
+async def _engine_evidence(db: AsyncSession, result: Result) -> tuple[bool, bool]:
+    """``(credited, candidate)`` — what the reconcile engine holds for this row.
+
+    ``apply_verdicts`` records one ``Observation`` per (result, alert) it
+    matched, and an attestation records none. But a matched alert is not
+    always CREDITED: a match with no host to scope against is recorded and
+    deliberately left as a candidate (``pending`` / ``UNSCOPED_MATCH``). So "an
+    Observation exists" stopped meaning "an alert matched this row" the day
+    that rule landed, and a click on such a row could never be withdrawn
+    (RG-RUNS-03).
+
+    A credited match is recognisable without a schema change: crediting copies
+    the alert's own time onto ``Result.observed_at``, while an attestation
+    stamps the moment of the click. ``credited`` is therefore "the row's
+    ``observed_at`` IS one of its alerts' times"; ``candidate`` is "alerts are
+    on record and none of them is what observed this row".
+    """
     from models import Observation  # noqa: PLC0415
 
-    hit = await db.execute(select(Observation.id).where(
-        Observation.result_id == result.id).limit(1))
-    return hit.first() is not None
+    times = (await db.execute(select(Observation.observed_at).where(
+        Observation.result_id == result.id))).scalars().all()
+    if not times:
+        return False, False
+    credited = bool(result.observed) and any(
+        _same_instant(t, result.observed_at) for t in times)
+    return credited, not credited
 
 
 @router.put("/{result_id}/validate")
@@ -175,11 +200,13 @@ async def validate_result(
       alert. A not-yet-observed row gets ``observed_at = now`` (MTTD); an
       already-observed row keeps its ``observed_at``.
     * ``observed=false`` RETRACTS the attestation: clears ``observed`` and
-      ``observed_at``; a ``detected`` the attestation wrote (no matched-alert
-      ``Observation``) reverts to None; an engine-written outcome stands. A
-      retraction never writes ``missed``. On an engine-matched row (an
-      ``Observation`` exists) there is nothing to retract: 409
-      ``NOT_AN_ATTESTATION``, nothing changes.
+      ``observed_at``; a ``detected`` the attestation wrote (no CREDITED
+      alert) reverts to what the engine had said: None, or ``pending`` /
+      ``UNSCOPED_MATCH`` when an uncredited candidate alert is on record. An
+      engine-written outcome stands. A retraction never writes ``missed``. On
+      an engine-matched row (the row's ``observed_at`` is one of its recorded
+      alerts' times) there is nothing to retract: 409 ``NOT_AN_ATTESTATION``,
+      nothing changes.
     * ``observed=true`` on an ``expected_outcome: prevent`` row (any mode):
       409 ``ATTESTATION_NOT_A_WITNESS`` -- a hand mark cannot stand in for the
       alert witness. Re-asserting on an already-observed prevent row updates
@@ -234,7 +261,10 @@ async def validate_result(
             "detail": f"id={result_id} expected_outcome=prevent outcome={result.outcome}",
         })
 
-    if not body.observed and await _has_engine_evidence(db, result):
+    credited, candidate = (False, False)
+    if not body.observed:
+        credited, candidate = await _engine_evidence(db, result)
+    if credited:
         # Round 4: an engine-matched row carries no attestation to retract.
         # Refuse and change nothing -- clearing observed/observed_at here left a
         # "detected, not observed" row and erased the matched alert's MTTD.
@@ -259,13 +289,21 @@ async def validate_result(
             result.outcome_reason = None
     else:
         # A retraction (round 3 R5b): it withdraws the operator's attestation
-        # and nothing else. A `detected` here has no matched-alert Observation
-        # (that case is refused above), so the attestation wrote it -> back to
-        # unjudged (the next reconcile re-judges). Any other outcome stands. A
-        # retraction never writes `missed`.
+        # and nothing else. A `detected` here has no CREDITED alert (that case
+        # is refused above), so the attestation wrote it -> back to what the
+        # engine had said before the click: unjudged (the next reconcile
+        # re-judges), or — when an uncredited candidate alert is on record —
+        # the `pending` / `UNSCOPED_MATCH` the click replaced (RG-RUNS-03).
+        # Any other outcome stands. A retraction never writes `missed`.
         if result.outcome == OUTCOME_DETECTED:
-            result.outcome = None
-            result.outcome_reason = None
+            if candidate:
+                from connectors.service import UNSCOPED_MATCH  # noqa: PLC0415
+
+                result.outcome = OUTCOME_PENDING
+                result.outcome_reason = UNSCOPED_MATCH
+            else:
+                result.outcome = None
+                result.outcome_reason = None
         result.observed_at = None
 
     if body.notes is not None:

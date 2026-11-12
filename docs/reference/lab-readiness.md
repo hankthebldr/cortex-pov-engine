@@ -22,7 +22,7 @@
 ## Summary
 
 - **Scenarios:** 199  (GREEN 167 · YELLOW 27 · RED 5)
-- **Steps:** 830 total · 142 detection-bearing steps produce no real signal
+- **Steps:** 823 total · 142 detection-bearing steps produce no real signal
 - **Need target egress for a tool:** 27 scenarios
 - **Consent-gated:** 4 scenarios
 - **EAL-delivered (network/NGFW signal from SimCore, not the agent):** 70 scenarios
@@ -71,9 +71,9 @@
 | SIM-EDR-006 | EDR | BIOC/XQL/Correlation/IOC | 3/3 | agent |  |
 | SIM-EDR-007 | EDR | BIOC/XQL/Correlation/IOC | 3/3 | agent |  |
 | SIM-EDR-008 | EDR | BIOC/XQL/Correlation/IOC | 3/3 | agent |  |
-| SIM-EDR-013 | EDR | ABIOC/XQL/Correlation | 3/3 | agent |  |
-| SIM-EDR-017 | EDR | ABIOC/XQL/Correlation | 4/4 | agent |  |
-| SIM-EDR-021 | EDR | BIOC/ABIOC/XQL/Correlation | 7/7 | agent |  |
+| SIM-EDR-013 | EDR | ABIOC/XQL | 1/1 | agent |  |
+| SIM-EDR-017 | EDR | ABIOC/XQL/Correlation | 3/3 | agent |  |
+| SIM-EDR-021 | EDR | BIOC/XQL | 3/3 | agent |  |
 | SIM-EDR-023 | EDR | ABIOC/Prevention/BIOC/XQL/Correlation | 4/4 | agent |  |
 | SIM-EDR-024 | EDR | ABIOC/BIOC/Correlation | 4/4 | agent |  |
 | SIM-EDR-025 | EDR | ABIOC/Prevention/XQL | 6/6 | agent |  |

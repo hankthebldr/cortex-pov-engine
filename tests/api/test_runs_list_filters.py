@@ -85,6 +85,11 @@ def test_scenario_filter_and_limit(client, seeded_runs):
     assert body["runs"][0]["run_id"] == "r-a-new"
 
 
-def test_limit_above_500_is_422(client, seeded_runs):
-    r = client.get("/api/runs", params={"limit": 501})
+def test_limit_above_max_is_422(client, seeded_runs):
+    # The bound is LIST_RUNS_MAX_LIMIT (5000), not 500: the console's Runs
+    # poll sends limit=5000 (ui/src/api/client.js RUNS_PAGE_LIMIT).
+    from api.runs import LIST_RUNS_MAX_LIMIT
+
+    r = client.get("/api/runs", params={"limit": LIST_RUNS_MAX_LIMIT + 1})
     assert r.status_code == 422
+    assert client.get("/api/runs", params={"limit": LIST_RUNS_MAX_LIMIT}).status_code == 200

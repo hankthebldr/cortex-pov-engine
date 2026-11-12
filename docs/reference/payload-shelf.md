@@ -169,10 +169,14 @@ python3 -m engine.payload_shelf --stdout
 ```
 
 The drift gate runs in-process as
-`tests/engine/test_payload_shelf.py::test_the_committed_sources_file_matches_the_real_packs`.
-Wire `--check` into CI's existing `adapters` job; do **not** add a thirteenth job
-(a job that can be skipped reads exactly like a passing one, which is on this
-repo's list of shipped failure modes).
+`tests/engine/test_payload_shelf.py::test_the_committed_sources_file_matches_the_real_packs`,
+and **since round 2 (2026-11-10) `--check` runs in CI's existing `adapters`
+job**, with `PAYLOAD_ALLOW_UNPINNED=0` set at job scope; `make check-adapters`
+runs it too. No thirteenth job was added (a job that can be skipped reads
+exactly like a passing one, which is on this repo's list of shipped failure
+modes). `scripts/build-payloads.sh` is still not exercised in CI, because it
+downloads from the public internet, so the `=0` is a rule waiting for the
+first CI step that stages the shelf. The wiring has not run on GitHub yet.
 
 **Why generated.** The hand-maintained list had **already drifted**: it declared
 `adapter_id: TOOL-LINPEAS` for a pack that has never existed. That is the exact
@@ -494,6 +498,33 @@ FILENAME_KEYED_DETECTIONS_SUPPRESSED —
 Consumers must carry that warning into the run record and the POV report, or a
 designed control reads as a coverage gap in front of a customer.
 
+### The beacon's artifact cache (round 2, 2026-11-10)
+
+The beacon keeps a content-addressed cache of fetched artifacts, keyed by
+digest. **A cache hit is now verified by hashing the bytes written**: the
+entry is copied and hashed in one read, the digest of the copy is compared
+with the pinned one, and an entry that does not hash to its name is discarded
+and refetched (BEACON-15). Before, another writer swapping the entry between
+the check and the copy staged foreign bytes as a cache hit (demonstrated on
+macOS: iteration 5 of 40). Where the cache lives, from
+`agent/beacon/artifact.go::getArtifactCacheDir`:
+
+- `CORTEXSIM_CACHE_DIR` when set, on every OS.
+- **Windows:** `cache` next to the beacon binary, so
+  `%ProgramData%\CortexSim\cache` for the service (inheriting the install
+  directory's DACL, which the installer strips of inheritance) and
+  `%LOCALAPPDATA%\CortexSim\cache` for a per-user beacon. A binary at a drive
+  root, or at a path that is not drive-absolute, gets **no** cache: every
+  artifact is fetched, and the beacon logs that once. The beacon never uses
+  the POSIX chain, `%TEMP%` or a drive-rooted directory on Windows. It sets no
+  ACL itself.
+- **POSIX:** `/opt/cortexsim/cache` if writable, else the user cache directory
+  plus `cortexsim`, else `$TMPDIR/cortexsim-cache`.
+
+The Windows rows' native tests (`TestWindowsArtifactCacheDir` and the cache
+digest tests) passed on Windows in run 43037077022 at `e434efa`; no end-to-end
+run has staged an artifact on Windows, and nothing asserts the inherited DACL.
+
 ---
 
 ## 6 · Error codes
@@ -813,6 +844,17 @@ cannot be mistaken for shipped.
 8. ~~Fail loudly.~~ **DONE and verified live** — exit 78, per-step
    `ARTIFACT NOT STAGED` frame, and the "THIS STEP DID NOT RUN … NOT a gap in
    the customer's detection coverage" vocabulary in the run record.
+   **Exception (2026-11, BEACON-16):** when a staged file vanishes or locks
+   between the verified write and the rename, it is reported as
+   `ARTIFACT_QUARANTINE_SUSPECTED`. On Windows that is a sharing violation or
+   access denied while a scanner holds the file, or a `.part` that disappears.
+   That frame does **not** say "NOT a gap". It says the file was removed or
+   locked in a way consistent with endpoint protection, and to check the
+   endpoint's prevention alerts before reading the step as either a CortexSim
+   failure or a coverage gap. A quarantine may be the customer's prevention
+   working. Whether it should become a prevention witness is an open decision;
+   it is not fed to scoring. The rename gets a brief retry first. Only an
+   injected rename function has exercised this; no real EDR quarantine has.
    **But see item 14:** that vocabulary does not reach the POV report.
 
 **K8s track**
@@ -831,10 +873,11 @@ cannot be mistaken for shipped.
 
 **CI**
 
-11. **STILL OWED.** Add `python3 -m engine.payload_shelf --check` to the existing
-    `adapters` job and run `PAYLOAD_ALLOW_UNPINNED=0` wherever the shelf is
-    staged. The drift gate does run in-process as a pytest; the pinned-build
-    enforcement does not run anywhere in CI.
+11. **Half done (round 2, 2026-11-10).** `python3 -m engine.payload_shelf
+    --check` runs in the existing `adapters` job, which sets
+    `PAYLOAD_ALLOW_UNPINNED=0` at job scope. Still owed: no CI step stages the
+    shelf, so the pinned-build enforcement in `scripts/build-payloads.sh` has
+    not run in CI. Not yet run on GitHub.
 
 **Resolver track (found during verification, 2026-08-05)**
 
@@ -1041,12 +1084,16 @@ which is how the rot survives. Run it on a schedule, not per-PR.
 
 ### 11.4 · Still owed by other tracks (this pass could not reach them)
 
-* **`payload_shelf.required_artifacts` should read the exemption.**
-  `compose().unstaged_adapters[]` still emits one generic sentence for all 48.
-  The pack data now exists — read `adapter.install.artifact_exempt` /
-  `adapter.artifact_exempt_reason_code` and surface `{adapter_id, reason_code,
-  reason, revisit}`. Until then the *durable declaration* is right and the
-  *console string* is still the old one.
+* **`payload_shelf.required_artifacts` should read the exemption.** *Server
+  half done in round 2 (2026-11-10).* `UnstagedAdapter` now carries
+  `reason_code`, `revisit` and `tier`, and a tier-4 entry is the pack's own
+  `install.artifact_exempt`, verbatim: 48 tier-4 entries, 48 distinct reasons,
+  8 codes, 8 with a `revisit`. `GET /api/tools/adapters` rows gain
+  `shelf_backed` and `artifact_exempt {reason_code, reason, revisit}`. Tiers
+  1/2/3/5 read `SOURCE_TREE_ON_DISK` / `IAC_PROVISIONED` / `EXTERNAL_ONLY`
+  instead of a sentence claiming a public-internet fetch at dispatch. Which
+  adapters are listed, `air_gapped` and the `TARGET_EGRESS_REQUIRED` warning
+  are unchanged. **Still owed: the console does not render these fields.**
 * **`GET /api/shelf/artifacts` should grow `exempt[]` + a `summary` block** so
   the console can render "48 of 56 runtime-fetched tools are not staged, each
   names why" without client-side counting. Style `ARCHIVE_*` /

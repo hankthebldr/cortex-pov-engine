@@ -5,8 +5,10 @@ name: cortex-pov-engine
 
 services:
   simcore:
-    # Versioned image + container name, single source CORTEXSIM_VERSION (default
-    # 1.0.2). Keeps the engine's namespace distinct from the SEPARATE
+    # Versioned image + container name, single source CORTEXSIM_VERSION. The
+    # default below must equal APP_VERSION in core/api/health.py, which is what
+    # /api/health reports (tests/scripts/test_dev_up_existing_env.py holds the
+    # two together). Keeps the engine's namespace distinct from the SEPARATE
     # cortex-pov-agent project. The engine's own beacon, if ever containerized,
     # is reserved the name cortex-pov-engine-agent-v<version> — never pov-agent.
     image: cortex-pov-engine-simcore:${CORTEXSIM_VERSION:-1.1.1}
@@ -14,8 +16,28 @@ services:
     build:
       context: .
       dockerfile: core/Dockerfile
+    # The publish address is operator-settable. SimCore's operator and agent
+    # APIs are unauthenticated (GET /api/health -> api_auth:
+    # API_UNAUTHENTICATED), so the address they are published on is the only
+    # access control a default deploy has. Set CORTEXSIM_BIND to 127.0.0.1 for a
+    # console-only host, or to the lab NIC's address to keep it off the
+    # corporate side. An IPv6 address is written WITHOUT brackets (::1).
+    #
+    # Unset or empty, the mapping names no host address ("8888:8888"), so Docker
+    # publishes on every host address, IPv4 and IPv6, because enrolled beacons
+    # must reach this port. Set, it becomes "<bind>:8888:8888". Two spellings
+    # that look equivalent are wrong:
+    #   - "${CORTEXSIM_BIND:-0.0.0.0}:8888:8888" makes the default IPv4-only (an
+    #     explicit 0.0.0.0 is not "every address" to Docker), so beacons that
+    #     reach the jumpbox over IPv6 are refused the connection.
+    #   - the long form with host_ip: "${CORTEXSIM_BIND:-}" does not parse when
+    #     the variable is unset: Compose rejects an empty host_ip ("invalid ip
+    #     address"), so a stock `docker compose up` fails. CI run 43033286928
+    #     caught that with `docker compose config -q`.
+    # ${VAR:+...} and the nested ${...} inside it are Compose Specification
+    # interpolation (Compose v2); legacy docker-compose v1 is not supported.
     ports:
-      - "${CORTEXSIM_PORT:-8888}:8888"
+      - "${CORTEXSIM_BIND:+${CORTEXSIM_BIND}:}${CORTEXSIM_PORT:-8888}:8888"
     volumes:
       # Bind-mount content at runtime so dev edits are live-reloadable. The production
       # image also bundles these, so the installer path (no mounts) works too. NOTE:
@@ -36,7 +58,9 @@ services:
       #   curl -fsSL http://<cp>:8888/agent/enroll.sh | CORTEXSIM_TOKEN=… bash
       - ./dist/agent:/app/core/static/agent:ro
       - simcore_db:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      # The host Docker socket is deliberately NOT mounted. Nothing in core/
+      # talks to Docker, and with it any command execution in this root,
+      # unauthenticated container would be root on the host.
     environment:
       # Default to development so a bare `docker compose up` does not trip the
       # production master-key guard (core/config.py). Set CORTEXSIM_ENV=production
@@ -46,10 +70,46 @@ services:
       # booting with "changeme". `scripts/dev-up.sh` generates this for you;
       # otherwise see .env.example for one-liners to generate a secret.
       - CORTEXSIM_SECRET=${CORTEXSIM_SECRET:?set CORTEXSIM_SECRET in .env (run scripts/dev-up.sh, or see .env.example)}
+      # Passed through so the app can NAME its exposure (boot warning and
+      # /api/health api_auth) and enforce the host guard / CORS opt-in from
+      # the same .env the port mapping reads. Unset stays unset: the app then
+      # reports "every interface", which is what the mapping above does.
+      - CORTEXSIM_BIND=${CORTEXSIM_BIND:-}
+      # Host names (beyond localhost, IP literals and the container's own
+      # hostname) the console/API may be reached by — DNS-rebinding guard.
+      # Comma list; '*.lab.example' matches subdomains; '*' disables the check.
+      # A beacon or browser using a DNS name not listed here gets
+      # 400 HOST_NOT_ALLOWED naming this variable.
+      - CORTEXSIM_ALLOWED_HOSTS=${CORTEXSIM_ALLOWED_HOSTS:-}
+      # Origins allowed to read the API cross-origin. Empty = same-origin only
+      # (the console needs nothing else).
+      - CORTEXSIM_CORS_ORIGINS=${CORTEXSIM_CORS_ORIGINS:-}
+      # CIDRs whose X-Forwarded-For is believed for an agent's last_ip. Empty =
+      # ignore XFF and record the socket peer (see .env.example).
+      - CORTEXSIM_TRUSTED_PROXIES=${CORTEXSIM_TRUSTED_PROXIES:-}
       # The only URLs the agent installer's ?server= and a served k8s bundle's
       # `server` may name, besides the address a request arrives on. Empty is
       # the request's own origin only; see .env.example.
       - CORTEXSIM_PUBLIC_URLS=${CORTEXSIM_PUBLIC_URLS:-}
+    # Container stdout is capped at 5 x 20 MB. json-file (Docker's default
+    # driver) otherwise keeps every line under /var/lib/docker for the life of
+    # the container; the app's own rotating handler caps only its file copy. A
+    # SimCore left up for weeks in development mode (DEBUG, one line per beacon
+    # poll) filled the jumpbox's disk, after which SQLite writes fail and every
+    # run fails. The driver is named because the options are driver-specific.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    # Liveness is declared by the image (core/Dockerfile HEALTHCHECK: curl
+    # /api/health on loopback). `docker ps` then shows healthy/unhealthy. It
+    # says the event loop answers, not that nothing is degraded, and Docker
+    # does not restart an unhealthy container: `restart:` acts on exit only.
+    #
+    # uvicorn gets --timeout-graceful-shutdown 5 (core/Dockerfile CMD); this
+    # leaves room for that plus the lifespan shutdown before compose SIGKILLs.
+    stop_grace_period: 15s
     restart: unless-stopped
 
 volumes:

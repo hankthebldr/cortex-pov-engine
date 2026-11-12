@@ -1,3 +1,4 @@
+{{- include "eal-simulator.validateExtraEnv" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,9 +10,19 @@ data:
   CORTEXSIM_ENV: {{ .Values.api.env.CORTEXSIM_ENV | quote }}
   CORTEXSIM_PORT: {{ .Values.api.env.CORTEXSIM_PORT | quote }}
   CORTEXSIM_BIND_ADDRESS: {{ .Values.api.bindAddress | quote }}
+  # Names SimCore's Host guard admits: the chart's own Service names, enabled
+  # Ingress hosts, the Tailscale hostname, then api.allowedHosts. Any other DNS
+  # name gets 400 HOST_NOT_ALLOWED. See values.yaml api.allowedHosts.
+  CORTEXSIM_ALLOWED_HOSTS: {{ include "eal-simulator.allowedHosts" . | quote }}
+{{- with .Values.api.trustedProxies }}
+  CORTEXSIM_TRUSTED_PROXIES: {{ join "," . | quote }}
+{{- end }}
   EAL_AUDIT_STDOUT: {{ .Values.audit.stdout | quote }}
   EAL_AUDIT_FILE_ENABLED: {{ .Values.audit.file.enabled | quote }}
   EAL_AUDIT_FILE_PATH: {{ .Values.audit.file.path | quote }}
 {{- if .Values.redis.enabled }}
   EAL_REDIS_URL: "redis://{{ include "eal-simulator.fullname" . }}-redis:6379/0"
+{{- end }}
+{{- range $key, $value := (.Values.api.extraEnv | default dict) }}
+  {{ $key }}: {{ $value | toString | quote }}
 {{- end }}

@@ -39,11 +39,14 @@ function formatValidationDetail(detail) {
  * `err.detail` / `err.status` ride along so a caller that wants to explain the
  * failure precisely (the launch panel) can, without re-parsing prose.
  */
-function apiError(message, { code = null, detail = null, status = null } = {}) {
+function apiError(message, { code = null, detail = null, status = null, payload = null } = {}) {
   const err = new Error(message)
   err.code = code
   err.detail = detail
   err.status = status
+  // The whole structured body, so a field beside {error, code, detail} (for
+  // example run_ids on 409 AGENT_HAS_OPEN_RUNS) is not lost.
+  err.payload = payload
   return err
 }
 
@@ -61,6 +64,13 @@ function apiError(message, { code = null, detail = null, status = null } = {}) {
 export const REQUEST_TIMEOUT_MS = 20_000
 /** Reports and bundles are generated on demand and legitimately take longer. */
 export const DOWNLOAD_TIMEOUT_MS = 60_000
+/**
+ * POST /api/tools/{tool}/install holds the request open while it builds, and
+ * SimCore caps that build at 600 s (core/tools/instantiator.py). The default
+ * 20 s budget abandoned every real install; the next request then met
+ * 409 INSTALL_IN_PROGRESS because the first was still running.
+ */
+export const INSTALL_TIMEOUT_MS = 630_000
 
 /**
  * Attach an abort signal unless the caller brought their own.
@@ -128,6 +138,7 @@ export async function request(path, options = {}) {
     let errorMessage = fallback
     let code = null
     let detail = null
+    let payload = null
     try {
       const errorBody = await response.json()
       // FastAPI returns errors as { detail: ... } where detail is one of:
@@ -153,21 +164,24 @@ export async function request(path, options = {}) {
         // reached the operator as "HTTP 422 — Unprocessable Entity", code null.
         code = errorBody.code || null
         detail = errorBody.detail
+        payload = errorBody
         errorMessage = errorBody.error || fallback
       } else if (errorBody.detail && typeof errorBody.detail === 'object') {
         const d = errorBody.detail
+        payload = d
         code = d.code || null
         detail = d.detail ?? null
         errorMessage = `${d.error || d.detail || fallback}${d.code ? ` [${d.code}]` : ''}`
       } else {
         code = errorBody.code || null
         detail = errorBody.detail ?? null
+        payload = errorBody
         errorMessage = errorBody.detail || errorBody.error || errorBody.message || fallback
       }
     } catch {
       // Response body was not JSON — keep the HTTP status message
     }
-    throw apiError(errorMessage, { code, detail, status: response.status })
+    throw apiError(errorMessage, { code, detail, status: response.status, payload })
   }
 
   // For blob responses (downloads), return raw Response
@@ -286,18 +300,66 @@ export async function getScenarioInfraHints(scenarioId) {
   return request(`/api/scenarios/${encodeURIComponent(scenarioId)}/infra-hints`)
 }
 
+/** Extension a bundle is saved under when the server names no file. */
+const BUNDLE_EXT = { bash: 'sh', powershell: 'ps1', k8s: 'yml' }
+
 /**
- * GET /api/scenarios/:id/download?format=bash|k8s
- * Returns a Blob for file download.
- * @param {string|number} id
- * @param {'bash'|'k8s'} format
- * @returns {Promise<Blob>}
+ * The filename from a Content-Disposition header, or null.
+ *
+ * Only the basename survives: a header is server-controlled text and the value
+ * becomes an `<a download>` name, so a path separator in it is dropped rather
+ * than trusted.
  */
-export async function downloadScenario(id, format = 'bash') {
-  const response = await request(`/api/scenarios/${id}/download?format=${format}`, {
-    _returnBlob: true,
-  })
-  return response.blob()
+export function filenameFromDisposition(header) {
+  if (!header || typeof header !== 'string') return null
+  const star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(header)
+  const plain = /filename\s*=\s*"([^"]*)"|filename\s*=\s*([^;\s]+)/.exec(header)
+  let name = null
+  if (star) {
+    try { name = decodeURIComponent(star[1].trim()) } catch { name = null }
+  }
+  if (!name && plain) name = (plain[1] ?? plain[2] ?? '').trim()
+  if (!name) return null
+  name = name.split(/[\\/]/).pop()
+  return name || null
+}
+
+/**
+ * GET /api/scenarios/:id/download?format=auto|bash|powershell|k8s
+ *
+ * `auto` (the default, and the server's own default) lets SimCore pick the
+ * target the scenario's command TEXT can satisfy: POSIX first, PowerShell for
+ * windows-only content. A bundle the content cannot satisfy is refused with 409
+ * BUNDLE_TARGET_UNSATISFIABLE naming the offending steps; the thrown error
+ * carries `.code` and `.detail` (`target=… unresolved=[step-01 (…)] — hint`).
+ *
+ * @param {string|number} id
+ * @param {'auto'|'bash'|'powershell'|'k8s'} [format='auto']
+ * @returns {Promise<{blob: Blob, filename: string, format: string,
+ *   target: ('posix'|'windows'|null), alternates: string[]}>}
+ *   `target` is the X-CortexSim-Bundle-Target header — the target SimCore
+ *   actually emitted for, which under `auto` is the only way to know whether
+ *   the file is a .sh or a .ps1. `filename` is the server's Content-Disposition
+ *   name when it sends one, else `cortexsim-<id>.<sh|ps1|yml>` by format.
+ */
+export async function downloadScenario(id, format = 'auto') {
+  const fmt = format || 'auto'
+  const response = await request(
+    `/api/scenarios/${encodeURIComponent(id)}/download?format=${encodeURIComponent(fmt)}`,
+    { _returnBlob: true },
+  )
+  const headers = response.headers
+  const target = headers?.get?.('X-CortexSim-Bundle-Target') || null
+  const alternates = (headers?.get?.('X-CortexSim-Bundle-Alternates') || '')
+    .split(',').map((s) => s.trim()).filter(Boolean)
+  const resolved = fmt === 'auto'
+    ? (target === 'windows' ? 'powershell' : target === 'posix' ? 'bash' : 'auto')
+    : fmt
+  const ext = BUNDLE_EXT[resolved] || 'txt'
+  const fallback = resolved === 'k8s' ? `cortexsim-${id}-k8s.${ext}` : `cortexsim-${id}.${ext}`
+  const filename = filenameFromDisposition(headers?.get?.('Content-Disposition')) || fallback
+  const blob = await response.blob()
+  return { blob, filename, format: resolved, target, alternates }
 }
 
 // ─── Composer drafts ──────────────────────────────────────────────────────────
@@ -432,13 +494,42 @@ export async function postRun(body) {
   })
 }
 
+/** Page size for GET /api/runs (SimCore's LIST_RUNS_MAX_LIMIT). */
+export const RUNS_PAGE_LIMIT = 5000
+
 /**
- * GET /api/runs
+ * GET /api/runs[?fields=summary], every page.
+ *
+ * `fields: 'summary'` asks for the list projection without each run's full
+ * `output` (rows carry `output_bytes` + `output_tail` instead). An older
+ * SimCore ignores the parameter and returns the full shape, which callers
+ * still handle. Anything that needs a run's whole transcript reads
+ * `getRun(id)` — never the list.
+ *
+ * SimCore pages the list (default 500 rows) and reports `total`. Reading only
+ * the first page silently dropped a deployment's oldest runs once it passed
+ * 500, so this follows `total` until every run is read. A body that is neither
+ * the legacy bare array nor `{runs: [...]}` is an unrecognised shape and
+ * throws, rather than reading as "no runs".
+ *
+ * @param {{fields?: 'summary'}} [opts]
  * @returns {Promise<Array>}
  */
-export async function getRuns() {
-  const data = await request('/api/runs')
-  return Array.isArray(data) ? data : data?.runs ?? []
+export async function getRuns({ fields } = {}) {
+  const all = []
+  for (let page = 0; page < 100; page += 1) {
+    const qs = new URLSearchParams({ limit: String(RUNS_PAGE_LIMIT), offset: String(all.length) })
+    if (fields) qs.set('fields', fields)
+    const data = await request(`/api/runs?${qs}`)
+    if (Array.isArray(data)) return data // a pre-paging SimCore: one unpaged list
+    if (!data || !Array.isArray(data.runs)) {
+      throw new Error('GET /api/runs returned an unrecognised shape (no runs array)')
+    }
+    all.push(...data.runs)
+    const total = Number.isInteger(data.total) ? data.total : null
+    if (total === null || data.runs.length === 0 || all.length >= total) return all
+  }
+  return all
 }
 
 /**
@@ -562,7 +653,8 @@ export async function getTools() {
  * @returns {Promise<Object>}
  */
 export async function installTool(toolName) {
-  return request(`/api/tools/${toolName}/install`, { method: 'POST' })
+  // The request stays open for the whole build, so it gets a build's budget.
+  return request(`/api/tools/${toolName}/install`, { method: 'POST', _timeoutMs: INSTALL_TIMEOUT_MS })
 }
 
 /**
@@ -782,20 +874,72 @@ export async function deleteAgent(agentId) {
 }
 
 /**
+ * POST /api/runs/:runId/abort — end a run the operator chose to stop.
+ * @param {string} runId
+ */
+export async function abortRun(runId) {
+  return request(`/api/runs/${encodeURIComponent(runId)}/abort`, { method: 'POST' })
+}
+
+/**
  * Build the installer download URL for an agent (bash .sh / PowerShell .ps1).
- * Server URL is auto-derived server-side from the request.
+ *
+ * The script has the address the beacon calls back to written into it. Without
+ * `server`, SimCore takes that address from the request's Host header — right
+ * when the TARGET fetches the URL (`curl <address>/api/agents/install | bash`),
+ * and wrong when a BROWSER fetches it from wherever the console happens to be
+ * open (an SSH tunnel at localhost:8888 bakes localhost). A link the browser
+ * downloads must pass `server`: the address the target can reach. SimCore
+ * validates it and answers 400 BAD_SERVER for one it will not bake.
  *
  * Pass `token` to get the ENROLLMENT installer (SimCore assigns the agent id);
  * pass `id` for the legacy self-asserted path. Prefer the token: an operator
  * who invents ids produces duplicates and typos, and the token is revocable.
  *
- * @param {{os?:string, id?:string, interval?:number, token?:string}} opts
+ * @param {{os?:string, id?:string, interval?:number, token?:string, server?:string}} opts
  */
-export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token = null } = {}) {
+export function agentInstallUrl({ os = 'linux', id = null, interval = 10, token = null, server = null } = {}) {
   const q = new URLSearchParams({ os, interval: String(interval) })
   if (token) q.set('token', token)
   if (id) q.set('id', id)
+  if (server) q.set('server', server)
   return `/api/agents/install?${q.toString()}`
+}
+
+/**
+ * URL of the prebuilt beacon SimCore serves for a target
+ * (GET /api/agents/binary). A link, so the browser saves the file.
+ * @param {{os?:string, arch?:string}} opts
+ */
+export function agentBinaryUrl({ os = 'linux', arch = 'amd64' } = {}) {
+  return `/api/agents/binary?${new URLSearchParams({ os, arch }).toString()}`
+}
+
+/**
+ * GET /api/agents/binary/sha256 — the digest of the beacon SimCore serves.
+ *
+ * Returns the 64 lower-case hex characters, or throws. The route answers
+ * text/plain; a body that is not a SHA-256 (a captive portal page, an empty
+ * answer) is an error with code DIGEST_UNRECOGNISED — a hash check built on a
+ * guessed digest is worse than none.
+ *
+ * @param {{os?:string, arch?:string}} opts
+ * @returns {Promise<string>}
+ */
+export async function getAgentBinarySha256({ os = 'linux', arch = 'amd64' } = {}) {
+  const path = `/api/agents/binary/sha256?${new URLSearchParams({ os, arch }).toString()}`
+  const response = await request(path, {
+    _returnBlob: true,
+    _timeoutMs: REQUEST_TIMEOUT_MS,
+    headers: { Accept: 'text/plain' },
+  })
+  const digest = String(await response.text()).trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw apiError('SimCore answered the digest request with something that is not a SHA-256', {
+      code: 'DIGEST_UNRECOGNISED', detail: { path, length: digest.length }, status: response.status,
+    })
+  }
+  return digest
 }
 
 /**

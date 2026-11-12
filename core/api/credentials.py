@@ -34,6 +34,18 @@ def _not_found(resource: str, name: str) -> dict[str, str]:
     }
 
 
+def _reserved_name(exc: ValueError) -> HTTPException:
+    """``CredentialStore`` refuses the ``__cortexsim__/`` namespace with a
+    ValueError; unmapped, that reached the global handler as a 500. It is a
+    caller error with a stable code, not an internal failure."""
+    reserved = "reserved" in str(exc)
+    return HTTPException(status_code=400, detail={
+        "error": "Reserved secret name" if reserved else "Invalid secret",
+        "code": "RESERVED_SECRET_NAME" if reserved else "INVALID_SECRET",
+        "detail": str(exc),
+    })
+
+
 # ── Pydantic request/response models ───────────────────────────────────────
 
 
@@ -105,13 +117,16 @@ async def put_secret(
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     store = CredentialStore(session)
-    secret = await store.put(
-        body.name,
-        body.plaintext,
-        type_hint=body.type_hint,
-        description=body.description,
-        rotation_days=body.rotation_days,
-    )
+    try:
+        secret = await store.put(
+            body.name,
+            body.plaintext,
+            type_hint=body.type_hint,
+            description=body.description,
+            rotation_days=body.rotation_days,
+        )
+    except ValueError as exc:
+        raise _reserved_name(exc) from exc
     await session.commit()
     return secret.to_dict()
 
@@ -139,7 +154,10 @@ async def delete_secret(
     session: AsyncSession = Depends(get_db),
 ):
     store = CredentialStore(session)
-    removed = await store.delete(name)
+    try:
+        removed = await store.delete(name)
+    except ValueError as exc:
+        raise _reserved_name(exc) from exc
     if not removed:
         raise HTTPException(status_code=404, detail=_not_found("secret", name))
     await session.commit()

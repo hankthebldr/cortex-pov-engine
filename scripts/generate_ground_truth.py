@@ -39,6 +39,12 @@ Design rules (same as export_artifacts.py):
     fields degrade to the filesystem-only method and ``"boot_verified":
     false`` says so explicitly — never a silently wrong number standing in
     for a proven one.
+    Exception: ``uctc_crosswalk_v2.2.py --report`` counts its per-class
+    assertion lines with the real AssertionCatalog and exits non-zero when it
+    cannot import it, so this generator needs core/requirements.txt (the CI
+    ``refs`` job and ``make ground-truth`` both provide it). Those lines are
+    then cross-checked per class against this generator's own loader count;
+    the two once disagreed on one page (PLT 4 vs 7, POS 2 vs 18) — DOCS-17.
 
 Usage:
     python3 scripts/generate_ground_truth.py           # write both files
@@ -47,6 +53,7 @@ Usage:
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -246,16 +253,40 @@ _UCTC_PATTERNS: dict[str, re.Pattern] = {
     "tier_drift": re.compile(r"^tier drift \(S-13\):\s*(\d+)"),
     "posture_primary": re.compile(r"^posture-class primary \(S-14\):\s*(\d+)"),
     "proposed_v23": re.compile(r"^proposed v2\.3 TCs:\s*(\d+)\s+(\{.*\})"),
-    "plt": re.compile(
-        r"^PLT assertions:\s*(\d+) artifact\(s\)\s*->\s*(\d+)/(\d+) PLT rows AUTHORED"
-        r"\s*\|\s*(\d+)/(\d+) PROVEN[^|]*\|\s*(\d+) documented non-bindings"
-    ),
-    "pos": re.compile(
-        r"^POS assertions \(K8s pack\):\s*(\d+) artifact\(s\)\s*->\s*(\d+)/(\d+) POS rows AUTHORED"
-        r"\s*\|\s*(\d+)/(\d+) PROVEN[^|]*\|\s*net-new (\[.*?\])\s*\|\s*breadth-not-coverage (\[.*?\])"
-        r"\s*\|\s*(\d+) documented non-bindings"
-    ),
 }
+
+# One line per assertion validation class, counted by the crosswalk from the
+# real AssertionCatalog. Groups: artifacts, bound rows, class rows, proven,
+# class rows, net-new list, breadth list, documented non-bindings.
+_UCTC_ASSERTION_LINE = (
+    r"^{cls} assertions:\s*(\d+) artifact\(s\)\s*->\s*(\d+)/(\d+) {cls} rows AUTHORED"
+    r"\s*\|\s*(\d+)/(\d+) PROVEN[^|]*\|\s*net-new (\[.*?\])\s*\|\s*breadth-not-coverage (\[.*?\])"
+    r"\s*\|\s*(\d+) documented non-bindings"
+)
+for _cls in ("PLT", "POS", "AUT"):
+    _UCTC_PATTERNS[_cls.lower()] = re.compile(_UCTC_ASSERTION_LINE.format(cls=_cls))
+
+
+def _parse_assertion_line(match: re.Match) -> dict[str, int]:
+    try:
+        net_new = ast.literal_eval(match.group(6))
+    except (ValueError, SyntaxError) as exc:
+        raise GroundTruthError(
+            f"uctc_crosswalk_v2.2.py --report printed an unparseable net-new list: "
+            f"{match.group(6)!r}"
+        ) from exc
+    if not isinstance(net_new, list):
+        raise GroundTruthError(f"net-new is not a list: {match.group(6)!r}")
+    return {
+        "artifacts": int(match.group(1)),
+        "bound": int(match.group(2)),
+        "index_rows_total": int(match.group(3)),
+        "proven": int(match.group(4)),
+        # Rows no scenario already evidences — the honest coverage delta, as
+        # opposed to `bound`, which includes breadth on scenario-evidenced rows.
+        "net_new": len(net_new),
+        "documented_non_bindings": int(match.group(8)),
+    }
 
 
 def run_uctc_crosswalk() -> dict[str, Any]:
@@ -268,19 +299,26 @@ def run_uctc_crosswalk() -> dict[str, Any]:
             f"uctc_crosswalk_v2.2.py --report exited {proc.returncode} "
             f"(a real crosswalk error, not a parsing problem):\n{proc.stderr}"
         )
-    out = proc.stdout
+    return parse_uctc_report(proc.stdout)
+
+
+def parse_uctc_report(out: str) -> dict[str, Any]:
+    """Parse ``uctc_crosswalk_v2.2.py --report`` stdout. Every line is
+    required: a report missing one raises rather than reading as zero."""
     m = re.search(_UCTC_PATTERNS["scenarios_and_rows"].pattern, out, re.MULTILINE)
     ev = re.search(_UCTC_PATTERNS["evidenced"].pattern, out, re.MULTILINE)
     pay = re.search(_UCTC_PATTERNS["payload"].pattern, out, re.MULTILINE)
     td = re.search(_UCTC_PATTERNS["tier_drift"].pattern, out, re.MULTILINE)
     pp = re.search(_UCTC_PATTERNS["posture_primary"].pattern, out, re.MULTILINE)
-    plt = re.search(_UCTC_PATTERNS["plt"].pattern, out, re.MULTILINE)
-    pos = re.search(_UCTC_PATTERNS["pos"].pattern, out, re.MULTILINE)
-    if not (m and ev and pay and td and pp and plt and pos):
+    lines = {cls: re.search(_UCTC_PATTERNS[cls.lower()].pattern, out, re.MULTILINE)
+             for cls in ("PLT", "POS", "AUT")}
+    missing = [cls for cls, hit in lines.items() if hit is None]
+    if not (m and ev and pay and td and pp) or missing:
         raise GroundTruthError(
             "uctc_crosswalk_v2.2.py --report changed its output format — "
-            "the parser in generate_ground_truth.py needs updating to match.\n"
-            f"--- full output ---\n{out}"
+            "the parser in generate_ground_truth.py needs updating to match"
+            + (f" (no parseable assertion line for {missing})" if missing else "")
+            + f".\n--- full output ---\n{out}"
         )
     return {
         "crosswalk_scenarios": int(m.group(1)),
@@ -293,20 +331,9 @@ def run_uctc_crosswalk() -> dict[str, Any]:
         "payload_unresolved": int(pay.group(2)),
         "tier_drift_s13": int(td.group(1)),
         "posture_class_primary_s14": int(pp.group(1)),
-        "plt_assertions": {
-            "artifacts": int(plt.group(1)),
-            "bound": int(plt.group(2)),
-            "index_rows_total": int(plt.group(3)),
-            "proven": int(plt.group(4)),
-            "documented_non_bindings": int(plt.group(6)),
-        },
-        "pos_assertions": {
-            "artifacts": int(pos.group(1)),
-            "bound": int(pos.group(2)),
-            "index_rows_total": int(pos.group(3)),
-            "proven": int(pos.group(4)),
-            "documented_non_bindings": int(pos.group(8)),
-        },
+        "aut_assertions": _parse_assertion_line(lines["AUT"]),
+        "plt_assertions": _parse_assertion_line(lines["PLT"]),
+        "pos_assertions": _parse_assertion_line(lines["POS"]),
     }
 
 
@@ -396,6 +423,83 @@ def boot_truth_assertions() -> Optional[dict[str, Any]]:
         "warnings": len(cat.warnings),
         "by_validation_class": dict(sorted(by_class.items())),
     }
+
+
+# The uctc_index block keys each per-class assertion line under this name.
+_CROSSWALK_ASSERTION_KEYS = {
+    "AUT": "aut_assertions",
+    "PLT": "plt_assertions",
+    "POS": "pos_assertions",
+}
+
+
+def crosswalk_assertion_counts(uctc: dict[str, Any]) -> dict[str, int]:
+    """Per-class artifact counts as ``uctc_crosswalk_v2.2.py --report`` printed
+    them. A class whose line the report does not carry is ABSENT from the
+    result, never 0: "the crosswalk never counted AUT" and "the crosswalk
+    counted zero AUT artifacts" are different claims."""
+    return {cls: int(uctc[key]["artifacts"])
+            for cls, key in sorted(_CROSSWALK_ASSERTION_KEYS.items())
+            if key in uctc}
+
+
+def assertion_class_checks(crosswalk_by_class: dict[str, int],
+                           loader_by_class: dict[str, int],
+                           *, loader_label: str) -> list[tuple[str, Any, Any]]:
+    """One ``(label, crosswalk, loader)`` pair per validation class either side
+    knows about, in the shape ``build()``'s ``checks`` list uses. A class the
+    crosswalk never prints compares as the string ``"absent"`` so it can never
+    equal a count."""
+    pairs: list[tuple[str, Any, Any]] = []
+    for cls in sorted(set(crosswalk_by_class) | set(loader_by_class)):
+        cw = crosswalk_by_class.get(cls, "absent")
+        ld = loader_by_class.get(cls, 0)
+        pairs.append((
+            f"{cls} assertion artifacts: uctc_crosswalk_v2.2.py --report vs {loader_label}",
+            cw, ld,
+        ))
+    return pairs
+
+
+def cross_check_assertion_classes(crosswalk_by_class: dict[str, int],
+                                  loader_by_class: dict[str, int],
+                                  *, loader_label: str) -> dict[str, int]:
+    """Raise GroundTruthError unless the crosswalk's per-class assertion
+    artifact counts equal the loader's for EVERY class (DOCS-17: the page once
+    printed PLT 7 / POS 18 from the loader and PLT 4 / POS 2 from the
+    crosswalk's hand tables, and no check compared the two)."""
+    pairs = assertion_class_checks(crosswalk_by_class, loader_by_class,
+                                   loader_label=loader_label)
+    mismatches = [f"  - {label}: {a} != {b}" for label, a, b in pairs if a != b]
+    if mismatches:
+        raise GroundTruthError(
+            "Assertion counts disagree between the UC/TC crosswalk and the "
+            "loader — ground-truth.md would print two different answers to "
+            "'how many are authored':\n" + "\n".join(mismatches)
+        )
+    return dict(sorted(loader_by_class.items()))
+
+
+def cross_check_assertion_counts(uctc: Optional[dict[str, Any]] = None,
+                                 boot_assertions: Optional[dict[str, Any]] = None
+                                 ) -> dict[str, int]:
+    """Run the crosswalk and the loader on this tree and cross-check them.
+
+    Uses the real AssertionCatalog when importable; otherwise the filesystem
+    glob, labelled as such. Returns the agreed per-class counts."""
+    if uctc is None:
+        uctc = run_uctc_crosswalk()
+    if boot_assertions is None:
+        boot_assertions = boot_truth_assertions()
+    if boot_assertions is not None:
+        loader_by_class = boot_assertions["by_validation_class"]
+        label = "the real AssertionCatalog"
+    else:
+        loader_by_class = count_assertions_filesystem()["by_validation_class"]
+        label = "a filesystem glob of assertions/ (AssertionCatalog not importable)"
+    return cross_check_assertion_classes(
+        crosswalk_assertion_counts(uctc), loader_by_class, loader_label=label,
+    )
 
 
 def boot_truth_strict_refs() -> Optional[dict[str, Any]]:
@@ -492,6 +596,16 @@ def build() -> dict[str, Any]:
             "assertion artifact count: filesystem glob vs the real AssertionCatalog",
             fs_assertions["artifacts_total"], boot_assertions["loaded"],
         ))
+        checks.extend(assertion_class_checks(
+            crosswalk_assertion_counts(uctc), boot_assertions["by_validation_class"],
+            loader_label="the real AssertionCatalog",
+        ))
+    else:
+        checks.extend(assertion_class_checks(
+            crosswalk_assertion_counts(uctc),
+            count_assertions_filesystem()["by_validation_class"],
+            loader_label="a filesystem glob of assertions/",
+        ))
 
     mismatches = [f"  - {label}: {a} != {b}" for label, a, b in checks if a != b]
     if mismatches:
@@ -550,6 +664,7 @@ def build() -> dict[str, Any]:
             "payload_unresolved": uctc["payload_unresolved"],
             "tier_drift_s13": uctc["tier_drift_s13"],
             "posture_class_primary_s14": uctc["posture_class_primary_s14"],
+            "aut_assertions": uctc["aut_assertions"],
             "plt_assertions": uctc["plt_assertions"],
             "pos_assertions": uctc["pos_assertions"],
         },
@@ -698,16 +813,15 @@ def render_markdown(doc: dict[str, Any]) -> str:
     lines.append(f"| DET/HNT TCs evidenced | {u['det_hnt_evidenced']}/{u['det_hnt_total']} |")
     lines.append(f"| S-13 tier disagreements | {u['tier_drift_s13']} |")
     lines.append(f"| S-14 posture-class-primary bindings | {u['posture_class_primary_s14']} |")
-    lines.append(
-        f"| PLT assertions authored | {u['plt_assertions']['bound']}/"
-        f"{u['plt_assertions']['index_rows_total']} rows ({u['plt_assertions']['artifacts']} artifact(s), "
-        f"{u['plt_assertions']['proven']} tenant-proven) |"
-    )
-    lines.append(
-        f"| POS assertions authored | {u['pos_assertions']['bound']}/"
-        f"{u['pos_assertions']['index_rows_total']} rows ({u['pos_assertions']['artifacts']} artifact(s), "
-        f"{u['pos_assertions']['proven']} tenant-proven) |"
-    )
+    # Same artifact counts as the Assertions section above — build() refuses to
+    # write this file when the crosswalk and the loader disagree per class.
+    for cls in ("PLT", "POS", "AUT"):
+        row = u[f"{cls.lower()}_assertions"]
+        lines.append(
+            f"| {cls} assertions authored | {row['bound']}/{row['index_rows_total']} rows "
+            f"({row['artifacts']} artifact(s), {row['net_new']} row(s) no scenario reaches, "
+            f"{row['proven']} tenant-proven) |"
+        )
     lines.append("")
 
     lines.append("## HTTP routes")

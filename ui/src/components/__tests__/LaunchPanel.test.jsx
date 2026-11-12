@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import LaunchPanel from '../LaunchPanel.jsx'
@@ -96,6 +96,77 @@ describe('<LaunchPanel />', () => {
     await screen.findByText(/lab-host-error/)
     await userEvent.click(screen.getByRole('button', { name: /Launch Run/ }))
     await waitFor(() => expect(onError).toHaveBeenCalledWith('orchestrator down'))
+  })
+
+  // PUSH-09 / UI-03 / UI-04 — the legacy panel had the same bash|k8s-only
+  // selector, the same hard-coded `.sh` name, and the same invisible refusal.
+  describe('push bundle format', () => {
+    let savedAs
+    let urls
+    const formatOf = (u) => new URL(u, 'http://localhost').searchParams.get('format')
+
+    beforeEach(() => {
+      savedAs = []
+      urls = []
+      URL.createObjectURL = vi.fn(() => 'blob:mock')
+      URL.revokeObjectURL = vi.fn()
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function click() {
+        savedAs.push(this.download)
+      })
+    })
+
+    it('offers PowerShell and auto beside bash and k8s', async () => {
+      installRoutes({ 'GET /api/agents': { agents: [], total: 0 } })
+      render(<LaunchPanel scenario={baseScenario} onRunComplete={vi.fn()} onError={vi.fn()} />)
+      await userEvent.click(screen.getByRole('button', { name: /Push/ }))
+      expect(screen.getByRole('button', { name: /^PowerShell$/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /^auto$/ })).toBeInTheDocument()
+    })
+
+    it('a PowerShell download asks for format=powershell and saves the .ps1 the server names', async () => {
+      installRoutes({
+        'GET /api/agents': { agents: [], total: 0 },
+        'GET /api/scenarios/SIM-EDR-001/download': (url) => {
+          urls.push(url)
+          return new Response('# ps1\n', {
+            status: 200,
+            headers: {
+              'Content-Disposition': 'attachment; filename="cortexsim-SIM-EDR-001.ps1"',
+              'X-CortexSim-Bundle-Target': 'windows',
+            },
+          })
+        },
+      })
+      render(<LaunchPanel scenario={baseScenario} onRunComplete={vi.fn()} onError={vi.fn()} />)
+      await userEvent.click(screen.getByRole('button', { name: /Push/ }))
+      await userEvent.click(screen.getByRole('button', { name: /^PowerShell$/ }))
+      await userEvent.click(screen.getByRole('button', { name: /Download/ }))
+      await waitFor(() => expect(savedAs).toEqual(['cortexsim-SIM-EDR-001.ps1']))
+      expect(formatOf(urls[0])).toBe('powershell')
+      expect(screen.getByText(/PowerShell 5\.1/)).toBeInTheDocument()
+    })
+
+    it('a refused download is rendered beside the button, with code and step ids', async () => {
+      installRoutes({
+        'GET /api/agents': { agents: [], total: 0 },
+        'GET /api/scenarios/SIM-EDR-001/download': () => new Response(JSON.stringify({
+          detail: {
+            error: 'Scenario cannot emit a bundle for this target',
+            code: 'BUNDLE_TARGET_UNSATISFIABLE',
+            detail: 'target=windows scenario=SIM-EDR-001 unresolved=[step-02 (WINDOWS_COMMAND_UNAVAILABLE)] '
+              + '— declare platform_variants.windows on those steps',
+          },
+        }), { status: 409, headers: { 'content-type': 'application/json' } }),
+      })
+      render(<LaunchPanel scenario={baseScenario} onRunComplete={vi.fn()} onError={vi.fn()} />)
+      await userEvent.click(screen.getByRole('button', { name: /Push/ }))
+      await userEvent.click(screen.getByRole('button', { name: /^PowerShell$/ }))
+      await userEvent.click(screen.getByRole('button', { name: /Download/ }))
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent('BUNDLE_TARGET_UNSATISFIABLE')
+      expect(alert).toHaveTextContent('step-02')
+      expect(savedAs).toEqual([])
+    })
   })
 
   it('disables modes the scenario does not support', () => {

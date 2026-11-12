@@ -169,7 +169,7 @@ steps:
     # ROOT — links from the curl CGO. A DNS record is a pointer; when the
     # resource it points at is released, the pointer survives. That survival is
     # the whole technique and it is where the chain starts.
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     expected_detections:
       - plane: ASM
         type: Analytics
@@ -187,7 +187,7 @@ steps:
       echo cortexsim-tim008-provider-endpoint-claimed
     identity: container-runtime
     mitre_technique: "T1584.006"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -236,7 +236,7 @@ steps:
       echo cortexsim-tim008-reputation-controls-evaluated-and-silent
     identity: container-runtime
     mitre_technique: "T1584.001"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-03
       pivot: shared_entity
@@ -258,7 +258,7 @@ steps:
       echo cortexsim-tim008-intel-promoted-and-queue-reread
     identity: root
     mitre_technique: "T1584.001"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-04
       pivot: shared_entity
@@ -286,7 +286,7 @@ steps:
       echo cortexsim-tim008-terminal-stitch-verified
     identity: root
     mitre_technique: "T1071.001"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-05
       pivot: shared_entity

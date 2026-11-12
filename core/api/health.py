@@ -400,6 +400,10 @@ def probe_xsiam_operation_catalog() -> dict[str, Any]:
     return _ok(count=count)
 
 
+_SHIPPED_BEACON_TARGETS = ("linux/amd64", "linux/arm64", "darwin/amd64",
+                           "darwin/arm64", "windows/amd64")
+
+
 def probe_agent_binaries() -> dict[str, Any]:
     """Which prebuilt beacons this SimCore can hand to an endpoint.
 
@@ -412,7 +416,12 @@ def probe_agent_binaries() -> dict[str, Any]:
     dist_dir = str(_agent_dist_dir())
     binaries = _available_binaries()
     have = {f"{b['os']}/{b['arch']}" for b in binaries}
-    want = {f"{goos}/amd64" for goos in ("linux", "darwin", "windows")}
+    # The shipped matrix (scripts/build-agent-dist.sh and the core/Dockerfile
+    # agent-builder stage; tests/installer/test_agent_dist_matrix_parity.py
+    # holds those two together). This used to want <goos>/amd64 only, so a
+    # shelf without the arm64 beacons read ok while an Apple-silicon Mac or an
+    # arm64 Linux host got a 404 and a source-build fallback.
+    want = set(_SHIPPED_BEACON_TARGETS)
     missing = sorted(want - have)
 
     if not binaries:
@@ -426,12 +435,20 @@ def probe_agent_binaries() -> dict[str, Any]:
             dist_dir=dist_dir, available=[], missing=sorted(want),
         )
     if missing:
+        consequence = (
+            "GET /api/agents/binary 404s for those targets and the POSIX installer "
+            "falls back to a source build, which needs Go on the host")
+        if "windows/amd64" in missing:
+            consequence = (
+                "GET /api/agents/binary?os=windows will 404 and the PowerShell "
+                "installer will refuse WINDOWS_AGENT_UNAVAILABLE"
+                + ("; the other targets fall back to a source build"
+                   if len(missing) > 1 else ""))
         return _degraded(
             "AGENT_DIST_INCOMPLETE",
-            f"prebuilt beacons are missing for {', '.join(missing)}. "
-            f"GET /api/agents/binary?os=windows will 404 and the PowerShell "
-            f"installer will refuse WINDOWS_AGENT_UNAVAILABLE. Fix: run "
-            f"`make agent-dist` (it cross-compiles linux/darwin/windows) and rebuild.",
+            f"prebuilt beacons are missing for {', '.join(missing)}. {consequence}. "
+            f"Fix: run `make agent-dist` (it cross-compiles the five shipped targets) "
+            f"and rebuild.",
             dist_dir=dist_dir, available=sorted(have), missing=missing,
         )
     return _ok(dist_dir=dist_dir, available=sorted(have), missing=[])
@@ -503,6 +520,97 @@ def probe_payload_shelf(scenarios: Optional[list[dict[str, Any]]] = None) -> dic
     return _ok(**common)
 
 
+def probe_api_auth() -> dict[str, Any]:
+    """SEC-01 / SEC-10 — what this deployment exposes, stated as a component.
+
+    There is no API authentication in SimCore yet, so this is permanently
+    ``degraded`` (code ``API_UNAUTHENTICATED``). That is deliberate and it is
+    the repo's own rule: a zero is degraded, not ok. A deployment anyone on the
+    network can drive must not read green, and the overall status of every
+    current deployment is therefore ``degraded`` until auth lands.
+
+    It flips only when an authentication mechanism exists to inspect — never
+    because a bind address or firewall rule *looks* narrow, which this process
+    cannot verify (a 127.0.0.1 publish behind a port-forward is still exposed).
+    """
+    from security import host_guard  # noqa: PLC0415
+
+    raw_bind = (getattr(settings, "CORTEXSIM_BIND", "") or "").strip()
+    bind = raw_bind or "0.0.0.0"
+    port = settings.CORTEXSIM_PORT
+    raw_allowed = getattr(settings, "CORTEXSIM_ALLOWED_HOSTS", "")
+    allowed = host_guard.parse_allowed_hosts(raw_allowed)
+    ignored = host_guard.unusable_allowed_hosts(raw_allowed)
+    cors = [o.strip() for o in (getattr(settings, "CORTEXSIM_CORS_ORIGINS", "") or "").split(",")
+            if o.strip()]
+    # CORTEXSIM_BIND is a SETTING — the address docker-compose publishes the
+    # port on. This process does not bind a socket from it and cannot see the
+    # address it is actually reachable on, so it is reported as configuration,
+    # never as "SimCore is published on X" (RG-GUARD-06): under a host-run
+    # uvicorn that statement was simply false.
+    published = (
+        f"CORTEXSIM_BIND={raw_bind} is the address docker-compose is configured "
+        f"to publish port {port} on" if raw_bind else
+        f"CORTEXSIM_BIND is unset, so docker-compose publishes port {port} on "
+        f"every interface of the host ({bind})"
+    )
+    refused = host_guard.refusals.snapshot()
+    # What the guard admits as this machine's own name (RG-UI-05). No DNS here:
+    # the FQDN is whatever the running guard already resolved, or None.
+    local = host_guard.local_host_names()
+    guard_notes = ""
+    if ignored:
+        guard_notes += (
+            f" CORTEXSIM_ALLOWED_HOSTS has {len(ignored)} entr"
+            f"{'y' if len(ignored) == 1 else 'ies'} that can never match a Host "
+            f"header and {'is' if len(ignored) == 1 else 'are'} ignored: "
+            f"{', '.join(repr(e) for e in ignored)} — write the name only "
+            f"('jumpbox.lab' or '*.lab')."
+        )
+    if refused["total"]:
+        names = ", ".join(repr(e["host"]) for e in refused["hosts"][:5])
+        guard_notes += (
+            f" The Host guard has refused {refused['total']} request(s) since "
+            f"boot (HOST_NOT_ALLOWED), most recently for {names}. If one of those "
+            f"names is yours — the console URL, or a beacon's or installer's "
+            f"--server — add it to CORTEXSIM_ALLOWED_HOSTS and restart SimCore; "
+            f"until then that endpoint cannot poll, download or report."
+        )
+    return _degraded(
+        "API_UNAUTHENTICATED",
+        f"The operator and agent APIs are unauthenticated: anyone who can reach "
+        f"this SimCore's port can launch runs, start tools, read the credential "
+        f"inventory, enroll or impersonate agents and post their output. Where it "
+        f"listens is not verified here: {published}, and a host-run SimCore "
+        f"(scripts/dev-up-native.sh, a bare uvicorn) binds whatever --host uvicorn "
+        f"was started with, which this process cannot see. The Host guard "
+        f"blocks DNS-rebinding pages and CORS is "
+        f"{'limited to ' + ', '.join(cors) if cors else 'off (same-origin only)'}, "
+        f"but neither stops a direct network client, and a body-less cross-site "
+        f"POST to an IP address is still delivered.{guard_notes} "
+        f"Fix: publish SimCore only where the DC needs it — 127.0.0.1 for a "
+        f"console-only host, or the lab NIC's address; set it as CORTEXSIM_BIND "
+        f"under compose, or pass it as uvicorn's --host when host-run — and "
+        f"restrict the "
+        f"port to the DC's and the enrolled endpoints' addresses with a security "
+        f"group or host firewall. API authentication itself is not implemented "
+        f"yet (SEC-01); this component stays degraded until it is.",
+        authenticated=False,
+        bind=bind,
+        bind_source="CORTEXSIM_BIND" if raw_bind else "default",
+        bind_verified=False,
+        port=port,
+        host_guard="disabled" if "*" in allowed else "enforced",
+        allowed_hosts=allowed,
+        ignored_allowed_hosts=ignored,
+        local_host_names=local["hostname"],
+        local_fqdn_names=local["fqdn"],
+        host_guard_refusals=refused["total"],
+        last_refused_hosts=refused["hosts"],
+        cors_origins=cors,
+    )
+
+
 # -- async probes -----------------------------------------------------------
 
 
@@ -563,6 +671,7 @@ async def probe_agents(session_factory) -> dict[str, Any]:
     """
     from sqlalchemy import select  # noqa: PLC0415
 
+    import api.agents as agents_api  # noqa: PLC0415
     from api.agents import _derive_status  # noqa: PLC0415
     from models import Agent  # noqa: PLC0415
 
@@ -578,7 +687,42 @@ async def probe_agents(session_factory) -> dict[str, Any]:
     common = {"registered": len(rows), **buckets,
               "derived_from": "last_seen age; no outbound probe is made"}
 
-    if not rows:
+    # RG-INSTALL-05: is an agent's recorded address really its own? Two signs
+    # it is a proxy's: an X-Forwarded-For SimCore ignored because the peer is
+    # not in CORTEXSIM_TRUSTED_PROXIES, and distinct hosts sharing one address.
+    # last_ip is what scopes a reconcile to a host, so this is not cosmetic.
+    forwarders = list(agents_api.ignored_forwarders())
+    by_ip: dict[str, set] = {}
+    for agent in rows:
+        ip, host = getattr(agent, "last_ip", None), getattr(agent, "hostname", None)
+        if ip and host:
+            by_ip.setdefault(ip, set()).add(host)
+    shared = {ip: sorted(hosts) for ip, hosts in sorted(by_ip.items()) if len(hosts) > 1}
+    if forwarders:
+        common["ignored_forwarders"] = forwarders
+    if shared:
+        common["shared_addresses"] = shared
+    address_fault = None
+    if forwarders:
+        address_fault = (
+            "XFF_FROM_UNTRUSTED_PEER",
+            f"X-Forwarded-For arrived from {', '.join(forwarders)}, which "
+            f"CORTEXSIM_TRUSTED_PROXIES does not list, so the header was ignored and "
+            f"agents behind that peer are recorded with the peer's address, not their "
+            f"own. A reconcile scoped by that address matches the wrong host. Fix: if "
+            f"that peer is your proxy, add it to CORTEXSIM_TRUSTED_PROXIES (CIDRs, "
+            f"passed to the container as an environment variable) and restart SimCore.")
+    elif shared:
+        ip, hosts = next(iter(shared.items()))
+        address_fault = (
+            "AGENT_ADDRESS_SHARED",
+            f"{len(shared)} address(es) are recorded for more than one host (e.g. {ip}: "
+            f"{', '.join(hosts)}), so SimCore sees those agents through one proxy or NAT "
+            f"and an address-scoped reconcile cannot tell them apart. Fix: if a proxy "
+            f"sends X-Forwarded-For, list it in CORTEXSIM_TRUSTED_PROXIES; if the hosts "
+            f"sit behind one NAT, pass ?host= on /reconcile to name the endpoint.")
+
+    if not rows and address_fault is None:
         # Deliberately OK, not degraded. A fresh SimCore, and any push-only
         # deployment, has no agents by design — flagging that amber forever
         # would make the banner background noise, and a banner nobody reads is
@@ -593,7 +737,7 @@ async def probe_agents(session_factory) -> dict[str, Any]:
                    "GET /api/agents/install?os=linux.",
             **common,
         )
-    if buckets["online"] == 0:
+    if rows and buckets["online"] == 0:
         return _degraded(
             "NO_AGENT_ONLINE",
             f"{len(rows)} agent(s) are enrolled but none has checked in within 30s "
@@ -603,6 +747,8 @@ async def probe_agents(session_factory) -> dict[str, Any]:
             f"reach this SimCore's /api/agents/{{id}}/tasks.",
             **common,
         )
+    if address_fault is not None:
+        return _degraded(*address_fault, **common)
     return _ok(**common)
 
 
@@ -647,6 +793,33 @@ async def probe_task_queue(session_factory) -> dict[str, Any]:
             stranded=dict(sorted(stranded.items())), **common,
         )
     return _ok(stranded={}, **common)
+
+
+async def probe_master_key(session_factory) -> dict[str, Any]:
+    """OPS-12 — does the current ``CORTEXSIM_SECRET`` open this vault at all?
+
+    A regenerated ``.env`` over a surviving data volume leaves every stored
+    credential undecryptable. Before this probe, ``integrations`` still read
+    ``ok`` with N configured and the first sign was a ``CRYPTO_ERROR`` 500 on a
+    tenant test in front of the customer.
+
+    It decrypts the key-check SimCore writes at first boot (or, for a database
+    that predates it, test-decrypts the stored secrets). A local decrypt only:
+    no tenant call, and ``stamp=False`` — a health probe never writes.
+
+    Its own component, not a field of ``integrations``: vault integrity is not
+    tenant configuration, and a mismatch must name itself in
+    ``degraded_components`` rather than hide behind an integrations code.
+    """
+    from security.credentials import check_master_key  # noqa: PLC0415
+
+    async with session_factory() as session:
+        result = await check_master_key(session, stamp=False)
+
+    common = {"key_check": result.status, "secrets_checked": result.secrets_checked}
+    if result.status == "mismatch":
+        return _degraded(result.code, result.detail, **common)
+    return _ok(detail=result.detail, **common)
 
 
 async def probe_integrations(session_factory) -> dict[str, Any]:
@@ -861,9 +1034,13 @@ COMPONENT_KEYS: tuple[str, ...] = (
     "agent_binaries",
     "agents",
     "task_queue",
+    "master_key",
     "integrations",
     "eal_collectors",
     "mcp",
+    # Exposure, not readiness: last so the list still reads top-down from "can
+    # this process store anything" to "is anything configured to leave it".
+    "api_auth",
 )
 
 
@@ -941,9 +1118,11 @@ async def component_health(app: Any = None) -> dict[str, dict[str, Any]]:
     components["agent_binaries"] = _guard("agent_binaries", probe_agent_binaries)
     components["agents"] = await _aguard("agents", probe_agents)
     components["task_queue"] = await _aguard("task_queue", probe_task_queue)
+    components["master_key"] = await _aguard("master_key", probe_master_key)
     components["integrations"] = await _aguard("integrations", probe_integrations)
     components["eal_collectors"] = await _aguard("eal_collectors", probe_eal_collectors)
     components["mcp"] = _guard("mcp", lambda: probe_mcp(app))
+    components["api_auth"] = _guard("api_auth", probe_api_auth)
     return components
 
 

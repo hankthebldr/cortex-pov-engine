@@ -111,6 +111,11 @@ async def lifespan(app: FastAPI):
     from config import validate_master_key  # noqa: PLC0415
     validate_master_key(settings.CORTEXSIM_SECRET, env=settings.CORTEXSIM_ENV)
 
+    # 0b. Say, loudly, what this deployment exposes (SEC-01/SEC-10). Always
+    #     fires: there is no API authentication to configure yet.
+    warn_unauthenticated()
+    warn_unusable_allowed_hosts()
+
     # 1. Initialize database (create tables).
     #    A storage fault here is a DEPLOYMENT problem, not a defect, so it gets
     #    the same treatment as the master-key guard: a named code, a plain
@@ -133,6 +138,25 @@ async def lifespan(app: FastAPI):
         # "Application startup failed", which buries the message above.
         os._exit(DB_BOOT_EXIT_CODE)
     logger.info("Database initialized at %s", settings.CORTEXSIM_BASE_DIR + "/data/cortexsim.db")
+
+    # 1b. Master-key check (OPS-12). A regenerated .env over a surviving data
+    #     volume leaves every stored credential undecryptable, and nothing said
+    #     so until a tenant test 500'd in front of the customer. Stamp the
+    #     key-check on first boot; on every later boot decrypt it. A mismatch
+    #     does not refuse boot (runs, scenarios and push bundles need no vault)
+    #     — it is logged here and reported by /api/health as MASTER_KEY_MISMATCH.
+    #     A local decrypt only; no tenant is contacted.
+    from security.credentials import check_master_key  # noqa: PLC0415
+    try:
+        async with _db_context() as db:
+            key_check = await check_master_key(db, stamp=True)
+            await db.commit()
+        if key_check.status == "mismatch":
+            logger.error("MASTER_KEY_MISMATCH — %s", key_check.detail)
+        else:
+            logger.info("Master-key check: %s", key_check.status)
+    except Exception:  # noqa: BLE001 — a failed check must not take boot down
+        logger.exception("master-key check failed — /api/health will report it")
 
     # 2. Load scenarios from YAML
     scenarios_dir = settings.CORTEXSIM_SCENARIOS_DIR
@@ -288,20 +312,114 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow all origins (jumpbox internal tool, no auth exists). Per the
-# CORS spec a wildcard origin cannot carry credentials — browsers reject
-# `allow_origins=["*"]` + `allow_credentials=True` outright — so credentials
-# stay OFF. Nothing here sends them (no auth, no cookies, no session), so this
-# keeps the API fully open while making the config spec-valid. Do not flip
-# allow_credentials back to True without narrowing allow_origins off "*" — the
-# two together are invalid and a browser will refuse the response.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# ---------------------------------------------------------------------------
+# HTTP exposure: CORS opt-in + Host guard (SEC-07)
+#
+# CORS used to be allow_origins=["*"]. With no authentication anywhere, that let
+# ANY web page a DC had open read every API response — runs, the credential
+# inventory, agent ids — into its own JavaScript. Nothing needs it: the console
+# is served by SimCore and calls the API at window.location.origin
+# (ui/src/api/client.js), and the Vite dev server proxies /api, so both are
+# same-origin. CORS is therefore mounted ONLY for origins an operator names in
+# CORTEXSIM_CORS_ORIGINS, and never with credentials.
+#
+# The Host guard (security/host_guard.py) closes what CORS never did: DNS
+# rebinding, where the attacker's page becomes same-origin with SimCore. It is
+# added LAST so it is the OUTERMOST layer and refuses before anything answers.
+# Still open until SEC-01: a cross-site *simple* POST to an IP literal is
+# delivered without a preflight, so body-less POST routes remain forgeable.
+# ---------------------------------------------------------------------------
+
+from security.host_guard import (  # noqa: E402
+    HostGuardMiddleware,
+    parse_allowed_hosts,
+    unusable_allowed_hosts,
 )
+
+
+def parse_cors_origins(raw: str | None) -> list[str]:
+    """``"https://a.example, https://b.example,"`` -> the non-empty entries."""
+    return [o.strip() for o in (raw or "").split(",") if o.strip()]
+
+
+def install_http_security(app: FastAPI, *, cors_origins: list[str],
+                          allowed_hosts: list[str]) -> None:
+    """Mount CORS (only if origins are named) and then the Host guard.
+
+    Starlette's ``add_middleware`` prepends, so the guard — added second — is
+    ``user_middleware[0]``, the outermost layer.
+    """
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_origins),
+            # Never True: with no authentication there is nothing a credential
+            # would legitimately carry, and wildcard + credentials makes
+            # Starlette reflect every caller's Origin (tests/api/test_cors.py).
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    app.add_middleware(HostGuardMiddleware, allowed_hosts=list(allowed_hosts))
+
+
+install_http_security(
+    app,
+    cors_origins=parse_cors_origins(settings.CORTEXSIM_CORS_ORIGINS),
+    allowed_hosts=parse_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS),
+)
+
+
+def warn_unauthenticated() -> None:
+    """The loud boot line. It always fires today: no authentication exists.
+
+    ``CORTEXSIM_BIND`` is quoted as a SETTING, never as where SimCore listens
+    (RG-GUARD-06): it is the address docker-compose publishes the port on.
+    This process binds nothing from it and cannot see the address uvicorn was
+    started on, so "Published on 127.0.0.1 only" was false under a host-run
+    launcher that binds every interface.
+    """
+    raw_bind = (settings.CORTEXSIM_BIND or "").strip()
+    hosts = parse_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS)
+    logger.warning(
+        "SECURITY: SimCore's operator and agent APIs are UNAUTHENTICATED (SEC-01). "
+        "Anyone who can reach this SimCore on port %d can launch runs, start "
+        "tools, read the credential inventory and impersonate agents. %s A "
+        "host-run SimCore (scripts/dev-up-native.sh, a bare uvicorn) binds "
+        "whatever --host uvicorn was given, which this process cannot see. "
+        "Host guard: %s. CORS: %s. "
+        "Restrict the port to the DC's address (security group / host firewall) "
+        "and publish on one interface (CORTEXSIM_BIND under compose, --host for "
+        "a host-run uvicorn). GET /api/health reports "
+        "this as api_auth: API_UNAUTHENTICATED.",
+        settings.CORTEXSIM_PORT,
+        (f"CORTEXSIM_BIND={raw_bind}: docker-compose is configured to publish on "
+         f"that address (not verified by this process)." if raw_bind else
+         "CORTEXSIM_BIND is unset, so docker-compose publishes on every "
+         "interface (0.0.0.0)."),
+        ("disabled (CORTEXSIM_ALLOWED_HOSTS='*')" if "*" in hosts else
+         "localhost, IP literals, this host's names" + (f", {', '.join(hosts)}" if hosts else "")),
+        ", ".join(parse_cors_origins(settings.CORTEXSIM_CORS_ORIGINS)) or "off (same-origin only)",
+    )
+
+
+def warn_unusable_allowed_hosts() -> None:
+    """Say at boot which ``CORTEXSIM_ALLOWED_HOSTS`` entries can never match.
+
+    An entry such as ``lab*.example`` or ``jump box`` admits nothing, and the
+    beacon or browser it was meant for is refused ``HOST_NOT_ALLOWED`` with the
+    setting apparently in place. ``/api/health`` lists the same entries as
+    ``api_auth.ignored_allowed_hosts``.
+    """
+    ignored = unusable_allowed_hosts(settings.CORTEXSIM_ALLOWED_HOSTS)
+    if ignored:
+        logger.warning(
+            "CORTEXSIM_ALLOWED_HOSTS: %d entr%s can never match a Host header and "
+            "%s ignored: %s. Write the host name only ('jumpbox.lab'; a scheme "
+            "or port is accepted and dropped) or '*.lab' for subdomains.",
+            len(ignored), "y" if len(ignored) == 1 else "ies",
+            "is" if len(ignored) == 1 else "are",
+            ", ".join(repr(e) for e in ignored))
 
 
 # ---------------------------------------------------------------------------

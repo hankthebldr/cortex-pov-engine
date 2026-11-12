@@ -14,9 +14,23 @@ package beacon
 //     on Windows would be exactly the small lie the taxonomy exists to stop.
 
 import (
+	"errors"
 	"os"
 	"runtime"
+	"syscall"
 )
+
+// Win32 error codes a scanner holding a freshly written file produces.
+const (
+	errorSharingViolation syscall.Errno = 32
+	errorLockViolation    syscall.Errno = 33
+)
+
+// isSharingViolation reports a rename blocked because another process (on a
+// customer endpoint, almost always the AV/EDR scanner) holds the file open.
+func isSharingViolation(err error) bool {
+	return errors.Is(err, errorSharingViolation) || errors.Is(err, errorLockViolation)
+}
 
 func openFlags() int {
 	return os.O_WRONLY | os.O_CREATE | os.O_EXCL

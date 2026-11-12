@@ -284,7 +284,7 @@
     ],
     "xql_queries": [
       {
-        "purpose": "validation",
+        "purpose": "hunt",
         "name": "GentleKiller Vulnerable Driver Load Preceding EDR Telemetry Loss",
         "query": "dataset = xdr_data\n| filter _time > to_timestamp(current_time() - 900)\n| filter event_type = ENUM.LOAD_IMAGE and lowercase(action_module_path) contains \"throttlestop.sys\"\n| comp count() as driver_loads by agent_hostname, action_module_path, actor_process_image_name\n| filter driver_loads >= 1\n| fields agent_hostname, action_module_path, actor_process_image_name, driver_loads",
         "expected_rows_min": 1,

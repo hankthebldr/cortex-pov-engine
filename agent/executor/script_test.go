@@ -2,6 +2,7 @@ package executor
 
 import (
 	"encoding/base64"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -108,8 +109,13 @@ func TestPowerShellChainStepScript_RunsStepAsAChildProcess(t *testing.T) {
 	// And the encoded payload really is this step, exit-wrapped.
 	for _, line := range strings.Split(s, "\n") {
 		if i := strings.Index(line, "-EncodedCommand "); i >= 0 {
-			enc := strings.TrimSpace(line[i+len("-EncodedCommand "):])
-			payload := decodePowerShellCommand(t, enc)
+			// The launch is wrapped in try/catch on the same line, so the
+			// payload is the first token after the flag.
+			fields := strings.Fields(line[i+len("-EncodedCommand "):])
+			if len(fields) == 0 {
+				t.Fatalf("no payload after -EncodedCommand: %q", line)
+			}
+			payload := decodePowerShellCommand(t, fields[0])
 			if !strings.Contains(payload, "whoami") {
 				t.Fatalf("encoded payload does not carry the step: %q", payload)
 			}
@@ -171,14 +177,14 @@ func TestChainStepScripts_EmitParsableSentinels(t *testing.T) {
 
 // A null $LASTEXITCODE (the child never launched) must not produce a marker line
 // with an unparsable rc — the beacon would report a sentinel-parse error instead
-// of a failed step.
+// of a failed step. It reads as rc 126 (BEACON-03), and so does a caught launch.
 func TestPowerShellChainStepScript_GuardsNullExitCode(t *testing.T) {
 	s := powerShellChainStepScript("__MARK__", "whoami")
-	if !strings.Contains(s, "if ($null -eq $__cs_rc)") {
-		t.Fatalf("no null guard on $LASTEXITCODE:\n%s", s)
+	if !strings.Contains(s, "if ($__cs_nl -or $null -eq $__cs_rc)") {
+		t.Fatalf("no null/caught guard on $LASTEXITCODE:\n%s", s)
 	}
-	if !strings.Contains(s, "$__cs_rc = 1 }") {
-		t.Fatalf("null $LASTEXITCODE must fail the step, not pass it:\n%s", s)
+	if !strings.Contains(s, "$__cs_rc = 126 }") {
+		t.Fatalf("null $LASTEXITCODE must fail the step (126), not pass it:\n%s", s)
 	}
 }
 
@@ -240,5 +246,112 @@ func TestStripANSI_LeavesOrdinaryTextUntouched(t *testing.T) {
 	}
 	if got := stripANSI("abc\x1b["); got != "abc" {
 		t.Errorf("stripANSI on a truncated CSI = %q", got)
+	}
+}
+
+// BEACON-03. $LASTEXITCODE is a session-global the anchor never resets. When
+// step N's child cannot even be launched (an EDR/AppLocker block, a missing
+// image), `&` sets nothing and step N reads step N-1's exit code — usually 0 —
+// so a step that never ran is reported as a PASS. The reset must be its own
+// statement BEFORE the launch, and the launch must be caught.
+func TestPowerShellChainStepScript_ResetsExitCodeAndCatchesALaunchFailure(t *testing.T) {
+	s := powerShellChainStepScript("__MARK__", "whoami")
+	lines := strings.Split(s, "\n")
+	reset, launch := -1, -1
+	for i, l := range lines {
+		if strings.TrimSpace(l) == "$global:LASTEXITCODE = $null" {
+			reset = i
+		}
+		if strings.Contains(l, "-EncodedCommand ") {
+			launch = i
+		}
+	}
+	if reset < 0 || launch < 0 || reset >= launch {
+		t.Fatalf("no standalone `$global:LASTEXITCODE = $null` before the launch line "+
+			"(reset=%d launch=%d):\n%s", reset, launch, s)
+	}
+	l := strings.TrimSpace(lines[launch])
+	if !strings.HasPrefix(l, "try { & ") || !strings.Contains(l, "} catch {") {
+		t.Fatalf("the child launch is not wrapped in try/catch: %q", l)
+	}
+	if !strings.Contains(s, "!! STEP CHILD NOT LAUNCHED") || !strings.Contains(s, "$__cs_rc = 126") {
+		t.Fatalf("a child that never launched must print the marker and read rc 126:\n%s", s)
+	}
+}
+
+// BEACON-06. Without -OutputFormat Text, a powershell.exe whose stderr is a pipe
+// serialises every error record as `#< CLIXML <Objs ...>` — the run record then
+// carries XML instead of the error a DC needs to read.
+func TestPowerShellArgs_ForceTextOutputFormat(t *testing.T) {
+	for i := 0; i+1 < len(powerShellArgs); i++ {
+		if powerShellArgs[i] == "-OutputFormat" && powerShellArgs[i+1] == "Text" {
+			return
+		}
+	}
+	t.Fatalf("powerShellArgs = %v, want -OutputFormat Text", powerShellArgs)
+}
+
+// BEACON-12. A bare `powershell.exe` is resolved through PATH; for a beacon
+// running as LocalSystem a writable directory early on PATH plants SYSTEM code.
+// The chained launch line must name the interpreter by a quoted path.
+func TestPowerShellChainStepScript_InvokesTheInterpreterByQuotedPath(t *testing.T) {
+	s := powerShellChainStepScript("__MARK__", "whoami")
+	re := regexp.MustCompile(`& '[^']*powershell\.exe' -NoProfile `)
+	if !re.MatchString(s) {
+		t.Fatalf("the step child is not launched through a single-quoted interpreter path:\n%s", s)
+	}
+}
+
+// BEACON-10. Windows PowerShell 5.1 writes redirected output in the OEM code
+// page, so a non-ASCII byte in TTP output reaches SimCore mangled. The wrapper
+// sets UTF-8 (BOM-less) before the command, guarding the console setter because
+// a service has no console handle and the setter can throw.
+func TestPowerShellExitWrapper_SetsUTF8BeforeTheCommand(t *testing.T) {
+	w := powerShellExitWrapper("whoami")
+	enc := strings.Index(w, "try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch {}")
+	oe := strings.Index(w, "$OutputEncoding = New-Object System.Text.UTF8Encoding $false")
+	cmd := strings.Index(w, "whoami")
+	if enc < 0 || oe < 0 || !(enc < cmd && oe < cmd) {
+		t.Fatalf("UTF-8 prelude missing or after the command:\n%s", w)
+	}
+}
+
+// BEACON-05. Windows PowerShell 5.1 wraps a native tool's stderr into
+// NativeCommandError records and clears $? even when the tool exits 0, so the
+// wrapper turned every chatty-but-successful tool into exit 1. The native exit
+// code is the truth; the clause must be checked before the generic $? failure.
+func TestPowerShellExitWrapper_NativeStderrAtExitZeroIsNotAFailure(t *testing.T) {
+	w := powerShellExitWrapper("whoami")
+	clause := "if (-not $__cs_ok -and $__cs_native -eq 0 -and $Error.Count -gt 0 -and " +
+		"$Error[0].FullyQualifiedErrorId -like 'NativeCommandError*') { exit 0 }"
+	ci := strings.Index(w, clause)
+	fi := strings.Index(w, "if (-not $__cs_ok) { exit 1 }")
+	if ci < 0 || fi < 0 || ci > fi {
+		t.Fatalf("NativeCommandError clause missing or after the generic failure:\n%s", w)
+	}
+}
+
+// The windows-2022 CI job's first run (2026-11-10, run 42927561143) showed
+// Windows PowerShell 5.1 serialising its "Preparing modules for first use"
+// progress record to a redirected stderr as CLIXML, -OutputFormat Text
+// notwithstanding: a step's stderr began "#< CLIXML" and carried an <Objs>
+// envelope, so a clean step reported noise and a failing one buried its error.
+// The record is raised by the first cmdlet lookup, so the preference must be
+// set before the prologue's own New-Object. The behaviour itself can only be
+// proven on Windows (TestPowerShellExitWrapper_StderrIsTextNotCLIXML and the
+// CI job's pull phase); this pins the ordering on every host.
+func TestPowerShellExitWrapper_SilencesProgressBeforeAnyCmdlet(t *testing.T) {
+	w := powerShellExitWrapper("Write-Output ok")
+	pp := strings.Index(w, "$ProgressPreference = 'SilentlyContinue'")
+	if pp < 0 {
+		t.Fatalf("wrapper never sets $ProgressPreference; 5.1 writes progress to stderr as CLIXML:\n%s", w)
+	}
+	firstCmdlet := strings.Index(w, "New-Object")
+	if firstCmdlet < 0 {
+		t.Fatalf("prologue no longer calls New-Object; re-anchor this test on its first cmdlet:\n%s", w)
+	}
+	if pp > firstCmdlet {
+		t.Errorf("$ProgressPreference is set at offset %d, after the first cmdlet at %d; "+
+			"the progress record is raised by that lookup", pp, firstCmdlet)
 	}
 }

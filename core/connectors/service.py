@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -203,17 +204,34 @@ async def reconcile_run(
     window, scope them to the run's target host, correlate to ``results``,
     persist matches, emit SSE.
 
-    ``host`` overrides the scope host; when omitted it is resolved from
+    ``host`` overrides the scope host (``host_source: "operator"`` in the
+    summary — the API's ``?host=``); when omitted or blank it is resolved from
     ``Run.target`` → ``Agent.hostname``. A run with no resolvable host is
     reconciled UNSCOPED and the summary says so — on a shared tenant that means
     an alert from any endpoint could have been credited.
 
     Raises :class:`ReconcileError` (never HTTP) on any failure.
     """
+    host = (host or "").strip() or None
     conn, cfg, store, integ = await _resolve_connector(
         db, connector_kind, integration_name, fetcher)
 
-    exec_times = [r.executed_at for r in results if r.executed_at]
+    candidates, never_delivered = reconcile_candidates(
+        run, results, reported_steps=await reported_step_ids(db, run.run_id))
+    if never_delivered and not candidates:
+        # Nothing on this run can be credited, so spending a metered tenant
+        # query on it would only buy the chance to credit the wrong alert.
+        # ``queries_issued: 0`` because no tenant page was read: every
+        # reconcile summary carries the ledger count (the MCP reconcile tool
+        # requires the key and reads its absence as an unknown shape).
+        summary = efficacy_summary(results, 0, f"{connector_kind}:{integ.name}")
+        summary.update({"pulled": 0, "queries_issued": 0,
+                        "never_delivered": True, "verdicts": [],
+                        "warnings": [NEVER_DELIVERED_WARNING],
+                        "warning": NEVER_DELIVERED_WARNING})
+        return ReconcileOutcome(summary=summary, newly_matched=0)
+
+    exec_times = [r.executed_at for r in candidates if r.executed_at]
     since = (min(exec_times) if exec_times
              else (run.started_at or datetime.utcnow() - timedelta(hours=1)))
     until = datetime.utcnow() + timedelta(minutes=5)
@@ -236,7 +254,7 @@ async def reconcile_run(
 
     scope_host = host if host is not None else await resolve_run_host(db, run)
     eligible, host_scope = scope_to_host(pull.observations, scope_host)
-    verdicts = reconcile(results, eligible, window_seconds=window_seconds,
+    verdicts = reconcile(candidates, eligible, window_seconds=window_seconds,
                          window_seconds_by_type=window_by_type(),
                          window_end_by_result=await match_window_ends(
                              db, run.run_id, results, window_seconds=window_seconds))
@@ -248,6 +266,9 @@ async def reconcile_run(
     ctx: dict[str, Any] = {
         "basis": "reconcile",
         "unscoped": host_scope["host"] is None,
+        # No host to scope against at all (push runs, a vanished agent row,
+        # no `host` override): a detect match is UNSCOPED_MATCH, not detected.
+        "host_unresolved": host_scope["host"] is None,
         "truncated": bool(truncation),
         "dropped": pull.dropped,
         "alert_incidents": {e: getattr(by_ext.get(e), "incident_id", None) for e in matched_ext},
@@ -313,6 +334,7 @@ async def reconcile_run(
         if ledger.get("stored_ledger_kept"):
             summary["case_ledger"]["stored_ledger_kept"] = True
     summary["host_scope"] = host_scope
+    summary["host_source"] = host_source(host, host_scope)
     if "incidents" in ctx:
         summary["incidents_considered"] = len(ctx["incidents"])
     if "incidents_error" in ctx:
@@ -320,11 +342,18 @@ async def reconcile_run(
     summary["verdicts"] = [v.to_dict() for v in verdicts if v.matched]
 
     warnings: list[str] = []
+    if never_delivered:
+        # A composed run whose beacon task was never collected: only its
+        # in-process (EAL) steps were candidates.
+        summary["never_delivered"] = True
+        warnings.append(NEVER_DELIVERED_WARNING)
     if host_scope["host"] is None:
         warnings.append(
             "unscoped: this run has no resolvable target host, so an alert from "
-            "ANY endpoint in the tenant was eligible to be credited — on a shared "
-            "tenant treat every match here as unconfirmed.")
+            "ANY endpoint in the tenant could match. A matched detect expectation "
+            "is therefore recorded pending (UNSCOPED_MATCH) with no MTTD, not "
+            "detected; reconcile again with ?host=<the endpoint it ran on> to "
+            "credit it.")
     if truncation:
         summary["truncated"] = True
         summary["truncation"] = truncation
@@ -346,6 +375,122 @@ async def reconcile_run(
         summary["warnings"] = warnings
         summary["warning"] = " ".join(warnings)
     return ReconcileOutcome(summary=summary, newly_matched=newly)
+
+
+#: ``Result.outcome_reason`` for a ``detect`` expectation that matched an alert
+#: during an UNSCOPED reconcile (no resolvable host — push runs). The alert
+#: could have been raised by any endpoint in the tenant, so the row stays
+#: ``pending`` and gets no ``observed_at`` (no MTTD) — DOCS-03, option (c).
+UNSCOPED_MATCH = "UNSCOPED_MATCH"
+
+NEVER_DELIVERED_WARNING = (
+    "never delivered: this pull run's task was never collected by a beacon, so "
+    "nothing ran on the target. Its rows are not reconcile candidates and no "
+    "alert was credited to them — an alert in this window came from something "
+    "else on the host."
+)
+
+
+#: Text only a beacon puts into ``Run.output``: its per-step frame
+#: (``=== STEP n/N · <step-id> · ...``, posted on ``/output``; the same shape
+#: ``api.runs._STEP_HEADER_RE`` reads, unchanged since v1.0.0) and the summary
+#: line ``/complete`` appends. SimCore's own markers (``--- RUN ABORTED BY
+#: OPERATOR ---``, ``RUN FAILED ON RESTART``, the ``!! PLATFORM VARIANT``
+#: launch notes) match neither.
+_BEACON_TRACE_RE = re.compile(r"=== STEP \d+/\d+ · |^--- COMPLETION SUMMARY ---",
+                              re.MULTILINE)
+#: The same per-step frame, capturing its step id.
+_STEP_FRAME_RE = re.compile(r"=== STEP \d+/\d+ · ([^\s·]+) · ")
+
+
+async def reported_step_ids(db: AsyncSession, run_id: str) -> set[str]:
+    """Steps the host gave an account of having reached: a ``StepOutcome`` row
+    (written by the step's ``/output`` or the ``/complete`` steps[]) other than
+    ``not_run``. What :func:`reconcile_candidates` needs for an aborted run."""
+    rows = (await db.execute(
+        select(StepOutcome.step_id, StepOutcome.termination)
+        .where(StepOutcome.run_id == run_id))).all()
+    return {sid for sid, term in rows if term != "not_run"}
+
+
+def beacon_reported(run: Any) -> bool:
+    """Does the run's own output show that a beacon executed it?
+
+    True when ``Run.output`` holds a beacon step frame or a ``/complete``
+    summary line. Both arrive only on the run's agent callbacks, which a
+    beacon makes only after collecting the task.
+    """
+    output = getattr(run, "output", None)
+    return bool(output) and _BEACON_TRACE_RE.search(output) is not None
+
+
+def reconcile_candidates(run: Any, results: list, *,
+                         reported_steps: Any = ()) -> tuple[list, bool]:
+    """``(candidates, never_delivered)`` — the rows an alert may be credited to.
+
+    A pull run whose task no beacon ever collected (``delivered_at`` NULL) did
+    not execute on the target, so none of its beacon-step rows is evidence of
+    anything (OPS-01). Its terminating path SHOULD already have stamped them
+    ``not_executed``; this is the defence in depth for any path that did not,
+    and for a run that is simply still queued.
+
+    A composed run's EAL steps executed inside SimCore at launch, so their rows
+    stay candidates. Push runs and delivered pull runs are unaffected.
+
+    A pull run that reads ``complete`` is a candidate even with ``delivered_at``
+    NULL: ``complete`` is written only by a beacon's ``/complete``, the
+    classified beacon-lost path or an in-process dispatch — each proof that it
+    executed — so such a row predates the ``delivered_at`` migration. Excluding
+    it would make every historical run unreconcilable for no honesty gain.
+
+    So is one whose own record carries a beacon's trace
+    (:func:`beacon_reported`), whatever its status (RG-RUNS-05). ``delivered_at``
+    first shipped in v1.1.0 and is added by ALTER TABLE on boot, so an in-place
+    upgrade leaves every older run with it NULL; one that executed and ended
+    ``failed`` or ``aborted`` was told "nothing ran on the target", which is
+    false. Status alone cannot decide that — a legacy ``failed`` row may as
+    well be a pre-delivery orphan — but a step frame or a completion summary in
+    the run's output can only have been posted by a beacon that had the task.
+
+    An ``aborted`` pull run that WAS delivered is narrowed to the steps the host
+    reported (RG-RUNS-01, residual): ``reported_steps`` (the caller's
+    :func:`reported_step_ids`), a step frame in the run's own output, or an
+    in-process step. The abort wins the race with the beacon by design, so
+    which steps ran is the host's to say, on its late ``/complete`` steps[]. A
+    beacon that died after the abort, or predates steps[], never says it, and
+    an alert on that host was credited, with an MTTD, to a step that never ran.
+    Its other rows are not candidates: never credited, and the silent-row
+    judgement leaves them ``pending`` (no host record), never ``missed``. The
+    default ``()`` errs that way too: a caller that passes nothing credits only
+    what the output itself shows ran.
+    """
+    from engine.orchestrator import in_process_steps  # noqa: PLC0415
+
+    mode, status = getattr(run, "mode", None), getattr(run, "status", None)
+    delivered = getattr(run, "delivered_at", None) is not None or beacon_reported(run)
+    if mode == "pull" and status == "aborted" and delivered:
+        ran = (set(reported_steps or ())
+               | set(_STEP_FRAME_RE.findall(getattr(run, "output", None) or ""))
+               | set(in_process_steps(run)))
+        return [r for r in results if r.step_id in ran], False
+    if mode != "pull" or delivered or status == "complete":
+        return list(results), False
+
+    ran_here = in_process_steps(run)
+    return [r for r in results if r.step_id in ran_here], True
+
+
+def host_source(override: Optional[str], host_scope: dict[str, Any]) -> Optional[str]:
+    """Who named the host a reconcile was scoped to.
+
+    ``"operator"`` — the DC passed it (``?host=`` / the ``/observations`` body);
+    ``"run_target"`` — resolved from the run's launch agent; ``None`` — nothing
+    did, and the reconcile was unscoped. Reported beside ``host_scope`` so an
+    operator-asserted scope is never read as one SimCore resolved itself.
+    """
+    if host_scope.get("host") is None:
+        return None
+    return "operator" if override else "run_target"
 
 
 def case_ledger_tenant(cfg: ConnectorConfig) -> Optional[str]:
@@ -955,9 +1100,11 @@ async def apply_verdicts(
     alerts = list(observations or [])
     by_ext = {a.external_id: a for a in alerts if getattr(a, "external_id", None)}
     unscoped = bool(pull_context and pull_context.get("unscoped"))
+    host_unresolved = bool(pull_context and pull_context.get("host_unresolved"))
     seen_obs = await _existing_observation_keys(db, run_id)
 
     matched = 0
+    unscoped_matches = 0
     applied: list[tuple[Any, Result]] = []
     for v in verdicts:
         if not v.matched:
@@ -983,6 +1130,32 @@ async def apply_verdicts(
         if result.outcome in EXCLUDED_FROM_DENOMINATOR:
             # The host says this step never ran: an alert inside its window came
             # from something else. Never observed, never MTTD, never re-judged.
+            continue
+        if host_unresolved and result.expected_outcome != "prevent":
+            if result.observed or result.outcome in (OUTCOME_DETECTED, OUTCOME_PREVENTED):
+                # RG-RUNS-02: the row is ALREADY credited — by an earlier
+                # host-scoped match or an operator attestation. An alert that
+                # cannot be attributed to a host is not evidence against that
+                # credit. Rewriting the outcome here left `observed`,
+                # `observed_at` and the MTTD on a row that read pending: 0 %
+                # coverage beside an average MTTD. The alert stays on record
+                # (the Observation above); the row is not touched.
+                continue
+            # DOCS-03 (option c): with no host to scope against, the alert
+            # could be ANY endpoint's. A detect expectation is not met by it:
+            # the row stays pending, unobserved, with no observed_at and so no
+            # MTTD. The alert is on record (the Observation above) and named
+            # in the notes; a host-scoped reconcile can still credit it.
+            # (Prevent rows keep their own two-witness rule:
+            # PASS_WITHHELD_UNSCOPED.)
+            result.outcome = OUTCOME_PENDING
+            result.outcome_reason = UNSCOPED_MATCH
+            note = (f"unscoped candidate via {source} — not credited: no target host "
+                    f"to scope against (alert={v.alert_external_id or v.alert_name or 'n/a'}, "
+                    f"matched on {', '.join(v.matched_on)})")
+            if note not in (result.notes or ""):
+                result.notes = ((result.notes + " | ") if result.notes else "") + note
+            unscoped_matches += 1
             continue
         result.observed = True
         result.observed_at = v.observed_at
@@ -1039,6 +1212,8 @@ async def apply_verdicts(
     # hook here scores every one of them, with no new scheduling and no
     # outbound call: Tier 1 reads only rows CortexSim already owns.
     summary = efficacy_summary(results, matched, source)
+    if unscoped_matches:
+        summary["unscoped_matches"] = unscoped_matches
     if run is not None:
         summary["tc_verdict"] = await score_run_safely(
             db, run, source=f"reconcile:{source}", results=results,
@@ -1129,6 +1304,11 @@ async def _judge_silent_results(
         if r.observed or r.executed_at is None:
             continue
         if r.outcome not in (None, OUTCOME_PENDING):
+            continue
+        if r.outcome_reason == UNSCOPED_MATCH:
+            # An alert DID match; it just could not be attributed to this
+            # run's host. That is better evidence than silence, and a later
+            # empty or soak pass must not overwrite it with "no host record".
             continue
         if r.signal_type in by_type:
             if first_run_seen is None:
@@ -1528,7 +1708,13 @@ async def resolve_tenant_runner(
     db: AsyncSession, *, integration: Optional[str] = None,
     timeframe_seconds: int = 3600,
 ) -> TenantRunner:
-    """Build a read-only XQL row-count runner from a registered tenant credential.
+    """Build an XQL row-count runner from a registered tenant credential.
+
+    It issues each query verbatim. It is not read-only by construction: what
+    keeps it from writing is the one guard inside
+    ``XsiamClient.start_xql_query``, which refuses a ``target`` stage with
+    ``XQL_WRITE_STAGE_REFUSED`` on every path (SEC-05; wording corrected for
+    SEC-18).
 
     Never raises for a missing/unusable tenant — the caller resolves ``pending``
     and "no tenant wired" is an honest verdict, not a server error. Only an
@@ -2028,6 +2214,14 @@ async def auto_reconcile_once(
             select(Result).where(Result.run_id == run.run_id)
         )).scalars().all())
         if not any((not r.observed) and r.executed_at for r in results):
+            continue
+        candidates, never_delivered = reconcile_candidates(
+            run, results, reported_steps=await reported_step_ids(db, run.run_id))
+        if never_delivered and not any(
+                (not r.observed) and r.executed_at for r in candidates):
+            # Counted, not silent: a sweep that skips a queued or orphaned run
+            # must say so rather than read as "nothing matched".
+            _note("never_delivered")
             continue
         skip = _reconcile_eligible(run, max_attempts=max_attempts,
                                    backoff_seconds=backoff_seconds, now=now)

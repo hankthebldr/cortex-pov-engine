@@ -59,6 +59,16 @@ async def _seed_scenario(db, scenario_id="SIM-EDR-001", *, push=True, pull=True)
                 "command": "id", "expected_detections": []}],
     )
     db.add(s)
+    # Every pull launch here targets agent-1, which must be enrolled: an
+    # unenrolled target is refused before seeding (TARGET_AGENT_NOT_ENROLLED).
+    from datetime import datetime
+
+    from models import Agent
+
+    db.add(Agent(agent_id="agent-1", hostname="host-1", os="linux",
+                 capabilities=["shell", "identity-harness"], interpreters=[],
+                 registered_at=datetime.utcnow(), last_seen=datetime.utcnow(),
+                 status="online"))
     await db.commit()
     return s
 
@@ -165,6 +175,40 @@ def test_rehydrate_fails_orphaned_running_run(session_factory):
     asyncio.run(_run())
 
 
+def test_rehydrate_stamps_an_orphans_results_not_executed(session_factory):
+    """OPS-01: an orphan never reached its target, so its seeded rows must
+    leave the denominator and refuse every later alert. Left NULL they read as
+    'awaiting reconcile', and a matching alert from anything else on the host
+    credited a detection with a real-looking MTTD to a run that never ran."""
+    from datetime import datetime
+
+    from models import Result, Run
+
+    async def _run():
+        async with session_factory() as db:
+            db.add(Run(run_id="orphan-2", scenario_id="SIM-X", mode="pull",
+                       status="running"))
+            for i, outcome in enumerate((None, "pending", "not_reached")):
+                db.add(Result(run_id="orphan-2", step_id=f"step-0{i + 1}", plane="EDR",
+                              signal_type="BIOC", expected_detection=f"d{i}",
+                              executed_at=datetime.utcnow(), outcome=outcome,
+                              outcome_reason="UPSTREAM_SEVERED" if outcome else None))
+            await db.commit()
+
+        async with session_factory() as db:
+            await _fresh_orchestrator().rehydrate(db)
+            rows = {r.step_id: (r.outcome, r.outcome_reason) for r in
+                    (await db.execute(select(Result))).scalars().all()}
+        assert rows == {
+            "step-01": ("not_executed", "TASK_LOST_ON_RESTART"),
+            "step-02": ("not_executed", "TASK_LOST_ON_RESTART"),
+            # a host-reported exclusion keeps its own, better reason
+            "step-03": ("not_reached", "UPSTREAM_SEVERED"),
+        }
+
+    asyncio.run(_run())
+
+
 def test_abort_persisted_deletes_durable_rows(session_factory):
     from models import QueuedTask
 
@@ -176,6 +220,7 @@ def test_abort_persisted_deletes_durable_rows(session_factory):
                 scenario_id="SIM-EDR-001", mode="pull", db=db,
                 target_agent_id="agent-1",
             )
+            assert res.success, res.error
             await orch.abort_persisted(res.run_id, db)
             assert orch.is_aborted(res.run_id)
             rows = (await db.execute(select(QueuedTask))).scalars().all()

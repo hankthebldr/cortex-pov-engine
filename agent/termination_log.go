@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -46,12 +45,4 @@ func writeTerminationLog(path, line string) {
 	}
 	_, _ = f.WriteString(line + "\n")
 	_ = f.Close()
-}
-
-// exitFatal is a fatal startup exit: the FATAL line on stderr and on the
-// termination log, so `kubectl describe pod` shows why the pod is crash-looping.
-func exitFatal(code string, err error) {
-	log.Printf("FATAL %s: %v", code, err)
-	writeTerminationLog(terminationLogPath(), fatalLine(code, err.Error()))
-	os.Exit(1)
 }

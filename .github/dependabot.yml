@@ -1,0 +1,26 @@
+# Dependabot — GitHub Actions only, for now.
+#
+# Purpose: every third-party action in .github/workflows is pinned to a full
+# commit SHA with its tag in a trailing comment
+# (`uses: actions/checkout@<40 hex> # v4`), because a tag is a pointer its owner
+# can move and the release workflow holds `packages: write` and
+# `contents: write` (CI-12). tests/ci/test_action_pins.py refuses a floating tag.
+# A pin that nobody refreshes is its own risk, so Dependabot proposes the new
+# SHA (and rewrites the comment) when an action publishes a release.
+#
+# PRs target dev, not main: main only advances by a merge from dev
+# (CONTRIBUTING.md), and a dependency bump is topic work like any other.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

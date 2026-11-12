@@ -153,7 +153,7 @@ steps:
     # ROOT — links from the curl CGO. Nothing here touches the customer; this
     # step exists so the readout can show what was happening while the estate
     # was, correctly, quiet.
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     expected_detections:
       - plane: TIM
         type: IOC
@@ -171,7 +171,7 @@ steps:
       echo cortexsim-tim009-tool-obtained-emitted
     identity: container-runtime
     mitre_technique: "T1588.002"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-01
       pivot: shared_entity
@@ -196,7 +196,7 @@ steps:
       echo cortexsim-tim009-intel-bundle-landed
     identity: container-runtime
     mitre_technique: "T1583.001"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-02
       pivot: shared_entity
@@ -246,7 +246,7 @@ steps:
       echo cortexsim-tim009-terminal-stitch-verified
     identity: root
     mitre_technique: "T1587.001"
-    platforms: ["linux", "windows", "macos"]
+    platforms: ["linux", "macos"]
     causality:
       parent_step: step-04
       pivot: shared_entity

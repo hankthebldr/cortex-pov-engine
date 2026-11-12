@@ -19,8 +19,40 @@ import { downloadReport } from '../../api/client.js'
  * Data:
  *   activeRun  — { scenarioId, runId, step, totalSteps, ... }
  *   lastRun    — most recent completed run (used as fallback when nothing live)
+ *   caveats    — string[]: the ways this run did not run as authored (from
+ *                runCaveatLines). Rendered INSIDE the capture region, because
+ *                Screenshot captures only that region and the Run detail
+ *                banners sit outside it — the PNG a DC puts in a deck would
+ *                otherwise show a degraded run exactly like a clean one.
  */
-export default function InflightView({ activeRun, lastRun, onError }) {
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/**
+ * One short sentence per way a run did not run as authored. Pure.
+ * @param {object|null} degraded      runDegradations() output
+ * @param {Array|null} launchWarnings [{code, text}] about the target
+ * @returns {string[]}
+ */
+export function runCaveatLines(degraded, launchWarnings) {
+  const d = degraded || {}
+  const identity = Array.isArray(d.identity) ? d.identity : []
+  const variant = Array.isArray(d.variant) ? d.variant : []
+  const notRun = Array.isArray(d.notRun) ? d.notRun : []
+  const lines = []
+  if (identity.length) {
+    lines.push(`${identity.length} of ${Math.max(d.total || 0, identity.length)} steps ran as the beacon account, `
+      + 'not the authored identity')
+  }
+  if (variant.length) lines.push(`${plural(variant.length, 'step')} ran a platform variant, not the authored command`)
+  if (notRun.length) lines.push(`${plural(notRun.length, 'step')} never ran on this host (PLATFORM_UNSATISFIABLE)`)
+  for (const w of Array.isArray(launchWarnings) ? launchWarnings : []) {
+    if (w && w.code) lines.push(`launch warning: ${w.code}`)
+  }
+  return lines
+}
+
+export default function InflightView({ activeRun, lastRun, onError, caveats = [] }) {
   // Prefer the live run; fall back to the most recent completed run.
   const targetRunId     = activeRun?.runId      || lastRun?.runId      || null
   const targetScenarioId = activeRun?.scenarioId || lastRun?.scenarioId || null
@@ -161,6 +193,14 @@ export default function InflightView({ activeRun, lastRun, onError }) {
           </h1>
           {summary && (
             <p className="narrative__summary">{summary}</p>
+          )}
+          {caveats.length > 0 && (
+            <div className="narrative__caveats" data-testid="narrative-caveats">
+              <strong>This run did not execute as authored — a miss on the steps below is not a coverage measurement.</strong>
+              <ul>
+                {caveats.map((c) => <li key={c}>{c}</li>)}
+              </ul>
+            </div>
           )}
         </div>
 

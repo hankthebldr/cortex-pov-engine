@@ -20,6 +20,7 @@ Pluggable policy:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -34,6 +35,149 @@ from .crypto import CryptoError, derive_fernet_key
 
 
 logger = logging.getLogger("cortexsim.security")
+
+
+# ---------------------------------------------------------------------------
+# Reserved names + the master-key check (OPS-12)
+# ---------------------------------------------------------------------------
+
+#: Secret names under this prefix belong to SimCore itself, never an operator.
+RESERVED_PREFIX = "__cortexsim__/"
+#: The key-check row: a Fernet token of a constant, written on first boot.
+KEY_CHECK_NAME = RESERVED_PREFIX + "master-key-check"
+_KEY_CHECK_PLAINTEXT = "cortexsim master-key check v1"
+
+
+def _is_reserved(name: Optional[str]) -> bool:
+    return (name or "").startswith(RESERVED_PREFIX)
+
+
+MASTER_KEY_MISMATCH = "MASTER_KEY_MISMATCH"
+
+_MISMATCH_REMEDIATION = (
+    "Fix: restore the .env (CORTEXSIM_SECRET) this data volume was written with "
+    "and restart SimCore — the stored credentials become readable again; or, if "
+    "that secret is gone, re-enter every credential (PUT "
+    "/api/credentials/integrations) under the current one. Rotating the key "
+    "without re-entering credentials cannot work: they were encrypted with the "
+    "old key. This is a local decrypt — no tenant call is made."
+)
+
+
+@dataclass(frozen=True)
+class KeyCheckResult:
+    """Outcome of :func:`check_master_key`.
+
+    ``status``: ``ok`` (the key-check decrypts); ``stamped`` / ``restamped``
+    (boot wrote a missing / replaced a stale key-check because every stored
+    credential decrypts under the current key); ``not_stamped`` / ``stale``
+    (the same two situations seen by a ``stamp=False`` caller); or
+    ``mismatch`` — at least one stored credential does not decrypt. Only
+    ``mismatch`` carries ``MASTER_KEY_MISMATCH``.
+    """
+
+    status: str
+    code: str
+    detail: str
+    secrets_checked: int = 0
+
+
+async def check_master_key(
+    session: AsyncSession, *, master_key: Optional[str] = None, stamp: bool,
+) -> KeyCheckResult:
+    """Prove the current master key opens this database's vault.
+
+    * Key-check row decrypts -> ``ok``.
+    * Otherwise every stored credential is test-decrypted (``last_accessed_at``
+      is not touched). If ANY fails -> ``mismatch``, and nothing is written:
+      stamping now would record a key that cannot read the vault as correct.
+      That covers both a regenerated ``.env`` (the key-check is from the old
+      key) and a database that predates the key-check.
+    * If every stored credential decrypts — none stored, or the operator
+      re-entered them all under the current key after a mismatch — nothing is
+      unreadable, so a missing or stale key-check is (re)written when ``stamp``
+      is true (boot) -> ``stamped`` / ``restamped``. With ``stamp=False``
+      (``/api/health`` never writes) it reports ``not_stamped`` / ``stale``,
+      both OK: nothing the operator stored is lost.
+
+    Never raises for a mismatch and never contacts a tenant.
+    """
+    fernet = Fernet(derive_fernet_key(master_key or settings.CORTEXSIM_SECRET))
+
+    row = (await session.execute(
+        select(Secret).where(Secret.name == KEY_CHECK_NAME)
+    )).scalar_one_or_none()
+
+    if row is not None:
+        try:
+            plain = fernet.decrypt(row.ciphertext.encode("ascii")).decode("utf-8")
+        except (InvalidToken, ValueError):
+            plain = None
+        if plain == _KEY_CHECK_PLAINTEXT:
+            return KeyCheckResult("ok", "OK", "the master key opens the credential vault")
+
+    stored = [s for s in (await session.execute(select(Secret))).scalars().all()
+              if not _is_reserved(s.name)]
+    unreadable = 0
+    for secret in stored:
+        try:
+            fernet.decrypt(secret.ciphertext.encode("ascii"))
+        except (InvalidToken, ValueError):
+            unreadable += 1
+
+    if unreadable:
+        why = (
+            "the key-check SimCore recorded at first boot does not decrypt"
+            if row is not None else
+            "this database predates the key-check, so the current key was NOT "
+            "recorded as correct"
+        )
+        return KeyCheckResult(
+            "mismatch", MASTER_KEY_MISMATCH,
+            f"CORTEXSIM_SECRET is not the key this database's credential vault was "
+            f"written with: {unreadable} of {len(stored)} stored credential(s) do "
+            f"not decrypt under it, and {why}. Those credentials are unreadable "
+            f"until the original key is restored. " + _MISMATCH_REMEDIATION,
+            secrets_checked=len(stored),
+        )
+
+    if not stamp:
+        state = "stale" if row is not None else "not_stamped"
+        return KeyCheckResult(
+            state, "OK",
+            (f"the recorded key-check is from a different key, but all {len(stored)} "
+             f"stored credential(s) decrypt under the current one, so nothing is "
+             f"lost; the next boot re-records it" if row is not None else
+             f"no key-check recorded yet (boot writes it); {len(stored)} stored "
+             f"credential(s) decrypt under the current key"),
+            secrets_checked=len(stored),
+        )
+
+    now = datetime.utcnow()
+    token = fernet.encrypt(_KEY_CHECK_PLAINTEXT.encode("utf-8")).decode("ascii")
+    if row is None:
+        session.add(Secret(
+            name=KEY_CHECK_NAME,
+            type_hint="cortexsim_key_check",
+            ciphertext=token,
+            preview_tail=None,
+            description="SimCore master-key check (not a credential; do not edit)",
+            created_at=now,
+            updated_at=now,
+        ))
+        state = "stamped"
+    else:
+        row.ciphertext = token
+        row.updated_at = now
+        state = "restamped"
+    await session.flush()
+    logger.info("master-key check %s (%d stored credential(s) decrypt under this key)",
+                state, len(stored))
+    return KeyCheckResult(
+        state, "OK",
+        f"key-check recorded; {len(stored)} stored credential(s) decrypt under this key",
+        secrets_checked=len(stored),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +255,10 @@ class CredentialStore:
         """
         if not name or not plaintext:
             raise ValueError("name and plaintext are required")
+        if _is_reserved(name):
+            # The key-check lives here; overwriting it would make the next boot
+            # report MASTER_KEY_MISMATCH for a key that is perfectly fine.
+            raise ValueError(f"secret names under '{RESERVED_PREFIX}' are reserved for SimCore")
 
         token = self._fernet.encrypt(plaintext.encode("utf-8")).decode("ascii")
         tail = redaction_policy(plaintext, type_hint)
@@ -170,6 +318,8 @@ class CredentialStore:
 
     async def delete(self, name: str) -> bool:
         """Delete a secret by name. Returns True if a row was removed."""
+        if _is_reserved(name):
+            raise ValueError(f"secret names under '{RESERVED_PREFIX}' are reserved for SimCore")
         row = await self._get_secret_row(name)
         if row is None:
             return False
@@ -179,10 +329,12 @@ class CredentialStore:
         return True
 
     async def list(self) -> list[Secret]:
-        """Return every Secret row (metadata only — caller must not access ciphertext)."""
+        """Return every operator Secret row (metadata only — caller must not
+        access ciphertext). SimCore's own reserved rows (the master-key check)
+        are not operator secrets and are not listed."""
         stmt = select(Secret).order_by(Secret.name)
         res = await self._session.execute(stmt)
-        return list(res.scalars().all())
+        return [s for s in res.scalars().all() if not _is_reserved(s.name)]
 
     async def _get_secret_row(self, name: str) -> Optional[Secret]:
         stmt = select(Secret).where(Secret.name == name)

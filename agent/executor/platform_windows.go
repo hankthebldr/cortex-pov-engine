@@ -6,28 +6,58 @@ package executor
 //
 // Two things POSIX gives free have to be built by hand here:
 //
-//   - THE SHELL. There is no `sh`. Windows scenarios are PowerShell, and
-//     Windows PowerShell 5.1 is the only interpreter guaranteed present on a
-//     customer's image (see script.go).
+//   - THE SHELL. There is no `sh`. Windows scenarios are PowerShell (or cmd
+//     batch when SimCore resolves a step to shell=cmd), and Windows PowerShell
+//     5.1 is the only interpreter guaranteed present on a customer's image
+//     (see script.go). Both are launched by ABSOLUTE path under %SystemRoot%
+//     (BEACON-12), never resolved through PATH.
 //
-//   - THE TREE KILL. There is no process group a signal can reach. `syscall`
-//     exposes neither CreateJobObject nor CTRL_BREAK delivery to a
-//     non-console child, so an abort that only calls TerminateProcess on the
-//     shell leaves every tool the scenario launched running while SimCore
-//     reports the run stopped. We instead snapshot the process table and
-//     terminate the shell's descendants leaf-first (see proctree.go).
+//   - THE TREE KILL. There is no process group a signal can reach. The tree is
+//     a Job Object instead (jobobject_windows.go): every child is assigned to
+//     one right after Start, and an abort terminates the job, which reaches
+//     every descendant without ever naming one by pid.
 //
-// Staying inside `syscall` keeps the beacon dependency-free, which is the
-// property that lets it cross-compile to a single static binary a DC can copy
-// onto an air-gapped host.
+// Staying inside `syscall` (plus kernel32 through syscall.NewLazyDLL) keeps the
+// beacon dependency-free, which is the property that lets it cross-compile to a
+// single static binary a DC can copy onto an air-gapped host.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
-	"time"
-	"unsafe"
 )
+
+var (
+	systemRootOnce sync.Once
+	systemRoot     string
+)
+
+func hostSystemRoot() string {
+	systemRootOnce.Do(func() { systemRoot = os.Getenv("SystemRoot") })
+	return systemRoot
+}
+
+// powerShellExePath is the absolute path of Windows PowerShell 5.1, resolved
+// once from %SystemRoot% (C:\Windows when it is unset).
+func powerShellExePath() string { return windowsPowerShellPath(hostSystemRoot()) }
+
+// cmdExePath is the absolute path of cmd.exe, resolved the same way.
+func cmdExePath() string { return windowsCmdPath(hostSystemRoot()) }
+
+// normalizeStepStderr turns the CLIXML that Windows PowerShell 5.1 writes to a
+// redirected stderr back into text (see clixml.go). Applied to every step's
+// captured stderr on this host; bytes that are not that envelope are unchanged.
+func normalizeStepStderr(s string) string { return decodeCLIXMLStderr(s) }
+
+// stderrChunkFilter is normalizeStepStderr for the live-streamed path: it
+// returns the callback to hand stderr chunks to, and a flush to call once the
+// process has exited.
+func stderrChunkFilter(emit func(string)) (write func(string), flush func()) {
+	f := newCLIXMLChunkFilter(emit)
+	return f.Write, f.Flush
+}
 
 // newShellCmd builds the per-step command: a PowerShell process carrying the
 // exit-code wrapper, base64-encoded so no quoting layer can corrupt the TTP.
@@ -36,26 +66,63 @@ import (
 // so a Ctrl-C delivered to an interactively-run beacon does not race our own
 // orderly teardown of an in-flight step.
 func newShellCmd(cmdStr string) *exec.Cmd {
-	args := append(append([]string{}, powerShellArgs...),
-		"-EncodedCommand", encodePowerShellCommand(powerShellExitWrapper(cmdStr)))
-	cmd := exec.Command(powerShellExe, args...)
+	argv := powerShellArgv(powerShellExePath(), cmdStr)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
 	return cmd
 }
 
+// newShellCmdFor builds the per-step command for a step shell: "" and
+// "powershell" are PowerShell, "cmd" is cmd.exe running the author's batch text
+// from a temp file (PUSH-18). The returned cleanup removes that file and must be
+// called after the command has exited.
+//
+// BEACON-18: a PowerShell step whose command line would not fit in
+// CreateProcess's 32,767 characters is refused here, with the sizes, instead
+// of failing inside Start() as "The filename or extension is too long". (A cmd
+// step runs from a file, so its text never touches the limit.)
+func newShellCmdFor(shell, cmdStr string) (*exec.Cmd, func(), error) {
+	switch shell {
+	case "", ShellPowerShell:
+		if err := checkPowerShellCommandLine(powerShellExePath(), cmdStr); err != nil {
+			return nil, func() {}, err
+		}
+		return newShellCmd(cmdStr), func() {}, nil
+	case ShellCmd:
+		file, cleanup, err := writeCmdScript(cmdStr)
+		if err != nil {
+			return nil, func() {}, err
+		}
+		argv, cmdLine := cmdInvocation(cmdExePath(), file)
+		cmd := exec.Command(argv[0], argv[1:]...)
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CmdLine:       cmdLine,
+			CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		}
+		return cmd, cleanup, nil
+	default:
+		return nil, func() {}, fmt.Errorf("step shell %q is not executable on windows (powershell|cmd)", shell)
+	}
+}
+
 // newAnchorCmd builds the persistent anchor for a ChainSession: PowerShell in
 // `-Command -` mode, which executes statements read from stdin. Each step is
-// then dispatched from that anchor as a nested PowerShell child (script.go), so
-// the causality chain is a genuine parent→child process tree.
+// then dispatched from that anchor as a nested child (script.go), so the
+// causality chain is a genuine parent→child process tree. The bool reports
+// whether the anchor carries cgoImage (always, when one is given: the Args[0]
+// rewrite works on every Windows host — see BEACON-08 below for what it does
+// NOT change).
 func newAnchorCmd(cgoImage string) (*exec.Cmd, bool) {
 	args := append(append([]string{}, powerShellArgs...), "-Command", "-")
-	cmd := exec.Command(powerShellExe, args...)
+	cmd := exec.Command(powerShellExePath(), args...)
 	cmd.Env = anchorEnv()
 	if cgoImage != "" {
-		// Windows builds the child's command line from Args (Path is passed
-		// separately as lpApplicationName), so rewriting Args[0] relabels the
-		// observed command line exactly as the POSIX argv[0] rewrite does,
-		// while still executing powershell.exe.
+		// BEACON-08: Windows builds the child's COMMAND LINE from Args, while
+		// Path is passed separately as lpApplicationName. Rewriting Args[0]
+		// therefore relabels the command line ONLY — the process IMAGE is still
+		// powershell.exe, and image-keyed telemetry (image name, image path,
+		// hash, signer) reports powershell.exe, not cgoImage. Unlike POSIX
+		// argv[0], it does not change what a sensor calls the process.
 		cmd.Args[0] = cgoImage
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
@@ -89,74 +156,26 @@ func chainStepScript(marker, wrappedCmd string) string {
 	return powerShellChainStepScript(marker, wrappedCmd)
 }
 
-// killProcessTree terminates pid and every descendant of it, leaf-first.
-//
-// There is no graceful phase. The POSIX path can send SIGTERM and let a tool
-// clean up, but a console-less Windows child has no equivalent that is
-// deliverable here — WM_CLOSE needs a window and CTRL_BREAK_EVENT needs a
-// shared console. TerminateProcess is therefore the only reliable primitive,
-// and reliability is the requirement: an abort the operator believes happened
-// must actually have happened.
-//
-// The table is re-snapshotted after the kill sweep so processes spawned in the
-// window between snapshot and termination are still caught. killGrace is the
-// pause between the two sweeps.
-func killProcessTree(pid int) {
-	root := uint32(pid)
-	terminateTree(root)
-	time.Sleep(killGrace)
-	// Second sweep: anything the first pass raced (a child created after the
-	// snapshot but before its parent died) is reparented or still live.
-	terminateTree(root)
-}
-
-func terminateTree(root uint32) {
-	entries, err := snapshotProcesses()
-	if err != nil {
-		// Snapshotting can fail under low resources or a restricted token. Fall
-		// back to killing at least the process we own rather than nothing.
-		terminatePID(root)
-		return
-	}
-	for _, target := range buildKillOrder(entries, root) {
-		terminatePID(target)
-	}
-}
-
-// snapshotProcesses reads the live process table via the ToolHelp API.
-func snapshotProcesses() ([]procEntry, error) {
-	snap, err := syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer syscall.CloseHandle(snap)
-
-	var entry syscall.ProcessEntry32
-	entry.Size = uint32(unsafe.Sizeof(entry))
-
-	if err := syscall.Process32First(snap, &entry); err != nil {
-		return nil, err
-	}
-	out := make([]procEntry, 0, 256)
-	for {
-		out = append(out, procEntry{PID: entry.ProcessID, PPID: entry.ParentProcessID})
-		if err := syscall.Process32Next(snap, &entry); err != nil {
-			// ERROR_NO_MORE_FILES ends the walk; any other error still leaves us
-			// with a usable partial table, which is better than aborting the kill.
-			break
+// chainStepScriptFor renders one step for the anchor under a step shell. A cmd
+// step's batch text goes to a temp file the anchor hands to cmd.exe; cleanup
+// removes it once the step's sentinel has been read.
+func chainStepScriptFor(marker, stepID, shell, wrappedCmd string) (string, func(), error) {
+	switch shell {
+	case "", ShellPowerShell:
+		// BEACON-18: the anchor launches the step child with the same argv, so
+		// the same limit applies. Refused here the step is an execution error
+		// that names its cause; let through it was a child "not launched".
+		if err := checkPowerShellCommandLine(powerShellExePath(), wrappedCmd); err != nil {
+			return "", func() {}, err
 		}
+		return powerShellChainStepScriptFor(powerShellExePath(), marker, stepID, wrappedCmd), func() {}, nil
+	case ShellCmd:
+		file, cleanup, err := writeCmdScript(wrappedCmd)
+		if err != nil {
+			return "", func() {}, err
+		}
+		return powerShellChainCmdStepScript(cmdExePath(), marker, stepID, file), cleanup, nil
+	default:
+		return "", func() {}, fmt.Errorf("step shell %q is not executable on windows (powershell|cmd)", shell)
 	}
-	return out, nil
-}
-
-func terminatePID(pid uint32) {
-	if pid == 0 {
-		return
-	}
-	h, err := syscall.OpenProcess(syscall.PROCESS_TERMINATE, false, pid)
-	if err != nil {
-		return // already gone, or not ours to kill
-	}
-	defer syscall.CloseHandle(h)
-	_ = syscall.TerminateProcess(h, 1)
 }

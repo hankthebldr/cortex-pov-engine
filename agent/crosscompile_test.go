@@ -21,7 +21,10 @@ import (
 	"time"
 )
 
-func crossBuild(t *testing.T, goos, subcommand string) {
+// crossBuild names GOARCH as well as GOOS. With GOOS alone the toolchain keeps
+// the HOST's arch, so on an Apple-silicon Mac TestCrossCompile_Windows built
+// windows/arm64, which is not shipped, and never windows/amd64, which is.
+func crossBuild(t *testing.T, goos, goarch, subcommand string) {
 	t.Helper()
 
 	if _, err := exec.LookPath("go"); err != nil {
@@ -34,12 +37,12 @@ func crossBuild(t *testing.T, goos, subcommand string) {
 	cmd := exec.CommandContext(ctx, "go", subcommand, "./...")
 	// CGO_ENABLED=0 mirrors scripts/build-agent-dist.sh: the beacon must be a
 	// static, dependency-free binary a DC can copy onto an air-gapped host.
-	cmd.Env = append(cmd.Environ(), "GOOS="+goos, "CGO_ENABLED=0")
+	cmd.Env = append(cmd.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("GOOS=%s go %s ./... failed — the beacon does not support %s:\n%v\n%s",
-			goos, subcommand, goos, err, strings.TrimSpace(string(out)))
+		t.Fatalf("GOOS=%s GOARCH=%s go %s ./... failed — the beacon does not support %s/%s:\n%v\n%s",
+			goos, goarch, subcommand, goos, goarch, err, strings.TrimSpace(string(out)))
 	}
 }
 
@@ -49,8 +52,8 @@ func TestCrossCompile_Windows(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compile gate skipped under -short")
 	}
-	crossBuild(t, "windows", "build")
-	crossBuild(t, "windows", "vet")
+	crossBuild(t, "windows", "amd64", "build")
+	crossBuild(t, "windows", "amd64", "vet")
 }
 
 // darwin and linux are the platforms the beacon already shipped on; the Windows
@@ -59,12 +62,14 @@ func TestCrossCompile_Darwin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compile gate skipped under -short")
 	}
-	crossBuild(t, "darwin", "build")
+	crossBuild(t, "darwin", "amd64", "build")
+	crossBuild(t, "darwin", "arm64", "build")
 }
 
 func TestCrossCompile_Linux(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-compile gate skipped under -short")
 	}
-	crossBuild(t, "linux", "build")
+	crossBuild(t, "linux", "amd64", "build")
+	crossBuild(t, "linux", "arm64", "build")
 }

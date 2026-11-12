@@ -169,7 +169,7 @@ steps:
     causality:
       parent_step: step-02
       pivot: temporal
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: BIOC
@@ -242,7 +242,7 @@ steps:
     causality:
       parent_step: step-05
       pivot: shared_entity
-    platforms: ["linux", "windows"]
+    platforms: ["linux"]
     expected_detections:
       - plane: ITDR
         type: Correlation

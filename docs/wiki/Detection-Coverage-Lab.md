@@ -57,6 +57,11 @@ emits from any CortexSim run.
 Once a scenario or EAL campaign has executed and the DC has validated
 detections in the XSIAM console:
 
+`cortexsim.local` must be a name SimCore admits, or every request is
+`400 HOST_NOT_ALLOWED`: add it to `CORTEXSIM_ALLOWED_HOSTS` (compose) or pass
+`--set api.allowedHosts[0]=cortexsim.local` (Helm chart). `localhost` and an IP
+literal always pass.
+
 ```bash
 RUN=<run_id>
 BASE=http://cortexsim.local:8888

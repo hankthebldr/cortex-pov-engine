@@ -35,6 +35,15 @@ async def _seed_async(session_factory, first_status="complete", completed=True):
             started_at=datetime.utcnow() - timedelta(minutes=5),
             completed_at=datetime.utcnow() if completed else None,
         ))
+        # Pull launches need an enrolled target (TARGET_AGENT_NOT_ENROLLED is
+        # refused before seeding); both agents the tests name exist.
+        from models import Agent
+
+        for aid in ("agent-1", "agent-2"):
+            db.add(Agent(agent_id=aid, hostname=f"h-{aid}", os="linux",
+                         capabilities=["shell", "identity-harness"], interpreters=[],
+                         registered_at=datetime.utcnow(), last_seen=datetime.utcnow(),
+                         status="online"))
         await db.commit()
 
 

@@ -125,7 +125,16 @@ single `submit(coro_factory)` method, so any worker substrate can plug in.
 
 The Helm chart at `deploy/helm/eal-simulator/` deploys:
 
-* `<release>-api` — FastAPI gateway pods (replicaCount 2)
+* `<release>-api` — the FastAPI gateway, **one replica** (chart 1.1.0; it
+  defaulted to 2). SimCore's task queue, event bus and, with persistence off,
+  its SQLite file live in the process, so two API pods behind one Service are
+  two separate SimCores. Scale the pod's resources, not the count. Chart values
+  added in 1.1.0: `api.allowedHosts` (merged with the Service names, enabled
+  Ingress hosts and `tailscale.hostname` into `CORTEXSIM_ALLOWED_HOSTS`),
+  `api.trustedProxies` (`CORTEXSIM_TRUSTED_PROXIES`), `api.extraEnv` (refuses a
+  chart-managed key and `CORTEXSIM_SECRET`) and `clusterDomain`. A changed
+  allowlist rolls the pods (`checksum/config`). *Rendered with `helm template`
+  only; not installed in a cluster.*
 * `<release>-worker` — worker pods scheduled onto nodes routed through the
   customer NGFW (`nodeSelector: cortexsim.paloaltonetworks.com/role=simulator`)
 * `<release>-redis` — optional broker

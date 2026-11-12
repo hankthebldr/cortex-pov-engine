@@ -2,21 +2,28 @@ import React from 'react'
 import SwitcherPill from './SwitcherPill.jsx'
 import { useEnvironment } from '../../../context/EnvironmentContext.jsx'
 import { agentIdOf } from '../../../api/ids.js'
+import { agentLiveness, LIVENESS } from '../setupProgress.js'
 
 /**
- * AgentSwitcher — always-visible active-beacon/agent pill in the global bar.
+ * AgentSwitcher — an active-beacon/agent switcher pill for a global bar.
+ *
+ * NOT MOUNTED. Nothing in the console renders this component (checked
+ * 2026-11-10: only tests import it). The header a DC sees is ConsoleHeader.jsx,
+ * whose agent chip is a read-out, not a switcher, and carries its own liveness
+ * wording. A change here changes nothing on screen until something mounts it.
  *
  * Reads the agent list + active agent from the provider; selecting writes
  * through (persisted). The "Manage agents…" footer deep-links to the Agents
- * destination. Liveness dot mirrors the online/stale/offline model.
+ * destination. The dot comes from the same liveness model as the Agents cards
+ * and Get started (setupProgress.agentLiveness), so a row the installer only
+ * enrolled is a warning here too — never a healthy dot before a beacon polled.
  */
-function agentStatus(agent) {
-  const raw = agent?.status || agent?.liveness || null
-  if (!raw) return null
-  const s = String(raw).toLowerCase()
-  if (s.includes('online') || s.includes('active') || s.includes('healthy')) return 'healthy'
-  if (s.includes('stale')) return 'warn'
-  return 'bad'
+const DOT = {
+  [LIVENESS.ONLINE]: 'healthy',
+  [LIVENESS.STALE]: 'warn',
+  [LIVENESS.ENROLLED]: 'warn',
+  [LIVENESS.OFFLINE]: 'bad',
+  [LIVENESS.UNKNOWN]: 'bad',
 }
 
 export default function AgentSwitcher({ onManage = () => {} }) {
@@ -24,21 +31,26 @@ export default function AgentSwitcher({ onManage = () => {} }) {
 
   const options = agents.map((a) => {
     const id = agentIdOf(a)
+    const live = agentLiveness(a)
     return {
       id,
       label: a.hostname || id,
-      meta: [a.os, id].filter(Boolean).join(' · '),
-      status: agentStatus(a),
+      meta: [a.os, id, live.state === LIVENESS.ONLINE ? null : live.label].filter(Boolean).join(' · '),
+      status: DOT[live.state] || 'bad',
+      // The state in words: the dot's colour is not the only signal (UI-22).
+      statusLabel: live.label,
     }
   })
 
   const label = agent ? (agent.hostname || agentIdOf(agent)) : 'no agent'
+  const live = agent ? agentLiveness(agent) : null
 
   return (
     <SwitcherPill
       kind="agent"
       label={label}
-      status={agentStatus(agent)}
+      status={live ? (DOT[live.state] || 'bad') : null}
+      statusLabel={live ? live.label : null}
       empty={!agent}
       options={options}
       activeId={agentIdOf(agent)}

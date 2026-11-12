@@ -117,8 +117,13 @@ def test_an_unscoped_pull_cannot_produce_an_accuracy_pass(session_factory):
     asyncio.run(_setup(session_factory, hostname=None))
     fetcher, _ = _tenant([_alert("a", host="someone-else")])
     summary, run = asyncio.run(_reconcile(session_factory, fetcher))
-    assert summary["measurement"]["value"] == 100.0
-    assert "unscoped" in summary["measurement"]["withheld"]
+    # DOCS-03: an unscoped match is no longer credited at all (the row stays
+    # pending / UNSCOPED_MATCH), so the measured value is 0 of 1 — and with
+    # nothing matched the guard withholds it: the verdict is pending, never a
+    # fail and never a pass.
+    assert summary["unscoped_matches"] == 1
+    assert summary["measurement"]["value"] == 0.0
+    assert summary["measurement"]["withheld"]
     assert run.tc_verdict == "pending"
 
 

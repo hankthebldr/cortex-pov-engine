@@ -29,6 +29,10 @@ type ExecutionIdentity struct {
 	Username string
 	// Command is the TTP shell command to execute.
 	Command string
+	// Shell is the step interpreter: "" is the host default (sh on POSIX,
+	// PowerShell on Windows); "cmd" selects cmd.exe on Windows (PUSH-18). A
+	// shell the host cannot execute fails the step rather than falling back.
+	Shell string
 }
 
 // ExecResult holds the outcome of a single command execution.
@@ -74,7 +78,7 @@ func ExecuteCtxStream(ctx context.Context, identity ExecutionIdentity, onChunk e
 	}
 
 	start := time.Now()
-	o, execErr := executor.RunCommandCtxStreamOutcome(ctx, wrapped, onChunk)
+	o, execErr := executor.RunShellCtxStreamOutcome(ctx, identity.Shell, wrapped, onChunk)
 	duration := time.Since(start)
 	stdout, stderr, exitCode := o.Stdout, o.Stderr, o.ExitCode
 
