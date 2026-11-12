@@ -730,3 +730,31 @@ def test_back_dated_eal_bodies_open_the_window_earlier(session_factory):
 
     assert w["run-plain"]["from"] - w["run-dated"]["from"] == 1500 * 1000
     assert w["run-plain"]["to"] == w["run-dated"]["to"]
+
+
+def test_dry_run_eal_run_persists_pending_and_the_report_says_so(session_factory):
+    """Every Result `not_executed` (an eal run that stayed dry-run): the stored
+    verdict is `pending` with `reason: not_executed`, and the run report reads
+    PENDING — never "NOT SCOREABLE — the test case carries no measurable
+    threshold", which is false for a run where nothing ran."""
+    from api.runs import _verdict_section
+    from models import Result
+    from sqlalchemy import select
+
+    _seed(session_factory, verification_xql="dataset = xdr_data", results=2)
+
+    async def _mark_dry_run():
+        async with session_factory() as db:
+            for r in (await db.execute(select(Result))).scalars().all():
+                r.outcome, r.outcome_reason = "not_executed", "EAL_DRY_RUN_NO_CONSENT"
+            await db.commit()
+    asyncio.run(_mark_dry_run())
+
+    score, run = asyncio.run(_score(session_factory, source="complete"))
+
+    assert run.tc_verdict == "pending"
+    assert run.tc_verdict_detail["reason"] == "not_executed"
+    section = "\n".join(_verdict_section(run))
+    assert "PENDING" in section
+    assert "EAL_DRY_RUN_NO_CONSENT" in section
+    assert "NOT SCOREABLE" not in section
