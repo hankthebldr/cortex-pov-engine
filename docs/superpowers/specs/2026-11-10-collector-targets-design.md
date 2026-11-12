@@ -68,7 +68,8 @@ check that leaves the tenant untouched.
   specifics -- I can confirm what applets shortly"*. Every collector emitter today is
   an HTTP POST. Which Broker VM applets a POV uses decides whether a Broker VM target
   is a new kind (an HTTP receiver) or a new transport (for example syslog). Note for
-  that decision: the tenant-setup research (`docs/docs-tenant-setup-research`) lists
+  that decision: the tenant-setup research
+  (`docs/superpowers/specs/2026-11-10-tenant-setup-research/`) lists
   no HTTP receiver among the documented applets, and #178 reworded the delivery
   remediation on that basis, while the mechanics ledger still carries a "Broker VM
   HTTP applet" as an open question.
