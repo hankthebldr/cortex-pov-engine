@@ -1606,6 +1606,71 @@ escape every string behind it.
 - Pins: `uvicorn[standard]` 0.29.0 to 0.31.1 and `httpx` 0.27.0 to 0.27.2
   (forced by the MCP SDK).
 
+### Fixed — Tier-2 verify queries the run's own window (#230)
+
+- **A late verify no longer reads as a miss, and an early one cannot pass on
+  another run's records.** `POST /api/runs/{id}/verify` and the
+  `CORTEXSIM_AUTO_VERIFY` sweep sent every `verification_xql` with a
+  `relativeTime` counted back from *now* (3600 s by default), so verifying a
+  run more than an hour after it ran found 0 rows and scored `fail`. A pull run
+  is now queried over `{from, to}` in epoch ms: `from` is the run start minus
+  300 s, minus the most negative `eal.params.event_time_offset_seconds` its
+  steps declare; `to` is the run end plus `max(correlation window, 300 s)`,
+  clamped to now (`core/connectors/verify_window.py`). The window is recorded
+  at `tc_verdict_detail.verification.window`.
+- A push run keeps the `relativeTime` lookback and records `window: null` with
+  `window_reason: "push_execution_time_unknown"`: its `completed_at` is when
+  the bundle was generated, and SimCore never learns when the bundle ran. An
+  explicit `timeframe_seconds` is still a full override.
+- The fix covers pull runs of 12 of the 14 scenarios that carry
+  `verification_xql`. `SIM-EDR-018` step-04 and `SIM-EDR-025` filter on
+  `current_time()` inside their own queries and keep the old behaviour.
+
+### Fixed — scenario lint on `channel: eal` steps (#232, #233)
+
+- **S-25 now scans `eal.params`.** The loader rule and its mirror in
+  `.claude/hooks/lint-scenario.py` checked step commands, `platform_variants`
+  and `cleanup` for published indicator values, but not a `channel: eal`
+  step's `eal.params`, so a scenario could point `c2_http_beacon` at actor
+  infrastructure and load, and SimCore would send that traffic from its own
+  process. Both now walk `eal.params` recursively (dicts, lists, strings); an
+  `ipv4` / `ipv6` / `domain` / `url` indicator value, or a url's host, found
+  there is S-25 unless the plugin is a collector-POST plugin, where it is a
+  record field value rather than a peer. The message names the dotted path
+  (for example `eal.params.extra.hosts.0`).
+- **A `channel: eal` step is never marker-only.** Such a step carries a
+  descriptive no-op `command` because `command` is required, and
+  `coverage_report.is_marker_only_step` and the hook's marker-only warning
+  counted it as emitting nothing. Neither does now. The corpus count is
+  unchanged on this tree (98 marker-only steps of 823).
+
+### Added — idp and m365 emitters gain the Pink chain shapes (#234)
+
+For IOC-driven SaaS chains such as Unit 42's Pink (CL-CRI-1147: vishing,
+Entra passkey enrolment, M365 exfiltration, internal extortion). No scenario
+in this release uses them yet.
+
+- **`idp_signin_emulator`**: `source_ip` replaces every attacker-side IP (the
+  `us-west` home baseline is unchanged); `event_time_offset_seconds` (≤ 0, at
+  most a day) back-dates record body times; pattern
+  `vishing_passkey_enrollment` (Microsoft only) emits an interactive sign-in
+  with an approved number-matched push and, 90 s later from the same IP, a
+  "User registered security info" passkey record. Under `canary_token` the
+  passkey record's `initiatedBy.user` follows the canary principal, so one
+  person never reads as two. `docs/reference/eal-plugin-catalog.md` now lists
+  all nine presets.
+- **`m365_activity_emitter`**: `source_ip`; `user_agents`, written to each
+  record's `UserAgent` and never to SimCore's POST header; `storage_targets`
+  (`onedrive` / `sharepoint`, default `[onedrive]`); `event_time_offset_seconds`;
+  and pattern `internal_extortion_notice`, an Exchange `Send` to N internal
+  recipients followed by N Teams `MessageSent` records, each 3 s after the
+  Send. Per-record timestamps are kept.
+- Shared helper `analytics_emitter.body_time(offset_seconds, *, plus_seconds)`.
+  Record shapes are taken from the Microsoft Graph `signIn` / `directoryAudit`
+  documentation and the Office 365 Management Activity API schema, not
+  observed in a tenant. With none of the new params set, every existing record
+  keeps its shape.
+
 ## [1.1.1] - 2026-11-12
 
 **Security hotfix for v1.1.0: unauthenticated routes let the caller choose a
