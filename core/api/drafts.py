@@ -290,7 +290,10 @@ _MUTABLE_COLUMNS = (
     "mitre_technique_name",
     "additional_techniques",
     "execution_identity",
+    "threat_report",
+    "threat_report_url",
     "push_supported",
+    "push_supported_declared",
     "pull_supported",
     "external_tools",
     "steps",
@@ -430,9 +433,15 @@ async def update_draft(
     draft = _validate_body(body)
     # Re-derive the full ORM kwargs (detection_types, push_supported, sentinels)
     # from the new body, then overwrite ONLY the mutable columns — identity,
-    # status and provenance stay put.
+    # status and provenance stay put. The row's existing push declaration is
+    # handed in as the floor: a carried `push_supported: false` survives a PUT
+    # that omits it or sends true (never widened), while a derived false (no
+    # declaration) is re-derived from the new steps as before.
     kwargs = draft_to_orm_kwargs(
-        draft, author=row.author, scenario_id=scenario_id
+        draft,
+        author=row.author,
+        scenario_id=scenario_id,
+        prior_declared=row.push_supported_declared,
     )
     for col in _MUTABLE_COLUMNS:
         if col in kwargs:

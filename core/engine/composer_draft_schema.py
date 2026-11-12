@@ -11,8 +11,12 @@ would reject for lacking a UC/TC binding, a version, MITRE metadata, etc.
 ``DraftScenarioSchema`` is that schema. It RELAXES, relative to ``ScenarioSchema``:
 
   * ``uc_ref`` / ``tc_ref`` / ``uc_name`` / ``tc_name`` / ``mitre_*`` /
-    ``version`` / ``push_supported`` / ``pull_supported`` become optional and
-    are sentinel-filled by :func:`draft_to_orm_kwargs`.
+    ``version`` / ``pull_supported`` become optional and are sentinel-filled
+    by :func:`draft_to_orm_kwargs`.
+  * ``push_supported`` becomes optional and is DERIVED from the command text —
+    but an explicit ``false`` on the body is a FLOOR (:func:`effective_push_support`):
+    a draft forked from a corpus scenario that refuses push delivery must not
+    be offered the bundle its origin refuses, however POSIX-shaped its steps.
   * it does NOT run the UC/TC index FK check at rest — an ``UNBOUND`` draft is a
     legal *saved* state. Binding is enforced at LAUNCH (the D5 gate), not at save.
 
@@ -72,6 +76,7 @@ __all__ = [
     "DraftScenarioSchema",
     "DraftValidationError",
     "draft_to_orm_kwargs",
+    "effective_push_support",
     "orm_sentinels",
 ]
 
@@ -134,6 +139,25 @@ class DraftScenarioSchema(BaseModel):
     # ── Optional identity / provenance ──────────────────────────────────────
     author: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
+    # Threat-intel citation carried from a fork origin. Read at run time by
+    # the POV report (api/runs.py), the markdown report generator and the
+    # bundle header, so a fork that dropped them produced a report with no
+    # Unit 42 attribution. Plain optional strings; the corpus schema validates
+    # them no further either.
+    threat_report: Optional[str] = None
+    threat_report_url: Optional[str] = None
+
+    # ── Optional push declaration — a FLOOR, never a widening ──────────────
+    # ``push_supported`` on a draft is DERIVED from the command text at
+    # ORM-conversion. This field lets a draft forked from a corpus scenario
+    # that declares ``push_supported: false`` carry that refusal: the
+    # derivation may narrow true → false, but an explicit false here is never
+    # widened to true (see :func:`effective_push_support`). An explicit true
+    # is recorded as the declaration and is otherwise not a floor. Absent =
+    # the Phase-1 behaviour, derivation alone. Persisted on its own column
+    # (``push_supported_declared``) because the row's derived ``false`` and
+    # a carried refusal must never read as one value.
+    push_supported: Optional[bool] = None
 
     # ── Optional UC/TC index binding (sentinel-filled when omitted) ─────────
     uc_ref: Optional[str] = None
@@ -345,18 +369,44 @@ def _derive_push_supported(steps: list[dict[str, Any]], cleanup: Optional[dict[s
         return False
 
 
+def effective_push_support(
+    derived: bool,
+    declared: Optional[bool],
+    prior_declared: Optional[bool] = None,
+) -> tuple[bool, Optional[bool]]:
+    """The ONE floor rule → ``(push_supported, push_supported_declared)``.
+
+    ``derived`` is what the push generator says about the command text;
+    ``declared`` is what the request body said (None = nothing); and
+    ``prior_declared`` is what the row already carries, for a PUT. A refusal —
+    an explicit ``False`` from either — is a floor: it narrows the result to
+    ``False`` and is kept as the declaration, so a fork of a refusing origin
+    stays refused for its lifetime whatever a later body omits or widens.
+    Anything else leaves the derivation alone and records the body's own
+    declaration, so a DERIVED ``False`` never hardens into a declared one and a
+    hand-authored draft recovers the moment its steps become emittable.
+    """
+    if declared is False or prior_declared is False:
+        return False, False
+    return derived, declared
+
+
 def draft_to_orm_kwargs(
     draft: DraftScenarioSchema,
     *,
     author: str = "composer",
     scenario_id: Optional[str] = None,
+    prior_declared: Optional[bool] = None,
 ) -> dict[str, Any]:
     """Build ``Scenario`` ORM keyword args from a validated draft.
 
     Fills every ``nullable=False`` column a from-scratch draft lacks with the
     explicit sentinels in :data:`orm_sentinels`; derives ``detection_types``
     from the steps' expected detections and ``push_supported`` from the command
-    text; and stamps ``status='draft'`` and the ``'composer-draft'`` tag.
+    text — narrowed by the draft's declared refusal and, on a PUT, by
+    ``prior_declared`` (the row's existing ``push_supported_declared``), via
+    :func:`effective_push_support`; and stamps ``status='draft'`` and the
+    ``'composer-draft'`` tag.
 
     ``scenario_id`` defaults to ``SIM-DRAFT-<slug>-<rand>`` where ``<slug>`` is
     the slugified name and ``<rand>`` is a short random suffix, so a draft id is
@@ -414,6 +464,10 @@ def draft_to_orm_kwargs(
 
     cleanup = draft.cleanup.model_dump() if draft.cleanup else None
 
+    push_supported, push_supported_declared = effective_push_support(
+        _derive_push_supported(steps, cleanup), draft.push_supported, prior_declared
+    )
+
     resolved_id = scenario_id or f"SIM-DRAFT-{_slug(draft.name)}-{secrets.token_hex(3)}"
 
     kwargs: dict[str, Any] = {
@@ -441,7 +495,10 @@ def draft_to_orm_kwargs(
         ),
         "additional_techniques": [t.model_dump() for t in draft.additional_techniques],
         "execution_identity": execution_identity,
-        "push_supported": _derive_push_supported(steps, cleanup),
+        "threat_report": draft.threat_report,
+        "threat_report_url": draft.threat_report_url,
+        "push_supported": push_supported,
+        "push_supported_declared": push_supported_declared,
         # The agent beacon runs any command; channel is implicitly 'agent' in
         # Phase 1, so pull is always supported for a draft.
         "pull_supported": True,
