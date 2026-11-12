@@ -16,7 +16,7 @@ import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Collection, Mapping, Optional, Sequence
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -623,9 +623,10 @@ class Orchestrator:
 
         The campaign delivers LIVE only when ``authorized_by`` is set (the launch
         carried ``consent.simulation_authorized`` and named the operator) and
-        :func:`_eal_live_blockers` finds nothing: every step is a collector step
-        resolved to a keyed collector target whose last check did not fail, and
-        the campaign sleeps no longer than ``EAL_IN_PROCESS_MAX_SLEEP_SECONDS``.
+        :func:`_eal_live_blockers` finds nothing: no eal step was rejected before
+        the campaign was built, every step is a collector step resolved to a
+        keyed collector target whose last check did not fail, and the campaign
+        sleeps no longer than ``EAL_IN_PROCESS_MAX_SLEEP_SECONDS``.
         Otherwise the whole campaign runs dry-run (records pre-rendered, nothing
         POSTed) and each step's ledger ``code`` is the ``EAL_DRY_RUN_*`` reason.
         Keys are read from the vault only on the live path, after the gate
@@ -695,9 +696,11 @@ class Orchestrator:
                 specs = await load_specs(db)
                 resolved, res = apply_targets(spec, registry, specs)
                 resolutions = {r.step_id: r for r in res}
+                # Every entry in `outcomes` so far is an eal step rejected
+                # before the campaign; it holds the rest at dry-run.
                 blockers = _eal_live_blockers(
                     campaign_steps, resolutions, collector_plugin_names(registry),
-                    authorized_by=authorized_by,
+                    authorized_by=authorized_by, rejected=set(outcomes),
                 )
                 # Ephemeral, not persisted; run_id (passed to execute) is the
                 # real disambiguator. campaign_id must match CMP-{LABEL}-{NNN}.
@@ -2004,17 +2007,20 @@ def _eal_live_blockers(
     collector_plugins: set[str],
     *,
     authorized_by: Optional[str],
+    rejected: Collection[str] = (),
 ) -> dict[str, tuple[str, str]]:
     """Why each step of an in-process EAL campaign may not deliver live.
 
     ``campaign_steps`` are the campaign's ``CampaignStep`` rows and
     ``resolutions`` maps a collector step's id to its
-    ``eal_simulator.targets.StepResolution``. Returns ``{step_id: (code,
-    detail)}``; an empty dict means the campaign may go live.
+    ``eal_simulator.targets.StepResolution``. ``rejected`` names the run's eal
+    steps that never made it into the campaign (unregistered plugin, invalid
+    step id). Returns ``{step_id: (code, detail)}``; an empty dict means the
+    campaign may go live.
 
-    The campaign goes live whole or not at all: when any step is blocked, every
-    other step is held at dry-run with ``EAL_DRY_RUN_HELD``, naming the blocking
-    steps. Pure — no database, no network.
+    The run's eal steps go live whole or not at all: when any step is blocked
+    or was rejected, every other campaign step is held at dry-run with
+    ``EAL_DRY_RUN_HELD``, naming those steps. Pure — no database, no network.
     """
     from eal_simulator.targets import FAILING_VERDICTS  # noqa: PLC0415
 
@@ -2063,8 +2069,9 @@ def _eal_live_blockers(
                     f"over the {EAL_IN_PROCESS_MAX_SLEEP_SECONDS}s in-process ceiling",
                 )
 
-    if blockers:
-        held = ", ".join(sorted(blockers))
+    if blockers or rejected:
+        # str(): a rejected step may have no id at all.
+        held = ", ".join(sorted(str(i) for i in set(blockers) | set(rejected)))
         for cs in campaign_steps:
             if cs.step_id not in blockers:
                 blockers[cs.step_id] = (

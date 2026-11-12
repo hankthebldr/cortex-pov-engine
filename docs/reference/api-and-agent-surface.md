@@ -539,7 +539,9 @@ POSTed):
 
 1. the launch carried `consent.simulation_authorized: true` **and** a non-blank
    `authorized_by`;
-2. every eal step's plugin is a collector plugin (`targets.collector_plugin_names`);
+2. every eal step entered the campaign (its plugin is registered and its id is
+   `step-NN`), and every one's plugin is a collector plugin
+   (`targets.collector_plugin_names`);
 3. every eal step resolves to a configured collector target (§1.9.1) — `explicit`,
    `binding` or `default`; an inline `collector_url` does not count;
 4. every such target has a key in the vault;
@@ -550,9 +552,13 @@ POSTed):
    (`EAL_IN_PROCESS_MAX_SLEEP_SECONDS`) — the campaign runs synchronously inside
    the launch request.
 
-The campaign goes live whole or not at all. In a dry run each eal step's
-`Run.channel_dispatch` entry has `status: dry_run` (or the executor's own
-`not_delivered` / `skipped` / `error`) and a `code` saying why:
+The run's eal steps go live whole or not at all. In a dry run each campaign
+step's `Run.channel_dispatch` entry has `status: dry_run` (`not_delivered` when
+the executor reported the step failed, `skipped` when it skipped it) and a `code`
+saying why. A step rejected before the campaign keeps `status: error` with its
+own code (`PLUGIN_MISCONFIGURED`, `EAL_STEP_INVALID`), as does every step when
+the dispatch itself faults (`EAL_DISPATCH_FAULT`) or the executor returns no
+result (`EAL_NO_RESULT`); `error` comes only from those orchestrator codes.
 
 | `code` | Meaning |
 |---|---|
@@ -562,15 +568,16 @@ The campaign goes live whole or not at all. In a dry run each eal step's
 | `EAL_DRY_RUN_TARGET_NO_KEY` | The step's target has no key stored |
 | `EAL_DRY_RUN_TARGET_FAILING` | The step's target's last preflight failed |
 | `EAL_DRY_RUN_SLEEP_CAP` | Total sleep is over 30 s; set on the steps that sleep |
-| `EAL_DRY_RUN_HELD` | This step is clean, but another step blocks; `detail` names the blocking steps |
+| `EAL_DRY_RUN_HELD` | This step is clean, but another step blocks or was rejected before the campaign; `detail` names those steps |
 
 When the gate passes, the keys are read from the vault (`collector_targets.load_tokens`)
 only then and only into the in-memory campaign, which runs with
 `dry_run: false`, `simulation_authorized: true`, the launch's `authorized_by` and
 the resolved targets' exact `host:port` pins as `target_allowlist`. The ledger
-`status` is then `dispatched` (code `null`) or the executor's `not_delivered` /
-`skipped` / `error`; delivery is accounted by `eal_simulator/delivery.py` (only a
-2xx delivers, so a collector 401 reads `not_delivered`). Each eal step's seeded
+`status` is then `dispatched` (code `null`), or `not_delivered` for any step the
+executor reported as failed or partial, or `skipped`; delivery is accounted by
+`eal_simulator/delivery.py` (only a 2xx delivers, so a collector 401 reads
+`not_delivered`). Each eal step's seeded
 `Result.executed_at` is that step's own recorded start (naive UTC), or the launch
 time when the step has no result. ***tenant-verified is 0***: nothing on this
 path has delivered to a live tenant.

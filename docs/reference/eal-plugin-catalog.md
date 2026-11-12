@@ -150,9 +150,14 @@ pinned into the campaign's effective `target_allowlist`. Its callers: campaign
 create (a step may omit `collector_url`), `GET …/collectors` (adds
 `resolutions[]`, `blocking[]`, `failing[]`, `degraded[]`), campaign preflight,
 launch, the offline bundle (URL, header and scheme from the target; the key
-never), and the Composer in-process dispatch (dry-run, never keys). The stored
-campaign spec is never rewritten; the key is decrypted only at launch, into the
-in-memory campaign.
+never), and the Composer / scenario-run in-process dispatch. That dispatch runs
+dry-run, without keys, unless the run launched with `consent.simulation_authorized`
+and a named `authorized_by` and every eal step resolves to a keyed target whose
+last check did not fail, with at most 30 s of total sleep; only then are the keys
+decrypted and the campaign delivers live, and otherwise each step says why with
+an `EAL_DRY_RUN_*` code (`api-and-agent-surface.md` §1.3.2). The stored campaign
+spec is never rewritten; the key is decrypted only at launch, into the in-memory
+campaign.
 
 Per-target preflight, `POST /api/collector-targets/{name}/preflight`, is a
 ladder: **configured** (URL valid, key present when the kind needs one) →

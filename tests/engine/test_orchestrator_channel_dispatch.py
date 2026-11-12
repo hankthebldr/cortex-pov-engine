@@ -784,3 +784,26 @@ def test_eal_live_collector_401_reads_not_delivered(session_factory, recorder):
             assert ledger["step-01"]["status"] == "not_delivered", ledger["step-01"]
 
     asyncio.run(_run())
+
+
+def test_eal_step_rejected_before_the_campaign_holds_the_rest(session_factory, recorder):
+    """A step dropped before the campaign is built (unregistered plugin) must
+    hold the clean steps at dry-run: a scenario run is never half-live."""
+    async def _run():
+        async with session_factory() as db:
+            await _seed_target(db)
+            await _seed_agent(db, "agent-1")
+            await _seed_scenario(db, steps=[
+                _m365_step("step-01"),
+                _eal_step("step-02", plugin="no_such_plugin"),
+            ])
+            _, ledger = await _launch_and_ledger(
+                _fresh_orchestrator(), db, consent=LIVE_CONSENT, authorized_by="tester")
+            assert ledger["step-02"]["status"] == "error"
+            assert ledger["step-02"]["code"] == "PLUGIN_MISCONFIGURED"
+            assert ledger["step-01"]["status"] == "dry_run"
+            assert ledger["step-01"]["code"] == "EAL_DRY_RUN_HELD"
+            assert "step-02" in ledger["step-01"]["detail"]
+            assert recorder.posts == []
+
+    asyncio.run(_run())
